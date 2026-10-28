@@ -20,7 +20,7 @@ func (a *app) ensureMacServer(ctx context.Context) error {
 		return nil
 	}
 	if a.status != nil {
-		if st, err := a.status.Poll(ctx); err == nil && st.Running {
+		if st, err := a.pollStatus(ctx); err == nil && st.Running {
 			return nil
 		}
 	}

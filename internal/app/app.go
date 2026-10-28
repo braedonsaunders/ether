@@ -41,6 +41,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/safety"
 	"github.com/braedonsaunders/ether/internal/segcache"
+	"github.com/braedonsaunders/ether/internal/service"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/stats"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -433,6 +434,11 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 	cfg = a.cfg.Get() // the port may have moved off a busy default
+	// Publish the actual listener, including automatic port fallback, without
+	// exposing the service's protected configuration to the desktop user.
+	if err := service.PublishLocalURL(a.opts.DataDir, strings.TrimSuffix(probeURL(ln.Addr()), "/identity")); err != nil {
+		a.log.Warn("publish local tray endpoint", "err", err)
+	}
 	dl := newDualListener(ln, func() *tls.Config { return a.certs.TLSConfig() })
 	srv := &http.Server{
 		Handler:           a.handler,

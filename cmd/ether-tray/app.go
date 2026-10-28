@@ -53,48 +53,46 @@ type ServiceController interface {
 }
 
 type app struct {
-	baseURL   string
-	status    *StatusClient
-	svc       ServiceController // nil when the service manager is unavailable
-	updates   UpdateChecker     // nil when no release key is compiled in (dev builds)
-	installer InstallerLauncher // macOS installer releases; nil like updates
-	goos      string            // empty: runtime.GOOS (tests override)
-	cfg       config.Updates
-	dataDir   string
-	autostart *Autostart
-	openURL   func(string) error
-	log       *slog.Logger
-	version   string // empty: updater.Version (tests override)
+	baseURL        string
+	resolveBaseURL func() string // re-read the service endpoint for each action; never mutate shared clients
+	status         *StatusClient
+	svc            ServiceController // nil when the service manager is unavailable
+	updates        UpdateChecker     // nil when no release key is compiled in (dev builds)
+	installer      InstallerLauncher // macOS installer releases; nil like updates
+	goos           string            // empty: runtime.GOOS (tests override)
+	cfg            config.Updates
+	dataDir        string
+	autostart      *Autostart
+	openURL        func(string) error
+	log            *slog.Logger
+	version        string // empty: updater.Version (tests override)
 	// staleChecked is set once the restart-after-upgrade decision has been
 	// made for this tray start (see restartStaleServer).
 	staleChecked atomic.Bool
 }
 
 func newApp(log *slog.Logger) *app {
-	base := os.Getenv("ETHER_URL")
-	if base == "" {
-		base = defaultBaseURL
-	}
+	override := os.Getenv("ETHER_URL")
 	dataDir := config.DefaultDataDir()
+	resolveURL := func() string { return localBaseURL(dataDir, override, service.ReadLocalURL) }
+	base := resolveURL()
 	cfg := config.Updates{Channel: "stable"}
 	if c, err := openServerConfig(dataDir); err == nil {
 		cfg = c.Updates
-		if os.Getenv("ETHER_URL") == "" {
-			base = serverBaseURL(c.Server)
-		}
 	} else {
 		// Expected on Windows: the service's %ProgramData%\Ether is locked
 		// to SYSTEM and Administrators, so the tray (a normal user) uses
-		// the default port and update settings.
-		log.Debug("tray: server config not readable; using defaults", "dir", dataDir, "err", err)
+		// published non-secret endpoint and default update settings.
+		log.Debug("tray: server config not readable; using default update settings", "dir", dataDir, "err", err)
 	}
 	a := &app{
-		baseURL:   base,
-		status:    NewStatusClient(base, &http.Client{Timeout: 3 * time.Second}),
-		cfg:       cfg,
-		dataDir:   dataDir,
-		autostart: DefaultAutostart(),
-		log:       log,
+		baseURL:        base,
+		resolveBaseURL: resolveURL,
+		status:         NewStatusClient(base, &http.Client{Timeout: 3 * time.Second}),
+		cfg:            cfg,
+		dataDir:        dataDir,
+		autostart:      DefaultAutostart(),
+		log:            log,
 	}
 	a.openURL = func(u string) error { return OpenBrowser(u) }
 
@@ -117,6 +115,36 @@ func newApp(log *slog.Logger) *app {
 		log.Debug("tray: update checks disabled", "err", err)
 	}
 	return a
+}
+
+// A Windows service publishes only its listening URL, so a normal-user tray
+// never needs access to the credential-bearing configuration. The explicit
+// ETHER_URL override remains authoritative. Other installs read the config.
+func localBaseURL(dataDir, override string, published func(string) (string, error)) string {
+	if override != "" {
+		return strings.TrimRight(override, "/")
+	}
+	if base, err := published(dataDir); err == nil && base != "" {
+		return base
+	}
+	if c, err := openServerConfig(dataDir); err == nil {
+		return serverBaseURL(c.Server)
+	}
+	return defaultBaseURL
+}
+
+func (a *app) currentBaseURL() string {
+	if a.resolveBaseURL != nil {
+		return a.resolveBaseURL()
+	}
+	return a.baseURL
+}
+
+func (a *app) pollStatus(ctx context.Context) (Status, error) {
+	if a.resolveBaseURL == nil {
+		return a.status.Poll(ctx)
+	}
+	return NewStatusClient(a.currentBaseURL(), a.status.http).Poll(ctx)
 }
 
 // serverBaseURL is where the local server listens: its configured port on
@@ -176,13 +204,13 @@ func serverExecutable() string {
 	return ""
 }
 
-func (a *app) webUIURL() string { return a.baseURL + "/ether/" }
+func (a *app) webUIURL() string { return a.currentBaseURL() + "/ether/" }
 
 // openUI opens the web UI at the server's configured port and returns the
 // process exit code (`ether-tray --open`, used by installer shortcuts so
 // they follow the port the server actually chose).
 func (a *app) openUI() int {
-	if err := OpenBrowser(a.webUIURL()); err != nil {
+	if err := a.openURL(a.webUIURL()); err != nil {
 		a.log.Error("ether-tray: open web UI", "url", a.webUIURL(), "err", err)
 		return 1
 	}
@@ -205,11 +233,11 @@ func (a *app) openPlex() {
 // The first status that names the server's release also settles whether
 // the server must be restarted onto the binary this install ships.
 func (a *app) pollOnce(ctx context.Context) Status {
-	st, _ := a.status.Poll(ctx)
+	st, _ := a.pollStatus(ctx)
 	if restarted, err := a.restartStaleServer(st); err != nil && a.log != nil {
 		a.log.Warn("tray: restart server after upgrade", "err", err)
 	} else if restarted {
-		st, _ = a.status.Poll(ctx)
+		st, _ = a.pollStatus(ctx)
 	}
 	return st
 }

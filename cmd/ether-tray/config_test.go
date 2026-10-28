@@ -1,12 +1,98 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/config"
 )
+
+func TestTrayFollowsChangedServerPort(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ETHER_DATA_DIR", dir)
+	t.Setenv("ETHER_URL", "")
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"server":{"port":32400}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := newApp(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var opened string
+	a.openURL = func(u string) error { opened = u; return nil }
+	if err := os.WriteFile(path, []byte(`{"server":{"port":32450}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.openEther()
+	if opened != "http://127.0.0.1:32450/ether/" {
+		t.Fatalf("opened %s after port change", opened)
+	}
+	opened = ""
+	if code := a.openUI(); code != 0 || opened != "http://127.0.0.1:32450/ether/" {
+		t.Fatalf("shortcut code=%d URL=%s", code, opened)
+	}
+	if got := a.updatePageURL(); got != "http://127.0.0.1:32450/ether/settings/updates" {
+		t.Fatalf("update URL = %s", got)
+	}
+}
+
+func TestLocalBaseURLWithoutPrivateConfig(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private-config-not-accessible")
+	published := func(got string) (string, error) {
+		if got != dir {
+			t.Fatalf("data directory = %s", got)
+		}
+		return "http://127.0.0.1:32450", nil
+	}
+	if got := localBaseURL(dir, "", published); got != "http://127.0.0.1:32450" {
+		t.Fatalf("protected configuration fallback = %s", got)
+	}
+	if got := localBaseURL(dir, "http://localhost:32500/", func(string) (string, error) {
+		t.Fatal("explicit URL must bypass discovery")
+		return "", nil
+	}); got != "http://localhost:32500" {
+		t.Fatal(got)
+	}
+	if got := localBaseURL(dir, "", func(string) (string, error) { return "", errors.New("not published") }); got != defaultBaseURL {
+		t.Fatal(got)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("discovery created private directory: %v", err)
+	}
+}
+
+func TestTrayStatusFollowsPublishedEndpoint(t *testing.T) {
+	newServer := func(id string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/identity" {
+				fmt.Fprintf(w, `<MediaContainer machineIdentifier="%s" version="1.43.5"/>`, id)
+			} else {
+				http.NotFound(w, r)
+			}
+		}))
+	}
+	oldServer, movedServer := newServer("old-port"), newServer("new-port")
+	defer oldServer.Close()
+	defer movedServer.Close()
+	base := oldServer.URL
+	a := &app{baseURL: oldServer.URL, status: NewStatusClient(oldServer.URL, oldServer.Client()), resolveBaseURL: func() string { return base }}
+	if st, err := a.pollStatus(context.Background()); err != nil || st.MachineID != "old-port" {
+		t.Fatalf("before: %+v %v", st, err)
+	}
+	base = movedServer.URL
+	if st, err := a.pollStatus(context.Background()); err != nil || st.MachineID != "new-port" {
+		t.Fatalf("after: %+v %v", st, err)
+	}
+	if a.status.baseURL != oldServer.URL {
+		t.Fatal("poll mutated the shared HTTP client")
+	}
+}
 
 func TestOpenServerConfigNeverCreates(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "Ether")

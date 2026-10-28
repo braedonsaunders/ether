@@ -119,7 +119,7 @@ func cfJSON(id, name string) string {
 //
 // early.json matches the slug guess for "Early"; cf-late hides in
 // zz-late.json, past five fillers. With Parallel=4 the early stop must
-// bound fetches to the first two waves: 8 files, through zzz-after-01.
+// bound fetches to the first two waves: at most 8 files, through zzz-after-01.
 func earlyLateTree() map[string]string {
 	tree := map[string]string{
 		"radarr/cf/early.json":   cfJSON("cf-early", "Early"),
@@ -154,10 +154,20 @@ func assertFetchBound(t *testing.T, gh *schedGitHub) {
 	t.Helper()
 	got := gh.fetchedPaths()
 	slices.Sort(got)
-	want := append([]string(nil), earlyLateBound...)
-	slices.Sort(want)
-	if !slices.Equal(got, want) {
-		t.Fatalf("fetched %v, want exactly the first two waves %v", got, want)
+	// A callback already scheduled in the last wave may see that all wanted
+	// formats were found and skip its HTTP request. Completion order can thus
+	// shrink the set, but must never start a later wave or duplicate a fetch.
+	seen := make(map[string]bool)
+	for _, path := range got {
+		if !slices.Contains(earlyLateBound, path) || seen[path] {
+			t.Fatalf("fetched %v, want unique requests within the first two waves %v", got, earlyLateBound)
+		}
+		seen[path] = true
+	}
+	for _, required := range []string{"radarr/cf/early.json", "radarr/cf/zz-late.json"} {
+		if !seen[required] {
+			t.Fatalf("missing wanted format request %s in %v", required, got)
+		}
 	}
 }
 
