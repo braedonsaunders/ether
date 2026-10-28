@@ -286,6 +286,59 @@ func TestUnavailableCooloff(t *testing.T) {
 	}
 }
 
+func TestUnavailableCooloffRechecksWhenCachedOnlyOff(t *testing.T) {
+	ctx := context.Background()
+	// Empty results are search-cached only for freshReleaseCooloff (3m), so
+	// a fresh Resolve after the 5m recheck window reaches the indexer again.
+	run := func(cachedOnly bool) (*fakeIndexer, *fakeClock, *Service, *core.Title) {
+		clock := &fakeClock{t: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+		idx := &fakeIndexer{}
+		cfg := testCfg()
+		cfg.Debrid.CachedOnly = cachedOnly
+		svc := New(idx, fakeHealth{}, nil, cfg, Options{Now: clock.now})
+		return idx, clock, svc, matrixTitle()
+	}
+
+	t.Run("cached only off rechecks after window", func(t *testing.T) {
+		idx, clock, svc, title := run(false)
+		if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+			t.Fatalf("first resolve err=%v want ErrNotAvailable", err)
+		}
+		if idx.searches.Load() != 1 {
+			t.Fatalf("searches=%d want 1 after first resolve", idx.searches.Load())
+		}
+		// Within the recheck window: the remembered answer still serves.
+		if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+			t.Fatalf("second resolve err=%v want ErrNotAvailable", err)
+		}
+		if idx.searches.Load() != 1 {
+			t.Fatalf("searches=%d want 1 within recheck window", idx.searches.Load())
+		}
+		// Past the window: one fresh search instead of the 24h-style cooloff.
+		clock.add(6 * time.Minute)
+		if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+			t.Fatalf("third resolve err=%v want ErrNotAvailable", err)
+		}
+		if idx.searches.Load() != 2 {
+			t.Fatalf("searches=%d want 2 after recheck window with cached-only off", idx.searches.Load())
+		}
+	})
+
+	t.Run("cached only on keeps long cooloff", func(t *testing.T) {
+		idx, clock, svc, title := run(true)
+		if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+			t.Fatalf("first resolve err=%v want ErrNotAvailable", err)
+		}
+		clock.add(6 * time.Minute)
+		if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+			t.Fatalf("second resolve err=%v want ErrNotAvailable", err)
+		}
+		if idx.searches.Load() != 1 {
+			t.Fatalf("searches=%d want 1 after recheck window with cached-only on", idx.searches.Load())
+		}
+	})
+}
+
 func TestFreshEpisodeShortCooloffAndReResolveWhenUploaded(t *testing.T) {
 	ctx := context.Background()
 	airDay := time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC)
