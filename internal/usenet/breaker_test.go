@@ -3,6 +3,7 @@ package usenet
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -10,6 +11,57 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/usenet/nntptest"
 )
+
+func TestCappedDouble(t *testing.T) {
+	maxD := time.Duration(math.MaxInt64)
+	for _, tc := range []struct {
+		name      string
+		d, lo, hi time.Duration
+		want      time.Duration
+	}{
+		{"below lo clamps to lo", 10 * time.Millisecond, 100 * time.Millisecond, 400 * time.Millisecond, 100 * time.Millisecond},
+		{"normal double", 150 * time.Millisecond, 100 * time.Millisecond, 400 * time.Millisecond, 300 * time.Millisecond},
+		{"healthy conn range", time.Second, time.Second, 2 * time.Minute, 2 * time.Second},
+		{"healthy auth range", 3 * time.Hour, 15 * time.Minute, 6 * time.Hour, 6 * time.Hour},
+		{"non-power-of-two cap", 200 * time.Millisecond, 100 * time.Millisecond, 300 * time.Millisecond, 300 * time.Millisecond},
+		{"non-power-of-two below cap", 140 * time.Millisecond, 100 * time.Millisecond, 300 * time.Millisecond, 280 * time.Millisecond},
+		{"over half cap", 250 * time.Millisecond, 100 * time.Millisecond, 400 * time.Millisecond, 400 * time.Millisecond},
+		{"already over cap", 500 * time.Millisecond, 100 * time.Millisecond, 400 * time.Millisecond, 400 * time.Millisecond},
+		{"lo equals hi", 100 * time.Millisecond, 400 * time.Millisecond, 400 * time.Millisecond, 400 * time.Millisecond},
+		{"lo over hi collapses to hi", 100 * time.Millisecond, 500 * time.Millisecond, 400 * time.Millisecond, 400 * time.Millisecond},
+		{"near max no wrap", maxD - 1, time.Second, maxD, maxD},
+		{"over half near max", maxD/2 + 1, time.Second, maxD, maxD},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cappedDouble(tc.d, tc.lo, tc.hi); got != tc.want {
+				t.Fatalf("cappedDouble(%v, %v, %v) = %v, want %v", tc.d, tc.lo, tc.hi, got, tc.want)
+			}
+		})
+	}
+
+	now := time.Unix(1_800_000_000, 0)
+	b := newBreaker(100*time.Millisecond, 400*time.Millisecond, 1, func() time.Time { return now })
+	for i, want := range []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 400 * time.Millisecond, 400 * time.Millisecond} {
+		if got := b.connFailure(errors.New("boom")); got != want {
+			t.Fatalf("connFailure %d = %v, want %v", i+1, got, want)
+		}
+	}
+
+	p := &pool{o: &Options{BackoffMin: 100 * time.Millisecond, BackoffMax: 400 * time.Millisecond}}
+	for _, tc := range []struct {
+		fails int
+		base  time.Duration
+	}{
+		{1, 100 * time.Millisecond},
+		{2, 200 * time.Millisecond},
+		{3, 400 * time.Millisecond},
+		{4, 400 * time.Millisecond},
+	} {
+		if got := p.warmBackoff(tc.fails); got < tc.base || got >= tc.base*5/4 {
+			t.Fatalf("warmBackoff(%d) = %v, want in [%v, %v)", tc.fails, got, tc.base, tc.base*5/4)
+		}
+	}
+}
 
 func TestBreakerAuthBackoffDoublesToCap(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)

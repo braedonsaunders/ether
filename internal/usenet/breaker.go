@@ -101,6 +101,10 @@ func (b *breaker) success() {
 
 // cappedDouble doubles d, clamped to [lo, hi].
 func cappedDouble(d, lo, hi time.Duration) time.Duration {
+	// lo>hi or d already past the cap collapses to hi; d>hi/2 returns hi before doubling, so d*2 cannot overflow.
+	if lo > hi || d > hi/2 {
+		return hi
+	}
 	return min(max(d*2, lo), hi)
 }
 
