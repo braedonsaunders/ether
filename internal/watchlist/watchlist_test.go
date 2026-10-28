@@ -1,13 +1,16 @@
 package watchlist
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -200,6 +203,85 @@ func TestOwnerRouterUsesRealSettingsAndViewer(t *testing.T) {
 	s.Router().ServeHTTP(w, r)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Released") {
 		t.Fatalf("no persisted reminder %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRouterItemsFailureIs500(t *testing.T) {
+	s, _, _, _, _, _ := setup(t)
+	s.o.Users = func(context.Context) ([]core.User, error) { return []core.User{{ID: 1}}, nil }
+	// Make Sync and Check succeed trivially so only the Items read can fail:
+	// no upstream sources for Sync, and Check returns at once with no resolver.
+	s.o.Trakt, s.o.Resolver = nil, nil
+	if _, e := s.db.ExecContext(context.Background(), `DROP TABLE watchlist_items`); e != nil {
+		t.Fatal(e)
+	}
+	for _, tc := range []struct{ method, path string }{
+		{"GET", "/users/1/"},
+		{"POST", "/users/1/sync"},
+		{"POST", "/users/1/check"},
+	} {
+		w := httptest.NewRecorder()
+		s.Router().ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != 500 {
+			t.Fatalf("%s %s: got %d (%s), want 500", tc.method, tc.path, w.Code, w.Body.String())
+		}
+	}
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestRunLogsSyncCheckAndRecordPassFailures(t *testing.T) {
+	s, _, _, _, src, _ := setup(t)
+	src.err = errors.New("upstream unavailable")
+	s.o.Users = func(context.Context) ([]core.User, error) { return []core.User{{ID: 1}}, nil }
+	// Items (used by Check) and recordPass now fail; Sync fails upstream.
+	for _, q := range []string{`DROP TABLE watchlist_items`, `DROP TABLE watchlist_meta`} {
+		if _, e := s.db.ExecContext(context.Background(), q); e != nil {
+			t.Fatal(e)
+		}
+	}
+	out := &lockedBuffer{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(out, nil)))
+	defer slog.SetDefault(prev)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); s.Run(ctx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		got := out.String()
+		if strings.Contains(got, "watchlist sync failed") && strings.Contains(got, "watchlist check failed") && strings.Contains(got, "watchlist: record pass failed") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not stop")
+	}
+	got := out.String()
+	for _, want := range []string{"watchlist sync failed", "watchlist check failed", "watchlist: record pass failed"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in log output:\n%s", want, got)
+		}
 	}
 }
 
