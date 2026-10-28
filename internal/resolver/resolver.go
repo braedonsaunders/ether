@@ -32,12 +32,22 @@ const (
 	freshReleaseCooloff = 3 * time.Minute
 	// unavailableRecheck bounds how long a remembered "unavailable" answer
 	// is trusted when debrid cached-only is off: an uncached torrent sent
-	// to download may become ready after the remembered failure, so after
-	// this window any Resolve does one fresh search — which may queue the
-	// download or serve it ready. The resolver itself never polls: the
-	// recheck runs only when a caller invokes Resolve, which includes
-	// user-initiated playback as well as PreResolve and the watchlist
-	// Check, each bounded by that caller's own budgets and gates.
+	// to download may become ready after the remembered failure. Once a
+	// still-live remembered entry is older than this window, a Resolve in
+	// the fast-path shape (no Exclude, Prefer, pin or discovered releases)
+	// skips the remembered answer and does one fresh search, bypassing the
+	// search cache — which may queue the download or serve it ready. The
+	// unavailable writes keep their entries alive past this window in this
+	// mode: the no-candidates write uses the cooloff (fresh releases use
+	// the shorter freshReleaseCooloff instead, and their entries and
+	// search cache expire before this window, so the next Resolve
+	// searches again anyway), and the health-failed write at the end of
+	// resolve extends its TTL likewise (see the trade-off noted there).
+	// With cached-only on, or in the other request shapes, the remembered
+	// answer stands until its entry expires. The resolver itself never
+	// polls: the recheck runs only when a caller invokes Resolve, which
+	// includes user-initiated playback as well as PreResolve and the
+	// watchlist Check, each bounded by that caller's own budgets and gates.
 	unavailableRecheck = 5 * time.Minute
 )
 
@@ -728,7 +738,19 @@ func (s *Service) resolve(ctx context.Context, req core.ResolveRequest, profile 
 		return nil, failed(nil)
 	}
 	if !clientRejected && len(req.Exclude) == 0 && len(cands) <= maxHealthAttempts {
-		s.setAvailability(ctx, int64(t.Key), false, min(s.cooloff(), failedHealthTTL))
+		ttl := min(s.cooloff(), failedHealthTTL)
+		if !s.cachedOnly() {
+			// Keep the entry alive for the full cooloff so it is still
+			// live when unavailableRecheck passes: getAvailability drops
+			// expired entries (store.go), so the failedHealthTTL cap
+			// erased it at 2m and a later Resolve served the long-lived
+			// search cache without re-asking the indexer. Trade-off in
+			// cached-only-off mode: a title whose releases all failed
+			// health is now rechecked at the unavailableRecheck window
+			// (5m) instead of after failedHealthTTL (2m).
+			ttl = s.cooloff()
+		}
+		s.setAvailability(ctx, int64(t.Key), false, ttl)
 	}
 	trace.Err = "no healthy candidates"
 	return nil, fmt.Errorf("%q: %w", t.Title, core.ErrNotAvailable)

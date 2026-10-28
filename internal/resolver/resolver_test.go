@@ -357,13 +357,63 @@ func TestUnavailableRecheckRefreshesNonemptyRejectedSearchCache(t *testing.T) {
 	if idx.searches.Load() != 1 {
 		t.Fatalf("searches=%d want 1 after first resolve", idx.searches.Load())
 	}
+	// Within the recheck window the remembered answer still serves, with
+	// no new search even though the search cache is non-empty.
+	clock.add(4 * time.Minute)
+	if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("within-window resolve err=%v want ErrNotAvailable", err)
+	}
+	if idx.searches.Load() != 1 {
+		t.Fatalf("searches=%d want 1 within recheck window", idx.searches.Load())
+	}
 	// A matching release appears, then the clock moves past the 5m
-	// recheck window but well inside the 30m search-cache TTL and the 1h
-	// unavailable cooloff.
+	// recheck window (6m total) but well inside the 30m search-cache TTL
+	// and the 1h unavailable cooloff.
 	idx.mu.Lock()
 	idx.releases = []core.Release{rel("good", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 8000)}
 	idx.mu.Unlock()
-	clock.add(6 * time.Minute)
+	clock.add(2 * time.Minute)
+	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
+	if err != nil || res == nil || res.Release.ID != "good" {
+		t.Fatalf("recheck resolve res=%+v err=%v want release good", res, err)
+	}
+	if idx.searches.Load() != 2 {
+		t.Fatalf("searches=%d want 2 (fresh search on recheck)", idx.searches.Load())
+	}
+}
+
+func TestUnavailableRecheckAfterHealthFailureWhenCachedOnlyOff(t *testing.T) {
+	ctx := context.Background()
+	clock := &fakeClock{t: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+	// The only release fails its health check, so Resolve remembers the
+	// title unavailable via the "no healthy candidates" path. Its result
+	// stays in the 30m search cache, like the rejected-search-cache case.
+	idx := &fakeIndexer{releases: []core.Release{rel("bad", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 8000)}}
+	cfg := testCfg()
+	cfg.Debrid.CachedOnly = false
+	svc := New(idx, fakeHealth{unhealthy: map[string]bool{"bad": true}}, nil, cfg, Options{Now: clock.now})
+	title := matrixTitle()
+	if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("first resolve err=%v want ErrNotAvailable", err)
+	}
+	if idx.searches.Load() != 1 {
+		t.Fatalf("searches=%d want 1 after first resolve", idx.searches.Load())
+	}
+	// Within the recheck window: remembered answer, no new search.
+	clock.add(4 * time.Minute)
+	if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("within-window resolve err=%v want ErrNotAvailable", err)
+	}
+	if idx.searches.Load() != 1 {
+		t.Fatalf("searches=%d want 1 within recheck window", idx.searches.Load())
+	}
+	// A healthy release appears; past the 5m window (6m total, beyond the
+	// 2m failed-health availability TTL) Resolve must fresh-search rather
+	// than serve the non-empty 30m search cache of the failed release.
+	idx.mu.Lock()
+	idx.releases = []core.Release{rel("good", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 8000)}
+	idx.mu.Unlock()
+	clock.add(2 * time.Minute)
 	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
 	if err != nil || res == nil || res.Release.ID != "good" {
 		t.Fatalf("recheck resolve res=%+v err=%v want release good", res, err)
