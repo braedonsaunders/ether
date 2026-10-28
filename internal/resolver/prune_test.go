@@ -82,6 +82,59 @@ func TestPruneExpiresBadMarksAndStaleRows(t *testing.T) {
 	}
 }
 
+func TestPruneKeepsRecentUnavailableForRecheckPeek(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	clock := &fakeClock{t: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+	t0 := clock.now()
+	svc := New(&fakeIndexer{}, fakeHealth{}, db, testCfg(), Options{Now: clock.now})
+	svc.setAvailability(ctx, 42, false, time.Minute)
+	svc.setAvailability(ctx, 43, true, time.Minute)
+
+	// Expired (1m TTL) but checked 2m ago, inside unavailableRecheck:
+	// Prune must keep the unavailable entry for the peek, in memory and DB.
+	clock.add(2 * time.Minute)
+	if _, err := svc.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.getAvailability(ctx, 42); ok {
+		t.Fatal("preserved entry must stay expired for getAvailability")
+	}
+	if checked, ok := svc.lastUnavailableChecked(ctx, 42); !ok || !checked.Equal(t0) {
+		t.Fatalf("peek after prune (memory) checked=%v ok=%v want %v,true", checked, ok, t0)
+	}
+	freshSvc := New(&fakeIndexer{}, fakeHealth{}, db, testCfg(), Options{Now: clock.now})
+	if checked, ok := freshSvc.lastUnavailableChecked(ctx, 42); !ok || !checked.Equal(t0) {
+		t.Fatalf("peek after prune (DB) checked=%v ok=%v want %v,true", checked, ok, t0)
+	}
+	// The available=true entry is still pruned normally.
+	var availRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM resolver_availability WHERE rating_key=43`).Scan(&availRows); err != nil {
+		t.Fatal(err)
+	}
+	if availRows != 0 {
+		t.Fatalf("available=true rows after prune = %d, want 0", availRows)
+	}
+
+	// Checked now older than unavailableRecheck: Prune drops it and the
+	// peek goes away in memory and DB.
+	clock.add(4 * time.Minute) // 6m since the check
+	if _, err := svc.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.lastUnavailableChecked(ctx, 42); ok {
+		t.Fatal("peek still ok after prune past recheck window (memory)")
+	}
+	freshSvc = New(&fakeIndexer{}, fakeHealth{}, db, testCfg(), Options{Now: clock.now})
+	if _, ok := freshSvc.lastUnavailableChecked(ctx, 42); ok {
+		t.Fatal("peek still ok after prune past recheck window (DB)")
+	}
+}
+
 func TestRemarkingBadRefreshesRetention(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.OpenMemory(ctx)

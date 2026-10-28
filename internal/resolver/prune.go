@@ -58,8 +58,9 @@ func (s *Service) Prune(ctx context.Context) (int64, error) {
 			delete(s.searchCache, k)
 		}
 	}
+	// Keep recent unavailable entries past expiry: the recheck peek reads checked even expired, and the search cache expires long before the next daily Prune.
 	for k, e := range s.avail {
-		if now.After(e.expires) {
+		if now.After(e.expires) && (e.available || now.Sub(e.checked) > unavailableRecheck) {
 			delete(s.avail, k)
 		}
 	}
@@ -83,14 +84,14 @@ func (s *Service) Prune(ctx context.Context) (int64, error) {
 	}
 	var total int64
 	for _, q := range []struct {
-		sql string
-		arg int64
+		sql  string
+		args []any
 	}{
-		{`DELETE FROM resolver_availability WHERE expires_at<?`, now.Unix()},
-		{`DELETE FROM resolver_verified WHERE checked_at<?`, verifiedCutoff},
-		{`DELETE FROM resolver_bad WHERE manual=0 AND updated_at<?`, now.Add(-badRetention).Unix()},
+		{`DELETE FROM resolver_availability WHERE expires_at<? AND (available=1 OR checked_at<?)`, []any{now.Unix(), now.Add(-unavailableRecheck).Unix()}},
+		{`DELETE FROM resolver_verified WHERE checked_at<?`, []any{verifiedCutoff}},
+		{`DELETE FROM resolver_bad WHERE manual=0 AND updated_at<?`, []any{now.Add(-badRetention).Unix()}},
 	} {
-		res, err := s.db.ExecContext(ctx, q.sql, q.arg)
+		res, err := s.db.ExecContext(ctx, q.sql, q.args...)
 		if err != nil {
 			return total, err
 		}
