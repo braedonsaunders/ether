@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -35,6 +36,45 @@ func TestWriteFileAtomicReplacesAndCleansUp(t *testing.T) {
 		if e.Name() != "config.json" && e.Name() != "config.json.tmp" {
 			t.Fatalf("leftover temp file %s", e.Name())
 		}
+	}
+}
+
+// Regression for PR #31: a dir-sync failure after the rename has already
+// committed the new file, so Update must treat it as success — otherwise
+// memory is rolled back while a restart applies the "failed" write.
+func TestStoreUpdatePostRenameDirSyncFailureKeepsMemoryInSync(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := syncDir
+	called := 0
+	syncDir = func(string) error { called++; return errors.New("injected dir sync failure") }
+	t.Cleanup(func() { syncDir = old })
+
+	var notified []Config
+	s.Subscribe(func(c Config) { notified = append(notified, c) })
+
+	const name = "after-dir-sync-failure"
+	if err := s.Update(func(c *Config) error { c.Server.FriendlyName = name; return nil }); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if called == 0 {
+		t.Fatal("syncDir stub was never invoked; dir-sync failure was not exercised")
+	}
+	if got := s.Get().Server.FriendlyName; got != name {
+		t.Fatalf("in-memory FriendlyName = %q, want %q", got, name)
+	}
+	if len(notified) != 1 || notified[0].Server.FriendlyName != name {
+		t.Fatalf("notified = %+v, want one update with %q", notified, name)
+	}
+	reloaded, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Get().Server.FriendlyName; got != name {
+		t.Fatalf("reloaded FriendlyName = %q, want %q (memory must equal disk)", got, name)
 	}
 }
 
