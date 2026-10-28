@@ -454,6 +454,10 @@ type Store struct {
 	mu            sync.RWMutex
 	cfg           Config
 	subs          []func(Config)
+	// syncDir is the post-rename directory-sync step used by save. Open
+	// sets it to syncDirAfterRename (production: skipped on Windows);
+	// tests may replace it per Store to inject a post-rename failure.
+	syncDir func(string) error
 
 	// keyCreated is set when Open generated the credential key, so data
 	// sealed elsewhere (the database) cannot have been sealed with it.
@@ -522,7 +526,7 @@ func Open(dataDir string) (*Store, error) {
 	if err := EnsureDataDir(dataDir); err != nil {
 		return nil, err
 	}
-	s := &Store{path: filepath.Join(dataDir, "config.json"), cfg: Defaults(dataDir), kick: make(chan struct{}, 1)}
+	s := &Store{path: filepath.Join(dataDir, "config.json"), cfg: Defaults(dataDir), kick: make(chan struct{}, 1), syncDir: syncDirAfterRename}
 	b, err := os.ReadFile(s.path)
 	readErr := err
 	_, statErr := os.Lstat(filepath.Join(dataDir, CredentialKeyFile))
@@ -682,7 +686,11 @@ func (s *Store) save() error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(s.path, b, 0o600)
+	syncDir := s.syncDir
+	if syncDir == nil { // Store not built by Open
+		syncDir = syncDirAfterRename
+	}
+	return writeFileAtomicWithDirSync(s.path, b, 0o600, syncDir)
 }
 
 // EffectiveCache combines the shared pool policy with this node's mount path.

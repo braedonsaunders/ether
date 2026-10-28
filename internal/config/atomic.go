@@ -7,8 +7,13 @@ import (
 	"runtime"
 )
 
-// syncDir fsyncs dir; a var so tests can inject a post-rename dir-sync failure.
-var syncDir = func(dir string) error {
+// syncDirAfterRename is the production post-rename step: fsync dir so the
+// rename itself is durable. It is a no-op on Windows, where directory fsync
+// is unsupported and rename is already journalled by NTFS.
+func syncDirAfterRename(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
 	d, err := os.Open(dir)
 	if err != nil {
 		return err
@@ -21,11 +26,17 @@ var syncDir = func(dir string) error {
 // leaves either the old or the new file, never a truncated one: it writes a
 // uniquely named temp file in the same directory (concurrent writers or a
 // stale temp from a crash cannot collide), fsyncs it and renames it over
-// path, then best-effort fsyncs the directory — a failure there only warns,
-// since the rename already committed the new file. Directory fsync is
-// skipped on Windows, where it is unsupported and rename is already
-// journalled by NTFS.
+// path, then best-effort fsyncs the directory via syncDirAfterRename — a
+// failure there only warns, since the rename already committed the new file.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	return writeFileAtomicWithDirSync(path, data, perm, syncDirAfterRename)
+}
+
+// writeFileAtomicWithDirSync is writeFileAtomic with an injected post-rename
+// dir-sync step (Store.syncDir). The injected step replaces
+// syncDirAfterRename entirely, so tests exercise it on every platform,
+// including Windows, without changing production Windows behaviour.
+func writeFileAtomicWithDirSync(path string, data []byte, perm os.FileMode, syncDir func(string) error) error {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
@@ -57,10 +68,10 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	ok = true
-	if runtime.GOOS != "windows" {
-		// The rename already committed the new file, so a dir-sync failure
-		// must not be returned: callers would roll back in-memory state to
-		// a version the disk no longer holds. Best-effort, with a warning.
+	// The rename already committed the new file, so a dir-sync failure
+	// must not be returned: callers would roll back in-memory state to
+	// a version the disk no longer holds. Best-effort, with a warning.
+	if syncDir != nil {
 		if err := syncDir(dir); err != nil {
 			slog.Warn("config: fsync directory after rename; new file is live but the rename may not be durable", "path", path, "err", err)
 		}

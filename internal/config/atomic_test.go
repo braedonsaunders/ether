@@ -48,10 +48,10 @@ func TestStoreUpdatePostRenameDirSyncFailureKeepsMemoryInSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := syncDir
+	// Inject via this Store only: the stub replaces the whole post-rename
+	// step, so it runs on every platform (production skips it on Windows).
 	called := 0
-	syncDir = func(string) error { called++; return errors.New("injected dir sync failure") }
-	t.Cleanup(func() { syncDir = old })
+	s.syncDir = func(string) error { called++; return errors.New("injected dir sync failure") }
 
 	var notified []Config
 	s.Subscribe(func(c Config) { notified = append(notified, c) })
@@ -61,7 +61,7 @@ func TestStoreUpdatePostRenameDirSyncFailureKeepsMemoryInSync(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	if called == 0 {
-		t.Fatal("syncDir stub was never invoked; dir-sync failure was not exercised")
+		t.Fatal("injected syncDir stub was never invoked; dir-sync failure was not exercised")
 	}
 	if got := s.Get().Server.FriendlyName; got != name {
 		t.Fatalf("in-memory FriendlyName = %q, want %q", got, name)
