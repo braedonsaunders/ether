@@ -536,7 +536,7 @@ func (p *pool) warmLoop() {
 func (p *pool) warmBackoff(fails int) time.Duration {
 	d := p.o.BackoffMin
 	for i := 1; i < fails && d < p.o.BackoffMax; i++ {
-		d *= 2
+		d = cappedDouble(d, p.o.BackoffMin, p.o.BackoffMax)
 	}
 	d = min(d, p.o.BackoffMax)
 	if d > 0 {
