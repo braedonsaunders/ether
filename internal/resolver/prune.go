@@ -44,6 +44,20 @@ func boundMap[K comparable, V any](m map[K]V, max int, expired func(V) bool) {
 	}
 }
 
+// unavailableRetention is how long Prune keeps an expired unavailable
+// entry (in memory and in resolver_availability) for the recheck peek.
+// It must outlive any search-cache result that was rejected alongside
+// that entry: searchCached (resolver.go) caches a non-empty result for
+// the full searchTTL (only an empty result is capped at
+// freshReleaseCooloff, and searchRescue uses searchTTL too), so dropping
+// the marker earlier would let Resolve — without lastUnavailableChecked —
+// reuse that still-live stale result instead of fresh-searching. Hence
+// the ceiling is max(unavailableRecheck, searchTTL) from checked; past it
+// no associated search result can still suppress recovery.
+func (s *Service) unavailableRetention() time.Duration {
+	return max(unavailableRecheck, s.searchTTL())
+}
+
 // Prune drops expired entries from the in-memory caches and deletes
 // resolver rows that can no longer be served: expired availability, health
 // passes older than the health TTL and automatic bad marks not re-marked
@@ -58,9 +72,12 @@ func (s *Service) Prune(ctx context.Context) (int64, error) {
 			delete(s.searchCache, k)
 		}
 	}
-	// Keep recent unavailable entries past expiry: the recheck peek reads checked even expired, and the search cache expires long before the next daily Prune.
+	// Keep unavailable entries past expiry while their stale search
+	// result can still suppress recovery: the recheck peek reads checked
+	// even expired. getAvailability still never serves these expired
+	// entries; only lastUnavailableChecked peeks at them.
 	for k, e := range s.avail {
-		if now.After(e.expires) && (e.available || now.Sub(e.checked) > unavailableRecheck) {
+		if now.After(e.expires) && (e.available || now.Sub(e.checked) > s.unavailableRetention()) {
 			delete(s.avail, k)
 		}
 	}
@@ -87,7 +104,7 @@ func (s *Service) Prune(ctx context.Context) (int64, error) {
 		sql  string
 		args []any
 	}{
-		{`DELETE FROM resolver_availability WHERE expires_at<? AND (available=1 OR checked_at<?)`, []any{now.Unix(), now.Add(-unavailableRecheck).Unix()}},
+		{`DELETE FROM resolver_availability WHERE expires_at<? AND (available=1 OR checked_at<?)`, []any{now.Unix(), now.Add(-s.unavailableRetention()).Unix()}},
 		{`DELETE FROM resolver_verified WHERE checked_at<?`, []any{verifiedCutoff}},
 		{`DELETE FROM resolver_bad WHERE manual=0 AND updated_at<?`, []any{now.Add(-badRetention).Unix()}},
 	} {

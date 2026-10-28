@@ -425,12 +425,63 @@ func TestUnavailableRecheckAfterHealthFailureWhenCachedOnlyOff(t *testing.T) {
 	idx.releases = []core.Release{rel("good", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 8000)}
 	idx.mu.Unlock()
 	clock.add(2 * time.Minute)
+	// Maintainer's probe: a Prune just before the final Resolve must not
+	// drop the unavailable marker while the 30m search cache of the
+	// failed release can still suppress the fresh recheck.
+	if _, err := svc.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
 	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
 	if err != nil || res == nil || res.Release.ID != "good" {
 		t.Fatalf("recheck resolve res=%+v err=%v want release good", res, err)
 	}
 	if idx.searches.Load() != 2 {
 		t.Fatalf("searches=%d want 2 (fresh search on recheck)", idx.searches.Load())
+	}
+}
+
+// Same probe as TestUnavailableRecheckAfterHealthFailureWhenCachedOnlyOff
+// but over a persisted service: Prune's DB delete must also retain the
+// marker (checked via a fresh service's peek over the same DB, the
+// prune_test idiom) until the stale search cache can no longer suppress
+// recovery.
+func TestUnavailableRecheckAfterHealthFailurePrunePersisted(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	clock := &fakeClock{t: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)}
+	idx := &fakeIndexer{releases: []core.Release{rel("bad", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 8000)}}
+	cfg := testCfg()
+	cfg.Debrid.CachedOnly = false
+	healthChecks := &atomic.Int64{}
+	svc := New(idx, fakeHealth{unhealthy: map[string]bool{"bad": true}, checks: healthChecks}, db, cfg, Options{Now: clock.now})
+	title := matrixTitle()
+	if _, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()}); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("first resolve err=%v want ErrNotAvailable", err)
+	}
+	if idx.searches.Load() != 1 || healthChecks.Load() != 1 {
+		t.Fatalf("searches=%d health checks=%d want 1 and 1 (health-failed path)", idx.searches.Load(), healthChecks.Load())
+	}
+	idx.mu.Lock()
+	idx.releases = []core.Release{rel("good", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 8000)}
+	idx.mu.Unlock()
+	clock.add(6 * time.Minute)
+	if _, err := svc.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
+	freshSvc := New(idx, fakeHealth{}, db, cfg, Options{Now: clock.now})
+	if _, ok := freshSvc.lastUnavailableChecked(ctx, int64(title.Key)); !ok {
+		t.Fatal("peek after prune (DB) lost the unavailable marker at 6m")
+	}
+	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
+	if err != nil || res == nil || res.Release.ID != "good" {
+		t.Fatalf("recheck resolve after prune res=%+v err=%v want release good", res, err)
+	}
+	if idx.searches.Load() != 2 {
+		t.Fatalf("searches=%d want 2 (fresh search on recheck after prune)", idx.searches.Load())
 	}
 }
 

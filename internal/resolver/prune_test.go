@@ -120,18 +120,34 @@ func TestPruneKeepsRecentUnavailableForRecheckPeek(t *testing.T) {
 		t.Fatalf("available=true rows after prune = %d, want 0", availRows)
 	}
 
-	// Checked now older than unavailableRecheck: Prune drops it and the
-	// peek goes away in memory and DB.
+	// Past unavailableRecheck (6m since the check) but inside the
+	// retention ceiling max(unavailableRecheck, searchTTL)=30m in
+	// testCfg: the stale non-empty search result can still suppress
+	// recovery, so Prune must still keep the marker, in memory and DB.
 	clock.add(4 * time.Minute) // 6m since the check
 	if _, err := svc.Prune(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if checked, ok := svc.lastUnavailableChecked(ctx, 42); !ok || !checked.Equal(t0) {
+		t.Fatalf("peek after prune at 6m (memory) checked=%v ok=%v want %v,true", checked, ok, t0)
+	}
+	freshSvc = New(&fakeIndexer{}, fakeHealth{}, db, testCfg(), Options{Now: clock.now})
+	if checked, ok := freshSvc.lastUnavailableChecked(ctx, 42); !ok || !checked.Equal(t0) {
+		t.Fatalf("peek after prune at 6m (DB) checked=%v ok=%v want %v,true", checked, ok, t0)
+	}
+
+	// Checked now older than the retention ceiling: Prune drops it and
+	// the peek goes away in memory and DB.
+	clock.add(25 * time.Minute) // 31m since the check, past searchTTL
+	if _, err := svc.Prune(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := svc.lastUnavailableChecked(ctx, 42); ok {
-		t.Fatal("peek still ok after prune past recheck window (memory)")
+		t.Fatal("peek still ok after prune past retention ceiling (memory)")
 	}
 	freshSvc = New(&fakeIndexer{}, fakeHealth{}, db, testCfg(), Options{Now: clock.now})
 	if _, ok := freshSvc.lastUnavailableChecked(ctx, 42); ok {
-		t.Fatal("peek still ok after prune past recheck window (DB)")
+		t.Fatal("peek still ok after prune past retention ceiling (DB)")
 	}
 }
 
