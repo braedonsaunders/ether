@@ -130,7 +130,7 @@ func (g *TrashGuides) Profiles(ctx context.Context, app string) ([]TrashProfile,
 	ok := make([]bool, len(names))
 	var firstErr error
 	var mu sync.Mutex
-	g.each(ctx, names, func(i int, name string) bool {
+	g.eachSliding(ctx, names, func(ctx context.Context, i int, name string) bool {
 		data, err := g.file(ctx, app, trashKindProfiles, name)
 		if err != nil {
 			mu.Lock()
@@ -178,7 +178,7 @@ func (g *TrashGuides) Profile(ctx context.Context, app, id string) ([]byte, erro
 // -> trash ID) among app's custom formats. File names are slugs that don't
 // reliably follow from a format's name, so cached files are searched first,
 // then files named like a wanted format, then the rest, fetching at most
-// trashParallel at a time and stopping once every ID is found. The error
+// Parallel at a time and stopping once every ID is found. The error
 // reports why some IDs could not be looked up; the result holds what was found.
 func (g *TrashGuides) CustomFormats(ctx context.Context, app string, want map[string]string) (map[string]core.CustomFormat, error) {
 	found := map[string]core.CustomFormat{}
@@ -221,7 +221,7 @@ func (g *TrashGuides) CustomFormats(ctx context.Context, app string, want map[st
 	if len(remaining) == 0 {
 		return found, nil
 	}
-	g.each(ctx, append(likely, cold...), func(_ int, name string) bool {
+	g.eachWave(ctx, append(likely, cold...), func(ctx context.Context, _ int, name string) bool {
 		mu.Lock()
 		more := len(remaining) > 0
 		mu.Unlock()
@@ -244,10 +244,54 @@ func (g *TrashGuides) CustomFormats(ctx context.Context, app string, want map[st
 	return found, nil
 }
 
-// each runs fn over names with at most o.Parallel calls in flight,
-// starting no more once fn returns false or ctx ends.
-func (g *TrashGuides) each(ctx context.Context, names []string, fn func(int, string) bool) {
-	sem := make(chan struct{}, g.o.Parallel)
+// eachWave runs fn over names in waves of at most g.o.Parallel calls,
+// starting no further wave once fn returns false or ctx ends. Waves
+// protect CustomFormats' early stop: a sliding window would keep
+// starting work past the point that asked to stop while its earlier
+// calls were still queued, defeating the early stop. Calls in a wave
+// run with the parent ctx to completion (wg.Wait), so a fetch
+// already paid for is cached by g.file even when another call in the
+// wave asked to stop; only starting the next wave is suppressed.
+func (g *TrashGuides) eachWave(ctx context.Context, names []string, fn func(context.Context, int, string) bool) {
+	parallel := g.o.Parallel
+	if parallel <= 0 {
+		parallel = trashParallel
+	}
+	for start := 0; start < len(names); start += parallel {
+		if ctx.Err() != nil {
+			return
+		}
+		var wg sync.WaitGroup
+		var stop sync.Once
+		stopped := make(chan struct{})
+		for i, name := range names[start:min(start+parallel, len(names))] {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if !fn(ctx, start+i, name) {
+					stop.Do(func() { close(stopped) })
+				}
+			}()
+		}
+		wg.Wait()
+		if isClosed(stopped) {
+			return
+		}
+	}
+}
+
+// eachSliding runs fn over names with at most g.o.Parallel calls in
+// flight, starting a new call as soon as one finishes instead of
+// waiting for the slowest call of a wave. Profiles' fn never returns
+// false, so there is no early stop for a wave barrier to protect and
+// the barrier would only leave slots idle behind a slow fetch; it
+// still starts no new call once fn returns false or ctx ends.
+func (g *TrashGuides) eachSliding(ctx context.Context, names []string, fn func(context.Context, int, string) bool) {
+	parallel := g.o.Parallel
+	if parallel <= 0 {
+		parallel = trashParallel
+	}
+	sem := make(chan struct{}, parallel)
 	var wg sync.WaitGroup
 	var stop sync.Once
 	stopped := make(chan struct{})
@@ -264,7 +308,7 @@ func (g *TrashGuides) each(ctx context.Context, names []string, fn func(int, str
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if !fn(i, name) {
+			if !fn(ctx, i, name) {
 				stop.Do(func() { close(stopped) })
 			}
 		}()
