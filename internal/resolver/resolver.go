@@ -1047,6 +1047,14 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 			return "sample"
 		}
 	}
+	if reason := rejectIdentity(rel, t, sreq); reason != "" {
+		return reason
+	}
+	return rejectPolicy(rel, t, profile, caps, preferred)
+}
+
+// rejectIdentity checks the result's reported identity without client policy.
+func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest) string {
 	isEpisode := sreq.Type == core.TypeEpisode
 	idMatch, idConflict := releaseparse.CompareTitleIDs(rel.TitleIDs, sreq.IDs)
 	if idConflict {
@@ -1112,6 +1120,11 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 			return "year mismatch"
 		}
 	}
+	return ""
+}
+
+// rejectPolicy applies client support and quality/size policy in rejection order.
+func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, caps core.ClientCaps, preferred bool) string {
 	// Client / profile hard gates. The viewer's explicit pick bypasses the
 	// profile-policy gates (an explicit 4K pick on a 1080p profile must
 	// still resolve), never the client's codec support.

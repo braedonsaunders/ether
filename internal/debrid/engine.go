@@ -714,8 +714,20 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 		if ctx.Err() != nil {
 			err = errRunCancelled // the run was abandoned; waiters fetch again
 		}
+		// Retire the entire failed tail before waking any reader. A caller
+		// can immediately retry its first block; publishing failures one
+		// block at a time lets that retry join later stale flights.
+		f.bmu.Lock()
+		for j := i; j < len(fls); j++ {
+			idx := first + int64(j)
+			if f.flights[idx] == fls[j] {
+				delete(f.flights, idx)
+			}
+		}
+		f.bmu.Unlock()
 		for ; i < len(fls); i++ {
-			f.finish(first+int64(i), fls[i], nil, err, mode)
+			fls[i].err = err
+			close(fls[i].done)
 		}
 	}
 	if slotHeld {

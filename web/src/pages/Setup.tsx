@@ -201,6 +201,11 @@ export default function Setup() {
   const [claimMsg, setClaimMsg] = useState("");
   const [disk, setDisk] = useState<DiskInfo | null>(null);
   const pollRef = useRef<number | null>(null);
+  const mounted = useRef(false);
+  const diskRun = useRef(0);
+  const pinRun = useRef(0);
+  const claimRun = useRef(0);
+  const claiming = useRef(false);
 
   const load = useCallback(() => {
     api
@@ -213,65 +218,104 @@ export default function Setup() {
       .catch(setLoadError);
   }, []);
   useEffect(() => {
+    mounted.current = true;
     load();
     return () => {
+      mounted.current = false;
+      diskRun.current++;
+      pinRun.current++;
+      claimRun.current++;
+      claiming.current = false;
       if (pollRef.current) window.clearInterval(pollRef.current);
+      pollRef.current = null;
     };
   }, [load]);
 
   const refreshDisk = useCallback((path: string) => {
+    const run = ++diskRun.current;
+    setDisk(null);
     api
       .disk(path)
-      .then(setDisk)
-      .catch(() => setDisk(null));
+      .then((info) => {
+        if (run === diskRun.current) setDisk(info);
+      })
+      .catch(() => {
+        if (run === diskRun.current) setDisk(null);
+      });
   }, []);
   useEffect(() => {
     if (step === 3 && cfg) refreshDisk(cfg.cache.dir);
+    return () => {
+      diskRun.current++;
+    };
   }, [step, cfg?.cache.dir]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const claimServer = async () => {
+    if (!mounted.current || claiming.current) return;
+    claiming.current = true;
+    const run = ++claimRun.current;
+    const current = () => mounted.current && run === claimRun.current;
     setSaving(true);
     setError(null);
     try {
       try {
         await api.claim();
+        if (!current()) return;
         setClaimMsg("Server claimed to your Plex account.");
       } catch (e) {
+        if (!current()) return;
         setClaimMsg(`Signed in, but claiming failed: ${(e as Error).message}`);
       }
       // PIN approval and claiming update the server, not the wizard's draft.
       // Refresh only Plex so the next full-config save retains those credentials.
       const { plex } = await api.getConfig();
+      if (!current()) return;
       setCfg((c) => (c ? { ...c, plex } : c));
     } catch (e) {
-      setError(e);
+      if (current()) setError(e);
     } finally {
-      setSaving(false);
+      if (current()) {
+        claiming.current = false;
+        setSaving(false);
+      }
     }
   };
 
   const startPin = async () => {
+    const run = ++pinRun.current;
+    const current = () => mounted.current && run === pinRun.current;
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    pollRef.current = null;
+    setSaving(true);
     setError(null);
     try {
       const p = await api.pinStart();
+      if (!current()) return;
       setPin(p);
       window.open(p.authUrl, "_blank", "noopener,noreferrer");
-      if (pollRef.current) window.clearInterval(pollRef.current);
+      let polling = false;
       pollRef.current = window.setInterval(async () => {
+        if (!current() || polling) return;
+        polling = true;
         try {
           const { done } = await api.pinPoll(p.id);
-          if (!done) return;
+          if (!current() || !done) return;
           if (pollRef.current) window.clearInterval(pollRef.current);
+          pollRef.current = null;
           setPin(null);
           setPinDone(true);
           setClaimMsg("Signed in. Claiming this server…");
           await claimServer();
         } catch {
           /* keep polling */
+        } finally {
+          polling = false;
         }
       }, 2000);
     } catch (e) {
-      setError(e);
+      if (current()) setError(e);
+    } finally {
+      if (current()) setSaving(false);
     }
   };
 

@@ -458,6 +458,9 @@ func (s *Service) Candidates(ctx context.Context, t *core.Title) []core.Release 
 			out = append(out, r)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		s.log.Debug("availability candidates not fully loaded", "err", err)
+	}
 	return out
 }
 

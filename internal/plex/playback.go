@@ -560,26 +560,50 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 	}
 
 	if dec.Kind == core.DecisionDirectPlay {
-		// Like PMS, list the video and the selected audio and subtitle
-		// streams only.
-		part.Decision = "directplay"
-		var kept []model.Stream
-		for _, st := range streams {
-			if st.StreamType != 1 && (st.Selected == nil || !*st.Selected) {
-				continue
-			}
-			st.Location = "direct"
-			kept = append(kept, st)
-		}
-		part.Stream = kept
-		return m
+		return directPlayMedia(m, streams)
 	}
+	applyTranscodeMedia(&m, dec, p.protocol)
+	var kept []model.Stream
+	for _, st := range streams {
+		ref, _ := s.streams.lookup(st.ID)
+		if shaped, keep := applyStreamDecision(st, ref.info, dec); keep {
+			kept = append(kept, shaped)
+		}
+	}
+	part.Stream = kept
+	if p.protocol == core.ProtocolDASH {
+		dashDecisionMedia(&m)
+	}
+	return m
+}
+
+// directPlayMedia preserves stream ordering and keeps selected tracks only.
+func directPlayMedia(m model.Media, streams []model.Stream) model.Media {
+	part := &m.Part[0]
+	// Like PMS, list the video and the selected audio and subtitle
+	// streams only.
+	part.Decision = "directplay"
+	var kept []model.Stream
+	for _, st := range streams {
+		if st.StreamType != 1 && (st.Selected == nil || !*st.Selected) {
+			continue
+		}
+		st.Location = "direct"
+		kept = append(kept, st)
+	}
+	part.Stream = kept
+	return m
+}
+
+// applyTranscodeMedia describes the output container and media dimensions.
+func applyTranscodeMedia(m *model.Media, dec core.Decision, protocol string) {
+	part := &m.Part[0]
 	// Describe the actual HLS segment container so native MDE does not see
 	// HEVC paired with the MPEG-TS container it cannot use.
 	m.SetTranscodeOrder()
 	part.SetTranscodeOrder()
 	m.AspectRatio = 0
-	m.Protocol = p.protocol
+	m.Protocol = protocol
 	m.Container = "mpegts"
 	if dec.Container == transcode.ContainerFMP4 {
 		m.Container = "mp4"
@@ -587,7 +611,7 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 		m.Container = "mkv"
 	}
 	part.Container = m.Container
-	part.Protocol = p.protocol
+	part.Protocol = protocol
 	part.Decision = "transcode"
 	part.Key = ""
 	part.File = ""
@@ -616,85 +640,79 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 		m.AudioCodec = plexCodec(dec.AudioCodec)
 	}
 	part.Bitrate, part.Width, part.Height = m.Bitrate, m.Width, m.Height
-	var kept []model.Stream
-	for _, st := range streams {
-		ref, _ := s.streams.lookup(st.ID)
-		src := ref.info
-		st.Index = nil // segments carry their own stream layout
-		switch st.StreamType {
-		case 1:
-			st.Decision = "copy"
-			if dec.StripDolbyVision {
-				st.DOVIPresent, st.DOVIProfile, st.DOVILevel, st.DOVIVersion = nil, 0, 0, ""
-				st.DOVIBLCompatID, st.DOVIBLPresent, st.DOVIELPresent, st.DOVIRPUPresent = nil, nil, nil, nil
-				base := src
-				base.DolbyVision = false
-				st.DisplayTitle = videoDisplayTitle(base)
-				st.ExtendedDisplayTitle = st.DisplayTitle
+}
+
+// applyStreamDecision shapes one already-resolved stream without registry I/O.
+func applyStreamDecision(st model.Stream, src core.StreamInfo, dec core.Decision) (model.Stream, bool) {
+	st.Index = nil // segments carry their own stream layout
+	switch st.StreamType {
+	case 1:
+		st.Decision = "copy"
+		if dec.StripDolbyVision {
+			st.DOVIPresent, st.DOVIProfile, st.DOVILevel, st.DOVIVersion = nil, 0, 0, ""
+			st.DOVIBLCompatID, st.DOVIBLPresent, st.DOVIELPresent, st.DOVIRPUPresent = nil, nil, nil, nil
+			base := src
+			base.DolbyVision = false
+			st.DisplayTitle = videoDisplayTitle(base)
+			st.ExtendedDisplayTitle = st.DisplayTitle
+		}
+		if !dec.VideoCopy {
+			// A transcoded stream is new: PMS drops the source's
+			// profile and chroma details and reports 8-bit output.
+			st.Decision = "transcode"
+			if dec.VideoCodec != "" {
+				st.Codec = plexCodec(dec.VideoCodec)
 			}
-			if !dec.VideoCopy {
-				// A transcoded stream is new: PMS drops the source's
-				// profile and chroma details and reports 8-bit output.
-				st.Decision = "transcode"
-				if dec.VideoCodec != "" {
-					st.Codec = plexCodec(dec.VideoCodec)
-				}
-				if dec.MaxHeight > 0 && st.Height > dec.MaxHeight {
-					st.Width = st.Width * dec.MaxHeight / max(st.Height, 1)
-					st.Height = dec.MaxHeight
-				}
-				if dec.BitrateKbps > 0 {
-					st.Bitrate = dec.BitrateKbps
-				}
-				st.Profile, st.ChromaSubsampling, st.ScanType = "", "", ""
-				st.DOVIPresent, st.DOVIProfile = nil, 0
-				st.DOVIBLCompatID, st.DOVIBLPresent, st.DOVIELPresent, st.DOVIRPUPresent = nil, nil, nil, nil
-				st.DOVILevel, st.DOVIVersion, st.Level = 0, "", 0
-				if st.Codec == "h264" || dec.ToneMap {
-					st.BitDepth = 8
-				}
-				if dec.ToneMap {
-					st.ColorTrc, st.ColorPrimaries, st.ColorSpace = "bt709", "", ""
-				}
+			if dec.MaxHeight > 0 && st.Height > dec.MaxHeight {
+				st.Width = st.Width * dec.MaxHeight / max(st.Height, 1)
+				st.Height = dec.MaxHeight
 			}
-			st.Location = "segments-av"
-		case 2:
-			if st.Selected == nil || !*st.Selected {
-				continue
+			if dec.BitrateKbps > 0 {
+				st.Bitrate = dec.BitrateKbps
 			}
-			st.Decision = "copy"
-			if !dec.AudioCopy {
-				st.Decision = "transcode"
-				if dec.AudioCodec != "" {
-					st.Codec = plexCodec(dec.AudioCodec)
-				}
-				// Source-only details go, as in PMS's transcoded audio.
-				st.Profile, st.AudioChannelLayout, st.SamplingRate, st.Title = "", "", 0, ""
+			st.Profile, st.ChromaSubsampling, st.ScanType = "", "", ""
+			st.DOVIPresent, st.DOVIProfile = nil, 0
+			st.DOVIBLCompatID, st.DOVIBLPresent, st.DOVIELPresent, st.DOVIRPUPresent = nil, nil, nil, nil
+			st.DOVILevel, st.DOVIVersion, st.Level = 0, "", 0
+			if st.Codec == "h264" || dec.ToneMap {
+				st.BitDepth = 8
 			}
-			st.Location = "segments-av"
-		case 3:
-			if st.Selected == nil || !*st.Selected {
-				continue
-			}
-			switch {
-			case dec.BurnSubtitles:
-				st.Decision = "burn"
-				st.Location = "segments-video"
-			case src.External:
-				st.Decision = "copy"
-				st.Location = "sidecar"
-			default:
-				st.Decision = "copy"
-				st.Location = "segments-subtitle"
+			if dec.ToneMap {
+				st.ColorTrc, st.ColorPrimaries, st.ColorSpace = "bt709", "", ""
 			}
 		}
-		kept = append(kept, st)
+		st.Location = "segments-av"
+	case 2:
+		if st.Selected == nil || !*st.Selected {
+			return st, false
+		}
+		st.Decision = "copy"
+		if !dec.AudioCopy {
+			st.Decision = "transcode"
+			if dec.AudioCodec != "" {
+				st.Codec = plexCodec(dec.AudioCodec)
+			}
+			// Source-only details go, as in PMS's transcoded audio.
+			st.Profile, st.AudioChannelLayout, st.SamplingRate, st.Title = "", "", 0, ""
+		}
+		st.Location = "segments-av"
+	case 3:
+		if st.Selected == nil || !*st.Selected {
+			return st, false
+		}
+		switch {
+		case dec.BurnSubtitles:
+			st.Decision = "burn"
+			st.Location = "segments-video"
+		case src.External:
+			st.Decision = "copy"
+			st.Location = "sidecar"
+		default:
+			st.Decision = "copy"
+			st.Location = "segments-subtitle"
+		}
 	}
-	part.Stream = kept
-	if p.protocol == core.ProtocolDASH {
-		dashDecisionMedia(&m)
-	}
-	return m
+	return st, true
 }
 
 // handleStartHLS is /video/:/transcode/universal/start.m3u8.

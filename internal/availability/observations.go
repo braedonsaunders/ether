@@ -145,6 +145,9 @@ func (s *Service) attachRetained(ctx context.Context, titles map[core.RatingKey]
 				work = append(work, p)
 			}
 		}
+		if err := rows.Err(); err != nil {
+			s.log.Debug("availability retained releases not fully loaded", "err", err)
+		}
 		rows.Close()
 	}
 	policy := s.policy()

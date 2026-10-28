@@ -1,9 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { createFakeServer } from "../mock/server";
 import Setup, { canAdvance, savedDraft } from "../pages/Setup";
-import type { Indexer, UsenetProvider } from "../lib/types";
+import type { DiskInfo, Indexer, UsenetProvider } from "../lib/types";
 import { api } from "../lib/api";
 import { calls, renderApp } from "./harness";
 
@@ -167,6 +167,136 @@ function renderWizard(configure?: (fake: ReturnType<typeof createFakeServer>) =>
 }
 
 describe("setup wizard", () => {
+  it.each([false, true])("ignores an older disk response (failure=%s)", async (failOld) => {
+    const pending: { resolve: (d: DiskInfo) => void; reject: (e: Error) => void }[] = [];
+    vi.spyOn(api, "disk").mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+    );
+    const fake = renderWizard();
+    await screen.findByText(/Signed in as alice/);
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    for (const heading of ["Usenet providers", "Indexers and addons"]) {
+      await screen.findByRole("heading", { name: heading });
+      fireEvent.click(screen.getByLabelText(/Skip test for this step/));
+      fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    }
+    await screen.findByRole("heading", { name: "Cache folder and disk budget" });
+    await waitFor(() => expect(pending).toHaveLength(1));
+    fireEvent.change(screen.getByDisplayValue(fake.state.config.cache.dir), {
+      target: { value: "/new-cache" },
+    });
+    await waitFor(() => expect(pending).toHaveLength(2));
+    await act(async () => {
+      pending[1]!.resolve({
+        path: "/new-cache",
+        probedPath: "/new-cache",
+        usedBytes: 0,
+        cacheBudgetBytes: 0,
+        freeBytes: 20 * 1024 ** 3,
+        totalBytes: 40 * 1024 ** 3,
+      });
+    });
+    const current = screen.getByText(/free of.*on this disk/).textContent;
+    await act(async () => {
+      if (failOld) pending[0]!.reject(new Error("old disk unavailable"));
+      else
+        pending[0]!.resolve({
+          path: "/old-cache",
+          probedPath: "/old-cache",
+          usedBytes: 0,
+          cacheBudgetBytes: 0,
+          freeBytes: 2 * 1024 ** 3,
+          totalBytes: 4 * 1024 ** 3,
+        });
+    });
+    expect(screen.getByText(/free of.*on this disk/).textContent).toBe(current);
+  });
+
+  it("does not open sign-in or start polling after an abandoned PIN request", async () => {
+    renderWizard((f) => {
+      f.state.config.plex.token = "";
+      f.state.config.plex.claimed = false;
+      f.state.config.plex.ownerUsername = "";
+    });
+    await screen.findByRole("button", { name: "Sign in to plex.tv" });
+    vi.useFakeTimers();
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    let finish!: (v: { id: string; code: string; authUrl: string }) => void;
+    vi.spyOn(api, "pinStart").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const poll = vi.spyOn(api, "pinPoll");
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to plex.tv" }));
+    cleanup();
+    await act(async () => {
+      finish({ id: "late-pin", code: "ABCD", authUrl: "https://example.test/auth" });
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(open).not.toHaveBeenCalled();
+    expect(poll).not.toHaveBeenCalled();
+  });
+
+  it("does not claim after a pending PIN poll completes following unmount", async () => {
+    renderWizard((f) => {
+      f.state.config.plex.token = "";
+      f.state.config.plex.claimed = false;
+      f.state.config.plex.ownerUsername = "";
+    });
+    await screen.findByRole("button", { name: "Sign in to plex.tv" });
+    vi.useFakeTimers();
+    vi.spyOn(window, "open").mockReturnValue(null);
+    vi.spyOn(api, "pinStart").mockResolvedValue({
+      id: "late-pin",
+      code: "ABCD",
+      authUrl: "https://example.test/auth",
+    });
+    let finish!: (v: { done: boolean }) => void;
+    const poll = vi.spyOn(api, "pinPoll").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const claim = vi.spyOn(api, "claim").mockResolvedValue({ ok: true });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to plex.tv" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    expect(poll).toHaveBeenCalledOnce();
+    cleanup();
+    await act(async () => {
+      finish({ done: true });
+    });
+    expect(claim).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh configuration after an abandoned claim completes", async () => {
+    renderWizard((f) => {
+      f.state.config.plex.claimed = false;
+    });
+    const button = await screen.findByRole("button", { name: "Claim server" });
+    let finish!: (v: { ok: boolean }) => void;
+    vi.spyOn(api, "claim").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const config = vi.spyOn(api, "getConfig");
+    fireEvent.click(button);
+    cleanup();
+    await act(async () => {
+      finish({ ok: true });
+    });
+    expect(config).not.toHaveBeenCalled();
+  });
+
   it("keeps the required cache restart visible after finishing setup", async () => {
     const fake = renderWizard();
     vi.spyOn(api, "setupComplete").mockResolvedValue({
