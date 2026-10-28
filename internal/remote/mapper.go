@@ -17,6 +17,16 @@ const (
 	MethodNATPMP = "nat-pmp"
 )
 
+type portMappingConflict struct {
+	external int
+	client   string
+	internal int
+}
+
+func (e *portMappingConflict) Error() string {
+	return fmt.Sprintf("upnp: external port %d already mapped to %s:%d; give each service its own public port", e.external, e.client, e.internal)
+}
+
 // MappingStatus is the port mapper's state for the admin dashboard.
 type MappingStatus struct {
 	Active       bool      `json:"active"`
@@ -142,11 +152,15 @@ func (m *PortMapper) Ensure(ctx context.Context, internal, external int) (Mappin
 
 func (m *PortMapper) mapLocked(ctx context.Context, now time.Time) error {
 	var errs []error
+	var conflict *portMappingConflict
 	// Reuse a known gateway first; rediscover if it stopped answering.
 	if m.igd != nil {
 		if err := m.mapUPnP(ctx, m.igd, now); err == nil {
 			return nil
 		} else {
+			if errors.As(err, &conflict) {
+				return err
+			}
 			errs = append(errs, err)
 			m.igd = nil
 		}
@@ -167,6 +181,9 @@ func (m *PortMapper) mapLocked(ctx context.Context, now time.Time) error {
 			m.igd = igd
 			return nil
 		} else {
+			if errors.As(err, &conflict) {
+				return err
+			}
 			errs = append(errs, err)
 		}
 	} else {
@@ -203,6 +220,17 @@ func (m *PortMapper) mapUPnP(ctx context.Context, igd *IGD, now time.Time) error
 	if igd.LocalIP == nil {
 		return errors.New("upnp: cannot determine local address towards gateway")
 	}
+	owned := func(e *PortMappingEntry) bool {
+		return e.InternalPort == m.internal &&
+			(net.ParseIP(e.InternalClient).Equal(igd.LocalIP) ||
+				(staleIP != nil && net.ParseIP(e.InternalClient).Equal(staleIP)))
+	}
+	// Some gateways silently replace a mapping for the same LAN host even
+	// when it points at another service. Inspect before adding, not just
+	// after a conflict response, and do not bypass a known conflict via NAT-PMP.
+	if e, err := igd.GetSpecificPortMapping(ctx, "TCP", m.external); err == nil && !owned(e) {
+		return &portMappingConflict{m.external, e.InternalClient, e.InternalPort}
+	}
 	lease := m.o.Lease
 	err := igd.AddPortMapping(ctx, "TCP", m.external, m.internal, igd.LocalIP, m.o.Description, lease)
 	var ue *UPnPError
@@ -215,13 +243,11 @@ func (m *PortMapper) mapUPnP(ctx context.Context, igd *IGD, now time.Time) error
 		// Another host (or a stale entry of ours) holds the port. If it is
 		// ours, replace it; otherwise report the conflict.
 		// Our own entry from before an address change counts as ours too.
-		if e, gerr := igd.GetSpecificPortMapping(ctx, "TCP", m.external); gerr == nil &&
-			(net.ParseIP(e.InternalClient).Equal(igd.LocalIP) || (staleIP != nil && net.ParseIP(e.InternalClient).Equal(staleIP))) {
+		if e, gerr := igd.GetSpecificPortMapping(ctx, "TCP", m.external); gerr == nil && owned(e) {
 			_ = igd.DeletePortMapping(ctx, "TCP", m.external)
 			err = igd.AddPortMapping(ctx, "TCP", m.external, m.internal, igd.LocalIP, m.o.Description, lease)
 		} else if gerr == nil {
-			err = fmt.Errorf("upnp: external port %d already mapped to %s:%d (another device, or another Ether node: give each node its own public port)",
-				m.external, e.InternalClient, e.InternalPort)
+			err = &portMappingConflict{m.external, e.InternalClient, e.InternalPort}
 		}
 	}
 	if err != nil && errors.As(err, &ue) {
@@ -303,7 +329,12 @@ func (m *PortMapper) mapNATPMP(ctx context.Context, c *NATPMP, now time.Time) er
 func (m *PortMapper) deleteLocked(ctx context.Context) {
 	switch {
 	case m.status.Method == MethodUPnP && m.igd != nil:
-		if err := m.igd.DeletePortMapping(ctx, "TCP", m.status.ExternalPort); err != nil {
+		entry, err := m.igd.GetSpecificPortMapping(ctx, "TCP", m.status.ExternalPort)
+		if err != nil {
+			m.o.Logger.Warn("upnp unmap skipped: cannot verify mapping ownership", "err", err)
+		} else if entry.InternalPort != m.status.InternalPort || !net.ParseIP(entry.InternalClient).Equal(net.ParseIP(m.status.InternalIP)) {
+			m.o.Logger.Warn("upnp unmap skipped: mapping now belongs to another service", "external", m.status.ExternalPort)
+		} else if err := m.igd.DeletePortMapping(ctx, "TCP", m.status.ExternalPort); err != nil {
 			m.o.Logger.Warn("upnp unmap failed", "err", err)
 		}
 	case m.status.Method == MethodNATPMP && m.natpmp != nil:
