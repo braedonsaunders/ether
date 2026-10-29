@@ -269,6 +269,23 @@
         "headers": {
           "X-Profile-Id": "${profile_id}"
         }
+      },
+      {
+        "name": "transcoded HLS master playlist",
+        "method": "GET",
+        "path": "${stream_url}",
+        "headers": {
+          "Accept": "application/vnd.apple.mpegurl"
+        }
+      },
+      {
+        "name": "first transcoded HLS segment range",
+        "method": "GET",
+        "path": "${segment_url}",
+        "headers": {
+          "Accept": "video/mp2t",
+          "Range": "bytes=0-65535"
+        }
       }
     ],
     "progress_reporting": [
@@ -321,5 +338,5 @@
       }
     ]
   },
-  "profile_status": "source-derived template; v2 routes and request bodies checked against build-1810 OpenAPI; direct and HLS transcode plans verified against the live lab; progress and stop lifecycle tested"
+  "profile_status": "source-derived client request template plus lab HLS delivery probes; v2 routes and request bodies checked against build-1810 OpenAPI; direct and HLS transcode plans, master playlist, segment range, progress, and stop lifecycle verified live"
 }
