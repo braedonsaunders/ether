@@ -157,6 +157,8 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, ViewerCapabilities: a.viewerCapabilities(local, experience), ViewerPolicy: surfaceViewerPolicy{app: a}, ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), TrackPreferences: surfaceTrackPreferences{app: a}, LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: sessions.BindSurface(r.broker, id), LazyStreams: lazy, Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: sessions.BindEvents(r.events, id), Tickets: tickets, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) { return r.surfaceURL(ctx, id, req) }, Config: settings}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
+	r.control.listeners.discovery = newSharedDiscovery(r.ctx)
+	r.control.listeners.discoveryEndpoint = r.discoveryEndpoint
 	r.control.clientCount = a.frontendClients.count
 	r.control.sharedStatus = r.sharedStatus
 	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {

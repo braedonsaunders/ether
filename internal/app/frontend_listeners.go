@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -19,19 +20,22 @@ import (
 // frontendListeners owns listeners and announcers for independently mounted
 // protocol instances. A failed bind is retained as status, not a process error.
 type frontendListeners struct {
-	mu       sync.Mutex
-	opMu     sync.Mutex
-	registry *frontend.Registry
-	running  map[frontend.Protocol]*runningFrontend
-	failures map[frontend.Protocol]string
+	mu                sync.Mutex
+	opMu              sync.Mutex
+	registry          *frontend.Registry
+	running           map[frontend.Protocol]*runningFrontend
+	failures          map[frontend.Protocol]string
+	discovery         *sharedDiscovery
+	discoveryEndpoint func(context.Context, frontend.Protocol, netip.AddrPort) (string, error)
 }
 type runningFrontend struct {
-	servers        []*http.Server
-	listeners      []net.Listener
-	announcers     []frontend.Announcer
-	warnings       []string
-	prefixes       []string
-	sharedPrefixes []string
+	servers         []*http.Server
+	listeners       []net.Listener
+	announcers      []frontend.Announcer
+	warnings        []string
+	prefixes        []string
+	sharedPrefixes  []string
+	sharedDiscovery bool
 }
 
 func newFrontendListeners(r *frontend.Registry) *frontendListeners {
@@ -149,10 +153,15 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 		m.mu.Unlock()
 		return fmt.Errorf("start %s: %w", id, err)
 	}
+	responder, hasDiscovery := inst.(frontend.DiscoveryResponder)
+	run.sharedDiscovery = hasDiscovery && m.discovery != nil && m.discoveryEndpoint != nil
 	m.mu.Lock()
 	delete(m.failures, id)
 	m.running[id] = run
 	m.mu.Unlock()
+	if run.sharedDiscovery {
+		_ = m.discovery.add(id, discoveryEntry{responder: responder, endpoint: m.discoveryEndpoint})
+	}
 	for i, srv := range run.servers {
 		ln := run.listeners[i]
 		go func() {
@@ -201,6 +210,9 @@ func (m *frontendListeners) stop(ctx context.Context, id frontend.Protocol) erro
 	if !ok {
 		return nil
 	}
+	if run.sharedDiscovery && m.discovery != nil {
+		m.discovery.remove(id)
+	}
 	var errs []error
 	// A protocol may have long-lived streams. A toggle must not wait forever
 	// for them, even when the caller supplied a context with no deadline.
@@ -245,6 +257,11 @@ func (m *frontendListeners) status(ctx context.Context, id frontend.Protocol) fr
 			}
 		}
 		st.Warnings = append(st.Warnings, run.warnings...)
+		if run.sharedDiscovery && m.discovery != nil {
+			if err := m.discovery.error(); err != nil {
+				st.Warnings = append(st.Warnings, "Discovery unavailable: "+err.Error())
+			}
+		}
 	}
 	if failure != "" {
 		st.Error = failure
@@ -263,6 +280,9 @@ func (m *frontendListeners) close(ctx context.Context) error {
 		if err := m.stop(ctx, id); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if m.discovery != nil {
+		m.discovery.close()
 	}
 	return errors.Join(errs...)
 }

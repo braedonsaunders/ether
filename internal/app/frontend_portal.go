@@ -75,6 +75,16 @@ func surfaceLANAddress(peer netip.Addr, local net.Addr, addresses, prefixes []st
 		if err != nil || port != localPort {
 			continue
 		}
+		if peer.IsLoopback() {
+			bound := net.ParseIP(host)
+			if bound != nil && (bound.IsUnspecified() || bound.IsLoopback()) {
+				u := url.URL{Scheme: "http", Host: net.JoinHostPort(peer.String(), port)}
+				if index < len(prefixes) {
+					u.Path = prefixes[index]
+				}
+				return strings.TrimRight(u.String(), "/"), true
+			}
+		}
 		portal, err := portalLANAddress(peer, host, port, interfaces)
 		if err == nil {
 			u, _ := url.Parse(portal)
