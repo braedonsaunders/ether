@@ -31,6 +31,18 @@ func TestTMDBFixtureWithRealClient(t *testing.T) {
 	if err != nil || len(season.Episodes) != 4 {
 		t.Fatalf("season=%v err=%v", season, err)
 	}
+	list, err := client.MovieList(ctx, "popular", 1)
+	if err != nil || len(list.Results) != 60 {
+		t.Fatalf("movie list=%v err=%v", list, err)
+	}
+	multi, err := client.SearchMulti(ctx, "Fixture", 1)
+	if err != nil || len(multi.Results) != 80 {
+		t.Fatalf("multi search count/error: %v %v", multi, err)
+	}
+	ids, err := client.EpisodeExternalIDs(ctx, 20001, 1, 2)
+	if err != nil || ids == nil {
+		t.Fatalf("episode IDs=%v err=%v", ids, err)
+	}
 	resp, err := http.Get(srv.URL + "/3/unimplemented")
 	if err != nil {
 		t.Fatal(err)

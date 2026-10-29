@@ -96,6 +96,10 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	}); err != nil {
 		return fmt.Errorf("personalization: %w", err)
 	}
+	if err := parityWarmPersonalization(ctx, a); err != nil {
+		a.personalize.Close()
+		return err
+	}
 	a.closers = append(a.closers, a.personalize.Close)
 	a.subtitles = subtitles.New(subtitles.Options{
 		Config:    cfg.OpenSubtitles,

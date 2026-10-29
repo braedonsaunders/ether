@@ -76,7 +76,7 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 		}
 		return false
 	})
-	a.resolver = resolver.New(a.sources, a.media, a.db, cfg, resolver.Options{SearchObserved: a.observeSearch, Discovered: a.discoveredReleases, Observed: a.observeRelease, Invalidated: a.invalidateRelease, Logger: log.With("component", "resolver")})
+	a.resolver = resolver.New(parityIndexer(a.sources), parityHealth(a.media), a.db, cfg, resolver.Options{Now: parityClock(), SearchObserved: a.observeSearch, Discovered: a.discoveredReleases, Observed: a.observeRelease, Invalidated: a.invalidateRelease, Logger: log.With("component", "resolver")})
 	a.resolver.SetSourceSignals(a.debrid)
 	a.closers = append(a.closers, func() { a.resolver.Close() })
 

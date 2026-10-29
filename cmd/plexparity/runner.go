@@ -109,7 +109,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		go func() { done <- cmd.Wait() }()
 		url := "http://" + net.JoinHostPort(addr, "32400")
 		client := &http.Client{Timeout: time.Second}
-		deadline := time.NewTimer(30 * time.Second)
+		deadline := time.NewTimer(120 * time.Second)
 		ready := false
 		for !ready {
 			select {

@@ -73,6 +73,38 @@ func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
 			result = map[string]any{"images": map[string]any{"base_url": "http://127.0.0.1/fixture-images/", "secure_base_url": "http://127.0.0.1/fixture-images/"}}
 		case path == "genre/movie/list" || path == "genre/tv/list":
 			result = map[string]any{"genres": []map[string]any{{"id": 18, "name": "Drama"}}}
+		case len(parts) == 7 && parts[0] == "tv" && parts[2] == "season" && parts[4] == "episode" && parts[6] == "external_ids":
+			id, e := strconv.Atoi(parts[1])
+			season, e2 := strconv.Atoi(parts[3])
+			episode, e3 := strconv.Atoi(parts[5])
+			if e == nil && e2 == nil && e3 == nil && id >= 20001 && id <= 20020 && season == 1 && episode >= 1 && episode <= 4 {
+				result = map[string]any{"id": id*10 + episode}
+			}
+		case path == "search/multi":
+			query := strings.ToLower(r.URL.Query().Get("query"))
+			items := make([]map[string]any, 0, len(movies)+len(shows))
+			for _, it := range append(append([]map[string]any{}, movies...), shows...) {
+				name, _ := it["title"].(string)
+				if name == "" {
+					name, _ = it["name"].(string)
+				}
+				if query == "" || strings.Contains(strings.ToLower(name), query) {
+					items = append(items, it)
+				}
+			}
+			if page, _ := strconv.Atoi(r.URL.Query().Get("page")); page > 1 {
+				items = nil
+			}
+			result = map[string]any{"page": 1, "total_pages": 1, "total_results": len(items), "results": items}
+		case len(parts) == 2 && ((parts[0] == "movie" && (parts[1] == "now_playing" || parts[1] == "popular" || parts[1] == "top_rated" || parts[1] == "upcoming")) || (parts[0] == "tv" && (parts[1] == "airing_today" || parts[1] == "on_the_air" || parts[1] == "popular" || parts[1] == "top_rated"))):
+			items := movies
+			if parts[0] == "tv" {
+				items = shows
+			}
+			if page, _ := strconv.Atoi(r.URL.Query().Get("page")); page > 1 {
+				items = nil
+			}
+			result = map[string]any{"page": 1, "total_pages": 1, "total_results": len(items), "results": items}
 		case len(parts) == 2 && (parts[0] == "movie" || parts[0] == "tv"):
 			id, err := strconv.Atoi(parts[1])
 			if err != nil {

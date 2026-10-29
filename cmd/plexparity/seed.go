@@ -37,6 +37,7 @@ func seed(ctx context.Context, dir string) error {
 		return err
 	}
 	if err = cfg.Update(func(c *config.Config) error {
+		c.Catalog.TMDBKey = "offline-fixture-key"
 		c.Server.MachineIdentifier = "0123456789abcdef0123456789abcdef01234567"
 		c.Server.FriendlyName = "Parity fixture"
 		c.Plex.ClientIdentifier = "0123456789abcdef0123456789abcdef"

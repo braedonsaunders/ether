@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,19 +47,45 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 	}
 	sort.Strings(names)
 	result := transcript{ids: ids.Values}
+	viewerIDs := map[string]map[string]string{}
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		h := profiles["web"].Headers.Clone()
+		h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
+		h.Set("Accept", "application/xml")
+		q := protocol.Request{Method: http.MethodGet, Path: "/playlists", Headers: map[string]http.Header{"web": h}}
+		resp, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, q, "web", nil, false)
+		if err != nil || resp.Status != http.StatusOK {
+			return result, fmt.Errorf("%s playlist discovery: status=%d error=%v", viewer, resp.Status, err)
+		}
+		var listing struct {
+			Playlists []struct {
+				Key string `xml:"ratingKey,attr"`
+			} `xml:"Playlist"`
+		}
+		if err = xml.Unmarshal(resp.Body, &listing); err != nil || len(listing.Playlists) == 0 || listing.Playlists[0].Key == "" {
+			return result, fmt.Errorf("%s missing playlist fixture: %v", viewer, err)
+		}
+		vars := map[string]string{}
+		for k, v := range ids.Values {
+			vars[k] = v
+		}
+		vars["playlistKey"] = listing.Playlists[0].Key
+		viewerIDs[viewer] = vars
+	}
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 		for _, name := range names {
 			for _, jsonMode := range []bool{false, true} {
 				for _, probe := range protocol.Corpus() {
 					probe.Path = strings.ReplaceAll(probe.Path, "query=burbs", "query=fixture")
 					h := profiles[name].Headers.Clone()
+					h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
 					if jsonMode {
 						h.Set("Accept", "application/json")
 					} else {
 						h.Set("Accept", "application/xml")
 					}
 					probe.Headers = map[string]http.Header{name: h, name + "-json": h}
-					response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, ids.Values, jsonMode)
+					response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], jsonMode)
 					if err != nil {
 						return result, fmt.Errorf("%s %s: %w", viewer, probe.Path, err)
 					}
@@ -66,6 +93,35 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 						return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, probe.Path)
 					}
 					result.captures = append(result.captures, capture{viewer, name, probe.Path, jsonMode, response})
+				}
+			}
+		}
+	}
+	// Cover further browse routes after the original probes, preserving their
+	// approved fixture signatures. Missing owner data is an invalid fixture.
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			for _, jsonMode := range []bool{false, true} {
+				for _, path := range browsingPaths() {
+					h := profiles[name].Headers.Clone()
+					h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
+					if jsonMode {
+						h.Set("Accept", "application/json")
+					} else {
+						h.Set("Accept", "application/xml")
+					}
+					probe := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h, name + "-json": h}}
+					resp, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], jsonMode)
+					if err != nil {
+						return result, fmt.Errorf("browse %s %s: %w", viewer, path, err)
+					}
+					if viewer == "owner" && (resp.Status < 200 || resp.Status >= 300) {
+						return result, fmt.Errorf("browse fixture %s returned %d", path, resp.Status)
+					}
+					if len(resp.Body) >= 16<<20 {
+						return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)
+					}
+					result.captures = append(result.captures, capture{viewer, name, path, jsonMode, resp})
 				}
 			}
 		}
@@ -87,9 +143,10 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 					path = strings.ReplaceAll(path, "{{episodeKey}}", "{{movieKey}}")
 				}
 				h := profiles[name].Headers.Clone()
+				h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
 				h.Set("Accept", "application/json")
 				probe := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h, name + "-json": h}}
-				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, ids.Values, true)
+				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], true)
 				if err != nil {
 					return result, fmt.Errorf("mutation %s %s: %w", viewer, path, err)
 				}

@@ -14,7 +14,7 @@ func TestParityClock(t *testing.T) {
 		t.Fatalf("clock = %v, want %v", got, want)
 	}
 	t.Setenv("ETHER_PARITY_TMDB_URL", "http://127.0.0.1:1234/3")
-	if len(parityTMDBOptions()) == 0 || len(parityCatalogueOptions()) == 0 {
+	if len(parityTMDBOptions()) == 0 || len(parityCatalogueOptions()) == 0 || len(parityCollectionOptions()) == 0 {
 		t.Fatal("fixture dependencies not installed")
 	}
 }

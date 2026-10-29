@@ -29,14 +29,14 @@ else
 fi
 rsync -az --exclude .git --exclude node_modules --exclude web/node_modules --exclude dist/ffmpeg "$root/" "$host:$remote/driver/"
 rsync -az "$root/cmd/plexparity/" "$host:$remote/harness/"
-rsync -az "$root/internal/app/parity_runtime_default.go" "$root/internal/app/parity_runtime_fixture.go" "$host:$remote/harness/"
+rsync -az "$root/internal/app/parity_runtime_default.go" "$root/internal/app/parity_runtime_fixture.go" "$root/internal/app/parity_source_default.go" "$root/internal/app/parity_source_fixture.go" "$host:$remote/harness/"
 ssh -o BatchMode=yes "$host" bash -s -- "$remote" <<'REMOTE'
 set -euo pipefail
 root=$1
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
- else
+ fi
  python3 - "$root/$tree" <<'PYCODE'
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1]) / "internal/app"
@@ -46,8 +46,12 @@ replacements = {
   ('a.catalogOptions()...)', 'append(a.catalogOptions(), parityCatalogueOptions()...)...)')],
  "build_personalization.go": [
   ('state.Options{Logger:', 'state.Options{Now: parityClock(), Logger:'),
-  ('personalize.Options{\n', 'personalize.Options{\n        Now: parityClock(),\n')],
+  ('personalize.Options{\n', 'personalize.Options{\n        Now: parityClock(),\n'),
+  ('a.closers = append(a.closers, a.personalize.Close)', 'if err := parityWarmPersonalization(ctx, a); err != nil { a.personalize.Close(); return err }\n\ta.closers = append(a.closers, a.personalize.Close)')],
  "build_identity.go": [('auth.Options{\n', 'auth.Options{\n        Now: parityClock(),\n')],
+ "build_sources.go": [('resolver.New(a.sources, a.media,', 'resolver.New(parityIndexer(a.sources), parityHealth(a.media),'), ('resolver.Options{SearchObserved:', 'resolver.Options{Now: parityClock(), SearchObserved:')],
+ "build_playback.go": [('Engine:     a.media,', 'Engine:     parityEngine(a.media, dataDir),'), ('playback.Options{DataDir:', 'playback.Options{Now: parityClock(), DataDir:')],
+ "collections.go": [('return []collections.Option{', 'return append([]collections.Option{'), ('\n\t}\n}', '\n\t}, parityCollectionOptions()...)\n}')],
  "plex.go": [('deps.Config = a.cfg.Get', 'deps.Now = parityClock()\n\tdeps.Config = a.cfg.Get')],
 }
 for name, changes in replacements.items():
@@ -55,6 +59,7 @@ for name, changes in replacements.items():
  text = path.read_text()
  for old, new in changes:
   if new in text: continue
+  if old.startswith('a.closers = append(a.closers, a.personalize.Close)') and 'parityWarmPersonalization(ctx, a)' in text: continue
   if old == 'auth.Options{\n' and re.search(r'auth\.Options\{\s*Now:\s*parityClock\(\)', text): continue
   if old == 'personalize.Options{\n' and re.search(r'personalize\.Options\{\s*Now:\s*parityClock\(\)', text): continue
   if text.count(old) != 1: raise SystemExit(f"cannot apply parity seam: {path}: expected exactly one {old!r}")
@@ -67,8 +72,7 @@ checks = {
 for name, pattern in checks.items():
  if not re.search(pattern, (root / name).read_text()): raise SystemExit(f"missing clock seam in {name}")
 PYCODE
- fi
- cp "$root/harness/parity_runtime_default.go" "$root/harness/parity_runtime_fixture.go" "$root/$tree/internal/app/"
+ cp "$root/harness/parity_runtime_default.go" "$root/harness/parity_runtime_fixture.go" "$root/harness/parity_source_default.go" "$root/harness/parity_source_fixture.go" "$root/$tree/internal/app/"
 done
 mkdir -p "$root/baseline/cmd/parityseed" "$root/candidate/cmd/plexparity"
 cp "$root/harness/seed.go" "$root/baseline/cmd/parityseed/seed.go"
@@ -93,6 +97,7 @@ docker run --rm --network none \
  cd /driver
  go build -p 4 -o /work/parity ./cmd/plexparity
  /work/seed /work/seeddata
+ ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart /work/seeddata/parity.mp4
  /work/parity run /work/baseline /work/candidate /work/seeddata
  '
 REMOTE

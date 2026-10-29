@@ -3,7 +3,9 @@
 package app
 
 import (
+	"context"
 	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/collections"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 	"time"
 )
@@ -13,3 +15,7 @@ import (
 func parityClock() func() time.Time            { return nil }
 func parityCatalogueOptions() []catalog.Option { return nil }
 func parityTMDBOptions() []tmdb.Option         { return nil }
+
+func parityCollectionOptions() []collections.Option { return nil }
+
+func parityWarmPersonalization(context.Context, *App) error { return nil }

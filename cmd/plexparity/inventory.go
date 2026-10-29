@@ -23,6 +23,12 @@ func missingRoutes() []string {
 			paths = append(paths, u.Path)
 		}
 	}
+	for _, path := range browsingPaths() {
+		path = template.ReplaceAllString(path, "1")
+		if u, err := url.Parse(path); err == nil {
+			paths = append(paths, u.Path)
+		}
+	}
 	paths = append(paths, "/:/timeline", "/:/scrobble", "/library/onDeck", "/hubs/continueWatching", "/hubs")
 	var missing []string
 	for _, route := range server.RouteInventory().Routes {

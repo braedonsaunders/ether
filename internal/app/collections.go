@@ -24,12 +24,12 @@ func (a *App) collectionOptions(cfg config.Config) []collections.Option {
 	renderer := artwork.NewRenderer(a.images, filepath.Join(dataDir, "cache", "posters"), a.log.With("component", "artwork"))
 	chat := llm.NewClient(llm.ClientOptions{Config: cfg.LLM, Logger: a.log.With("component", "llm")})
 	a.cfg.Subscribe(func(c config.Config) { chat.UpdateConfig(c.LLM) })
-	return []collections.Option{
+	return append([]collections.Option{
 		collections.WithTMDB(a.tmdb),
 		collections.WithArtwork(renderer, a.images),
 		collections.WithCatalogConfig(func() config.Catalog { return a.cfg.Get().Catalog }),
 		collections.WithTraktConfig(func() config.Trakt { return a.cfg.Get().Trakt }),
 		collections.WithLLM(chat),
 		collections.WithUserAgent("Ether/" + a.opts.Version + " (+https://github.com/braedonsaunders/ether)"),
-	}
+	}, parityCollectionOptions()...)
 }
