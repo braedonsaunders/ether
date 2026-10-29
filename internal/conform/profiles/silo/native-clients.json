@@ -1,0 +1,8 @@
+{
+  "protocol":"silo",
+  "client":"Silo native Apple and Android clients; native API profile is being established from client source",
+  "source":{"repo":"Silo-Server/silo-apple; Silo-Server/silo-android; Silo-Server/silo-server","commit":"silo-apple 6fb7075889c3a655ec75c659d416492c87c2c07a; silo-android 3cecc7a661d8c7b3844128c79a1312ac0f370979","files":["silo-apple (API client sources)","silo-android (API client sources)","silo-server internal/router (native /api/v1 routes)"]},
+  "headers":{"Accept":"application/json","Content-Type":"application/json","Authorization":"Bearer {token}"},
+  "authorization":{"format":"Native Silo API bearer token; confirm exact client flow against captured requests before conformance is enabled","example":"Authorization: Bearer {redacted}"},
+  "flows":{"connect":[{"name":"native API health","method":"GET","path":"/api/v1/health"}],"sign_in":[{"name":"native sign-in","method":"POST","path":"/api/v1/auth/login"}],"home":[{"name":"home","method":"GET","path":"/api/v1/home"}],"library_browse":[{"name":"libraries","method":"GET","path":"/api/v1/libraries"},{"name":"items","method":"GET","path":"/api/v1/libraries/{libraryId}/items"}],"item_detail":[{"name":"item","method":"GET","path":"/api/v1/items/{itemId}"}],"play_direct":[{"name":"playback","method":"POST","path":"/api/v1/playback/{itemId}"}],"play_transcode":[{"name":"playback transcode","method":"POST","path":"/api/v1/playback/{itemId}?transcode=true"}],"progress_reporting":[{"name":"progress","method":"POST","path":"/api/v1/playback/{sessionId}/progress"}],"mark_watched":[{"name":"watched","method":"POST","path":"/api/v1/items/{itemId}/watched"}],"stop":[{"name":"stop playback","method":"DELETE","path":"/api/v1/playback/{sessionId}"}]}
+}

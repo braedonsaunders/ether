@@ -261,3 +261,13 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+## Conformance API descriptions
+
+Jellyfin OpenAPI 12.4 is published at `https://repo.jellyfin.org/files/openapi/stable/`;
+Emby.SDK publishes OpenAPI documents from `MediaBrowser/Emby.SDK`. The upstream
+redistribution license for these generated descriptions was not explicit in the
+reviewed sources, so Ether does not vendor them. Fetch current Jellyfin 12.4 and
+pinned Emby.SDK snapshots with `internal/conform/specs/fetch.sh` when needed.
+Silo reference route names/shapes in the conformance notes are independently
+recorded observations, not copied AGPL source.
