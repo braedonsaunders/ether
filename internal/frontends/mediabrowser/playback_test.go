@@ -35,6 +35,15 @@ func TestMediaDetailsPreserveChapterAndInterlaceMetadata(t *testing.T) {
 	}
 }
 
+func TestMediaStreamUsesReportedDispositions(t *testing.T) {
+	yes, no := true, false
+	streams := mediaStreams([]frontend.StreamInfo{{Type: "audio", Default: true, DefaultDisposition: &no, ForcedDisposition: &yes, HearingImpaired: &yes, Original: &yes}})
+	got := streams[0].(map[string]any)
+	if got["IsDefault"] != false || got["IsForced"] != true || got["IsHearingImpaired"] != true || got["IsOriginal"] != true {
+		t.Fatal(got)
+	}
+}
+
 func TestStreamCapacityResponseIncludesRetryDelay(t *testing.T) {
 	w := httptest.NewRecorder()
 	streamError(w, &frontend.TranscodeCapacityError{RetryAfter: 1500 * time.Millisecond})
@@ -55,7 +64,11 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 		} else {
 			calls = append(calls, "plan")
 		}
-		return frontend.PlayPlan{ID: "plan", Estimated: req.Intent.Estimate, Media: frontend.MediaInfo{Container: "mp4"}, Decision: frontend.Decision{Kind: "directplay"}, DirectPlay: true}, nil
+		tag := ""
+		if !req.Intent.Estimate {
+			tag = "source-revision"
+		}
+		return frontend.PlayPlan{ID: "plan", Estimated: req.Intent.Estimate, Media: frontend.MediaInfo{Container: "mp4"}, Decision: frontend.Decision{Kind: "directplay"}, DirectPlay: true, ETag: tag}, nil
 	}, OpenFunc: func(_ context.Context, req frontend.OpenRequest) (frontend.Session, error) {
 		calls = append(calls, "open")
 		return frontend.Session{ID: "session"}, nil
@@ -92,7 +105,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
 	}
-	if w := call(`{"IsPlayback":true,"EnableDirectStream":false,"EnableTranscoding":false}`); w.Code != 200 || strings.Join(calls, ",") != "estimate,plan,open,stream" || !strings.Contains(w.Body.String(), "/jellyfin/sessions/media/") {
+	if w := call(`{"IsPlayback":true,"EnableDirectStream":false,"EnableTranscoding":false}`); w.Code != 200 || strings.Join(calls, ",") != "estimate,plan,open,stream" || !strings.Contains(w.Body.String(), "/jellyfin/sessions/media/") || !strings.Contains(w.Body.String(), `"ETag":"source-revision"`) {
 		t.Fatal(w.Code, w.Body.String(), calls)
 	}
 }

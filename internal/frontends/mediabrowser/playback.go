@@ -181,6 +181,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		sourceID = version
 	}
 	source := mediaSourceDTO(sourceID, plan.Media)
+	if plan.ETag != "" {
+		source["ETag"] = plan.ETag
+	}
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
 	source["IsInfiniteStream"] = channel != ""
 	if channel == "" && i.host.Experience != nil {
@@ -254,7 +257,7 @@ func (i *instance) mediaSourceDialect(source map[string]any) {
 		return
 	}
 	// These Jellyfin properties are absent from Emby's pinned DTO.
-	for _, key := range []string{"GenPtsInput", "HasSegments", "IgnoreDts", "IgnoreIndex", "MediaAttachments"} {
+	for _, key := range []string{"ETag", "GenPtsInput", "HasSegments", "IgnoreDts", "IgnoreIndex", "MediaAttachments"} {
 		delete(source, key)
 	}
 	if streams, ok := source["MediaStreams"].([]any); ok {
@@ -284,9 +287,19 @@ func mediaStreams(streams []frontend.StreamInfo) []any {
 	out := make([]any, 0, len(streams))
 	for _, s := range streams {
 		kind := map[string]string{"video": "Video", "audio": "Audio", "subtitle": "Subtitle"}[s.Type]
-		// TODO(StreamInfo dispositions): replace false accessibility/original
-		// defaults when the broker exposes the probe's disposition flags.
 		m := map[string]any{"Index": s.Index, "Type": kind, "Codec": s.Codec, "Language": s.Language, "IsDefault": s.Default, "IsForced": s.Forced, "IsExternal": s.External, "Width": s.Width, "Height": s.Height, "Channels": s.Channels, "IsInterlaced": s.Interlaced, "IsHearingImpaired": false, "IsOriginal": false, "IsTextSubtitleStream": false, "SupportsExternalStream": false}
+		if s.DefaultDisposition != nil {
+			m["IsDefault"] = *s.DefaultDisposition
+		}
+		if s.ForcedDisposition != nil {
+			m["IsForced"] = *s.ForcedDisposition
+		}
+		if s.HearingImpaired != nil {
+			m["IsHearingImpaired"] = *s.HearingImpaired
+		}
+		if s.Original != nil {
+			m["IsOriginal"] = *s.Original
+		}
 		if s.Profile != "" {
 			m["Profile"] = s.Profile
 		}
