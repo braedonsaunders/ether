@@ -64,7 +64,7 @@ func TestSeed(t *testing.T) {
 			}
 		}
 		var attributed int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM personalize_plays WHERE user_id=? AND hub_id<>'' AND max_fraction>=0.3`, u.ID).Scan(&attributed); err != nil || attributed == 0 {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM personalize_plays WHERE user_id=? AND hub_id<>'' AND kind<>'' AND max_fraction>=0.3`, u.ID).Scan(&attributed); err != nil || attributed == 0 {
 			t.Fatalf("%s attributed personalization plays=%d err=%v", token, attributed, err)
 		}
 		st := state.New(db, state.Options{})

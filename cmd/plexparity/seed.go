@@ -264,7 +264,7 @@ func seed(ctx context.Context, dir string) error {
 		deadline := time.NewTimer(10 * time.Second)
 		for {
 			var count int
-			err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM personalize_plays WHERE user_id=? AND item_key=? AND hub_id<>'' AND max_fraction>=0.3`, u.ID, played).Scan(&count)
+			err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM personalize_plays WHERE user_id=? AND item_key=? AND hub_id<>'' AND kind<>'' AND max_fraction>=0.3`, u.ID, played).Scan(&count)
 			if err != nil {
 				deadline.Stop()
 				return err
