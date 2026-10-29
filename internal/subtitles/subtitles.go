@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -207,8 +208,11 @@ type Candidate struct {
 	HearingImp    bool
 	AITranslated  bool
 	HashMatch     bool
-	// Forced marks a foreign-parts-only track (OpenSubtitles'
-	// foreign_parts_only), which Plex calls forced.
+	// Forced marks a real forced track: OpenSubtitles'
+	// foreign_parts_only and NOT hearing_impaired (the
+	// Bazarr/OpenSubtitles definition Plex uses). An HI
+	// foreign-parts track is SDH, not forced; HearingImp
+	// carries that flag separately.
 	Forced bool
 	Score  float64 // filled by Rank
 }
@@ -352,7 +356,7 @@ func (s *Service) SearchWithHash(ctx context.Context, title *core.Title, lang, r
 			HashMatch: a.HashMatch, FileID: a.Files[0].FileID, FileName: a.Files[0].FileName, Language: a.Language,
 			Release: a.Release, DownloadCount: a.DownloadCount, Ratings: a.Ratings,
 			Uploader: a.Uploader.Name, UploaderRank: a.Uploader.Rank,
-			HearingImp: a.HearingImp, AITranslated: a.AITranslated, Forced: a.ForeignOnly,
+			HearingImp: a.HearingImp, AITranslated: a.AITranslated, Forced: a.ForeignOnly && !a.HearingImp,
 		})
 	}
 	Rank(out, releaseName)
@@ -571,11 +575,83 @@ func (s *Service) download(ctx context.Context, c Candidate) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("subtitle file fetch: %s", resp.Status)
 	}
-	return unzipSubtitle(raw)
+	return unzipSubtitle(raw, c.Language)
 }
 
-// unzipSubtitle extracts the first .srt/.vtt entry when the download is a zip.
-func unzipSubtitle(raw []byte) ([]byte, error) {
+// maxSubtitleBytes bounds one subtitle entry/file; anything larger is an
+// explicit error, never a silently truncated subtitle.
+const maxSubtitleBytes = 16 << 20
+
+// zipJunk reports macOS archive noise that must never be picked as the
+// subtitle: __MACOSX/ resource forks, ._* AppleDouble files, .DS_Store
+// and directory entries.
+func zipJunk(f *zip.File) bool {
+	if f.FileInfo().IsDir() || strings.HasSuffix(f.Name, "/") {
+		return true
+	}
+	for _, seg := range strings.Split(f.Name, "/") {
+		if seg == "__MACOSX" {
+			return true
+		}
+	}
+	base := path.Base(f.Name)
+	return base == ".DS_Store" || strings.HasPrefix(base, "._")
+}
+
+// Aggregate budget for trying zip entries: a zip bomb must not cost
+// dozens of seconds of decompression/parsing, so trying stops after
+// maxZipTriedEntries entries or maxZipExpandedBytes expanded in total,
+// whichever comes first.
+const (
+	maxZipExpandedBytes = 32 << 20
+	maxZipTriedEntries  = 16
+)
+
+// zipNameMatchesLang reports whether an entry name carries the requested
+// language as a delimited token (pt-br, pt_br, pt.br, ptbr or pob for
+// Brazilian Portuguese). Separators are normalised before matching so
+// the spellings collapse to one form.
+func zipNameMatchesLang(name, lang string) bool {
+	want := normLang(lang)
+	if want == "" {
+		return false
+	}
+	base := strings.ToLower(path.Base(name))
+	norm := strings.NewReplacer("_", "-", ".", "-", " ", "-").Replace(base)
+	padded := "-" + norm + "-"
+	variants := []string{want, strings.ReplaceAll(want, "-", "")}
+	if want == "pt-br" {
+		variants = append(variants, "pob")
+	}
+	for _, v := range variants {
+		if strings.Contains(padded, "-"+v+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+// unzipSubtitle extracts a usable subtitle entry when the download is a
+// zip. Entries whose name matches the requested language are preferred
+// first; within that, .srt/.vtt are preferred over .ass/.ssa (which are
+// returned raw; NormalizeLang converts them). Only entries that really
+// produce cues are usable, so a junk or corrupt first entry does not
+// lose the subtitle.
+//
+// Among usable entries in the same language-match class, the one with
+// the most cues wins: a 1-cue .srt stub must not beat a complete .ass.
+// Cue count is deliberately the only completeness heuristic — it is
+// cheap and bounded; judging actual completeness would need language
+// and duration knowledge the zip does not carry. Format/order breaks
+// cue ties.
+//
+// Trying is bounded in aggregate (maxZipTriedEntries /
+// maxZipExpandedBytes): after the budget, trying stops; if no usable
+// entry was found by then, an error is returned (wrapping the last
+// per-entry error when there is one). An
+// entry over maxSubtitleBytes is an explicit error rather than a
+// silent truncation.
+func unzipSubtitle(raw []byte, lang string) ([]byte, error) {
 	if len(raw) < 4 || raw[0] != 'P' || raw[1] != 'K' {
 		return raw, nil
 	}
@@ -583,19 +659,103 @@ func unzipSubtitle(raw []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	type entry struct {
+		f         *zip.File
+		prio      int // 0: srt/vtt, 1: ass/ssa
+		langMatch bool
+	}
+	var entries []entry
 	for _, f := range zr.File {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		if ext != ".srt" && ext != ".vtt" {
+		if zipJunk(f) {
 			continue
 		}
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
+		prio := -1
+		switch strings.ToLower(filepath.Ext(f.Name)) {
+		case ".srt", ".vtt":
+			prio = 0
+		case ".ass", ".ssa":
+			prio = 1
 		}
-		defer rc.Close()
-		return io.ReadAll(io.LimitReader(rc, 16<<20))
+		if prio >= 0 {
+			entries = append(entries, entry{f, prio, zipNameMatchesLang(f.Name, lang)})
+		}
 	}
-	return nil, fmt.Errorf("zip contains no .srt/.vtt subtitle")
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].langMatch != entries[j].langMatch {
+			return entries[i].langMatch
+		}
+		return entries[i].prio < entries[j].prio
+	})
+	type usable struct {
+		data      []byte
+		cues      int
+		langMatch bool
+	}
+	var best *usable
+	var tooLarge, lastErr error
+	expanded, tried := 0, 0
+	budgetExhausted := false
+	for _, e := range entries {
+		if tried >= maxZipTriedEntries || expanded >= maxZipExpandedBytes {
+			budgetExhausted = true
+			break
+		}
+		tried++
+		if e.f.UncompressedSize64 > maxSubtitleBytes {
+			tooLarge = fmt.Errorf("zip subtitle %q too large: %d bytes exceeds %d byte limit", e.f.Name, e.f.UncompressedSize64, maxSubtitleBytes)
+			continue
+		}
+		rc, err := e.f.Open()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(rc, maxSubtitleBytes+1))
+		rc.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		expanded += len(data)
+		if len(data) > maxSubtitleBytes {
+			tooLarge = fmt.Errorf("zip subtitle %q too large: exceeds %d byte limit", e.f.Name, maxSubtitleBytes)
+			continue
+		}
+		srt, _, err := NormalizeLang(data, lang)
+		if err != nil {
+			lastErr = err
+		} else if parsed, perr := ParseCues(srt); perr != nil {
+			// Count parsed cues from the SRT NormalizeLang rendered
+			// (it already dispatches ParseCues/ParseASS), never raw
+			// "-->" occurrences: arrows inside dialogue text would
+			// inflate the count and crown a stub over a full track.
+			lastErr = perr
+		} else if len(parsed) == 0 {
+			lastErr = fmt.Errorf("zip subtitle %q has no cues", e.f.Name)
+		} else if cand := (&usable{data, len(parsed), e.langMatch}); best == nil ||
+			(cand.langMatch != best.langMatch && cand.langMatch) ||
+			(cand.langMatch == best.langMatch && cand.cues > best.cues) {
+			best = cand
+		}
+		if expanded >= maxZipExpandedBytes {
+			budgetExhausted = true
+			break
+		}
+	}
+	if best != nil {
+		return best.data, nil
+	}
+	if budgetExhausted {
+		err := fmt.Errorf("zip subtitle budget exhausted after %d entries tried, %d bytes expanded (limits %d entries, %d bytes)", tried, expanded, maxZipTriedEntries, maxZipExpandedBytes)
+		if lastErr != nil {
+			return nil, fmt.Errorf("%w: %w", err, lastErr)
+		}
+		return nil, err
+	}
+	if tooLarge != nil {
+		return nil, tooLarge
+	}
+	return nil, fmt.Errorf("zip contains no usable .srt/.vtt/.ass/.ssa subtitle")
 }
 
 func cacheID(title *core.Title, lang string, fileID int64) string {
@@ -644,15 +804,16 @@ func (s *Service) fetchAndCache(ctx context.Context, id string, c Candidate) (st
 	})
 }
 
-// normLang folds "en"/"eng"/"EN"/"en-US" to a comparable 2-letter code
-// (keeping pt-br distinct, as OpenSubtitles does).
+// normLang folds "en"/"eng"/"EN"/"en-US" to a comparable 2-letter code,
+// keeping the region for Portuguese and Chinese (pt-br vs pt-pt, zh-tw vs
+// zh-cn are distinct subtitle languages, as OpenSubtitles treats them).
+// Must agree with normLang/lang in internal/plex and internal/trackprefs.
 func normLang(l string) string {
 	l = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(l)), "_", "-")
-	switch l {
-	case "pt-br", "zh-tw", "pob":
-		if l == "pob" {
-			return "pt-br"
-		}
+	if l == "pob" {
+		return "pt-br"
+	}
+	if strings.HasPrefix(l, "pt-") || strings.HasPrefix(l, "zh-") {
 		return l
 	}
 	if i := strings.IndexAny(l, "-_"); i > 0 {
@@ -743,12 +904,65 @@ func MissingLanguages(user *core.User, embedded []core.StreamInfo) []string {
 	return out
 }
 
+// Preferences is the viewer's subtitle mode/style (trackprefs vocabulary)
+// for automatic fetching. Empty means no preference: best-ranked wins.
+type Preferences struct {
+	Mode  string // off, forced-only, foreign-only, always
+	Style string // normal, sdh, forced
+}
+
+func firstPrefs(prefs []Preferences) Preferences {
+	if len(prefs) > 0 {
+		return prefs[0]
+	}
+	return Preferences{}
+}
+
+// candidatesForFetch applies Preferences to ranked candidates: forced-only
+// requires a real forced track (never a full or HI track), style sdh/forced
+// prefers matching tracks while keeping Rank order inside each group.
+func candidatesForFetch(cands []Candidate, p Preferences) []Candidate {
+	if p.Mode == "forced-only" {
+		out := cands[:0]
+		for _, c := range cands {
+			if c.Forced {
+				out = append(out, c)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		cands = out
+	}
+	var match func(Candidate) bool
+	switch p.Style {
+	case "sdh":
+		match = func(c Candidate) bool { return c.HearingImp }
+	case "forced":
+		match = func(c Candidate) bool { return c.Forced }
+	default:
+		return cands
+	}
+	out := make([]Candidate, 0, len(cands))
+	for _, c := range cands {
+		if match(c) {
+			out = append(out, c)
+		}
+	}
+	for _, c := range cands {
+		if !match(c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // Sidecars returns external subtitle streams for the user's preferred
 // languages missing from the embedded tracks. It returns (nil, nil) when
 // the service is disabled or nothing is missing; per-language failures are
 // logged and skipped, never failing playback.
-func (s *Service) Sidecars(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo) ([]core.StreamInfo, error) {
-	return s.SidecarsForRelease(ctx, title, user, embedded, "")
+func (s *Service) Sidecars(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo, prefs ...Preferences) ([]core.StreamInfo, error) {
+	return s.SidecarsForRelease(ctx, title, user, embedded, "", prefs...)
 }
 
 // selection is the persisted choice for one title+language+release, so
@@ -759,8 +973,15 @@ type selection struct {
 	Language string    `json:"language"`
 	Release  string    `json:"release"`
 	At       time.Time `json:"at"`
-	// Forced is set for a viewer-picked foreign-parts-only track.
+	// Forced is set for a real forced track (foreign-parts-only, not HI).
 	Forced bool `json:"forced,omitempty"`
+	// SDH marks a hearing-impaired track; it is surfaced in the sidecar
+	// title so trackprefs' sdh() detection can match it. Selections
+	// persisted before this field existed have no reliable SDH signal
+	// (the candidate is gone), so they load with SDH=false and keep
+	// serving as non-SDH until the track is re-downloaded and the
+	// selection is rewritten — SDH is never invented from a release name.
+	SDH bool `json:"sdh,omitempty"`
 }
 
 func releaseSig(release string) string {
@@ -853,12 +1074,13 @@ func sidecarTitle(lang, release string) string {
 // three candidates are tried in order, and the winner is cached and
 // remembered. "Nothing found" is remembered for NegativeTTL. A quota error
 // stops downloads for the rest of the call.
-func (s *Service) SidecarsForRelease(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo, releaseName string) ([]core.StreamInfo, error) {
-	return s.SidecarsWithHash(ctx, title, user, embedded, releaseName, "")
+func (s *Service) SidecarsForRelease(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo, releaseName string, prefs ...Preferences) ([]core.StreamInfo, error) {
+	return s.SidecarsWithHash(ctx, title, user, embedded, releaseName, "", prefs...)
 }
 
 // SidecarsWithHash uses an already-computed cached-source hash for exact release matching.
-func (s *Service) SidecarsWithHash(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo, releaseName, movieHash string) ([]core.StreamInfo, error) {
+func (s *Service) SidecarsWithHash(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo, releaseName, movieHash string, prefs ...Preferences) ([]core.StreamInfo, error) {
+	pref := firstPrefs(prefs)
 	cacheRelease := releaseName
 	if movieHash != "" {
 		cacheRelease += " hash-" + movieHash
@@ -917,6 +1139,12 @@ func (s *Service) SidecarsWithHash(ctx context.Context, title *core.Title, user 
 			s.log.Debug("subtitle search failed", "lang", lang, "key", title.Key, "err", err)
 			continue
 		}
+		filtered := false
+		if pref.Mode != "" || pref.Style != "" {
+			before := len(cands)
+			cands = candidatesForFetch(cands, pref)
+			filtered = len(cands) != before
+		}
 		found := false
 		// Try the best few candidates; a dead link should not lose the language.
 		for i, c := range cands {
@@ -936,12 +1164,15 @@ func (s *Service) SidecarsWithHash(ctx context.Context, title *core.Title, user 
 			if release == "" {
 				release = c.FileName
 			}
-			s.saveSelection(title, lang, cacheRelease, selection{ID: id, FileID: c.FileID, Language: lang, Release: release, At: s.now().UTC()})
-			add(lang, selection{ID: id, Release: release})
+			sel := selection{ID: id, FileID: c.FileID, Language: lang, Release: release, At: s.now().UTC(), Forced: c.Forced, SDH: c.HearingImp}
+			s.saveSelection(title, lang, cacheRelease, sel)
+			add(lang, sel)
 			found = true
 			break
 		}
-		if !found && !quotaHit && ctx.Err() == nil {
+		// No negative entry when preferences filtered candidates out:
+		// another mode/style may still accept one of them.
+		if !found && !filtered && !quotaHit && ctx.Err() == nil {
 			s.mu.Lock()
 			s.negative[nk] = s.now()
 			if len(s.negative) > 10000 {

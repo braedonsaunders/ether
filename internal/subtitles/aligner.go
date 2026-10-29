@@ -365,7 +365,7 @@ func (a *Aligner) timelines(ctx context.Context, bs *buildState, title *core.Tit
 				release = c.FileName
 			}
 			if releaseName != "" {
-				a.s.saveSelection(title, lang, releaseName, selection{ID: id, FileID: c.FileID, Language: lang, Release: release, At: a.s.now().UTC()})
+				a.s.saveSelection(title, lang, releaseName, selection{ID: id, FileID: c.FileID, Language: lang, Release: release, At: a.s.now().UTC(), SDH: c.HearingImp})
 			}
 		}
 		add(id, c.FileID, c.Release)

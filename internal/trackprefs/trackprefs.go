@@ -157,8 +157,18 @@ func (s *Service) choice(ctx context.Context, user int64, key core.RatingKey, ki
 	err = json.Unmarshal([]byte(raw), &c)
 	return c, err == nil, err
 }
+
+// lang normalises a language code, keeping the region for Portuguese and
+// Chinese (pt-br vs pt-pt, zh-tw vs zh-cn are distinct subtitle languages).
+// Must agree with normLang in internal/subtitles and internal/plex.
 func lang(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), "_", "-")
+	if s == "pob" {
+		return "pt-br"
+	}
+	if strings.HasPrefix(s, "pt-") || strings.HasPrefix(s, "zh-") {
+		return s
+	}
 	s = strings.Split(s, "-")[0]
 	switch s {
 	case "eng":
@@ -184,9 +194,66 @@ func lang(s string) string {
 	}
 	return s
 }
+
+// sdh reports whether a track title carries an SDH/CC marker. The marker
+// must be delimited by start/end, whitespace or brackets — a loose "sdh"
+// substring is not enough, because release names such as
+// "Movie.2024.SDH.WEB-GRP" or "Show-SDH" contain it without the track
+// being hearing-impaired. Generated sidecars use the delimited form
+// " (SDH)" (see subtitles.sidecarStream); legacy generated titles ending
+// in a bare " SDH" also match, since that suffix is space-delimited.
+// "(CC)" and " CC " count as SDH/CC markers, like "[CC]".
+//
+// An explicitly negated marker ("No SDH", "Not hearing impaired",
+// "non-SDH", "No CC", ...) is not SDH: a simple negation guard runs
+// before any positive match. This stays a title-only heuristic — a
+// title is all the marker ever has — so genuinely ambiguous titles
+// (e.g. a release that merely mentions SDH in prose) remain ambiguous
+// and are documented as such rather than resolved by guessing.
 func sdh(t core.StreamInfo) bool {
-	v := strings.ToLower(t.Title)
-	return strings.Contains(v, "sdh") || strings.Contains(v, "hearing impaired") || strings.Contains(v, "[cc]") || v == "cc"
+	v := strings.ToLower(strings.TrimSpace(t.Title))
+	if negatedSDH(v) {
+		return false
+	}
+	if strings.Contains(v, "hearing impaired") {
+		return true
+	}
+	return delimitedMarker(v, "sdh") || delimitedMarker(v, "cc")
+}
+
+// negatedSDH is the simple negation guard: any explicit negation of an
+// SDH/CC/hearing-impaired marker in the title vetoes the match.
+func negatedSDH(v string) bool {
+	for _, neg := range []string{
+		"no sdh", "not sdh", "non-sdh", "non sdh", "without sdh",
+		"no cc", "not cc", "non-cc", "non cc", "without cc",
+		"no hearing impaired", "not hearing impaired",
+		"non-hearing impaired", "non hearing impaired", "without hearing impaired",
+	} {
+		if strings.Contains(v, neg) {
+			return true
+		}
+	}
+	return false
+}
+
+// delimitedMarker reports whether marker occurs in v delimited by
+// start/end, whitespace or brackets.
+func delimitedMarker(v, marker string) bool {
+	for from := 0; ; {
+		j := strings.Index(v[from:], marker)
+		if j < 0 {
+			return false
+		}
+		i := from + j
+		end := i + len(marker)
+		beforeOK := i == 0 || v[i-1] == ' ' || v[i-1] == '\t' || v[i-1] == '(' || v[i-1] == '['
+		afterOK := end == len(v) || v[end] == ' ' || v[end] == '\t' || v[end] == ')' || v[end] == ']' || v[end] == ':'
+		if beforeOK && afterOK {
+			return true
+		}
+		from = i + 1
+	}
 }
 func rankLanguage(code string, want []string) int {
 	for i, v := range want {
@@ -214,8 +281,28 @@ func pick(streams []core.StreamInfo, kind string, want []string, style string, f
 				n += 10
 			}
 		}
-		if memory != nil && lang(t.Language) == memory.Language && t.Forced == memory.Forced && sdh(t) == memory.SDH {
+		if memory != nil && lang(t.Language) == memory.Language && t.Forced == memory.Forced {
+			// SDH equality must not veto the memory bonus: memories saved
+			// before generated sidecars carried the " (SDH)" marker (and
+			// old selections without an sdh field) record SDH=false for
+			// tracks that are in fact SDH, so gating the whole bonus on
+			// it would punish a track for a marker-only change and invert
+			// the remembered choice. The base bonus is language+forced
+			// only; SDH state then breaks ties, with one exception: an
+			// explicit style=="sdh" request outranks a remembered
+			// non-SDH choice, so under style sdh only an actual SDH track
+			// earns the SDH bonus (a plain track matching memory
+			// SDH=false must not beat it). Without an sdh style, memory
+			// keeps deciding: the track whose SDH state matches the
+			// remembered one wins.
 			n += 10000
+			if style == "sdh" {
+				if sdh(t) {
+					n += 1000
+				}
+			} else if sdh(t) == memory.SDH {
+				n += 1000
+			}
 		}
 		if n > score {
 			best, score = i, n

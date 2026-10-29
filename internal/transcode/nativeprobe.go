@@ -756,16 +756,15 @@ func (t mkvTrack) stream(index int) (core.StreamInfo, bool, error) {
 		return core.StreamInfo{}, true, nil
 	}
 	si := core.StreamInfo{Index: index, Title: t.name, Default: t.flagDefault, Forced: t.forced}
-	// libavformat reports the legacy ISO 639-2 Language element, which
-	// mkvmerge writes next to LanguageBCP47. A BCP 47 tag alone is mapped
-	// to the same three-letter form.
+	// mkvmerge writes the legacy ISO 639-2 Language element next to
+	// LanguageBCP47, and the legacy value can be generic or plain wrong
+	// next to it (por beside pt-PT), so a present, usable LanguageBCP47
+	// wins; the legacy element is only the fallback.
 	si.Language = normalizeLanguage(t.language)
-	if !t.hasLanguage && t.bcp47 != "" {
-		primary, _, _ := strings.Cut(strings.ToLower(t.bcp47), "-")
-		if three, ok := iso6391to2[primary]; ok {
-			primary = three
+	if t.bcp47 != "" {
+		if norm := normalizeBCP47Language(t.bcp47); norm != "" {
+			si.Language = norm
 		}
-		si.Language = normalizeLanguage(primary)
 	}
 	var err error
 	switch t.kind {

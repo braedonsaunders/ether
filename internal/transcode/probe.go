@@ -236,6 +236,17 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	si.Profile = s.Profile
 	si.Level = s.Level
 	si.Language = normalizeLanguage(tag(s.Tags, "language"))
+	// A language_bcp47 tag (any key casing; ffprobe 8.x emits the
+	// upper-case LANGUAGE_BCP47 key) carries the region/script the
+	// legacy language tag loses, so it wins when present and usable.
+	// For real MKV files the region is carried by the native probe's
+	// LanguageBCP47 element; this ffprobe branch is only the fallback
+	// for inputs the native probe defers.
+	if bcp := bcp47Tag(s.Tags); bcp != "" {
+		if norm := normalizeBCP47Language(bcp); norm != "" {
+			si.Language = norm
+		}
+	}
 	si.Title = tag(s.Tags, "title")
 	si.Default = s.Disposition["default"] == 1
 	si.Forced = s.Disposition["forced"] == 1
@@ -325,6 +336,116 @@ func normalizeLanguage(l string) string {
 		return ""
 	}
 	return l
+}
+
+// bcp47Tag returns the language_bcp47 stream tag, accepting key casing
+// variants (language_bcp47, LANGUAGE_BCP47, Language_Bcp47, ...) and the
+// hyphenated spelling. tag() already matches case-insensitively.
+func bcp47Tag(tags map[string]string) string {
+	if v := tag(tags, "language_bcp47"); v != "" {
+		return v
+	}
+	return tag(tags, "language-bcp47")
+}
+
+func bcp47Alpha(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 'a' || s[i] > 'z' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+func bcp47Digits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+// normalizeBCP47Language is the single BCP 47 parser shared by the three
+// probes (Matroska LanguageBCP47, the ffprobe language_bcp47 tag and the
+// MP4 elng box); downstream consumers receive this normalised form in
+// StreamInfo.Language. Only Portuguese and Chinese keep a region
+// (pt-br vs pt-pt, zh-tw vs zh-cn are distinct subtitle languages — the
+// form subtitles.normLang, trackprefs.lang and plex.normLang already
+// understand); every other language folds to its primary code in the
+// ISO 639-2 form the probes have always reported. A 4-letter script
+// subtag is skipped (pt-Latn-BR -> pt-br), except that for Chinese a
+// script without an explicit region implies one by convention
+// (zh-Hans -> zh-cn, zh-Hant -> zh-tw); an explicit region always wins
+// over the script (zh-Hant-CN -> zh-cn, zh-Hans-HK -> zh-hk).
+// StreamInfo has no separate tag field, and Language is not code3-only:
+// plex derives the Plex code3 from the base language (pt-br -> por via
+// languageCode3), so no consumer breaks.
+//
+// A primary subtag that is not 2-3 ASCII letters is garbage (a lone
+// "p", non-ASCII bytes from a corrupt elng box, digits, ...), not a
+// language: "" is returned so the caller falls back to the legacy
+// mdhd/language value instead of propagating the junk downstream.
+// Valid 3-letter ISO 639-2 primaries (eng, deu, und handled above)
+// pass this check.
+func normalizeBCP47Language(tag string) string {
+	tag = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(tag)), "_", "-")
+	if tag == "" || tag == "und" || tag == "unknown" {
+		return ""
+	}
+	if tag == "pob" {
+		return "pt-br"
+	}
+	var parts []string
+	for _, p := range strings.Split(tag, "-") {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	if len(parts) == 0 || parts[0] == "und" {
+		return ""
+	}
+	primary := parts[0]
+	if len(primary) < 2 || len(primary) > 3 || !bcp47Alpha(primary) {
+		return ""
+	}
+	// A 639-2 primary (por/zho) means the same as its 639-1 form here.
+	switch primary {
+	case "por":
+		primary = "pt"
+	case "chi", "zho":
+		primary = "zh"
+	}
+	script, region := "", ""
+	for _, p := range parts[1:] {
+		if region == "" && script == "" && len(p) == 4 && bcp47Alpha(p) {
+			script = p
+			continue
+		}
+		if region == "" && ((len(p) == 2 && bcp47Alpha(p)) || (len(p) == 3 && bcp47Digits(p))) {
+			region = p
+			break
+		}
+		// Extended-language (3 letters), variant and extension subtags
+		// carry nothing the consumers distinguish; skip them.
+	}
+	if primary == "pt" || primary == "zh" {
+		if region == "" && primary == "zh" {
+			switch script {
+			case "hans":
+				region = "cn"
+			case "hant":
+				region = "tw"
+			}
+		}
+		if region != "" {
+			return primary + "-" + region
+		}
+	}
+	if three, ok := iso6391to2[primary]; ok {
+		return three
+	}
+	return primary
 }
 
 func isImageCodec(c string) bool {

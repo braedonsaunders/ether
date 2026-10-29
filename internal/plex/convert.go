@@ -1009,8 +1009,18 @@ var lang3to1 = func() map[string]string {
 	return m
 }()
 
+// normLang normalises a language code, keeping the region for Portuguese
+// and Chinese (pt-br vs pt-pt, zh-tw vs zh-cn are distinct subtitle
+// languages). Must agree with normLang/lang in internal/subtitles and
+// internal/trackprefs.
 func normLang(code string) string {
-	c := strings.ToLower(strings.TrimSpace(code))
+	c := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(code)), "_", "-")
+	if c == "pob" {
+		return "pt-br"
+	}
+	if strings.HasPrefix(c, "pt-") || strings.HasPrefix(c, "zh-") {
+		return c
+	}
 	if i := strings.IndexAny(c, "-_"); i > 0 {
 		c = c[:i]
 	}
@@ -1024,25 +1034,43 @@ func normLang(code string) string {
 
 func sameLanguage(a, b string) bool { return a != "" && normLang(a) == normLang(b) }
 
+// langEntry looks a code up in languages, falling back to the base
+// language for region-preserving codes (pt-br -> pt).
+func langEntry(code string) ([3]string, bool) {
+	n := normLang(code)
+	if l, ok := languages[n]; ok {
+		return l, true
+	}
+	if i := strings.Index(n, "-"); i > 0 {
+		l, ok := languages[n[:i]]
+		return l, ok
+	}
+	return [3]string{}, false
+}
+
 func languageName(code string) string {
 	if code == "" {
 		return ""
 	}
-	if l, ok := languages[normLang(code)]; ok {
+	if l, ok := langEntry(code); ok {
 		return l[0]
 	}
 	return code
 }
 
 func languageCode3(code string) string {
-	if l, ok := languages[normLang(code)]; ok {
+	if l, ok := langEntry(code); ok {
 		return l[1]
 	}
 	return strings.ToLower(code)
 }
 
 func languageTag(code string) string {
-	if l, ok := languages[normLang(code)]; ok {
+	// A preserved region is part of the tag (pt-br, zh-tw).
+	if n := normLang(code); strings.Contains(n, "-") {
+		return n
+	}
+	if l, ok := langEntry(code); ok {
 		return l[2]
 	}
 	return strings.ToLower(code)

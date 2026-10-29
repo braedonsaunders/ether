@@ -392,8 +392,19 @@ func TestMatroskaLanguageMatchesLibavformat(t *testing.T) {
 		want  string
 	}{
 		{mkvTrack{language: "eng", hasLanguage: true, bcp47: "en-US"}, "eng"},
-		{mkvTrack{language: "eng", bcp47: "pt-BR"}, "por"},
-		{mkvTrack{language: "eng", bcp47: "x-klingon"}, "x"},
+		// Justificativa da mudança do caso antes travado em "por": com só
+		// BCP47 presente, cortar em "-" perdia a região e uma faixa pt-BR
+		// virava português genérico, satisfazendo/falhando preferências
+		// pt-BR erradas em MissingLanguages/trackprefs. Language passa a
+		// guardar "pt-br" (forma que os normalizadores entendem); o code3
+		// do Plex continua "por" (derivado da base por languageCode3).
+		{mkvTrack{language: "eng", bcp47: "pt-BR"}, "pt-br"},
+		{mkvTrack{bcp47: "pt-PT"}, "pt-pt"},
+		{mkvTrack{bcp47: "zh-TW"}, "zh-tw"},
+		{mkvTrack{bcp47: "en-GB"}, "eng"},
+		{mkvTrack{bcp47: "en_US"}, "eng"},
+		// Primário "x" (len<2) é inválido: BCP47 lixo cai no legacy.
+		{mkvTrack{language: "eng", bcp47: "x-klingon"}, "eng"},
 		{mkvTrack{language: "und", hasLanguage: true}, ""},
 	} {
 		c.track.kind, c.track.codecID, c.track.channels, c.track.sampling = 2, "A_AC3", 2, 48000

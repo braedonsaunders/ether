@@ -169,6 +169,19 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 	if len(md) >= langAt+2 {
 		si.Language = normalizeLanguage(movLanguage(binary.BigEndian.Uint16(md[langAt:])))
 	}
+	// An elng box carries the full BCP 47 tag the mdhd packed 639-2 code
+	// cannot express, so it wins when present. Without elng the region
+	// is genuinely unknown — mdhd holds only ISO 639-2/T — and the
+	// 639-2 code is kept as-is rather than inventing a region.
+	if elng, ok := path(b, trak, "mdia", "elng"); ok {
+		if norm := normalizeBCP47Language(elngLanguage(elng.payload(b))); norm != "" {
+			si.Language = norm
+		}
+	} else if elng, ok := child(b, trak, "elng"); ok {
+		if norm := normalizeBCP47Language(elngLanguage(elng.payload(b))); norm != "" {
+			si.Language = norm
+		}
+	}
 	if tkhd, ok := child(b, trak, "tkhd"); ok && len(tkhd.payload(b)) >= 4 {
 		si.Default = tkhd.payload(b)[3]&1 != 0
 	}
@@ -541,6 +554,19 @@ func sampleStats(b []byte, stbl mp4Box) (frames, bytes uint64, deltas [][2]uint3
 		}
 	}
 	return frames, bytes, deltas
+}
+
+// elngLanguage reads an elng box payload: a full box (version/flags)
+// followed by the null-terminated BCP 47 language tag.
+func elngLanguage(p []byte) string {
+	if len(p) <= 4 {
+		return ""
+	}
+	p = p[4:]
+	if i := strings.IndexByte(string(p), 0); i >= 0 {
+		p = p[:i]
+	}
+	return strings.TrimSpace(string(p))
 }
 
 // movLanguage decodes an mdhd language: packed ISO-639-2/T, or a

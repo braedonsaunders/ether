@@ -27,6 +27,7 @@ type osFake struct {
 	mu                                 sync.Mutex
 	lastQuery                          map[string]string
 	empty                              bool                  // search returns no data
+	hearing                            bool                  // search results are hearing_impaired
 	quota                              bool                  // /download answers 406
 	expireToken                        string                // token answered with 401 once
 	body                               func(id int64) []byte // file content per file id
@@ -57,9 +58,9 @@ func newOSFake(t *testing.T) *osFake {
 		}
 		lang := q["languages"]
 		json.NewEncoder(w).Encode(map[string]any{"data": []any{
-			map[string]any{"attributes": map[string]any{"language": lang, "download_count": 900, "release": "Show.S01E02.1080p.WEB",
+			map[string]any{"attributes": map[string]any{"language": lang, "download_count": 900, "release": "Show.S01E02.1080p.WEB", "hearing_impaired": f.hearing,
 				"files": []any{map[string]any{"file_id": 11, "file_name": "a.srt"}}}},
-			map[string]any{"attributes": map[string]any{"language": lang, "download_count": 100, "release": "Other",
+			map[string]any{"attributes": map[string]any{"language": lang, "download_count": 100, "release": "Other", "hearing_impaired": f.hearing,
 				"files": []any{map[string]any{"file_id": 12, "file_name": "b.srt"}}}},
 			map[string]any{"attributes": map[string]any{"language": "xx", "download_count": 99999, "release": "Wrong language",
 				"files": []any{map[string]any{"file_id": 13, "file_name": "c.srt"}}}},
@@ -261,7 +262,7 @@ func TestLegacyEncodingsAndZip(t *testing.T) {
 	}
 
 	raw := zbuf.Bytes()
-	sub, err := unzipSubtitle(raw)
+	sub, err := unzipSubtitle(raw, "ja")
 	if err != nil {
 		t.Fatal(err)
 	}
