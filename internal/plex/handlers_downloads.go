@@ -58,6 +58,10 @@ func (s *Server) downloadsAllowed(u *core.User) bool {
 	return s.cfg().Downloads.AllowFriends
 }
 
+// DownloadsAllowed exposes the same admission decision for informational
+// frontend capability reporting; the download handler still enforces it.
+func (s *Server) DownloadsAllowed(u *core.User) bool { return s.downloadsAllowed(u) }
+
 func (s *Server) requireDownloads(w http.ResponseWriter, r *http.Request) bool {
 	if !s.downloadsEnabled() {
 		writeHTTPError(w, http.StatusNotFound)

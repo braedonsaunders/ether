@@ -27,7 +27,7 @@ func TestViewerCapabilitiesPolicyAndMembership(t *testing.T) {
 	if err = a.users.RefreshViewers(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err = a.safety.Put(ctx, id, safety.Policy{RemoteDisabled: true, MaxContentRating: "PG", MaxBitrateKbps: 3000}); err != nil {
+	if err = a.safety.Put(ctx, id, safety.Policy{RemoteDisabled: true, MaxContentRating: "PG", MaxBitrateKbps: 3000, StreamLimit: 2, BlockedKeywords: []string{"violence"}}); err != nil {
 		t.Fatal(err)
 	}
 	experience := frontendtest.Experience{ViewsFunc: func(_ context.Context, v *core.Viewer) ([]frontend.View, error) {
@@ -45,8 +45,15 @@ func TestViewerCapabilitiesPolicyAndMembership(t *testing.T) {
 	if lan.IsOwner == nil || *lan.IsOwner || lan.CanPlayRemote == nil || *lan.CanPlayRemote || lan.PeerRemote == nil || *lan.PeerRemote || lan.HasLocalPassword == nil || !*lan.HasLocalPassword || lan.RemoteBitrateKbps == nil || *lan.RemoteBitrateKbps != 3000 || lan.MaxRating == nil || *lan.MaxRating != "PG" || lan.AllowedLibraries == nil || len(*lan.AllowedLibraries) != 1 {
 		t.Fatalf("LAN: %+v", lan)
 	}
+	if lan.CanPlay == nil || !*lan.CanPlay || lan.MaxActiveSessions == nil || *lan.MaxActiveSessions != 2 || lan.BlockedTags == nil || len(*lan.BlockedTags) != 1 || (*lan.BlockedTags)[0] != "violence" {
+		t.Fatalf("LAN policy: %+v", lan)
+	}
+	active, err := a.users.ActiveUser(ctx, id)
+	if err != nil || lan.CanDownload == nil || *lan.CanDownload != a.plexServer.DownloadsAllowed(active) {
+		t.Fatalf("download policy: %+v, %v", lan, err)
+	}
 	remote, err := call(ctx, viewer, frontend.Device{}, netip.MustParseAddr("8.8.8.8"))
-	if err != nil || remote.PeerRemote == nil || !*remote.PeerRemote {
+	if err != nil || remote.PeerRemote == nil || !*remote.PeerRemote || remote.CanPlay == nil || *remote.CanPlay {
 		t.Fatalf("remote: %+v %v", remote, err)
 	}
 	if err = a.users.SetOwnerEnabled(ctx, id, false); err != nil {

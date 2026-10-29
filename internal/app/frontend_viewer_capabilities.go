@@ -8,6 +8,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/playback"
 )
 
 func (a *App) viewerCapabilities(local *identity.Local, experience frontend.Experience) frontend.ViewerCapabilitiesFunc {
@@ -35,6 +36,12 @@ func (a *App) viewerCapabilities(local *identity.Local, experience frontend.Expe
 		if a.safety != nil {
 			can := a.safety.CanPlay(v, true, time.Now())
 			out.CanPlayRemote = &can
+			if out.PeerRemote != nil {
+				play := a.safety.CanPlay(v, *out.PeerRemote, time.Now())
+				out.CanPlay = &play
+			}
+			tags := append([]string{}, a.safety.ForUser(v).BlockedKeywords...)
+			out.BlockedTags = &tags
 			rating := v.MaxContentRating
 			out.MaxRating = &rating
 			cap := a.safety.BitrateLimit(v)
@@ -43,7 +50,19 @@ func (a *App) viewerCapabilities(local *identity.Local, experience frontend.Expe
 			}
 			out.RemoteBitrateKbps = &cap
 		}
+		limit := playback.UserStreamLimit(a.cfg.Get(), v)
+		out.MaxActiveSessions = &limit
+		transcode := a.transcoder != nil
+		out.CanTranscode = &transcode
+		out.CanTranscodeAudio = &transcode
+		out.CanTranscodeVideo = &transcode
+		out.CanRemux = &transcode
+		if a.plexServer != nil {
+			download := a.plexServer.DownloadsAllowed(v)
+			out.CanDownload = &download
+		}
 		if a.livetv != nil {
+			out.CanManageLiveTV = &owner
 			if p, e := a.livetv.Policy(ctx, v.ID); e == nil {
 				allowed := !p.Disabled
 				out.CanUseLiveTV = &allowed
