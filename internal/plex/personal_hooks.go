@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -35,11 +36,8 @@ func (s *Server) postPlayPicks(ctx context.Context, pr *Request, key core.Rating
 // postPlayHub renders ranked picks as one hub in post-play shape. The
 // prefix follows the just-watched title's family, like Related's hubs.
 func (s *Server) postPlayHub(ctx context.Context, pr *Request, key core.RatingKey, picks []core.PostPlayPick) (model.Hub, bool) {
-	items := make([]core.Title, 0, len(picks))
-	for _, p := range picks {
-		items = append(items, p.Title)
-	}
-	items = s.filterAllowed(pr.User, items)
+	row := experience.PostPlay(picks, pr.User, s.visibility())
+	items := row.Items
 	if len(items) == 0 {
 		return model.Hub{}, false
 	}
@@ -67,13 +65,7 @@ func (s *Server) relatedAfterPostPlay(ctx context.Context, pr *Request, mc *mode
 		return
 	}
 	for _, h := range hubs {
-		items := h.Items[:0:0]
-		for _, t := range h.Items {
-			if !seen[t.Key] {
-				seen[t.Key] = true
-				items = append(items, t)
-			}
-		}
+		items := experience.UniqueRelated(h.Items, seen)
 		if len(items) == 0 {
 			continue
 		}
