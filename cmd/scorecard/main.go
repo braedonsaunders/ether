@@ -339,7 +339,7 @@ func run(c config) ([]result, error) {
 	if c.Samples < 1 || len(c.Concurrency) == 0 || len(c.Scenarios) == 0 {
 		return nil, errors.New("samples, concurrency and scenarios are required")
 	}
-	if c.Samples > 1000000 || c.Repetitions < 0 || c.Repetitions > 1000 || c.TimeoutMS < 0 || math.IsNaN(c.RatePerSecond) || math.IsInf(c.RatePerSecond, 0) || c.RatePerSecond < 0 || c.RatePerSecond > 1000000 || (c.RatePerSecond > 0 && c.RatePerSecond < 0.001) {
+	if c.Samples > 1000000 || c.Repetitions < 0 || c.Repetitions > 1000 || c.TimeoutMS < 0 || c.TimeoutMS > 3600000 || math.IsNaN(c.RatePerSecond) || math.IsInf(c.RatePerSecond, 0) || c.RatePerSecond < 0 || c.RatePerSecond > 1000000 || (c.RatePerSecond > 0 && c.RatePerSecond < 0.001) {
 		return nil, errors.New("invalid load configuration")
 	}
 	reps := c.Repetitions

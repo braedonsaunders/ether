@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +33,17 @@ func validateMatchedLimits(a, b string) error {
 	if !filepath.IsAbs(a) || !filepath.IsAbs(b) {
 		return errors.New("cgroup paths must be absolute")
 	}
+	left, err := os.Stat(a)
+	if err != nil {
+		return errors.New("reference cgroup unavailable")
+	}
+	right, err := os.Stat(b)
+	if err != nil {
+		return errors.New("ether cgroup unavailable")
+	}
+	if os.SameFile(left, right) {
+		return errors.New("reference and ether must use distinct cgroups")
+	}
 	for _, name := range []string{"cpu.max", "memory.max", "cpuset.cpus.effective"} {
 		x, e := readTrim(filepath.Join(a, name))
 		if e != nil {
@@ -45,6 +58,23 @@ func validateMatchedLimits(a, b string) error {
 		}
 		if (name == "memory.max" && x == "max") || (name == "cpu.max" && strings.HasPrefix(x, "max ")) || x == "" {
 			return errors.New("fixed CPU, memory and cpuset limits are required")
+		}
+		if name == "memory.max" {
+			n, e := strconv.ParseUint(x, 10, 64)
+			if e != nil || n == 0 {
+				return errors.New("invalid finite memory limit")
+			}
+		}
+		if name == "cpu.max" {
+			parts := strings.Fields(x)
+			if len(parts) != 2 {
+				return errors.New("invalid finite CPU limit")
+			}
+			quota, e := strconv.ParseUint(parts[0], 10, 64)
+			period, e2 := strconv.ParseUint(parts[1], 10, 64)
+			if e != nil || e2 != nil || quota == 0 || period == 0 {
+				return errors.New("invalid finite CPU limit")
+			}
 		}
 	}
 	return nil

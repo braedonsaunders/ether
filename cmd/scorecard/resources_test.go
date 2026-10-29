@@ -84,6 +84,10 @@ func TestResourceDeltasAndFixedLimits(t *testing.T) {
 	if e = validateMatchedLimits(left, right); e != nil {
 		t.Fatal(e)
 	}
+	if e = validateMatchedLimits(left, left); e == nil {
+		t.Fatal("same cgroup accepted")
+	}
+
 	if e = os.WriteFile(filepath.Join(right, "memory.max"), []byte("max"), 0600); e != nil {
 		t.Fatal(e)
 	}
