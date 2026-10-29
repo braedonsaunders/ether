@@ -304,6 +304,9 @@ func (i *instance) browseRoutes() error {
 			dto["BackdropImageTags"] = backdrops
 		}
 		i.addNamedFacets(r, v, d, dto)
+		if i.protocol == "jellyfin" {
+			i.jellyfinItemDetailDTO(d, dto)
+		}
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)
 		}
