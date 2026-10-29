@@ -5,7 +5,21 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
+
+type scopedTrackSource struct {
+	*trackprefs.Service
+	scope trackprefs.Scope
+}
+
+func (s scopedTrackSource) Select(ctx context.Context, viewer int64, key core.RatingKey, info core.MediaInfo, original string) (trackprefs.Selection, error) {
+	selection, applied, err := s.Service.SelectScoped(ctx, viewer, key, info, original, s.scope)
+	if err != nil || applied {
+		return selection, err
+	}
+	return s.Service.Select(ctx, viewer, key, info, original)
+}
 
 // selectBrokerTracks translates wire stream indexes to the experience
 // service's slice positions, then translates its result back for the encoder.

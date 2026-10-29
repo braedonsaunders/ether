@@ -28,6 +28,9 @@ type Rules struct {
 	Loudness          bool     `json:"loudness"`
 	NightMode         bool     `json:"nightMode"`
 	DialogueBoost     bool     `json:"dialogueBoost"`
+	MaxBitrateKbps    int      `json:"maxBitrateKbps,omitempty"` // 0 means no viewer preference
+	MaxHeight         int      `json:"maxHeight,omitempty"`
+	PreferredQuality  string   `json:"preferredQuality,omitempty"`
 }
 type Choice struct {
 	Language string `json:"language"`
@@ -58,6 +61,15 @@ func Default() Rules {
 	return Rules{AudioLanguages: []string{}, SubtitleLanguages: []string{}, SubtitleMode: "off", SubtitleStyle: "normal"}
 }
 func (r Rules) Validate() error {
+	if r.MaxBitrateKbps < 0 || r.MaxHeight < 0 {
+		return errors.New("invalid bitrate preference")
+	}
+	if r.PreferredQuality != "" {
+		values := map[string]int{"auto": 0, "original": 0, "480p": 480, "720p": 720, "1080p": 1080, "2160p": 2160}
+		if height, ok := values[r.PreferredQuality]; !ok || height != r.MaxHeight {
+			return errors.New("invalid quality preference")
+		}
+	}
 	switch r.SubtitleMode {
 	case "off", "forced-only", "foreign-only", "always":
 	default:
@@ -211,6 +223,24 @@ func (s *Service) Select(ctx context.Context, user int64, key core.RatingKey, in
 	if err != nil {
 		return out, err
 	}
+	return s.selectRules(ctx, user, key, info, original, r)
+}
+
+// SelectScoped falls back to Select unchanged when no scoped preference applies.
+func (s *Service) SelectScoped(ctx context.Context, user int64, key core.RatingKey, info core.MediaInfo, original string, scope Scope) (Selection, bool, error) {
+	rules, changed, err := s.ScopedRules(ctx, user, scope)
+	if err != nil {
+		return Selection{-1, -1}, false, err
+	}
+	if !changed {
+		return Selection{}, false, nil
+	}
+	selection, err := s.selectRules(ctx, user, key, info, original, rules)
+	return selection, true, err
+}
+
+func (s *Service) selectRules(ctx context.Context, user int64, key core.RatingKey, info core.MediaInfo, original string, r Rules) (Selection, error) {
+	out := Selection{-1, -1}
 	a, hasA, err := s.choice(ctx, user, key, "audio")
 	if err != nil {
 		return out, err
@@ -302,6 +332,33 @@ func (s *Service) Memory(ctx context.Context, user int64) ([]SavedChoice, error)
 // SetSubtitlePreferences updates only subtitle fields, preserving concurrent
 // audio and other rule changes. The compare-and-swap is shared across nodes.
 func (s *Service) SetSubtitlePreferences(ctx context.Context, user int64, languages []string, mode string) error {
+	return s.updateViewerRules(ctx, user, func(r *Rules) {
+		r.SubtitleLanguages = append([]string(nil), languages...)
+		r.SubtitleMode = mode
+	})
+}
+
+func (s *Service) SetAudioPreferences(ctx context.Context, user int64, languages []string) error {
+	return s.updateViewerRules(ctx, user, func(r *Rules) { r.AudioLanguages = append([]string(nil), languages...) })
+}
+
+func (s *Service) SetSubtitleLanguage(ctx context.Context, user int64, languages []string) error {
+	return s.updateViewerRules(ctx, user, func(r *Rules) { r.SubtitleLanguages = append([]string(nil), languages...) })
+}
+
+func (s *Service) SetSubtitleMode(ctx context.Context, user int64, mode string) error {
+	return s.updateViewerRules(ctx, user, func(r *Rules) { r.SubtitleMode = mode })
+}
+
+func (s *Service) SetBitratePreference(ctx context.Context, user int64, kbps int) error {
+	return s.updateViewerRules(ctx, user, func(r *Rules) { r.MaxBitrateKbps = kbps })
+}
+
+func (s *Service) SetHeightPreference(ctx context.Context, user int64, height int, quality string) error {
+	return s.updateViewerRules(ctx, user, func(r *Rules) { r.MaxHeight = height; r.PreferredQuality = quality })
+}
+
+func (s *Service) updateViewerRules(ctx context.Context, user int64, update func(*Rules)) error {
 	if user <= 0 {
 		return errors.New("invalid user")
 	}
@@ -319,8 +376,7 @@ func (s *Service) SetSubtitlePreferences(ctx context.Context, user int64, langua
 		if err != nil {
 			return err
 		}
-		rules.SubtitleLanguages = append([]string(nil), languages...)
-		rules.SubtitleMode = mode
+		update(&rules)
 		if err = rules.Validate(); err != nil {
 			return err
 		}

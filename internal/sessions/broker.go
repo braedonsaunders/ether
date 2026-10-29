@@ -21,12 +21,15 @@ import (
 
 // BrokerDeps are the explicit dependencies shared by all protocol surfaces.
 type BrokerDeps struct {
-	Coordination       *Coordination
-	DB                 *sql.DB
-	Cluster            clusterbus.Node
-	Live               LiveBackend
-	Variants           func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error)
-	SelectTracks       func(context.Context, *core.Viewer, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
+	Coordination *Coordination
+	DB           *sql.DB
+	Cluster      clusterbus.Node
+	Live         LiveBackend
+	Variants     func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error)
+	SelectTracks func(context.Context, *core.Viewer, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
+	// SelectScopedTracks receives the authenticated device as well. If present,
+	// it replaces SelectTracks and must preserve the unscoped behavior.
+	SelectScopedTracks func(context.Context, *core.Viewer, core.Device, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
 	Lookup             func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
 	Playback           core.Playback
 	Transcoder         core.Transcoder
@@ -312,8 +315,14 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	existed = existed && previous != nil && previous.ID == ps.ID
-	if b.deps.SelectTracks != nil {
-		selected, err := b.deps.SelectTracks(ctx, v, title, ps.Info, req.Intent.Options, req.Intent.AudioSet, req.Intent.SubtitleSet)
+	if b.deps.SelectScopedTracks != nil || b.deps.SelectTracks != nil {
+		var selected core.DecideOptions
+		var err error
+		if b.deps.SelectScopedTracks != nil {
+			selected, err = b.deps.SelectScopedTracks(ctx, v, req.Device, title, ps.Info, req.Intent.Options, req.Intent.AudioSet, req.Intent.SubtitleSet)
+		} else {
+			selected, err = b.deps.SelectTracks(ctx, v, title, ps.Info, req.Intent.Options, req.Intent.AudioSet, req.Intent.SubtitleSet)
+		}
 		if err != nil {
 			if !existed {
 				b.deps.Playback.Stop(ps.ID)

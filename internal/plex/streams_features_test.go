@@ -17,6 +17,50 @@ import (
 	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
 
+// Hide the optional scoped interface to exercise the original selection path.
+type unscopedTrackPreferences struct{ TrackPreferences }
+
+func TestNoScopedOverridesPreserveSelection(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	rules := trackprefs.Default()
+	rules.AudioLanguages = []string{"en"}
+	if err := prefs.PutRules(context.Background(), 7, rules); err != nil {
+		t.Fatal(err)
+	}
+	info := core.MediaInfo{Streams: []core.StreamInfo{{Type: "audio", Language: "fr"}, {Type: "audio", Language: "en"}}}
+	viewer := &core.User{ID: 7}
+	f.srv.d.TrackPreferences = unscopedTrackPreferences{prefs}
+	old := f.srv.preferredSelection(context.Background(), viewer, fightClub.Key, info, "", selection{})
+	f.srv.d.TrackPreferences = prefs
+	got := f.srv.preferredSelection(context.Background(), viewer, fightClub.Key, info, "", selection{})
+	if got != old {
+		t.Fatalf("no-override selection changed: old=%+v new=%+v", old, got)
+	}
+}
+
+func TestScopedQualityOnlyTightensPlexRequest(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	f.srv.d.TrackPreferences = prefs
+	viewer := &core.User{ID: 7}
+	info := core.MediaInfo{Streams: []core.StreamInfo{{Type: "audio", Language: "en"}}}
+	for _, tc := range []struct{ requested, preferred, want int }{{2000, 5000, 2000}, {5000, 2000, 2000}} {
+		if err := prefs.PutScoped(context.Background(), viewer.ID, "device", "tv", trackprefs.ScopedRules{MaxBitrateKbps: &tc.preferred}); err != nil {
+			t.Fatal(err)
+		}
+		play := &playRequest{key: fightClub.Key, audioSel: -1, opts: core.DecideOptions{MaxBitrateKbps: tc.requested}}
+		f.srv.applyStreamPreferences(context.Background(), &Request{User: viewer, ClientID: "tv"}, play, &fightClub, info)
+		if play.opts.MaxBitrateKbps != tc.want {
+			t.Fatalf("request %d preference %d: %+v", tc.requested, tc.preferred, play.opts)
+		}
+	}
+}
+
 func TestPersistentShowChoiceAppliesToNextEpisodeDecision(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()

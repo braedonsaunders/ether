@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -11,6 +12,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/state"
+	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
 
 func (a *App) buildSessionEvents(context.Context, config.Config) error {
@@ -51,11 +53,26 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 			}
 			return a.resolver.Variants(ctx, core.ResolveRequest{Title: t, User: v, Client: caps}, 4)
 		},
-		SelectTracks: func(ctx context.Context, viewer *core.Viewer, title *core.Title, info core.MediaInfo, opts core.DecideOptions, audioSet, subtitleSet bool) (core.DecideOptions, error) {
+		SelectScopedTracks: func(ctx context.Context, viewer *core.Viewer, device core.Device, title *core.Title, info core.MediaInfo, opts core.DecideOptions, audioSet, subtitleSet bool) (core.DecideOptions, error) {
 			if a.trackprefs == nil {
 				return opts, nil
 			}
-			prefs := experience.TrackPreferences{Source: a.trackprefs, GetTitle: a.catalog.Get}
+			scope := trackprefs.Scope{Device: device.ID}
+			if title.ShowKey != 0 {
+				scope.Series = strconv.FormatInt(int64(title.ShowKey), 10)
+			} else if title.Key.Kind() == core.KindEpisode || title.Key.Kind() == core.KindSeason || title.Key.Kind() == core.KindShow {
+				scope.Series = strconv.FormatInt(int64(core.ShowKey(title.Key.TMDB())), 10)
+			}
+			if section, ok := visibility.SectionFor(title.Type); ok {
+				scope.Library = strconv.Itoa(section)
+			}
+			rules, _, err := a.trackprefs.ScopedRules(ctx, viewer.ID, scope)
+			if err != nil {
+				return opts, err
+			}
+			opts.MaxBitrateKbps = trackprefs.LimitBitrate(opts.MaxBitrateKbps, rules.MaxBitrateKbps)
+			opts.MaxHeight = trackprefs.LimitBitrate(opts.MaxHeight, rules.MaxHeight)
+			prefs := experience.TrackPreferences{Source: scopedTrackSource{Service: a.trackprefs, scope: scope}, GetTitle: a.catalog.Get}
 			return selectBrokerTracks(ctx, prefs, viewer, title, info, opts, audioSet, subtitleSet, func(err error) { a.log.Warn("track preferences unavailable", "err", err) })
 		},
 		Lookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {

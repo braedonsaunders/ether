@@ -8,6 +8,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
 
 func TestTrackPreferencesAreSharedAndViewerScoped(t *testing.T) {
@@ -44,5 +45,37 @@ func TestTrackPreferencesAreSharedAndViewerScoped(t *testing.T) {
 	}
 	if _, err = svc.Get(ctx, v); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("inactive %v", err)
+	}
+}
+
+func TestScopedTrackPreferencesReachSharedSelector(t *testing.T) {
+	ctx := context.Background()
+	a := setupTestApp(t, true)
+	local, err := identity.NewLocal(a.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := local.CreateViewer(ctx, "scoped-viewer", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	viewer := &frontend.Viewer{ID: id}
+	svc := surfaceTrackPreferences{app: a}
+	lang := []string{"fr"}
+	cap := 2500
+	if err = svc.SetScoped(ctx, viewer, "device", "tv", frontend.TrackPreferencePatch{AudioLanguages: &lang, MaxBitrateKbps: &cap}); err != nil {
+		t.Fatal(err)
+	}
+	tracks, bitrate, _, _, sources, err := svc.GetScoped(ctx, viewer, frontend.TrackScope{Device: "tv"})
+	if err != nil || bitrate != 2500 || len(tracks.AudioLanguages) != 1 || tracks.AudioLanguages[0] != "fr" || sources["audio"] != "device" {
+		t.Fatalf("shared scope: %+v %d %v %v", tracks, bitrate, sources, err)
+	}
+	info := core.MediaInfo{Streams: []core.StreamInfo{{Type: "audio", Language: "en"}, {Type: "audio", Language: "fr"}}}
+	selected, applied, err := a.trackprefs.SelectScoped(ctx, id, core.MovieKey(1), info, "", trackprefs.Scope{Device: "tv"})
+	if err != nil || !applied || selected.Audio != 1 {
+		t.Fatalf("selection: %+v %v %v", selected, applied, err)
 	}
 }
