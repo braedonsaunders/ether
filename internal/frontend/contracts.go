@@ -147,6 +147,22 @@ type RowInteractionReporter interface {
 	ReportRowInteraction(context.Context, RowInteraction) error
 }
 
+// FavoriteKind namespaces stable, policy-checked entity identifiers.
+type FavoriteKind string
+
+const (
+	FavoriteTitle      FavoriteKind = "title"
+	FavoritePerson     FavoriteKind = "person"
+	FavoriteCollection FavoriteKind = "collection"
+	FavoriteChannel    FavoriteKind = "channel"
+)
+
+// FavoriteRef identifies an entity in its own namespace.
+type FavoriteRef struct {
+	Kind FavoriteKind
+	ID   string
+}
+
 type ItemRequest struct {
 	Viewer *core.Viewer
 	Device core.Device
@@ -156,6 +172,12 @@ type ItemQuery struct {
 	Offset, Limit int
 	Sort          core.SortOrder
 	Desc          bool
+	Types         []core.MediaType
+	Recursive     bool
+	Season        *int // Optional presented season number.
+	Filter        core.Filter
+	Watched       *bool
+	Favorite      *bool
 }
 
 // Continuation distinguishes a known next page from exhaustion and a
@@ -195,13 +217,17 @@ type Extra struct {
 	Height                                  int
 }
 type ItemDetail struct {
-	Title    core.Title
-	UserData core.WatchStatus
-	Tracks   []core.StreamInfo
-	Images   []Image
-	Versions []Version
-	Markers  []Marker
-	Extras   []Extra
+	Collection *core.Collection
+	Playlist   *core.Playlist
+	Title      core.Title
+	UserData   core.WatchStatus
+	Tracks     []core.StreamInfo
+	Images     []Image
+	// ImagesAuthoritative is true only when Images is the complete currently authorized artwork list.
+	ImagesAuthoritative bool
+	Versions            []Version
+	Markers             []Marker
+	Extras              []Extra
 }
 
 // Experience applies viewer policy before returning any data. Browse operations
@@ -211,12 +237,19 @@ type Experience interface {
 	Rows(context.Context, RowRequest) ([]Row, error)
 	Item(context.Context, ItemRequest) (ItemDetail, error)
 	Children(context.Context, *core.Viewer, core.Device, core.RatingKey, ItemQuery) (core.Page, error)
+	LibraryItems(context.Context, *core.Viewer, core.Device, string, ItemQuery) (core.Page, error)
+	Similar(context.Context, *core.Viewer, core.Device, core.RatingKey, ItemQuery) (SearchPage, error)
+	Ancestors(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]core.Title, error)
+	Facets(context.Context, *core.Viewer, core.Device, string, string) ([]core.FacetValue, error)
 	Search(context.Context, *core.Viewer, core.Device, string, ItemQuery) (SearchPage, error)
 	UserData(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 	SetPlayed(context.Context, *core.Viewer, core.RatingKey) error
 	SetUnplayed(context.Context, *core.Viewer, core.RatingKey) error
 	SetFavorite(context.Context, *core.Viewer, core.RatingKey, bool) error
+	SetEntityFavorite(context.Context, *core.Viewer, FavoriteRef, bool) error
+	EntityFavorites(context.Context, *core.Viewer, []FavoriteRef) (map[FavoriteRef]bool, error)
 	SetRating(context.Context, *core.Viewer, core.RatingKey, float64) error
+	SetLikes(context.Context, *core.Viewer, core.RatingKey, *bool) error
 	RemoveFromContinue(context.Context, *core.Viewer, core.RatingKey) error
 }
 

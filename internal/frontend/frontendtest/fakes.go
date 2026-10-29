@@ -12,6 +12,13 @@ import (
 
 // Experience implements frontend.Experience with optional function hooks.
 type Experience struct {
+	SetLikesFunc             func(context.Context, *core.Viewer, core.RatingKey, *bool) error
+	SetEntityFavoriteFunc    func(context.Context, *core.Viewer, frontend.FavoriteRef, bool) error
+	EntityFavoritesFunc      func(context.Context, *core.Viewer, []frontend.FavoriteRef) (map[frontend.FavoriteRef]bool, error)
+	SimilarFunc              func(context.Context, *core.Viewer, core.Device, core.RatingKey, frontend.ItemQuery) (frontend.SearchPage, error)
+	AncestorsFunc            func(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]core.Title, error)
+	FacetsFunc               func(context.Context, *core.Viewer, core.Device, string, string) ([]core.FacetValue, error)
+	LibraryItemsFunc         func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (core.Page, error)
 	SetPlayedFunc            func(context.Context, *core.Viewer, core.RatingKey) error
 	SetUnplayedFunc          func(context.Context, *core.Viewer, core.RatingKey) error
 	SetFavoriteFunc          func(context.Context, *core.Viewer, core.RatingKey, bool) error
@@ -47,6 +54,30 @@ func (f Experience) Item(c context.Context, r frontend.ItemRequest) (frontend.It
 func (f Experience) Children(c context.Context, v *core.Viewer, d core.Device, k core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
 	if f.ChildrenFunc != nil {
 		return f.ChildrenFunc(c, v, d, k, q)
+	}
+	return core.Page{}, nil
+}
+func (f Experience) Similar(c context.Context, v *core.Viewer, d core.Device, k core.RatingKey, q frontend.ItemQuery) (frontend.SearchPage, error) {
+	if f.SimilarFunc != nil {
+		return f.SimilarFunc(c, v, d, k, q)
+	}
+	return frontend.SearchPage{}, nil
+}
+func (f Experience) Ancestors(c context.Context, v *core.Viewer, d core.Device, k core.RatingKey) ([]core.Title, error) {
+	if f.AncestorsFunc != nil {
+		return f.AncestorsFunc(c, v, d, k)
+	}
+	return nil, nil
+}
+func (f Experience) Facets(c context.Context, v *core.Viewer, d core.Device, id, name string) ([]core.FacetValue, error) {
+	if f.FacetsFunc != nil {
+		return f.FacetsFunc(c, v, d, id, name)
+	}
+	return nil, nil
+}
+func (f Experience) LibraryItems(c context.Context, v *core.Viewer, d core.Device, id string, q frontend.ItemQuery) (core.Page, error) {
+	if f.LibraryItemsFunc != nil {
+		return f.LibraryItemsFunc(c, v, d, id, q)
 	}
 	return core.Page{}, nil
 }
@@ -87,6 +118,24 @@ func (f Experience) SetUnplayed(c context.Context, v *core.Viewer, k core.Rating
 func (f Experience) SetFavorite(c context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
 	if f.SetFavoriteFunc != nil {
 		return f.SetFavoriteFunc(c, v, k, on)
+	}
+	return nil
+}
+func (f Experience) SetEntityFavorite(c context.Context, v *core.Viewer, ref frontend.FavoriteRef, on bool) error {
+	if f.SetEntityFavoriteFunc != nil {
+		return f.SetEntityFavoriteFunc(c, v, ref, on)
+	}
+	return nil
+}
+func (f Experience) EntityFavorites(c context.Context, v *core.Viewer, refs []frontend.FavoriteRef) (map[frontend.FavoriteRef]bool, error) {
+	if f.EntityFavoritesFunc != nil {
+		return f.EntityFavoritesFunc(c, v, refs)
+	}
+	return nil, nil
+}
+func (f Experience) SetLikes(c context.Context, v *core.Viewer, k core.RatingKey, likes *bool) error {
+	if f.SetLikesFunc != nil {
+		return f.SetLikesFunc(c, v, k, likes)
 	}
 	return nil
 }
