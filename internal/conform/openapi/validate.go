@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type Document struct{ root map[string]any }
@@ -133,8 +136,8 @@ func (d *Document) Validate(method, requestPath string, status int, contentType 
 	if err = dec.Decode(&value); err != nil {
 		return fmt.Errorf("response JSON: %w", err)
 	}
-	if dec.Decode(new(any)) == nil {
-		return fmt.Errorf("multiple JSON values")
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return fmt.Errorf("trailing data after JSON value")
 	}
 	return d.validate(schema, value, "$", 0)
 }
@@ -214,6 +217,12 @@ func (d *Document) validate(schema any, v any, path string, depth int) error {
 		if !ok {
 			return fmt.Errorf("%s: expected array", path)
 		}
+		if n, ok := number(s["minItems"]); ok && float64(len(arr)) < n {
+			return fmt.Errorf("%s: too few items", path)
+		}
+		if n, ok := number(s["maxItems"]); ok && float64(len(arr)) > n {
+			return fmt.Errorf("%s: too many items", path)
+		}
 		if item := s["items"]; item != nil {
 			for i, val := range arr {
 				if err := d.validate(item, val, fmt.Sprintf("%s/%d", path, i), depth+1); err != nil {
@@ -222,8 +231,24 @@ func (d *Document) validate(schema any, v any, path string, depth int) error {
 			}
 		}
 	case "string":
-		if _, ok := v.(string); !ok {
+		str, ok := v.(string)
+		if !ok {
 			return fmt.Errorf("%s: expected string", path)
+		}
+		if n, ok := number(s["minLength"]); ok && float64(utf8.RuneCountInString(str)) < n {
+			return fmt.Errorf("%s: string too short", path)
+		}
+		if n, ok := number(s["maxLength"]); ok && float64(utf8.RuneCountInString(str)) > n {
+			return fmt.Errorf("%s: string too long", path)
+		}
+		if pattern, ok := s["pattern"].(string); ok {
+			re, e := regexp.Compile(pattern)
+			if e != nil {
+				return fmt.Errorf("%s: unsupported pattern: %w", path, e)
+			}
+			if !re.MatchString(str) {
+				return fmt.Errorf("%s: pattern mismatch", path)
+			}
 		}
 	case "integer":
 		n, ok := v.(json.Number)
@@ -244,6 +269,22 @@ func (d *Document) validate(schema any, v any, path string, depth int) error {
 	default:
 		return fmt.Errorf("%s: unsupported schema type %q", path, typ)
 	}
+	if n, ok := number(v); ok {
+		if min, ok := number(s["minimum"]); ok && (n < min || (n == min && s["exclusiveMinimum"] == true)) {
+			return fmt.Errorf("%s: below minimum", path)
+		}
+		if max, ok := number(s["maximum"]); ok && (n > max || (n == max && s["exclusiveMaximum"] == true)) {
+			return fmt.Errorf("%s: above maximum", path)
+		}
+	}
 	return nil
+}
+func number(v any) (float64, bool) {
+	n, ok := v.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	f, err := n.Float64()
+	return f, err == nil
 }
 func array(v any) []any { a, _ := v.([]any); return a }
