@@ -17,10 +17,9 @@ The no-override path is covered by `TestNoScopedOverridesPreserveSelection`
 and `TestScopedQualityOnlyTightensPlexRequest`. This is recorded for
 attribution only: no response is allowlisted without a verified exact pair.
 
-The v0.2.45 self-run currently leaves 21 GET routes uncovered. All are
+The v0.2.45 notification-inclusive self-run leaves 18 GET routes uncovered. All are
 implemented features; none should be exempted as intentionally unsupported:
 
-- Three notification endpoints: eventsource and both WebSocket spellings.
 - Five download-queue reads: queue, items, item, decision and media. These
   need an enabled queue with a completed real download item.
 - Five subtitle and trickplay reads: subtitle search, external subtitle stream,
