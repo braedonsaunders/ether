@@ -414,6 +414,18 @@ func TestBrokerSupersededReportCannotStopReplacement(t *testing.T) {
 		return s
 	}
 	old, current := open(), open()
+	listed, err := b.Sessions(ctx, frontend.SessionAccess{Viewer: v})
+	if err != nil || len(listed) != 1 || listed[0].ID != current.ID {
+		t.Fatalf("superseded sessions remain visible: %+v %v", listed, err)
+	}
+	staleMedia := httptest.NewRecorder()
+	b.ServeMedia(staleMedia, httptest.NewRequest(http.MethodGet, old.MediaPath, nil))
+	if staleMedia.Code != http.StatusNotFound {
+		t.Fatalf("superseded grant still served: %d", staleMedia.Code)
+	}
+	if err := b.Report(ctx, frontend.SessionAccess{Viewer: &core.Viewer{ID: 3}, Device: d, Protocol: "jellyfin"}, old.ID, frontend.Timeline{State: "stopped"}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("foreign retired report: %v", err)
+	}
 	if err := b.Report(ctx, a, current.ID, frontend.Timeline{PlaybackID: old.ID, State: "stopped"}); err != nil {
 		t.Fatal(err)
 	}

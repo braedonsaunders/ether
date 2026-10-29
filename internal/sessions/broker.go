@@ -67,6 +67,13 @@ type brokerSession struct {
 	sequence         uint64
 }
 
+type retiredSession struct {
+	viewerID int64
+	protocol frontend.Protocol
+	deviceID string
+	until    time.Time
+}
+
 // Broker coordinates neutral sessions with the shared playback admission manager.
 // Plex's legacy timeline tracker is not yet included in Sessions; owner
 // Activity continues to use the shared playback manager until that move lands.
@@ -75,6 +82,7 @@ type Broker struct {
 	mu           sync.Mutex
 	plans        map[string]brokerPlan
 	sessions     map[string]*brokerSession
+	retired      map[string]retiredSession
 	owners       *PlaybackOwners
 	gates        *Lifecycle
 	bindings     *BindingTable[frontend.PlayIntent]
@@ -97,7 +105,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if coord.Owners == nil || coord.Gates == nil {
 		return nil, errors.New("sessions: invalid coordination")
 	}
-	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
+	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -412,8 +420,43 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	}
 	b.bindings.Put(&Binding[frontend.PlayIntent]{ID: id, UserID: v.ID, ClientID: s.clientID, Key: session.Item, PlayID: ps.ID, PlaybackID: s.playbackID, Requested: p.request.Intent, Decision: p.decision, Info: ps.Info, Caps: s.caps, Opts: s.opts, UpdatedAt: b.deps.Now()})
 	b.owners.Bind(v.ID, s.clientID, session.Item, s.playbackID, ps.ID, true, b.deps.Now())
+	now := b.deps.Now()
+	for id, old := range b.retired {
+		if !old.until.After(now) {
+			delete(b.retired, id)
+		}
+	}
+	var superseded []*brokerSession
+	for oldID, old := range b.sessions {
+		if !old.live && old.public.ViewerID == v.ID && old.clientID == s.clientID && old.public.Item == session.Item {
+			delete(b.sessions, oldID)
+			if len(b.retired) >= 4096 {
+				for key := range b.retired {
+					delete(b.retired, key)
+					break
+				}
+			}
+			b.retired[oldID] = retiredSession{viewerID: v.ID, protocol: old.public.Protocol, deviceID: old.public.Device.ID, until: now.Add(2 * time.Hour)}
+			superseded = append(superseded, old)
+		}
+	}
 	b.sessions[id] = s
 	b.mu.Unlock()
+	for _, old := range superseded {
+		b.bindings.Remove(old.public.ID)
+		if b.deps.Transcoder != nil {
+			b.deps.Transcoder.Stop(old.public.ID)
+		}
+		if b.cluster != nil {
+			if err := b.cluster.store.remove(ctx, old.public.ID); err != nil && b.deps.OnEventError != nil {
+				b.deps.OnEventError(err)
+			}
+		}
+		if old.playID != ps.ID {
+			b.deps.Playback.Stop(old.playID)
+		}
+		b.publish(ctx, frontend.Event{Type: "SessionStopped", ViewerID: old.public.ViewerID, Item: old.public.Item, SessionID: old.public.ID})
+	}
 	b.publish(ctx, frontend.Event{Type: "SessionStarted", ViewerID: v.ID, Item: session.Item, SessionID: id})
 	return session, nil
 }
@@ -488,6 +531,15 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 }
 func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
 	s, v, err := b.access(ctx, a, id)
+	if errors.Is(err, core.ErrNotFound) {
+		retired, retiredErr := b.retiredAccess(ctx, a, id)
+		if retiredErr != nil {
+			return retiredErr
+		}
+		if retired {
+			return nil
+		}
+	}
 	if errors.Is(err, core.ErrNotFound) && b.cluster != nil {
 		return b.cluster.forwardReport(ctx, a, id, t)
 	}
