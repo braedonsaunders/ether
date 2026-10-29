@@ -22,4 +22,7 @@ type VersionTarget struct{ Item core.RatingKey }
 type VersionHandles interface {
 	Issue(context.Context, VersionScope, core.RatingKey, string) (string, error)
 	Resolve(context.Context, VersionScope, string) (VersionTarget, error)
+	// MatchSession verifies that a scoped handle denotes the source bound to
+	// this authenticated local playback session.
+	MatchSession(context.Context, VersionScope, string, string) error
 }

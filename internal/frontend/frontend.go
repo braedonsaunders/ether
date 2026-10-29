@@ -219,6 +219,7 @@ type Host struct {
 	LiveTV             LiveTV
 	VirtualPaths       VirtualPaths
 	Sessions           Sessions
+	VersionHandles     VersionHandles
 	LazyStreams        LazyStreams
 	Identity           SurfaceIdentity
 	IDs                ids.Codecs

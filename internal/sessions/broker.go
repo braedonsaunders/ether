@@ -54,12 +54,14 @@ type BrokerDeps struct {
 }
 
 type brokerPlan struct {
-	request  frontend.PlanRequest
-	source   *core.PlaySession
-	decision core.Decision
-	created  time.Time
-	etag     string
-	live     bool
+	request       frontend.PlanRequest
+	source        *core.PlaySession
+	decision      core.Decision
+	created       time.Time
+	etag          string
+	live          bool
+	exactRelease  string
+	versionHandle string
 }
 type brokerSession struct {
 	public           frontend.Session
@@ -76,6 +78,8 @@ type brokerSession struct {
 	segmentDuration  time.Duration
 	live             bool
 	sequence         uint64
+	versionHandle    string
+	exactRelease     string
 }
 
 type retiredSession struct {
@@ -261,7 +265,7 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		}
 	}
 	if req.Channel != "" {
-		if req.Version != "" {
+		if req.Version != "" || req.Intent.ExactVersion {
 			return frontend.PlayPlan{}, core.ErrNotAvailable
 		}
 		return b.planLive(ctx, req, v)
@@ -275,6 +279,29 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	}
 	if !title.Released.IsZero() && title.Released.After(b.deps.Now()) {
 		return frontend.PlayPlan{}, core.ErrUnreleased
+	}
+	if req.Intent.Estimate && req.Intent.ExactVersion {
+		info := b.deps.Playback.Estimate(ctx, title, req.Caps)
+		dec := core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: info.Container}
+		if b.deps.Transcoder != nil {
+			dec = b.deps.Transcoder.Decide(info, req.Caps, req.Intent.Options)
+		}
+		return frontend.PlayPlan{Estimated: true, Media: publicMedia(info), Decision: dec}, nil
+	}
+	versionHandle := ""
+	if req.Intent.ExactVersion {
+		if req.Version == "" || b.deps.DB == nil {
+			return frontend.PlayPlan{}, core.ErrNotAvailable
+		}
+		h := &versionHandles{db: b.deps.DB, broker: b, protocol: req.Protocol}
+		item, release, err := h.resolveRecord(ctx, frontend.VersionScope{Viewer: v, Device: req.Device, Protocol: req.Protocol, Caps: req.Caps}, req.Version)
+		if err != nil {
+			return frontend.PlayPlan{}, err
+		}
+		if item != req.Item {
+			return frontend.PlayPlan{}, core.ErrNotFound
+		}
+		versionHandle, req.Version = normalizeVersionHandle(req.Version), release
 	}
 	var chosen *core.ReleaseVariant
 	if req.Version != "" {
@@ -328,7 +355,13 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	defer unlock()
 	previous, existed := b.deps.Playback.SessionFor(v.ID, req.Caps.ClientID, req.Item)
 	var ps *core.PlaySession
-	if chosen != nil {
+	if chosen != nil && req.Intent.ExactVersion {
+		vp, ok := b.deps.Playback.(core.ExactVariantPlayback)
+		if !ok {
+			return frontend.PlayPlan{}, core.ErrNotAvailable
+		}
+		ps, err = vp.PrepareExactVariant(ctx, v, req.Item, req.Caps, chosen.ID)
+	} else if chosen != nil {
 		vp, ok := b.deps.Playback.(core.VariantPlayback)
 		if !ok {
 			return frontend.PlayPlan{}, core.ErrNotAvailable
@@ -341,6 +374,12 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		return frontend.PlayPlan{}, err
 	}
 	if ps == nil {
+		return frontend.PlayPlan{}, core.ErrNotAvailable
+	}
+	if req.Intent.ExactVersion && (ps.Resolution == nil || ps.Resolution.Release.ID != req.Version) {
+		if !existed || previous == nil || previous.ID != ps.ID {
+			b.deps.Playback.Stop(ps.ID)
+		}
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	existed = existed && previous != nil && previous.ID == ps.ID
@@ -394,7 +433,11 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 			delete(b.plans, key)
 		}
 	}
-	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now(), etag: etag}
+	exactRelease := ""
+	if req.Intent.ExactVersion {
+		exactRelease = req.Version
+	}
+	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now(), etag: etag, exactRelease: exactRelease, versionHandle: versionHandle}
 	b.mu.Unlock()
 	direct, remux, transcoding := b.planAlternatives(ps, req)
 	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec, DirectPlay: direct, DirectStream: remux, Transcoding: transcoding, ETag: etag}, nil
@@ -450,6 +493,9 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if !ok || ps == nil || ps.UserID != v.ID || ps.ClientID != p.request.Caps.ClientID || ps.Key != p.request.Item {
 		return frontend.Session{}, core.ErrNotAvailable
 	}
+	if p.exactRelease != "" && (ps.Resolution == nil || ps.Resolution.Release.ID != p.exactRelease) {
+		return frontend.Session{}, core.ErrNotAvailable
+	}
 	// A plan's tag must not describe a source that failed over before Open.
 	// Ask the frontend to re-plan instead of handing it a stale revision.
 	if p.etag != "" && sourceRevision(ps) != p.etag {
@@ -468,7 +514,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if err := b.enrichCapabilities(ctx, &session); err != nil {
 		return frontend.Session{}, err
 	}
-	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding}
+	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding, versionHandle: p.versionHandle, exactRelease: p.exactRelease}
 	if b.cluster != nil && session.Protocol != "plex" {
 		if err := b.cluster.store.put(ctx, session, ps.ID, *v, b.deps.Now()); err != nil {
 			return frontend.Session{}, err

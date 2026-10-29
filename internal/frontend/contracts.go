@@ -374,6 +374,9 @@ type Experience interface {
 type PlayIntent struct {
 	Estimate bool
 	Options  core.DecideOptions
+	// ExactVersion treats PlanRequest.Version as a scoped opaque handle and
+	// refuses any substitute release, including during later source failover.
+	ExactVersion bool
 	// Set flags distinguish omitted choices from stream index zero and
 	// an explicit subtitle-off choice (SubtitleStream == -1).
 	AudioSet        bool
@@ -432,7 +435,8 @@ type StreamRequest struct {
 	SegmentDuration time.Duration
 }
 type PlanRequest struct {
-	// Version is a resolver-issued variant ID; empty asks for automatic selection.
+	// Version is a resolver-issued variant ID in legacy mode, or a scoped
+	// VersionHandles handle when ExactVersion is set. Empty selects automatically.
 	Version  string
 	Viewer   *core.Viewer
 	Device   core.Device

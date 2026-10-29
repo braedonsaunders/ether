@@ -13,6 +13,10 @@ func sessionID(protocol frontend.Protocol) (string, error) {
 	if protocol != "silo" {
 		return rand.Text(), nil
 	}
+	return randomUUID()
+}
+
+func randomUUID() (string, error) {
 	var id [16]byte
 	if _, err := rand.Read(id[:]); err != nil {
 		return "", err
