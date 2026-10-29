@@ -16,7 +16,7 @@ type Experience struct {
 	RowsFunc     func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
 	ItemFunc     func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error)
 	ChildrenFunc func(context.Context, *core.Viewer, core.Device, core.RatingKey, frontend.ItemQuery) (core.Page, error)
-	SearchFunc   func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (core.Page, error)
+	SearchFunc   func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (frontend.SearchPage, error)
 	UserDataFunc func(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 }
 
@@ -44,11 +44,11 @@ func (f Experience) Children(c context.Context, v *core.Viewer, d core.Device, k
 	}
 	return core.Page{}, nil
 }
-func (f Experience) Search(c context.Context, v *core.Viewer, d core.Device, s string, q frontend.ItemQuery) (core.Page, error) {
+func (f Experience) Search(c context.Context, v *core.Viewer, d core.Device, s string, q frontend.ItemQuery) (frontend.SearchPage, error) {
 	if f.SearchFunc != nil {
 		return f.SearchFunc(c, v, d, s, q)
 	}
-	return core.Page{}, nil
+	return frontend.SearchPage{}, nil
 }
 func (f Experience) UserData(c context.Context, v *core.Viewer, k []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
 	if f.UserDataFunc != nil {

@@ -38,6 +38,23 @@ func (h *Handler) frontendList(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, list)
 }
+func (h *Handler) frontendStatus(w http.ResponseWriter, r *http.Request) {
+	if !h.frontendAvailable(w) {
+		return
+	}
+	list, err := h.deps.Frontends.List(r.Context())
+	if err != nil {
+		writeError(w, 500, "frontend_error", "Could not read front-end status")
+		return
+	}
+	for _, item := range list {
+		if string(item.Descriptor.ID) == r.PathValue("id") {
+			writeJSON(w, 200, item.Status)
+			return
+		}
+	}
+	writeError(w, 404, "not_found", "Front end not found")
+}
 func (h *Handler) frontendSettings(w http.ResponseWriter, r *http.Request) {
 	if !h.frontendAvailable(w) {
 		return

@@ -33,6 +33,7 @@ func (s Scope) String() string {
 // shares one scope.
 var sectionScopes = map[string]Scope{
 	"frontends":     Shared,
+	"frontendPorts": Local,
 	"posters":       Shared,
 	"sharedCache":   Shared,
 	"availability":  Shared,

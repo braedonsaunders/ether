@@ -37,6 +37,7 @@ type Status struct {
 	TargetVersion string   `json:"targetVersion"`
 	Conformance   string   `json:"conformance"`
 	Error         string   `json:"error,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
 }
 type Announcer interface {
 	Start(context.Context) error

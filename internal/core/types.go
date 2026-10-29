@@ -147,13 +147,14 @@ type User struct {
 // ClientCaps is what a Plex client can play, derived from X-Plex-* headers,
 // the client profile and its declared limits.
 type ClientCaps struct {
-	Product         string `json:"product"`  // X-Plex-Product: "Plex Web", "Plex for iOS", "Plex for Apple TV"
-	Platform        string `json:"platform"` // X-Plex-Platform
-	PlatformVersion string `json:"platformVersion"`
-	Device          string `json:"device"`
-	DeviceName      string `json:"deviceName"`
-	ClientID        string `json:"clientId"` // X-Plex-Client-Identifier
-	Version         string `json:"version"`
+	Protocol        Protocol `json:"protocol,omitempty"`
+	Product         string   `json:"product"`  // X-Plex-Product: "Plex Web", "Plex for iOS", "Plex for Apple TV"
+	Platform        string   `json:"platform"` // X-Plex-Platform
+	PlatformVersion string   `json:"platformVersion"`
+	Device          string   `json:"device"`
+	DeviceName      string   `json:"deviceName"`
+	ClientID        string   `json:"clientId"` // X-Plex-Client-Identifier
+	Version         string   `json:"version"`
 
 	MaxHeight      int                 `json:"maxHeight"` // 2160, 1080, 720...
 	HDR10          bool                `json:"hdr10"`

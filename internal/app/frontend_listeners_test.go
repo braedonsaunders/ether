@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"io"
 	"net"
 	"net/http"
+	"syscall"
 	"testing"
 )
 
@@ -79,5 +81,38 @@ func TestFrontendListenerConflict(t *testing.T) {
 	}
 	if st := m.status(context.Background(), "test"); st.Error == "" {
 		t.Fatal(st)
+	}
+}
+
+func TestFrontendDefaultFallback(t *testing.T) {
+	var tried []string
+	listen := func(_ string, addr string) (net.Listener, error) {
+		tried = append(tried, addr)
+		if len(tried) == 1 {
+			return nil, syscall.EADDRINUSE
+		}
+		return net.Listen("tcp", "127.0.0.1:0")
+	}
+	ln, err := listenFrontendWith("silo", "127.0.0.1:8090", listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ln.Close()
+	if len(tried) != 2 || tried[1] != "127.0.0.1:8091" {
+		t.Fatal(tried)
+	}
+	tried = nil
+	ln, err = listenFrontendWith("plex", "127.0.0.1:32400", listen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = ln.Close()
+	if tried[1] != "127.0.0.1:32450" {
+		t.Fatal(tried)
+	}
+	tried = nil
+	_, err = listenFrontendWith("silo", "127.0.0.1:9090", listen)
+	if !errors.Is(err, syscall.EADDRINUSE) || len(tried) != 1 {
+		t.Fatal(tried, err)
 	}
 }
