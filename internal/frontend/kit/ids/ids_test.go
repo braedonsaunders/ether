@@ -77,3 +77,21 @@ func FuzzParseGUID(f *testing.F) {
 		}
 	})
 }
+
+func TestStremio(t *testing.T) {
+	for _, s := range []string{"tmdb:123", "tmdb:123:0:1", "tt0816692", "tt0903747:1:2"} {
+		if _, err := ParseStremio(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	for _, s := range []string{"tmdb:0", "tmdb:01", "tt", "tt1:1", "tt1:-1:2", "tt1:1000:1", "ttx"} {
+		if _, err := ParseStremio(s); err == nil {
+			t.Fatalf("accepted %s", s)
+		}
+	}
+}
+func FuzzStremio(f *testing.F) {
+	f.Add("tt0903747:1:2")
+	f.Add("tmdb:123")
+	f.Fuzz(func(t *testing.T, s string) { _, _ = ParseStremio(s) })
+}

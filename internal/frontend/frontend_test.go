@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 type testFrontend struct {
@@ -90,5 +92,25 @@ func TestFailedMountCanRetry(t *testing.T) {
 	f.err = nil
 	if _, err := r.Mount(context.Background(), "test"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type resolverFunc func(context.Context, string, string) (*core.Viewer, error)
+
+func (f resolverFunc) Resolve(ctx context.Context, surface, credential string) (*core.Viewer, error) {
+	return f(ctx, surface, credential)
+}
+func TestBoundIdentity(t *testing.T) {
+	var gotSurface, gotCredential string
+	resolver := resolverFunc(func(_ context.Context, surface, credential string) (*core.Viewer, error) {
+		gotSurface, gotCredential = surface, credential
+		return &core.Viewer{}, nil
+	})
+	identity := BindIdentity(resolver, "jellyfin")
+	if _, err := identity.Resolve(context.Background(), "secret"); err != nil || gotSurface != "jellyfin" || gotCredential != "secret" {
+		t.Fatal(gotSurface, gotCredential, err)
+	}
+	if _, err := BindIdentity(nil, "jellyfin").Resolve(context.Background(), "secret"); err == nil {
+		t.Fatal("nil resolver accepted")
 	}
 }
