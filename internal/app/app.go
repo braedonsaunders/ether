@@ -438,6 +438,8 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.cluster.RunAsLeader(ctx, "database maintenance", a.maintainDB) })
 	background.start(func() { a.stats.Run(ctx) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "notification delivery", a.notifications.Run) })
+	background.start(func() { a.cluster.RunAsLeader(ctx, "favorite episode alerts", a.runFavoriteEpisodeAlerts) })
+	background.start(func() { a.cluster.RunAsLeader(ctx, "viewer push delivery", a.runViewerPush) })
 	if a.clustered() {
 		background.start(func() { a.sampleHealth(ctx) })
 	}

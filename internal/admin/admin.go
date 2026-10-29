@@ -90,6 +90,8 @@ type StatusFuncE func(ctx context.Context) (any, error)
 type Deps struct {
 	Frontends            FrontendAdmin
 	FavoritesMirror      FavoritesMirror
+	ViewerAlerts         ViewerAlertPreferences
+	ViewerPush           ViewerPushService
 	ActiveViewer         func(context.Context, int64) (*core.User, error)
 	LocalIdentity        *identity.Local
 	IdentityGrants       *identity.Grants
@@ -262,6 +264,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) routes() *http.ServeMux {
 	mux := http.NewServeMux()
+	h.viewerPushRoutes(mux, h.deps.ViewerPush)
 	api := func(pattern string, fn http.HandlerFunc) {
 		mux.HandleFunc(pattern, h.requireAuth(fn))
 	}
@@ -272,6 +275,8 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/setup/local", h.handleLocalSetup)
 	mux.HandleFunc("POST /api/me/login", h.handleLocalViewerLogin)
 	mux.HandleFunc("GET /api/me", h.handleMe)
+	mux.HandleFunc("GET /api/me/favorite-episode-alert", h.portalFavoriteEpisodeAlert)
+	mux.HandleFunc("POST /api/me/favorite-episode-alert", h.portalFavoriteEpisodeAlert)
 	mux.HandleFunc("GET /api/me/favorites-mirror", h.portalFavoritesMirror)
 	mux.HandleFunc("POST /api/me/favorites-mirror", h.portalFavoritesMirror)
 	mux.HandleFunc("POST /api/me/link/plex", h.limitIdentityAuth(h.handlePlexLinkStart))
@@ -291,6 +296,7 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/auth/pin/{handle}", h.limitAuth(h.handleSignInPoll))
 
 	api("POST /api/viewers/{id}/quickconnect", h.handleOwnerQuickConnect)
+	api("GET /api/viewers/{id}/favorite-episode-alert", h.ownerFavoriteEpisodeAlert)
 	api("GET /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
 	api("POST /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
 	api("GET /api/frontends", h.frontendList)

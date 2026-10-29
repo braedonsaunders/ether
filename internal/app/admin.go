@@ -14,6 +14,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/newznab"
+	"github.com/braedonsaunders/ether/internal/notify"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/subtitles"
 	"github.com/braedonsaunders/ether/internal/tmdb"
@@ -30,6 +31,8 @@ func (a *App) buildAdmin() http.Handler {
 	invites, _ := identity.NewInvite(a.db, 24*time.Hour, 30*24*time.Hour, nil)
 	return admin.New(admin.Deps{
 		FavoritesMirror: a.favorites,
+		ViewerAlerts:    &notify.ViewerAlerts{DB: a.db, Active: a.users.ActiveUser},
+		ViewerPush:      a.viewerPush(),
 		ActiveViewer:    a.users.ActiveUser,
 		Invites:         invites,
 		SetViewerActive: a.users.SetOwnerEnabled,
