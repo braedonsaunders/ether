@@ -17,17 +17,14 @@ The no-override path is covered by `TestNoScopedOverridesPreserveSelection`
 and `TestScopedQualityOnlyTightensPlexRequest`. This is recorded for
 attribution only: no response is allowlisted without a verified exact pair.
 
-The v0.2.45 notification-inclusive self-run leaves 18 GET routes uncovered. All are
+The v0.2.45 self-run with live-TV and downloads leaves 8 GET routes uncovered. All are
 implemented features; none should be exempted as intentionally unsupported:
 
-- Five download-queue reads: queue, items, item, decision and media. These
-  need an enabled queue with a completed real download item.
 - Five subtitle and trickplay reads: subtitle search, external subtitle stream,
   transcode subtitle, BIF and individual frame. These need actual subtitle
   and generated trickplay data.
-- Eight live-TV reads: session, playlist, DASH part, program segment, IPTV
-  relay, IPTV resource, subscription and grab operation. The IPTV paths need
-  an offline IPTV source fixture.
+- Three live-TV reads: DASH part, IPTV relay and IPTV resource. These need an
+  offline IPTV source fixture.
 
 A zero-unapproved result with exit 2 covers only the exercised corpus; it is
 not a full parity verdict. The CI warning must become a failure once coverage
