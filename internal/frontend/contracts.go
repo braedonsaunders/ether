@@ -301,6 +301,8 @@ type StreamRequest struct {
 	SegmentDuration time.Duration
 }
 type PlanRequest struct {
+	// Version is a resolver-issued variant ID; empty asks for automatic selection.
+	Version  string
 	Viewer   *core.Viewer
 	Device   core.Device
 	Protocol Protocol

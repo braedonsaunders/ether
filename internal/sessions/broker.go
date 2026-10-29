@@ -24,6 +24,7 @@ type BrokerDeps struct {
 	DB                 *sql.DB
 	Cluster            clusterbus.Node
 	Live               LiveBackend
+	Variants           func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error)
 	SelectTracks       func(context.Context, *core.Viewer, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
 	Lookup             func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
 	Playback           core.Playback
@@ -199,6 +200,9 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		}
 	}
 	if req.Channel != "" {
+		if req.Version != "" {
+			return frontend.PlayPlan{}, core.ErrNotAvailable
+		}
 		return b.planLive(ctx, req, v)
 	}
 	title, err := b.deps.Lookup(ctx, v, req.Device, req.Item)
@@ -211,8 +215,32 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	if !title.Released.IsZero() && title.Released.After(b.deps.Now()) {
 		return frontend.PlayPlan{}, core.ErrUnreleased
 	}
+	var chosen *core.ReleaseVariant
+	if req.Version != "" {
+		if b.deps.Variants == nil {
+			return frontend.PlayPlan{}, core.ErrNotAvailable
+		}
+		variants, err := b.deps.Variants(ctx, v, title, req.Caps)
+		if err != nil {
+			return frontend.PlayPlan{}, err
+		}
+		for j := range variants {
+			if variants[j].ID == req.Version {
+				chosen = &variants[j]
+				break
+			}
+		}
+		if chosen == nil {
+			return frontend.PlayPlan{}, core.ErrNotFound
+		}
+	}
 	if req.Intent.Estimate {
-		info := b.deps.Playback.Estimate(ctx, title, req.Caps)
+		var info core.MediaInfo
+		if chosen != nil {
+			info = chosen.Info
+		} else {
+			info = b.deps.Playback.Estimate(ctx, title, req.Caps)
+		}
 		dec := core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: info.Container}
 		if b.deps.Transcoder != nil {
 			dec = b.deps.Transcoder.Decide(info, req.Caps, req.Intent.Options)
@@ -237,14 +265,24 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		return frontend.PlayPlan{}, err
 	}
 	defer unlock()
-	_, existed := b.deps.Playback.SessionFor(v.ID, req.Caps.ClientID, req.Item)
-	ps, err := b.deps.Playback.Prepare(ctx, v, req.Item, req.Caps)
+	previous, existed := b.deps.Playback.SessionFor(v.ID, req.Caps.ClientID, req.Item)
+	var ps *core.PlaySession
+	if chosen != nil {
+		vp, ok := b.deps.Playback.(core.VariantPlayback)
+		if !ok {
+			return frontend.PlayPlan{}, core.ErrNotAvailable
+		}
+		ps, err = vp.PrepareVariant(ctx, v, req.Item, req.Caps, chosen.ID)
+	} else {
+		ps, err = b.deps.Playback.Prepare(ctx, v, req.Item, req.Caps)
+	}
 	if err != nil {
 		return frontend.PlayPlan{}, err
 	}
 	if ps == nil {
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
+	existed = existed && previous != nil && previous.ID == ps.ID
 	if b.deps.SelectTracks != nil {
 		selected, err := b.deps.SelectTracks(ctx, v, title, ps.Info, req.Intent.Options, req.Intent.AudioSet, req.Intent.SubtitleSet)
 		if err != nil {

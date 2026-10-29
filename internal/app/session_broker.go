@@ -43,6 +43,12 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	}}
 	return sessions.NewBroker(sessions.BrokerDeps{
 		DB: a.db, Cluster: a.clusterNode(), Live: live,
+		Variants: func(ctx context.Context, v *core.Viewer, t *core.Title, caps core.ClientCaps) ([]core.ReleaseVariant, error) {
+			if a.resolver == nil {
+				return nil, core.ErrNotAvailable
+			}
+			return a.resolver.Variants(ctx, core.ResolveRequest{Title: t, User: v, Client: caps}, 4)
+		},
 		SelectTracks: func(ctx context.Context, viewer *core.Viewer, title *core.Title, info core.MediaInfo, opts core.DecideOptions, audioSet, subtitleSet bool) (core.DecideOptions, error) {
 			if a.trackprefs == nil {
 				return opts, nil
