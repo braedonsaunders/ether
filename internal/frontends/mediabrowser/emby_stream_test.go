@@ -42,4 +42,8 @@ func TestEmbyStreamUsesOptionalProbeFacts(t *testing.T) {
 			t.Fatalf("unknown %s was emitted: %#v", key, unknown)
 		}
 	}
+	audio := (&instance{protocol: "emby"}).mediaStreams([]frontend.StreamInfo{{Type: "audio"}})[0].(map[string]any)
+	if audio["IsInterlaced"] != false {
+		t.Fatal("audio cannot be interlaced", audio)
+	}
 }

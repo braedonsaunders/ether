@@ -39,7 +39,7 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 	}
 	if stream.ProbedInterlaced != nil {
 		dto["IsInterlaced"] = *stream.ProbedInterlaced
-	} else if !stream.Interlaced {
+	} else if stream.Type == "video" && !stream.Interlaced {
 		delete(dto, "IsInterlaced")
 	}
 	if stream.DisplayAspectRatio != "" {
