@@ -57,6 +57,9 @@ For media with an unknown transfer function, Silo's required HDR10+ boolean
 means HDR10+ has not been positively identified; the media remains playable.
 Watch details omit marker ranges until they can be bound to the selected file;
 this is an outstanding Silo schema and skip-intro compatibility gap.
+Native certification also requires verifying that Ether's stream request
+headers reach direct playback and HLS playlists and segments, including after a
+seek; this has not yet been verified on the physical devices.
 
 | Client | Version | Browse | Play | Resume | Watched | Subtitles | Device pairing |
 | --- | --- | --- | --- | --- | --- | --- | --- |
