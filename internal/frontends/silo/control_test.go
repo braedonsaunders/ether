@@ -65,6 +65,13 @@ func TestPlaybackControlIsSessionBoundAndRelaysCommands(t *testing.T) {
 	}
 	server := httptest.NewServer(inst.Handler())
 	defer server.Close()
+	capRequest := httptest.NewRequest("GET", "/api/v2/playback/sessions/control/capabilities", nil)
+	capRequest.Header.Set("Authorization", "Bearer grant")
+	capResponse := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(capResponse, capRequest)
+	if capResponse.Code != 200 || !strings.Contains(capResponse.Body.String(), `"available":true`) || !strings.Contains(capResponse.Body.String(), `"protocol":"silo.playback-control.v2"`) {
+		t.Fatalf("control capabilities: %d %s", capResponse.Code, capResponse.Body.String())
+	}
 	issue := func(session string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest("POST", "/api/v2/playback/sessions/"+session+"/control/ws-ticket", strings.NewReader(`{"installation_id":"`+inst.(*instance).installationID()+`"}`))
 		r.Header.Set("Authorization", "Bearer grant")
