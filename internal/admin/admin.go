@@ -88,6 +88,7 @@ type StatusFuncE func(ctx context.Context) (any, error)
 // tuning knobs, Logger/Logs, the dashboard status providers, Extensions,
 // ValidateExtra and DiskUsage have defaults or may be left empty.
 type Deps struct {
+	Frontends            FrontendAdmin
 	LocalIdentity        *identity.Local
 	IdentityGrants       *identity.Grants
 	IdentityLimiter      *identity.LoginLimiter
@@ -286,6 +287,10 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/auth/pin/{handle}", h.limitAuth(h.handleSignInPoll))
 
 	api("POST /api/viewers/{id}/quickconnect", h.handleOwnerQuickConnect)
+	api("GET /api/frontends", h.frontendList)
+	api("GET /api/frontends/{id}/settings", h.frontendSettings)
+	api("PUT /api/frontends/{id}/settings", h.frontendSettings)
+	api("PUT /api/frontends/{id}/enabled", h.frontendToggle)
 	api("GET /api/config", h.handleGetConfig)
 	api("PUT /api/config", h.handlePutConfig)
 	api("GET /api/config/{section}", h.handleGetSection)

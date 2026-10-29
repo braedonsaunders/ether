@@ -14,21 +14,29 @@ import (
 )
 
 type Descriptor struct {
-	ID                           Protocol
-	Name, Logo, Version, DocsURL string
-	DefaultPort                  int
-	Clients                      []string
-	SettingsSchema               any
+	ID             Protocol `json:"id"`
+	Name           string   `json:"name"`
+	Logo           string   `json:"logo,omitempty"`
+	Version        string   `json:"version,omitempty"`
+	DocsURL        string   `json:"docsUrl,omitempty"`
+	DefaultPort    int      `json:"defaultPort,omitempty"`
+	Clients        []string `json:"clients,omitempty"`
+	SettingsSchema any      `json:"settingsSchema,omitempty"`
 }
 type ListenerSpec struct {
-	Address, PathPrefix string
-	TLS                 bool
+	Address    string `json:"address"`
+	PathPrefix string `json:"pathPrefix,omitempty"`
+	TLS        bool   `json:"tls"`
 }
 type Status struct {
-	Addresses                         []string
-	LAN, WAN                          string
-	Clients24h, LiveStreams           int
-	TargetVersion, Conformance, Error string
+	Addresses     []string `json:"addresses"`
+	LAN           string   `json:"lan"`
+	WAN           string   `json:"wan"`
+	Clients24h    int      `json:"clients24h"`
+	LiveStreams   int      `json:"liveStreams"`
+	TargetVersion string   `json:"targetVersion"`
+	Conformance   string   `json:"conformance"`
+	Error         string   `json:"error,omitempty"`
 }
 type Announcer interface {
 	Start(context.Context) error
