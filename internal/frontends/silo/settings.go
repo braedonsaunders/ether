@@ -449,6 +449,34 @@ func (i *instance) settingValues(w http.ResponseWriter, r *http.Request) {
 			}
 			break
 		}
+		// Older profile writes predate the revisioned settings store. Read
+		// their saved value until the corresponding setting is explicitly set.
+		if row["source"] == "default" && d.acceptsScope("profile") && !trackField(key) {
+			for field, settingKey := range profileSettings {
+				if settingKey != key {
+					continue
+				}
+				raw, err := i.host.Preferences.Get(r.Context(), v, "profile", profileKey)
+				if err != nil && !errors.Is(err, frontend.ErrPreferencesNotFound) {
+					http.Error(w, "Unavailable", 503)
+					return
+				}
+				if err == nil {
+					var saved map[string]any
+					if json.Unmarshal(raw, &saved) != nil {
+						http.Error(w, "Unavailable", 503)
+						return
+					}
+					if value, ok := saved[field]; ok {
+						if field == "preferred_metadata_language" && value == "" {
+							value = nil
+						}
+						row["value"], row["source"], row["scope"], row["profile_id"] = value, "profile", "profile", strconv.FormatInt(v.ID, 10)
+					}
+				}
+				break
+			}
+		}
 		if trackField(key) {
 			delete(row, "scope")
 			delete(row, "profile_id")
@@ -575,6 +603,32 @@ func (i *instance) settingWrite(w http.ResponseWriter, r *http.Request) {
 		if err := i.host.Preferences.Delete(r.Context(), v, settingsClient(scope, id), key); err != nil {
 			http.Error(w, "Unavailable", 503)
 			return
+		}
+		if scope == "profile" {
+			for field, settingKey := range profileSettings {
+				if settingKey != key {
+					continue
+				}
+				raw, err := i.host.Preferences.Get(r.Context(), v, "profile", profileKey)
+				if err != nil && !errors.Is(err, frontend.ErrPreferencesNotFound) {
+					http.Error(w, "Unavailable", 503)
+					return
+				}
+				if err == nil {
+					var legacy map[string]any
+					if json.Unmarshal(raw, &legacy) != nil {
+						http.Error(w, "Unavailable", 503)
+						return
+					}
+					delete(legacy, field)
+					encoded, err := json.Marshal(legacy)
+					if err != nil || i.host.Preferences.Put(r.Context(), v, "profile", profileKey, encoded) != nil {
+						http.Error(w, "Unavailable", 503)
+						return
+					}
+				}
+				break
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return

@@ -12,6 +12,15 @@ import (
 
 const profileKey = "silo.profile"
 
+var profileSettings = map[string]string{
+	"auto_skip_intro":             "playback.auto_skip_intro",
+	"auto_skip_credits":           "playback.auto_skip_credits",
+	"auto_skip_recap":             "playback.auto_skip_recap",
+	"auto_play_next_preview":      "playback.auto_play_next_preview",
+	"show_forced_subtitles":       "playback.show_forced_subtitles",
+	"preferred_metadata_language": "catalog.metadata_language",
+}
+
 func defaults() map[string]any {
 	return map[string]any{"avatar": "", "avatar_source": "none", "quality_preference": "auto", "language": "", "preferred_metadata_language": "", "auto_skip_intro": false, "auto_skip_credits": false, "auto_skip_recap": false, "auto_play_next_preview": false, "show_forced_subtitles": true, "max_playback_quality": ""}
 }
@@ -32,9 +41,31 @@ func (i *instance) profileData(r *http.Request, v *frontend.Viewer) (map[string]
 	} else if err = json.Unmarshal(raw, &p); err != nil {
 		return nil, err
 	}
+	if _, ok := i.host.Preferences.(frontend.VersionedPreferences); ok {
+		for profileField, settingKey := range profileSettings {
+			value, found, err := i.getSetting(r, v, settingKey, "profile", "")
+			if err != nil {
+				return nil, err
+			}
+			if found {
+				var decoded any
+				if err := json.Unmarshal(value.Value, &decoded); err != nil {
+					return nil, err
+				}
+				if decoded == nil && profileField == "preferred_metadata_language" {
+					decoded = ""
+				}
+				p[profileField] = decoded
+			}
+		}
+	}
 	tracks, err := i.host.TrackPreferences.Get(r.Context(), v)
 	if err != nil {
 		return nil, err
+	}
+	p["language"] = ""
+	if len(tracks.AudioLanguages) > 0 {
+		p["language"] = tracks.AudioLanguages[0]
 	}
 	if scoped, ok := i.host.TrackPreferences.(frontend.ScopedTrackPreferenceService); ok {
 		_, _, height, _, _, err := scoped.GetScoped(r.Context(), v, frontend.TrackScope{})
@@ -142,6 +173,8 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	var maturity *string
 	var maxHeight *int
+	var audioLanguage *string
+	profileUpdates := map[string]json.RawMessage{}
 	tracksChanged := false
 	for k, raw := range patch {
 		switch k {
@@ -163,6 +196,13 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 				tracks.SubtitleLanguages = []string{value}
 			}
 			tracksChanged = true
+		case "language":
+			var value string
+			if json.Unmarshal(raw, &value) != nil {
+				http.Error(w, "Bad Request", 400)
+				return
+			}
+			audioLanguage = &value
 		case "subtitle_mode":
 			var value string
 			if json.Unmarshal(raw, &value) != nil {
@@ -191,7 +231,7 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			maxHeight = &height
-		case "avatar", "quality_preference", "language", "preferred_metadata_language", "auto_skip_intro", "auto_skip_credits", "auto_skip_recap", "auto_play_next_preview", "show_forced_subtitles":
+		case "avatar", "quality_preference", "preferred_metadata_language", "auto_skip_intro", "auto_skip_credits", "auto_skip_recap", "auto_play_next_preview", "show_forced_subtitles":
 			var value any
 			if json.Unmarshal(raw, &value) != nil {
 				http.Error(w, "Bad Request", 400)
@@ -199,7 +239,7 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 			}
 			switch defaults()[k].(type) {
 			case string:
-				if value == nil && k == "avatar" {
+				if value == nil && (k == "avatar" || k == "preferred_metadata_language") {
 					value = ""
 				}
 				if _, ok := value.(string); !ok {
@@ -213,6 +253,17 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			preferences[k] = value
+			if settingKey := profileSettings[k]; settingKey != "" {
+				if k == "preferred_metadata_language" && value == "" {
+					profileUpdates[settingKey] = json.RawMessage("null")
+				} else {
+					profileUpdates[settingKey], _ = json.Marshal(value)
+				}
+				if !settingDefinitions[settingKey].valid(profileUpdates[settingKey]) {
+					http.Error(w, "Bad Request", 400)
+					return
+				}
+			}
 		default:
 			http.Error(w, "Unsupported", 422)
 			return
@@ -235,6 +286,21 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if audioLanguage != nil {
+		scoped, ok := i.host.TrackPreferences.(frontend.ScopedTrackPreferenceService)
+		if !ok {
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+		languages := []string{}
+		if *audioLanguage != "" {
+			languages = append(languages, *audioLanguage)
+		}
+		if scoped.SetAudio(r.Context(), v, languages) != nil {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+	}
 	if maxHeight != nil {
 		scoped, ok := i.host.TrackPreferences.(frontend.ScopedTrackPreferenceService)
 		if !ok {
@@ -248,6 +314,14 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 		if scoped.SetHeight(r.Context(), v, *maxHeight, quality) != nil {
 			http.Error(w, "Unavailable", 503)
 			return
+		}
+	}
+	if service, ok := i.host.Preferences.(frontend.VersionedPreferences); ok {
+		for key, value := range profileUpdates {
+			if _, _, err := service.PutVersioned(r.Context(), v, settingsClient("profile", ""), key, value); err != nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
 		}
 	}
 	preferences["_updated_at"] = time.Now().UTC().Format(time.RFC3339Nano)
