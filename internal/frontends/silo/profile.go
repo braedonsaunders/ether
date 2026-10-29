@@ -13,7 +13,7 @@ import (
 const profileKey = "silo.profile"
 
 func defaults() map[string]any {
-	return map[string]any{"avatar": "", "avatar_source": "none", "quality_preference": "auto", "language": "", "preferred_metadata_language": "", "auto_skip_intro": false, "auto_skip_credits": false, "auto_skip_recap": false, "auto_play_next_preview": false, "show_forced_subtitles": false, "max_playback_quality": ""}
+	return map[string]any{"avatar": "", "avatar_source": "none", "quality_preference": "auto", "language": "", "preferred_metadata_language": "", "auto_skip_intro": false, "auto_skip_credits": false, "auto_skip_recap": false, "auto_play_next_preview": false, "show_forced_subtitles": true, "max_playback_quality": ""}
 }
 func (i *instance) profileData(r *http.Request, v *frontend.Viewer) (map[string]any, error) {
 	if i.host.Preferences == nil || i.host.TrackPreferences == nil || v.CreatedAt.IsZero() || v.UpdatedAt.IsZero() {

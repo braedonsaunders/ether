@@ -53,6 +53,9 @@ func TestProfilePreferencesRoundTrip(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("profiles %d %s", w.Code, w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `"show_forced_subtitles":true`) {
+		t.Fatalf("forced subtitle default: %s", w.Body.String())
+	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", "")
 	if e == nil {
 		doc, e := openapi.Parse(spec)
