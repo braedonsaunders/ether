@@ -130,6 +130,9 @@ func mediaStreams(streams []frontend.StreamInfo) []any {
 	return out
 }
 func (i *instance) playbackRoutes() error {
+	if err := i.router.Handle("GET", "/MediaSegments/{itemId}", http.HandlerFunc(i.mediaSegments)); err != nil {
+		return err
+	}
 	for _, entry := range []struct {
 		path    string
 		stopped bool
