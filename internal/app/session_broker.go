@@ -38,6 +38,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		return 0, false
 	}}
 	return sessions.NewBroker(sessions.BrokerDeps{
+		DB: a.db, Cluster: a.clusterNode(),
 		Lookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
 			title, err := a.catalog.Get(ctx, key)
 			if err != nil {

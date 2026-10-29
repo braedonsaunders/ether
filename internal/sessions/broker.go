@@ -3,6 +3,8 @@ package sessions
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/clusterbus"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/state"
@@ -18,6 +21,8 @@ import (
 
 // BrokerDeps are the explicit dependencies shared by all protocol surfaces.
 type BrokerDeps struct {
+	DB                 *sql.DB
+	Cluster            clusterbus.Node
 	Lookup             func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
 	Playback           core.Playback
 	Transcoder         core.Transcoder
@@ -69,6 +74,7 @@ type Broker struct {
 	bindings     *BindingTable[frontend.PlayIntent]
 	closed       bool
 	pendingPlans int
+	cluster      *brokerCluster
 }
 
 func NewBroker(d BrokerDeps) (*Broker, error) {
@@ -78,7 +84,15 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), owners: NewPlaybackOwners(), gates: NewLifecycle(), bindings: NewBindingTable[frontend.PlayIntent]()}, nil
+	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), owners: NewPlaybackOwners(), gates: NewLifecycle(), bindings: NewBindingTable[frontend.PlayIntent]()}
+	if d.DB != nil && d.Cluster != nil {
+		var err error
+		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return b, nil
 }
 func (b *Broker) viewer(ctx context.Context, v *core.Viewer) (*core.Viewer, error) {
 	if v == nil || v.ID <= 0 {
@@ -316,9 +330,17 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	}
 	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/file", Protocol: req.Protocol, ViewerID: v.ID, Device: p.request.Device, Item: p.request.Item, StartedAt: b.deps.Now()}
 	s := &brokerSession{public: session, grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding}
+	if b.cluster != nil && session.Protocol != "plex" {
+		if err := b.cluster.store.put(ctx, session, ps.ID, *v, b.deps.Now()); err != nil {
+			return frontend.Session{}, err
+		}
+	}
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
+		if b.cluster != nil {
+			_ = b.cluster.store.remove(ctx, session.ID)
+		}
 		return frontend.Session{}, core.ErrNotAvailable
 	}
 	b.bindings.Put(&Binding[frontend.PlayIntent]{ID: id, UserID: v.ID, ClientID: s.clientID, Key: session.Item, PlayID: ps.ID, PlaybackID: s.playbackID, Requested: p.request.Intent, Decision: p.decision, Info: ps.Info, Caps: s.caps, Opts: s.opts, UpdatedAt: b.deps.Now()})
@@ -377,11 +399,22 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 		return nil, core.ErrUnauthorized
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	var out []frontend.Session
 	for _, s := range b.sessions {
 		if owner || s.public.ViewerID == v.ID {
 			out = append(out, s.public)
+		}
+	}
+	b.mu.Unlock()
+	if b.cluster != nil {
+		remote, err := b.cluster.remote(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range remote {
+			if owner || r.session.ViewerID == v.ID {
+				out = append(out, r.session)
+			}
 		}
 	}
 	return out, nil
@@ -438,6 +471,34 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) error {
 	s, _, err := b.access(ctx, a, id)
 	if errors.Is(err, core.ErrNotFound) {
+		if b.cluster == nil {
+			return nil
+		}
+		v, err := b.viewer(ctx, a.Viewer)
+		if err != nil {
+			return err
+		}
+		owner := a.Owner && v.IsOwner && !v.Delegated
+		if a.Owner && !owner {
+			return core.ErrUnauthorized
+		}
+		remote, err := b.cluster.remote(ctx)
+		if err != nil {
+			return err
+		}
+		for _, r := range remote {
+			if r.session.ID != id {
+				continue
+			}
+			if !owner && (r.session.ViewerID != v.ID || r.session.Protocol != a.Protocol || a.Device.ID == "" || r.session.Device.ID != a.Device.ID) {
+				return core.ErrUnauthorized
+			}
+			payload, err := json.Marshal(remoteStop{Node: r.node, ID: id, ActorID: v.ID, DeviceID: a.Device.ID, Protocol: a.Protocol, Owner: owner})
+			if err != nil {
+				return err
+			}
+			return b.cluster.node.Publish(ctx, brokerStopTopic, payload)
+		}
 		return nil
 	}
 	if err != nil {
@@ -463,6 +524,11 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	b.mu.Unlock()
 	if !ok {
 		return nil
+	}
+	if b.cluster != nil {
+		if err := b.cluster.store.remove(ctx, s.public.ID); err != nil && b.deps.OnEventError != nil {
+			b.deps.OnEventError(err)
+		}
 	}
 	b.bindings.Remove(s.public.ID)
 	if b.deps.Transcoder != nil {
@@ -493,12 +559,37 @@ func (b *Broker) StopPlayback(ctx context.Context, playID string) bool {
 			unlock()
 		}
 	}
+	if len(entries) == 0 && b.cluster != nil {
+		remote, err := b.cluster.remote(ctx)
+		if err != nil {
+			if b.deps.OnEventError != nil {
+				b.deps.OnEventError(err)
+			}
+			return false
+		}
+		for _, r := range remote {
+			if r.sourceID != "" && r.sourceID == playID {
+				payload, err := json.Marshal(remoteStop{Node: r.node, SourceID: playID})
+				if err == nil {
+					err = b.cluster.node.Publish(ctx, brokerStopTopic, payload)
+				}
+				if err != nil && b.deps.OnEventError != nil {
+					b.deps.OnEventError(err)
+				}
+				return err == nil
+			}
+		}
+	}
 	return len(entries) > 0
 }
 
 // Close stops local broker sessions and prevents new plans or opens.
 func (b *Broker) Close(ctx context.Context) {
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
 	b.closed = true
 	var ids, planned []string
 	for _, s := range b.sessions {
@@ -514,5 +605,8 @@ func (b *Broker) Close(ctx context.Context) {
 	}
 	for _, id := range planned {
 		b.deps.Playback.Stop(id)
+	}
+	if b.cluster != nil {
+		b.cluster.close()
 	}
 }
