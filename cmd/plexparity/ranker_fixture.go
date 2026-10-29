@@ -111,11 +111,17 @@ func trainRankerFixture(ctx context.Context, dir string, db *sql.DB, engine *per
 	if err != nil {
 		return fmt.Errorf("train real ranker: %w", err)
 	}
-	holdoutPositive, holdoutNegative, examples, err := rankerFixtureHoldout(ctx, db)
+	holdoutPositive, holdoutNegative, examples, byViewer, err := rankerFixtureHoldout(ctx, db)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "RANKER_RESULT active=%t examples=%d positives=%d auc=%.6f baseline=%.6f holdout_positives=%d holdout_negatives=%d\n", insight.Active, insight.Examples, insight.Positives, insight.AUC, insight.BaselineAUC, holdoutPositive, holdoutNegative)
+	perViewer := make(map[string]rankerHoldoutClass, len(viewers))
+	for _, viewer := range viewers {
+		counts := byViewer[viewer.ID]
+		perViewer[viewer.Username] = counts
+		fmt.Fprintf(os.Stderr, "RANKER_HOLDOUT viewer=%s positives=%d negatives=%d\n", viewer.Username, counts.Positives, counts.Negatives)
+	}
 	if !insight.Active || insight.TrainedAt == nil || insight.Examples < 2000 || insight.Positives < 30 || insight.AUC < 0.55 || insight.AUC < insight.BaselineAUC+0.02 {
 		return fmt.Errorf("ranker did not pass production activation gate: active=%t examples=%d positives=%d auc=%.6f baseline=%.6f", insight.Active, insight.Examples, insight.Positives, insight.AUC, insight.BaselineAUC)
 	}
@@ -123,11 +129,12 @@ func trainRankerFixture(ctx context.Context, dir string, db *sql.DB, engine *per
 		return fmt.Errorf("ranker holdout evidence mismatch: rows=%d model=%d positives=%d negatives=%d", examples, insight.Examples, holdoutPositive, holdoutNegative)
 	}
 	proof := struct {
-		Description      string             `json:"description"`
-		Insight          core.RankerInsight `json:"insight"`
-		HoldoutPositives int                `json:"holdout_positives"`
-		HoldoutNegatives int                `json:"holdout_negatives"`
-	}{"Deterministic synthetic viewers prefer less-popular titles and reset them after watching; real Home/progress APIs, production training and chronological holdout gate", insight, holdoutPositive, holdoutNegative}
+		Description      string                        `json:"description"`
+		Insight          core.RankerInsight            `json:"insight"`
+		HoldoutPositives int                           `json:"holdout_positives"`
+		HoldoutNegatives int                           `json:"holdout_negatives"`
+		HoldoutViewers   map[string]rankerHoldoutClass `json:"holdout_viewers"`
+	}{"Deterministic synthetic viewers prefer less-popular titles and reset them after watching; real Home/progress APIs, production training and chronological holdout gate", insight, holdoutPositive, holdoutNegative, perViewer}
 	b, err := json.MarshalIndent(proof, "", "  ")
 	if err != nil {
 		return err
@@ -137,39 +144,55 @@ func trainRankerFixture(ctx context.Context, dir string, db *sql.DB, engine *per
 
 // Reproduce only the production chronological split and label counts from
 // the real serve log, independently of the model's reported AUC and Active.
-func rankerFixtureHoldout(ctx context.Context, db *sql.DB) (int, int, int, error) {
-	rows, err := db.QueryContext(ctx, `SELECT i.label,i.fv,length(i.features),COALESCE(p.abandoned,0)
+type rankerHoldoutClass struct {
+	Positives int `json:"positives"`
+	Negatives int `json:"negatives"`
+}
+
+func rankerFixtureHoldout(ctx context.Context, db *sql.DB) (int, int, int, map[int64]rankerHoldoutClass, error) {
+	rows, err := db.QueryContext(ctx, `SELECT i.user_id,i.label,i.fv,length(i.features),COALESCE(p.abandoned,0)
 		FROM personalize_serve_items i JOIN personalize_serves s ON s.id=i.serve_id
 		LEFT JOIN personalize_plays p ON p.id=i.play_id AND i.label=1
 		WHERE i.label IN (0,1)
 		ORDER BY s.first_at DESC,i.serve_id DESC,i.row_pos,i.item_pos LIMIT 150000`)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, nil, err
 	}
 	defer rows.Close()
-	var labels []bool
+	type holdoutLabel struct {
+		user     int64
+		positive bool
+	}
+	var labels []holdoutLabel
 	for rows.Next() {
+		var user int64
 		var label, version, size, abandoned int
-		if err := rows.Scan(&label, &version, &size, &abandoned); err != nil {
-			return 0, 0, 0, err
+		if err := rows.Scan(&user, &label, &version, &size, &abandoned); err != nil {
+			return 0, 0, 0, nil, err
 		}
 		if !((version == 1 && size == 68) || (version == 2 && size == 80)) {
-			return 0, 0, 0, fmt.Errorf("invalid training feature snapshot version=%d size=%d", version, size)
+			return 0, 0, 0, nil, fmt.Errorf("invalid training feature snapshot version=%d size=%d", version, size)
 		}
-		labels = append(labels, label == 1 && abandoned == 0)
+		labels = append(labels, holdoutLabel{user, label == 1 && abandoned == 0})
 	}
 	if err := rows.Err(); err != nil {
-		return 0, 0, 0, err
+		return 0, 0, 0, nil, err
 	}
 	// The SQL order is newest first. The last 20% after reversal is the
 	// chronological holdout, hence the first N-split entries here.
 	n := len(labels)
 	split := int(float64(n) * 0.8)
 	positive := 0
+	byViewer := make(map[int64]rankerHoldoutClass)
 	for _, v := range labels[:n-split] {
-		if v {
+		counts := byViewer[v.user]
+		if v.positive {
 			positive++
+			counts.Positives++
+		} else {
+			counts.Negatives++
 		}
+		byViewer[v.user] = counts
 	}
-	return positive, n - split - positive, n, nil
+	return positive, n - split - positive, n, byViewer, nil
 }
