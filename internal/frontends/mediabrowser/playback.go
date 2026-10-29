@@ -180,13 +180,14 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	} else if version != "" {
 		sourceID = version
 	}
-	source := map[string]any{"Id": sourceID, "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.DirectPlay, "SupportsDirectStream": plan.DirectStream, "SupportsTranscoding": plan.Transcoding, "MediaStreams": mediaStreams(plan.Media.Streams)}
-	addChapters(source, plan.Media)
-	source["Protocol"] = "Http"
-	source["Type"] = "Default"
-	source["IsRemote"] = true
-	source["RequiresOpening"] = false
-	source["RequiresClosing"] = false
+	source := mediaSourceDTO(sourceID, plan.Media)
+	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
+	source["IsInfiniteStream"] = channel != ""
+	if channel == "" && i.host.Experience != nil {
+		if detail, e := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: dev, Key: key}); e == nil {
+			source["HasSegments"] = len(detail.Markers) > 0
+		}
+	}
 	for _, stream := range plan.Media.Streams {
 		if stream.Type == "audio" && stream.Default {
 			source["DefaultAudioStreamIndex"] = stream.Index
@@ -246,14 +247,28 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
 }
+
+// mediaSourceDTO describes the operations this frontend offers, not an
+// upstream URL. Compatibility is filled in only from the broker's plan.
+func mediaSourceDTO(id string, media frontend.MediaInfo) map[string]any {
+	source := map[string]any{
+		"Id": id, "Container": media.Container, "RunTimeTicks": media.Duration.Nanoseconds() / 100, "Size": media.Size, "Bitrate": media.BitrateKbps * 1000,
+		"Protocol": "Http", "Type": "Default", "IsRemote": true, "ReadAtNativeFramerate": false, "IgnoreDts": false, "IgnoreIndex": false, "GenPtsInput": false,
+		"SupportsDirectPlay": false, "SupportsDirectStream": false, "SupportsTranscoding": false, "IsInfiniteStream": false,
+		"RequiresOpening": false, "RequiresClosing": false, "RequiresLooping": false, "SupportsProbing": false, "TranscodingSubProtocol": "http", "HasSegments": false,
+		"Formats": []string{}, "MediaAttachments": []any{}, "RequiredHttpHeaders": map[string]string{}, "MediaStreams": mediaStreams(media.Streams),
+	}
+	addChapters(source, media)
+	return source
+}
+
 func mediaStreams(streams []frontend.StreamInfo) []any {
 	out := make([]any, 0, len(streams))
 	for _, s := range streams {
 		kind := map[string]string{"video": "Video", "audio": "Audio", "subtitle": "Subtitle"}[s.Type]
-		m := map[string]any{"Index": s.Index, "Type": kind, "Codec": s.Codec, "Language": s.Language, "IsDefault": s.Default, "IsForced": s.Forced, "IsExternal": s.External, "Width": s.Width, "Height": s.Height, "Channels": s.Channels}
-		if s.Type == "video" {
-			m["IsInterlaced"] = s.Interlaced
-		}
+		// TODO(StreamInfo dispositions): replace false accessibility/original
+		// defaults when the broker exposes the probe's disposition flags.
+		m := map[string]any{"Index": s.Index, "Type": kind, "Codec": s.Codec, "Language": s.Language, "IsDefault": s.Default, "IsForced": s.Forced, "IsExternal": s.External, "Width": s.Width, "Height": s.Height, "Channels": s.Channels, "IsInterlaced": s.Interlaced, "IsHearingImpaired": false, "IsOriginal": false, "IsTextSubtitleStream": false, "SupportsExternalStream": false}
 		if s.Profile != "" {
 			m["Profile"] = s.Profile
 		}

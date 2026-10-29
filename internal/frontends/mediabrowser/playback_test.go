@@ -30,7 +30,7 @@ func TestMediaDetailsPreserveChapterAndInterlaceMetadata(t *testing.T) {
 	if streams[0].(map[string]any)["IsInterlaced"] != true {
 		t.Fatal(streams)
 	}
-	if _, exists := streams[1].(map[string]any)["IsInterlaced"]; exists {
+	if streams[1].(map[string]any)["IsInterlaced"] != false {
 		t.Fatal(streams)
 	}
 }

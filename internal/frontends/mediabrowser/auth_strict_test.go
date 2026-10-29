@@ -113,4 +113,8 @@ func TestJellyfinAuthenticationStrictRequiredFields(t *testing.T) {
 		check("UserPolicy", user["Policy"])
 		check("UserConfiguration", user["Configuration"])
 	}
+	source := mediaSourceDTO("source", frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", Index: 0}}})
+	check("MediaSourceInfo", source)
+	streams := source["MediaStreams"].([]any)
+	check("MediaStream", streams[0])
 }
