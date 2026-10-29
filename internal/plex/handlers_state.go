@@ -9,6 +9,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // stateKey reads the item key from ratingKey= or key=.
@@ -70,10 +71,8 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	user := pr.User
 	s.log.Debug("playback timeline", "user", user.ID, "client", pr.ClientID, "key", key, "state", state, "position", offset, "duration", duration)
 
-	if s.d.State != nil && key.Kind() != core.KindExtra {
-		if err := s.d.State.Progress(ctx, user.ID, key, offset, duration, state); err != nil {
-			s.log.Warn("record progress", "key", key, "err", err)
-		}
+	if err := sessions.RecordProgress(ctx, s.d.State, user.ID, key, offset, duration, state); err != nil {
+		s.log.Warn("record progress", "key", key, "err", err)
 	}
 	var ps *core.PlaySession
 	if s.d.Playback != nil {
