@@ -93,13 +93,30 @@ versions = call(silo_base, f"/api/v2/catalog/items/{item['content_id']}/versions
 version = next((x for x in versions if x.get("resolution") == "1080p" and x.get("codec_video") == "h264"), versions[0])
 capabilities = call(silo_base, "/api/v2/playback/capabilities", headers=silo_auth)
 duration = int(version.get("duration") or 600)
-silo_values = {"username": silo_user, "password": silo_password, "access_token": silo_token,
-               "profile_id": profile_id, "library_id": str(movie_library["id"]),
-               "item_id": item["content_id"], "file_id": str(version["file_id"]),
-               "installation_id": capabilities["installation_id"], "duration_seconds": str(duration),
-               "position_seconds": str(max(1, duration // 10)), "sequence": "1",
-               "play_session_id": uuid.uuid4().hex, "playback_attempt_id": uuid.uuid4().hex,
-               "stop_id": uuid.uuid4().hex, "quality_preference": "auto",
-               "app_version": "1.0.0", "app_build": "seed"}
-save("silo", silo_token, silo_values)
+base_silo_values = {"username": silo_user, "password": silo_password, "access_token": silo_token,
+                    "profile_id": profile_id, "library_id": str(movie_library["id"]),
+                    "item_id": item["content_id"], "file_id": str(version["file_id"]),
+                    "installation_id": capabilities["installation_id"], "duration_seconds": str(duration),
+                    "position_seconds": str(max(1, duration // 10)), "sequence": "1",
+                    "quality_preference": "auto", "app_version": "1.0.0", "app_build": "seed"}
+for slug in ("silo-apple", "silo-android"):
+    values = dict(base_silo_values)
+    values.update({"playback_attempt_id_direct": str(uuid.uuid4()),
+                   "playback_attempt_id_transcode": str(uuid.uuid4()),
+                   "play_session_id": "", "stop_id": str(uuid.uuid4())})
+    repo = pathlib.Path(sys.argv[1]).resolve().parents[2]
+    profile = json.loads((repo / "internal" / "conform" / "profiles" / "silo" / f"{slug}.json").read_text())
+    direct = profile["flows"]["play_direct"][0]["body"]
+    request_text = json.dumps(direct)
+    for key, value in values.items():
+        request_text = request_text.replace("${" + key + "}", json.dumps(str(value))[1:-1])
+    request_body = json.loads(request_text)
+    client_headers = dict(silo_auth)
+    client_headers.update({"X-Silo-Client": profile["client"], "X-Silo-Client-Version": values["app_version"], "X-Silo-Client-Build": values["app_build"]})
+    opened = call(silo_base, "/api/v2/playback/start", "POST", request_body, client_headers)
+    if opened.get("outcome") != "playable" or not opened.get("session_id"):
+        raise RuntimeError(f"{slug}: direct playback preflight did not return a playable session")
+    values["play_session_id"] = opened["session_id"]
+    save(slug, silo_token, values)
+save("silo", silo_token, base_silo_values)
 PY
