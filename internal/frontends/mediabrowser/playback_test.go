@@ -35,6 +35,14 @@ func TestMediaDetailsPreserveChapterAndInterlaceMetadata(t *testing.T) {
 	}
 }
 
+func TestStreamCapacityResponseIncludesRetryDelay(t *testing.T) {
+	w := httptest.NewRecorder()
+	streamError(w, &frontend.TranscodeCapacityError{RetryAfter: 1500 * time.Millisecond})
+	if w.Code != 503 || w.Header().Get("Retry-After") != "2" {
+		t.Fatal(w.Code, w.Header())
+	}
+}
+
 func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	var calls []string
@@ -47,7 +55,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 		} else {
 			calls = append(calls, "plan")
 		}
-		return frontend.PlayPlan{ID: "plan", Estimated: req.Intent.Estimate, Media: frontend.MediaInfo{Container: "mp4"}, Decision: frontend.Decision{Kind: "directplay"}}, nil
+		return frontend.PlayPlan{ID: "plan", Estimated: req.Intent.Estimate, Media: frontend.MediaInfo{Container: "mp4"}, Decision: frontend.Decision{Kind: "directplay"}, DirectPlay: true}, nil
 	}, OpenFunc: func(_ context.Context, req frontend.OpenRequest) (frontend.Session, error) {
 		calls = append(calls, "open")
 		return frontend.Session{ID: "session"}, nil
@@ -69,7 +77,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 		return w
 	}
 	w := call(`{"EnableDirectStream":false,"EnableTranscoding":false}`)
-	if w.Code != 200 || strings.Join(calls, ",") != "estimate" {
+	if w.Code != 200 || strings.Join(calls, ",") != "estimate" || !strings.Contains(w.Body.String(), `"SupportsDirectPlay":true`) || !strings.Contains(w.Body.String(), `"SupportsTranscoding":false`) {
 		t.Fatal(w.Code, w.Body.String(), calls)
 	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")

@@ -2,6 +2,7 @@ package mediabrowser
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,6 +31,18 @@ func boolValue(p *bool, def bool) bool {
 		return def
 	}
 	return *p
+}
+
+func streamError(w http.ResponseWriter, err error) {
+	var capacity *frontend.TranscodeCapacityError
+	if errors.Is(err, frontend.ErrTranscodeCapacity) && errors.As(err, &capacity) && capacity.RetryAfter > 0 {
+		seconds := capacity.RetryAfter / time.Second
+		if capacity.RetryAfter%time.Second != 0 {
+			seconds++
+		}
+		w.Header().Set("Retry-After", strconv.FormatInt(int64(seconds), 10))
+	}
+	http.Error(w, "Playback unavailable", http.StatusServiceUnavailable)
 }
 func queryBool(r *http.Request, key string, def bool) bool {
 	values := route.Query(r.URL.Query(), key)
@@ -167,7 +180,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	} else if version != "" {
 		sourceID = version
 	}
-	source := map[string]any{"Id": sourceID, "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
+	source := map[string]any{"Id": sourceID, "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.DirectPlay, "SupportsDirectStream": plan.DirectStream, "SupportsTranscoding": plan.Transcoding, "MediaStreams": mediaStreams(plan.Media.Streams)}
 	addChapters(source, plan.Media)
 	source["Protocol"] = "Http"
 	source["Type"] = "Default"
@@ -195,7 +208,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
 		if err != nil {
 			_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID)
-			http.Error(w, "Playback unavailable", 503)
+			streamError(w, err)
 			return
 		}
 		if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
@@ -436,7 +449,7 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	url, err := i.host.Sessions.StartStream(r.Context(), access, sessionID, frontend.StreamRequest{Format: format})
 	if err != nil {
-		http.Error(w, "Unavailable", 503)
+		streamError(w, err)
 		return
 	}
 	if !strings.HasPrefix(url, "/sessions/media/") || strings.ContainsAny(url, "\r\n") {
