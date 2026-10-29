@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -150,14 +151,43 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				command := map[frontend.CommandKind]string{frontend.CommandStop: "Stop", frontend.CommandPause: "Pause", frontend.CommandUnpause: "Unpause", frontend.CommandSeek: "Seek"}[event.Command.Kind]
-				if command == "" {
+				if command != "" {
+					data := map[string]any{"Command": command}
+					if event.Command.Kind == frontend.CommandSeek {
+						data["SeekPositionTicks"] = event.Command.Position.Nanoseconds() / 100
+					}
+					if event.ActorViewerID > 0 {
+						if actor, err := ids.GUID(ids.User, event.ActorViewerID); err == nil {
+							data["ControllingUserId"] = actor
+						}
+					}
+					if write(map[string]any{"MessageType": "Playstate", "Data": data}) != nil {
+						return
+					}
 					continue
 				}
-				data := map[string]any{"Command": command}
-				if event.Command.Kind == frontend.CommandSeek {
-					data["SeekPositionTicks"] = event.Command.Position.Nanoseconds() / 100
+				if event.ActorViewerID <= 0 {
+					continue
 				}
-				if write(map[string]any{"MessageType": "Playstate", "Data": data}) != nil {
+				actor, err := ids.GUID(ids.User, event.ActorViewerID)
+				if err != nil {
+					continue
+				}
+				name := ""
+				arguments := map[string]string{}
+				switch event.Command.Kind {
+				case frontend.CommandSetAudio:
+					name = "SetAudioStreamIndex"
+					arguments["Index"] = strconv.Itoa(event.Command.StreamIndex)
+				case frontend.CommandSetSubtitle:
+					name = "SetSubtitleStreamIndex"
+					arguments["Index"] = strconv.Itoa(event.Command.StreamIndex)
+				case frontend.CommandMessage:
+					name = "DisplayMessage"
+					arguments["Header"] = "Ether"
+					arguments["Text"] = event.Command.Message
+				}
+				if name != "" && write(map[string]any{"MessageType": "GeneralCommand", "Data": map[string]any{"Name": name, "ControllingUserId": actor, "Arguments": arguments}}) != nil {
 					return
 				}
 				continue

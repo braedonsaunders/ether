@@ -11,6 +11,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/coder/websocket"
 )
 
@@ -150,6 +151,12 @@ func TestSocketPlaystateUsesTargetedBrokerCommand(t *testing.T) {
 	events <- frontend.Event{Type: "SessionCommand", TargetProtocol: "jellyfin", TargetDeviceID: "tv", Command: &frontend.Command{Kind: frontend.CommandSeek, Position: 3 * time.Second}}
 	_, body, err := c.Read(ctx)
 	if err != nil || !strings.Contains(string(body), `"MessageType":"Playstate"`) || !strings.Contains(string(body), `"Command":"Seek"`) || !strings.Contains(string(body), `"SeekPositionTicks":30000000`) {
+		t.Fatal(string(body), err)
+	}
+	events <- frontend.Event{Type: "SessionCommand", ActorViewerID: 2, TargetProtocol: "jellyfin", TargetDeviceID: "tv", Command: &frontend.Command{Kind: frontend.CommandSetSubtitle, StreamIndex: -1}}
+	_, body, err = c.Read(ctx)
+	actor, _ := ids.GUID(ids.User, 2)
+	if err != nil || !strings.Contains(string(body), `"MessageType":"GeneralCommand"`) || !strings.Contains(string(body), `"Name":"SetSubtitleStreamIndex"`) || !strings.Contains(string(body), `"Index":"-1"`) || !strings.Contains(string(body), actor) {
 		t.Fatal(string(body), err)
 	}
 }
