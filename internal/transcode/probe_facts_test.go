@@ -19,3 +19,15 @@ func TestProbeFactsPreserveUnknownAndExplicitValues(t *testing.T) {
 		t.Fatalf("unknown became a claim: %+v", b)
 	}
 }
+
+func TestDolbyVisionRecordTakesPrecedenceOverConflictingNegativeFlags(t *testing.T) {
+	data := `{"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","side_data_list":[{"side_data_type":"DOVI configuration record","dovi_config_present":0,"dv_bl_signal_compatibility_id":0,"dv_bl_compat_id_present":0}]}],"format":{}}`
+	m, err := ParseProbe([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := m.Streams[0]
+	if s.DolbyVisionConfigurationPresent == nil || !*s.DolbyVisionConfigurationPresent || s.DolbyVisionBLCompatibilityIDPresent == nil || !*s.DolbyVisionBLCompatibilityIDPresent {
+		t.Fatalf("positive evidence lost: %+v", s)
+	}
+}

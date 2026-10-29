@@ -341,7 +341,7 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 				v := true
 				si.DolbyVisionConfigurationPresent = &v
 			}
-			if flag, ok := sd["dovi_config_present"].(float64); ok && (flag == 0 || flag == 1) {
+			if flag, ok := sd["dovi_config_present"].(float64); ok && (flag == 1 || (flag == 0 && si.DolbyVisionConfigurationPresent == nil)) {
 				v := flag == 1
 				si.DolbyVisionConfigurationPresent = &v
 			}
@@ -349,7 +349,7 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 				v := true
 				si.DolbyVisionBLCompatibilityIDPresent = &v
 			}
-			if flag, ok := sd["dv_bl_compat_id_present"].(float64); ok && (flag == 0 || flag == 1) {
+			if flag, ok := sd["dv_bl_compat_id_present"].(float64); ok && (flag == 1 || (flag == 0 && si.DolbyVisionBLCompatibilityIDPresent == nil)) {
 				v := flag == 1
 				si.DolbyVisionBLCompatibilityIDPresent = &v
 			}
