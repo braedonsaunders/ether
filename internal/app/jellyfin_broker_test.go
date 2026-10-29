@@ -14,6 +14,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontends/mediabrowser"
 	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/state"
+	"github.com/braedonsaunders/ether/internal/store"
+	"github.com/coder/websocket"
 )
 
 func TestJellyfinRealBrokerPlayback(t *testing.T) {
@@ -78,5 +81,66 @@ func TestJellyfinRealBrokerPlayback(t *testing.T) {
 	w = call("POST", "/Sessions/Playing/Stopped", `{"PlaySessionId":"`+result.PlaySessionId+`","PositionTicks":10000000}`)
 	if w.Code != 204 || len(p.Sessions()) != 0 {
 		t.Fatalf("stop %d %s", w.Code, w.Body)
+	}
+}
+
+func TestPlexWatchReachesJellyfinSocket(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	viewer := &core.Viewer{ID: 2}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		if id != 2 {
+			return nil, core.ErrUnauthorized
+		}
+		return viewer, nil
+	}
+	events := sessions.NewEventBus(nil, active)
+	defer events.Close()
+	watch := state.New(store.OpenTest(t), state.Options{})
+	defer watch.Close(context.Background())
+	unsub := subscribeSessionState(watch, events, func(int64, core.RatingKey) {}, nil)
+	defer unsub()
+	ident := frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*core.Viewer, error) {
+		if token != "grant" {
+			return nil, core.ErrUnauthorized
+		}
+		return viewer, nil
+	}}
+	exp := frontendtest.Experience{UserDataFunc: func(ctx context.Context, v *core.Viewer, keys []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
+		return watch.GetMany(ctx, v.ID, keys)
+	}}
+	inst, err := (mediabrowser.Jellyfin{MachineID: "test"}).Mount(ctx, frontend.Host{Identity: ident, Experience: exp, Events: sessions.BindEvents(events, "jellyfin")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(inst.Handler())
+	defer srv.Close()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/socket?api_key=grant", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close(websocket.StatusNormalClosure, "")
+	if _, _, err = c.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := core.MovieKey(5)
+	if err = watch.Scrobble(state.WithOrigin(ctx, state.Origin{Surface: "plex", ClientID: "plex-tv"}), viewer.ID, key); err != nil {
+		t.Fatal(err)
+	}
+	_, body, err := c.Read(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var message struct {
+		MessageType string
+		Data        struct {
+			UserDataList []struct {
+				Played bool
+				ItemId string
+			}
+		}
+	}
+	if err = json.Unmarshal(body, &message); err != nil || message.MessageType != "UserDataChanged" || len(message.Data.UserDataList) != 1 || !message.Data.UserDataList[0].Played || message.Data.UserDataList[0].ItemId != ids.RatingKeyGUID(key) {
+		t.Fatal(string(body), err)
 	}
 }

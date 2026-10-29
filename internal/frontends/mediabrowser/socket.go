@@ -33,6 +33,10 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 		defer done()
 		return conn.Write(wc, websocket.MessageText, b)
 	}
+	var events <-chan frontend.Event
+	if i.host.Events != nil {
+		events, _ = i.host.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: i.protocol})
+	}
 	if write(map[string]any{"MessageType": "ForceKeepAlive", "Data": "0,30"}) != nil {
 		return
 	}
@@ -56,10 +60,6 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	var events <-chan frontend.Event
-	if i.host.Events != nil {
-		events, _ = i.host.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: i.protocol})
-	}
 	for {
 		select {
 		case <-ctx.Done():
