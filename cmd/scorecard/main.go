@@ -43,13 +43,14 @@ type config struct {
 	Scenarios   []scenario `json:"scenarios"`
 }
 type measurement struct {
-	P50          float64 `json:"p50_ms"`
-	P95          float64 `json:"p95_ms"`
-	TTFBP50      float64 `json:"ttfb_p50_ms"`
-	TTFBP95      float64 `json:"ttfb_p95_ms"`
-	Errors       int     `json:"errors"`
-	SchemaErrors int     `json:"schema_errors"`
-	Samples      int     `json:"samples"`
+	P50             float64 `json:"p50_ms"`
+	P95             float64 `json:"p95_ms"`
+	TTFBP50         float64 `json:"ttfb_p50_ms"`
+	TTFBP95         float64 `json:"ttfb_p95_ms"`
+	Errors          int     `json:"errors"`
+	SchemaErrors    int     `json:"schema_errors"`
+	SchemaUncovered int     `json:"schema_uncovered"`
+	Samples         int     `json:"samples"`
 }
 type result struct {
 	Name            string      `json:"name"`
@@ -74,6 +75,7 @@ func measureWithSchema(client *http.Client, t target, samples, concurrency int, 
 	var firstBytes []float64
 	errs := 0
 	schemaErrors := 0
+	schemaUncovered := 0
 	jobs := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
@@ -110,17 +112,24 @@ func measureWithSchema(client *http.Client, t target, samples, concurrency int, 
 						}
 					}
 					elapsed := float64(time.Since(start)) / float64(time.Millisecond)
-					validationFailed := false
+					validationFailed, uncovered := false, false
 					if err == nil && spec != nil {
 						if bodyBytes.Len() > 16<<20 {
 							validationFailed = true
-						} else if spec.Validate(http.MethodGet, t.SpecPath, resp.StatusCode, resp.Header.Get("Content-Type"), bodyBytes.Bytes()) != nil {
-							validationFailed = true
+						} else if e := spec.Validate(http.MethodGet, t.SpecPath, resp.StatusCode, resp.Header.Get("Content-Type"), bodyBytes.Bytes()); e != nil {
+							if strings.HasPrefix(e.Error(), "no specification for ") {
+								uncovered = true
+							} else {
+								validationFailed = true
+							}
 						}
 					}
 					mu.Lock()
 					if validationFailed {
 						schemaErrors++
+					}
+					if uncovered {
+						schemaUncovered++
 					}
 					if err != nil || firstByte.Load() == 0 {
 						errs++
@@ -144,7 +153,7 @@ func measureWithSchema(client *http.Client, t target, samples, concurrency int, 
 	wg.Wait()
 	sort.Float64s(durations)
 	sort.Float64s(firstBytes)
-	m := measurement{Errors: errs, SchemaErrors: schemaErrors, Samples: samples}
+	m := measurement{Errors: errs, SchemaErrors: schemaErrors, SchemaUncovered: schemaUncovered, Samples: samples}
 	if len(durations) > 0 {
 		m.P50 = percentile(durations, 50)
 		m.P95 = percentile(durations, 95)
@@ -155,7 +164,7 @@ func measureWithSchema(client *http.Client, t target, samples, concurrency int, 
 }
 func percentile(v []float64, p int) float64 { return v[(len(v)*p+99)/100-1] }
 func winner(a, b measurement) string {
-	if a.Errors > 0 || b.Errors > 0 || a.SchemaErrors > 0 || b.SchemaErrors > 0 {
+	if a.Errors > 0 || b.Errors > 0 || a.SchemaErrors > 0 || b.SchemaErrors > 0 || a.SchemaUncovered > 0 || b.SchemaUncovered > 0 {
 		return "inconclusive"
 	}
 	if a.P50 == b.P50 && a.P95 == b.P95 {
@@ -240,7 +249,7 @@ func run(c config) ([]result, error) {
 			}
 			a := measureWithSchema(client, s.Reference, c.Samples, n, spec)
 			b := measureWithSchema(client, s.Ether, c.Samples, n, spec)
-			out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, a.Errors+a.SchemaErrors, b.Errors+b.SchemaErrors), P95Winner: metricWinner(a.P95, b.P95, a.Errors+a.SchemaErrors, b.Errors+b.SchemaErrors), TTFBP50Winner: metricWinner(a.TTFBP50, b.TTFBP50, a.Errors+a.SchemaErrors, b.Errors+b.SchemaErrors), TTFBP95Winner: metricWinner(a.TTFBP95, b.TTFBP95, a.Errors+a.SchemaErrors, b.Errors+b.SchemaErrors), CompletionScope: scope, SchemaChecked: spec != nil})
+			out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), P95Winner: metricWinner(a.P95, b.P95, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), TTFBP50Winner: metricWinner(a.TTFBP50, b.TTFBP50, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), TTFBP95Winner: metricWinner(a.TTFBP95, b.TTFBP95, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), CompletionScope: scope, SchemaChecked: spec != nil})
 		}
 	}
 	return out, nil

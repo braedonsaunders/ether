@@ -114,3 +114,10 @@ read and may affect throughput. It is a spec check, not evidence that every
 client's strict decoder has run; schemas may leave client-required fields
 optional. Bounded streaming responses cannot use this mode, and JSON responses
 larger than 16 MiB count as schema errors.
+Undocumented method/path combinations are counted separately as
+`schema_uncovered`; they are not reported as required-field failures. Either
+schema failures or uncovered operations make the latency winner inconclusive.
+`lab-profile-browse.py` is an opt-in lab driver that reads credentials only
+from stdin and refuses to time resume/next-up responses whose visible item
+projections differ. It can compare views by collection type despite different
+labels; those timings still require the stated workload caveats.

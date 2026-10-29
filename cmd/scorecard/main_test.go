@@ -70,3 +70,22 @@ func TestSchemaValidationChecksEachResponseAndBlocksWinner(t *testing.T) {
 		t.Fatal("invalid response must not win latency")
 	}
 }
+
+func TestSchemaUndocumentedOperationIsUncovered(t *testing.T) {
+	doc, err := openapi.Parse([]byte(`{"openapi":"3.0.3","paths":{"/known":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object"}}}}}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer s.Close()
+	m := measureWithSchema(s.Client(), target{URL: s.URL, SpecPath: "/undocumented"}, 3, 1, doc)
+	if m.SchemaUncovered != 3 || m.SchemaErrors != 0 {
+		t.Fatalf("undocumented operation misclassified: %+v", m)
+	}
+	if winner(measurement{}, m) != "inconclusive" {
+		t.Fatal("uncovered schema must not win")
+	}
+}
