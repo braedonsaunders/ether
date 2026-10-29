@@ -5,6 +5,7 @@ import SignInMethods from "./SignInMethods";
 import { FavoritesMirror } from "./FavoritesMirror";
 import { FavoriteEpisodeAlerts } from "./FavoriteEpisodeAlerts";
 import { ViewerPush } from "./ViewerPush";
+import { NotInterested, type NotInterestedEntry } from "./NotInterested";
 import { EtherLogo } from "../../components/brand";
 
 const SESSION_KEY = "ether.viewerPortal";
@@ -124,6 +125,26 @@ export default function Me() {
   );
   const pushRemove = useCallback(
     (endpoint: string) => request("/alerts/push/subscription", token, { endpoint }, "DELETE"),
+    [token],
+  );
+  const loadNotInterested = useCallback(async (): Promise<NotInterestedEntry[]> => {
+    const result = await request<{ items: { handle: string; title?: string }[] }>(
+      "/not-interested",
+      token,
+    );
+    return result.items.map((item) => ({
+      handle: item.handle,
+      title: item.title,
+      unavailable: !item.title,
+    }));
+  }, [token]);
+  const restoreInterest = useCallback(
+    async (handle: string) => {
+      const result = await request<{ restored: boolean }>("/not-interested/restore", token, {
+        handle,
+      });
+      if (!result.restored) throw new Error("restore failed");
+    },
     [token],
   );
 
@@ -294,6 +315,7 @@ export default function Me() {
               subscribe={pushSubscribe}
               remove={pushRemove}
             />
+            <NotInterested load={loadNotInterested} restore={restoreInterest} />
             <SignInMethods base="/me" token={token} />
             <Button
               variant="outline"

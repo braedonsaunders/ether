@@ -100,3 +100,29 @@ it("uses the viewer grant to opt into favourite episode alerts", async () => {
   expect(JSON.parse(String(options?.body))).toEqual({ enabled: true });
   expect((options?.headers as Record<string, string>)["X-Ether-Request"]).toBe("1");
 });
+
+it("restores a hidden recommendation using the portal grant and opaque handle", async () => {
+  sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/not-interested/restore")) {
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
+      expect((init?.headers as Record<string, string>)["X-Ether-Request"]).toBe("1");
+      expect(JSON.parse(String(init?.body))).toEqual({ handle: "opaque" });
+      return new Response(JSON.stringify({ restored: true }));
+    }
+    if (url.endsWith("/not-interested"))
+      return new Response(JSON.stringify({ items: [{ handle: "opaque" }] }));
+    if (url.endsWith("/favorites-mirror") || url.endsWith("/favorite-episode-alert"))
+      return new Response(JSON.stringify({ enabled: false }));
+    if (url.endsWith("/identities")) return new Response(JSON.stringify({ identities: [] }));
+    if (url.endsWith("/devices")) return new Response(JSON.stringify({ devices: [] }));
+    return new Response(JSON.stringify({ id: 1, username: "alice" }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Me />);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Show Unavailable title in recommendations" }),
+  );
+  expect(await screen.findByText("No hidden recommendations.")).toBeInTheDocument();
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/not-interested/restore"))).toBe(true);
+});
