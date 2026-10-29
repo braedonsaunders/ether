@@ -162,7 +162,11 @@ func (i *instance) browseRoutes() error {
 			if view.Type == "show" {
 				kind = "tvshows"
 			}
-			items = append(items, map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true, "ServerId": i.info.ID, "SortName": view.Name, "DisplayPreferencesId": viewID, "CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}})
+			item := map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true, "ServerId": i.info.ID, "SortName": view.Name, "DisplayPreferencesId": viewID, "CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}}
+			if i.protocol == "emby" {
+				i.embyViewDTO(item)
+			}
+			items = append(items, item)
 		}
 		jsonReply(w, i.queryResult(items, len(items), 0))
 	}
