@@ -61,4 +61,13 @@ AND EXISTS (SELECT 1 FROM plex_sessions newer WHERE newer.user_id=plex_sessions.
 CREATE UNIQUE INDEX sessions_active_device ON plex_sessions(user_id,surface,device_id)
  WHERE active=1 AND protocol IS NOT NULL AND protocol<>'plex' AND surface IS NOT NULL AND device_id IS NOT NULL;
 `)
+	store.Register("sessions", 5, `CREATE TABLE sessions_lazy_streams (
+		hash TEXT PRIMARY KEY,
+		protocol TEXT NOT NULL,
+		viewer_id BIGINT NOT NULL,
+		grant_reference TEXT NOT NULL,
+		request TEXT NOT NULL,
+		expires BIGINT NOT NULL
+	); CREATE INDEX sessions_lazy_streams_expiry ON sessions_lazy_streams(expires);`)
+
 }

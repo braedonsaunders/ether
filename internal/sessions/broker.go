@@ -87,6 +87,7 @@ type Broker struct {
 	plans        map[string]brokerPlan
 	sessions     map[string]*brokerSession
 	retired      map[string]retiredSession
+	lazySessions map[string]lazySession
 	devices      map[deviceKey]frontend.SessionCapabilities
 	owners       *PlaybackOwners
 	gates        *Lifecycle

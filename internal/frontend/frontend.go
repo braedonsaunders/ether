@@ -205,6 +205,7 @@ type Host struct {
 	TrackPreferences   TrackPreferenceService
 	LiveTV             LiveTV
 	Sessions           Sessions
+	LazyStreams        LazyStreams
 	Identity           SurfaceIdentity
 	IDs                ids.Codecs
 	Events             Subscriber
