@@ -2,14 +2,12 @@ package plex
 
 import (
 	"context"
-	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 )
 
 // AccessPolicy adds owner-defined restrictions to the mandatory title guard.
-type AccessPolicy interface {
-	Allowed(*core.User, *core.Title) bool
-}
+type AccessPolicy = experience.AccessPolicy
 
 func (s *Server) visibleTitles(u *core.User, ts []core.Title) []core.Title {
 	out := make([]core.Title, 0, len(ts))
@@ -22,13 +20,7 @@ func (s *Server) visibleTitles(u *core.User, ts []core.Title) []core.Title {
 }
 
 func (s *Server) titleAllowed(u *core.User, t *core.Title) bool {
-	if t == nil || t.Adult {
-		return false
-	}
-	if u != nil && catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
-		return false
-	}
-	return s.d.AccessPolicy == nil || s.d.AccessPolicy.Allowed(u, t)
+	return experience.TitleAllowed(s.d.AccessPolicy, u, t)
 }
 
 // visibleTitle also checks section and inherited show policy for artwork and

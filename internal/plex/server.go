@@ -23,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 )
@@ -363,11 +364,8 @@ func (s *Server) userSections(u *core.User) []Section {
 	}
 	var out []Section
 	for _, sec := range s.sections {
-		for _, id := range u.AllowedSections {
-			if id == sec.ID {
-				out = append(out, sec)
-				break
-			}
+		if experience.SectionAllowed(u, sec.ID) {
+			out = append(out, sec)
 		}
 	}
 	return out
