@@ -87,7 +87,7 @@ func newClusterState(s *Server, db *sql.DB, node clusterbus.Node) *clusterState 
 
 func (c *clusterState) start() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=?`, c.self); err != nil {
+	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=? AND COALESCE(protocol,'plex')='plex'`, c.self); err != nil {
 		c.warn("clear own stale sessions", err)
 	}
 	cancel()
@@ -108,7 +108,7 @@ func (c *clusterState) close() {
 	<-c.done
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
-	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=?`, c.self); err != nil {
+	if _, err := c.db.ExecContext(ctx, `DELETE FROM plex_sessions WHERE node_id=? AND COALESCE(protocol,'plex')='plex'`, c.self); err != nil {
 		c.warn("remove own sessions", err)
 	}
 }
@@ -302,14 +302,14 @@ ON CONFLICT(id) DO UPDATE SET node_id=excluded.node_id, user_id=excluded.user_id
 		}
 		args = append(args, e.id)
 	}
-	q := `DELETE FROM plex_sessions WHERE node_id=?`
+	q := `DELETE FROM plex_sessions WHERE node_id=? AND COALESCE(protocol,'plex')='plex'`
 	if len(entries) > 0 {
 		q += ` AND id NOT IN (` + strings.TrimSuffix(strings.Repeat("?,", len(entries)), ",") + `)`
 	}
 	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM plex_sessions WHERE updated_at<?`, now-(10*time.Minute).Milliseconds()); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM plex_sessions WHERE COALESCE(protocol,'plex')='plex' AND updated_at<?`, now-(10*time.Minute).Milliseconds()); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -54,6 +54,27 @@ func sessionsOf(t *testing.T, f *fixture) []map[string]any {
 	return out
 }
 
+func TestClusterHeartbeatPreservesBrokerSessions(t *testing.T) {
+	a, _, _ := twoServers(t)
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	for _, row := range []struct {
+		id, node string
+		updated  int64
+	}{{"broker-local", "a", now}, {"broker-stale", "other", now - int64((11*time.Minute)/time.Millisecond)}} {
+		if _, err := a.srv.cl.db.ExecContext(ctx, `INSERT INTO plex_sessions(id,node_id,user_id,session_key,data,updated_at,protocol) VALUES(?,?,?,?,?,?,?)`, row.id, row.node, 1, 123, `{}`, row.updated, "jellyfin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := a.srv.cl.syncSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := a.srv.cl.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plex_sessions WHERE protocol='jellyfin'`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("heartbeat removed broker sessions: count=%d err=%v", count, err)
+	}
+}
+
 func TestClusterSessionsListedOnEveryNode(t *testing.T) {
 	a, b, hub := twoServers(t)
 	a.get(t, "/:/timeline?ratingKey=1000000000000550&state=playing&time=1000&duration=10000",
