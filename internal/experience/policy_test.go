@@ -109,3 +109,22 @@ func TestAvailabilitySessionIsolation(t *testing.T) {
 		t.Fatalf("sessions leaked across viewers: %+v", got)
 	}
 }
+
+func TestUpcomingCollectionDeniesHiddenOrMissingShow(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	episode := core.Title{Key: 18, ShowKey: 17, Type: core.TypeEpisode, Released: now.Add(time.Hour)}
+	show := &core.Title{Key: 17, Type: core.TypeShow, Adult: true}
+	v := Visibility{GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) { return show, nil }}
+	clock := func() time.Time { return now }
+	if got := v.UpcomingItems(context.Background(), nil, []core.Title{episode}, clock); len(got) != 0 {
+		t.Fatal("episode with hidden show was returned")
+	}
+	show.Adult = false
+	if got := v.UpcomingItems(context.Background(), nil, []core.Title{episode}, clock); len(got) != 1 {
+		t.Fatal("visible show episode was omitted")
+	}
+	v.GetTitle = func(context.Context, core.RatingKey) (*core.Title, error) { return nil, core.ErrNotFound }
+	if got := v.UpcomingItems(context.Background(), nil, []core.Title{episode}, clock); len(got) != 0 {
+		t.Fatal("episode with missing show was returned")
+	}
+}

@@ -130,7 +130,7 @@ func (v Visibility) CollectionAllowed(viewer *core.User, c *core.Collection) boo
 func (v Visibility) UpcomingItems(ctx context.Context, viewer *core.User, items []core.Title, now func() time.Time) []core.Title {
 	out := make([]core.Title, 0, len(items))
 	for _, title := range items {
-		if !v.TitleAllowed(viewer, &title) || title.Released.IsZero() {
+		if !v.Playable(ctx, viewer, &title) || title.Released.IsZero() {
 			continue
 		}
 		if !title.Released.After(now()) && len(v.Available(ctx, viewer, []core.Title{title})) == 0 {
