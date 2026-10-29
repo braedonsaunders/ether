@@ -132,7 +132,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		}
 		add(item.kind, item.element+"\x00"+path+"\x00"+collectionVersion, frontendArtworkEntry{element: item.element})
 	}
-	complete := title != nil
+	complete := true
 	if title != nil {
 		if artwork.ValidPath(title.StillPath) {
 			add(frontend.ImageStill, "still\x00"+title.StillPath, frontendArtworkEntry{remotePath: title.StillPath})
@@ -184,7 +184,6 @@ func (a FrontendArtwork) List(ctx context.Context, req frontend.ArtworkRequest) 
 	for _, e := range entries {
 		out = append(out, e.image)
 	}
-	// Collection, playlist and channel art need their own complete sources.
 	return out, complete, nil
 }
 

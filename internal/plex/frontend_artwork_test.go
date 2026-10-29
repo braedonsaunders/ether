@@ -99,6 +99,38 @@ func TestColdArtworkSelectionIsSharedAcrossSurfaces(t *testing.T) {
 	}
 }
 
+func TestFrontendArtworkUsesGeneratedCollectionPoster(t *testing.T) {
+	f := newFixture()
+	f.srv.Close()
+	key := core.SmartKey(12)
+	f.cols.cols[key] = core.Collection{Key: key, Title: "Owner Picks", Kind: "smart", Type: core.TypeMovie, ChildCount: 1}
+	f.cols.items[key] = []core.Title{alien}
+	d := f.srv.d
+	d.Collections = &artCollections{fakeCollections: f.cols}
+	f.srv = NewServer(d)
+	defer f.srv.Close()
+	source := FrontendArtwork{Server: f.srv}
+	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: key}
+	images, complete, err := source.List(context.Background(), req)
+	if err != nil || !complete {
+		t.Fatalf("collection list: %v", err)
+	}
+	var thumb frontend.Image
+	for _, img := range images {
+		if img.Kind == frontend.ImageThumb {
+			thumb = img
+			break
+		}
+	}
+	if thumb.Path == "" {
+		t.Fatal("generated collection thumb missing")
+	}
+	data, ct, err := source.Read(context.Background(), req, thumb, frontend.ArtworkTransform{Width: 400})
+	if err != nil || ct != "image/jpeg" || string(data) != "GENERATED-owner" {
+		t.Fatalf("generated image: %q %q %v", data, ct, err)
+	}
+}
+
 func TestFrontendArtworkVariantsAreScopedAndValidated(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
