@@ -29,6 +29,8 @@ func (a *App) buildAdmin() http.Handler {
 	quick, _ := identity.NewQuickConnect(a.db, 10*time.Minute, 30*24*time.Hour, nil)
 	invites, _ := identity.NewInvite(a.db, 24*time.Hour, 30*24*time.Hour, nil)
 	return admin.New(admin.Deps{
+		FavoritesMirror: a.favorites,
+		ActiveViewer:    a.users.ActiveUser,
 		Invites:         invites,
 		SetViewerActive: a.users.SetOwnerEnabled,
 		LocalOwnerConfigured: func(ctx context.Context) bool {
