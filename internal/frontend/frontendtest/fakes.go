@@ -12,6 +12,11 @@ import (
 
 // Experience implements frontend.Experience with optional function hooks.
 type Experience struct {
+	SetPlayedFunc            func(context.Context, *core.Viewer, core.RatingKey) error
+	SetUnplayedFunc          func(context.Context, *core.Viewer, core.RatingKey) error
+	SetFavoriteFunc          func(context.Context, *core.Viewer, core.RatingKey, bool) error
+	SetRatingFunc            func(context.Context, *core.Viewer, core.RatingKey, float64) error
+	RemoveFromContinueFunc   func(context.Context, *core.Viewer, core.RatingKey) error
 	ReportRowInteractionFunc func(context.Context, frontend.RowInteraction) error
 	ViewsFunc                func(context.Context, *core.Viewer) ([]frontend.View, error)
 	RowsFunc                 func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
@@ -66,6 +71,37 @@ func (f Experience) ReportRowInteraction(c context.Context, interaction frontend
 }
 
 var _ frontend.RowInteractionReporter = Experience{}
+
+func (f Experience) SetPlayed(c context.Context, v *core.Viewer, k core.RatingKey) error {
+	if f.SetPlayedFunc != nil {
+		return f.SetPlayedFunc(c, v, k)
+	}
+	return nil
+}
+func (f Experience) SetUnplayed(c context.Context, v *core.Viewer, k core.RatingKey) error {
+	if f.SetUnplayedFunc != nil {
+		return f.SetUnplayedFunc(c, v, k)
+	}
+	return nil
+}
+func (f Experience) SetFavorite(c context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
+	if f.SetFavoriteFunc != nil {
+		return f.SetFavoriteFunc(c, v, k, on)
+	}
+	return nil
+}
+func (f Experience) SetRating(c context.Context, v *core.Viewer, k core.RatingKey, rating float64) error {
+	if f.SetRatingFunc != nil {
+		return f.SetRatingFunc(c, v, k, rating)
+	}
+	return nil
+}
+func (f Experience) RemoveFromContinue(c context.Context, v *core.Viewer, k core.RatingKey) error {
+	if f.RemoveFromContinueFunc != nil {
+		return f.RemoveFromContinueFunc(c, v, k)
+	}
+	return nil
+}
 
 // Sessions implements frontend.Sessions with optional function hooks.
 type Sessions struct {

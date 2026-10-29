@@ -213,6 +213,11 @@ type Experience interface {
 	Children(context.Context, *core.Viewer, core.Device, core.RatingKey, ItemQuery) (core.Page, error)
 	Search(context.Context, *core.Viewer, core.Device, string, ItemQuery) (SearchPage, error)
 	UserData(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
+	SetPlayed(context.Context, *core.Viewer, core.RatingKey) error
+	SetUnplayed(context.Context, *core.Viewer, core.RatingKey) error
+	SetFavorite(context.Context, *core.Viewer, core.RatingKey, bool) error
+	SetRating(context.Context, *core.Viewer, core.RatingKey, float64) error
+	RemoveFromContinue(context.Context, *core.Viewer, core.RatingKey) error
 }
 
 type PlayIntent struct {
