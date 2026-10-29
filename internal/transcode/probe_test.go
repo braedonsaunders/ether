@@ -43,7 +43,7 @@ func TestParseProbeGolden(t *testing.T) {
 			want: core.MediaInfo{
 				Container: "mkv", Duration: sec(7950.125), Size: 59836712345, BitrateKbps: 60211,
 				Streams: []core.StreamInfo{
-					{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Level: 153, Default: true, Width: 3840, Height: 2160,
+					{Index: 0, Type: "video", Codec: "hevc", Profile: "Main 10", Level: 153, Default: true, Original: boolean(false), Commentary: boolean(false), Dub: boolean(false), Width: 3840, Height: 2160,
 						FrameRate: 23.976, BitDepth: 10, ColorTransfer: "smpte2084", BitrateKbps: 58312,
 						SampleAspectRatio: "1:1", ColorRange: "tv", ColorPrimaries: "bt2020", ColorSpace: "bt2020nc"},
 					{Index: 1, Type: "audio", Codec: "eac3", Language: "eng", Title: "English DD+ 5.1", Default: true,
@@ -123,6 +123,12 @@ func TestParseProbeGolden(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.file, func(t *testing.T) {
+			// Every retained stream in these recorded fixtures reports both
+			// dispositions; preserve their presence as well as their values.
+			for i := range tt.want.Streams {
+				tt.want.Streams[i].DefaultDisposition = boolean(tt.want.Streams[i].Default)
+				tt.want.Streams[i].ForcedDisposition = boolean(tt.want.Streams[i].Forced)
+			}
 			got := mustParse(t, tt.file)
 			if !reflect.DeepEqual(got, tt.want) {
 				if len(got.Streams) != len(tt.want.Streams) {

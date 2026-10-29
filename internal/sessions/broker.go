@@ -158,16 +158,26 @@ func copyRequest(r frontend.PlanRequest) frontend.PlanRequest {
 	if r.Intent.Plex != nil {
 		p := *r.Intent.Plex
 		if p.SubtitleStream != nil {
-			s := *p.SubtitleStream
+			s := copyStream(*p.SubtitleStream)
 			p.SubtitleStream = &s
 		}
 		r.Intent.Plex = &p
 	}
 	return r
 }
+func copyStream(stream core.StreamInfo) core.StreamInfo {
+	for _, field := range []**bool{&stream.DefaultDisposition, &stream.ForcedDisposition, &stream.HearingImpaired, &stream.Original, &stream.VisualImpaired, &stream.Commentary, &stream.Dub, &stream.DolbyVisionBLPresent, &stream.DolbyVisionELPresent, &stream.DolbyVisionRPUPresent} {
+		if *field != nil {
+			value := **field
+			*field = &value
+		}
+	}
+	return stream
+}
 func publicMedia(info core.MediaInfo) core.MediaInfo {
 	info.Streams = slices.Clone(info.Streams)
 	for i := range info.Streams {
+		info.Streams[i] = copyStream(info.Streams[i])
 		info.Streams[i].ExternalURL = ""
 	}
 	info.Chapters = slices.Clone(info.Chapters)

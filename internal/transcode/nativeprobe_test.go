@@ -79,6 +79,31 @@ func TestProbeSourceMatchesRecordedFFprobe(t *testing.T) {
 func normalizeForNative(want, got *core.MediaInfo) {
 	for i := range want.Streams {
 		w := &want.Streams[i]
+		// Native probing does not yet report these ffprobe dispositions. Keep
+		// comparing each one whenever native probing starts supplying it.
+		if i < len(got.Streams) {
+			if got.Streams[i].DefaultDisposition == nil {
+				w.DefaultDisposition = nil
+			}
+			if got.Streams[i].ForcedDisposition == nil {
+				w.ForcedDisposition = nil
+			}
+			if got.Streams[i].HearingImpaired == nil {
+				w.HearingImpaired = nil
+			}
+			if got.Streams[i].Original == nil {
+				w.Original = nil
+			}
+			if got.Streams[i].VisualImpaired == nil {
+				w.VisualImpaired = nil
+			}
+			if got.Streams[i].Commentary == nil {
+				w.Commentary = nil
+			}
+			if got.Streams[i].Dub == nil {
+				w.Dub = nil
+			}
+		}
 		if w.ColorTransfer == "unknown" {
 			w.ColorTransfer = ""
 		}

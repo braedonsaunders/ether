@@ -240,6 +240,23 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	si.Title = tag(s.Tags, "title")
 	si.Default = s.Disposition["default"] == 1
 	si.Forced = s.Disposition["forced"] == 1
+	for _, field := range []struct {
+		key string
+		dst **bool
+	}{
+		{"default", &si.DefaultDisposition},
+		{"forced", &si.ForcedDisposition},
+		{"hearing_impaired", &si.HearingImpaired},
+		{"original", &si.Original},
+		{"visual_impaired", &si.VisualImpaired},
+		{"comment", &si.Commentary},
+		{"dub", &si.Dub},
+	} {
+		if value, ok := s.Disposition[field.key]; ok {
+			set := value == 1
+			*field.dst = &set
+		}
+	}
 	si.BitrateKbps = int(atoi64(s.BitRate) / 1000)
 	if si.BitrateKbps == 0 {
 		// mkvmerge statistics tags

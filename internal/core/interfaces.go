@@ -386,20 +386,28 @@ type StreamInfo struct {
 	Interlaced        bool `json:"interlaced,omitempty"`
 	VariableFrameRate bool `json:"variableFrameRate,omitempty"`
 
-	Index         int     `json:"index"`
-	Type          string  `json:"type"` // video, audio, subtitle
-	Codec         string  `json:"codec"`
-	Profile       string  `json:"profile,omitempty"`
-	Level         int     `json:"level,omitempty"`
-	Language      string  `json:"language,omitempty"`
-	Title         string  `json:"title,omitempty"`
-	Default       bool    `json:"default,omitempty"`
-	Forced        bool    `json:"forced,omitempty"`
-	Width         int     `json:"width,omitempty"`
-	Height        int     `json:"height,omitempty"`
-	FrameRate     float64 `json:"frameRate,omitempty"`
-	BitDepth      int     `json:"bitDepth,omitempty"`
-	ColorTransfer string  `json:"colorTransfer,omitempty"` // smpte2084 = HDR10, arib-std-b67 = HLG
+	Index    int    `json:"index"`
+	Type     string `json:"type"` // video, audio, subtitle
+	Codec    string `json:"codec"`
+	Profile  string `json:"profile,omitempty"`
+	Level    int    `json:"level,omitempty"`
+	Language string `json:"language,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Default  bool   `json:"default,omitempty"`
+	Forced   bool   `json:"forced,omitempty"`
+	// Nil means the source did not report this ffprobe disposition.
+	DefaultDisposition *bool   `json:"defaultDisposition,omitempty"`
+	ForcedDisposition  *bool   `json:"forcedDisposition,omitempty"`
+	HearingImpaired    *bool   `json:"hearingImpaired,omitempty"`
+	Original           *bool   `json:"original,omitempty"`
+	VisualImpaired     *bool   `json:"visualImpaired,omitempty"`
+	Commentary         *bool   `json:"commentary,omitempty"`
+	Dub                *bool   `json:"dub,omitempty"`
+	Width              int     `json:"width,omitempty"`
+	Height             int     `json:"height,omitempty"`
+	FrameRate          float64 `json:"frameRate,omitempty"`
+	BitDepth           int     `json:"bitDepth,omitempty"`
+	ColorTransfer      string  `json:"colorTransfer,omitempty"` // smpte2084 = HDR10, arib-std-b67 = HLG
 	// Signalled picture format, in ffprobe's names; empty when the stream
 	// and container leave it unspecified (decoders then assume square
 	// pixels and limited range).
