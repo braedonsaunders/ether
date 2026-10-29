@@ -197,7 +197,7 @@ func safeSVGNumbers(s string) bool {
 	return true
 }
 
-func (r *SVGRasterizer) execute(ctx context.Context, key string, build func() (image.Image, error), opts RasterOptions) ([]byte, string, error) {
+func (r *SVGRasterizer) execute(ctx context.Context, key string, build func(context.Context) (image.Image, error), opts RasterOptions) ([]byte, string, error) {
 	if r == nil || opts.Width < 0 || opts.Height < 0 || opts.Width > 2048 || opts.Height > 2048 || (opts.Format != "" && opts.Format != "png" && opts.Format != "jpeg") {
 		return nil, "", ErrSVG
 	}
@@ -227,8 +227,12 @@ func (r *SVGRasterizer) execute(ctx context.Context, key string, build func() (i
 			<-r.slots
 			results <- result
 		}()
-		img, err := build()
+		img, err := build(bounded)
 		if err != nil {
+			result.err = err
+			return
+		}
+		if err := bounded.Err(); err != nil {
 			result.err = err
 			return
 		}
@@ -278,7 +282,7 @@ func (r *SVGRasterizer) Rasterize(ctx context.Context, reference string, data []
 		return nil, "", err
 	}
 	key := rasterKey(reference, data, opts)
-	return r.execute(ctx, key, func() (image.Image, error) {
+	return r.execute(ctx, key, func(ctx context.Context) (image.Image, error) {
 		icon, err := oksvg.ReadIconStream(bytes.NewReader(data), oksvg.StrictErrorMode)
 		if err != nil || icon == nil || icon.ViewBox.W < 1e-6 || icon.ViewBox.H < 1e-6 || math.IsNaN(icon.ViewBox.W) || math.IsNaN(icon.ViewBox.H) || math.IsNaN(icon.ViewBox.X) || math.IsNaN(icon.ViewBox.Y) || math.IsInf(icon.ViewBox.W, 0) || math.IsInf(icon.ViewBox.H, 0) || math.IsInf(icon.ViewBox.X, 0) || math.IsInf(icon.ViewBox.Y, 0) || icon.ViewBox.W > 1e6 || icon.ViewBox.H > 1e6 || math.Abs(icon.ViewBox.X) > 1e6 || math.Abs(icon.ViewBox.Y) > 1e6 {
 			return nil, ErrSVG
@@ -298,7 +302,13 @@ func (r *SVGRasterizer) Rasterize(ctx context.Context, reference string, data []
 		}
 		img := image.NewRGBA(image.Rect(0, 0, width, height))
 		icon.SetTarget(0, 0, float64(width), float64(height))
-		icon.Draw(rasterx.NewDasher(width, height, rasterx.NewScannerGV(width, height, img, img.Bounds())), 1)
+		dasher := rasterx.NewDasher(width, height, rasterx.NewScannerGV(width, height, img, img.Bounds()))
+		for _, path := range icon.SVGPaths {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			path.DrawTransformed(dasher, 1, icon.Transform)
+		}
 		return img, nil
 	}, opts)
 }
@@ -311,7 +321,7 @@ func (r *SVGRasterizer) ChannelLogo(ctx context.Context, reference, number, name
 		return nil, "", ErrSVG
 	}
 	key := rasterKey(reference, []byte(number+"\x00"+name), opts)
-	return r.execute(ctx, key, func() (image.Image, error) {
+	return r.execute(ctx, key, func(ctx context.Context) (image.Image, error) {
 		width, height := opts.Width, opts.Height
 		if width == 0 && height == 0 {
 			width = 640
@@ -330,6 +340,9 @@ func (r *SVGRasterizer) ChannelLogo(ctx context.Context, reference, number, name
 		ry := max(1, height*24/360)
 		background := color.RGBA{R: 0x18, G: 0x2d, B: 0x45, A: 255}
 		for y := 0; y < height; y++ {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			for x := 0; x < width; x++ {
 				cx, cy := x, y
 				if x < rx {

@@ -63,7 +63,7 @@ func TestSVGRasterTimeoutRetainsConcurrencySlotUntilWorkEnds(t *testing.T) {
 	release := make(chan struct{})
 	finished := make(chan error, 1)
 	go func() {
-		_, _, err := r.execute(ctx, "blocked", func() (image.Image, error) {
+		_, _, err := r.execute(ctx, "blocked", func(context.Context) (image.Image, error) {
 			close(started)
 			<-release
 			return image.NewRGBA(image.Rect(0, 0, 1, 1)), nil
