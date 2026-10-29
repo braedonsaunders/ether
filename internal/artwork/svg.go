@@ -281,6 +281,9 @@ func (r *SVGRasterizer) Rasterize(ctx context.Context, reference string, data []
 	if err := validateSVG(data); err != nil {
 		return nil, "", err
 	}
+	// A timed-out render may finish after its caller returns; it must not
+	// retain a caller-owned buffer that can be reused or changed.
+	data = append([]byte(nil), data...)
 	key := rasterKey(reference, data, opts)
 	return r.execute(ctx, key, func(ctx context.Context) (image.Image, error) {
 		icon, err := oksvg.ReadIconStream(bytes.NewReader(data), oksvg.StrictErrorMode)
