@@ -48,6 +48,9 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 	if err := i.mutationRoutes(); err != nil {
 		return nil, err
 	}
+	if err := i.notInterestedRoutes(); err != nil {
+		return nil, err
+	}
 	if err := i.settingsRoutes(); err != nil {
 		return nil, err
 	}
