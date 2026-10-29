@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/braedonsaunders/ether/internal/app" // register the same migrations as Ether
@@ -25,6 +26,20 @@ import (
 )
 
 var fixtureNow = time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
+
+func fixtureMovieCount() int {
+	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
+		return 360
+	}
+	return 60
+}
+
+func fixtureMoviePopularity(i int) float64 {
+	if i <= 60 {
+		return float64(100 - i)
+	}
+	return 40 / (1 + float64(i-60)/50)
+}
 
 // seed creates one fixture directory, which must be copied before either server starts.
 // It uses the baseline's migrations and public component APIs; it refuses existing data.
@@ -56,14 +71,19 @@ func seed(ctx context.Context, dir string) error {
 		return err
 	}
 	defer db.Close()
-	now := func() time.Time { return fixtureNow }
+	var seedClock atomic.Int64
+	seedClock.Store(fixtureNow.UnixNano())
+	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
+		seedClock.Store(fixtureNow.AddDate(0, 0, -45).UnixNano())
+	}
+	now := func() time.Time { return time.Unix(0, seedClock.Load()).UTC() }
 	cat, err := catalog.New(db, nil, cfg.Get().Catalog, nil, catalog.WithNow(now))
 	if err != nil {
 		return err
 	}
 	released := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := int64(1); i <= 60; i++ {
-		title := core.Title{Key: core.MovieKey(10000 + i), Type: core.TypeMovie, IDs: core.IDs{TMDB: 10000 + i}, Title: fmt.Sprintf("Fixture Movie %03d", i), Year: 2020, Released: released, Runtime: 90 * time.Minute, Language: "en", ContentRating: "PG", Genres: []string{"Drama"}, Rating: 7, VoteCount: 1000, Popularity: float64(100 - i)}
+	for i := int64(1); i <= int64(fixtureMovieCount()); i++ {
+		title := core.Title{Key: core.MovieKey(10000 + i), Type: core.TypeMovie, IDs: core.IDs{TMDB: 10000 + i}, Title: fmt.Sprintf("Fixture Movie %03d", i), Year: 2020, Released: released, Runtime: 90 * time.Minute, Language: "en", ContentRating: "PG", Genres: []string{"Drama"}, Rating: 7, VoteCount: 1000, Popularity: fixtureMoviePopularity(int(i))}
 		title.PosterPath = "/fixture.jpg"
 		title.BackdropPath = "/fixture.jpg"
 		title.Cast = []core.Person{{TMDB: 123, Name: "Fixture Actor", ThumbPath: "/fixture.jpg"}}
@@ -222,6 +242,15 @@ func seed(ctx context.Context, dir string) error {
 		return err
 	}
 	defer engine.Close()
+	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
+		waiter, ok := any(engine).(interface{ ParityWaitForGeneric(context.Context) error })
+		if !ok {
+			return fmt.Errorf("ranker training requires the parity generic-model barrier")
+		}
+		if err := waiter.ParityWaitForGeneric(ctx); err != nil {
+			return err
+		}
+	}
 	if _, err = engine.SetHomeLayout(ctx, core.HomeLayout{Global: []core.LayoutPage{{Section: "home", MaxRows: 16}}}); err != nil {
 		return err
 	}
@@ -232,7 +261,7 @@ func seed(ctx context.Context, dir string) error {
 		if err = engine.Refresh(ctx, &u); err != nil {
 			return err
 		}
-		hc := core.HubContext{Device: core.DeviceWeb, Daypart: core.DaypartAfternoon, Now: fixtureNow, ClientID: "fixture"}
+		hc := core.HubContext{Device: core.DeviceWeb, Daypart: core.DaypartAfternoon, Now: now(), ClientID: "fixture"}
 		hubs, err := engine.HomeHubsFor(ctx, &u, hc, 20)
 		if err != nil {
 			return err
@@ -283,6 +312,15 @@ func seed(ctx context.Context, dir string) error {
 			}
 		}
 		if err = engine.Refresh(ctx, &u); err != nil {
+			return err
+		}
+	}
+	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
+		viewers, err := users.Users(ctx)
+		if err != nil {
+			return err
+		}
+		if err := trainRankerFixture(ctx, dir, db, engine, st, viewers, &seedClock); err != nil {
 			return err
 		}
 	}

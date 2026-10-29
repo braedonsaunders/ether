@@ -10,6 +10,8 @@ trickplay_only=${7:-0}
 subtitles_only=${8:-0}
 iptv_only=${9:-0}
 counterfactual=${10:-0}
+train_ranker=${11:-0}
+ranker_train_only=${12:-0}
 case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
 case "$crowd_diag" in 0|1) ;; *) echo 'invalid crowd diagnostic mode' >&2; exit 1;; esac
 case "$notifications_only" in 0|1) ;; *) echo 'invalid notification-only mode' >&2; exit 1;; esac
@@ -19,6 +21,9 @@ case "$trickplay_only" in 0|1) ;; *) echo 'invalid trickplay-only mode' >&2; exi
 case "$subtitles_only" in 0|1) ;; *) echo 'invalid subtitles-only mode' >&2; exit 1;; esac
 case "$iptv_only" in 0|1) ;; *) echo 'invalid IPTV-only mode' >&2; exit 1;; esac
 case "$counterfactual" in 0|1) ;; *) echo 'invalid counterfactual mode' >&2; exit 1;; esac
+case "$train_ranker" in 0|1) ;; *) echo 'invalid ranker training mode' >&2; exit 1;; esac
+case "$ranker_train_only" in 0|1) ;; *) echo 'invalid ranker training-only mode' >&2; exit 1;; esac
+if [ "$ranker_train_only" = 1 ] && [ "$train_ranker" != 1 ]; then echo 'training-only mode requires ranker training' >&2; exit 1; fi
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -139,6 +144,7 @@ PYCODE
 done
 mkdir -p "$root/baseline/cmd/parityseed" "$root/candidate/cmd/plexparity"
 cp "$root/harness/seed.go" "$root/baseline/cmd/parityseed/seed.go"
+cp "$root/harness/ranker_fixture.go" "$root/baseline/cmd/parityseed/ranker_fixture.go"
 cat > "$root/baseline/cmd/parityseed/main.go" <<'GO'
 package main
 import ("context"; "fmt"; "os")
@@ -149,10 +155,17 @@ docker run --rm --network none \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e ETHER_PARITY_POLICY_COUNTERFACTUAL="$counterfactual" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e ETHER_PARITY_POLICY_COUNTERFACTUAL="$counterfactual" -e ETHER_PARITY_TRAIN_RANKER="$train_ranker" -e ETHER_PARITY_RANKER_TRAIN_ONLY="$ranker_train_only" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
  cd /baseline
+ if [ "$ETHER_PARITY_RANKER_TRAIN_ONLY" = 1 ]; then
+  go build -p 1 -tags plexparity -o /work/seed ./cmd/parityseed
+  timeout 14m /work/seed /work/seeddata
+  printf "RANKER_PROVENANCE "; cat /work/seeddata/ranker-training.json
+  echo "coverage incomplete: ranker training-only experiment"
+  exit 2
+ fi
  go build -p 4 -tags plexparity -o /work/baseline ./cmd/ether
  go build -p 4 -tags plexparity -o /work/seed ./cmd/parityseed
  cd /candidate
@@ -160,6 +173,7 @@ docker run --rm --network none \
  cd /driver
  go build -p 4 -o /work/parity ./cmd/plexparity
  /work/seed /work/seeddata
+ if [ "$ETHER_PARITY_TRAIN_RANKER" = 1 ]; then printf "RANKER_PROVENANCE "; cat /work/seeddata/ranker-training.json; fi
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart /work/seeddata/parity.mp4
  ffmpeg -hide_banner -loglevel error -i /work/seeddata/parity.mp4 -c copy -f mpegts /work/seeddata/iptv.ts
  printf "1\n00:00:00,000 --> 00:00:03,000\nFixture subtitle\n" > /work/seeddata/parity.srt

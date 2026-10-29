@@ -51,10 +51,10 @@ func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
 	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 90}); err != nil {
 		panic(err)
 	}
-	movies := make([]map[string]any, 0, 60)
+	movies := make([]map[string]any, 0, fixtureMovieCount())
 	shows := make([]map[string]any, 0, 20)
-	for i := 1; i <= 60; i++ {
-		movies = append(movies, map[string]any{"id": 10000 + i, "title": fmt.Sprintf("Fixture Movie %03d", i), "release_date": "2020-01-01", "original_language": "en", "popularity": 100 - i, "vote_average": 7, "vote_count": 1000, "genre_ids": []int{18}, "genres": []map[string]any{{"id": 18, "name": "Drama"}}, "runtime": 90, "media_type": "movie"})
+	for i := 1; i <= fixtureMovieCount(); i++ {
+		movies = append(movies, map[string]any{"id": 10000 + i, "title": fmt.Sprintf("Fixture Movie %03d", i), "release_date": "2020-01-01", "original_language": "en", "popularity": fixtureMoviePopularity(i), "vote_average": 7, "vote_count": 1000, "genre_ids": []int{18}, "genres": []map[string]any{{"id": 18, "name": "Drama"}}, "runtime": 90, "media_type": "movie"})
 	}
 	for i := range movies {
 		movies[i]["poster_path"] = "/fixture.jpg"
@@ -148,7 +148,7 @@ func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
 			if err != nil {
 				break
 			}
-			if parts[0] == "movie" && id >= 10001 && id <= 10060 {
+			if parts[0] == "movie" && id >= 10001 && id <= 10000+fixtureMovieCount() {
 				result = movies[id-10001]
 			}
 			if parts[0] == "tv" && id >= 20001 && id <= 20020 {
