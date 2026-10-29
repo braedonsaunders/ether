@@ -82,6 +82,14 @@ func identityError(w http.ResponseWriter, err error) {
 		http.Error(w, "Unauthorized", 401)
 	}
 }
+func (i *instance) quickEnabled() bool {
+	if i.host.Config != nil {
+		if value, ok := i.host.Config()["quickConnect"].(bool); ok {
+			return value
+		}
+	}
+	return true
+}
 func (i *instance) routes() error {
 	add := func(method, path string, h http.HandlerFunc) error { return i.router.Handle(method, path, h) }
 	routes := []struct {
@@ -137,8 +145,12 @@ func (i *instance) routes() error {
 			}
 			w.WriteHeader(204)
 		}},
-		{"GET", "/QuickConnect/Enabled", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, true) }},
+		{"GET", "/QuickConnect/Enabled", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, i.quickEnabled()) }},
 		{"POST", "/QuickConnect/Initiate", func(w http.ResponseWriter, r *http.Request) {
+			if !i.quickEnabled() {
+				http.Error(w, "Quick Connect disabled", 401)
+				return
+			}
 			code, secret, err := i.host.Identity.QuickConnectInitiate(i.identityContext(r), device(r))
 			if err != nil {
 				identityError(w, err)

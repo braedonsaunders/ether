@@ -140,3 +140,26 @@ func TestQuickConnectStatusDoesNotRedeem(t *testing.T) {
 		t.Fatal(redeemed)
 	}
 }
+
+func TestQuickConnectOwnerSetting(t *testing.T) {
+	enabled := false
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, Config: func() frontend.Settings { return frontend.Settings{"quickConnect": enabled} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, httptest.NewRequest(method, path, nil))
+		return w
+	}
+	if w := call("GET", "/QuickConnect/Enabled"); w.Body.String() != "false\n" {
+		t.Fatal(w.Body.String())
+	}
+	if w := call("POST", "/QuickConnect/Initiate"); w.Code != 401 {
+		t.Fatal(w.Code)
+	}
+	enabled = true
+	if w := call("GET", "/QuickConnect/Enabled"); w.Body.String() != "true\n" {
+		t.Fatal(w.Body.String())
+	}
+}
