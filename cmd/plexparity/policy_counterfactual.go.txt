@@ -1,0 +1,165 @@
+//go:build plexparity
+
+// Disposable 24be2876 diagnostic port of the restricted-only filtering and
+// backfill rules from c82a7830 and 2c7bcdc9. Never built into Ether releases.
+package plex
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/go-chi/chi/v5"
+)
+
+func (s *Server) parityPolicyRestricted(u *core.User) bool {
+	if u == nil {
+		return true
+	}
+	if u.IsOwner {
+		return false
+	}
+	if u.MaxContentRating != "" || len(u.AllowedSections) > 0 {
+		return true
+	}
+	if s.d.AccessPolicy == nil {
+		return false
+	}
+	if p, ok := s.d.AccessPolicy.(core.ArtworkAccessPolicy); ok {
+		return p.Restricted(u)
+	}
+	return true
+}
+func (s *Server) parityPolicySearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
+	types := s.searchTypes(pr.User, sectionID)
+	if strings.TrimSpace(query) == "" || len(types) == 0 {
+		return nil, nil
+	}
+	allowed := map[core.MediaType]bool{}
+	for _, typ := range types {
+		allowed[typ] = true
+	}
+	want := limit
+	if want <= 0 {
+		want = 20
+	}
+	fetch := want
+	for {
+		items, ok := s.discoverySearch(ctx, pr, query, fetch)
+		if !ok {
+			var err error
+			items, err = s.d.Catalog.Search(ctx, query, types, fetch)
+			if err != nil {
+				return nil, err
+			}
+		}
+		filtered := make([]core.Title, 0, len(items))
+		for i := range items {
+			if allowed[items[i].Type] && s.visibleTitle(ctx, pr.User, &items[i]) {
+				filtered = append(filtered, items[i])
+			}
+		}
+		if len(filtered) >= want {
+			return filtered[:want], nil
+		}
+		if len(items) < fetch || fetch >= 1000 || ctx.Err() != nil {
+			return filtered, nil
+		}
+		fetch = min(fetch*2, 1000)
+	}
+}
+func parityPolicySeen(seen map[core.RatingKey]bool) map[core.RatingKey]bool {
+	out := make(map[core.RatingKey]bool, len(seen))
+	for k, v := range seen {
+		out[k] = v
+	}
+	return out
+}
+func (s *Server) parityPolicyPostplay(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	pr := FromContext(ctx)
+	k, err := core.ParseRatingKey(chi.URLParam(r, "key"))
+	if err != nil || !s.relatedSourceVisible(ctx, pr, k) {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	count := countParam(r, 12)
+	mc := hubContainer()
+	seen := map[core.RatingKey]bool{k: true}
+	if h, ok := s.upNextHub(ctx, pr, k); ok {
+		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, h, hubCtx{related: k}))
+		seen[h.Items[0].Key] = true
+	}
+	fetch := count
+	for {
+		picks := s.postPlayPicks(ctx, pr, k, fetch)
+		trial := parityPolicySeen(seen)
+		kept := make([]core.PostPlayPick, 0, len(picks))
+		for _, p := range picks {
+			if !trial[p.Title.Key] && s.visibleTitle(ctx, pr.User, &p.Title) {
+				trial[p.Title.Key] = true
+				kept = append(kept, p)
+				if len(kept) >= count {
+					break
+				}
+			}
+		}
+		if len(kept) >= count || len(picks) < fetch || fetch >= 1000 || ctx.Err() != nil {
+			for k, v := range trial {
+				seen[k] = v
+			}
+			if len(kept) > 0 {
+				if mh, ok := s.postPlayHub(ctx, pr, k, kept); ok {
+					mc.Hub = append(mc.Hub, mh)
+				}
+			}
+			break
+		}
+		fetch = min(fetch*2, 1000)
+	}
+	if s.d.Recommender != nil {
+		fetch = count
+		for {
+			hubs, err := s.d.Recommender.Related(ctx, pr.User, k, fetch)
+			if err != nil {
+				break
+			}
+			trial := parityPolicySeen(seen)
+			more := false
+			filtered := make([]core.Hub, 0, len(hubs))
+			for _, h := range hubs {
+				items := make([]core.Title, 0, len(h.Items))
+				for _, t := range h.Items {
+					if !trial[t.Key] && s.visibleTitle(ctx, pr.User, &t) {
+						trial[t.Key] = true
+						items = append(items, t)
+						if len(items) >= count {
+							break
+						}
+					}
+				}
+				if len(items) < count && len(h.Items) >= fetch {
+					more = true
+				}
+				if len(items) > 0 {
+					h.Items = items
+					filtered = append(filtered, h)
+				}
+			}
+			if more && fetch < 1000 && ctx.Err() == nil {
+				fetch = min(fetch*2, 1000)
+				continue
+			}
+			for k, v := range trial {
+				seen[k] = v
+			}
+			for _, h := range filtered {
+				mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: k}))
+			}
+			break
+		}
+	}
+	mc.Size = len(mc.Hub)
+	s.write(w, r, mc)
+}

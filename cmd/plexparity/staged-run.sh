@@ -9,6 +9,7 @@ downloads_only=${6:-0}
 trickplay_only=${7:-0}
 subtitles_only=${8:-0}
 iptv_only=${9:-0}
+counterfactual=${10:-0}
 case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
 case "$crowd_diag" in 0|1) ;; *) echo 'invalid crowd diagnostic mode' >&2; exit 1;; esac
 case "$notifications_only" in 0|1) ;; *) echo 'invalid notification-only mode' >&2; exit 1;; esac
@@ -17,6 +18,7 @@ case "$downloads_only" in 0|1) ;; *) echo 'invalid downloads-only mode' >&2; exi
 case "$trickplay_only" in 0|1) ;; *) echo 'invalid trickplay-only mode' >&2; exit 1;; esac
 case "$subtitles_only" in 0|1) ;; *) echo 'invalid subtitles-only mode' >&2; exit 1;; esac
 case "$iptv_only" in 0|1) ;; *) echo 'invalid IPTV-only mode' >&2; exit 1;; esac
+case "$counterfactual" in 0|1) ;; *) echo 'invalid counterfactual mode' >&2; exit 1;; esac
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -121,6 +123,19 @@ PYCODE
  cp "$root/harness/parity_wait_fixture.go" "$root/$tree/internal/personalize/"
  cp "$root/harness/parity_session_fixture.go" "$root/$tree/internal/livetv/"
  cp "$root/harness/parity_clock_fixture.go" "$root/$tree/internal/transcode/"
+ if [ "$tree" = baseline ] && [ "$counterfactual" = 1 ]; then
+  cp "$root/harness/policy_counterfactual.go.txt" "$root/$tree/internal/plex/zz_parity_policy_counterfactual.go"
+  python3 - "$root/$tree/internal/plex/handlers_hubs.go" <<'PYCODE'
+import pathlib,sys
+p=pathlib.Path(sys.argv[1]);s=p.read_text()
+search='func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {'
+post='func (s *Server) handlePostplay(w http.ResponseWriter, r *http.Request) {'
+if s.count(search)!=1 or s.count(post)!=1: raise SystemExit('counterfactual requires the pinned main handlers')
+s=s.replace(search,search+'\n if s.parityPolicyRestricted(pr.User) { return s.parityPolicySearch(ctx,pr,query,sectionID,limit) }',1)
+s=s.replace(post,post+'\n if s.parityPolicyRestricted(FromContext(r.Context()).User) { s.parityPolicyPostplay(w,r); return }',1)
+p.write_text(s)
+PYCODE
+ fi
 done
 mkdir -p "$root/baseline/cmd/parityseed" "$root/candidate/cmd/plexparity"
 cp "$root/harness/seed.go" "$root/baseline/cmd/parityseed/seed.go"
@@ -134,7 +149,7 @@ docker run --rm --network none \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e ETHER_PARITY_POLICY_COUNTERFACTUAL="$counterfactual" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
  cd /baseline

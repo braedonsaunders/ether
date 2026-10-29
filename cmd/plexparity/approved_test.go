@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
 	"net/http"
@@ -12,8 +13,8 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 	if err := json.Unmarshal(approvedSearch, &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 190 {
-		t.Fatalf("got %d signatures, want 190", len(entries))
+	if len(entries) != 260 {
+		t.Fatalf("got %d signatures, want 260", len(entries))
 	}
 	for _, e := range entries {
 		if e.Viewer != "teen" && e.Viewer != "child" {
@@ -29,6 +30,28 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 	a := capture{viewer: "owner"}
 	if ok, err := approved(a, a); err != nil || ok != "" {
 		t.Fatalf("unrestricted approval: %v %v", ok, err)
+	}
+	a = capture{viewer: "teen", client: "web", path: "/search?query=fixture", response: protocol.Response{Status: 200, Body: []byte("unreviewed")}}
+	b := a
+	b.response.Body = []byte("different")
+	if ok, err := approved(a, b); err != nil || ok != "" {
+		t.Fatalf("route and viewer alone approved an unreviewed pair: %v %v", ok, err)
+	}
+}
+
+func TestCounterfactualDoesNotHideApprovedPairs(t *testing.T) {
+	t.Setenv("ETHER_PARITY_POLICY_COUNTERFACTUAL", "1")
+	old := approvedSearch
+	defer func() { approvedSearch = old }()
+	a := capture{viewer: "teen", client: "web", path: "/search?query=fixture", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte("first")}}
+	b := a
+	b.response.Body = []byte("second")
+	entry := approvedDifference{Viewer: a.viewer, Client: a.client, Path: a.path, Baseline: signature(a.response), Candidate: signature(b.response), Commit: "c82a7830"}
+	approvedSearch, _ = json.Marshal([]approvedDifference{entry})
+	var out bytes.Buffer
+	n, err := diffTranscripts(transcript{captures: []capture{a}}, transcript{captures: []capture{b}}, &out)
+	if err != nil || n != 1 {
+		t.Fatalf("counterfactual hid an approved pair: n=%d err=%v report=%s", n, err, out.String())
 	}
 }
 

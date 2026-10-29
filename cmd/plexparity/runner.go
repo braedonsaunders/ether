@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -67,6 +68,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		{"ETHER_PARITY_TRICKPLAY_ONLY", "only trickplay probes executed"},
 		{"ETHER_PARITY_SUBTITLES_ONLY", "only subtitle probes executed"},
 		{"ETHER_PARITY_IPTV_ONLY", "only IPTV probes executed"},
+		{"ETHER_PARITY_POLICY_COUNTERFACTUAL", "diagnostic counterfactual policy replay"},
 	} {
 		if os.Getenv(mode.env) == "1" {
 			return incompleteCoverage{[]string{mode.description}}
@@ -244,6 +246,26 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 			}
 			fmt.Fprintf(out, "server %d log tail:\n%s\n", i, b)
 			return fmt.Errorf("server %d: %w", i, captureErr)
+		}
+		if os.Getenv("ETHER_PARITY_POLICY_COUNTERFACTUAL") == "1" {
+			for _, c := range captured.captures {
+				if (c.viewer != "teen" && c.viewer != "child") || !(strings.HasPrefix(c.path, "/search?") || strings.HasPrefix(c.path, "/library/search?") || strings.HasPrefix(c.path, "/hubs/search") || strings.Contains(c.path, "/postplay")) {
+					continue
+				}
+				record := struct {
+					Server    int               `json:"server"`
+					Viewer    string            `json:"viewer"`
+					Client    string            `json:"client"`
+					JSON      bool              `json:"json"`
+					Path      string            `json:"path"`
+					Signature responseSignature `json:"signature"`
+				}{i, c.viewer, c.client, c.json, c.path, signature(c.response)}
+				b, err := json.Marshal(record)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "COUNTERFACTUAL %s\n", b)
+			}
 		}
 		transcripts = append(transcripts, captured)
 	}

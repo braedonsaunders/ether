@@ -733,6 +733,10 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 			if commit != "" && !approvedHeaders(x, y) {
 				commit = ""
 			}
+			// Counterfactual evidence must not rely on either allowlist.
+			if os.Getenv("ETHER_PARITY_POLICY_COUNTERFACTUAL") == "1" {
+				noise, commit = false, ""
+			}
 			label := "REGRESSION"
 			if noise {
 				label = "BASELINE-NONDETERMINISTIC (also on main)"

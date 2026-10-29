@@ -7,6 +7,10 @@ candidate=$2
 host=${PRISM_TEST_HOST:-braedon@100.123.220.120}
 root=$(git rev-parse --show-toplevel)
 baseline=$(git -C "$root" rev-parse --verify "${baseline}^{commit}")
+if [ "${ETHER_PARITY_POLICY_COUNTERFACTUAL:-0}" = 1 ] && [ "$baseline" != 24be28768e1dc6be99fbf73193444f6325314d38 ]; then
+ echo 'counterfactual policy port is pinned to main 24be2876' >&2
+ exit 1
+fi
 if [ ! -d "$candidate" ]; then candidate=$(git -C "$root" rev-parse --verify "${candidate}^{commit}"); fi
 printf 'baseline=%s candidate=%s\n' "$baseline" "$candidate"
 remote=$(ssh -o BatchMode=yes "$host" 'mkdir -p ~/prism-test && mktemp -d ~/prism-test/plexparity.XXXXXXXX')
@@ -34,4 +38,4 @@ rsync -az "$root/internal/app/parity_runtime_default.go" "$root/internal/app/par
 rsync -az "$root/internal/personalize/parity_wait_fixture.go" "$host:$remote/harness/"
 rsync -az "$root/internal/livetv/parity_session_fixture.go" "$host:$remote/harness/"
 rsync -az "$root/internal/transcode/parity_clock_fixture.go" "$host:$remote/harness/"
-ssh -o BatchMode=yes "$host" bash -s -- "$remote" "${ETHER_PARITY_ATTRIBUTION:-0}" "${ETHER_PARITY_CROWD_DIAG:-0}" "${ETHER_PARITY_NOTIFICATIONS_ONLY:-0}" "${ETHER_PARITY_LIVETV_ONLY:-0}" "${ETHER_PARITY_DOWNLOADS_ONLY:-0}" "${ETHER_PARITY_TRICKPLAY_ONLY:-0}" "${ETHER_PARITY_SUBTITLES_ONLY:-0}" "${ETHER_PARITY_IPTV_ONLY:-0}" < "$root/cmd/plexparity/staged-run.sh"
+ssh -o BatchMode=yes "$host" bash -s -- "$remote" "${ETHER_PARITY_ATTRIBUTION:-0}" "${ETHER_PARITY_CROWD_DIAG:-0}" "${ETHER_PARITY_NOTIFICATIONS_ONLY:-0}" "${ETHER_PARITY_LIVETV_ONLY:-0}" "${ETHER_PARITY_DOWNLOADS_ONLY:-0}" "${ETHER_PARITY_TRICKPLAY_ONLY:-0}" "${ETHER_PARITY_SUBTITLES_ONLY:-0}" "${ETHER_PARITY_IPTV_ONLY:-0}" "${ETHER_PARITY_POLICY_COUNTERFACTUAL:-0}" < "$root/cmd/plexparity/staged-run.sh"
