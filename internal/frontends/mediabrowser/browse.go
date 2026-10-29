@@ -304,13 +304,15 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parent := route.Query(r.URL.Query(), "ParentId")
-	if len(parent) != 1 {
-		http.Error(w, "ParentId required", 400)
+	if len(parent) > 1 {
+		http.Error(w, "Bad Request", 400)
 		return
 	}
 	q := itemQuery(r)
 	var page frontend.Page
-	if id, e := ids.ParseGUID(ids.View, parent[0]); e == nil {
+	if len(parent) == 0 || parent[0] == "" {
+		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), "", q)
+	} else if id, e := ids.ParseGUID(ids.View, parent[0]); e == nil {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), ids.Decimal(id), q)
 	} else if key, e := ids.ParseRatingKeyGUID(parent[0]); e == nil {
 		page, err = i.host.Experience.Children(r.Context(), v, device(r), key, q)
