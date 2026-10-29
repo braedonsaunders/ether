@@ -79,6 +79,9 @@ func (s surface) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 	}
 	return s.broker.Stop(ctx, a, id)
 }
+func (s surface) Command(ctx context.Context, actor *core.Viewer, id string, cmd frontend.Command) error {
+	return s.broker.Command(ctx, actor, id, cmd)
+}
 func (s surface) Sessions(ctx context.Context, a frontend.SessionAccess) ([]frontend.Session, error) {
 	if a.Protocol != s.protocol {
 		return nil, core.ErrUnauthorized

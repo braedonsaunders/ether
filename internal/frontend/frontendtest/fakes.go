@@ -169,6 +169,7 @@ type Sessions struct {
 	ServeMediaFunc   func(http.ResponseWriter, *http.Request)
 	ReportFunc       func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error
 	StopFunc         func(context.Context, frontend.SessionAccess, string) error
+	CommandFunc      func(context.Context, *core.Viewer, string, frontend.Command) error
 	SessionsFunc     func(context.Context, frontend.SessionAccess) ([]frontend.Session, error)
 	RecoverFunc      func(context.Context, string, string, time.Duration) error
 	TranscodeForFunc func(context.Context, string) (core.HLSSession, bool)
@@ -215,6 +216,12 @@ func (f Sessions) Report(c context.Context, a frontend.SessionAccess, id string,
 func (f Sessions) Stop(c context.Context, a frontend.SessionAccess, id string) error {
 	if f.StopFunc != nil {
 		return f.StopFunc(c, a, id)
+	}
+	return nil
+}
+func (f Sessions) Command(c context.Context, actor *core.Viewer, id string, cmd frontend.Command) error {
+	if f.CommandFunc != nil {
+		return f.CommandFunc(c, actor, id, cmd)
 	}
 	return nil
 }

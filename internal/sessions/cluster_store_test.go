@@ -94,6 +94,21 @@ func TestClusterBrokerListsAndStopsRemoteSession(t *testing.T) {
 	if err := b.Stop(ctx, frontend.SessionAccess{Viewer: &core.Viewer{ID: 3}, Device: device, Protocol: "jellyfin"}, s.ID); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("foreign stop: %v", err)
 	}
+	target, err := a.deps.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", SessionID: s.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Command(ctx, &core.Viewer{ID: 1}, s.ID, frontend.Command{Kind: frontend.CommandPause}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-target:
+		if event.Command == nil || event.Command.Kind != frontend.CommandPause {
+			t.Fatalf("remote command %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("remote command not delivered")
+	}
 	if err := b.Stop(ctx, owner, s.ID); err != nil {
 		t.Fatal(err)
 	}

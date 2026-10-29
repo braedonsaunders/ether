@@ -28,6 +28,7 @@ type eventSubscriber struct {
 	viewer   int64
 	owner    bool
 	protocol frontend.Protocol
+	session  string
 	pending  chan frontend.Event
 	done     chan struct{}
 }
@@ -56,7 +57,7 @@ func (b *EventBus) Subscribe(ctx context.Context, scope frontend.EventScope) (<-
 	if scope.Viewer == nil || !b.authorized(ctx, scope.Viewer.ID, scope.Owner) {
 		return nil, core.ErrUnauthorized
 	}
-	s := &eventSubscriber{viewer: scope.Viewer.ID, owner: scope.Owner, protocol: scope.Protocol, pending: make(chan frontend.Event, 64), done: make(chan struct{})}
+	s := &eventSubscriber{viewer: scope.Viewer.ID, owner: scope.Owner, protocol: scope.Protocol, session: scope.SessionID, pending: make(chan frontend.Event, 64), done: make(chan struct{})}
 	out := make(chan frontend.Event)
 	b.mu.Lock()
 	if b.closed {
@@ -105,6 +106,9 @@ func (b *EventBus) deliver(event frontend.Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for s := range b.subs {
+		if event.Command != nil && (s.session == "" || s.session != event.SessionID || s.protocol != event.TargetProtocol || s.viewer != event.ViewerID) {
+			continue
+		}
 		if !s.owner && s.viewer != event.ViewerID {
 			continue
 		}

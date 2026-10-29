@@ -366,6 +366,26 @@ type Timeline struct {
 	Position, Duration time.Duration
 	State              string
 }
+
+type CommandKind string
+
+const (
+	CommandStop        CommandKind = "stop"
+	CommandPause       CommandKind = "pause"
+	CommandUnpause     CommandKind = "unpause"
+	CommandSeek        CommandKind = "seek"
+	CommandSetAudio    CommandKind = "setAudio"
+	CommandSetSubtitle CommandKind = "setSubtitle"
+	CommandMessage     CommandKind = "message"
+)
+
+type Command struct {
+	Kind                CommandKind
+	Position            time.Duration
+	StreamIndex         int
+	Message             string
+	ControllerSessionID string
+}
 type Event struct {
 	Type      string
 	ViewerID  int64
@@ -378,6 +398,8 @@ type Event struct {
 	OriginProtocol  Protocol
 	OriginSessionID string
 	OriginClientID  string
+	Command         *Command
+	TargetProtocol  Protocol
 }
 
 // SessionAccess binds client operations to an authenticated viewer and surface.
@@ -396,6 +418,8 @@ type EventScope struct {
 	Owner  bool
 	// Protocol suppresses this surface's own user-data invalidations.
 	Protocol Protocol
+	// SessionID selects the authenticated client session for targeted commands.
+	SessionID string
 }
 
 // Sessions owns playback across protocols. Open revalidates the broker-owned
@@ -412,6 +436,7 @@ type Sessions interface {
 	ServeMedia(http.ResponseWriter, *http.Request)
 	Report(context.Context, SessionAccess, string, Timeline) error
 	Stop(context.Context, SessionAccess, string) error
+	Command(context.Context, *core.Viewer, string, Command) error
 	Sessions(context.Context, SessionAccess) ([]Session, error)
 	Recover(context.Context, string, string, time.Duration) error
 	TranscodeFor(context.Context, string) (core.HLSSession, bool)
