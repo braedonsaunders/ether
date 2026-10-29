@@ -70,4 +70,14 @@ CREATE UNIQUE INDEX sessions_active_device ON plex_sessions(user_id,surface,devi
 		expires BIGINT NOT NULL
 	); CREATE INDEX sessions_lazy_streams_expiry ON sessions_lazy_streams(expires);`)
 
+	store.Register("sessions", 6, `CREATE TABLE sessions_version_handles (
+		handle TEXT PRIMARY KEY,
+		viewer_id BIGINT NOT NULL,
+		surface TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		item_id BIGINT NOT NULL,
+		release_id TEXT NOT NULL,
+		UNIQUE(viewer_id,surface,device_id,item_id,release_id)
+	);`)
+
 }

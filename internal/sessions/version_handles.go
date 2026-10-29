@@ -1,0 +1,105 @@
+package sessions
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"errors"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+type versionHandles struct {
+	db       *sql.DB
+	broker   *Broker
+	protocol frontend.Protocol
+}
+
+// NewVersionHandles creates a surface-bound, durable version identifier map.
+// Handles are not credentials and all lookups recheck viewer and title policy.
+func NewVersionHandles(db *sql.DB, b *Broker, protocol frontend.Protocol) (frontend.VersionHandles, error) {
+	if db == nil || b == nil || protocol == "" {
+		return nil, errors.New("sessions: missing version handle dependency")
+	}
+	return &versionHandles{db: db, broker: b, protocol: protocol}, nil
+}
+
+func (v *versionHandles) validate(ctx context.Context, scope frontend.VersionScope, item core.RatingKey, release string) (*core.Viewer, error) {
+	if scope.Protocol != v.protocol || scope.Device.ID == "" || len(scope.Device.ID) > 512 || item == 0 || release == "" || len(release) > 512 || v.broker.deps.Variants == nil {
+		return nil, core.ErrNotFound
+	}
+	viewer, err := v.broker.viewer(ctx, scope.Viewer)
+	if err != nil {
+		return nil, err
+	}
+	caps := scope.Caps
+	caps.Protocol = v.protocol
+	caps.ClientID = clientKey(v.protocol, scope.Device)
+	if !v.broker.permitted(viewer, caps) {
+		return nil, core.ErrUnauthorized
+	}
+	if caps.Remote && v.broker.deps.RemoteBitrateLimit != nil {
+		if limit := v.broker.deps.RemoteBitrateLimit(); limit > 0 && (caps.MaxBitrateKbps == 0 || limit < caps.MaxBitrateKbps) {
+			caps.MaxBitrateKbps = limit
+		}
+	}
+	if limit := v.broker.deps.BitrateLimit(viewer); limit > 0 && (caps.MaxBitrateKbps == 0 || limit < caps.MaxBitrateKbps) {
+		caps.MaxBitrateKbps = limit
+	}
+	title, err := v.broker.deps.Lookup(ctx, viewer, scope.Device, item)
+	if err != nil || title == nil || title.Key != item || (!title.Released.IsZero() && title.Released.After(v.broker.deps.Now())) {
+		return nil, core.ErrNotFound
+	}
+	if title.Type == core.TypeShow || title.Type == core.TypeSeason {
+		return nil, core.ErrNotFound
+	}
+	offered, err := v.broker.deps.Variants(ctx, viewer, title, caps)
+	if err != nil {
+		return nil, err
+	}
+	for _, candidate := range offered {
+		if candidate.ID == release {
+			return viewer, nil
+		}
+	}
+	return nil, core.ErrNotFound
+}
+
+func (v *versionHandles) Issue(ctx context.Context, scope frontend.VersionScope, item core.RatingKey, release string) (string, error) {
+	viewer, err := v.validate(ctx, scope, item, release)
+	if err != nil {
+		return "", err
+	}
+	token := rand.Text()
+	_, err = v.db.ExecContext(ctx, `INSERT INTO sessions_version_handles(handle,viewer_id,surface,device_id,item_id,release_id) VALUES(?,?,?,?,?,?) ON CONFLICT(viewer_id,surface,device_id,item_id,release_id) DO NOTHING`, token, viewer.ID, string(v.protocol), scope.Device.ID, int64(item), release)
+	if err != nil {
+		return "", err
+	}
+	var stored string
+	err = v.db.QueryRowContext(ctx, `SELECT handle FROM sessions_version_handles WHERE viewer_id=? AND surface=? AND device_id=? AND item_id=? AND release_id=?`, viewer.ID, string(v.protocol), scope.Device.ID, int64(item), release).Scan(&stored)
+	return stored, err
+}
+
+func (v *versionHandles) Resolve(ctx context.Context, scope frontend.VersionScope, handle string) (frontend.VersionTarget, error) {
+	if scope.Protocol != v.protocol || scope.Device.ID == "" || scope.Viewer == nil || handle == "" || len(handle) > 128 {
+		return frontend.VersionTarget{}, core.ErrNotFound
+	}
+	viewer, err := v.broker.viewer(ctx, scope.Viewer)
+	if err != nil {
+		return frontend.VersionTarget{}, err
+	}
+	var item int64
+	var release string
+	err = v.db.QueryRowContext(ctx, `SELECT item_id,release_id FROM sessions_version_handles WHERE handle=? AND viewer_id=? AND surface=? AND device_id=?`, handle, viewer.ID, string(v.protocol), scope.Device.ID).Scan(&item, &release)
+	if errors.Is(err, sql.ErrNoRows) {
+		return frontend.VersionTarget{}, core.ErrNotFound
+	}
+	if err != nil {
+		return frontend.VersionTarget{}, err
+	}
+	if _, err = v.validate(ctx, scope, core.RatingKey(item), release); err != nil {
+		return frontend.VersionTarget{}, err
+	}
+	return frontend.VersionTarget{Item: core.RatingKey(item)}, nil
+}
