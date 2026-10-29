@@ -1,14 +1,17 @@
 package mediabrowser
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/braedonsaunders/ether/internal/conform"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadFetchAlignAndRedact(t *testing.T) {
@@ -89,5 +92,58 @@ func TestAccessTokenHeaderTemplate(t *testing.T) {
 	defer server.Close()
 	if _, err = p.Fetch(context.Background(), server.Client(), server.URL, "secret", p.Corpus("web")[0], "web", nil, true); err != nil {
 		t.Fatal(err)
+	}
+}
+func TestBinaryRangeFixturesDoNotContainMedia(t *testing.T) {
+	dir := t.TempDir()
+	profile := `{"protocol":"emby","client":"test","flows":{"play_direct":[{"name":"stream","method":"GET","path":"/video/stream"}]}}`
+	if err := os.WriteFile(filepath.Join(dir, "web.json"), []byte(profile), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Load("emby", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve := func(ch byte) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.ServeContent(w, r, "movie.mp4", time.Time{}, bytes.NewReader(bytes.Repeat([]byte{ch}, 200000)))
+		}))
+	}
+	reference := serve('A')
+	defer reference.Close()
+	target := serve('B')
+	defer target.Close()
+	corpus := p.Corpus("web")
+	if len(corpus) != 3 {
+		t.Fatalf("ranges: %d", len(corpus))
+	}
+	for _, req := range corpus {
+		a, err := p.Fetch(context.Background(), reference.Client(), reference.URL, "", req, "web", nil, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := p.Fetch(context.Background(), target.Client(), target.URL, "", req, "web", nil, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Kind != "binary-range" || len(a.Body) != 0 || a.SHA256 == "" {
+			t.Fatalf("unsafe fixture: %+v", a)
+		}
+		if got := p.Compare(a, b); got.Blocking() != 0 {
+			t.Fatalf("range compare: %+v", got)
+		}
+		if a.SHA256 == b.SHA256 {
+			t.Fatal("different media have same hash")
+		}
+		if err := conform.SaveFixture(dir, req.Name, a); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := os.ReadFile(filepath.Join(dir, req.Name+".json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(saved, []byte("QUFBQUFB")) {
+			t.Fatal("fixture contains media data")
+		}
 	}
 }

@@ -4,6 +4,8 @@ package mediabrowser
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -115,7 +117,17 @@ func (p *Protocol) Corpus(profile string) []conform.Request {
 			if method == "" {
 				method = http.MethodGet
 			}
-			out = append(out, conform.Request{Name: k + "_" + r.Name, Method: method, Path: r.Path, Headers: map[string]http.Header{profile + "-json": h}, Body: r.Body})
+			base := conform.Request{Name: k + "_" + r.Name, Method: method, Path: r.Path, Headers: map[string]http.Header{profile + "-json": h}, Body: r.Body}
+			if binaryPath(method, r.Path) {
+				for _, kind := range []string{"start", "middle", "suffix"} {
+					item := base
+					item.Name += "_" + kind
+					item.RangeKind = kind
+					out = append(out, item)
+				}
+			} else {
+				out = append(out, base)
+			}
 		}
 	}
 	return out
@@ -244,14 +256,67 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 			req.Header.Set("X-Emby-Token", token)
 		}
 	}
+	if r.RangeKind != "" {
+		var rangeValue string
+		switch r.RangeKind {
+		case "start":
+			rangeValue = "bytes=0-65535"
+		case "suffix":
+			rangeValue = "bytes=-65536"
+		case "middle":
+			preflight := req.Clone(ctx)
+			preflight.Header = preflight.Header.Clone()
+			preflight.Header.Set("Range", "bytes=0-0")
+			probe, e := c.Do(preflight)
+			if e != nil {
+				return conform.Response{}, fmt.Errorf("range preflight failed (%T)", e)
+			}
+			var first, last, total int64
+			_, parseErr := fmt.Sscanf(probe.Header.Get("Content-Range"), "bytes %d-%d/%d", &first, &last, &total)
+			probe.Body.Close()
+			if probe.StatusCode != http.StatusPartialContent || parseErr != nil || first != 0 || last != 0 || total <= 0 {
+				return conform.Response{}, fmt.Errorf("range preflight returned invalid Content-Range")
+			}
+			start := total / 2
+			end := start + 65535
+			if end >= total {
+				end = total - 1
+			}
+			rangeValue = fmt.Sprintf("bytes=%d-%d", start, end)
+		default:
+			return conform.Response{}, fmt.Errorf("invalid range kind")
+		}
+		req.Header.Set("Range", rangeValue)
+	}
 	resp, err := c.Do(req)
 	if err != nil {
 		return conform.Response{}, fmt.Errorf("request failed (%T)", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, (16<<20)+1))
+	limit := int64((16 << 20) + 1)
+	if r.RangeKind != "" {
+		limit = 65537
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit))
 	if err != nil {
 		return conform.Response{}, err
+	}
+	if r.RangeKind != "" {
+		if len(body) > 65536 {
+			return conform.Response{}, fmt.Errorf("range response exceeds 65536 bytes")
+		}
+		headers := http.Header{}
+		for _, k := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag", "Cache-Control"} {
+			if v := resp.Header.Values(k); len(v) > 0 {
+				if k == "ETag" {
+					headers.Set("ETag", "[PRESENT]")
+				} else {
+					headers[http.CanonicalHeaderKey(k)] = append([]string(nil), v...)
+				}
+			}
+		}
+		sum := sha256.Sum256(body)
+		return conform.Response{Status: resp.StatusCode, Headers: headers, Kind: "binary-range", RangeKind: r.RangeKind, BodyLength: int64(len(body)), SHA256: hex.EncodeToString(sum[:])}, nil
 	}
 	if len(body) > 16<<20 {
 		return conform.Response{}, fmt.Errorf("response exceeds 16 MiB limit")
@@ -261,7 +326,12 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 func (p *Protocol) FixtureName(profile string, r conform.Request, jsonMode bool) string {
 	return conform.FixtureName(profile, r.Name+"_"+r.Method+"_"+r.Path, jsonMode)
 }
-func (p *Protocol) Compare(a, b conform.Response) conform.Report { return conform.Compare(a, b) }
+func (p *Protocol) Compare(a, b conform.Response) conform.Report {
+	if a.Kind == "binary-range" || b.Kind == "binary-range" {
+		return conform.CompareBinary(a, b)
+	}
+	return conform.Compare(a, b)
+}
 
 // Redact removes credentials and host-specific values before fixture storage.
 func (p *Protocol) Redact(r conform.Response) conform.Response {
@@ -309,3 +379,11 @@ var secretQuery = regexp.MustCompile(`(?i)([?&](?:api_key|access_token|token|aut
 func redactText(b []byte) []byte { return secretQuery.ReplaceAll(b, []byte("${1}[REDACTED]")) }
 
 func (p *Protocol) IgnorePaths() []string { return nil }
+
+func binaryPath(method, path string) bool {
+	if method != http.MethodGet {
+		return false
+	}
+	path = strings.ToLower(strings.SplitN(path, "?", 2)[0])
+	return strings.HasSuffix(path, "/stream") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, ".mp4")
+}

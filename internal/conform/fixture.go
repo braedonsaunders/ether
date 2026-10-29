@@ -14,9 +14,13 @@ import (
 
 // Response is a captured HTTP response.
 type Response struct {
-	Status  int         `json:"status"`
-	Headers http.Header `json:"headers"`
-	Body    []byte      `json:"body"`
+	Status     int         `json:"status"`
+	Headers    http.Header `json:"headers"`
+	Body       []byte      `json:"body"`
+	Kind       string      `json:"kind,omitempty"`
+	RangeKind  string      `json:"rangeKind,omitempty"`
+	BodyLength int64       `json:"bodyLength,omitempty"`
+	SHA256     string      `json:"sha256,omitempty"`
 }
 
 // DiscoveredIDs holds per-server identifiers used to make templated probes target real items.
@@ -202,4 +206,5 @@ type Request struct {
 	Name, Method, Path string
 	Headers            map[string]http.Header
 	Body               []byte
+	RangeKind          string
 }
