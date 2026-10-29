@@ -75,7 +75,7 @@ func startBrokerCluster(b *Broker, db *sql.DB, node clusterbus.Node) (*brokerClu
 
 func (c *brokerCluster) heartbeat() {
 	defer close(c.done)
-	ticker := time.NewTicker(20 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -152,6 +152,20 @@ func (c *brokerCluster) reconcile() {
 			c.broker.deps.OnEventError(err)
 		}
 		return
+	}
+	if len(ids) > 0 {
+		// Allow an in-flight Open to return its local grant. The database
+		// already suppresses timeline reports from these superseded rows.
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-c.stop:
+			timer.Stop()
+			return
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
 	for _, id := range ids {
 		c.broker.mu.Lock()

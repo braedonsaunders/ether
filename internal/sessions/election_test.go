@@ -45,8 +45,9 @@ func TestConcurrentOpenElectsOneDeviceSessionAcrossNodes(t *testing.T) {
 		plans[i] = p
 	}
 	type outcome struct {
-		s   frontend.Session
-		err error
+		s      frontend.Session
+		err    error
+		status int
 	}
 	var results [2]outcome
 	start := make(chan struct{})
@@ -57,13 +58,23 @@ func TestConcurrentOpenElectsOneDeviceSessionAcrossNodes(t *testing.T) {
 			defer wg.Done()
 			<-start
 			results[i].s, results[i].err = broker.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", PlanID: plans[i].ID})
+			if results[i].err == nil {
+				path, err := broker.StartStream(ctx, frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: "jellyfin"}, results[i].s.ID, frontend.StreamRequest{Format: frontend.StreamDirect})
+				if err != nil {
+					results[i].err = err
+					return
+				}
+				rec := httptest.NewRecorder()
+				broker.ServeMedia(rec, httptest.NewRequest(http.MethodGet, path, nil))
+				results[i].status = rec.Code
+			}
 		}()
 	}
 	close(start)
 	wg.Wait()
 	for _, r := range results {
-		if r.err != nil || r.s.ID == "" || r.s.MediaPath == "" {
-			t.Fatalf("open: %+v %v", r.s, r.err)
+		if r.err != nil || r.s.ID == "" || r.s.MediaPath == "" || r.status != http.StatusOK {
+			t.Fatalf("open: %+v status=%d err=%v", r.s, r.status, r.err)
 		}
 	}
 	var winner string
