@@ -249,6 +249,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	i.mediaSourceDialect(source)
+	if i.protocol == "emby" {
+		i.embyMediaSourceDTO(source, wireID, plan.Media)
+	}
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
 }
 

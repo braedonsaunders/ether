@@ -283,6 +283,9 @@ func (i *instance) browseRoutes() error {
 				source["Name"] = version.Name
 				source["HasSegments"] = len(d.Markers) > 0
 				i.mediaSourceDialect(source)
+				if i.protocol == "emby" {
+					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)
+				}
 				sources = append(sources, source)
 			}
 			dto["MediaSources"] = sources
