@@ -28,3 +28,27 @@ func TestPortalAddresses(t *testing.T) {
 		t.Fatalf("public %q %v", got, err)
 	}
 }
+
+func TestSecurePortalPrefersReachableLocalPlexDirect(t *testing.T) {
+	_, network, _ := net.ParseCIDR("192.168.1.0/24")
+	interfaces := []remote.InterfaceAddr{{IP: net.ParseIP("192.168.1.5"), Net: network}}
+	connections := []remote.Connection{
+		{URI: "https://8.8.8.8:443"},
+		{URI: "https://192-168-1-5.hash.plex.direct:32400", Local: true},
+	}
+	got, err := portalSecureAddress(context.Background(), netip.MustParseAddr("192.168.1.9"), "0.0.0.0", "32400", interfaces, connections)
+	if err != nil || got != "https://192-168-1-5.hash.plex.direct:32400/ether/me" {
+		t.Fatalf("local: %q %v", got, err)
+	}
+	got, err = portalSecureAddress(context.Background(), netip.MustParseAddr("192.168.2.9"), "0.0.0.0", "32400", interfaces, connections)
+	if err != nil || got != "https://8.8.8.8:443/ether/me" {
+		t.Fatalf("remote: %q %v", got, err)
+	}
+	if _, err = portalSecureAddress(context.Background(), netip.MustParseAddr("192.168.1.9"), "0.0.0.0", "32400", interfaces, []remote.Connection{{URI: "http://192.168.1.5:32400", Local: true}}); err == nil {
+		t.Fatal("accepted insecure address")
+	}
+	got, err = portalSecureAddress(context.Background(), netip.MustParseAddr("192.168.1.9"), "192.168.1.6", "32400", interfaces, connections)
+	if err != nil || got != "https://8.8.8.8:443/ether/me" {
+		t.Fatalf("unbound local: %q %v", got, err)
+	}
+}

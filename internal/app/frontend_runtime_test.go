@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/plextv"
@@ -69,6 +70,38 @@ func TestSharedFrontendRemainsAvailableWhenPlexIsOff(t *testing.T) {
 	a.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/identity", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatal(w.Code)
+	}
+}
+
+func TestSharedFrontendRunsOnDualListenerTLS(t *testing.T) {
+	a := setupTestApp(t, true)
+	if err := a.frontends.registry.Register(sharedFrontend{"stremio", "/stremio"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.frontends.control.listeners.start(context.Background(), "stremio"); err != nil {
+		t.Fatal(err)
+	}
+	fixture := httptest.NewTLSServer(http.NotFoundHandler())
+	certs := fixture.TLS.Certificates
+	client := fixture.Client()
+	fixture.Close()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dual := newDualListener(listener, func() *tls.Config { return &tls.Config{Certificates: certs, MinVersion: tls.VersionTLS12} })
+	server := &http.Server{Handler: a.Handler()}
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(dual) }()
+	t.Cleanup(func() { _ = server.Close(); <-done })
+	res, err := client.Get("https://" + listener.Addr().String() + "/stremio/test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil || res.StatusCode != http.StatusOK || string(body) != "stremio" {
+		t.Fatalf("TLS response: %d %q %v", res.StatusCode, body, err)
 	}
 }
 func TestPlexFrontendStatusUsesMainListener(t *testing.T) {
