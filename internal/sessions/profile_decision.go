@@ -280,6 +280,18 @@ func profileDeliveryAllowed(p *core.ClientCapabilityProfiles, d core.Decision, i
 		if !strings.EqualFold(c.Delivery, delivery) || (c.MediaType != "" && !strings.EqualFold(c.MediaType, "video")) || !profileContains(c.Containers, d.Container) || !profileContains(c.VideoCodecs, d.VideoCodec) || !profileContains(c.AudioCodecs, d.AudioCodec) {
 			continue
 		}
+		if c.MaxAudioChannels != "" && (d.AudioCodec != "" || profileStream(info, "audio", d.AudioStream) != nil) {
+			limit, err := strconv.Atoi(c.MaxAudioChannels)
+			channels := d.AudioChannels
+			if channels == 0 && d.AudioCopy {
+				if source := profileStream(info, "audio", d.AudioStream); source != nil {
+					channels = source.Channels
+				}
+			}
+			if err != nil || limit <= 0 || channels <= 0 || channels > limit {
+				continue
+			}
+		}
 		if profileConditions(c.Conditions, info, info.Video()) && profileRestrictions(p, output, d.VideoCodec, d.AudioCodec, d.AudioStream) {
 			return true
 		}

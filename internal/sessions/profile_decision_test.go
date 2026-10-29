@@ -51,6 +51,17 @@ func TestClientProfilePairsAndDelivery(t *testing.T) {
 	if profileDeliveryAllowed(p, out, info, "hls") || !profileDeliveryAllowed(p, out, info, "dash") {
 		t.Fatal("accepted undeclared delivery or rejected declared delivery")
 	}
+	p.Transcoding[0].MaxAudioChannels = "2"
+	out.AudioCopy = true
+	out.AudioStream = 1
+	info.Streams[1].Channels = 6
+	if profileDeliveryAllowed(p, out, info, "dash") {
+		t.Fatal("accepted output exceeding declared audio channels")
+	}
+	info.Streams[1].Channels = 2
+	if !profileDeliveryAllowed(p, out, info, "dash") {
+		t.Fatal("rejected output within declared audio channels")
+	}
 	if !profileDirectAllowed(nil, info, d) || !profileDeliveryAllowed(nil, out, info, "hls") {
 		t.Fatal("legacy nil profile path changed")
 	}
