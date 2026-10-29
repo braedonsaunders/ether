@@ -190,6 +190,37 @@ func FormatStremio(id StremioID) (string, error) {
 func (Codecs) ParseStremio(value string) (StremioID, error) { return ParseStremio(value) }
 func (Codecs) FormatStremio(id StremioID) (string, error)   { return FormatStremio(id) }
 
+// StremioTMDBKey maps a TMDB Stremio identifier to its neutral catalogue key.
+// IMDb identifiers require the host's policy-checked external ID lookup.
+func StremioTMDBKey(mediaType string, id StremioID) (core.RatingKey, error) {
+	if id.Source != "tmdb" {
+		return 0, ErrInvalid
+	}
+	n, err := ParseDecimal(id.ID)
+	if err != nil || n <= 0 {
+		return 0, ErrInvalid
+	}
+	switch mediaType {
+	case "movie":
+		if id.HasEpisode || n >= 1_000_000_000_000_000 {
+			return 0, ErrInvalid
+		}
+		return core.MovieKey(n), nil
+	case "series":
+		if n >= 100_000_000 {
+			return 0, ErrInvalid
+		}
+		if id.HasEpisode {
+			if id.Season < 0 || id.Season >= 1000 || id.Episode < 0 || id.Episode >= 10000 {
+				return 0, ErrInvalid
+			}
+			return core.EpisodeKey(n, id.Season, id.Episode), nil
+		}
+		return core.ShowKey(n), nil
+	}
+	return 0, ErrInvalid
+}
+
 // StringGUID maps opaque channel/programme IDs into distinct namespaces.
 // It is deterministic but not reversible; resolution requires the host's
 // viewer-filtered LiveTV lookup.

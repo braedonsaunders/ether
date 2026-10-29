@@ -129,6 +129,25 @@ func TestStringGUIDNamespaces(t *testing.T) {
 		t.Fatal("accepted wrong kind")
 	}
 }
+
+func TestStremioTMDBKeyBoundsAndKinds(t *testing.T) {
+	for _, tc := range []struct {
+		typ, raw string
+		valid    bool
+	}{
+		{"movie", "tmdb:42", true}, {"series", "tmdb:42", true}, {"series", "tmdb:42:2:3", true},
+		{"movie", "tmdb:42:2:3", false}, {"series", "tmdb:100000000:2:3", false}, {"movie", "tt123", false},
+	} {
+		id, err := ParseStremio(tc.raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, err := StremioTMDBKey(tc.typ, id)
+		if (err == nil) != tc.valid || tc.valid && key.TMDB() != 42 {
+			t.Fatalf("%s %s: %v %v", tc.typ, tc.raw, key, err)
+		}
+	}
+}
 func FuzzStringGUID(f *testing.F) {
 	f.Add("channel-one")
 	f.Fuzz(func(t *testing.T, s string) {
