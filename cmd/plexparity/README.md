@@ -17,12 +17,9 @@ The no-override path is covered by `TestNoScopedOverridesPreserveSelection`
 and `TestScopedQualityOnlyTightensPlexRequest`. This is recorded for
 attribution only: no response is allowlisted without a verified exact pair.
 
-The v0.2.45 self-run with live-TV and downloads leaves 8 GET routes uncovered. All are
+The v0.2.45 full self-run leaves 3 GET routes uncovered. All are
 implemented features; none should be exempted as intentionally unsupported:
 
-- Five subtitle and trickplay reads: subtitle search, external subtitle stream,
-  transcode subtitle, BIF and individual frame. These need actual subtitle
-  and generated trickplay data.
 - Three live-TV reads: DASH part, IPTV relay and IPTV resource. These need an
   offline IPTV source fixture.
 
