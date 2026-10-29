@@ -387,7 +387,7 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 	if p.subSet && p.subSel >= 0 && p.subSel < len(ps.Info.Streams) && ps.Info.Streams[p.subSel].Type == "subtitle" {
 		subtitle = p.subSel
 	}
-	s.playbackOwners.bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
+	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	s.transcodes.put(&transcodeEntry{
 		id: p.sessionID, playID: ps.ID, playbackID: pr.SessionID, userID: pr.User.ID, clientID: pr.ClientID, key: p.key,
 		requested: requested,
@@ -778,7 +778,7 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer unlockEncoder()
 
-	if s.playbackOwners.stale(pr.User.ID, pr.ClientID, p.key, pr.SessionID) {
+	if s.playbackOwners.Stale(pr.User.ID, pr.ClientID, p.key, pr.SessionID) {
 		writeHTTPError(w, http.StatusGone)
 		return
 	}
@@ -808,7 +808,7 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 		}
 		entry, _ = s.transcodes.get(p.sessionID)
 	}
-	s.playbackOwners.bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
+	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
 
@@ -1035,7 +1035,7 @@ func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		e = current
-		if s.playbackOwners.stale(e.userID, e.clientID, e.key, pr.SessionID) && e.playbackID != pr.SessionID {
+		if s.playbackOwners.Stale(e.userID, e.clientID, e.key, pr.SessionID) && e.playbackID != pr.SessionID {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -1053,7 +1053,7 @@ func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
 		// A replacement decision owns the source before its encoder starts.
 		// Retire a superseded encoder without releasing that prepared source,
 		// including stops that omit the external playback identifier.
-		superseded := s.playbackOwners.stale(e.userID, e.clientID, e.key, e.playbackID)
+		superseded := s.playbackOwners.Stale(e.userID, e.clientID, e.key, e.playbackID)
 		if !superseded && !shared && e.playID != "" && s.d.Playback != nil {
 			s.d.Playback.Stop(e.playID)
 		}
@@ -1182,7 +1182,7 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.Method != http.MethodHead && r.URL.Query().Get("download") != "1" {
-		s.playbackOwners.bind(pr.User.ID, pr.ClientID, key, pr.SessionID, ps.ID, false, s.now())
+		s.playbackOwners.Bind(pr.User.ID, pr.ClientID, key, pr.SessionID, ps.ID, false, s.now())
 	}
 	if r.URL.Query().Get("download") == "1" {
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(chi.URLParam(r, "file"), "\"", "")+"\"")

@@ -53,7 +53,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unlockEncoder()
-	if s.playbackOwners.stale(pr.User.ID, pr.ClientID, p.key, pr.SessionID) {
+	if s.playbackOwners.Stale(pr.User.ID, pr.ClientID, p.key, pr.SessionID) {
 		writeHTTPError(w, http.StatusGone)
 		return
 	}
@@ -80,7 +80,7 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 		}
 		entry, _ = s.transcodes.get(p.sessionID)
 	}
-	s.playbackOwners.bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
+	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
 

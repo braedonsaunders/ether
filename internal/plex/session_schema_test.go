@@ -1,4 +1,4 @@
-package sessions
+package plex
 
 import (
 	"testing"

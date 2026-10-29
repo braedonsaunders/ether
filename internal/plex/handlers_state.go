@@ -59,7 +59,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	// A late stop from an explicitly superseded playback must not stop the
 	// replacement source or overwrite its progress. Unknown/omitted IDs keep
 	// the historical behavior for clients with different request identities.
-	if s.playbackOwners.stale(pr.User.ID, pr.ClientID, key, pr.SessionID) {
+	if s.playbackOwners.Stale(pr.User.ID, pr.ClientID, key, pr.SessionID) {
 		s.cleanSupersededEncoders(ctx, pr.User.ID, pr.ClientID, key, pr.SessionID)
 		s.sessions.remove(trackID(pr.User.ID, pr.ClientID, pr.SessionID))
 		s.writeEmpty(w, r)
@@ -89,7 +89,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	tids := s.transcodes.forClient(user.ID, pr.ClientID, key)
 	for _, id := range tids {
-		if e, ok := s.transcodes.get(id); ok && s.playbackOwners.stale(user.ID, pr.ClientID, key, e.playbackID) {
+		if e, ok := s.transcodes.get(id); ok && s.playbackOwners.Stale(user.ID, pr.ClientID, key, e.playbackID) {
 			s.cleanSupersededEncoders(ctx, user.ID, pr.ClientID, key, e.playbackID)
 			continue
 		}
@@ -494,7 +494,7 @@ func (s *Server) terminateLocal(sid, reason string) bool {
 				return false
 			}
 			defer unlock()
-			if s.playbackOwners.stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
+			if s.playbackOwners.Stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
 				s.cleanSupersededEncoders(s.ctx, e.user.ID, e.client.ClientID, e.key, e.client.SessionID)
 				return true
 			}

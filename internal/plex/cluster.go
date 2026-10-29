@@ -403,7 +403,7 @@ func (s *Server) endLocalSession(tid string, offset time.Duration) {
 	if !ok {
 		return
 	}
-	if s.playbackOwners.stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
+	if s.playbackOwners.Stale(e.user.ID, e.client.ClientID, e.key, e.client.SessionID) {
 		s.cleanSupersededEncoders(s.ctx, e.user.ID, e.client.ClientID, e.key, e.client.SessionID)
 		return
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // DefaultPMSVersion is reported when Identity.Version is empty. Clients gate
@@ -151,7 +152,7 @@ type Server struct {
 	downloads         *downloadStore
 	queues            *playQueueStore
 	sessions          *sessionTracker
-	playbackOwners    *playbackOwners
+	playbackOwners    *sessions.PlaybackOwners
 	playbackLifecycle *playbackLifecycle
 	transcodes        *transcodeTable
 	extraPlay         *extraPlayStore
@@ -208,7 +209,7 @@ func NewServer(d Deps) *Server {
 		downloads:         newDownloadStore(),
 		queues:            newPlayQueueStore(),
 		sessions:          newSessionTracker(),
-		playbackOwners:    newPlaybackOwners(),
+		playbackOwners:    sessions.NewPlaybackOwners(),
 		playbackLifecycle: newPlaybackLifecycle(),
 		transcodes:        newTranscodeTable(),
 		extraPlay:         newExtraPlayStore(),
@@ -395,7 +396,7 @@ func (s *Server) janitor() {
 			s.queues.expire(now, 6*time.Hour)
 			s.renderedVariants.expire(now, renderedVariantsTTL)
 			s.transcodes.expire(now, 2*time.Hour)
-			s.playbackOwners.expire(now, 2*time.Hour)
+			s.playbackOwners.Expire(now, 2*time.Hour)
 			s.extraPlay.expire(now, 2*time.Hour)
 			s.expireTerminations(now, terminationTTL)
 			expired := s.sessions.expire(now, 2*time.Minute)
