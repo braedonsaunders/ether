@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -66,6 +67,13 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 			}
 		},
 		Events:       events,
+		OpenSubtitle: a.subtitles.OpenFormat,
+		ExtractSubtitle: func(ctx context.Context, input string, index int, codec string, w io.Writer) error {
+			if a.transcoder == nil {
+				return core.ErrNotAvailable
+			}
+			return a.transcoder.ExtractSubtitle(ctx, input, index, codec, w)
+		},
 		OnEventError: func(err error) { a.log.Warn("session event publication failed", "err", err) },
 	})
 }

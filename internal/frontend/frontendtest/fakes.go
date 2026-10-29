@@ -158,6 +158,7 @@ type Sessions struct {
 	PlanFunc         func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error)
 	OpenFunc         func(context.Context, frontend.OpenRequest) (frontend.Session, error)
 	StartStreamFunc  func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error)
+	SubtitleURLFunc  func(context.Context, frontend.SessionAccess, string, int, string) (string, error)
 	ServeMediaFunc   func(http.ResponseWriter, *http.Request)
 	ReportFunc       func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error
 	StopFunc         func(context.Context, frontend.SessionAccess, string) error
@@ -184,6 +185,12 @@ func (f Sessions) StartStream(c context.Context, a frontend.SessionAccess, id st
 		return f.StartStreamFunc(c, a, id, r)
 	}
 	return "", nil
+}
+func (f Sessions) SubtitleURL(c context.Context, a frontend.SessionAccess, id string, index int, format string) (string, error) {
+	if f.SubtitleURLFunc != nil {
+		return f.SubtitleURLFunc(c, a, id, index, format)
+	}
+	return "", core.ErrNotAvailable
 }
 func (f Sessions) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	if f.ServeMediaFunc != nil {

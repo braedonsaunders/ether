@@ -174,6 +174,10 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, w http.ResponseWriter, r
 		return
 	}
 	tail := parts[2:]
+	if len(tail) == 2 && tail[0] == "subtitles" {
+		b.serveSubtitle(w, r, s, tail[1])
+		return
+	}
 	if len(tail) == 1 && tail[0] == "file" && s.format == frontend.StreamDirect {
 		b.deps.Playback.ServeRange(w, r, s.playID)
 		return

@@ -52,6 +52,12 @@ func (s surface) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	return s.broker.StartStream(ctx, a, id, r)
 }
+func (s surface) SubtitleURL(ctx context.Context, a frontend.SessionAccess, id string, index int, format string) (string, error) {
+	if a.Protocol != s.protocol {
+		return "", core.ErrUnauthorized
+	}
+	return s.broker.SubtitleURL(ctx, a, id, index, format)
+}
 func (s surface) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	if scoped, ok := s.broker.(interface {
 		ServeMediaFor(frontend.Protocol, http.ResponseWriter, *http.Request)

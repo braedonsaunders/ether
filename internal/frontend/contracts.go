@@ -371,6 +371,8 @@ type Sessions interface {
 	Open(context.Context, OpenRequest) (Session, error)
 	// StartStream revalidates access to the session and returns its scoped URL.
 	StartStream(context.Context, SessionAccess, string, StreamRequest) (string, error)
+	// SubtitleURL returns a scoped URL for a subtitle stream index and format.
+	SubtitleURL(context.Context, SessionAccess, string, int, string) (string, error)
 	// ServeMedia authorizes the scoped grant and serves direct, HLS or DASH data.
 	ServeMedia(http.ResponseWriter, *http.Request)
 	Report(context.Context, SessionAccess, string, Timeline) error

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"sync"
@@ -28,6 +29,8 @@ type BrokerDeps struct {
 	OnTimeline         func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string)
 	Events             *EventBus
 	OnEventError       func(error)
+	OpenSubtitle       func(string, string) (io.ReadCloser, string, error)
+	ExtractSubtitle    func(context.Context, string, int, string, io.Writer) error
 	Now                func() time.Time
 }
 
@@ -53,7 +56,7 @@ type brokerSession struct {
 }
 
 // Broker coordinates neutral sessions with the shared playback admission manager.
-// Follow-up work: scoped subtitle extraction and cluster-wide session listing and stop are not yet implemented here.
+// Follow-up work: cluster-wide session listing and stop are not yet implemented here.
 // Plex's legacy timeline tracker is not yet included in Sessions; owner
 // Activity continues to use the shared playback manager until that move lands.
 type Broker struct {
