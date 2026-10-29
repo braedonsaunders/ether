@@ -11,11 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	pmsconform "github.com/braedonsaunders/ether/internal/conform"
+	"github.com/braedonsaunders/ether/internal/conform/mediabrowser"
 	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 )
 
@@ -30,13 +32,23 @@ func run(args []string) error {
 		return fmt.Errorf("usage: conformdiff record|compare|live [flags]")
 	}
 	cmd := args[0]
+	if cmd == "validate" {
+		return validateFixture(args[1:])
+	}
 	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
-	ref := f.String("reference", "", "fixture directory")
+	ref := f.String("reference", "", "reference server URL")
+	fixtures := f.String("fixtures", "", "recorded reference fixture directory")
+	protocol := f.String("protocol", "plex", "plex|jellyfin|emby|silo")
+	profileDir := f.String("profiles", "", "profile directory")
+	refToken := f.String("reference-token", os.Getenv("CONFORM_REFERENCE_TOKEN"), "reference credential")
+	targetToken := f.String("target-token", os.Getenv("CONFORM_TARGET_TOKEN"), "target credential")
+	refVars := f.String("reference-vars", "", "JSON file containing reference template variables")
+	targetVars := f.String("target-vars", "", "JSON file containing target template variables")
 	refServer := f.String("reference-server", "", "live reference PMS URL")
 	target := f.String("target", "", "target PMS URL")
 	server := f.String("server", "", "PMS URL to record")
 	token := f.String("token", "", "PMS access token")
-	out := f.String("out", "testdata/conform/plex", "output fixture directory")
+	out := f.String("out", "", "output fixture directory")
 	client := f.String("client", "all", "web|ios|appletv|all")
 	format := f.String("format", "text", "text|json")
 	summary := f.Bool("summary", false, "print per-endpoint missing/extra/type differences and a count table")
@@ -51,20 +63,69 @@ func run(args []string) error {
 	if *timeout <= 0 || *concurrency < 1 {
 		return fmt.Errorf("--timeout and --concurrency must be positive")
 	}
+	var p pmsconform.Protocol
+	if *protocol == "plex" {
+		p = conformplex.Protocol{}
+	} else {
+		dir := *profileDir
+		if dir == "" {
+			dir = filepath.Join("internal", "conform", "profiles", *protocol)
+		}
+		var e error
+		p, e = mediabrowser.Load(*protocol, dir)
+		if e != nil {
+			return e
+		}
+	}
+	if *client != "all" && *client != "" {
+		for _, name := range strings.Split(*client, ",") {
+			if _, ok := p.Clients()[name]; !ok {
+				return fmt.Errorf("unknown client %q", name)
+			}
+		}
+	}
+	if *protocol != "plex" {
+		*concurrency = 1
+	}
+	if *out == "" {
+		*out = filepath.Join("testdata", "conform", *protocol)
+	}
+	if *fixtures == "" {
+		*fixtures = *out
+	}
+	if *refToken == "" {
+		*refToken = *token
+	}
+	if *targetToken == "" {
+		*targetToken = *token
+	}
+	referenceVars, err := readVariables(*refVars)
+	if err != nil {
+		return err
+	}
+	targetVariables, err := readVariables(*targetVars)
+	if err != nil {
+		return err
+	}
 	var report pmsconform.Report
-	var err error
 	switch cmd {
 	case "record":
 		if *server == "" {
+			*server = *ref
+		}
+		if *server == "" {
 			return fmt.Errorf("record requires --server")
 		}
-		report, err = record(*server, *token, *out, *client, *only, *timeout, *concurrency)
+		report, err = record(p, referenceVars, *server, *refToken, *out, *client, *only, *timeout, *concurrency)
 	case "compare":
-		if *target == "" || *ref == "" {
-			return fmt.Errorf("compare requires --reference and --target")
+		if *target == "" {
+			return fmt.Errorf("compare requires --target")
 		}
-		report, err = compare(*ref, *target, *token, *client, *only, *timeout, *concurrency)
+		report, err = compare(p, targetVariables, *fixtures, *target, *targetToken, *client, *only, *timeout, *concurrency)
 	case "live":
+		if *refServer == "" {
+			*refServer = *ref
+		}
 		if *refServer == "" || *target == "" {
 			return fmt.Errorf("live requires --reference-server and --target")
 		}
@@ -73,10 +134,10 @@ func run(args []string) error {
 			return e
 		}
 		defer os.RemoveAll(tmp)
-		report, err = record(*refServer, *token, tmp, *client, *only, *timeout, *concurrency)
+		report, err = record(p, referenceVars, *refServer, *refToken, tmp, *client, *only, *timeout, *concurrency)
 		if err == nil {
 			var targetReport pmsconform.Report
-			targetReport, err = compare(tmp, *target, *token, *client, *only, *timeout, *concurrency)
+			targetReport, err = compare(p, targetVariables, tmp, *target, *targetToken, *client, *only, *timeout, *concurrency)
 			report = mergeReports(report, targetReport)
 		}
 	default:
@@ -116,16 +177,21 @@ func filterReport(r pmsconform.Report, re *regexp.Regexp) pmsconform.Report {
 	return r
 }
 
-func profiles(sel string) []string {
+func profiles(p pmsconform.Protocol, sel string) []string {
 	if sel == "all" || sel == "" {
-		return []string{"web", "ios", "appletv"}
+		names := make([]string, 0, len(p.Clients()))
+		for name := range p.Clients() {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return names
 	}
 	return strings.Split(sel, ",")
 }
 
 // corpus is the probe corpus, optionally narrowed to paths containing only.
-func corpus(only string) []pmsconform.Request {
-	all := conformplex.Corpus()
+func corpus(p pmsconform.Protocol, profile, only string) []pmsconform.Request {
+	all := p.Corpus(profile)
 	if only == "" {
 		return all
 	}
@@ -138,24 +204,27 @@ func corpus(only string) []pmsconform.Request {
 	return out
 }
 
-func record(base, token, out, sel, only string, timeout time.Duration, concurrency int) (pmsconform.Report, error) {
+func record(p pmsconform.Protocol, variables map[string]string, base, token, out, sel, only string, timeout time.Duration, concurrency int) (pmsconform.Report, error) {
 	client := &http.Client{Timeout: timeout}
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
 	report := pmsconform.Report{}
 	var mu sync.Mutex
-	for _, profile := range profiles(sel) {
+	for _, profile := range profiles(p, sel) {
 		// A partial recording reuses the saved IDs so the new fixtures
 		// describe the same items as the rest of the set.
 		ids, e := loadDiscovery(out, profile)
 		if only == "" || e != nil {
-			ids = conformplex.Discover(ctx, client, base, token, profile, nil)
+			ids = p.Discover(ctx, client, base, token, profile, nil)
 			for _, w := range ids.Warnings {
 				report.Discovery = append(report.Discovery, profile+": "+w)
 			}
 			if e := saveDiscovery(out, profile, ids); e != nil {
 				return report, e
 			}
+		}
+		for k, v := range variables {
+			ids.Values[k] = v
 		}
 		type job struct {
 			req  pmsconform.Request
@@ -169,8 +238,8 @@ func record(base, token, out, sel, only string, timeout time.Duration, concurren
 			go func() {
 				defer wg.Done()
 				for j := range jobs {
-					resp, e := conformplex.Fetch(ctx, client, base, token, j.req, profile, ids.Values, j.json)
-					filename := fixtureName(profile, j.req.Path, j.json)
+					resp, e := p.Fetch(ctx, client, base, token, j.req, profile, ids.Values, j.json)
+					filename := p.FixtureName(profile, j.req, j.json)
 					if e != nil {
 						mu.Lock()
 						report.Differences = append(report.Differences, errorDifference(profile, j.req, e))
@@ -179,7 +248,7 @@ func record(base, token, out, sel, only string, timeout time.Duration, concurren
 						continue
 					}
 					fixtureMu.Lock()
-					n, e := pmsconform.SaveFixtureTrimmed(filepath.Join(out, profile), filename, resp)
+					n, e := pmsconform.SaveFixtureTrimmed(filepath.Join(out, profile), filename, p.Redact(resp))
 					fixtureMu.Unlock()
 					mu.Lock()
 					if e != nil {
@@ -192,8 +261,8 @@ func record(base, token, out, sel, only string, timeout time.Duration, concurren
 				}
 			}()
 		}
-		for _, req := range corpus(only) {
-			for _, jm := range []bool{false, true} {
+		for _, req := range corpus(p, profile, only) {
+			for _, jm := range p.Formats() {
 				jobs <- job{req, jm}
 			}
 		}
@@ -205,20 +274,32 @@ func record(base, token, out, sel, only string, timeout time.Duration, concurren
 	}
 	return report, nil
 }
-func compare(dir, base, token, sel, only string, timeout time.Duration, concurrency int) (pmsconform.Report, error) {
+func compare(p pmsconform.Protocol, variables map[string]string, dir, base, token, sel, only string, timeout time.Duration, concurrency int) (pmsconform.Report, error) {
 	client := &http.Client{Timeout: timeout}
 	ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 	defer cancel()
 	out := pmsconform.Report{}
-	for _, req := range corpus(only) {
-		out.Endpoints = append(out.Endpoints, req.Path)
-	}
-	for _, profile := range profiles(sel) {
+	for _, profile := range profiles(p, sel) {
+		for _, req := range corpus(p, profile, only) {
+			found := false
+			for _, endpoint := range out.Endpoints {
+				if endpoint == req.Path {
+					found = true
+					break
+				}
+			}
+			if !found {
+				out.Endpoints = append(out.Endpoints, req.Path)
+			}
+		}
 		refIDs, e := loadDiscovery(dir, profile)
 		if e != nil {
 			refIDs = pmsconform.DiscoveredIDs{Values: map[string]string{}, Warnings: []string{"reference discovery unavailable; fallback IDs may be used"}}
 		}
-		targetIDs := conformplex.Discover(ctx, client, base, token, profile, &refIDs)
+		targetIDs := p.Discover(ctx, client, base, token, profile, &refIDs)
+		for k, v := range variables {
+			targetIDs.Values[k] = v
+		}
 		for _, w := range refIDs.Warnings {
 			out.Discovery = append(out.Discovery, profile+" reference: "+w)
 		}
@@ -238,7 +319,7 @@ func compare(dir, base, token, sel, only string, timeout time.Duration, concurre
 			go func() {
 				defer wg.Done()
 				for j := range jobs {
-					name := fixtureName(profile, j.req.Path, j.json)
+					name := p.FixtureName(profile, j.req, j.json)
 					a, e := pmsconform.LoadFixture(filepath.Join(dir, profile, name+".json"))
 					if e != nil {
 						d := errorDifference(profile, j.req, fmt.Errorf("load fixture: %w", e))
@@ -247,7 +328,7 @@ func compare(dir, base, token, sel, only string, timeout time.Duration, concurre
 						results <- result{[]pmsconform.Difference{d}}
 						continue
 					}
-					b, e := conformplex.Fetch(ctx, client, base, token, j.req, profile, targetIDs.Values, j.json)
+					b, e := p.Fetch(ctx, client, base, token, j.req, profile, targetIDs.Values, j.json)
 					if e != nil {
 						d := errorDifference(profile, j.req, e)
 						d.Format = formatName(j.json)
@@ -255,14 +336,14 @@ func compare(dir, base, token, sel, only string, timeout time.Duration, concurre
 						results <- result{[]pmsconform.Difference{d}}
 						continue
 					}
-					r := pmsconform.Compare(a, b).WithRequest(profile, formatName(j.json), j.req.Path)
+					r := p.Compare(a, p.Redact(b)).WithRequest(profile, formatName(j.json), j.req.Path)
 					results <- result{r.Differences}
 				}
 			}()
 		}
 		go func() {
-			for _, req := range corpus(only) {
-				for _, jm := range []bool{false, true} {
+			for _, req := range corpus(p, profile, only) {
+				for _, jm := range p.Formats() {
 					jobs <- job{req, jm}
 				}
 			}
@@ -340,8 +421,19 @@ func writeManifest(dir string, r pmsconform.Report, only string) error {
 		}
 	}
 	counts := map[string]int{}
-	for _, profile := range []string{"web", "ios", "appletv"} {
-		entries, _ := os.ReadDir(filepath.Join(dir, profile))
+	profileDirs, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, d := range profileDirs {
+		if !d.IsDir() {
+			continue
+		}
+		profile := d.Name()
+		entries, err := os.ReadDir(filepath.Join(dir, profile))
+		if err != nil {
+			return err
+		}
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") && !strings.HasPrefix(entry.Name(), "_") {
 				counts[profile]++
@@ -373,4 +465,20 @@ func loadDiscovery(dir, profile string) (pmsconform.DiscoveredIDs, error) {
 	var d pmsconform.DiscoveredIDs
 	e = json.Unmarshal(b, &d)
 	return d, e
+}
+
+// readVariables keeps supplied template values out of the saved discovery file.
+func readVariables(path string) (map[string]string, error) {
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var v map[string]string
+	if err = json.Unmarshal(b, &v); err != nil {
+		return nil, fmt.Errorf("variables: %w", err)
+	}
+	return v, nil
 }

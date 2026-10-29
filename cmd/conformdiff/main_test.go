@@ -13,6 +13,7 @@ import (
 	"time"
 
 	pmsconform "github.com/braedonsaunders/ether/internal/conform"
+	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 )
 
 func TestFilterReport(t *testing.T) {
@@ -36,8 +37,8 @@ func TestFilterReport(t *testing.T) {
 }
 
 func TestCorpusFilter(t *testing.T) {
-	all := corpus("")
-	dec := corpus("/transcode/universal/decision")
+	all := corpus(conformplex.Protocol{}, "web", "")
+	dec := corpus(conformplex.Protocol{}, "web", "/transcode/universal/decision")
 	if len(dec) == 0 || len(dec) >= len(all) {
 		t.Fatalf("decision filter: %d of %d", len(dec), len(all))
 	}
@@ -70,7 +71,7 @@ func TestRecordOnlyKeepsDiscoveryAndManifest(t *testing.T) {
 	srv := fakePMS(t, "")
 	defer srv.Close()
 	dir := t.TempDir()
-	if _, err := record(srv.URL, "tok", dir, "web", "", 5*time.Second, 2); err != nil {
+	if _, err := record(conformplex.Protocol{}, nil, srv.URL, "tok", dir, "web", "", 5*time.Second, 2); err != nil {
 		t.Fatal(err)
 	}
 	disc := filepath.Join(dir, "web", "_discovery.json")
@@ -87,7 +88,7 @@ func TestRecordOnlyKeepsDiscoveryAndManifest(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644)
 	os.WriteFile(disc, append(bytes.TrimSpace(before), '\n'), 0o644)
 
-	if _, err := record(srv.URL, "tok", dir, "web", "/identity", 5*time.Second, 2); err != nil {
+	if _, err := record(conformplex.Protocol{}, nil, srv.URL, "tok", dir, "web", "/identity", 5*time.Second, 2); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(disc)
@@ -104,13 +105,13 @@ func TestCompareSummaryAgainstFixtures(t *testing.T) {
 	ref := fakePMS(t, "")
 	defer ref.Close()
 	dir := t.TempDir()
-	if _, err := record(ref.URL, "tok", dir, "web", "", 5*time.Second, 2); err != nil {
+	if _, err := record(conformplex.Protocol{}, nil, ref.URL, "tok", dir, "web", "", 5*time.Second, 2); err != nil {
 		t.Fatal(err)
 	}
 	// The target lacks nothing but adds an attribute in listings.
 	target := fakePMS(t, ` extra="1"`)
 	defer target.Close()
-	rep, err := compare(dir, target.URL, "tok", "web", "", 5*time.Second, 2)
+	rep, err := compare(conformplex.Protocol{}, nil, dir, target.URL, "tok", "web", "", 5*time.Second, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +129,25 @@ func TestCompareSummaryAgainstFixtures(t *testing.T) {
 	var js struct {
 		Endpoints []pmsconform.EndpointSummary `json:"endpoints"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &js); err != nil || len(js.Endpoints) != len(corpus("")) {
+	if err := json.Unmarshal(out.Bytes(), &js); err != nil || len(js.Endpoints) != len(corpus(conformplex.Protocol{}, "web", "")) {
 		t.Fatalf("json summary: %v %d", err, len(js.Endpoints))
+	}
+}
+
+func TestValidateFixture(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "spec.json")
+	if err := os.WriteFile(spec, []byte(`{"openapi":"3.0.0","paths":{"/x":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object","required":["Id"]}}}}}}}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := pmsconform.SaveFixture(dir, "response", pmsconform.Response{Status: 200, Headers: http.Header{"Content-Type": []string{"application/json"}}, Body: []byte(`{"Id":"one"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"-spec", spec, "-fixture", filepath.Join(dir, "response.json"), "-path", "/x"}
+	if err := validateFixture(args); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateFixture(append(args[:len(args)-1], "/missing")); err == nil {
+		t.Fatal("undocumented path accepted")
 	}
 }
