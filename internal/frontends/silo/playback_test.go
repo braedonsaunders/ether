@@ -105,6 +105,9 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "/api/v2/stream/"+sessionID+"/scoped/master.m3u8") || !strings.Contains(w.Body.String(), `"session_id":"`+sessionID+`"`) {
 		t.Fatal("media URL not native", w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `"X-Silo-Device-Id":"tv"`) {
+		t.Fatal("media request missing device binding", w.Body.String())
+	}
 	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":0,"subtitle_track_index":0}`)
 	if w.Code != 201 || planned.Intent.Options.AudioStream != 2 || planned.Intent.Options.SubtitleStream != 5 {
 		t.Fatalf("track ordinal mapping: %d %+v", w.Code, planned.Intent.Options)

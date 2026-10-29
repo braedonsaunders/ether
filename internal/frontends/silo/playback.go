@@ -337,7 +337,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		ordinal++
 	}
 	subtitle["inventory"] = inventory
-	stream := map[string]any{"url": media, "protocol": proto, "container": plan.Media.Container, "mime_type": mime, "headers": map[string]string{}, "header_refresh": "none"}
+	stream := map[string]any{"url": media, "protocol": proto, "container": plan.Media.Container, "mime_type": mime, "headers": map[string]string{"X-Silo-Device-Id": d.ID}, "header_refresh": "none"}
 	if format == frontend.StreamHLS {
 		stream["container"] = "hls"
 	}
