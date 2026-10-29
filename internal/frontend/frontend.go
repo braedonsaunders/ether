@@ -205,13 +205,16 @@ var ErrAlreadyMounted = errors.New("frontend already mounted")
 // Registry serializes lifecycle transitions so a protocol has at most one
 // live instance. The host factory must bind identity to the requested surface.
 type Registry struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	entries map[Protocol]*entry
 	host    func(Protocol) Host
 }
 type entry struct {
-	frontend Frontend
-	instance Instance
+	frontend   Frontend
+	descriptor Descriptor
+	instance   Instance
+	transition chan struct{}
+	generation uint64
 }
 
 func NewRegistry(host func(Protocol) Host) *Registry {
@@ -221,7 +224,8 @@ func (r *Registry) Register(f Frontend) error {
 	if f == nil {
 		return errors.New("nil frontend")
 	}
-	id := f.Describe().ID
+	descriptor := f.Describe()
+	id := descriptor.ID
 	if id == "" {
 		return errors.New("empty frontend id")
 	}
@@ -230,7 +234,7 @@ func (r *Registry) Register(f Frontend) error {
 	if _, ok := r.entries[id]; ok {
 		return fmt.Errorf("frontend %q already registered", id)
 	}
-	r.entries[id] = &entry{frontend: f}
+	r.entries[id] = &entry{frontend: f, descriptor: cloneDescriptor(descriptor)}
 	return nil
 }
 
@@ -252,47 +256,104 @@ func (r *Registry) ValidateSettings(id Protocol, settings Settings) (bool, error
 }
 
 func (r *Registry) Mount(ctx context.Context, id Protocol) (Instance, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	e, ok := r.entries[id]
-	if !ok {
-		return nil, ErrNotRegistered
+	for {
+		r.mu.Lock()
+		e, ok := r.entries[id]
+		if !ok {
+			r.mu.Unlock()
+			return nil, ErrNotRegistered
+		}
+		if wait := e.transition; wait != nil {
+			r.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		if e.instance != nil {
+			r.mu.Unlock()
+			return nil, ErrAlreadyMounted
+		}
+		if r.host == nil {
+			r.mu.Unlock()
+			return nil, errors.New("missing host factory")
+		}
+		e.generation++
+		generation := e.generation
+		e.transition = make(chan struct{})
+		frontend, host := e.frontend, r.host
+		r.mu.Unlock()
+		instance, err := frontend.Mount(ctx, host(id))
+		if err != nil && instance != nil {
+			_ = instance.Close(ctx)
+			instance = nil
+		}
+		if err == nil && instance == nil {
+			err = errors.New("frontend returned nil instance")
+		}
+		r.mu.Lock()
+		if current := r.entries[id]; current != e || e.generation != generation {
+			r.mu.Unlock()
+			if instance != nil {
+				_ = instance.Close(ctx)
+			}
+			return nil, errors.New("frontend mount superseded")
+		}
+		if err == nil {
+			e.instance = instance
+		}
+		close(e.transition)
+		e.transition = nil
+		r.mu.Unlock()
+		return instance, err
 	}
-	if e.instance != nil {
-		return nil, ErrAlreadyMounted
-	}
-	if r.host == nil {
-		return nil, errors.New("missing host factory")
-	}
-	instance, err := e.frontend.Mount(ctx, r.host(id))
-	if err != nil {
-		return nil, err
-	}
-	if instance == nil {
-		return nil, errors.New("frontend returned nil instance")
-	}
-	e.instance = instance
-	return instance, nil
 }
 func (r *Registry) Unmount(ctx context.Context, id Protocol) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	e, ok := r.entries[id]
-	if !ok {
-		return ErrNotRegistered
-	}
-	if e.instance == nil {
-		return nil
-	}
-	if err := e.instance.Close(ctx); err != nil {
+	for {
+		r.mu.Lock()
+		e, ok := r.entries[id]
+		if !ok {
+			r.mu.Unlock()
+			return ErrNotRegistered
+		}
+		if wait := e.transition; wait != nil {
+			r.mu.Unlock()
+			select {
+			case <-wait:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		if e.instance == nil {
+			r.mu.Unlock()
+			return nil
+		}
+		e.generation++
+		generation := e.generation
+		e.transition = make(chan struct{})
+		instance := e.instance
+		r.mu.Unlock()
+		err := instance.Close(ctx)
+		r.mu.Lock()
+		if current := r.entries[id]; current != e || e.generation != generation {
+			r.mu.Unlock()
+			return errors.New("frontend unmount superseded")
+		}
+		if err == nil {
+			e.instance = nil
+		}
+		close(e.transition)
+		e.transition = nil
+		r.mu.Unlock()
 		return err
 	}
-	e.instance = nil
-	return nil
 }
 func (r *Registry) Instance(id Protocol) (Instance, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	e, ok := r.entries[id]
 	if !ok || e.instance == nil {
 		return nil, false
@@ -300,12 +361,21 @@ func (r *Registry) Instance(id Protocol) (Instance, bool) {
 	return e.instance, true
 }
 func (r *Registry) Descriptors() []Descriptor {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
 	result := make([]Descriptor, 0, len(r.entries))
 	for _, e := range r.entries {
-		result = append(result, e.frontend.Describe())
+		result = append(result, cloneDescriptor(e.descriptor))
 	}
+	r.mu.RUnlock()
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+func cloneDescriptor(d Descriptor) Descriptor {
+	d.Clients = append([]string(nil), d.Clients...)
+	d.CertifiedApps = append([]CertifiedApp(nil), d.CertifiedApps...)
+	for i := range d.CertifiedApps {
+		d.CertifiedApps[i].Steps = append([]ConnectStep(nil), d.CertifiedApps[i].Steps...)
+	}
+	return d
 }
