@@ -186,10 +186,15 @@ func TestImageGrantUsesScopedArtworkAndTransforms(t *testing.T) {
 	if source.calls != 1 || source.request.Viewer.ID != 1 || source.request.Device != device || source.request.Item != core.MovieKey(42) || source.image != image || source.transform != (frontend.ArtworkTransform{Width: 300, Height: 200, Format: "png", Blur: true}) {
 		t.Fatalf("bad source request: %+v", source)
 	}
+	w = httptest.NewRecorder()
+	s.Serve(w, httptest.NewRequest("GET", "/?h=200&format=png", nil), secret)
+	if w.Code != 200 || source.transform.Width != 0 || source.transform.Height != 200 {
+		t.Fatalf("height-only request: %+v", source.transform)
+	}
 	allowed = false
 	w = httptest.NewRecorder()
 	s.Serve(w, httptest.NewRequest("GET", "/", nil), secret)
-	if w.Code != 404 || source.calls != 1 {
+	if w.Code != 404 || source.calls != 2 {
 		t.Fatal("hidden artwork reached source", w.Code, source.calls)
 	}
 }

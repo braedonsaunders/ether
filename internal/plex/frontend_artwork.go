@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	_ "image/gif" // decode animated logos as their first frame for transforms
 	"image/jpeg"
 	"image/png"
 	"net/http"
@@ -35,6 +36,7 @@ type FrontendArtwork struct {
 	URLImages interface {
 		GetUntrustedURL(context.Context, string) ([]byte, string, error)
 	}
+	Raster *artwork.SVGRasterizer
 }
 
 type frontendArtworkEntry struct {
@@ -46,6 +48,7 @@ type frontendArtworkEntry struct {
 	remotePath                    string
 	channel                       bool
 	channelLogo                   string
+	channelNumber, channelName    string
 	ultra                         *model.UltraBlurColors
 }
 
@@ -106,7 +109,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 			if channel.ID != req.Channel {
 				continue
 			}
-			return []frontendArtworkEntry{{image: a.ChannelImage(req.Viewer, channel), channel: true, channelLogo: channel.Logo}}, true, nil
+			return []frontendArtworkEntry{{image: a.ChannelImage(req.Viewer, channel), channel: true, channelLogo: channel.Logo, channelNumber: channel.Number, channelName: channel.Name}}, true, nil
 		}
 		return nil, false, core.ErrNotFound
 	}
@@ -287,6 +290,10 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		if entry.ultra != nil {
 			return renderUltraBlur(*entry.ultra, transform)
 		}
+		opts := artwork.RasterOptions{Width: transform.Width, Height: transform.Height, Format: transform.Format, Blur: transform.Blur}
+		if entry.channel && entry.channelLogo == "" && (transform.Format != "" || transform.Blur) {
+			return a.Raster.ChannelLogo(ctx, img.Path, entry.channelNumber, entry.channelName, opts)
+		}
 		if entry.channel && entry.channelLogo != "" {
 			if a.URLImages == nil {
 				return nil, "", core.ErrNotAvailable
@@ -295,7 +302,7 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 			if err != nil {
 				return nil, "", err
 			}
-			return transformArtwork(data, ct, transform)
+			return a.transformArtwork(ctx, img.Path, data, ct, transform)
 		}
 		ctx = context.WithValue(ctx, artworkCacheOnlyKey{}, true)
 		ctx = withRequest(ctx, &Request{User: req.Viewer, Language: req.Device.Language, Product: req.Device.Product, Platform: req.Device.Platform, DeviceName: req.Device.DeviceName, ClientID: req.Device.ID})
@@ -325,9 +332,19 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		if w.body.Len() == 0 {
 			return nil, "", core.ErrNotFound
 		}
-		return transformArtwork(w.body.Bytes(), w.header.Get("Content-Type"), transform)
+		return a.transformArtwork(ctx, img.Path, w.body.Bytes(), w.header.Get("Content-Type"), transform)
 	}
 	return nil, "", core.ErrUnauthorized
+}
+
+func (a FrontendArtwork) transformArtwork(ctx context.Context, reference string, data []byte, contentType string, transform frontend.ArtworkTransform) ([]byte, string, error) {
+	if strings.HasPrefix(contentType, "image/svg+xml") {
+		if transform.Format == "" && !transform.Blur {
+			return data, contentType, nil
+		}
+		return a.Raster.Rasterize(ctx, reference, data, artwork.RasterOptions{Width: transform.Width, Height: transform.Height, Format: transform.Format, Blur: transform.Blur})
+	}
+	return transformArtwork(data, contentType, transform)
 }
 
 // renderUltraBlur paints the same four colours Plex provides to its clients.

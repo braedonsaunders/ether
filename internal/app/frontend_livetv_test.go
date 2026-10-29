@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -112,7 +113,7 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := plex.FrontendArtwork{Server: a.plexServer, URLImages: a.images}
+	source := plex.FrontendArtwork{Server: a.plexServer, URLImages: a.images, Raster: artwork.NewSVGRasterizer()}
 	facade := surfaceLiveTV{app: a, channelArtwork: source.ChannelImage}
 	channels, err := facade.Channels(ctx, viewer)
 	if err != nil || len(channels) != 1 || len(channels[0].Images) != 1 {
@@ -139,6 +140,11 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	service.Serve(w, httptest.NewRequest("GET", "/", nil), secret)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "News") {
 		t.Fatalf("channel logo: %d %q", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	service.Serve(w, httptest.NewRequest("GET", "/?format=png&w=320", nil), secret)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("channel PNG: %d %q", w.Code, w.Header().Get("Content-Type"))
 	}
 	channel.AllowedUsers = []int64{viewerID + 1}
 	if _, err := a.livetv.SaveChannel(ctx, channel); err != nil {

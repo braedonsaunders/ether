@@ -214,7 +214,10 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 		return
 	}
 	width, _ := strconv.Atoi(r.URL.Query().Get("w"))
-	if width <= 0 || width > 4000 {
+	if width < 0 || width > 4000 {
+		width = 500
+	}
+	if width == 0 && r.URL.Query().Get("h") == "" {
 		width = 500
 	}
 	var data []byte

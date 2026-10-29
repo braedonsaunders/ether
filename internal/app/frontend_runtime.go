@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	artworkpkg "github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -92,7 +93,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	var channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
 	if a.tmdb != nil {
 		variants := newArtworkVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
-		source := plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get}
+		source := plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get, Raster: artworkpkg.NewSVGRasterizer()}
 		if a.images != nil {
 			source.URLImages = a.images
 		}
