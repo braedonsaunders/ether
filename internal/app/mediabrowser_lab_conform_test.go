@@ -274,9 +274,31 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	}
 }
 
+type labFixtureOptions struct {
+	Duration  time.Duration
+	FrameRate int
+}
+
 // newAlignedLabFixture supplies an isolated real app with fake playback and artwork for opt-in lab tests.
-func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData) (*App, *core.User, func()) {
+// Options permit other protocols to match a reference duration without changing
+// the MediaBrowser fixture; values are bounded to keep generated media small.
+func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ...labFixtureOptions) (*App, *core.User, func()) {
 	t.Helper()
+	duration, frameRate := 15*time.Second, 24
+	if len(options) > 1 {
+		t.Fatal("only one lab fixture options value is allowed")
+	}
+	if len(options) == 1 {
+		if options[0].Duration != 0 {
+			duration = options[0].Duration
+		}
+		if options[0].FrameRate != 0 {
+			frameRate = options[0].FrameRate
+		}
+	}
+	if duration <= 0 || duration > 30*time.Minute || frameRate < 1 || frameRate > 60 {
+		t.Fatal("invalid lab fixture duration or frame rate")
+	}
 	ctx := context.Background()
 	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
 	for y := 0; y < 180; y++ {
@@ -315,7 +337,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData) (*App, *co
 	if e != nil {
 		t.Fatal("ffmpeg is required for the opt-in lab harness")
 	}
-	makeMedia := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "15", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", filepath.Join(dir, "parity.mp4"))
+	makeMedia := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=320x180:rate=%d", frameRate), "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", strconv.FormatFloat(duration.Seconds(), 'f', 3, 64), "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", filepath.Join(dir, "parity.mp4"))
 	if output, e := makeMedia.CombinedOutput(); e != nil {
 		t.Fatalf("generate fixture media: %v: %s", e, output)
 	}
