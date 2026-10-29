@@ -46,6 +46,9 @@ func (i *instance) openAPI(w http.ResponseWriter, r *http.Request) {
 func (i *instance) systemIdentity(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"server_id": i.id})
 }
+func (*instance) branding(w http.ResponseWriter, _ *http.Request) {
+	reply(w, http.StatusOK, map[string]any{"server_name": "Ether", "login_subtitle": "", "storage_available": false})
+}
 func (i *instance) setup(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"needs_setup": false, "wizard_completed": true})
 }
@@ -90,7 +93,7 @@ func (i *instance) publicRoutes() error {
 	for _, e := range []struct {
 		path string
 		h    http.HandlerFunc
-	}{{"/api/v2/openapi.json", i.openAPI}, {"/api/v2/system/identity", i.systemIdentity}, {"/api/v2/requests/status", i.requestStatus}, {"/api/v2/system/info", i.systemInfo}, {"/api/v2/system/setup", i.setup}, {"/api/v2/account/me", i.account}, {"/api/v2/profiles", i.profiles}} {
+	}{{"/api/v2/openapi.json", i.openAPI}, {"/api/v2/theme/branding", i.branding}, {"/api/v2/system/identity", i.systemIdentity}, {"/api/v2/requests/status", i.requestStatus}, {"/api/v2/system/info", i.systemInfo}, {"/api/v2/system/setup", i.setup}, {"/api/v2/account/me", i.account}, {"/api/v2/profiles", i.profiles}} {
 		if err := i.router.Handle("GET", e.path, e.h); err != nil {
 			return err
 		}

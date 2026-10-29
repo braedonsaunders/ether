@@ -136,6 +136,7 @@ func TestCurrentClientCapabilityDiscovery(t *testing.T) {
 		path, expected string
 		authenticated  bool
 	}{
+		{"/api/v2/theme/branding", `"server_name":"Ether"`, false},
 		{"/api/v2/auth/providers", `"password_login":true`, false},
 		{"/api/v2/auth/oauth/capabilities", `"state":"unsupported"`, false},
 		{"/api/v2/auth/external-sign-in/capabilities", `"state":"unsupported"`, false},
