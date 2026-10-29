@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/braedonsaunders/ether/internal/conform"
+	"github.com/braedonsaunders/ether/internal/plex"
 )
 
 // routes will be wired to the front-end registry as protocol handlers land.
@@ -20,6 +21,9 @@ func routes(args []string) error {
 	case "plex", "jellyfin", "emby", "silo":
 	default:
 		return fmt.Errorf("unknown protocol %q", *protocol)
+	}
+	if *protocol == "plex" {
+		return json.NewEncoder(os.Stdout).Encode(plex.RouteInventory())
 	}
 	return json.NewEncoder(os.Stdout).Encode(conform.RouteInventory{Available: false, Routes: []conform.Route{}})
 }
