@@ -450,7 +450,8 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 	}
 	state := "available"
 	_, hasDeviceIdentity := i.host.Identity.(deviceIdentity)
-	allowed := i.host.Sessions != nil && i.host.Capabilities != nil && hasDeviceIdentity
+	_, hasScopedMedia := i.host.Sessions.(scopedMedia)
+	allowed := i.host.Sessions != nil && i.host.Capabilities != nil && hasDeviceIdentity && hasScopedMedia
 	if !allowed {
 		state = "not_configured"
 	}
@@ -473,6 +474,12 @@ func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Re
 }
 
 type sharedPrefix struct{}
+
+// scopedMedia binds the authenticated device to the exact broker session.
+// Its policy checks are performed by the broker on every media request.
+type scopedMedia interface {
+	ServeMediaAccess(http.ResponseWriter, *http.Request, frontend.SessionAccess)
+}
 
 func (i *instance) playbackRoutes() error {
 	if err := i.router.Handle("GET", "/api/v2/playback/sessions/control/capabilities", http.HandlerFunc(i.playbackControlCapabilities)); err != nil {
@@ -506,26 +513,14 @@ func (i *instance) playbackRoutes() error {
 				http.Error(w, "Unauthorized", 401)
 				return
 			}
-			d := device(r)
 			parts := strings.SplitN(r.PathValue("path"), "/", 2)
 			if len(parts) != 2 {
 				http.NotFound(w, r)
 				return
 			}
-			sessions, err := i.host.Sessions.Sessions(r.Context(), frontend.SessionAccess{Viewer: viewer, Device: d, Protocol: "silo"})
-			if err != nil {
+			media, ok := i.host.Sessions.(scopedMedia)
+			if !ok {
 				http.Error(w, "Unavailable", 503)
-				return
-			}
-			found := false
-			for _, session := range sessions {
-				if session.ID == parts[0] && session.ViewerID == viewer.ID && session.Protocol == "silo" && d.ID != "" && session.Device.ID == d.ID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				http.NotFound(w, r)
 				return
 			}
 			forward := r.Clone(r.Context())
@@ -533,7 +528,7 @@ func (i *instance) playbackRoutes() error {
 			u.Path = "/sessions/media/" + r.PathValue("path")
 			u.RawPath = ""
 			forward.URL = &u
-			i.host.Sessions.ServeMedia(w, forward)
+			media.ServeMediaAccess(w, forward, frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: "silo"})
 		})); err != nil {
 			return err
 		}

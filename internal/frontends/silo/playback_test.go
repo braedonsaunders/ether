@@ -19,6 +19,17 @@ import (
 
 type fileIDs struct{}
 
+type fakeBroker = frontendtest.Sessions
+type testScopedMedia struct{ fakeBroker }
+
+func (s testScopedMedia) ServeMediaAccess(w http.ResponseWriter, r *http.Request, a frontend.SessionAccess) {
+	if a.Viewer == nil || a.Viewer.ID != 7 || a.Protocol != "silo" || a.Device.ID != "tv" {
+		http.NotFound(w, r)
+		return
+	}
+	s.ServeMedia(w, r)
+}
+
 func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
 	identity := deviceTestIdentity{resolveDevice: func(_ context.Context, token string, d frontend.Device) (*frontend.Viewer, time.Time, error) {
@@ -40,7 +51,7 @@ func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	sessions := frontendtest.Sessions{SessionsFunc: func(context.Context, frontend.SessionAccess) ([]frontend.Session, error) {
 		return []frontend.Session{{ID: "session", ViewerID: 7, Protocol: "silo", Device: frontend.Device{ID: "tv"}}}, nil
 	}, ServeMediaFunc: func(w http.ResponseWriter, _ *http.Request) { served++; w.WriteHeader(http.StatusOK) }}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: testScopedMedia{sessions}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +78,7 @@ func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	if served != 1 {
 		t.Fatalf("served %d requests", served)
 	}
-	inst, err = (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, Sessions: sessions})
+	inst, err = (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, Sessions: testScopedMedia{sessions}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +89,15 @@ func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("missing device resolver: %d", w.Code)
+	}
+	inst, err = (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing scoped broker authorization: %d", w.Code)
 	}
 }
 
@@ -128,7 +148,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
 		return frontend.ItemDetail{Versions: []frontend.Version{{ID: "cut", Media: frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", Index: 0}, {Type: "audio", Index: 2}, {Type: "subtitle", Index: 5}}}}}}, nil
 	}}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, viewer), Experience: experience, Sessions: session, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, viewer), Experience: experience, Sessions: testScopedMedia{session}, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
