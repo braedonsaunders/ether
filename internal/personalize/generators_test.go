@@ -359,3 +359,39 @@ func TestFavoriteHistoryPriorityStableAndEmptyParity(t *testing.T) {
 		}
 	}
 }
+
+func TestUpNextFavoritesPreserveHistoryOrderWithinGroups(t *testing.T) {
+	h := newHarness(t, nil)
+	a, b, c := showKey(0, 1), showKey(0, 2), showKey(0, 3)
+	for _, show := range []core.RatingKey{a, b, c} {
+		h.cat.addSeason(show, 1, testNow.AddDate(-1, 0, 0))
+	}
+	h.finish(1, core.EpisodeKey(a.TMDB(), 1, 1), testNow.Add(-time.Hour))
+	h.finish(1, core.EpisodeKey(b.TMDB(), 1, 1), testNow.Add(-2*time.Hour))
+	h.finish(1, core.EpisodeKey(c.TMDB(), 1, 1), testNow.Add(-3*time.Hour))
+	builder := &builder{e: h.e, ctx: context.Background(), user: core.User{ID: 1}, now: testNow}
+	base := builder.genUpNext()
+	if len(base) != 1 || len(base[0].items) != 3 {
+		t.Fatalf("base %+v", base)
+	}
+	h.e.opts.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) {
+		return []FavoriteSignal{{Key: b}, {Key: c}}, nil
+	}
+	got := builder.genUpNext()
+	if len(got) != 1 || len(got[0].items) != 3 {
+		t.Fatalf("favorites %+v", got)
+	}
+	want := []core.RatingKey{core.EpisodeKey(b.TMDB(), 1, 2), core.EpisodeKey(c.TMDB(), 1, 2), core.EpisodeKey(a.TMDB(), 1, 2)}
+	for i, key := range want {
+		if got[0].items[i].t.Key != key {
+			t.Fatalf("order %+v", got[0].items)
+		}
+	}
+	h.e.opts.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) { return nil, nil }
+	again := builder.genUpNext()
+	for i := range base[0].items {
+		if base[0].items[i].t.Key != again[0].items[i].t.Key {
+			t.Fatal("empty favorites changed up next")
+		}
+	}
+}
