@@ -247,16 +247,16 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 		}
 		if x.response.Status != y.response.Status || !bytes.Equal(normalizeResponse(x.response.Body), normalizeResponse(y.response.Body)) || !reflect.DeepEqual(normalizeHeaders(x.response.Headers), normalizeHeaders(y.response.Headers)) {
 			n++
-			ok, err := approved(x, y)
+			commit, err := approved(x, y)
 			if err != nil {
 				return n, err
 			}
-			if ok && !approvedHeaders(x, y) {
-				ok = false
+			if commit != "" && !approvedHeaders(x, y) {
+				commit = ""
 			}
 			label := "REGRESSION"
-			if ok {
-				label = "APPROVED c82a7830"
+			if commit != "" {
+				label = "APPROVED " + commit
 			}
 			fmt.Fprintf(out, "%s ", label)
 			fmt.Fprintf(out, "viewer=%s client=%s json=%t route=%s\nbaseline status=%d headers=%v body=%q\ncandidate status=%d headers=%v body=%q\n", x.viewer, x.client, x.json, x.path, x.response.Status, normalizeHeaders(x.response.Headers), x.response.Body, y.response.Status, normalizeHeaders(y.response.Headers), y.response.Body)

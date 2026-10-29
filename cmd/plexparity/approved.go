@@ -31,26 +31,30 @@ type approvedDifference struct {
 	Path      string            `json:"path"`
 	Baseline  responseSignature `json:"baseline"`
 	Candidate responseSignature `json:"candidate"`
+	Commit    string            `json:"commit"`
 }
 
 func signature(r protocol.Response) responseSignature {
 	sum := sha256.Sum256(r.Body)
 	return responseSignature{r.Status, r.Headers.Get("Content-Type"), hex.EncodeToString(sum[:])}
 }
-func approved(a, b capture) (bool, error) {
+func approved(a, b capture) (string, error) {
 	if a.viewer != "teen" && a.viewer != "child" {
-		return false, nil
+		return "", nil
 	}
 	var entries []approvedDifference
 	if err := json.Unmarshal(approvedSearch, &entries); err != nil {
-		return false, fmt.Errorf("invalid approved differences: %w", err)
+		return "", fmt.Errorf("invalid approved differences: %w", err)
 	}
 	for _, entry := range entries {
 		if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == signature(a.response) && entry.Candidate == signature(b.response) {
-			return true, nil
+			if entry.Commit == "" {
+				return "c82a7830", nil
+			}
+			return entry.Commit, nil
 		}
 	}
-	return false, nil
+	return "", nil
 }
 
 // An approved body change can also change Content-Length. All other

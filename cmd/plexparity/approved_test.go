@@ -12,14 +12,14 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 	if err := json.Unmarshal(approvedSearch, &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 30 {
-		t.Fatalf("got %d signatures, want 30", len(entries))
+	if len(entries) != 110 {
+		t.Fatalf("got %d signatures, want 110", len(entries))
 	}
 	for _, e := range entries {
 		if e.Viewer != "teen" && e.Viewer != "child" {
 			t.Fatalf("unrestricted viewer approved: %+v", e)
 		}
-		if e.Path != "/hubs/search?query=fixture&limit=10&includeCollections=1" && e.Path != "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1" {
+		if e.Path != "/hubs/search?query=fixture&limit=10&includeCollections=1" && e.Path != "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1" && e.Path != "/search?query=fixture" && e.Path != "/hubs/search/voice?query=fixture" && e.Path != "/hubs/metadata/{{movieKey}}/postplay" {
 			t.Fatalf("unexpected route: %s", e.Path)
 		}
 		if len(e.Baseline.SHA256) != 64 || len(e.Candidate.SHA256) != 64 || e.Baseline.SHA256 == e.Candidate.SHA256 {
@@ -27,7 +27,7 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 		}
 	}
 	a := capture{viewer: "owner"}
-	if ok, err := approved(a, a); err != nil || ok {
+	if ok, err := approved(a, a); err != nil || ok != "" {
 		t.Fatalf("unrestricted approval: %v %v", ok, err)
 	}
 }
