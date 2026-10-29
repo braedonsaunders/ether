@@ -66,7 +66,7 @@ describe("Settings", () => {
       essentials.compareDocumentPosition(optional) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     for (const [name, href] of [
-      [/Connectivity/, "/remote-access"],
+      [/Apps/, "/apps/plex"],
       [/Catalog settings/, "/catalog/settings"],
       [/Sources › Debrid/, "/sources/debrid"],
     ] as const)
@@ -279,8 +279,8 @@ describe("Settings", () => {
     expect(whole.server.friendlyName).toBe("Den Ether");
   });
 
-  it("opens Connectivity on status and connection checks", async () => {
-    renderApp("/remote-access");
+  it("opens Plex app settings on status and connection checks", async () => {
+    renderApp("/apps/plex");
     expect(await screen.findByRole("heading", { name: "Connection checks" }, WAIT)).toBeVisible();
     expect(screen.getByText("Plex account")).toBeInTheDocument();
     expect(screen.queryByLabelText("Allow remote access")).toBeNull();
@@ -290,11 +290,43 @@ describe("Settings", () => {
     expect(screen.queryByText("Owner token")).toBeNull();
   });
 
+  it("explains that Plex account sign-in remains active when apps are off", async () => {
+    renderApp("/apps/plex", {}, (f) => {
+      f.state.config.frontends = { plex: { enabled: false } };
+    });
+    expect(
+      await screen.findByText("Plex apps: off (account sign-in still active)", {}, WAIT),
+    ).toBeVisible();
+  });
+
+  it("keeps an unsaved app setting while switching tabs", async () => {
+    renderApp("/apps/jellyfin");
+    fireEvent.change(await screen.findByLabelText("Server name", {}, WAIT), {
+      target: { value: "Household Jellyfin" },
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Silo" }));
+    await screen.findByRole("spinbutton", { name: "Port" }, WAIT);
+    fireEvent.click(screen.getByRole("tab", { name: "Jellyfin" }));
+    expect(await screen.findByRole("textbox", { name: "Server name" }, WAIT)).toHaveValue(
+      "Household Jellyfin",
+    );
+    expect(screen.getByRole("region", { name: "Unsaved changes" })).toBeVisible();
+  });
+
+  it("redirects old Connectivity links to the matching Apps tab", async () => {
+    renderApp("/remote-access/secure");
+    expect(await screen.findByRole("heading", { name: "Apps" }, WAIT)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Secure connections" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
   it("puts every server page in the main sidebar, with no separate settings menu", async () => {
     renderApp("/server");
     await screen.findByRole("heading", { name: "General" }, WAIT);
     const sidebar = (name: string) => screen.queryAllByRole("link", { name });
-    for (const name of ["General", "Connectivity", "Integrations", "Notifications", "Maintenance"])
+    for (const name of ["General", "Apps", "Integrations", "Notifications", "Maintenance"])
       expect(sidebar(name).length).toBeGreaterThan(0);
     for (const name of ["Backups & import", "Updates", "Troubleshooting", "Logs"])
       expect(sidebar(name)).toHaveLength(0);

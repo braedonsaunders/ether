@@ -1803,6 +1803,87 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const mr = maintenance.handle(method, seg, body);
     if (mr) return json(mr.body, mr.status);
 
+    const protocolDefs = [
+      { id: "plex", name: "Plex", defaultPort: 32400 },
+      { id: "jellyfin", name: "Jellyfin", defaultPort: 8096 },
+      { id: "emby", name: "Emby", defaultPort: 8097 },
+      { id: "silo", name: "Silo", defaultPort: 8090 },
+      { id: "stremio", name: "Stremio" },
+      { id: "webdav", name: "Files" },
+      { id: "dlna", name: "DLNA" },
+    ];
+    if (seg[0] === "frontends" && seg.length === 1 && method === "GET") {
+      return json(
+        protocolDefs.map((descriptor) => {
+          const entry = state.config.frontends?.[descriptor.id];
+          const enabled =
+            entry?.enabled ?? (state.config.frontends == null && descriptor.id === "plex");
+          const port = state.config.frontendPorts?.[descriptor.id] ?? descriptor.defaultPort;
+          return {
+            descriptor,
+            enabled,
+            status: {
+              addresses: enabled && port ? [`127.0.0.1:${port}`] : [],
+              lan: "unknown",
+              wan: "unknown",
+              clients24h: 0,
+              clients24hKnown: true,
+              liveStreams: 0,
+              liveStreamsKnown: true,
+              targetVersion: "",
+              conformance: "unknown",
+            },
+          };
+        }),
+      );
+    }
+    if (seg[0] === "frontends" && seg.length === 3) {
+      const [, id, action] = seg;
+      const descriptor = protocolDefs.find((item) => item.id === id);
+      if (!descriptor) return err(404, "not_found", "Front end not found");
+      if (action === "status" && method === "GET") {
+        const enabled =
+          state.config.frontends?.[id!]?.enabled ??
+          (state.config.frontends == null && id === "plex");
+        const port = state.config.frontendPorts?.[id!] ?? descriptor.defaultPort;
+        return json({
+          addresses: enabled && port ? [`127.0.0.1:${port}`] : [],
+          lan: "unknown",
+          wan: "unknown",
+          clients24h: 0,
+          clients24hKnown: true,
+          liveStreams: 0,
+          liveStreamsKnown: true,
+          targetVersion: "",
+          conformance: "unknown",
+        });
+      }
+      if (action === "settings" && method === "GET")
+        return json({
+          ...state.config.frontends?.[id!]?.settings,
+          ...((state.config.frontendPorts?.[id!] ?? descriptor.defaultPort)
+            ? { port: state.config.frontendPorts?.[id!] ?? descriptor.defaultPort }
+            : {}),
+        });
+      const entries =
+        state.config.frontends ?? (state.config.frontends = { plex: { enabled: true } });
+      const entry = entries[id!] ?? (entries[id!] = { enabled: false });
+      if (action === "settings" && method === "PUT") {
+        const { port, ...settings } = body as Record<string, unknown>;
+        entry.settings = settings;
+        if (typeof port === "number") (state.config.frontendPorts ??= {})[id!] = port;
+        return json({ ok: true });
+      }
+      if (
+        action === "enabled" &&
+        method === "PUT" &&
+        typeof (body as { enabled?: unknown }).enabled === "boolean"
+      ) {
+        entry.enabled = (body as { enabled: boolean }).enabled;
+        return json({ ok: true });
+      }
+    }
+
     // Static routes
     switch (route) {
       case "GET /availability":

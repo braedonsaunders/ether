@@ -81,7 +81,7 @@ const ViewerProfile = lazy(() => import("./pages/viewers/ViewerProfile"));
 const settingsPage = <K extends keyof typeof import("./pages/settings/pages")>(name: K) =>
   lazy(() => import("./pages/settings/pages").then((m) => ({ default: m[name] })));
 const GeneralPage = settingsPage("GeneralPage");
-const RemoteAccessPage = settingsPage("RemoteAccessPage");
+const Apps = lazy(() => import("./pages/apps/Apps"));
 const ServicesPage = settingsPage("ServicesPage");
 const MaintenancePage = settingsPage("MaintenancePage");
 const ClusterPage = settingsPage("ClusterPage");
@@ -169,7 +169,7 @@ function navigation(setupComplete: boolean): SidebarNavGroup[] {
       items: [
         { href: "/server", label: t("General"), icon: <Server size={icon} /> },
         { href: "/cache", label: t("Cache"), icon: <HardDrive size={icon} /> },
-        { href: "/remote-access", label: t("Connectivity"), icon: <Globe size={icon} /> },
+        { href: "/apps", label: t("Apps"), icon: <Globe size={icon} /> },
         { href: "/services", label: t("Integrations"), icon: <Plug size={icon} /> },
         { href: "/cluster", label: t("Cluster"), icon: <Boxes size={icon} /> },
         { href: "/notifications", label: t("Notifications"), icon: <Bell size={icon} /> },
@@ -177,6 +177,12 @@ function navigation(setupComplete: boolean): SidebarNavGroup[] {
       ],
     },
   ];
+}
+
+function LegacyConnectivityRedirect() {
+  const { tab } = useParams();
+  const target = tab === "remote" || tab === "secure" ? tab : "plex";
+  return <Navigate to={`/apps/${target}`} replace />;
 }
 
 function HealthIndicator() {
@@ -410,7 +416,8 @@ function Shell() {
             <Route path="/notifications/:tab?" element={<Notifications />} />
             <Route path="/server/posters" element={<Navigate to="/metadata/artwork" replace />} />
             <Route path="/server/:tab?" element={<GeneralPage />} />
-            <Route path="/remote-access/:tab?" element={<RemoteAccessPage />} />
+            <Route path="/apps/:tab?" element={<Apps />} />
+            <Route path="/remote-access/:tab?" element={<LegacyConnectivityRedirect />} />
             <Route path="/services/:tab?" element={<ServicesPage />} />
             <Route path="/cluster" element={<ClusterPage />} />
             <Route path="/maintenance/:tab?/:backupTab?" element={<MaintenancePage />} />
@@ -514,18 +521,24 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const onReady = useCallback(() => setReady(true), []);
   return (
-    <I18nProvider>{() => <ThemeProvider {...theme}>
-      <UiLinkProvider link={RouterAnchor}>
-        <Chrome>{location.pathname === "/me" ? (
-          <Suspense fallback={<PageFallback />}>
-            <Me />
-          </Suspense>
-        ) : (
-          <Gate onReady={onReady} />
-        )}
-        </Chrome>{location.pathname !== "/me" ? <BrandSplash ready={ready} /> : null}
-        <Toaster richColors closeButton position="bottom-right" />
-      </UiLinkProvider>
-    </ThemeProvider>}</I18nProvider>
+    <I18nProvider>
+      {() => (
+        <ThemeProvider {...theme}>
+          <UiLinkProvider link={RouterAnchor}>
+            <Chrome>
+              {location.pathname === "/me" ? (
+                <Suspense fallback={<PageFallback />}>
+                  <Me />
+                </Suspense>
+              ) : (
+                <Gate onReady={onReady} />
+              )}
+            </Chrome>
+            {location.pathname !== "/me" ? <BrandSplash ready={ready} /> : null}
+            <Toaster richColors closeButton position="bottom-right" />
+          </UiLinkProvider>
+        </ThemeProvider>
+      )}
+    </I18nProvider>
   );
 }

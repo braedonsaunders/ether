@@ -23,6 +23,8 @@ import { PlexStatus, UpdatesStatus } from "./sections";
  * server reports gets its own tab on General so new options are never unreachable.
  */
 const KNOWN_KEYS = new Set([
+  "frontends",
+  "frontendPorts",
   "server",
   "plex",
   "usenet",

@@ -287,14 +287,20 @@ export const PAGES = localized<PageDef[]>(() => [
     keywords: searchTerms(msg("settings")),
   },
   {
-    href: "/remote-access",
-    title: t("Connectivity"),
+    href: "/apps",
+    title: t("Apps"),
     sections: [
       {
-        key: "status",
-        title: t("Plex status"),
-        keywords: searchTerms(msg("claim connection checks reachability")),
+        key: "plex",
+        title: t("Plex"),
+        keywords: searchTerms(msg("claim account compatibility reachability")),
       },
+      { key: "jellyfin", title: t("Jellyfin") },
+      { key: "emby", title: t("Emby") },
+      { key: "silo", title: t("Silo") },
+      { key: "stremio", title: t("Stremio") },
+      { key: "files", title: t("Files") },
+      { key: "dlna", title: t("DLNA") },
       {
         key: "remote",
         title: t("Remote access"),
@@ -305,18 +311,8 @@ export const PAGES = localized<PageDef[]>(() => [
         title: t("Secure connections"),
         keywords: searchTerms(msg("certificate plex.direct tls")),
       },
-      {
-        key: "account",
-        title: t("Plex account"),
-        keywords: searchTerms(msg("owner token claimed")),
-      },
-      {
-        key: "compatibility",
-        title: t("Compatibility"),
-        keywords: searchTerms(msg("pms version")),
-      },
     ],
-    keywords: searchTerms(msg("settings plex")),
+    keywords: searchTerms(msg("settings plex apps protocols")),
   },
   {
     href: "/services",

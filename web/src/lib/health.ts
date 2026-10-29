@@ -263,7 +263,7 @@ export function remoteHealth(v: unknown): HealthItem {
   const base = {
     id: "remote" as const,
     label: t("Remote access"),
-    href: "/remote-access",
+    href: "/apps/plex",
   };
   if (!isPlainObject(v))
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };
@@ -321,7 +321,7 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
   const base = {
     id: "plexdirect" as const,
     label: "plex.direct",
-    href: "/remote-access",
+    href: "/apps/plex",
   };
   if (!isPlainObject(v))
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };

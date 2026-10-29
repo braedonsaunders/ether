@@ -1224,7 +1224,7 @@ export default function Setup() {
           <Alert variant="info">
             <AlertDescription>
               {t(
-                "Finishing setup locks this admin page to your owner account. You can reopen setup later from Connectivity.",
+                "Finishing setup locks this admin page to your owner account. You can reopen setup later from Apps.",
               )}
             </AlertDescription>
           </Alert>

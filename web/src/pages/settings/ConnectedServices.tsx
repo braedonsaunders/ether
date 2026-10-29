@@ -312,8 +312,8 @@ function ServiceOverview({ cfg }: { cfg: EtherConfig }) {
         ) : (
           <Badge variant="warning">{t("Not signed in")}</Badge>
         ),
-      href: "/remote-access",
-      action: t("Connectivity"),
+      href: "/apps/plex",
+      action: t("Apps"),
     },
     {
       name: "TMDB",
