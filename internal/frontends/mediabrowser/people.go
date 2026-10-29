@@ -1,0 +1,82 @@
+package mediabrowser
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+// peopleDTO uses parent-authorized facet IDs and title-bound portrait grants.
+func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token string, detail frontend.ItemDetail) []any {
+	type credit struct {
+		id               int64
+		name, role, kind string
+	}
+	var credits []credit
+	for _, p := range detail.Title.Cast {
+		credits = append(credits, credit{p.TMDB, p.Name, p.Role, "Actor"})
+	}
+	for _, p := range detail.Title.Directors {
+		credits = append(credits, credit{p.TMDB, p.Name, p.Role, "Director"})
+	}
+	for _, p := range detail.Title.Writers {
+		credits = append(credits, credit{p.TMDB, p.Name, p.Role, "Writer"})
+	}
+	ids := make([]int64, 0, min(len(credits), 256))
+	seen := map[int64]bool{}
+	for _, c := range credits {
+		if c.id <= 0 || seen[c.id] {
+			continue
+		}
+		if len(ids) == 256 {
+			break
+		}
+		seen[c.id] = true
+		ids = append(ids, c.id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	facets, err := i.host.Experience.PersonFacetIDs(r.Context(), viewer, device(r), detail.Title.Key, ids)
+	if err != nil {
+		return nil
+	}
+	portraits := map[string]frontend.Image{}
+	if detail.ImagesAuthoritative && i.host.ImageGrants != nil {
+		for _, img := range detail.Images {
+			if img.Kind == frontend.ImagePerson && img.Subject != "" {
+				if _, ok := portraits[img.Subject]; !ok {
+					portraits[img.Subject] = img
+				}
+			}
+		}
+	}
+	grants := map[int64]string{}
+	attempted := map[int64]bool{}
+	result := make([]any, 0, len(credits))
+	for _, c := range credits {
+		id := facets[c.id]
+		if id == "" || c.name == "" {
+			continue
+		}
+		dto := map[string]any{"Id": id, "Name": c.name, "Type": c.kind}
+		if c.role != "" {
+			dto["Role"] = c.role
+		}
+		if !attempted[c.id] {
+			attempted[c.id] = true
+			if img, ok := portraits["tmdb:"+strconv.FormatInt(c.id, 10)]; ok {
+				grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: token, Device: device(r), Item: detail.Title.Key, Image: img})
+				if err == nil {
+					grants[c.id] = grant
+				}
+			}
+		}
+		if grant := grants[c.id]; grant != "" {
+			dto["PrimaryImageTag"] = grant
+		}
+		result = append(result, dto)
+	}
+	return result
+}

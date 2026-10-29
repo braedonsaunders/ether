@@ -263,6 +263,9 @@ func (i *instance) browseRoutes() error {
 			return
 		}
 		dto := i.itemDTO(d.Title, d.UserData)
+		if people := i.peopleDTO(r, v, token, d); len(people) > 0 {
+			dto["People"] = people
+		}
 		if len(d.Versions) > 0 {
 			sources := make([]any, 0, len(d.Versions))
 			for _, version := range d.Versions {
