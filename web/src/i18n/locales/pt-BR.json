@@ -205,6 +205,7 @@
     "many": "{count} falhas de localização",
     "other": "{count} falhas de localização"
   },
+  "m_016432d700cb95": "Títulos que este espectador marcou como favoritos.",
   "m_0167e82bd63134": "Criar cluster e reiniciar",
   "m_016c1ad2c01a20": "Título ou nome do release…",
   "m_016ce9ca610005": "Iniciado {when}",
@@ -3296,6 +3297,7 @@
     "other": "{count} Inícios mudam neste contexto"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Favoritos",
   "m_175a707795b382": "{section} do Plex como",
   "m_175c0a3a005ab3": "Zoom",
   "m_175ee8fbf7f10f": "Alterar esta pasta exige reiniciar o Ether após a configuração. Pôsteres e artes permanecem no cache da pasta de configuração.",

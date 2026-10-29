@@ -199,6 +199,7 @@
     "one": "{count} ıskalama",
     "other": "{count} ıskalama"
   },
+  "m_016432d700cb95": "Bu izleyicinin favori olarak işaretlediği içerikler.",
   "m_0167e82bd63134": "Kümeyi oluştur ve yeniden başlat",
   "m_016c1ad2c01a20": "Başlık veya sürüm adı…",
   "m_016ce9ca610005": "{when} başladı",
@@ -3187,6 +3188,7 @@
     "other": "Bu bağlamda {count} Ana Sayfa değişir"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Favoriler",
   "m_175a707795b382": "Plex {section} görünümü:",
   "m_175c0a3a005ab3": "Yakınlaştır",
   "m_175ee8fbf7f10f": "Bu klasörü değiştirmek, kurulumdan sonra Ether'in yeniden başlatılmasını gerektirir. Posterler ve görseller yapılandırma klasörünün önbelleğinde kalır.",

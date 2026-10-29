@@ -215,7 +215,7 @@ const minRowItems = 12
 // rowFloor is the minimum for a row kind. Continue Watching and Up Next are
 // utility rows: one in-progress title is still worth showing.
 func (a *assembly) rowFloor(kind string) int {
-	if kind == KindContinue || kind == KindUpNext {
+	if kind == KindContinue || kind == KindUpNext || kind == KindFavorites {
 		return 0
 	}
 	return a.minRow
@@ -283,6 +283,20 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 				}
 			}
 		}
+		// Favorites are an explicit personal collection. Keep the full ordered
+		// shelf even when another visible row already contains those titles.
+		for _, r := range sel {
+			if r.c.kind != KindFavorites {
+				continue
+			}
+			for _, it := range r.items {
+				if len(picked[r]) >= a.rowCap(r.c) {
+					break
+				}
+				picked[r] = append(picked[r], it)
+				claimed[it.t.Key] = true
+			}
+		}
 		draftOrder := append([]*rankedRow(nil), sel...)
 		sort.SliceStable(draftOrder, func(i, j int) bool { return anchored(draftOrder[i].c) && !anchored(draftOrder[j].c) })
 		for _, phase := range []bool{true, false} {
@@ -290,7 +304,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			// Ordered utility/collection rows retain their live order and priority.
 			if len(a.previous) > 0 {
 				for _, r := range sel {
-					if r.c.source == core.RowSourcePlex || (r.c.source == core.RowSourceEngine && !r.c.keepOrder) || !draftsFirst(r.c) || !inPhase(r) {
+					if r.c.kind == KindFavorites || r.c.source == core.RowSourcePlex || (r.c.source == core.RowSourceEngine && !r.c.keepOrder) || !draftsFirst(r.c) || !inPhase(r) {
 						continue
 					}
 					for _, it := range r.items {
@@ -306,7 +320,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 				a.retainItems(sel, picked, claimed, inPhase)
 			}
 			for _, r := range draftOrder {
-				if r.c.source == core.RowSourcePlex || !draftsFirst(r.c) || !inPhase(r) {
+				if r.c.kind == KindFavorites || r.c.source == core.RowSourcePlex || !draftsFirst(r.c) || !inPhase(r) {
 					continue
 				}
 				for _, it := range r.items {

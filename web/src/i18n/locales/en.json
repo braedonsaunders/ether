@@ -199,6 +199,7 @@
     "one": "{count} miss",
     "other": "{count} misses"
   },
+  "m_016432d700cb95": "Titles this viewer marked as favorites.",
   "m_0167e82bd63134": "Create cluster and restart",
   "m_016c1ad2c01a20": "Title or release name…",
   "m_016ce9ca610005": "Started {when}",
@@ -3187,6 +3188,7 @@
     "other": "{count} Homes change in this context"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Favorites",
   "m_175a707795b382": "Plex {section} as",
   "m_175c0a3a005ab3": "Zoom",
   "m_175ee8fbf7f10f": "Changing this folder requires restarting Ether after setup. Posters and artwork stay in the configuration folder's cache.",

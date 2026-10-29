@@ -72,6 +72,28 @@ func TestAssemblyDedupesAcrossRows(t *testing.T) {
 	}
 }
 
+func TestFavoritesShelfRetainsOrderAndOverlapOnHome(t *testing.T) {
+	cat := newFakeCatalog(testNow)
+	keys := []core.RatingKey{movieKey(0, 3), movieKey(0, 2), movieKey(0, 1)}
+	favorites := testRow(KindFavorites, "favorites", items(cat, keys...))
+	favorites.keepOrder, favorites.minItems = true, 1
+	// Plex's own rows claim their items before engine rows draft.
+	plex := testRow(KindContinue, "continue", items(cat, keys[1]))
+	plex.source, plex.keepOrder = core.RowSourcePlex, true
+	other := testRow(KindTrending, "trending", items(cat, append(keys, movieKey(1, 1), movieKey(1, 2), movieKey(1, 3), movieKey(1, 4))...))
+	layout := &core.HomeLayout{Global: []core.LayoutPage{{Section: "home", Rows: []core.RowPolicy{{Row: KindFavorites, Status: "always", Slot: 2}}}}}
+	rows := run(emptyModel(plex, other, favorites), func(a *assembly) { a.layout = layout })
+	row := rowByKind(rows, KindFavorites)
+	if row == nil || len(row.Items) != len(keys) {
+		t.Fatalf("favorites shelf missing or short: %#v", row)
+	}
+	for i, key := range keys {
+		if row.Items[i].Key != key {
+			t.Fatalf("favorite %d = %v, want %v", i, row.Items[i].Key, key)
+		}
+	}
+}
+
 func TestAssemblyMMRDiversifies(t *testing.T) {
 	cat := newFakeCatalog(testNow)
 	// Six saga films score highest, then six varied titles just below.

@@ -343,6 +343,13 @@ func (e *Engine) gatherTaste(ctx context.Context, user core.User) (tasteInput, m
 	now := e.now()
 	in := tasteInput{userID: user.ID, now: now, loc: e.loc, halfLife: e.opts.HalfLife,
 		statuses: map[core.RatingKey]core.WatchStatus{}, titles: map[core.RatingKey]core.Title{}}
+	if e.opts.Favorites != nil {
+		favorites, err := e.opts.Favorites(ctx, &user)
+		if err != nil {
+			return in, nil, fmt.Errorf("favorites: %w", err)
+		}
+		in.favorites = favorites
+	}
 	touched := map[core.RatingKey]bool{}
 	var err error
 	if e.state != nil {
@@ -438,6 +445,14 @@ func (e *Engine) gatherTaste(ctx context.Context, user core.User) (tasteInput, m
 	for _, p := range in.plays {
 		if p.updated.After(latest[p.tasteKey]) {
 			latest[p.tasteKey] = p.updated
+		}
+	}
+	for _, favorite := range in.favorites {
+		if favorite.Key != 0 {
+			key := tasteKey(favorite.Key)
+			if _, ok := latest[key]; !ok || favorite.AddedAt.After(latest[key]) {
+				latest[key] = favorite.AddedAt
+			}
 		}
 	}
 	order := make([]kt, 0, len(latest))

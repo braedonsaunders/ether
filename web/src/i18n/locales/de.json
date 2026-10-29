@@ -199,6 +199,7 @@
     "one": "{count} Fehltreffer",
     "other": "{count} Fehltreffer"
   },
+  "m_016432d700cb95": "Titel, die dieser Zuschauer als Favoriten markiert hat.",
   "m_0167e82bd63134": "Cluster erstellen und neu starten",
   "m_016c1ad2c01a20": "Titel oder Release-Name…",
   "m_016ce9ca610005": "Gestartet {when}",
@@ -3187,6 +3188,7 @@
     "other": "{count} Startseiten ändern sich in diesem Kontext"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Favoriten",
   "m_175a707795b382": "Plex {section} als",
   "m_175c0a3a005ab3": "Zoom",
   "m_175ee8fbf7f10f": "Wenn du diesen Ordner änderst, musst du Ether nach der Einrichtung neu starten. Poster und Artwork bleiben im Cache des Konfigurationsordners.",

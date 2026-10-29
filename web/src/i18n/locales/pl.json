@@ -211,6 +211,7 @@
     "many": "{count} braków",
     "other": "{count} braku"
   },
+  "m_016432d700cb95": "Tytuły oznaczone przez tego widza jako ulubione.",
   "m_0167e82bd63134": "Utwórz klaster i uruchom ponownie",
   "m_016c1ad2c01a20": "Tytuł lub nazwa wydania…",
   "m_016ce9ca610005": "Rozpoczęto: {when}",
@@ -3405,6 +3406,7 @@
     "other": "W tym kontekście zmienia się {count} strony głównej"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Ulubione",
   "m_175a707795b382": "Plex: {section} jako",
   "m_175c0a3a005ab3": "Powiększenie",
   "m_175ee8fbf7f10f": "Zmiana tego folderu wymaga ponownego uruchomienia Ether po konfiguracji. Plakaty i grafiki pozostają w pamięci podręcznej folderu konfiguracji.",

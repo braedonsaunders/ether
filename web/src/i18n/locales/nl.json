@@ -199,6 +199,7 @@
     "one": "{count} misser",
     "other": "{count} missers"
   },
+  "m_016432d700cb95": "Titels die deze kijker als favoriet heeft gemarkeerd.",
   "m_0167e82bd63134": "Cluster maken en herstarten",
   "m_016c1ad2c01a20": "Titel of releasenaam…",
   "m_016ce9ca610005": "Gestart {when}",
@@ -3187,6 +3188,7 @@
     "other": "{count} Home-pagina's veranderen in deze context"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Favorieten",
   "m_175a707795b382": "Plex {section} als",
   "m_175c0a3a005ab3": "Zoomen",
   "m_175ee8fbf7f10f": "Als je deze map wijzigt, moet je Ether na de installatie opnieuw opstarten. Posters en artwork blijven in de cache van de configuratiemap.",

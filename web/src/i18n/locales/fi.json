@@ -199,6 +199,7 @@
     "one": "{count} ohi",
     "other": "{count} ohi"
   },
+  "m_016432d700cb95": "Nimikkeet, jotka tämä katsoja on merkinnyt suosikeiksi.",
   "m_0167e82bd63134": "Luo klusteri ja käynnistä uudelleen",
   "m_016c1ad2c01a20": "Nimike tai julkaisun nimi…",
   "m_016ce9ca610005": "Alkoi {when}",
@@ -3187,6 +3188,7 @@
     "other": "{count} etusivua muuttuu tässä kontekstissa"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Suosikit",
   "m_175a707795b382": "Plex {section} katselijana",
   "m_175c0a3a005ab3": "Zoomaus",
   "m_175ee8fbf7f10f": "Tämän kansion vaihtaminen vaatii Etherin uudelleenkäynnistyksen asennuksen jälkeen. Julisteet ja kuvitus pysyvät määrityskansion välimuistissa.",

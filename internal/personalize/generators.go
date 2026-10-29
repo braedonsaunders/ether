@@ -21,6 +21,7 @@ type generator struct {
 // generators run in this order; order only matters for logging, since
 // assembly ranks rows.
 var generators = []generator{
+	{KindFavorites, (*builder).genFavorites},
 	{KindContinue, (*builder).genContinue},
 	{KindUpNext, (*builder).genUpNext},
 	{KindTop10Today, (*builder).genTop10Today},
@@ -70,6 +71,35 @@ func newRow(kind, id, title, reason string, items []candItem) *candRow {
 	info := infoFor(kind)
 	return &candRow{kind: kind, id: id, title: title, reason: reason, context: info.context, source: info.source,
 		items: items, minItems: 4, scale: 1}
+}
+
+// genFavorites is owner-placeable only and retains the source's newest-first order.
+func (b *builder) genFavorites() []*candRow {
+	if b.generic || b.e.opts.Favorites == nil {
+		return nil
+	}
+	favorites, err := b.e.opts.Favorites(b.ctx, &b.user)
+	if err != nil {
+		return nil
+	}
+	var items []candItem
+	for _, favorite := range favorites {
+		if favorite.Key == 0 {
+			continue
+		}
+		title, err := b.e.catalog.Get(b.ctx, favorite.Key)
+		if err != nil || title == nil || title.Adult || (b.e.opts.Allowed != nil && !b.e.opts.Allowed(&b.user, title)) {
+			continue
+		}
+		items = append(items, candItem{t: *title, base: rankScore(len(items), len(favorites)), qual: quality(title), reason: "A favorite"})
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	row := newRow(KindFavorites, "favorites", "Favorites", "Titles marked as favorites.", items)
+	row.minItems = 1
+	row.keepOrder = true
+	return []*candRow{row}
 }
 
 // ---- Continue Watching and Up Next --------------------------------------------

@@ -288,3 +288,55 @@ func TestOwnerCollectionRows(t *testing.T) {
 		t.Fatalf("owner rows fetched again (%d → %d)", before, cols.calls)
 	}
 }
+
+func TestFavoritesRowIsOwnerPlacedAndPreservesOrder(t *testing.T) {
+	keys := []core.RatingKey{core.MovieKey(1), core.MovieKey(2)}
+	h := newHarness(t, func(o *Options) {
+		o.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) {
+			return []FavoriteSignal{{Key: keys[0], AddedAt: testNow}, {Key: keys[1], AddedAt: testNow.Add(-time.Hour)}}, nil
+		}
+	})
+	// Use catalogue keys known to the harness.
+	h.cat.dataMu.Lock()
+	for _, key := range keys {
+		h.cat.titles[key] = core.Title{Key: key, Type: core.TypeMovie, Title: key.String()}
+	}
+	h.cat.dataMu.Unlock()
+	b := &builder{e: h.e, ctx: context.Background(), user: core.User{ID: 1}}
+	rows := b.genFavorites()
+	if len(rows) != 1 || len(rows[0].items) != 2 || rows[0].items[0].t.Key != keys[0] || !rows[0].keepOrder || rows[0].minItems != 1 {
+		t.Fatalf("favorite rows: %+v", rows)
+	}
+	if len(infoFor(KindFavorites).surfaces) != 0 {
+		t.Fatal("favorites row must not be enabled by default")
+	}
+}
+
+func TestEmptyFavoritesPreservesGeneratedRows(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	user := core.User{ID: 1}
+	before, err := h.e.buildModel(ctx, user, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.e.opts.Favorites = func(context.Context, *core.User) ([]FavoriteSignal, error) { return []FavoriteSignal{}, nil }
+	after, err := h.e.buildModel(ctx, user, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.rows) != len(after.rows) {
+		t.Fatalf("row count changed: %d vs %d", len(before.rows), len(after.rows))
+	}
+	for i := range before.rows {
+		a, b := before.rows[i], after.rows[i]
+		if a.id != b.id || a.kind != b.kind || len(a.items) != len(b.items) {
+			t.Fatalf("row %d changed", i)
+		}
+		for j := range a.items {
+			if a.items[j].t.Key != b.items[j].t.Key {
+				t.Fatalf("row %d item %d changed", i, j)
+			}
+		}
+	}
+}

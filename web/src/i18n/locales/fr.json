@@ -205,6 +205,7 @@
     "many": "{count} d’échecs de recherche",
     "other": "{count} échecs de recherche"
   },
+  "m_016432d700cb95": "Titres que ce spectateur a ajoutés à ses favoris.",
   "m_0167e82bd63134": "Créer le cluster et redémarrer",
   "m_016c1ad2c01a20": "Titre ou nom de release…",
   "m_016ce9ca610005": "Démarré {when}",
@@ -3296,6 +3297,7 @@
     "other": "{count} accueils changent dans ce contexte"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Favoris",
   "m_175a707795b382": "Plex {section} en tant que",
   "m_175c0a3a005ab3": "Zoom",
   "m_175ee8fbf7f10f": "Modifier ce dossier nécessite de redémarrer Ether après la configuration. Les affiches et illustrations restent dans le cache du dossier de configuration.",

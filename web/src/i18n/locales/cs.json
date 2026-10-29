@@ -211,6 +211,7 @@
     "many": "{count} chybějících",
     "other": "{count} chybějících"
   },
+  "m_016432d700cb95": "Tituly, které si tento divák označil jako oblíbené.",
   "m_0167e82bd63134": "Vytvořit cluster a restartovat",
   "m_016c1ad2c01a20": "Název titulu nebo vydání…",
   "m_016ce9ca610005": "Zahájeno {when}",
@@ -3405,6 +3406,7 @@
     "other": "V tomto kontextu se změní {count} stránek Domů"
   },
   "m_17554937432c68": "Jellyfin",
+  "m_1759a72d011ede": "Oblíbené",
   "m_175a707795b382": "Plex {section} jako",
   "m_175c0a3a005ab3": "Přiblížení",
   "m_175ee8fbf7f10f": "Změna této složky vyžaduje po nastavení restart Etheru. Plakáty a artwork zůstávají v mezipaměti konfigurační složky.",

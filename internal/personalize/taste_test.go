@@ -2,6 +2,7 @@ package personalize
 
 import (
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -245,5 +246,38 @@ func TestTasteDeterministic(t *testing.T) {
 		if a.People[i].ID != b.People[i].ID {
 			t.Fatalf("people order differs at %d", i)
 		}
+	}
+}
+
+func TestFavoriteTasteSignalAndDecay(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	key := core.MovieKey(4242)
+	title := core.Title{Key: key, Type: core.TypeMovie, Genres: []string{"Drama"}}
+	in := tasteInput{now: now, halfLife: 120 * 24 * time.Hour, titles: map[core.RatingKey]core.Title{key: title}}
+	baseline := buildTaste(in)
+	in.favorites = []FavoriteSignal{{Key: key, AddedAt: now.Add(-120 * 24 * time.Hour)}, {PersonID: 123, AddedAt: now}}
+	fav := buildTaste(in)
+	if len(baseline.Evidence) != 0 || len(fav.Evidence) != 1 || fav.Evidence[0].Kind != "favorite" || fav.Evidence[0].Weight <= 1 || fav.Person[123] <= 0 || fav.Confidence <= baseline.Confidence {
+		t.Fatalf("favorite signal: baseline=%+v favorite=%+v", baseline, fav)
+	}
+}
+
+func TestEmptyFavoritesPreservesTaste(t *testing.T) {
+	key := core.MovieKey(77)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	in := tasteInput{now: now, titles: map[core.RatingKey]core.Title{key: {Key: key, Type: core.TypeMovie, Genres: []string{"Drama"}}}, history: []core.HistoryEntry{{Key: key, Completed: true, ViewedAt: now}}}
+	original := buildTaste(in)
+	in.favorites = []FavoriteSignal{}
+	if got := buildTaste(in); !reflect.DeepEqual(original, got) {
+		t.Fatal("empty favorites changed taste")
+	}
+}
+
+func TestFavoriteDoesNotEraseWatchedEvidence(t *testing.T) {
+	key := core.MovieKey(78)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	in := tasteInput{now: now, titles: map[core.RatingKey]core.Title{key: {Key: key, Type: core.TypeMovie}}, history: []core.HistoryEntry{{Key: key, Completed: true, ViewedAt: now}}, favorites: []FavoriteSignal{{Key: key, AddedAt: now}}}
+	if e := buildTaste(in).evidenceFor(key); e == nil || e.Kind != EvidenceFinished || e.Completions != 1 {
+		t.Fatalf("watched evidence lost: %+v", e)
 	}
 }

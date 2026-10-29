@@ -49,7 +49,11 @@ export default function Designer() {
     setDraft(prune(doc.data.layout));
   }
   const dirty = Boolean(doc.data) && !sameLayout(draft, saved);
-  const available = doc.data?.availableRows ?? [];
+  const available = (doc.data?.availableRows ?? []).map((row) =>
+    row.kind === "favorites"
+      ? { ...row, title: t("Favorites"), description: t("Titles this viewer marked as favorites.") }
+      : row,
+  );
   const defaults = doc.data?.defaults.maxRows ?? { home: 14, movies: 10, shows: 10 };
 
   const viewerId = layer === "global" ? spotCheck : layer;

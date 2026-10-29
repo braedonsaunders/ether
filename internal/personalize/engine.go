@@ -60,7 +60,16 @@ type UserSource interface {
 
 // Options build an Engine. DB and Catalog are required; every other
 // dependency is optional and its rows simply drop out when absent.
+// FavoriteSignal is a viewer-owned title or person and its last favorite time.
+type FavoriteSignal struct {
+	Key      core.RatingKey
+	PersonID int64
+	AddedAt  time.Time
+}
+
 type Options struct {
+	// Favorites is optional; nil or empty leaves existing ranking unchanged.
+	Favorites       func(context.Context, *core.User) ([]FavoriteSignal, error)
 	FilterAvailable func(context.Context, []core.Title) []core.Title
 	// Owner previews use the same effective viewer and title policy as Plex.
 	UserPolicy func(*core.User) *core.User
