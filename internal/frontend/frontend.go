@@ -184,14 +184,15 @@ type Images interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }
 type Host struct {
-	Experience Experience
-	Sessions   Sessions
-	Identity   SurfaceIdentity
-	IDs        ids.Codecs
-	Events     Subscriber
-	Images     Images
-	Config     func() Settings
-	Log        *slog.Logger
+	Experience   Experience
+	Capabilities Capabilities
+	Sessions     Sessions
+	Identity     SurfaceIdentity
+	IDs          ids.Codecs
+	Events       Subscriber
+	Images       Images
+	Config       func() Settings
+	Log          *slog.Logger
 	// ClientSeen reports an authenticated client's protocol-specific device ID.
 	ClientSeen func(deviceID string)
 	// ClientIP resolves the transport peer using the configured trusted proxies.

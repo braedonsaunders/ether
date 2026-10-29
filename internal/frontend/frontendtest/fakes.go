@@ -248,3 +248,17 @@ func (f Identity) Revoke(ctx context.Context, grant string) error {
 func (f Identity) SetupComplete() bool { return f.SetupCompleteFunc != nil && f.SetupCompleteFunc() }
 
 var _ frontend.SurfaceIdentity = Identity{}
+
+// Capabilities is a configurable fake for the host capability provider.
+type Capabilities struct {
+	BuildFunc func(context.Context, frontend.CapabilityRequest) (frontend.CapabilityResult, error)
+}
+
+func (f Capabilities) Build(ctx context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
+	if f.BuildFunc != nil {
+		return f.BuildFunc(ctx, req)
+	}
+	return frontend.CapabilityResult{}, nil
+}
+
+var _ frontend.Capabilities = Capabilities{}

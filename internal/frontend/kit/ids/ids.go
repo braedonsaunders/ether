@@ -82,6 +82,10 @@ func (Codecs) GUID(kind Kind, id int64) (string, error)         { return GUID(ki
 func (Codecs) ParseGUID(kind Kind, value string) (int64, error) { return ParseGUID(kind, value) }
 func (Codecs) Decimal(id int64) string                          { return Decimal(id) }
 func (Codecs) ParseDecimal(value string) (int64, error)         { return ParseDecimal(value) }
+func (Codecs) RatingKeyGUID(key core.RatingKey) string          { return RatingKeyGUID(key) }
+func (Codecs) ParseRatingKeyGUID(value string) (core.RatingKey, error) {
+	return ParseRatingKeyGUID(value)
+}
 
 // StremioID is an external TMDB or IMDb identifier with an optional episode.
 // IMDb identifiers cannot be converted to RatingKey without a catalog lookup.

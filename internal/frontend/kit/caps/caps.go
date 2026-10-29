@@ -26,8 +26,11 @@ type DeviceInfo struct {
 	Protocol                                                 core.Protocol
 	Product, Platform, Version, Device, DeviceName, ClientID string
 	VideoCodecs, AudioCodecs, Containers                     []string
+	SubtitleCodecs                                           []string
+	DVProfiles                                               []int
 	MaxHeight, MaxBitrateKbps                                int
 	HDR10, DolbyVision                                       bool
+	Remote, Download                                         bool
 }
 
 // Layer applies learned capabilities or owner rules after declared capabilities.
@@ -57,6 +60,12 @@ func add(dst []string, value string) []string {
 // Build merges declarations, then applies learning followed by owner rules.
 func (b Builder) Build(ctx context.Context, device DeviceInfo, profile DeviceProfile, protocolInfo []string, userAgent string) (core.ClientCaps, error) {
 	c := core.ClientCaps{Protocol: device.Protocol, Product: device.Product, Platform: device.Platform, Version: device.Version, Device: device.Device, DeviceName: device.DeviceName, ClientID: device.ClientID, MaxHeight: device.MaxHeight, MaxBitrateKbps: device.MaxBitrateKbps, HDR10: device.HDR10, DolbyVision: device.DolbyVision}
+	c.Remote, c.Download = device.Remote, device.Download
+	c.SubtitleCodecs = append([]string(nil), device.SubtitleCodecs...)
+	if device.SubtitleCodecs != nil && c.SubtitleCodecs == nil {
+		c.SubtitleCodecs = []string{}
+	}
+	c.DVProfiles = append([]int(nil), device.DVProfiles...)
 	if c.Product == "" {
 		c.Product = userAgent
 	}

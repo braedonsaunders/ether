@@ -22,10 +22,39 @@ type Policy = {
   notes: string;
 };
 
-/** Built-in compatibility reference for each family of Plex apps. */
+/** Built-in compatibility reference and families reported by front ends. */
 export function DeviceCapabilities() {
   const [protocol, setProtocol] = useState("");
   const matrix = useAsync(() => apiFetch<{ policies: Policy[] }>("/playback/policy"), []);
+  const protocols = [
+    ...new Set([
+      "plex",
+      "jellyfin",
+      "emby",
+      "silo",
+      ...(matrix.data?.policies.map((p) => p.protocol ?? "plex") ?? []),
+    ]),
+  ];
+  const protocolLabel = (value: string) => {
+    switch (value) {
+      case "plex":
+        return "Plex";
+      case "jellyfin":
+        return "Jellyfin";
+      case "emby":
+        return "Emby";
+      case "silo":
+        return "Silo";
+      case "stremio":
+        return "Stremio";
+      case "webdav":
+        return t("Files");
+      case "dlna":
+        return "DLNA";
+      default:
+        return value;
+    }
+  };
   return (
     <>
       <p className="max-w-3xl text-sm text-fg-muted">
@@ -48,10 +77,11 @@ export function DeviceCapabilities() {
           onChange={(e) => setProtocol(e.currentTarget.value)}
         >
           <option value="">{t("All protocols")}</option>
-          <option value="plex">Plex</option>
-          <option value="jellyfin">Jellyfin</option>
-          <option value="emby">Emby</option>
-          <option value="silo">Silo</option>
+          {protocols.map((value) => (
+            <option key={value} value={value}>
+              {protocolLabel(value)}
+            </option>
+          ))}
         </select>
       </label>
       {matrix.error ? (

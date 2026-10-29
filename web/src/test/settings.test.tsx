@@ -6,6 +6,13 @@ import { renderAppWith } from "./routes";
 const WAIT = { timeout: 4000 };
 
 describe("Settings", () => {
+  it("shows and filters client families reported by other protocols", async () => {
+    renderApp("/playback/devices");
+    expect(await screen.findByText("Stremio TV", {}, WAIT)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "stremio" } });
+    expect(screen.getByText("Stremio TV")).toBeInTheDocument();
+    expect(screen.queryByText("Jellyfin TV")).toBeNull();
+  });
   it("saves automatic franchise visibility without changing other catalog settings", async () => {
     const { fake } = renderApp("/catalog/settings");
     const toggle = await screen.findByLabelText("Hide automatic franchise collections", {}, WAIT);

@@ -70,7 +70,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: sessions.NewEventBus(a.clusterNode(), a.users.ActiveUser), discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
-		return frontend.Host{Identity: surfaceIdentity{surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: r.events, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, Config: func() frontend.Settings {
+		return frontend.Host{Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: r.events, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, Config: func() frontend.Settings {
 			settings, err := r.control.Settings(r.ctx, id)
 			if err != nil {
 				return frontend.Settings{}
