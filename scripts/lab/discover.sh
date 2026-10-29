@@ -5,10 +5,12 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$here/.conform"
 chmod 700 "$here/.conform"
-python3 - "$here/lab.env" "$here/.conform" <<'PY'
+LAB_PORT_BASE="${LAB_PORT_BASE:-18096}"
+python3 - "$here/lab.env" "$here/.conform" "$LAB_PORT_BASE" <<'PY'
 import json, os, pathlib, sys, urllib.error, urllib.parse, urllib.request, uuid
 env = dict(line.rstrip("\n").split("=", 1) for line in open(sys.argv[1]) if "=" in line)
 out = pathlib.Path(sys.argv[2])
+port_base = int(sys.argv[3])
 os.umask(0o077)
 
 def call(base, path, method="GET", body=None, headers=None):
@@ -63,21 +65,21 @@ def item_vars(base, token, auth, protocol, uid, username, password):
         values[f"provider:{provider}:{value}"] = str(item["Id"])
     return values
 
-jf_base = "http://127.0.0.1:18096"
+jf_base = f"http://127.0.0.1:{port_base}"
 jf_user, jf_password = env["JELLYFIN_ADULT_USER"], env["JELLYFIN_ADULT_PASSWORD"]
 jf_auth = {"Authorization": 'MediaBrowser Client="conformdiff", Device="conformdiff", DeviceId="prism-lab", Version="1"'}
 jf = call(jf_base, "/Users/AuthenticateByName", "POST", {"Username": jf_user, "Pw": jf_password}, jf_auth)
 jf_token = jf["AccessToken"]
 save("jellyfin", jf_token, item_vars(jf_base, jf_token, jf_auth, "jellyfin", jf["User"]["Id"], jf_user, jf_password))
 
-emby_base = "http://127.0.0.1:18097/emby"
+emby_base = f"http://127.0.0.1:{port_base + 1}/emby"
 emby_user, emby_password = env["EMBY_ADULT_USER"], env["EMBY_ADULT_PASSWORD"]
 emby_auth = {"X-Emby-Authorization": 'MediaBrowser Client="conformdiff", Device="conformdiff", DeviceId="prism-lab", Version="1"'}
 emby = call(emby_base, "/Users/AuthenticateByName", "POST", {"Username": emby_user, "Pw": emby_password}, emby_auth)
 emby_token = emby["AccessToken"]
 save("emby", emby_token, item_vars(emby_base, emby_token, emby_auth, "emby", emby["User"]["Id"], emby_user, emby_password))
 
-silo_base = "http://127.0.0.1:18098"
+silo_base = f"http://127.0.0.1:{port_base + 2}"
 silo_user, silo_password = env["SILO_ADULT_USER"], env["SILO_ADULT_PASSWORD"]
 silo = call(silo_base, "/api/v2/auth/login", "POST", {"username": silo_user, "password": silo_password})
 silo_token = silo["access_token"]
