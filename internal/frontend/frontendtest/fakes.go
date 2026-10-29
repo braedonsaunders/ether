@@ -31,6 +31,7 @@ type Experience struct {
 	ViewsFunc                func(context.Context, *core.Viewer) ([]frontend.View, error)
 	RowsFunc                 func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
 	ItemFunc                 func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error)
+	ItemArtworkFunc          func(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]frontend.Image, bool, error)
 	ChildrenFunc             func(context.Context, *core.Viewer, core.Device, core.RatingKey, frontend.ItemQuery) (core.Page, error)
 	SearchFunc               func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (frontend.SearchPage, error)
 	UserDataFunc             func(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
@@ -53,6 +54,13 @@ func (f Experience) Item(c context.Context, r frontend.ItemRequest) (frontend.It
 		return f.ItemFunc(c, r)
 	}
 	return frontend.ItemDetail{}, nil
+}
+func (f Experience) ItemArtwork(c context.Context, v *core.Viewer, d core.Device, k core.RatingKey) ([]frontend.Image, bool, error) {
+	if f.ItemArtworkFunc != nil {
+		return f.ItemArtworkFunc(c, v, d, k)
+	}
+	detail, err := f.Item(c, frontend.ItemRequest{Viewer: v, Device: d, Key: k})
+	return detail.Images, detail.ImagesAuthoritative, err
 }
 func (f Experience) Children(c context.Context, v *core.Viewer, d core.Device, k core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
 	if f.ChildrenFunc != nil {
@@ -439,4 +447,23 @@ func (f Experience) SetWatchlist(c context.Context, v *core.Viewer, k core.Ratin
 		return f.SetWatchlistFunc(c, v, k, on)
 	}
 	return nil
+}
+
+// TrackPreferences is a configurable fake for shared viewer track settings.
+type TrackPreferences struct {
+	GetFunc func(context.Context, *core.Viewer) (frontend.TrackPreferences, error)
+	SetFunc func(context.Context, *core.Viewer, frontend.TrackPreferences) error
+}
+
+func (f TrackPreferences) Get(ctx context.Context, v *core.Viewer) (frontend.TrackPreferences, error) {
+	if f.GetFunc != nil {
+		return f.GetFunc(ctx, v)
+	}
+	return frontend.TrackPreferences{}, frontend.ErrPreferencesNotFound
+}
+func (f TrackPreferences) Set(ctx context.Context, v *core.Viewer, p frontend.TrackPreferences) error {
+	if f.SetFunc != nil {
+		return f.SetFunc(ctx, v, p)
+	}
+	return frontend.ErrPreferencesNotFound
 }

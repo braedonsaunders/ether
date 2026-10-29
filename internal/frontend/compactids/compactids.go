@@ -42,6 +42,18 @@ func (a *Allocator) Compact(ctx context.Context, surface, kind, ref string) (int
 	var id int64
 	err = tx.QueryRowContext(ctx, `INSERT INTO frontend_compact_id_counters(surface,kind,last_id) VALUES(?,?,1) ON CONFLICT(surface,kind) DO UPDATE SET last_id=frontend_compact_id_counters.last_id+1 WHERE frontend_compact_id_counters.last_id<2147483647 RETURNING last_id`, surface, kind).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
+		// Another allocator may have inserted this ref while we waited for the
+		// counter lock, including the last available number.
+		e := tx.QueryRowContext(ctx, `SELECT id FROM frontend_compact_ids WHERE surface=? AND kind=? AND ref=?`, surface, kind, ref).Scan(&id)
+		if e == nil {
+			if e = tx.Commit(); e != nil {
+				return 0, e
+			}
+			return int32(id), nil
+		}
+		if !errors.Is(e, sql.ErrNoRows) {
+			return 0, e
+		}
 		return 0, errors.New("compact ids: namespace exhausted")
 	}
 	if err != nil {

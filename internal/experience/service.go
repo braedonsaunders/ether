@@ -24,10 +24,12 @@ type Library struct {
 
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
 type ServiceDeps struct {
-	Active        func(context.Context, int64) (*core.User, error)
-	Libraries     []Library
-	Visibility    Visibility
-	Get           func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Active     func(context.Context, int64) (*core.User, error)
+	Libraries  []Library
+	Visibility Visibility
+	Get        func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	// CachedGet applies catalogue visibility without a network refresh.
+	CachedGet     func(context.Context, core.RatingKey) (*core.Title, error)
 	Children      func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Grandchildren func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Browse        func(context.Context, core.BrowseQuery) (core.Page, error)
@@ -325,6 +327,37 @@ func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.
 		d.UserData.InWatchlist, err = s.d.IsWatchlisted(ctx, v, title.Key)
 	}
 	return d, err
+}
+
+// AuthorizeArtwork applies the same active-viewer and item policy as Item,
+// without running playback or track enrichment for a grid of images.
+func (s *Service) AuthorizeArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) (*core.Viewer, error) {
+	v, err := s.viewer(ctx, viewer)
+	if err != nil {
+		return nil, err
+	}
+	if key.Kind() == core.KindCollection || key.Kind() == core.KindSmart || key.Kind() == core.KindPlaylist {
+		if _, err := s.Item(ctx, frontend.ItemRequest{Viewer: v, Device: device, Key: key}); err != nil {
+			return nil, err
+		}
+	} else if s.d.CachedGet != nil {
+		title, err := s.d.CachedGet(ctx, key)
+		visibility := s.d.Visibility
+		visibility.GetTitle = s.d.CachedGet
+		if err != nil {
+			return nil, err
+		}
+		if title == nil || title.Key != key || visibility.SectionFor == nil {
+			return nil, core.ErrNotFound
+		}
+		section, ok := visibility.SectionFor(title.Type)
+		if !ok || !SectionAllowed(v, section) || !visibility.Visible(ctx, v, title) {
+			return nil, core.ErrNotFound
+		}
+	} else if _, err := s.item(ctx, v, key); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
 	v, err := s.viewer(ctx, viewer)

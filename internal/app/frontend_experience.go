@@ -230,7 +230,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
-	deps := experience.ServiceDeps{Active: a.users.ActiveUser, Libraries: libs, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, SimilarSource: a.catalog.Similar, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
+	deps := experience.ServiceDeps{Active: a.users.ActiveUser, Libraries: libs, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, SimilarSource: a.catalog.Similar, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
 		if a.episodeorder != nil {
 			return a.episodeorder.Get(ctx, u, k)
 		}
@@ -275,7 +275,8 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 				return frontend.ItemDetail{}, err
 			}
 			for _, version := range versions {
-				result.Versions = append(result.Versions, frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info})
+				added := versionAddedAt(title, version.Release.PubDate)
+				result.Versions = append(result.Versions, frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info, AddedAt: added})
 			}
 		}
 		if a.extras != nil {
@@ -353,6 +354,17 @@ type surfaceExperience struct {
 	protocol core.Protocol
 	artwork  frontend.Artwork
 	active   func(context.Context, int64) (*core.User, error)
+}
+
+func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {
+	active, err := s.Service.AuthorizeArtwork(ctx, viewer, device, key)
+	if err != nil {
+		return nil, false, err
+	}
+	if s.artwork == nil {
+		return nil, false, core.ErrNotAvailable
+	}
+	return s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: active, Device: device, Item: key})
 }
 
 func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
@@ -454,4 +466,19 @@ func (s *surfaceExperience) ReportRowInteraction(ctx context.Context, i frontend
 		return experience.ErrReceipt
 	}
 	return s.receipts.Report(ctx, i)
+}
+
+// versionAddedAt prefers the actual release publication time. When absent,
+// use Plex's title AddedAt rule: UpdatedAt, then its original release date.
+func versionAddedAt(title *core.Title, published time.Time) time.Time {
+	if !published.IsZero() {
+		return published
+	}
+	if title == nil {
+		return time.Time{}
+	}
+	if !title.UpdatedAt.IsZero() {
+		return title.UpdatedAt
+	}
+	return title.Released
 }

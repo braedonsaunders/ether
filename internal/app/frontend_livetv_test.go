@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -16,6 +17,12 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 )
+
+type testRemoteLogo struct{}
+
+func (testRemoteLogo) GetUntrustedURL(context.Context, string) ([]byte, string, error) {
+	return []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#f00"/></svg>`), "image/svg+xml", nil
+}
 
 func TestFrontendLiveTVUsesViewerPolicy(t *testing.T) {
 	ctx := context.Background()
@@ -112,7 +119,7 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := plex.FrontendArtwork{Server: a.plexServer, URLImages: a.images}
+	source := plex.FrontendArtwork{Server: a.plexServer, URLImages: testRemoteLogo{}, Raster: artwork.NewSVGRasterizer()}
 	facade := surfaceLiveTV{app: a, channelArtwork: source.ChannelImage}
 	channels, err := facade.Channels(ctx, viewer)
 	if err != nil || len(channels) != 1 || len(channels[0].Images) != 1 {
@@ -140,6 +147,11 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "News") {
 		t.Fatalf("channel logo: %d %q", w.Code, w.Body.String())
 	}
+	w = httptest.NewRecorder()
+	service.Serve(w, httptest.NewRequest("GET", "/?format=png&w=320", nil), secret)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("channel PNG: %d %q", w.Code, w.Header().Get("Content-Type"))
+	}
 	channel.AllowedUsers = []int64{viewerID + 1}
 	if _, err := a.livetv.SaveChannel(ctx, channel); err != nil {
 		t.Fatal(err)
@@ -164,5 +176,16 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	channels, err = facade.Channels(ctx, viewer)
 	if err != nil || len(channels) != 1 || channels[0].Logo != "" || len(channels[0].Images) != 1 || strings.Contains(channels[0].Images[0].Path, "private") {
 		t.Fatalf("channel logo URL was exposed: %+v %v", channels, err)
+	}
+	request.Item = 0
+	request.Image = channels[0].Images[0]
+	secret, err = service.Issue(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	service.Serve(w, httptest.NewRequest("GET", "/?format=png&w=32", nil), secret)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("external SVG transform: %d %q", w.Code, w.Header().Get("Content-Type"))
 	}
 }

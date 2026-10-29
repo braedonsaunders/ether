@@ -77,6 +77,10 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	batch, err := service.IssueBatch(ctx, frontend.ImageBatchRequest{Credential: credential, Device: core.Device{ID: "tv"}, Items: []core.RatingKey{title.Key}})
+	if err != nil || len(batch) != 1 || len(batch[0].Images) != 1 {
+		t.Fatalf("visible batch: %+v %v", batch, err)
+	}
 	viewer.MaxContentRating = "G"
 	if err := a.users.UpdateUser(ctx, *viewer); err != nil {
 		t.Fatal(err)
@@ -88,6 +92,10 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	}
 	if _, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: title.Key, Image: detail.Images[0]}); err == nil {
 		t.Fatal("issued artwork for a hidden title")
+	}
+	batch, err = service.IssueBatch(ctx, frontend.ImageBatchRequest{Credential: credential, Device: core.Device{ID: "tv"}, Items: []core.RatingKey{title.Key}})
+	if err != nil || len(batch) != 0 {
+		t.Fatalf("hidden title exposed in batch: %+v %v", batch, err)
 	}
 }
 
@@ -129,6 +137,14 @@ func TestSurfaceExperienceArtworkFollowsItemAuthorization(t *testing.T) {
 	if err != nil || detail.ImagesAuthoritative || len(detail.Images) != 1 || detail.Images[0].Path != "opaque" {
 		t.Fatalf("incomplete: %+v %v", detail, err)
 	}
+	selector, ok := experience.(frontend.ItemArtwork)
+	if !ok {
+		t.Fatal("lightweight artwork policy missing")
+	}
+	images, complete, err := selector.ItemArtwork(ctx, owner, core.Device{}, title.Key)
+	if err != nil || complete || len(images) != 1 {
+		t.Fatalf("selector: %+v %v %v", images, complete, err)
+	}
 	probe.complete = true
 	detail, err = experience.Item(ctx, request)
 	if err != nil || !detail.ImagesAuthoritative {
@@ -143,6 +159,9 @@ func TestSurfaceExperienceArtworkFollowsItemAuthorization(t *testing.T) {
 	request.Viewer = &core.Viewer{ID: owner.ID + 10000, IsOwner: true}
 	if _, err := experience.Item(ctx, request); err == nil || probe.calls != before {
 		t.Fatal("unauthorized viewer reached artwork")
+	}
+	if _, _, err := selector.ItemArtwork(ctx, request.Viewer, core.Device{}, title.Key); err == nil || probe.calls != before {
+		t.Fatal("unauthorized viewer reached lightweight artwork")
 	}
 }
 
