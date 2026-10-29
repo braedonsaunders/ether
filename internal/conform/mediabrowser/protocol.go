@@ -4,6 +4,7 @@ package mediabrowser
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -202,6 +203,25 @@ func (p *Protocol) Discover(ctx context.Context, c *http.Client, base, token, pr
 	return out
 }
 func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string, r conform.Request, profile string, vars map[string]string, jsonMode bool) (conform.Response, error) {
+	if p.Dialect == "silo" && (r.Path == "/api/v2/playback/start" || (r.Method == http.MethodDelete && strings.HasPrefix(r.Path, "/api/v2/playback/"))) {
+		if vars == nil {
+			return conform.Response{}, fmt.Errorf("Silo playback requires mutable run variables")
+		}
+		id, err := newUUID()
+		if err != nil {
+			return conform.Response{}, err
+		}
+		if r.Path == "/api/v2/playback/start" {
+			vars["playback_attempt_id"] = id
+			for _, key := range []string{"playback_attempt_id_direct", "playback_attempt_id_transcode"} {
+				if strings.Contains(string(r.Body), "${"+key+"}") {
+					vars[key] = id
+				}
+			}
+		} else {
+			vars["stop_id"] = id
+		}
+	}
 	path := r.Path
 	for k, v := range vars {
 		path = strings.ReplaceAll(path, "{{"+k+"}}", v)
@@ -401,4 +421,14 @@ func binaryPath(method, path string) bool {
 	}
 	path = strings.ToLower(strings.SplitN(path, "?", 2)[0])
 	return strings.HasSuffix(path, "/stream") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, ".mp4")
+}
+
+func newUUID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
 }

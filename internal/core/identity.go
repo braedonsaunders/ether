@@ -11,10 +11,13 @@ type Viewer = User
 
 // Device identifies the client receiving a surface-specific credential.
 type Device struct {
-	ID      string
-	Client  string
-	Product string
-	Version string
+	ID         string
+	Client     string
+	Product    string
+	Version    string
+	Platform   string
+	DeviceName string
+	Language   string
 }
 
 // Identity resolves a credential only for the supplied surface. Surface IDs

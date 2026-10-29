@@ -19,3 +19,9 @@ type Protocol interface {
 	Redact(response Response) Response
 	Compare(reference, target Response) Report
 }
+
+// ResponseObserver is an optional protocol extension for stateful ordered flows.
+// Implementations may update only the caller-owned run variables.
+type ResponseObserver interface {
+	Observe(Request, Response, map[string]string)
+}

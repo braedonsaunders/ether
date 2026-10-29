@@ -1,0 +1,27 @@
+{
+  "status": 200,
+  "headers": {
+    "Content-Language": [
+      "en-US"
+    ],
+    "Content-Length": [
+      "298"
+    ],
+    "Content-Type": [
+      "application/vnd.apple.mpegurl"
+    ],
+    "Date": [
+      "Thu, 29 Oct 2026 [REDACTED_IP] GMT"
+    ],
+    "Expires": [
+      "0"
+    ],
+    "Server": [
+      "Kestrel"
+    ],
+    "X-Response-Time-Ms": [
+      "6.6875"
+    ]
+  },
+  "body": "I0VYVE0zVQojRVhULVgtU1RSRUFNLUlORjpCQU5EV0lEVEg9MjU2MDAwLEFWRVJBR0UtQkFORFdJRFRIPTI1NjAwMCxWSURFTy1SQU5HRT1TRFIsQ09ERUNTPSJhdmMxLjY0MDAzMyxtcDRhLjQwLjIiLFJFU09MVVRJT049Mzg0MHgyMTYwLEZSQU1FLVJBVEU9MzAKbWFpbi5tM3U4P0RldmljZUlkPXByaXNtLWNvbmZvcm0tW1JFREFDVEVEXSZNZWRpYVNvdXJjZUlkPTg3NDgxMmVhZmExOWJlZWJiODQyYWE4MmU5NzY4NzhmJlBsYXlTZXNzaW9uSWQ9MTFlNzhiZTljNmE2NDM5MWFmMWI3YTdmYmRlODhjODEmQXVkaW9Db2RlYz1hYWMK"
+}
