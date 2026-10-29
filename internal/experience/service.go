@@ -24,10 +24,12 @@ type Library struct {
 
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
 type ServiceDeps struct {
-	Active        func(context.Context, int64) (*core.User, error)
-	Libraries     []Library
-	Visibility    Visibility
-	Get           func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Active     func(context.Context, int64) (*core.User, error)
+	Libraries  []Library
+	Visibility Visibility
+	Get        func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	// CachedGet applies catalogue visibility without a network refresh.
+	CachedGet     func(context.Context, core.RatingKey) (*core.Title, error)
 	Children      func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Grandchildren func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Browse        func(context.Context, core.BrowseQuery) (core.Page, error)
@@ -337,6 +339,17 @@ func (s *Service) AuthorizeArtwork(ctx context.Context, viewer *core.Viewer, dev
 	if key.Kind() == core.KindCollection || key.Kind() == core.KindSmart || key.Kind() == core.KindPlaylist {
 		if _, err := s.Item(ctx, frontend.ItemRequest{Viewer: v, Device: device, Key: key}); err != nil {
 			return nil, err
+		}
+	} else if s.d.CachedGet != nil {
+		title, err := s.d.CachedGet(ctx, key)
+		visibility := s.d.Visibility
+		visibility.GetTitle = s.d.CachedGet
+		if err != nil || title == nil || title.Key != key || visibility.SectionFor == nil {
+			return nil, core.ErrNotFound
+		}
+		section, ok := visibility.SectionFor(title.Type)
+		if !ok || !SectionAllowed(v, section) || !visibility.Visible(ctx, v, title) {
+			return nil, core.ErrNotFound
 		}
 	} else if _, err := s.item(ctx, v, key); err != nil {
 		return nil, err

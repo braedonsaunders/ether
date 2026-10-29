@@ -52,15 +52,30 @@ func (c *Catalog) Get(ctx context.Context, key core.RatingKey) (*core.Title, err
 		return nil, err
 	}
 	t, err := c.get(ctx, key)
-	if err == nil && (t.Adult || !t.IsReleased(c.now()) || (c.config().GateMoviesByHomeRelease && !c.homeVisible(t))) {
+	if err == nil && !c.visibleTitle(t) {
 		return nil, core.ErrNotFound
 	}
 	// A season none of whose episodes has aired is not listed (seasonsOfShow)
 	// and must not open directly either.
-	if err == nil && t.Type == core.TypeSeason && !listableSeason(t, c.now()) {
+	return t, err
+}
+
+func (c *Catalog) visibleTitle(t *core.Title) bool {
+	return t != nil && !t.Adult && t.IsReleased(c.now()) && (!c.config().GateMoviesByHomeRelease || c.homeVisible(t)) && (t.Type != core.TypeSeason || listableSeason(t, c.now()))
+}
+
+// CachedGet applies the same catalogue visibility gates as Get without a
+// network refresh. Missing or hidden records fail closed; callers may use
+// the normal catalogue path separately to populate the local mirror.
+func (c *Catalog) CachedGet(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+	stored, err := c.loadByKey(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if !c.visibleTitle(&stored.t) {
 		return nil, core.ErrNotFound
 	}
-	return t, err
+	return &stored.t, nil
 }
 
 func (c *Catalog) StoredTitle(ctx context.Context, key core.RatingKey) (*core.Title, error) {
