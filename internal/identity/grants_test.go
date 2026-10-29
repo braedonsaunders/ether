@@ -91,3 +91,45 @@ func TestGrantsSurfaceMembershipAndRevocation(t *testing.T) {
 		t.Fatalf("revoked: %v", err)
 	}
 }
+
+type plexAuth struct{ calls int }
+
+func (p *plexAuth) Authenticate(_ context.Context, token string) (*core.User, error) {
+	p.calls++
+	if token == "plex-token" {
+		return &core.User{ID: 1}, nil
+	}
+	return nil, core.ErrUnauthorized
+}
+func TestResolverSeparatesPlexAndGrants(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plex := &plexAuth{}
+	resolver, err := identity.NewResolver(plex, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := grants.Issue(ctx, 1, nil, "jellyfin", core.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = resolver.Resolve(ctx, "plex", token); !errors.Is(err, core.ErrUnauthorized) || plex.calls != 0 {
+		t.Fatalf("grant reached Plex validator: %v calls %d", err, plex.calls)
+	}
+	if _, err = resolver.Resolve(ctx, "jellyfin", "plex-token"); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("Plex token accepted on Jellyfin: %v", err)
+	}
+	if _, err = resolver.Resolve(ctx, "plex", "plex-token"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = resolver.Resolve(ctx, "jellyfin", token); err != nil {
+		t.Fatal(err)
+	}
+}

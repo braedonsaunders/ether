@@ -34,6 +34,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/flight"
+	_ "github.com/braedonsaunders/ether/internal/identity/schema"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -263,6 +264,9 @@ func New(ctx context.Context, db *sql.DB, o Options) (*Service, error) {
 	s := &Service{db: db, o: o, log: o.Logger.With("component", "auth"),
 		pos: map[string]cacheEntry{}, neg: map[string]time.Time{},
 		seen: map[int64]time.Time{}}
+	if err := backfillPlexLinks(ctx, db); err != nil {
+		return nil, err
+	}
 	if err := s.reload(ctx); err != nil {
 		return nil, err
 	}
@@ -538,7 +542,7 @@ func (s *Service) validateOnce(ctx context.Context, token, h string) (*core.User
 		}
 		if !ok {
 			if known {
-				if _, err := s.db.ExecContext(ctx, `UPDATE auth_users SET active=0 WHERE id=? AND is_owner=0`, localID); err != nil {
+				if _, err := s.db.ExecContext(ctx, `UPDATE auth_users SET active=0, plex_shared=0 WHERE id=? AND is_owner=0`, localID); err != nil {
 					return nil, err
 				}
 				if err := s.reload(ctx); err != nil {
@@ -684,7 +688,12 @@ func (s *Service) FlushSeen(ctx context.Context) error {
 
 func (s *Service) upsertValidated(ctx context.Context, a *plextv.Account) (int64, error) {
 	now := s.o.Now().Unix()
-	_, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO auth_users (plex_id, uuid, username, title, email, thumb, is_home, restricted, active, origin, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
 ON CONFLICT(plex_id) DO UPDATE SET uuid=excluded.uuid, username=excluded.username, title=excluded.title,
@@ -692,6 +701,12 @@ ON CONFLICT(plex_id) DO UPDATE SET uuid=excluded.uuid, username=excluded.usernam
 		a.ID, a.UUID, a.Username, a.DisplayName(), a.Email, a.Thumb, b2i(a.Home), b2i(a.Restricted), originValidated, now, now)
 	if err != nil {
 		return 0, fmt.Errorf("auth: save user: %w", err)
+	}
+	if err := upsertPlexLink(ctx, tx, a.ID, a.DisplayName(), now); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
 	}
 	if err := s.reload(ctx); err != nil {
 		return 0, err
@@ -777,6 +792,12 @@ func (s *Service) setOwnerTx(ctx context.Context, a plextv.Account, serverToken 
 		return err
 	}
 	defer tx.Rollback()
+	// A Plex claim attaches to the existing local owner, retaining its viewer
+	// ID and all state. A Plex ID already linked to another viewer must fail
+	// rather than silently merging two people's state.
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET plex_id=? WHERE is_owner=1 AND plex_id IS NULL`, a.ID); err != nil {
+		return fmt.Errorf("auth: attach Plex owner: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET is_owner=0, origin=CASE WHEN origin='owner' THEN 'friend' ELSE origin END,
 		active=CASE WHEN is_owner=1 THEN 0 ELSE active END WHERE is_owner=1 AND plex_id<>?`, a.ID); err != nil {
 		return err
@@ -791,9 +812,12 @@ ON CONFLICT(plex_id) DO UPDATE SET
 	title=CASE WHEN excluded.title<>'' THEN excluded.title ELSE auth_users.title END,
 	email=CASE WHEN excluded.email<>'' THEN excluded.email ELSE auth_users.email END,
 	thumb=CASE WHEN excluded.thumb<>'' THEN excluded.thumb ELSE auth_users.thumb END,
-	is_owner=1, active=1, origin='owner', updated_at=excluded.updated_at`,
+	is_owner=1, active=1, owner_enabled=1, plex_shared=1, origin='owner', updated_at=excluded.updated_at`,
 		a.ID, a.UUID, a.Username, title, a.Email, a.Thumb, b2i(a.Home), now, now); err != nil {
 		return fmt.Errorf("auth: save owner: %w", err)
+	}
+	if err := upsertPlexLink(ctx, tx, a.ID, title, now); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_tokens WHERE source=?`, sourceServer); err != nil {
 		return err
@@ -822,6 +846,9 @@ func (s *Service) SyncFriends(ctx context.Context, friends []plextv.Friend) erro
 		return err
 	}
 	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_membership_epoch SET epoch=epoch+1 WHERE id=1`); err != nil {
+		return err
+	}
 	var ownerLocal int64
 	if err := tx.QueryRowContext(ctx, `SELECT id FROM auth_users WHERE is_owner=1`).Scan(&ownerLocal); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -847,8 +874,8 @@ func (s *Service) SyncFriends(ctx context.Context, friends []plextv.Friend) erro
 		default:
 			secs, _ := json.Marshal(sectionIDs(f.Sections, f.AllLibs))
 			if err := tx.QueryRowContext(ctx, `
-INSERT INTO auth_users (plex_id, uuid, username, title, email, thumb, is_home, restricted, active, origin, plex_sections, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'friend', ?, ?, ?)
+INSERT INTO auth_users (plex_id, uuid, username, title, email, thumb, is_home, restricted, active, plex_shared, origin, plex_sections, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'friend', ?, ?, ?)
 ON CONFLICT(plex_id) DO UPDATE SET
 	uuid=CASE WHEN excluded.uuid<>'' THEN excluded.uuid ELSE auth_users.uuid END,
 	username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE auth_users.username END,
@@ -856,13 +883,19 @@ ON CONFLICT(plex_id) DO UPDATE SET
 	email=CASE WHEN excluded.email<>'' THEN excluded.email ELSE auth_users.email END,
 	thumb=CASE WHEN excluded.thumb<>'' THEN excluded.thumb ELSE auth_users.thumb END,
 	is_home=excluded.is_home, restricted=excluded.restricted,
-	active=CASE WHEN auth_users.is_owner=1 THEN 1 ELSE excluded.active END,
+	plex_shared=CASE WHEN auth_users.is_owner=1 THEN 1 ELSE excluded.active END,
+ active=CASE WHEN auth_users.is_owner=1 THEN 1 WHEN auth_users.owner_enabled=1 THEN excluded.active ELSE 0 END,
 	origin=CASE WHEN auth_users.origin='owner' THEN auth_users.origin ELSE 'friend' END,
 	plex_sections=excluded.plex_sections, updated_at=excluded.updated_at
 RETURNING id`,
 				f.PlexID, f.UUID, f.Username, f.DisplayName(), f.Email, f.Thumb, b2i(f.Home), b2i(f.Restricted),
-				b2i(!f.Pending), string(secs), now, now, f.Title, f.Title).Scan(&uid); err != nil {
+				b2i(!f.Pending), b2i(!f.Pending), string(secs), now, now, f.Title, f.Title).Scan(&uid); err != nil {
 				return fmt.Errorf("auth: save friend %d: %w", f.PlexID, err)
+			}
+			if !f.Pending {
+				if err := upsertPlexLink(ctx, tx, f.PlexID, f.DisplayName(), now); err != nil {
+					return err
+				}
 			}
 			if f.Pending {
 				continue // invited but not accepted: no access yet
@@ -879,7 +912,7 @@ RETURNING id`,
 		}
 	}
 	// Friends no longer in the list lost access.
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM auth_users WHERE is_owner=0 AND active=1 AND plex_id IS NOT NULL`)
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM auth_users WHERE is_owner=0 AND plex_id IS NOT NULL`)
 	if err != nil {
 		return err
 	}
@@ -899,7 +932,7 @@ RETURNING id`,
 		return err
 	}
 	for _, id := range gone {
-		if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET active=0, updated_at=? WHERE id=?`, now, id); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE auth_users SET active=0, plex_shared=0, updated_at=? WHERE id=?`, now, id); err != nil {
 			return err
 		}
 	}

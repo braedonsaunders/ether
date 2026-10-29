@@ -14,24 +14,8 @@ import (
 	"golang.org/x/crypto/argon2"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/store"
+	_ "github.com/braedonsaunders/ether/internal/identity/schema"
 )
-
-func init() {
-	store.Register("identity_links", 1, `
-CREATE TABLE identity_links (
- id INTEGER PRIMARY KEY AUTOINCREMENT,
- viewer_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
- provider TEXT NOT NULL,
- subject TEXT NOT NULL,
- display TEXT NOT NULL DEFAULT '',
- verified_at INTEGER NOT NULL DEFAULT 0,
- password_hash TEXT NOT NULL DEFAULT '',
- UNIQUE(provider, subject)
-);
-CREATE INDEX identity_links_viewer ON identity_links(viewer_id);
-`)
-}
 
 // Local authenticates unique local usernames, independent of display names.
 // Membership is checked at authentication time against the viewer record.
