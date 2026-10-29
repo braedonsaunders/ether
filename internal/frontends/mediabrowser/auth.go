@@ -148,9 +148,6 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 		policy["EnableVideoPlaybackTranscoding"] = *caps.CanTranscode
 		policy["EnableAudioPlaybackTranscoding"] = *caps.CanTranscode
 	}
-	if caps.CanDownload != nil {
-		policy["EnableContentDownloading"] = *caps.CanDownload
-	}
 	if caps.RemoteBitrateKbps != nil {
 		policy["RemoteClientBitrateLimit"] = *caps.RemoteBitrateKbps * 1000
 	}

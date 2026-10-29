@@ -286,7 +286,7 @@ func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
 		if v != viewer || ip.String() != "198.51.100.7" {
 			t.Fatal(v, ip)
 		}
-		return frontend.ViewerCapabilities{CanPlayRemote: &no, CanUseLiveTV: &yes, RemoteBitrateKbps: &bitrate, HasLocalPassword: &yes, AllowedLibraries: &views}, nil
+		return frontend.ViewerCapabilities{CanPlayRemote: &no, CanUseLiveTV: &yes, CanDownload: &yes, RemoteBitrateKbps: &bitrate, HasLocalPassword: &yes, AllowedLibraries: &views}, nil
 	}}
 	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), host)
 	if err != nil {
@@ -305,5 +305,8 @@ func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
 	}
 	if result.Policy["EnableVideoPlaybackTranscoding"] != false {
 		t.Fatal("transcoding must be unavailable without a broker")
+	}
+	if result.Policy["EnableContentDownloading"] != false {
+		t.Fatal("MediaBrowser downloads are not supported")
 	}
 }

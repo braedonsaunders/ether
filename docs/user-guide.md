@@ -14,6 +14,8 @@ Jellyfin and Emby support is in development. No app has been certified yet;
 the matrix will be filled in only after testing the listed features on the
 specified app version. A dash means not yet verified.
 
+Downloads: not supported.
+
 | Client | Version | Browse | Play | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Jellyfin for Android TV | Pending | — | — | — | — | — | — | — | — |
