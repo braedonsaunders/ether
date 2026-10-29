@@ -135,7 +135,7 @@ func TestPlaybackCapacityProblem(t *testing.T) {
 	}
 }
 
-func TestUnknownHDR10PlusOnlySuppressesPQ(t *testing.T) {
+func TestUnknownTransferRemainsPlayableAndUnknownPQIsSuppressed(t *testing.T) {
 	positive, negative := true, false
 	for _, tc := range []struct {
 		transfer string

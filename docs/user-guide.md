@@ -48,6 +48,8 @@ not yet been verified on the named client.
 Settings beyond revision 8 are not supported.
 PQ video variants with unknown HDR10+ metadata are not offered until the
 server can determine that metadata; SDR and HLG variants remain available.
+For media with an unknown transfer function, Silo's required HDR10+ boolean
+means HDR10+ has not been positively identified; the media remains playable.
 
 | Client | Version | Browse | Play | Resume | Watched | Subtitles | Device pairing |
 | --- | --- | --- | --- | --- | --- | --- | --- |
