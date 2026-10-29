@@ -32,6 +32,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	var planned frontend.PlanRequest
 	var streamed frontend.StreamRequest
 	var timeline frontend.Timeline
+	var stopped string
 	session := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 		planned = r
 		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Duration: time.Hour, Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus}}}, Decision: frontend.Decision{Kind: "transcode", VideoCopy: true}}, nil
@@ -54,7 +55,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		ReportFunc: func(_ context.Context, _ frontend.SessionAccess, _ string, r frontend.Timeline) error {
 			timeline = r
 			return nil
-		}}
+		}, StopFunc: func(_ context.Context, _ frontend.SessionAccess, id string) error { stopped = id; return nil }}
 	ident := frontendtest.Identity{ResolveFunc: func(_ context.Context, s string) (*frontend.Viewer, error) {
 		if s != "account-secret" {
 			return nil, errors.New("bad")
@@ -116,7 +117,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if json.Unmarshal(w.Body.Bytes(), &body) != nil || body["outcome"] != "playable" {
 		t.Fatalf("response %s", w.Body.String())
 	}
-	w = call("POST", "/api/v2/playback/session/progress", `{"installation_id":"install","sequence":1,"position":60}`)
+	w = call("POST", "/api/v2/playback/session/progress", `{"installation_id":"install","sequence":1,"position":60,"is_paused":false}`)
 	if w.Code != 200 || timeline.Position != time.Minute || timeline.State != "playing" || timeline.Sequence != 1 {
 		t.Fatalf("progress %d %+v", w.Code, timeline)
 	}
@@ -128,6 +129,14 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		if err := doc.Validate("POST", "/api/v2/playback/session/progress", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
 			t.Errorf("progress spec: %v", err)
 		}
+	}
+	w = call("DELETE", "/api/v2/playback/session", `{"installation_id":"install","stop_id":"stop"}`)
+	if w.Code != 200 || stopped != "session" || !strings.Contains(w.Body.String(), `"stop_id":"stop"`) {
+		t.Fatalf("stop without final sample: %d %s", w.Code, w.Body.String())
+	}
+	w = call("DELETE", "/api/v2/playback/session", `{"installation_id":"install","stop_id":"stop","sequence":2}`)
+	if w.Code != 400 {
+		t.Fatalf("partial final sample: %d %s", w.Code, w.Body.String())
 	}
 
 }

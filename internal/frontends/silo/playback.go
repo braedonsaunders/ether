@@ -359,11 +359,11 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 }
 
 type progressRequest struct {
-	InstallationID string  `json:"installation_id"`
-	Position       float64 `json:"position"`
-	Sequence       uint64  `json:"sequence"`
-	Paused         bool    `json:"is_paused"`
-	StopID         string  `json:"stop_id"`
+	InstallationID string   `json:"installation_id"`
+	Position       *float64 `json:"position"`
+	Sequence       uint64   `json:"sequence"`
+	Paused         *bool    `json:"is_paused"`
+	StopID         string   `json:"stop_id"`
 }
 
 func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +377,7 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b progressRequest
-	if decode(r, &b) != nil || b.InstallationID == "" || b.Sequence == 0 || b.Position < 0 || math.IsNaN(b.Position) || math.IsInf(b.Position, 0) || b.Position > float64((1<<63-1)/int64(time.Second)) {
+	if decode(r, &b) != nil || b.InstallationID == "" {
 		http.Error(w, "Bad Request", 400)
 		return
 	}
@@ -385,21 +385,34 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 		installationChanged(w)
 		return
 	}
-	state := "playing"
-	if b.Paused {
-		state = "paused"
-	}
 	stop := r.Method == "DELETE"
 	if stop && b.StopID == "" {
 		http.Error(w, "Bad Request", 400)
 		return
 	}
+	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: "silo"}
+	sessionID := r.PathValue("session")
+	hasSample := b.Sequence != 0 || b.Position != nil || b.Paused != nil
+	if !hasSample && stop {
+		if err = i.host.Sessions.Stop(r.Context(), access, sessionID); err != nil {
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+		reply(w, 200, map[string]any{"outcome": "stopped", "stop_id": b.StopID})
+		return
+	}
+	if b.Sequence == 0 || b.Position == nil || b.Paused == nil || *b.Position < 0 || math.IsNaN(*b.Position) || math.IsInf(*b.Position, 0) || *b.Position > float64((1<<63-1)/int64(time.Second)) {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	state := "playing"
+	if *b.Paused {
+		state = "paused"
+	}
 	if stop {
 		state = "stopped"
 	}
-	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: "silo"}
-	sessionID := r.PathValue("session")
-	err = i.host.Sessions.Report(r.Context(), access, sessionID, frontend.Timeline{PlaybackID: sessionID, ClientSessionID: b.InstallationID, Position: time.Duration(b.Position * float64(time.Second)), Sequence: b.Sequence, State: state})
+	err = i.host.Sessions.Report(r.Context(), access, sessionID, frontend.Timeline{PlaybackID: sessionID, ClientSessionID: b.InstallationID, Position: time.Duration(*b.Position * float64(time.Second)), Sequence: b.Sequence, State: state})
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
@@ -408,7 +421,7 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 	if stop {
 		outcome = "stopped"
 	}
-	response := map[string]any{"outcome": outcome, "accepted": map[string]any{"position": b.Position, "sequence": b.Sequence, "is_paused": b.Paused}}
+	response := map[string]any{"outcome": outcome, "accepted": map[string]any{"position": *b.Position, "sequence": b.Sequence, "is_paused": *b.Paused}}
 	if b.StopID != "" {
 		response["stop_id"] = b.StopID
 	}
