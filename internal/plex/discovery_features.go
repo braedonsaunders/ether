@@ -172,7 +172,7 @@ func (s *Server) discoverySearch(ctx context.Context, pr *Request, query string,
 	if e != nil {
 		return nil, false
 	}
-	return s.visibleTitles(pr.User, items), true
+	return items, true
 }
 func (s *Server) decorateDiscoveryMetadata(ctx context.Context, pr *Request, t *core.Title, m *model.Metadata) {
 	d := s.d.Discovery

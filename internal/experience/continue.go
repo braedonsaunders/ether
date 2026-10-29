@@ -140,7 +140,13 @@ func (c Continue) InProgress(ctx context.Context, viewer *core.User, t core.Medi
 		keys = append(keys, st.Key)
 		state[st.Key] = st
 	}
-	titles := c.GetTitles(ctx, keys)
+	candidates := c.GetTitles(ctx, keys)
+	titles := make([]core.Title, 0, len(candidates))
+	for i := range candidates {
+		if c.Visible(ctx, viewer, &candidates[i]) {
+			titles = append(titles, candidates[i])
+		}
+	}
 	// Resume unfinished media and advance recently completed series. A
 	// completed episode has no offset, so InProgress alone loses the show.
 	if t != core.TypeMovie {
@@ -165,7 +171,7 @@ func (c Continue) InProgress(ctx context.Context, viewer *core.User, t core.Medi
 				continue
 			}
 		}
-		if !c.SectionAllowed(viewer, ti.Type) {
+		if !c.SectionAllowed(viewer, ti.Type) || !c.Visible(ctx, viewer, &ti) {
 			continue
 		}
 		if ti.Type == core.TypeEpisode {
@@ -179,5 +185,9 @@ func (c Continue) InProgress(ctx context.Context, viewer *core.User, t core.Medi
 			break
 		}
 	}
-	return out, state
+	visibleState := make(map[core.RatingKey]core.WatchStatus, len(out))
+	for _, title := range out {
+		visibleState[title.Key] = state[title.Key]
+	}
+	return out, visibleState
 }

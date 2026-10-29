@@ -60,3 +60,30 @@ func TestSearchCatalogueEnforcesViewerPolicy(t *testing.T) {
 		t.Fatalf("unexpected results: %+v, %v", got, err)
 	}
 }
+
+func TestSearchFiltersBeforeLimitAndBackfills(t *testing.T) {
+	ctx := context.Background()
+	parent := core.ShowKey(10)
+	episode := core.Title{Key: 11, ShowKey: parent, Type: core.TypeEpisode}
+	items := []core.Title{episode, {Key: 12, Type: core.TypeMovie}, {Key: 13, Type: core.TypeMovie}}
+	calls := 0
+	s := Search{
+		Visibility: Visibility{
+			GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) { return &core.Title{Adult: true}, nil },
+			FilterAvailable: func(_ context.Context, titles []core.Title) []core.Title {
+				if titles[0].Key == 12 {
+					return nil
+				}
+				return titles
+			},
+		},
+		Catalog: func(_ context.Context, _ string, _ []core.MediaType, limit int) ([]core.Title, error) {
+			calls++
+			return items[:min(limit, len(items))], nil
+		},
+	}
+	got, err := s.Find(ctx, &core.User{}, "query", []core.MediaType{core.TypeMovie, core.TypeEpisode}, 1)
+	if err != nil || len(got) != 1 || got[0].Key != 13 || calls != 3 {
+		t.Fatalf("backfill: %+v, %v, calls %d", got, err, calls)
+	}
+}
