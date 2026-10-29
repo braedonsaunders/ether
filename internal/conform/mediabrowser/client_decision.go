@@ -6,6 +6,9 @@ import "fmt"
 // It describes a requested delivery, not proof of the server's actual encode.
 type PlaybackOffer struct {
 	ID                   string `json:"Id"`
+	Protocol             string `json:"Protocol"`
+	Path                 string `json:"Path"`
+	IsRemote             bool   `json:"IsRemote"`
 	SupportsDirectPlay   bool   `json:"SupportsDirectPlay"`
 	SupportsDirectStream bool   `json:"SupportsDirectStream"`
 	SupportsTranscoding  bool   `json:"SupportsTranscoding"`
