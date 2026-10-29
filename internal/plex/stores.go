@@ -2,7 +2,6 @@ package plex
 
 import (
 	"context"
-	"crypto/rand"
 	"hash/fnv"
 	"strconv"
 	"sync"
@@ -146,118 +145,45 @@ type transcodeEntry struct {
 const decisionFailureTTL = 15 * time.Second
 
 type transcodeTable struct {
-	mu sync.Mutex
-	m  map[string]*transcodeEntry
+	table *sessions.BindingTable[playRequest]
 }
 
-func newTranscodeTable() *transcodeTable { return &transcodeTable{m: map[string]*transcodeEntry{}} }
-
+func newTranscodeTable() *transcodeTable {
+	return &transcodeTable{table: sessions.NewBindingTable[playRequest]()}
+}
+func (e *transcodeEntry) binding() *sessions.Binding[playRequest] {
+	return &sessions.Binding[playRequest]{ID: e.id, StreamToken: e.streamToken, PlayID: e.playID, PlaybackID: e.playbackID, UserID: e.userID, ClientID: e.clientID, Key: e.key, Requested: e.requested, Decision: e.decision, Info: e.info, Subtitle: e.subtitle, Caps: e.caps, Opts: e.opts, Offset: e.offset, Started: e.started, UpdatedAt: e.updatedAt, FailKey: e.failKey, FailErr: e.failErr, FailedAt: e.failedAt}
+}
+func plexBinding(b *sessions.Binding[playRequest]) *transcodeEntry {
+	return &transcodeEntry{id: b.ID, streamToken: b.StreamToken, playID: b.PlayID, playbackID: b.PlaybackID, userID: b.UserID, clientID: b.ClientID, key: b.Key, requested: b.Requested, decision: b.Decision, info: b.Info, subtitle: b.Subtitle, caps: b.Caps, opts: b.Opts, offset: b.Offset, started: b.Started, updatedAt: b.UpdatedAt, failKey: b.FailKey, failErr: b.FailErr, failedAt: b.FailedAt}
+}
 func (t *transcodeTable) put(e *transcodeEntry) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if old, ok := t.m[e.id]; ok {
-		if old.userID != e.userID || old.clientID != e.clientID {
-			return
-		}
-		e.streamToken = old.streamToken
-	}
-	if e.streamToken == "" {
-		e.streamToken = rand.Text()
-	}
-	cp := *e
-	t.m[e.id] = &cp
+	b := e.binding()
+	t.table.Put(b)
+	e.streamToken = b.StreamToken
 }
-
-// claim reserves a client-chosen ID before any playback/transcoder work. A
-// different viewer or device cannot replace, reuse, stop, or probe that binding.
 func (t *transcodeTable) claim(id string, userID int64, clientID string, now time.Time) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if e, ok := t.m[id]; ok {
-		return e.userID == userID && e.clientID == clientID
-	}
-	t.m[id] = &transcodeEntry{id: id, userID: userID, clientID: clientID, streamToken: rand.Text(), updatedAt: now}
-	return true
+	return t.table.Claim(id, userID, clientID, now)
 }
-
 func (t *transcodeTable) get(id string) (*transcodeEntry, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.m[id]
+	b, ok := t.table.Get(id)
 	if !ok {
 		return nil, false
 	}
-	cp := *e
-	return &cp, true
+	return plexBinding(b), true
 }
-
-// fail records a failed decision on the binding the decision claimed. A
-// binding owned by another viewer or device is left alone.
 func (t *transcodeTable) fail(id string, userID int64, clientID string, key core.RatingKey, err error, now time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.m[id]
-	if !ok || e.userID != userID || e.clientID != clientID || err == nil {
-		return
-	}
-	e.failKey, e.failErr, e.failedAt, e.updatedAt = key, err, now, now
+	t.table.Fail(id, userID, clientID, key, err, now)
 }
-
-// takeFailure returns and clears a recent failed decision for this viewer's
-// binding and title.
 func (t *transcodeTable) takeFailure(id string, userID int64, key core.RatingKey, now time.Time) (error, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.m[id]
-	if !ok || e.failErr == nil {
-		return nil, false
-	}
-	err, match := e.failErr, e.userID == userID && e.failKey == key && now.Sub(e.failedAt) < decisionFailureTTL
-	if e.userID == userID {
-		e.failKey, e.failErr, e.failedAt = 0, nil, time.Time{}
-	}
-	if !match {
-		return nil, false
-	}
-	return err, true
+	return t.table.TakeFailure(id, userID, key, now)
 }
-
-func (t *transcodeTable) touch(id string, now time.Time) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if e, ok := t.m[id]; ok {
-		e.updatedAt = now
-	}
-}
-
-func (t *transcodeTable) remove(id string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.m, id)
-}
-
-// forClient lists the transcode sessions of a client for a title.
+func (t *transcodeTable) touch(id string, now time.Time) { t.table.Touch(id, now) }
+func (t *transcodeTable) remove(id string)               { t.table.Remove(id) }
 func (t *transcodeTable) forClient(userID int64, clientID string, key core.RatingKey) []string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	var out []string
-	for id, e := range t.m {
-		if e.userID == userID && e.clientID == clientID && (key == 0 || e.key == key) {
-			out = append(out, id)
-		}
-	}
-	return out
+	return t.table.ForClient(userID, clientID, key)
 }
-
-func (t *transcodeTable) expire(now time.Time, ttl time.Duration) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for id, e := range t.m {
-		if now.Sub(e.updatedAt) > ttl {
-			delete(t.m, id)
-		}
-	}
-}
+func (t *transcodeTable) expire(now time.Time, ttl time.Duration) { t.table.Expire(now, ttl) }
 
 // ---------------------------------------------------------------------------
 // Facet cache: genre/country keys -> titles for filter resolution.
@@ -310,14 +236,4 @@ func (s *Server) facetTitle(ctx context.Context, t core.MediaType, name, value s
 }
 
 // byPlayID returns the transcode session ids fed by a playback session.
-func (t *transcodeTable) byPlayID(playID string) []string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	var ids []string
-	for id, e := range t.m {
-		if e.playID == playID && e.started {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
+func (t *transcodeTable) byPlayID(playID string) []string { return t.table.ByPlayID(playID) }
