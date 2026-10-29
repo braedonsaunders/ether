@@ -19,9 +19,19 @@ type registered struct {
 	handler http.Handler
 }
 type Router struct {
-	mu      sync.RWMutex
-	routes  []registered
-	ordered []registered
+	mu        sync.RWMutex
+	routes    []registered
+	ordered   []registered
+	unmatched func(*http.Request, int)
+}
+
+// SetUnmatched installs an optional observer for 404 and 405 responses. The
+// observer is called without the router lock and must redact and rate-limit
+// any request information it records.
+func (r *Router) SetUnmatched(observer func(*http.Request, int)) {
+	r.mu.Lock()
+	r.unmatched = observer
+	r.mu.Unlock()
 }
 
 // Handle registers a literal/parameter route. Parameters use {name}; a final
@@ -92,6 +102,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(req.URL.Path, "/"), "/")
 	r.mu.RLock()
 	entries := append([]registered(nil), r.ordered...)
+	unmatched := r.unmatched
 	r.mu.RUnlock()
 	methodMismatch := false
 	for _, e := range entries {
@@ -133,8 +144,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if methodMismatch {
+		if unmatched != nil {
+			unmatched(req, http.StatusMethodNotAllowed)
+		}
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
+	}
+	if unmatched != nil {
+		unmatched(req, http.StatusNotFound)
 	}
 	http.NotFound(w, req)
 }

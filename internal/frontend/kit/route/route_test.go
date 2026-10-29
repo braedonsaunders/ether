@@ -71,3 +71,32 @@ func TestRouterPrefersLiteralsThenParametersThenTail(t *testing.T) {
 		t.Fatalf("inventory order changed: %s", got)
 	}
 }
+
+func TestUnmatchedObserverRunsOutsideLock(t *testing.T) {
+	var r Router
+	if err := r.Handle("GET", "/item", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})); err != nil {
+		t.Fatal(err)
+	}
+	var statuses []int
+	r.SetUnmatched(func(_ *http.Request, status int) {
+		statuses = append(statuses, status)
+		_ = r.Routes()
+		r.SetUnmatched(nil)
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/item", nil))
+	if w.Code != 405 || len(statuses) != 1 || statuses[0] != 405 {
+		t.Fatalf("method: %d %v", w.Code, statuses)
+	}
+	r.SetUnmatched(func(_ *http.Request, status int) { statuses = append(statuses, status) })
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/missing", nil))
+	if w.Code != 404 || len(statuses) != 2 || statuses[1] != 404 {
+		t.Fatalf("missing: %d %v", w.Code, statuses)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/item", nil))
+	if len(statuses) != 2 {
+		t.Fatalf("observer called on match: %v", statuses)
+	}
+}
