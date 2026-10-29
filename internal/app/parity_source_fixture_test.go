@@ -40,3 +40,10 @@ func TestParitySourceWithRealResolver(t *testing.T) {
 		t.Fatalf("media bytes %q: %v", b, err)
 	}
 }
+
+func TestParitySourceProvidesHTTPRelease(t *testing.T) {
+	releases, err := (paritySource{}).Search(context.Background(), core.SearchRequest{IDs: core.IDs{TMDB: 10002}, Title: "Fixture Movie 002", Year: 2020, Type: core.TypeMovie})
+	if err != nil || len(releases) != 1 || releases[0].Protocol != "http" {
+		t.Fatalf("HTTP fixture releases=%+v err=%v", releases, err)
+	}
+}

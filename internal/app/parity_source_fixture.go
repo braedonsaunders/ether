@@ -26,7 +26,13 @@ func (paritySource) Search(_ context.Context, q core.SearchRequest) ([]core.Rele
 		info.Seasons = []int{q.Season}
 		info.Episodes = []int{q.Episode}
 	}
-	return []core.Release{{ID: fmt.Sprintf("fixture-%d-%d-%d", q.IDs.TMDB, q.Season, q.Episode), GUID: "fixture", Indexer: "parity fixture", Name: name, Size: 4 << 30, TitleIDs: q.IDs, PubDate: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Info: info}}, nil
+	protocol := ""
+	if q.IDs.TMDB == 10002 {
+		// The fake debrid HTTP source serves local bytes; its release carries
+		// the real protocol through the resolver and playback decision.
+		protocol = "http"
+	}
+	return []core.Release{{ID: fmt.Sprintf("fixture-%d-%d-%d", q.IDs.TMDB, q.Season, q.Episode), GUID: "fixture", Indexer: "parity fixture", Name: name, Size: 4 << 30, TitleIDs: q.IDs, Protocol: protocol, PubDate: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Info: info}}, nil
 }
 func (paritySource) FetchNZB(context.Context, core.Release) ([]byte, error) {
 	return []byte("parity-media"), nil
