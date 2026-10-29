@@ -198,16 +198,12 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 }
 
 func (s *Server) recentlyAddedHub(ctx context.Context, pr *Request, sec Section, count int) (hubSpec, error) {
-	q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type}, Sort: core.SortAdded, Desc: true, Limit: count + 1}
-	if pr.User != nil {
-		q.Filter.MaxContentRating = pr.User.MaxContentRating
-	}
-	page, err := s.d.Catalog.Browse(ctx, q)
+	items, more, err := experience.RecentlyAdded(ctx, pr.User, sec.Type, count, s.d.Catalog.Browse)
 	if err != nil {
 		return hubSpec{}, err
 	}
 	id := strconv.Itoa(sec.ID)
-	hs := hubSpec{Hub: core.Hub{Title: "Recently Added in " + sec.Title, Type: sec.Type, Style: "shelf", Promoted: true, Items: page.Items}}
+	hs := hubSpec{Hub: core.Hub{Title: "Recently Added in " + sec.Title, Type: sec.Type, Style: "shelf", Promoted: true, Items: items}}
 	if sec.Type == core.TypeShow {
 		hs.ID, hs.Context, hs.Type = "tv.recentlyadded."+id, "hub.tv.recentlyadded", ""
 		hs.key = "/hubs/home/recentlyAdded?type=2&sectionID=" + id
@@ -215,9 +211,7 @@ func (s *Server) recentlyAddedHub(ctx context.Context, pr *Request, sec Section,
 		hs.ID, hs.Context = "movie.recentlyadded."+id, "hub.movie.recentlyadded"
 		hs.key = "/library/sections/" + id + "/all?sort=addedAt:desc"
 	}
-	if len(hs.Items) > count {
-		hs.Items, hs.More = hs.Items[:count], true
-	}
+	hs.More = more
 	return hs, nil
 }
 

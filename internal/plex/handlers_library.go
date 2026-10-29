@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -810,22 +811,11 @@ func (s *Server) sectionRecentlyViewed(w http.ResponseWriter, r *http.Request, s
 	mc := s.sectionContainer(sec)
 	mc.Title2 = "Recently Viewed"
 	if s.d.State != nil && pr.User != nil {
-		hist, err := s.d.State.History(ctx, pr.User.ID, time.Time{}, 100)
+		items, err := experience.RecentlyViewed(ctx, pr.User, sec.ID, s.d.State.History, s.getTitles, func(t core.MediaType) (int, bool) {
+			section, ok := s.sectionFor(t)
+			return section.ID, ok
+		})
 		if err == nil {
-			seen := map[core.RatingKey]bool{}
-			var keys []core.RatingKey
-			for _, h := range hist {
-				if !seen[h.Key] {
-					seen[h.Key] = true
-					keys = append(keys, h.Key)
-				}
-			}
-			var items []core.Title
-			for _, t := range s.getTitles(ctx, keys) {
-				if sct, ok := s.sectionFor(t.Type); ok && sct.ID == sec.ID {
-					items = append(items, t)
-				}
-			}
 			mc.Metadata = s.renderTitles(ctx, pr, items, renderOpts{media: true})
 		}
 	}
