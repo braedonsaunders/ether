@@ -63,7 +63,7 @@ func (i *instance) mutate(w http.ResponseWriter, r *http.Request, kind string) {
 	}
 	st := data[key]
 	id := ids.RatingKeyGUID(key)
-	jsonReply(w, userDataDTO(id, st))
+	jsonReply(w, i.userDataDTO(id, st))
 }
 func (i *instance) mutationRoutes() error {
 	for _, path := range []struct{ pattern, kind string }{{"/UserItems/{itemId}/Rating", "likes"}, {"/Users/{userId}/Items/{itemId}/Rating", "likes"}, {"/UserPlayedItems/{itemId}", "played"}, {"/Users/{userId}/PlayedItems/{itemId}", "played"}, {"/UserFavoriteItems/{itemId}", "favorite"}, {"/Users/{userId}/FavoriteItems/{itemId}", "favorite"}} {

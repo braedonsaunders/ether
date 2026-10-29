@@ -23,20 +23,31 @@ func queryInt(r *http.Request, name string, def int) int {
 	}
 	return n
 }
-func userDataDTO(id string, st frontend.WatchStatus) map[string]any {
-	data := map[string]any{"Key": id, "ItemId": id, "PlaybackPositionTicks": st.ViewOffset.Nanoseconds() / 100, "PlayCount": st.ViewCount, "Played": st.ViewCount > 0, "Rating": st.UserRating}
-	if st.UserRating >= 7 {
-		data["Likes"] = true
-	} else if st.UserRating >= 1 && st.UserRating <= 3 {
-		data["Likes"] = false
-	} else {
-		data["Likes"] = nil
+func (i *instance) userDataDTO(id string, st frontend.WatchStatus) map[string]any {
+	data := map[string]any{"PlaybackPositionTicks": st.ViewOffset.Nanoseconds() / 100, "PlayCount": st.ViewCount, "Played": st.ViewCount > 0, "IsFavorite": st.IsFavorite, "PlayedPercentage": float64(0)}
+	if st.Duration > 0 {
+		data["PlayedPercentage"] = min(100, float64(st.ViewOffset)*100/float64(st.Duration))
+	}
+	if !st.LastViewedAt.IsZero() {
+		data["LastPlayedDate"] = st.LastViewedAt.UTC()
+	}
+	if st.UserRating > 0 {
+		data["Rating"] = st.UserRating
+		if st.UserRating >= 7 {
+			data["Likes"] = true
+		} else if st.UserRating <= 3 {
+			data["Likes"] = false
+		}
+	}
+	if i.protocol == "jellyfin" {
+		data["Key"] = id
+		data["ItemId"] = id
 	}
 	return data
 }
-func itemDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
+func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	kind := map[frontend.MediaType]string{"movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode"}[t.Type]
-	m := map[string]any{"Id": ids.RatingKeyGUID(t.Key), "Name": t.Title, "Type": kind, "LocationType": "FileSystem", "IsFolder": t.Type == "show" || t.Type == "season", "Overview": t.Summary, "ProductionYear": t.Year, "RunTimeTicks": t.Runtime.Nanoseconds() / 100, "UserData": userDataDTO(ids.RatingKeyGUID(t.Key), state)}
+	m := map[string]any{"Id": ids.RatingKeyGUID(t.Key), "Name": t.Title, "Type": kind, "LocationType": "FileSystem", "IsFolder": t.Type == "show" || t.Type == "season", "Overview": t.Summary, "ProductionYear": t.Year, "RunTimeTicks": t.Runtime.Nanoseconds() / 100, "UserData": i.userDataDTO(ids.RatingKeyGUID(t.Key), state)}
 	providers := map[string]string{}
 	if t.IDs.TMDB > 0 {
 		providers["Tmdb"] = strconv.FormatInt(t.IDs.TMDB, 10)
@@ -48,6 +59,7 @@ func itemDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 		providers["Tvdb"] = strconv.FormatInt(t.IDs.TVDB, 10)
 	}
 	m["ProviderIds"] = providers
+	m["ServerId"] = i.info.ID
 	if t.Type == "movie" || t.Type == "episode" {
 		m["MediaType"] = "Video"
 	}
@@ -153,7 +165,7 @@ func (i *instance) browseRoutes() error {
 			}
 			items := make([]any, 0, len(page))
 			for _, title := range page {
-				items = append(items, itemDTO(title, state[title.Key]))
+				items = append(items, i.itemDTO(title, state[title.Key]))
 			}
 			if reporter, ok := i.host.Experience.(frontend.RowInteractionReporter); ok && len(page) > 0 {
 				start, end := paging.Bounds(len(titles), offset, limit)
@@ -193,7 +205,7 @@ func (i *instance) browseRoutes() error {
 			http.NotFound(w, r)
 			return
 		}
-		dto := itemDTO(d.Title, d.UserData)
+		dto := i.itemDTO(d.Title, d.UserData)
 		if tags := i.imageTags(r, d, token); len(tags) > 0 {
 			dto["ImageTags"] = tags
 		}
@@ -273,7 +285,7 @@ func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.View
 	}
 	items := make([]any, 0, len(page.Items))
 	for _, title := range page.Items {
-		items = append(items, itemDTO(title, state[title.Key]))
+		items = append(items, i.itemDTO(title, state[title.Key]))
 	}
 	jsonReply(w, map[string]any{"Items": items, "TotalRecordCount": page.Total, "StartIndex": offset})
 }
@@ -418,7 +430,7 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]any, 0, len(titles))
 	for _, t := range titles {
-		items = append(items, itemDTO(t, state[t.Key]))
+		items = append(items, i.itemDTO(t, state[t.Key]))
 	}
 	jsonReply(w, items)
 }
