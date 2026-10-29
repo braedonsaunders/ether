@@ -38,7 +38,10 @@ func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 	if err := PublicRoutes(r, info); err != nil {
 		return nil, err
 	}
-	enabled, _ := settings["discovery"].(bool)
+	enabled := true
+	if configured, ok := settings["discovery"].(bool); ok {
+		enabled = configured
+	}
 	inst := &instance{host: host, info: info, router: r, port: port, discoveryEnabled: enabled}
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err

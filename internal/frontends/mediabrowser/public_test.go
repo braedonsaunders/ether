@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
@@ -57,6 +58,26 @@ func TestJellyfinPublicSpec(t *testing.T) {
 		r.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if err := doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
 			t.Errorf("%s: %v", path, err)
+		}
+	}
+}
+
+func TestPublicRecordedCorpus(t *testing.T) {
+	fixtures := map[string]string{"/System/Info/Public": "findroid_jsonconnect_system info_GET__System_Info_Public.json", "/Users/Public": "findroid_jsonconnect_public users_GET__Users_Public.json"}
+	r := &route.Router{}
+	if err := PublicRoutes(r, PublicInfo{ID: "123", ServerName: "Ether", Version: "12.4.0", ProductName: "Jellyfin Server"}); err != nil {
+		t.Fatal(err)
+	}
+	for path, file := range fixtures {
+		reference, err := conform.LoadFixture("../../../testdata/conform/jellyfin/findroid/" + file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		report := conform.Compare(reference, conform.Response{Status: w.Code, Headers: w.Header(), Body: w.Body.Bytes()})
+		if report.Blocking() != 0 {
+			t.Errorf("%s: %+v", path, report.Differences)
 		}
 	}
 }

@@ -118,3 +118,40 @@ func TestUserDataMutationIsViewerScoped(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 }
+
+func TestSearchHintsUsesExperience(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	exp := frontendtest.Experience{SearchFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, term string, q frontend.ItemQuery) (frontend.SearchPage, error) {
+		if v != viewer || term != "search" || q.Offset != 1 || q.Limit != 2 {
+			t.Fatal(v, term, q)
+		}
+		return frontend.SearchPage{Page: frontend.Page{Items: []frontend.Title{{Key: 5, Type: "movie", Title: "Found"}}, Total: 3}}, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/Search/Hints?searchTerm=search&StartIndex=1&Limit=2"
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", path, nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Found") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := openapi.Parse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+}
