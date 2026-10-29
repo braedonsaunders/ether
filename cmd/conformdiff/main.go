@@ -19,6 +19,7 @@ import (
 	pmsconform "github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/conform/mediabrowser"
 	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
+	"github.com/braedonsaunders/ether/internal/conform/silo"
 )
 
 func main() {
@@ -75,7 +76,11 @@ func run(args []string) error {
 			dir = filepath.Join("internal", "conform", "profiles", *protocol)
 		}
 		var e error
-		p, e = mediabrowser.Load(*protocol, dir)
+		if *protocol == "silo" {
+			p, e = silo.Load(dir)
+		} else {
+			p, e = mediabrowser.Load(*protocol, dir)
+		}
 		if e != nil {
 			return e
 		}
