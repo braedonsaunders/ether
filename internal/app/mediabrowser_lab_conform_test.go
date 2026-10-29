@@ -67,7 +67,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	embyRef := labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
 	defer embyRef.logout(t)
 	ctx := context.Background()
-	a, viewer, cleanup := newAlignedLabFixture(t, jellyfinRef)
+	a, viewer, cleanup := newAlignedLabFixture(t, jellyfinRef, labFixtureOptions{PublicViewerPicker: map[string]bool{"emby": true}})
 	defer cleanup()
 	summary := conformance.Manifest{Schema: 1, Protocols: map[string]conformance.Summary{}}
 	for _, spec := range []struct {
