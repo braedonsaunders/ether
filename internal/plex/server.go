@@ -431,10 +431,8 @@ func (s *Server) TranscodeFor(playSessionID string) (core.HLSSession, bool) {
 	if s.d.Transcoder == nil {
 		return nil, false
 	}
-	for _, id := range s.transcodes.byPlayID(playSessionID) {
-		if hs, ok := s.d.Transcoder.Session(id); ok && hs != nil {
-			return hs, true
-		}
+	if hs, ok := sessions.TranscodeFor(s.transcodes.table, s.d.Transcoder, playSessionID); ok {
+		return hs, true
 	}
 	if s.d.LiveTV != nil {
 		return s.d.LiveTV.TranscodeFor(playSessionID)
