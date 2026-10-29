@@ -84,6 +84,15 @@ func grantHash(credential string) (string, bool) {
 
 // Issue creates a new independent credential for a device and surface.
 func (g *Grants) Issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
+	return g.issue(ctx, viewerID, identityID, surface, device, false)
+}
+
+// IssueLogin atomically issues a grant and records a successful explicit sign-in.
+func (g *Grants) IssueLogin(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
+	return g.issue(ctx, viewerID, identityID, surface, device, true)
+}
+
+func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device, login bool) (string, error) {
 	if surface == "" || viewerID <= 0 {
 		return "", errors.New("identity: surface and viewer required")
 	}
@@ -97,7 +106,20 @@ func (g *Grants) Issue(ctx context.Context, viewerID int64, identityID *int64, s
 	token := grantPrefix + base64.RawURLEncoding.EncodeToString(raw[:])
 	hash, _ := grantHash(token)
 	now := g.now().UnixMilli()
-	result, err := g.db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), viewerID)
+	var exec interface {
+		ExecContext(context.Context, string, ...any) (sql.Result, error)
+	} = g.db
+	var tx *sql.Tx
+	var err error
+	if login {
+		tx, err = g.db.BeginTx(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		defer tx.Rollback()
+		exec = tx
+	}
+	result, err := exec.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), viewerID)
 	if err != nil {
 		return "", err
 	}
@@ -107,6 +129,14 @@ func (g *Grants) Issue(ctx context.Context, viewerID int64, identityID *int64, s
 	}
 	if n != 1 {
 		return "", core.ErrUnauthorized
+	}
+	if login {
+		if err := recordLogin(ctx, tx, viewerID, now); err != nil {
+			return "", err
+		}
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
 	}
 	return token, nil
 }

@@ -89,6 +89,9 @@ type Instance interface {
 // frontends must not construct a viewer from untrusted request data.
 type SurfaceIdentity interface {
 	Resolve(context.Context, string) (*core.Viewer, error)
+	// ViewerTimes revalidates the surface credential and allows only the same
+	// viewer or an active owner to read another active viewer's timestamps.
+	ViewerTimes(context.Context, string, int64) (ViewerTimes, error)
 	PublicViewers(context.Context) ([]PublicViewer, error)
 	SignIn(context.Context, string, string, core.Device) (string, error)
 	IssueRefresh(context.Context, string, core.Device) (string, error)
@@ -100,6 +103,11 @@ type SurfaceIdentity interface {
 	QuickConnectApprove(context.Context, *core.Viewer, string) error
 	Revoke(context.Context, string) error
 	SetupComplete() bool
+}
+
+// ViewerTimes contains observed events; a zero time means unknown.
+type ViewerTimes struct {
+	LastLogin, LastActivity time.Time
 }
 
 // QuickConnectDetails is returned only to the holder of the polling secret.
@@ -140,6 +148,10 @@ func (b boundIdentity) Resolve(ctx context.Context, credential string) (*core.Vi
 		return nil, errors.New("identity surface unavailable")
 	}
 	return b.resolver.Resolve(ctx, string(b.surface), credential)
+}
+
+func (boundIdentity) ViewerTimes(context.Context, string, int64) (ViewerTimes, error) {
+	return ViewerTimes{}, ErrIdentityUnavailable
 }
 
 func (boundIdentity) IssueRefresh(context.Context, string, core.Device) (string, error) {

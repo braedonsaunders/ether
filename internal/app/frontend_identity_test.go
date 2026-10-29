@@ -207,3 +207,74 @@ func TestPublicViewerPickerRequiresOptInAndOnlyActiveLocalCredentials(t *testing
 		t.Fatal(viewers)
 	}
 }
+
+func TestViewerTimesRequiresSurfaceCredentialAndActiveOwner(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := a.users.Owner(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := identity.NewLocal(a.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewerID, err := local.CreateViewer(ctx, "member-times", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(a.db, a.users, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := identity.NewResolver(a.users, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	times, err := identity.NewViewerTimes(a.db, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := surfaceIdentity{surface: "jellyfin", resolver: resolver, grants: grants, times: times}
+	ownerGrant, err := grants.Issue(ctx, owner.ID, nil, "jellyfin", core.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberGrant, err := grants.Issue(ctx, viewerID, nil, "jellyfin", core.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ViewerTimes(ctx, memberGrant, owner.ID); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("member read owner: %v", err)
+	}
+	result, err := s.ViewerTimes(ctx, memberGrant, viewerID)
+	if err != nil || !result.LastLogin.IsZero() || result.LastActivity.IsZero() {
+		t.Fatalf("self: %+v %v", result, err)
+	}
+	if _, err = s.ViewerTimes(ctx, ownerGrant, viewerID); err != nil {
+		t.Fatalf("owner: %v", err)
+	}
+	wrong := s
+	wrong.surface = "emby"
+	if _, err = wrong.ViewerTimes(ctx, ownerGrant, viewerID); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("cross surface: %v", err)
+	}
+	if _, err = a.db.ExecContext(ctx, `UPDATE auth_users SET is_owner=0 WHERE id=?`, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ViewerTimes(ctx, ownerGrant, viewerID); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("stale owner: %v", err)
+	}
+	if err = s.Revoke(ctx, memberGrant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ViewerTimes(ctx, memberGrant, viewerID); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("revoked credential: %v", err)
+	}
+}

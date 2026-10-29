@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -18,11 +19,37 @@ type surfaceIdentity struct {
 	local       *identity.Local
 	grants      *identity.Grants
 	quick       *identity.QuickConnect
+	times       *identity.ViewerTimes
+	log         *slog.Logger
 	login, poll *identity.LoginLimiter
 }
 
 func (s surfaceIdentity) Resolve(ctx context.Context, credential string) (*core.Viewer, error) {
-	return s.resolver.Resolve(ctx, string(s.surface), credential)
+	if s.resolver == nil {
+		return nil, core.ErrUnauthorized
+	}
+	viewer, err := s.resolver.Resolve(ctx, string(s.surface), credential)
+	if err == nil && viewer != nil && s.times != nil {
+		// A failed observation must not turn a valid credential into an outage;
+		// it remains unknown until a later authenticated request records it.
+		if observeErr := s.times.Observe(ctx, viewer.ID); observeErr != nil && s.log != nil {
+			s.log.Warn("viewer activity observation failed", slog.Any("error", observeErr))
+		}
+	}
+	return viewer, err
+}
+func (s surfaceIdentity) ViewerTimes(ctx context.Context, credential string, target int64) (frontend.ViewerTimes, error) {
+	if s.times == nil || target <= 0 {
+		return frontend.ViewerTimes{}, core.ErrUnauthorized
+	}
+	viewer, err := s.Resolve(ctx, credential)
+	if err != nil {
+		return frontend.ViewerTimes{}, err
+	}
+	if viewer == nil {
+		return frontend.ViewerTimes{}, core.ErrUnauthorized
+	}
+	return s.times.Get(ctx, viewer.ID, target)
 }
 func (s surfaceIdentity) allow(ctx context.Context, limiter *identity.LoginLimiter, key string) error {
 	ip, ok := frontend.ClientIP(ctx)
@@ -64,16 +91,24 @@ func (s surfaceIdentity) SignIn(ctx context.Context, username, password string, 
 	if err != nil {
 		return "", err
 	}
-	return s.grants.Issue(ctx, viewer, &link, string(s.surface), device)
+	return s.grants.IssueLogin(ctx, viewer, &link, string(s.surface), device)
 }
 func (s surfaceIdentity) IssueRefresh(ctx context.Context, access string, device core.Device) (string, error) {
-	return s.grants.IssueRefresh(ctx, string(s.surface), access, device)
+	refresh, err := s.grants.IssueRefresh(ctx, string(s.surface), access, device)
+	if err == nil {
+		_, _ = s.Resolve(ctx, access)
+	}
+	return refresh, err
 }
 func (s surfaceIdentity) Refresh(ctx context.Context, token string, device core.Device) (string, string, error) {
 	if err := s.allow(ctx, s.poll, "refresh"); err != nil {
 		return "", "", err
 	}
-	return s.grants.Refresh(ctx, string(s.surface), token, device)
+	access, refresh, err := s.grants.Refresh(ctx, string(s.surface), token, device)
+	if err == nil {
+		_, _ = s.Resolve(ctx, access)
+	}
+	return access, refresh, err
 }
 func (s surfaceIdentity) QuickConnectInitiate(ctx context.Context, device core.Device) (string, string, error) {
 	if s.surface == "plex" {
@@ -134,7 +169,7 @@ func (s surfaceIdentity) Revoke(ctx context.Context, credential string) error {
 	if s.surface == "plex" {
 		return core.ErrUnauthorized
 	}
-	viewer, err := s.grants.Resolve(ctx, string(s.surface), credential)
+	viewer, err := s.Resolve(ctx, credential)
 	if err != nil {
 		return err
 	}

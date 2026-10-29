@@ -227,6 +227,9 @@ func (q *QuickConnect) poll(ctx context.Context, requestedSurface, secret string
 	if err != nil {
 		return "", err
 	}
+	if err = recordLogin(ctx, tx, viewer, now); err != nil {
+		return "", err
+	}
 	if err = tx.Commit(); err != nil {
 		return "", err
 	}
