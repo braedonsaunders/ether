@@ -1,0 +1,26 @@
+{
+  "status": 206,
+  "headers": {
+    "Accept-Ranges": [
+      "bytes"
+    ],
+    "Content-Length": [
+      "65536"
+    ],
+    "Content-Range": [
+      "bytes 112959850-113025385/113025386"
+    ],
+    "Content-Type": [
+      "video/mp4"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "captured",
+  "bodyLength": 65536,
+  "sha256": "1885f99d8e210f76ec2392c47d2c54959e644a8752419d7381e8ec042e528be0",
+  "requestRange": "bytes=-65536"
+}

@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "private, no-cache, no-transform"
+    ],
+    "Content-Length": [
+      "170"
+    ],
+    "Content-Type": [
+      "application/json"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "eyJhbGxvd2VkIjp0cnVlLCJhdmFpbGFibGUiOnRydWUsInByb3RvY29sIjoic2lsby5wbGF5YmFjay1jb250cm9sLnYyIiwicmV2aXNpb24iOiJjZmZiMDMwMmY3MjY0NDgxM2NmNDQwYzJiYzQ0ODU2OWQ2YzM5YzY5ZDRlOTNhNjczOGUzOTJiNTZkOGI3YzUyIiwic3RhdGUiOiJhdmFpbGFibGUifQ=="
+}

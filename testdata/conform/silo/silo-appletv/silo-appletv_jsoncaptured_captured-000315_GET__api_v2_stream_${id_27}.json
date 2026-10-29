@@ -1,0 +1,27 @@
+{
+  "status": 206,
+  "headers": {
+    "Accept-Ranges": [
+      "bytes"
+    ],
+    "Content-Length": [
+      "33554432"
+    ],
+    "Content-Range": [
+      "bytes 268435456-301989887/326632467"
+    ],
+    "Content-Type": [
+      "video/quicktime"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "captured",
+  "bodyLength": 33554432,
+  "sha256": "9e9682131d7756b332085668b97ea0f20d3a672279c47d1a997528700a2f428d",
+  "truncated": true,
+  "requestRange": "bytes=268435456-301989887"
+}

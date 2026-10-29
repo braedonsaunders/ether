@@ -1,0 +1,16 @@
+{
+  "status": 101,
+  "headers": {
+    "Connection": [
+      "Upgrade"
+    ],
+    "Sec-Websocket-Protocol": [
+      "silo.playback-control.v2"
+    ],
+    "Upgrade": [
+      "websocket"
+    ]
+  },
+  "body": "",
+  "kind": "websocket"
+}

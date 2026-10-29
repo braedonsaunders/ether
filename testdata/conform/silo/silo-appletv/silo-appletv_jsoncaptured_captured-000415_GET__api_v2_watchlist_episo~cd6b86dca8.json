@@ -1,0 +1,15 @@
+{
+  "status": 404,
+  "headers": {
+    "Cache-Control": [
+      "no-store"
+    ],
+    "Content-Length": [
+      "208"
+    ],
+    "Content-Type": [
+      "application/problem+json"
+    ]
+  },
+  "body": "eyJkZXRhaWwiOiJUaGUgaXRlbSBpcyBub3Qgb24gdGhlIHByb2ZpbGUncyB3YXRjaGxpc3QuIiwiaW5zdGFuY2UiOiJ1cm46c2lsbzpyZXF1ZXN0OmQ3MTJiOGE3MWY5MWY1NjdhY2Q1YzI2YyIsInN0YXR1cyI6NDA0LCJ0aXRsZSI6Ik5vdCBmb3VuZCIsInR5cGUiOiJodHRwczovL3NpbG9zZXJ2ZXIub3JnL2RvY3MvYXBpL3YyL3Byb2JsZW1zL25vdF9mb3VuZCJ9"
+}

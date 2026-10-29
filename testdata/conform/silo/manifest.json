@@ -4,7 +4,8 @@
   ],
   "fixtureCounts": {
     "silo-android": 15,
-    "silo-apple": 15
+    "silo-apple": 15,
+    "silo-appletv": 195
   },
   "fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.",
   "requestErrors": null,
@@ -15,16 +16,52 @@
   "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored.",
   "hlsCoverage": "Playable direct and HLS transcode plans, playlist, and three segment ranges.",
   "playlistSemanticNotes": [
-    {"tag":"#EXT-X-DEFINE", "reason":"URL variables are optional when segment URLs need no templating."},
-    {"tag":"#EXT-X-DISCONTINUITY", "reason":"A valid encoder boundary may be present when Ether restarts a stream."},
-    {"tag":"#EXT-X-INDEPENDENT-SEGMENTS", "reason":"A valid declaration that segments can be decoded independently is optional."},
-    {"field":"segment_count and target_duration", "reason":"Servers may segment the same duration differently; each playlist is validated and completed total duration is compared within tolerance."},
-    {"field":"variant_attributes", "reason":"Servers can offer different valid bitrate ladders and codecs; every variant must declare a positive bandwidth."}
+    {
+      "tag": "#EXT-X-DEFINE",
+      "reason": "URL variables are optional when segment URLs need no templating."
+    },
+    {
+      "tag": "#EXT-X-DISCONTINUITY",
+      "reason": "A valid encoder boundary may be present when Ether restarts a stream."
+    },
+    {
+      "tag": "#EXT-X-INDEPENDENT-SEGMENTS",
+      "reason": "A valid declaration that segments can be decoded independently is optional."
+    },
+    {
+      "field": "segment_count and target_duration",
+      "reason": "Servers may segment the same duration differently; each playlist is validated and completed total duration is compared within tolerance."
+    },
+    {
+      "field": "variant_attributes",
+      "reason": "Servers can offer different valid bitrate ladders and codecs; every variant must declare a positive bandwidth."
+    }
   ],
   "notApplicable": [
-    {"endpoint":"/api/v2/catalog/items/${item_id}", "path":"$/versions[]/file_path", "reason":"Ether has no authoritative server filesystem path; exposing an internal path would leak implementation details.", "clientAudit":"Silo Apple does not decode file_path; Silo Android retains it as nullable metadata and has no runtime reader."},
-    {"endpoint":"/api/v2/catalog/items/${item_id}", "path":"$/playback_variants[]/parts[]/versions[]/file_path", "reason":"Ether has no authoritative server filesystem path; exposing an internal path would leak implementation details.", "clientAudit":"Silo Apple does not decode file_path; Silo Android retains it as nullable metadata and has no runtime reader."},
-    {"endpoint":"/api/v2/playback/${play_session_id}", "path":"$/history_id", "reason":"Ether history entries have no externally addressable history identifier.", "clientAudit":"The tracked Silo Apple and Android runtime sources contain no history_id reader."},
-    {"endpoint":"/api/v2/playback/start", "path":"$/playback_plan/expires_at", "reason":"Session media grants have no fixed expiry: they end when their session stops or retires and are revalidated on use.", "clientAudit":"Apple and Android declare playback-plan expires_at optional; their tracked runtime has no playback-plan expiry reader."}
-  ]
+    {
+      "endpoint": "/api/v2/catalog/items/${item_id}",
+      "path": "$/versions[]/file_path",
+      "reason": "Ether has no authoritative server filesystem path; exposing an internal path would leak implementation details.",
+      "clientAudit": "Silo Apple does not decode file_path; Silo Android retains it as nullable metadata and has no runtime reader."
+    },
+    {
+      "endpoint": "/api/v2/catalog/items/${item_id}",
+      "path": "$/playback_variants[]/parts[]/versions[]/file_path",
+      "reason": "Ether has no authoritative server filesystem path; exposing an internal path would leak implementation details.",
+      "clientAudit": "Silo Apple does not decode file_path; Silo Android retains it as nullable metadata and has no runtime reader."
+    },
+    {
+      "endpoint": "/api/v2/playback/${play_session_id}",
+      "path": "$/history_id",
+      "reason": "Ether history entries have no externally addressable history identifier.",
+      "clientAudit": "The tracked Silo Apple and Android runtime sources contain no history_id reader."
+    },
+    {
+      "endpoint": "/api/v2/playback/start",
+      "path": "$/playback_plan/expires_at",
+      "reason": "Session media grants have no fixed expiry: they end when their session stops or retires and are revalidated on use.",
+      "clientAudit": "Apple and Android declare playback-plan expires_at optional; their tracked runtime has no playback-plan expiry reader."
+    }
+  ],
+  "capturePolicy": "Captured reference responses; proxy errors excluded; mutating requests fixture-only; listings trimmed to 50 entries; binary bytes omitted."
 }

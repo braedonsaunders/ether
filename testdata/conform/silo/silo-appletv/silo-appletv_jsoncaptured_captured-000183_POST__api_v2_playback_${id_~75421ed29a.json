@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "no-store"
+    ],
+    "Content-Type": [
+      "application/json"
+    ]
+  },
+  "body": "eyJhY2NlcHRlZCI6eyJpc19wYXVzZWQiOmZhbHNlLCJwb3NpdGlvbiI6MjQ1Ljg4MjA4OTIwOSwic2VxdWVuY2UiOjF9LCJvdXRjb21lIjoiYXBwbGllZCJ9"
+}

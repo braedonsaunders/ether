@@ -1,0 +1,27 @@
+{
+  "status": 206,
+  "headers": {
+    "Accept-Ranges": [
+      "bytes"
+    ],
+    "Content-Length": [
+      "33554432"
+    ],
+    "Content-Range": [
+      "bytes 1057307795-1090862226/1180090590"
+    ],
+    "Content-Type": [
+      "video/x-matroska"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "captured",
+  "bodyLength": 33554432,
+  "sha256": "782f0422f399bcf16971d899e9651ea98bc99c619e589b7724b65bd623f34db8",
+  "truncated": true,
+  "requestRange": "bytes=1057307795-1090862226"
+}

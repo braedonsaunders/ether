@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "private, no-cache, no-transform"
+    ],
+    "Content-Length": [
+      "983"
+    ],
+    "Content-Type": [
+      "application/json"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "eyJhbGxvd2VkIjp0cnVlLCJkZWxpdmVyeSI6InNlcnZlciIsImVwaXNvZGVfcGFyZW50X2FydHdvcmsiOnRydWUsImVwaXNvZGVfc3RpbGxfcHJvdmVuYW5jZSI6dHJ1ZSwiZXh0ZW5kZWRfaXRlbV9hcnR3b3JrIjp0cnVlLCJvcmlnaW5hbF9tYXhfd2lkdGhfcHgiOjM4NDAsInBhcmFtIjoiaW1hZ2Vfc2l6ZSIsInJldmlzaW9uIjoiMmJhNDE1NzZhMTZhOGI2YTNjOGY3ZDA2NDdmODQ5YTUwNWM5Y2RkY2ZiODNlZDY1MjBlOWJkZTJjNzk0MzE5YiIsInNlYXNvbl9saXN0X2FydHdvcmtfcGFyYW0iOiJpbmNsdWRlX2FydHdvcmsiLCJzaXplcyI6WyJzbWFsbCIsIm1lZGl1bSIsImxhcmdlIiwib3JpZ2luYWwiXSwic2xvdF93aWR0aF9wYXJhbXMiOnsiYmFja2Ryb3AiOiJiYWNrZHJvcF93aWR0aCIsImxvZ28iOiJsb2dvX3dpZHRoIiwicGhvdG8iOiJwaG90b193aWR0aCIsInBvc3RlciI6InBvc3Rlcl93aWR0aCIsInN0aWxsIjoic3RpbGxfd2lkdGgifSwic3RhdGUiOiJhdmFpbGFibGUiLCJzdG9yYWdlX2JhY2tlbmQiOiJsb2NhbCIsIndpZHRocyI6eyJiYWNrZHJvcCI6eyJsYXJnZSI6MjU2MCwibWVkaXVtIjoxOTIwLCJzbWFsbCI6MzAwfSwiYmFubmVyIjp7ImxhcmdlIjoxMDAwLCJtZWRpdW0iOjUwMCwic21hbGwiOjUwMH0sImNsZWFyYXJ0Ijp7ImxhcmdlIjoxMDAwLCJtZWRpdW0iOjUwMCwic21hbGwiOjUwMH0sImRpc2MiOnsibGFyZ2UiOjEwMDAsIm1lZGl1bSI6NTAwLCJzbWFsbCI6MzAwfSwibG9nbyI6eyJsYXJnZSI6MTI4MCwibWVkaXVtIjo1MDAsInNtYWxsIjo1MDB9LCJwb3N0ZXIiOnsibGFyZ2UiOjEwMDAsIm1lZGl1bSI6NTAwLCJzbWFsbCI6MzAwfSwicHJvZmlsZSI6eyJsYXJnZSI6NTAwLCJtZWRpdW0iOjUwMCwic21hbGwiOjMwMH0sInN0aWxsIjp7ImxhcmdlIjoxMjgwLCJtZWRpdW0iOjUwMCwic21hbGwiOjMwMH0sInRodW1iIjp7ImxhcmdlIjoxMjgwLCJtZWRpdW0iOjUwMCwic21hbGwiOjMwMH19fQ=="
+}

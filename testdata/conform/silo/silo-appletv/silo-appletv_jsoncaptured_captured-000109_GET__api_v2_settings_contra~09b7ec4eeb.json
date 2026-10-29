@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "private, no-cache, no-transform"
+    ],
+    "Content-Length": [
+      "553"
+    ],
+    "Content-Type": [
+      "application/json"
+    ],
+    "Etag": [
+      "[PRESENT]"
+    ]
+  },
+  "body": "eyJhbGxvd2VkIjp0cnVlLCJhcGlfdmVyc2lvbiI6MSwiY2xpZW50X2ZhbWlsaWVzIjpbInR2IiwibW9iaWxlIiwidGFibGV0IiwiZGVza3RvcCIsIndlYiJdLCJjb250cmFjdF9ldGFnIjoiXCJiZDFlZDUyMDJlYjA3NmY1NjFiOWZjMmY2N2EzMDczNTI3MmZlMDE3NzA2ZGNhZDNkYTgxNzg3MzZkYzg4MTk3XCIiLCJkZWZpbml0aW9uX2NvdW50Ijo3NSwibWFuaWZlc3RfcmV2aXNpb24iOjI0LCJyZXZpc2lvbiI6ImUxYjUxYzVhYTUxZTdmOGE1YzRjMjU0ZjgwZTMwZmJhMTY3MGE4NjQ2MjM2YzAzMTkxNmFhM2NhYWE5OTQ5ODEiLCJzY29wZXMiOlsiYWNjb3VudCIsInByb2ZpbGUiLCJwcm9maWxlX2NsaWVudCIsInByb2ZpbGVfZGV2aWNlIiwicHJvZmlsZV9saWJyYXJ5IiwicHJvZmlsZV9zZXJpZXMiXSwic3RhdGUiOiJhdmFpbGFibGUiLCJzdXBwb3J0c19hdG9taWNfc2hvcnRjdXRzIjp0cnVlLCJzdXBwb3J0c19iYXRjaGVkX2VmZmVjdGl2ZSI6dHJ1ZSwic3VwcG9ydHNfZGV2aWNlX3JlbmFtZSI6dHJ1ZSwic3VwcG9ydHNfaWRlbXBvdGVudF93cml0ZXMiOnRydWV9"
+}
