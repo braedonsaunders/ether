@@ -924,6 +924,7 @@
   "m_0625c5e94b1220": "Własny obraz",
   "m_062681ad35077b": "Katalog wierszy",
   "m_0628e5eb0f5902": "Nie udało się zapisać układu",
+  "m_062d3c7f33b9ac": "Pokaż moje ulubione jako listę odtwarzania w Plex.",
   "m_062da5c5a3a9e4": "Przesuń w górę: {name}",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Nie znaleziono",
@@ -1960,6 +1961,7 @@
   "m_0d5d20f3c35585": "Zakotwiczony dla wszystkich",
   "m_0d5dfdfbc169a5": "Na tej stronie głównej nic by się teraz nie wyświetliło. Włącz wiersz lub złagodź harmonogram.",
   "m_0d5ece67cd84b7": "reguła {n}",
+  "m_0d6120e4d2d968": "Gdy ta opcja jest wyłączona, Twoje ulubione zostaną zachowane.",
   "m_0d616bb4f704d2": "{episode} (przypięty)",
   "m_0d6189919fb29e": "Przywróć kolejność emisji",
   "m_0d6976fc2d60c8": "Cofnij publikację",
@@ -2397,6 +2399,7 @@
     "many": "Dokończ lub usuń niekompletne reguły ({count}).",
     "other": "Dokończ lub usuń niekompletne reguły ({count})."
   },
+  "m_10b7dd055ff58b": "Ulubione w Plexie",
   "m_10b96b8683017c": {
     "one": "Wydania, których formaty niestandardowe uzyskają niższą ocenę, nie są odtwarzane. Ten profil ustawia własne oceny dla {count} formatu.",
     "few": "Wydania, których formaty niestandardowe uzyskają niższą ocenę, nie są odtwarzane. Ten profil ustawia własne oceny dla {count} formatów.",

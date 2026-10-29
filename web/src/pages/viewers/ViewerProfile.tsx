@@ -9,7 +9,7 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { ArrowLeft, CheckCircle2, History, LayoutTemplate, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
 import { Meter } from "../../components/charts";
@@ -18,8 +18,9 @@ import { titleSubtitle } from "../../components/Poster";
 import { viewerName } from "../../components/pickers";
 import { t, tn } from "../../i18n";
 import SignInMethods from "../me/SignInMethods";
+import { FavoritesMirror } from "../me/FavoritesMirror";
 import { getToken } from "../../lib/api";
-import { api, errorMessage } from "../../lib/api";
+import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer, ViewerDetail } from "../../lib/contract";
 import { formatDateTime, formatNumber, formatPercent, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
@@ -48,6 +49,18 @@ export default function ViewerProfile() {
   const viewer = useAsync<ViewerDetail | null>(() => api.viewer(id), [id]);
   const taste = useAsync(() => api.taste(id), [id]);
   const [refreshing, setRefreshing] = useState(false);
+  const loadFavorites = useCallback(
+    () => apiFetch<{ enabled: boolean }>(`/viewers/${id}/favorites-mirror`),
+    [id],
+  );
+  const saveFavorites = useCallback(
+    (enabled: boolean) =>
+      apiFetch(`/viewers/${id}/favorites-mirror`, {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      }),
+    [id],
+  );
 
   const v = viewer.data;
   const setTab = (next: string) => navigate(`/viewers/${id}/${next}`);
@@ -165,7 +178,10 @@ export default function ViewerProfile() {
           <SignInMethods base={`/users/${id}`} token={getToken()} owner />
         </div>
       ) : (
-        <ViewerWatchlist viewerId={id} />
+        <div className="space-y-6">
+          <FavoritesMirror load={loadFavorites} save={saveFavorites} />
+          <ViewerWatchlist viewerId={id} />
+        </div>
       )}
     </DetailPageLayout>
   );

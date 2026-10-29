@@ -432,6 +432,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       audioLanguages: [],
       allowedSections: [],
     })),
+    favoritesMirror: new Map<number, boolean>(),
     collections: [] as CollectionSpec[],
     overrides: new Map<number, TasteOverride[]>(),
     layout: {
@@ -1781,6 +1782,11 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const seg = p.split("/").filter(Boolean);
     const route = `${method} /${seg.join("/")}`;
 
+    if (p === "/me/favorites-mirror") {
+      if (method === "POST") state.favoritesMirror.set(1, (body as { enabled: boolean }).enabled);
+      return json({ enabled: state.favoritesMirror.get(1) ?? true });
+    }
+
     const cached = cacheMock(method, seg, body, state.config, state.clustered);
     if (cached) return json(cached.body, cached.status);
 
@@ -2540,6 +2546,11 @@ export function createFakeServer(opts: FakeOptions = {}) {
       const id = Number(seg[1]);
       const v = VIEWERS.find((x) => x.id === id);
       if (!v) return err(404, "not_found", "no such viewer");
+      if (seg[2] === "favorites-mirror") {
+        if (method === "POST")
+          state.favoritesMirror.set(id, (body as { enabled: boolean }).enabled);
+        return json({ enabled: state.favoritesMirror.get(id) ?? true });
+      }
       if (!seg[2] && method === "GET") {
         const recent = pickTitles(`recent${id}`, 8).map((t, i) => ({
           title: card(t),

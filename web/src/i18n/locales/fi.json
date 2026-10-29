@@ -864,6 +864,7 @@
   "m_0625c5e94b1220": "Oma kuva",
   "m_062681ad35077b": "Rivikatalogi",
   "m_0628e5eb0f5902": "Asettelun tallennus epäonnistui",
+  "m_062d3c7f33b9ac": "Näytä suosikkini soittolistana Plexissä.",
   "m_062da5c5a3a9e4": "Siirrä ylös: {name}",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Ei löytynyt",
@@ -1848,6 +1849,7 @@
   "m_0d5d20f3c35585": "Ankkuroitu kaikille",
   "m_0d5dfdfbc169a5": "Tällä etusivulla ei näkyisi nyt mitään. Ota rivi käyttöön tai höllennä aikataulua.",
   "m_0d5ece67cd84b7": "sääntö {n}",
+  "m_0d6120e4d2d968": "Suosikkisi säilytetään, kun tämä on pois päältä.",
   "m_0d616bb4f704d2": "{episode} (kiinnitetty)",
   "m_0d6189919fb29e": "Palauta esitysjärjestykseen",
   "m_0d6976fc2d60c8": "Peruuta julkaisu",
@@ -2257,6 +2259,7 @@
     "one": "Viimeistele tai poista keskeneräinen sääntö.",
     "other": "Viimeistele tai poista {count} keskeneräistä sääntöä."
   },
+  "m_10b7dd055ff58b": "Suosikit Plexissä",
   "m_10b96b8683017c": {
     "one": "Julkaisuja, joiden omat formaatit saavat alempia pisteitä, ei toisteta. Tämä profiili asettaa omat pisteensä {count} formaatille.",
     "other": "Julkaisuja, joiden omat formaatit saavat alempia pisteitä, ei toisteta. Tämä profiili asettaa omat pisteensä {count} formaatille."

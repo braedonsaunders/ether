@@ -894,6 +894,7 @@
   "m_0625c5e94b1220": "Image personnalisée",
   "m_062681ad35077b": "Catalogue de rangées",
   "m_0628e5eb0f5902": "Impossible d’enregistrer la disposition",
+  "m_062d3c7f33b9ac": "Afficher mes favoris sous forme de liste de lecture dans Plex.",
   "m_062da5c5a3a9e4": "Monter {name}",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Introuvable",
@@ -1904,6 +1905,7 @@
   "m_0d5d20f3c35585": "Ancrée pour tout le monde",
   "m_0d5dfdfbc169a5": "Rien ne s’afficherait sur cet accueil pour le moment. Activez une rangée ou assouplissez une planification.",
   "m_0d5ece67cd84b7": "règle {n}",
+  "m_0d6120e4d2d968": "Vos favoris sont conservés lorsque cette option est désactivée.",
   "m_0d616bb4f704d2": "{episode} (épinglé)",
   "m_0d6189919fb29e": "Rétablir l’ordre de diffusion",
   "m_0d6976fc2d60c8": "Dépublier",
@@ -2327,6 +2329,7 @@
     "many": "Terminez ou supprimez {count} de règles incomplètes.",
     "other": "Terminez ou supprimez {count} règles incomplètes."
   },
+  "m_10b7dd055ff58b": "Favoris dans Plex",
   "m_10b96b8683017c": {
     "one": "Les releases dont les formats personnalisés ont un score inférieur ne sont pas lues. Ce profil définit ses propres scores pour {count} format.",
     "many": "Les releases dont les formats personnalisés ont un score inférieur ne sont pas lues. Ce profil définit ses propres scores pour {count} de formats.",

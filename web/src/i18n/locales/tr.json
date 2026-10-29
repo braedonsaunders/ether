@@ -864,6 +864,7 @@
   "m_0625c5e94b1220": "Özel görsel",
   "m_062681ad35077b": "Satır kataloğu",
   "m_0628e5eb0f5902": "Düzen kaydedilemedi",
+  "m_062d3c7f33b9ac": "Favorilerimi Plex'te çalma listesi olarak göster.",
   "m_062da5c5a3a9e4": "{name} öğesini yukarı taşı",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Bulunamadı",
@@ -1848,6 +1849,7 @@
   "m_0d5d20f3c35585": "Herkes için sabitlendi",
   "m_0d5dfdfbc169a5": "Şu anda bu Ana Sayfa'da hiçbir şey görünmez. Bir satırı açın veya bir zamanlamayı gevşetin.",
   "m_0d5ece67cd84b7": "kural {n}",
+  "m_0d6120e4d2d968": "Bu kapalıyken favorileriniz korunur.",
   "m_0d616bb4f704d2": "{episode} (sabitlendi)",
   "m_0d6189919fb29e": "Yayın sırasına sıfırla",
   "m_0d6976fc2d60c8": "Yayından kaldır",
@@ -2257,6 +2259,7 @@
     "one": "Tamamlanmamış kuralı bitirin veya kaldırın.",
     "other": "Tamamlanmamış {count} kuralı bitirin veya kaldırın."
   },
+  "m_10b7dd055ff58b": "Plex'teki favoriler",
   "m_10b96b8683017c": {
     "one": "Özel biçimleri daha düşük puan alan sürümler oynatılmaz. Bu profil {count} biçim için kendi puanlarını belirler.",
     "other": "Özel biçimleri daha düşük puan alan sürümler oynatılmaz. Bu profil {count} biçim için kendi puanlarını belirler."

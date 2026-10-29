@@ -864,6 +864,7 @@
   "m_0625c5e94b1220": "Eigen afbeelding",
   "m_062681ad35077b": "Rijcatalogus",
   "m_0628e5eb0f5902": "Indeling opslaan mislukt",
+  "m_062d3c7f33b9ac": "Toon mijn favorieten als afspeellijst in Plex.",
   "m_062da5c5a3a9e4": "{name} omhoog verplaatsen",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Niet gevonden",
@@ -1848,6 +1849,7 @@
   "m_0d5d20f3c35585": "Vastgezet voor iedereen",
   "m_0d5dfdfbc169a5": "Er zou op dit moment niets op deze Home staan. Schakel een rij in of versoepel een planning.",
   "m_0d5ece67cd84b7": "regel {n}",
+  "m_0d6120e4d2d968": "Je favorieten worden bewaard als dit is uitgeschakeld.",
   "m_0d616bb4f704d2": "{episode} (vastgepind)",
   "m_0d6189919fb29e": "Terugzetten naar uitzendvolgorde",
   "m_0d6976fc2d60c8": "Publicatie intrekken",
@@ -2257,6 +2259,7 @@
     "one": "Voltooi of verwijder de onvolledige regel.",
     "other": "Voltooi of verwijder {count} onvolledige regels."
   },
+  "m_10b7dd055ff58b": "Favorieten in Plex",
   "m_10b96b8683017c": {
     "one": "Releases waarvan de eigen formaten lager scoren, worden niet afgespeeld. Dit profiel stelt eigen scores in voor {count} formaat.",
     "other": "Releases waarvan de eigen formaten lager scoren, worden niet afgespeeld. Dit profiel stelt eigen scores in voor {count} formaten."

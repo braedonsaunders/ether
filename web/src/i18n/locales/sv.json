@@ -864,6 +864,7 @@
   "m_0625c5e94b1220": "Egen bild",
   "m_062681ad35077b": "Radkatalog",
   "m_0628e5eb0f5902": "Det gick inte att spara layouten",
+  "m_062d3c7f33b9ac": "Visa mina favoriter som en spellista i Plex.",
   "m_062da5c5a3a9e4": "Flytta {name} uppåt",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Hittades inte",
@@ -1848,6 +1849,7 @@
   "m_0d5d20f3c35585": "Förankrad för alla",
   "m_0d5dfdfbc169a5": "Inget skulle visas på det här Hem just nu. Slå på en rad eller lätta på ett schema.",
   "m_0d5ece67cd84b7": "regel {n}",
+  "m_0d6120e4d2d968": "Dina favoriter sparas när detta är avstängt.",
   "m_0d616bb4f704d2": "{episode} (fäst)",
   "m_0d6189919fb29e": "Återställ till sändningsordning",
   "m_0d6976fc2d60c8": "Avpublicera",
@@ -2257,6 +2259,7 @@
     "one": "Slutför eller ta bort den ofullständiga regeln.",
     "other": "Slutför eller ta bort {count} ofullständiga regler."
   },
+  "m_10b7dd055ff58b": "Favoriter i Plex",
   "m_10b96b8683017c": {
     "one": "Releaser vars egna format får lägre poäng spelas inte upp. Den här profilen anger egna poäng för {count} format.",
     "other": "Releaser vars egna format får lägre poäng spelas inte upp. Den här profilen anger egna poäng för {count} format."

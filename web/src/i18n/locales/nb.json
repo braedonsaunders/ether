@@ -864,6 +864,7 @@
   "m_0625c5e94b1220": "Egendefinert bilde",
   "m_062681ad35077b": "Radkatalog",
   "m_0628e5eb0f5902": "Kunne ikke lagre oppsettet",
+  "m_062d3c7f33b9ac": "Vis favorittene mine som en spilleliste i Plex.",
   "m_062da5c5a3a9e4": "Flytt {name} opp",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Ikke funnet",
@@ -1848,6 +1849,7 @@
   "m_0d5d20f3c35585": "Forankret for alle",
   "m_0d5dfdfbc169a5": "Ingenting ville vist på dette Hjem akkurat nå. Slå på en rad eller løsne en tidsplan.",
   "m_0d5ece67cd84b7": "regel {n}",
+  "m_0d6120e4d2d968": "Favorittene dine beholdes når denne er av.",
   "m_0d616bb4f704d2": "{episode} (festet)",
   "m_0d6189919fb29e": "Tilbakestill til sendt rekkefølge",
   "m_0d6976fc2d60c8": "Avpubliser",
@@ -2257,6 +2259,7 @@
     "one": "Fullfør eller fjern den ufullstendige regelen.",
     "other": "Fullfør eller fjern {count} ufullstendige regler."
   },
+  "m_10b7dd055ff58b": "Favoritter i Plex",
   "m_10b96b8683017c": {
     "one": "Utgivelser hvis egendefinerte formater får lavere poeng, spilles ikke av. Denne profilen setter egne poeng for {count} format.",
     "other": "Utgivelser hvis egendefinerte formater får lavere poeng, spilles ikke av. Denne profilen setter egne poeng for {count} formater."

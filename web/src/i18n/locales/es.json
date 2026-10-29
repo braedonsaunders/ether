@@ -894,6 +894,7 @@
   "m_0625c5e94b1220": "Imagen personalizada",
   "m_062681ad35077b": "Catálogo de filas",
   "m_0628e5eb0f5902": "No se pudo guardar la disposición",
+  "m_062d3c7f33b9ac": "Mostrar mis favoritos como una lista de reproducción en Plex.",
   "m_062da5c5a3a9e4": "Subir {name}",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "No encontrado",
@@ -1904,6 +1905,7 @@
   "m_0d5d20f3c35585": "Anclada para todos",
   "m_0d5dfdfbc169a5": "Ahora mismo no se mostraría nada en este Inicio. Activa una fila o flexibiliza una programación.",
   "m_0d5ece67cd84b7": "regla {n}",
+  "m_0d6120e4d2d968": "Tus favoritos se conservan cuando esto está desactivado.",
   "m_0d616bb4f704d2": "{episode} (fijado)",
   "m_0d6189919fb29e": "Restablecer al orden de emisión",
   "m_0d6976fc2d60c8": "Anular publicación",
@@ -2327,6 +2329,7 @@
     "many": "Completa o quita {count} reglas incompletas.",
     "other": "Completa o quita {count} reglas incompletas."
   },
+  "m_10b7dd055ff58b": "Favoritos en Plex",
   "m_10b96b8683017c": {
     "one": "No se reproducen los lanzamientos cuyos formatos personalizados puntúen menos. Este perfil define sus propias puntuaciones para {count} formato.",
     "many": "No se reproducen los lanzamientos cuyos formatos personalizados puntúen menos. Este perfil define sus propias puntuaciones para {count} formatos.",

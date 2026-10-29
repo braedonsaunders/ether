@@ -924,6 +924,7 @@
   "m_0625c5e94b1220": "Vlastní obrázek",
   "m_062681ad35077b": "Katalog řádků",
   "m_0628e5eb0f5902": "Rozvržení se nepodařilo uložit",
+  "m_062d3c7f33b9ac": "Zobrazit mé oblíbené položky jako seznam skladeb v Plex.",
   "m_062da5c5a3a9e4": "Posunout {name} nahoru",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Nenalezeno",
@@ -1960,6 +1961,7 @@
   "m_0d5d20f3c35585": "Ukotveno pro všechny",
   "m_0d5dfdfbc169a5": "Na tomto Domů by se teď nic nezobrazilo. Zapněte některý řádek nebo uvolněte plán.",
   "m_0d5ece67cd84b7": "pravidlo {n}",
+  "m_0d6120e4d2d968": "Když je tato možnost vypnutá, vaše oblíbené položky zůstanou zachovány.",
   "m_0d616bb4f704d2": "{episode} (připnuto)",
   "m_0d6189919fb29e": "Obnovit odvysílané pořadí",
   "m_0d6976fc2d60c8": "Zrušit publikování",
@@ -2397,6 +2399,7 @@
     "many": "Dokončete nebo odeberte {count} nedokončeného pravidla.",
     "other": "Dokončete nebo odeberte {count} nedokončených pravidel."
   },
+  "m_10b7dd055ff58b": "Oblíbené v Plexu",
   "m_10b96b8683017c": {
     "one": "Vydání, jejichž vlastní formáty mají nižší skóre, se nepřehrávají. Tento profil nastavuje vlastní skóre pro {count} formát.",
     "few": "Vydání, jejichž vlastní formáty mají nižší skóre, se nepřehrávají. Tento profil nastavuje vlastní skóre pro {count} formáty.",

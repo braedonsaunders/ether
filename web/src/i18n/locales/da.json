@@ -864,6 +864,7 @@
   "m_0625c5e94b1220": "Brugerdefineret billede",
   "m_062681ad35077b": "Rækkekatalog",
   "m_0628e5eb0f5902": "Kunne ikke gemme layoutet",
+  "m_062d3c7f33b9ac": "Vis mine favoritter som en playliste i Plex.",
   "m_062da5c5a3a9e4": "Flyt {name} op",
   "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Ikke fundet",
@@ -1848,6 +1849,7 @@
   "m_0d5d20f3c35585": "Forankret for alle",
   "m_0d5dfdfbc169a5": "Der ville ikke blive vist noget på dette Hjem lige nu. Slå en række til, eller lemp en tidsplan.",
   "m_0d5ece67cd84b7": "regel {n}",
+  "m_0d6120e4d2d968": "Dine favoritter gemmes, når dette er slået fra.",
   "m_0d616bb4f704d2": "{episode} (fastgjort)",
   "m_0d6189919fb29e": "Nulstil til sendt rækkefølge",
   "m_0d6976fc2d60c8": "Fjern offentliggørelse",
@@ -2257,6 +2259,7 @@
     "one": "Gør den ufuldstændige regel færdig, eller fjern den.",
     "other": "Gør {count} ufuldstændige regler færdige, eller fjern dem."
   },
+  "m_10b7dd055ff58b": "Favoritter i Plex",
   "m_10b96b8683017c": {
     "one": "Udgivelser, hvis brugerdefinerede formater scorer lavere, afspilles ikke. Denne profil angiver sine egne scorer for {count} format.",
     "other": "Udgivelser, hvis brugerdefinerede formater scorer lavere, afspilles ikke. Denne profil angiver sine egne scorer for {count} formater."

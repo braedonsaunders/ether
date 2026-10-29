@@ -89,6 +89,8 @@ type StatusFuncE func(ctx context.Context) (any, error)
 // ValidateExtra and DiskUsage have defaults or may be left empty.
 type Deps struct {
 	Frontends            FrontendAdmin
+	FavoritesMirror      FavoritesMirror
+	ActiveViewer         func(context.Context, int64) (*core.User, error)
 	LocalIdentity        *identity.Local
 	IdentityGrants       *identity.Grants
 	IdentityLimiter      *identity.LoginLimiter
@@ -270,6 +272,8 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/setup/local", h.handleLocalSetup)
 	mux.HandleFunc("POST /api/me/login", h.handleLocalViewerLogin)
 	mux.HandleFunc("GET /api/me", h.handleMe)
+	mux.HandleFunc("GET /api/me/favorites-mirror", h.portalFavoritesMirror)
+	mux.HandleFunc("POST /api/me/favorites-mirror", h.portalFavoritesMirror)
 	mux.HandleFunc("POST /api/me/link/plex", h.limitIdentityAuth(h.handlePlexLinkStart))
 	mux.HandleFunc("GET /api/me/link/plex/{handle}", h.limitIdentityPoll(h.handlePlexLinkPoll))
 	mux.HandleFunc("POST /api/me/invite", h.handleInviteCreate)
@@ -287,6 +291,8 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/auth/pin/{handle}", h.limitAuth(h.handleSignInPoll))
 
 	api("POST /api/viewers/{id}/quickconnect", h.handleOwnerQuickConnect)
+	api("GET /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
+	api("POST /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
 	api("GET /api/frontends", h.frontendList)
 	api("GET /api/frontends/qr", h.frontendQR)
 	api("GET /api/frontends/{id}/status", h.frontendStatus)

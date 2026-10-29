@@ -1,7 +1,8 @@
 import { t } from "../../i18n";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsaunders/appkit-ui";
 import SignInMethods from "./SignInMethods";
+import { FavoritesMirror } from "./FavoritesMirror";
 import { EtherLogo } from "../../components/brand";
 
 const SESSION_KEY = "ether.viewerPortal";
@@ -78,6 +79,15 @@ export default function Me() {
       cancelled = true;
     };
   }, [token]);
+
+  const loadFavorites = useCallback(
+    () => request<{ enabled: boolean }>("/favorites-mirror", token),
+    [token],
+  );
+  const saveFavorites = useCallback(
+    (enabled: boolean) => request("/favorites-mirror", token, { enabled }),
+    [token],
+  );
 
   async function redeemInvite() {
     setBusy(true);
@@ -238,6 +248,7 @@ export default function Me() {
                 {t("Approve device")}
               </Button>
             </form>
+            <FavoritesMirror load={loadFavorites} save={saveFavorites} />
             <SignInMethods base="/me" token={token} />
             <Button
               variant="outline"
