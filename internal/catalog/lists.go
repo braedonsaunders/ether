@@ -6,6 +6,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -62,6 +65,55 @@ func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaTy
 	if limit <= 0 {
 		limit = 20
 	}
+	items, err := c.searchTitles(ctx, query, types, limit, 0)
+	if err != nil || len(items) > 0 {
+		return items, err
+	}
+	title, year := searchTitleYear(query)
+	if year == 0 {
+		return items, nil
+	}
+	return c.searchTitles(ctx, title, types, limit, year)
+}
+
+// Only interpret a final, separated year after the literal query found nothing.
+// Numeric titles and titles such as Blade Runner 2049 retain their literal match.
+func searchTitleYear(query string) (string, int) {
+	split := strings.LastIndexAny(query, " \t\n\r")
+	if split < 1 {
+		return query, 0
+	}
+	title, suffix := strings.TrimSpace(query[:split]), query[split+1:]
+	if strings.HasPrefix(suffix, "(") && strings.HasSuffix(suffix, ")") {
+		suffix = suffix[1 : len(suffix)-1]
+	}
+	if title == "" || len(suffix) != 4 {
+		return query, 0
+	}
+	year, err := strconv.Atoi(suffix)
+	if err != nil || year < 1900 || year > 2099 {
+		return query, 0
+	}
+	return title, year
+}
+
+func (c *Catalog) searchTitles(ctx context.Context, query string, types []core.MediaType, limit, year int) ([]core.Title, error) {
+	finish := func(items []core.Title) []core.Title {
+		items = c.FilterVisibility(ctx, items)
+		if year != 0 {
+			var matching []core.Title
+			for _, t := range items {
+				if t.Year == year {
+					matching = append(matching, t)
+				}
+			}
+			if len(matching) > 0 {
+				items = matching
+			}
+		}
+		sortTitlesForSearch(items, query)
+		return limitTitles(items, limit)
+	}
 	wantMovie, wantTV := true, true
 	if len(types) > 0 {
 		wantMovie, wantTV = false, false
@@ -88,8 +140,8 @@ func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaTy
 	// Local first (instant, works offline).
 	like := store.Like(store.DialectOf(c.db))
 	local, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE type IN ('movie','show')
-		AND (title `+like+` ? ESCAPE '\' OR original_title `+like+` ? ESCAPE '\') ORDER BY popularity DESC LIMIT ?`,
-		"%"+escapeLike(query)+"%", "%"+escapeLike(query)+"%", limit*2)
+		AND (title `+like+` ? ESCAPE '\' OR original_title `+like+` ? ESCAPE '\') ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`,
+		"%"+escapeLike(query)+"%", "%"+escapeLike(query)+"%", year, year, limit*2)
 	if err == nil {
 		var filtered []core.Title
 		for _, t := range local {
@@ -100,7 +152,7 @@ func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaTy
 		add(filtered)
 	}
 	if c.client == nil {
-		return limitTitles(c.FilterVisibility(ctx, out), limit), nil
+		return finish(out), nil
 	}
 	var remote []core.Title
 	// Page through TMDB until we have enough or run out (max 3 pages).
@@ -161,14 +213,13 @@ func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaTy
 	}
 	// Remote (TMDB relevance) order is preserved after local exact-prefix matches:
 	// keep simple stable order: exact title first, then popularity.
-	sortTitlesForSearch(out, query)
-	return limitTitles(c.FilterVisibility(ctx, out), limit), nil
+	return finish(out), nil
 }
 
 func sortTitlesForSearch(items []core.Title, q string) {
-	lq := strings.ToLower(q)
+	lq := searchFold(q)
 	score := func(t core.Title) int {
-		lt := strings.ToLower(t.Title)
+		lt := searchFold(t.Title)
 		switch {
 		case lt == lq:
 			return 0
@@ -187,6 +238,16 @@ func sortTitlesForSearch(items []core.Title, q string) {
 		}
 		return items[i].Popularity > items[j].Popularity
 	})
+}
+
+// Fold accents for relevance ranking without changing the title sent to TMDB.
+func searchFold(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Mn, r) {
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, norm.NFD.String(s))
 }
 
 // List returns TMDB curated/trending lists with a short in-memory TTL.

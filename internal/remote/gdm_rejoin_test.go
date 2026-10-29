@@ -41,15 +41,38 @@ func TestGDMRejoinKeepsAnswering(t *testing.T) {
 	first := g.conns[0]
 	g.mu.Unlock()
 
-	time.Sleep(350 * time.Millisecond)
-	g.mu.Lock()
-	current := g.conns[0]
-	g.mu.Unlock()
-	if current == first {
-		t.Fatal("socket was not reopened")
+	// Wait for an observed rejoin rather than assuming the serving goroutine
+	// ran during a fixed sleep on a loaded race runner.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		g.mu.Lock()
+		current := g.conns[0]
+		g.mu.Unlock()
+		if current != first {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("socket was not reopened")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	reps, err := DiscoverGDM(context.Background(), fmt.Sprintf("127.0.0.1:%d", port), time.Second)
-	if err != nil || len(reps) != 1 || reps[0].MachineIdentifier != "m" {
-		t.Fatalf("after rejoin: %v %v", reps, err)
+	// UDP discovery can lose a datagram while the old socket is replaced.
+	// Require a real response after rejoin, but do not require that a single
+	// packet survives continuous 100ms rejoins. A broken responder still fails
+	// the bounded deadline below.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for ctx.Err() == nil {
+		reps, err := DiscoverGDM(ctx, fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
+		if err != nil {
+			t.Fatalf("after rejoin: %v", err)
+		}
+		if len(reps) > 0 {
+			if len(reps) != 1 || reps[0].MachineIdentifier != "m" {
+				t.Fatalf("unexpected response: %v", reps)
+			}
+			return
+		}
 	}
+	t.Fatal("rejoined socket did not answer discovery before deadline")
 }

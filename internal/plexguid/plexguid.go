@@ -23,6 +23,7 @@ import (
 
 func init() {
 	store.Register("plexguid", 1, `CREATE TABLE plexguid_mappings(rating_key INTEGER PRIMARY KEY,guid TEXT NOT NULL,checked_at INTEGER NOT NULL);`)
+	store.Register("plexguid", 2, `CREATE INDEX plexguid_mappings_guid ON plexguid_mappings(guid);`)
 }
 
 const (
@@ -314,6 +315,9 @@ func (s *Service) getItems(ctx context.Context, path string, q url.Values) ([]pr
 		return nil, fmt.Errorf("Plex metadata unavailable")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, core.ErrNotFound
+	}
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("Plex metadata HTTP %d", resp.StatusCode)
 	}

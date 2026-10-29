@@ -75,7 +75,7 @@
                     "extendedDisplayTitle": "1080p (H.264)"
                   },
                   {
-                    "id": 1875505719,
+                    "id": 1262677085,
                     "streamType": 2,
                     "canNormalizeLoudness": false,
                     "selected": true,
@@ -93,7 +93,7 @@
                     "extendedDisplayTitle": "English (EAC3 5.1)"
                   },
                   {
-                    "id": 363877508,
+                    "id": 1670249740,
                     "streamType": 2,
                     "canNormalizeLoudness": false,
                     "codec": "aac",
@@ -108,7 +108,7 @@
                     "extendedDisplayTitle": "French (AAC Stereo)"
                   },
                   {
-                    "id": 852249297,
+                    "id": 1809146860,
                     "streamType": 3,
                     "canAutoSync": false,
                     "codec": "srt",

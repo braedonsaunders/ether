@@ -52,6 +52,9 @@ var languages = []struct{ token, name string }{
 	{"FINNISH", "finnish"}, {"CZECH", "czech"}, {"HUNGARIAN", "hungarian"}, {"GREEK", "greek"},
 	{"THAI", "thai"}, {"VIETNAMESE", "vietnamese"}, {"INDONESIAN", "indonesian"},
 	{"ENGLISH", "english"}, {"ENG", "english"},
+	{"ITA", "italian"}, {"JAP", "japanese"}, {"JPN", "japanese"},
+	{"GER", "german"}, {"DEU", "german"}, {"FRE", "french"}, {"FRA", "french"},
+	{"SPA", "spanish"}, {"POR", "portuguese"}, {"KOR", "korean"},
 	// Explicit regional language tags are used by WEB release groups.
 	// Do not treat bare country codes (BR/US/GB) as audio languages.
 	{"PT-BR", LanguagePortugueseBrazil}, {"BRAZILIAN", LanguagePortugueseBrazil}, {"DUBLADO", LanguagePortugueseBrazil}, {"PT-PT", LanguagePortuguesePortugal},
@@ -103,7 +106,14 @@ func Parse(name string) core.ReleaseInfo {
 		}
 	}
 	info.Height = parseHeight(upper)
-	info.Source = overrideSource(parseSource(upper), spaced, floor)
+	source := parseSource(upper)
+	// Short anime disc tags count only in release metadata. Do not mistake
+	// "BD" in a title or an upload group for its source.
+	metadata := spaced[max(floor, 0):]
+	if source == "" && (tokenIndex(metadata, "BD") >= 0 || tokenIndex(metadata, "BDMUX") >= 0) {
+		source = core.SourceBluRay
+	}
+	info.Source = overrideSource(source, spaced, floor)
 	info.VideoCodec = parseVideoCodec(upper)
 	info.AudioCodec, info.Atmos = parseAudio(upper)
 	if m := reChannels.FindStringSubmatch(strings.ToUpper(spaced)); m != nil {
@@ -724,7 +734,7 @@ func containsAny(s string, subs ...string) bool {
 // boundaryKeywords mark the end of the title portion.
 var boundaryKeywords = []string{
 	"2160P", "1080P", "1080I", "720P", "576P", "480P", "360P", "4K", "UHD",
-	"BLURAY", "BLU-RAY", "BDRIP", "BRRIP", "HDDVD", "HD-DVD", "WEB-DL", "WEBDL", "WEBRIP", "WEB", "HDTV",
+	"BLURAY", "BLU-RAY", "BD", "BDMUX", "BDRIP", "BD-RIP", "BRRIP", "HDDVD", "HD-DVD", "WEB-DL", "WEBDL", "WEBRIP", "WEB", "HDTV",
 	"PDTV", "DSR", "DSRIP", "TVRIP", "SATRIP", "DTHRIP", "SDTV",
 	"DVDRIP", "DVDR", "DVD5", "DVD9", "DVDSCR", "VHSRIP", "LDRIP", "LASERDISC",
 	"REMUX", "X264", "X265", "H264", "H265", "HEVC", "AVC", "AV1", "VP9", "XVID", "DIVX", "MPEG2", "VC1", "VC-1",
@@ -737,7 +747,7 @@ var boundaryKeywords = []string{
 // words ("The French Dispatch", "Internal Affairs", "Charlottes Web",
 // "Cam"); before the release year or episode marker they stay in the title.
 var titleWordKeywords = map[string]bool{
-	"COMPLETE": true, "SEASON": true, "SEASONS": true, "MULTI": true, "FRENCH": true, "GERMAN": true,
+	"BD": true, "BDMUX": true, "COMPLETE": true, "SEASON": true, "SEASONS": true, "MULTI": true, "FRENCH": true, "GERMAN": true,
 	"SPANISH": true, "ITALIAN": true, "INTERNAL": true, "LIMITED": true,
 	"SUBBED": true, "DUBBED": true, "CAM": true, "WEB": true, "PAL": true,
 }

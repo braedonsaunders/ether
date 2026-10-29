@@ -28,6 +28,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -105,9 +106,54 @@ func resolveSubtitle(want *core.StreamInfo, pos int, info core.MediaInfo) int {
 	return experience.ResolveSubtitle(want, pos, info)
 }
 
-// resolveSelection maps a stored subtitle choice onto info's positions. A
+// resolveAudio retains the requested language across estimates and releases.
+// Within that language prefer the same codec, channel layout and track label;
+// position breaks ties but can never override a language mismatch.
+func resolveAudio(want *core.StreamInfo, pos int, info core.MediaInfo) int {
+	best, bestScore := -1, -1
+	for i, st := range info.Streams {
+		if st.Type != "audio" {
+			continue
+		}
+		if want.Language == "" {
+			// Without a language, only retain a fully matching track at its position.
+			if i == pos && sameStreamIdentity(*want, st) {
+				return i
+			}
+			continue
+		}
+		tier := langtag.MatchTier(want.Language, st.Language)
+		if tier == 0 {
+			continue
+		}
+		// Exact language/script/region outranks every codec/layout hint.
+		score := tier * 32
+		if st.Codec == want.Codec {
+			score += 8
+		}
+		if st.Channels == want.Channels {
+			score += 4
+		}
+		if st.Title == want.Title {
+			score += 2
+		}
+		if i == pos {
+			score++
+		}
+		if score > bestScore {
+			best, bestScore = i, score
+		}
+	}
+	return best
+}
+
+// resolveSelection maps stored track identities onto the current positions. A
 // choice that info cannot satisfy is dropped, so viewer preferences apply.
 func resolveSelection(sel selection, info core.MediaInfo) selection {
+	if sel.audioSet && sel.audioStream != nil {
+		sel.audio = resolveAudio(sel.audioStream, sel.audio, info)
+		sel.audioSet = sel.audio >= 0
+	}
 	if !sel.subtitleSet || sel.subtitleStream == nil {
 		return sel
 	}
@@ -119,9 +165,10 @@ func resolveSelection(sel selection, info core.MediaInfo) selection {
 	return sel
 }
 
-// resolvePlaySubtitle is resolveSelection for a play request.
-func resolvePlaySubtitle(p *playRequest, info core.MediaInfo) {
-	sel := resolveSelection(selection{subtitle: p.subSel, subtitleSet: p.subSet, subtitleStream: p.subStream}, info)
+// resolvePlaySelection is resolveSelection for a play request.
+func resolvePlaySelection(p *playRequest, info core.MediaInfo) {
+	sel := resolveSelection(selection{audio: p.audioSel, audioSet: p.audioSel >= 0, audioStream: p.audioStream, subtitle: p.subSel, subtitleSet: p.subSet, subtitleStream: p.subStream}, info)
+	p.audioSel = sel.audio
 	p.subSel, p.subSet = sel.subtitle, sel.subtitleSet
 	if !p.subSet {
 		p.subSel = -1
@@ -344,7 +391,7 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 	}
 	pos := entry.subtitle
 	if perr == nil && q.Get("subtitleStreamID") != "" {
-		resolvePlaySubtitle(&p, entry.info)
+		resolvePlaySelection(&p, entry.info)
 		pos = p.subSel
 	}
 	offset := entry.offset

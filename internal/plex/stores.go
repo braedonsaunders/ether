@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"encoding/json"
 	"hash/fnv"
 	"strconv"
 	"sync"
@@ -22,15 +23,11 @@ type streamRef struct {
 	slot  string // identity within the title (see streamSlot)
 }
 
-// streamRegistry hands out stable Stream ids. Ids are a hash of (ratingKey,
-// stream position) so they survive restarts; the registry resolves them back
-// (for /library/streams/{id} and audioStreamID/subtitleStreamID params) and
-// probes past the rare collision.
-//
-// External (sidecar) subtitles hash their source instead: they follow the
-// embedded streams, whose count differs between the estimate shown before
-// play and the probed release, so a position would name a different stream
-// (or none) once playback starts.
+// streamRegistry hands out stable Stream IDs. Audio/subtitle IDs include
+// their identity as well as title and position, so a cached ID cannot change
+// language after a new release, registry eviction, or server restart. Video
+// IDs retain position identity; external subtitles retain source identity.
+// Hash collisions are resolved by probing without overwriting old references.
 type streamRegistry struct {
 	mu   sync.Mutex
 	byID map[int64]streamRef
@@ -40,10 +37,6 @@ const maxStreamRefs = 200_000
 
 func newStreamRegistry() *streamRegistry { return &streamRegistry{byID: map[int64]streamRef{}} }
 
-func streamHash(key core.RatingKey, index int) int64 {
-	return slotHash(key, strconv.Itoa(index))
-}
-
 func slotHash(key core.RatingKey, slot string) int64 {
 	h := fnv.New64a()
 	h.Write([]byte(strconv.FormatInt(int64(key), 10) + "/" + slot))
@@ -51,11 +44,16 @@ func slotHash(key core.RatingKey, slot string) int64 {
 	return int64(h.Sum64()%2_000_000_000) + 1
 }
 
-// streamSlot is a stream's identity within its title: its position, or
-// for a sidecar with a known source, that source.
+// streamSlot is a stream's stable identity within its title.
 func streamSlot(index int, info core.StreamInfo) string {
 	if info.External && info.ExternalURL != "" {
 		return "external/" + info.ExternalURL
+	}
+	if info.Type == "audio" || info.Type == "subtitle" {
+		// JSON avoids ambiguous separators in arbitrary track titles. Probe-only
+		// hints and default flags do not change a track's identity.
+		raw, _ := json.Marshal([]any{index, info.Type, info.Language, info.Codec, info.Channels, info.Title, info.Forced, info.External, info.ExternalURL})
+		return "track-v2/" + string(raw)
 	}
 	return strconv.Itoa(index)
 }
@@ -70,11 +68,11 @@ func (r *streamRegistry) register(key core.RatingKey, index int, info core.Strea
 	id := slotHash(key, slot)
 	for {
 		ref, ok := r.byID[id]
-		if !ok || (ref.key == key && ref.slot == slot) {
+		if !ok || (ref.key == key && ref.slot == slot && sameStreamIdentity(ref.info, info)) {
 			r.byID[id] = streamRef{key: key, index: index, info: info, slot: slot}
 			return id
 		}
-		id++ // collision: probe
+		id++ // hash collision or changed identity: preserve the old reference
 	}
 }
 
@@ -88,9 +86,19 @@ func (r *streamRegistry) lookup(id int64) (streamRef, bool) {
 // ---------------------------------------------------------------------------
 // Stream selections (PUT /library/parts/{id}?audioStreamID=&subtitleStreamID=)
 
+// Selection identity excludes mutable probe/default hints. It includes the
+// distinguishing audio/subtitle metadata so an old ID cannot change language
+// when a later release reuses the same stream position.
+func sameStreamIdentity(a, b core.StreamInfo) bool {
+	return a.Type == b.Type && a.Codec == b.Codec && a.Language == b.Language &&
+		a.Channels == b.Channels && a.Title == b.Title && a.Forced == b.Forced &&
+		a.External == b.External && a.ExternalURL == b.ExternalURL
+}
+
 type selection struct {
 	audio       int // position in MediaInfo.Streams
 	audioSet    bool
+	audioStream *core.StreamInfo
 	subtitle    int // position, -1 = none
 	subtitleSet bool
 	// subtitleStream is the chosen subtitle when it was picked by stream

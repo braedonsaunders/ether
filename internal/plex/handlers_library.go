@@ -597,6 +597,10 @@ func (s *Server) handleSectionSub(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section, sub string) {
+	if sub == "all" && r.URL.Query().Has("guid") {
+		s.libraryByGUID(w, r, &sec)
+		return
+	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	q := r.URL.Query()
@@ -869,6 +873,10 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 // handleLibraryAll is /library/all?type=N across sections.
 func (s *Server) handleLibraryAll(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
+	if q.Has("guid") {
+		s.libraryByGUID(w, r, nil)
+		return
+	}
 	t := typeFromParam(q.Get("type"))
 	sec, ok := s.sectionFor(t)
 	if !ok || t == "" || !s.canSeeSection(FromContext(r.Context()).User, sec.ID) {

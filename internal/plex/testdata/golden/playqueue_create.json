@@ -88,7 +88,7 @@
                     "extendedDisplayTitle": "1080p (H.264)"
                   },
                   {
-                    "id": 235143889,
+                    "id": 1178485371,
                     "streamType": 2,
                     "canNormalizeLoudness": false,
                     "selected": true,
@@ -106,7 +106,7 @@
                     "extendedDisplayTitle": "English (EAC3 5.1)"
                   },
                   {
-                    "id": 770028522,
+                    "id": 524715698,
                     "streamType": 2,
                     "canNormalizeLoudness": false,
                     "codec": "aac",
@@ -121,7 +121,7 @@
                     "extendedDisplayTitle": "French (AAC Stereo)"
                   },
                   {
-                    "id": 1258400311,
+                    "id": 404519478,
                     "streamType": 3,
                     "canAutoSync": false,
                     "codec": "srt",
@@ -242,7 +242,7 @@
                     "extendedDisplayTitle": "1080p (H.264)"
                   },
                   {
-                    "id": 1113299542,
+                    "id": 1942083294,
                     "streamType": 2,
                     "canNormalizeLoudness": false,
                     "selected": true,
@@ -260,7 +260,7 @@
                     "extendedDisplayTitle": "English (EAC3 5.1)"
                   },
                   {
-                    "id": 578414909,
+                    "id": 1769368341,
                     "streamType": 2,
                     "canNormalizeLoudness": false,
                     "codec": "aac",
@@ -275,7 +275,7 @@
                     "extendedDisplayTitle": "French (AAC Stereo)"
                   },
                   {
-                    "id": 90043120,
+                    "id": 609465441,
                     "streamType": 3,
                     "canAutoSync": false,
                     "codec": "srt",

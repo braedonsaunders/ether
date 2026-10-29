@@ -432,7 +432,8 @@ func cacheKey(c *Client, req core.SearchRequest) string {
 	// v4: subtitle-only tags (VOSTFR), Latino/Brazilian variants, Dual
 	// Audio and anime absolute episode numbers; Stremio addons keep HTTP
 	// and Usenet streams and read flag languages.
-	fmt.Fprint(h, "release-parse-v4|")
+	// v5: anime BD/BDMux source tags and three-letter audio languages.
+	fmt.Fprint(h, "release-parse-v5|")
 	if c.Config().IsBuiltin() && (req.Type == core.TypeEpisode || req.Type == core.TypeShow || req.Season > 0) {
 		// Built-in TV keywords no longer require the series premiere year.
 		// Do not reuse persisted empty answers from that narrower search.

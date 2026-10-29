@@ -141,7 +141,7 @@ func EpisodeTitleMatches(name, want string) bool {
 // Normalize the suffix without dropping its number, so different parts
 // remain different episodes. Ordinary uses of the word "part" are kept.
 func normalizeEpisodeTitle(title string) string {
-	words := strings.Fields(NormalizeTitle(title))
+	words := collapseEpisodeContractions(strings.Fields(NormalizeTitle(title)))
 	if len(words) == 0 {
 		return ""
 	}
@@ -189,4 +189,35 @@ func EpisodeSeriesYear(name string, parsedYear int) int {
 	}
 	info := core.ReleaseInfo{}
 	return parseYear(spaced[:loc[0]], &info)
+}
+
+// Scene separators can split apostrophes ("I.ll"), while catalogue titles
+// retain them ("I'll"). Normalize only familiar contraction pairs; do not
+// merge arbitrary words or relax episode-title identity to token overlap.
+func collapseEpisodeContractions(words []string) []string {
+	out := make([]string, 0, len(words))
+	for i := 0; i < len(words); i++ {
+		if i+1 < len(words) {
+			suffixes := ""
+			switch words[i] {
+			case "i":
+				suffixes = "m ll d ve"
+			case "you", "we", "they":
+				suffixes = "re ll d ve"
+			case "he", "she", "it", "that", "there", "what", "who", "how":
+				suffixes = "s ll d"
+			case "don", "doesn", "didn", "can", "won", "wouldn", "shouldn", "couldn", "isn", "aren", "wasn", "weren", "hasn", "haven", "hadn":
+				suffixes = "t"
+			case "let":
+				suffixes = "s"
+			}
+			if suffixes != "" && strings.Contains(" "+suffixes+" ", " "+words[i+1]+" ") {
+				out = append(out, words[i]+words[i+1])
+				i++
+				continue
+			}
+		}
+		out = append(out, words[i])
+	}
+	return out
 }
