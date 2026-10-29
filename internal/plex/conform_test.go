@@ -128,7 +128,7 @@ func TestDecisionConformsToPMS(t *testing.T) {
 					rec := f.request(t, http.MethodGet, target, hdr)
 					ours := pmsconform.Response{Status: rec.Code, Headers: rec.Header(), Body: rec.Body.Bytes()}
 
-					for _, d := range pmsconform.Compare(ref, ours).Differences {
+					for _, d := range conformplex.Compare(ref, ours).Differences {
 						switch {
 						case d.Kind == pmsconform.KindMissing && pmsOnlyRE.MatchString(d.Path):
 						case d.Kind == pmsconform.KindExtra && etherOnlyRE.MatchString(d.Path):
@@ -185,7 +185,7 @@ func TestDetailConformsToPMS(t *testing.T) {
 				}
 				rec := f.getWarm(t, strings.ReplaceAll(template, "{{movieKey}}", burbs.Key.String()), hdr...)
 				ours := pmsconform.Response{Status: rec.Code, Headers: rec.Header(), Body: rec.Body.Bytes()}
-				for _, d := range pmsconform.Compare(ref, ours).Differences {
+				for _, d := range conformplex.Compare(ref, ours).Differences {
 					switch {
 					case d.Kind == pmsconform.KindMissing && (pmsOnlyRE.MatchString(d.Path) || detailPMSOnlyRE.MatchString(d.Path)):
 					case d.Kind == pmsconform.KindExtra && etherOnlyRE.MatchString(d.Path):
@@ -268,7 +268,7 @@ func TestTVConformsToPMS(t *testing.T) {
 					}
 					rec := f.getWarm(t, target, hdr...)
 					ours := pmsconform.Response{Status: rec.Code, Headers: rec.Header(), Body: rec.Body.Bytes()}
-					for _, d := range pmsconform.Compare(ref, ours).Differences {
+					for _, d := range conformplex.Compare(ref, ours).Differences {
 						switch {
 						case d.Kind == pmsconform.KindMissing && (pmsOnlyRE.MatchString(d.Path) || tvPMSOnlyRE.MatchString(d.Path)):
 						case d.Kind == pmsconform.KindExtra && etherOnlyRE.MatchString(d.Path):

@@ -24,8 +24,14 @@ func (Protocol) Fetch(ctx context.Context, c *http.Client, base, token string, r
 func (Protocol) FixtureName(profile string, r conform.Request, jsonMode bool) string {
 	return conform.FixtureName(profile, r.Path, jsonMode)
 }
-func (Protocol) Compare(a, b conform.Response) conform.Report { return conform.Compare(a, b) }
+func (Protocol) Compare(a, b conform.Response) conform.Report { return Compare(a, b) }
 
 func (Protocol) Redact(r conform.Response) conform.Response { return r }
 
 func (Protocol) IgnorePaths() []string { return nil }
+
+// Compare preserves the Plex-specific response header contract.
+func Compare(a, b conform.Response) conform.Report {
+	headers := []string{"Content-Type", "X-Plex-Protocol", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers", "Access-Control-Allow-Methods"}
+	return conform.CompareHeaders(a, b, headers)
+}

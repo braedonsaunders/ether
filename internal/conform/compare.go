@@ -87,9 +87,6 @@ func blockingKind(kind string) bool {
 	return kind != KindValue
 }
 
-// comparedHeaders are the response headers that must match PMS.
-var comparedHeaders = []string{"Content-Type", "X-Plex-Protocol", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers", "Access-Control-Allow-Methods"}
-
 // Compare checks status, selected headers and the response schema. Bodies
 // are reduced to schemas (paths with array indices collapsed, the set of
 // value types and distinct values seen at each path, and child element
@@ -100,6 +97,11 @@ var comparedHeaders = []string{"Content-Type", "X-Plex-Protocol", "Access-Contro
 // servers (titles, ids, keys, timestamps, counts, versions, redacted
 // fields) are compared by type only.
 func Compare(a, b Response) Report {
+	return CompareHeaders(a, b, []string{"Content-Type", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers", "Access-Control-Allow-Methods"})
+}
+
+// CompareHeaders compares responses using protocol-supplied headers.
+func CompareHeaders(a, b Response, headers []string) Report {
 	r := Report{}
 	add := func(d Difference) {
 		d.Blocking = blockingKind(d.Kind)
@@ -108,7 +110,7 @@ func Compare(a, b Response) Report {
 	if a.Status != b.Status {
 		add(Difference{Path: "$status", Kind: KindStatus, Reference: a.Status, Target: b.Status})
 	}
-	for _, k := range comparedHeaders {
+	for _, k := range headers {
 		av, bv := a.Headers.Get(k), b.Headers.Get(k)
 		if av != bv && !(k == "Access-Control-Allow-Origin" && redacted(av)) {
 			add(Difference{Path: "$headers." + k, Kind: KindHeader, Reference: av, Target: bv})

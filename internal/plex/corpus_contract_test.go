@@ -59,7 +59,7 @@ func TestRecordedCorpusProtocolContracts(t *testing.T) {
 						return
 					}
 					ours := pmsconform.Response{Status: rec.Code, Headers: rec.Header(), Body: rec.Body.Bytes()}
-					for _, diff := range pmsconform.Compare(ref, ours).Differences {
+					for _, diff := range conformplex.Compare(ref, ours).Differences {
 						// Three legacy root JSON recordings lost the original multiuser
 						// boolean during redaction. Their explicitly redacted value is opaque.
 						if strings.HasSuffix(diff.Path, "/multiuser") && diff.Reference == "[REDACTED]" {

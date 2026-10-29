@@ -174,3 +174,14 @@ func TestDiscoverAlignsSameTitlesAcrossDifferentServerIDs(t *testing.T) {
 		}
 	}
 }
+func TestPlexProtocolHeaderIsCompared(t *testing.T) {
+	a := Response{Status: 200, Headers: http.Header{"X-Plex-Protocol": []string{"1.0"}}, Body: []byte(`{}`)}
+	b := a
+	b.Headers = http.Header{}
+	if Compare(a, b).Blocking() != 1 {
+		t.Fatal("missing Plex protocol header was not reported")
+	}
+	if conform.Compare(a, b).Blocking() != 0 {
+		t.Fatal("generic comparison included a Plex-specific header")
+	}
+}
