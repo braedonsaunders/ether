@@ -52,6 +52,10 @@ func TestResolveDeviceIsSurfaceBoundAndReadOnly(t *testing.T) {
 	if afterUsed != beforeUsed || afterExpiry != beforeExpiry {
 		t.Fatalf("read changed grant: %d/%d -> %d/%d", beforeUsed, beforeExpiry, afterUsed, afterExpiry)
 	}
+	var observations int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_viewer_times WHERE viewer_id=1`).Scan(&observations); err != nil || observations != 0 {
+		t.Fatalf("device validation wrote activity: %d %v", observations, err)
+	}
 	if _, err = db.ExecContext(ctx, `UPDATE auth_users SET active=0 WHERE id=1`); err != nil {
 		t.Fatal(err)
 	}
