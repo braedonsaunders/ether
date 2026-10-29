@@ -67,7 +67,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 			VibeSearch:  a.collections,
 			Recommender: a.personalize,
 			State:       a.state,
-			Playlists:   a.state.Playlists(),
+			Playlists:   a.playlists,
 			Auth:        a.users,
 			Playback:    a.playback,
 			Transcoder:  tc,

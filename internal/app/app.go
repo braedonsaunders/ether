@@ -20,9 +20,11 @@ import (
 	"github.com/braedonsaunders/ether/internal/cluster"
 	"github.com/braedonsaunders/ether/internal/collections"
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/debrid"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/extras"
+	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/markers"
@@ -120,6 +122,8 @@ type App struct {
 	catalog     *catalog.Catalog
 	collections *collections.Service
 	images      *artwork.Images
+	favorites   *favorites.Service
+	playlists   core.Playlists
 	state       *state.State
 	trakt       *trakt.Client
 	simklDevice *simkl.DeviceManager

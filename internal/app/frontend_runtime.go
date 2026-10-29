@@ -77,6 +77,17 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return nil, err
 	}
 	r.stateUnsub = subscribeSessionState(a.state, r.events, a.plexServer.WatchStateChanged, func(err error) { a.log.Warn("user data event publication failed", "err", err) })
+	experiences := make(map[frontend.Protocol]frontend.Experience)
+	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby"} {
+		experience, err := a.newSurfaceExperience(protocol)
+		if err != nil {
+			r.stateUnsub()
+			r.broker.Close(context.Background())
+			cancel()
+			return nil, err
+		}
+		experiences[protocol] = experience
+	}
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
 		settings := func() frontend.Settings {
 			value, err := r.control.Settings(r.ctx, id)
@@ -85,7 +96,14 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			}
 			return value
 		}
-		var experience frontend.Experience // installed by the experience adapter when ready
+		experience := experiences[id]
+		if experience == nil {
+			var err error
+			experience, err = a.newSurfaceExperience(id)
+			if err != nil {
+				a.log.Error("frontend experience unavailable", "surface", id, "err", err)
+			}
+		}
 		var imageGrants frontend.ImageGrants
 		if id != "plex" {
 			imageGrants, _ = identity.NewImageGrantService(a.db, id, grants, func() frontend.Experience { return experience }, a.images, 10*time.Minute, nil)

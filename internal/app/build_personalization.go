@@ -9,6 +9,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/collections"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/recommend"
@@ -24,6 +26,36 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	var err error
 	// Watch state and recommendations.
 	a.state = state.New(a.db, state.Options{Now: parityClock(), Logger: log.With("component", "state"), Availability: a.dbAvail})
+	basePlaylists := a.state.Playlists()
+	marked, ok := basePlaylists.(core.TransactionalMarkedPlaylists)
+	if !ok {
+		return fmt.Errorf("favorites: marked playlists unavailable")
+	}
+	libs := []experience.Library{{ID: 1, Name: "Movies", Type: core.TypeMovie}, {ID: 2, Name: "TV Shows", Type: core.TypeShow}}
+	visibility := experienceVisibility(a.safety, a.catalog.Get, func(ctx context.Context, titles []core.Title) []core.Title {
+		if a.availability == nil {
+			return titles
+		}
+		return a.availability.FilterDiscovery(ctx, titles)
+	}, func() []*core.PlaySession {
+		if a.playback == nil {
+			return nil
+		}
+		return a.playback.Sessions()
+	}, libs)
+	a.favorites, err = favorites.New(favorites.Options{DB: a.db, Marked: marked, Active: a.users.ActiveUser,
+		Allowed: func(ctx context.Context, u *core.User, subject favorites.Subject) bool {
+			return a.favoriteAllowed(ctx, u, subject, visibility)
+		},
+		Changed: func(ctx context.Context, id int64, subject favorites.Subject) { a.favoriteChanged(ctx, id, subject) },
+	})
+	if err != nil {
+		return fmt.Errorf("favorites: %w", err)
+	}
+	a.playlists, err = favorites.NewPlaylists(basePlaylists, a.favorites)
+	if err != nil {
+		return fmt.Errorf("favorites playlists: %w", err)
+	}
 	a.closers = append(a.closers, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -63,7 +95,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 			return a.availability.FilterDiscovery(ctx, ts)
 		},
 		UserPolicy: a.safety.UserPolicy, Allowed: a.safety.Allowed,
-		LLM: a.llm, Trakt: a.trakt, Playlists: a.state.Playlists(),
+		LLM: a.llm, Trakt: a.trakt, Playlists: a.playlists, Favorites: a.favoriteSignals,
 		ExtraHomeRows: a.extraHomeRows,
 		Dependencies: func(scorer core.PersonalScorer) (core.Recommender, core.CollectionRows, error) {
 			opts := append(a.collectionOptions(cfg), collections.WithState(a.state), collections.WithAuth(a.users), collections.WithScorer(scorer), collections.WithVibeRefiner(a.llm))
