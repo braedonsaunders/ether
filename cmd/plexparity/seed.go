@@ -193,6 +193,12 @@ func seed(ctx context.Context, dir string) error {
 		return err
 	}
 	_, err = tv.SaveChannel(ctx, livetv.Channel{ID: "fixture-channel", Number: "101", Name: "Fixture TV", Kind: "virtual", Enabled: true, Epoch: fixtureNow, Seed: 42, Items: []livetv.Item{{Key: core.MovieKey(10001), Title: "Fixture Movie 001", DurationMS: 5400000}, {Key: core.MovieKey(10002), Title: "Fixture Movie 002", DurationMS: 5400000}}})
+	if err == nil {
+		_, err = tv.SaveChannel(ctx, livetv.Channel{ID: "fixture-iptv", Number: "102", Name: "Fixture IPTV", Kind: "iptv", Enabled: true, StreamURL: "http://127.0.0.1:32410/index.m3u8"})
+	}
+	if err == nil {
+		_, err = tv.SaveChannel(ctx, livetv.Channel{ID: "fixture-iptv-relay", Number: "103", Name: "Fixture IPTV relay", Kind: "iptv", Enabled: true, Transcode: true, StreamURL: "http://127.0.0.1:32410/index.m3u8"})
+	}
 	tv.Close()
 	if err != nil {
 		return err

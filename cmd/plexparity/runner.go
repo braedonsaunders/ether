@@ -66,6 +66,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		{"ETHER_PARITY_DOWNLOADS_ONLY", "only download probes executed"},
 		{"ETHER_PARITY_TRICKPLAY_ONLY", "only trickplay probes executed"},
 		{"ETHER_PARITY_SUBTITLES_ONLY", "only subtitle probes executed"},
+		{"ETHER_PARITY_IPTV_ONLY", "only IPTV probes executed"},
 	} {
 		if os.Getenv(mode.env) == "1" {
 			return incompleteCoverage{[]string{mode.description}}
@@ -97,6 +98,20 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 	subtitleTracker := &fixtureTracker{}
 	subtitles := httptest.NewServer(subtitleFixture(subtitleTracker))
 	defer subtitles.Close()
+	iptvTracker := &fixtureTracker{}
+	iptvHandler, err := iptvFixture(seedDir, iptvTracker)
+	if err != nil {
+		return err
+	}
+	iptvListener, err := net.Listen("tcp", "127.0.0.1:32410")
+	if err != nil {
+		return fmt.Errorf("IPTV fixture port must be free: %w", err)
+	}
+	iptv := httptest.NewUnstartedServer(iptvHandler)
+	iptv.Listener.Close()
+	iptv.Listener = iptvListener
+	iptv.Start()
+	defer iptv.Close()
 	transcripts := make([]transcript, 0, 2)
 	for i, bin := range []string{baseline, candidate} {
 		dest := filepath.Join(dir, "server")
@@ -218,6 +233,9 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 		}
 		if missing := subtitleTracker.failures(); len(missing) > 0 && captureErr == nil {
 			captureErr = fmt.Errorf("subtitle fixture does not implement %v", missing)
+		}
+		if missing := iptvTracker.failures(); len(missing) > 0 && captureErr == nil {
+			captureErr = fmt.Errorf("IPTV fixture does not implement %v", missing)
 		}
 		if captureErr != nil {
 			b, _ := os.ReadFile(log.Name())

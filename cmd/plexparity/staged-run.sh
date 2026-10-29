@@ -8,6 +8,7 @@ livetv_only=${5:-0}
 downloads_only=${6:-0}
 trickplay_only=${7:-0}
 subtitles_only=${8:-0}
+iptv_only=${9:-0}
 case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
 case "$crowd_diag" in 0|1) ;; *) echo 'invalid crowd diagnostic mode' >&2; exit 1;; esac
 case "$notifications_only" in 0|1) ;; *) echo 'invalid notification-only mode' >&2; exit 1;; esac
@@ -15,6 +16,7 @@ case "$livetv_only" in 0|1) ;; *) echo 'invalid live TV-only mode' >&2; exit 1;;
 case "$downloads_only" in 0|1) ;; *) echo 'invalid downloads-only mode' >&2; exit 1;; esac
 case "$trickplay_only" in 0|1) ;; *) echo 'invalid trickplay-only mode' >&2; exit 1;; esac
 case "$subtitles_only" in 0|1) ;; *) echo 'invalid subtitles-only mode' >&2; exit 1;; esac
+case "$iptv_only" in 0|1) ;; *) echo 'invalid IPTV-only mode' >&2; exit 1;; esac
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -79,6 +81,11 @@ data = live.read_text()
 needle = 'func liveSessionID() string {'
 if data.count(needle) != 1: raise SystemExit('cannot apply deterministic live session seam')
 live.write_text(data.replace(needle, needle + '\n\treturn parityLiveSessionID()\n', 1))
+dash = root.parent / 'transcode/dash_session.go'
+data = dash.read_text()
+needle = 'renderLiveMPD(s.created, time.Now(),'
+if data.count(needle) != 1: raise SystemExit('cannot apply deterministic live DASH clock seam')
+dash.write_text(data.replace(needle, 'renderLiveMPD(parityManifestTime(), parityManifestTime(),', 1))
 if sys.argv[2] == '1':
  path = root.parent / 'personalize/crowd.go'
  data = path.read_text()
@@ -113,6 +120,7 @@ PYCODE
  cp "$root/harness/parity_runtime_default.go" "$root/harness/parity_runtime_fixture.go" "$root/harness/parity_source_default.go" "$root/harness/parity_source_fixture.go" "$root/$tree/internal/app/"
  cp "$root/harness/parity_wait_fixture.go" "$root/$tree/internal/personalize/"
  cp "$root/harness/parity_session_fixture.go" "$root/$tree/internal/livetv/"
+ cp "$root/harness/parity_clock_fixture.go" "$root/$tree/internal/transcode/"
 done
 mkdir -p "$root/baseline/cmd/parityseed" "$root/candidate/cmd/plexparity"
 cp "$root/harness/seed.go" "$root/baseline/cmd/parityseed/seed.go"
@@ -126,7 +134,7 @@ docker run --rm --network none \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
  cd /baseline
@@ -138,6 +146,7 @@ docker run --rm --network none \
  go build -p 4 -o /work/parity ./cmd/plexparity
  /work/seed /work/seeddata
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart /work/seeddata/parity.mp4
+ ffmpeg -hide_banner -loglevel error -i /work/seeddata/parity.mp4 -c copy -f mpegts /work/seeddata/iptv.ts
  printf "1\n00:00:00,000 --> 00:00:03,000\nFixture subtitle\n" > /work/seeddata/parity.srt
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -f lavfi -i anullsrc=r=48000:cl=stereo -f srt -i /work/seeddata/parity.srt -t 20 -map 0:v -map 1:a -map 2:a -map 3:s -metadata:s:a:0 language=fra -metadata:s:a:1 language=eng -metadata:s:s:0 language=eng -c:v libx264 -pix_fmt yuv420p -c:a aac -c:s mov_text -movflags +faststart /work/seeddata/parity-tracks.mp4
  /work/parity run /work/baseline /work/candidate /work/seeddata

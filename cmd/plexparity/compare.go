@@ -59,6 +59,18 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 	}
 	sort.Strings(names)
 	result := transcript{ids: ids.Values}
+	if os.Getenv("ETHER_PARITY_IPTV_ONLY") == "1" {
+		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+			for _, name := range names {
+				captures, err := iptvCapture(ctx, client, base, viewer, name, profiles[name].Headers)
+				if err != nil {
+					return result, fmt.Errorf("%s %s IPTV: %w", viewer, name, err)
+				}
+				result.captures = append(result.captures, captures...)
+			}
+		}
+		return result, nil
+	}
 	if subtitleMode || os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1" {
 		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 			for _, name := range names {

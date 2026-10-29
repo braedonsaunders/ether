@@ -52,7 +52,7 @@ func normalizeCaptureHeaders(c capture) http.Header {
 	if strings.HasPrefix(c.path, "/:/websocket") && h.Get("Sec-WebSocket-Accept") != "" {
 		h.Set("Sec-WebSocket-Accept", "<WEBSOCKET-HANDSHAKE-TOKEN>")
 	}
-	if strings.HasPrefix(c.path, "playback:segment:") || c.path == "playback:dash:header" || c.path == "playback:dash:0.m4s" || c.path == "livetv:program-segment" {
+	if strings.HasPrefix(c.path, "playback:segment:") || c.path == "playback:dash:header" || c.path == "playback:dash:0.m4s" || c.path == "livetv:program-segment" || (strings.HasPrefix(c.path, "iptv:") && strings.HasSuffix(c.path, ":relay:media")) || c.path == "iptv:dash:part" {
 		h.Del("Last-Modified")
 	}
 	return h
