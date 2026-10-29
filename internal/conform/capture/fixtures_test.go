@@ -71,9 +71,12 @@ func TestRedactObjectKeysPreservesNumbers(t *testing.T) {
 }
 
 func TestTicketRedaction(t *testing.T) {
-	h := safeRequestHeaders(http.Header{"Sec-Websocket-Protocol": []string{"silo.playback-control.v2, silo.ticket.secret_value"}}, nil)
+	h := safeRequestHeaders(http.Header{"Sec-Websocket-Protocol": []string{"silo.playback-control.v2, silo.ticket.secret_value"}, "X-Silo-Device-Id": []string{"private-device"}}, nil)
 	if strings.Contains(h.Get("Sec-Websocket-Protocol"), "secret_value") {
 		t.Fatal("websocket ticket leaked")
+	}
+	if h.Get("X-Silo-Device-Id") != "${device_id}" {
+		t.Fatal("device header presence not safely retained")
 	}
 	r := (&mediabrowser.Protocol{}).Redact(conform.Response{Body: []byte(`{"ticket":"secret_value","device_code":"secret_value","user_code":"secret_value","match_code":"secret_value","protocol":"silo.playback-control.v2"}`)})
 	if bytes.Contains(r.Body, []byte("secret_value")) {

@@ -377,6 +377,9 @@ func safeRequestHeaders(h http.Header, secrets []string) http.Header {
 	if h.Get("X-Emby-Token") != "" {
 		out.Set("X-Emby-Token", "${access_token}")
 	}
+	if h.Get("X-Silo-Device-Id") != "" {
+		out.Set("X-Silo-Device-Id", "${device_id}")
+	}
 	for k, values := range out {
 		if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "X-Emby-Authorization") || strings.EqualFold(k, "X-Emby-Token") || strings.EqualFold(k, "Cookie") {
 			continue
@@ -440,7 +443,9 @@ func (r *Recorder) sanitize(body []byte, secrets []string, path string) []byte {
 						continue
 					}
 					n := strings.ToLower(k)
-					if _, ok := val.(string); ok && n == "id" && (strings.Contains(strings.ToLower(path), "system/info")) {
+					if str, ok := val.(string); ok && str != "" && privateIdentifier(n) && !captureTemplate.MatchString(str) {
+						x[k] = "${" + r.slot(str) + "}"
+					} else if _, ok := val.(string); ok && n == "id" && (strings.Contains(strings.ToLower(path), "system/info")) {
 						x[k] = "[REDACTED]"
 					} else if str, ok := val.(string); ok && strings.HasSuffix(n, "id") && opaqueID.MatchString(str) {
 						x[k] = "${" + r.slot(str) + "}"
@@ -520,6 +525,9 @@ func (r *Recorder) sanitize(body []byte, secrets []string, path string) []byte {
 	masked := opaqueTextID.ReplaceAllStringFunc(string(res.Body), func(id string) string { return "${" + r.slot(id) + "}" })
 	r.mu.Unlock()
 	return scrubText([]byte(masked))
+}
+func privateIdentifier(n string) bool {
+	return n == "owner_id" || n == "output_context_id" || n == "plan_attempt_key" || n == "file_id" || strings.HasSuffix(n, "_file_id")
 }
 func privateField(k string) bool {
 	n := strings.ToLower(k)
