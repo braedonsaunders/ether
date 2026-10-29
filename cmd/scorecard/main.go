@@ -27,6 +27,7 @@ type target struct {
 	Variables map[string]string `json:"variables,omitempty"`
 	ReadLimit int64             `json:"read_limit,omitempty"`
 	SpecPath  string            `json:"spec_path,omitempty"`
+	Cgroup    string            `json:"cgroup,omitempty"`
 }
 type scenario struct {
 	Name        string `json:"name"`
@@ -48,27 +49,31 @@ type config struct {
 	CacheState    string     `json:"cache_state,omitempty"`
 }
 type measurement struct {
-	P50                 float64 `json:"p50_ms"`
-	P95                 float64 `json:"p95_ms"`
-	P99                 float64 `json:"p99_ms"`
-	TTFBP50             float64 `json:"ttfb_p50_ms"`
-	TTFBP95             float64 `json:"ttfb_p95_ms"`
-	TTFBP99             float64 `json:"ttfb_p99_ms"`
-	AllScheduledP50     float64 `json:"all_scheduled_p50_ms"`
-	AllScheduledP95     float64 `json:"all_scheduled_p95_ms"`
-	AllScheduledP99     float64 `json:"all_scheduled_p99_ms"`
-	QueueP50            float64 `json:"queue_p50_ms"`
-	QueueP95            float64 `json:"queue_p95_ms"`
-	QueueP99            float64 `json:"queue_p99_ms"`
-	WallSeconds         float64 `json:"wall_seconds"`
-	SuccessfulPerSecond float64 `json:"successful_per_second"`
-	HTTPSuccesses       int     `json:"http_successes"`
-	ValidSuccesses      int     `json:"valid_successes"`
-	Timeouts            int     `json:"timeouts"`
-	Errors              int     `json:"errors"`
-	SchemaErrors        int     `json:"schema_errors"`
-	SchemaUncovered     int     `json:"schema_uncovered"`
-	Samples             int     `json:"samples"`
+	P50                 float64        `json:"p50_ms"`
+	P95                 float64        `json:"p95_ms"`
+	P99                 float64        `json:"p99_ms"`
+	TTFBP50             float64        `json:"ttfb_p50_ms"`
+	TTFBP95             float64        `json:"ttfb_p95_ms"`
+	TTFBP99             float64        `json:"ttfb_p99_ms"`
+	AllScheduledP50     float64        `json:"all_scheduled_p50_ms"`
+	AllScheduledP95     float64        `json:"all_scheduled_p95_ms"`
+	AllScheduledP99     float64        `json:"all_scheduled_p99_ms"`
+	QueueP50            float64        `json:"queue_p50_ms"`
+	QueueP95            float64        `json:"queue_p95_ms"`
+	QueueP99            float64        `json:"queue_p99_ms"`
+	WallSeconds         float64        `json:"wall_seconds"`
+	StartedAt           time.Time      `json:"started_at"`
+	EndedAt             time.Time      `json:"ended_at"`
+	SuccessfulPerSecond float64        `json:"successful_per_second"`
+	HTTPSuccesses       int            `json:"http_successes"`
+	ValidSuccesses      int            `json:"valid_successes"`
+	Resource            *resourceDelta `json:"resource,omitempty"`
+	ResourceError       string         `json:"resource_error,omitempty"`
+	Timeouts            int            `json:"timeouts"`
+	Errors              int            `json:"errors"`
+	SchemaErrors        int            `json:"schema_errors"`
+	SchemaUncovered     int            `json:"schema_uncovered"`
+	Samples             int            `json:"samples"`
 }
 type result struct {
 	Name            string      `json:"name"`
@@ -104,6 +109,16 @@ func measureScheduled(client *http.Client, t target, samples, concurrency int, s
 	var allScheduled, queueDelays []float64
 	errs := 0
 	timeouts := 0
+	var before *resourceSample
+	resourceError := ""
+	if t.Cgroup != "" {
+		sample, e := readResourceSample(t.Cgroup, "/proc")
+		if e != nil {
+			resourceError = "resource sample unavailable"
+		} else {
+			before = &sample
+		}
+	}
 	wallStart := time.Now()
 	schemaErrors := 0
 	schemaUncovered := 0
@@ -217,8 +232,9 @@ func measureScheduled(client *http.Client, t target, samples, concurrency int, s
 	sort.Float64s(firstBytes)
 	sort.Float64s(allScheduled)
 	sort.Float64s(queueDelays)
-	wall := time.Since(wallStart).Seconds()
-	m := measurement{Errors: errs, Timeouts: timeouts, SchemaErrors: schemaErrors, SchemaUncovered: schemaUncovered, Samples: samples, WallSeconds: wall, SuccessfulPerSecond: float64(len(durations)-schemaErrors-schemaUncovered) / wall, HTTPSuccesses: len(durations), ValidSuccesses: len(durations) - schemaErrors - schemaUncovered}
+	wallEnd := time.Now()
+	wall := wallEnd.Sub(wallStart).Seconds()
+	m := measurement{Errors: errs, Timeouts: timeouts, SchemaErrors: schemaErrors, SchemaUncovered: schemaUncovered, Samples: samples, WallSeconds: wall, StartedAt: wallStart.UTC(), EndedAt: wallEnd.UTC(), SuccessfulPerSecond: float64(len(durations)-schemaErrors-schemaUncovered) / wall, HTTPSuccesses: len(durations), ValidSuccesses: len(durations) - schemaErrors - schemaUncovered}
 	if len(allScheduled) > 0 {
 		m.AllScheduledP50 = percentile(allScheduled, 50)
 		m.AllScheduledP95 = percentile(allScheduled, 95)
@@ -229,6 +245,20 @@ func measureScheduled(client *http.Client, t target, samples, concurrency int, s
 		m.QueueP95 = percentile(queueDelays, 95)
 		m.QueueP99 = percentile(queueDelays, 99)
 	}
+	if t.Cgroup != "" && before != nil {
+		after, e := readResourceSample(t.Cgroup, "/proc")
+		if e != nil {
+			resourceError = "resource sample unavailable"
+		} else if delta, e := summarizeResources(*before, after, m.ValidSuccesses); e != nil {
+			resourceError = "resource counter regressed"
+		} else {
+			m.Resource = &delta
+			if before.ProcessReadErrors > 0 || after.ProcessReadErrors > 0 {
+				resourceError = "process snapshot incomplete"
+			}
+		}
+	}
+	m.ResourceError = resourceError
 	if len(durations) > 0 {
 		m.P50 = percentile(durations, 50)
 		m.P95 = percentile(durations, 95)
@@ -241,7 +271,7 @@ func measureScheduled(client *http.Client, t target, samples, concurrency int, s
 }
 func percentile(v []float64, p int) float64 { return v[(len(v)*p+99)/100-1] }
 func winner(a, b measurement) string {
-	if a.Errors > 0 || b.Errors > 0 || a.SchemaErrors > 0 || b.SchemaErrors > 0 || a.SchemaUncovered > 0 || b.SchemaUncovered > 0 {
+	if a.Errors > 0 || b.Errors > 0 || a.SchemaErrors > 0 || b.SchemaErrors > 0 || a.SchemaUncovered > 0 || b.SchemaUncovered > 0 || a.ResourceError != "" || b.ResourceError != "" {
 		return "inconclusive"
 	}
 	if a.P50 == b.P50 && a.P95 == b.P95 && a.P99 == b.P99 {
@@ -304,6 +334,14 @@ func run(c config) ([]result, error) {
 		if s.Name == "" || s.Reference.URL == "" || s.Ether.URL == "" {
 			return nil, errors.New("scenario requires name and both URLs")
 		}
+		if (s.Reference.Cgroup == "") != (s.Ether.Cgroup == "") {
+			return nil, errors.New("resource comparison requires both cgroups")
+		}
+		if s.Reference.Cgroup != "" {
+			if err := validateMatchedLimits(s.Reference.Cgroup, s.Ether.Cgroup); err != nil {
+				return nil, err
+			}
+		}
 		var spec *openapi.Document
 		if s.SpecFile != "" {
 			data, err := os.ReadFile(s.SpecFile)
@@ -355,6 +393,12 @@ func run(c config) ([]result, error) {
 					a = measureScheduled(client, s.Reference, c.Samples, n, spec, c.RatePerSecond)
 				}
 				ae, be := a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered
+				if a.ResourceError != "" {
+					ae++
+				}
+				if b.ResourceError != "" {
+					be++
+				}
 				out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, ae, be), P95Winner: metricWinner(a.P95, b.P95, ae, be), P99Winner: metricWinner(a.P99, b.P99, ae, be), TTFBP50Winner: metricWinner(a.TTFBP50, b.TTFBP50, ae, be), TTFBP95Winner: metricWinner(a.TTFBP95, b.TTFBP95, ae, be), TTFBP99Winner: metricWinner(a.TTFBP99, b.TTFBP99, ae, be), CompletionScope: scope, SchemaChecked: spec != nil, Repetition: rep + 1, Order: order, LoadModel: model, RatePerSecond: c.RatePerSecond, CacheState: cache})
 			}
 		}
@@ -362,6 +406,13 @@ func run(c config) ([]result, error) {
 	return out, nil
 }
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "resources" {
+		if err := resources(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "inventory" {
 		if err := inventory(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)

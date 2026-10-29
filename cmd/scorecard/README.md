@@ -138,3 +138,25 @@ not an automatic cache flush. With no rate, the tool uses closed-loop load and
 cannot measure omitted arrivals; queue values are not meaningful. This is a
 bounded request generator, not yet a mixed-playback or resource-efficiency
 soak harness, and it does not establish statistical significance by itself.
+
+For preliminary cgroup-v2 resource evidence, set an absolute `cgroup` path on
+both targets. The run rejects different or unlimited CPU/memory limits and
+different effective CPU sets. Before and after each target run it samples
+hierarchical CPU and block I/O counters, cgroup memory, and best-effort process
+RSS/FD/thread/child counts. It reports CPU-seconds per valid successful HTTP
+operation when the counters are available. Run the generator outside both
+server cgroups and use fresh, isolated cgroups; otherwise its own work or other
+jobs contaminate the measurement. An HTTP success is not proof of correct
+media quality or an SDK-valid response. Counter regressions and incomplete
+process snapshots make the latency winner inconclusive.
+
+For growth and peak observation use `scorecard resources -cgroup /absolute/path
+-interval 1s -samples 7201` in a separately coordinated run. This emits a
+machine-readable cgroup-v2 time series; interrupted runs have `complete=false`.
+Memory.current includes cache, RSS sums can double-count shared pages, and
+memory.peak may predate the run unless the cgroup is fresh. GPU, per-container
+network I/O and Go goroutine counts are explicitly unmeasured. FFmpeg children
+are included only if they remain in the measured cgroup. The tool does not yet
+measure CPU per verified stream-minute, perform mixed churn/failure injection,
+or control cold caches; no extended soak should run without aligned fixtures,
+resource isolation and the coordinator's reservation.
