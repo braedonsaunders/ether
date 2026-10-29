@@ -27,6 +27,8 @@ func (i *instance) mutation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.PathValue("kind") {
+	case "not_interested":
+		err = i.host.Experience.SetNotInterested(r.Context(), v, key, r.Method == "PUT")
 	case "watchlist":
 		err = i.host.Experience.SetWatchlist(r.Context(), v, key, r.Method == "PUT")
 	default:
@@ -49,7 +51,7 @@ func (i *instance) mutation(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 func (i *instance) mutationRoutes() error {
-	for _, e := range []struct{ method, path, kind string }{{"PUT", "/api/v2/watchlist/{id}", "watchlist"}, {"DELETE", "/api/v2/watchlist/{id}", "watchlist"}, {"PUT", "/api/v2/favorites/{id}", "favorite"}, {"DELETE", "/api/v2/favorites/{id}", "favorite"}, {"POST", "/api/v2/watched/{id}", "watched"}, {"DELETE", "/api/v2/watched/{id}", "watched"}} {
+	for _, e := range []struct{ method, path, kind string }{{"PUT", "/api/v2/not-interested/{id}", "not_interested"}, {"DELETE", "/api/v2/not-interested/{id}", "not_interested"}, {"PUT", "/api/v2/watchlist/{id}", "watchlist"}, {"DELETE", "/api/v2/watchlist/{id}", "watchlist"}, {"PUT", "/api/v2/favorites/{id}", "favorite"}, {"DELETE", "/api/v2/favorites/{id}", "favorite"}, {"POST", "/api/v2/watched/{id}", "watched"}, {"DELETE", "/api/v2/watched/{id}", "watched"}} {
 		kind := e.kind
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { r.SetPathValue("kind", kind); i.mutation(w, r) })
 		if err := i.router.Handle(e.method, e.path, handler); err != nil {

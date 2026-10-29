@@ -15,7 +15,19 @@ import (
 func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	id := ids.RatingKeyGUID(t.Key)
 	kind := map[frontend.MediaType]string{"movie": "movie", "show": "series", "season": "season", "episode": "episode"}[t.Type]
-	out := map[string]any{"content_id": id, "title": t.Title, "type": kind, "overview": t.Summary, "year": t.Year, "runtime": int(t.Runtime.Minutes()), "genres": nonNil(t.Genres), "keywords": nonNil(t.Keywords), "studios": nonNil(t.Studios), "rating_tmdb": t.Rating, "status": "matched", "user_state": map[string]any{"played": state.ViewCount > 0, "is_favorite": state.IsFavorite, "in_watchlist": state.InWatchlist, "not_interested": false}}
+	out := map[string]any{"content_id": id, "title": t.Title, "type": kind, "overview": t.Summary, "year": t.Year, "runtime": int(t.Runtime.Minutes()), "genres": nonNil(t.Genres), "keywords": nonNil(t.Keywords), "studios": nonNil(t.Studios), "rating_tmdb": t.Rating, "status": "matched", "user_state": map[string]any{"played": state.ViewCount > 0, "is_favorite": state.IsFavorite, "in_watchlist": state.InWatchlist, "not_interested": state.IsNotInterested}}
+	if t.ContentRating != "" {
+		out["content_rating"] = t.ContentRating
+	}
+	if t.Language != "" {
+		out["original_language"] = t.Language
+	}
+	if !t.Released.IsZero() {
+		out["release_date"] = t.Released.Format("2006-01-02")
+	}
+	if t.Type == "show" && t.Status != "" {
+		out["show_status"] = strings.ReplaceAll(strings.ToLower(t.Status), " ", "_")
+	}
 	if t.Type == "movie" || t.Type == "episode" {
 		out["play_content_id"] = id
 	}
@@ -168,6 +180,21 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := titleDTO(d.Title, d.UserData)
+	if d.Title.OriginalTitle != "" {
+		out["original_title"] = d.Title.OriginalTitle
+	}
+	if len(d.Title.Countries) > 0 {
+		out["countries"] = d.Title.Countries
+	}
+	if d.Title.IDs.TMDB > 0 {
+		out["tmdb_id"] = strconv.FormatInt(d.Title.IDs.TMDB, 10)
+	}
+	if d.Title.IDs.IMDB != "" {
+		out["imdb_id"] = d.Title.IDs.IMDB
+	}
+	if d.Title.IDs.TVDB > 0 {
+		out["tvdb_id"] = strconv.FormatInt(d.Title.IDs.TVDB, 10)
+	}
 	cast := make([]any, 0, len(d.Title.Cast))
 	for n, p := range d.Title.Cast {
 		cast = append(cast, map[string]any{"name": p.Name, "character": p.Role, "order": n})
@@ -183,6 +210,33 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	out["versions"] = []any{}
 	out["ratings"] = []any{}
 	out["subtitles"] = []any{}
+	if d.Title.Rating > 0 && d.Title.Rating <= 10 {
+		score := d.Title.Rating * 10
+		out["ratings"] = []any{map[string]any{"source": "tmdb", "name": "TMDB", "score": score, "display": strconv.FormatFloat(d.Title.Rating, 'f', 1, 64)}}
+		source := map[string]any{"source": "tmdb", "score": score}
+		if d.Title.VoteCount > 0 {
+			source["votes"] = d.Title.VoteCount
+		}
+		out["rating_sources"] = []any{source}
+	}
+	if d.Title.Type == "movie" || d.Title.Type == "episode" {
+		played := d.UserData.ViewCount > 0
+		watched, unplayed, inProgress := 0, 1, 0
+		if played {
+			watched, unplayed = 1, 0
+		}
+		if d.UserData.ViewOffset > 0 {
+			inProgress = 1
+		}
+		rollup := map[string]any{"played": played, "watched_count": watched, "unplayed_count": unplayed, "in_progress_count": inProgress, "is_in_progress": inProgress > 0}
+		if d.UserData.ViewOffset > 0 {
+			rollup["position_seconds"] = d.UserData.ViewOffset.Seconds()
+		}
+		if d.UserData.Duration > 0 {
+			rollup["duration_seconds"] = d.UserData.Duration.Seconds()
+		}
+		out["user_data"] = rollup
+	}
 	i.artwork(r, v, credential, key, out)
 	if i.host.Sessions != nil && i.host.Capabilities != nil {
 		dev := device(r)
@@ -201,6 +255,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				items := make([]any, 0, len(versions))
 				defaultID := ""
 				for _, version := range versions {
+					if !siloSourceHasKnownHDR10Plus(version.Media) {
+						continue
+					}
 					ref, _ := json.Marshal(fileReference{Key: int64(key), Version: version.ID})
 					file, e := i.host.IDs.Compact(r.Context(), "silo", "file", string(ref))
 					if e != nil {
@@ -217,6 +274,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 					}
 					resolution, video, audio := "", "", ""
 					hdr := false
+					audioTracks := []any{}
 					for _, stream := range version.Media.Streams {
 						if stream.Type == "video" {
 							video = stream.Codec
@@ -228,11 +286,48 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						if stream.Type == "audio" && audio == "" {
 							audio = stream.Codec
 						}
+						if stream.Type == "audio" {
+							track := map[string]any{"default": stream.Default}
+							if stream.Codec != "" {
+								track["codec"] = stream.Codec
+							}
+							if stream.Language != "" {
+								track["language"] = stream.Language
+							}
+							if stream.Title != "" {
+								track["title"] = stream.Title
+							}
+							if stream.Channels > 0 {
+								track["channels"] = stream.Channels
+							}
+							if stream.ChannelLayout != "" {
+								track["layout"] = stream.ChannelLayout
+							}
+							if stream.SampleRate > 0 {
+								track["sample_rate"] = stream.SampleRate
+							}
+							if stream.BitrateKbps > 0 {
+								track["bitrate"] = stream.BitrateKbps
+							}
+							if stream.BitDepth > 0 {
+								track["bit_depth"] = stream.BitDepth
+							}
+							if stream.Profile != "" {
+								track["profile"] = stream.Profile
+							}
+							audioTracks = append(audioTracks, track)
+						}
 					}
-					items = append(items, map[string]any{"file_id": id, "file_name": version.Name, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": version.Media.Container, "duration": int64(version.Media.Duration.Seconds()), "file_size": version.Media.Size, "bitrate": version.Media.BitrateKbps, "added_at": version.AddedAt.UTC().Format("2006-01-02T15:04:05.000Z")})
+					item := map[string]any{"file_id": id, "file_name": version.Name, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": version.Media.Container, "duration": int64(version.Media.Duration.Seconds()), "file_size": version.Media.Size, "bitrate": version.Media.BitrateKbps, "added_at": version.AddedAt.UTC().Format("2006-01-02T15:04:05.000Z")}
+					if len(audioTracks) > 0 {
+						item["audio_tracks"] = audioTracks
+					}
+					items = append(items, item)
 				}
 				out["versions"] = items
-				out["playback_variants"] = []any{map[string]any{"variant_id": "default", "default_file_id": defaultID, "part_count": 1, "parts": []any{map[string]any{"part_index": 1, "default_file_id": defaultID, "versions": items}}}}
+				if len(items) > 0 {
+					out["playback_variants"] = []any{map[string]any{"variant_id": "default", "default_file_id": defaultID, "part_count": 1, "parts": []any{map[string]any{"part_index": 1, "default_file_id": defaultID, "versions": items}}}}
+				}
 
 			}
 		}

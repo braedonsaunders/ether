@@ -130,3 +130,15 @@ func TestPlaybackCapacityProblem(t *testing.T) {
 		t.Fatalf("capacity %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestUnknownHDR10PlusOnlySuppressesPQ(t *testing.T) {
+	for _, tc := range []struct {
+		transfer string
+		want     bool
+	}{{"bt709", true}, {"arib-std-b67", true}, {"", true}, {"smpte2084", false}} {
+		media := frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: tc.transfer}}}
+		if got := siloSourceHasKnownHDR10Plus(media); got != tc.want {
+			t.Errorf("transfer %q: got %v", tc.transfer, got)
+		}
+	}
+}

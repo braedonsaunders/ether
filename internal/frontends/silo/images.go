@@ -14,6 +14,7 @@ func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential 
 	if err != nil || !detail.ImagesAuthoritative {
 		return
 	}
+	backdrops := []string{}
 	for _, img := range detail.Images {
 		field := map[string]string{"poster": "poster_url", "backdrop": "backdrop_url", "logo": "logo_url"}[img.Kind]
 		if field == "" || img.Path == "" {
@@ -27,7 +28,16 @@ func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential 
 		if r.Context().Value(sharedPrefix{}) != nil {
 			prefix = "/silo"
 		}
-		out[field] = prefix + "/api/v2/images/" + token
+		path := prefix + "/api/v2/images/" + token
+		if _, exists := out[field]; !exists {
+			out[field] = path
+		}
+		if img.Kind == "backdrop" {
+			backdrops = append(backdrops, path)
+		}
+	}
+	if r.PathValue("id") != "" && len(backdrops) > 0 {
+		out["backdrop_urls"] = backdrops
 	}
 }
 func (i *instance) imageRoutes() error {

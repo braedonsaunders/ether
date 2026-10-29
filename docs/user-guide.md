@@ -45,6 +45,9 @@ if that port is occupied, check the Apps page for the actual listening address.
 Add that address in the Silo app and sign in with an Ether viewer account, or
 approve the device's code in the viewer portal. A dash means the feature has
 not yet been verified on the named client.
+Settings beyond revision 8 are not supported.
+PQ video variants with unknown HDR10+ metadata are not offered until the
+server can determine that metadata; SDR and HLG variants remain available.
 
 | Client | Version | Browse | Play | Resume | Watched | Subtitles | Device pairing |
 | --- | --- | --- | --- | --- | --- | --- | --- |

@@ -18,6 +18,17 @@ type fileReference struct {
 	Version string `json:"version,omitempty"`
 }
 
+// A PQ stream can contain HDR10+ metadata that the current probe cannot yet
+// distinguish from absence. Non-PQ video cannot carry HDR10+.
+func siloSourceHasKnownHDR10Plus(media frontend.MediaInfo) bool {
+	for _, stream := range media.Streams {
+		if stream.Type == "video" && stream.ColorTransfer == "smpte2084" {
+			return false
+		}
+	}
+	return true
+}
+
 type startRequest struct {
 	Context struct {
 		Deliveries map[string]struct {
@@ -157,6 +168,10 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Playback unavailable", 503)
 		return
 	}
+	if !siloSourceHasKnownHDR10Plus(plan.Media) {
+		http.Error(w, "Source HDR metadata unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)
@@ -188,11 +203,14 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media = "/api/v2/stream/" + strings.TrimPrefix(media, "/sessions/media/")
-	source := map[string]any{"media_file_id": b.FileID, "duration_seconds": plan.Media.Duration.Seconds(), "container": plan.Media.Container, "bitrate_kbps": plan.Media.BitrateKbps, "hdr10_plus": false, "dv_enhancement_layer": "none"}
+	source := map[string]any{"media_file_id": b.FileID, "duration_seconds": plan.Media.Duration.Seconds(), "container": plan.Media.Container, "bitrate_kbps": plan.Media.BitrateKbps, "hdr10_plus": false, "dv_enhancement_layer": "unknown"}
 	recipe := map[string]any{"video_codec": plan.Decision.VideoCodec, "audio_codec": plan.Decision.AudioCodec, "bitrate_kbps": plan.Decision.BitrateKbps}
 	hdr10, hlg, dv := false, false, false
 	for _, s := range plan.Media.Streams {
 		if s.Type == "video" {
+			if s.DolbyVisionELPresent != nil && !*s.DolbyVisionELPresent {
+				source["dv_enhancement_layer"] = "none"
+			}
 			if plan.Decision.VideoCopy && !plan.Decision.ToneMap {
 				hdr10 = s.ColorTransfer == "smpte2084"
 				hlg = s.ColorTransfer == "arib-std-b67"
@@ -205,10 +223,56 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 			source["video_profile"] = s.Profile
 			source["video_level"] = s.Level
 			source["frame_rate"] = s.FrameRate
+			if s.ColorRange != "" {
+				source["color_range"] = s.ColorRange
+			}
+			rangeName := ""
+			switch {
+			case s.DolbyVision:
+				rangeName = "dolby_vision"
+			case s.ColorTransfer == "smpte2084":
+				rangeName = "hdr10"
+			case s.ColorTransfer == "arib-std-b67":
+				rangeName = "hlg"
+			case s.ColorTransfer == "bt709":
+				rangeName = "sdr"
+			}
+			if rangeName != "" {
+				source["dynamic_range"] = rangeName
+			}
+			if plan.Decision.VideoCopy {
+				if s.Width > 0 {
+					recipe["width"] = s.Width
+				}
+				if s.Height > 0 {
+					recipe["height"] = s.Height
+				}
+				if s.FrameRate > 0 {
+					recipe["frame_rate"] = s.FrameRate
+				}
+				if rangeName != "" {
+					recipe["dynamic_range"] = rangeName
+				}
+			} else if plan.Decision.ToneMap {
+				recipe["dynamic_range"] = "sdr"
+			}
 		}
 		if s.Type == "audio" && s.Index == plan.Decision.AudioStream {
 			source["audio_codec"] = s.Codec
 			source["audio_channels"] = s.Channels
+			if s.ChannelLayout != "" {
+				source["audio_layout"] = s.ChannelLayout
+			}
+			if plan.Decision.AudioCopy {
+				if s.Channels > 0 {
+					recipe["audio_channels"] = s.Channels
+				}
+				if s.ChannelLayout != "" {
+					recipe["audio_layout"] = s.ChannelLayout
+				}
+			} else if plan.Decision.AudioChannels > 0 {
+				recipe["audio_channels"] = plan.Decision.AudioChannels
+			}
 		}
 	}
 	selected := map[string]any{}
@@ -265,7 +329,14 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		timeline["player_start_seconds"] = 0
 		timeline["timeline_offset_seconds"] = b.Position
 	}
-	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": false, "hlg": hlg, "dolby_vision": dv}, "audio": map[string]any{"passthrough": false, "atmos_preserved": false}, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
+	audioClaim := map[string]any{"passthrough": false, "atmos_preserved": false}
+	if plan.Decision.AudioCodec != "" {
+		audioClaim["codec"] = plan.Decision.AudioCodec
+	}
+	if plan.Decision.Reason != "" {
+		audioClaim["reason"] = plan.Decision.Reason
+	}
+	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": false, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
 	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "session_id": session.ID, "playback_plan": output})
 }
 

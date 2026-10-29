@@ -5,13 +5,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
 func (i *instance) systemInfo(w http.ResponseWriter, r *http.Request) {
 	doc := i.openAPIDocument()
 	sum := sha256.Sum256(doc)
-	reply(w, 200, map[string]any{"server_version": "Ether", "api_major": 2, "contract_digest": hex.EncodeToString(sum[:]), "links": map[string]any{"openapi": "/api/v2/openapi.json", "capabilities": "/api/v2/capabilities", "identity": "/api/v2/system/identity"}})
+	data := map[string]any{"server_version": "Ether", "api_major": 2, "contract_digest": hex.EncodeToString(sum[:]), "links": map[string]any{"openapi": "/api/v2/openapi.json", "capabilities": "/api/v2/capabilities", "identity": "/api/v2/system/identity"}}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if origin, err := url.Parse(scheme + "://" + r.Host); err == nil && origin.Host != "" && origin.User == nil && origin.Path == "" && origin.RawQuery == "" && origin.Fragment == "" {
+		data["request_origin"] = origin.String()
+	}
+	reply(w, 200, data)
 }
 
 // openAPIDocument describes only Ether's implemented routes and never claims

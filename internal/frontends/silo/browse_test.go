@@ -15,10 +15,26 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
+func TestTitleDTOReportsKnownMetadata(t *testing.T) {
+	released := time.Date(2020, 2, 3, 0, 0, 0, 0, time.UTC)
+	item := titleDTO(frontend.Title{Key: 1000000000000001, Type: "movie", Title: "Example", Language: "fr", ContentRating: "PG", Released: released}, frontend.WatchStatus{IsNotInterested: true})
+	if item["original_language"] != "fr" || item["content_rating"] != "PG" || item["release_date"] != "2020-02-03" {
+		t.Fatalf("metadata: %+v", item)
+	}
+	if state := item["user_state"].(map[string]any); state["not_interested"] != true {
+		t.Fatalf("state: %+v", state)
+	}
+	unknown := titleDTO(frontend.Title{Key: 1000000000000002, Type: "movie", Title: "Unknown"}, frontend.WatchStatus{})
+	if _, ok := unknown["added_at"]; ok {
+		t.Fatal("invented added time")
+	}
+}
+
 func TestBrowseAndMutationsUseViewer(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 5}
 	key := frontend.RatingKey(1000000000000001)
 	var played frontend.RatingKey
+	var excluded bool
 	ident := frontendtest.Identity{ResolveFunc: func(_ context.Context, s string) (*frontend.Viewer, error) {
 		if s != "grant" {
 			return nil, errors.New("bad")
@@ -45,6 +61,12 @@ func TestBrowseAndMutationsUseViewer(t *testing.T) {
 			t.Fatal("viewer")
 		}
 		played = k
+		return nil
+	}, SetNotInterestedFunc: func(_ context.Context, v *frontend.Viewer, k frontend.RatingKey, on bool) error {
+		if v.ID != 5 || k != key {
+			t.Fatal("wrong exclusion owner or item")
+		}
+		excluded = on
 		return nil
 	}}
 	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
@@ -103,6 +125,15 @@ func TestBrowseAndMutationsUseViewer(t *testing.T) {
 	if w := call("POST", "/api/v2/watched/"+ids.RatingKeyGUID(key+1)); w.Code != 404 || played != key {
 		t.Fatalf("hidden item %d", w.Code)
 	}
+	if w := call("PUT", "/api/v2/not-interested/"+ids.RatingKeyGUID(key)); w.Code != 204 || !excluded {
+		t.Fatalf("exclude %d %v", w.Code, excluded)
+	}
+	if w := call("DELETE", "/api/v2/not-interested/"+ids.RatingKeyGUID(key)); w.Code != 204 || excluded {
+		t.Fatalf("undo %d %v", w.Code, excluded)
+	}
+	if w := call("PUT", "/api/v2/not-interested/"+ids.RatingKeyGUID(key+1)); w.Code != 404 || excluded {
+		t.Fatalf("hidden exclusion %d", w.Code)
+	}
 }
 
 func TestDetailWithEstimatedVersionSpec(t *testing.T) {
@@ -116,7 +147,7 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 		if !r.Intent.Estimate {
 			t.Fatal("resolved detail")
 		}
-		return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Container: "mp4"}}, nil
+		return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Container: "mp4", Streams: []frontend.StreamInfo{{Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true}}}}, nil
 	}}
 	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: sess, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
@@ -130,6 +161,9 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"audio_tracks"`) || !strings.Contains(w.Body.String(), `"language":"en"`) {
+		t.Fatalf("missing real audio tracks: %s", w.Body.String())
 	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", "")
 	if e == nil {
