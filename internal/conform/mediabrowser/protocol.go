@@ -415,7 +415,73 @@ func (p *Protocol) Compare(a, b conform.Response) conform.Report {
 	if a.Kind == "binary-range" || b.Kind == "binary-range" {
 		return conform.CompareBinary(a, b)
 	}
-	return conform.Compare(a, b)
+	report := conform.Compare(a, b)
+	if p.Dialect == "emby" && emptyEmbyReferenceAddresses(a, b) {
+		changed := false
+		for n := range report.Differences {
+			d := &report.Differences[n]
+			switch d.Path {
+			case "$/LocalAddress", "$/WanAddress", "$/LocalAddresses[]", "$/RemoteAddresses[]":
+				if d.Kind == conform.KindExtra {
+					d.Kind = conform.KindValue
+					d.Blocking = false
+					changed = true
+				}
+			}
+		}
+		if changed {
+			report.ReferenceDefects = append(report.ReferenceDefects, conform.ReferenceDefect{ID: "emby-lab-unconfigured-addresses", Detail: "The lab has no configured advertised addresses; a target may advertise reachable addresses.", Observed: "Emby 4.10.2 lab"})
+		}
+	}
+	return report
+}
+
+func emptyEmbyReferenceAddresses(a, b conform.Response) bool {
+	if a.Status != 200 || b.Status != 200 {
+		return false
+	}
+	var ref, target map[string]any
+	if json.Unmarshal(a.Body, &ref) != nil || json.Unmarshal(b.Body, &target) != nil {
+		return false
+	}
+	for _, m := range []map[string]any{ref, target} {
+		if _, ok := m["Id"].(string); !ok {
+			return false
+		}
+		if _, ok := m["ServerName"].(string); !ok {
+			return false
+		}
+		if _, ok := m["Version"].(string); !ok {
+			return false
+		}
+	}
+	for _, k := range []string{"LocalAddress", "WanAddress"} {
+		if v, ok := ref[k]; ok && v != nil && v != "" {
+			return false
+		}
+		v, ok := target[k].(string)
+		if !ok || v == "" {
+			return false
+		}
+	}
+	for _, k := range []string{"LocalAddresses", "RemoteAddresses"} {
+		if v, ok := ref[k]; ok && v != nil {
+			list, ok := v.([]any)
+			if !ok || len(list) != 0 {
+				return false
+			}
+		}
+		list, ok := target[k].([]any)
+		if !ok || len(list) == 0 {
+			return false
+		}
+		for _, v := range list {
+			if s, ok := v.(string); !ok || s == "" {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Redact removes credentials and host-specific values before fixture storage.

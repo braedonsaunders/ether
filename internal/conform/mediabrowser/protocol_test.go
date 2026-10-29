@@ -179,3 +179,18 @@ func TestKnownEmbySuffixDefectIsTruncated(t *testing.T) {
 		t.Fatal("hash did not cover bounded prefix")
 	}
 }
+
+func TestEmbyUnconfiguredReferenceAddresses(t *testing.T) {
+	p := &Protocol{Dialect: "emby"}
+	reference := conform.Response{Status: 200, Headers: http.Header{"Content-Type": []string{"application/json"}}, Body: []byte(`{"Id":"id","ServerName":"lab","Version":"4.10.2.0","LocalAddresses":[],"RemoteAddresses":[]}`)}
+	target := conform.Response{Status: 200, Headers: reference.Headers, Body: []byte(`{"Id":"id","ServerName":"ether","Version":"4.10.2.0","LocalAddress":"http://ether","WanAddress":"http://ether","LocalAddresses":["http://ether"],"RemoteAddresses":["http://ether"]}`)}
+	report := p.Compare(reference, target)
+	if report.Blocking() != 0 || len(report.ReferenceDefects) != 1 {
+		t.Fatal(report)
+	}
+	target.Body = []byte(`{"Id":"id","ServerName":"ether","Version":"4.10.2.0"}`)
+	report = p.Compare(reference, target)
+	if len(report.ReferenceDefects) != 0 {
+		t.Fatal("accepted missing target addresses", report)
+	}
+}
