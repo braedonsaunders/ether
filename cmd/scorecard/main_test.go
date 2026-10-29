@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -47,5 +48,25 @@ func TestMeasuresFirstByteSeparatelyFromBody(t *testing.T) {
 	m := measure(s.Client(), target{URL: s.URL}, 3, 1)
 	if m.Errors != 0 || m.TTFBP50 <= 0 || m.P50-m.TTFBP50 < 15 {
 		t.Fatalf("expected distinct first-byte and body timing: %+v", m)
+	}
+}
+
+func TestSchemaValidationChecksEachResponseAndBlocksWinner(t *testing.T) {
+	spec := []byte(`{"openapi":"3.0.3","paths":{"/Items/{id}":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object","required":["Id"],"properties":{"Id":{"type":"string"}}}}}}}}}}}`)
+	doc, err := openapi.Parse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	m := measureWithSchema(srv.Client(), target{URL: srv.URL, SpecPath: "/Items/123"}, 4, 2, doc)
+	if m.Errors != 0 || m.SchemaErrors != 4 {
+		t.Fatalf("missing required field was not counted: %+v", m)
+	}
+	if winner(measurement{}, m) != "inconclusive" {
+		t.Fatal("invalid response must not win latency")
 	}
 }

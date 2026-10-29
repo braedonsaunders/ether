@@ -102,3 +102,15 @@ targets to stop after at most that many body bytes; `completion_scope` records
 this explicitly. Use an explicit Range header when testing a bounded stream.
 First byte is an HTTP response measurement, not decoded first frame; a first HLS
 segment requires a separately configured segment request after negotiation.
+
+For full JSON response probes, set `spec_file` to the pinned OpenAPI JSON,
+`protocol` to `jellyfin` or `emby`, and each target's `spec_path` to the
+corresponding path in that spec (profile-based requests fill this automatically).
+Every successful response is checked against the documented status, content
+type and schema, including fields marked required; `schema_checked` and
+`schema_errors` distinguish checks from untested responses. Results with schema
+errors have an inconclusive latency winner. Validation occurs after the timed
+read and may affect throughput. It is a spec check, not evidence that every
+client's strict decoder has run; schemas may leave client-required fields
+optional. Bounded streaming responses cannot use this mode, and JSON responses
+larger than 16 MiB count as schema errors.

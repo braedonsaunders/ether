@@ -47,6 +47,9 @@ func profileScenario(s scenario) (scenario, error) {
 			return scenario{}, e
 		}
 		dst.URL = strings.TrimRight(dst.URL, "/") + path
+		if dst.SpecPath == "" {
+			dst.SpecPath = path
+		}
 		headers := map[string]string{}
 		for k, v := range p.Headers {
 			value, e := expandProfileHeader(v, dst.Variables)
