@@ -58,6 +58,34 @@ func TestAdjacentChildrenRespectPolicyAndSeriesOrder(t *testing.T) {
 	if err != nil || page.Total != 3 {
 		t.Fatalf("normal query %+v %v", page, err)
 	}
+	q.StartAt = episodes[2].Key
+	q.Limit = 1
+	page, err = s.Children(ctx, v, core.Device{}, show.Key, q)
+	if err != nil || page.Total != 2 || len(page.Items) != 1 || page.Items[0].Key != episodes[2].Key {
+		t.Fatalf("inclusive start %+v %v", page, err)
+	}
+	q.Offset = 1
+	page, err = s.Children(ctx, v, core.Device{}, show.Key, q)
+	if err != nil || page.Total != 2 || len(page.Items) != 1 || page.Items[0].Key != episodes[3].Key {
+		t.Fatalf("inclusive start next page %+v %v", page, err)
+	}
+	q.StartAt = episodes[1].Key
+	if _, err = s.Children(ctx, v, core.Device{}, show.Key, q); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("hidden start %v", err)
+	}
+	q.StartAt = core.EpisodeKey(2, 1, 1)
+	if _, err = s.Children(ctx, v, core.Device{}, show.Key, q); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("other show's start %v", err)
+	}
+	q.StartAt = episodes[2].Key
+	q.Season = &season
+	if _, err = s.Children(ctx, v, core.Device{}, show.Key, q); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("filtered start %v", err)
+	}
+	q.AdjacentTo = episodes[0].Key
+	if _, err = s.Children(ctx, v, core.Device{}, show.Key, q); err == nil {
+		t.Fatal("conflicting anchors accepted")
+	}
 }
 
 func TestAdjacentLibraryFiltersAndSortsBeforeSelection(t *testing.T) {

@@ -122,6 +122,9 @@ func (s *Service) Views(ctx context.Context, viewer *core.Viewer) ([]frontend.Vi
 
 // LibraryItems scans catalogue pages and filters before applying the requested page.
 func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device core.Device, viewID string, q frontend.ItemQuery) (core.Page, error) {
+	if q.StartAt != 0 && q.AdjacentTo != 0 {
+		return core.Page{}, errors.New("experience: incompatible item anchors")
+	}
 	v, err := s.viewer(ctx, viewer)
 	if err != nil {
 		return core.Page{}, err
@@ -139,6 +142,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		inner.Offset = 0
 		inner.Limit = 0
 		inner.AdjacentTo = 0
+		inner.StartAt = 0
 		inner.Sort = ""
 		inner.Desc = false
 		for _, lib := range s.d.Libraries {
@@ -156,6 +160,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		}
 		if q.AdjacentTo != 0 {
 			return adjacentTitles(all, q)
+		}
+		if q.StartAt != 0 {
+			return startingTitles(all, q)
 		}
 		total := len(all)
 		start := min(max(q.Offset, 0), total)
@@ -190,6 +197,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			}
 		}
 		if !possible {
+			if q.StartAt != 0 || q.AdjacentTo != 0 {
+				return core.Page{}, core.ErrNotFound
+			}
 			return core.Page{Items: []core.Title{}, Total: 0}, nil
 		}
 	}
@@ -259,6 +269,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	}
 	if q.AdjacentTo != 0 {
 		return adjacentTitles(permitted, q)
+	}
+	if q.StartAt != 0 {
+		return startingTitles(permitted, q)
 	}
 	total := len(permitted)
 	start := min(max(q.Offset, 0), total)
@@ -394,6 +407,9 @@ func (s *Service) AuthorizeArtwork(ctx context.Context, viewer *core.Viewer, dev
 	return v, nil
 }
 func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
+	if q.StartAt != 0 && q.AdjacentTo != 0 {
+		return core.Page{}, errors.New("experience: incompatible item anchors")
+	}
 	v, err := s.viewer(ctx, viewer)
 	if err != nil {
 		return core.Page{}, err
@@ -432,6 +448,9 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 		}
 		if q.AdjacentTo != 0 {
 			return adjacentTitles(items, q)
+		}
+		if q.StartAt != 0 {
+			return startingTitles(items, q)
 		}
 		total := len(items)
 		start := min(max(q.Offset, 0), total)
@@ -474,6 +493,9 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 	}
 	if q.AdjacentTo != 0 {
 		return adjacentTitles(out, q)
+	}
+	if q.StartAt != 0 {
+		return startingTitles(out, q)
 	}
 	total := len(out)
 	start := min(max(q.Offset, 0), total)

@@ -173,7 +173,11 @@ type ItemRequest struct {
 }
 type ItemQuery struct {
 	// AdjacentTo selects the anchor and its immediately neighboring visible items.
-	AdjacentTo    core.RatingKey
+	AdjacentTo core.RatingKey
+	// StartAt selects an inclusive starting item after authorization, filtering
+	// and ordering. Offset and Limit apply to the resulting suffix. It cannot
+	// be combined with AdjacentTo; an absent or filtered anchor is not found.
+	StartAt       core.RatingKey
 	Offset, Limit int
 	Sort          core.SortOrder
 	Desc          bool
