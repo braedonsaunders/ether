@@ -22,7 +22,7 @@ import (
 )
 
 // Run with a locally forwarded, loopback-only scorecard listener:
-// LAB_ENV=/path/to/lab.env LAB_JELLYFIN_URL=http://reference:8096 SCORECARD_URL=http://127.0.0.1:18196 SCORECARD_MANIFEST=/path/to/scorecard-files.json go test -tags conformlab ./internal/conform/mediabrowser -run TestLabPlaybackDecisions -count=1 -v
+// LAB_ENV=/path/to/lab.env LAB_JELLYFIN_URL=http://reference:8096 SCORECARD_URL=http://127.0.0.1:18196 SCORECARD_ORIGIN=http://127.0.0.1:18096 SCORECARD_MANIFEST=/path/to/scorecard-files.json go test -tags conformlab ./internal/conform/mediabrowser -run TestLabPlaybackDecisions -count=1 -v
 // The manifest is private fixture input. No credentials or media paths are logged.
 func TestLabPlaybackDecisions(t *testing.T) {
 	envPath, refBase, targetBase, manifest := os.Getenv("LAB_ENV"), os.Getenv("LAB_JELLYFIN_URL"), os.Getenv("SCORECARD_URL"), os.Getenv("SCORECARD_MANIFEST")
