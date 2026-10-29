@@ -15,6 +15,14 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
+func TestItemDoesNotAdvertiseUnsupportedDeleteOrDownload(t *testing.T) {
+	i := &instance{protocol: "jellyfin"}
+	item := i.itemDTO(frontend.Title{Key: 5, Type: "movie"}, frontend.WatchStatus{})
+	if item["CanDelete"] != false || item["CanDownload"] != false {
+		t.Fatal(item)
+	}
+}
+
 func TestBrowseUsesExperienceAndValidatesSpec(t *testing.T) {
 	user := &frontend.Viewer{ID: 7, Username: "viewer"}
 	title := frontend.Title{Key: 5, Type: "movie", Title: "A", Runtime: time.Minute}
