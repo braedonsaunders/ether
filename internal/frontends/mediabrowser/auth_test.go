@@ -42,6 +42,17 @@ func TestEmbyUserCreationDateIsIdentityOwned(t *testing.T) {
 	}
 }
 
+func TestUserHiddenPolicyMatchesPublicPicker(t *testing.T) {
+	yes := true
+	i := &instance{protocol: "jellyfin", host: frontend.Host{Config: func() frontend.Settings { return frontend.Settings{"publicViewerPicker": true} }, ViewerCapabilities: func(context.Context, *frontend.Viewer, frontend.Device, netip.Addr) (frontend.ViewerCapabilities, error) {
+		return frontend.ViewerCapabilities{HasLocalPassword: &yes}, nil
+	}}}
+	got := i.userDTO(httptest.NewRequest("GET", "/Users/Me", nil), &frontend.Viewer{ID: 1})
+	if got["Policy"].(map[string]any)["IsHidden"] != false {
+		t.Fatal(got)
+	}
+}
+
 func TestSessionCapabilitiesRoundTrip(t *testing.T) {
 	v := &frontend.Viewer{ID: 9, Username: "viewer"}
 	var saved frontend.SessionCapabilities
@@ -310,6 +321,9 @@ func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
 	}
 	if result.Policy["EnableContentDownloading"] != false {
 		t.Fatal("MediaBrowser downloads are not supported")
+	}
+	if result.Policy["IsHidden"] != true || result.Policy["EnableRemoteControlOfOtherUsers"] != false {
+		t.Fatal(result.Policy)
 	}
 	if result.Policy["EnableMediaPlayback"] != false || result.Policy["EnableAudioPlaybackTranscoding"] != true || result.Policy["EnablePlaybackRemuxing"] != true || result.Policy["MaxActiveSessions"] != float64(3) || len(result.Policy["BlockedTags"].([]any)) != 1 {
 		t.Fatal(result.Policy)

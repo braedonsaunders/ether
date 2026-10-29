@@ -88,14 +88,16 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	// omits `required`. Unsupported features are false; the broker and host
 	// remain authoritative for every actual operation.
 	policy := map[string]any{
-		"IsAdministrator": v.IsOwner && !v.Delegated, "IsHidden": false, "IsDisabled": false,
-		"EnableUserPreferenceAccess": i.host.Preferences != nil, "EnableRemoteControlOfOtherUsers": v.IsOwner && !v.Delegated,
+		"IsAdministrator": v.IsOwner && !v.Delegated, "IsHidden": true, "IsDisabled": false,
+		"EnableCollectionManagement": false, "EnableSubtitleManagement": false, "EnableLyricManagement": false,
+		"EnableUserPreferenceAccess": i.host.Preferences != nil, "EnableRemoteControlOfOtherUsers": false,
 		"EnableSharedDeviceControl": false, "EnableRemoteAccess": false, "EnableLiveTvManagement": false, "EnableLiveTvAccess": false,
 		"EnableMediaPlayback": i.host.Sessions != nil, "EnablePlaybackRemuxing": i.host.Sessions != nil,
 		// The host's configured playback policy overrides these defaults below.
 		"EnableAudioPlaybackTranscoding": i.host.Sessions != nil, "EnableVideoPlaybackTranscoding": i.host.Sessions != nil,
 		"ForceRemoteSourceTranscoding": false, "EnableContentDeletion": false, "EnableContentDownloading": false,
 		"EnableSyncTranscoding": false, "EnableMediaConversion": false, "EnableAllDevices": true, "EnableAllChannels": true,
+		"EnabledDevices": []string{}, "EnabledChannels": []string{}, "EnableContentDeletionFromFolders": []string{}, "AllowedTags": []string{}, "BlockedTags": []string{},
 		"EnableAllFolders": len(v.AllowedSections) == 0, "InvalidLoginAttemptCount": 0, "LoginAttemptsBeforeLockout": -1,
 		"MaxActiveSessions": v.StreamLimit, "EnablePublicSharing": false, "RemoteClientBitrateLimit": 0,
 		"AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "SyncPlayAccess": "None",
@@ -107,6 +109,7 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	configuration := map[string]any{"PlayDefaultAudioTrack": true, "DisplayMissingEpisodes": false, "GroupedFolders": []string{}, "SubtitleMode": "Default", "DisplayCollectionsView": false, "EnableLocalPassword": false, "OrderedViews": []string{}, "LatestItemsExcludes": []string{}, "MyMediaExcludes": []string{}, "HidePlayedInLatest": true, "RememberAudioSelections": true, "RememberSubtitleSelections": true, "EnableNextEpisodeAutoPlay": true}
 	if len(v.AudioLanguages) > 0 {
 		configuration["AudioLanguagePreference"] = v.AudioLanguages[0]
+		configuration["PlayDefaultAudioTrack"] = false
 	}
 	if len(v.SubtitleLanguages) > 0 {
 		configuration["SubtitleLanguagePreference"] = v.SubtitleLanguages[0]
@@ -120,7 +123,7 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 		}
 	}
 	if i.protocol == "emby" {
-		for _, key := range []string{"ForceRemoteSourceTranscoding", "LoginAttemptsBeforeLockout", "MaxActiveSessions", "PasswordResetProviderId", "SyncPlayAccess"} {
+		for _, key := range []string{"AllowedTags", "EnableCollectionManagement", "EnableLyricManagement", "ForceRemoteSourceTranscoding", "LoginAttemptsBeforeLockout", "MaxActiveSessions", "PasswordResetProviderId", "SyncPlayAccess"} {
 			delete(policy, key)
 		}
 		policy["SimultaneousStreamLimit"] = v.StreamLimit
@@ -183,6 +186,11 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	if caps.HasLocalPassword != nil {
 		result["HasPassword"] = *caps.HasLocalPassword
 		result["HasConfiguredPassword"] = *caps.HasLocalPassword
+		if i.host.Config != nil {
+			if enabled, ok := i.host.Config()["publicViewerPicker"].(bool); ok && enabled && *caps.HasLocalPassword {
+				policy["IsHidden"] = false
+			}
+		}
 	}
 	if caps.AllowedLibraries != nil {
 		folders := make([]string, 0, len(*caps.AllowedLibraries))
