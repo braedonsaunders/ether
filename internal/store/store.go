@@ -321,6 +321,11 @@ func registered() []migration {
 		}
 		groups[m.component] = append(groups[m.component], m)
 	}
+	for component := range deps {
+		if _, ok := groups[component]; !ok {
+			panic("store: migration dependencies declared for missing component " + component)
+		}
+	}
 	state := make(map[string]uint8, len(groups))
 	ordered := make([]migration, 0, len(ms))
 	var visit func(string)
