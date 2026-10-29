@@ -74,3 +74,29 @@ it("uses the portal grant to update the viewer's Plex favourites playlist", asyn
   )!;
   expect(JSON.parse(String(options?.body))).toEqual({ enabled: false });
 });
+
+it("uses the viewer grant to opt into favourite episode alerts", async () => {
+  sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/favorite-episode-alert")) {
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
+      return new Response(JSON.stringify({ enabled: init?.method === "POST" }));
+    }
+    if (url.endsWith("/favorites-mirror")) return new Response(JSON.stringify({ enabled: false }));
+    if (url.endsWith("/identities")) return new Response(JSON.stringify({ identities: [] }));
+    if (url.endsWith("/devices")) return new Response(JSON.stringify({ devices: [] }));
+    return new Response(JSON.stringify({ id: 1, username: "alice" }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Me />);
+  const toggle = await screen.findByRole("switch", { name: "New episodes from favourite shows" });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  expect(toggle).not.toBeChecked();
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle).toBeChecked());
+  const [, options] = fetchMock.mock.calls.find(
+    ([url, init]) => url.endsWith("/favorite-episode-alert") && init?.method === "POST",
+  )!;
+  expect(JSON.parse(String(options?.body))).toEqual({ enabled: true });
+  expect((options?.headers as Record<string, string>)["X-Ether-Request"]).toBe("1");
+});

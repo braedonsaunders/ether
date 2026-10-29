@@ -3,14 +3,21 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsaunders/appkit-ui";
 import SignInMethods from "./SignInMethods";
 import { FavoritesMirror } from "./FavoritesMirror";
+import { FavoriteEpisodeAlerts } from "./FavoriteEpisodeAlerts";
+import { ViewerPush } from "./ViewerPush";
 import { EtherLogo } from "../../components/brand";
 
 const SESSION_KEY = "ether.viewerPortal";
 type Viewer = { id: number; username?: string; title?: string };
 
-async function request<T>(path: string, token: string, body?: unknown): Promise<T> {
+async function request<T>(
+  path: string,
+  token: string,
+  body?: unknown,
+  method?: "POST" | "PUT" | "DELETE",
+): Promise<T> {
   const res = await fetch(`/ether/api/me${path}`, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { "Content-Type": "application/json", "X-Ether-Request": "1" }),
@@ -86,6 +93,37 @@ export default function Me() {
   );
   const saveFavorites = useCallback(
     (enabled: boolean) => request("/favorites-mirror", token, { enabled }),
+    [token],
+  );
+  const loadAlerts = useCallback(
+    () => request<{ enabled: boolean }>("/favorite-episode-alert", token),
+    [token],
+  );
+  const saveAlerts = useCallback(
+    (enabled: boolean) => request("/favorite-episode-alert", token, { enabled }),
+    [token],
+  );
+  const getPushKey = useCallback(
+    () => request<{ publicKey: string }>("/alerts/push/key", token),
+    [token],
+  );
+  const pushStatus = useCallback(
+    (endpoint: string) =>
+      request<{ registered: boolean }>("/alerts/push/status", token, { endpoint }),
+    [token],
+  );
+  const pushSubscribe = useCallback(
+    (subscription: PushSubscriptionJSON) =>
+      request(
+        "/alerts/push/subscription",
+        token,
+        { endpoint: subscription.endpoint, keys: subscription.keys },
+        "PUT",
+      ),
+    [token],
+  );
+  const pushRemove = useCallback(
+    (endpoint: string) => request("/alerts/push/subscription", token, { endpoint }, "DELETE"),
     [token],
   );
 
@@ -249,6 +287,13 @@ export default function Me() {
               </Button>
             </form>
             <FavoritesMirror load={loadFavorites} save={saveFavorites} />
+            <FavoriteEpisodeAlerts load={loadAlerts} save={saveAlerts} />
+            <ViewerPush
+              getKey={getPushKey}
+              status={pushStatus}
+              subscribe={pushSubscribe}
+              remove={pushRemove}
+            />
             <SignInMethods base="/me" token={token} />
             <Button
               variant="outline"

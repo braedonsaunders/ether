@@ -19,6 +19,7 @@ import { viewerName } from "../../components/pickers";
 import { t, tn } from "../../i18n";
 import SignInMethods from "../me/SignInMethods";
 import { FavoritesMirror } from "../me/FavoritesMirror";
+import { FavoriteEpisodeAlerts } from "../me/FavoriteEpisodeAlerts";
 import { getToken } from "../../lib/api";
 import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer, ViewerDetail } from "../../lib/contract";
@@ -34,7 +35,16 @@ import { ViewerPlayback } from "./ViewerPlayback";
 import { Membership } from "./ManageViewers";
 import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
-const TABS = ["taste", "activity", "home", "access", "playback", "watchlist", "sign-in"] as const;
+const TABS = [
+  "taste",
+  "activity",
+  "home",
+  "access",
+  "playback",
+  "watchlist",
+  "alerts",
+  "sign-in",
+] as const;
 type Tab = (typeof TABS)[number];
 function asTab(raw: string | undefined): Tab | undefined {
   return raw && (TABS as readonly string[]).includes(raw) ? (raw as Tab) : undefined;
@@ -59,6 +69,10 @@ export default function ViewerProfile() {
         method: "POST",
         body: JSON.stringify({ enabled }),
       }),
+    [id],
+  );
+  const loadAlerts = useCallback(
+    () => apiFetch<{ enabled: boolean }>(`/viewers/${id}/favorite-episode-alert`),
     [id],
   );
 
@@ -145,6 +159,7 @@ export default function ViewerProfile() {
             { key: "access", label: t("Limits & preferences") },
             { key: "playback", label: t("Audio & subtitles") },
             { key: "watchlist", label: t("Watchlist") },
+            { key: "alerts", label: t("Alerts") },
             { key: "sign-in", label: t("Sign-in methods & devices") },
           ]}
         />
@@ -166,6 +181,8 @@ export default function ViewerProfile() {
         <ViewerAccess key={id} viewer={v} />
       ) : tab === "playback" ? (
         <ViewerPlayback key={id} viewer={v} />
+      ) : tab === "alerts" ? (
+        <FavoriteEpisodeAlerts load={loadAlerts} />
       ) : tab === "sign-in" ? (
         <div className="space-y-6">
           {!v.isOwner ? (
