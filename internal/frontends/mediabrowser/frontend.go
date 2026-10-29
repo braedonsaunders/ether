@@ -23,26 +23,22 @@ func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 	}
 	sum := sha256.Sum256([]byte("ether:jellyfin:" + f.MachineID))
 	info := PublicInfo{ID: hex.EncodeToString(sum[:16]), ServerName: "Ether", Version: "12.4.0", ProductName: "Jellyfin Server"}
-	settings := frontend.Settings{}
-	if host.Config != nil {
-		settings = host.Config()
-	}
-	if s, ok := settings["serverName"].(string); ok && s != "" {
-		info.ServerName = s
-	}
-	port := 8096
-	if n, ok := settings["port"].(float64); ok && n > 0 && n <= 65535 {
-		port = int(n)
-	}
 	r := &route.Router{}
-	if err := PublicRoutes(r, info); err != nil {
+	if err := publicRoutes(r, func() PublicInfo {
+		cfg := frontend.Settings{}
+		if host.Config != nil {
+			cfg = host.Config()
+		}
+		current := info
+		name, ok := cfg["serverName"].(string)
+		if ok && name != "" {
+			current.ServerName = name
+		}
+		return current
+	}); err != nil {
 		return nil, err
 	}
-	enabled := true
-	if configured, ok := settings["discovery"].(bool); ok {
-		enabled = configured
-	}
-	inst := &instance{host: host, info: info, router: r, port: port, discoveryEnabled: enabled}
+	inst := &instance{host: host, info: info, router: r, port: 8096}
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err
 	}
@@ -59,22 +55,41 @@ func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 }
 
 type instance struct {
-	host             frontend.Host
-	info             PublicInfo
-	router           *route.Router
-	port             int
-	discoveryEnabled bool
+	host   frontend.Host
+	info   PublicInfo
+	router *route.Router
+	port   int
 }
 
 func (i *instance) Handler() http.Handler { return StripPrefix("/jellyfin", i.router) }
 func (i *instance) Listeners() []frontend.ListenerSpec {
-	return []frontend.ListenerSpec{{Address: fmt.Sprintf(":%d", i.port)}, {Shared: true, PathPrefix: "/jellyfin"}}
+	settings := frontend.Settings{}
+	if i.host.Config != nil {
+		settings = i.host.Config()
+	}
+	port := 8096
+	if n, ok := settings["port"].(float64); ok && n > 0 && n <= 65535 {
+		port = int(n)
+	}
+	return []frontend.ListenerSpec{{Address: fmt.Sprintf(":%d", port)}, {Shared: true, PathPrefix: "/jellyfin"}}
 }
 func (i *instance) Discovery() []frontend.Announcer {
-	if i.discoveryEnabled {
-		return []frontend.Announcer{&discovery{info: i.info, port: i.port, listenPort: 7359}}
+	settings := frontend.Settings{}
+	if i.host.Config != nil {
+		settings = i.host.Config()
 	}
-	return nil
+	if enabled, ok := settings["discovery"].(bool); ok && !enabled {
+		return nil
+	}
+	port := 8096
+	if n, ok := settings["port"].(float64); ok && n > 0 && n <= 65535 {
+		port = int(n)
+	}
+	info := i.info
+	if name, ok := settings["serverName"].(string); ok && name != "" {
+		info.ServerName = name
+	}
+	return []frontend.Announcer{&discovery{info: info, port: port, listenPort: 7359}}
 }
 func (i *instance) Status(context.Context) frontend.Status {
 	return frontend.Status{TargetVersion: i.info.Version, Conformance: "in progress"}

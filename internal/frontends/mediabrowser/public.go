@@ -21,11 +21,23 @@ type PublicInfo struct {
 // A user picker is intentionally not exposed until the host can supply its
 // authorized list of visible viewers.
 func PublicRoutes(r *route.Router, info PublicInfo) error {
+	return publicRoutes(r, func() PublicInfo { return info })
+}
+func publicRoutes(r *route.Router, getInfo func() PublicInfo) error {
 	handlers := []struct {
 		method, path string
 		handler      http.HandlerFunc
 	}{
-		{"GET", "/System/Info/Public", func(w http.ResponseWriter, _ *http.Request) {
+		{"GET", "/System/Info/Public", func(w http.ResponseWriter, r *http.Request) {
+			info := getInfo()
+			address := info.LocalAddress
+			if address == "" && r.Host != "" {
+				scheme := "http"
+				if r.TLS != nil {
+					scheme = "https"
+				}
+				address = scheme + "://" + r.Host
+			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(struct {
 				ID                     string `json:"Id"`
@@ -35,7 +47,7 @@ func PublicRoutes(r *route.Router, info PublicInfo) error {
 				ProductName            string `json:"ProductName"`
 				OperatingSystem        string `json:"OperatingSystem"`
 				StartupWizardCompleted bool   `json:"StartupWizardCompleted"`
-			}{info.ID, info.ServerName, info.LocalAddress, info.Version, info.ProductName, "", true})
+			}{info.ID, info.ServerName, address, info.Version, info.ProductName, "", true})
 		}},
 		{"GET", "/Branding/Configuration", func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, map[string]any{}) }},
 		{"POST", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, "Jellyfin Server") }},
