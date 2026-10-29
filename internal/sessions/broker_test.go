@@ -273,10 +273,14 @@ func TestBrokerSegmentedMedia(t *testing.T) {
 		}
 		return w.Body.String()
 	}
-	if got := fetch(hls); !strings.Contains(got, "00000.ts") {
+	if got := fetch(hls); !strings.Contains(got, "base/index.m3u8") {
+		t.Fatalf("master %q", got)
+	}
+	baseHLS := strings.TrimSuffix(hls, "master.m3u8") + "base/"
+	if got := fetch(baseHLS + "index.m3u8"); !strings.Contains(got, "00000.ts") {
 		t.Fatalf("playlist %q", got)
 	}
-	if got := fetch(strings.TrimSuffix(hls, "index.m3u8") + "00000.ts"); got != "segment-0" {
+	if got := fetch(baseHLS + "00000.ts"); got != "segment-0" {
 		t.Fatalf("segment %q", got)
 	}
 	dash, err := broker.StartStream(ctx, access, s.ID, frontend.StreamRequest{Format: frontend.StreamDASH})
@@ -368,5 +372,90 @@ func TestBrokerSupersededReportCannotStopReplacement(t *testing.T) {
 	}
 	if err := b.Stop(ctx, a, current.ID); err != nil {
 		t.Fatalf("idempotent stop: %v", err)
+	}
+}
+
+type fakeLadderSession struct{ fakeMediaSession }
+
+func (s *fakeLadderSession) Rungs() []core.HLSRung {
+	return []core.HLSRung{{ID: "base", Bandwidth: 2000000, Width: 1280, Height: 720}, {ID: "low", Bandwidth: 500000, Width: 640, Height: 360}}
+}
+func (s *fakeLadderSession) ServeRungPlaylist(w http.ResponseWriter, _ *http.Request, rung string) {
+	_, _ = fmt.Fprintf(w, "#EXTM3U\n# %s\n00000.ts\n", rung)
+}
+func (s *fakeLadderSession) ServeRungSegment(w http.ResponseWriter, _ *http.Request, rung string, n int) {
+	_, _ = fmt.Fprintf(w, "%s-%d", rung, n)
+}
+
+type fakeLadderTranscoder struct {
+	fakeMediaTranscoder
+	ladder *fakeLadderSession
+}
+
+func (f *fakeLadderTranscoder) StartHLS(_ context.Context, r core.HLSRequest) (core.HLSSession, error) {
+	f.ladder = &fakeLadderSession{fakeMediaSession: fakeMediaSession{id: r.SessionID}}
+	return f.ladder, nil
+}
+func (f *fakeLadderTranscoder) Session(id string) (core.HLSSession, bool) {
+	if f.ladder != nil && f.ladder.id == id {
+		return f.ladder, true
+	}
+	return nil, false
+}
+func (f *fakeLadderTranscoder) Stop(id string) {
+	if f.ladder != nil && f.ladder.id == id {
+		f.ladder = nil
+	}
+}
+func TestBrokerHLSLadder(t *testing.T) {
+	ctx := context.Background()
+	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 1}
+	tc := &fakeLadderTranscoder{}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	b, err := NewBroker(BrokerDeps{Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, Playback: p, Transcoder: tc, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := &core.Viewer{ID: 2}
+	device := core.Device{ID: "tv"}
+	plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := b.StartStream(ctx, frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: "jellyfin"}, session.ID, frontend.StreamRequest{Format: frontend.StreamHLS})
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		b.ServeMedia(w, httptest.NewRequest(http.MethodGet, path, nil))
+		return w
+	}
+	master := get(path)
+	if master.Code != 200 || !strings.Contains(master.Body.String(), "base/index.m3u8") || !strings.Contains(master.Body.String(), "low/index.m3u8") {
+		t.Fatalf("master %d %q", master.Code, master.Body.String())
+	}
+	base := strings.TrimSuffix(path, "master.m3u8")
+	if got := get(base + "low/index.m3u8"); got.Code != 200 || !strings.Contains(got.Body.String(), "# low") {
+		t.Fatalf("low playlist %d %q", got.Code, got.Body.String())
+	}
+	if got := get(base + "low/00000.ts"); got.Code != 200 || got.Body.String() != "low-0" {
+		t.Fatalf("low segment %d %q", got.Code, got.Body.String())
+	}
+	if got := get(base + "unknown/00000.ts"); got.Code != 404 {
+		t.Fatalf("unknown rung %d", got.Code)
+	}
+	head := httptest.NewRecorder()
+	b.ServeMedia(head, httptest.NewRequest(http.MethodHead, path, nil))
+	if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Length") == "" {
+		t.Fatalf("HEAD %d %q", head.Code, head.Body.String())
 	}
 }

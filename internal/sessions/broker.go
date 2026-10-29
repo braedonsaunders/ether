@@ -53,8 +53,7 @@ type brokerSession struct {
 }
 
 // Broker coordinates neutral sessions with the shared playback admission manager.
-// Follow-up work: scoped subtitle extraction, HLS master/ladder playlists, and
-// cluster-wide session listing and stop are not yet implemented here.
+// Follow-up work: scoped subtitle extraction and cluster-wide session listing and stop are not yet implemented here.
 // Plex's legacy timeline tracker is not yet included in Sessions; owner
 // Activity continues to use the shared playback manager until that move lands.
 type Broker struct {

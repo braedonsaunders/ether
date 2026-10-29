@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -61,7 +62,7 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 					return path + "manifest.mpd", nil
 				}
 			} else {
-				return path + "index.m3u8", nil
+				return path + "master.m3u8", nil
 			}
 		}
 	}
@@ -118,7 +119,7 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	if req.Format == frontend.StreamDASH {
 		return path + "manifest.mpd", nil
 	}
-	return path + "index.m3u8", nil
+	return path + "master.m3u8", nil
 }
 
 // ServeMedia validates a session-scoped capability on every request.
@@ -186,14 +187,47 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, w http.ResponseWriter, r
 		http.NotFound(w, r)
 		return
 	}
-	if s.format == frontend.StreamHLS && len(tail) == 1 {
-		if tail[0] == "index.m3u8" {
-			hs.ServePlaylist(w, r)
+	if s.format == frontend.StreamHLS {
+		if len(tail) == 1 && tail[0] == "master.m3u8" {
+			b.serveMaster(w, r, s, hs)
 			return
 		}
-		if n, ok := transcode.ParseSegmentName(tail[0]); ok {
-			hs.ServeSegment(w, r, n)
-			return
+		// Keep the initial single-variant URLs working for already-open clients.
+		if len(tail) == 1 {
+			if tail[0] == "index.m3u8" {
+				hs.ServePlaylist(w, r)
+				return
+			}
+			if n, ok := transcode.ParseSegmentName(tail[0]); ok {
+				hs.ServeSegment(w, r, n)
+				return
+			}
+		}
+		if len(tail) == 2 {
+			rung, name := tail[0], tail[1]
+			if ls, ok := hs.(core.HLSLadderSession); ok {
+				for _, candidate := range ls.Rungs() {
+					if candidate.ID == rung && validRung(rung) {
+						if name == "index.m3u8" {
+							ls.ServeRungPlaylist(w, r, rung)
+							return
+						}
+						if n, ok := transcode.ParseSegmentName(name); ok {
+							ls.ServeRungSegment(w, r, rung, n)
+							return
+						}
+					}
+				}
+			} else if rung == "base" {
+				if name == "index.m3u8" {
+					hs.ServePlaylist(w, r)
+					return
+				}
+				if n, ok := transcode.ParseSegmentName(name); ok {
+					hs.ServeSegment(w, r, n)
+					return
+				}
+			}
 		}
 	}
 	if s.format == frontend.StreamDASH {
@@ -221,6 +255,74 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, w http.ResponseWriter, r
 		}
 	}
 	http.NotFound(w, r)
+}
+
+func validRung(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func (b *Broker) serveMaster(w http.ResponseWriter, r *http.Request, s *brokerSession, hs core.HLSSession) {
+	ps, ok := b.deps.Playback.Session(s.playID)
+	if !ok || ps == nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body strings.Builder
+	body.WriteString("#EXTM3U\n")
+	if ls, ok := hs.(core.HLSLadderSession); ok && len(ls.Rungs()) > 1 {
+		for _, rung := range ls.Rungs() {
+			if !validRung(rung.ID) || rung.Bandwidth <= 0 {
+				continue
+			}
+			fmt.Fprintf(&body, "#EXT-X-STREAM-INF:BANDWIDTH=%d", rung.Bandwidth)
+			if rung.AverageBandwidth > 0 {
+				fmt.Fprintf(&body, ",AVERAGE-BANDWIDTH=%d", rung.AverageBandwidth)
+			}
+			if rung.Width > 0 && rung.Height > 0 {
+				fmt.Fprintf(&body, ",RESOLUTION=%dx%d", rung.Width, rung.Height)
+			}
+			if rung.Codecs != "" && !strings.ContainsAny(rung.Codecs, "\"\r\n") {
+				fmt.Fprintf(&body, ",CODECS=%q", rung.Codecs)
+			}
+			if rung.FrameRate > 0 {
+				fmt.Fprintf(&body, ",FRAME-RATE=%.3f", rung.FrameRate)
+			}
+			fmt.Fprintf(&body, "\n%s/index.m3u8\n", rung.ID)
+		}
+	} else {
+		entry, ok := b.bindings.Get(s.public.ID)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		dec := entry.Decision
+		bw := ps.Info.BitrateKbps
+		if !dec.VideoCopy && dec.BitrateKbps > 0 {
+			bw = dec.BitrateKbps
+		}
+		if bw <= 0 {
+			bw = 8000
+		}
+		fmt.Fprintf(&body, "#EXT-X-STREAM-INF:BANDWIDTH=%d%s\nbase/index.m3u8\n", bw*1000, transcode.HLSVariantAttributes(ps.Info, dec))
+	}
+	if body.String() == "#EXTM3U\n" {
+		http.Error(w, "no playable rendition", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
+	if r.Method != http.MethodHead {
+		_, _ = io.WriteString(w, body.String())
+	}
 }
 
 var _ frontend.Sessions = (*Broker)(nil)
