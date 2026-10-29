@@ -28,8 +28,10 @@ type ProwlarrDiscovery struct {
 	Warnings               []string         `json:"warnings,omitempty"`
 	// PresentIDs are the scoped IDs of every enabled indexer the source
 	// reported, including ones filtered out below (unknown protocol).
-	// It is diagnostic only: Ether's import is additive (upsert only),
-	// so no caller may use this list to remove stored indexers.
+	// The default import is additive (upsert only) and must not use this
+	// list to remove stored indexers; only an explicit owner-requested
+	// sync (import with sync=true) may reconcile against it, and even
+	// then never when it is empty or the discovery skipped indexers.
 	PresentIDs []string `json:"presentIds,omitempty"`
 }
 
@@ -83,6 +85,46 @@ func ProwlarrIDPrefix(cfg config.Prowlarr) string {
 		return ""
 	}
 	return "prowlarr-" + prowlarrScope(base.String()) + "-"
+}
+
+// ProwlarrLocallyEdited reports whether a stored indexer that carries
+// this instance's ID prefix no longer matches the identity discovery
+// would have generated for it, i.e. the owner edited it locally after
+// import. There is no import history to diff against, so the rule is
+// deliberately narrow and purely pattern-based. An entry is locally
+// edited when ANY of these holds:
+//
+//   - the ID suffix after "prowlarr-<scope>-" is not the numeric source
+//     indexer ID discovery generates;
+//   - the URL is not the generated proxy URL "<normalised base>/<id>";
+//   - the name does not carry the generated "[<scope>:<id>]" marker.
+//
+// Edits to limits, grabs or priority alone are NOT detectable this way
+// and do not protect an entry from an explicit sync; only the identity
+// fields above do. Callers must only ask about same-scope entries.
+func ProwlarrLocallyEdited(cfg config.Prowlarr, ix config.Indexer) bool {
+	prefix := ProwlarrIDPrefix(cfg)
+	if prefix == "" || !strings.HasPrefix(ix.ID, prefix) {
+		return false
+	}
+	suffix := strings.TrimPrefix(ix.ID, prefix)
+	if suffix == "" {
+		return true
+	}
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			return true
+		}
+	}
+	base, err := normalizeProwlarrBase(cfg.URL)
+	if err != nil {
+		return true
+	}
+	if ix.URL != base.String()+"/"+suffix {
+		return true
+	}
+	marker := "[" + prowlarrScope(base.String()) + ":" + suffix + "]"
+	return !strings.Contains(ix.Name, marker)
 }
 
 // MaxRateLimitPause is the shared cap on a service-requested pause,
@@ -193,8 +235,8 @@ func DiscoverProwlarrReport(ctx context.Context, cfg config.Prowlarr, opts Optio
 		seen[item.ID] = true
 		id := "prowlarr-" + scope + "-" + strconv.Itoa(item.ID)
 		// Present at the source (enabled), even if unimportable below.
-		// Diagnostic only — import stays additive and never removes a
-		// stored indexer that is absent from this list.
+		// The default import stays additive and never removes a stored
+		// indexer absent from this list; only an explicit sync may.
 		present = append(present, id)
 		if protocol != "usenet" && protocol != "1" && !torrent {
 			// Counted and reported, not silently dropped: the owner should
