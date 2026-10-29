@@ -116,6 +116,9 @@ func (d *DiscoveryFeatures) Run(ctx context.Context) {
 }
 
 func (s *Server) discoveryHubs(ctx context.Context, pr *Request, limit int) []hubSpec {
+	if !s.viewerRestricted(pr.User) {
+		return s.legacyDiscoveryHubs(ctx, pr, limit)
+	}
 	d := s.d.Discovery
 	if d == nil || pr.User == nil {
 		return nil

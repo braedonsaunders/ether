@@ -198,6 +198,9 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 }
 
 func (s *Server) recentlyAddedHub(ctx context.Context, pr *Request, sec Section, count int) (hubSpec, error) {
+	if !s.viewerRestricted(pr.User) {
+		return s.legacyRecentlyAddedHub(ctx, pr, sec, count)
+	}
 	items, more, err := experience.RecentlyAdded(ctx, pr.User, sec.Type, count, s.visibility(), s.d.Catalog.Browse)
 	if err != nil {
 		return hubSpec{}, err
@@ -724,6 +727,10 @@ func (s *Server) upNextHub(ctx context.Context, pr *Request, k core.RatingKey) (
 // pre-buffered), then the related rows. Without a PostPlayer this is the
 // old behaviour: Up Next, then related.
 func (s *Server) handlePostplay(w http.ResponseWriter, r *http.Request) {
+	if !s.viewerRestricted(FromContext(r.Context()).User) {
+		s.legacyHandlePostplay(w, r)
+		return
+	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	k, err := core.ParseRatingKey(chi.URLParam(r, "key"))
@@ -763,6 +770,9 @@ func (s *Server) searchTypes(u *core.User, sectionID int) []core.MediaType {
 }
 
 func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
+	if !s.viewerRestricted(pr.User) {
+		return s.legacyRunSearch(ctx, pr, query, sectionID, limit)
+	}
 	search := experience.Search{
 		Visibility: s.visibility(),
 		Natural: func(ctx context.Context, _ *core.User, query string, limit int) ([]core.Title, bool) {
@@ -776,6 +786,9 @@ func (s *Server) runSearch(ctx context.Context, pr *Request, query string, secti
 }
 
 func (s *Server) vibeSearch(ctx context.Context, pr *Request, query string) (*core.Collection, []core.Title, bool, error) {
+	if pr != nil && !s.viewerRestricted(pr.User) {
+		return s.legacyVibeSearch(ctx, pr, query)
+	}
 	searcher := s.d.VibeSearch
 	if searcher == nil {
 		searcher, _ = s.d.Collections.(core.VibeSearcher)

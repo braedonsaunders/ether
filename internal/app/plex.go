@@ -109,7 +109,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 			FFmpeg: a.transcoder.FFmpegPath(), Logger: a.log,
 		})
 	}
-	deps.AccessPolicy = a.safety
+	a.wirePlexPolicy(&deps)
 	deps.Config = a.cfg.Get
 	deps.Logger = a.log.With("component", "plex")
 	deps.Identity = identity
@@ -163,4 +163,9 @@ func plexPlatform() string {
 	default:
 		return "Linux"
 	}
+}
+
+// wirePlexPolicy supplies the same safety service to every Plex deployment.
+func (a *App) wirePlexPolicy(deps *plex.Deps) {
+	deps.AccessPolicy = a.safety
 }

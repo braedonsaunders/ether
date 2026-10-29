@@ -551,6 +551,9 @@ func (s *Server) collectionRaw(ctx context.Context, u *core.User, k core.RatingK
 }
 
 func (s *Server) scopedCollectionItems(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
+	if !s.viewerRestricted(u) {
+		return s.legacyScopedCollectionItems(ctx, u, k)
+	}
 	pr := FromContext(ctx)
 	p, ok := s.d.Collections.(core.CollectionPlaceholder)
 	if !ok || !p.AllowsPlaceholders(ctx, u, k, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)) {
