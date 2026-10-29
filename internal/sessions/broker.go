@@ -420,23 +420,11 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	}
 	b.bindings.Put(&Binding[frontend.PlayIntent]{ID: id, UserID: v.ID, ClientID: s.clientID, Key: session.Item, PlayID: ps.ID, PlaybackID: s.playbackID, Requested: p.request.Intent, Decision: p.decision, Info: ps.Info, Caps: s.caps, Opts: s.opts, UpdatedAt: b.deps.Now()})
 	b.owners.BindFor("broker", v.ID, s.clientID, session.Item, s.playbackID, ps.ID, true, b.deps.Now())
-	now := b.deps.Now()
-	for id, old := range b.retired {
-		if !old.until.After(now) {
-			delete(b.retired, id)
-		}
-	}
 	var superseded []*brokerSession
 	for oldID, old := range b.sessions {
 		if !old.live && old.public.ViewerID == v.ID && old.clientID == s.clientID && old.public.Item == session.Item {
 			delete(b.sessions, oldID)
-			if len(b.retired) >= 4096 {
-				for key := range b.retired {
-					delete(b.retired, key)
-					break
-				}
-			}
-			b.retired[oldID] = retiredSession{viewerID: v.ID, protocol: old.public.Protocol, deviceID: old.public.Device.ID, until: now.Add(2 * time.Hour)}
+			b.rememberRetiredLocked(old)
 			superseded = append(superseded, old)
 		}
 	}
@@ -669,6 +657,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	_, ok := b.sessions[s.public.ID]
 	if ok {
 		delete(b.sessions, s.public.ID)
+		b.rememberRetiredLocked(s)
 	}
 	b.mu.Unlock()
 	if !ok {
@@ -678,6 +667,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 		if err := b.cluster.store.remove(ctx, s.public.ID); err != nil && b.deps.OnEventError != nil {
 			b.deps.OnEventError(err)
 		}
+		b.cluster.announceRetired(ctx, s)
 	}
 	b.bindings.Remove(s.public.ID)
 	if s.live {

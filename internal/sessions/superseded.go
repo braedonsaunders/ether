@@ -2,10 +2,29 @@ package sessions
 
 import (
 	"context"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
+
+// Caller holds b.mu. Keeping a bounded tombstone makes late progress and
+// duplicate stops harmless without retaining grants or upstream credentials.
+func (b *Broker) rememberRetiredLocked(s *brokerSession) {
+	now := b.deps.Now()
+	for id, r := range b.retired {
+		if !r.until.After(now) {
+			delete(b.retired, id)
+		}
+	}
+	if len(b.retired) >= 4096 {
+		for id := range b.retired {
+			delete(b.retired, id)
+			break
+		}
+	}
+	b.retired[s.public.ID] = retiredSession{viewerID: s.public.ViewerID, protocol: s.public.Protocol, deviceID: s.public.Device.ID, until: now.Add(2 * time.Hour)}
+}
 
 // retiredAccess keeps late reports harmless while preserving viewer/device
 // authorization for the short-lived supersession history.
