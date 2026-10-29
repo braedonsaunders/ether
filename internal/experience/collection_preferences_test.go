@@ -91,3 +91,32 @@ func TestNotInterestedPagingAndSingleEntry(t *testing.T) {
 		t.Fatal("hidden item", err)
 	}
 }
+
+func TestListingPageBoundsPreserveAuthorizedTotals(t *testing.T) {
+	ctx := context.Background()
+	viewer := &core.User{ID: 1}
+	movie := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie}
+	var collections []core.Collection
+	members := map[core.RatingKey][]core.Title{}
+	var exclusions []frontend.NotInterestedEntry
+	for i := 1; i <= 610; i++ {
+		key := core.CollectionKey(int64(i))
+		collections = append(collections, core.Collection{Key: key, Type: core.TypeMovie})
+		members[key] = []core.Title{movie}
+		exclusions = append(exclusions, frontend.NotInterestedEntry{Key: core.MovieKey(int64(i))})
+	}
+	src := completeCollections{lists: map[core.MediaType][]core.Collection{core.TypeMovie: collections}, items: members}
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, Collections: src, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, Get: func(_ context.Context, _ *core.User, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k, Type: core.TypeMovie}, nil
+	}, NotInterestedSource: func(context.Context, *core.User) ([]frontend.NotInterestedEntry, error) { return exclusions, nil }}}
+	for _, tc := range []struct{ offset, limit, want int }{{0, 0, 50}, {0, -1, 50}, {0, 7, 7}, {0, 500, 500}, {0, 1000, 500}, {600, 500, 10}, {610, 500, 0}, {0, int(^uint(0) >> 1), 500}} {
+		c, err := s.Collections(ctx, viewer, core.Device{}, frontend.CollectionQuery{Offset: tc.offset, Limit: tc.limit})
+		if err != nil || c.Total != 610 || len(c.Items) != tc.want {
+			t.Fatalf("collections %+v => total=%d len=%d err=%v", tc, c.Total, len(c.Items), err)
+		}
+		n, err := s.NotInterested(ctx, viewer, core.Device{}, frontend.PageQuery{Offset: tc.offset, Limit: tc.limit})
+		if err != nil || n.Total != 610 || len(n.Items) != tc.want {
+			t.Fatalf("not interested %+v => total=%d len=%d err=%v", tc, n.Total, len(n.Items), err)
+		}
+	}
+}

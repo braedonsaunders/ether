@@ -7,7 +7,18 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+const (
+	defaultListLimit = 50
+	maxListLimit     = 500
+)
+
 func sliceBounds(total, offset, limit int) (int, int) {
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
 	start := min(max(offset, 0), total)
 	end := total
 	if limit > 0 && limit < total-start {

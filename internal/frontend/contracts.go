@@ -281,7 +281,8 @@ type ExternalRequest struct {
 	Season, Episode *int
 }
 
-// CollectionQuery requests viewer-scoped collection pagination.
+// CollectionQuery requests viewer-scoped collection pagination. A nonpositive
+// Limit defaults to 50; larger requests are capped at 500.
 type CollectionQuery struct {
 	Types         []core.MediaType
 	Offset, Limit int
@@ -290,6 +291,8 @@ type CollectionPage struct {
 	Items []core.Collection
 	Total int
 }
+
+// PageQuery defaults nonpositive Limit to 50 and caps it at 500.
 type PageQuery struct{ Offset, Limit int }
 type NotInterestedEntry struct {
 	Key     core.RatingKey
