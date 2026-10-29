@@ -243,6 +243,9 @@ type Version struct {
 	ETag         string     `json:"etag,omitempty"`
 	DateModified *time.Time `json:"dateModified,omitempty"`
 	PublishedAt  *time.Time `json:"publishedAt,omitempty"`
+	// FirstObservedAt is the first committed observation of this candidate offer.
+	// Nil means that no trustworthy observation was recorded.
+	FirstObservedAt *time.Time `json:"firstObservedAt,omitempty"`
 }
 type Marker struct {
 	Type       string

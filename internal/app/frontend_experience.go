@@ -290,8 +290,16 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 				return frontend.ItemDetail{}, err
 			}
 			for _, version := range versions {
-				added := versionAddedAt(title, version.Release.PubDate)
-				result.Versions = append(result.Versions, frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info, AddedAt: added})
+				result.Versions = append(result.Versions, frontendVersion(title, version))
+			}
+			if len(versions) > 0 {
+				ledger, e := experience.NewFirstObservedLedger(a.db)
+				if e == nil {
+					e = observeVersionOffers(ctx, ledger, title.Key, versions, result.Versions, time.Now())
+				}
+				if e != nil {
+					a.log.Warn("version observation unavailable", "err", e)
+				}
 			}
 		}
 		if a.extras != nil {
