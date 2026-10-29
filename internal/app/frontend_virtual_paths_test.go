@@ -87,6 +87,36 @@ func TestVirtualPathsBatchSharesLibraryScanAndOmitsHidden(t *testing.T) {
 	}
 }
 
+func TestVirtualPathsScanShortPagesForCollisions(t *testing.T) {
+	first := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Film"}
+	second := core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, Title: "Film"}
+	experience := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *core.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "movies", Type: core.TypeMovie}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, _ *core.Viewer, _ core.Device, _ string, q frontend.ItemQuery) (core.Page, error) {
+			return core.Page{Items: []core.Title{[]core.Title{first, second}[q.Offset]}, Total: 2}, nil
+		},
+	}
+	got, err := (surfaceVirtualPaths{experience: experience}).Paths(context.Background(), &core.Viewer{ID: 7}, core.Device{}, []core.RatingKey{first.Key, second.Key})
+	if err != nil || len(got) != 2 || !strings.Contains(got[first.Key], first.Key.String()) || !strings.Contains(got[second.Key], second.Key.String()) {
+		t.Fatalf("paths: %v, %v", got, err)
+	}
+}
+
+func TestVirtualPathsChildrenContinueShortPagesAndRejectTruncation(t *testing.T) {
+	experience := frontendtest.Experience{ChildrenFunc: func(_ context.Context, _ *core.Viewer, _ core.Device, _ core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
+		if q.Offset == 2 {
+			return core.Page{Total: 3}, nil
+		}
+		return core.Page{Items: []core.Title{{Key: core.MovieKey(int64(q.Offset + 1))}}, Total: 3}, nil
+	}}
+	_, err := (surfaceVirtualPaths{experience: experience}).children(context.Background(), &core.Viewer{ID: 7}, core.Device{}, core.ShowKey(1))
+	if !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("truncated children: %v", err)
+	}
+}
+
 func TestVirtualPathBaseFailsClosedWhenWebDAVDisabled(t *testing.T) {
 	enabled := false
 	s := surfaceVirtualPaths{enabled: func() bool { return enabled }, base: func(context.Context, *http.Request) (string, error) { return "https://ether.example/webdav", nil }}

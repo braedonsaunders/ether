@@ -82,12 +82,12 @@ func (s surfaceVirtualPaths) Paths(ctx context.Context, viewer *core.Viewer, dev
 			if !wantsChildren {
 				continue
 			}
-			seasons, err := s.experience.Children(ctx, viewer, device, show.Key, frontend.ItemQuery{Limit: 10000})
+			seasonItems, err := s.children(ctx, viewer, device, show.Key)
 			if err != nil {
 				return nil, err
 			}
-			filtered := seasons.Items[:0]
-			for _, season := range seasons.Items {
+			filtered := seasonItems[:0]
+			for _, season := range seasonItems {
 				if season.Type == core.TypeSeason {
 					filtered = append(filtered, season)
 				}
@@ -108,12 +108,12 @@ func (s surfaceVirtualPaths) Paths(ctx context.Context, viewer *core.Viewer, dev
 				if !wantsEpisodes {
 					continue
 				}
-				episodes, err := s.experience.Children(ctx, viewer, device, season.Key, frontend.ItemQuery{Limit: 10000})
+				episodeItems, err := s.children(ctx, viewer, device, season.Key)
 				if err != nil {
 					return nil, err
 				}
-				filteredEpisodes := episodes.Items[:0]
-				for _, episode := range episodes.Items {
+				filteredEpisodes := episodeItems[:0]
+				for _, episode := range episodeItems {
 					if episode.Type == core.TypeEpisode {
 						filteredEpisodes = append(filteredEpisodes, episode)
 					}
@@ -147,7 +147,7 @@ func (s surfaceVirtualPaths) library(ctx context.Context, viewer *core.Viewer, d
 		if view.Type != typ {
 			continue
 		}
-		for offset := 0; offset < 100000; offset += 250 {
+		for offset := 0; offset < 100000; {
 			page, err := s.experience.LibraryItems(ctx, viewer, device, view.ID, frontend.ItemQuery{Offset: offset, Limit: 250})
 			if err != nil {
 				return nil, err
@@ -157,15 +157,35 @@ func (s surfaceVirtualPaths) library(ctx context.Context, viewer *core.Viewer, d
 					titles = append(titles, title)
 				}
 			}
-			if len(page.Items) < 250 {
+			offset += len(page.Items)
+			if offset >= page.Total {
 				break
 			}
-			if offset == 99750 {
+			if len(page.Items) == 0 || offset >= 100000 {
 				return nil, core.ErrNotAvailable
 			}
 		}
 	}
 	return titles, nil
+}
+
+func (s surfaceVirtualPaths) children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]core.Title, error) {
+	var titles []core.Title
+	for offset := 0; offset < 100000; {
+		page, err := s.experience.Children(ctx, viewer, device, key, frontend.ItemQuery{Offset: offset, Limit: 500})
+		if err != nil {
+			return nil, err
+		}
+		titles = append(titles, page.Items...)
+		offset += len(page.Items)
+		if offset >= page.Total {
+			return titles, nil
+		}
+		if len(page.Items) == 0 {
+			return nil, core.ErrNotAvailable
+		}
+	}
+	return nil, core.ErrNotAvailable
 }
 
 func siblingNames(titles []core.Title, name func(core.Title) string) map[core.RatingKey]string {
@@ -224,19 +244,18 @@ func (s surfaceVirtualPaths) Path(ctx context.Context, viewer *core.Viewer, devi
 	if title.Type != core.TypeSeason && title.Type != core.TypeEpisode {
 		return "", core.ErrNotFound
 	}
-	seasons, err := s.experience.Children(ctx, viewer, device, showKey, frontend.ItemQuery{Limit: 10000})
+	seasonItems, err := s.children(ctx, viewer, device, showKey)
 	if err != nil {
 		return "", err
 	}
-	filteredSeasons := seasons.Items[:0]
-	for _, season := range seasons.Items {
+	filteredSeasons := seasonItems[:0]
+	for _, season := range seasonItems {
 		if season.Type == core.TypeSeason {
 			filteredSeasons = append(filteredSeasons, season)
 		}
 	}
-	seasons.Items = filteredSeasons
-	seasonNames := siblingNames(seasons.Items, func(t core.Title) string { return fmt.Sprintf("Season %02d", t.Season) })
-	for _, season := range seasons.Items {
+	seasonNames := siblingNames(filteredSeasons, func(t core.Title) string { return fmt.Sprintf("Season %02d", t.Season) })
+	for _, season := range filteredSeasons {
 		seasonName := seasonNames[season.Key]
 		if seasonName == "" {
 			continue
@@ -247,18 +266,17 @@ func (s surfaceVirtualPaths) Path(ctx context.Context, viewer *core.Viewer, devi
 		if title.Type != core.TypeEpisode {
 			continue
 		}
-		page, err := s.experience.Children(ctx, viewer, device, season.Key, frontend.ItemQuery{Limit: 10000})
+		items, err := s.children(ctx, viewer, device, season.Key)
 		if err != nil {
 			return "", err
 		}
-		episodes := page.Items[:0]
-		for _, episode := range page.Items {
+		episodes := items[:0]
+		for _, episode := range items {
 			if episode.Type == core.TypeEpisode {
 				episodes = append(episodes, episode)
 			}
 		}
-		page.Items = episodes
-		names := siblingNames(page.Items, func(t core.Title) string { return strings.TrimSuffix(path.Base(libpath.Episode(t)), ".mkv") })
+		names := siblingNames(episodes, func(t core.Title) string { return strings.TrimSuffix(path.Base(libpath.Episode(t)), ".mkv") })
 		if name := names[key]; name != "" {
 			return path.Join(base, seasonName, name+".mkv"), nil
 		}
