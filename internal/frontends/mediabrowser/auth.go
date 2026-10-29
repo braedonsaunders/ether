@@ -92,8 +92,7 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 		"EnableUserPreferenceAccess": i.host.Preferences != nil, "EnableRemoteControlOfOtherUsers": v.IsOwner && !v.Delegated,
 		"EnableSharedDeviceControl": false, "EnableRemoteAccess": false, "EnableLiveTvManagement": false, "EnableLiveTvAccess": false,
 		"EnableMediaPlayback": i.host.Sessions != nil, "EnablePlaybackRemuxing": i.host.Sessions != nil,
-		// TODO(ViewerCapabilities.CanTranscodeAudio/CanTranscodeVideo): replace
-		// these broker-availability defaults with the host's configured policy.
+		// The host's configured playback policy overrides these defaults below.
 		"EnableAudioPlaybackTranscoding": i.host.Sessions != nil, "EnableVideoPlaybackTranscoding": i.host.Sessions != nil,
 		"ForceRemoteSourceTranscoding": false, "EnableContentDeletion": false, "EnableContentDownloading": false,
 		"EnableSyncTranscoding": false, "EnableMediaConversion": false, "EnableAllDevices": true, "EnableAllChannels": true,
@@ -149,12 +148,34 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	if caps.CanPlayRemote != nil {
 		policy["EnableRemoteAccess"] = *caps.CanPlayRemote
 	}
+	if caps.CanPlay != nil {
+		policy["EnableMediaPlayback"] = *caps.CanPlay
+	}
 	if caps.CanUseLiveTV != nil {
 		policy["EnableLiveTvAccess"] = *caps.CanUseLiveTV
 	}
 	if caps.CanTranscode != nil {
 		policy["EnableVideoPlaybackTranscoding"] = *caps.CanTranscode
 		policy["EnableAudioPlaybackTranscoding"] = *caps.CanTranscode
+	}
+	if caps.CanTranscodeAudio != nil {
+		policy["EnableAudioPlaybackTranscoding"] = *caps.CanTranscodeAudio
+	}
+	if caps.CanTranscodeVideo != nil {
+		policy["EnableVideoPlaybackTranscoding"] = *caps.CanTranscodeVideo
+	}
+	if caps.CanRemux != nil {
+		policy["EnablePlaybackRemuxing"] = *caps.CanRemux
+	}
+	if caps.MaxActiveSessions != nil {
+		if i.protocol == "emby" {
+			policy["SimultaneousStreamLimit"] = *caps.MaxActiveSessions
+		} else {
+			policy["MaxActiveSessions"] = *caps.MaxActiveSessions
+		}
+	}
+	if caps.BlockedTags != nil {
+		policy["BlockedTags"] = *caps.BlockedTags
 	}
 	if caps.RemoteBitrateKbps != nil {
 		policy["RemoteClientBitrateLimit"] = *caps.RemoteBitrateKbps * 1000
