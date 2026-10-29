@@ -18,8 +18,10 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	kitimages "github.com/braedonsaunders/ether/internal/frontend/kit/images"
+	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/tmdb"
+	"github.com/go-chi/chi/v5"
 )
 
 // FrontendArtwork adapts the existing Plex artwork selection and rendering
@@ -28,7 +30,10 @@ import (
 type FrontendArtwork struct {
 	Server *Server
 	// Variants must be cache-only; it may schedule a bounded background fill.
-	Variants func(*core.Title, string) (*tmdb.Images, bool)
+	Variants  func(*core.Title, string) (*tmdb.Images, bool)
+	URLImages interface {
+		GetUntrustedURL(context.Context, string) ([]byte, string, error)
+	}
 }
 
 type frontendArtworkEntry struct {
@@ -37,6 +42,8 @@ type frontendArtworkEntry struct {
 	discoveryKind                 string
 	discovery                     bool
 	remotePath                    string
+	channel                       bool
+	channelLogo                   string
 }
 
 type artworkCacheOnlyKey struct{}
@@ -59,13 +66,47 @@ func artworkReference(req frontend.ArtworkRequest, kind, source string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+// ChannelImage describes a channel already filtered through AllowedChannels.
+// The reference is not an authorization credential; List rechecks policy.
+func (a FrontendArtwork) ChannelImage(viewer *core.Viewer, channel livetv.Channel) frontend.Image {
+	if viewer == nil {
+		return frontend.Image{}
+	}
+	req := frontend.ArtworkRequest{Viewer: viewer, Channel: channel.ID}
+	ref := artworkReference(req, frontend.ImageChannel, channel.ID+"\x00"+channel.Logo+"\x00"+channel.Name+"\x00"+channel.Number)
+	return frontend.Image{Kind: frontend.ImageChannel, Path: ref, Tag: ref}
+}
+
 func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkRequest) ([]frontendArtworkEntry, bool, error) {
-	if a.Server == nil || req.Viewer == nil || req.Item == 0 {
+	if a.Server == nil || req.Viewer == nil || ((req.Item == 0) == (req.Channel == "")) {
 		return nil, false, core.ErrUnauthorized
 	}
 	s := a.Server
+	if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
+		viewer := policy.UserPolicy(req.Viewer)
+		if viewer == nil || viewer.ID != req.Viewer.ID {
+			return nil, false, core.ErrUnauthorized
+		}
+		req.Viewer = viewer
+	}
 	ctx = context.WithValue(ctx, artworkCacheOnlyKey{}, true)
 	ctx = withRequest(ctx, &Request{User: req.Viewer, Language: req.Device.Language, Product: req.Device.Product, Platform: req.Device.Platform, DeviceName: req.Device.DeviceName, ClientID: req.Device.ID})
+	if req.Channel != "" {
+		if s.d.LiveTV == nil {
+			return nil, false, core.ErrNotFound
+		}
+		channels, err := s.d.LiveTV.AllowedChannels(ctx, req.Viewer)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, channel := range channels {
+			if channel.ID != req.Channel {
+				continue
+			}
+			return []frontendArtworkEntry{{image: a.ChannelImage(req.Viewer, channel), channel: true, channelLogo: channel.Logo}}, true, nil
+		}
+		return nil, false, core.ErrNotFound
+	}
 	var title *core.Title
 	var collectionVersion string
 	switch req.Item.Kind() {
@@ -223,6 +264,23 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		if entry.image != img {
 			continue
 		}
+		if policy, ok := a.Server.d.AccessPolicy.(core.UserPolicySource); ok {
+			viewer := policy.UserPolicy(req.Viewer)
+			if viewer == nil || viewer.ID != req.Viewer.ID {
+				return nil, "", core.ErrUnauthorized
+			}
+			req.Viewer = viewer
+		}
+		if entry.channel && entry.channelLogo != "" {
+			if a.URLImages == nil {
+				return nil, "", core.ErrNotAvailable
+			}
+			data, ct, err := a.URLImages.GetUntrustedURL(ctx, entry.channelLogo)
+			if err != nil {
+				return nil, "", err
+			}
+			return transformArtwork(data, ct, transform)
+		}
 		ctx = context.WithValue(ctx, artworkCacheOnlyKey{}, true)
 		ctx = withRequest(ctx, &Request{User: req.Viewer, Language: req.Device.Language, Product: req.Device.Product, Platform: req.Device.Platform, DeviceName: req.Device.DeviceName, ClientID: req.Device.ID})
 		r, err := http.NewRequestWithContext(ctx, http.MethodGet, "/?width="+strconv.Itoa(transform.Width), nil)
@@ -231,6 +289,11 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		}
 		w := &artworkResponse{header: make(http.Header)}
 		switch {
+		case entry.channel:
+			route := chi.NewRouteContext()
+			route.URLParams.Add("channel", req.Channel)
+			r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, route))
+			a.Server.handleLiveLogo(w, r)
 		case entry.remotePath != "":
 			a.Server.serveRemoteImage(w, r, a.Server.d.ImageURL(entry.remotePath, tmdbSize(transform.Width)))
 		case entry.discovery:

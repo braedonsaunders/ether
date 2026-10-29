@@ -17,7 +17,11 @@ const maxLiveProgrammes = 10000
 
 var errLiveQuery = errors.New("invalid live guide query")
 
-type surfaceLiveTV struct{ app *App }
+type surfaceLiveTV struct {
+	app            *App
+	channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
+	artwork        frontend.Artwork
+}
 
 func (s surfaceLiveTV) viewer(ctx context.Context, v *core.Viewer) (*core.User, error) {
 	if v == nil || v.ID <= 0 {
@@ -29,8 +33,14 @@ func (s surfaceLiveTV) viewer(ctx context.Context, v *core.Viewer) (*core.User, 
 	}
 	return s.app.safety.UserPolicy(viewer), nil
 }
-func liveChannel(c livetv.Channel) frontend.LiveChannel {
-	return frontend.LiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Kind: c.Kind, Logo: c.Logo, Rating: c.Rating, Favorite: c.Favorite}
+func (s surfaceLiveTV) liveChannel(viewer *core.Viewer, c livetv.Channel) frontend.LiveChannel {
+	result := frontend.LiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Kind: c.Kind, Rating: c.Rating, Favorite: c.Favorite}
+	if s.channelArtwork != nil {
+		if image := s.channelArtwork(viewer, c); image.Path != "" {
+			result.Images = []frontend.Image{image}
+		}
+	}
+	return result
 }
 func (s surfaceLiveTV) Channels(ctx context.Context, v *core.Viewer) ([]frontend.LiveChannel, error) {
 	viewer, err := s.viewer(ctx, v)
@@ -49,7 +59,7 @@ func (s surfaceLiveTV) Channels(ctx context.Context, v *core.Viewer) ([]frontend
 	}
 	out := make([]frontend.LiveChannel, 0, len(channels))
 	for _, c := range channels {
-		out = append(out, liveChannel(c))
+		out = append(out, s.liveChannel(viewer, c))
 	}
 	return out, nil
 }
@@ -89,17 +99,30 @@ func (s surfaceLiveTV) Guide(ctx context.Context, v *core.Viewer, q frontend.Liv
 		limit = maxLiveProgrammes
 	}
 	out := make([]frontend.LiveProgramme, 0, min(len(programmes), limit))
+	imageCache := make(map[core.RatingKey][]frontend.Image)
 	for _, p := range programmes {
 		if !allowed[p.ChannelID] {
 			continue
 		}
-		item := frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating, Artwork: p.Item.Thumb}
+		item := frontend.LiveProgramme{ID: p.ID, ChannelID: p.ChannelID, Start: p.Start, End: p.End, Item: p.Item.Key, Title: p.Item.Title, Summary: p.Item.Summary, Rating: p.Item.Rating}
 		if p.Item.Key != 0 && s.app.catalog != nil {
 			if title, e := s.app.catalog.Get(ctx, p.Item.Key); e == nil {
 				item.ShowTitle = title.ShowTitle
 				item.EpisodeTitle = title.Title
 				item.Season = title.Season
 				item.Episode = title.Episode
+			}
+			if s.artwork != nil {
+				images, found := imageCache[p.Item.Key]
+				if !found {
+					var complete bool
+					images, complete, _ = s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Device: q.Device, Item: p.Item.Key})
+					if !complete {
+						images = nil
+					}
+					imageCache[p.Item.Key] = images
+				}
+				item.Images = images
 			}
 		}
 		out = append(out, item)

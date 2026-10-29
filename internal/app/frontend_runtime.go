@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/compactids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontends/mediabrowser"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/sessions"
@@ -87,9 +89,15 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return nil, err
 	}
 	var artwork frontend.Artwork
+	var channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
 	if a.tmdb != nil {
 		variants := newArtworkVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
-		artwork = plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get}
+		source := plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get}
+		if a.images != nil {
+			source.URLImages = a.images
+		}
+		artwork = source
+		channelArtwork = source.ChannelImage
 	}
 	experiences := make(map[frontend.Protocol]frontend.Experience)
 	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby"} {
@@ -126,7 +134,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				imageGrants, _ = identity.NewImageGrantService(a.db, id, grants, func() frontend.Experience { return experience }, a.images, 10*time.Minute, nil)
 			}
 		}
-		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, ViewerCapabilities: a.viewerCapabilities(local, experience), ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), LiveTV: surfaceLiveTV{app: a}, Sessions: sessions.BindSurface(r.broker, id), Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: sessions.BindEvents(r.events, id), Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, Config: settings}
+		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, ViewerCapabilities: a.viewerCapabilities(local, experience), ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: sessions.BindSurface(r.broker, id), Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: sessions.BindEvents(r.events, id), Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, Config: settings}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.clientCount = a.frontendClients.count

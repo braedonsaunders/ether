@@ -360,11 +360,26 @@ func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) 
 func (s *surfaceExperience) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
 	rows, err := s.Service.Rows(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)), req)
 	if err == nil {
+		var active *core.User
+		if req.Viewer != nil {
+			active, _ = s.active(ctx, req.Viewer.ID)
+		}
 		for _, row := range rows {
 			s.warmArtwork(row.Items, req.Device)
 			for _, entry := range row.Entries {
 				if entry.Title != nil {
 					s.warmArtwork([]core.Title{*entry.Title}, req.Device)
+				}
+				if channel := entry.LiveChannel; channel != nil {
+					// An upstream logo may carry provider credentials. Only return
+					// a policy-scoped descriptor to non-Plex front ends.
+					channel.Logo = ""
+					if active != nil && s.artwork != nil {
+						images, complete, e := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: active, Device: req.Device, Channel: channel.ID})
+						if e == nil && complete {
+							channel.Images = images
+						}
+					}
 				}
 			}
 		}

@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/livetv"
+	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 )
 
@@ -77,5 +80,89 @@ func TestFrontendLiveTVUsesViewerPolicy(t *testing.T) {
 	}
 	if _, err := facade.Channels(ctx, nil); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatal(err)
+	}
+}
+
+func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
+	ctx := context.Background()
+	a := setupTestApp(t, true)
+	local, err := identity.NewLocal(a.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewerID, err := local.CreateViewer(ctx, "channelviewer", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := a.users.ActiveUser(ctx, viewerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	title := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, IDs: core.IDs{TMDB: 1}, Title: "Programme", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}
+	if err := a.catalog.UpsertTitle(ctx, title, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1,detail_at=? WHERE key=?`, time.Now().Unix(), int64(title.Key)); err != nil {
+		t.Fatal(err)
+	}
+	channel, err := a.livetv.SaveChannel(ctx, livetv.Channel{ID: "scoped-channel", Number: "9", Name: "News", Kind: "virtual", Enabled: true, AllowedUsers: []int64{viewerID}, Items: []livetv.Item{{Key: core.MovieKey(1), Title: "Programme", DurationMS: 3600000}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := plex.FrontendArtwork{Server: a.plexServer, URLImages: a.images}
+	facade := surfaceLiveTV{app: a, channelArtwork: source.ChannelImage}
+	channels, err := facade.Channels(ctx, viewer)
+	if err != nil || len(channels) != 1 || len(channels[0].Images) != 1 {
+		t.Fatalf("channels: %+v %v", channels, err)
+	}
+	grants, err := identity.NewGrants(a.db, a.users, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := grants.Issue(ctx, viewerID, nil, "jellyfin", core.Device{ID: "tv", Language: "en"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := identity.NewArtworkImageGrantService(a.db, "jellyfin", grants, func() frontend.Experience { return nil }, source, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv", Language: "en"}, Channel: channel.ID, Image: channels[0].Images[0]}
+	secret, err := service.Issue(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	service.Serve(w, httptest.NewRequest("GET", "/", nil), secret)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "News") {
+		t.Fatalf("channel logo: %d %q", w.Code, w.Body.String())
+	}
+	channel.AllowedUsers = []int64{viewerID + 1}
+	if _, err := a.livetv.SaveChannel(ctx, channel); err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	service.Serve(w, httptest.NewRequest("GET", "/", nil), secret)
+	if w.Code != 404 {
+		t.Fatalf("hidden channel remained accessible: %d", w.Code)
+	}
+	if _, err := service.Issue(ctx, request); err == nil {
+		t.Fatal("issued grant for hidden channel")
+	}
+	request.Item = core.MovieKey(1)
+	if _, err := service.Issue(ctx, request); err == nil {
+		t.Fatal("accepted both item and channel")
+	}
+	channel.AllowedUsers = []int64{viewerID}
+	channel.Logo = "https://example.invalid/logo.png?token=private"
+	if _, err := a.livetv.SaveChannel(ctx, channel); err != nil {
+		t.Fatal(err)
+	}
+	channels, err = facade.Channels(ctx, viewer)
+	if err != nil || len(channels) != 1 || channels[0].Logo != "" || len(channels[0].Images) != 1 || strings.Contains(channels[0].Images[0].Path, "private") {
+		t.Fatalf("channel logo URL was exposed: %+v %v", channels, err)
 	}
 }

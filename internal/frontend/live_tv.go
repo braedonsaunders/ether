@@ -11,6 +11,7 @@ import (
 type LiveChannel struct {
 	ID, Number, Name, Kind, Logo, Rating string
 	Favorite                             bool
+	Images                               []Image
 }
 type LiveProgramme struct {
 	ID, ChannelID                   string
@@ -19,11 +20,13 @@ type LiveProgramme struct {
 	Title, Summary, Rating, Artwork string
 	ShowTitle, EpisodeTitle         string
 	Season, Episode                 int
+	Images                          []Image
 }
 type LiveGuideQuery struct {
 	Channels    []string
 	From, Until time.Time
 	Limit       int
+	Device      core.Device
 }
 
 // LiveTV applies the same per-viewer access and safety policy as Plex Live TV.

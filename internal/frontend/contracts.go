@@ -69,6 +69,7 @@ type RowLiveChannel struct {
 	ID, Number, Name, Logo string
 	GuideReference         string
 	Current, Next          *RowProgramme
+	Images                 []Image
 }
 
 // RowProgramme describes one guide entry without an upstream stream URL.
