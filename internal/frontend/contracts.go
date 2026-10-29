@@ -76,6 +76,18 @@ type Marker struct {
 	Type       string
 	Start, End time.Duration
 }
+
+// Extra describes a playable trailer or clip. Key is the broker-facing item
+// identity; Source and SourceID describe the upstream reference, not a resolved
+// URL or credentials. Plex media and part identifiers remain adapter-owned.
+type Extra struct {
+	Key, ParentKey                          core.RatingKey
+	Title, Kind, Source, SourceID, Language string
+	Official                                bool
+	PublishedAt                             time.Time
+	Duration                                time.Duration
+	Height                                  int
+}
 type ItemDetail struct {
 	Title    core.Title
 	UserData core.WatchStatus
@@ -83,7 +95,7 @@ type ItemDetail struct {
 	Images   []Image
 	Versions []Version
 	Markers  []Marker
-	Extras   []core.Title
+	Extras   []Extra
 }
 
 // Experience applies viewer policy before returning any data. Browse operations
