@@ -297,7 +297,7 @@ func (s *Server) serveDiscoveryPoster(w http.ResponseWriter, r *http.Request, k 
 	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
-	t, e := s.d.Catalog.Get(ctx, k)
+	t, e := s.artworkTitle(ctx, k)
 	if e != nil || pr.User == nil || !s.visibleTitle(ctx, pr.User, t) {
 		writeHTTPError(w, 404)
 		return

@@ -28,7 +28,7 @@ func (s *Server) visibility() experience.Visibility {
 	v := experience.Visibility{Policy: s.d.AccessPolicy, FilterAvailable: s.d.FilterAvailable,
 		SectionFor: func(t core.MediaType) (int, bool) { sec, ok := s.sectionFor(t); return sec.ID, ok }}
 	if s.d.Catalog != nil {
-		v.GetTitle = s.d.Catalog.Get
+		v.GetTitle = s.artworkTitle
 	}
 	if s.d.Playback != nil {
 		v.Sessions = s.d.Playback.Sessions

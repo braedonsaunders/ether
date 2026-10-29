@@ -85,6 +85,10 @@ type fakeCatalog struct {
 	failOnce map[core.RatingKey]bool // the next Get of these keys fails
 }
 
+func (c *fakeCatalog) StoredTitle(ctx context.Context, k core.RatingKey) (*core.Title, error) {
+	return c.Get(ctx, k)
+}
+
 func (c *fakeCatalog) Get(_ context.Context, k core.RatingKey) (*core.Title, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

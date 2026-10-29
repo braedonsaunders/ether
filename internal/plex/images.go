@@ -200,7 +200,7 @@ func (s *Server) artPath(ctx context.Context, key core.RatingKey, element string
 			return "", 0, err
 		}
 		for _, k := range pl.Items {
-			if t, err := s.d.Catalog.Get(ctx, k); err == nil && s.visibleTitle(ctx, u, t) {
+			if t, err := s.artworkTitle(ctx, k); err == nil && s.visibleTitle(ctx, u, t) {
 				if element == "art" && t.BackdropPath != "" {
 					return t.BackdropPath, 1280, nil
 				}
@@ -211,7 +211,7 @@ func (s *Server) artPath(ctx context.Context, key core.RatingKey, element string
 		}
 		return "", 0, core.ErrNotFound
 	}
-	t, err := s.d.Catalog.Get(ctx, key)
+	t, err := s.artworkTitle(ctx, key)
 	if err != nil {
 		return "", 0, err
 	}
@@ -229,7 +229,7 @@ func (s *Server) artPath(ctx context.Context, key core.RatingKey, element string
 		if pk == 0 {
 			return nil
 		}
-		p, err := s.d.Catalog.Get(ctx, pk)
+		p, err := s.artworkTitle(ctx, pk)
 		if err != nil {
 			return nil
 		}
@@ -358,7 +358,7 @@ func (s *Server) servePersonImage(w http.ResponseWriter, r *http.Request, key co
 	if r.Context().Err() != nil {
 		return
 	}
-	t, err := s.d.Catalog.Get(r.Context(), key)
+	t, err := s.artworkTitle(r.Context(), key)
 	if r.Context().Err() != nil || err != nil || t == nil || !t.IsReleased(s.now()) || !s.visibleTitle(r.Context(), FromContext(r.Context()).User, t) {
 		writeHTTPError(w, http.StatusNotFound)
 		return

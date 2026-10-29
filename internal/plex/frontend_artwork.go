@@ -39,6 +39,21 @@ type frontendArtworkEntry struct {
 	remotePath                    string
 }
 
+type artworkCacheOnlyKey struct{}
+
+// Artwork enumeration is called from item enrichment and must not start a
+// catalogue network fetch. Plex requests retain their existing Get behavior.
+func (s *Server) artworkTitle(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+	if cacheOnly, _ := ctx.Value(artworkCacheOnlyKey{}).(bool); cacheOnly {
+		stored, ok := s.d.Catalog.(core.StoredTitleLookup)
+		if !ok {
+			return nil, core.ErrNotAvailable
+		}
+		return stored.StoredTitle(ctx, key)
+	}
+	return s.d.Catalog.Get(ctx, key)
+}
+
 func artworkReference(req frontend.ArtworkRequest, kind, source string) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\x00%d\x00%s\x00%s\x00%s\x00%s", req.Viewer.ID, req.Item, req.Device.Language, kind, source, "artwork-v1")))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
@@ -49,6 +64,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		return nil, core.ErrUnauthorized
 	}
 	s := a.Server
+	ctx = context.WithValue(ctx, artworkCacheOnlyKey{}, true)
 	ctx = withRequest(ctx, &Request{User: req.Viewer, Language: req.Device.Language, Product: req.Device.Product, Platform: req.Device.Platform, DeviceName: req.Device.DeviceName, ClientID: req.Device.ID})
 	var title *core.Title
 	var collectionVersion string
@@ -71,7 +87,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 			return nil, core.ErrNotFound
 		}
 		var err error
-		title, err = s.d.Catalog.Get(ctx, req.Item)
+		title, err = s.artworkTitle(ctx, req.Item)
 		if err != nil || title == nil || !title.IsReleased(s.now()) || !s.visibleTitle(ctx, req.Viewer, title) {
 			return nil, core.ErrNotFound
 		}
@@ -197,6 +213,7 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		if entry.image != img {
 			continue
 		}
+		ctx = context.WithValue(ctx, artworkCacheOnlyKey{}, true)
 		ctx = withRequest(ctx, &Request{User: req.Viewer, Language: req.Device.Language, Product: req.Device.Product, Platform: req.Device.Platform, DeviceName: req.Device.DeviceName, ClientID: req.Device.ID})
 		r, err := http.NewRequestWithContext(ctx, http.MethodGet, "/?width="+strconv.Itoa(transform.Width), nil)
 		if err != nil {
