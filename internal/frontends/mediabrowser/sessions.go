@@ -35,7 +35,11 @@ func (i *instance) sessionRows(ctx context.Context, viewer *frontend.Viewer, dev
 	}
 	items := make([]any, 0, len(sessions))
 	for _, session := range sessions {
-		items = append(items, i.brokerSessionDTO(viewer, session))
+		item := i.brokerSessionDTO(viewer, session)
+		if i.protocol == "emby" {
+			i.embySessionDTO(ctx, item, session.Device.ID)
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }

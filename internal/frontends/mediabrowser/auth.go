@@ -264,6 +264,9 @@ func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]an
 			}
 		}
 	}
+	if i.protocol == "emby" {
+		i.embySessionDTO(r.Context(), session, d.ID)
+	}
 	return session
 }
 
