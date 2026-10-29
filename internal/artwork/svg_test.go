@@ -57,7 +57,7 @@ func TestSVGRasterizerBoundsAndCache(t *testing.T) {
 
 func TestSVGRasterTimeoutRetainsConcurrencySlotUntilWorkEnds(t *testing.T) {
 	r := NewSVGRasterizer()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -71,7 +71,8 @@ func TestSVGRasterTimeoutRetainsConcurrencySlotUntilWorkEnds(t *testing.T) {
 		finished <- err
 	}()
 	<-started
-	if err := <-finished; !errors.Is(err, context.DeadlineExceeded) {
+	cancel()
+	if err := <-finished; !errors.Is(err, context.Canceled) {
 		t.Fatal("timeout", err)
 	}
 	if len(r.slots) != 1 {
