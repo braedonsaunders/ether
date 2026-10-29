@@ -361,8 +361,10 @@ type Session struct {
 type Timeline struct {
 	// PlaybackID may be empty for clients that do not send one. The broker
 	// preserves its no-ID supersession semantics.
-	PlaybackID         string
-	ClientSessionID    string
+	PlaybackID      string
+	ClientSessionID string
+	// Sequence is optional; zero preserves the legacy unordered behavior.
+	Sequence           uint64
 	Position, Duration time.Duration
 	State              string
 }

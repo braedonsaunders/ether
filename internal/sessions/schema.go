@@ -41,4 +41,5 @@ ALTER TABLE plex_sessions ADD COLUMN surface TEXT;
 ALTER TABLE plex_sessions ADD COLUMN device_id TEXT;
 ALTER TABLE plex_sessions ADD COLUMN device_data TEXT;
 `)
+	store.Register("sessions", 2, `ALTER TABLE plex_sessions ADD COLUMN report_sequence TEXT;`)
 }

@@ -56,7 +56,7 @@ func TestClusterCleanupPreservesPlexRows(t *testing.T) {
 	}
 }
 
-func TestClusterBrokerListsAndStopsRemoteSession(t *testing.T) {
+func TestClusterBrokerListsStopsAndOrdersReportsAcrossNodes(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
 	hub := clusterbus.NewHub()
@@ -100,6 +100,38 @@ func TestClusterBrokerListsAndStopsRemoteSession(t *testing.T) {
 	}
 	if err := b.Command(ctx, &core.Viewer{ID: 1}, s.ID, frontend.Command{Kind: frontend.CommandPause}); err != nil {
 		t.Fatal(err)
+	}
+	access := frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: "jellyfin"}
+	progress := a.deps.Progress.(*fakeProgress)
+	sources := a.deps.Playback.Sessions()
+	if len(sources) != 1 {
+		t.Fatal("missing playback source")
+	}
+	sources[0].Info.Duration = time.Hour
+	for _, report := range []struct {
+		broker   *Broker
+		sequence uint64
+		position time.Duration
+	}{{a, 2, 2 * time.Minute}, {b, 1, time.Minute}, {b, 2, time.Minute}, {b, 3, 3 * time.Minute}, {a, 0, 4 * time.Minute}} {
+		if err := report.broker.Report(ctx, access, s.ID, frontend.Timeline{Sequence: report.sequence, Position: report.position, State: "playing"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if progress.calls != 3 || progress.position != 4*time.Minute || progress.duration != time.Hour {
+		t.Fatalf("out-of-order progress: %+v", progress)
+	}
+	var last string
+	if err := db.QueryRowContext(ctx, `SELECT report_sequence FROM plex_sessions WHERE id=?`, s.ID).Scan(&last); err != nil || last != "00000000000000000003" {
+		t.Fatalf("stored sequence=%q err=%v", last, err)
+	}
+	if err := b.Report(ctx, access, s.ID, frontend.Timeline{Sequence: ^uint64(0), Position: 5 * time.Minute, Duration: time.Hour, State: "playing"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Report(ctx, access, s.ID, frontend.Timeline{Sequence: 3, Position: time.Minute, Duration: time.Hour, State: "playing"}); err != nil {
+		t.Fatal(err)
+	}
+	if progress.calls != 4 || progress.position != 5*time.Minute {
+		t.Fatalf("uint64 sequence ordering: %+v", progress)
 	}
 	select {
 	case event := <-target:

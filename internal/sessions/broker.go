@@ -63,6 +63,7 @@ type brokerSession struct {
 	streamPosition   time.Duration
 	segmentDuration  time.Duration
 	live             bool
+	sequence         uint64
 }
 
 // Broker coordinates neutral sessions with the shared playback admission manager.
@@ -479,6 +480,9 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 }
 func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
 	s, v, err := b.access(ctx, a, id)
+	if errors.Is(err, core.ErrNotFound) && b.cluster != nil {
+		return b.cluster.forwardReport(ctx, a, id, t)
+	}
 	if err != nil {
 		return err
 	}
@@ -497,6 +501,25 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 			return core.ErrUnauthorized
 		}
 	}
+	accepted, err := b.acceptSequence(ctx, s, t.Sequence)
+	if err != nil {
+		return err
+	}
+	if !accepted {
+		return nil
+	}
+	if !s.live {
+		reportedID := t.PlaybackID
+		if reportedID == s.public.ID {
+			reportedID = s.playbackID
+		}
+		if b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, reportedID) {
+			if b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
+				return b.stopLocked(ctx, s)
+			}
+			return nil
+		}
+	}
 	if s.live {
 		b.publish(ctx, frontend.Event{Type: "SessionUpdated", ViewerID: s.public.ViewerID, SessionID: id})
 		if t.State == "stopped" {
@@ -504,15 +527,15 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		}
 		return nil
 	}
-	reportedID := t.PlaybackID
-	if reportedID == s.public.ID {
-		reportedID = s.playbackID
-	}
-	if b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, reportedID) {
-		if b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
-			return b.stopLocked(ctx, s)
+	if t.Duration <= 0 {
+		if source, ok := b.deps.Playback.Session(s.playID); ok && source != nil && source.Info.Duration > 0 {
+			t.Duration = source.Info.Duration
 		}
-		return nil
+	}
+	// Keep active broker ownership alive when Plex's shared v39 history
+	// expires idle entries. Never refresh a superseded binding.
+	if !b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
+		b.owners.Bind(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID, s.playID, false, b.deps.Now())
 	}
 	ctx = state.WithOrigin(ctx, state.Origin{Surface: s.public.Protocol, SessionID: s.public.ID, ClientID: s.public.Device.ID})
 	if err := RecordProgress(ctx, b.deps.Progress, s.public.ViewerID, s.public.Item, t.Position, t.Duration, t.State); err != nil {
