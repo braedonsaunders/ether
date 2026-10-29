@@ -11,6 +11,10 @@ differences but incomplete route coverage. CI currently warns on exit 2.
 experience unit tests. Do not allowlist a difference without an exact, verified
 response pair and its commit attribution.
 
+Live DASH manifests use a fixed test-only clock in both staged binaries. This
+checks serialization under identical times; it does not test wall-clock
+progression. Production builds retain the normal live clock and its tests.
+
 Intentional difference `42ef28ac`: viewers who saved scoped language or
 quality overrides have those preferences applied to Plex playback selection.
 The no-override path is covered by `TestNoScopedOverridesPreserveSelection`
