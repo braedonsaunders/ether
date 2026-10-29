@@ -219,3 +219,29 @@ func TestLikesUseAtomicExperienceMutation(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func TestOnlyPresentedRowsReportImpressions(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	var handles []string
+	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+		return []frontend.Row{{Purpose: frontend.RowContinue, Handle: "first", Items: []frontend.Title{{Key: 1, Type: "movie"}}}, {Purpose: frontend.RowContinue, Handle: "second", Items: []frontend.Title{{Key: 2, Type: "movie"}}}}, nil
+	}, ReportRowInteractionFunc: func(_ context.Context, r frontend.RowInteraction) error {
+		if r.Viewer != viewer || r.Protocol != "jellyfin" || r.Kind != frontend.RowImpression {
+			t.Fatal(r)
+		}
+		handles = append(handles, r.Handle)
+		return nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/UserItems/Resume?StartIndex=1&Limit=1", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || len(handles) != 1 || handles[0] != "second" {
+		t.Fatal(w.Code, handles)
+	}
+}

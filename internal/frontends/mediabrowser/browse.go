@@ -101,11 +101,17 @@ func (i *instance) browseRoutes() error {
 				http.Error(w, "Unavailable", 503)
 				return
 			}
+			type rowSpan struct {
+				start, end int
+				handle     string
+			}
+			spans := []rowSpan{}
 			titles := []frontend.Title{}
 			for _, row := range rows {
 				if row.Purpose != purpose {
 					continue
 				}
+				start := len(titles)
 				if len(row.Entries) > 0 {
 					for _, entry := range row.Entries {
 						if entry.Kind == frontend.RowEntryTitle && entry.Title != nil {
@@ -114,6 +120,9 @@ func (i *instance) browseRoutes() error {
 					}
 				} else {
 					titles = append(titles, row.Items...)
+				}
+				if row.Handle != "" && len(titles) > start {
+					spans = append(spans, rowSpan{start, len(titles), row.Handle})
 				}
 			}
 			offset := queryInt(r, "StartIndex", 0)
@@ -131,6 +140,17 @@ func (i *instance) browseRoutes() error {
 			items := make([]any, 0, len(page))
 			for _, title := range page {
 				items = append(items, itemDTO(title, state[title.Key]))
+			}
+			if reporter, ok := i.host.Experience.(frontend.RowInteractionReporter); ok && len(page) > 0 {
+				start, end := paging.Bounds(len(titles), offset, limit)
+				for _, span := range spans {
+					if span.start < end && span.end > start {
+						err := reporter.ReportRowInteraction(r.Context(), frontend.RowInteraction{Viewer: v, Device: device(r), Protocol: i.protocol, Handle: span.handle, Kind: frontend.RowImpression})
+						if err != nil && i.host.Log != nil {
+							i.host.Log.Warn("row impression failed", "error", err)
+						}
+					}
+				}
 			}
 			if asArray {
 				jsonReply(w, items)
