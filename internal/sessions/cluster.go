@@ -156,7 +156,10 @@ func (c *brokerCluster) forwardReport(ctx context.Context, a frontend.SessionAcc
 		}
 		return c.node.Publish(ctx, brokerReportTopic, payload)
 	}
-	return core.ErrNotFound
+	// A just-stopped or superseded session may already be absent from the
+	// shared table before its retirement event reaches this node. Treat late
+	// reports as idempotent no-ops, as Stop already does.
+	return nil
 }
 
 func (c *brokerCluster) receiveReport(payload []byte) {

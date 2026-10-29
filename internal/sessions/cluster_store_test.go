@@ -171,6 +171,10 @@ func TestClusterBrokerListsStopsAndOrdersReportsAcrossNodes(t *testing.T) {
 	if err := b.Stop(ctx, owner, s.ID); err != nil {
 		t.Fatal(err)
 	}
+	// Simulate the peer observing the row removal before the retirement event.
+	b.mu.Lock()
+	delete(b.retired, s.ID)
+	b.mu.Unlock()
 	stoppedCalls := progress.calls
 	if err := b.Report(ctx, access, s.ID, frontend.Timeline{Sequence: 1, State: "stopped"}); err != nil || progress.calls != stoppedCalls {
 		t.Fatalf("late stopped report changed progress: %v", err)
