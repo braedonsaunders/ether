@@ -42,7 +42,7 @@ func (s *Service) Snapshot(ctx context.Context, v *core.User) ([]Entry, uint64, 
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.o.DB.QueryContext(ctx, `SELECT COALESCE(r.revision,0),t.title_key,t.added_at FROM (SELECT ? AS viewer_id) v LEFT JOIN notinterested_revisions r ON r.viewer_id=v.viewer_id LEFT JOIN notinterested_titles t ON t.viewer_id=v.viewer_id ORDER BY t.added_at DESC,t.title_key ASC`, viewer.ID)
+	rows, err := s.o.DB.QueryContext(ctx, `SELECT COALESCE(r.revision,0),t.title_key,t.added_at FROM (SELECT CAST(? AS BIGINT) AS viewer_id) v LEFT JOIN notinterested_revisions r ON r.viewer_id=v.viewer_id LEFT JOIN notinterested_titles t ON t.viewer_id=v.viewer_id ORDER BY t.added_at DESC,t.title_key ASC`, viewer.ID)
 	if err != nil {
 		return nil, 0, err
 	}
