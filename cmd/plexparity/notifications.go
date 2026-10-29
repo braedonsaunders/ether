@@ -85,6 +85,13 @@ func notificationCapture(ctx context.Context, client *http.Client, base, viewer,
 			stop()
 			return nil, fmt.Errorf("%s websocket dial: %w", path, dialErr)
 		}
+		type wsResult struct {
+			kind websocket.MessageType
+			body []byte
+			err  error
+		}
+		read := make(chan wsResult, 1)
+		go func() { kind, body, err := ws.Read(wsCtx); read <- wsResult{kind, body, err} }()
 		// A successful ping proves the server has installed its subscription.
 		if err = ws.Ping(wsCtx); err != nil {
 			ws.CloseNow()
@@ -96,13 +103,13 @@ func notificationCapture(ctx context.Context, client *http.Client, base, viewer,
 			stop()
 			return nil, err
 		}
-		kind, body, readErr := ws.Read(wsCtx)
+		message := <-read
 		ws.CloseNow()
 		stop()
-		if readErr != nil || kind != websocket.MessageText || !bytes.Contains(body, []byte(`"type":"timeline"`)) {
-			return nil, fmt.Errorf("%s websocket event kind=%d error=%v body=%s", path, kind, readErr, body)
+		if message.err != nil || message.kind != websocket.MessageText || !bytes.Contains(message.body, []byte(`"type":"timeline"`)) {
+			return nil, fmt.Errorf("%s websocket event kind=%d error=%v body=%s", path, message.kind, message.err, message.body)
 		}
-		captures = append(captures, capture{viewer, name, path, false, protocol.Response{Status: handshake.StatusCode, Headers: handshake.Header, Body: body}})
+		captures = append(captures, capture{viewer, name, path, false, protocol.Response{Status: handshake.StatusCode, Headers: handshake.Header, Body: message.body}})
 	}
 	return captures, nil
 }

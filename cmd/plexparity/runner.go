@@ -200,6 +200,9 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	if os.Getenv("ETHER_PARITY_ATTRIBUTION") == "1" {
 		return incompleteCoverage{[]string{"artwork probes skipped for historical attribution"}}
 	}
+	if os.Getenv("ETHER_PARITY_NOTIFICATIONS_ONLY") == "1" {
+		return incompleteCoverage{[]string{"only notification probes executed"}}
+	}
 	if missing := missingRoutes(); len(missing) > 0 {
 		return incompleteCoverage{missing}
 	}
