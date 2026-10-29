@@ -55,6 +55,34 @@ func copyFixture(src, dst string) error {
 // runPair fails on unapproved differences and reports incomplete coverage
 // separately so callers can distinguish a clean partial run from a regression.
 func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Writer) error {
+	subtitleOnly := os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1"
+	if err := runPairMode(ctx, baseline, candidate, seedDir, out, subtitleOnly); err != nil {
+		return err
+	}
+	for _, mode := range []struct{ env, description string }{
+		{"ETHER_PARITY_ATTRIBUTION", "artwork probes skipped for historical attribution"},
+		{"ETHER_PARITY_NOTIFICATIONS_ONLY", "only notification probes executed"},
+		{"ETHER_PARITY_LIVETV_ONLY", "only live TV probes executed"},
+		{"ETHER_PARITY_DOWNLOADS_ONLY", "only download probes executed"},
+		{"ETHER_PARITY_TRICKPLAY_ONLY", "only trickplay probes executed"},
+		{"ETHER_PARITY_SUBTITLES_ONLY", "only subtitle probes executed"},
+	} {
+		if os.Getenv(mode.env) == "1" {
+			return incompleteCoverage{[]string{mode.description}}
+		}
+	}
+	// A separately configured copy of the same seed enables the offline
+	// subtitle provider without changing the primary world's responses.
+	if err := runPairMode(ctx, baseline, candidate, seedDir, out, true); err != nil {
+		return err
+	}
+	if missing := missingRoutes(); len(missing) > 0 {
+		return incompleteCoverage{missing}
+	}
+	return nil
+}
+
+func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out io.Writer, subtitleMode bool) error {
 	dir, err := os.MkdirTemp("", "ether-plexparity-")
 	if err != nil {
 		return err
@@ -91,7 +119,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 			c.Server.Port = port
 			c.Cache.Dir = filepath.Join(dest, "cache")
 			c.Transcode.TempDir = filepath.Join(dest, "transcode")
-			if os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1" {
+			if subtitleMode {
 				c.OpenSubtitles.Enabled = true
 				c.OpenSubtitles.APIKey = "parity-fixture"
 				c.Cache.DisableSpeculation = true
@@ -169,7 +197,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 			default:
 			}
 		}
-		captured, captureErr := captureCorpus(ctx, url)
+		captured, captureErr := captureCorpusMode(ctx, url, subtitleMode)
 		cancel()
 		<-done
 		log.Close()
@@ -207,27 +235,6 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	}
 	if n > 0 {
 		return fmt.Errorf("%d unapproved response differences", n)
-	}
-	if os.Getenv("ETHER_PARITY_ATTRIBUTION") == "1" {
-		return incompleteCoverage{[]string{"artwork probes skipped for historical attribution"}}
-	}
-	if os.Getenv("ETHER_PARITY_NOTIFICATIONS_ONLY") == "1" {
-		return incompleteCoverage{[]string{"only notification probes executed"}}
-	}
-	if os.Getenv("ETHER_PARITY_LIVETV_ONLY") == "1" {
-		return incompleteCoverage{[]string{"only live TV probes executed"}}
-	}
-	if os.Getenv("ETHER_PARITY_DOWNLOADS_ONLY") == "1" {
-		return incompleteCoverage{[]string{"only download probes executed"}}
-	}
-	if os.Getenv("ETHER_PARITY_TRICKPLAY_ONLY") == "1" {
-		return incompleteCoverage{[]string{"only trickplay probes executed"}}
-	}
-	if os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1" {
-		return incompleteCoverage{[]string{"only subtitle probes executed"}}
-	}
-	if missing := missingRoutes(); len(missing) > 0 {
-		return incompleteCoverage{missing}
 	}
 	return nil
 }

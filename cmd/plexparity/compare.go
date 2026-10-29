@@ -30,6 +30,10 @@ type transcript struct {
 
 // captureCorpus retains literal response bytes. There are no normalizations.
 func captureCorpus(ctx context.Context, base string) (transcript, error) {
+	return captureCorpusMode(ctx, base, false)
+}
+
+func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (transcript, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	ids := protocol.Discover(ctx, client, base, "parity-owner", "web", nil)
 	if len(ids.Warnings) > 0 {
@@ -55,7 +59,7 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 	}
 	sort.Strings(names)
 	result := transcript{ids: ids.Values}
-	if os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1" {
+	if subtitleMode || os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1" {
 		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 			for _, name := range names {
 				captures, err := subtitleCapture(ctx, client, base, viewer, name, ids.Values["movieKey"], profiles[name].Headers)
@@ -668,6 +672,15 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 			captures, err := downloadCapture(ctx, client, base, viewer, name, ids.Values["movieKey"], profiles[name].Headers)
 			if err != nil {
 				return result, fmt.Errorf("%s %s downloads: %w", viewer, name, err)
+			}
+			result.captures = append(result.captures, captures...)
+		}
+	}
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			captures, err := trickplayCapture(ctx, client, base, viewer, name, ids.Values["movieKey"], profiles[name].Headers)
+			if err != nil {
+				return result, fmt.Errorf("%s %s trickplay: %w", viewer, name, err)
 			}
 			result.captures = append(result.captures, captures...)
 		}
