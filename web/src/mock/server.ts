@@ -1788,6 +1788,32 @@ export function createFakeServer(opts: FakeOptions = {}) {
       return json({ enabled: state.favoritesMirror.get(1) ?? true });
     }
 
+    const appsOffset = seg[0] === "me" ? 1 : seg[0] === "viewers" && seg[1] ? 2 : -1;
+    if (appsOffset >= 0 && seg[appsOffset] === "apps") {
+      const enabled = ["stremio", "webdav", "m3u"].filter(
+        (id) => state.config.frontends?.[id]?.enabled,
+      );
+      if (method === "GET" && seg.length === appsOffset + 1) return json({ apps: enabled });
+      const surface = seg[appsOffset + 1];
+      if (method === "POST" && surface && enabled.includes(surface)) {
+        const qr =
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+        const id = seg[0] === "viewers" ? seg[1] : "1";
+        if (surface === "webdav")
+          return json({
+            surface,
+            url: "http://ether.local/webdav/",
+            username: id,
+            password: "mock-app-password",
+            qr,
+          });
+        const path =
+          surface === "m3u" ? "m3u/mock-grant/playlist.m3u" : "stremio/mock-grant/manifest.json";
+        return json({ surface, url: `http://ether.local/${path}`, qr });
+      }
+      return err(404, "not_found", "app unavailable");
+    }
+
     const cached = cacheMock(method, seg, body, state.config, state.clustered);
     if (cached) return json(cached.body, cached.status);
 

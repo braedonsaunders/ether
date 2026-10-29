@@ -95,6 +95,7 @@ type Deps struct {
 	ViewerPush           ViewerPushService
 	ActiveViewer         func(context.Context, int64) (*core.User, error)
 	ViewerPortalURL      func(context.Context, *http.Request) (string, error)
+	StremioPortalURL     func(context.Context, *http.Request) (string, error)
 	LocalIdentity        *identity.Local
 	IdentityGrants       *identity.Grants
 	IdentityLimiter      *identity.LoginLimiter

@@ -43,7 +43,14 @@ export function ConnectApps({ base, token }: { base: string; token: string }) {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "X-Ether-Request": "1" },
       });
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { error?: { code?: string } };
+        if (body.error?.code === "stremio_https_required") {
+          setError(t("Stremio needs HTTPS. Add a certificate under Apps → Secure connections."));
+          return;
+        }
+        throw new Error();
+      }
       setConnection((await response.json()) as Connection);
     } catch {
       setError(t("The request could not be completed. Try again."));

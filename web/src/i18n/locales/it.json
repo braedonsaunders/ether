@@ -1626,6 +1626,7 @@
   "m_0b654a9fc601dd": "Riproduci un titolo in Plex; la decisione comparirà qui.",
   "m_0b65e93c57d127": "Stile della grafica",
   "m_0b69a2bbf87d10": "Nessun encoder hardware rilevato",
+  "m_0b6bb4a4831796": "Stremio richiede HTTPS. Aggiungi un certificato in App → Connessioni sicure.",
   "m_0b6ffda7aaaa95": "La quota di questo nodo delle connessioni e dei limiti di richieste di ogni provider, rispetto agli altri nodi. 2 ottiene il doppio della quota di un nodo a 1; 0 equivale a 1.",
   "m_0b7135e7718c1f": "Scegli la locandina e lo sfondo che Plex mostra per questo titolo.",
   "m_0b725108f96a25": "Installato",

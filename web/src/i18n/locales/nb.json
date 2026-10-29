@@ -1578,6 +1578,7 @@
   "m_0b654a9fc601dd": "Spill av en tittel i Plex; beslutningen vises her.",
   "m_0b65e93c57d127": "Omslagsstil",
   "m_0b69a2bbf87d10": "Ingen maskinvarekodere funnet",
+  "m_0b6bb4a4831796": "Stremio krever HTTPS. Legg til et sertifikat under Apper → Sikre tilkoblinger.",
   "m_0b6ffda7aaaa95": "Denne nodens andel av hver leverandørs tilkoblinger og forespørselsgrenser, relativt til de andre nodene. 2 får dobbelt så stor andel som en node på 1; 0 betyr 1.",
   "m_0b7135e7718c1f": "Velg plakaten og bakgrunnsbildet Plex viser for denne tittelen.",
   "m_0b725108f96a25": "Installert",

@@ -1626,6 +1626,7 @@
   "m_0b654a9fc601dd": "Lancez un titre dans Plex ; la décision apparaît ici.",
   "m_0b65e93c57d127": "Style d’illustration",
   "m_0b69a2bbf87d10": "Aucun encodeur matériel détecté",
+  "m_0b6bb4a4831796": "Stremio nécessite HTTPS. Ajoutez un certificat dans Applications → Connexions sécurisées.",
   "m_0b6ffda7aaaa95": "La part de ce nœud dans les connexions et les limites de requêtes de chaque fournisseur, par rapport aux autres nœuds. 2 obtient deux fois la part d’un nœud à 1 ; 0 équivaut à 1.",
   "m_0b7135e7718c1f": "Choisissez l’affiche et le fond d’écran que Plex affiche pour ce titre.",
   "m_0b725108f96a25": "Installée",

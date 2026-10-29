@@ -1578,6 +1578,7 @@
   "m_0b654a9fc601dd": "Speel een titel af in Plex; de beslissing verschijnt hier.",
   "m_0b65e93c57d127": "Artworkstijl",
   "m_0b69a2bbf87d10": "Geen hardware-encoders gedetecteerd",
+  "m_0b6bb4a4831796": "Stremio vereist HTTPS. Voeg een certificaat toe onder Apps → Beveiligde verbindingen.",
   "m_0b6ffda7aaaa95": "Het aandeel van deze node in de verbindingen en verzoeklimieten van elke provider, ten opzichte van de andere nodes. 2 krijgt twee keer zoveel als een node met 1; 0 betekent 1.",
   "m_0b7135e7718c1f": "Kies de poster en achtergrond die Plex voor deze titel toont.",
   "m_0b725108f96a25": "Geïnstalleerd",

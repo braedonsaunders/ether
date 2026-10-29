@@ -1674,6 +1674,7 @@
   "m_0b654a9fc601dd": "Odtwórz tytuł w Plex; decyzja pojawi się tutaj.",
   "m_0b65e93c57d127": "Styl grafiki",
   "m_0b69a2bbf87d10": "Nie wykryto enkoderów sprzętowych",
+  "m_0b6bb4a4831796": "Stremio wymaga HTTPS. Dodaj certyfikat w Aplikacje → Bezpieczne połączenia.",
   "m_0b6ffda7aaaa95": "Udział tego węzła w połączeniach i limitach żądań każdego dostawcy względem pozostałych węzłów. 2 oznacza dwukrotnie większy udział niż 1; 0 oznacza 1.",
   "m_0b7135e7718c1f": "Wybierz plakat i tło, które Plex pokazuje dla tego tytułu.",
   "m_0b725108f96a25": "Zainstalowano",

@@ -1578,6 +1578,7 @@
   "m_0b654a9fc601dd": "Play a title in Plex; the decision appears here.",
   "m_0b65e93c57d127": "Artwork style",
   "m_0b69a2bbf87d10": "No hardware encoders detected",
+  "m_0b6bb4a4831796": "Stremio needs HTTPS. Add a certificate under Apps → Secure connections.",
   "m_0b6ffda7aaaa95": "This node's share of each provider's connections and request limits, relative to the other nodes. 2 gets twice the share of a node at 1; 0 means 1.",
   "m_0b7135e7718c1f": "Pick the poster and backdrop Plex shows for this title.",
   "m_0b725108f96a25": "Installed",

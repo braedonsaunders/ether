@@ -30,14 +30,15 @@ func (a *App) buildAdmin() http.Handler {
 	quick, _ := identity.NewQuickConnect(a.db, 10*time.Minute, 30*24*time.Hour, nil)
 	invites, _ := identity.NewInvite(a.db, 24*time.Hour, 30*24*time.Hour, nil)
 	return admin.New(admin.Deps{
-		FavoritesMirror: a.favorites,
-		NotInterested:   notInterestedPortal{a},
-		ViewerAlerts:    &notify.ViewerAlerts{DB: a.db, Active: a.users.ActiveUser},
-		ViewerPush:      a.viewerPush(),
-		ActiveViewer:    a.users.ActiveUser,
-		ViewerPortalURL: a.frontends.viewerPortalURL,
-		Invites:         invites,
-		SetViewerActive: a.users.SetOwnerEnabled,
+		FavoritesMirror:  a.favorites,
+		NotInterested:    notInterestedPortal{a},
+		ViewerAlerts:     &notify.ViewerAlerts{DB: a.db, Active: a.users.ActiveUser},
+		ViewerPush:       a.viewerPush(),
+		ActiveViewer:     a.users.ActiveUser,
+		ViewerPortalURL:  a.frontends.viewerPortalURL,
+		StremioPortalURL: a.frontends.viewerPortalSecureURL,
+		Invites:          invites,
+		SetViewerActive:  a.users.SetOwnerEnabled,
 		LocalOwnerConfigured: func(ctx context.Context) bool {
 			owner, err := a.users.Owner(ctx)
 			if err != nil {

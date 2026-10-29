@@ -3,6 +3,7 @@ package admin_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,6 +21,39 @@ type connectFrontends struct{}
 
 func (connectFrontends) List(context.Context) ([]admin.FrontendInfo, error) {
 	return []admin.FrontendInfo{{Descriptor: frontend.Descriptor{ID: "stremio"}, Enabled: true}, {Descriptor: frontend.Descriptor{ID: "webdav"}, Enabled: false}}, nil
+}
+
+func TestConnectAppsFailsBeforeMintingWhenHTTPSUnavailable(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	users, err := auth.New(ctx, db, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, _ := identity.NewLocal(db)
+	viewerID, err := local.CreateViewer(ctx, "viewer", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	grants, _ := identity.NewGrants(db, users, time.Hour, nil)
+	portal, _ := grants.Issue(ctx, viewerID, nil, "viewer-portal", core.Device{})
+	h := admin.New(admin.Deps{Config: newStore(t, nil), IdentityGrants: grants, Frontends: connectFrontends{},
+		ViewerPortalURL:  func(context.Context, *http.Request) (string, error) { return "http://192.168.1.5/ether/me", nil },
+		StremioPortalURL: func(context.Context, *http.Request) (string, error) { return "", errors.New("no certificate") },
+	})
+	r := req("POST", "/ether/api/me/apps/stremio", "")
+	r.Header.Set("Authorization", "Bearer "+portal)
+	w := serve(h, r)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "stremio_https_required") {
+		t.Fatalf("response: %d %s", w.Code, w.Body.String())
+	}
+	devices, err := grants.List(ctx, viewerID)
+	if err != nil || len(devices) != 1 || devices[0].Surface != "viewer-portal" {
+		t.Fatalf("unexpected grant: %+v %v", devices, err)
+	}
 }
 func (connectFrontends) Settings(context.Context, frontend.Protocol) (frontend.Settings, error) {
 	return nil, nil
@@ -47,6 +81,9 @@ func TestConnectAppsGrantScopeAndAuthorization(t *testing.T) {
 	owner, _ := grants.Issue(ctx, ownerID, nil, "owner", core.Device{})
 	h := admin.New(admin.Deps{Config: newStore(t, nil), IdentityGrants: grants, Frontends: connectFrontends{}, ActiveViewer: users.ActiveUser,
 		ViewerPortalURL: func(context.Context, *http.Request) (string, error) {
+			return "https://ether.example/prefix/ether/me", nil
+		},
+		StremioPortalURL: func(context.Context, *http.Request) (string, error) {
 			return "https://ether.example/prefix/ether/me", nil
 		},
 	})
@@ -119,5 +156,22 @@ func TestConnectAppsGrantScopeAndAuthorization(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		t.Fatalf("owner create: %d", res.StatusCode)
+	}
+	r := req("POST", "/ether/api/me/apps/stremio", "")
+	r.Header.Set("Authorization", "Bearer "+portal)
+	r.Header.Del("X-Ether-Request")
+	if response := serve(h, r); response.Code != http.StatusForbidden {
+		t.Fatalf("missing CSRF: %d", response.Code)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE auth_users SET active=0 WHERE id=?`, viewerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	res = do("POST", "/ether/api/me/apps/stremio", portal)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("inactive viewer: %d", res.StatusCode)
 	}
 }

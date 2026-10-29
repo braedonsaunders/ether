@@ -1578,6 +1578,7 @@
   "m_0b654a9fc601dd": "Spela upp en titel i Plex; beslutet visas här.",
   "m_0b65e93c57d127": "Omslagsstil",
   "m_0b69a2bbf87d10": "Inga hårdvarukodare hittades",
+  "m_0b6bb4a4831796": "Stremio kräver HTTPS. Lägg till ett certifikat under Appar → Säkra anslutningar.",
   "m_0b6ffda7aaaa95": "Den här nodens andel av varje leverantörs anslutningar och förfrågningsgränser, i förhållande till de andra noderna. 2 får dubbelt så stor andel som en nod med 1; 0 betyder 1.",
   "m_0b7135e7718c1f": "Välj affisch och bakgrundsbild som Plex visar för den här titeln.",
   "m_0b725108f96a25": "Installerad",

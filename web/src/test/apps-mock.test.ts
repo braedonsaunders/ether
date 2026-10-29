@@ -22,4 +22,16 @@ describe("Apps mock API", () => {
     expect(fake.state.config.frontends?.plex?.enabled).toBe(true);
     expect(fake.state.config.frontendPorts?.silo).toBe(8092);
   });
+
+  it("lists enabled apps and returns a viewer connection", async () => {
+    const fake = createFakeServer();
+    await fake.fetch("/ether/api/frontends/stremio/enabled", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(await (await fake.fetch("/ether/api/me/apps")).json()).toEqual({ apps: ["stremio"] });
+    const created = await (await fake.fetch("/ether/api/me/apps/stremio", { method: "POST" })).json();
+    expect(created.url).toContain("/stremio/mock-grant/manifest.json");
+    expect(created.qr).toMatch(/^data:image\/png;base64,/);
+  });
 });

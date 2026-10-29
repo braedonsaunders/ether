@@ -1578,6 +1578,7 @@
   "m_0b654a9fc601dd": "Spiele einen Titel in Plex ab; die Entscheidung erscheint hier.",
   "m_0b65e93c57d127": "Artwork-Stil",
   "m_0b69a2bbf87d10": "Keine Hardware-Encoder erkannt",
+  "m_0b6bb4a4831796": "Stremio benötigt HTTPS. Füge unter Apps → Sichere Verbindungen ein Zertifikat hinzu.",
   "m_0b6ffda7aaaa95": "Der Anteil dieses Knotens an den Verbindungen und Anfragelimits jedes Anbieters im Verhältnis zu den anderen Knoten. 2 erhält doppelt so viel wie ein Knoten mit 1; 0 bedeutet 1.",
   "m_0b7135e7718c1f": "Wähle Poster und Hintergrundbild, die Plex für diesen Titel anzeigt.",
   "m_0b725108f96a25": "Installiert",

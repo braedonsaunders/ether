@@ -83,9 +83,21 @@ func (h *Handler) connectApps(w http.ResponseWriter, r *http.Request, viewer *co
 		writeError(w, 503, "unavailable", "address unavailable")
 		return
 	}
-	portal, err := h.deps.ViewerPortalURL(r.Context(), r)
+	address := h.deps.ViewerPortalURL
+	if surface == "stremio" {
+		address = h.deps.StremioPortalURL
+		if address == nil {
+			writeError(w, 503, "stremio_https_required", "Stremio needs HTTPS. Add a certificate under Apps → Secure connections.")
+			return
+		}
+	}
+	portal, err := address(r.Context(), r)
+	if err != nil && surface == "stremio" {
+		writeError(w, 503, "stremio_https_required", "Stremio needs HTTPS. Add a certificate under Apps → Secure connections.")
+		return
+	}
 	u, parseErr := url.Parse(portal)
-	if err != nil || parseErr != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || !strings.HasSuffix(u.Path, "/ether/me") {
+	if err != nil || parseErr != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || (surface == "stremio" && u.Scheme != "https") || u.Host == "" || !strings.HasSuffix(u.Path, "/ether/me") {
 		writeError(w, 503, "unavailable", "address unavailable")
 		return
 	}

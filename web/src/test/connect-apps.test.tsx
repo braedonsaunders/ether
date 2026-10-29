@@ -39,3 +39,16 @@ it("mints a viewer-scoped secret once and can reveal its QR code", async () => {
     }),
   );
 });
+
+it("explains how to enable HTTPS when Stremio has no secure address", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) =>
+    init?.method === "POST"
+      ? new Response(JSON.stringify({ error: { code: "stremio_https_required" } }), { status: 503 })
+      : new Response(JSON.stringify({ apps: ["stremio"] }), { status: 200 }),
+  );
+  render(<ConnectApps base="/me" token="portal" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Create connection" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Stremio needs HTTPS. Add a certificate under Apps → Secure connections.",
+  );
+});

@@ -1578,6 +1578,7 @@
   "m_0b654a9fc601dd": "Afspil en titel i Plex; beslutningen vises her.",
   "m_0b65e93c57d127": "Grafikstil",
   "m_0b69a2bbf87d10": "Ingen hardwareencodere fundet",
+  "m_0b6bb4a4831796": "Stremio kræver HTTPS. Tilføj et certifikat under Apps → Sikre forbindelser.",
   "m_0b6ffda7aaaa95": "Denne nodes andel af hver udbyders forbindelser og forespørgselsgrænser i forhold til de andre noder. 2 får dobbelt så stor en andel som en node på 1; 0 betyder 1.",
   "m_0b7135e7718c1f": "Vælg den plakat og baggrund, Plex viser for denne titel.",
   "m_0b725108f96a25": "Installeret",
