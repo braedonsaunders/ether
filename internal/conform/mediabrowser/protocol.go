@@ -217,6 +217,7 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 				v = strings.ReplaceAll(v, "${"+key+"}", value)
 				v = strings.ReplaceAll(v, "{{"+key+"}}", value)
 			}
+			v = strings.ReplaceAll(v, "${access_token}", token)
 			v = strings.ReplaceAll(v, "${token}", token)
 			v = strings.ReplaceAll(v, "{{token}}", token)
 			if strings.Contains(v, "${") || strings.Contains(v, "{{") {
@@ -273,7 +274,7 @@ func (p *Protocol) Redact(r conform.Response) conform.Response {
 	}
 	var v any
 	if json.Unmarshal(r.Body, &v) == nil {
-		scrub(v)
+		v = scrub(v)
 		if b, err := json.Marshal(v); err == nil {
 			r.Body = b
 		}
@@ -282,7 +283,7 @@ func (p *Protocol) Redact(r conform.Response) conform.Response {
 	}
 	return r
 }
-func scrub(v any) {
+func scrub(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, val := range x {
@@ -290,14 +291,17 @@ func scrub(v any) {
 			if strings.Contains(n, "token") || strings.Contains(n, "password") || n == "pw" || n == "username" || n == "serverid" || n == "server_id" || strings.HasSuffix(n, "path") || strings.HasSuffix(n, "url") || strings.HasSuffix(n, "uri") || strings.HasPrefix(n, "date") || strings.HasSuffix(n, "date") {
 				x[k] = "[REDACTED]"
 			} else {
-				scrub(val)
+				x[k] = scrub(val)
 			}
 		}
 	case []any:
-		for _, val := range x {
-			scrub(val)
+		for i, val := range x {
+			x[i] = scrub(val)
 		}
+	case string:
+		return string(redactText(conform.Redact([]byte(x))))
 	}
+	return v
 }
 
 var secretQuery = regexp.MustCompile(`(?i)([?&](?:api_key|access_token|token|authorization)=)[^&\s"']+`)

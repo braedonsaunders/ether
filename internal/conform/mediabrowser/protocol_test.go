@@ -54,3 +54,40 @@ func TestLoadFetchAlignAndRedact(t *testing.T) {
 		}
 	}
 }
+
+func TestShippedProfilesLoad(t *testing.T) {
+	for _, name := range []string{"jellyfin", "emby", "silo"} {
+		t.Run(name, func(t *testing.T) {
+			p, err := Load(name, filepath.Join("..", "profiles", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for id := range p.Clients() {
+				if len(p.Corpus(id)) == 0 {
+					t.Errorf("empty corpus for %s", id)
+				}
+			}
+		})
+	}
+}
+func TestAccessTokenHeaderTemplate(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"protocol":"emby","client":"Emby web","headers":{"X-Emby-Token":"${access_token}"},"flows":{"connect":[{"name":"ping","method":"GET","path":"/ping"}]}}`
+	if err := os.WriteFile(filepath.Join(dir, "web.json"), []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Load("emby", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Emby-Token") != "secret" {
+			t.Error("token not substituted")
+		}
+		w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	if _, err = p.Fetch(context.Background(), server.Client(), server.URL, "secret", p.Corpus("web")[0], "web", nil, true); err != nil {
+		t.Fatal(err)
+	}
+}
