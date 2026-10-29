@@ -89,6 +89,7 @@ type Instance interface {
 // frontends must not construct a viewer from untrusted request data.
 type SurfaceIdentity interface {
 	Resolve(context.Context, string) (*core.Viewer, error)
+	PublicViewers(context.Context) ([]PublicViewer, error)
 	SignIn(context.Context, string, string, core.Device) (string, error)
 	QuickConnectInitiate(context.Context, core.Device) (code, secret string, err error)
 	QuickConnectStatus(context.Context, string) (approved bool, err error)
@@ -150,6 +151,9 @@ var ErrQuickConnectPending = errors.New("frontend quick connect pending")
 
 // BindIdentity alone binds resolution; app-hosted implementations additionally
 // provide credential issuance and Quick Connect operations.
+func (boundIdentity) PublicViewers(context.Context) ([]PublicViewer, error) {
+	return nil, ErrIdentityUnavailable
+}
 func (boundIdentity) SignIn(context.Context, string, string, core.Device) (string, error) {
 	return "", ErrIdentityUnavailable
 }
@@ -186,11 +190,14 @@ type Images interface {
 type Host struct {
 	Experience   Experience
 	Capabilities Capabilities
+	Preferences  Preferences
+	LiveTV       LiveTV
 	Sessions     Sessions
 	Identity     SurfaceIdentity
 	IDs          ids.Codecs
 	Events       Subscriber
 	Images       Images
+	ImageGrants  ImageGrants
 	Config       func() Settings
 	Log          *slog.Logger
 	// ClientSeen reports an authenticated client's protocol-specific device ID.

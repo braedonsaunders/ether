@@ -111,3 +111,37 @@ func TestFormatStremio(t *testing.T) {
 		t.Fatal("ignored episode fields")
 	}
 }
+
+func TestStringGUIDNamespaces(t *testing.T) {
+	channel, err := StringGUID(Channel, "owner-channel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, _ := StringGUID(Channel, "owner-channel")
+	programme, _ := StringGUID(Programme, "owner-channel")
+	if channel != again || channel == programme || len(channel) != 32 {
+		t.Fatal(channel, again, programme)
+	}
+	if _, err := ParseGUID(Programme, channel); err == nil {
+		t.Fatal("accepted wrong namespace")
+	}
+	if _, err := StringGUID(Item, "owner-channel"); err == nil {
+		t.Fatal("accepted wrong kind")
+	}
+}
+func FuzzStringGUID(f *testing.F) {
+	f.Add("channel-one")
+	f.Fuzz(func(t *testing.T, s string) {
+		if s == "" {
+			return
+		}
+		first, err := StringGUID(Channel, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, _ := StringGUID(Channel, s)
+		if first != second || len(first) != 32 {
+			t.Fatal(first, second)
+		}
+	})
+}

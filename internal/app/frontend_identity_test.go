@@ -172,3 +172,38 @@ func TestSurfaceIdentityRateLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPublicViewerPickerRequiresOptInAndOnlyActiveLocalCredentials(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	if _, err := a.db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at,active) VALUES(11,111,0,0,1),(12,112,0,0,0),(13,113,0,0,1),(14,114,0,0,1)`); err != nil {
+		t.Fatal(err)
+	}
+	local, _ := identity.NewLocal(a.db)
+	for _, item := range []struct {
+		id   int64
+		name string
+	}{{11, "plex-linked"}, {12, "inactive"}, {14, "local-viewer"}} {
+		if err := local.Create(ctx, item.id, item.name, "password"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	limiter, _ := identity.NewLoginLimiter(a.db, time.Minute, 30, 8, nil)
+	enabled := false
+	s := surfaceIdentity{surface: "jellyfin", local: local, login: limiter, settings: func() frontend.Settings { return frontend.Settings{"publicViewerPicker": enabled} }}
+	if list, err := s.PublicViewers(ctx); err != nil || len(list) != 0 {
+		t.Fatal(list, err)
+	}
+	enabled = true
+	if _, err := s.PublicViewers(ctx); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("missing IP", err)
+	}
+	ctx = frontend.WithClientIP(ctx, netip.MustParseAddr("192.0.2.42"))
+	viewers, err := s.PublicViewers(ctx)
+	if err != nil || len(viewers) != 2 {
+		t.Fatal(viewers, err)
+	}
+	if viewers[0].Name != "local-viewer" || viewers[1].Name != "plex-linked" {
+		t.Fatal(viewers)
+	}
+}
