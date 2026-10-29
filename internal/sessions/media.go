@@ -34,6 +34,12 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		return "", core.ErrNotAvailable
 	}
 	path := "/sessions/media/" + s.public.ID + "/" + s.grant + "/"
+	if s.live {
+		if req.Format != frontend.StreamHLS {
+			return "", core.ErrNotAvailable
+		}
+		return path + "live/index.m3u8", nil
+	}
 	if req.Format == frontend.StreamDirect {
 		if s.decision.Kind != core.DecisionDirectPlay || !s.opts.DirectPlay {
 			return "", core.ErrNotAvailable
@@ -174,6 +180,10 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, w http.ResponseWriter, r
 		return
 	}
 	tail := parts[2:]
+	if s.live && len(tail) >= 2 && tail[0] == "live" && b.deps.Live != nil {
+		b.deps.Live.Serve(w, r, viewer, s.playID, strings.Join(tail[1:], "/"), "/sessions/media/"+s.public.ID+"/"+s.grant+"/live/")
+		return
+	}
 	if len(tail) == 2 && tail[0] == "subtitles" {
 		b.serveSubtitle(w, r, s, tail[1])
 		return

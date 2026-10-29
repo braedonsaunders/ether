@@ -47,15 +47,15 @@ func (p ownerPlayback) Session(id string) (*core.PlaySession, bool) {
 	return nil, false
 }
 func (a *App) stopOwnerSession(id string) error {
+	if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.StopPlayback(context.Background(), id) {
+		return nil
+	}
 	if a.livetv != nil {
 		for _, s := range a.livetv.ViewingSessions() {
 			if s.ID == id {
 				return a.livetv.Stop(context.Background(), id, &core.User{IsOwner: true})
 			}
 		}
-	}
-	if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.StopPlayback(context.Background(), id) {
-		return nil
 	}
 	if a.plexServer != nil {
 		a.plexServer.StopPlayback(id, "The server owner has ended this stream.")

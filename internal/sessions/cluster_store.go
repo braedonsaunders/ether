@@ -27,6 +27,7 @@ type legacyClusterEntry struct {
 	StartedAt  time.Time      `json:"startedAt"`
 	UpdatedAt  time.Time      `json:"updatedAt"`
 	SourceID   string         `json:"sourceID,omitempty"`
+	Channel    string         `json:"channel,omitempty"`
 }
 type legacyClient struct {
 	ClientID   string `json:"clientID"`
@@ -46,7 +47,7 @@ func (c clusterStore) put(ctx context.Context, s frontend.Session, sourceID stri
 	v := core.User{ID: viewer.ID, Username: viewer.Username, Title: viewer.Title, IsOwner: viewer.IsOwner}
 	d := s.Device
 	d.Client = ""
-	data, err := json.Marshal(legacyClusterEntry{ID: s.ID, SessionKey: key, User: v, Client: legacyClient{ClientID: d.ID, Product: d.Product, Version: d.Version, Platform: d.Platform, DeviceName: d.DeviceName}, Key: s.Item, State: "playing", StartedAt: s.StartedAt, UpdatedAt: now, SourceID: sourceID})
+	data, err := json.Marshal(legacyClusterEntry{ID: s.ID, SessionKey: key, User: v, Client: legacyClient{ClientID: d.ID, Product: d.Product, Version: d.Version, Platform: d.Platform, DeviceName: d.DeviceName}, Key: s.Item, State: "playing", StartedAt: s.StartedAt, UpdatedAt: now, SourceID: sourceID, Channel: s.Channel})
 	if err != nil {
 		return err
 	}
@@ -108,7 +109,7 @@ func (c clusterStore) list(ctx context.Context, cutoff time.Time, live map[strin
 			continue
 		}
 		d.Client = ""
-		out = append(out, remoteSession{node: node, sourceID: e.SourceID, session: frontend.Session{ID: e.ID, ViewerID: viewer, Protocol: frontend.Protocol(protocol), Item: e.Key, Device: d, StartedAt: e.StartedAt}})
+		out = append(out, remoteSession{node: node, sourceID: e.SourceID, session: frontend.Session{ID: e.ID, ViewerID: viewer, Protocol: frontend.Protocol(protocol), Item: e.Key, Channel: e.Channel, Device: d, StartedAt: e.StartedAt}})
 	}
 	return out, rows.Err()
 }

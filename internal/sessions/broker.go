@@ -23,6 +23,7 @@ import (
 type BrokerDeps struct {
 	DB                 *sql.DB
 	Cluster            clusterbus.Node
+	Live               LiveBackend
 	Lookup             func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
 	Playback           core.Playback
 	Transcoder         core.Transcoder
@@ -44,6 +45,7 @@ type brokerPlan struct {
 	source   *core.PlaySession
 	decision core.Decision
 	created  time.Time
+	live     bool
 }
 type brokerSession struct {
 	public           frontend.Session
@@ -58,10 +60,10 @@ type brokerSession struct {
 	format           frontend.StreamFormat
 	streamPosition   time.Duration
 	segmentDuration  time.Duration
+	live             bool
 }
 
 // Broker coordinates neutral sessions with the shared playback admission manager.
-// Follow-up work: cluster-wide session listing and stop are not yet implemented here.
 // Plex's legacy timeline tracker is not yet included in Sessions; owner
 // Activity continues to use the shared playback manager until that move lands.
 type Broker struct {
@@ -158,7 +160,7 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	if err != nil {
 		return frontend.PlayPlan{}, err
 	}
-	if req.Protocol == "" || req.Device.ID == "" || req.Item == 0 {
+	if req.Protocol == "" || req.Device.ID == "" || (req.Item == 0) == (req.Channel == "") {
 		return frontend.PlayPlan{}, core.ErrUnauthorized
 	}
 	// Plex-specific version and stream identifiers remain on the existing Plex
@@ -193,6 +195,9 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 				req.Intent.Options.MaxBitrateKbps = limit
 			}
 		}
+	}
+	if req.Channel != "" {
+		return b.planLive(ctx, req, v)
 	}
 	title, err := b.deps.Lookup(ctx, v, req.Device, req.Item)
 	if err != nil {
@@ -311,6 +316,9 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		if limit := b.deps.RemoteBitrateLimit(); limit > 0 && (p.request.Caps.MaxBitrateKbps == 0 || p.request.Caps.MaxBitrateKbps > limit) {
 			return frontend.Session{}, core.ErrUnauthorized
 		}
+	}
+	if p.live {
+		return b.openLive(ctx, req, p, v)
 	}
 	title, err := b.deps.Lookup(ctx, v, req.Device, p.request.Item)
 	if err != nil {
@@ -439,6 +447,13 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 			return core.ErrUnauthorized
 		}
 	}
+	if s.live {
+		b.publish(ctx, frontend.Event{Type: "SessionUpdated", ViewerID: s.public.ViewerID, SessionID: id})
+		if t.State == "stopped" {
+			return b.stopLocked(ctx, s)
+		}
+		return nil
+	}
 	reportedID := t.PlaybackID
 	if reportedID == s.public.ID {
 		reportedID = s.playbackID
@@ -531,6 +546,11 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 		}
 	}
 	b.bindings.Remove(s.public.ID)
+	if s.live {
+		err := b.deps.Live.Stop(ctx, &core.Viewer{ID: s.public.ViewerID}, s.playID)
+		b.publish(ctx, frontend.Event{Type: "SessionStopped", ViewerID: s.public.ViewerID, SessionID: s.public.ID})
+		return err
+	}
 	if b.deps.Transcoder != nil {
 		b.deps.Transcoder.Stop(s.public.ID)
 	}
@@ -596,7 +616,9 @@ func (b *Broker) Close(ctx context.Context) {
 		ids = append(ids, s.playID)
 	}
 	for _, p := range b.plans {
-		planned = append(planned, p.source.ID)
+		if p.source != nil {
+			planned = append(planned, p.source.ID)
+		}
 	}
 	b.plans = make(map[string]brokerPlan)
 	b.mu.Unlock()

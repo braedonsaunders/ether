@@ -24,6 +24,10 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	if a.transcoder != nil {
 		tc = a.transcoder
 	}
+	var live sessions.LiveBackend
+	if a.livetv != nil {
+		live = sessionLive{service: a.livetv}
+	}
 	visibility := experience.Visibility{Policy: a.safety, GetTitle: a.catalog.Get, SectionFor: func(t core.MediaType) (int, bool) {
 		want := core.TypeMovie
 		switch t {
@@ -38,7 +42,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		return 0, false
 	}}
 	return sessions.NewBroker(sessions.BrokerDeps{
-		DB: a.db, Cluster: a.clusterNode(),
+		DB: a.db, Cluster: a.clusterNode(), Live: live,
 		Lookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
 			title, err := a.catalog.Get(ctx, key)
 			if err != nil {

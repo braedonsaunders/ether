@@ -301,8 +301,11 @@ type PlanRequest struct {
 	Device   core.Device
 	Protocol Protocol
 	Item     core.RatingKey
-	Caps     core.ClientCaps
-	Intent   PlayIntent
+	// Channel is the stable Host.LiveTV channel ID. Exactly one of Item and
+	// Channel must be supplied.
+	Channel string
+	Caps    core.ClientCaps
+	Intent  PlayIntent
 }
 type PlayPlan struct {
 	ID        string
@@ -322,6 +325,7 @@ type Session struct {
 	ViewerID      int64
 	Device        core.Device
 	Item          core.RatingKey
+	Channel       string
 	StartedAt     time.Time
 }
 type Timeline struct {
