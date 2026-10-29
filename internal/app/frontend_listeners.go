@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,7 @@ type runningFrontend struct {
 	listeners  []net.Listener
 	announcers []frontend.Announcer
 	warnings   []string
+	prefixes   []string
 }
 
 func newFrontendListeners(r *frontend.Registry) *frontendListeners {
@@ -61,6 +63,9 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 		_ = m.registry.Unmount(context.Background(), id)
 	}
 	for _, spec := range inst.Listeners() {
+		if spec.Shared {
+			continue
+		}
 		if spec.TLS {
 			err = errors.New("frontend TLS listener requires a certificate provider")
 			break
@@ -71,6 +76,7 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 			break
 		}
 		run.listeners = append(run.listeners, ln)
+		run.prefixes = append(run.prefixes, spec.PathPrefix)
 		_, requestedPort, requestedErr := net.SplitHostPort(spec.Address)
 		_, actualPort, actualErr := net.SplitHostPort(ln.Addr().String())
 		if requestedErr == nil && actualErr == nil && requestedPort != "0" && requestedPort != actualPort {
@@ -178,8 +184,13 @@ func (m *frontendListeners) status(ctx context.Context, id frontend.Protocol) fr
 		st = inst.Status(ctx)
 	}
 	if run != nil {
-		for _, ln := range run.listeners {
+		providedURLs := len(st.ConnectURLs) > 0
+		for i, ln := range run.listeners {
 			st.Addresses = append(st.Addresses, ln.Addr().String())
+			if !providedURLs {
+				addresses, _ := net.InterfaceAddrs()
+				st.ConnectURLs = append(st.ConnectURLs, connectionURLs(ln.Addr().String(), run.prefixes[i], addresses)...)
+			}
 		}
 		st.Warnings = append(st.Warnings, run.warnings...)
 	}
@@ -248,4 +259,36 @@ func listenFrontendWith(id frontend.Protocol, address string, listen func(string
 		}
 	}
 	return nil, err
+}
+
+// connectionURLs converts actual bound addresses into LAN URLs, avoiding
+// loopback and unspecified addresses that another device cannot reach.
+func connectionURLs(address, prefix string, interfaces []net.Addr) []string {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil
+	}
+	var hosts []string
+	ip := net.ParseIP(host)
+	if ip != nil && ip.IsUnspecified() {
+		for _, item := range interfaces {
+			ip, _, err := net.ParseCIDR(item.String())
+			if err == nil && !ip.IsLoopback() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() {
+				hosts = append(hosts, ip.String())
+			}
+		}
+	} else if host != "" && host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		hosts = append(hosts, host)
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, host := range hosts {
+		u := url.URL{Scheme: "http", Host: net.JoinHostPort(host, port), Path: prefix}
+		value := u.String()
+		if !seen[value] {
+			seen[value] = true
+			out = append(out, value)
+		}
+	}
+	return out
 }

@@ -49,6 +49,7 @@ func (a *App) buildAdmin() http.Handler {
 		},
 		AuthenticatePlex: a.users.Authenticate, LinkPlex: a.users.LinkPlex, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, PollLimiter: pollLimiter, QuickConnect: quick, RefreshViewers: a.users.RefreshViewers, OwnerConfigured: func(ctx context.Context) bool { _, err := a.users.Owner(ctx); return err == nil },
 		Config:        a.cfg,
+		Frontends:     a.frontends.control,
 		Extensions:    a.extensionHandlers(),
 		ValidateExtra: a.validateExtra,
 		Logger:        a.log.With("component", "admin"),

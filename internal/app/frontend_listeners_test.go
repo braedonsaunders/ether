@@ -116,3 +116,17 @@ func TestFrontendDefaultFallback(t *testing.T) {
 		t.Fatal(tried, err)
 	}
 }
+
+func TestFrontendConnectionURLs(t *testing.T) {
+	addresses := []net.Addr{&net.IPNet{IP: net.ParseIP("192.168.1.2"), Mask: net.CIDRMask(24, 32)}, &net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)}}
+	got := connectionURLs("0.0.0.0:8090", "/silo", addresses)
+	if len(got) != 1 || got[0] != "http://192.168.1.2:8090/silo" {
+		t.Fatal(got)
+	}
+	if got := connectionURLs("127.0.0.1:8090", "", addresses); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if got := connectionURLs("[2001:db8::1]:8090", "", nil); len(got) != 1 || got[0] != "http://[2001:db8::1]:8090" {
+		t.Fatal(got)
+	}
+}

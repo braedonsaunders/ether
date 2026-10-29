@@ -168,6 +168,7 @@ type App struct {
 	migration         *migrate.Service
 	safety            *safety.Service
 	updates           *updateState
+	frontends         *frontendRuntime
 	plexServer        *plex.Server
 	handler           http.Handler
 	instanceLock      *instanceLock
@@ -425,9 +426,7 @@ func (a *App) Run(ctx context.Context) error {
 	} else if err := a.registrar.Start(ctx); err != nil {
 		a.log.Warn("plex.tv registrar", "err", err)
 	}
-	if err := a.gdm.Start(ctx); err != nil {
-		a.log.Warn("GDM discovery responder", "err", err)
-	}
+
 	background.start(func() { a.housekeeping(ctx) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "database maintenance", a.maintainDB) })
 	background.start(func() { a.stats.Run(ctx) })
@@ -453,6 +452,8 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	a.frontends.start(ctx, ln.Addr())
+	defer a.frontends.stop()
 	cfg = a.cfg.Get() // the port may have moved off a busy default
 	// Publish the actual listener, including automatic port fallback, without
 	// exposing the service's protected configuration to the desktop user.
@@ -514,7 +515,6 @@ func (a *App) Run(ctx context.Context) error {
 	defer done()
 	_ = srv.Shutdown(shutdown)
 	a.registrar.Stop()
-	a.gdm.Stop()
 	if runErr != nil {
 		return runErr
 	}

@@ -13,32 +13,53 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
+// ConnectStep identifies a translated owner-console connection instruction.
+type ConnectStep string
+
+const (
+	ConnectOpenApp      ConnectStep = "openApp"
+	ConnectAddServer    ConnectStep = "addServer"
+	ConnectSignIn       ConnectStep = "signIn"
+	ConnectInstallAddon ConnectStep = "installAddon"
+)
+
+// CertifiedApp contains only verified native clients, with their connection steps.
+type CertifiedApp struct {
+	Name  string        `json:"name"`
+	Steps []ConnectStep `json:"steps"`
+}
+
 type Descriptor struct {
-	ID             Protocol `json:"id"`
-	Name           string   `json:"name"`
-	Logo           string   `json:"logo,omitempty"`
-	Version        string   `json:"version,omitempty"`
-	DocsURL        string   `json:"docsUrl,omitempty"`
-	DefaultPort    int      `json:"defaultPort,omitempty"`
-	Clients        []string `json:"clients,omitempty"`
-	SettingsSchema any      `json:"settingsSchema,omitempty"`
+	ID             Protocol       `json:"id"`
+	Name           string         `json:"name"`
+	Logo           string         `json:"logo,omitempty"`
+	Version        string         `json:"version,omitempty"`
+	DocsURL        string         `json:"docsUrl,omitempty"`
+	DefaultPort    int            `json:"defaultPort,omitempty"`
+	Clients        []string       `json:"clients,omitempty"`
+	CertifiedApps  []CertifiedApp `json:"certifiedApps,omitempty"`
+	SettingsSchema any            `json:"settingsSchema,omitempty"`
 }
 type ListenerSpec struct {
 	Address    string `json:"address"`
 	PathPrefix string `json:"pathPrefix,omitempty"`
 	TLS        bool   `json:"tls"`
+	// Shared means the app supplies this listener; the manager must not bind it.
+	Shared bool `json:"shared,omitempty"`
 }
 type Status struct {
-	Addresses     []string `json:"addresses"`
-	ConnectURLs   []string `json:"connectUrls,omitempty"`
-	LAN           string   `json:"lan"`
-	WAN           string   `json:"wan"`
-	Clients24h    int      `json:"clients24h"`
-	LiveStreams   int      `json:"liveStreams"`
-	TargetVersion string   `json:"targetVersion"`
-	Conformance   string   `json:"conformance"`
-	Error         string   `json:"error,omitempty"`
-	Warnings      []string `json:"warnings,omitempty"`
+	Addresses        []string `json:"addresses"`
+	ConnectURLs      []string `json:"connectUrls,omitempty"`
+	LAN              string   `json:"lan"`
+	WAN              string   `json:"wan"`
+	Clients24h       int      `json:"clients24h"`
+	Clients24hKnown  bool     `json:"clients24hKnown"`
+	LiveStreams      int      `json:"liveStreams"`
+	LiveStreamsKnown bool     `json:"liveStreamsKnown"`
+	TargetVersion    string   `json:"targetVersion"`
+	Conformance      string   `json:"conformance"`
+	Error            string   `json:"error,omitempty"`
+	Warnings         []string `json:"warnings,omitempty"`
 }
 type Announcer interface {
 	Start(context.Context) error
@@ -48,6 +69,11 @@ type Frontend interface {
 	Describe() Descriptor
 	Mount(context.Context, Host) (Instance, error)
 }
+
+// SettingsValidator lets a frontend validate its own protocol-specific options.
+// The host also checks common listener options before persistence.
+type SettingsValidator interface{ ValidateSettings(Settings) error }
+
 type Instance interface {
 	Handler() http.Handler
 	Listeners() []ListenerSpec
@@ -134,6 +160,24 @@ func (r *Registry) Register(f Frontend) error {
 	r.entries[id] = &entry{frontend: f}
 	return nil
 }
+
+// ValidateSettings delegates protocol-specific settings to the registered frontend.
+// The bool reports whether it provides a validator.
+func (r *Registry) ValidateSettings(id Protocol, settings Settings) (bool, error) {
+	r.mu.Lock()
+	e, ok := r.entries[id]
+	if !ok {
+		r.mu.Unlock()
+		return false, ErrNotRegistered
+	}
+	validator, supported := e.frontend.(SettingsValidator)
+	r.mu.Unlock()
+	if !supported {
+		return false, nil
+	}
+	return true, validator.ValidateSettings(settings)
+}
+
 func (r *Registry) Mount(ctx context.Context, id Protocol) (Instance, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

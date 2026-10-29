@@ -63,14 +63,17 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
 		}
 		cancel()
 	}
-	a.gdm = remote.NewGDMResponder(remote.GDMOptions{
-		Info: func() remote.GDMInfo {
-			c := a.cfg.Get()
-			return remote.GDMInfo{Name: c.Server.FriendlyName, MachineIdentifier: c.Server.MachineIdentifier,
-				Port: c.Server.Port, Version: plextv.PMSVersion(c), UpdatedAt: time.Now()}
-		},
-		Logger: log.With("component", "gdm"),
-	})
+	a.gdm = a.newGDMResponder()
 
 	return nil
+}
+
+func (a *App) newGDMResponder() *remote.GDMResponder {
+	return remote.NewGDMResponder(remote.GDMOptions{
+		Info: func() remote.GDMInfo {
+			c := a.cfg.Get()
+			return remote.GDMInfo{Name: c.Server.FriendlyName, MachineIdentifier: c.Server.MachineIdentifier, Port: c.Server.Port, Version: plextv.PMSVersion(c), UpdatedAt: time.Now()}
+		},
+		Logger: a.log.With("component", "gdm"),
+	})
 }

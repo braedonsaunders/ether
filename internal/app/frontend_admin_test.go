@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"strings"
@@ -60,5 +61,39 @@ func TestFrontendPortIsNodeLocal(t *testing.T) {
 	local := string(config.LocalJSON(c))
 	if strings.Contains(shared, "frontendPorts") || !strings.Contains(shared, `"frontends"`) || !strings.Contains(local, `"frontendPorts"`) || strings.Contains(local, `"frontends"`) {
 		t.Fatal(shared, local)
+	}
+}
+
+type customSettingsFrontend struct{ listenerFrontend }
+
+func (customSettingsFrontend) ValidateSettings(s frontend.Settings) error {
+	if v, ok := s["customPath"]; ok {
+		if path, ok := v.(string); !ok || path == "" {
+			return errors.New("invalid custom path")
+		}
+	}
+	return nil
+}
+func TestFrontendSpecificSettings(t *testing.T) {
+	ctx := context.Background()
+	cfg, err := config.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := 0
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	if err := reg.Register(customSettingsFrontend{listenerFrontend{"127.0.0.1:0", &closed}}); err != nil {
+		t.Fatal(err)
+	}
+	control := newFrontendControl(reg, cfg)
+	if err := control.PutSettings(ctx, "test", frontend.Settings{"customPath": "/addon"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := control.PutSettings(ctx, "test", frontend.Settings{"customPath": false}); err == nil {
+		t.Fatal("invalid custom setting accepted")
+	}
+	got, err := control.Settings(ctx, "test")
+	if err != nil || got["customPath"] != "/addon" {
+		t.Fatal(got, err)
 	}
 }

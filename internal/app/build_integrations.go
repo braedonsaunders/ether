@@ -52,16 +52,22 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	a.buildExtras()
-	plexHandler, err := a.buildPlex(cfg)
+	_, err = a.buildPlex(cfg)
 	if err != nil {
 		return fmt.Errorf("plex front end: %w", err)
 	}
+	a.frontends, err = newFrontendRuntime(a, cfg)
+	if err != nil {
+		return fmt.Errorf("front-end registry: %w", err)
+	}
+	a.closers = append(a.closers, a.frontends.close)
+	a.cfg.Subscribe(a.frontends.reconcile)
 	mux := http.NewServeMux()
 	mux.Handle("/ether/", lanOnly(a.buildAdmin()))
 	mux.HandleFunc("/ether", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ether/", http.StatusFound)
 	})
-	mux.Handle("/", plexHandler)
+	mux.Handle("/", a.frontends.plexHandler())
 	a.handler = mux
 	return nil
 }

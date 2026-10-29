@@ -51,6 +51,9 @@ func (f *frontendControl) Settings(_ context.Context, id frontend.Protocol) (fro
 		return nil, frontend.ErrNotRegistered
 	}
 	cfg := f.config.Get()
+	if id == "plex" {
+		return frontend.Settings{"port": float64(cfg.Server.Port), "serverName": cfg.Server.FriendlyName}, nil
+	}
 	settings := frontend.Settings{}
 	for k, v := range cfg.Frontends[string(id)].Settings {
 		settings[k] = v
@@ -62,7 +65,7 @@ func (f *frontendControl) Settings(_ context.Context, id frontend.Protocol) (fro
 	}
 	return settings, nil
 }
-func validateFrontendSettings(s frontend.Settings) error {
+func validateFrontendSettings(s frontend.Settings, protocolValidator bool) error {
 	for k, v := range s {
 		switch k {
 		case "port":
@@ -79,7 +82,9 @@ func validateFrontendSettings(s frontend.Settings) error {
 				return fmt.Errorf("invalid %s", k)
 			}
 		default:
-			return fmt.Errorf("unknown setting %s", k)
+			if !protocolValidator {
+				return fmt.Errorf("unknown setting %s", k)
+			}
 		}
 	}
 	return nil
@@ -88,8 +93,28 @@ func (f *frontendControl) PutSettings(_ context.Context, id frontend.Protocol, s
 	if _, ok := f.descriptor(id); !ok {
 		return frontend.ErrNotRegistered
 	}
-	if err := validateFrontendSettings(s); err != nil {
+	supported, err := f.registry.ValidateSettings(id, s)
+	if err != nil {
 		return err
+	}
+	if err := validateFrontendSettings(s, supported); err != nil {
+		return err
+	}
+	if id == "plex" {
+		for key := range s {
+			if key != "port" && key != "serverName" {
+				return fmt.Errorf("unsupported Plex setting %s", key)
+			}
+		}
+		return f.config.Update(func(c *config.Config) error {
+			if port, ok := s["port"].(float64); ok {
+				c.Server.Port = int(port)
+			}
+			if name, ok := s["serverName"].(string); ok {
+				c.Server.FriendlyName = name
+			}
+			return nil
+		})
 	}
 	return f.config.Update(func(c *config.Config) error {
 		if c.Frontends == nil {

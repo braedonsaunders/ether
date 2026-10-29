@@ -141,8 +141,13 @@ type Registrar struct {
 	client *Client
 	log    *slog.Logger
 
-	wake    chan struct{}
-	mapWake chan struct{} // RunPortMapping
+	wake               chan struct{}
+	mapWake            chan struct{} // RunPortMapping
+	presenceWake       chan struct{}
+	publicationMu      sync.Mutex
+	publicationRunMu   sync.Mutex
+	publicationCancel  context.CancelFunc
+	publicationEnabled bool
 
 	runMu  sync.Mutex
 	cancel context.CancelFunc
@@ -231,12 +236,14 @@ func NewRegistrar(o RegistrarOptions) (*Registrar, error) {
 		o.Reach = remote.NewReachabilityChecker(nil)
 	}
 	r := &Registrar{
-		o:       o,
-		client:  client,
-		log:     o.Logger.With("component", "registrar"),
-		wake:    make(chan struct{}, 1),
-		mapWake: make(chan struct{}, 1),
-		next:    map[string]time.Time{},
+		o:                  o,
+		client:             client,
+		log:                o.Logger.With("component", "registrar"),
+		wake:               make(chan struct{}, 1),
+		mapWake:            make(chan struct{}, 1),
+		presenceWake:       make(chan struct{}, 1),
+		publicationEnabled: plexAppsEnabled(o.Config.Get()),
+		next:               map[string]time.Time{},
 	}
 	if c := o.Config.Get(); c.Plex.Claimed {
 		r.claimedToken = c.Plex.Token
@@ -280,9 +287,42 @@ func (r *Registrar) Start(ctx context.Context) error {
 	loopDone := make(chan struct{})
 	go r.loop(ctx, loopDone)
 	presenceDone := make(chan struct{})
-	go func() { defer close(presenceDone); r.presence.Run(ctx) }()
+	go func() { defer close(presenceDone); r.runPresence(ctx) }()
 	go func() { <-loopDone; <-presenceDone; close(done) }()
 	return nil
+}
+
+func plexAppsEnabled(c config.Config) bool {
+	return c.Frontends == nil || c.Frontends["plex"].Enabled
+}
+
+// Presence is publication, not account or membership synchronisation.
+func (r *Registrar) runPresence(ctx context.Context) {
+	var cancel context.CancelFunc
+	var done chan struct{}
+	stop := func() {
+		if cancel != nil {
+			cancel()
+			<-done
+			cancel = nil
+		}
+	}
+	defer stop()
+	for {
+		if plexAppsEnabled(r.o.Config.Get()) && cancel == nil {
+			child, c := context.WithCancel(ctx)
+			cancel = c
+			done = make(chan struct{})
+			go func() { defer close(done); r.presence.Run(child) }()
+		} else if !plexAppsEnabled(r.o.Config.Get()) {
+			stop()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-r.presenceWake:
+		}
+	}
 }
 
 // Stop ends the loop and removes any port mapping.
@@ -475,8 +515,8 @@ func (r *Registrar) runDue(ctx context.Context) {
 	force := r.forcePub
 	generation := r.pubGeneration
 	r.mu.Unlock()
-	if force || r.due(taskPublish, r.o.PublishInterval) {
-		if err := r.PublishNow(ctx); err != nil && ctx.Err() == nil {
+	if plexAppsEnabled(cfg) && (force || r.due(taskPublish, r.o.PublishInterval)) {
+		if err := r.PublishNow(ctx); err != nil && ctx.Err() == nil && plexAppsEnabled(r.o.Config.Get()) {
 			r.mu.Lock()
 			r.pubFail++
 			backoff := time.Minute << min(r.pubFail-1, 5) // 1m .. 32m
@@ -498,7 +538,7 @@ func (r *Registrar) runDue(ctx context.Context) {
 			r.schedule(taskOwner, r.o.Now().Add(10*time.Minute))
 		}
 	}
-	if cfg.Plex.RemoteAccess && r.due(taskReach, r.o.ReachabilityInterval) {
+	if plexAppsEnabled(cfg) && cfg.Plex.RemoteAccess && r.due(taskReach, r.o.ReachabilityInterval) {
 		r.CheckReachability(ctx)
 	}
 }
@@ -746,6 +786,22 @@ func mergeURIs(own, extra []string) []string {
 // PublishNow publishes the current connections to plex.tv and verifies the
 // server appears in the resources list.
 func (r *Registrar) PublishNow(ctx context.Context) error {
+	r.publicationRunMu.Lock()
+	defer r.publicationRunMu.Unlock()
+	r.publicationMu.Lock()
+	if !r.publicationEnabled {
+		r.publicationMu.Unlock()
+		return errors.New("plextv: Plex apps are disabled")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	r.publicationCancel = cancel
+	r.publicationMu.Unlock()
+	defer func() {
+		cancel()
+		r.publicationMu.Lock()
+		r.publicationCancel = nil
+		r.publicationMu.Unlock()
+	}()
 	r.mu.Lock()
 	generation := r.pubGeneration
 	libraries := slices.Clone(r.libraries)
@@ -1100,6 +1156,23 @@ func (r *Registrar) Unclaim(ctx context.Context) error {
 // the claim. Without the release the old account keeps the device record
 // and a later claim by another account is refused by plex.tv with 401s.
 func (r *Registrar) onConfig(c config.Config) {
+	enabled := plexAppsEnabled(c)
+	r.publicationMu.Lock()
+	changed := r.publicationEnabled != enabled
+	r.publicationEnabled = enabled
+	if !enabled && r.publicationCancel != nil {
+		r.publicationCancel()
+	}
+	r.publicationMu.Unlock()
+	if changed {
+		select {
+		case r.presenceWake <- struct{}{}:
+		default:
+		}
+		if enabled {
+			r.RequestPublish()
+		}
+	}
 	r.mu.Lock()
 	prev := r.claimedToken
 	if c.Plex.Claimed {
