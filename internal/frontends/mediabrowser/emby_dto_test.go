@@ -17,10 +17,14 @@ func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
 	}
 	added := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
 	i.embyItemDetailDTO(m, frontend.ItemDetail{Versions: []frontend.Version{{AddedAt: added, Media: core.MediaInfo{
-		Container: "mp4", Size: 123, BitrateKbps: 456, Streams: []core.StreamInfo{{Type: "video", Width: 1920, Height: 1080}},
+		Container: "mp4", Size: 123, BitrateKbps: 456, Streams: []core.StreamInfo{{Type: "video", Width: 1920, Height: 1080}}, Chapters: []core.Chapter{{Title: "Opening", Start: time.Second}},
 	}}}})
 	if m["DateCreated"] != added || m["Container"] != "mp4" || m["Size"] != int64(123) || m["Bitrate"] != 456000 || m["Width"] != 1920 || m["Height"] != 1080 {
 		t.Fatalf("source facts: %#v", m)
+	}
+	chapter := m["Chapters"].([]any)[0].(map[string]any)
+	if chapter["Name"] != "Opening" || chapter["StartPositionTicks"] != int64(10000000) || chapter["ChapterIndex"] != 0 {
+		t.Fatalf("chapter facts: %#v", chapter)
 	}
 	ambiguous := map[string]any{}
 	i.embyItemDetailDTO(ambiguous, frontend.ItemDetail{Versions: []frontend.Version{{Media: core.MediaInfo{Size: 123}}, {Media: core.MediaInfo{Size: 456}}}})

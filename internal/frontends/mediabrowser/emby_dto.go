@@ -21,6 +21,17 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 		return
 	}
 	v := d.Versions[0]
+	if len(v.Media.Chapters) > 0 {
+		chapters := make([]any, 0, len(v.Media.Chapters))
+		for index, chapter := range v.Media.Chapters {
+			entry := map[string]any{"ChapterIndex": index, "MarkerType": "Chapter", "StartPositionTicks": chapter.Start.Nanoseconds() / 100}
+			if chapter.Title != "" {
+				entry["Name"] = chapter.Title
+			}
+			chapters = append(chapters, entry)
+		}
+		m["Chapters"] = chapters
+	}
 	if !v.AddedAt.IsZero() {
 		m["DateCreated"] = v.AddedAt.UTC()
 	}
