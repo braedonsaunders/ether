@@ -64,59 +64,71 @@ func applyAiredCounts(ctx context.Context, db *sql.DB, now time.Time, items []*c
 	}
 	seasons := map[seasonID]*seasonAired{}
 	var order []seasonID
-	ph := placeholders(len(showArgs))
 	nowTS := now.Unix()
-	rows, err := db.QueryContext(ctx, `SELECT show_key,season,released_ts,child_count FROM catalog_titles WHERE type='season' AND show_key IN (`+ph+`)`, showArgs...)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var show, released int64
-		var season, child int
-		if err := rows.Scan(&show, &season, &released, &child); err != nil {
-			rows.Close()
+	// Query in batches (same 200 as hydrateSlice in store.go): a single
+	// IN (...) over a large slice overflows SQLite's bound-variable limit.
+	// Batches partition the deduplicated showArgs, so seasons/order keep
+	// accumulating in the same order as one unchunked query.
+	const batch = 200
+	for start := 0; start < len(showArgs); start += batch {
+		part := showArgs[start:min(start+batch, len(showArgs))]
+		ph := placeholders(len(part))
+		rows, err := db.QueryContext(ctx, `SELECT show_key,season,released_ts,child_count FROM catalog_titles WHERE type='season' AND show_key IN (`+ph+`)`, part...)
+		if err != nil {
 			return err
 		}
-		if !episodeKeyFits(season, 0) {
-			continue
+		for rows.Next() {
+			var show, released int64
+			var season, child int
+			if err := rows.Scan(&show, &season, &released, &child); err != nil {
+				rows.Close()
+				return err
+			}
+			if !episodeKeyFits(season, 0) {
+				continue
+			}
+			id := seasonID{core.RatingKey(show), season}
+			// Negative Unix timestamps are valid pre-1970 air dates; only zero is unknown.
+			seasons[id] = &seasonAired{date: released, released: released != 0 && released <= nowTS, stored: child}
+			order = append(order, id)
 		}
-		id := seasonID{core.RatingKey(show), season}
-		// Negative Unix timestamps are valid pre-1970 air dates; only zero is unknown.
-		seasons[id] = &seasonAired{date: released, released: released != 0 && released <= nowTS, stored: child}
-		order = append(order, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	// COUNT(CASE ...) rather than SUM so both SQLite and PostgreSQL return
-	// an integer.
-	rows, err = db.QueryContext(ctx, `SELECT show_key,season,COUNT(*),COUNT(CASE WHEN released_ts<>0 AND released_ts<=? AND adult=0 THEN 1 END),
-		COALESCE(MIN(CASE WHEN released_ts<>0 AND released_ts<=? AND adult=0 THEN released_ts END),0)
-		FROM catalog_titles WHERE type='episode' AND show_key IN (`+ph+`) GROUP BY show_key,season`, append([]any{nowTS, nowTS}, showArgs...)...)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var show int64
-		var earliest int64
-		var season, total, aired int
-		if err := rows.Scan(&show, &season, &total, &aired, &earliest); err != nil {
-			rows.Close()
+		rows.Close()
+		if err := rows.Err(); err != nil {
 			return err
 		}
-		if s := seasons[seasonID{core.RatingKey(show), season}]; s != nil && total > 0 {
-			s.mirrored, s.airedCount = true, aired
-			// Specials often have no season premiere. A dated aired child is
-			// sufficient to open this container, but never overrides a future date.
-			if season == 0 && s.date == 0 && earliest != 0 {
-				s.date, s.released = earliest, true
+	}
+	for start := 0; start < len(showArgs); start += batch {
+		part := showArgs[start:min(start+batch, len(showArgs))]
+		ph := placeholders(len(part))
+		// COUNT(CASE ...) rather than SUM so both SQLite and PostgreSQL return
+		// an integer.
+		rows, err := db.QueryContext(ctx, `SELECT show_key,season,COUNT(*),COUNT(CASE WHEN released_ts<>0 AND released_ts<=? AND adult=0 THEN 1 END),
+			COALESCE(MIN(CASE WHEN released_ts<>0 AND released_ts<=? AND adult=0 THEN released_ts END),0)
+			FROM catalog_titles WHERE type='episode' AND show_key IN (`+ph+`) GROUP BY show_key,season`, append([]any{nowTS, nowTS}, part...)...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var show int64
+			var earliest int64
+			var season, total, aired int
+			if err := rows.Scan(&show, &season, &total, &aired, &earliest); err != nil {
+				rows.Close()
+				return err
+			}
+			if s := seasons[seasonID{core.RatingKey(show), season}]; s != nil && total > 0 {
+				s.mirrored, s.airedCount = true, aired
+				// Specials often have no season premiere. A dated aired child is
+				// sufficient to open this container, but never overrides a future date.
+				if season == 0 && s.date == 0 && earliest != 0 {
+					s.date, s.released = earliest, true
+				}
 			}
 		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
 	}
 	type showAired struct{ seasons, episodes int }
 	shows := map[core.RatingKey]*showAired{}
