@@ -28,12 +28,13 @@ func (fileIDs) Resolve(_ context.Context, s, k string, n int32) (string, error) 
 }
 func TestPlaybackUsesScopedBroker(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
+	hdr10Plus := true
 	var planned frontend.PlanRequest
 	var streamed frontend.StreamRequest
 	var timeline frontend.Timeline
 	session := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 		planned = r
-		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Duration: time.Hour}, Decision: frontend.Decision{Kind: "transcode"}}, nil
+		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Duration: time.Hour, Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus}}}, Decision: frontend.Decision{Kind: "transcode", VideoCopy: true}}, nil
 	}, OpenFunc: func(_ context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 		if r.PlanID != "plan" {
 			t.Fatal("wrong plan")
@@ -78,6 +79,9 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	w := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","start_position":12}`)
 	if w.Code != 201 || strings.Contains(w.Body.String(), "account-secret") || planned.Version != "cut" || planned.Item != 1000000000000001 || streamed.Format != frontend.StreamHLS {
 		t.Fatalf("play %d %s %+v %+v", w.Code, w.Body.String(), planned, streamed)
+	}
+	if !strings.Contains(w.Body.String(), `"hdr10_plus":true`) {
+		t.Fatalf("known HDR10+ not reported: %s", w.Body.String())
 	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", "")
 	if e == nil {
