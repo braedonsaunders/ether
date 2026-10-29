@@ -2,9 +2,38 @@ package silo
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
+
+// creditPortraits returns title-bound grants for known credited people.
+func (i *instance) creditPortraits(r *http.Request, credential string, d frontend.ItemDetail) map[int64]string {
+	urls := map[int64]string{}
+	if !d.ImagesAuthoritative || i.host.ImageGrants == nil {
+		return urls
+	}
+	for _, img := range d.Images {
+		if img.Kind != frontend.ImagePerson || !strings.HasPrefix(img.Subject, "tmdb:") {
+			continue
+		}
+		id, err := strconv.ParseInt(strings.TrimPrefix(img.Subject, "tmdb:"), 10, 64)
+		if err != nil || id <= 0 || urls[id] != "" {
+			continue
+		}
+		grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: credential, Device: device(r), Item: d.Title.Key, Image: img})
+		if err != nil {
+			continue
+		}
+		prefix := ""
+		if r.Context().Value(sharedPrefix{}) != nil {
+			prefix = "/silo"
+		}
+		urls[id] = prefix + "/api/v2/images/" + grant
+	}
+	return urls
+}
 
 func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential string, key frontend.RatingKey, out map[string]any) {
 	if i.host.Experience == nil || i.host.ImageGrants == nil {

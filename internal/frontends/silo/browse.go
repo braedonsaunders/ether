@@ -236,14 +236,29 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	if d.Title.IDs.TVDB > 0 {
 		out["tvdb_id"] = strconv.FormatInt(d.Title.IDs.TVDB, 10)
 	}
+	portraits := i.creditPortraits(r, credential, d)
 	cast := make([]any, 0, len(d.Title.Cast))
 	for n, p := range d.Title.Cast {
-		cast = append(cast, map[string]any{"name": p.Name, "character": p.Role, "order": n})
+		credit := map[string]any{"name": p.Name, "character": p.Role, "order": n}
+		if p.TMDB > 0 {
+			credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
+			if url := portraits[p.TMDB]; url != "" {
+				credit["photo_url"] = url
+			}
+		}
+		cast = append(cast, credit)
 	}
 	crew := make([]any, 0, len(d.Title.Crew)+len(d.Title.Directors)+len(d.Title.Writers))
 	for _, people := range [][]frontend.Person{d.Title.Crew, d.Title.Directors, d.Title.Writers} {
 		for _, p := range people {
-			crew = append(crew, map[string]any{"name": p.Name, "job": p.Role})
+			credit := map[string]any{"name": p.Name, "job": p.Role}
+			if p.TMDB > 0 {
+				credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
+				if url := portraits[p.TMDB]; url != "" {
+					credit["photo_url"] = url
+				}
+			}
+			crew = append(crew, credit)
 		}
 	}
 	out["cast"] = cast

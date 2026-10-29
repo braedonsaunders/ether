@@ -30,6 +30,26 @@ func TestTitleDTOReportsKnownMetadata(t *testing.T) {
 	}
 }
 
+func TestCreditPortraitUsesTitleBoundGrant(t *testing.T) {
+	key := frontend.RatingKey(1000000000000001)
+	var issued frontend.ImageGrantRequest
+	i := &instance{host: frontend.Host{ImageGrants: frontendtest.ImageGrants{IssueFunc: func(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
+		issued = req
+		return "opaque-grant", nil
+	}}}}
+	r := httptest.NewRequest("GET", "/api/v2/catalog/items/x", nil)
+	r.Header.Set("X-Silo-Device-Id", "tv")
+	d := frontend.ItemDetail{Title: frontend.Title{Key: key}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/private"}}}
+	got := i.creditPortraits(r, "account-token", d)
+	if got[12] != "/api/v2/images/opaque-grant" || issued.Item != key || issued.Credential != "account-token" || strings.Contains(got[12], "account-token") {
+		t.Fatalf("portrait grant: %v %+v", got, issued)
+	}
+	d.ImagesAuthoritative = false
+	if len(i.creditPortraits(r, "account-token", d)) != 0 {
+		t.Fatal("issued portrait for non-authoritative artwork")
+	}
+}
+
 func TestEmptyHomeUsesAuthorizedBrowseFallback(t *testing.T) {
 	v := &frontend.Viewer{ID: 5}
 	visible, excluded := frontend.RatingKey(1000000000000001), frontend.RatingKey(1000000000000002)
