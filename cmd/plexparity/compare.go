@@ -558,6 +558,10 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 			return n, fmt.Errorf("corpus order mismatch at %d", i)
 		}
 		if x.response.Status != y.response.Status || !bytes.Equal(normalizeCaptureBody(x), normalizeCaptureBody(y)) || !reflect.DeepEqual(normalizeCaptureHeaders(x), normalizeCaptureHeaders(y)) {
+			noise, err := baselineNondeterministic(x, y)
+			if err != nil {
+				return n, err
+			}
 			commit, err := approved(x, y)
 			if err != nil {
 				return n, err
@@ -566,7 +570,9 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 				commit = ""
 			}
 			label := "REGRESSION"
-			if commit != "" {
+			if noise {
+				label = "BASELINE-NONDETERMINISTIC (also on main)"
+			} else if commit != "" {
 				label = "APPROVED " + commit
 			} else {
 				n++
