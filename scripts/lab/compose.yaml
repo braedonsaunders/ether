@@ -1,6 +1,16 @@
 # Run only in Ubuntu-24.04 on gpu-workstation. Ports bind to WSL loopback;
 # use tunnel.sh from the Mac. Never run this stack on the Mac or HYPERV03.
 services:
+  # Silo's build-1810 image expects the Jellyfin FFmpeg layout configured in
+  # playback.ffmpeg_path. Seed that exact package tree into a private volume.
+  silo-ffmpeg-seed:
+    image: jellyfin/jellyfin:12.4@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771
+    container_name: prism-silo-ffmpeg-seed
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["cp -a /usr/lib/jellyfin-ffmpeg/. /ffmpeg/"]
+    volumes:
+      - silo_ffmpeg:/ffmpeg
+    restart: "no"
   jellyfin:
     image: jellyfin/jellyfin:12.4@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771
     container_name: prism-jellyfin
@@ -25,10 +35,14 @@ services:
     # Digest of the current upstream pre-release omnibus image.
     image: ghcr.io/silo-server/silo-server:aio@sha256:bd5f1bbd88fc01a7f03f57c4baeadb8a6bcf26d16c90d8c85b92e06351e0e18c
     container_name: prism-silo
+    depends_on:
+      silo-ffmpeg-seed:
+        condition: service_completed_successfully
     ports: ["127.0.0.1:8098:8080"]
     volumes:
       - ./data/silo:/config
       - ./media:/mnt/media:ro
+      - silo_ffmpeg:/usr/lib/jellyfin-ffmpeg:ro
     environment:
       ENABLE_JELLYFIN_COMPAT: "false"
       PORT: "8080"
@@ -37,3 +51,6 @@ services:
       SECRET_KEY: ${SILO_SECRET_KEY:?set in lab.env}
       ENABLE_REDIS: "true"
     restart: unless-stopped
+
+volumes:
+  silo_ffmpeg:

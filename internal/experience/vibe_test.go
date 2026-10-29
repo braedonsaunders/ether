@@ -34,3 +34,23 @@ func TestVibeSearch(t *testing.T) {
 		t.Fatal("missing source must not claim query")
 	}
 }
+
+func TestVibeSearchFiltersInheritedPolicyAndAvailability(t *testing.T) {
+	ctx := context.Background()
+	s := VibeSearch{
+		Source: fakeVibe{ok: true, items: []core.Title{{Key: 1, ShowKey: 5}, {Key: 2}, {Key: 3}}},
+		Visibility: Visibility{
+			GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) { return &core.Title{Adult: true}, nil },
+			FilterAvailable: func(_ context.Context, ts []core.Title) []core.Title {
+				if ts[0].Key == 2 {
+					return nil
+				}
+				return ts
+			},
+		},
+	}
+	_, got, ok, err := s.Find(ctx, &core.User{}, "query")
+	if err != nil || !ok || len(got) != 1 || got[0].Key != 3 {
+		t.Fatalf("unexpected results: %+v %v %v", got, ok, err)
+	}
+}

@@ -811,7 +811,7 @@ func (s *Server) sectionRecentlyViewed(w http.ResponseWriter, r *http.Request, s
 	mc := s.sectionContainer(sec)
 	mc.Title2 = "Recently Viewed"
 	if s.d.State != nil && pr.User != nil {
-		items, err := experience.RecentlyViewed(ctx, pr.User, sec.ID, s.d.State.History, s.getTitles, func(t core.MediaType) (int, bool) {
+		items, err := experience.RecentlyViewed(ctx, pr.User, sec.ID, s.visibility(), s.d.State.History, s.getTitles, func(t core.MediaType) (int, bool) {
 			section, ok := s.sectionFor(t)
 			return section.ID, ok
 		})

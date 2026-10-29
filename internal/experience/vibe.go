@@ -23,11 +23,14 @@ func (s VibeSearch) Find(ctx context.Context, viewer *core.User, query string) (
 	}
 	collection, items, ok, err := s.Source.VibeCollection(ctx, viewer, query)
 	if err != nil || !ok {
-		return collection, items, ok, err
+		return nil, nil, ok, err
+	}
+	if collection != nil && !s.Visibility.CollectionAllowed(viewer, collection) {
+		return nil, nil, true, nil
 	}
 	filtered := make([]core.Title, 0, len(items))
 	for i := range items {
-		if s.Visibility.TitleAllowed(viewer, &items[i]) {
+		if s.Visibility.Visible(ctx, viewer, &items[i]) {
 			filtered = append(filtered, items[i])
 		}
 	}

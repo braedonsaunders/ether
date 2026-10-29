@@ -189,7 +189,7 @@
           "file_id": "${file_id}",
           "profile_id": "${profile_id}",
           "playback_attempt_id": "${playback_attempt_id_transcode}",
-          "quality_preference": "1080p",
+          "quality_preference": "720p",
           "subtitle_fidelity_preference": "compatible",
           "client_capabilities": {
             "video_evidence": "exact",
@@ -208,7 +208,7 @@
               "mp4"
             ],
             "hdr": false,
-            "max_resolution": "1080p",
+            "max_resolution": "720p",
             "video_decode": [
               {
                 "codec": "h264",
@@ -221,8 +221,8 @@
                 "bit_depths": [
                   8
                 ],
-                "max_width": 1920,
-                "max_height": 1080,
+                "max_width": 1280,
+                "max_height": 720,
                 "max_frame_rate": 60,
                 "max_bitrate_kbps": 20000,
                 "hardware": true
@@ -241,13 +241,12 @@
                 "enabled": true,
                 "supported_on_device": true,
                 "containers": [
-                  "mp4"
+                  "hls"
                 ],
                 "video_codecs": [
                   "h264"
                 ],
                 "audio_decode_codecs": [
-                  "mp3",
                   "aac"
                 ],
                 "audio_passthrough_codecs": [],
@@ -269,6 +268,23 @@
         },
         "headers": {
           "X-Profile-Id": "${profile_id}"
+        }
+      },
+      {
+        "name": "transcoded HLS master playlist",
+        "method": "GET",
+        "path": "${stream_url}",
+        "headers": {
+          "Accept": "application/vnd.apple.mpegurl"
+        }
+      },
+      {
+        "name": "first transcoded HLS segment range",
+        "method": "GET",
+        "path": "${segment_url}",
+        "headers": {
+          "Accept": "video/mp2t",
+          "Range": "bytes=0-65535"
         }
       }
     ],
@@ -322,5 +338,5 @@
       }
     ]
   },
-  "profile_status": "source-derived template; v2 routes and request bodies checked against build-1810 OpenAPI; live direct plan is playable; server returns adaptation_unavailable for transcode with current lab capabilities; progress and stop lifecycle tested"
+  "profile_status": "source-derived client request template plus lab HLS delivery probes; v2 routes and request bodies checked against build-1810 OpenAPI; direct and HLS transcode plans, master playlist, segment range, progress, and stop lifecycle verified live"
 }
