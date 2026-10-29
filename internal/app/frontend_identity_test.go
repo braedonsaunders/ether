@@ -206,6 +206,11 @@ func TestPublicViewerPickerRequiresOptInAndOnlyActiveLocalCredentials(t *testing
 	if viewers[0].Name != "local-viewer" || viewers[1].Name != "plex-linked" {
 		t.Fatal(viewers)
 	}
+	for _, viewer := range viewers {
+		if viewer.HasConfiguredPassword == nil || !*viewer.HasConfiguredPassword {
+			t.Fatalf("missing credential capability: %+v", viewer)
+		}
+	}
 }
 
 func TestViewerTimesRequiresSurfaceCredentialAndActiveOwner(t *testing.T) {

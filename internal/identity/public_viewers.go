@@ -19,6 +19,9 @@ func (l *Local) PublicViewers(ctx context.Context) ([]frontend.PublicViewer, err
 		if err := rows.Scan(&viewer.ID, &viewer.Name); err != nil {
 			return nil, err
 		}
+		// This query only returns active viewers with a configured local password.
+		configured := true
+		viewer.HasConfiguredPassword = &configured
 		result = append(result, viewer)
 	}
 	return result, rows.Err()
