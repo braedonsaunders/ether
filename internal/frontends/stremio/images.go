@@ -3,6 +3,7 @@ package stremio
 import (
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
@@ -28,7 +29,11 @@ func (i *instance) imageBase(r *http.Request) *url.URL {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil
 	}
-	u.Path, u.RawPath, u.RawQuery, u.Fragment = "/stremio/image/", "", "", ""
+	if !strings.HasSuffix(u.Path, "/ether/me") {
+		return nil
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/ether/me") + "/stremio/image/"
+	u.RawPath, u.RawQuery, u.Fragment = "", "", ""
 	return u
 }
 

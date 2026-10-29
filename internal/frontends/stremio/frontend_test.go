@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
 	"strings"
 	"testing"
 
@@ -37,29 +36,6 @@ func TestManifestRequiresSurfaceGrantAndProvidesCORS(t *testing.T) {
 		if rec.Code != tc.status || rec.Header().Get("Access-Control-Allow-Origin") != "*" || rec.Header().Get("Cache-Control") != "private, no-store" {
 			t.Fatalf("%s %s: status=%d headers=%v", tc.method, tc.path, rec.Code, rec.Header())
 		}
-	}
-}
-
-func TestSetupCreatesSurfaceGrantFromVerifiedPeer(t *testing.T) {
-	identity := frontendtest.Identity{SignInFunc: func(ctx context.Context, user, password string, device frontend.Device) (string, error) {
-		ip, ok := frontend.ClientIP(ctx)
-		if !ok || ip.String() != "192.0.2.1" || user != "viewer" || password != "secret" || device.ID == "" {
-			t.Fatal("missing verified identity inputs")
-		}
-		return "grant-secret", nil
-	}}
-	host := frontend.Host{Identity: identity, Experience: frontendtest.Experience{}, Sessions: frontendtest.Sessions{},
-		ClientIP:        func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.0.2.1"), true },
-		ViewerPortalURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/ether/me", nil },
-	}
-	inst, err := (Frontend{}).Mount(context.Background(), host)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rec := httptest.NewRecorder()
-	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/stremio/setup", strings.NewReader(`{"username":"viewer","password":"secret"}`)))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "https://ether.example/stremio/grant-secret/manifest.json") {
-		t.Fatalf("setup: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -112,5 +88,29 @@ func TestMetaRejectsHiddenTitle(t *testing.T) {
 	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/meta/movie/tmdb:42.json", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("hidden title returned: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRowCatalogSkipsUnsupportedEntries(t *testing.T) {
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}
+	title := frontend.Title{Key: 42, Title: "Visible", Type: "movie"}
+	title.IDs.TMDB = 42
+	experience := frontendtest.Experience{RowsFunc: func(_ context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+		if req.Viewer.ID != 7 || req.Placement != frontend.PlacementHome {
+			t.Fatal("wrong row scope")
+		}
+		return []frontend.Row{{Purpose: frontend.RowContinue, Entries: []frontend.RowEntry{
+			{Kind: frontend.RowEntryDirectory, Directory: &frontend.RowDirectory{Title: "Unsupported"}},
+			{Kind: frontend.RowEntryTitle, Title: &title},
+		}}}, nil
+	}}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/catalog/movie/ether-continue.json", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Visible") || strings.Contains(rec.Body.String(), "Unsupported") {
+		t.Fatalf("row: %d %s", rec.Code, rec.Body.String())
 	}
 }

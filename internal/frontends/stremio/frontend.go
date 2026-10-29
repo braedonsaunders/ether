@@ -38,9 +38,6 @@ func (Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instance,
 	if err := i.router.Handle(http.MethodGet, "/image/{secret}", http.HandlerFunc(i.image)); err != nil {
 		return nil, err
 	}
-	if err := i.router.Handle(http.MethodPost, "/setup", http.HandlerFunc(i.setup)); err != nil {
-		return nil, err
-	}
 	return i, nil
 }
 
@@ -52,7 +49,7 @@ type instance struct {
 func (i *instance) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Range")
 		w.Header().Set("Cache-Control", "private, no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
@@ -87,13 +84,19 @@ func (i *instance) manifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	catalogs := []any{
+		map[string]any{"type": "movie", "id": "ether-movies", "name": "Ether Movies", "extra": []any{map[string]any{"name": "search"}, map[string]any{"name": "skip"}, map[string]any{"name": "genre"}}},
+		map[string]any{"type": "series", "id": "ether-series", "name": "Ether Series", "extra": []any{map[string]any{"name": "search"}, map[string]any{"name": "skip"}, map[string]any{"name": "genre"}}},
+	}
+	for _, typ := range []string{"movie", "series"} {
+		for _, row := range []struct{ id, name string }{{"continue", "Continue Watching"}, {"recent", "Recently Released"}, {"recommendations", "Recommendations"}} {
+			catalogs = append(catalogs, map[string]any{"type": typ, "id": "ether-" + row.id, "name": row.name, "extra": []any{map[string]any{"name": "skip"}}})
+		}
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"id": "org.ether.viewer", "version": "1.0.0", "name": "Ether",
 		"types": []string{"movie", "series"}, "resources": []string{"catalog", "meta", "stream"},
 		"idPrefixes": []string{"tmdb:", "tt"},
-		"catalogs": []any{
-			map[string]any{"type": "movie", "id": "ether-movies", "name": "Ether Movies", "extra": []any{map[string]any{"name": "search"}, map[string]any{"name": "skip"}, map[string]any{"name": "genre"}}},
-			map[string]any{"type": "series", "id": "ether-series", "name": "Ether Series", "extra": []any{map[string]any{"name": "search"}, map[string]any{"name": "skip"}, map[string]any{"name": "genre"}}},
-		},
+		"catalogs":   catalogs,
 	})
 }

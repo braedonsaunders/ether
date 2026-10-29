@@ -25,7 +25,9 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	typ, id := r.PathValue("type"), r.PathValue("id")
-	if (typ != "movie" || id != "ether-movies.json" && id != "ether-movies") && (typ != "series" || id != "ether-series.json" && id != "ether-series") {
+	catalogID := strings.TrimSuffix(id, ".json")
+	purpose := map[string]frontend.RowPurpose{"ether-continue": frontend.RowContinue, "ether-recent": frontend.RowRecentlyReleased, "ether-recommendations": frontend.RowRecommendation}[catalogID]
+	if (typ != "movie" && typ != "series") || (purpose == "" && !((typ == "movie" && catalogID == "ether-movies") || (typ == "series" && catalogID == "ether-series"))) {
 		http.NotFound(w, r)
 		return
 	}
@@ -57,7 +59,49 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 	}
 	device := deviceFor(credential)
 	var titles []frontend.Title
-	if query := extra.Get("search"); query != "" {
+	if purpose != "" {
+		var rows []frontend.Row
+		rows, err = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: viewer, Device: device, Placement: frontend.PlacementHome, Limit: 100})
+		if err == nil {
+			seen := map[frontend.RatingKey]bool{}
+			for _, row := range rows {
+				if row.Purpose != purpose {
+					continue
+				}
+				items := row.Items
+				if len(row.Entries) > 0 {
+					items = nil
+					for _, entry := range row.Entries {
+						if entry.Kind == frontend.RowEntryTitle && entry.Title != nil {
+							items = append(items, *entry.Title)
+						}
+					}
+				}
+				for _, title := range items {
+					if typ == "series" && string(title.Type) == "episode" && title.ShowKey != 0 {
+						detail, e := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device, Key: title.ShowKey})
+						if e != nil {
+							continue
+						}
+						title = detail.Title
+					}
+					if string(title.Type) != map[string]string{"movie": "movie", "series": "show"}[typ] || seen[title.Key] {
+						continue
+					}
+					seen[title.Key] = true
+					titles = append(titles, title)
+				}
+			}
+			if q.Offset >= len(titles) {
+				titles = nil
+			} else {
+				titles = titles[q.Offset:]
+				if len(titles) > q.Limit {
+					titles = titles[:q.Limit]
+				}
+			}
+		}
+	} else if query := extra.Get("search"); query != "" {
 		q.Types = []frontend.MediaType{frontend.MediaType(map[string]string{"movie": "movie", "series": "show"}[typ])}
 		page, e := i.host.Experience.Search(r.Context(), viewer, device, query, q)
 		err, titles = e, page.Page.Items
