@@ -2,7 +2,9 @@ package plex
 
 import (
 	"context"
+
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -13,22 +15,32 @@ func (s *Server) finalizeHomeRows(ctx context.Context, pr *Request, hc core.HubC
 	if !ok {
 		return rows
 	}
-	raw := make([]core.Hub, 0, len(rows))
-	byID := map[string]model.Hub{}
+	candidates := make([]experience.LayoutCandidate, 0, len(rows))
 	for _, row := range rows {
-		raw = append(raw, core.Hub{ID: row.HubIdentifier, Title: row.Title, Type: core.MediaType(row.Type), Context: row.Context, ItemCount: max(row.Size, len(row.Metadata)+len(row.Directory))})
-		byID[row.HubIdentifier] = row
+		candidates = append(candidates, experience.LayoutCandidate{ID: row.HubIdentifier, Title: row.Title, Type: core.MediaType(row.Type), Purpose: homePurpose(core.Hub{ID: row.HubIdentifier, Type: core.MediaType(row.Type)}), ItemCount: max(row.Size, len(row.Metadata)+len(row.Directory))})
 	}
-	ordered, err := engine.FinalizeHome(ctx, pr.User, hc, section, raw)
+	indices, err := experience.ArrangeLayout(candidates, func(candidates []experience.LayoutCandidate) ([]string, error) {
+		raw := make([]core.Hub, 0, len(candidates))
+		for i, candidate := range candidates {
+			raw = append(raw, core.Hub{ID: candidate.ID, Title: candidate.Title, Type: candidate.Type, Context: rows[i].Context, ItemCount: candidate.ItemCount})
+		}
+		ordered, err := engine.FinalizeHome(ctx, pr.User, hc, section, raw)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]string, 0, len(ordered))
+		for _, row := range ordered {
+			ids = append(ids, row.ID)
+		}
+		return ids, nil
+	})
 	if err != nil {
 		s.log.Warn("Home layout unavailable", "error", err)
 		return rows
 	}
-	out := make([]model.Hub, 0, len(ordered))
-	for _, row := range ordered {
-		if rendered, ok := byID[row.ID]; ok {
-			out = append(out, rendered)
-		}
+	out := make([]model.Hub, 0, len(indices))
+	for _, i := range indices {
+		out = append(out, rows[i])
 	}
 	return out
 }
