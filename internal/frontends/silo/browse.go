@@ -108,6 +108,47 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	// Small or newly configured libraries may not yet have enough history for
+	// ranked rows. Keep them discoverable through a policy-scoped browse row.
+	if len(rows) == 0 {
+		views, e := i.host.Experience.Views(r.Context(), v)
+		if e != nil {
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+		pageLimit := limit
+		if pageLimit == 0 {
+			pageLimit = 20
+		}
+		for _, library := range views {
+			if view != "" && library.ID != view {
+				continue
+			}
+			page, e := i.host.Experience.LibraryItems(r.Context(), v, device(r), library.ID, frontend.ItemQuery{Limit: pageLimit})
+			if e != nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			keys := make([]frontend.RatingKey, 0, len(page.Items))
+			for _, title := range page.Items {
+				keys = append(keys, title.Key)
+			}
+			states, e := i.host.Experience.UserData(r.Context(), v, keys)
+			if e != nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			items := make([]frontend.Title, 0, len(page.Items))
+			for _, title := range page.Items {
+				if !states[title.Key].IsNotInterested {
+					items = append(items, title)
+				}
+			}
+			if len(items) > 0 {
+				rows = append(rows, frontend.Row{ID: "browse:" + library.ID, Title: library.Name, Purpose: frontend.RowPurpose("browse"), Items: items})
+			}
+		}
+	}
 	sections := make([]any, 0, len(rows))
 	seen := map[string]int{}
 	used := map[string]bool{}

@@ -30,6 +30,37 @@ func TestTitleDTOReportsKnownMetadata(t *testing.T) {
 	}
 }
 
+func TestEmptyHomeUsesAuthorizedBrowseFallback(t *testing.T) {
+	v := &frontend.Viewer{ID: 5}
+	visible, excluded := frontend.RatingKey(1000000000000001), frontend.RatingKey(1000000000000002)
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies"}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, viewer *frontend.Viewer, _ frontend.Device, library string, _ frontend.ItemQuery) (frontend.Page, error) {
+			if viewer != v || library != "1" {
+				t.Fatal("incorrect library policy context")
+			}
+			return frontend.Page{Items: []frontend.Title{{Key: visible, Type: "movie", Title: "Visible"}, {Key: excluded, Type: "movie", Title: "Excluded"}}}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{excluded: {IsNotInterested: true}}, nil
+		},
+	}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}, Experience: exp}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/v2/home/sections", nil)
+	req.Header.Set("Authorization", "Bearer grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, req)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"title":"Visible"`) || strings.Contains(w.Body.String(), `"title":"Excluded"`) {
+		t.Fatalf("fallback: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestBrowseAndMutationsUseViewer(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 5}
 	key := frontend.RatingKey(1000000000000001)
