@@ -69,9 +69,12 @@ func TestFrontendArtworkVariantsAreScopedAndValidated(t *testing.T) {
 		return &tmdb.Images{Posters: []tmdb.ImageFile{{FilePath: "/alternative.jpg"}, {FilePath: "https://example.com/image.jpg"}}}, true
 	}}
 	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: fightClub.Key}
-	entries, err := source.entries(context.Background(), req)
+	entries, complete, err := source.entries(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !complete {
+		t.Fatal("fresh variants did not complete title artwork")
 	}
 	count := 0
 	for _, entry := range entries {

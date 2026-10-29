@@ -3,18 +3,92 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
 type artworkProbe struct {
 	calls    int
 	complete bool
 	err      error
+}
+
+func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	if err := a.users.SyncFriends(ctx, []plextv.Friend{{PlexID: 333, Username: "viewer", AllLibs: true}}); err != nil {
+		t.Fatal(err)
+	}
+	users, err := a.users.Users(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var viewer *core.User
+	for i := range users {
+		if users[i].PlexID == 333 {
+			viewer = &users[i]
+			break
+		}
+	}
+	if viewer == nil {
+		t.Fatal("viewer missing")
+	}
+	viewer.MaxContentRating = "PG-13"
+	if err := a.users.UpdateUser(ctx, *viewer); err != nil {
+		t.Fatal(err)
+	}
+	title := core.Title{Key: core.MovieKey(999), Type: core.TypeMovie, IDs: core.IDs{TMDB: 999}, Title: "Restricted artwork", PosterPath: "/test.jpg", ContentRating: "PG-13", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}
+	if err := a.catalog.UpsertTitle(ctx, title, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1,detail_at=? WHERE key=?`, time.Now().Unix(), int64(title.Key)); err != nil {
+		t.Fatal(err)
+	}
+	source := plex.FrontendArtwork{Server: a.plexServer, Variants: func(*core.Title, string) (*tmdb.Images, bool) { return &tmdb.Images{}, true }}
+	exp, err := a.newSurfaceExperience("jellyfin", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(a.db, a.users, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := grants.Issue(ctx, viewer.ID, nil, "jellyfin", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := identity.NewArtworkImageGrantService(a.db, "jellyfin", grants, func() frontend.Experience { return exp }, source, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := exp.Item(ctx, frontend.ItemRequest{Viewer: viewer, Device: core.Device{ID: "tv"}, Key: title.Key})
+	if err != nil || !detail.ImagesAuthoritative || len(detail.Images) == 0 {
+		t.Fatalf("visible artwork: %+v %v", detail, err)
+	}
+	secret, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: title.Key, Image: detail.Images[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer.MaxContentRating = "G"
+	if err := a.users.UpdateUser(ctx, *viewer); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	service.Serve(w, httptest.NewRequest("GET", "/", nil), secret)
+	if w.Code != 404 {
+		t.Fatalf("hidden title artwork remained accessible: %d", w.Code)
+	}
+	if _, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: title.Key, Image: detail.Images[0]}); err == nil {
+		t.Fatal("issued artwork for a hidden title")
+	}
 }
 
 func (p *artworkProbe) List(_ context.Context, req frontend.ArtworkRequest) ([]frontend.Image, bool, error) {

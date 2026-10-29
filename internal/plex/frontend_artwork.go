@@ -59,9 +59,9 @@ func artworkReference(req frontend.ArtworkRequest, kind, source string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkRequest) ([]frontendArtworkEntry, error) {
+func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkRequest) ([]frontendArtworkEntry, bool, error) {
 	if a.Server == nil || req.Viewer == nil || req.Item == 0 {
-		return nil, core.ErrUnauthorized
+		return nil, false, core.ErrUnauthorized
 	}
 	s := a.Server
 	ctx = context.WithValue(ctx, artworkCacheOnlyKey{}, true)
@@ -72,24 +72,24 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 	case core.KindCollection, core.KindSmart:
 		collection, err := s.collection(ctx, req.Viewer, req.Item)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		collectionVersion = collectionStamp(collection)
 	case core.KindPlaylist:
 		if s.d.Playlists == nil {
-			return nil, core.ErrNotFound
+			return nil, false, core.ErrNotFound
 		}
 		if _, err := s.d.Playlists.Get(ctx, req.Viewer.ID, req.Item); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	default:
 		if s.d.Catalog == nil {
-			return nil, core.ErrNotFound
+			return nil, false, core.ErrNotFound
 		}
 		var err error
 		title, err = s.artworkTitle(ctx, req.Item)
-		if err != nil || title == nil || !title.IsReleased(s.now()) || !s.visibleTitle(ctx, req.Viewer, title) {
-			return nil, core.ErrNotFound
+		if err != nil || title == nil || title.Key != req.Item || !title.IsReleased(s.now()) || !s.visibleTitle(ctx, req.Viewer, title) {
+			return nil, false, core.ErrNotFound
 		}
 	}
 	var entries []frontendArtworkEntry
@@ -132,10 +132,15 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		}
 		add(item.kind, item.element+"\x00"+path+"\x00"+collectionVersion, frontendArtworkEntry{element: item.element})
 	}
+	complete := false
 	if title != nil {
+		if artwork.ValidPath(title.StillPath) {
+			add(frontend.ImageStill, "still\x00"+title.StillPath, frontendArtworkEntry{remotePath: title.StillPath})
+		}
 		if a.Variants != nil {
 			variants, ready := a.Variants(title, req.Device.Language)
 			if ready && variants != nil {
+				complete = true
 				for _, group := range []struct {
 					kind  string
 					files []tmdb.ImageFile
@@ -161,11 +166,16 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 			}
 		}
 	}
-	return entries, nil
+	if complete && s.d.Discovery != nil && s.d.Discovery.Overlays != nil {
+		if _, err := s.d.Discovery.Overlays.Settings(ctx); err != nil {
+			complete = false
+		}
+	}
+	return entries, complete, nil
 }
 
 func (a FrontendArtwork) List(ctx context.Context, req frontend.ArtworkRequest) ([]frontend.Image, bool, error) {
-	entries, err := a.entries(ctx, req)
+	entries, complete, err := a.entries(ctx, req)
 	if err != nil {
 		return nil, false, err
 	}
@@ -173,8 +183,8 @@ func (a FrontendArtwork) List(ctx context.Context, req frontend.ArtworkRequest) 
 	for _, e := range entries {
 		out = append(out, e.image)
 	}
-	// Alternates, channel art and all generated sources are not yet complete.
-	return out, false, nil
+	// Collection, playlist and channel art need their own complete sources.
+	return out, complete, nil
 }
 
 type artworkResponse struct {
@@ -205,7 +215,7 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 	if transform.Width < 0 || transform.Width > 4000 || transform.Height < 0 || transform.Height > 4000 || (transform.Format != "" && transform.Format != "jpeg" && transform.Format != "png") {
 		return nil, "", core.ErrNotAvailable
 	}
-	entries, err := a.entries(ctx, req)
+	entries, _, err := a.entries(ctx, req)
 	if err != nil {
 		return nil, "", err
 	}
