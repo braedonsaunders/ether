@@ -122,6 +122,9 @@ type PlaySession struct {
 	// Nil means no timeline has arrived; source bytes do not imply progress.
 	ViewOffset *int64 `json:"viewOffset,omitempty"`
 	Failovers  int    // mid-stream release swaps so far
+	// Origin names where the current release streams from: "Usenet" or the
+	// debrid service, such as "Real-Debrid" (additive).
+	Origin string `json:"origin,omitempty"`
 	// DownFailovers counts speed-driven swaps to a lower-bitrate release
 	// (a subset of Failovers) (additive).
 	DownFailovers int `json:"downFailovers,omitempty"`

@@ -33,11 +33,11 @@ func sourceSuitability(r core.Release, t *core.Title, p core.QualityProfile, c c
 		return ""
 	}
 	for _, lang := range info.Languages {
-		if lang == "multi" {
+		if lang == releaseparse.LanguageMulti {
 			return ""
 		}
 		for _, pref := range want {
-			if strings.EqualFold(lang, assumedLanguage(&core.Title{Language: pref})) {
+			if releaseparse.LanguageMatch(lang, pref) != releaseparse.LanguageNoMatch {
 				return ""
 			}
 		}

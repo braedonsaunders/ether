@@ -51,7 +51,8 @@ func Decide(playback core.Playback, transcoder core.Transcoder, r DecisionReques
 	if rr, ok := playback.(core.RemuxRequirer); ok && rr.RequiresRemux(ps.ID) {
 		requiresRemux = true
 	}
-	preferRemux := r.PreferRemux && onDemand && ps.Resolution.Release.Protocol != core.ProtocolTorrent
+	preferRemux := r.PreferRemux && onDemand && ps.Resolution.Release.Protocol != core.ProtocolTorrent &&
+		ps.Resolution.Release.Protocol != core.ProtocolHTTP
 	if (preferRemux || requiresRemux) && r.Options.DirectStream && onDemand && dec.Kind == core.DecisionDirectPlay && transcoder != nil {
 		dec.Kind = core.DecisionRemux
 		dec.VideoCopy, dec.AudioCopy = true, true

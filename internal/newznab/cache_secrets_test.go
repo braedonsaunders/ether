@@ -152,3 +152,37 @@ func TestRedactLinkRoundTrip(t *testing.T) {
 		t.Fatal("unknown token hydrated")
 	}
 }
+
+func TestCachedAddonStreamLinksDropAddonSecrets(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const key = "rdkey-0123456789ABCDEF"
+	cfg := config.Indexer{ID: "addon1", Kind: config.IndexerKindStremio, URL: "https://addon.example/realdebrid=" + key + "/manifest.json", Enabled: true}
+	c := New(cfg, db, Options{})
+	rel := core.Release{ID: "h", Protocol: core.ProtocolHTTP,
+		StreamURL:     "https://addon.example/resolve/realdebrid/" + key + "/abc/0/Movie.mkv",
+		StreamHeaders: map[string]string{"Authorization": "Bearer " + key},
+		NZBURL:        "https://addon.example/nzb/" + key + "/x.nzb"}
+	c.cachePut(ctx, "k", []core.Release{rel})
+	var stored string
+	if err := db.QueryRow(`SELECT results FROM newznab_cache WHERE cache_key='k'`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stored, key) {
+		t.Fatalf("cached row keeps the addon's key: %s", stored)
+	}
+	got, ok := c.cacheGet(ctx, "k")
+	if !ok || got[0].StreamURL != rel.StreamURL || got[0].StreamHeaders["Authorization"] != "Bearer "+key || got[0].NZBURL != rel.NZBURL {
+		t.Fatalf("hydrated %+v", got)
+	}
+	// Route words in the path are not secrets.
+	for _, s := range c.cacheSecrets() {
+		if s.text == "manifest.json" || s.text == "resolve" {
+			t.Fatalf("route word %q treated as a secret", s.text)
+		}
+	}
+}

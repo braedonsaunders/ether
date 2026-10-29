@@ -365,3 +365,12 @@ func TestBackgroundHealthPreservesBudgetContext(t *testing.T) {
 		t.Fatalf("range not accounted: %d", reserved)
 	}
 }
+
+func TestHTTPSourceOriginNamesService(t *testing.T) {
+	for kind, want := range map[string]string{"realdebrid": "Real-Debrid", "torbox": "TorBox", KindHTTP: "HTTP", "newsvc": "newsvc", "": "Debrid"} {
+		s := &httpSource{f: &remoteFile{pl: Payload{Kind: kind}}}
+		if got := s.Origin(); got != want {
+			t.Errorf("Origin() for kind %q = %q, want %q", kind, got, want)
+		}
+	}
+}

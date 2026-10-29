@@ -1,8 +1,9 @@
 // Package debrid streams torrent releases through owner-configured debrid
 // services (Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link,
-// Offcloud). A torrent the service already holds ("cached") is added to the
-// owner's account and its main video file is read over HTTPS range
-// requests; nothing is downloaded in full and Ether never seeds.
+// Offcloud), and Stremio addons' own HTTP stream links (direct.go). A
+// torrent the service already holds ("cached") is added to the owner's
+// account and its main video file is read over HTTPS range requests;
+// nothing is downloaded in full and Ether never seeds.
 //
 // The rest of Ether treats a release payload as opaque bytes (normally an
 // NZB). A debrid release's payload is a small descriptor (see Payload), and
@@ -47,6 +48,12 @@ type Payload struct {
 	Expires   time.Time           `json:"expires,omitempty"`   // when URL should be regenerated
 	Target    *core.ReleaseTarget `json:"target,omitempty"`
 	Release   string              `json:"release,omitempty"` // release name, for logs
+	// Direct HTTP streams (Kind KindHTTP, direct.go): Link is the addon's
+	// stream link, Headers the request headers it requires and Origin the
+	// owner-configured addon origin. Link and Headers can carry the
+	// addon's credentials.
+	Headers map[string]string `json:"headers,omitempty"`
+	Origin  string            `json:"origin,omitempty"`
 }
 
 // IsPayload reports whether b is an encoded debrid Payload.
@@ -67,7 +74,7 @@ func DecodePayload(b []byte) (Payload, error) {
 	if err := json.Unmarshal(b[len(payloadMagic):], &p); err != nil {
 		return Payload{}, fmt.Errorf("debrid: corrupt payload: %w", err)
 	}
-	if p.Size <= 0 || p.InfoHash == "" {
+	if p.Size <= 0 || (p.InfoHash == "" && !(p.IsDirect() && p.Link != "")) {
 		return Payload{}, errors.New("debrid: incomplete payload")
 	}
 	return p, nil

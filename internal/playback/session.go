@@ -351,8 +351,23 @@ func (s *session) snapshot(now time.Time) *core.PlaySession {
 		ps.Resolution = &res
 		ps.Source = g.src
 		ps.Info = g.infoSnapshot()
+		ps.Origin = sourceOrigin(g.src, res.Release.Protocol)
 	}
 	return ps
+}
+
+// sourceOrigin names the service a generation streams from.
+func sourceOrigin(src core.MediaSource, protocol string) string {
+	if o, ok := src.(core.OriginSource); ok {
+		return o.Origin()
+	}
+	if protocol == core.ProtocolTorrent {
+		return "Debrid"
+	}
+	if protocol == core.ProtocolHTTP {
+		return "HTTP"
+	}
+	return "Usenet"
 }
 
 func displayTitle(t *core.Title) string {

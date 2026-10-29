@@ -416,3 +416,34 @@ func IsObfuscated(title string) bool {
 func HasUsableInfo(info core.ReleaseInfo) bool {
 	return info.Height > 0 || info.Source != core.SourceUnknown || info.VideoCodec != ""
 }
+
+// EpisodeMatchesAbsolute reports whether parsed info is the episode whose
+// number counted from the series start is absolute: an anime release
+// numbered that way ("Show - 1071") and naming no season.
+func EpisodeMatchesAbsolute(parsed core.ReleaseInfo, absolute int) bool {
+	if absolute <= 0 || parsed.FullSeason || len(parsed.Seasons) > 0 {
+		return false
+	}
+	for _, e := range parsed.AbsoluteEpisodes {
+		if e == absolute {
+			return true
+		}
+	}
+	return false
+}
+
+// AnimeSearchEpisode is the absolute episode number an anime episode
+// request is also searched by ("Show 1071"), or 0: the catalogue's count,
+// or the episode itself in the first season.
+func AnimeSearchEpisode(req core.SearchRequest) int {
+	if !req.Anime || req.Type != core.TypeEpisode || req.Season <= 0 || req.Episode <= 0 {
+		return 0
+	}
+	if req.AbsoluteEpisode > 0 {
+		return req.AbsoluteEpisode
+	}
+	if req.Season == 1 {
+		return req.Episode
+	}
+	return 0
+}

@@ -75,16 +75,39 @@ and supply the configured install link (`https://…/manifest.json` or
 `stremio://…`). Choosing a torrent protocol on a Torznab indexer does not
 make it a Stremio addon.
 
-Ether requests movies by IMDb ID and episodes by IMDb ID, season and episode.
-A title without an IMDb ID cannot be searched through this adapter; season-zero specials are also unsupported. **Test**
+Ether asks an addon for a title by IMDb ID when the addon accepts them, else
+by TMDB ID. Addons that look anime up only by Kitsu, MyAnimeList, AniList or
+AniDB ID are asked by that ID for anime: the first time such an addon needs it,
+Ether downloads the community [anime-lists](https://github.com/Fribb/anime-lists)
+mapping (about 6 MB, refreshed daily) and uses an ID only when the mapping
+names exactly one entry for the season and episode. Other titles, unmapped
+seasons, whole-season requests and season-zero specials are not asked. **Test**
 checks the addon's manifest and advertised movie/series stream support; a
 successful test does not prove that a particular title returns usable releases.
 
-A supported result needs a release name and an identifiable torrent hash.
-Ether accepts explicit hashes, magnets and supported hash-bearing resolver
-URLs. An opaque playback/CDN URL, external-player link, YouTube ID or NZB URL
-alone is not a torrent result Ether can use. An addon can therefore play
-successfully in Stremio while returning no usable results to Ether.
+A result needs a release name and one of these, tried in order:
+
+- **A torrent hash** (explicit hashes, magnets and supported hash-bearing
+  resolver URLs): Ether checks and streams it through your enabled debrid
+  accounts. Without a debrid account, a torrent the addon also linked plays
+  through that link instead.
+- **An NZB link** (`nzbUrl`): a Usenet release, downloaded like any NZB and
+  streamed from your Usenet providers. It is ignored until a Usenet provider is
+  enabled.
+- **An HTTP stream link**, including an addon's own resolver or playback URL:
+  Ether reads it directly with range requests, without needing a debrid account
+  of its own. Before playing, one small request checks that the link serves the
+  whole file. An error page, a short "downloading" clip or a server without
+  range requests is skipped for now and tried again later. With **Cached torrents
+  only** on, links the addon labels only as uncached are left out.
+
+External-player links and YouTube IDs have nothing Ether can stream.
+
+HTTP and NZB links may point at the addon's own address, even on your network.
+Any other address they lead to, including redirects, must be on the internet.
+Request headers the addon asks for are sent only to the addon's own link. Links
+are never shown in the owner UI or logs, because they can carry the addon's
+credentials.
 
 Use the configured install URL supplied by the addon. Addon settings and
 credentials encoded in its URL path are retained; query-string configuration
@@ -96,6 +119,10 @@ Ether checks torrent availability through your enabled debrid accounts. An
 addon's cached labels are hints, not proof that your account can stream a file.
 Some public instances also refuse server clients; use an instance that permits
 them or a self-hosted instance.
+
+Language flags in an addon's results (🇫🇷, 🇲🇽 for Latino Spanish, 🇧🇷 for
+Brazilian Portuguese) and "Multi Audio" count as the release's audio
+languages.
 
 Self-hosted DMM hashlist indexers that speak Torznab, such as Zilean
 (`http://HOST:8182/torznab`) or StremThru (`https://HOST/v0/torznab`), can be
@@ -344,6 +371,35 @@ External)", and subtitle mode **Always** selects them.
   browsing doesn't use it up.
 - When a stream is converted, text subtitles are sent alongside the video
   rather than burned into it.
+
+## Release languages and anime numbering
+
+A quality profile's **Languages** accept preferred ISO language codes, such as
+`fr`, `es-419` or `pt-BR`. Ether reads audio languages from release names and
+addon flags:
+
+- **Regional variants:** `LATINO`, `ES-MX` and `es-419` are Latin American
+  Spanish; `CASTELLANO` and `ES-ES` identify Spanish from Spain. `PT-BR`,
+  `DUBLADO` and `BRAZILIAN` identify Brazilian Portuguese; `PT-PT` identifies
+  Portuguese from Portugal. Plain `SPANISH` and `PORTUGUESE` leave the region
+  unspecified. Regional preferences (`es-ES`, `es-419`, `pt-PT`, `pt-BR`) rank
+  their own variant above other or unspecified variants. Bare `es` and `pt`
+  accept all regions equally. Imported custom formats retain Starr's separate
+  Latino/Brazilian language categories.
+- **Subtitle tags:** `VOSTFR`, `VOSE`, `SUBFRENCH` and `LEGENDADO` mean the
+  original audio with subtitles in that language. They never count as that
+  language's audio, so a French dub still ranks above a VOSTFR release for a
+  French preference. They add a small bonus when the subtitle language is
+  preferred.
+- `MULTi`, `Dual-Audio` and "Multi Audio" mean several audio tracks; `Multi-Subs`
+  does not.
+
+Anime releases often number episodes from the start of the series
+(`[Group] Show - 1071 (1080p)`). Ether counts each episode's number from the
+seasons in your catalogue and accepts either numbering. It also searches
+indexers by that number for anime, meaning TMDB's "anime" keyword or
+Japanese-language animation. When an earlier season's episode count is
+unknown, only the season-and-episode numbering is used.
 
 ## Import a quality profile from TRaSH Guides
 

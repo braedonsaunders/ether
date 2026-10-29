@@ -3,6 +3,7 @@ package newznab
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"sort"
 	"strings"
@@ -31,6 +32,10 @@ type cachedResults struct {
 	Releases []core.Release `json:"releases"`
 }
 
+// minAddonSecret is the shortest addon path segment treated as a secret:
+// shorter ones ("stream", "resolve") are route words, not settings.
+const minAddonSecret = 12
+
 // cacheSecret is one stored form of a secret and the token replacing it.
 // Tokens are delimited by NUL, which never occurs in a link (results
 // containing NUL are not cached).
@@ -55,6 +60,27 @@ func (c *Client) cacheSecrets() []cacheSecret {
 		}
 	}
 	add("apikey", cfg.APIKey)
+	// A Stremio addon's settings, often including its debrid key, live in
+	// its install path, and its stream and NZB links repeat them.
+	if cfg.IsStremio() {
+		if u, err := url.Parse(strings.TrimSpace(cfg.URL)); err == nil {
+			n := 0
+			for _, seg := range strings.Split(u.EscapedPath(), "/") {
+				raw, err := url.PathUnescape(seg)
+				if err != nil || raw == "manifest.json" {
+					continue
+				}
+				// "providers=x|realdebrid=KEY": the segment and each value.
+				parts := append([]string{raw}, strings.FieldsFunc(raw, func(r rune) bool { return strings.ContainsRune("|=,;&", r) })...)
+				for _, part := range parts {
+					if len(part) >= minAddonSecret {
+						add(fmt.Sprintf("addon:%d", n), part)
+						n++
+					}
+				}
+			}
+		}
+	}
 	keys := make([]string, 0, len(cfg.SecretSettings))
 	for k := range cfg.SecretSettings {
 		keys = append(keys, k)
@@ -119,7 +145,27 @@ func hydrateLink(v string, secrets []cacheSecret) (string, bool) {
 	return strings.Join(parts, ""), true
 }
 
-func releaseLinks(r *core.Release) []*string { return []*string{&r.NZBURL, &r.GUID, &r.MagnetURL} }
+func releaseLinks(r *core.Release) []*string {
+	return []*string{&r.NZBURL, &r.GUID, &r.MagnetURL, &r.StreamURL}
+}
+
+// mapHeaders applies fn to a copy of r's stream header values; ok is false
+// when fn fails for one.
+func mapHeaders(r *core.Release, fn func(string) (string, bool)) bool {
+	if len(r.StreamHeaders) == 0 {
+		return true
+	}
+	out := make(map[string]string, len(r.StreamHeaders))
+	for k, v := range r.StreamHeaders {
+		w, ok := fn(v)
+		if !ok {
+			return false
+		}
+		out[k] = w
+	}
+	r.StreamHeaders = out
+	return true
+}
 
 // encodeCached is the stored form of results; ok is false when they
 // cannot be stored without a secret.
@@ -133,6 +179,9 @@ func (c *Client) encodeCached(results []core.Release) (string, bool) {
 				return "", false
 			}
 			*p = v
+		}
+		if !mapHeaders(&r, func(v string) (string, bool) { return redactLink(v, secrets) }) {
+			return "", false
 		}
 		out[i] = r
 	}
@@ -164,6 +213,9 @@ func (c *Client) decodeCached(raw string) ([]core.Release, bool) {
 				return nil, false
 			}
 			*p = v
+		}
+		if !mapHeaders(&doc.Releases[i], func(v string) (string, bool) { return hydrateLink(v, secrets) }) {
+			return nil, false
 		}
 	}
 	return doc.Releases, true

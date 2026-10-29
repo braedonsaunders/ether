@@ -238,9 +238,11 @@ func TestTitleMatches(t *testing.T) {
 
 func TestExplicitRegionalAudioTags(t *testing.T) {
 	for _, tc := range []struct{ name, language string }{
-		{"Harbor.Show.S02E18.Beach.Day.576p.WEB-DL.AAC2.0.H.264.pt-BR-GROUP", "portuguese"},
+		{"Harbor.Show.S02E18.Beach.Day.576p.WEB-DL.AAC2.0.H.264.pt-BR-GROUP", "portuguese-brazil"},
+		{"Harbor.Show.S02E18.1080p.WEB.pt-PT-GROUP", "portuguese-portugal"},
 		{"Harbor.Show.S02E18.1080p.WEB.EN-US-GROUP", "english"},
-		{"Harbor.Show.S02E18.1080p.WEB.es-419-GROUP", "spanish"},
+		{"Harbor.Show.S02E18.1080p.WEB.es-419-GROUP", "spanish-latino"},
+		{"Harbor.Show.S02E18.1080p.WEB.es-ES-GROUP", "spanish-spain"},
 		{"Harbor.Show.S02E18.1080p.WEB.BR-GROUP", ""},
 	} {
 		got := Parse(tc.name)

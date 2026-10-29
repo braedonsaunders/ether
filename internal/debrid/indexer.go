@@ -22,6 +22,13 @@ type TorrentResolver interface {
 // a debrid provider is enabled (annotated with cache availability where a
 // provider offers a bulk check), and FetchNZB returns a debrid payload for
 // torrents while Usenet releases go to the inner indexer unchanged.
+//
+// A Stremio addon's own HTTP stream links (core.ProtocolHTTP) need no
+// debrid account. Without one, a torrent the addon also linked plays
+// through that link instead; with cached-only on, links the addon labels
+// only as uncached are left out (the label is a hint, never proof: the
+// probe in FetchNZB decides). Usenet results are left out while no Usenet
+// provider is enabled.
 type Indexer struct {
 	inner   core.Indexer
 	svc     *Service
@@ -93,7 +100,7 @@ func (x *Indexer) SearchWith(ctx context.Context, req core.SearchRequest, arrive
 		if arrived != nil {
 			var eligible []core.Release
 			for _, r := range batch {
-				if r.Protocol != core.ProtocolTorrent || x.svc.Enabled() {
+				if r, ok := x.playable(r); ok {
 					eligible = append(eligible, r)
 				}
 			}
@@ -125,11 +132,12 @@ func (x *Indexer) SearchWith(ctx context.Context, req core.SearchRequest, arrive
 	var torrents []string
 	out := results[:0:0]
 	for _, r := range results {
-		if r.Protocol != core.ProtocolTorrent {
-			out = append(out, r)
+		r, ok := x.playable(r)
+		if !ok {
 			continue
 		}
-		if !enabled {
+		if r.Protocol != core.ProtocolTorrent {
+			out = append(out, r)
 			continue
 		}
 		if r.InfoHash != "" {
@@ -205,6 +213,36 @@ func (x *Indexer) SearchWith(ctx context.Context, req core.SearchRequest, arrive
 	}
 	sort.SliceStable(kept, func(i, j int) bool { return rank(kept[i]) < rank(kept[j]) })
 	return kept, nil
+}
+
+// playable adapts a search result to what this server can stream, or
+// reports false: torrents need an enabled debrid provider (or else play
+// through the addon link they came with), Usenet needs a Usenet provider,
+// and with cached-only on an HTTP link the addon labels only as uncached
+// is left out.
+func (x *Indexer) playable(r core.Release) (core.Release, bool) {
+	switch r.Protocol {
+	case core.ProtocolTorrent:
+		if x.svc.Enabled() {
+			return r, true
+		}
+		if r.StreamURL == "" {
+			return r, false
+		}
+		r.Protocol = core.ProtocolHTTP
+		fallthrough
+	case core.ProtocolHTTP:
+		if r.StreamURL == "" {
+			return r, false
+		}
+		if x.svc.Config().CachedOnly && len(r.DebridUncached) > 0 && len(r.DebridCached) == 0 {
+			return r, false
+		}
+		return r, true
+	case core.ProtocolUsenet:
+		return r, x.usenetReady == nil || x.usenetReady()
+	}
+	return r, true
 }
 
 // searchSeasonPacks queries inner for season-level releases (Episode = 0)
@@ -290,11 +328,12 @@ func (x *Indexer) SearchRescue(ctx context.Context, req core.SearchRequest) ([]c
 	var torrents []string
 	out := results[:0:0]
 	for _, r := range results {
-		if r.Protocol != core.ProtocolTorrent {
-			out = append(out, r)
+		r, ok := x.playable(r)
+		if !ok {
 			continue
 		}
-		if !enabled {
+		if r.Protocol != core.ProtocolTorrent {
+			out = append(out, r)
 			continue
 		}
 		if r.InfoHash != "" {
@@ -336,6 +375,9 @@ func (x *Indexer) SearchRescue(ctx context.Context, req core.SearchRequest) ([]c
 // payload of the release's main video file (or the wanted episode of a
 // season pack); for anything else, the inner indexer's NZB.
 func (x *Indexer) FetchNZB(ctx context.Context, r core.Release) ([]byte, error) {
+	if r.Protocol == core.ProtocolHTTP {
+		return x.svc.DirectPayload(ctx, r)
+	}
 	if r.Protocol != core.ProtocolTorrent {
 		return x.inner.FetchNZB(ctx, r)
 	}

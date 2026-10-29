@@ -41,6 +41,7 @@ function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onSt
           <Badge variant={s.decision === "transcode" ? "warning" : "success"}>
             {decisionLabel(s.decision)}
           </Badge>
+          {s.origin ? <Badge variant="secondary">{s.origin}</Badge> : null}
           {s.remote ? <Badge variant="info">{t("Remote")}</Badge> : null}
           {s.failovers ? (
             <Badge variant="warning">

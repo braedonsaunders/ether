@@ -58,7 +58,7 @@ The table maps familiar workflows to Ether’s on-demand features. It does not c
 | :--- | :--- |
 | **Plex Media Server** *(for streaming)* | Clean-room implementation of the PMS HTTP/HLS/DASH/GDM protocol, `*.plex.direct` TLS, and `plex.tv` sharing. *(Keep PMS for your local files.)* |
 | **Sonarr & Radarr** | Resolution happens at **Play** time (or during detail-page warmup) using your quality profiles, custom formats, edition rules, and release pins. |
-| **Prowlarr & Jackett** | Native Newznab and Torznab manager with daily quota tracking, Retry-After backoff, result caching, 1-click Prowlarr import, a built-in **Cardigann YAML** engine, and **Stremio stream addons** as torrent sources (paste an install link). |
+| **Prowlarr & Jackett** | Native Newznab and Torznab manager with daily quota tracking, Retry-After backoff, result caching, 1-click Prowlarr import, a built-in **Cardigann YAML** engine, and **Stremio stream addons** as sources (paste an install link): torrent, NZB and HTTP stream results, looked up by IMDb, TMDB or anime database ID. |
 | **SABnzbd, NZBGet, NzbDAV, AltMount** | Native NNTP connection pools, wire-pipelined `BODY` fetching, SWAR yEnc decoding, and direct byte-range seeking inside store-mode RAR4, RAR5, and 7z sets (including password-protected stored archives). |
 | **zurg, rclone, Riven, plex_debrid** | Native HTTPS range streaming for **Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, and Offcloud**—including single-episode extraction from torrent season packs without mounts. |
 | **Overseerr & Jellyseerr** | Released titles need no requests. Viewers' Plex and Trakt Watchlists sync automatically; newly playable titles appear in a *Now available* row on that viewer's Home, and the owner can be alerted. |

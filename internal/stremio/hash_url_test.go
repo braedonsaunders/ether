@@ -60,10 +60,7 @@ func TestStreamHashFromLabeledSources(t *testing.T) {
 		{"magnet URL and dht conflict", stream{URL: magnetA, Sources: []string{"dht:" + hashB}}, "", true},
 		{"infoHash and magnet URL conflict", stream{InfoHash: hashB, URL: magnetA}, "", true},
 		{"query magnet and dht conflict", stream{URL: "https://addon.test/play?magnet=" + url.QueryEscape(magnetA), Sources: []string{"dht:" + hashB}}, "", true},
-		{"no labeled hash in text fields", stream{Name: hashA, Title: hashA, Description: hashA, BehaviorHints: struct {
-			Filename  string `json:"filename"`
-			VideoSize int64  `json:"videoSize"`
-		}{Filename: hashA + ".mkv"}}, "", false},
+		{"no labeled hash in text fields", stream{Name: hashA, Title: hashA, Description: hashA, BehaviorHints: behaviorHints{Filename: hashA + ".mkv"}}, "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, ambiguous := streamHash(&tc.s); got != tc.want || ambiguous != tc.ambiguous {

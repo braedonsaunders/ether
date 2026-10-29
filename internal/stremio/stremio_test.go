@@ -58,6 +58,7 @@ type fakeAddon struct {
 	paths     []string
 	manifests int
 	streams   map[string]string // request path suffix -> body
+	manifest  string            // "" = manifestJSON
 	status    int
 	retry     string
 }
@@ -71,8 +72,12 @@ func (f *fakeAddon) handler(t *testing.T) http.Handler {
 		if strings.HasSuffix(r.URL.Path, "/manifest.json") {
 			f.mu.Lock()
 			f.manifests++
+			m := f.manifest
 			f.mu.Unlock()
-			fmt.Fprint(w, manifestJSON)
+			if m == "" {
+				m = manifestJSON
+			}
+			fmt.Fprint(w, m)
 			return
 		}
 		if status != 0 {
@@ -142,7 +147,9 @@ func TestManifestCheck(t *testing.T) {
 		`{"id":"x","resources":["stream"],"types":["movie"],"idPrefixes":["tt"]}`:                            "",
 		`{"id":"x","resources":["catalog","meta"],"types":["movie"]}`:                                        "does not provide streams",
 		`{"id":"x","resources":[{"name":"stream","types":["tv"]}]}`:                                          "movie or series",
-		`{"id":"x","resources":[{"name":"stream","types":["movie"],"idPrefixes":["kitsu"]}]}`:                "IMDb",
+		`{"id":"x","resources":[{"name":"stream","types":["movie"],"idPrefixes":["kitsu"]}]}`:                "",
+		`{"id":"x","resources":[{"name":"stream","types":["movie"],"idPrefixes":["tmdb:"]}]}`:                "",
+		`{"id":"x","resources":[{"name":"stream","types":["movie"],"idPrefixes":["yt_id:"]}]}`:               "IMDb",
 		`{"id":"x","resources":["stream"],"types":["movie"],"behaviorHints":{"configurationRequired":true}}`: "configured first",
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
@@ -154,7 +161,7 @@ func TestManifestCheck(t *testing.T) {
 	}
 }
 
-func TestSearchEpisodeReadsPackFilesAndSkipsNonTorrents(t *testing.T) {
+func TestSearchEpisodeReadsPackFilesUsenetAndHTTPStreams(t *testing.T) {
 	f := &fakeAddon{streams: map[string]string{"/stream/series/tt0903747:1:2.json": episodeStreams}}
 	srv := httptest.NewServer(f.handler(t))
 	defer srv.Close()
@@ -167,8 +174,18 @@ func TestSearchEpisodeReadsPackFilesAndSkipsNonTorrents(t *testing.T) {
 	if got := f.streamRequests(); len(got) != 1 || got[0] != "/providers=a,b%7Csort=size/stream/series/tt0903747:1:2.json" {
 		t.Fatalf("stream requests %v", got)
 	}
-	if len(rels) != 3 {
-		t.Fatalf("want 3 torrent releases (duplicate, Usenet and direct links skipped), got %d: %+v", len(rels), rels)
+	if len(rels) != 5 {
+		t.Fatalf("want 3 torrents, a Usenet and an HTTP stream (duplicate skipped), got %d: %+v", len(rels), rels)
+	}
+	if u := rels[3]; u.Protocol != core.ProtocolUsenet || u.NZBURL != "https://nzb.example/x.nzb" || u.InfoHash != "" || !strings.HasPrefix(u.GUID, "nzb:") {
+		t.Fatalf("usenet stream %+v", u)
+	}
+	if h := rels[4]; h.Protocol != core.ProtocolHTTP || h.StreamURL != "https://cdn.example/video.mp4" || h.StreamOrigin != srv.URL || !strings.HasPrefix(h.GUID, "http:") || h.Info.Height != 720 {
+		t.Fatalf("http stream %+v", h)
+	}
+	// Flags on the statistics line are audio languages.
+	if got := rels[1].Info.Languages; len(got) != 2 || got[0] != "english" || got[1] != "russian" {
+		t.Fatalf("flag languages %v", got)
 	}
 	a := rels[0]
 	if a.InfoHash != hashA || a.Protocol != core.ProtocolTorrent || a.GUID != "btih:"+hashA+"/1" || a.Category != tvCategory {
@@ -249,15 +266,15 @@ func TestSearchKeyedAddonReadsHashesAndCachedMarkers(t *testing.T) {
 	}
 }
 
-func TestSearchURLOnlyStreamsAreSkippedAndLogged(t *testing.T) {
+func TestSearchUnplayableStreamsAreSkippedAndLogged(t *testing.T) {
 	var buf bytes.Buffer
 	old := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
 	t.Cleanup(func() { slog.SetDefault(old) })
 
 	body := `{"streams":[
-	 {"name":"Direct","title":"Movie 2014 1080p BluRay x264-GRP","url":"https://cdn.example/video.mp4"},
-	 {"name":"Direct2","title":"Movie 2014 720p BluRay x264-GRP","url":"https://cdn.example/other.mp4"}
+	 {"name":"Web","title":"Movie 2014 1080p BluRay x264-GRP","externalUrl":"https://cdn.example/watch"},
+	 {"name":"Trailer","title":"Movie 2014 720p BluRay x264-GRP","ytId":"abcdefghijk"}
 	]}`
 	f := &fakeAddon{streams: map[string]string{"/stream/movie/tt0816692.json": body}}
 	srv := httptest.NewServer(f.handler(t))
@@ -268,7 +285,7 @@ func TestSearchURLOnlyStreamsAreSkippedAndLogged(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(rels) != 0 {
-		t.Fatalf("want 0 releases from URL-only streams, got %+v", rels)
+		t.Fatalf("want 0 releases from external and YouTube streams, got %+v", rels)
 	}
 	log := buf.String()
 	if !strings.Contains(log, "level=WARN") || !strings.Contains(log, "skippedNoHash=2") || !strings.Contains(log, "skippedAmbiguous=0") || !strings.Contains(log, "host="+strings.TrimPrefix(srv.URL, "http://")) {
@@ -279,8 +296,8 @@ func TestSearchURLOnlyStreamsAreSkippedAndLogged(t *testing.T) {
 	}
 	// O contador também é observável direto no convert.
 	if _, skipped, ambiguous := convert([]stream{
-		{Title: "Movie 2014 1080p", URL: "https://cdn.example/video.mp4"},
-		{Title: "Movie 2014 720p", URL: "https://cdn.example/other.mp4"},
+		{Title: "Movie 2014 1080p", URL: "stremio:///detail/movie/tt0816692"},
+		{Title: "Movie 2014 720p"},
 	}, core.SearchRequest{Type: core.TypeMovie, Title: "Movie"}, false); skipped != 2 || ambiguous != 0 {
 		t.Fatalf("skippedNoHash=%d skippedAmbiguous=%d want 2/0", skipped, ambiguous)
 	}
@@ -291,9 +308,9 @@ func TestSearchURLOnlyStreamsAreSkippedAndLogged(t *testing.T) {
 // conta à parte como ambíguo, nunca como "without hash".
 func TestConvertSkippedCountsOnlyHashCausedSkips(t *testing.T) {
 	rels, skipped, ambiguous := convert([]stream{
-		{Title: "Movie 2014 1080p BluRay x264-GRP", URL: "https://cdn.example/video.mp4"},
-		{Title: "Movie 2014 1080p BluRay x264-GRP", URL: "https://cdn.example/video.mp4"}, // duplicata exata
-		{Title: "Movie 2014 720p BluRay x264-GRP", URL: "https://cdn.example/other.mp4"},
+		{Title: "Movie 2014 1080p BluRay x264-GRP", URL: "stremio:///video"},
+		{Title: "Movie 2014 1080p BluRay x264-GRP", URL: "stremio:///video"}, // duplicata exata
+		{Title: "Movie 2014 720p BluRay x264-GRP", URL: "stremio:///other"},
 		{URL: "https://cdn.example/unnamed.mp4"},                                                          // sem nome: morreria de qualquer jeito
 		{Title: "Movie 2014 2160p BluRay x264-GRP", InfoHash: hashA, URL: "magnet:?xt=urn:btih:" + hashB}, // ambíguo
 		{Title: "Movie 2014 2160p BluRay x264-GRP", InfoHash: hashA, URL: "magnet:?xt=urn:btih:" + hashB}, // ambíguo duplicado
@@ -322,7 +339,7 @@ func TestSearchSkipWarnThrottledPerBackend(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(old) })
 
 	body := `{"streams":[
-	 {"name":"Direct","title":"Movie 2014 1080p BluRay x264-GRP","url":"https://cdn.example/video.mp4"}
+	 {"name":"Web","title":"Movie 2014 1080p BluRay x264-GRP","externalUrl":"https://cdn.example/watch"}
 	]}`
 	f := &fakeAddon{streams: map[string]string{"/stream/movie/tt0816692.json": body}}
 	srv := httptest.NewServer(f.handler(t))

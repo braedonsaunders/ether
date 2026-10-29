@@ -451,9 +451,43 @@ func searchRequestFor(t *core.Title) core.SearchRequest {
 		if title == "" {
 			title = t.Title
 		}
-		return core.SearchRequest{Type: core.TypeEpisode, IDs: ids, Title: title, OriginalTitle: t.ShowOriginalTitle, Year: t.ShowYear, Season: season, Episode: episode, EpisodeTitle: t.Title}
+		return core.SearchRequest{Type: core.TypeEpisode, IDs: ids, Title: title, OriginalTitle: t.ShowOriginalTitle, Year: t.ShowYear, Season: season, Episode: episode, EpisodeTitle: t.Title,
+			AbsoluteEpisode: t.AbsoluteEpisode, Anime: isAnime(t)}
 	}
-	return core.SearchRequest{Type: core.TypeMovie, IDs: t.IDs, Title: t.Title, OriginalTitle: t.OriginalTitle, Year: t.Year}
+	return core.SearchRequest{Type: core.TypeMovie, IDs: t.IDs, Title: t.Title, OriginalTitle: t.OriginalTitle, Year: t.Year, Anime: isAnime(t)}
+}
+
+// isAnime reports a title whose releases follow anime conventions
+// (absolute episode numbers, fansub groups): TMDB's "anime" keyword, or
+// Japanese-language animation.
+func isAnime(t *core.Title) bool {
+	for _, k := range t.Keywords {
+		if strings.EqualFold(k, "anime") {
+			return true
+		}
+	}
+	if !strings.EqualFold(t.Language, "ja") {
+		return false
+	}
+	for _, g := range t.Genres {
+		if strings.EqualFold(g, "Animation") {
+			return true
+		}
+	}
+	return false
+}
+
+// absoluteEpisode is the requested episode's number counted from the
+// series start: the catalogue's count, or the episode number itself in
+// the first season. 0 when unknown.
+func absoluteEpisode(sreq core.SearchRequest) int {
+	switch {
+	case sreq.AbsoluteEpisode > 0:
+		return sreq.AbsoluteEpisode
+	case sreq.Season == 1:
+		return sreq.Episode
+	}
+	return 0
 }
 
 func flightKey(req core.ResolveRequest, profile core.QualityProfile) string {
@@ -1190,7 +1224,8 @@ func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest) st
 			if miniseriesPart != sreq.Episode {
 				return "season/episode mismatch"
 			}
-		} else if !releaseparse.EpisodeMatches(rel.Info, sreq.Season, sreq.Episode) {
+		} else if !releaseparse.EpisodeMatches(rel.Info, sreq.Season, sreq.Episode) &&
+			!releaseparse.EpisodeMatchesAbsolute(rel.Info, absoluteEpisode(sreq)) {
 			return "season/episode mismatch"
 		}
 	} else {
@@ -1374,6 +1409,56 @@ func sizedForEpisode(rel core.Release) core.Release {
 	return rel
 }
 
+// languageScore applies a profile's language preferences, which are
+// opt-in (an unset profile is language-neutral) and may be ISO codes
+// ("fr", "es-419") or release language names. Audio decides: a release
+// declaring only other audio languages is pushed down, the preferred
+// language or MULTI is not, and another regional variant of a preferred
+// language (Castilian for a Latino preference) counts for less than the
+// exact one. Subtitle-only declarations (VOSTFR) never stand in for audio;
+// they add a small bonus of their own.
+func languageScore(info core.ReleaseInfo, prefs []string) float64 {
+	if len(prefs) == 0 {
+		return 0
+	}
+	sc := 0.0
+	if len(info.Languages) > 0 {
+		ok := false
+		for _, l := range info.Languages {
+			if l == releaseparse.LanguageMulti {
+				ok = true
+				continue
+			}
+			best := releaseparse.LanguageNoMatch
+			for _, pref := range prefs {
+				best = max(best, releaseparse.LanguageMatch(l, pref))
+			}
+			switch best {
+			case releaseparse.LanguageExactMatch:
+				ok = true
+				sc += 5
+			case releaseparse.LanguageBaseMatch:
+				ok = true
+				sc += 2
+			}
+		}
+		if !ok {
+			sc -= 25
+		}
+	}
+	for _, l := range info.SubtitleLanguages {
+		matched := false
+		for _, pref := range prefs {
+			matched = matched || releaseparse.LanguageMatch(l, pref) == releaseparse.LanguageExactMatch
+		}
+		if matched {
+			sc += 2
+			break
+		}
+	}
+	return sc
+}
+
 func packCoversSeason(info core.ReleaseInfo, season int) bool {
 	if len(info.Seasons) == 0 {
 		return true // "Complete series": the file chooser verifies the episode
@@ -1461,24 +1546,7 @@ func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.T
 	if info.Proper || info.Repack {
 		sc += 6
 	}
-	// Language preferences are opt-in; an unset profile is language-neutral.
-	if len(profile.PreferredLanguages) > 0 && len(info.Languages) > 0 {
-		ok := false
-		for _, l := range info.Languages {
-			if l == "multi" {
-				ok = true
-			}
-			for _, pref := range profile.PreferredLanguages {
-				if strings.EqualFold(l, pref) {
-					ok = true
-					sc += 5
-				}
-			}
-		}
-		if !ok {
-			sc -= 25
-		}
-	}
+	sc += languageScore(info, profile.PreferredLanguages)
 	// Indexer reputation.
 	s.mu.RLock()
 	rep := s.reps[rel.Indexer]

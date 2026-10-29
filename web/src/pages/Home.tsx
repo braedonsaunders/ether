@@ -239,6 +239,7 @@ function SessionCard({ s }: { s: NowPlaying }) {
                     ? t("Direct play")
                     : t("Starting")}
             </Badge>
+            {s.origin ? <Badge variant="secondary">{s.origin}</Badge> : null}
             {s.remote ? <Badge variant="info">{t("Remote")}</Badge> : null}
             {s.failovers ? (
               <Badge variant="warning">

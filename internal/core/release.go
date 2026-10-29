@@ -35,9 +35,15 @@ type ReleaseInfo struct {
 	Channels    string   `json:"channels,omitempty"` // "5.1"
 	Group       string   `json:"group,omitempty"`
 	Languages   []string `json:"languages,omitempty"`
-	Proper      bool     `json:"proper,omitempty"`
-	Repack      bool     `json:"repack,omitempty"`
-	Container   string   `json:"container,omitempty"`
+	// SubtitleLanguages are subtitle languages a release declares without
+	// claiming the audio (VOSTFR, VOSE, SUBFRENCH) (additive).
+	SubtitleLanguages []string `json:"subtitleLanguages,omitempty"`
+	// AbsoluteEpisodes are episode numbers counted from the series start,
+	// as anime releases number them ("Show - 1071") (additive).
+	AbsoluteEpisodes []int  `json:"absoluteEpisodes,omitempty"`
+	Proper           bool   `json:"proper,omitempty"`
+	Repack           bool   `json:"repack,omitempty"`
+	Container        string `json:"container,omitempty"`
 }
 
 // Release is an indexer search result for a title.
@@ -75,6 +81,14 @@ type Release struct {
 	// only: a provider's own answer always wins.
 	DebridCached   []string `json:"debridCached,omitempty"`
 	DebridUncached []string `json:"debridUncached,omitempty"`
+	// HTTP stream releases (ProtocolHTTP, additive). StreamURL is the URL
+	// the addon answered with; it and StreamHeaders (request headers the
+	// addon requires) can carry the addon's credentials, so they never
+	// leave the server. StreamOrigin is the owner-configured addon origin
+	// (scheme://host:port), the only private address the URL may reach.
+	StreamURL     string            `json:"streamUrl,omitempty"`
+	StreamHeaders map[string]string `json:"streamHeaders,omitempty"`
+	StreamOrigin  string            `json:"streamOrigin,omitempty"`
 }
 
 // Resolution is the resolver's answer for a title and client: the winning

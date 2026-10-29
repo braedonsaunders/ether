@@ -287,11 +287,14 @@ type SearchOptions struct {
 }
 
 // browserRelease is rel as the owner's browser may see it. NZB links carry
-// the indexer's API key and magnet links can carry tracker passkeys; the
-// console never needs either (pins and health checks look releases up by
-// ID in the server's own results), so both are dropped.
+// the indexer's API key, magnet links can carry tracker passkeys, and an
+// addon's stream URL and headers can carry the addon's (or its debrid
+// account's) credentials; the console never needs any of them (pins and
+// health checks look releases up by ID in the server's own results), so
+// all are dropped. StreamOrigin is the owner's own addon origin and stays.
 func browserRelease(rel core.Release) core.Release {
 	rel.NZBURL, rel.MagnetURL = "", ""
+	rel.StreamURL, rel.StreamHeaders = "", nil
 	return rel
 }
 

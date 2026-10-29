@@ -46,7 +46,7 @@ func TestTitleWordsAreNotAudioLanguages(t *testing.T) {
 		"Movie.2020.FRENCH.1080p.WEB-DL-GRP":               {"french"},
 		"Show.S01E01.GERMAN.720p.WEB.h264-GRP":             {"german"},
 		"Movie.Title.FRENCH.1080p.BluRay-GRP":              {"french"},
-		"Movie.2021.PT-BR.1080p.WEB-DL-GRP":                {"portuguese"},
+		"Movie.2021.PT-BR.1080p.WEB-DL-GRP":                {"portuguese-brazil"},
 	} {
 		got := Parse(name).Languages
 		if len(got) != len(want) {

@@ -235,6 +235,11 @@ type SearchRequest struct {
 	Season        int
 	Episode       int
 	EpisodeTitle  string // optional title used to distinguish same-numbered episodes
+	// AbsoluteEpisode is the episode's number counted from the series
+	// start (0 = unknown), and Anime marks a series whose releases are
+	// commonly numbered that way (additive).
+	AbsoluteEpisode int
+	Anime           bool
 }
 
 type Indexer interface {
@@ -347,6 +352,13 @@ type MediaSource interface {
 	Name() string // file name inside the release, e.g. "Movie.2024.1080p.mkv"
 	ReleaseID() string
 	Close() error
+}
+
+// OriginSource is implemented by a MediaSource that can name the service its
+// bytes come from, such as "Real-Debrid" (additive). Sources without it are
+// Usenet.
+type OriginSource interface {
+	Origin() string
 }
 
 type Engine interface {

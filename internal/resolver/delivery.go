@@ -22,8 +22,8 @@ type deliveryState struct {
 // Usenet listings share the configured NNTP pool; torrent evidence is scoped
 // to the release because different debrid links may use different CDNs.
 func deliveryKey(r core.Release) string {
-	if r.Protocol == core.ProtocolTorrent {
-		return "torrent:" + r.ID
+	if r.Protocol == core.ProtocolTorrent || r.Protocol == core.ProtocolHTTP {
+		return r.Protocol + ":" + r.ID
 	}
 	return "usenet"
 }

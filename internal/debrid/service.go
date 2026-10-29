@@ -15,6 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/clusterbus"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -60,6 +61,9 @@ type Options struct {
 	PayloadTTL  time.Duration // stored payload reuse, 0 = 7 days
 	CachedTTL   time.Duration // known-cached memory, 0 = 12h
 	UncachedTTL time.Duration // known-uncached memory, 0 = 30m
+	// DirectGuard guards direct HTTP stream requests (tests map fake public
+	// hosts onto local servers); nil uses a zero safefetch.Guard.
+	DirectGuard *safefetch.Guard
 }
 
 // Service holds the configured debrid providers and applies priority,
@@ -79,6 +83,8 @@ type Service struct {
 
 	queuedMu sync.Mutex
 	queued   map[string]queuedDownload // queueKey -> the download sent for that title
+
+	direct directClients // direct HTTP streams (direct.go)
 
 	// Cluster (cluster.go); all nil/zero on a standalone server.
 	clusterMu sync.RWMutex
@@ -239,6 +245,7 @@ func NewService(cfg config.Debrid, opts Options) *Service {
 		opts.ProviderOptions.Now = opts.Now
 	}
 	s := &Service{opts: opts, log: opts.Logger, db: opts.DB, now: opts.Now, known: map[string]knownState{}}
+	s.direct.guard = opts.DirectGuard
 	s.UpdateConfig(cfg)
 	return s
 }
@@ -1039,6 +1046,14 @@ func (s *Service) fresh(p Payload) bool {
 // no-longer-cached outcomes (failover without marking the release bad) and
 // core.ErrArticleMissing when the file itself is gone from the torrent.
 func (s *Service) Refresh(ctx context.Context, p Payload, force bool) (Payload, error) {
+	if p.IsDirect() {
+		// An addon's link resolves itself on every request: a failed
+		// redirect target is replaced by asking the link again.
+		if force {
+			p.URL = p.Link
+		}
+		return p, nil
+	}
 	if !force {
 		if stored, ok := s.storedPayload(ctx, p.Key); ok && s.fresh(stored) && stored.Path == p.Path && stored.Size == p.Size {
 			return stored, nil

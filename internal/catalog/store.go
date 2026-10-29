@@ -317,6 +317,72 @@ func (c *Catalog) hydrateSlice(ctx context.Context, items []core.Title) error {
 			items[i].ShowIDs.TVDB = show.tvdb
 		}
 	}
+	return c.hydrateAbsoluteEpisodes(ctx, items)
+}
+
+// hydrateAbsoluteEpisodes numbers episodes from the series start (anime
+// releases name them so): the episode plus every earlier regular season's
+// episode count. An episode stays unnumbered when an earlier season is
+// missing from the mirror or has no known count: a guessed number would
+// match the wrong release.
+func (c *Catalog) hydrateAbsoluteEpisodes(ctx context.Context, items []core.Title) error {
+	var showArgs []any
+	seen := map[core.RatingKey]bool{}
+	for i := range items {
+		t := &items[i]
+		if t.Type == core.TypeEpisode && t.ShowKey != 0 && t.Season > 1 && t.Episode > 0 && !seen[t.ShowKey] {
+			seen[t.ShowKey] = true
+			showArgs = append(showArgs, int64(t.ShowKey))
+		}
+		if t.Type == core.TypeEpisode && t.Season == 1 && t.Episode > 0 {
+			t.AbsoluteEpisode = t.Episode
+		}
+	}
+	counts := map[core.RatingKey]map[int]int{}
+	const batch = 200
+	for start := 0; start < len(showArgs); start += batch {
+		part := showArgs[start:min(start+batch, len(showArgs))]
+		if err := func() error {
+			rows, err := c.db.QueryContext(ctx, `SELECT show_key,season,child_count FROM catalog_titles WHERE type='season' AND season > 0 AND show_key IN (`+placeholders(len(part))+`)`, part...)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var show int64
+				var season, n int
+				if err := rows.Scan(&show, &season, &n); err != nil {
+					return err
+				}
+				k := core.RatingKey(show)
+				if counts[k] == nil {
+					counts[k] = map[int]int{}
+				}
+				counts[k][season] = n
+			}
+			return rows.Err()
+		}(); err != nil {
+			return err
+		}
+	}
+	for i := range items {
+		t := &items[i]
+		seasons := counts[t.ShowKey]
+		if t.Type != core.TypeEpisode || t.Season <= 1 || t.Episode <= 0 || seasons == nil {
+			continue
+		}
+		total := 0
+		for s := 1; s < t.Season; s++ {
+			if seasons[s] <= 0 {
+				total = -1
+				break
+			}
+			total += seasons[s]
+		}
+		if total >= 0 {
+			t.AbsoluteEpisode = total + t.Episode
+		}
+	}
 	return nil
 }
 

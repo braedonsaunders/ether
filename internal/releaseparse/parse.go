@@ -21,10 +21,17 @@ var (
 	reBareEpisode = regexp.MustCompile(`(?i)\b(?:Episode\s*(\d{1,3})|Ep\s*(\d{1,3})|E(\d{2,3}))\b`)
 	reDashEpisode = regexp.MustCompile(`(?i)\s-\s*(\d{2,3})\s+(?:\d{3,4}[pi]\b|BD\b|BLURAY\b|WEB|HDTV\b|DVD|X264\b|X265\b|HEVC\b|H264\b|H265\b|AV1\b|XVID\b)`)
 	reEpRange     = regexp.MustCompile(`(?i)E(\d{1,3})`)
-	reChannels    = regexp.MustCompile(`([257])[\s.]([01])\b`)
-	reRawChannels = regexp.MustCompile(`\b(5\.1|7\.1|2\.0|2\.1|6\.1)\b`)
-	reGroupTail   = regexp.MustCompile(`-([A-Za-z0-9][A-Za-z0-9_]{1,})$`)
-	reBracket     = regexp.MustCompile(`\[([^\]]+)\]`)
+	// Anime absolute numbering and "Season N - EE" (parseAbsoluteEpisode,
+	// parseSeasonDashEpisode).
+	reAbsoluteBracket   = regexp.MustCompile(`(?i)(?:^|\s)-\s+(\d{1,4})(?:v\d{1,2})?(?:\s*[\[(]|\s*$|\s+(?:END|FINAL)\b)`)
+	reAbsoluteTag       = regexp.MustCompile(`(?i)\s-\s(\d{1,4})(?:v\d{1,2})?`)
+	reDashNumber        = regexp.MustCompile(`\s-\s(\d{1,4})(?:v\d{1,2})?\b`)
+	reSeasonShortDashEp = regexp.MustCompile(`(?i)\bS(\d{1,2})\s+-\s+(\d{1,4})(?:v\d{1,2})?\b`)
+	reSeasonDashEp      = regexp.MustCompile(`(?i)\b(?:Season|Saison|Stagione|Temporada)\s*(\d{1,2})\s+-\s+(\d{1,4})(?:v\d{1,2})?\b`)
+	reChannels          = regexp.MustCompile(`([257])[\s.]([01])\b`)
+	reRawChannels       = regexp.MustCompile(`\b(5\.1|7\.1|2\.0|2\.1|6\.1)\b`)
+	reGroupTail         = regexp.MustCompile(`-([A-Za-z0-9][A-Za-z0-9_]{1,})$`)
+	reBracket           = regexp.MustCompile(`\[([^\]]+)\]`)
 )
 
 var containers = map[string]bool{
@@ -32,9 +39,12 @@ var containers = map[string]bool{
 	"wmv": true, "ts": true, "m2ts": true, "webm": true, "mpg": true, "mpeg": true,
 }
 
+// languages are audio language tags. MULTI is read separately
+// (multiAudioAfter) and subtitle-only tags such as VOSTFR live in
+// subtitleTags. Regional variants are named by language.go's constants.
 var languages = []struct{ token, name string }{
-	{"MULTI", "multi"}, {"FRENCH", "french"}, {"VOSTFR", "french"}, {"TRUEFRENCH", "french"},
-	{"GERMAN", "german"}, {"SPANISH", "spanish"}, {"LATINO", "spanish"}, {"ITALIAN", "italian"},
+	{"DUAL", LanguageMulti}, {"FRENCH", "french"}, {"TRUEFRENCH", "french"}, {"VFF", "french"}, {"VFQ", "french"}, {"VF2", "french"},
+	{"GERMAN", "german"}, {"SPANISH", "spanish"}, {"CASTELLANO", LanguageSpanishSpain}, {"CASTILIAN", LanguageSpanishSpain}, {"LATINO", LanguageSpanishLatino}, {"LATAM", LanguageSpanishLatino}, {"ITALIAN", "italian"},
 	{"DUTCH", "dutch"}, {"PORTUGUESE", "portuguese"}, {"RUSSIAN", "russian"}, {"RUS", "russian"}, {"UKRAINIAN", "ukrainian"}, {"UKR", "ukrainian"}, {"POLISH", "polish"},
 	{"KOREAN", "korean"}, {"JAPANESE", "japanese"}, {"CHINESE", "chinese"}, {"MANDARIN", "chinese"},
 	{"HINDI", "hindi"}, {"TELUGU", "telugu"}, {"TAMIL", "tamil"}, {"TURKISH", "turkish"},
@@ -44,8 +54,8 @@ var languages = []struct{ token, name string }{
 	{"ENGLISH", "english"}, {"ENG", "english"},
 	// Explicit regional language tags are used by WEB release groups.
 	// Do not treat bare country codes (BR/US/GB) as audio languages.
-	{"PT-BR", "portuguese"}, {"PT-PT", "portuguese"},
-	{"ES-ES", "spanish"}, {"ES-MX", "spanish"}, {"ES-419", "spanish"},
+	{"PT-BR", LanguagePortugueseBrazil}, {"BRAZILIAN", LanguagePortugueseBrazil}, {"DUBLADO", LanguagePortugueseBrazil}, {"PT-PT", LanguagePortuguesePortugal},
+	{"ES-ES", LanguageSpanishSpain}, {"ES-MX", LanguageSpanishLatino}, {"ES-419", LanguageSpanishLatino},
 	{"EN-US", "english"}, {"EN-GB", "english"},
 }
 
@@ -65,6 +75,15 @@ func Parse(name string) core.ReleaseInfo {
 
 	// Season / episode.
 	markerAt := parseEpisodes(spaced, upper, &info)
+	if abs, at := parseAbsoluteEpisode(stem, spaced); abs > 0 && len(info.Seasons) == 0 {
+		// Anime numbers episodes from the series start ("Show - 1071");
+		// such a number is only an absolute episode, never a season's
+		// episode, so movie titles and SxxEyy names keep their meaning.
+		info.AbsoluteEpisodes = []int{abs}
+		if markerAt < 0 || at < markerAt {
+			markerAt = at
+		}
+	}
 	var yearAt int
 	info.Year, yearAt = parseYearAt(spaced)
 	// Words before the release year or the episode/season marker are the
@@ -108,6 +127,10 @@ func Parse(name string) core.ReleaseInfo {
 	// Words of the title itself ("The.French.Dispatch.2021", "The Danish
 	// Girl") are not audio languages.
 	seen := map[string]bool{}
+	if multiAudioAfter(spaced, floor) {
+		seen[LanguageMulti] = true
+		info.Languages = append(info.Languages, LanguageMulti)
+	}
 	for _, l := range languages {
 		if languageTagAfter(spaced, l.token, floor) {
 			if !seen[l.name] {
@@ -116,6 +139,7 @@ func Parse(name string) core.ReleaseInfo {
 			}
 		}
 	}
+	info.SubtitleLanguages = parseSubtitleLanguages(spaced, floor)
 	info.Title = extractTitle(spaced, yearAt, markerAt, floor, &info)
 	return info
 }
@@ -196,7 +220,7 @@ func looksLikeMeta(v string) bool {
 
 func isKnownTail(g string) bool {
 	switch strings.ToUpper(g) {
-	case "DL", "RIP", "CAM", "TS", "TC", "MA", "HD", "SD", "VISION", "DV", "HDR", "ATMOS":
+	case "DL", "RIP", "CAM", "TS", "TC", "MA", "HD", "SD", "VISION", "DV", "HDR", "ATMOS", "AUDIO", "SUBS":
 		return true
 	}
 	return false
@@ -228,6 +252,12 @@ func parseEpisodes(spaced, upper string, info *core.ReleaseInfo) int {
 			info.Episodes = []int{episode}
 			return at
 		}
+		// Anime: "Show Season 2 - 05 (1080p)" is an episode, not seasons 2-5.
+		if season, episode, at, ok := parseSeasonDashEpisode(spaced); ok {
+			info.Seasons = []int{season}
+			info.Episodes = []int{episode}
+			return at
+		}
 		if loc := reSeasonWord.FindStringSubmatchIndex(spaced); loc != nil {
 			m := submatches(spaced, loc)
 			info.Seasons = seasonRange(m)
@@ -236,6 +266,16 @@ func parseEpisodes(spaced, upper string, info *core.ReleaseInfo) int {
 		}
 	}
 	if hasS {
+		// Anime: "Show S2 - 05 (1080p)" is season 2's fifth episode.
+		if loc := reSeasonShortDashEp.FindStringSubmatchIndex(spaced); loc != nil && releaseTagFollows(spaced[loc[1]:]) {
+			m := submatches(spaced, loc)
+			season, _ := strconv.Atoi(m[1])
+			episode, _ := strconv.Atoi(m[2])
+			if season >= 1 && episode >= 1 {
+				info.Seasons, info.Episodes = []int{season}, []int{episode}
+				return loc[0]
+			}
+		}
 		if loc := reSeasonOnly.FindStringSubmatchIndex(spaced); loc != nil {
 			m := submatches(spaced, loc)
 			// Guard against matching the S in e.g. S01E02 (already handled) —
@@ -375,6 +415,65 @@ func parseDashEpisode(spaced string) (episode, at int, ok bool) {
 		return 0, -1, false
 	}
 	return e, loc[0], true
+}
+
+// parseSeasonDashEpisode reads "Season N - EE" followed by the end of the
+// name or a release tag (reSeasonDashEp).
+func parseSeasonDashEpisode(spaced string) (season, episode, at int, ok bool) {
+	loc := reSeasonDashEp.FindStringSubmatchIndex(spaced)
+	if loc == nil || !releaseTagFollows(spaced[loc[1]:]) {
+		return 0, 0, -1, false
+	}
+	m := submatches(spaced, loc)
+	s, _ := strconv.Atoi(m[1])
+	e, _ := strconv.Atoi(m[2])
+	if s < 1 || s > 50 || e < 1 {
+		return 0, 0, -1, false
+	}
+	return s, e, loc[0], true
+}
+
+// parseAbsoluteEpisode reads an anime episode number counted from the
+// series start: "[Group] Show - 1071 (1080p)", "Show - 05v2 [1080p]",
+// "Show - 12 END". stem keeps the name's brackets, which mark the number's
+// end; at is the dash's offset in spaced. Batch ranges ("01-12") and
+// years ("Godzilla - 1954 (1080p)") are not episodes.
+func parseAbsoluteEpisode(stem, spaced string) (episode, at int) {
+	m := reAbsoluteBracket.FindStringSubmatch(stem)
+	if m == nil {
+		if m = reAbsoluteTag.FindStringSubmatch(spaced); m == nil || !releaseTagFollows(spaced[strings.Index(spaced, m[0])+len(m[0]):]) {
+			return 0, -1
+		}
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil || n < 1 || n > 9999 || (len(m[1]) == 4 && n >= 1888 && n <= 2100) {
+		return 0, -1
+	}
+	for _, loc := range reDashNumber.FindAllStringSubmatchIndex(spaced, -1) {
+		if v, _ := strconv.Atoi(spaced[loc[2]:loc[3]]); v == n {
+			return n, loc[0]
+		}
+	}
+	return 0, -1
+}
+
+// releaseTagFollows reports whether rest (the text after an episode
+// number) is empty or starts with a release tag: a resolution, source,
+// codec, an anime CRC or END.
+func releaseTagFollows(rest string) bool {
+	tok, _, _ := strings.Cut(strings.TrimSpace(rest), " ")
+	if tok == "" {
+		return true
+	}
+	u := strings.ToUpper(tok)
+	if reResolution.MatchString(u) || (len(u) == 8 && strings.Trim(u, "0123456789ABCDEF") == "") {
+		return true
+	}
+	switch u {
+	case "END", "FINAL", "BD", "BLURAY", "WEB", "WEB-DL", "WEBRIP", "HDTV", "DVD", "X264", "X265", "HEVC", "H264", "H265", "AV1", "AAC", "FLAC", "UNCENSORED", "VOSTFR", "MULTI", "DUAL":
+		return true
+	}
+	return false
 }
 
 // seasonRange expands submatches carrying a season and an optional range

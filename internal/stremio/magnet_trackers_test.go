@@ -47,7 +47,7 @@ func TestConvertCountsSkippedNoHashBeyondMaxResults(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		streams = append(streams, stream{
 			Title: "Movie 2014 720p BluRay x264-GRP",
-			URL:   fmt.Sprintf("https://cdn.example/%d.mp4", i),
+			URL:   fmt.Sprintf("stremio:///detail/%d", i),
 		})
 	}
 	rels, skipped, ambiguous := convert(streams, core.SearchRequest{Type: core.TypeMovie, Title: "Movie"}, false)

@@ -12,9 +12,9 @@ import (
 func (m *Manager) resumeSourceAllowed(release core.Release) bool {
 	switch strings.ToLower(strings.TrimSpace(m.config().Resolver.SourcePreference)) {
 	case "debrid":
-		return release.Protocol == core.ProtocolTorrent
+		return release.Protocol == core.ProtocolTorrent || release.Protocol == core.ProtocolHTTP
 	case "usenet":
-		return release.Protocol != core.ProtocolTorrent
+		return release.Protocol != core.ProtocolTorrent && release.Protocol != core.ProtocolHTTP
 	default:
 		return true
 	}

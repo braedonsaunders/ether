@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/dlclark/regexp2"
 )
 
@@ -138,20 +139,7 @@ func originalLanguage(t *core.Title) string {
 	if t == nil || t.Language == "" {
 		return ""
 	}
-	code := strings.ToLower(t.Language)
-	if name, ok := map[string]string{"en": "english", "fr": "french", "es": "spanish", "de": "german", "it": "italian",
-		"da": "danish", "nl": "dutch", "ja": "japanese", "is": "icelandic", "zh": "chinese", "ru": "russian", "uk": "ukrainian", "pl": "polish",
-		"vi": "vietnamese", "sv": "swedish", "no": "norwegian", "nb": "norwegian", "nn": "norwegian", "fi": "finnish",
-		"tr": "turkish", "pt": "portuguese", "ko": "korean", "hi": "hindi", "te": "telugu", "ta": "tamil", "ar": "arabic",
-		"cs": "czech", "hu": "hungarian", "el": "greek", "th": "thai", "id": "indonesian", "cn": "chinese",
-		"he": "hebrew", "lt": "lithuanian", "ro": "romanian", "bg": "bulgarian", "fa": "persian", "bn": "bengali",
-		"sk": "slovak", "lv": "latvian", "ca": "catalan", "hr": "croatian", "sr": "serbian", "bs": "bosnian",
-		"et": "estonian", "mk": "macedonian", "sl": "slovenian", "ml": "malayalam", "kn": "kannada", "sq": "albanian",
-		"af": "afrikaans", "mr": "marathi", "tl": "tagalog", "ur": "urdu", "rm": "romansh", "mn": "mongolian",
-		"ka": "georgian", "ga": "irish"}[code]; ok {
-		return name
-	}
-	return code
+	return releaseparse.LanguageName(t.Language)
 }
 
 func fieldNumber(s core.FormatSpecification, k string) float64 {
@@ -212,8 +200,9 @@ func specMatch(s compiledSpec, r core.Release, original string) (bool, error) {
 		}
 		var except bool
 		_ = json.Unmarshal(s.def.Fields["exceptLanguage"], &except)
+		name = formatLanguageName(name)
 		for _, l := range r.Info.Languages {
-			same := name != "" && strings.EqualFold(l, name)
+			same := name != "" && strings.EqualFold(formatLanguageName(l), name)
 			if same != except {
 				return true, nil
 			}
@@ -223,10 +212,25 @@ func specMatch(s compiledSpec, r core.Release, original string) (bool, error) {
 	return false, nil
 }
 
+// Starr uses Spanish/Portuguese for both an unspecified region and the
+// European variant, with separate enums for Latino/Brazilian. Keep those
+// imported rules compatible while quality-profile preferences distinguish
+// explicit es-ES and pt-PT from their region-neutral es and pt counterparts.
+func formatLanguageName(name string) string {
+	name = releaseparse.LanguageName(name)
+	switch name {
+	case releaseparse.LanguageSpanishSpain:
+		return "spanish"
+	case releaseparse.LanguagePortuguesePortugal:
+		return "portuguese"
+	}
+	return name
+}
+
 // Radarr's language enum (NzbDrone.Core.Languages.Language), named as the
-// release parser names languages. The parser does not distinguish regional
-// variants, so Portuguese (Brazil) and Spanish (Latino) compare as their base
-// language. Unknown (0) and Any (-1) are valid values that name no language.
+// release parser names languages. Like Radarr, Portuguese (Brazil) and
+// Spanish (Latino) are languages of their own, distinct from Portuguese and
+// Spanish. Unknown (0) and Any (-1) are valid values that name no language.
 const (
 	languageAny      = -1
 	languageOriginal = -2
@@ -237,8 +241,8 @@ var starrLanguages = map[int]string{
 	9: "icelandic", 10: "chinese", 11: "russian", 12: "polish", 13: "vietnamese", 14: "swedish", 15: "norwegian",
 	16: "finnish", 17: "turkish", 18: "portuguese", 19: "flemish", 20: "greek", 21: "korean", 22: "hungarian",
 	23: "hebrew", 24: "lithuanian", 25: "czech", 26: "hindi", 27: "romanian", 28: "thai", 29: "bulgarian",
-	30: "portuguese", 31: "arabic", 32: "ukrainian", 33: "persian", 34: "bengali", 35: "slovak", 36: "latvian",
-	37: "spanish", 38: "catalan", 39: "croatian", 40: "serbian", 41: "bosnian", 42: "estonian", 43: "tamil",
+	30: releaseparse.LanguagePortugueseBrazil, 31: "arabic", 32: "ukrainian", 33: "persian", 34: "bengali", 35: "slovak", 36: "latvian",
+	37: releaseparse.LanguageSpanishLatino, 38: "catalan", 39: "croatian", 40: "serbian", 41: "bosnian", 42: "estonian", 43: "tamil",
 	44: "indonesian", 45: "telugu", 46: "macedonian", 47: "slovenian", 48: "malayalam", 49: "kannada",
 	50: "albanian", 51: "afrikaans", 52: "marathi", 53: "tagalog", 54: "urdu", 55: "romansh", 56: "mongolian",
 	57: "georgian", 58: "irish",

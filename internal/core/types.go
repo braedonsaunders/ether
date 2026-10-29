@@ -50,6 +50,9 @@ type Title struct {
 	SeasonTitle       string    `json:"seasonTitle,omitempty"`
 	Season            int       `json:"season,omitempty"`
 	Episode           int       `json:"episode,omitempty"`
+	// AbsoluteEpisode counts an episode from the series start across its
+	// regular seasons; 0 when an earlier season's size is unknown (additive).
+	AbsoluteEpisode int `json:"absoluteEpisode,omitempty"`
 
 	Title                       string        `json:"title"`
 	OriginalTitle               string        `json:"originalTitle,omitempty"`

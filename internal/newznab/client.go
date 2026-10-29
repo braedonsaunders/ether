@@ -429,7 +429,10 @@ func cacheKey(c *Client, req core.SearchRequest) string {
 	// v2: title boundaries and year-like titles parse correctly.
 	// v3: cam variants, groups, UHD-sourced 1080p, title words before
 	// the episode marker and remaster years parse correctly.
-	fmt.Fprint(h, "release-parse-v3|")
+	// v4: subtitle-only tags (VOSTFR), Latino/Brazilian variants, Dual
+	// Audio and anime absolute episode numbers; Stremio addons keep HTTP
+	// and Usenet streams and read flag languages.
+	fmt.Fprint(h, "release-parse-v4|")
 	if c.Config().IsBuiltin() && (req.Type == core.TypeEpisode || req.Type == core.TypeShow || req.Season > 0) {
 		// Built-in TV keywords no longer require the series premiere year.
 		// Do not reuse persisted empty answers from that narrower search.
@@ -444,6 +447,11 @@ func cacheKey(c *Client, req core.SearchRequest) string {
 		strings.ToLower(strings.TrimSpace(req.Title)), req.Year, req.Season, req.Episode)
 	if orig := strings.ToLower(strings.TrimSpace(req.OriginalTitle)); orig != "" && orig != strings.ToLower(strings.TrimSpace(req.Title)) {
 		fmt.Fprintf(h, "|%s", orig)
+	}
+	// Anime requests search more (absolute numbers, kitsu ids); keys of
+	// every other request stay as they were.
+	if req.Anime {
+		fmt.Fprintf(h, "|anime:%d", req.AbsoluteEpisode)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -551,6 +559,17 @@ func (c *Client) searchAttempts(req core.SearchRequest, caps *Caps) []url.Values
 			v2.Set("t", "search")
 			v2.Set("q", q)
 			attempts = append(attempts, v2)
+		}
+		// Anime releases are numbered from the series start ("Show - 1071")
+		// and indexers rarely map them to seasons: search the absolute
+		// number too. Identity checks still require the title and number.
+		if abs := releaseparse.AnimeSearchEpisode(req); abs > 0 {
+			for _, title := range titles {
+				v := base()
+				v.Set("t", "search")
+				v.Set("q", fmt.Sprintf("%s %02d", title, abs))
+				attempts = append(attempts, v)
+			}
 		}
 		// Torznab season-pack and complete-series fallback: older TV shows
 		// on torrent indexers often exist only as full-season or complete

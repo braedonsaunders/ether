@@ -115,10 +115,35 @@ func (m Manifest) Check() error {
 	if !contains(r.Types, "movie") && !contains(r.Types, "series") {
 		return errors.New("the addon does not provide movie or series streams")
 	}
-	if len(r.IDPrefixes) > 0 && !contains(r.IDPrefixes, "tt") {
-		return errors.New("the addon does not look titles up by IMDb id")
+	if !m.takesIDs("tt") && !m.takesIDs("tmdb") {
+		anime := false
+		for _, db := range animeDatabases {
+			anime = anime || m.takesIDs(db)
+		}
+		if !anime {
+			return errors.New("the addon does not look titles up by IMDb, TMDB, Kitsu, MyAnimeList, AniList or AniDB id")
+		}
 	}
 	return nil
+}
+
+// takesIDs reports whether the addon's streams are looked up by ids with
+// prefix ("tt", "tmdb", "kitsu"). An addon that lists no prefixes is
+// asked by IMDb id only, as before prefixes were read.
+func (m Manifest) takesIDs(prefix string) bool {
+	r, ok := m.streamResource()
+	if !ok {
+		return false
+	}
+	if len(r.IDPrefixes) == 0 {
+		return prefix == "tt"
+	}
+	for _, p := range r.IDPrefixes {
+		if strings.EqualFold(strings.TrimSuffix(strings.TrimSpace(p), ":"), prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // serves reports whether the addon answers stream requests of a type.

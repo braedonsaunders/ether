@@ -95,8 +95,12 @@ func (s *Service) SourceStartups() []SourceStartup {
 	return out
 }
 
+// protocolOf is a release's routing source. An addon's HTTP stream is
+// read like a debrid file (HTTPS ranges from a CDN), so it routes with
+// debrid; it is never known to be cached, so only an explicit debrid
+// preference moves it first.
 func protocolOf(rel core.Release) string {
-	if rel.Protocol == core.ProtocolTorrent {
+	if rel.Protocol == core.ProtocolTorrent || rel.Protocol == core.ProtocolHTTP {
 		return core.ProtocolTorrent
 	}
 	return core.ProtocolUsenet

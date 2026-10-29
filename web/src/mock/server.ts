@@ -1639,6 +1639,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
             StartedAt: new Date(Date.now() - 40 * 60000).toISOString(),
             Info: { size: 5.4 * 1024 ** 3, duration: 118 * 60 * 1e9 },
             viewOffset: 46 * 60 * 1000,
+            origin: "Real-Debrid",
             Resolution: {
               release: {
                 name: `${session.title.replace(/ /g, ".")}.${session.year}.1080p.WEB-DL.H264`,

@@ -15,10 +15,12 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/braedonsaunders/ether/internal/animemap"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
 const (
@@ -43,6 +45,10 @@ const (
 type Backend struct {
 	base   *url.URL
 	client *http.Client
+	svc    *Service
+	// instance is the configured indexer's id: two addons configured on
+	// the same host never share HTTP or Usenet release identities.
+	instance string
 
 	mu           sync.Mutex
 	manifest     *Manifest
@@ -54,22 +60,63 @@ type Backend struct {
 
 var _ newznab.Backend = (*Backend)(nil)
 
-// Service builds and keeps one Backend per addon URL, so a backend's
-// manifest survives between searches.
+// Service builds and keeps one Backend per configured addon, so a
+// backend's manifest survives between searches.
 type Service struct {
 	client *http.Client
+	nzb    *http.Client
+	anime  AnimeIDs
 
-	mu       sync.Mutex
-	backends map[string]*Backend
+	animeOnce sync.Once
+	mu        sync.Mutex
+	backends  map[string]*Backend
+}
+
+// AnimeIDs maps a TMDB request to an anime database id (Kitsu, MAL,
+// AniList, AniDB) for addons that look anime up only by those ids.
+// Implemented by *animemap.Service.
+type AnimeIDs interface {
+	Lookup(ctx context.Context, req core.SearchRequest, db string) (id int64, episode int, ok bool, err error)
+}
+
+// Options configure a Service.
+type Options struct {
+	// Client talks to the owner-configured addon (20 s timeout when nil).
+	Client *http.Client
+	// NZBClient downloads the NZB files of Usenet streams. Its transport
+	// must be a safefetch guard: only the addon's own origin may be a
+	// private address. Nil builds one.
+	NZBClient *http.Client
+	// Anime maps TMDB ids to anime database ids; nil loads the community
+	// mapping lazily, the first time an addon needs it.
+	Anime AnimeIDs
 }
 
 // NewService returns a Service. client nil uses a default client with a
 // 20 s timeout.
 func NewService(client *http.Client) *Service {
-	if client == nil {
-		client = &http.Client{Timeout: defaultTimeout}
+	return NewServiceWithOptions(Options{Client: client})
+}
+
+// NewServiceWithOptions returns a Service built from o.
+func NewServiceWithOptions(o Options) *Service {
+	if o.Client == nil {
+		o.Client = &http.Client{Timeout: defaultTimeout}
 	}
-	return &Service{client: client, backends: map[string]*Backend{}}
+	if o.NZBClient == nil {
+		o.NZBClient = (&safefetch.Guard{}).Client(&http.Client{Timeout: nzbTimeout})
+	}
+	return &Service{client: o.Client, nzb: o.NZBClient, anime: o.Anime, backends: map[string]*Backend{}}
+}
+
+// animeIDs returns the anime id map, creating the default one on first use.
+func (s *Service) animeIDs() AnimeIDs {
+	s.animeOnce.Do(func() {
+		if s.anime == nil {
+			s.anime = animemap.New(animemap.Options{})
+		}
+	})
+	return s.anime
 }
 
 // Backend returns the backend for an addon indexer (newznab.Options.Backend).
@@ -78,12 +125,12 @@ func (s *Service) Backend(cfg config.Indexer) (newznab.Backend, error) {
 	if err != nil {
 		return nil, fmt.Errorf("indexer %q: %w", cfg.Name, err)
 	}
-	key := base.String()
+	key := cfg.ID + "\x00" + base.String()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	b := s.backends[key]
 	if b == nil {
-		b = &Backend{base: base, client: s.client, now: time.Now}
+		b = &Backend{base: base, client: s.client, svc: s, instance: cfg.ID, now: time.Now}
 		s.backends[key] = b
 	}
 	return b, nil
@@ -95,35 +142,26 @@ func (s *Service) Test(ctx context.Context, cfg config.Indexer) error {
 	return err
 }
 
-// Search implements newznab.Backend. Movies are looked up by IMDb id and
-// episodes by IMDb id, season and episode; a season-level request (Episode
-// 0) asks for the season's first episode and keeps whole-season packs.
-// Titles without an IMDb id, and show-level requests, have no answer.
+// Search implements newznab.Backend. Movies are looked up by id and
+// episodes by id, season and episode (lookupID: IMDb, else TMDB, else a
+// mapped anime database id); a season-level request (Episode 0) asks for
+// the season's first episode and keeps whole-season packs. Titles the
+// addon cannot be asked about, and show-level requests, have no answer.
 func (b *Backend) Search(ctx context.Context, req core.SearchRequest, reserve func(context.Context, string) error) ([]core.Release, error) {
-	imdb := imdbID(req.IDs.IMDB)
-	if imdb == "" {
-		return nil, nil
-	}
-	var kind, id string
-	packs := false
 	switch req.Type {
 	case core.TypeMovie:
-		kind, id = "movie", imdb
 	case core.TypeEpisode, core.TypeSeason:
 		if req.Season <= 0 {
 			return nil, nil
 		}
-		ep := req.Episode
-		if ep <= 0 {
-			ep, packs = 1, true
-		}
-		kind, id = "series", fmt.Sprintf("%s:%d:%d", imdb, req.Season, ep)
 	default:
 		return nil, nil
 	}
-	if !b.serves(ctx, kind) {
+	look, ok := b.lookupID(ctx, req)
+	if !ok {
 		return nil, nil
 	}
+	kind, id, packs := look.kind, look.id, look.packs
 	if err := reserve(ctx, "hit"); err != nil {
 		return nil, err
 	}
@@ -137,15 +175,18 @@ func (b *Backend) Search(ctx context.Context, req core.SearchRequest, reserve fu
 		}
 		return nil, err
 	}
-	rels, skippedNoHash, skippedAmbiguous := convert(answer.Streams, req, packs)
+	rels, skippedNoHash, skippedAmbiguous := convertWith(answer.Streams, req, packs, convertOptions{
+		origin: b.origin(), instance: b.instance, entryEpisode: look.entryEpisode,
+	})
 	b.logSkipped(skippedNoHash, skippedAmbiguous)
 	return rels, nil
 }
 
-// logSkipped warns about hash-caused skips at most once per
-// skipWarnInterval per Backend; later searches inside the window are
-// demoted to Debug. Só o host: a URL do addon pode carregar credenciais
-// na path/query.
+// logSkipped warns about skipped streams (no usable torrent, NZB or HTTP
+// link, or conflicting hashes) at most once per skipWarnInterval per
+// Backend; later searches inside the window are demoted to Debug. Only
+// the host is logged: the addon URL can carry credentials in its path or
+// query.
 func (b *Backend) logSkipped(skippedNoHash, skippedAmbiguous int) {
 	if skippedNoHash == 0 && skippedAmbiguous == 0 {
 		return
@@ -158,16 +199,16 @@ func (b *Backend) logSkipped(skippedNoHash, skippedAmbiguous int) {
 	}
 	b.mu.Unlock()
 	if throttled {
-		slog.Default().Debug("stremio: streams skipped without a usable info hash", "host", b.base.Host, "skippedNoHash", skippedNoHash, "skippedAmbiguous", skippedAmbiguous)
+		slog.Default().Debug("stremio: streams skipped without a usable torrent, NZB or HTTP link", "host", b.base.Host, "skippedNoHash", skippedNoHash, "skippedAmbiguous", skippedAmbiguous)
 		return
 	}
-	slog.Default().Warn("stremio: streams skipped without a usable info hash", "host", b.base.Host, "skippedNoHash", skippedNoHash, "skippedAmbiguous", skippedAmbiguous)
+	slog.Default().Warn("stremio: streams skipped without a usable torrent, NZB or HTTP link", "host", b.base.Host, "skippedNoHash", skippedNoHash, "skippedAmbiguous", skippedAmbiguous)
 }
 
-// serves reports whether the addon answers kind, from a manifest fetched
-// at most hourly. An unreadable manifest does not block the search: the
-// stream request itself is the authority.
-func (b *Backend) serves(ctx context.Context, kind string) bool {
+// currentManifest is the addon's manifest, fetched at most hourly; nil
+// when it cannot be read (the stream request itself is then the
+// authority, asked by IMDb id).
+func (b *Backend) currentManifest(ctx context.Context) *Manifest {
 	b.mu.Lock()
 	m, at := b.manifest, b.manifestAt
 	b.mu.Unlock()
@@ -177,18 +218,13 @@ func (b *Backend) serves(ctx context.Context, kind string) bool {
 		err := getJSON(mctx, b.client, b.base, "/manifest.json", maxManifest, &fetched)
 		cancel()
 		if err != nil {
-			return true
+			return m
 		}
 		b.mu.Lock()
 		b.manifest, b.manifestAt, m = &fetched, b.now(), &fetched
 		b.mu.Unlock()
 	}
-	return m.serves(kind)
-}
-
-// FetchNZB implements newznab.Backend: addon results are torrents.
-func (b *Backend) FetchNZB(_ context.Context, r core.Release, _ func(context.Context, string) error) ([]byte, error) {
-	return nil, fmt.Errorf("stremio: %q is a torrent release; it streams through a debrid provider", r.Name)
+	return m
 }
 
 // ResolveTorrent implements newznab.Backend. Every addon result already
@@ -202,17 +238,24 @@ func (b *Backend) ResolveTorrent(_ context.Context, r core.Release, _ func(conte
 
 // stream is the part of a Stremio stream object Ether reads.
 type stream struct {
-	Name          string   `json:"name"`
-	Title         string   `json:"title"`
-	Description   string   `json:"description"`
-	InfoHash      string   `json:"infoHash"`
-	FileIdx       *int     `json:"fileIdx"`
-	URL           string   `json:"url"`
-	Sources       []string `json:"sources"`
-	BehaviorHints struct {
-		Filename  string `json:"filename"`
-		VideoSize int64  `json:"videoSize"`
-	} `json:"behaviorHints"`
+	Name          string        `json:"name"`
+	Title         string        `json:"title"`
+	Description   string        `json:"description"`
+	InfoHash      string        `json:"infoHash"`
+	FileIdx       *int          `json:"fileIdx"`
+	URL           string        `json:"url"`
+	NZBURL        string        `json:"nzbUrl"`
+	Sources       []string      `json:"sources"`
+	BehaviorHints behaviorHints `json:"behaviorHints"`
+}
+
+// behaviorHints is the part of a stream's behaviorHints Ether reads.
+type behaviorHints struct {
+	Filename     string `json:"filename"`
+	VideoSize    int64  `json:"videoSize"`
+	ProxyHeaders struct {
+		Request map[string]string `json:"request"`
+	} `json:"proxyHeaders"`
 }
 
 // guidSuffix is the per-file part of a release GUID: the file index when
@@ -229,17 +272,43 @@ func guidSuffix(s *stream, req core.SearchRequest, packs bool) string {
 	return ""
 }
 
-// convert turns addon streams into torrent releases, best first as the
-// addon ordered them. skippedNoHash counts only streams whose sole cause
-// of discard is a missing hash: the name/pack filters (pure, so running
-// them first does not change which releases come out, nor their order)
-// run before the hash check, streams with conflicting hash labels count
-// separately as skippedAmbiguous, and duplicate no-hash streams (same
-// chosen name, URL and GUID suffix — the key the release seen-map would
-// use, minus the hash itself) count at most once. Including streams
-// beyond maxResults: the count walks every stream, but only the first
-// maxResults valid ones become releases.
+// convert turns addon streams into releases with default options (tests,
+// fuzzing).
 func convert(streams []stream, req core.SearchRequest, packs bool) (out []core.Release, skippedNoHash, skippedAmbiguous int) {
+	return convertWith(streams, req, packs, convertOptions{})
+}
+
+// convertOptions carry what conversion needs beyond the streams.
+type convertOptions struct {
+	// origin is the addon's own scheme://host[:port], the one private
+	// address its stream URLs may reach.
+	origin string
+	// instance identifies the configured addon in HTTP and NZB GUIDs.
+	instance string
+	// entryEpisode is the episode number inside the anime database entry
+	// the addon was asked for (0 for IMDb and TMDB lookups).
+	entryEpisode int
+}
+
+// convertWith turns addon streams into releases, best first as the addon
+// ordered them:
+//
+//   - a stream labelled with an info hash is a torrent Ether streams
+//     through its own debrid accounts. Its HTTP link, when it has one, is
+//     kept as the release's StreamURL so a server without a debrid account
+//     can still play the addon's own resolution of it;
+//   - otherwise a stream with an nzbUrl is a Usenet release;
+//   - otherwise a stream with an HTTP(S) url is an HTTP stream (an addon's
+//     own resolver or CDN link), read with range requests.
+//
+// External links, YouTube ids and the rest have nothing Ether can stream.
+// skippedNoHash counts only streams discarded for having none of those
+// (after the pure name/pack filters, so the count does not change which
+// releases come out); streams with conflicting hash labels count
+// separately as skippedAmbiguous, and duplicate skipped streams (same
+// chosen name, URL and GUID suffix) count at most once. The count walks
+// every stream, but only the first maxResults valid ones become releases.
+func convertWith(streams []stream, req core.SearchRequest, packs bool, opts convertOptions) (out []core.Release, skippedNoHash, skippedAmbiguous int) {
 	out = make([]core.Release, 0, min(len(streams), maxResults))
 	seen := make(map[string]bool, len(streams))
 	seenSkipped := make(map[string]bool, len(streams))
@@ -260,7 +329,8 @@ func convert(streams []stream, req core.SearchRequest, packs bool) (out []core.R
 			continue
 		}
 		hash, ambiguous := streamHash(s)
-		if ambiguous || hash == "" {
+		streamURL, nzbURL := httpLink(s.URL), httpLink(s.NZBURL)
+		if ambiguous || (hash == "" && nzbURL == "" && (streamURL == "" || packs)) {
 			key := name + "\x00" + s.URL + "\x00" + guidSuffix(s, req, packs)
 			if ambiguous {
 				key = "ambiguous\x00" + key
@@ -278,30 +348,45 @@ func convert(streams []stream, req core.SearchRequest, packs bool) (out []core.R
 		if len(out) == maxResults {
 			continue
 		}
-		guid := "btih:" + hash + guidSuffix(s, req, packs)
-		if seen[guid] {
-			continue
-		}
-		seen[guid] = true
 		size := s.BehaviorHints.VideoSize
 		if size <= 0 {
 			size = parseSize(text)
 		}
 		rel := core.Release{
-			GUID:      guid,
-			Name:      name,
-			Size:      size,
-			Seeders:   parseSeeders(text),
-			Info:      describe(name, file, torrent),
-			Protocol:  core.ProtocolTorrent,
-			InfoHash:  hash,
-			MagnetURL: newznab.MagnetFor(hash, firstNonEmpty(torrent, name), streamTrackers(s)),
-			Category:  movieCategory,
+			Name:     name,
+			Size:     size,
+			Seeders:  parseSeeders(text),
+			Info:     describe(name, file, torrent),
+			Category: movieCategory,
 		}
 		if req.Type != core.TypeMovie {
 			rel.Category = tvCategory
 		}
+		rel.Info.Languages = streamLanguages(rel.Info.Languages, s.Name+"\n"+s.Title+"\n"+s.Description)
+		rel.Info = entryEpisodeIdentity(rel.Info, req, opts.entryEpisode)
 		rel.DebridCached, rel.DebridUncached = debridHints(s.Name)
+		switch {
+		case hash != "":
+			rel.GUID = "btih:" + hash + guidSuffix(s, req, packs)
+			rel.Protocol = core.ProtocolTorrent
+			rel.InfoHash = hash
+			rel.MagnetURL = newznab.MagnetFor(hash, firstNonEmpty(torrent, name), streamTrackers(s))
+			if streamURL != "" && !packs {
+				rel.StreamURL, rel.StreamHeaders, rel.StreamOrigin = streamURL, s.requestHeaders(), opts.origin
+			}
+		case nzbURL != "":
+			rel.GUID = "nzb:" + opts.instance + ":" + linkIdentity(name, size, nzbURL, s, req)
+			rel.Protocol = core.ProtocolUsenet
+			rel.NZBURL = nzbURL
+		default:
+			rel.GUID = "http:" + opts.instance + ":" + linkIdentity(name, size, streamURL, s, req)
+			rel.Protocol = core.ProtocolHTTP
+			rel.StreamURL, rel.StreamHeaders, rel.StreamOrigin = streamURL, s.requestHeaders(), opts.origin
+		}
+		if seen[rel.GUID] {
+			continue
+		}
+		seen[rel.GUID] = true
 		out = append(out, rel)
 	}
 	return out, skippedNoHash, skippedAmbiguous

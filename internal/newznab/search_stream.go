@@ -33,7 +33,10 @@ func (c *Client) SearchWith(ctx context.Context, req core.SearchRequest, arrived
 				continue
 			}
 			seen[r.ID] = true
-			if c.Config().IsTorrent() {
+			// Feed results of a torrent indexer are torrents even with only
+			// a .torrent link; backends (built-in sites, Stremio addons)
+			// label each result themselves, Usenet and HTTP streams included.
+			if cfg := c.Config(); cfg.IsTorrent() && !cfg.UsesBackend() {
 				r.Protocol = core.ProtocolTorrent
 			}
 			batch = append(batch, r)

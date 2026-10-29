@@ -254,6 +254,20 @@ func (r *Runner) fallbackAttempts(req core.SearchRequest, movieCats, tvCats []in
 		kq.keywords = strings.TrimSpace(kq.q + " " + epString)
 		out = append(out, kq)
 	}
+	// Anime releases are numbered from the series start ("Show - 1071").
+	if abs := releaseparse.AnimeSearchEpisode(req); abs > 0 && isTV {
+		allTitles := []string{}
+		if primary := sanitizeTitle(req.Title); primary != "" {
+			allTitles = append(allTitles, primary)
+		}
+		for _, t := range append(allTitles, altTitles...) {
+			aq := base
+			aq.season, aq.ep = 0, 0
+			aq.q = t
+			aq.keywords = fmt.Sprintf("%s %02d", t, abs)
+			out = append(out, aq)
+		}
+	}
 	// Torrent season-pack / complete-series rescue when an episode search
 	// returned 0 single-episode rows.
 	if isTV && req.Season > 0 && req.Episode > 0 && !strings.EqualFold(r.def.Protocol, "usenet") {
