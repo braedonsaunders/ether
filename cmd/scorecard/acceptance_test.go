@@ -35,6 +35,19 @@ func TestRecoveryRequiresDistinctVerifiedClientsAndFollowup(t *testing.T) {
 	if got := evaluateRecovery(gap); got.Status != "inconclusive" {
 		t.Fatalf("followup gap: %+v", got)
 	}
+	unverified := trial
+	unverified.Observations = append([]recoveryObservation(nil), trial.Observations...)
+	unverified.Observations[4].Verified = false
+	if got := evaluateRecovery(unverified); got.Status != "inconclusive" {
+		t.Fatalf("unverified followup: %+v", got)
+	}
+	expectedFailure := trial
+	expectedFailure.Observations = append([]recoveryObservation(nil), trial.Observations...)
+	expectedFailure.Observations[4].Success = false
+	expectedFailure.Observations[4].ExpectedFailure = true
+	if got := evaluateRecovery(expectedFailure); got.Status != "inconclusive" {
+		t.Fatalf("fault in fault-free followup: %+v", got)
+	}
 	failure := trial
 	failure.Observations = append([]recoveryObservation(nil), trial.Observations...)
 	failure.Observations[4].Success = false

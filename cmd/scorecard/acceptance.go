@@ -83,8 +83,14 @@ func evaluateRecovery(t recoveryTrial) recoveryResult {
 			return recoveryResult{Status: "inconclusive", RecoveryMS: float64(elapsed) / float64(time.Millisecond), Reason: "follow-up observation gap"}
 		}
 		last = o.At
-		if !o.Success && !o.ExpectedFailure {
+		if !o.Success {
+			if o.ExpectedFailure {
+				return recoveryResult{Status: "inconclusive", RecoveryMS: float64(elapsed) / float64(time.Millisecond), Reason: "fault-free follow-up contains an expected failure"}
+			}
 			return recoveryResult{Status: "fail", RecoveryMS: float64(elapsed) / float64(time.Millisecond), Reason: "unexpected failure after recovery"}
+		}
+		if !o.Verified || o.Client == "" {
+			return recoveryResult{Status: "inconclusive", RecoveryMS: float64(elapsed) / float64(time.Millisecond), Reason: "follow-up success lacks source verification or client identity"}
 		}
 	}
 	if followEnd.Sub(last) > 30*time.Second {
