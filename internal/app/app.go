@@ -141,18 +141,19 @@ type App struct {
 	// Debrid: torrent releases stream through owner debrid accounts. The
 	// wrappers dispatch on the payload and delegate Usenet to engine and
 	// indexers, so every consumer uses media and sources.
-	debrid        *debrid.Service
-	media         *debrid.Engine  // core.Engine + core.HealthChecker over engine
-	sources       *debrid.Indexer // core.Indexer over indexers
-	resolver      *resolver.Service
-	transcoder    *transcode.Manager
-	load          *sysload.Sampler // machine load for the Overview
-	playback      *playback.Manager
-	prefetch      *prefetch.Prefetcher
-	cachefill     *cachefill.Manager
-	plextv        *plextv.Client
-	users         *auth.Service
-	sessionEvents *sessions.EventBus
+	debrid              *debrid.Service
+	media               *debrid.Engine  // core.Engine + core.HealthChecker over engine
+	sources             *debrid.Indexer // core.Indexer over indexers
+	resolver            *resolver.Service
+	transcoder          *transcode.Manager
+	load                *sysload.Sampler // machine load for the Overview
+	playback            *playback.Manager
+	prefetch            *prefetch.Prefetcher
+	cachefill           *cachefill.Manager
+	plextv              *plextv.Client
+	users               *auth.Service
+	sessionEvents       *sessions.EventBus
+	sessionCoordination *sessions.Coordination
 
 	certs     *plextv.CertManager
 	registrar *plextv.Registrar

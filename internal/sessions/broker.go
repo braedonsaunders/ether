@@ -21,6 +21,7 @@ import (
 
 // BrokerDeps are the explicit dependencies shared by all protocol surfaces.
 type BrokerDeps struct {
+	Coordination       *Coordination
 	DB                 *sql.DB
 	Cluster            clusterbus.Node
 	Live               LiveBackend
@@ -89,7 +90,14 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), owners: NewPlaybackOwners(), gates: NewLifecycle(), bindings: NewBindingTable[frontend.PlayIntent]()}
+	coord := d.Coordination
+	if coord == nil {
+		coord = NewCoordination()
+	}
+	if coord.Owners == nil || coord.Gates == nil {
+		return nil, errors.New("sessions: invalid coordination")
+	}
+	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)

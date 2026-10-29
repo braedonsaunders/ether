@@ -76,6 +76,7 @@ type SessionToucher interface {
 // Deps are the server's dependencies. Catalog, State, Auth and Playback are
 // required; the rest degrade gracefully when nil.
 type Deps struct {
+	SessionCoordination *sessions.Coordination
 	FavoriteShows       func(context.Context, *core.User) (map[core.RatingKey]bool, error)
 	FilterAvailable     func(context.Context, []core.Title) []core.Title
 	PrioritizeAvailable func(context.Context, []core.Title) []core.Title
@@ -202,6 +203,10 @@ func NewServer(d Deps) *Server {
 		d.Now = time.Now
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	coord := d.SessionCoordination
+	if coord == nil || coord.Owners == nil || coord.Gates == nil {
+		coord = sessions.NewCoordination()
+	}
 	s := &Server{
 		d:                 d,
 		log:               d.Logger.With("component", "plex"),
@@ -212,8 +217,8 @@ func NewServer(d Deps) *Server {
 		downloads:         newDownloadStore(),
 		queues:            newPlayQueueStore(),
 		sessions:          newSessionTracker(),
-		playbackOwners:    sessions.NewPlaybackOwners(),
-		playbackLifecycle: sessions.NewLifecycle(),
+		playbackOwners:    coord.Owners,
+		playbackLifecycle: coord.Gates,
 		transcodes:        newTranscodeTable(),
 		extraPlay:         newExtraPlayStore(),
 		selections:        newSelectionStore(),

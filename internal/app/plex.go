@@ -96,6 +96,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 	deps.LiveTV = a.livetv
 	deps.Subtitles = plexSubtitles{a}
 	deps.TrackPreferences = a.trackprefs
+	deps.SessionCoordination = a.sessionCoordination
 	deps.Markers = a.markers
 	if a.transcoder != nil && !cfg.Spike.Enabled {
 		if dl, err := a.transcoder.NewDownloadRemuxer(cfg.Downloads); err == nil {

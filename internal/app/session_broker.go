@@ -14,6 +14,7 @@ import (
 )
 
 func (a *App) buildSessionEvents(context.Context, config.Config) error {
+	a.sessionCoordination = sessions.NewCoordination()
 	a.sessionEvents = sessions.NewEventBus(a.clusterNode(), a.users.ActiveUser)
 	a.closers = append(a.closers, a.sessionEvents.Close)
 	return nil
@@ -42,7 +43,8 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		return 0, false
 	}}
 	return sessions.NewBroker(sessions.BrokerDeps{
-		DB: a.db, Cluster: a.clusterNode(), Live: live,
+		Coordination: a.sessionCoordination,
+		DB:           a.db, Cluster: a.clusterNode(), Live: live,
 		Variants: func(ctx context.Context, v *core.Viewer, t *core.Title, caps core.ClientCaps) ([]core.ReleaseVariant, error) {
 			if a.resolver == nil {
 				return nil, core.ErrNotAvailable

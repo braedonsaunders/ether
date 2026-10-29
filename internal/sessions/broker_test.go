@@ -127,6 +127,33 @@ func TestBrokerAppliesTrackSelectionsBeforeDecision(t *testing.T) {
 		t.Fatalf("selected audio=%d subtitle=%d err=%v", tc.audio, tc.subtitle, err)
 	}
 }
+
+func TestBrokerUsesSharedPlaybackCoordination(t *testing.T) {
+	ctx := context.Background()
+	coord := NewCoordination()
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	b, err := NewBroker(BrokerDeps{Coordination: coord, Events: events, Playback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	device := core.Device{ID: "device"}
+	unlock, err := coord.Gates.Acquire(ctx, fmt.Sprintf("owner/1/%s", clientKey("jellyfin", device)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	limited, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
+	defer cancel()
+	_, err = b.Plan(limited, frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("broker bypassed shared gate: %v", err)
+	}
+}
 func TestBrokerMultiProtocolAdmissionAndMedia(t *testing.T) {
 	ctx := context.Background()
 	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 5}
