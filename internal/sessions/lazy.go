@@ -185,6 +185,16 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
+		if opened {
+			_ = s.broker.Stop(ctx, access, id)
+			s.broker.mu.Lock()
+			delete(s.broker.lazySessions, hash)
+			s.broker.mu.Unlock()
+		}
+		http.NotFound(w, r)
+		return
+	}
 	// The scoped path remains internal; every client request must pass this
 	// handler so revoking the issuing grant revokes the capability as well.
 	clone := r.Clone(ctx)

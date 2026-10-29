@@ -15,8 +15,10 @@ import (
 )
 
 type fakeLazyGrants struct {
-	mu      sync.Mutex
-	revoked bool
+	mu       sync.Mutex
+	revoked  bool
+	checks   int
+	revokeAt int
 }
 
 func (g *fakeLazyGrants) GrantReference(_ context.Context, surface, credential string) (string, *core.Viewer, error) {
@@ -28,6 +30,10 @@ func (g *fakeLazyGrants) GrantReference(_ context.Context, surface, credential s
 func (g *fakeLazyGrants) ValidateGrantReference(_ context.Context, surface, ref string, viewer int64) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	g.checks++
+	if g.revokeAt > 0 && g.checks >= g.revokeAt {
+		g.revoked = true
+	}
 	if g.revoked || surface != "stremio" || ref != "grant-reference" || viewer != 1 {
 		return core.ErrUnauthorized
 	}
@@ -119,6 +125,21 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if strings.Contains(serialized, "account-credential-secret") || strings.Contains(serialized, "grant-reference") {
 		t.Fatal("credential or grant reference in serialized playback request")
 	}
+	other := req
+	other.Device.ID = "other-install"
+	secondPath, err := lazy.Issue(ctx, "account-credential-secret", other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants.mu.Lock()
+	grants.checks = 0
+	grants.revokeAt = 3
+	grants.mu.Unlock()
+	midOpen := httptest.NewRecorder()
+	lazy.ServeHTTP(midOpen, httptest.NewRequest(http.MethodGet, secondPath, nil))
+	if midOpen.Code != http.StatusNotFound || len(pb.Sessions()) != 1 {
+		t.Fatalf("revocation during open: status=%d sessions=%d", midOpen.Code, len(pb.Sessions()))
+	}
 	grants.mu.Lock()
 	grants.revoked = true
 	grants.mu.Unlock()
@@ -129,6 +150,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	}
 	grants.mu.Lock()
 	grants.revoked = false
+	grants.revokeAt = 0
 	grants.mu.Unlock()
 	now = now.Add(time.Hour)
 	expired := httptest.NewRecorder()
