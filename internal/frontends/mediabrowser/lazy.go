@@ -45,3 +45,25 @@ func (i *instance) lazyMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	i.host.LazyStreams.ServeHTTP(w, r)
 }
+
+// absoluteMediaURL turns a broker grant path into a reachable surface URL.
+// The server base is host-verified; client Host and forwarding headers are not used.
+func (i *instance) absoluteMediaURL(r *http.Request, path string) string {
+	if i.host.SurfaceURL == nil || !strings.HasPrefix(path, "/sessions/media/") || strings.ContainsAny(path, "?#%\\\r\n") {
+		return ""
+	}
+	for _, part := range strings.Split(path, "/") {
+		if part == "." || part == ".." {
+			return ""
+		}
+	}
+	base, err := i.host.SurfaceURL(i.identityContext(r), r)
+	if err != nil {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return ""
+	}
+	return strings.TrimRight(base, "/") + path
+}

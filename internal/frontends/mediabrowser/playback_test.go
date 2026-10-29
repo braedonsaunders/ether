@@ -77,7 +77,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 		return "/sessions/media/path/grant/direct", nil
 	}}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
-	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: sessions, Capabilities: frontendtest.Capabilities{}})
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: sessions, Capabilities: frontendtest.Capabilities{}, SurfaceURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/jellyfin", nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
 	}
-	if w := call(`{"IsPlayback":true,"EnableDirectStream":false,"EnableTranscoding":false}`); w.Code != 200 || strings.Join(calls, ",") != "estimate,plan,open,stream" || !strings.Contains(w.Body.String(), "/jellyfin/sessions/media/") || !strings.Contains(w.Body.String(), `"ETag":"source-revision"`) {
+	if w := call(`{"IsPlayback":true,"EnableDirectStream":false,"EnableTranscoding":false}`); w.Code != 200 || strings.Join(calls, ",") != "estimate,plan,open,stream" || !strings.Contains(w.Body.String(), "https://ether.example/jellyfin/sessions/media/") || !strings.Contains(w.Body.String(), `"ETag":"source-revision"`) {
 		t.Fatal(w.Code, w.Body.String(), calls)
 	}
 }

@@ -56,7 +56,7 @@ func queryBool(r *http.Request, key string, def bool) bool {
 	return v
 }
 func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
-	v, _, err := i.viewer(r)
+	v, credential, err := i.viewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
@@ -165,7 +165,8 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			version = sourceID
 		}
 	}
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, Caps: capability.Client, Intent: intent})
+	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, Caps: capability.Client, Intent: intent}
+	plan, err := i.host.Sessions.Plan(r.Context(), planRequest)
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)
 		return
@@ -198,6 +199,11 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	playID := ""
+	if !playback && channel == "" && version == "" && opts.DirectPlay {
+		if path := i.lazySourceURL(r, credential, planRequest); path != "" {
+			source["Path"] = path
+		}
+	}
 	if playback {
 		session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: i.protocol, PlanID: plan.ID, Viewer: v, Device: dev})
 		if err != nil {
@@ -214,6 +220,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			streamError(w, err)
 			return
 		}
+		scopedURL := url
 		if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
 			url = prefix + url
 		}
@@ -240,7 +247,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		}
 		playID = session.ID
 		if format == frontend.StreamDirect {
-			source["Path"] = url
+			if path := i.absoluteMediaURL(r, scopedURL); path != "" {
+				source["Path"] = path
+			}
 		} else {
 			source["TranscodingUrl"] = url
 			source["TranscodingSubProtocol"] = "hls"
@@ -381,6 +390,9 @@ func (i *instance) playbackRoutes() error {
 		return err
 	}
 	for _, method := range []string{"GET", "HEAD"} {
+		if err := i.router.Handle(method, "/sessions/lazy/{path...}", http.HandlerFunc(i.lazyMedia)); err != nil {
+			return err
+		}
 		if err := i.router.Handle(method, "/sessions/media/{path...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if i.host.Sessions == nil {
 				http.Error(w, "Unavailable", 503)
