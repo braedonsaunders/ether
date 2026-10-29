@@ -61,8 +61,9 @@ func (i *instance) login(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		Provider string `json:"provider"`
 	}
-	if decode(r, &b) != nil || b.Username == "" {
+	if decode(r, &b) != nil || b.Username == "" || (b.Provider != "" && b.Provider != "local") {
 		http.Error(w, "Bad Request", 400)
 		return
 	}
@@ -88,11 +89,26 @@ func (i *instance) login(w http.ResponseWriter, r *http.Request) {
 	}
 	reply(w, 200, map[string]any{"access_token": token, "refresh_token": refresh, "expires_in": 3600, "user": user(v)})
 }
+
+func (*instance) authProviders(w http.ResponseWriter, _ *http.Request) {
+	reply(w, http.StatusOK, map[string]any{"password_login": true, "items": []any{map[string]any{"id": "local", "display_name": "Ether account", "mode": "credentials", "default": true}}})
+}
+
+func (*instance) oauthCapabilities(w http.ResponseWriter, _ *http.Request) {
+	reply(w, http.StatusOK, map[string]any{"available": false, "native": false, "linking": false, "provider_logout": false, "select_account": false, "revision": "ether-oauth-v1", "state": "unsupported", "allowed": false})
+}
+
+func (*instance) externalSignInCapabilities(w http.ResponseWriter, _ *http.Request) {
+	reply(w, http.StatusOK, map[string]any{"available": false, "identities": false, "admin_identities": false, "break_glass": false, "connection_test": false, "live_provider_changes": false, "provider_recheck": false, "credentials_linking": false, "network_sign_in": false, "network_link_keeps_password": false, "revision": "ether-external-sign-in-v1", "state": "unsupported", "allowed": false})
+}
 func (i *instance) authRoutes() error {
 	for _, entry := range []struct {
 		method, path string
 		handler      http.HandlerFunc
 	}{
+		{"GET", "/api/v2/auth/providers", i.authProviders},
+		{"GET", "/api/v2/auth/oauth/capabilities", i.oauthCapabilities},
+		{"GET", "/api/v2/auth/external-sign-in/capabilities", i.externalSignInCapabilities},
 		{"POST", "/api/v2/auth/login", i.login},
 		{"POST", "/api/v2/auth/refresh", i.refresh},
 		{"POST", "/api/v2/auth/logout", i.logout},

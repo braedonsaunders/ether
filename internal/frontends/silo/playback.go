@@ -426,9 +426,21 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": installation, "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
 }
 
+func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	reply(w, http.StatusOK, map[string]any{"available": false, "protocol": "", "revision": "ether-playback-control-v1", "state": "unsupported", "allowed": false})
+}
+
 type sharedPrefix struct{}
 
 func (i *instance) playbackRoutes() error {
+	if err := i.router.Handle("GET", "/api/v2/playback/sessions/control/capabilities", http.HandlerFunc(i.playbackControlCapabilities)); err != nil {
+		return err
+	}
 	if err := i.router.Handle("GET", "/api/v2/playback/capabilities", http.HandlerFunc(i.playbackCapabilities)); err != nil {
 		return err
 	}

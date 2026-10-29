@@ -84,6 +84,54 @@ func TestPasswordAndRefresh(t *testing.T) {
 	}
 }
 
+func TestCurrentClientCapabilityDiscovery(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc *openapi.Document
+	if data, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", ""); e == nil {
+		doc, e = openapi.Parse(data)
+		if e != nil {
+			t.Fatal(e)
+		}
+	} else if !os.IsNotExist(e) {
+		t.Fatal(e)
+	}
+	for _, tc := range []struct {
+		path, expected string
+		authenticated  bool
+	}{
+		{"/api/v2/auth/providers", `"password_login":true`, false},
+		{"/api/v2/auth/oauth/capabilities", `"state":"unsupported"`, false},
+		{"/api/v2/auth/external-sign-in/capabilities", `"state":"unsupported"`, false},
+		{"/api/v2/playback/sessions/control/capabilities", `"available":false`, true},
+	} {
+		r := httptest.NewRequest("GET", tc.path, nil)
+		if tc.authenticated {
+			r.Header.Set("Authorization", "Bearer access")
+		}
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), tc.expected) {
+			t.Errorf("%s: %d %s", tc.path, w.Code, w.Body.String())
+		}
+		if doc != nil {
+			if e := doc.Validate("GET", tc.path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
+				t.Errorf("%s spec: %v", tc.path, e)
+			}
+		}
+	}
+	r := httptest.NewRequest("GET", "/api/v2/playback/sessions/control/capabilities", nil)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("control capability without auth: %d", w.Code)
+	}
+}
+
 func TestDevicePairing(t *testing.T) {
 	approved := false
 	ident := frontendtest.Identity{
