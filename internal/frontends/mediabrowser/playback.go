@@ -249,6 +249,10 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		if format == frontend.StreamDirect {
 			if path := i.absoluteMediaURL(r, scopedURL); path != "" {
 				source["Path"] = path
+			} else if i.host.SurfaceURL == nil {
+				// Older embedded hosts without a URL facade can still use the
+				// broker's same-origin scoped path. Production uses verified URLs.
+				source["Path"] = url
 			}
 		} else {
 			source["TranscodingUrl"] = url
