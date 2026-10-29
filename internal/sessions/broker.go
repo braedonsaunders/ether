@@ -22,11 +22,14 @@ import (
 // BrokerDeps are the explicit dependencies shared by all protocol surfaces.
 type BrokerDeps struct {
 	Coordination *Coordination
-	DB           *sql.DB
-	Cluster      clusterbus.Node
-	Live         LiveBackend
-	Variants     func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error)
-	SelectTracks func(context.Context, *core.Viewer, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
+	// MaxPendingStarts bounds active or waiting neutral stream starts.
+	// Zero selects the default; the broker rejects values above 4096.
+	MaxPendingStarts int
+	DB               *sql.DB
+	Cluster          clusterbus.Node
+	Live             LiveBackend
+	Variants         func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error)
+	SelectTracks     func(context.Context, *core.Viewer, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
 	// SelectScopedTracks receives the authenticated device as well. If present,
 	// it replaces SelectTracks and must preserve the unscoped behavior.
 	SelectScopedTracks func(context.Context, *core.Viewer, core.Device, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
@@ -87,6 +90,7 @@ type retiredSession struct {
 // Activity continues to use the shared playback manager until that move lands.
 type Broker struct {
 	deps         BrokerDeps
+	startSlots   chan struct{}
 	mu           sync.Mutex
 	plans        map[string]brokerPlan
 	sessions     map[string]*brokerSession
@@ -115,7 +119,14 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if coord.Owners == nil || coord.Gates == nil {
 		return nil, errors.New("sessions: invalid coordination")
 	}
-	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
+	limit := d.MaxPendingStarts
+	if limit <= 0 {
+		limit = 128
+	}
+	if limit > 4096 {
+		return nil, errors.New("sessions: max pending starts exceeds 4096")
+	}
+	b := &Broker{deps: d, startSlots: make(chan struct{}, limit), plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -775,6 +786,7 @@ func (b *Broker) StopPlayback(ctx context.Context, playID string) bool {
 		}
 	}
 	b.mu.Unlock()
+	stopped := true
 	for i := range entries {
 		s := &entries[i]
 		unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
@@ -783,6 +795,8 @@ func (b *Broker) StopPlayback(ctx context.Context, playID string) bool {
 			b.publish(ctx, frontend.Event{Type: "SessionCommand", ViewerID: s.public.ViewerID, SessionID: s.public.ID, TargetProtocol: s.public.Protocol, TargetDeviceID: s.public.Device.ID, Command: &cmd})
 			_ = b.stopLocked(ctx, s)
 			unlock()
+		} else {
+			stopped = false
 		}
 	}
 	if len(entries) == 0 && b.cluster != nil {
@@ -806,7 +820,7 @@ func (b *Broker) StopPlayback(ctx context.Context, playID string) bool {
 			}
 		}
 	}
-	return len(entries) > 0
+	return len(entries) > 0 && stopped
 }
 
 // Close stops local broker sessions and prevents new plans or opens.

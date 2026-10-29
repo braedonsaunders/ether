@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -20,6 +21,15 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	s, _, err := b.access(ctx, a, id)
 	if err != nil {
 		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	select {
+	case b.startSlots <- struct{}{}:
+		defer func() { <-b.startSlots }()
+	default:
+		return "", &frontend.SessionBusyError{RetryAfter: time.Second}
 	}
 	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
 	if err != nil {
