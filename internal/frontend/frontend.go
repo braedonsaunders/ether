@@ -209,6 +209,8 @@ type Host struct {
 	ImageGrants  ImageGrants
 	Config       func() Settings
 	Log          *slog.Logger
+	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
+	ViewerPortalURL func(context.Context, *http.Request) (string, error)
 	// ClientSeen reports an authenticated client's protocol-specific device ID.
 	ClientSeen func(deviceID string)
 	// ClientIP resolves the transport peer using the configured trusted proxies.

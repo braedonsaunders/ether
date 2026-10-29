@@ -2,6 +2,7 @@
 package ids
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -79,7 +80,24 @@ func ParseDecimal(value string) (int64, error) {
 }
 
 // Codecs exposes stateless codecs to a frontend without retaining state.
-type Codecs struct{}
+type CompactAllocator interface {
+	Compact(context.Context, string, string, string) (int32, error)
+	Resolve(context.Context, string, string, int32) (string, error)
+}
+type Codecs struct{ Allocator CompactAllocator }
+
+func (c Codecs) Compact(ctx context.Context, surface, kind, ref string) (int32, error) {
+	if c.Allocator == nil {
+		return 0, ErrInvalid
+	}
+	return c.Allocator.Compact(ctx, surface, kind, ref)
+}
+func (c Codecs) Resolve(ctx context.Context, surface, kind string, id int32) (string, error) {
+	if c.Allocator == nil {
+		return "", ErrInvalid
+	}
+	return c.Allocator.Resolve(ctx, surface, kind, id)
+}
 
 func (Codecs) GUID(kind Kind, id int64) (string, error)         { return GUID(kind, id) }
 func (Codecs) ParseGUID(kind Kind, value string) (int64, error) { return ParseGUID(kind, value) }

@@ -166,7 +166,13 @@ func (i *instance) routes() error {
 				identityError(w, err)
 				return
 			}
-			jsonReply(w, map[string]any{"Code": code, "Secret": secret, "Authenticated": false, "DeviceId": dev.ID, "DeviceName": dev.DeviceName, "AppName": dev.Client, "AppVersion": dev.Version, "DateAdded": time.Now().UTC()})
+			response := map[string]any{"Code": code, "Secret": secret, "Authenticated": false, "DeviceId": dev.ID, "DeviceName": dev.DeviceName, "AppName": dev.Client, "AppVersion": dev.Version, "DateAdded": time.Now().UTC()}
+			if i.host.ViewerPortalURL != nil {
+				if portal, err := i.host.ViewerPortalURL(r.Context(), r); err == nil && portal != "" {
+					response["VerificationUrl"] = portal
+				}
+			}
+			jsonReply(w, response)
 		}},
 		{"GET", "/QuickConnect/Connect", func(w http.ResponseWriter, r *http.Request) {
 			secret := route.Query(r.URL.Query(), "secret")
