@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root=$1
+attribution=${2:-0}
+case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -9,9 +11,12 @@ for tree in baseline candidate; do
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1]) / "internal/app"
 replacements = {
+ "app.go": [('	background.start(func() { a.cluster.RunAsLeader(ctx, "catalogue sync", a.catalog.Run) })\n\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "trending charts", a.catalog.RunTrends) })', '\tif parityRunCatalogueWorkers() {\n\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "catalogue sync", a.catalog.Run) })\n\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "trending charts", a.catalog.RunTrends) })\n\t}'),
+ ('\tif a.clustered() {\n\t\tbackground.start(func() { a.runRegistrarAsLeader(ctx) })\n\t\tbackground.start(func() { a.registrar.RunPortMapping(ctx) })\n\t} else if err := a.registrar.Start(ctx); err != nil {\n\t\ta.log.Warn("plex.tv registrar", "err", err)\n\t}', '\tif parityRunRegistrar() {\n\t\tif a.clustered() {\n\t\t\tbackground.start(func() { a.runRegistrarAsLeader(ctx) })\n\t\t\tbackground.start(func() { a.registrar.RunPortMapping(ctx) })\n\t\t} else if err := a.registrar.Start(ctx); err != nil {\n\t\t\ta.log.Warn("plex.tv registrar", "err", err)\n\t\t}\n\t}')],
  "build_catalogue.go": [
   ('log.With("component", "tmdb"))', 'log.With("component", "tmdb"), parityTMDBOptions()...)'),
-  ('a.catalogOptions()...)', 'append(a.catalogOptions(), parityCatalogueOptions()...)...)')],
+  ('a.catalogOptions()...)', 'append(a.catalogOptions(), parityCatalogueOptions()...)...)'),
+  ('a.closers = append(a.closers, a.tmdb.Close)', 'parityConfigureTMDB(a.tmdb)\n\ta.closers = append(a.closers, a.tmdb.Close)')],
  "build_personalization.go": [
   ('state.Options{Logger:', 'state.Options{Now: parityClock(), Logger:'),
   ('personalize.Options{\n', 'personalize.Options{\n        Now: parityClock(),\n'),
@@ -28,6 +33,9 @@ for name, changes in replacements.items():
  text = path.read_text()
  for old, new in changes:
   if new in text: continue
+  if name == 'app.go' and 'catalogue sync' in old and 'if parityRunCatalogueWorkers()' in text: continue
+  if name == 'app.go' and 'a.registrar.Start(ctx)' in old and 'if parityRunRegistrar()' in text: continue
+  if old.startswith('a.closers = append(a.closers, a.tmdb.Close)') and 'parityConfigureTMDB(a.tmdb)' in text: continue
   if old.startswith('a.closers = append(a.closers, a.personalize.Close)') and 'parityWarmPersonalization(ctx, a)' in text: continue
   if old == 'auth.Options{\n' and re.search(r'auth\.Options\{\s*Now:\s*parityClock\(\)', text): continue
   if old == 'personalize.Options{\n' and re.search(r'personalize\.Options\{\s*Now:\s*parityClock\(\)', text): continue
@@ -55,7 +63,7 @@ docker run --rm --network none \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
  cd /baseline

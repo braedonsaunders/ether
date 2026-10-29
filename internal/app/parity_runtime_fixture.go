@@ -45,3 +45,16 @@ func parityWarmPersonalization(ctx context.Context, a *App) error {
 }
 
 func parityPlexTVBaseURL() string { return os.Getenv("ETHER_PARITY_PLEXTV_URL") }
+
+// Fixture catalogue is pre-seeded; asynchronous refresh would race requests.
+func parityRunCatalogueWorkers() bool { return false }
+
+// Memberships are seeded explicitly; periodic Plex.tv sync would race probes.
+func parityRunRegistrar() bool { return false }
+
+func parityConfigureTMDB(c *tmdb.Client) {
+	cfg := &tmdb.Configuration{}
+	cfg.Images.BaseURL = os.Getenv("ETHER_PARITY_TMDB_URL") + "/images/"
+	cfg.Images.SecureBaseURL = cfg.Images.BaseURL
+	c.SetConfiguration(cfg)
+}

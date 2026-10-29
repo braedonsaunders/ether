@@ -21,3 +21,9 @@ func parityCollectionOptions() []collections.Option { return nil }
 func parityWarmPersonalization(context.Context, *App) error { return nil }
 
 func parityPlexTVBaseURL() string { return "" }
+
+func parityRunCatalogueWorkers() bool { return true }
+
+func parityRunRegistrar() bool { return true }
+
+func parityConfigureTMDB(*tmdb.Client) {}

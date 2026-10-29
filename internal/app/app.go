@@ -415,8 +415,10 @@ func (a *App) Run(ctx context.Context) error {
 	// scrobbles, and its import queue is claimed per row.
 	// Tracked like every other background loop, so Run returns (and the
 	// caller closes the database) only after they have stopped.
-	background.start(func() { a.cluster.RunAsLeader(ctx, "catalogue sync", a.catalog.Run) })
-	background.start(func() { a.cluster.RunAsLeader(ctx, "trending charts", a.catalog.RunTrends) })
+	if parityRunCatalogueWorkers() {
+		background.start(func() { a.cluster.RunAsLeader(ctx, "catalogue sync", a.catalog.Run) })
+		background.start(func() { a.cluster.RunAsLeader(ctx, "trending charts", a.catalog.RunTrends) })
+	}
 	background.start(func() { a.cluster.RunAsLeader(ctx, "release availability", a.availability.Run) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "collection refresh", a.collections.Run) })
 	background.start(func() { a.trakt.Start(ctx) })
@@ -428,11 +430,13 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.load.Run(ctx) })
 	background.start(func() { a.cache.Run(ctx) })
 	background.start(func() { a.cachefill.Run(ctx) })
-	if a.clustered() {
-		background.start(func() { a.runRegistrarAsLeader(ctx) })
-		background.start(func() { a.registrar.RunPortMapping(ctx) })
-	} else if err := a.registrar.Start(ctx); err != nil {
-		a.log.Warn("plex.tv registrar", "err", err)
+	if parityRunRegistrar() {
+		if a.clustered() {
+			background.start(func() { a.runRegistrarAsLeader(ctx) })
+			background.start(func() { a.registrar.RunPortMapping(ctx) })
+		} else if err := a.registrar.Start(ctx); err != nil {
+			a.log.Warn("plex.tv registrar", "err", err)
+		}
 	}
 
 	background.start(func() { a.housekeeping(ctx) })
