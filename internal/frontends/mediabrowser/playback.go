@@ -304,9 +304,11 @@ func (i *instance) mediaSourceDTO(id string, media frontend.MediaInfo) map[strin
 
 func (i *instance) mediaStreams(streams []frontend.StreamInfo) []any {
 	out := mediaStreams(streams)
-	if i.protocol == "emby" {
-		for n, stream := range streams {
+	for n, stream := range streams {
+		if i.protocol == "emby" {
 			i.embyMediaStreamDTO(out[n].(map[string]any), stream)
+		} else if i.protocol == "jellyfin" {
+			i.jellyfinStreamDTO(out[n].(map[string]any), stream)
 		}
 	}
 	return out
