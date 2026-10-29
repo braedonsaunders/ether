@@ -82,9 +82,9 @@ func TestOnlyReviewedMissingFieldIsInformational(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := pmsconform.Report{Differences: []pmsconform.Difference{{Path: "$/file_path", Kind: pmsconform.KindMissing, Blocking: true}, {Path: "$/file_path", Kind: pmsconform.KindExtra, Blocking: true}, {Path: "$/other", Kind: pmsconform.KindMissing, Blocking: true}}}
+	report := pmsconform.Report{Differences: []pmsconform.Difference{{Endpoint: "/item", Path: "$/file_path", Kind: pmsconform.KindMissing, Blocking: true}, {Endpoint: "/item", Path: "$/file_path", Kind: pmsconform.KindExtra, Blocking: true}, {Endpoint: "/item", Path: "$/other", Kind: pmsconform.KindMissing, Blocking: true}, {Endpoint: "/other", Path: "$/file_path", Kind: pmsconform.KindMissing, Blocking: true}}}
 	applyNotApplicable(&report, "/item", rules)
-	if report.Differences[0].Blocking || report.Differences[0].Reason == "" || !report.Differences[1].Blocking || !report.Differences[2].Blocking {
+	if report.Differences[0].Blocking || report.Differences[0].Reason == "" || !report.Differences[1].Blocking || !report.Differences[2].Blocking || !report.Differences[3].Blocking {
 		t.Fatalf("rules broadened: %+v", report.Differences)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"notApplicable":[{"endpoint":"/item","path":"$/file_path","reason":"x"}]}`), 0600); err != nil {

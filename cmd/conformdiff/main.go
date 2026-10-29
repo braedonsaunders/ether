@@ -161,6 +161,17 @@ func run(args []string) error {
 		if err == nil {
 			var targetReport pmsconform.Report
 			targetReport, err = compare(p, targetVariables, tmp, *target, *targetToken, *client, *only, *timeout, *concurrency)
+			if err == nil {
+				// The temporary live recording has its own generated manifest;
+				// reviewed field exceptions come from the checked-in corpus.
+				var rules map[string]string
+				rules, err = loadNotApplicable(*fixtures)
+				if err == nil {
+					for _, endpoint := range targetReport.Endpoints {
+						applyNotApplicable(&targetReport, endpoint, rules)
+					}
+				}
+			}
 			report = mergeReports(report, targetReport)
 		}
 	default:
@@ -420,7 +431,7 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 func applyNotApplicable(report *pmsconform.Report, endpoint string, rules map[string]string) {
 	for index := range report.Differences {
 		d := &report.Differences[index]
-		if d.Kind != pmsconform.KindMissing {
+		if d.Kind != pmsconform.KindMissing || d.Endpoint != endpoint {
 			continue
 		}
 		if reason, ok := rules[endpoint+"\x00"+d.Path]; ok {
