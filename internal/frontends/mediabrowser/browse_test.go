@@ -25,7 +25,12 @@ func TestItemDetailPassesVerifiedPeer(t *testing.T) {
 		if got, ok := frontend.ClientIP(ctx); !ok || got != peer {
 			return frontend.ItemDetail{}, errors.New("missing verified peer")
 		}
-		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie"}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie", Genres: []string{"Drama"}}}, nil
+	}, NamedFacetIDsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, key frontend.RatingKey, kind string, names []string) (map[string]string, error) {
+		if v != viewer || key != 5 || kind != "genre" || len(names) != 1 || names[0] != "Drama" {
+			return nil, errors.New("wrong facet scope")
+		}
+		return map[string]string{"Drama": "genre-id"}, nil
 	}}
 	inst, err := (Emby{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, ClientIP: func(*http.Request) (netip.Addr, bool) { return peer, true }})
 	if err != nil {
@@ -35,7 +40,7 @@ func TestItemDetailPassesVerifiedPeer(t *testing.T) {
 	r.Header.Set("X-Emby-Token", "grant")
 	w := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(w, r)
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"GenreItems":[{"Id":"genre-id","Name":"Drama"}]`) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }

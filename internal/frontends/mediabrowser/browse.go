@@ -296,6 +296,7 @@ func (i *instance) browseRoutes() error {
 		if len(backdrops) > 0 {
 			dto["BackdropImageTags"] = backdrops
 		}
+		i.addNamedFacets(r, v, d, dto)
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)
 		}
