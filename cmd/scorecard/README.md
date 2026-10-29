@@ -172,3 +172,18 @@ a logout failure is recorded without credentials and exits nonzero. Earlier
 reports created before this check do not prove their reference grants were
 revoked. The offline lifecycle test is `python3 -B
 cmd/scorecard/lab_cleanup_test.py`.
+
+`scorecard acceptance -input FILE` evaluates predeclared recovery, growth and
+cleanup evidence. Recovery requires three consecutive verified successes from
+distinct clients within 30 seconds, a continuously observed five-minute
+follow-up, and at least 211 distinct matched trials before comparing p95 with
+approximate order-statistic intervals. Overlap is inconclusive unless the full
+interval of differences falls within a predeclared positive tolerance. RSS
+checks require a complete two-hour series with at most 30-second gaps and apply
+the predeclared final-window drift/slope bounds. Cleanup requires continuous
+five-minute observation and exposes failure or incomplete coverage. Metadata
+must match for host, fixed limits, media, profile, trace and quality; errors,
+work accounting, cleanup and timing gaps disqualify a recovery winner. This
+is an assertion evaluator, not a workload driver; inputs and manifest hashes
+must be independently collected and verified. It cannot authenticate their
+provenance or establish overall efficiency/robustness acceptance by itself.
