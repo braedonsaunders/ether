@@ -121,3 +121,7 @@ schema failures or uncovered operations make the latency winner inconclusive.
 from stdin and refuses to time resume/next-up responses whose visible item
 projections differ. It can compare views by collection type despite different
 labels; those timings still require the stated workload caveats.
+For fixture-only session failures, `/__scorecard/events` may also report a
+`scorecard session stage failure` with stage `plan`, `open`, or `start_stream`
+and a fixed error category. An absent event does not identify the failure;
+only sentinel errors are classified, and arbitrary error text is not exposed.

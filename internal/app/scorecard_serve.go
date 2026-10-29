@@ -349,16 +349,28 @@ type scorecardEvent struct {
 	Time     time.Time `json:"time"`
 	Message  string    `json:"message"`
 	Category string    `json:"category"`
+	Stage    string    `json:"stage,omitempty"`
 }
 
 func scorecardEvents(entries []admin.LogEntry) []scorecardEvent {
-	allowed := map[string]bool{"prepare failed": true, "release failed to open": true, "probe failed; using estimated media info": true, "ffmpeg failed": true, "start ffmpeg": true, "segment unavailable after restarts": true}
+	allowed := map[string]bool{"prepare failed": true, "release failed to open": true, "probe failed; using estimated media info": true, "ffmpeg failed": true, "start ffmpeg": true, "segment unavailable after restarts": true, "scorecard session stage failure": true}
 	out := []scorecardEvent{}
 	for _, entry := range entries {
 		if !allowed[entry.Message] {
 			continue
 		}
 		category := "other"
+		stage := ""
+		if entry.Message == "scorecard session stage failure" {
+			switch entry.Attrs["stage"] {
+			case "plan", "open", "start_stream":
+				stage = entry.Attrs["stage"]
+			}
+			switch entry.Attrs["category"] {
+			case "not_available", "not_found", "unauthorized", "stream_limit", "transcode_capacity", "deadline", "canceled":
+				category = entry.Attrs["category"]
+			}
+		}
 		v := strings.ToLower(entry.Attrs["err"])
 		for _, known := range []string{"not available yet", "stream limit reached", "transcode capacity exhausted", "context deadline exceeded", "context canceled", "media source temporarily unavailable"} {
 			if strings.Contains(v, known) {
@@ -366,7 +378,7 @@ func scorecardEvents(entries []admin.LogEntry) []scorecardEvent {
 				break
 			}
 		}
-		out = append(out, scorecardEvent{Time: entry.Time, Message: entry.Message, Category: category})
+		out = append(out, scorecardEvent{Time: entry.Time, Message: entry.Message, Category: category, Stage: stage})
 	}
 	return out
 }
