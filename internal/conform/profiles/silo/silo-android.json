@@ -1,0 +1,102 @@
+{
+  "protocol": "silo",
+  "client": "Silo Android",
+  "source": {
+    "repo": "Silo-Server/silo-android",
+    "commit": "3cecc7a661d8c7b3844128c79a1312ac0f370979",
+    "files": [
+      "app/src/main/"
+    ]
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "Authorization": "Bearer ${access_token}"
+  },
+  "authorization": {
+    "format": "Native bearer token; validate against client router before enabling recording",
+    "example": "Authorization: Bearer ${access_token}"
+  },
+  "flows": {
+    "connect": [
+      {
+        "name": "native API health",
+        "method": "GET",
+        "path": "/api/v1/health"
+      }
+    ],
+    "sign_in": [
+      {
+        "name": "native sign-in",
+        "method": "POST",
+        "path": "/api/v1/auth/login",
+        "body": {
+          "username": "${username}",
+          "password": "${password}"
+        }
+      }
+    ],
+    "home": [
+      {
+        "name": "home",
+        "method": "GET",
+        "path": "/api/v1/home"
+      }
+    ],
+    "library_browse": [
+      {
+        "name": "libraries",
+        "method": "GET",
+        "path": "/api/v1/libraries"
+      },
+      {
+        "name": "items",
+        "method": "GET",
+        "path": "/api/v1/libraries/{libraryId}/items"
+      }
+    ],
+    "item_detail": [
+      {
+        "name": "item",
+        "method": "GET",
+        "path": "/api/v1/items/${item_id}"
+      }
+    ],
+    "play_direct": [
+      {
+        "name": "playback",
+        "method": "POST",
+        "path": "/api/v1/playback/${item_id}"
+      }
+    ],
+    "play_transcode": [
+      {
+        "name": "playback transcode",
+        "method": "POST",
+        "path": "/api/v1/playback/${item_id}?transcode=true"
+      }
+    ],
+    "progress_reporting": [
+      {
+        "name": "progress",
+        "method": "POST",
+        "path": "/api/v1/playback/${play_session_id}/progress"
+      }
+    ],
+    "mark_watched": [
+      {
+        "name": "watched",
+        "method": "POST",
+        "path": "/api/v1/items/${item_id}/watched"
+      }
+    ],
+    "stop": [
+      {
+        "name": "stop playback",
+        "method": "DELETE",
+        "path": "/api/v1/playback/${play_session_id}"
+      }
+    ]
+  },
+  "profile_status": "source-derived-template; not captured traffic"
+}
