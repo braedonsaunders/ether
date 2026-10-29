@@ -125,3 +125,16 @@ For fixture-only session failures, `/__scorecard/events` may also report a
 `scorecard session stage failure` with stage `plan`, `open`, or `start_stream`
 and a fixed error category. An absent event does not identify the failure;
 only sentinel errors are classified, and arbitrary error text is not exposed.
+
+For bounded open-loop tests set `rate_per_second` to the offered arrival rate,
+`repetitions` to at least two, and `timeout_ms` explicitly. Requests retain their
+intended schedule even when all workers are busy; queue p50/p95/p99 and
+`all_scheduled_*` include scheduler delay and failed/timed-out work. The
+successful-response p50/p95/p99 and first-byte percentiles exclude failed HTTP
+requests; error and timeout counts and valid-success throughput are reported
+alongside them, and any error makes the winner inconclusive. Repetitions
+alternate reference-first and Ether-first. `cache_state` is an explicit label,
+not an automatic cache flush. With no rate, the tool uses closed-loop load and
+cannot measure omitted arrivals; queue values are not meaningful. This is a
+bounded request generator, not yet a mixed-playback or resource-efficiency
+soak harness, and it does not establish statistical significance by itself.

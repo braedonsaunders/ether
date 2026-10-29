@@ -4,6 +4,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -87,5 +89,41 @@ func TestSchemaUndocumentedOperationIsUncovered(t *testing.T) {
 	}
 	if winner(measurement{}, m) != "inconclusive" {
 		t.Fatal("uncovered schema must not win")
+	}
+}
+
+func TestOpenLoopAccountsForQueueAndTimeouts(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer s.Close()
+	m := measureScheduled(s.Client(), target{URL: s.URL}, 6, 1, nil, 1000)
+	if m.Errors != 0 || m.QueueP95 < 30 || m.AllScheduledP95 <= m.P95 || m.HTTPSuccesses != 6 {
+		t.Fatalf("offered load/queue lost: %+v", m)
+	}
+	client := &http.Client{Timeout: 5 * time.Millisecond}
+	m = measureScheduled(client, target{URL: s.URL}, 2, 1, nil, 1000)
+	if m.Timeouts != 2 || m.Errors != 2 || m.AllScheduledP99 < 4 || m.ValidSuccesses != 0 {
+		t.Fatalf("timeouts omitted: %+v", m)
+	}
+}
+func TestRepetitionsAlternateServerOrder(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	makeServer := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			order = append(order, name)
+			mu.Unlock()
+			_, _ = w.Write([]byte("ok"))
+		}))
+	}
+	a, b := makeServer("reference"), makeServer("ether")
+	defer a.Close()
+	defer b.Close()
+	rows, err := run(config{Samples: 1, Concurrency: []int{1}, Repetitions: 2, Scenarios: []scenario{{Name: "views", Reference: target{URL: a.URL}, Ether: target{URL: b.URL}}}})
+	if err != nil || len(rows) != 2 || strings.Join(order, ",") != "reference,ether,ether,reference" || rows[1].Order != "ether_first" {
+		t.Fatalf("order %v rows %+v err %v", order, rows, err)
 	}
 }

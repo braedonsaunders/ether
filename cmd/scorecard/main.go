@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -38,19 +39,36 @@ type scenario struct {
 	Ether       target `json:"ether"`
 }
 type config struct {
-	Samples     int        `json:"samples"`
-	Concurrency []int      `json:"concurrency"`
-	Scenarios   []scenario `json:"scenarios"`
+	Samples       int        `json:"samples"`
+	Concurrency   []int      `json:"concurrency"`
+	Scenarios     []scenario `json:"scenarios"`
+	RatePerSecond float64    `json:"rate_per_second,omitempty"`
+	Repetitions   int        `json:"repetitions,omitempty"`
+	TimeoutMS     int        `json:"timeout_ms,omitempty"`
+	CacheState    string     `json:"cache_state,omitempty"`
 }
 type measurement struct {
-	P50             float64 `json:"p50_ms"`
-	P95             float64 `json:"p95_ms"`
-	TTFBP50         float64 `json:"ttfb_p50_ms"`
-	TTFBP95         float64 `json:"ttfb_p95_ms"`
-	Errors          int     `json:"errors"`
-	SchemaErrors    int     `json:"schema_errors"`
-	SchemaUncovered int     `json:"schema_uncovered"`
-	Samples         int     `json:"samples"`
+	P50                 float64 `json:"p50_ms"`
+	P95                 float64 `json:"p95_ms"`
+	P99                 float64 `json:"p99_ms"`
+	TTFBP50             float64 `json:"ttfb_p50_ms"`
+	TTFBP95             float64 `json:"ttfb_p95_ms"`
+	TTFBP99             float64 `json:"ttfb_p99_ms"`
+	AllScheduledP50     float64 `json:"all_scheduled_p50_ms"`
+	AllScheduledP95     float64 `json:"all_scheduled_p95_ms"`
+	AllScheduledP99     float64 `json:"all_scheduled_p99_ms"`
+	QueueP50            float64 `json:"queue_p50_ms"`
+	QueueP95            float64 `json:"queue_p95_ms"`
+	QueueP99            float64 `json:"queue_p99_ms"`
+	WallSeconds         float64 `json:"wall_seconds"`
+	SuccessfulPerSecond float64 `json:"successful_per_second"`
+	HTTPSuccesses       int     `json:"http_successes"`
+	ValidSuccesses      int     `json:"valid_successes"`
+	Timeouts            int     `json:"timeouts"`
+	Errors              int     `json:"errors"`
+	SchemaErrors        int     `json:"schema_errors"`
+	SchemaUncovered     int     `json:"schema_uncovered"`
+	Samples             int     `json:"samples"`
 }
 type result struct {
 	Name            string      `json:"name"`
@@ -60,29 +78,54 @@ type result struct {
 	Winner          string      `json:"winner"`
 	P50Winner       string      `json:"p50_winner"`
 	P95Winner       string      `json:"p95_winner"`
+	P99Winner       string      `json:"p99_winner"`
 	TTFBP50Winner   string      `json:"ttfb_p50_winner"`
 	TTFBP95Winner   string      `json:"ttfb_p95_winner"`
+	TTFBP99Winner   string      `json:"ttfb_p99_winner"`
+	Repetition      int         `json:"repetition"`
+	Order           string      `json:"order"`
+	LoadModel       string      `json:"load_model"`
+	RatePerSecond   float64     `json:"rate_per_second,omitempty"`
+	CacheState      string      `json:"cache_state"`
 	CompletionScope string      `json:"completion_scope"`
 	SchemaChecked   bool        `json:"schema_checked"`
 }
 
 func measure(client *http.Client, t target, samples, concurrency int) measurement {
-	return measureWithSchema(client, t, samples, concurrency, nil)
+	return measureScheduled(client, t, samples, concurrency, nil, 0)
 }
 func measureWithSchema(client *http.Client, t target, samples, concurrency int, spec *openapi.Document) measurement {
+	return measureScheduled(client, t, samples, concurrency, spec, 0)
+}
+func measureScheduled(client *http.Client, t target, samples, concurrency int, spec *openapi.Document, rate float64) measurement {
 	var mu sync.Mutex
 	var durations []float64
 	var firstBytes []float64
+	var allScheduled, queueDelays []float64
 	errs := 0
+	timeouts := 0
+	wallStart := time.Now()
 	schemaErrors := 0
 	schemaUncovered := 0
-	jobs := make(chan struct{})
+	type job struct{ scheduled time.Time }
+	buffer := 0
+	if rate > 0 {
+		buffer = samples
+	}
+	jobs := make(chan job, buffer)
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for range jobs {
+			for scheduled := range jobs {
+				queue := 0.0
+				if !scheduled.scheduled.IsZero() {
+					queue = float64(time.Since(scheduled.scheduled)) / float64(time.Millisecond)
+					if queue < 0 {
+						queue = 0
+					}
+				}
 				req, err := http.NewRequest(http.MethodGet, t.URL, nil)
 				if err == nil {
 					for k, v := range t.Headers {
@@ -112,6 +155,7 @@ func measureWithSchema(client *http.Client, t target, samples, concurrency int, 
 						}
 					}
 					elapsed := float64(time.Since(start)) / float64(time.Millisecond)
+					timedOut := err != nil && os.IsTimeout(err)
 					validationFailed, uncovered := false, false
 					if err == nil && spec != nil {
 						if bodyBytes.Len() > 16<<20 {
@@ -125,6 +169,13 @@ func measureWithSchema(client *http.Client, t target, samples, concurrency int, 
 						}
 					}
 					mu.Lock()
+					allScheduled = append(allScheduled, elapsed+queue)
+					if rate > 0 {
+						queueDelays = append(queueDelays, queue)
+					}
+					if timedOut {
+						timeouts++
+					}
 					if validationFailed {
 						schemaErrors++
 					}
@@ -141,24 +192,50 @@ func measureWithSchema(client *http.Client, t target, samples, concurrency int, 
 				} else {
 					mu.Lock()
 					errs++
+					allScheduled = append(allScheduled, queue)
+					if rate > 0 {
+						queueDelays = append(queueDelays, queue)
+					}
 					mu.Unlock()
 				}
 			}
 		}()
 	}
 	for i := 0; i < samples; i++ {
-		jobs <- struct{}{}
+		j := job{}
+		if rate > 0 {
+			j.scheduled = wallStart.Add(time.Duration(float64(i) * float64(time.Second) / rate))
+			if delay := time.Until(j.scheduled); delay > 0 {
+				time.Sleep(delay)
+			}
+		}
+		jobs <- j
 	}
 	close(jobs)
 	wg.Wait()
 	sort.Float64s(durations)
 	sort.Float64s(firstBytes)
-	m := measurement{Errors: errs, SchemaErrors: schemaErrors, SchemaUncovered: schemaUncovered, Samples: samples}
+	sort.Float64s(allScheduled)
+	sort.Float64s(queueDelays)
+	wall := time.Since(wallStart).Seconds()
+	m := measurement{Errors: errs, Timeouts: timeouts, SchemaErrors: schemaErrors, SchemaUncovered: schemaUncovered, Samples: samples, WallSeconds: wall, SuccessfulPerSecond: float64(len(durations)-schemaErrors-schemaUncovered) / wall, HTTPSuccesses: len(durations), ValidSuccesses: len(durations) - schemaErrors - schemaUncovered}
+	if len(allScheduled) > 0 {
+		m.AllScheduledP50 = percentile(allScheduled, 50)
+		m.AllScheduledP95 = percentile(allScheduled, 95)
+		m.AllScheduledP99 = percentile(allScheduled, 99)
+	}
+	if len(queueDelays) > 0 {
+		m.QueueP50 = percentile(queueDelays, 50)
+		m.QueueP95 = percentile(queueDelays, 95)
+		m.QueueP99 = percentile(queueDelays, 99)
+	}
 	if len(durations) > 0 {
 		m.P50 = percentile(durations, 50)
 		m.P95 = percentile(durations, 95)
+		m.P99 = percentile(durations, 99)
 		m.TTFBP50 = percentile(firstBytes, 50)
 		m.TTFBP95 = percentile(firstBytes, 95)
+		m.TTFBP99 = percentile(firstBytes, 99)
 	}
 	return m
 }
@@ -167,13 +244,13 @@ func winner(a, b measurement) string {
 	if a.Errors > 0 || b.Errors > 0 || a.SchemaErrors > 0 || b.SchemaErrors > 0 || a.SchemaUncovered > 0 || b.SchemaUncovered > 0 {
 		return "inconclusive"
 	}
-	if a.P50 == b.P50 && a.P95 == b.P95 {
+	if a.P50 == b.P50 && a.P95 == b.P95 && a.P99 == b.P99 {
 		return "tie"
 	}
-	if b.P50 <= a.P50 && b.P95 <= a.P95 {
+	if b.P50 <= a.P50 && b.P95 <= a.P95 && b.P99 <= a.P99 {
 		return "ether"
 	}
-	if a.P50 <= b.P50 && a.P95 <= b.P95 {
+	if a.P50 <= b.P50 && a.P95 <= b.P95 && a.P99 <= b.P99 {
 		return "reference"
 	}
 	return "mixed"
@@ -194,7 +271,26 @@ func run(c config) ([]result, error) {
 	if c.Samples < 1 || len(c.Concurrency) == 0 || len(c.Scenarios) == 0 {
 		return nil, errors.New("samples, concurrency and scenarios are required")
 	}
-	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if c.Samples > 1000000 || c.Repetitions < 0 || c.Repetitions > 1000 || c.TimeoutMS < 0 || math.IsNaN(c.RatePerSecond) || math.IsInf(c.RatePerSecond, 0) || c.RatePerSecond < 0 || c.RatePerSecond > 1000000 || (c.RatePerSecond > 0 && c.RatePerSecond < 0.001) {
+		return nil, errors.New("invalid load configuration")
+	}
+	reps := c.Repetitions
+	if reps == 0 {
+		reps = 1
+	}
+	timeout := 30 * time.Second
+	if c.TimeoutMS > 0 {
+		timeout = time.Duration(c.TimeoutMS) * time.Millisecond
+	}
+	cache := c.CacheState
+	if cache == "" {
+		cache = "unspecified"
+	}
+	model := "closed_loop"
+	if c.RatePerSecond > 0 {
+		model = "open_loop"
+	}
+	client := &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	defer client.CloseIdleConnections()
 	var out []result
 	for _, s := range c.Scenarios {
@@ -247,9 +343,20 @@ func run(c config) ([]result, error) {
 			if n < 1 {
 				return nil, errors.New("concurrency must be positive")
 			}
-			a := measureWithSchema(client, s.Reference, c.Samples, n, spec)
-			b := measureWithSchema(client, s.Ether, c.Samples, n, spec)
-			out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), P95Winner: metricWinner(a.P95, b.P95, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), TTFBP50Winner: metricWinner(a.TTFBP50, b.TTFBP50, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), TTFBP95Winner: metricWinner(a.TTFBP95, b.TTFBP95, a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered), CompletionScope: scope, SchemaChecked: spec != nil})
+			for rep := 0; rep < reps; rep++ {
+				var a, b measurement
+				order := "reference_first"
+				if rep%2 == 0 {
+					a = measureScheduled(client, s.Reference, c.Samples, n, spec, c.RatePerSecond)
+					b = measureScheduled(client, s.Ether, c.Samples, n, spec, c.RatePerSecond)
+				} else {
+					order = "ether_first"
+					b = measureScheduled(client, s.Ether, c.Samples, n, spec, c.RatePerSecond)
+					a = measureScheduled(client, s.Reference, c.Samples, n, spec, c.RatePerSecond)
+				}
+				ae, be := a.Errors+a.SchemaErrors+a.SchemaUncovered, b.Errors+b.SchemaErrors+b.SchemaUncovered
+				out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, ae, be), P95Winner: metricWinner(a.P95, b.P95, ae, be), P99Winner: metricWinner(a.P99, b.P99, ae, be), TTFBP50Winner: metricWinner(a.TTFBP50, b.TTFBP50, ae, be), TTFBP95Winner: metricWinner(a.TTFBP95, b.TTFBP95, ae, be), TTFBP99Winner: metricWinner(a.TTFBP99, b.TTFBP99, ae, be), CompletionScope: scope, SchemaChecked: spec != nil, Repetition: rep + 1, Order: order, LoadModel: model, RatePerSecond: c.RatePerSecond, CacheState: cache})
+			}
 		}
 	}
 	return out, nil
