@@ -3,6 +3,7 @@ package frontendtest
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -60,6 +61,8 @@ func (f Experience) UserData(c context.Context, v *core.Viewer, k []core.RatingK
 type Sessions struct {
 	PlanFunc         func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error)
 	OpenFunc         func(context.Context, frontend.OpenRequest) (frontend.Session, error)
+	StartStreamFunc  func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error)
+	ServeMediaFunc   func(http.ResponseWriter, *http.Request)
 	ReportFunc       func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error
 	StopFunc         func(context.Context, frontend.SessionAccess, string) error
 	SessionsFunc     func(context.Context, frontend.SessionAccess) ([]frontend.Session, error)
@@ -79,6 +82,19 @@ func (f Sessions) Open(c context.Context, r frontend.OpenRequest) (frontend.Sess
 		return f.OpenFunc(c, r)
 	}
 	return frontend.Session{}, nil
+}
+func (f Sessions) StartStream(c context.Context, a frontend.SessionAccess, id string, r frontend.StreamRequest) (string, error) {
+	if f.StartStreamFunc != nil {
+		return f.StartStreamFunc(c, a, id, r)
+	}
+	return "", nil
+}
+func (f Sessions) ServeMedia(w http.ResponseWriter, r *http.Request) {
+	if f.ServeMediaFunc != nil {
+		f.ServeMediaFunc(w, r)
+		return
+	}
+	http.NotFound(w, r)
 }
 func (f Sessions) Report(c context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
 	if f.ReportFunc != nil {

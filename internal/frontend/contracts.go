@@ -3,6 +3,7 @@ package frontend
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -110,9 +111,43 @@ type Experience interface {
 }
 
 type PlayIntent struct {
-	Estimate bool
-	Options  core.DecideOptions
-	Position time.Duration
+	Estimate        bool
+	Options         core.DecideOptions
+	Position        time.Duration
+	ClientSessionID string
+	PlaybackID      string
+	// PreferRemux asks for a copy-only remux when source changes would
+	// otherwise disrupt the client. The broker still decides whether it applies.
+	PreferRemux bool
+	Plex        *PlexHints
+}
+
+// PlexHints carries Plex-specific selections that cannot be represented by
+// neutral stream indexes. Only the Plex adapter should populate it.
+type PlexHints struct {
+	Collection        string
+	MediaIndex        int
+	PartReleaseID     string
+	AudioSelection    int
+	SubtitleSelection int
+	SubtitleSet       bool
+	SubtitleStream    *core.StreamInfo
+}
+
+type StreamFormat string
+
+const (
+	StreamDirect StreamFormat = "direct"
+	StreamHLS    StreamFormat = "hls"
+	StreamDASH   StreamFormat = "dash"
+)
+
+// StreamRequest describes output, not an upstream URL or credential. The
+// broker owns the input, decision and stream grant.
+type StreamRequest struct {
+	Format          StreamFormat
+	Position        time.Duration
+	SegmentDuration time.Duration
 }
 type PlanRequest struct {
 	Viewer   *core.Viewer
@@ -146,6 +181,7 @@ type Timeline struct {
 	// PlaybackID may be empty for clients that do not send one. The broker
 	// preserves its no-ID supersession semantics.
 	PlaybackID         string
+	ClientSessionID    string
 	Position, Duration time.Duration
 	State              string
 }
@@ -178,6 +214,10 @@ type EventScope struct {
 type Sessions interface {
 	Plan(context.Context, PlanRequest) (PlayPlan, error)
 	Open(context.Context, OpenRequest) (Session, error)
+	// StartStream revalidates access to the session and returns its scoped URL.
+	StartStream(context.Context, SessionAccess, string, StreamRequest) (string, error)
+	// ServeMedia authorizes the scoped grant and serves direct, HLS or DASH data.
+	ServeMedia(http.ResponseWriter, *http.Request)
 	Report(context.Context, SessionAccess, string, Timeline) error
 	Stop(context.Context, SessionAccess, string) error
 	Sessions(context.Context, SessionAccess) ([]Session, error)
