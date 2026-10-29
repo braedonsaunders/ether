@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -29,6 +30,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -324,6 +326,8 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			if err := os.WriteFile(refFile, refJSON, 0600); err != nil {
 				t.Fatal(err)
 			}
+			labProxy, stopProxy := labProbeProxy(t, spec.reference)
+			defer stopProxy()
 			for _, mode := range []string{"compare", "live"} {
 				report := conform.Report{}
 				for _, clientName := range strings.Split(spec.client, ",") {
@@ -334,7 +338,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					}
 					args := []string{"run", "./cmd/conformdiff", mode, "-protocol", spec.proto, "-client", clientName, "-target", srv.URL, "-target-vars", targetFile, "-reference-vars", refFile, "-format", "json", "-timeout", "15s"}
 					if mode == "live" {
-						args = append(args, "-reference-server", spec.reference.base)
+						args = append(args, "-reference-server", labProxy)
 					}
 					cmd := exec.Command("go", args...)
 					cmd.Dir = "../.."
@@ -417,8 +421,54 @@ func (ref labReferenceData) logout(t *testing.T) {
 		return
 	}
 	response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if response.StatusCode != http.StatusUnauthorized && (response.StatusCode < 200 || response.StatusCode >= 300) {
 		t.Errorf("lab sign-out returned HTTP %d", response.StatusCode)
+	}
+}
+
+// labProbeProxy retains newly issued probe tokens only in memory, so every
+// live sign-in can be revoked after the test without writing credentials to a
+// transcript or report. Other requests pass through unchanged.
+func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
+	t.Helper()
+	target, err := url.Parse(ref.base)
+	if err != nil {
+		t.Fatal("invalid lab proxy target")
+	}
+	var mu sync.Mutex
+	issued := map[string]bool{}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	direct := proxy.Director
+	proxy.Director = func(req *http.Request) { direct(req); req.Host = target.Host }
+	proxy.ModifyResponse = func(response *http.Response) error {
+		if response.StatusCode != http.StatusOK || response.Request.Method != http.MethodPost || !strings.HasSuffix(response.Request.URL.Path, "/Users/AuthenticateByName") {
+			return nil
+		}
+		body, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+		response.Body.Close()
+		if err != nil {
+			return err
+		}
+		if len(body) > 1<<20 {
+			return fmt.Errorf("lab login response too large")
+		}
+		response.Body = io.NopCloser(bytes.NewReader(body))
+		var login struct{ AccessToken string }
+		if json.Unmarshal(body, &login) == nil && login.AccessToken != "" {
+			mu.Lock()
+			issued[login.AccessToken] = true
+			mu.Unlock()
+		}
+		return nil
+	}
+	server := httptest.NewServer(proxy)
+	return server.URL, func() {
+		server.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for token := range issued {
+			(labReferenceData{base: ref.base, token: token}).logout(t)
+		}
 	}
 }
 
@@ -557,5 +607,35 @@ func TestReadLabSettings(t *testing.T) {
 	settings, err := readLabSettings(path)
 	if err != nil || settings["USER"] != "viewer" || settings["PASSWORD"] != "literal # value" || settings["URL"] != "http://127.0.0.1:8096" {
 		t.Fatal("settings parsing failed", err)
+	}
+}
+
+func TestLabProbeProxyRevokesIssuedCredentials(t *testing.T) {
+	var logouts atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/emby/Users/AuthenticateByName":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"AccessToken":"probe-only-token"}`)
+		case "/emby/Sessions/Logout":
+			if r.Header.Get("X-Emby-Token") != "probe-only-token" {
+				t.Error("wrong sign-out credential")
+			}
+			logouts.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+	proxy, stop := labProbeProxy(t, labReferenceData{base: backend.URL + "/emby"})
+	resp, err := http.Post(proxy+"/Users/AuthenticateByName", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	stop()
+	if resp.StatusCode != 200 || logouts.Load() != 1 {
+		t.Fatal(resp.StatusCode, logouts.Load())
 	}
 }
