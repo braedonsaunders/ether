@@ -10,7 +10,7 @@ import { PlexStatus } from "../settings/sections";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { DomainPage, Section, useRouteTab } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
-import { localized, t } from "../../i18n";
+import { t } from "../../i18n";
 import { API_BASE, apiBlob, apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
 
@@ -45,35 +45,10 @@ type Settings = {
   quickConnect?: boolean;
   publicViewerPicker?: boolean;
 };
-const tabs = localized(
-  () =>
-    [
-      { key: "overview", label: t("Overview") },
-      { key: "plex", label: t("Plex") },
-      { key: "jellyfin", label: t("Jellyfin") },
-      { key: "emby", label: t("Emby") },
-      { key: "silo", label: t("Silo") },
-      { key: "stremio", label: t("Stremio") },
-      { key: "files", label: t("Files") },
-      { key: "dlna", label: t("DLNA") },
-      { key: "remote", label: t("Remote access") },
-      { key: "secure", label: t("Secure connections") },
-    ] as const,
-);
-const protocols = localized(
-  () =>
-    [
-      { id: "plex", name: t("Plex") },
-      { id: "jellyfin", name: t("Jellyfin") },
-      { id: "emby", name: t("Emby") },
-      { id: "silo", name: t("Silo") },
-      { id: "stremio", name: t("Stremio") },
-      { id: "webdav", name: t("Files") },
-      { id: "dlna", name: t("DLNA") },
-    ] as const,
-);
 const pathFor = (id: string) => (id === "webdav" ? "files" : id);
 const protocolFor = (tab: string) => (tab === "files" ? "webdav" : tab);
+const nameFor = (info: FrontendInfo) =>
+  info.descriptor.id === "webdav" ? t("Files") : info.descriptor.name;
 
 function reachability(value: string) {
   switch (value) {
@@ -341,12 +316,21 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
 }
 
 export default function Apps() {
+  const state = useAsync((signal) => apiFetch<FrontendInfo[]>("/frontends", { signal }), []);
+  const tabs = [
+    { key: "overview", label: t("Overview") },
+    ...(state.data ?? []).map((info) => ({
+      key: pathFor(info.descriptor.id),
+      label: nameFor(info),
+    })),
+    { key: "remote", label: t("Remote access") },
+    { key: "secure", label: t("Secure connections") },
+  ];
   const tab = useRouteTab(tabs);
   const [visited, setVisited] = useState(() => new Set([tab]));
   useEffect(() => {
     setVisited((old) => (old.has(tab) ? old : new Set([...old, tab])));
   }, [tab]);
-  const state = useAsync((signal) => apiFetch<FrontendInfo[]>("/frontends", { signal }), []);
   useInterval(() => void state.reload(), 10_000);
   const [error, setError] = useState<unknown>();
   const [busy, setBusy] = useState<string>();
@@ -380,18 +364,11 @@ export default function Apps() {
           <LoadingRows />
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
-            {protocols.map((protocol) => {
-              const info = state.data?.find((item) => item.descriptor.id === protocol.id);
-              if (!info)
-                return (
-                  <Section key={protocol.id} title={protocol.name}>
-                    <p>{t("Not available yet.")}</p>
-                  </Section>
-                );
+            {state.data.map((info) => {
               return (
                 <Section
                   key={info.descriptor.id}
-                  title={info.descriptor.name}
+                  title={nameFor(info)}
                   actions={
                     <Switch
                       checked={info.enabled}

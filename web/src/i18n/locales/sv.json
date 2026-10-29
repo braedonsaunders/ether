@@ -870,7 +870,6 @@
   "m_0628e5eb0f5902": "Det gick inte att spara layouten",
   "m_062d3c7f33b9ac": "Visa mina favoriter som en spellista i Plex.",
   "m_062da5c5a3a9e4": "Flytta {name} uppåt",
-  "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Hittades inte",
   "m_0634e41616c6e6": {
     "one": "{label}: {count} rad",
@@ -921,7 +920,6 @@
     "other": "{count} föreslagna träffar"
   },
   "m_0690e44fdf0bdd": "Ingen e-postkanal för veckorapporten",
-  "m_06924390dc5511": "hävda kontokompatibilitet nåbarhet",
   "m_06939def7a64ed": "Rampljus",
   "m_0695ec21e87e93": "Premiär för den senast sända ordinarie säsongen; okända datum sist",
   "m_06971389277796": "Läs klusterguiden",
@@ -938,7 +936,6 @@
   "m_06a9f05c041f64": "Spellistans URL eller fil",
   "m_06aa22a06919f6": "Förbuffra det översta förslaget",
   "m_06ab5bc940f91a": "Förbuffra huvudfilmen",
-  "m_06ac3fe17bae8a": "Stremio",
   "m_06ad75c747fb05": "Läser in titlar",
   "m_06afcdbd16dabd": "Visas aldrig",
   "m_06b02e0a57fe7e": "Upptäckt och presentation",
@@ -1617,7 +1614,6 @@
   "m_0bb5d7c67c168e": "Spara vikt",
   "m_0bb8d1b332c184": "Ultra",
   "m_0bb9255f355d2c": "Senast importerad {when}",
-  "m_0bbd975d5e970c": "Inte tillgängligt ännu.",
   "m_0bc17c208310c3": "{app} aktiverad",
   "m_0bc5960453b5ad": "Ta bort regeln?",
   "m_0bcb0398a4f45a": "Samling",
@@ -2024,7 +2020,6 @@
     "one": "den här noden: {slots} av {count} API-anslutning",
     "other": "den här noden: {slots} av {count} API-anslutningar"
   },
-  "m_0ec818e99390c6": "Plex",
   "m_0ec8a765324466": "Installerar körmiljö",
   "m_0ecae0dfe9b497": "Avfrågningsintervall",
   "m_0ece1036899793": "Egen policy",
@@ -3194,7 +3189,6 @@
     "one": "{count} Hem ändras i den här kontexten",
     "other": "{count} Hem ändras i den här kontexten"
   },
-  "m_17554937432c68": "Jellyfin",
   "m_1759a72d011ede": "Favoriter",
   "m_175a707795b382": "Plex {section} som",
   "m_175c0a3a005ab3": "Zoom",
@@ -3205,7 +3199,6 @@
   "m_17712c79c8ddcd": "{used} av {limit}",
   "m_17716059fc23b8": "NZB-nedladdningar per dag",
   "m_177603792bca5e": "TV-serier",
-  "m_1776b72bdf1f50": "DLNA",
   "m_177a91d641dc30": "Separera med kommatecken. Mallens gränser för år och betyg behålls.",
   "m_177be4afd29378": "Sök kanaler",
   "m_177cbfb70c64ff": {
@@ -3217,7 +3210,6 @@
   "m_1781f3648b89f6": "Uppspelning avslutad",
   "m_1783da56f9a14e": "Katalogen kunde inte läsas in",
   "m_1785e29d0663ff": "Inbyggda samlingar",
-  "m_1785fece308210": "Emby",
   "m_17896d3c630efd": "Endast filmer",
   "m_178a261fc6d8a3": "{error}. Den tidigare programinformationen används fortfarande.",
   "m_178dc1fcbddc99": "Rader som Plex själv tillhandahåller",

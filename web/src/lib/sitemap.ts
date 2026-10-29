@@ -291,17 +291,6 @@ export const PAGES = localized<PageDef[]>(() => [
     title: t("Apps"),
     sections: [
       {
-        key: "plex",
-        title: t("Plex"),
-        keywords: searchTerms(msg("claim account compatibility reachability")),
-      },
-      { key: "jellyfin", title: t("Jellyfin") },
-      { key: "emby", title: t("Emby") },
-      { key: "silo", title: t("Silo") },
-      { key: "stremio", title: t("Stremio") },
-      { key: "files", title: t("Files") },
-      { key: "dlna", title: t("DLNA") },
-      {
         key: "remote",
         title: t("Remote access"),
         keywords: searchTerms(msg("upnp port forward public")),

@@ -900,7 +900,6 @@
   "m_0628e5eb0f5902": "No se pudo guardar la disposición",
   "m_062d3c7f33b9ac": "Mostrar mis favoritos como una lista de reproducción en Plex.",
   "m_062da5c5a3a9e4": "Subir {name}",
-  "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "No encontrado",
   "m_0634e41616c6e6": {
     "one": "{label}: {count} fila",
@@ -954,7 +953,6 @@
     "other": "{count} coincidencias sugeridas"
   },
   "m_0690e44fdf0bdd": "No hay canal de correo para el informe semanal",
-  "m_06924390dc5511": "reclamar accesibilidad a la compatibilidad de la cuenta",
   "m_06939def7a64ed": "Foco",
   "m_0695ec21e87e93": "Estreno de la última temporada regular emitida; las fechas desconocidas van al final",
   "m_06971389277796": "Leer la guía del clúster",
@@ -971,7 +969,6 @@
   "m_06a9f05c041f64": "URL o archivo de la lista",
   "m_06aa22a06919f6": "Precargar la mejor sugerencia",
   "m_06ab5bc940f91a": "Precargar la película",
-  "m_06ac3fe17bae8a": "Stremio",
   "m_06ad75c747fb05": "Cargando títulos",
   "m_06afcdbd16dabd": "Nunca se muestra",
   "m_06b02e0a57fe7e": "Descubrimiento y presentación",
@@ -1666,7 +1663,6 @@
   "m_0bb5d7c67c168e": "Guardar peso",
   "m_0bb8d1b332c184": "Ultra",
   "m_0bb9255f355d2c": "Última importación {when}",
-  "m_0bbd975d5e970c": "Aún no disponible.",
   "m_0bc17c208310c3": "{app} habilitada",
   "m_0bc5960453b5ad": "¿Quitar la regla?",
   "m_0bcb0398a4f45a": "Colección",
@@ -2084,7 +2080,6 @@
     "many": "este nodo: {slots} de {count} conexiones de API",
     "other": "este nodo: {slots} de {count} conexiones de API"
   },
-  "m_0ec818e99390c6": "Plex",
   "m_0ec8a765324466": "Instalando el entorno de ejecución",
   "m_0ecae0dfe9b497": "Intervalo de consulta",
   "m_0ece1036899793": "Política personalizada",
@@ -3303,7 +3298,6 @@
     "many": "{count} Inicios cambian en este contexto",
     "other": "{count} Inicios cambian en este contexto"
   },
-  "m_17554937432c68": "Jellyfin",
   "m_1759a72d011ede": "Favoritos",
   "m_175a707795b382": "Plex {section} como",
   "m_175c0a3a005ab3": "Zoom",
@@ -3314,7 +3308,6 @@
   "m_17712c79c8ddcd": "{used} de {limit}",
   "m_17716059fc23b8": "Descargas de NZB al día",
   "m_177603792bca5e": "Series de TV",
-  "m_1776b72bdf1f50": "DLNA",
   "m_177a91d641dc30": "Separa con comas. Se conservan los límites de año y valoración de la plantilla.",
   "m_177be4afd29378": "Buscar canales",
   "m_177cbfb70c64ff": {
@@ -3327,7 +3320,6 @@
   "m_1781f3648b89f6": "Reproducción finalizada",
   "m_1783da56f9a14e": "No se pudo cargar el catálogo",
   "m_1785e29d0663ff": "Colecciones integradas",
-  "m_1785fece308210": "Emby",
   "m_17896d3c630efd": "Solo películas",
   "m_178a261fc6d8a3": "{error}. Se sigue usando la programación anterior.",
   "m_178dc1fcbddc99": "Filas que proporciona el propio Plex",

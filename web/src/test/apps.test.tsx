@@ -56,6 +56,9 @@ describe("Apps", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText("192.168.1.2:8090")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Silo" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Stremio" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Files" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Connect a device" }));
     expect(screen.getByText("Certified player")).toBeInTheDocument();
     expect(screen.getByText("Open the app on your device.")).toBeInTheDocument();

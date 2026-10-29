@@ -930,7 +930,6 @@
   "m_0628e5eb0f5902": "Rozvržení se nepodařilo uložit",
   "m_062d3c7f33b9ac": "Zobrazit mé oblíbené položky jako seznam skladeb v Plex.",
   "m_062da5c5a3a9e4": "Posunout {name} nahoru",
-  "m_06311c7ae81b37": "Silo",
   "m_06312783cfee0c": "Nenalezeno",
   "m_0634e41616c6e6": {
     "one": "{label}: {count} řádek",
@@ -987,7 +986,6 @@
     "other": "{count} navržených shod"
   },
   "m_0690e44fdf0bdd": "Pro týdenní report není žádný e-mailový kanál",
-  "m_06924390dc5511": "nárokovat dosažitelnost kompatibility účtu",
   "m_06939def7a64ed": "Reflektor",
   "m_0695ec21e87e93": "Premiéra nejnovější odvysílané běžné řady; neznámá data na konci",
   "m_06971389277796": "Přečíst průvodce clusterem",
@@ -1004,7 +1002,6 @@
   "m_06a9f05c041f64": "URL nebo soubor seznamu",
   "m_06aa22a06919f6": "Předem načíst nejlepší tip do vyrovnávací paměti",
   "m_06ab5bc940f91a": "Předem načíst hlavní film do vyrovnávací paměti",
-  "m_06ac3fe17bae8a": "Stremio",
   "m_06ad75c747fb05": "Načítání titulů",
   "m_06afcdbd16dabd": "Nikdy se nezobrazí",
   "m_06b02e0a57fe7e": "Objevování a prezentace",
@@ -1715,7 +1712,6 @@
   "m_0bb5d7c67c168e": "Uložit váhu",
   "m_0bb8d1b332c184": "Ultra",
   "m_0bb9255f355d2c": "Naposledy importováno {when}",
-  "m_0bbd975d5e970c": "Zatím nedostupné.",
   "m_0bc17c208310c3": "{app} povoleno",
   "m_0bc5960453b5ad": "Odebrat pravidlo?",
   "m_0bcb0398a4f45a": "Kolekce",
@@ -2144,7 +2140,6 @@
     "many": "tento uzel: {slots} z {count} připojení API",
     "other": "tento uzel: {slots} z {count} připojení API"
   },
-  "m_0ec818e99390c6": "Plex",
   "m_0ec8a765324466": "Instalace běhového prostředí",
   "m_0ecae0dfe9b497": "Interval dotazování",
   "m_0ece1036899793": "Vlastní zásady",
@@ -3412,7 +3407,6 @@
     "many": "V tomto kontextu se změní {count} stránky Domů",
     "other": "V tomto kontextu se změní {count} stránek Domů"
   },
-  "m_17554937432c68": "Jellyfin",
   "m_1759a72d011ede": "Oblíbené",
   "m_175a707795b382": "Plex {section} jako",
   "m_175c0a3a005ab3": "Přiblížení",
@@ -3423,7 +3417,6 @@
   "m_17712c79c8ddcd": "{used} z {limit}",
   "m_17716059fc23b8": "Stažení NZB za den",
   "m_177603792bca5e": "Seriály",
-  "m_1776b72bdf1f50": "DLNA",
   "m_177a91d641dc30": "Oddělte čárkami. Omezení roku a hodnocení ze šablony zůstanou zachována.",
   "m_177be4afd29378": "Hledat kanály",
   "m_177cbfb70c64ff": {
@@ -3437,7 +3430,6 @@
   "m_1781f3648b89f6": "Přehrávání ukončeno",
   "m_1783da56f9a14e": "Katalog se nepodařilo načíst",
   "m_1785e29d0663ff": "Vestavěné kolekce",
-  "m_1785fece308210": "Emby",
   "m_17896d3c630efd": "Pouze filmy",
   "m_178a261fc6d8a3": "{error}. Nadále se používají předchozí pořady.",
   "m_178dc1fcbddc99": "Řádky, které poskytuje sám Plex",
