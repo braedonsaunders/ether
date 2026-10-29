@@ -542,6 +542,40 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 			result.captures = append(result.captures, capture{viewer, name, "playback:dash:stop", false, stopped})
 		}
 	}
+	// Termination requires an actual tracked playback, not a made-up session.
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			for i, endpoint := range []string{"/status/sessions/terminate", "/status/sessions/terminate/player"} {
+				id := fmt.Sprintf("parity-%s-%s-terminate-%d", viewer, name, i)
+				h := profiles[name].Headers.Clone()
+				h.Set("X-Plex-Client-Identifier", "parity-"+viewer+"-"+name)
+				h.Set("X-Plex-Session-Identifier", id)
+				h.Set("Accept", "application/json")
+				req := protocol.Request{Method: http.MethodGet, Path: "/:/timeline?ratingKey={{movieKey}}&state=playing&time=1000&duration=5400000", Headers: map[string]http.Header{name + "-json": h}}
+				started, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
+				if err != nil || started.Status != http.StatusOK {
+					return result, fmt.Errorf("%s %s terminate setup: status=%d error=%v", viewer, name, started.Status, err)
+				}
+				result.captures = append(result.captures, capture{viewer, name, "termination:timeline-start", true, started})
+				req.Path = endpoint + "?sessionId=" + url.QueryEscape(id)
+				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, nil, true)
+				want := http.StatusForbidden
+				if viewer == "owner" {
+					want = http.StatusOK
+				}
+				if err != nil || response.Status != want {
+					return result, fmt.Errorf("%s %s %s: status=%d want=%d error=%v", viewer, name, endpoint, response.Status, want, err)
+				}
+				result.captures = append(result.captures, capture{viewer, name, "termination:" + endpoint, true, response})
+				req.Path = "/:/timeline?ratingKey={{movieKey}}&state=stopped&time=1000&duration=5400000"
+				stopped, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
+				if err != nil || stopped.Status != http.StatusOK {
+					return result, fmt.Errorf("%s %s termination stop: status=%d error=%v", viewer, name, stopped.Status, err)
+				}
+				result.captures = append(result.captures, capture{viewer, name, "termination:timeline-stop", true, stopped})
+			}
+		}
+	}
 	return result, nil
 }
 func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
