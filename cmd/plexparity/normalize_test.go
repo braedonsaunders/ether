@@ -41,6 +41,14 @@ func TestSegmentTimestampNormalizationIsScoped(t *testing.T) {
 	if normalizeCaptureHeaders(segment).Get("Last-Modified") == "" {
 		t.Fatal("nonsegment timestamp removed")
 	}
+	segment.path = "iptv:fixture-iptv:resource:media"
+	if normalizeCaptureHeaders(segment).Get("Last-Modified") == "" {
+		t.Fatal("IPTV upstream resource timestamp removed")
+	}
+	segment.path = "iptv:fixture-iptv-relay:relay:media"
+	if normalizeCaptureHeaders(segment).Get("Last-Modified") != "" || segment.response.Headers.Get("Last-Modified") == "" {
+		t.Fatal("generated IPTV relay timestamp was not scoped to comparison")
+	}
 }
 
 func TestBinaryPayloadIsNeverNormalized(t *testing.T) {

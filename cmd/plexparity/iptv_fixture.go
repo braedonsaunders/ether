@@ -19,6 +19,11 @@ func iptvFixture(seedDir string, tracker *fixtureTracker) (http.Handler, error) 
 		return nil, fmt.Errorf("empty IPTV fixture segment")
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			tracker.record(r.Method + " " + r.URL.RequestURI())
+			http.NotFound(w, r)
+			return
+		}
 		switch r.URL.Path {
 		case "/index.m3u8":
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
