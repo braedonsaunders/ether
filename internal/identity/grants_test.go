@@ -92,6 +92,69 @@ func TestGrantsSurfaceMembershipAndRevocation(t *testing.T) {
 	}
 }
 
+func TestGrantReferenceRevalidatesSurfaceMembershipAndExpiry(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 0)
+	g, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := g.Issue(ctx, 1, nil, "stremio", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, viewer, err := g.GrantReference(ctx, "stremio", token)
+	if err != nil || viewer.ID != 1 || ref == token || len(ref) != 64 {
+		t.Fatalf("reference: %q %+v %v", ref, viewer, err)
+	}
+	if err = g.ValidateGrantReference(ctx, "stremio", ref, 1); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		surface, ref string
+		viewer       int64
+	}{{"webdav", ref, 1}, {"stremio", ref, 2}, {"stremio", token, 1}, {"stremio", "malformed", 1}} {
+		if err = g.ValidateGrantReference(ctx, tc.surface, tc.ref, tc.viewer); !errors.Is(err, core.ErrUnauthorized) {
+			t.Fatalf("accepted wrong scope: %+v %v", tc, err)
+		}
+	}
+	now = now.Add(59 * time.Minute)
+	if err = g.ValidateGrantReference(ctx, "stremio", ref, 1); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if err = g.ValidateGrantReference(ctx, "stremio", ref, 1); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("validation extended expiry: %v", err)
+	}
+	token, err = g.Issue(ctx, 1, nil, "stremio", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, _, err = g.GrantReference(ctx, "stremio", token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE auth_users SET active=0 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err = g.ValidateGrantReference(ctx, "stremio", ref, 1); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("inactive viewer: %v", err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE auth_users SET active=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err = g.RevokeGrant(ctx, 1, ref); err != nil {
+		t.Fatal(err)
+	}
+	if err = g.ValidateGrantReference(ctx, "stremio", ref, 1); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("revoked grant: %v", err)
+	}
+}
+
 type plexAuth struct{ calls int }
 
 func (p *plexAuth) Authenticate(_ context.Context, token string) (*core.User, error) {

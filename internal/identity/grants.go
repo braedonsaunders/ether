@@ -154,6 +154,46 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	return viewer, nil
 }
 
+// GrantReference validates a surface credential and returns an internal,
+// non-secret reference plus its active viewer. The reference is not itself an
+// authentication credential and must never be exposed to a client.
+func (g *Grants) GrantReference(ctx context.Context, surface, credential string) (string, *core.Viewer, error) {
+	hash, ok := grantHash(credential)
+	if !ok {
+		return "", nil, core.ErrUnauthorized
+	}
+	viewer, err := g.Resolve(ctx, surface, credential)
+	if err != nil {
+		return "", nil, err
+	}
+	return hash, viewer, nil
+}
+
+// ValidateGrantReference rechecks the shared grant and active membership for
+// a scoped capability. Unlike Resolve, it does not extend the grant lifetime.
+func (g *Grants) ValidateGrantReference(ctx context.Context, surface, reference string, viewerID int64) error {
+	decoded, err := hex.DecodeString(reference)
+	if err != nil || len(decoded) != sha256.Size || hex.EncodeToString(decoded) != reference || surface == "" || viewerID <= 0 {
+		return core.ErrUnauthorized
+	}
+	var id int64
+	err = g.db.QueryRowContext(ctx, `SELECT g.viewer_id FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.revoked=0 AND g.expires>? AND u.active=1`, reference, surface, viewerID, g.now().UnixMilli()).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return core.ErrUnauthorized
+	}
+	if err != nil {
+		return err
+	}
+	viewer, err := g.viewers.ActiveUser(ctx, id)
+	if err != nil {
+		return err
+	}
+	if viewer == nil || viewer.ID != viewerID {
+		return core.ErrUnauthorized
+	}
+	return nil
+}
+
 // RevokeGrant, RevokeDevice and RevokeViewer invalidate credentials without
 // deleting audit metadata. Only a credential's hash is needed for revocation.
 func (g *Grants) RevokeGrant(ctx context.Context, viewerID int64, hash string) error {
