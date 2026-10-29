@@ -2,6 +2,8 @@ package mediabrowser
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -93,5 +95,45 @@ func TestEstimateIssuesLazyPathWithoutOpeningPlayback(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != http.StatusNoContent {
 		t.Fatal(w.Code)
+	}
+}
+
+func TestPlaybackPathUsesOnlyVerifiedSurfaceBase(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	for _, tc := range []struct {
+		name    string
+		surface func(context.Context, *http.Request) (string, error)
+		want    string
+	}{
+		{"absolute", func(context.Context, *http.Request) (string, error) { return "https://ether.example/jellyfin", nil }, "https://ether.example/jellyfin/sessions/media/session/grant/file"},
+		{"embedded", nil, "/jellyfin/sessions/media/session/grant/file"},
+		{"unavailable", func(context.Context, *http.Request) (string, error) { return "", errors.New("unavailable") }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			broker := frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+				return frontend.PlayPlan{ID: "plan", Decision: frontend.Decision{Kind: "directplay"}}, nil
+			}, OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+				return frontend.Session{ID: "session"}, nil
+			}, StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+				return "/sessions/media/session/grant/file", nil
+			}}
+			identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+			inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: broker, Capabilities: frontendtest.Capabilities{}, SurfaceURL: tc.surface})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest("POST", "/jellyfin/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true}`))
+			req.Header.Set("X-Emby-Token", "account-secret")
+			req.Header.Set("X-Emby-Device-Id", "tv")
+			rec := httptest.NewRecorder()
+			inst.Handler().ServeHTTP(rec, req)
+			if rec.Code != 200 {
+				t.Fatal(rec.Code)
+			}
+			var payload struct{ MediaSources []struct{ Path string } }
+			if err = json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || len(payload.MediaSources) != 1 || payload.MediaSources[0].Path != tc.want || strings.Contains(rec.Body.String(), "account-secret") {
+				t.Fatal(rec.Body.String(), err)
+			}
+		})
 	}
 }
