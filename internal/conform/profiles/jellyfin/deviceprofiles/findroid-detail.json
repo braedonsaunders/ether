@@ -1,0 +1,19 @@
+{
+  "client": "Findroid",
+  "source": "https://github.com/jarnedemeulemeester/findroid/blob/a451220b21232b9d0b2e2fdec8e04ac199209f0c/data/src/main/java/dev/jdtech/jellyfin/repository/JellyfinRepositoryImpl.kt",
+  "source_commit": "a451220b21232b9d0b2e2fdec8e04ac199209f0c",
+  "configuration": "getMediaSources detail request; not a playback-decision profile",
+  "device_profile": {
+    "Name": "Direct play all",
+    "MaxStaticBitrate": 1000000000,
+    "MaxStreamingBitrate": 1000000000,
+    "CodecProfiles": [],
+    "ContainerProfiles": [],
+    "DirectPlayProfiles": [],
+    "TranscodingProfiles": [],
+    "SubtitleProfiles": [
+      {"Format": "srt", "Method": "External"},
+      {"Format": "ass", "Method": "External"}
+    ]
+  }
+}
