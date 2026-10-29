@@ -70,6 +70,39 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 			}
 		}
 	}
+	// Mutations are replayed only after the read-only probes, keeping the
+	// initial response signatures independent of mutation ordering.
+	sequence := []string{
+		"/:/timeline?ratingKey={{movieKey}}&key=%2Flibrary%2Fmetadata%2F{{movieKey}}&state=playing&time=1200000&duration=5400000",
+		"/hubs/continueWatching", "/hubs",
+		"/:/scrobble?identifier=com.plexapp.plugins.library&key={{episodeKey}}",
+		"/library/onDeck", "/hubs",
+		"/:/timeline?ratingKey={{movieKey}}&key=%2Flibrary%2Fmetadata%2F{{movieKey}}&state=stopped&time=1300000&duration=5400000",
+		"/hubs/continueWatching", "/hubs",
+	}
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			for _, path := range sequence {
+				if viewer == "teen" {
+					path = strings.ReplaceAll(path, "{{episodeKey}}", "{{movieKey}}")
+				}
+				h := profiles[name].Headers.Clone()
+				h.Set("Accept", "application/json")
+				probe := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h, name + "-json": h}}
+				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, ids.Values, true)
+				if err != nil {
+					return result, fmt.Errorf("mutation %s %s: %w", viewer, path, err)
+				}
+				if response.Status < 200 || response.Status >= 300 {
+					return result, fmt.Errorf("mutation %s %s returned %d", viewer, path, response.Status)
+				}
+				if len(response.Body) >= 16<<20 {
+					return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)
+				}
+				result.captures = append(result.captures, capture{viewer, name, "sequence:" + path, true, response})
+			}
+		}
+	}
 	return result, nil
 }
 func diffTranscripts(a, b transcript, out io.Writer) (int, error) {

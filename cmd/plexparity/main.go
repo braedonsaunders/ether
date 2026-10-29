@@ -30,6 +30,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case len(os.Args) == 2 && os.Args[1] == "inventory":
+		missing := missingRoutes()
+		fmt.Printf("uncovered GET routes: %d\n%s\n", len(missing), inventorySummary())
+		if len(missing) > 0 {
+			os.Exit(1)
+		}
 	case len(os.Args) == 5 && os.Args[1] == "run":
 		if err := runPair(ctx, os.Args[2], os.Args[3], os.Args[4], os.Stdout); err != nil {
 			// Keep report and final status on one stream to avoid Docker multiplex interleaving.
@@ -51,7 +57,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "comparison incomplete; parity is not established")
 		os.Exit(2)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: plexparity seed EMPTY-DIRECTORY | tmdb-fixture LOOPBACK:PORT | compare BASELINE-URL CANDIDATE-URL | run BASELINE-BINARY CANDIDATE-BINARY SEED-DIRECTORY")
+		fmt.Fprintln(os.Stderr, "usage: plexparity inventory | seed EMPTY-DIRECTORY | tmdb-fixture LOOPBACK:PORT | compare BASELINE-URL CANDIDATE-URL | run BASELINE-BINARY CANDIDATE-BINARY SEED-DIRECTORY")
 		os.Exit(2)
 	}
 }
