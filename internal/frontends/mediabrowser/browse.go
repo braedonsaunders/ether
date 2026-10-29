@@ -29,7 +29,7 @@ func (i *instance) userDataDTO(id string, st frontend.WatchStatus) map[string]an
 		data["PlayedPercentage"] = min(100, float64(st.ViewOffset)*100/float64(st.Duration))
 	}
 	if !st.LastViewedAt.IsZero() {
-		data["LastPlayedDate"] = st.LastViewedAt.UTC()
+		data["LastPlayedDate"] = wireTime(st.LastViewedAt)
 	}
 	if st.UserRating > 0 {
 		data["Rating"] = st.UserRating
@@ -83,7 +83,7 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 		m["CommunityRating"] = t.Rating
 	}
 	if !t.Released.IsZero() {
-		m["PremiereDate"] = t.Released.UTC()
+		m["PremiereDate"] = wireTime(t.Released)
 	}
 	if len(t.Genres) > 0 {
 		m["Genres"] = t.Genres

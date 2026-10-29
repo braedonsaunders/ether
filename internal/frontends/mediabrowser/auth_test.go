@@ -37,7 +37,7 @@ func TestEmbyUserCreationDateIsIdentityOwned(t *testing.T) {
 	created := time.Date(2024, 3, 2, 1, 2, 3, 0, time.UTC)
 	i := &instance{protocol: "emby"}
 	got := i.userDTO(httptest.NewRequest("GET", "/Users/Me", nil), &frontend.Viewer{ID: 1, CreatedAt: created})
-	if got["DateCreated"] != created {
+	if got["DateCreated"] != wireTime(created) {
 		t.Fatal(got)
 	}
 }
@@ -82,7 +82,7 @@ func TestSessionCapabilitiesRoundTrip(t *testing.T) {
 	}
 	dto := inst.(*instance).sessionDTO(r, v)
 	capDTO := dto["Capabilities"].(map[string]any)
-	if dto["SupportsRemoteControl"] != true || capDTO["SupportsMediaControl"] != false || capDTO["SupportsPersistentIdentifier"] != false || dto["LastPlaybackCheckIn"] != (time.Time{}) || !strings.Contains(string(capDTO["DeviceProfile"].(json.RawMessage)), "TV") {
+	if dto["SupportsRemoteControl"] != true || capDTO["SupportsMediaControl"] != false || capDTO["SupportsPersistentIdentifier"] != false || dto["LastPlaybackCheckIn"] != wireTime(time.Time{}) || !strings.Contains(string(capDTO["DeviceProfile"].(json.RawMessage)), "TV") {
 		t.Fatal(capDTO)
 	}
 }

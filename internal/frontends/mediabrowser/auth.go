@@ -135,7 +135,7 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 		defer i.embyUserDTO(result)
 	}
 	if i.protocol == "emby" && !v.CreatedAt.IsZero() {
-		result["DateCreated"] = v.CreatedAt.UTC()
+		result["DateCreated"] = wireTime(v.CreatedAt)
 	}
 	if i.host.ViewerCapabilities == nil {
 		return result
@@ -225,10 +225,10 @@ func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]an
 	}
 	now := time.Now().UTC()
 	state := map[string]any{"CanSeek": false, "IsPaused": false, "IsMuted": false, "RepeatMode": "RepeatNone"}
-	session := map[string]any{"Id": sessionID, "UserId": userID, "UserName": v.Username, "ServerId": i.info.ID, "Client": d.Client, "DeviceId": d.ID, "DeviceName": d.DeviceName, "ApplicationVersion": d.Version, "LastActivityDate": now, "RemoteEndPoint": peer, "AdditionalUsers": []any{}, "PlayableMediaTypes": []any{}, "SupportedCommands": []any{}, "SupportsRemoteControl": false, "PlayState": state}
+	session := map[string]any{"Id": sessionID, "UserId": userID, "UserName": v.Username, "ServerId": i.info.ID, "Client": d.Client, "DeviceId": d.ID, "DeviceName": d.DeviceName, "ApplicationVersion": d.Version, "LastActivityDate": wireTime(now), "RemoteEndPoint": peer, "AdditionalUsers": []any{}, "PlayableMediaTypes": []any{}, "SupportedCommands": []any{}, "SupportsRemoteControl": false, "PlayState": state}
 	if i.protocol == "jellyfin" {
 		// This sign-in response precedes any playback check-in.
-		session["LastPlaybackCheckIn"] = time.Time{}
+		session["LastPlaybackCheckIn"] = wireTime(time.Time{})
 		state["PlaybackOrder"] = "Default"
 		session["IsActive"] = true
 		session["HasCustomDeviceName"] = false
@@ -410,7 +410,7 @@ func (i *instance) routes() error {
 				identityError(w, err)
 				return
 			}
-			response := map[string]any{"Code": code, "Secret": secret, "Authenticated": false, "DeviceId": dev.ID, "DeviceName": dev.DeviceName, "AppName": dev.Client, "AppVersion": dev.Version, "DateAdded": time.Now().UTC()}
+			response := map[string]any{"Code": code, "Secret": secret, "Authenticated": false, "DeviceId": dev.ID, "DeviceName": dev.DeviceName, "AppName": dev.Client, "AppVersion": dev.Version, "DateAdded": wireTime(time.Now())}
 			if i.host.ViewerPortalURL != nil {
 				if portal, err := i.host.ViewerPortalURL(r.Context(), r); err == nil && portal != "" {
 					response["VerificationUrl"] = portal
@@ -429,7 +429,7 @@ func (i *instance) routes() error {
 				identityError(w, err)
 				return
 			}
-			jsonReply(w, map[string]any{"Authenticated": details.Approved, "Secret": details.Secret, "Code": details.Code, "DeviceId": details.Device.ID, "DeviceName": details.Device.DeviceName, "AppName": details.Device.Client, "AppVersion": details.Device.Version, "DateAdded": details.CreatedAt})
+			jsonReply(w, map[string]any{"Authenticated": details.Approved, "Secret": details.Secret, "Code": details.Code, "DeviceId": details.Device.ID, "DeviceName": details.Device.DeviceName, "AppName": details.Device.Client, "AppVersion": details.Device.Version, "DateAdded": wireTime(details.CreatedAt)})
 		}},
 		{"POST", "/QuickConnect/Authorize", func(w http.ResponseWriter, r *http.Request) {
 			v, _, err := i.viewer(r)

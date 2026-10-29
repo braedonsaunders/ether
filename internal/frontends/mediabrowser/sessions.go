@@ -49,14 +49,14 @@ func (i *instance) brokerSessionDTO(viewer *frontend.Viewer, session frontend.Se
 	item := map[string]any{
 		"Id": session.ID, "UserId": userID, "ServerId": i.info.ID, "Client": session.Device.Client,
 		"DeviceId": session.Device.ID, "DeviceName": session.Device.DeviceName, "ApplicationVersion": session.Device.Version,
-		"LastActivityDate": session.StartedAt.UTC(), "PlayableMediaTypes": []string{}, "SupportedCommands": []string{},
+		"LastActivityDate": wireTime(session.StartedAt), "PlayableMediaTypes": []string{}, "SupportedCommands": []string{},
 		"SupportsRemoteControl": false,
 	}
 	if session.ViewerID == viewer.ID {
 		item["UserName"] = viewer.Username
 	}
 	if i.protocol == "jellyfin" {
-		item["LastPlaybackCheckIn"] = time.Time{}
+		item["LastPlaybackCheckIn"] = wireTime(time.Time{})
 		item["IsActive"] = true
 		item["SupportsMediaControl"] = false
 		item["HasCustomDeviceName"] = false
