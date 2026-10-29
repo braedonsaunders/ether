@@ -32,10 +32,11 @@ func (s testScopedMedia) ServeMediaAccess(w http.ResponseWriter, r *http.Request
 
 func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
+	revoked := false
 	identity := deviceTestIdentity{resolveDevice: func(_ context.Context, token string, d frontend.Device) (*frontend.Viewer, time.Time, error) {
 		switch token {
 		case "tv-grant":
-			if d.ID == "tv" {
+			if d.ID == "tv" && !revoked {
 				return viewer, time.Now().Add(time.Minute), nil
 			}
 		case "phone-grant":
@@ -78,6 +79,16 @@ func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	if served != 1 {
 		t.Fatalf("served %d requests", served)
 	}
+	revoked = true
+	request := httptest.NewRequest("GET", "/api/v2/stream/session/scoped/file", nil)
+	request.Header.Set("Authorization", "Bearer tv-grant")
+	request.Header.Set("X-Silo-Device-Id", "tv")
+	revokedResponse := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(revokedResponse, request)
+	if revokedResponse.Code != http.StatusUnauthorized || served != 1 {
+		t.Fatalf("revoked after open: status %d, served %d", revokedResponse.Code, served)
+	}
+	revoked = false
 	inst, err = (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, Sessions: testScopedMedia{sessions}})
 	if err != nil {
 		t.Fatal(err)
