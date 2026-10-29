@@ -82,7 +82,14 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	if i.protocol == "jellyfin" {
 		policy["PasswordResetProviderId"] = "Ether"
 	}
-	result := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": policy, "Configuration": map[string]any{}}
+	configuration := map[string]any{"RememberAudioSelections": true, "RememberSubtitleSelections": true}
+	if len(v.AudioLanguages) > 0 {
+		configuration["AudioLanguagePreference"] = v.AudioLanguages[0]
+	}
+	if len(v.SubtitleLanguages) > 0 {
+		configuration["SubtitleLanguagePreference"] = v.SubtitleLanguages[0]
+	}
+	result := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": policy, "Configuration": configuration}
 	if i.host.ViewerCapabilities == nil {
 		return result
 	}
