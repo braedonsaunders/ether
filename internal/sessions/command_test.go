@@ -26,6 +26,14 @@ func TestCommandAuthorizationAndTargetedDelivery(t *testing.T) {
 	}
 	defer b.Close(context.Background())
 	viewer, device := &core.Viewer{ID: 2}, core.Device{ID: "phone"}
+	deviceSocket, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", Device: device})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDevice, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", Device: core.Device{ID: "other-phone"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	p, err := b.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
 	if err != nil {
 		t.Fatal(err)
@@ -34,15 +42,25 @@ func TestCommandAuthorizationAndTargetedDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", SessionID: s.ID})
+	for _, ch := range []<-chan frontend.Event{deviceSocket, otherDevice} {
+		select {
+		case e := <-ch:
+			if e.Type != "SessionStarted" {
+				t.Fatalf("initial event %+v", e)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing initial lifecycle event")
+		}
+	}
+	target, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", Device: device, SessionID: s.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", SessionID: "other"})
+	other, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", Device: device, SessionID: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrongSurface, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "plex", SessionID: s.ID})
+	wrongSurface, err := events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "plex", Device: device, SessionID: s.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +78,15 @@ func TestCommandAuthorizationAndTargetedDelivery(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("missing target command")
 	}
-	for _, ch := range []<-chan frontend.Event{other, wrongSurface} {
+	select {
+	case got := <-deviceSocket:
+		if got.Command == nil || got.Command.Kind != frontend.CommandSeek {
+			t.Fatalf("device command %+v", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pre-playback socket missed command")
+	}
+	for _, ch := range []<-chan frontend.Event{other, wrongSurface, otherDevice} {
 		select {
 		case got := <-ch:
 			t.Fatalf("command leaked %+v", got)

@@ -443,6 +443,7 @@ type Event struct {
 	OriginClientID  string
 	Command         *Command
 	TargetProtocol  Protocol
+	TargetDeviceID  string
 	Session         *Session
 	Timeline        *Timeline
 }
@@ -465,6 +466,9 @@ type EventScope struct {
 	Protocol Protocol
 	// SessionID selects the authenticated client session for targeted commands.
 	SessionID string
+	// Device binds a socket before a playback session exists and remains valid
+	// when this authenticated device's current session changes.
+	Device core.Device
 }
 
 // Sessions owns playback across protocols. Open revalidates the broker-owned

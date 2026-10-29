@@ -716,7 +716,7 @@ func (b *Broker) StopPlayback(ctx context.Context, playID string) bool {
 		unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
 		if err == nil {
 			cmd := frontend.Command{Kind: frontend.CommandStop}
-			b.publish(ctx, frontend.Event{Type: "SessionCommand", ViewerID: s.public.ViewerID, SessionID: s.public.ID, TargetProtocol: s.public.Protocol, Command: &cmd})
+			b.publish(ctx, frontend.Event{Type: "SessionCommand", ViewerID: s.public.ViewerID, SessionID: s.public.ID, TargetProtocol: s.public.Protocol, TargetDeviceID: s.public.Device.ID, Command: &cmd})
 			_ = b.stopLocked(ctx, s)
 			unlock()
 		}

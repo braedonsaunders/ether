@@ -95,7 +95,7 @@ func TestClusterBrokerListsStopsAndOrdersReportsAcrossNodes(t *testing.T) {
 	if err := b.Stop(ctx, frontend.SessionAccess{Viewer: &core.Viewer{ID: 3}, Device: device, Protocol: "jellyfin"}, s.ID); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("foreign stop: %v", err)
 	}
-	target, err := a.deps.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", SessionID: s.ID})
+	target, err := a.deps.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: "jellyfin", Device: device, SessionID: s.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
