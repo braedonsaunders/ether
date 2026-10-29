@@ -52,7 +52,7 @@ func TestSegmentTimestampNormalizationIsScoped(t *testing.T) {
 }
 
 func TestBinaryPayloadIsNeverNormalized(t *testing.T) {
-	for _, path := range []string{"image:/thumb", "playback:segment:transcode"} {
+	for _, path := range []string{"image:/thumb", "playback:segment:transcode", "subtitle:stream", "subtitle:transcode"} {
 		a := capture{path: path, response: protocol.Response{Body: []byte("X-Ether-Stream-Token=one")}}
 		b := capture{path: path, response: protocol.Response{Body: []byte("X-Ether-Stream-Token=two")}}
 		if bytes.Equal(normalizeCaptureBody(a), normalizeCaptureBody(b)) {
