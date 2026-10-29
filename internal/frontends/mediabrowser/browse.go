@@ -253,6 +253,13 @@ func (i *instance) browseRoutes() error {
 			return
 		}
 		dto := i.itemDTO(d.Title, d.UserData)
+		if len(d.Versions) > 0 {
+			sources := make([]any, 0, len(d.Versions))
+			for _, version := range d.Versions {
+				sources = append(sources, map[string]any{"Id": version.ID, "Name": version.Name, "Container": version.Media.Container, "RunTimeTicks": version.Media.Duration.Nanoseconds() / 100, "Bitrate": version.Media.BitrateKbps * 1000, "Size": version.Media.Size, "MediaStreams": mediaStreams(version.Media.Streams)})
+			}
+			dto["MediaSources"] = sources
+		}
 		if tags := i.imageTags(r, d, token); len(tags) > 0 {
 			dto["ImageTags"] = tags
 		}
