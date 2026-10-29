@@ -35,9 +35,17 @@ func boolValue(p *bool, def bool) bool {
 
 func streamError(w http.ResponseWriter, err error) {
 	var capacity *frontend.TranscodeCapacityError
-	if errors.Is(err, frontend.ErrTranscodeCapacity) && errors.As(err, &capacity) && capacity.RetryAfter > 0 {
-		seconds := capacity.RetryAfter / time.Second
-		if capacity.RetryAfter%time.Second != 0 {
+	var busy *frontend.SessionBusyError
+	var retryAfter time.Duration
+	if errors.Is(err, frontend.ErrTranscodeCapacity) && errors.As(err, &capacity) && capacity != nil {
+		retryAfter = capacity.RetryAfter
+	}
+	if errors.Is(err, frontend.ErrSessionBusy) && errors.As(err, &busy) && busy != nil {
+		retryAfter = busy.RetryAfter
+	}
+	if retryAfter > 0 {
+		seconds := retryAfter / time.Second
+		if retryAfter%time.Second != 0 {
 			seconds++
 		}
 		w.Header().Set("Retry-After", strconv.FormatInt(int64(seconds), 10))

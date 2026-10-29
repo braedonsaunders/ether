@@ -240,3 +240,37 @@ func TestVersionSelectionDelegatesToBroker(t *testing.T) {
 		t.Fatal(w.Code, version, w.Body.String())
 	}
 }
+
+func TestSessionBusyReturnsRetryAfterOnPlaybackAndStream(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	broker := frontendtest.Sessions{
+		PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+			return frontend.PlayPlan{ID: "plan", Decision: frontend.Decision{Kind: "directplay"}}, nil
+		},
+		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			return frontend.Session{ID: "private-session"}, nil
+		},
+		StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+			return "", &frontend.SessionBusyError{RetryAfter: 1500 * time.Millisecond}
+		},
+		SessionsFunc: func(context.Context, frontend.SessionAccess) ([]frontend.Session, error) {
+			return []frontend.Session{{ID: "private-session", Item: 5, Protocol: "jellyfin", Device: frontend.Device{ID: "tv"}}}, nil
+		},
+	}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: broker, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := ids.RatingKeyGUID(5)
+	for _, tc := range []struct{ method, path, body string }{{"POST", "/Items/" + id + "/PlaybackInfo", `{"IsPlayback":true}`}, {"GET", "/Videos/" + id + "/stream?PlaySessionId=private-session", ""}} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("X-Emby-Token", "account-secret")
+		req.Header.Set("X-Emby-Device-Id", "tv")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, req)
+		if w.Code != 503 || w.Header().Get("Retry-After") != "2" || strings.Contains(w.Body.String(), "account-secret") || strings.Contains(w.Body.String(), "private-session") {
+			t.Fatal(w.Code, w.Header(), w.Body.String())
+		}
+	}
+}
