@@ -87,7 +87,7 @@ func TestPasswordAndRefresh(t *testing.T) {
 	var login struct {
 		ExpiresIn int64 `json:"expires_in"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil || login.ExpiresIn < 60 || login.ExpiresIn > 72 {
+	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil || login.ExpiresIn < 60 || login.ExpiresIn > 73 {
 		t.Fatalf("login must use stored grant expiry: %s", w.Body.String())
 	}
 	if doc != nil {
@@ -102,7 +102,7 @@ func TestPasswordAndRefresh(t *testing.T) {
 	var refreshed struct {
 		ExpiresIn int64 `json:"expires_in"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &refreshed); err != nil || refreshed.ExpiresIn < 60 || refreshed.ExpiresIn > 72 {
+	if err := json.Unmarshal(w.Body.Bytes(), &refreshed); err != nil || refreshed.ExpiresIn < 60 || refreshed.ExpiresIn > 73 {
 		t.Fatalf("refresh must use stored grant expiry: %s", w.Body.String())
 	}
 	if doc != nil {

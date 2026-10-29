@@ -449,7 +449,8 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	state := "available"
-	allowed := i.host.Sessions != nil && i.host.Capabilities != nil
+	_, hasDeviceIdentity := i.host.Identity.(deviceIdentity)
+	allowed := i.host.Sessions != nil && i.host.Capabilities != nil && hasDeviceIdentity
 	if !allowed {
 		state = "not_configured"
 	}
@@ -462,7 +463,8 @@ func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	available := i.host.Sessions != nil && i.host.Events != nil && i.host.Tickets != nil
+	_, hasDeviceIdentity := i.host.Identity.(deviceIdentity)
+	available := i.host.Sessions != nil && i.host.Events != nil && i.host.Tickets != nil && hasDeviceIdentity
 	state, protocol := "not_configured", ""
 	if available {
 		state, protocol = "available", controlProtocol

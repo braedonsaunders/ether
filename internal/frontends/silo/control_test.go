@@ -44,6 +44,23 @@ func (t *controlTestTickets) Consume(_ context.Context, token, purpose string) (
 }
 func (*controlTestTickets) Active(context.Context, frontend.Ticket) (bool, error) { return true, nil }
 
+func TestControlUnavailableWithoutDeviceAuthentication(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	host := frontend.Host{Identity: identity, Sessions: frontendtest.Sessions{}, Tickets: &controlTestTickets{}, Events: eventSource{make(chan frontend.Event)}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/playback/sessions/control/capabilities", nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"available":false`) {
+		t.Fatalf("control requires device authentication: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestPlaybackControlIsSessionBoundAndRelaysCommands(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
 	id := "8c2d329e-71d2-4ea1-9b57-95187baeb0aa"
