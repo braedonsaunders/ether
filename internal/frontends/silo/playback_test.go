@@ -19,6 +19,68 @@ import (
 
 type fileIDs struct{}
 
+func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	identity := deviceTestIdentity{resolveDevice: func(_ context.Context, token string, d frontend.Device) (*frontend.Viewer, time.Time, error) {
+		switch token {
+		case "tv-grant":
+			if d.ID == "tv" {
+				return viewer, time.Now().Add(time.Minute), nil
+			}
+		case "phone-grant":
+			if d.ID == "phone" {
+				return viewer, time.Now().Add(time.Minute), nil
+			}
+		case "expired":
+			return viewer, time.Now().Add(-time.Minute), nil
+		}
+		return nil, time.Time{}, errors.New("revoked or wrong device")
+	}}
+	served := 0
+	sessions := frontendtest.Sessions{SessionsFunc: func(context.Context, frontend.SessionAccess) ([]frontend.Session, error) {
+		return []frontend.Session{{ID: "session", ViewerID: 7, Protocol: "silo", Device: frontend.Device{ID: "tv"}}}, nil
+	}, ServeMediaFunc: func(w http.ResponseWriter, _ *http.Request) { served++; w.WriteHeader(http.StatusOK) }}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		token, device string
+		want          int
+	}{
+		{"tv-grant", "tv", 200},
+		{"phone-grant", "tv", 401},    // Same viewer, forged device header.
+		{"phone-grant", "phone", 404}, // Valid grant, another session's device.
+		{"expired", "tv", 401},
+		{"revoked", "tv", 401},
+		{"tv-grant", "", 401},
+	} {
+		r := httptest.NewRequest("GET", "/api/v2/stream/session/scoped/file", nil)
+		r.Header.Set("Authorization", "Bearer "+tc.token)
+		r.Header.Set("X-Silo-Device-Id", tc.device)
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != tc.want {
+			t.Errorf("token %s device %s: got %d want %d", tc.token, tc.device, w.Code, tc.want)
+		}
+	}
+	if served != 1 {
+		t.Fatalf("served %d requests", served)
+	}
+	inst, err = (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/stream/session/scoped/file", nil)
+	r.Header.Set("Authorization", "Bearer tv-grant")
+	r.Header.Set("X-Silo-Device-Id", "tv")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing device resolver: %d", w.Code)
+	}
+}
+
 func (fileIDs) Compact(context.Context, string, string, string) (int32, error) { return 1, nil }
 func (fileIDs) Resolve(_ context.Context, s, k string, n int32) (string, error) {
 	if s != "silo" || k != "file" || n != 1 {
@@ -66,7 +128,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
 		return frontend.ItemDetail{Versions: []frontend.Version{{ID: "cut", Media: frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", Index: 0}, {Type: "audio", Index: 2}, {Type: "subtitle", Index: 5}}}}}}, nil
 	}}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: experience, Sessions: session, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, viewer), Experience: experience, Sessions: session, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +183,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	wrongDevice.Header.Set("X-Silo-Device-Id", "other")
 	denied := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(denied, wrongDevice)
-	if denied.Code != http.StatusNotFound {
+	if denied.Code != http.StatusUnauthorized {
 		t.Fatalf("cross-device media: %d", denied.Code)
 	}
 

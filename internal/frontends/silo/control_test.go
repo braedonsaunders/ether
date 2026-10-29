@@ -55,12 +55,12 @@ func TestPlaybackControlIsSessionBoundAndRelaysCommands(t *testing.T) {
 		}
 		return []frontend.Session{{ID: id, ViewerID: viewer.ID, Protocol: "silo", Device: frontend.Device{ID: "tv"}}}, nil
 	}}
-	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
+	host := frontend.Host{Identity: testDeviceIdentity(frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
 		if token != "grant" {
 			return nil, errors.New("invalid")
 		}
 		return viewer, nil
-	}}, Sessions: sessions, Tickets: tickets, Events: eventSource{events}}
+	}}, viewer), Sessions: sessions, Tickets: tickets, Events: eventSource{events}}
 	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +84,14 @@ func TestPlaybackControlIsSessionBoundAndRelaysCommands(t *testing.T) {
 	}
 	if w := issue("other"); w.Code != http.StatusNotFound {
 		t.Fatalf("other session ticket: %d", w.Code)
+	}
+	spoof := httptest.NewRequest("POST", "/api/v2/playback/sessions/"+id+"/control/ws-ticket", strings.NewReader(`{"installation_id":"`+inst.(*instance).installationID()+`"}`))
+	spoof.Header.Set("Authorization", "Bearer another-device-grant")
+	spoof.Header.Set("X-Silo-Device-Id", "tv")
+	denied := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(denied, spoof)
+	if denied.Code != http.StatusUnauthorized {
+		t.Fatalf("spoofed device ticket: %d", denied.Code)
 	}
 	ticketResponse := issue(id)
 	if ticketResponse.Code != http.StatusOK || !strings.Contains(ticketResponse.Body.String(), `"protocol":"silo.playback-control.v2"`) {

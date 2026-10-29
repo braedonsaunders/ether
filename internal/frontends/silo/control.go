@@ -39,7 +39,7 @@ func (i *instance) controlSession(ctx context.Context, viewer *frontend.Viewer, 
 }
 
 func (i *instance) controlTicket(w http.ResponseWriter, r *http.Request) {
-	v, credential, err := i.viewer(r)
+	v, credential, err := i.deviceViewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return

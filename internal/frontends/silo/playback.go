@@ -499,7 +499,7 @@ func (i *instance) playbackRoutes() error {
 				http.Error(w, "Unavailable", 503)
 				return
 			}
-			viewer, _, err := i.viewer(r)
+			viewer, _, err := i.deviceViewer(r)
 			if err != nil || viewer == nil {
 				http.Error(w, "Unauthorized", 401)
 				return

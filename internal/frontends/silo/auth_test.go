@@ -2,6 +2,7 @@ package silo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http"
@@ -10,10 +11,29 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 )
+
+type deviceTestIdentity struct {
+	frontendtest.Identity
+	resolveDevice func(context.Context, string, frontend.Device) (*frontend.Viewer, time.Time, error)
+}
+
+func (i deviceTestIdentity) ResolveDevice(ctx context.Context, token string, d frontend.Device) (*frontend.Viewer, time.Time, error) {
+	return i.resolveDevice(ctx, token, d)
+}
+
+func testDeviceIdentity(i frontendtest.Identity, v *frontend.Viewer) deviceTestIdentity {
+	return deviceTestIdentity{Identity: i, resolveDevice: func(_ context.Context, token string, d frontend.Device) (*frontend.Viewer, time.Time, error) {
+		if d.ID != "tv" || (token != "access" && token != "next" && token != "account-secret" && token != "grant") {
+			return nil, time.Time{}, errors.New("invalid grant binding")
+		}
+		return v, time.Now().Add(73 * time.Second), nil
+	}}
+}
 
 func TestPasswordAndRefresh(t *testing.T) {
 	v := &frontend.Viewer{ID: 7, Username: "alice"}
@@ -40,7 +60,7 @@ func TestPasswordAndRefresh(t *testing.T) {
 		}
 		return "next", "next-refresh", nil
 	}, RevokeFunc: func(_ context.Context, token string) error { revoked = token; return nil }}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.0.2.1"), true }})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, v), ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.0.2.1"), true }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +84,12 @@ func TestPasswordAndRefresh(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"refresh_token":"refresh"`) {
 		t.Fatalf("login: %d %s", w.Code, w.Body.String())
 	}
+	var login struct {
+		ExpiresIn int64 `json:"expires_in"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil || login.ExpiresIn < 60 || login.ExpiresIn > 72 {
+		t.Fatalf("login must use stored grant expiry: %s", w.Body.String())
+	}
 	if doc != nil {
 		if err := doc.Validate("POST", "/api/v2/auth/login", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
 			t.Errorf("login spec: %v", err)
@@ -72,6 +98,12 @@ func TestPasswordAndRefresh(t *testing.T) {
 	w = call("/api/v2/auth/refresh", `{"refresh_token":"refresh"}`, "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"access_token":"next"`) {
 		t.Fatalf("refresh: %d %s", w.Code, w.Body.String())
+	}
+	var refreshed struct {
+		ExpiresIn int64 `json:"expires_in"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &refreshed); err != nil || refreshed.ExpiresIn < 60 || refreshed.ExpiresIn > 72 {
+		t.Fatalf("refresh must use stored grant expiry: %s", w.Body.String())
 	}
 	if doc != nil {
 		if err := doc.Validate("POST", "/api/v2/auth/refresh", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
@@ -163,7 +195,7 @@ func TestDevicePairing(t *testing.T) {
 			return "refresh", nil
 		},
 	}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, ViewerPortalURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/ether/me", nil }})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, &frontend.Viewer{ID: 7, Username: "alice"}), ViewerPortalURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/ether/me", nil }})
 	if err != nil {
 		t.Fatal(err)
 	}

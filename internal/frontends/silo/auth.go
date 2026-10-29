@@ -34,6 +34,40 @@ func device(r *http.Request) frontend.Device {
 	client := r.Header.Get("X-Silo-Client")
 	return frontend.Device{ID: r.Header.Get("X-Silo-Device-Id"), Client: client, Product: client, Version: r.Header.Get("X-Silo-Client-Version"), DeviceName: r.Header.Get("X-Silo-Device-Name"), Platform: r.Header.Get("X-Silo-Device-Platform")}
 }
+
+// deviceIdentity authenticates the stored grant binding without updating grant
+// activity. A device header alone is never proof of possession.
+type deviceIdentity interface {
+	ResolveDevice(context.Context, string, frontend.Device) (*frontend.Viewer, time.Time, error)
+}
+
+func (i *instance) resolveDevice(ctx context.Context, token string, d frontend.Device) (*frontend.Viewer, int64, error) {
+	identity, ok := i.host.Identity.(deviceIdentity)
+	if !ok || d.ID == "" {
+		return nil, 0, errors.New("device authentication unavailable")
+	}
+	v, expiry, err := identity.ResolveDevice(ctx, token, d)
+	seconds := int64(time.Until(expiry) / time.Second)
+	if err != nil || v == nil || seconds <= 0 {
+		return nil, 0, errors.New("invalid device grant")
+	}
+	return v, seconds, nil
+}
+
+func (i *instance) deviceViewer(r *http.Request) (*frontend.Viewer, string, error) {
+	a := strings.Fields(r.Header.Get("Authorization"))
+	if len(a) != 2 || !strings.EqualFold(a[0], "Bearer") || a[1] == "" {
+		return nil, "", errors.New("missing credential")
+	}
+	v, _, err := i.resolveDevice(r.Context(), a[1], device(r))
+	if err != nil {
+		return nil, "", err
+	}
+	if profile := r.Header.Get("X-Profile-Id"); profile != "" && profile != strconv.FormatInt(v.ID, 10) {
+		return nil, "", errors.New("profile mismatch")
+	}
+	return v, a[1], nil
+}
 func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 	a := strings.Fields(r.Header.Get("Authorization"))
 	if len(a) != 2 || !strings.EqualFold(a[0], "Bearer") || a[1] == "" {
@@ -76,8 +110,9 @@ func (i *instance) login(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	v, err := i.host.Identity.Resolve(r.Context(), token)
+	v, ttl, err := i.resolveDevice(r.Context(), token, device(r))
 	if err != nil || v == nil {
+		_ = i.host.Identity.Revoke(r.Context(), token)
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
@@ -87,7 +122,7 @@ func (i *instance) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	reply(w, 200, map[string]any{"access_token": token, "refresh_token": refresh, "expires_in": 3600, "user": user(v)})
+	reply(w, 200, map[string]any{"access_token": token, "refresh_token": refresh, "expires_in": ttl, "user": user(v)})
 }
 
 func (*instance) authProviders(w http.ResponseWriter, _ *http.Request) {
@@ -140,7 +175,13 @@ func (i *instance) refresh(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	reply(w, 200, map[string]any{"access_token": access, "refresh_token": refresh, "expires_in": 3600})
+	_, ttl, err := i.resolveDevice(r.Context(), access, device(r))
+	if err != nil {
+		_ = i.host.Identity.Revoke(r.Context(), access)
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	reply(w, 200, map[string]any{"access_token": access, "refresh_token": refresh, "expires_in": ttl})
 }
 func (i *instance) logout(w http.ResponseWriter, r *http.Request) {
 	v, token, err := i.viewer(r)
@@ -212,8 +253,9 @@ func (i *instance) devicePoll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
-	v, err := i.host.Identity.Resolve(ctx, access)
+	v, ttl, err := i.resolveDevice(ctx, access, details.Device)
 	if err != nil || v == nil {
+		_ = i.host.Identity.Revoke(ctx, access)
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
@@ -223,5 +265,5 @@ func (i *instance) devicePoll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	reply(w, 200, map[string]any{"status": "approved", "poll_after": 5, "profile_id": "", "profile_token": "", "temporary": false, "tokens": map[string]any{"access_token": access, "refresh_token": refresh, "expires_in": 3600, "user": user(v)}})
+	reply(w, 200, map[string]any{"status": "approved", "poll_after": 5, "profile_id": "", "profile_token": "", "temporary": false, "tokens": map[string]any{"access_token": access, "refresh_token": refresh, "expires_in": ttl, "user": user(v)}})
 }
