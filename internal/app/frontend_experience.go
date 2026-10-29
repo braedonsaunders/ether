@@ -275,7 +275,8 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 				return frontend.ItemDetail{}, err
 			}
 			for _, version := range versions {
-				result.Versions = append(result.Versions, frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info})
+				added := versionAddedAt(title, version.Release.PubDate)
+				result.Versions = append(result.Versions, frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info, AddedAt: added})
 			}
 		}
 		if a.extras != nil {
@@ -454,4 +455,19 @@ func (s *surfaceExperience) ReportRowInteraction(ctx context.Context, i frontend
 		return experience.ErrReceipt
 	}
 	return s.receipts.Report(ctx, i)
+}
+
+// versionAddedAt prefers the actual release publication time. When absent,
+// use Plex's title AddedAt rule: UpdatedAt, then its original release date.
+func versionAddedAt(title *core.Title, published time.Time) time.Time {
+	if !published.IsZero() {
+		return published
+	}
+	if title == nil {
+		return time.Time{}
+	}
+	if !title.UpdatedAt.IsZero() {
+		return title.UpdatedAt
+	}
+	return title.Released
 }

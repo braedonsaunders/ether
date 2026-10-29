@@ -223,7 +223,10 @@ const (
 
 type Version struct {
 	ID, Name string
-	Media    core.MediaInfo
+	// AddedAt is release publication time when known, otherwise the title date
+	// used for Plex AddedAt (updated time, then original release time).
+	AddedAt time.Time
+	Media   core.MediaInfo
 }
 type Marker struct {
 	Type       string
