@@ -379,10 +379,15 @@ func scrub(v any) any {
 			x[i] = scrub(val)
 		}
 	case string:
+		if isoDate.MatchString(x) {
+			return "[REDACTED]"
+		}
 		return string(redactText(conform.Redact([]byte(x))))
 	}
 	return v
 }
+
+var isoDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(?:T|$)`)
 
 var secretQuery = regexp.MustCompile(`(?i)([?&](?:api_key|access_token|token|authorization)=)[^&\s"']+`)
 

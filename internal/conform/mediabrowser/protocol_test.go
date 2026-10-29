@@ -32,7 +32,7 @@ func TestLoadFetchAlignAndRedact(t *testing.T) {
 				t.Error("missing auth")
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"Items": []any{map[string]any{"Id": id, "ProviderIds": map[string]string{"Tmdb": "42"}}}, "AccessToken": "secret", "ServerId": "server", "Path": "/private/file"})
+			json.NewEncoder(w).Encode(map[string]any{"Items": []any{map[string]any{"Id": id, "ProviderIds": map[string]string{"Tmdb": "42"}}}, "AccessToken": "secret", "ServerId": "server", "Path": "/private/file", "LastPlaybackCheckIn": "2026-01-02T03:04:05Z"})
 		}))
 	}
 	ref := serve("reference")
@@ -53,7 +53,7 @@ func TestLoadFetchAlignAndRedact(t *testing.T) {
 		t.Fatal(err)
 	}
 	redacted := string(p.Redact(resp).Body)
-	for _, secret := range []string{"secret", "/private/file", "server"} {
+	for _, secret := range []string{"secret", "/private/file", "server", "2026-01-02"} {
 		if strings.Contains(redacted, secret) {
 			t.Fatalf("not redacted: %s", redacted)
 		}
