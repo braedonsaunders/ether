@@ -77,6 +77,10 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	batch, err := service.IssueBatch(ctx, frontend.ImageBatchRequest{Credential: credential, Device: core.Device{ID: "tv"}, Items: []core.RatingKey{title.Key}})
+	if err != nil || len(batch) != 1 || len(batch[0].Images) != 1 {
+		t.Fatalf("visible batch: %+v %v", batch, err)
+	}
 	viewer.MaxContentRating = "G"
 	if err := a.users.UpdateUser(ctx, *viewer); err != nil {
 		t.Fatal(err)
@@ -88,6 +92,10 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	}
 	if _, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: title.Key, Image: detail.Images[0]}); err == nil {
 		t.Fatal("issued artwork for a hidden title")
+	}
+	batch, err = service.IssueBatch(ctx, frontend.ImageBatchRequest{Credential: credential, Device: core.Device{ID: "tv"}, Items: []core.RatingKey{title.Key}})
+	if err != nil || len(batch) != 0 {
+		t.Fatalf("hidden title exposed in batch: %+v %v", batch, err)
 	}
 }
 
