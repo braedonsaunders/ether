@@ -195,6 +195,7 @@ type SearchPage struct {
 	TotalExact   bool
 	Continuation Continuation
 }
+
 // Image identifies an image authorized for an item. Path is an opaque,
 // server-owned source reference: callers must neither interpret it as a URL nor
 // construct one themselves. Tag changes when the selected artwork changes.
@@ -211,6 +212,7 @@ const (
 	ImagePerson   = "person"
 	ImageChannel  = "channel"
 )
+
 type Version struct {
 	ID, Name string
 	Media    core.MediaInfo
@@ -238,7 +240,8 @@ type ItemDetail struct {
 	UserData   core.WatchStatus
 	Tracks     []core.StreamInfo
 	Images     []Image
-	// ImagesAuthoritative is true only when Images is the complete currently authorized artwork list.
+	// ImagesAuthoritative reports whether Images describes the currently selected
+	// authorized artwork. Background discovery may add alternatives later.
 	ImagesAuthoritative bool
 	Versions            []Version
 	Markers             []Marker

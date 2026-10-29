@@ -358,7 +358,60 @@ func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) 
 }
 
 func (s *surfaceExperience) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-	return s.Service.Rows(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)), req)
+	rows, err := s.Service.Rows(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)), req)
+	if err == nil {
+		for _, row := range rows {
+			s.warmArtwork(row.Items, req.Device)
+			for _, entry := range row.Entries {
+				if entry.Title != nil {
+					s.warmArtwork([]core.Title{*entry.Title}, req.Device)
+				}
+			}
+		}
+	}
+	return rows, err
+}
+
+func (s *surfaceExperience) warmArtwork(items []core.Title, device core.Device) {
+	warmer, ok := s.artwork.(interface{ Warm(core.Title, core.Device) })
+	if !ok {
+		return
+	}
+	for _, item := range items {
+		warmer.Warm(item, device)
+	}
+}
+
+func (s *surfaceExperience) Children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, query frontend.ItemQuery) (core.Page, error) {
+	page, err := s.Service.Children(ctx, viewer, device, key, query)
+	if err == nil {
+		s.warmArtwork(page.Items, device)
+	}
+	return page, err
+}
+
+func (s *surfaceExperience) LibraryItems(ctx context.Context, viewer *core.Viewer, device core.Device, viewID string, query frontend.ItemQuery) (core.Page, error) {
+	page, err := s.Service.LibraryItems(ctx, viewer, device, viewID, query)
+	if err == nil {
+		s.warmArtwork(page.Items, device)
+	}
+	return page, err
+}
+
+func (s *surfaceExperience) Search(ctx context.Context, viewer *core.Viewer, device core.Device, query string, options frontend.ItemQuery) (frontend.SearchPage, error) {
+	page, err := s.Service.Search(ctx, viewer, device, query, options)
+	if err == nil {
+		s.warmArtwork(page.Page.Items, device)
+	}
+	return page, err
+}
+
+func (s *surfaceExperience) Similar(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, query frontend.ItemQuery) (frontend.SearchPage, error) {
+	page, err := s.Service.Similar(ctx, viewer, device, key, query)
+	if err == nil {
+		s.warmArtwork(page.Page.Items, device)
+	}
+	return page, err
 }
 func (s *surfaceExperience) ReportRowInteraction(ctx context.Context, i frontend.RowInteraction) error {
 	if i.Protocol != s.protocol {

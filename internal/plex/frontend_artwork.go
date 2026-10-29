@@ -23,8 +23,8 @@ import (
 )
 
 // FrontendArtwork adapts the existing Plex artwork selection and rendering
-// paths for other surfaces. Its list remains non-authoritative until all
-// supported artwork sources have been enumerated.
+// paths for other surfaces. Title selections use the locally mirrored data
+// on a cold cache; alternate variants are filled in the background.
 type FrontendArtwork struct {
 	Server *Server
 	// Variants must be cache-only; it may schedule a bounded background fill.
@@ -132,7 +132,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		}
 		add(item.kind, item.element+"\x00"+path+"\x00"+collectionVersion, frontendArtworkEntry{element: item.element})
 	}
-	complete := false
+	complete := title != nil
 	if title != nil {
 		if artwork.ValidPath(title.StillPath) {
 			add(frontend.ImageStill, "still\x00"+title.StillPath, frontendArtworkEntry{remotePath: title.StillPath})
@@ -140,7 +140,6 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		if a.Variants != nil {
 			variants, ready := a.Variants(title, req.Device.Language)
 			if ready && variants != nil {
-				complete = true
 				for _, group := range []struct {
 					kind  string
 					files []tmdb.ImageFile
@@ -166,12 +165,14 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 			}
 		}
 	}
-	if complete && s.d.Discovery != nil && s.d.Discovery.Overlays != nil {
-		if _, err := s.d.Discovery.Overlays.Settings(ctx); err != nil {
-			complete = false
-		}
-	}
 	return entries, complete, nil
+}
+
+// Warm schedules the cache-only variant source for a visible row or grid item.
+func (a FrontendArtwork) Warm(title core.Title, device core.Device) {
+	if a.Variants != nil {
+		_, _ = a.Variants(&title, device.Language)
+	}
 }
 
 func (a FrontendArtwork) List(ctx context.Context, req frontend.ArtworkRequest) ([]frontend.Image, bool, error) {

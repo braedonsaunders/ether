@@ -19,7 +19,7 @@ func TestFrontendArtworkUsesPlexSelectionAndRechecksVisibility(t *testing.T) {
 	source := FrontendArtwork{Server: f.srv}
 	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: fightClub.Key}
 	images, complete, err := source.List(context.Background(), req)
-	if err != nil || complete {
+	if err != nil || !complete {
 		t.Fatalf("list: complete=%v err=%v", complete, err)
 	}
 	var poster frontend.Image
@@ -59,6 +59,43 @@ func TestFrontendArtworkUsesPlexSelectionAndRechecksVisibility(t *testing.T) {
 	f.catalog.mu.Unlock()
 	if _, _, err := source.Read(context.Background(), req, poster, frontend.ArtworkTransform{}); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("stale reference: %v", err)
+	}
+}
+
+func TestColdArtworkSelectionIsSharedAcrossSurfaces(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	var scheduled int
+	source := FrontendArtwork{Server: f.srv, Variants: func(*core.Title, string) (*tmdb.Images, bool) { scheduled++; return nil, false }}
+	var chosen frontend.Image
+	for _, protocol := range []string{"jellyfin", "emby", "silo"} {
+		req := frontend.ArtworkRequest{Viewer: &ownerUser, Device: core.Device{ID: protocol, Language: "en"}, Item: fightClub.Key}
+		images, complete, err := source.List(context.Background(), req)
+		if err != nil || !complete {
+			t.Fatalf("%s cold list: %v", protocol, err)
+		}
+		var poster frontend.Image
+		for _, img := range images {
+			if img.Kind == frontend.ImagePoster {
+				poster = img
+				break
+			}
+		}
+		if poster.Path == "" {
+			t.Fatalf("%s cold poster missing", protocol)
+		}
+		if chosen.Path != "" && chosen != poster {
+			t.Fatalf("%s selected a different poster", protocol)
+		}
+		chosen = poster
+		data, _, err := source.Read(context.Background(), req, poster, frontend.ArtworkTransform{Width: 300})
+		plex := f.get(t, "/library/metadata/"+fightClub.Key.String()+"/poster?width=300")
+		if err != nil || !bytes.Equal(data, plex.Body.Bytes()) {
+			t.Fatalf("%s differs from Plex: %v", protocol, err)
+		}
+	}
+	if scheduled == 0 {
+		t.Fatal("cold variants were not scheduled")
 	}
 }
 

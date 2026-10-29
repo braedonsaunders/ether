@@ -23,8 +23,9 @@ type ArtworkTransform struct {
 }
 
 // Artwork is the host-side source of authorized descriptors and their bytes.
-// An implementation reports complete only when all supported sources have been
-// enumerated. It must recheck visibility and descriptor membership on Read;
+// An implementation reports complete when its currently selected artwork is
+// authoritative, including on a cold cache. Alternatives may arrive later.
+// It must recheck visibility and descriptor membership on Read;
 // the descriptor is a reference, not an authorization credential.
 type Artwork interface {
 	List(context.Context, ArtworkRequest) (images []Image, complete bool, err error)
