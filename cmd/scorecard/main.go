@@ -137,6 +137,13 @@ func run(c config) ([]result, error) {
 	return out, nil
 }
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "inventory" {
+		if err := inventory(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "serve" {
 		if err := serve(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)

@@ -79,3 +79,11 @@ ID is `8:jellyfinX`.
 messages and fixed error categories from the in-memory log ring. It omits raw
 attributes, credentials, media paths and arbitrary error text. Events are
 process-wide; isolate a request in time before using them as evidence.
+
+For a route-level feature inventory, run `scorecard inventory -protocol
+jellyfin -spec PATH` (or `emby`). The command verifies the input against the
+repository's pinned OpenAPI SHA-256, mounts the protocol router with a fake
+identity, and reports every spec operation with exact method/template matching.
+A missing registration is a review candidate: alternate routes, wildcard
+handlers, licensing and feature applicability can change the conclusion. A
+registered route does not establish complete behavior.
