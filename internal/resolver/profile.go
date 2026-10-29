@@ -142,6 +142,9 @@ func downloadProfile(prof core.QualityProfile, caps core.ClientCaps) core.Qualit
 }
 
 func ruleMatches(rule config.QualityRule, caps core.ClientCaps, user *core.User) bool {
+	if rule.Protocol != "" && !strings.EqualFold(string(rule.Protocol), string(caps.Protocol)) {
+		return false
+	}
 	if rule.Product != "" && !strings.Contains(strings.ToLower(caps.Product), strings.ToLower(rule.Product)) {
 		return false
 	}
@@ -155,5 +158,5 @@ func ruleMatches(rule config.QualityRule, caps core.ClientCaps, user *core.User)
 	}
 	// A rule with no matchers at all would match everything; require
 	// at least one matcher to avoid surprises from empty config rows.
-	return rule.Product != "" || rule.Platform != "" || rule.UserID != 0
+	return rule.Protocol != "" || rule.Product != "" || rule.Platform != "" || rule.UserID != 0
 }

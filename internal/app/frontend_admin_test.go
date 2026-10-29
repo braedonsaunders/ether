@@ -1,0 +1,64 @@
+package app
+
+import (
+	"context"
+	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"strings"
+	"testing"
+)
+
+func TestFrontendControl(t *testing.T) {
+	ctx := context.Background()
+	c, err := config.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := 0
+	r := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	if err := r.Register(listenerFrontend{"127.0.0.1:0", &closed}); err != nil {
+		t.Fatal(err)
+	}
+	f := newFrontendControl(r, c)
+	c.Subscribe(func(c config.Config) { f.Reconcile(ctx, c) })
+	settings := frontend.Settings{"port": float64(8090), "serverName": "Ether"}
+	if err := f.PutSettings(ctx, "test", settings); err != nil {
+		t.Fatal(err)
+	}
+	settings["serverName"] = "changed"
+	got, err := f.Settings(ctx, "test")
+	if err != nil || got["serverName"] != "Ether" {
+		t.Fatal(got, err)
+	}
+	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(99999)}); err == nil {
+		t.Fatal("invalid port accepted")
+	}
+	if err := f.Toggle(ctx, "test", true); err != nil {
+		t.Fatal(err)
+	}
+	list, err := f.List(ctx)
+	if err != nil || len(list) != 1 || !list[0].Enabled || len(list[0].Status.Addresses) != 1 {
+		t.Fatal(list, err)
+	}
+	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(8091), "serverName": "Ether"}); err != nil || closed != 1 {
+		t.Fatal(err, closed)
+	}
+	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(8091), "serverName": "Renamed"}); err != nil || closed != 1 {
+		t.Fatal(err, closed)
+	}
+	if err := f.Toggle(ctx, "test", false); err != nil || closed != 2 {
+		t.Fatal(err, closed)
+	}
+	if err := f.Toggle(ctx, "missing", true); err == nil {
+		t.Fatal("unknown frontend accepted")
+	}
+}
+
+func TestFrontendPortIsNodeLocal(t *testing.T) {
+	c := config.Config{Frontends: map[string]config.Frontend{"silo": {Enabled: true}}, FrontendPorts: map[string]int{"silo": 8090}}
+	shared := string(config.SharedJSON(c))
+	local := string(config.LocalJSON(c))
+	if strings.Contains(shared, "frontendPorts") || !strings.Contains(shared, `"frontends"`) || !strings.Contains(local, `"frontendPorts"`) || strings.Contains(local, `"frontends"`) {
+		t.Fatal(shared, local)
+	}
+}

@@ -68,6 +68,22 @@ type ItemQuery struct {
 	Sort          core.SortOrder
 	Desc          bool
 }
+
+// Continuation distinguishes a known next page from exhaustion and a
+// truncated source that cannot determine whether more matches exist.
+type Continuation string
+
+const (
+	ContinuationMore      Continuation = "more"
+	ContinuationExhausted Continuation = "exhausted"
+	ContinuationUnknown   Continuation = "unknown"
+)
+
+type SearchPage struct {
+	Page         core.Page
+	TotalExact   bool
+	Continuation Continuation
+}
 type Image struct{ Kind, Path, Tag string }
 type Version struct {
 	ID, Name string
@@ -106,7 +122,7 @@ type Experience interface {
 	Rows(context.Context, RowRequest) ([]Row, error)
 	Item(context.Context, ItemRequest) (ItemDetail, error)
 	Children(context.Context, *core.Viewer, core.Device, core.RatingKey, ItemQuery) (core.Page, error)
-	Search(context.Context, *core.Viewer, core.Device, string, ItemQuery) (core.Page, error)
+	Search(context.Context, *core.Viewer, core.Device, string, ItemQuery) (SearchPage, error)
 	UserData(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 }
 

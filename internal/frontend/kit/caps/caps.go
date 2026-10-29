@@ -23,6 +23,7 @@ type DeviceProfile struct {
 
 // DeviceInfo is the neutral subset of a Silo or other client's declaration.
 type DeviceInfo struct {
+	Protocol                                                 core.Protocol
 	Product, Platform, Version, Device, DeviceName, ClientID string
 	VideoCodecs, AudioCodecs, Containers                     []string
 	MaxHeight, MaxBitrateKbps                                int
@@ -55,7 +56,7 @@ func add(dst []string, value string) []string {
 
 // Build merges declarations, then applies learning followed by owner rules.
 func (b Builder) Build(ctx context.Context, device DeviceInfo, profile DeviceProfile, protocolInfo []string, userAgent string) (core.ClientCaps, error) {
-	c := core.ClientCaps{Product: device.Product, Platform: device.Platform, Version: device.Version, Device: device.Device, DeviceName: device.DeviceName, ClientID: device.ClientID, MaxHeight: device.MaxHeight, MaxBitrateKbps: device.MaxBitrateKbps, HDR10: device.HDR10, DolbyVision: device.DolbyVision}
+	c := core.ClientCaps{Protocol: device.Protocol, Product: device.Product, Platform: device.Platform, Version: device.Version, Device: device.Device, DeviceName: device.DeviceName, ClientID: device.ClientID, MaxHeight: device.MaxHeight, MaxBitrateKbps: device.MaxBitrateKbps, HDR10: device.HDR10, DolbyVision: device.DolbyVision}
 	if c.Product == "" {
 		c.Product = userAgent
 	}

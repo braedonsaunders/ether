@@ -387,6 +387,7 @@ export interface QualityProfile {
 }
 
 export interface QualityRule {
+  protocol?: string;
   product?: string;
   platform?: string;
   userId?: number;

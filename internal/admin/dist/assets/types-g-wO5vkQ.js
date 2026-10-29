@@ -1,1 +1,0 @@
-import{t as r}from"./index-B6Oc4C8Q.js";const t=e=>{const n=e.title||e.username;return e.isOwner?r("{name} (owner)",{name:n}):n};function o(e){return`?days=${e.days}&user=${encodeURIComponent(e.user)}${e.year?`&year=${e.year}`:""}`}export{o as a,t as v};

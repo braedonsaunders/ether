@@ -49,6 +49,14 @@ func TestFrontendAPI(t *testing.T) {
 	if w.Code != 200 || f.settings["port"] != float64(8096) {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	w = serve(h, call("GET", "/ether/api/frontends/plex/status", ""))
+	if w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	w = serve(h, call("GET", "/ether/api/frontends/missing/status", ""))
+	if w.Code != 404 {
+		t.Fatal(w.Code)
+	}
 	w = serve(h, call("GET", "/ether/api/frontends", ""))
 	if w.Code != 200 {
 		t.Fatal(w.Code)

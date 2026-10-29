@@ -23,9 +23,11 @@ import (
 
 type Config struct {
 	// Frontends selects protocol listeners by their registered ID.
-	Frontends    map[string]Frontend `json:"frontends,omitempty"`
-	Posters      Posters             `json:"posters"`
-	Availability Availability        `json:"availability"`
+	Frontends map[string]Frontend `json:"frontends,omitempty"`
+	// FrontendPorts are node-local listener port overrides.
+	FrontendPorts map[string]int `json:"frontendPorts,omitempty"`
+	Posters       Posters        `json:"posters"`
+	Availability  Availability   `json:"availability"`
 	// SharedCache is the cluster-wide NAS policy. Mount paths stay in Cache.
 	SharedCache   *Cache        `json:"sharedCache,omitempty"`
 	Server        Server        `json:"server"`
@@ -56,7 +58,8 @@ type Config struct {
 
 // Frontend holds the enabled state of a protocol front end.
 type Frontend struct {
-	Enabled bool `json:"enabled"`
+	Enabled  bool           `json:"enabled"`
+	Settings map[string]any `json:"settings,omitempty"`
 }
 
 type Server struct {
@@ -297,10 +300,11 @@ type Quality struct {
 
 // QualityRule selects a profile when all non-empty matchers match.
 type QualityRule struct {
-	Product  string `json:"product,omitempty"`  // substring of X-Plex-Product
-	Platform string `json:"platform,omitempty"` // substring of X-Plex-Platform
-	UserID   int64  `json:"userId,omitempty"`
-	Profile  string `json:"profile"`
+	Protocol core.Protocol `json:"protocol,omitempty"`
+	Product  string        `json:"product,omitempty"`  // substring of X-Plex-Product
+	Platform string        `json:"platform,omitempty"` // substring of X-Plex-Platform
+	UserID   int64         `json:"userId,omitempty"`
+	Profile  string        `json:"profile"`
 }
 
 type Transcode struct {

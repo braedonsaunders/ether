@@ -142,6 +142,7 @@ func productCaps(product, platform, device string) baseCaps {
 func (pr *Request) ClientCaps(remoteMaxKbps int) core.ClientCaps {
 	b := productCaps(pr.Product, pr.Platform, pr.Device)
 	c := core.ClientCaps{
+		Protocol:        "plex",
 		Product:         pr.Product,
 		Platform:        pr.Platform,
 		PlatformVersion: pr.PlatformVersion,

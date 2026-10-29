@@ -49,7 +49,7 @@ function ruleViewer(r: QualityRule, viewers: Viewer[] | null) {
 }
 
 function ruleSummary(r: QualityRule, viewers: Viewer[] | null) {
-  return [r.product || t("Any device"), r.platform, ruleViewer(r, viewers)]
+  return [r.protocol, r.product || t("Any device"), r.platform, ruleViewer(r, viewers)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -208,8 +208,32 @@ export function ClientRulesTab() {
         {draft ? (
           <SettingsSection title={t("Match")}>
             <SettingsRow
+              title="Protocol"
+              description="Choose which kind of app this rule matches."
+              control={
+                <div className="w-56">
+                  <SearchSelect
+                    value={draft.protocol ?? ""}
+                    onChange={(v) => set({ protocol: v || undefined })}
+                    options={[
+                      { value: "", label: "Any protocol" },
+                      { value: "plex", label: "Plex" },
+                      { value: "jellyfin", label: "Jellyfin" },
+                      { value: "emby", label: "Emby" },
+                      { value: "silo", label: "Silo" },
+                      { value: "stremio", label: "Stremio" },
+                      { value: "webdav", label: "Files" },
+                      { value: "dlna", label: "DLNA" },
+                    ]}
+                    ariaLabel="Protocol"
+                    searchable={false}
+                  />
+                </div>
+              }
+            />
+            <SettingsRow
               title={t("Device")}
-              description={t("The Plex app's product name.")}
+              description="The app’s product name."
               control={
                 <div className="w-56">
                   <SearchSelect
