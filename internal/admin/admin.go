@@ -96,6 +96,7 @@ type Deps struct {
 	ActiveViewer         func(context.Context, int64) (*core.User, error)
 	ViewerPortalURL      func(context.Context, *http.Request) (string, error)
 	StremioPortalURL     func(context.Context, *http.Request) (string, error)
+	CreateDLNAGuest      func(context.Context) (*core.Viewer, error)
 	LocalIdentity        *identity.Local
 	IdentityGrants       *identity.Grants
 	IdentityLimiter      *identity.LoginLimiter
@@ -308,6 +309,7 @@ func (h *Handler) routes() *http.ServeMux {
 	api("POST /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
 	api("GET /api/viewers/{id}/apps", h.ownerConnectApps)
 	api("POST /api/viewers/{id}/apps/{surface}", h.ownerConnectApps)
+	api("POST /api/frontends/dlna/guest", h.ownerCreateDLNAGuest)
 	api("GET /api/frontends", h.frontendList)
 	api("GET /api/frontends/qr", h.frontendQR)
 	api("GET /api/frontends/{id}/status", h.frontendStatus)

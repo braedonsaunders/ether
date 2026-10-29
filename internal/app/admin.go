@@ -37,6 +37,7 @@ func (a *App) buildAdmin() http.Handler {
 		ActiveViewer:     a.users.ActiveUser,
 		ViewerPortalURL:  a.frontends.viewerPortalURL,
 		StremioPortalURL: a.frontends.viewerPortalSecureURL,
+		CreateDLNAGuest:  a.createDLNAGuest,
 		Invites:          invites,
 		SetViewerActive:  a.users.SetOwnerEnabled,
 		LocalOwnerConfigured: func(ctx context.Context) bool {

@@ -1,4 +1,4 @@
-import { Button, Input, Switch, toast } from "@braedonsaunders/appkit-ui";
+import { Button, Input, Switch, confirmDialog, toast } from "@braedonsaunders/appkit-ui";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../../app-context";
@@ -13,6 +13,7 @@ import { SaveBar, useDraft } from "../../components/SaveBar";
 import { t } from "../../i18n";
 import { API_BASE, apiBlob, apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
+import { viewerStatus } from "../viewers/ViewerStatus";
 
 type FrontendInfo = {
   descriptor: {
@@ -44,6 +45,7 @@ type Settings = {
   discovery?: boolean;
   quickConnect?: boolean;
   publicViewerPicker?: boolean;
+  viewerId?: number;
 };
 const pathFor = (id: string) => (id === "webdav" ? "files" : id);
 const protocolFor = (tab: string) => (tab === "files" ? "webdav" : tab);
@@ -312,10 +314,72 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
               {t("Show local viewer names on the sign-in screen")}
             </label>
           )}
+          {id === "dlna" && (
+            <DLNAViewer
+              value={draft.viewerId}
+              onChange={(viewerId) => setDraft((old) => (old ? { ...old, viewerId } : old))}
+            />
+          )}
         </Section>
       </div>
       <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={reset} error={error} />
     </>
+  );
+}
+
+function DLNAViewer({ value, onChange }: { value?: number; onChange: (id?: number) => void }) {
+  const viewers = useAsync(() => api.viewers(), []);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>();
+  async function createGuest() {
+    if (
+      !(await confirmDialog({
+        title: t("Create a living-room guest"),
+        message: t("Starts with the Kids preset (PG). You can change it on the guest's profile."),
+        confirmLabel: t("Create a living-room guest"),
+      }))
+    )
+      return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const viewer = await apiFetch<{ id: number }>("/frontends/dlna/guest", {
+        method: "POST",
+        body: "{}",
+      });
+      await viewers.reload();
+      onChange(viewer.id);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="space-y-2">
+      <label className="flex flex-col gap-1 text-sm">
+        {t("Browse as")}
+        <select
+          value={value ?? ""}
+          onChange={(e) =>
+            onChange(e.currentTarget.value ? Number(e.currentTarget.value) : undefined)
+          }
+        >
+          <option value="">{t("No viewer selected")}</option>
+          {(viewers.data ?? [])
+            .filter((v) => ["owner", "active"].includes(viewerStatus(v)))
+            .map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.title || v.username}
+              </option>
+            ))}
+        </select>
+      </label>
+      <Button disabled={busy} onClick={() => void createGuest()}>
+        {t("Create a living-room guest")}
+      </Button>
+      {error != null && <ErrorPanel error={error} />}
+    </div>
   );
 }
 

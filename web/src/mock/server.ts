@@ -433,6 +433,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       allowedSections: [],
     })),
     favoritesMirror: new Map<number, boolean>(),
+    dlnaGuests: [] as Viewer[],
     collections: [] as CollectionSpec[],
     overrides: new Map<number, TasteOverride[]>(),
     layout: {
@@ -1783,6 +1784,21 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const seg = p.split("/").filter(Boolean);
     const route = `${method} /${seg.join("/")}`;
 
+    if (p === "/frontends/dlna/guest" && method === "POST") {
+      const viewer: Viewer = {
+        id: 100 + state.dlnaGuests.length,
+        plexId: 0,
+        username: "",
+        title: "Living-room guest",
+        isOwner: false,
+        accessStatus: "active",
+        plays30d: 0,
+        hoursWatched30d: 0,
+      };
+      state.dlnaGuests.push(viewer);
+      return json(viewer, 201);
+    }
+
     if (p === "/me/favorites-mirror") {
       if (method === "POST") state.favoritesMirror.set(1, (body as { enabled: boolean }).enabled);
       return json({ enabled: state.favoritesMirror.get(1) ?? true });
@@ -2391,7 +2407,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       }
       case "GET /viewers":
         return json({
-          viewers: VIEWERS.map((v, i) => ({
+          viewers: [...VIEWERS, ...state.dlnaGuests].map((v, i) => ({
             ...v,
             thumb: avatarFor(v.title),
             lastActive: new Date(Date.now() - (i * 7 + 1) * 3600_000).toISOString(),
