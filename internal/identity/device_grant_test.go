@@ -77,3 +77,29 @@ func TestResolveDeviceIsSurfaceBoundAndReadOnly(t *testing.T) {
 		t.Fatalf("revoked: %v", err)
 	}
 }
+
+func TestResolveDeviceReportsCurrentSlidingExpiry(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 0).UTC()
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "tv"}
+	token, err := grants.Issue(ctx, 1, nil, "silo", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Minute)
+	if _, err = grants.Resolve(ctx, "silo", token); err != nil {
+		t.Fatal(err)
+	}
+	_, expires, err := grants.ResolveDevice(ctx, "silo", token, device)
+	if err != nil || !expires.Equal(now.Add(time.Hour)) {
+		t.Fatalf("current expiry=%s err=%v", expires, err)
+	}
+}
