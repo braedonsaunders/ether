@@ -6,6 +6,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/config"
@@ -380,7 +382,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}
 	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People", nil)
 	request.Header.Set("X-Emby-Token", jellyfinRef.token)
-	request.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="lab-conform", Version="1", Token="`+jellyfinRef.token+`"`)
+	request.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+jellyfinRef.device+`", Version="1", Token="`+jellyfinRef.token+`"`)
 	resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(request)
 	if e != nil {
 		t.Fatal("lab listing unavailable")
@@ -464,8 +466,8 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 }
 
 type labReferenceData struct {
-	base, token string
-	vars        map[string]string
+	base, token, device string
+	vars                map[string]string
 }
 
 func (ref labReferenceData) logout(t *testing.T) {
@@ -476,7 +478,7 @@ func (ref labReferenceData) logout(t *testing.T) {
 		return
 	}
 	req.Header.Set("X-Emby-Token", ref.token)
-	req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="lab-conform", Version="1", Token="`+ref.token+`"`)
+	req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+ref.device+`", Version="1", Token="`+ref.token+`"`)
 	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		t.Error("lab sign-out failed")
@@ -529,7 +531,7 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 		mu.Lock()
 		defer mu.Unlock()
 		for token := range issued {
-			(labReferenceData{base: ref.base, token: token}).logout(t)
+			(labReferenceData{base: ref.base, token: token, device: ref.vars["device_id"]}).logout(t)
 		}
 	}
 }
@@ -575,13 +577,19 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 		t.Fatalf("%s adult credentials are missing from LAB_ENV", prefix)
 	}
 	client := &http.Client{Timeout: 30 * time.Second}
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		t.Fatal("cannot allocate unique lab device")
+	}
+	suffix := hex.EncodeToString(random[:])
+	loginDevice, probeDevice := "ether-login-"+suffix, "ether-probe-"+suffix
 	body, _ := json.Marshal(map[string]string{"Username": username, "Pw": password})
 	req, err := http.NewRequest("POST", strings.TrimRight(base, "/")+"/Users/AuthenticateByName", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal("invalid lab URL")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="lab-login", Version="1"`)
+	req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+loginDevice+`", Version="1"`)
 	req.Header.Set("X-Emby-Authorization", req.Header.Get("Authorization"))
 	resp, err := client.Do(req)
 	if err != nil {
@@ -596,7 +604,7 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 	if err != nil || resp.StatusCode != 200 || login.AccessToken == "" || login.User.Id == "" {
 		t.Fatalf("lab authentication failed (HTTP %d)", resp.StatusCode)
 	}
-	ref := labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken}
+	ref := labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice}
 	completed := false
 	defer func() {
 		if !completed {
@@ -610,7 +618,7 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 			t.Fatal("invalid lab request")
 		}
 		req.Header.Set("X-Emby-Token", login.AccessToken)
-		req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="lab-conform", Version="1", Token="`+login.AccessToken+`"`)
+		req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+loginDevice+`", Version="1", Token="`+login.AccessToken+`"`)
 		response, err := client.Do(req)
 		if err != nil {
 			t.Fatal("lab discovery request failed")
@@ -653,10 +661,10 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 		t.Fatal("lab movie view is missing")
 	}
 	completed = true
-	return labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, vars: map[string]string{
+	return labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, vars: map[string]string{
 		"username": username, "password": password, "user_id": login.User.Id, "access_token": login.AccessToken,
 		"item_id": itemID, "itemId": itemID, "parent_id": viewID, "media_source_id": itemID,
-		"play_session_id": "initial", "position_ticks": "0", "device_id": "lab-run", "server_id": login.ServerId,
+		"play_session_id": "initial", "position_ticks": "0", "device_id": probeDevice, "server_id": login.ServerId,
 		"provider:tmdb:10378": itemID,
 	}}
 }
