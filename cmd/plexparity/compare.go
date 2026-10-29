@@ -639,6 +639,15 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 			result.captures = append(result.captures, captures...)
 		}
 	}
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			captures, err := downloadCapture(ctx, client, base, viewer, name, ids.Values["movieKey"], profiles[name].Headers)
+			if err != nil {
+				return result, fmt.Errorf("%s %s downloads: %w", viewer, name, err)
+			}
+			result.captures = append(result.captures, captures...)
+		}
+	}
 	return result, nil
 }
 func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
