@@ -714,15 +714,14 @@ func (s *Server) handleMetadataHubs(w http.ResponseWriter, r *http.Request) {
 // upNextHub is shared by post-play and the advertised shelf-items URL so
 // clients can reload the row or use it as a play-queue source.
 func (s *Server) upNextHub(ctx context.Context, pr *Request, k core.RatingKey) (hubSpec, bool) {
-	if k.Kind() != core.KindEpisode {
-		return hubSpec{}, false
-	}
-	next, err := s.d.Catalog.NextEpisode(ctx, k)
-	if err != nil || next == nil || !s.visibleTitle(ctx, pr.User, next) {
+	row := experience.NextUp(ctx, pr.User, k, func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+		return s.d.Catalog.NextEpisode(ctx, key)
+	}, s.visibility())
+	if len(row.Items) == 0 {
 		return hubSpec{}, false
 	}
 	return hubSpec{Hub: core.Hub{ID: "tv.upnext", Title: "Up Next", Type: core.TypeEpisode,
-		Context: "hub.tv.upnext", Items: []core.Title{*next}}}, true
+		Context: "hub.tv.upnext", Items: row.Items}}, true
 }
 
 // handlePostplay is /hubs/metadata/{key}/postplay. An episode with a

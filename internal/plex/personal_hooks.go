@@ -36,19 +36,9 @@ func (s *Server) postPlayPicks(ctx context.Context, pr *Request, key core.Rating
 // postPlayRow expands candidates only when filtering or deduplication leaves
 // room and the source returned a full page. Seen is committed once.
 func (s *Server) postPlayRow(ctx context.Context, pr *Request, key core.RatingKey, count int, seen map[core.RatingKey]bool) experience.PostPlayRow {
-	fetch := count
-	for {
-		picks := s.postPlayPicks(ctx, pr, key, fetch)
-		trial := cloneSeen(seen)
-		row := experience.PostPlay(ctx, picks, pr.User, s.visibility(), trial, count)
-		if len(row.Items) >= count || len(picks) < fetch || fetch >= 1000 || ctx.Err() != nil {
-			for key, value := range trial {
-				seen[key] = value
-			}
-			return row
-		}
-		fetch = min(fetch*2, 1000)
-	}
+	return experience.LoadPostPlay(ctx, pr.User, s.visibility(), count, seen, func(ctx context.Context, fetch int) []core.PostPlayPick {
+		return s.postPlayPicks(ctx, pr, key, fetch)
+	})
 }
 
 func cloneSeen(seen map[core.RatingKey]bool) map[core.RatingKey]bool {
