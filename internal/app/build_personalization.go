@@ -23,7 +23,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	dataDir := a.opts.DataDir
 	var err error
 	// Watch state and recommendations.
-	a.state = state.New(a.db, state.Options{Logger: log.With("component", "state"), Availability: a.dbAvail})
+	a.state = state.New(a.db, state.Options{Now: parityClock(), Logger: log.With("component", "state"), Availability: a.dbAvail})
 	a.closers = append(a.closers, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -53,7 +53,8 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	})
 	// Per-viewer Homes, built in the background and served to Plex.
 	if a.personalize, err = personalize.New(personalize.Options{
-		DB: a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
+		Now: parityClock(),
+		DB:  a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
 		FilterAvailable: func(ctx context.Context, ts []core.Title) []core.Title {
 			ts = a.catalog.FilterVisibility(ctx, ts)
 			if a.availability == nil {

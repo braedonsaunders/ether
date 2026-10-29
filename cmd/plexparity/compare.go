@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -13,23 +14,22 @@ import (
 	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
 )
 
-// compareCorpus compares literal response bytes. No response fields are currently
-// normalized; volatile values remain visible as differences until an explicit,
-// reviewed normalizer is implemented.
-func compareCorpus(ctx context.Context, baseline, candidate string, out io.Writer) (int, error) {
+type capture struct {
+	viewer, client, path string
+	json                 bool
+	response             protocol.Response
+}
+type transcript struct {
+	ids      map[string]string
+	captures []capture
+}
+
+// captureCorpus retains literal response bytes. There are no normalizations.
+func captureCorpus(ctx context.Context, base string) (transcript, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
-	ids := protocol.Discover(ctx, client, baseline, "parity-owner", "web", nil)
+	ids := protocol.Discover(ctx, client, base, "parity-owner", "web", nil)
 	if len(ids.Warnings) > 0 {
-		return 0, fmt.Errorf("baseline discovery incomplete: %s", strings.Join(ids.Warnings, "; "))
-	}
-	other := protocol.Discover(ctx, client, candidate, "parity-owner", "web", nil)
-	if len(other.Warnings) > 0 {
-		return 0, fmt.Errorf("candidate discovery incomplete: %s", strings.Join(other.Warnings, "; "))
-	}
-	for k, v := range ids.Values {
-		if other.Values[k] != v {
-			return 0, fmt.Errorf("fixture discovery differs for %s: %q vs %q", k, v, other.Values[k])
-		}
+		return transcript{}, fmt.Errorf("discovery incomplete: %s", strings.Join(ids.Warnings, "; "))
 	}
 	profiles := protocol.Clients()
 	web := profiles["web"]
@@ -45,11 +45,12 @@ func compareCorpus(ctx context.Context, baseline, candidate string, out io.Write
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	diffs := 0
+	result := transcript{ids: ids.Values}
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 		for _, name := range names {
 			for _, jsonMode := range []bool{false, true} {
 				for _, probe := range protocol.Corpus() {
+					probe.Path = strings.ReplaceAll(probe.Path, "query=burbs", "query=fixture")
 					h := profiles[name].Headers.Clone()
 					if jsonMode {
 						h.Set("Accept", "application/json")
@@ -57,21 +58,48 @@ func compareCorpus(ctx context.Context, baseline, candidate string, out io.Write
 						h.Set("Accept", "application/xml")
 					}
 					probe.Headers = map[string]http.Header{name: h, name + "-json": h}
-					a, err := protocol.Fetch(ctx, client, baseline, "parity-"+viewer, probe, name, ids.Values, jsonMode)
+					response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, ids.Values, jsonMode)
 					if err != nil {
-						return diffs, fmt.Errorf("baseline %s %s: %w", viewer, probe.Path, err)
+						return result, fmt.Errorf("%s %s: %w", viewer, probe.Path, err)
 					}
-					b, err := protocol.Fetch(ctx, client, candidate, "parity-"+viewer, probe, name, ids.Values, jsonMode)
-					if err != nil {
-						return diffs, fmt.Errorf("candidate %s %s: %w", viewer, probe.Path, err)
+					if len(response.Body) >= 16<<20 {
+						return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, probe.Path)
 					}
-					if a.Status != b.Status || !bytes.Equal(a.Body, b.Body) || a.Headers.Get("Content-Type") != b.Headers.Get("Content-Type") {
-						diffs++
-						fmt.Fprintf(out, "viewer=%s client=%s json=%t route=%s\nbaseline status=%d content-type=%q body=%q\ncandidate status=%d content-type=%q body=%q\n", viewer, name, jsonMode, probe.Path, a.Status, a.Headers.Get("Content-Type"), a.Body, b.Status, b.Headers.Get("Content-Type"), b.Body)
-					}
+					result.captures = append(result.captures, capture{viewer, name, probe.Path, jsonMode, response})
 				}
 			}
 		}
 	}
-	return diffs, nil
+	return result, nil
+}
+func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
+	if !reflect.DeepEqual(a.ids, b.ids) {
+		return 0, fmt.Errorf("fixture discovery differs: baseline %v candidate %v", a.ids, b.ids)
+	}
+	if len(a.captures) != len(b.captures) {
+		return 0, fmt.Errorf("capture counts differ: %d and %d", len(a.captures), len(b.captures))
+	}
+	n := 0
+	for i, x := range a.captures {
+		y := b.captures[i]
+		if x.viewer != y.viewer || x.client != y.client || x.path != y.path || x.json != y.json {
+			return n, fmt.Errorf("corpus order mismatch at %d", i)
+		}
+		if x.response.Status != y.response.Status || !bytes.Equal(x.response.Body, y.response.Body) || x.response.Headers.Get("Content-Type") != y.response.Headers.Get("Content-Type") {
+			n++
+			fmt.Fprintf(out, "viewer=%s client=%s json=%t route=%s\nbaseline status=%d content-type=%q body=%q\ncandidate status=%d content-type=%q body=%q\n", x.viewer, x.client, x.json, x.path, x.response.Status, x.response.Headers.Get("Content-Type"), x.response.Body, y.response.Status, y.response.Headers.Get("Content-Type"), y.response.Body)
+		}
+	}
+	return n, nil
+}
+func compareCorpus(ctx context.Context, baseline, candidate string, out io.Writer) (int, error) {
+	a, err := captureCorpus(ctx, baseline)
+	if err != nil {
+		return 0, fmt.Errorf("baseline: %w", err)
+	}
+	b, err := captureCorpus(ctx, candidate)
+	if err != nil {
+		return 0, fmt.Errorf("candidate: %w", err)
+	}
+	return diffTranscripts(a, b, out)
 }

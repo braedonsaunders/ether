@@ -1,0 +1,63 @@
+diff --git a/internal/app/build_catalogue.go b/internal/app/build_catalogue.go
+index 8461f673..a3ec3bf6 100644
+--- a/internal/app/build_catalogue.go
++++ b/internal/app/build_catalogue.go
+@@ -13,9 +13,9 @@ func (a *App) buildCatalogue(ctx context.Context, cfg config.Config) error {
+ 	log := a.log
+ 	var err error
+ 	// Catalogue.
+-	a.tmdb = tmdb.NewFromConfig(cfg.Catalog, log.With("component", "tmdb"))
++	a.tmdb = tmdb.NewFromConfig(cfg.Catalog, log.With("component", "tmdb"), parityTMDBOptions()...)
+ 	a.closers = append(a.closers, a.tmdb.Close)
+-	if a.catalog, err = catalog.New(a.db, a.tmdb, cfg.Catalog, log.With("component", "catalog"), a.catalogOptions()...); err != nil {
++	if a.catalog, err = catalog.New(a.db, a.tmdb, cfg.Catalog, log.With("component", "catalog"), append(a.catalogOptions(), parityCatalogueOptions()...)...); err != nil {
+ 		return fmt.Errorf("catalog: %w", err)
+ 	}
+ 
+diff --git a/internal/app/build_identity.go b/internal/app/build_identity.go
+index 88b20d35..3d2f5f0e 100644
+--- a/internal/app/build_identity.go
++++ b/internal/app/build_identity.go
+@@ -21,6 +21,7 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
+ 		return fmt.Errorf("plex.tv client: %w", err)
+ 	}
+ 	if a.users, err = auth.New(context.Background(), a.db, auth.Options{
++		Now:       parityClock(),
+ 		Validator: auth.PlexTVValidator{Client: a.plextv, MachineID: cfg.Server.MachineIdentifier},
+ 		Logger:    log.With("component", "auth"),
+ 	}); err != nil {
+diff --git a/internal/app/build_personalization.go b/internal/app/build_personalization.go
+index 643ae5d5..e031dc5a 100644
+--- a/internal/app/build_personalization.go
++++ b/internal/app/build_personalization.go
+@@ -23,7 +23,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
+ 	dataDir := a.opts.DataDir
+ 	var err error
+ 	// Watch state and recommendations.
+-	a.state = state.New(a.db, state.Options{Logger: log.With("component", "state"), Availability: a.dbAvail})
++	a.state = state.New(a.db, state.Options{Now: parityClock(), Logger: log.With("component", "state"), Availability: a.dbAvail})
+ 	a.closers = append(a.closers, func() {
+ 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+ 		defer cancel()
+@@ -53,7 +53,8 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
+ 	})
+ 	// Per-viewer Homes, built in the background and served to Plex.
+ 	if a.personalize, err = personalize.New(personalize.Options{
+-		DB: a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
++		Now: parityClock(),
++		DB:  a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
+ 		FilterAvailable: func(ctx context.Context, ts []core.Title) []core.Title {
+ 			ts = a.catalog.FilterVisibility(ctx, ts)
+ 			if a.availability == nil {
+diff --git a/internal/app/plex.go b/internal/app/plex.go
+index c3758ddd..c9e868e9 100644
+--- a/internal/app/plex.go
++++ b/internal/app/plex.go
+@@ -110,6 +110,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
+ 		})
+ 	}
+ 	deps.AccessPolicy = a.safety
++	deps.Now = parityClock()
+ 	deps.Config = a.cfg.Get
+ 	deps.Logger = a.log.With("component", "plex")
+ 	deps.Identity = identity

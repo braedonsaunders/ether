@@ -60,6 +60,10 @@ func seed(ctx context.Context, dir string) error {
 	released := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := int64(1); i <= 60; i++ {
 		title := core.Title{Key: core.MovieKey(10000 + i), Type: core.TypeMovie, IDs: core.IDs{TMDB: 10000 + i}, Title: fmt.Sprintf("Fixture Movie %03d", i), Year: 2020, Released: released, Runtime: 90 * time.Minute, Language: "en", ContentRating: "PG", Genres: []string{"Drama"}, Rating: 7, VoteCount: 1000, Popularity: float64(100 - i)}
+		if i <= 12 {
+			title.CollectionID = 40001
+			title.CollectionName = "Fixture Collection"
+		}
 		if i%3 == 0 {
 			title.ContentRating = "R"
 		}

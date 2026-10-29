@@ -110,6 +110,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		})
 	}
 	a.wirePlexPolicy(&deps)
+	deps.Now = parityClock()
 	deps.Config = a.cfg.Get
 	deps.Logger = a.log.With("component", "plex")
 	deps.Identity = identity

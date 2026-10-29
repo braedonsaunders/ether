@@ -21,6 +21,7 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("plex.tv client: %w", err)
 	}
 	if a.users, err = auth.New(context.Background(), a.db, auth.Options{
+		Now:       parityClock(),
 		Validator: auth.PlexTVValidator{Client: a.plextv, MachineID: cfg.Server.MachineIdentifier},
 		Logger:    log.With("component", "auth"),
 	}); err != nil {
