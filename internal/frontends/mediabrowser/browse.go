@@ -60,6 +60,35 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 	}
 	m["ProviderIds"] = providers
 	m["ServerId"] = i.info.ID
+	sortName := t.SortTitle
+	if sortName == "" {
+		sortName = t.Title
+	}
+	m["SortName"] = sortName
+	if t.OriginalTitle != "" {
+		m["OriginalTitle"] = t.OriginalTitle
+	}
+	if t.Language != "" {
+		m["OriginalLanguage"] = t.Language
+	}
+	if t.ContentRating != "" {
+		m["OfficialRating"] = t.ContentRating
+	}
+	if t.Rating > 0 {
+		m["CommunityRating"] = t.Rating
+	}
+	if !t.Released.IsZero() {
+		m["PremiereDate"] = t.Released.UTC()
+	}
+	if len(t.Genres) > 0 {
+		m["Genres"] = t.Genres
+	}
+	if len(t.Countries) > 0 {
+		m["ProductionLocations"] = t.Countries
+	}
+	if t.Tagline != "" {
+		m["Taglines"] = []string{t.Tagline}
+	}
 	if t.Type == "movie" || t.Type == "episode" {
 		m["MediaType"] = "Video"
 	}
@@ -68,13 +97,31 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 		m["SeriesName"] = t.ShowTitle
 	}
 	if t.Type == "episode" {
+		if parent := t.Key.Parent(); parent != 0 {
+			m["SeasonId"] = ids.RatingKeyGUID(parent)
+			m["ParentId"] = ids.RatingKeyGUID(parent)
+		}
+		if t.SeasonTitle != "" {
+			m["SeasonName"] = t.SeasonTitle
+		}
 		m["ParentIndexNumber"] = t.Season
 		m["IndexNumber"] = t.Episode
+
 	}
 	if t.Type == "season" {
+		if parent := t.Key.Parent(); parent != 0 {
+			m["ParentId"] = ids.RatingKeyGUID(parent)
+		}
 		m["IndexNumber"] = t.Season
 	}
 	return m
+}
+func (i *instance) queryResult(items []any, total, offset int) map[string]any {
+	result := map[string]any{"Items": items, "TotalRecordCount": total}
+	if i.protocol == "jellyfin" {
+		result["StartIndex"] = offset
+	}
+	return result
 }
 func (i *instance) browseRoutes() error {
 	add := func(method, path string, h http.HandlerFunc) error { return i.router.Handle(method, path, h) }
@@ -107,9 +154,9 @@ func (i *instance) browseRoutes() error {
 			if view.Type == "show" {
 				kind = "tvshows"
 			}
-			items = append(items, map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true})
+			items = append(items, map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true, "ServerId": i.info.ID, "SortName": view.Name, "DisplayPreferencesId": viewID, "CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}})
 		}
-		jsonReply(w, map[string]any{"Items": items, "TotalRecordCount": len(items), "StartIndex": 0})
+		jsonReply(w, i.queryResult(items, len(items), 0))
 	}
 	rowHandler := func(purpose frontend.RowPurpose, asArray bool) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +228,7 @@ func (i *instance) browseRoutes() error {
 			if asArray {
 				jsonReply(w, items)
 			} else {
-				jsonReply(w, map[string]any{"Items": items, "TotalRecordCount": len(titles), "StartIndex": offset})
+				jsonReply(w, i.queryResult(items, len(titles), offset))
 			}
 		}
 	}
@@ -214,7 +261,7 @@ func (i *instance) browseRoutes() error {
 	endpoints := []struct {
 		path    string
 		handler http.HandlerFunc
-	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/Users/{userId}/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/UserItems/Resume", rowHandler(frontend.RowContinue, false)}, {"/Users/{userId}/Items/Resume", rowHandler(frontend.RowContinue, false)}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Items", i.items}, {"/Users/{userId}/Items", i.items}, {"/Items/{id}/Similar", i.similar}, {"/Items/{id}/Ancestors", i.ancestors}, {"/Search/Hints", i.search}, {"/Shows/{id}/Seasons", i.children}, {"/Shows/{id}/Episodes", i.episodes}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
+	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/Users/{userId}/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/UserItems/Resume", rowHandler(frontend.RowContinue, false)}, {"/Users/{userId}/Items/Resume", rowHandler(frontend.RowContinue, false)}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Items", i.items}, {"/Users/{userId}/Items", i.items}, {"/Items/{id}/Similar", i.similar}, {"/Items/{id}/Ancestors", i.ancestors}, {"/Search/Hints", i.search}, {"/Genres", i.facets("genre")}, {"/Studios", i.facets("studio")}, {"/Persons", i.facets("person")}, {"/Shows/{id}/Seasons", i.children}, {"/Shows/{id}/Episodes", i.episodes}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
 	for _, e := range endpoints {
 		if err := add("GET", e.path, e.handler); err != nil {
 			return err
@@ -287,7 +334,7 @@ func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.View
 	for _, title := range page.Items {
 		items = append(items, i.itemDTO(title, state[title.Key]))
 	}
-	jsonReply(w, map[string]any{"Items": items, "TotalRecordCount": page.Total, "StartIndex": offset})
+	jsonReply(w, i.queryResult(items, page.Total, offset))
 }
 func (i *instance) children(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.viewer(r)
@@ -359,6 +406,10 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := itemQuery(r)
+	if err := i.resolveFilters(r, v, &q); err != nil {
+		http.Error(w, "Invalid filter", 400)
+		return
+	}
 	var page frontend.Page
 	if len(parent) == 0 || parent[0] == "" {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), "", q)

@@ -18,7 +18,9 @@ import (
 func TestBrowseUsesExperienceAndValidatesSpec(t *testing.T) {
 	user := &frontend.Viewer{ID: 7, Username: "viewer"}
 	title := frontend.Title{Key: 5, Type: "movie", Title: "A", Runtime: time.Minute}
-	exp := frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+	exp := frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+	}, ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
 		if req.Viewer != user || req.Key != 5 {
 			return frontend.ItemDetail{}, errors.New("denied")
 		}
@@ -243,5 +245,37 @@ func TestOnlyPresentedRowsReportImpressions(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || len(handles) != 1 || handles[0] != "second" {
 		t.Fatal(w.Code, handles)
+	}
+}
+
+func TestViewResponseMatchesSpec(t *testing.T) {
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 1}, nil }}
+	exp := frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/UserViews", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
+	if os.IsNotExist(e) {
+		return
+	}
+	if e != nil {
+		t.Fatal(e)
+	}
+	doc, e := openapi.Parse(spec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = doc.Validate("GET", "/UserViews", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
+		t.Fatal(e)
 	}
 }

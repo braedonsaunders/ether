@@ -35,7 +35,7 @@ func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, map[string]any{"Id": id, "Name": ch.Name, "Number": ch.Number, "Type": "TvChannel", "IsFolder": false, "UserData": map[string]any{"Key": id, "IsFavorite": ch.Favorite}})
 	}
-	jsonReply(w, map[string]any{"Items": items, "TotalRecordCount": len(channels), "StartIndex": offset})
+	jsonReply(w, i.queryResult(items, len(channels), offset))
 }
 func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 	viewer, _, err := i.viewer(r)
@@ -94,5 +94,5 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, map[string]any{"Id": id, "ChannelId": channel, "Name": p.Title, "Overview": p.Summary, "Type": "Program", "StartDate": p.Start, "EndDate": p.End, "OfficialRating": p.Rating, "IndexNumber": p.Episode, "ParentIndexNumber": p.Season})
 	}
-	jsonReply(w, map[string]any{"Items": items, "TotalRecordCount": len(items), "StartIndex": 0})
+	jsonReply(w, i.queryResult(items, len(items), 0))
 }

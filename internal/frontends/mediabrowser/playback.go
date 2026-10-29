@@ -150,6 +150,18 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		sourceID = wireID
 	}
 	source := map[string]any{"Id": sourceID, "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
+	source["Protocol"] = "Http"
+	source["Type"] = "Default"
+	source["IsRemote"] = true
+	source["RequiresOpening"] = false
+	source["RequiresClosing"] = false
+	for _, stream := range plan.Media.Streams {
+		if stream.Type == "audio" && stream.Default {
+			source["DefaultAudioStreamIndex"] = stream.Index
+			break
+		}
+	}
+
 	playID := ""
 	if playback {
 		session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: i.protocol, PlanID: plan.ID, Viewer: v, Device: dev})
@@ -205,7 +217,32 @@ func mediaStreams(streams []frontend.StreamInfo) []any {
 	out := make([]any, 0, len(streams))
 	for _, s := range streams {
 		kind := map[string]string{"video": "Video", "audio": "Audio", "subtitle": "Subtitle"}[s.Type]
-		out = append(out, map[string]any{"Index": s.Index, "Type": kind, "Codec": s.Codec, "Language": s.Language, "IsDefault": s.Default, "IsForced": s.Forced, "Width": s.Width, "Height": s.Height, "Channels": s.Channels})
+		m := map[string]any{"Index": s.Index, "Type": kind, "Codec": s.Codec, "Language": s.Language, "IsDefault": s.Default, "IsForced": s.Forced, "IsExternal": s.External, "Width": s.Width, "Height": s.Height, "Channels": s.Channels}
+		if s.Profile != "" {
+			m["Profile"] = s.Profile
+		}
+		if s.Title != "" {
+			m["Title"] = s.Title
+		}
+		if s.Level > 0 {
+			m["Level"] = s.Level
+		}
+		if s.FrameRate > 0 {
+			m["RealFrameRate"] = s.FrameRate
+		}
+		if s.BitDepth > 0 {
+			m["BitDepth"] = s.BitDepth
+		}
+		if s.SampleRate > 0 {
+			m["SampleRate"] = s.SampleRate
+		}
+		if s.BitrateKbps > 0 {
+			m["BitRate"] = s.BitrateKbps * 1000
+		}
+		if s.ChannelLayout != "" {
+			m["ChannelLayout"] = s.ChannelLayout
+		}
+		out = append(out, m)
 	}
 	return out
 }
