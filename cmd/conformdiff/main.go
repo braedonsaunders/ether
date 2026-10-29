@@ -1,4 +1,4 @@
-// pmsdiff records and compares Plex Media Server HTTP responses.
+// conformdiff records and compares Plex Media Server HTTP responses.
 package main
 
 import (
@@ -15,7 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/pmsconform"
+	pmsconform "github.com/braedonsaunders/ether/internal/conform"
+	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 )
 
 func main() {
@@ -26,7 +27,7 @@ func main() {
 }
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: pmsdiff record|compare|live [flags]")
+		return fmt.Errorf("usage: conformdiff record|compare|live [flags]")
 	}
 	cmd := args[0]
 	f := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -35,7 +36,7 @@ func run(args []string) error {
 	target := f.String("target", "", "target PMS URL")
 	server := f.String("server", "", "PMS URL to record")
 	token := f.String("token", "", "PMS access token")
-	out := f.String("out", "testdata/pms", "output fixture directory")
+	out := f.String("out", "testdata/conform/plex", "output fixture directory")
 	client := f.String("client", "all", "web|ios|appletv|all")
 	format := f.String("format", "text", "text|json")
 	summary := f.Bool("summary", false, "print per-endpoint missing/extra/type differences and a count table")
@@ -67,7 +68,7 @@ func run(args []string) error {
 		if *refServer == "" || *target == "" {
 			return fmt.Errorf("live requires --reference-server and --target")
 		}
-		tmp, e := os.MkdirTemp("", "pmsdiff-reference-")
+		tmp, e := os.MkdirTemp("", "conformdiff-reference-")
 		if e != nil {
 			return e
 		}
@@ -124,7 +125,7 @@ func profiles(sel string) []string {
 
 // corpus is the probe corpus, optionally narrowed to paths containing only.
 func corpus(only string) []pmsconform.Request {
-	all := pmsconform.Corpus()
+	all := conformplex.Corpus()
 	if only == "" {
 		return all
 	}
@@ -148,7 +149,7 @@ func record(base, token, out, sel, only string, timeout time.Duration, concurren
 		// describe the same items as the rest of the set.
 		ids, e := loadDiscovery(out, profile)
 		if only == "" || e != nil {
-			ids = pmsconform.Discover(ctx, client, base, token, profile, nil)
+			ids = conformplex.Discover(ctx, client, base, token, profile, nil)
 			for _, w := range ids.Warnings {
 				report.Discovery = append(report.Discovery, profile+": "+w)
 			}
@@ -168,7 +169,7 @@ func record(base, token, out, sel, only string, timeout time.Duration, concurren
 			go func() {
 				defer wg.Done()
 				for j := range jobs {
-					resp, e := pmsconform.Fetch(ctx, client, base, token, j.req, profile, ids.Values, j.json)
+					resp, e := conformplex.Fetch(ctx, client, base, token, j.req, profile, ids.Values, j.json)
 					filename := fixtureName(profile, j.req.Path, j.json)
 					if e != nil {
 						mu.Lock()
@@ -217,7 +218,7 @@ func compare(dir, base, token, sel, only string, timeout time.Duration, concurre
 		if e != nil {
 			refIDs = pmsconform.DiscoveredIDs{Values: map[string]string{}, Warnings: []string{"reference discovery unavailable; fallback IDs may be used"}}
 		}
-		targetIDs := pmsconform.Discover(ctx, client, base, token, profile, &refIDs)
+		targetIDs := conformplex.Discover(ctx, client, base, token, profile, &refIDs)
 		for _, w := range refIDs.Warnings {
 			out.Discovery = append(out.Discovery, profile+" reference: "+w)
 		}
@@ -246,7 +247,7 @@ func compare(dir, base, token, sel, only string, timeout time.Duration, concurre
 						results <- result{[]pmsconform.Difference{d}}
 						continue
 					}
-					b, e := pmsconform.Fetch(ctx, client, base, token, j.req, profile, targetIDs.Values, j.json)
+					b, e := conformplex.Fetch(ctx, client, base, token, j.req, profile, targetIDs.Values, j.json)
 					if e != nil {
 						d := errorDifference(profile, j.req, e)
 						d.Format = formatName(j.json)

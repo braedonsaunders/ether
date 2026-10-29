@@ -1,9 +1,10 @@
-package pmsconform
+package plex
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/braedonsaunders/ether/internal/conform"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +15,7 @@ func TestCompareDetectsStructureAndShape(t *testing.T) {
 	cases := []struct{ name, a, b, kind string }{{"missing attr", `<MediaContainer size="1"><Video id="4"/></MediaContainer>`, `<MediaContainer size="1"><Video/></MediaContainer>`, `missing`}, {"type change", `<MediaContainer size="1"/>`, `<MediaContainer size="one"/>`, `type`}, {"extra element", `<MediaContainer/>`, `<MediaContainer><Video/></MediaContainer>`, `extra`}, {"changed ordering", `<MediaContainer><Directory/><Video/></MediaContainer>`, `<MediaContainer><Video/><Directory/></MediaContainer>`, `value`}}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := Compare(Response{Status: 200, Body: []byte(tc.a)}, Response{Status: 200, Body: []byte(tc.b)})
+			r := conform.Compare(Response{Status: 200, Body: []byte(tc.a)}, Response{Status: 200, Body: []byte(tc.b)})
 			found := false
 			for _, d := range r.Differences {
 				if d.Kind == tc.kind {
@@ -31,7 +32,7 @@ func TestJSONComparisonAndVolatileShape(t *testing.T) {
 	a := Response{Status: 200, Headers: http.Header{"Content-Type": []string{"application/json"}}, Body: []byte(`{"MediaContainer":{"size":1,"machineIdentifier":"abc","Video":[{"id":4}]}}`)}
 	b := a
 	b.Body = []byte(`{"MediaContainer":{"size":"1","machineIdentifier":"xyz","Video":[{"id":8}],"extra":true}}`)
-	r := Compare(a, b)
+	r := conform.Compare(a, b)
 	foundType, foundExtra := false, false
 	for _, d := range r.Differences {
 		foundType = foundType || d.Kind == "type"
@@ -42,7 +43,7 @@ func TestJSONComparisonAndVolatileShape(t *testing.T) {
 	}
 }
 func TestRedact(t *testing.T) {
-	s := string(Redact([]byte(`X-Plex-Token=secret machineIdentifier="machine" user="alice" email=alice@example.com ip=192.168.1.4`)))
+	s := string(conform.Redact([]byte(`X-Plex-Token=secret machineIdentifier="machine" user="alice" email=alice@example.com ip=192.168.1.4`)))
 	for _, v := range []string{"secret", "machine\"", "alice@example.com", "192.168.1.4"} {
 		if strings.Contains(s, v) {
 			t.Errorf("unredacted %q in %s", v, s)
@@ -57,7 +58,7 @@ func TestTrimBodyAndPreserveRedactedJSON(t *testing.T) {
 		fmt.Fprintf(&items, `<Video ratingKey="%d"/>`, i)
 	}
 	items.WriteString(`</MediaContainer>`)
-	b, trimmed := TrimBody([]byte(items.String()))
+	b, trimmed := conform.TrimBody([]byte(items.String()))
 	if !trimmed {
 		t.Fatal("expected XML listing to be trimmed")
 	}
@@ -74,7 +75,7 @@ func TestTrimBodyAndPreserveRedactedJSON(t *testing.T) {
 		fmt.Fprintf(&jsonItems, `{"ratingKey":%d}`, i)
 	}
 	jsonItems.WriteString(`]}}`)
-	jsonBody, jsonTrimmed := TrimBody([]byte(jsonItems.String()))
+	jsonBody, jsonTrimmed := conform.TrimBody([]byte(jsonItems.String()))
 	if !jsonTrimmed {
 		t.Fatal("expected JSON listing to be trimmed")
 	}
@@ -87,7 +88,7 @@ func TestTrimBodyAndPreserveRedactedJSON(t *testing.T) {
 		t.Fatalf("trimmed JSON has %d entries", len(got))
 	}
 	secret := `{"machineIdentifier":"machine-secret","friendlyName":"secret server","username":"alice","X-Plex-Token":"token-secret","email":"alice@example.com","address":"192.168.1.30"}`
-	redacted := Redact([]byte(secret))
+	redacted := conform.Redact([]byte(secret))
 	var parsed map[string]any
 	if e := json.Unmarshal(redacted, &parsed); e != nil {
 		t.Fatalf("redaction broke JSON: %s (%v)", redacted, e)

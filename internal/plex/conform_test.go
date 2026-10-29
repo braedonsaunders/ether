@@ -15,11 +15,12 @@ import (
 	"testing"
 	"time"
 
+	pmsconform "github.com/braedonsaunders/ether/internal/conform"
+	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/pmsconform"
 )
 
-// The reference fixtures in testdata/pms were recorded from a real PMS
+// The reference fixtures in testdata/conform/plex were recorded from a real PMS
 // 1.43.4 playing "The 'Burbs" (HEVC Main 10 + DTS stereo + PGS in MKV).
 // These tests give Ether the same title and media and diff its decision
 // responses against PMS's with pmsconform: field names, JSON types,
@@ -95,13 +96,13 @@ func TestDecisionConformsToPMS(t *testing.T) {
 			codes:    map[string]string{"generalDecisionCode": "", "directPlayDecisionCode": "", "directPlayDecisionText": "", "transcodeDecisionCode": "", "mdeDecisionCode": ""},
 		},
 	}
-	clients := pmsconform.Clients()
+	clients := conformplex.Clients()
 	for _, md := range modes {
 		for _, profile := range []string{"web", "ios", "appletv"} {
 			for _, jsonMode := range []bool{false, true} {
 				name := md.name + "/" + profile + "/" + map[bool]string{false: "xml", true: "json"}[jsonMode]
 				t.Run(name, func(t *testing.T) {
-					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "pms", profile, pmsFixtureName(profile, md.template, jsonMode)))
+					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "conform", "plex", profile, pmsFixtureName(profile, md.template, jsonMode)))
 					if err != nil {
 						t.Fatalf("fixture: %v", err)
 					}
@@ -167,7 +168,7 @@ func TestDetailConformsToPMS(t *testing.T) {
 	for _, profile := range []string{"web", "ios", "appletv"} {
 		for _, jsonMode := range []bool{false, true} {
 			t.Run(profile+"/"+map[bool]string{false: "xml", true: "json"}[jsonMode], func(t *testing.T) {
-				ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "pms", profile, pmsFixtureName(profile, template, jsonMode)))
+				ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "conform", "plex", profile, pmsFixtureName(profile, template, jsonMode)))
 				if err != nil {
 					t.Fatalf("fixture: %v", err)
 				}
@@ -248,7 +249,7 @@ func TestTVConformsToPMS(t *testing.T) {
 		for _, profile := range []string{"web", "ios", "appletv"} {
 			for _, jsonMode := range []bool{false, true} {
 				t.Run(template+"/"+profile+"/"+map[bool]string{false: "xml", true: "json"}[jsonMode], func(t *testing.T) {
-					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "pms", profile, pmsFixtureName(profile, template, jsonMode)))
+					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "conform", "plex", profile, pmsFixtureName(profile, template, jsonMode)))
 					if err != nil {
 						t.Fatalf("fixture: %v", err)
 					}
@@ -408,7 +409,7 @@ func jsonScalar(x any) string {
 func TestPMSFixturesPresent(t *testing.T) {
 	// Guard against the fixture set moving: the conformance tests above
 	// silently depend on it.
-	if _, err := os.Stat(filepath.Join("..", "..", "testdata", "pms", "manifest.json")); err != nil {
+	if _, err := os.Stat(filepath.Join("..", "..", "testdata", "conform", "plex", "manifest.json")); err != nil {
 		t.Fatalf("reference fixtures missing: %v", err)
 	}
 }

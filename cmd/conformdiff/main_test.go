@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/pmsconform"
+	pmsconform "github.com/braedonsaunders/ether/internal/conform"
 )
 
 func TestFilterReport(t *testing.T) {
@@ -26,7 +26,7 @@ func TestFilterReport(t *testing.T) {
 		t.Fatalf("filtered: %+v", got.Differences)
 	}
 	// The shipped data-gap list must compile.
-	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "pms", "data-gaps.regexp"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "conform", "plex", "data-gaps.regexp"))
 	if err != nil {
 		t.Fatal(err)
 	}

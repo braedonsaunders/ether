@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
+	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/pmsconform"
 )
 
 // A stateful protocol contract across official client headers, both encodings,
 // real routing and authentication, and fake media. No live PMS is mutated.
 func TestPlaybackCorpusLifecycle(t *testing.T) {
-	for profile := range pmsconform.Clients() {
+	for profile := range conformplex.Clients() {
 		for _, jsonMode := range []bool{false, true} {
 			format := "xml"
 			if jsonMode {
@@ -25,7 +25,7 @@ func TestPlaybackCorpusLifecycle(t *testing.T) {
 				defer f.srv.Close()
 				f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
 				queueID := ""
-				for _, probe := range pmsconform.PlaybackCorpus() {
+				for _, probe := range conformplex.PlaybackCorpus() {
 					path := strings.NewReplacer("{{machineID}}", "fixture", "{{movieKey}}", fightClub.Key.String(), "{{session}}", "contract-stream", "{{queueID}}", queueID).Replace(probe.Path)
 					hdr := map[string]string{}
 					key := profile

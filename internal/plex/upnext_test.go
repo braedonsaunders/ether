@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/pmsconform"
 )
 
 type upNextWireItem struct {
@@ -26,7 +26,7 @@ type upNextWireContainer struct {
 }
 
 func TestPostplayUpNextReloadAndPlayQueue(t *testing.T) {
-	for name, client := range pmsconform.Clients() {
+	for name, client := range conformplex.Clients() {
 		for _, format := range []string{"xml", "json"} {
 			t.Run(name+"/"+format, func(t *testing.T) {
 				f := newFixture()
@@ -76,7 +76,7 @@ func TestPostplayUpNextReloadAndPlayQueue(t *testing.T) {
 					}
 				}
 				f.trans.decision = core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"}
-				for _, probe := range pmsconform.PlaybackCorpus() {
+				for _, probe := range conformplex.PlaybackCorpus() {
 					if !strings.HasPrefix(probe.Name, "transcode-") {
 						continue
 					}

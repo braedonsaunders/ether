@@ -6,19 +6,20 @@ import (
 	"strings"
 	"testing"
 
+	pmsconform "github.com/braedonsaunders/ether/internal/conform"
+	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/pmsconform"
 )
 
 // Every recorded browsing probe is exercised in both encodings and all three
 // client profiles. Dataset-dependent listings differ; protocol identity and
 // status are still checked against the recording rather than merely parsed.
 func TestRecordedCorpusProtocolContracts(t *testing.T) {
-	for _, probe := range pmsconform.Corpus() {
-		for profile, client := range pmsconform.Clients() {
+	for _, probe := range conformplex.Corpus() {
+		for profile, client := range conformplex.Clients() {
 			for _, jsonMode := range []bool{false, true} {
 				t.Run(profile+"/"+pmsFixtureName(profile, probe.Path, jsonMode), func(t *testing.T) {
-					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "pms", profile, pmsFixtureName(profile, probe.Path, jsonMode)))
+					ref, err := pmsconform.LoadFixture(filepath.Join("..", "..", "testdata", "conform", "plex", profile, pmsFixtureName(profile, probe.Path, jsonMode)))
 					if err != nil {
 						t.Fatal(err)
 					}

@@ -1,4 +1,4 @@
-package pmsconform
+package conform
 
 import (
 	"strings"
