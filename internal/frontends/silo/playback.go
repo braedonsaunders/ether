@@ -450,9 +450,15 @@ func playbackError(w http.ResponseWriter, err error) {
 		if errors.As(err, &cap) && cap.RetryAfter > 0 {
 			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(cap.RetryAfter.Seconds()))))
 		}
+		requestID, idErr := controlCommandID()
+		if idErr != nil {
+			http.Error(w, "Playback unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("X-Request-ID", requestID)
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"type": "/problems/transcode_capacity", "title": "Transcode capacity unavailable", "status": 503, "detail": "The server is busy; retry later."})
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://siloserver.org/docs/api/v2/problems/transcode_capacity", "title": "Transcode capacity unavailable", "status": 503, "detail": "The server is busy; retry later.", "instance": "urn:silo:request:" + requestID})
 		return
 	}
 	http.Error(w, "Playback unavailable", 503)
