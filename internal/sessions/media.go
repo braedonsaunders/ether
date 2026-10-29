@@ -21,7 +21,7 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	if err != nil {
 		return "", err
 	}
-	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("owner/%d/%s", s.public.ViewerID, s.clientID))
+	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
 	if err != nil {
 		return "", err
 	}

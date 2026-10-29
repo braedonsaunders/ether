@@ -15,9 +15,10 @@ type playbackOwners struct {
 	entries map[playbackOwnerKey]*playbackOwner
 }
 type playbackOwnerKey struct {
-	user   int64
-	client string
-	key    core.RatingKey
+	user    int64
+	client  string
+	key     core.RatingKey
+	surface string
 }
 type playbackOwner struct {
 	current string
@@ -35,12 +36,15 @@ func newPlaybackOwners() *playbackOwners {
 const playbackOwnerHistoryLimit = 32
 
 func (o *playbackOwners) bind(user int64, client string, key core.RatingKey, id, playID string, decision bool, now time.Time) {
+	o.bindFor("", user, client, key, id, playID, decision, now)
+}
+func (o *playbackOwners) bindFor(surface string, user int64, client string, key core.RatingKey, id, playID string, decision bool, now time.Time) {
 	if id == "" {
 		return
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	k := playbackOwnerKey{user, client, key}
+	k := playbackOwnerKey{user: user, client: client, key: key, surface: surface}
 	e := o.entries[k]
 	if e == nil {
 		e = &playbackOwner{}
@@ -61,12 +65,15 @@ func (o *playbackOwners) bind(user int64, client string, key core.RatingKey, id,
 	e.updated = now
 }
 func (o *playbackOwners) stale(user int64, client string, key core.RatingKey, id string) bool {
+	return o.staleFor("", user, client, key, id)
+}
+func (o *playbackOwners) staleFor(surface string, user int64, client string, key core.RatingKey, id string) bool {
 	if id == "" {
 		return false
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	e := o.entries[playbackOwnerKey{user, client, key}]
+	e := o.entries[playbackOwnerKey{user: user, client: client, key: key, surface: surface}]
 	return e != nil && e.current != "" && e.current != id && slices.Contains(e.prior, id)
 }
 func (o *playbackOwners) expire(now time.Time, ttl time.Duration) {
@@ -88,5 +95,14 @@ func (o *playbackOwners) Bind(user int64, client string, key core.RatingKey, id,
 }
 func (o *playbackOwners) Stale(user int64, client string, key core.RatingKey, id string) bool {
 	return o.stale(user, client, key, id)
+}
+
+// BindFor and StaleFor isolate frontend namespaces even when a client chooses
+// an identifier that looks like another protocol's internal client key.
+func (o *playbackOwners) BindFor(surface string, user int64, client string, key core.RatingKey, id, playID string, decision bool, now time.Time) {
+	o.bindFor(surface, user, client, key, id, playID, decision, now)
+}
+func (o *playbackOwners) StaleFor(surface string, user int64, client string, key core.RatingKey, id string) bool {
+	return o.staleFor(surface, user, client, key, id)
 }
 func (o *playbackOwners) Expire(now time.Time, ttl time.Duration) { o.expire(now, ttl) }

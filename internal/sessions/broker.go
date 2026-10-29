@@ -277,7 +277,7 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	b.pendingPlans++
 	b.mu.Unlock()
 	defer func() { b.mu.Lock(); b.pendingPlans--; b.mu.Unlock() }()
-	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("owner/%d/%s", v.ID, req.Caps.ClientID))
+	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", v.ID, req.Caps.ClientID))
 	if err != nil {
 		return frontend.PlayPlan{}, err
 	}
@@ -367,7 +367,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if !ok || b.deps.Now().Sub(p.created) > 2*time.Minute || !b.permitted(v, p.request.Caps) {
 		return frontend.Session{}, core.ErrUnauthorized
 	}
-	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("owner/%d/%s", v.ID, p.request.Caps.ClientID))
+	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", v.ID, p.request.Caps.ClientID))
 	if err != nil {
 		return frontend.Session{}, err
 	}
@@ -419,7 +419,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		return frontend.Session{}, core.ErrNotAvailable
 	}
 	b.bindings.Put(&Binding[frontend.PlayIntent]{ID: id, UserID: v.ID, ClientID: s.clientID, Key: session.Item, PlayID: ps.ID, PlaybackID: s.playbackID, Requested: p.request.Intent, Decision: p.decision, Info: ps.Info, Caps: s.caps, Opts: s.opts, UpdatedAt: b.deps.Now()})
-	b.owners.Bind(v.ID, s.clientID, session.Item, s.playbackID, ps.ID, true, b.deps.Now())
+	b.owners.BindFor("broker", v.ID, s.clientID, session.Item, s.playbackID, ps.ID, true, b.deps.Now())
 	now := b.deps.Now()
 	for id, old := range b.retired {
 		if !old.until.After(now) {
@@ -546,7 +546,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if err != nil {
 		return err
 	}
-	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("owner/%d/%s", s.public.ViewerID, s.clientID))
+	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
 	if err != nil {
 		return err
 	}
@@ -573,8 +573,8 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		if reportedID == s.public.ID {
 			reportedID = s.playbackID
 		}
-		if b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, reportedID) {
-			if b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
+		if b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, reportedID) {
+			if b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
 				return b.stopLocked(ctx, s)
 			}
 			return nil
@@ -594,8 +594,8 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	}
 	// Keep active broker ownership alive when Plex's shared v39 history
 	// expires idle entries. Never refresh a superseded binding.
-	if !b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
-		b.owners.Bind(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID, s.playID, false, b.deps.Now())
+	if !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
+		b.owners.BindFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID, s.playID, false, b.deps.Now())
 	}
 	ctx = state.WithOrigin(ctx, state.Origin{Surface: s.public.Protocol, SessionID: s.public.ID, ClientID: s.public.Device.ID})
 	if err := RecordProgress(ctx, b.deps.Progress, s.public.ViewerID, s.public.Item, t.Position, t.Duration, t.State); err != nil {
@@ -652,7 +652,7 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 	if err != nil {
 		return err
 	}
-	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("owner/%d/%s", s.public.ViewerID, s.clientID))
+	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
 	if err != nil {
 		return err
 	}
@@ -687,7 +687,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	if b.deps.Transcoder != nil {
 		b.deps.Transcoder.Stop(s.public.ID)
 	}
-	if !b.owners.Stale(s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
+	if !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
 		b.deps.Playback.Stop(s.playID)
 	}
 	b.publish(ctx, frontend.Event{Type: "SessionStopped", ViewerID: s.public.ViewerID, Item: s.public.Item, SessionID: s.public.ID})
@@ -706,7 +706,7 @@ func (b *Broker) StopPlayback(ctx context.Context, playID string) bool {
 	b.mu.Unlock()
 	for i := range entries {
 		s := &entries[i]
-		unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("owner/%d/%s", s.public.ViewerID, s.clientID))
+		unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
 		if err == nil {
 			cmd := frontend.Command{Kind: frontend.CommandStop}
 			b.publish(ctx, frontend.Event{Type: "SessionCommand", ViewerID: s.public.ViewerID, SessionID: s.public.ID, TargetProtocol: s.public.Protocol, Command: &cmd})

@@ -142,7 +142,7 @@ func TestBrokerUsesSharedPlaybackCoordination(t *testing.T) {
 	}
 	defer b.Close(ctx)
 	device := core.Device{ID: "device"}
-	unlock, err := coord.Gates.Acquire(ctx, fmt.Sprintf("owner/1/%s", clientKey("jellyfin", device)))
+	unlock, err := coord.Gates.Acquire(ctx, fmt.Sprintf("broker/owner/1/%s", clientKey("jellyfin", device)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +152,16 @@ func TestBrokerUsesSharedPlaybackCoordination(t *testing.T) {
 	_, err = b.Plan(limited, frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("broker bypassed shared gate: %v", err)
+	}
+	unlock()
+	plexUnlock, err := coord.Gates.Acquire(ctx, fmt.Sprintf("owner/1/%s", clientKey("jellyfin", device)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer plexUnlock()
+	_, err = b.Plan(ctx, frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil {
+		t.Fatalf("Plex client identifier blocked another protocol: %v", err)
 	}
 }
 func TestBrokerMultiProtocolAdmissionAndMedia(t *testing.T) {
