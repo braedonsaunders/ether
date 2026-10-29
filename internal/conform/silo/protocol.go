@@ -36,8 +36,11 @@ func (p *Protocol) Compare(reference, target conform.Response) conform.Report {
 	return p.Protocol.Compare(reference, target)
 }
 
-func (p *Protocol) CompareRequest(_ conform.Request, reference, target conform.Response) conform.Report {
-	return p.Compare(reference, target)
+func (p *Protocol) CompareRequest(request conform.Request, reference, target conform.Response) conform.Report {
+	if bytes.HasPrefix(bytes.TrimSpace(reference.Body), []byte("#EXTM3U")) || bytes.HasPrefix(bytes.TrimSpace(target.Body), []byte("#EXTM3U")) {
+		return compareSiloPlaylist(reference, target)
+	}
+	return p.Protocol.CompareRequest(request, reference, target)
 }
 
 // Fetch follows the first HLS variant when a target exposes a master ladder.

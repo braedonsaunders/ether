@@ -3,6 +3,7 @@ package silo
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/conform"
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,6 +48,34 @@ func TestShippedProfilesSendDeviceIdentity(t *testing.T) {
 				t.Fatalf("%s %s device header = %q", name, request.Path, got)
 			}
 		}
+	}
+}
+
+func TestSchemaValidatedExtraFieldsRemainInformational(t *testing.T) {
+	if _, err := openapi.CachedSpec("../specs/manifest.json", "silo", ""); os.IsNotExist(err) {
+		t.Skip("Silo OpenAPI cache is empty")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Load("../profiles/silo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers := http.Header{"Content-Type": {"application/json"}}
+	reference := conform.Response{Status: 200, Headers: headers, Body: []byte(`{}`)}
+	target := conform.Response{Status: 200, Headers: headers, Body: []byte(`{"original_language":"en","not_a_contract_field":"unexpected"}`)}
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/api/v2/catalog/items/movie-tmdb-10378"}, reference, target)
+	var known, unknown *conform.Difference
+	for n := range report.Differences {
+		switch report.Differences[n].Path {
+		case "$/original_language":
+			known = &report.Differences[n]
+		case "$/not_a_contract_field":
+			unknown = &report.Differences[n]
+		}
+	}
+	if known == nil || known.Blocking || unknown == nil || !unknown.Blocking {
+		t.Fatalf("schema classification: %+v", report.Differences)
 	}
 }
 func TestObserveHLSAndRejectExternalURLs(t *testing.T) {
