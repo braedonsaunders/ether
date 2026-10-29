@@ -28,3 +28,24 @@ type NeutralHomeRow struct {
 type NeutralHomeLayoutSource interface {
 	FinalizeNeutralHome(context.Context, *User, HomeSituation, string, []NeutralHomeRow) ([]NeutralHomeRow, error)
 }
+
+// NeutralImpression is a server-issued snapshot of a delivered row.
+type NeutralImpression struct {
+	Situation          HomeSituation
+	RowID, Kind, Title string
+	Purpose            RowPurpose
+	Rank               int
+	Items              []RatingKey
+	Collection         RatingKey
+	Item               RatingKey // Parent item for detail rows.
+	Placement, ViewID  string
+	Entries            []NeutralEntryRef
+}
+
+// NeutralEntryRef identifies one delivered entry in a stable namespace.
+type NeutralEntryRef struct{ Kind, ID string }
+
+// NeutralImpressionSink records a validated server-issued row snapshot.
+type NeutralImpressionSink interface {
+	RecordNeutralImpression(*User, NeutralImpression)
+}

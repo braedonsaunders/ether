@@ -19,7 +19,9 @@ func TestReceiptsSharedScopeAndRevocation(t *testing.T) {
 	active := true
 	allowed := true
 	calls := 0
-	opts := ReceiptOptions{DB: db, TTL: time.Minute, MaxPerDevice: 2, Now: func() time.Time { return now }, Active: func(_ context.Context, id int64) (*core.User, error) {
+	opts := ReceiptOptions{AllowedAction: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool {
+		return true
+	}, DB: db, TTL: time.Minute, MaxPerDevice: 2, Now: func() time.Time { return now }, Active: func(_ context.Context, id int64) (*core.User, error) {
 		if !active {
 			return nil, errors.New("revoked")
 		}
@@ -95,7 +97,9 @@ func TestReceiptCapAndHashStorage(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
 	now := time.Unix(1000, 0)
-	s, err := NewReceipts(ReceiptOptions{DB: db, TTL: time.Minute, MaxPerDevice: 1, Now: func() time.Time { return now }, Active: func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool { return true }, Record: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error {
+	s, err := NewReceipts(ReceiptOptions{AllowedAction: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool {
+		return true
+	}, DB: db, TTL: time.Minute, MaxPerDevice: 1, Now: func() time.Time { return now }, Active: func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool { return true }, Record: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error {
 		return nil
 	}})
 	if err != nil {
@@ -125,7 +129,9 @@ func TestReceiptConcurrentDuplicate(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
 	var calls atomic.Int64
-	o := ReceiptOptions{DB: db, TTL: time.Minute, MaxPerDevice: 8, Active: func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool { return true }, Record: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error {
+	o := ReceiptOptions{AllowedAction: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool {
+		return true
+	}, DB: db, TTL: time.Minute, MaxPerDevice: 8, Active: func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool { return true }, Record: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error {
 		calls.Add(1)
 		return nil
 	}}
@@ -167,7 +173,9 @@ func TestReceiptAuthorizationCanReadSameDB(t *testing.T) {
 			t.Errorf("authorization read: %v", err)
 		}
 	}
-	s, err := NewReceipts(ReceiptOptions{DB: db, TTL: time.Minute, MaxPerDevice: 2, Active: func(_ context.Context, id int64) (*core.User, error) { check(); return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool {
+	s, err := NewReceipts(ReceiptOptions{AllowedAction: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool {
+		return true
+	}, DB: db, TTL: time.Minute, MaxPerDevice: 2, Active: func(_ context.Context, id int64) (*core.User, error) { check(); return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool {
 		check()
 		return true
 	}, Record: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error {
@@ -184,5 +192,98 @@ func TestReceiptAuthorizationCanReadSameDB(t *testing.T) {
 	}
 	if err = s.Report(ctx, frontend.RowInteraction{Viewer: u, Device: d, Protocol: "plex", Handle: h, Kind: frontend.RowClick}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReceiptPersistsTrustedImpressionAcrossNodes(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	calls := 0
+	opts := ReceiptOptions{AllowedAction: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool {
+		return true
+	}, DB: db, TTL: time.Minute, MaxPerDevice: 10, Active: func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, Allowed: func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, s ReceiptSubject) bool {
+		return s.Impression != nil && len(s.Impression.Items) == 2
+	}, Record: func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, s ReceiptSubject, _ frontend.RowInteractionKind) error {
+		calls++
+		if s.Impression.Items[0] != 11 || s.Impression.Items[1] != 12 || s.Impression.Situation.Daypart != "evening" || s.Impression.Collection != 44 || s.Impression.Item != 45 || s.Impression.ViewID != "2" || len(s.Impression.Entries) != 2 || s.Impression.Entries[1].ID != "channel-a" {
+			t.Fatal("snapshot changed")
+		}
+		return nil
+	}}
+	a, _ := NewReceipts(opts)
+	b, _ := NewReceipts(opts)
+	v := &core.User{ID: 1}
+	d := core.Device{ID: "tv"}
+	imp := &core.NeutralImpression{RowID: "row", Purpose: "recommendation", Rank: 2, Items: []core.RatingKey{11, 12}, Situation: core.HomeSituation{Daypart: "evening"}, Collection: 44, Item: 45, ViewID: "2", Placement: "library", Entries: []core.NeutralEntryRef{{Kind: "title", ID: "11"}, {Kind: "liveChannel", ID: "channel-a"}}}
+	h, err := a.Issue(ctx, v, d, "jellyfin", ReceiptSubject{Kind: "row", ID: "row", Purpose: imp.Purpose, Rank: 2, Impression: imp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imp.Items[0] = 99
+	event := frontend.RowInteraction{Viewer: v, Device: d, Protocol: "jellyfin", Handle: h, Kind: frontend.RowImpression}
+	if err = b.Report(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.Report(ctx, event); err != nil || calls != 1 {
+		t.Fatalf("replay: %d %v", calls, err)
+	}
+}
+
+func TestReceiptRejectsActionBeforeClaim(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	allow := false
+	calls := 0
+	opts := ReceiptOptions{DB: db, TTL: time.Minute, MaxPerDevice: 2, Active: func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool { return true }, AllowedAction: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool {
+		return allow
+	}, Record: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error {
+		calls++
+		return nil
+	}}
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &core.User{ID: 1}
+	d := core.Device{ID: "tv"}
+	h, err := s.Issue(ctx, v, d, "jellyfin", ReceiptSubject{Kind: "title", ID: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := frontend.RowInteraction{Viewer: v, Device: d, Protocol: "jellyfin", Handle: h, Kind: frontend.RowClick}
+	if !errors.Is(s.Report(ctx, i), ErrReceipt) {
+		t.Fatal("unsupported action accepted")
+	}
+	allow = true
+	if err = s.Report(ctx, i); err != nil || calls != 1 {
+		t.Fatalf("denial consumed receipt: %d %v", calls, err)
+	}
+}
+
+func TestEntryReceiptRequiresMatchingSnapshot(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	var got ReceiptSubject
+	s, err := NewReceipts(ReceiptOptions{DB: db, TTL: time.Minute, MaxPerDevice: 3, Active: func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, Allowed: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool { return true }, AllowedAction: func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool {
+		return true
+	}, Record: func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, subject ReceiptSubject, _ frontend.RowInteractionKind) error {
+		got = subject
+		return nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imp := &core.NeutralImpression{RowID: "row", Purpose: "collection", Rank: 2, Collection: 44, Item: 45, Entries: []core.NeutralEntryRef{{Kind: "title", ID: "123"}}}
+	v := &core.User{ID: 1}
+	d := core.Device{ID: "tv"}
+	if _, err = s.Issue(ctx, v, d, "jellyfin", ReceiptSubject{Kind: "title", ID: "row/title/456", Purpose: imp.Purpose, Rank: 2, Impression: imp}); !errors.Is(err, ErrReceipt) {
+		t.Fatal("accepted entry outside snapshot")
+	}
+	h, err := s.Issue(ctx, v, d, "jellyfin", ReceiptSubject{Kind: "title", ID: "row/title/123", Purpose: imp.Purpose, Rank: 2, Impression: imp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Report(ctx, frontend.RowInteraction{Viewer: v, Device: d, Protocol: "jellyfin", Handle: h, Kind: frontend.RowClick}); err != nil || got.Impression == nil || got.Impression.Item != 45 || got.Impression.Collection != 44 {
+		t.Fatalf("scope lost: %+v %v", got, err)
 	}
 }

@@ -23,6 +23,9 @@ type RowServiceDeps struct {
 	AllowEntry func(context.Context, *core.User, frontend.RowEntry) bool
 	Layout     func(context.Context, frontend.RowRequest, []frontend.Row) ([]frontend.Row, error)
 	Receipts   *Receipts
+	Situation  func(context.Context, frontend.RowRequest) (core.HomeSituation, error)
+	// RankedSource disables retries when the source ranks policy-filtered candidates once.
+	RankedSource bool
 }
 
 // RowsService produces viewer-scoped rows for non-Plex surfaces.
@@ -48,7 +51,7 @@ func NewPlexRowsService(d PlexRowDeps) (*RowsService, error) {
 }
 
 func NewRowsService(d RowServiceDeps) (*RowsService, error) {
-	if d.Source == nil || d.Active == nil || d.AllowRow == nil || d.AllowEntry == nil || d.Receipts == nil || d.Visibility.GetTitle == nil || d.Visibility.SectionFor == nil {
+	if d.Source == nil || d.Active == nil || d.AllowRow == nil || d.AllowEntry == nil || d.Receipts == nil || d.Situation == nil || d.Visibility.GetTitle == nil || d.Visibility.SectionFor == nil {
 		return nil, errors.New("experience: incomplete row dependencies")
 	}
 	return &RowsService{d: d}, nil
@@ -138,7 +141,7 @@ func (s *RowsService) Rows(ctx context.Context, req frontend.RowRequest, protoco
 				out = append(out, row)
 			}
 		}
-		if !expand || fetch >= 1000 || ctx.Err() != nil {
+		if s.d.RankedSource || !expand || fetch >= 1000 || ctx.Err() != nil {
 			break
 		}
 		fetch = min(fetch*2, 1000)
@@ -181,6 +184,11 @@ func (s *RowsService) Rows(ctx context.Context, req frontend.RowRequest, protoco
 		}
 	}
 
+	situation, err := s.d.Situation(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
 	// Layout only sees permitted rows; reject injected or altered rows rather than
 	// trusting a layout provider to manufacture authorization decisions.
 	for i := range out {
@@ -194,14 +202,21 @@ func (s *RowsService) Rows(ctx context.Context, req frontend.RowRequest, protoco
 				return nil, errors.New("experience: layout returned unauthorized entry")
 			}
 		}
-		row.Handle, err = s.d.Receipts.Issue(ctx, req.Viewer, req.Device, protocol, ReceiptSubject{Kind: "row", ID: row.ID, Purpose: row.Purpose, Rank: row.Rank})
+		impression := &core.NeutralImpression{RowID: row.ID, Kind: row.Kind, Title: row.Title, Purpose: row.Purpose, Rank: row.Rank, Situation: situation, Collection: row.Collection, Item: req.Item, Placement: string(req.Placement), ViewID: req.ViewID}
+		for _, entry := range row.Entries {
+			impression.Entries = append(impression.Entries, core.NeutralEntryRef{Kind: string(entry.Kind), ID: entryIdentity(entry)})
+			if entry.Kind == frontend.RowEntryTitle && entry.Title != nil {
+				impression.Items = append(impression.Items, entry.Title.Key)
+			}
+		}
+		row.Handle, err = s.d.Receipts.Issue(ctx, req.Viewer, req.Device, protocol, ReceiptSubject{Kind: "row", ID: row.ID, Purpose: row.Purpose, Rank: row.Rank, Impression: impression})
 		if err != nil {
 			return nil, err
 		}
 		for j := range row.Entries {
 			entry := &row.Entries[j]
 			id := row.ID + "/" + string(entry.Kind) + "/" + entryIdentity(*entry)
-			entry.Handle, err = s.d.Receipts.Issue(ctx, req.Viewer, req.Device, protocol, ReceiptSubject{Kind: string(entry.Kind), ID: id, Purpose: row.Purpose, Rank: row.Rank})
+			entry.Handle, err = s.d.Receipts.Issue(ctx, req.Viewer, req.Device, protocol, ReceiptSubject{Kind: string(entry.Kind), ID: id, Purpose: row.Purpose, Rank: row.Rank, Impression: impression})
 			if err != nil {
 				return nil, err
 			}

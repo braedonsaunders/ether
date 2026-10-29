@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -31,27 +32,33 @@ CREATE TABLE experience_receipt_actions (
 );`)
 }
 
+func init() {
+	store.Register("experience_receipts", 2, `ALTER TABLE experience_receipts ADD COLUMN impression TEXT NOT NULL DEFAULT '';`)
+}
+
 // ReceiptSubject is server-owned neutral information, never supplied by a client report.
 type ReceiptSubject struct {
-	Kind, ID string
-	Purpose  core.RowPurpose
-	Rank     int
+	Kind, ID   string
+	Purpose    core.RowPurpose
+	Rank       int
+	Impression *core.NeutralImpression
 }
 
 type ReceiptOptions struct {
-	DB           *sql.DB
-	Active       func(context.Context, int64) (*core.User, error)
-	Allowed      func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool
-	Record       func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error
-	Now          func() time.Time
-	TTL          time.Duration
-	MaxPerDevice int
+	DB            *sql.DB
+	Active        func(context.Context, int64) (*core.User, error)
+	Allowed       func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject) bool
+	AllowedAction func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) bool
+	Record        func(context.Context, *core.User, core.Device, core.Protocol, ReceiptSubject, frontend.RowInteractionKind) error
+	Now           func() time.Time
+	TTL           time.Duration
+	MaxPerDevice  int
 }
 
 type Receipts struct{ opts ReceiptOptions }
 
 func NewReceipts(o ReceiptOptions) (*Receipts, error) {
-	if o.DB == nil || o.Active == nil || o.Allowed == nil || o.Record == nil || o.TTL < time.Second || o.MaxPerDevice <= 0 {
+	if o.DB == nil || o.Active == nil || o.Allowed == nil || o.AllowedAction == nil || o.Record == nil || o.TTL < time.Second || o.MaxPerDevice <= 0 {
 		return nil, errors.New("experience: incomplete receipt dependencies")
 	}
 	if o.Now == nil {
@@ -62,10 +69,37 @@ func NewReceipts(o ReceiptOptions) (*Receipts, error) {
 
 var ErrReceipt = errors.New("experience: invalid interaction receipt")
 
+func snapshotMatches(subject ReceiptSubject, imp *core.NeutralImpression) bool {
+	if imp == nil || imp.RowID == "" || imp.Purpose != subject.Purpose || imp.Rank != subject.Rank {
+		return false
+	}
+	if subject.Kind == "row" {
+		return imp.RowID == subject.ID
+	}
+	for _, entry := range imp.Entries {
+		if entry.Kind == subject.Kind && entry.ID != "" && subject.ID == imp.RowID+"/"+entry.Kind+"/"+entry.ID {
+			return true
+		}
+	}
+	return false
+}
+
 // Issue creates an opaque, surface-scoped receipt. A device identifier is required.
 func (s *Receipts) Issue(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subject ReceiptSubject) (string, error) {
 	if viewer == nil || viewer.ID <= 0 || device.ID == "" || protocol == "" || subject.Kind == "" || subject.ID == "" {
 		return "", ErrReceipt
+	}
+	var snapshot string
+	if subject.Impression != nil {
+		imp := subject.Impression
+		if !snapshotMatches(subject, imp) || len(imp.Items) > 1000 || len(imp.Entries) > 1000 || len(imp.Placement) > 128 || len(imp.ViewID) > 512 || len(imp.RowID) > 512 || len(imp.Kind) > 512 || len(imp.Title) > 2048 {
+			return "", ErrReceipt
+		}
+		b, err := json.Marshal(imp)
+		if err != nil || len(b) > 32768 {
+			return "", ErrReceipt
+		}
+		snapshot = string(b)
 	}
 	active, err := s.opts.Active(ctx, viewer.ID)
 	if err != nil || active == nil || active.ID != viewer.ID || !s.opts.Allowed(ctx, active, device, protocol, subject) {
@@ -97,7 +131,7 @@ func (s *Receipts) Issue(ctx context.Context, viewer *core.User, device core.Dev
 		}
 		handle := base64.RawURLEncoding.EncodeToString(raw)
 		sum := sha256.Sum256(raw)
-		res, e := tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, hex.EncodeToString(sum[:]), viewer.ID, device.ID, string(protocol), s.opts.Now().Add(s.opts.TTL).Unix(), subject.Kind, subject.ID, string(subject.Purpose), subject.Rank)
+		res, e := tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, hex.EncodeToString(sum[:]), viewer.ID, device.ID, string(protocol), s.opts.Now().Add(s.opts.TTL).Unix(), subject.Kind, subject.ID, string(subject.Purpose), subject.Rank, snapshot)
 		if e != nil {
 			return "", e
 		}
@@ -134,9 +168,9 @@ func (s *Receipts) Report(ctx context.Context, interaction frontend.RowInteracti
 	sum := sha256.Sum256(raw)
 	hash := hex.EncodeToString(sum[:])
 	var uid, expires int64
-	var device, protocol, kind, id, purpose string
+	var device, protocol, kind, id, purpose, snapshot string
 	var rank int
-	err = s.opts.DB.QueryRowContext(ctx, `SELECT viewer_id,device_id,protocol,expires,kind,subject,purpose,rank FROM experience_receipts WHERE hash=?`, hash).Scan(&uid, &device, &protocol, &expires, &kind, &id, &purpose, &rank)
+	err = s.opts.DB.QueryRowContext(ctx, `SELECT viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression FROM experience_receipts WHERE hash=?`, hash).Scan(&uid, &device, &protocol, &expires, &kind, &id, &purpose, &rank, &snapshot)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrReceipt
 	}
@@ -148,7 +182,20 @@ func (s *Receipts) Report(ctx context.Context, interaction frontend.RowInteracti
 	}
 	viewer, err := s.opts.Active(ctx, uid)
 	subject := ReceiptSubject{Kind: kind, ID: id, Purpose: core.RowPurpose(purpose), Rank: rank}
+	if snapshot != "" {
+		if len(snapshot) > 32768 {
+			return ErrReceipt
+		}
+		var imp core.NeutralImpression
+		if json.Unmarshal([]byte(snapshot), &imp) != nil || !snapshotMatches(subject, &imp) || len(imp.Items) > 1000 || len(imp.Entries) > 1000 {
+			return ErrReceipt
+		}
+		subject.Impression = &imp
+	}
 	if err != nil || viewer == nil || viewer.ID != uid || !s.opts.Allowed(ctx, viewer, interaction.Device, interaction.Protocol, subject) {
+		return ErrReceipt
+	}
+	if !s.opts.AllowedAction(ctx, viewer, interaction.Device, interaction.Protocol, subject, interaction.Kind) {
 		return ErrReceipt
 	}
 	// Policy and membership callbacks may use this same database; do not hold
