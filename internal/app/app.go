@@ -42,6 +42,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/safety"
 	"github.com/braedonsaunders/ether/internal/segcache"
 	"github.com/braedonsaunders/ether/internal/service"
+	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/simkl"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/stats"
@@ -136,17 +137,18 @@ type App struct {
 	// Debrid: torrent releases stream through owner debrid accounts. The
 	// wrappers dispatch on the payload and delegate Usenet to engine and
 	// indexers, so every consumer uses media and sources.
-	debrid     *debrid.Service
-	media      *debrid.Engine  // core.Engine + core.HealthChecker over engine
-	sources    *debrid.Indexer // core.Indexer over indexers
-	resolver   *resolver.Service
-	transcoder *transcode.Manager
-	load       *sysload.Sampler // machine load for the Overview
-	playback   *playback.Manager
-	prefetch   *prefetch.Prefetcher
-	cachefill  *cachefill.Manager
-	plextv     *plextv.Client
-	users      *auth.Service
+	debrid        *debrid.Service
+	media         *debrid.Engine  // core.Engine + core.HealthChecker over engine
+	sources       *debrid.Indexer // core.Indexer over indexers
+	resolver      *resolver.Service
+	transcoder    *transcode.Manager
+	load          *sysload.Sampler // machine load for the Overview
+	playback      *playback.Manager
+	prefetch      *prefetch.Prefetcher
+	cachefill     *cachefill.Manager
+	plextv        *plextv.Client
+	users         *auth.Service
+	sessionEvents *sessions.EventBus
 
 	certs     *plextv.CertManager
 	registrar *plextv.Registrar
@@ -330,7 +332,7 @@ func (a *App) build(ctx context.Context, cfg config.Config) error {
 	// initialized auth service. Scorer consumers are built inside the model's
 	// dependency phase before its workers start.
 	for _, build := range []func(context.Context, config.Config) error{
-		a.buildCatalogue, func(context.Context, config.Config) error { a.safety.SetCatalogPolicy(a.catalog.Visible); return nil }, a.buildIdentity, a.buildPersonalization,
+		a.buildCatalogue, func(context.Context, config.Config) error { a.safety.SetCatalogPolicy(a.catalog.Visible); return nil }, a.buildIdentity, a.buildSessionEvents, a.buildPersonalization,
 		a.buildSources, a.buildPlayback, a.buildPrefetch, a.buildIntegrations,
 	} {
 		if err := build(ctx, cfg); err != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/sessions"
+	watchstate "github.com/braedonsaunders/ether/internal/state"
 )
 
 // stateKey reads the item key from ratingKey= or key=.
@@ -43,6 +44,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	unlockOwner, locked := s.lockPlaybackRequest(w, r)
 	if !locked {
 		return
@@ -183,6 +185,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -202,6 +205,7 @@ func (s *Server) handleUnscrobble(w http.ResponseWriter, r *http.Request) { s.sc
 func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -251,6 +255,7 @@ func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) 
 func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -293,6 +298,7 @@ func (s *Server) handleRate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRemoveFromContinueWatching(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	key := stateKey(r)
 	if key == 0 || pr.User == nil || s.d.State == nil {
 		writeHTTPError(w, http.StatusBadRequest)
@@ -315,6 +321,7 @@ func (s *Server) handleRemoveFromContinueWatching(w http.ResponseWriter, r *http
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	entries := s.sessionEntries(ctx)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].sessionKey < entries[j].sessionKey })
 	mc := &model.MediaContainer{}
@@ -383,6 +390,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
+	ctx = watchstate.WithOrigin(ctx, watchstate.Origin{Surface: "plex", SessionID: pr.SessionID, ClientID: pr.ClientID})
 	mc := &model.MediaContainer{}
 	if s.d.State == nil || pr.User == nil {
 		s.write(w, r, mc)

@@ -29,6 +29,8 @@ type frontendRuntime struct {
 	registry       *frontend.Registry
 	control        *frontendControl
 	events         *sessions.EventBus
+	broker         *sessions.Broker
+	stateUnsub     func()
 	ctx            context.Context
 	cancel         context.CancelFunc
 	mu             sync.Mutex
@@ -68,9 +70,15 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: sessions.NewEventBus(a.clusterNode(), a.users.ActiveUser), discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
+	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: a.sessionEvents, discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
+	r.broker, err = a.newSessionBroker(r.events)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	r.stateUnsub = subscribeSessionState(a.state, r.events, a.plexServer.WatchStateChanged, func(err error) { a.log.Warn("user data event publication failed", "err", err) })
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
-		return frontend.Host{Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: r.events, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, Config: func() frontend.Settings {
+		return frontend.Host{Sessions: sessions.BindSurface(r.broker, id), Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: sessions.BindEvents(r.events, id), Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, Config: func() frontend.Settings {
 			settings, err := r.control.Settings(r.ctx, id)
 			if err != nil {
 				return frontend.Settings{}
@@ -82,18 +90,21 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	r.control.clientCount = a.frontendClients.count
 	r.control.sharedStatus = r.sharedStatus
 	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
-		r.events.Close()
+		r.stateUnsub()
+		r.broker.Close(context.Background())
 		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(mediabrowser.Jellyfin{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.events.Close()
+		r.stateUnsub()
+		r.broker.Close(context.Background())
 		cancel()
 		return nil, err
 	}
 	if cfg.Frontends == nil || cfg.Frontends["plex"].Enabled {
 		if err := r.control.listeners.start(ctx, "plex"); err != nil {
-			r.events.Close()
+			r.stateUnsub()
+			r.broker.Close(context.Background())
 			cancel()
 			return nil, err
 		}
@@ -269,5 +280,10 @@ func (r *frontendRuntime) close() {
 	r.mu.Unlock()
 	r.cancel()
 	_ = r.control.listeners.close(context.Background())
-	r.events.Close()
+	if r.stateUnsub != nil {
+		r.stateUnsub()
+	}
+	if r.broker != nil {
+		r.broker.Close(context.Background())
+	}
 }

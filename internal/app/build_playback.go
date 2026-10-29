@@ -26,14 +26,20 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 			a.playback.WarmInput(input, from, to)
 		}
 	}), transcode.WithInputFailureHandler(func(id, input string, at time.Duration, failure error) {
-		if a.plexServer == nil || ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		rctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 		log.Warn("recovering failed encoder input", "session", id, "at", at, "err", failure)
-		if err := a.plexServer.RecoverTranscode(rctx, id, input, at); err != nil {
-			log.Warn("encoder recovery exhausted", "session", id, "err", err)
+		var recoverErr error
+		if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.HasBinding(id) {
+			recoverErr = a.frontends.broker.Recover(rctx, id, input, at)
+		} else if a.plexServer != nil {
+			recoverErr = a.plexServer.RecoverTranscode(rctx, id, input, at)
+		}
+		if recoverErr != nil {
+			log.Warn("encoder recovery exhausted", "session", id, "err", recoverErr)
 		}
 	}))
 	if err != nil {
@@ -83,6 +89,11 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 		// Transcode sessions are keyed by the client's session id; the Plex
 		// front end (built below) maps playback sessions to them.
 		HLSLookup: func(id string) (core.HLSSession, bool) {
+			if a.frontends != nil && a.frontends.broker != nil {
+				if hs, ok := a.frontends.broker.TranscodeFor(context.Background(), id); ok {
+					return hs, true
+				}
+			}
 			if a.plexServer != nil {
 				if hs, ok := a.plexServer.TranscodeFor(id); ok {
 					return hs, true

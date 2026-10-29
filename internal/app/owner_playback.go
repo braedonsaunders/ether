@@ -54,6 +54,9 @@ func (a *App) stopOwnerSession(id string) error {
 			}
 		}
 	}
+	if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.StopPlayback(context.Background(), id) {
+		return nil
+	}
 	if a.plexServer != nil {
 		a.plexServer.StopPlayback(id, "The server owner has ended this stream.")
 	} else {

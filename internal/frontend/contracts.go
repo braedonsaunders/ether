@@ -259,6 +259,9 @@ type PlayIntent struct {
 	Position        time.Duration
 	ClientSessionID string
 	PlaybackID      string
+	// AllowTranscoding is nil for the existing default; false forbids video
+	// or audio transcoding while retaining any allowed direct-stream remux.
+	AllowTranscoding *bool
 	// PreferRemux asks for a copy-only remux when source changes would
 	// otherwise disrupt the client. The broker still decides whether it applies.
 	PreferRemux bool
@@ -333,6 +336,13 @@ type Event struct {
 	ViewerID  int64
 	Item      core.RatingKey
 	SessionID string
+	// SubjectKind and SubjectID identify non-title user data such as a
+	// favorite person, collection or channel. Item remains the title key.
+	SubjectKind     string
+	SubjectID       string
+	OriginProtocol  Protocol
+	OriginSessionID string
+	OriginClientID  string
 }
 
 // SessionAccess binds client operations to an authenticated viewer and surface.
@@ -349,6 +359,8 @@ type SessionAccess struct {
 type EventScope struct {
 	Viewer *core.Viewer
 	Owner  bool
+	// Protocol suppresses this surface's own user-data invalidations.
+	Protocol Protocol
 }
 
 // Sessions owns playback across protocols. Open revalidates the broker-owned

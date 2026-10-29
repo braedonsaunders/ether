@@ -19,6 +19,9 @@ type DecisionRequest struct {
 	PreferRemux          bool
 	Protocol             string
 	RemoteMaxBitrateKbps int
+	// PreserveSourceOnFailure lets a broker avoid stopping a reused source
+	// when an attempted decision cannot be served without a transcoder.
+	PreserveSourceOnFailure bool
 }
 
 // Decide preserves the playback remux override for on-demand sources and
@@ -34,7 +37,7 @@ func Decide(playback core.Playback, transcoder core.Transcoder, r DecisionReques
 	} else {
 		dec = transcode.Decide(ps.Info, r.Caps, r.Options, transcode.Policy{RemoteMaxBitrateKbps: r.RemoteMaxBitrateKbps})
 		if dec.Kind != core.DecisionDirectPlay {
-			if playback != nil {
+			if playback != nil && !r.PreserveSourceOnFailure {
 				playback.Stop(ps.ID)
 			}
 			return core.Decision{}, fmt.Errorf("this client requires media conversion; install or configure FFmpeg")

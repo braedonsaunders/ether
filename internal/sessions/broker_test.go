@@ -1,0 +1,372 @@
+package sessions
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+type fakePlayback struct {
+	mu                         sync.Mutex
+	sessions                   map[string]*core.PlaySession
+	limit, prepares, estimates int
+}
+
+func (f *fakePlayback) Estimate(context.Context, *core.Title, core.ClientCaps) core.MediaInfo {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.estimates++
+	return core.MediaInfo{Estimated: true, Container: "mp4"}
+}
+func (f *fakePlayback) Prepare(_ context.Context, u *core.User, key core.RatingKey, c core.ClientCaps) (*core.PlaySession, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.prepares++
+	for _, p := range f.sessions {
+		if p.UserID == u.ID && p.ClientID == c.ClientID && p.Key == key {
+			return p, nil
+		}
+	}
+	if len(f.sessions) >= f.limit {
+		return nil, core.ErrStreamLimit
+	}
+	id := fmt.Sprintf("source-%d", f.prepares)
+	p := &core.PlaySession{ID: id, UserID: u.ID, ClientID: c.ClientID, Key: key, Info: core.MediaInfo{Container: "mp4", Streams: []core.StreamInfo{{Type: "subtitle", ExternalURL: "https://upstream.invalid/?token=account-credential-secret"}}}}
+	f.sessions[id] = p
+	return p, nil
+}
+func (f *fakePlayback) Session(id string) (*core.PlaySession, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.sessions[id]
+	return p, ok
+}
+func (f *fakePlayback) SessionFor(user int64, client string, key core.RatingKey) (*core.PlaySession, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, p := range f.sessions {
+		if p.UserID == user && p.ClientID == client && p.Key == key {
+			return p, true
+		}
+	}
+	return nil, false
+}
+func (f *fakePlayback) ServeRange(w http.ResponseWriter, _ *http.Request, _ string) {
+	_, _ = w.Write([]byte("source bytes"))
+}
+func (f *fakePlayback) InputURL(id string) string { return "http://loopback/" + id }
+func (f *fakePlayback) Failover(context.Context, string, time.Duration) (*core.PlaySession, error) {
+	return nil, core.ErrNotAvailable
+}
+func (f *fakePlayback) Stop(id string) { f.mu.Lock(); defer f.mu.Unlock(); delete(f.sessions, id) }
+func (f *fakePlayback) Sessions() []*core.PlaySession {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]*core.PlaySession, 0, len(f.sessions))
+	for _, p := range f.sessions {
+		out = append(out, p)
+	}
+	return out
+}
+
+type fakeBrokerTranscoder struct{}
+
+func (fakeBrokerTranscoder) Probe(context.Context, string) (*core.MediaInfo, error) {
+	return nil, core.ErrNotAvailable
+}
+func (fakeBrokerTranscoder) Decide(core.MediaInfo, core.ClientCaps, core.DecideOptions) core.Decision {
+	return core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: "mp4"}
+}
+func (fakeBrokerTranscoder) StartHLS(context.Context, core.HLSRequest) (core.HLSSession, error) {
+	return nil, core.ErrNotAvailable
+}
+func (fakeBrokerTranscoder) Session(string) (core.HLSSession, bool) { return nil, false }
+func (fakeBrokerTranscoder) Stop(string)                            {}
+func (fakeBrokerTranscoder) HWAccel() core.HWAccel                  { return core.HWAccel{} }
+func TestBrokerMultiProtocolAdmissionAndMedia(t *testing.T) {
+	ctx := context.Background()
+	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 5}
+	progress := &fakeProgress{}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		return &core.Viewer{ID: id, IsOwner: id == 1}, nil
+	}
+	bus := NewEventBus(nil, active)
+	defer bus.Close()
+	lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key}, nil
+	}
+	broker, err := NewBroker(BrokerDeps{Lookup: lookup, Playback: p, Transcoder: fakeBrokerTranscoder{}, Progress: progress, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: bus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := &core.Viewer{ID: 2}
+	key := core.MovieKey(7)
+	estimate, err := broker.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: core.Device{ID: "detail"}, Protocol: "plex", Item: key, Intent: frontend.PlayIntent{Estimate: true}})
+	if err != nil || !estimate.Estimated || p.prepares != 0 {
+		t.Fatalf("estimate %+v prepare=%d err=%v", estimate, p.prepares, err)
+	}
+	var opened []frontend.Session
+	var access []frontend.SessionAccess
+	protocols := []frontend.Protocol{"plex", "plex", "jellyfin", "jellyfin", "jellyfin"}
+	for i, protocol := range protocols {
+		device := core.Device{ID: fmt.Sprintf("device-%d", i), Client: "account-credential-secret"}
+		req := frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: protocol, Item: key, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}}
+		plan, e := broker.Plan(ctx, req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, err := broker.Open(ctx, frontend.OpenRequest{Protocol: protocol, PlanID: plan.ID, Viewer: &core.Viewer{ID: 3}, Device: device}); !errors.Is(err, core.ErrUnauthorized) {
+			t.Fatalf("foreign open: %v", err)
+		}
+		if len(plan.Media.Streams) > 0 && plan.Media.Streams[0].ExternalURL != "" {
+			t.Fatal("upstream credential leaked in plan")
+		}
+		s, e := broker.Open(ctx, frontend.OpenRequest{Protocol: protocol, PlanID: plan.ID, Viewer: viewer, Device: device})
+		if e != nil {
+			t.Fatal(e)
+		}
+		a := frontend.SessionAccess{Viewer: viewer, Device: core.Device{ID: device.ID}, Protocol: protocol}
+		if err := broker.Stop(ctx, frontend.SessionAccess{Viewer: &core.Viewer{ID: 3}, Device: device, Protocol: protocol}, s.ID); !errors.Is(err, core.ErrUnauthorized) {
+			t.Fatalf("foreign stop: %v", err)
+		}
+		path, e := broker.StartStream(ctx, a, s.ID, frontend.StreamRequest{Format: frontend.StreamDirect})
+		if e != nil {
+			t.Fatal(e)
+		}
+		if strings.Contains(path, device.Client) || strings.Contains(s.MediaPath, device.Client) {
+			t.Fatal("account credential leaked in media path")
+		}
+		rec := httptest.NewRecorder()
+		broker.ServeMedia(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != 200 || rec.Body.String() != "source bytes" {
+			t.Fatalf("media: %d %q", rec.Code, rec.Body.String())
+		}
+		wrongSurface := httptest.NewRecorder()
+		BindSurface(broker, "emby").ServeMedia(wrongSurface, httptest.NewRequest(http.MethodGet, path, nil))
+		if wrongSurface.Code != http.StatusNotFound {
+			t.Fatalf("cross-surface media: %d", wrongSurface.Code)
+		}
+		bad := httptest.NewRecorder()
+		broker.ServeMedia(bad, httptest.NewRequest(http.MethodGet, strings.Replace(path, "/file", "x/file", 1), nil))
+		if bad.Code != 404 {
+			t.Fatalf("bad grant accepted: %d", bad.Code)
+		}
+		opened = append(opened, s)
+		access = append(access, a)
+	}
+	if got, err := broker.Sessions(ctx, frontend.SessionAccess{Viewer: viewer}); err != nil || len(got) != 5 {
+		t.Fatalf("sessions %d %v", len(got), err)
+	}
+	if err := broker.Report(ctx, access[0], opened[0].ID, frontend.Timeline{State: "paused", Position: time.Minute, Duration: time.Hour}); err != nil || progress.calls != 1 {
+		t.Fatalf("report calls=%d err=%v", progress.calls, err)
+	}
+	fifthDevice := core.Device{ID: "sixth"}
+	if _, err := broker.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: fifthDevice, Protocol: "jellyfin", Item: key, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}}); !errors.Is(err, core.ErrStreamLimit) {
+		t.Fatalf("sixth plan error: %v", err)
+	}
+	if err := broker.Stop(ctx, access[0], opened[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	fifth, err := broker.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: fifthDevice, Protocol: "jellyfin", Item: key, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil {
+		t.Fatalf("released admission: %v", err)
+	}
+	if _, err := broker.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: fifthDevice, Protocol: "jellyfin", PlanID: fifth.ID}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type fakeMediaSession struct{ id, protocol string }
+
+func (s *fakeMediaSession) ID() string { return s.id }
+func (s *fakeMediaSession) ServePlaylist(w http.ResponseWriter, _ *http.Request) {
+	_, _ = w.Write([]byte("#EXTM3U\n00000.ts\n"))
+}
+func (s *fakeMediaSession) ServeSegment(w http.ResponseWriter, _ *http.Request, n int) {
+	_, _ = fmt.Fprintf(w, "segment-%d", n)
+}
+func (s *fakeMediaSession) SwapInput(context.Context, string, core.MediaInfo, time.Duration) error {
+	return nil
+}
+func (s *fakeMediaSession) LastAccess() time.Time { return time.Now() }
+func (s *fakeMediaSession) Close() error          { return nil }
+func (s *fakeMediaSession) ServeManifest(w http.ResponseWriter, _ *http.Request) {
+	_, _ = fmt.Fprintf(w, "session/%s/0/header", s.id)
+}
+func (s *fakeMediaSession) ServeInit(w http.ResponseWriter, _ *http.Request, rep int) {
+	_, _ = fmt.Fprintf(w, "init-%d", rep)
+}
+func (s *fakeMediaSession) ServeMedia(w http.ResponseWriter, _ *http.Request, rep, n int) {
+	_, _ = fmt.Fprintf(w, "dash-%d-%d", rep, n)
+}
+
+type fakeMediaTranscoder struct{ sessions map[string]*fakeMediaSession }
+
+func (f *fakeMediaTranscoder) Probe(context.Context, string) (*core.MediaInfo, error) {
+	return nil, core.ErrNotAvailable
+}
+func (f *fakeMediaTranscoder) Decide(core.MediaInfo, core.ClientCaps, core.DecideOptions) core.Decision {
+	return core.Decision{Kind: core.DecisionDirectPlay, Container: "mp4"}
+}
+func (f *fakeMediaTranscoder) StartHLS(_ context.Context, r core.HLSRequest) (core.HLSSession, error) {
+	s := &fakeMediaSession{id: r.SessionID, protocol: r.Protocol}
+	f.sessions[r.SessionID] = s
+	return s, nil
+}
+func (f *fakeMediaTranscoder) Session(id string) (core.HLSSession, bool) {
+	s, ok := f.sessions[id]
+	if !ok {
+		return nil, false
+	}
+	return s, true
+}
+func (f *fakeMediaTranscoder) Stop(id string)        { delete(f.sessions, id) }
+func (f *fakeMediaTranscoder) HWAccel() core.HWAccel { return core.HWAccel{} }
+func TestBrokerSegmentedMedia(t *testing.T) {
+	ctx := context.Background()
+	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	tc := &fakeMediaTranscoder{sessions: map[string]*fakeMediaSession{}}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	bus := NewEventBus(nil, active)
+	defer bus.Close()
+	broker, err := NewBroker(BrokerDeps{Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, Playback: p, Transcoder: tc, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: bus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &core.Viewer{ID: 2}
+	device := core.Device{ID: "tv"}
+	plan, err := broker.Plan(ctx, frontend.PlanRequest{Viewer: v, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := broker.Open(ctx, frontend.OpenRequest{Viewer: v, Device: device, Protocol: "jellyfin", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := frontend.SessionAccess{Viewer: v, Device: device, Protocol: "jellyfin"}
+	hls, err := broker.StartStream(ctx, access, s.ID, frontend.StreamRequest{Format: frontend.StreamHLS})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := tc.sessions[s.ID]
+	again, err := broker.StartStream(ctx, access, s.ID, frontend.StreamRequest{Format: frontend.StreamHLS})
+	if err != nil || again != hls || tc.sessions[s.ID] != first {
+		t.Fatalf("repeated HLS start restarted encoder: %q %v", again, err)
+	}
+	fetch := func(path string) string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		broker.ServeMedia(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != 200 {
+			t.Fatalf("%s: %d", path, w.Code)
+		}
+		return w.Body.String()
+	}
+	if got := fetch(hls); !strings.Contains(got, "00000.ts") {
+		t.Fatalf("playlist %q", got)
+	}
+	if got := fetch(strings.TrimSuffix(hls, "index.m3u8") + "00000.ts"); got != "segment-0" {
+		t.Fatalf("segment %q", got)
+	}
+	dash, err := broker.StartStream(ctx, access, s.ID, frontend.StreamRequest{Format: frontend.StreamDASH})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fetch(dash); !strings.Contains(got, "session/"+s.ID) {
+		t.Fatalf("manifest %q", got)
+	}
+	base := strings.TrimSuffix(dash, "manifest.mpd") + "session/" + s.ID + "/0/"
+	if got := fetch(base + "header"); got != "init-0" {
+		t.Fatalf("init %q", got)
+	}
+	if got := fetch(base + "0.m4s"); got != "dash-0-0" {
+		t.Fatalf("DASH segment %q", got)
+	}
+}
+
+type noTranscodeFixture struct{ fakeBrokerTranscoder }
+
+func (noTranscodeFixture) Decide(core.MediaInfo, core.ClientCaps, core.DecideOptions) core.Decision {
+	return core.Decision{Kind: core.DecisionTranscode}
+}
+func TestPlanRejectsForbiddenTranscoding(t *testing.T) {
+	ctx := context.Background()
+	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	b, err := NewBroker(BrokerDeps{Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, Playback: p, Transcoder: noTranscodeFixture{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := false
+	_, err = b.Plan(ctx, frontend.PlanRequest{Viewer: &core.Viewer{ID: 2}, Device: core.Device{ID: "tv"}, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{AllowTranscoding: &allowed}})
+	if !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("forbidden transcode error %v", err)
+	}
+}
+
+func TestBrokerSupersededReportCannotStopReplacement(t *testing.T) {
+	ctx := context.Background()
+	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	progress := &fakeProgress{}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	bus := NewEventBus(nil, active)
+	defer bus.Close()
+	b, err := NewBroker(BrokerDeps{Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, Playback: p, Transcoder: fakeBrokerTranscoder{}, Progress: progress, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: bus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &core.Viewer{ID: 2}
+	d := core.Device{ID: "tv"}
+	a := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "jellyfin"}
+	open := func() frontend.Session {
+		t.Helper()
+		p, err := b.Plan(ctx, frontend.PlanRequest{Viewer: v, Device: d, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := b.Open(ctx, frontend.OpenRequest{Viewer: v, Device: d, Protocol: "jellyfin", PlanID: p.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	old, current := open(), open()
+	if err := b.Report(ctx, a, current.ID, frontend.Timeline{PlaybackID: old.ID, State: "stopped"}); err != nil {
+		t.Fatal(err)
+	}
+	if progress.calls != 0 || len(p.Sessions()) != 1 {
+		t.Fatal("stale identifier affected replacement")
+	}
+	if err := b.Report(ctx, a, old.ID, frontend.Timeline{PlaybackID: old.ID, State: "stopped"}); err != nil {
+		t.Fatal(err)
+	}
+	if progress.calls != 0 || len(p.Sessions()) != 1 {
+		t.Fatal("superseded session stopped replacement")
+	}
+	if err := b.Report(ctx, a, current.ID, frontend.Timeline{PlaybackID: current.ID, State: "playing"}); err != nil || progress.calls != 1 {
+		t.Fatalf("current report %v, progress %d", err, progress.calls)
+	}
+	if err := b.Report(ctx, a, current.ID, frontend.Timeline{PlaybackID: current.ID, State: "stopped"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Stop(ctx, a, current.ID); err != nil {
+		t.Fatalf("idempotent stop: %v", err)
+	}
+}

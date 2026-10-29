@@ -103,6 +103,23 @@ type Event struct {
 	Completed bool
 	At        time.Time
 	Imported  bool // reviewed history import; never an active playback timeline
+	Origin    Origin
+}
+
+// Origin identifies the surface and client that made a watch-state change.
+type Origin struct {
+	Surface             core.Protocol
+	SessionID, ClientID string
+}
+type originKey struct{}
+
+// WithOrigin attaches the authenticated request origin to committed events.
+func WithOrigin(ctx context.Context, origin Origin) context.Context {
+	return context.WithValue(ctx, originKey{}, origin)
+}
+func originFrom(ctx context.Context) Origin {
+	origin, _ := ctx.Value(originKey{}).(Origin)
+	return origin
 }
 
 // Options tune a State. Now is injectable for tests.
@@ -203,6 +220,7 @@ type progressWrite struct {
 	state            string
 	at               time.Time
 	before           *progressWrite
+	origin           Origin
 }
 
 func (w progressWrite) completes() bool {
@@ -432,6 +450,7 @@ func (s *State) updateAt(ctx context.Context, userID int64, keys []core.RatingKe
 		return err
 	}
 	for _, ev := range events {
+		ev.Origin = originFrom(ctx)
 		s.emit(ev)
 	}
 	return nil
@@ -513,7 +532,7 @@ func (s *State) Progress(ctx context.Context, userID int64, key core.RatingKey, 
 	if offset < 0 {
 		offset = 0
 	}
-	w := progressWrite{offset: offset, duration: duration, state: state}
+	w := progressWrite{offset: offset, duration: duration, state: state, origin: originFrom(ctx)}
 	if s.progress == nil {
 		return s.progressAt(ctx, userID, key, w)
 	}
@@ -524,6 +543,7 @@ func (s *State) Progress(ctx context.Context, userID int64, key core.RatingKey, 
 
 // progressAt applies one timeline update (at zero: now).
 func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey, w progressWrite) error {
+	ctx = WithOrigin(ctx, w.origin)
 	reported, duration, state := w.offset, w.duration, w.state
 	return s.updateAt(ctx, userID, []core.RatingKey{key}, w.at, func(cur *row, now time.Time) (bool, bool, []Event) {
 		offset := reported // fn may be re-run after a conflict
