@@ -3,7 +3,6 @@ package plex
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"html"
 	"net/http"
 	"regexp"
@@ -12,9 +11,10 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
-const streamGrantParam = "X-Ether-Stream-Token"
+const streamGrantParam = sessions.StreamGrantParam
 
 func transcodeSessionID(path string) string {
 	rest, ok := strings.CutPrefix(path, "/video/:/transcode/universal/session/")
@@ -75,15 +75,11 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 		return false
 	}
 	e, ok := s.transcodes.get(id)
-	if !ok || !e.started || e.streamToken == "" {
+	if !ok {
 		return false
 	}
-	token := r.URL.Query().Get(streamGrantParam)
-	if subtle.ConstantTimeCompare([]byte(token), []byte(e.streamToken)) != 1 {
-		return false
-	}
-	u := s.activeViewer(r.Context(), e.userID)
-	if u == nil {
+	u, ok := sessions.AuthenticateGrant(r.Context(), r.Method, r.URL.Query().Get(streamGrantParam), sessions.GrantBinding{Token: e.streamToken, ViewerID: e.userID, Started: e.started}, s.activeViewer)
+	if !ok {
 		return false
 	}
 	if policy, ok := s.d.AccessPolicy.(core.UserPolicySource); ok {
@@ -92,16 +88,13 @@ func (s *Server) authenticateStreamGrant(r *http.Request, pr *Request) bool {
 	if policy, ok := s.d.AccessPolicy.(core.PlaybackAccessPolicy); ok && !policy.CanPlay(u, pr.ClientCaps(0).Remote, s.now()) {
 		return false
 	}
+
 	pr.User = u
 	return true
 }
 
 func streamGrantURL(raw, token string) string {
-	sep := "?"
-	if strings.Contains(raw, "?") {
-		sep = "&"
-	}
-	return raw + sep + streamGrantParam + "=" + token
+	return sessions.GrantURL(raw, token)
 }
 
 // Only manifest responses are buffered. Segments remain streamed directly.
