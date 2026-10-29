@@ -91,6 +91,8 @@ type SurfaceIdentity interface {
 	Resolve(context.Context, string) (*core.Viewer, error)
 	PublicViewers(context.Context) ([]PublicViewer, error)
 	SignIn(context.Context, string, string, core.Device) (string, error)
+	IssueRefresh(context.Context, string, core.Device) (string, error)
+	Refresh(context.Context, string, core.Device) (string, string, error)
 	QuickConnectInitiate(context.Context, core.Device) (code, secret string, err error)
 	QuickConnectStatus(context.Context, string) (approved bool, err error)
 	QuickConnectDetails(context.Context, string) (QuickConnectDetails, error)
@@ -138,6 +140,13 @@ func (b boundIdentity) Resolve(ctx context.Context, credential string) (*core.Vi
 		return nil, errors.New("identity surface unavailable")
 	}
 	return b.resolver.Resolve(ctx, string(b.surface), credential)
+}
+
+func (boundIdentity) IssueRefresh(context.Context, string, core.Device) (string, error) {
+	return "", ErrIdentityUnavailable
+}
+func (boundIdentity) Refresh(context.Context, string, core.Device) (string, string, error) {
+	return "", "", ErrIdentityUnavailable
 }
 
 // ErrIdentityUnavailable means this host does not implement credential issuance.

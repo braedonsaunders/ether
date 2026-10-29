@@ -250,6 +250,8 @@ var _ frontend.Sessions = Sessions{}
 
 // Identity implements a configurable surface-bound identity for protocol tests.
 type Identity struct {
+	IssueRefreshFunc  func(context.Context, string, core.Device) (string, error)
+	RefreshFunc       func(context.Context, string, core.Device) (string, string, error)
 	ResolveFunc       func(context.Context, string) (*core.Viewer, error)
 	PublicViewersFunc func(context.Context) ([]frontend.PublicViewer, error)
 	SignInFunc        func(context.Context, string, string, core.Device) (string, error)
@@ -396,3 +398,16 @@ func (f LiveTV) ResolveProgrammeGUID(ctx context.Context, v *core.Viewer, id str
 }
 
 var _ frontend.LiveTV = LiveTV{}
+
+func (f Identity) IssueRefresh(ctx context.Context, token string, d core.Device) (string, error) {
+	if f.IssueRefreshFunc != nil {
+		return f.IssueRefreshFunc(ctx, token, d)
+	}
+	return "", frontend.ErrIdentityUnavailable
+}
+func (f Identity) Refresh(ctx context.Context, token string, d core.Device) (string, string, error) {
+	if f.RefreshFunc != nil {
+		return f.RefreshFunc(ctx, token, d)
+	}
+	return "", "", frontend.ErrIdentityUnavailable
+}

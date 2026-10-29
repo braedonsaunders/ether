@@ -66,6 +66,15 @@ func (s surfaceIdentity) SignIn(ctx context.Context, username, password string, 
 	}
 	return s.grants.Issue(ctx, viewer, &link, string(s.surface), device)
 }
+func (s surfaceIdentity) IssueRefresh(ctx context.Context, access string, device core.Device) (string, error) {
+	return s.grants.IssueRefresh(ctx, string(s.surface), access, device)
+}
+func (s surfaceIdentity) Refresh(ctx context.Context, token string, device core.Device) (string, string, error) {
+	if err := s.allow(ctx, s.poll, "refresh"); err != nil {
+		return "", "", err
+	}
+	return s.grants.Refresh(ctx, string(s.surface), token, device)
+}
 func (s surfaceIdentity) QuickConnectInitiate(ctx context.Context, device core.Device) (string, string, error) {
 	if s.surface == "plex" {
 		return "", "", core.ErrUnauthorized
