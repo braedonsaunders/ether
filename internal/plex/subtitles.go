@@ -27,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -101,42 +102,7 @@ func (s *Server) prefetchSidecars(ctx context.Context, pr *Request, t *core.Titl
 // source, the same embedded position, else a track of the same language
 // (same kind and forced flag preferred). -1 when info has none.
 func resolveSubtitle(want *core.StreamInfo, pos int, info core.MediaInfo) int {
-	if want == nil {
-		if pos >= 0 && pos < len(info.Streams) && info.Streams[pos].Type == "subtitle" {
-			return pos
-		}
-		return -1
-	}
-	if !want.External && pos >= 0 && pos < len(info.Streams) {
-		st := info.Streams[pos]
-		if st.Type == "subtitle" && !st.External && st.Index == want.Index && (want.Language == "" || sameLanguage(st.Language, want.Language)) {
-			return pos
-		}
-	}
-	if want.External && want.ExternalURL != "" {
-		for i, st := range info.Streams {
-			if st.Type == "subtitle" && st.External && st.ExternalURL == want.ExternalURL {
-				return i
-			}
-		}
-	}
-	best, bestScore := -1, 0
-	for i, st := range info.Streams {
-		if st.Type != "subtitle" || !sameLanguage(st.Language, want.Language) {
-			continue
-		}
-		n := 1
-		if st.Forced == want.Forced {
-			n += 4
-		}
-		if st.External == want.External {
-			n += 2
-		}
-		if n > bestScore {
-			best, bestScore = i, n
-		}
-	}
-	return best
+	return experience.ResolveSubtitle(want, pos, info)
 }
 
 // resolveSelection maps a stored subtitle choice onto info's positions. A

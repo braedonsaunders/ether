@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
@@ -733,36 +734,7 @@ func extendedTitle(st core.StreamInfo, display, codec string) string {
 // (see Server.audioLanguages), then the stream flagged default, then the
 // first. Multi-language releases often flag a dub as default.
 func pickAudio(info core.MediaInfo, langs []string) int {
-	for _, lang := range langs {
-		// Within one wanted language the best tier wins (exact before
-		// generic-want×regional before regional-want×generic); preference
-		// order across languages still dominates.
-		best, bestTier := -1, 0
-		for i, st := range info.Streams {
-			if st.Type != "audio" {
-				continue
-			}
-			if tier := langtag.MatchTier(lang, st.Language); tier > bestTier {
-				best, bestTier = i, tier
-			}
-		}
-		if best >= 0 {
-			return best
-		}
-	}
-	first := -1
-	for i, st := range info.Streams {
-		if st.Type != "audio" {
-			continue
-		}
-		if st.Default {
-			return i
-		}
-		if first < 0 {
-			first = i
-		}
-	}
-	return first
+	return experience.PickAudio(info, langs)
 }
 
 func boolPtrIf(b bool) *bool {
