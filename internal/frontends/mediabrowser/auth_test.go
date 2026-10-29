@@ -49,6 +49,8 @@ func TestAuthentication(t *testing.T) {
 	}{
 		{"POST", "/Users/AuthenticateByName", `{"Username":"alice","Pw":"secret"}`, `MediaBrowser Client="TV", DeviceId="device"`, 200},
 		{"GET", "/Users/Me", "", `MediaBrowser Token="valid"`, 200},
+		{"GET", "/System/Info", "", `MediaBrowser Token="valid"`, 200},
+		{"POST", "/Sessions/Capabilities/Full", "{}", `MediaBrowser Token="valid"`, 204},
 		{"GET", "/Users/Me", "", "", 401},
 		{"GET", "/socket", "", "", 403},
 		{"POST", "/Sessions/Logout", "", `MediaBrowser Token="valid"`, 204},

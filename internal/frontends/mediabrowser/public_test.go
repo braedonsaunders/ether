@@ -24,6 +24,9 @@ func TestPublicRoutes(t *testing.T) {
 		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || got["Id"] != "123" || got["StartupWizardCompleted"] != true {
 			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
 		}
+		if path == "/Jellyfin/System/Info/Public" && got["LocalAddress"] != "http://example.com/jellyfin" {
+			t.Fatal(got)
+		}
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/Users/Public", nil))

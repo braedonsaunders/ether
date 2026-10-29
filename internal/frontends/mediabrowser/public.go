@@ -38,6 +38,9 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo) error {
 				}
 				address = scheme + "://" + r.Host
 			}
+			if prefix, ok := r.Context().Value(prefixKey{}).(string); ok && address != "" {
+				address = strings.TrimRight(address, "/") + prefix
+			}
 			if info.ProductName == "Emby Server" {
 				jsonReply(w, map[string]any{"Id": info.ID, "ServerName": info.ServerName, "Version": info.Version, "LocalAddress": address, "LocalAddresses": []string{address}, "RemoteAddresses": []string{address}, "WanAddress": address})
 				return
