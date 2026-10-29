@@ -170,7 +170,7 @@ func copyRequest(r frontend.PlanRequest) frontend.PlanRequest {
 	return r
 }
 func copyStream(stream core.StreamInfo) core.StreamInfo {
-	for _, field := range []**bool{&stream.DefaultDisposition, &stream.ForcedDisposition, &stream.HearingImpaired, &stream.Original, &stream.VisualImpaired, &stream.Commentary, &stream.Dub, &stream.DolbyVisionBLPresent, &stream.DolbyVisionELPresent, &stream.DolbyVisionRPUPresent} {
+	for _, field := range []**bool{&stream.DefaultDisposition, &stream.ForcedDisposition, &stream.HearingImpaired, &stream.Original, &stream.VisualImpaired, &stream.Commentary, &stream.Dub, &stream.HDR10Plus, &stream.DolbyVisionBLPresent, &stream.DolbyVisionELPresent, &stream.DolbyVisionRPUPresent} {
 		if *field != nil {
 			value := **field
 			*field = &value

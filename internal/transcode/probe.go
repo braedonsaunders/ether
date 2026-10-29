@@ -286,6 +286,15 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 		si.ColorSpace = probedColour(s.ColorSpace)
 		si.DolbyVision, si.DolbyVisionProfile = dolbyVision(s)
 		for _, sd := range s.SideDataList {
+			if sd["side_data_type"] == "HDR Dynamic Metadata SMPTE2094-40" {
+				present := true
+				si.HDR10Plus = &present
+			} else if si.HDR10Plus == nil {
+				if flag, ok := sd["hdr10plus_flag"].(float64); ok && (flag == 0 || flag == 1) {
+					present := flag == 1
+					si.HDR10Plus = &present
+				}
+			}
 			if major, ok := sd["dv_version_major"].(float64); ok {
 				minor, _ := sd["dv_version_minor"].(float64)
 				si.DolbyVisionVersion = fmt.Sprintf("%d.%d", int(major), int(minor))
