@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 // Only the random stream grant query parameter is normalized. Its name and
@@ -25,4 +26,14 @@ func normalizeHeaders(h http.Header) http.Header {
 		out[key] = values
 	}
 	return out
+}
+
+// Segment files are created at encoder wall time; Last-Modified on those
+// ephemeral bytes is a volatile filesystem timestamp, not media metadata.
+func normalizeCaptureHeaders(c capture) http.Header {
+	h := normalizeHeaders(c.response.Headers)
+	if strings.HasPrefix(c.path, "playback:segment:") {
+		h.Del("Last-Modified")
+	}
+	return h
 }

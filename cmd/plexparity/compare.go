@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -238,6 +239,34 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 					return result, fmt.Errorf("%s %s media playlist failed: %d %v", viewer, name, playlist.Status, err)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:media-playlist:" + mode.name, false, playlist})
+				segmentURI := ""
+				for _, line := range strings.Split(string(playlist.Body), "\n") {
+					if line != "" && !strings.HasPrefix(line, "#") {
+						segmentURI = line
+						break
+					}
+				}
+				if segmentURI == "" {
+					return result, fmt.Errorf("%s %s %s playlist has no segment", viewer, name, mode.name)
+				}
+				playlistURL, err := url.Parse(playlistPath)
+				if err != nil {
+					return result, err
+				}
+				segmentURL, err := url.Parse(segmentURI)
+				if err != nil {
+					return result, err
+				}
+				resolved := playlistURL.ResolveReference(segmentURL)
+				if resolved.IsAbs() || resolved.Host != "" {
+					return result, fmt.Errorf("external HLS segment URL %q", segmentURI)
+				}
+				req.Path = resolved.String()
+				segment, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+				if err != nil || segment.Status != http.StatusOK || len(segment.Body) == 0 {
+					return result, fmt.Errorf("%s %s %s segment failed: status=%d bytes=%d error=%v", viewer, name, mode.name, segment.Status, len(segment.Body), err)
+				}
+				result.captures = append(result.captures, capture{viewer, name, "playback:segment:" + mode.name, false, segment})
 				stop := "/video/:/transcode/universal/stop?session=" + session
 				req.Path = stop
 				response, err = protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
@@ -263,7 +292,7 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 		if x.viewer != y.viewer || x.client != y.client || x.path != y.path || x.json != y.json {
 			return n, fmt.Errorf("corpus order mismatch at %d", i)
 		}
-		if x.response.Status != y.response.Status || !bytes.Equal(normalizeResponse(x.response.Body), normalizeResponse(y.response.Body)) || !reflect.DeepEqual(normalizeHeaders(x.response.Headers), normalizeHeaders(y.response.Headers)) {
+		if x.response.Status != y.response.Status || !bytes.Equal(normalizeResponse(x.response.Body), normalizeResponse(y.response.Body)) || !reflect.DeepEqual(normalizeCaptureHeaders(x), normalizeCaptureHeaders(y)) {
 			n++
 			commit, err := approved(x, y)
 			if err != nil {
@@ -277,7 +306,7 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 				label = "APPROVED " + commit
 			}
 			fmt.Fprintf(out, "%s ", label)
-			fmt.Fprintf(out, "viewer=%s client=%s json=%t route=%s\nbaseline status=%d headers=%v body=%q\ncandidate status=%d headers=%v body=%q\n", x.viewer, x.client, x.json, x.path, x.response.Status, normalizeHeaders(x.response.Headers), x.response.Body, y.response.Status, normalizeHeaders(y.response.Headers), y.response.Body)
+			fmt.Fprintf(out, "viewer=%s client=%s json=%t route=%s\nbaseline status=%d headers=%v body=%q\ncandidate status=%d headers=%v body=%q\n", x.viewer, x.client, x.json, x.path, x.response.Status, normalizeCaptureHeaders(x), x.response.Body, y.response.Status, normalizeCaptureHeaders(y), y.response.Body)
 		}
 	}
 	return n, nil

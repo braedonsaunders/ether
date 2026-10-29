@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
 	"net/http"
 	"testing"
 )
@@ -23,5 +24,17 @@ func TestNormalizeHeadersOnlyDropsDate(t *testing.T) {
 	got := normalizeHeaders(h)
 	if got.Get("Date") != "" || got.Get("Cache-Control") != "no-cache" || got.Get("X-Test") != "value" || h.Get("Date") != "different" {
 		t.Fatalf("unexpected normalized headers: %v", got)
+	}
+}
+
+func TestSegmentTimestampNormalizationIsScoped(t *testing.T) {
+	h := http.Header{"Last-Modified": {"Thu, 29 Oct 2026 18:47:27 GMT"}}
+	segment := capture{path: "playback:segment:remux", response: protocol.Response{Headers: h}}
+	if normalizeCaptureHeaders(segment).Get("Last-Modified") != "" {
+		t.Fatal("segment timestamp retained")
+	}
+	segment.path = "/library/metadata/1"
+	if normalizeCaptureHeaders(segment).Get("Last-Modified") == "" {
+		t.Fatal("nonsegment timestamp removed")
 	}
 }
