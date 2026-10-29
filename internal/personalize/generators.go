@@ -154,6 +154,11 @@ func (b *builder) genUpNext() []*candRow {
 	if err != nil {
 		return nil
 	}
+	if b.e.opts.Favorites != nil {
+		if favorites, e := b.e.opts.Favorites(b.ctx, &b.user); e == nil {
+			prioritizeFavoriteHistory(hist, favorites)
+		}
+	}
 	seenShow := map[int64]bool{}
 	var items []candItem
 	for _, h := range hist {
@@ -1363,4 +1368,22 @@ func (b *builder) genShowcase() []*candRow {
 
 func genreSlug(g string) string {
 	return strings.ReplaceAll(strings.ToLower(strings.ReplaceAll(g, "&", "and")), " ", "-")
+}
+
+func prioritizeFavoriteHistory(hist []core.HistoryEntry, favorites []FavoriteSignal) {
+	shows := map[core.RatingKey]bool{}
+	for _, f := range favorites {
+		if f.Key.Kind() == core.KindShow {
+			shows[f.Key] = true
+		}
+	}
+	if len(shows) == 0 {
+		return
+	}
+	sort.SliceStable(hist, func(i, j int) bool {
+		isFavorite := func(h core.HistoryEntry) bool {
+			return h.Key.Kind() == core.KindEpisode && shows[core.ShowKey(h.Key.TMDB())]
+		}
+		return isFavorite(hist[i]) && !isFavorite(hist[j])
+	})
 }

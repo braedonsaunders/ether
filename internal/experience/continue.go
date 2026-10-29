@@ -22,6 +22,7 @@ type Continue struct {
 	GetTitles          func(context.Context, []core.RatingKey) []core.Title
 	SectionAllowed     func(*core.User, core.MediaType) bool
 	OnError            func(error)
+	FavoriteShows      func(context.Context, *core.User) (map[core.RatingKey]bool, error)
 }
 
 func (c Continue) appendNext(ctx context.Context, viewer *core.User, titles []core.Title, state map[core.RatingKey]core.WatchStatus, limit int) []core.Title {
@@ -176,6 +177,11 @@ func (c Continue) inProgressBatch(ctx context.Context, viewer *core.User, t core
 		}
 		return titles[i].Key < titles[j].Key
 	})
+	if c.FavoriteShows != nil {
+		if favorites, err := c.FavoriteShows(ctx, viewer); err == nil {
+			PrioritizeFavoriteShows(titles, favorites)
+		}
+	}
 	seenShows := map[int64]bool{}
 	out := titles[:0:0]
 	for _, ti := range titles {
@@ -207,4 +213,24 @@ func (c Continue) inProgressBatch(ctx context.Context, viewer *core.User, t core
 		visibleState[title.Key] = state[title.Key]
 	}
 	return out, visibleState
+}
+
+// PrioritizeFavoriteShows stably promotes episodes of favorite shows without changing order within groups.
+func PrioritizeFavoriteShows(titles []core.Title, favorites map[core.RatingKey]bool) {
+	if len(favorites) == 0 {
+		return
+	}
+	sort.SliceStable(titles, func(i, j int) bool {
+		favorite := func(t core.Title) bool {
+			if t.Type != core.TypeEpisode {
+				return false
+			}
+			key := t.ShowKey
+			if key == 0 {
+				key = core.ShowKey(t.Key.TMDB())
+			}
+			return favorites[key]
+		}
+		return favorite(titles[i]) && !favorite(titles[j])
+	})
 }

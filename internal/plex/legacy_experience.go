@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/go-chi/chi/v5"
 	"net/http"
@@ -40,6 +41,11 @@ func (s *Server) legacyInProgressTitles(ctx context.Context, pr *Request, t core
 		}
 		return titles[i].Key < titles[j].Key
 	})
+	if s.d.FavoriteShows != nil {
+		if favorites, err := s.d.FavoriteShows(ctx, pr.User); err == nil {
+			experience.PrioritizeFavoriteShows(titles, favorites)
+		}
+	}
 	seenShows := map[int64]bool{}
 	out := titles[:0:0]
 	for _, ti := range titles {

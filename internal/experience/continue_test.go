@@ -156,3 +156,52 @@ func TestContinueBackfillStopsAtBound(t *testing.T) {
 		t.Fatalf("backfill exceeded its bound: %d %v", len(got), state.limits)
 	}
 }
+
+func TestPrioritizeFavoriteShowsStableAndEmptyParity(t *testing.T) {
+	showA, showB := core.ShowKey(1), core.ShowKey(2)
+	titles := []core.Title{{Key: core.EpisodeKey(1, 1, 1), Type: core.TypeEpisode, ShowKey: showA}, {Key: core.MovieKey(3), Type: core.TypeMovie}, {Key: core.EpisodeKey(2, 1, 1), Type: core.TypeEpisode, ShowKey: showB}, {Key: core.EpisodeKey(2, 1, 2), Type: core.TypeEpisode, ShowKey: showB}}
+	original := append([]core.Title(nil), titles...)
+	PrioritizeFavoriteShows(titles, nil)
+	for i := range titles {
+		if titles[i].Key != original[i].Key {
+			t.Fatal("empty favorites changed order")
+		}
+	}
+	PrioritizeFavoriteShows(titles, map[core.RatingKey]bool{showB: true})
+	want := []core.RatingKey{original[2].Key, original[3].Key, original[0].Key, original[1].Key}
+	for i := range want {
+		if titles[i].Key != want[i] {
+			t.Fatalf("order %+v", titles)
+		}
+	}
+}
+
+func TestContinueFavoriteShowPrecedesNewerProgressAndRetainsGroupOrder(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a, b, c, d := core.EpisodeKey(1, 1, 1), core.EpisodeKey(2, 1, 1), core.EpisodeKey(3, 1, 1), core.EpisodeKey(4, 1, 1)
+	statuses := []core.WatchStatus{{Key: a, LastViewedAt: now}, {Key: b, LastViewedAt: now.Add(-time.Second)}, {Key: c, LastViewedAt: now.Add(-2 * time.Second)}, {Key: d, LastViewedAt: now.Add(-3 * time.Second)}}
+	svc := Continue{State: continueState{statuses: statuses}, Now: func() time.Time { return now }, GetTitles: func(_ context.Context, keys []core.RatingKey) []core.Title {
+		out := make([]core.Title, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, core.Title{Key: k, Type: core.TypeEpisode, ShowKey: core.ShowKey(k.TMDB())})
+		}
+		return out
+	}, Visible: func(context.Context, *core.User, *core.Title) bool { return true }, SectionAllowed: func(*core.User, core.MediaType) bool { return true }}
+	wantBase := []core.RatingKey{a, b, c, d}
+	base, _ := svc.InProgress(context.Background(), &core.User{ID: 1}, core.TypeShow, 4)
+	for i := range wantBase {
+		if base[i].Key != wantBase[i] {
+			t.Fatalf("baseline %+v", base)
+		}
+	}
+	svc.FavoriteShows = func(context.Context, *core.User) (map[core.RatingKey]bool, error) {
+		return map[core.RatingKey]bool{core.ShowKey(2): true, core.ShowKey(4): true}, nil
+	}
+	got, _ := svc.InProgress(context.Background(), &core.User{ID: 1}, core.TypeShow, 3)
+	want := []core.RatingKey{b, d, a}
+	for i := range want {
+		if got[i].Key != want[i] {
+			t.Fatalf("favorite order %+v", got)
+		}
+	}
+}

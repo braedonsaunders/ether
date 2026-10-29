@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) continueExperience(pr *Request) experience.Continue {
-	c := experience.Continue{State: s.d.State, Now: s.now,
+	c := experience.Continue{State: s.d.State, Now: s.now, FavoriteShows: s.d.FavoriteShows,
 		Grandchildren: func(ctx context.Context, k core.RatingKey) ([]core.Title, error) {
 			return s.metadataGrandchildren(ctx, pr, k)
 		},

@@ -175,7 +175,7 @@ func (a *App) experienceContinue(ctx context.Context, viewer *core.User, librari
 		return a.catalog.Grandchildren(ctx, key)
 	}
 	var loadErr error
-	c := experience.Continue{State: a.state, Now: time.Now, GetTitles: getTitles, Grandchildren: grandchildren, NextEpisode: a.catalog.NextEpisode, Visible: visibility.Visible,
+	c := experience.Continue{State: a.state, Now: time.Now, FavoriteShows: a.favoriteShows, GetTitles: getTitles, Grandchildren: grandchildren, NextEpisode: a.catalog.NextEpisode, Visible: visibility.Visible,
 		SameDayUnavailable: func(ctx context.Context, title *core.Title) bool {
 			var source core.AvailabilitySource
 			if a.resolver != nil {

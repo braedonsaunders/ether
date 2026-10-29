@@ -340,3 +340,22 @@ func TestEmptyFavoritesPreservesGeneratedRows(t *testing.T) {
 		}
 	}
 }
+
+func TestFavoriteHistoryPriorityStableAndEmptyParity(t *testing.T) {
+	a, b := core.ShowKey(1), core.ShowKey(2)
+	hist := []core.HistoryEntry{{Key: core.EpisodeKey(1, 1, 1)}, {Key: core.EpisodeKey(2, 1, 1)}, {Key: core.EpisodeKey(2, 1, 2)}, {Key: core.MovieKey(3)}}
+	original := append([]core.HistoryEntry(nil), hist...)
+	prioritizeFavoriteHistory(hist, nil)
+	for i := range hist {
+		if hist[i].Key != original[i].Key {
+			t.Fatal("empty favorites changed order")
+		}
+	}
+	prioritizeFavoriteHistory(hist, []FavoriteSignal{{Key: b}})
+	want := []core.RatingKey{original[1].Key, original[2].Key, original[0].Key, original[3].Key}
+	for i := range want {
+		if hist[i].Key != want[i] {
+			t.Fatalf("order %+v (other show %v)", hist, a)
+		}
+	}
+}
