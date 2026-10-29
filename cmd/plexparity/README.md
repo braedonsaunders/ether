@@ -5,7 +5,7 @@ candidate may be a Git revision or a worktree path. The remote runner builds
 both trees with test-only seams and runs the real components against copied,
 offline fixture data. Exit 0 means no unapproved differences and complete
 coverage; 1 means a difference or an invalid fixture; 2 means no unapproved
-differences but incomplete route coverage. CI currently warns on exit 2.
+differences but incomplete route coverage. CI fails on either 1 or 2.
 
 `c2057bfe` restricted Home backfill: not exercised by fixture; covered by
 experience unit tests. Do not allowlist a difference without an exact, verified
@@ -21,12 +21,6 @@ The no-override path is covered by `TestNoScopedOverridesPreserveSelection`
 and `TestScopedQualityOnlyTightensPlexRequest`. This is recorded for
 attribution only: no response is allowlisted without a verified exact pair.
 
-The v0.2.45 full self-run leaves 3 GET routes uncovered. All are
-implemented features; none should be exempted as intentionally unsupported:
-
-- Three live-TV reads: DASH part, IPTV relay and IPTV resource. These need an
-  offline IPTV source fixture.
-
-A zero-unapproved result with exit 2 covers only the exercised corpus; it is
-not a full parity verdict. The CI warning must become a failure once coverage
-is complete.
+The complete v0.2.45 corpus covers every registered Plex GET route, including
+real offline IPTV resource, relay and DASH media. A zero-unapproved result with
+exit 2 means a future inventory route is uncovered and is not a parity verdict.
