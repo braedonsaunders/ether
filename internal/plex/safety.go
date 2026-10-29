@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 )
@@ -23,61 +24,24 @@ func (s *Server) titleAllowed(u *core.User, t *core.Title) bool {
 	return experience.TitleAllowed(s.d.AccessPolicy, u, t)
 }
 
-// visibleTitle also checks section and inherited show policy for artwork and
-// child items whose summaries have not yet inherited the certification.
+func (s *Server) visibility() experience.Visibility {
+	v := experience.Visibility{Policy: s.d.AccessPolicy, FilterAvailable: s.d.FilterAvailable,
+		SectionFor: func(t core.MediaType) (int, bool) { sec, ok := s.sectionFor(t); return sec.ID, ok }}
+	if s.d.Catalog != nil {
+		v.GetTitle = s.d.Catalog.Get
+	}
+	if s.d.Playback != nil {
+		v.Sessions = s.d.Playback.Sessions
+	}
+	return v
+}
+
 func (s *Server) visibleTitle(ctx context.Context, u *core.User, t *core.Title) bool {
-	if !s.titleVisible(u, t) {
-		return false
-	}
-	if len(s.availableForViewer(ctx, u, []core.Title{*t})) == 0 {
-		return false
-	}
-	return s.playableTitle(ctx, u, t)
+	return s.visibility().Visible(ctx, u, t)
 }
-
-// playableTitle is visibleTitle without the availability-discovery filter:
-// content policy, section access and the show's inherited policy only.
-// Discovery evidence hides recent titles from lists, but it is a guess about
-// releases, not a permission: a viewer who presses Play on such a title still
-// gets a resolve attempt and a readable decision instead of a bare 404.
 func (s *Server) playableTitle(ctx context.Context, u *core.User, t *core.Title) bool {
-	if !s.titleVisible(u, t) {
-		return false
-	}
-	if t.ShowKey != 0 {
-		show, err := s.d.Catalog.Get(ctx, t.ShowKey)
-		if err != nil || !s.titleVisible(u, show) {
-			return false
-		}
-	}
-	return true
+	return s.visibility().Playable(ctx, u, t)
 }
-
-// Discovery evidence must not revoke a source that this viewer already has
-// open. Membership/content guards still run independently; source failure uses
-// playback's normal failover path.
 func (s *Server) availableForViewer(ctx context.Context, u *core.User, ts []core.Title) []core.Title {
-	if s.d.FilterAvailable == nil {
-		return ts
-	}
-	filtered := s.d.FilterAvailable(ctx, ts)
-	if len(filtered) == len(ts) || u == nil || s.d.Playback == nil {
-		return filtered
-	}
-	keep := map[core.RatingKey]bool{}
-	for _, t := range filtered {
-		keep[t.Key] = true
-	}
-	for _, ps := range s.d.Playback.Sessions() {
-		if ps != nil && ps.UserID == u.ID {
-			keep[ps.Key] = true
-		}
-	}
-	out := make([]core.Title, 0, len(ts))
-	for _, t := range ts {
-		if keep[t.Key] {
-			out = append(out, t)
-		}
-	}
-	return out
+	return s.visibility().Available(ctx, u, ts)
 }

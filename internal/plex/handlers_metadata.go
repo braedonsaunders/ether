@@ -56,11 +56,7 @@ func (s *Server) itemContainer(t core.MediaType) *model.MediaContainer {
 
 // titleVisible reports whether the user may see the title's section.
 func (s *Server) titleVisible(u *core.User, t *core.Title) bool {
-	if !s.titleAllowed(u, t) {
-		return false
-	}
-	sec, ok := s.sectionFor(t.Type)
-	return !ok || s.canSeeSection(u, sec.ID)
+	return s.visibility().TitleAllowed(u, t)
 }
 
 func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
@@ -564,21 +560,7 @@ func (s *Server) scopedCollectionItems(ctx context.Context, u *core.User, k core
 	if err != nil {
 		return nil, err
 	}
-	allowed := make([]core.Title, 0, len(page.Items))
-	for _, t := range page.Items {
-		if !s.titleVisible(u, &t) || t.Released.IsZero() {
-			continue
-		}
-		if t.Released.After(s.now()) {
-			if _, ok := s.d.Collections.(core.CollectionPlaceholder); !ok {
-				continue
-			}
-		} else if len(s.availableForViewer(ctx, u, []core.Title{t})) == 0 {
-			continue
-		}
-		allowed = append(allowed, t)
-	}
-	return allowed, nil
+	return s.visibility().UpcomingItems(ctx, u, page.Items, s.now), nil
 }
 
 func (s *Server) lookupPlaceholder(ctx context.Context, pr *Request, key core.RatingKey, raw string) (*core.Title, core.RatingKey, error) {
@@ -625,11 +607,7 @@ func (s *Server) scopedCollectionCounts(ctx context.Context, u *core.User, cs []
 // collectionVisible reports whether u may see the section a movie or show
 // collection belongs to (mixed collections have no single section).
 func (s *Server) collectionVisible(u *core.User, c *core.Collection) bool {
-	if c.Type != core.TypeMovie && c.Type != core.TypeShow {
-		return true
-	}
-	sec, ok := s.sectionFor(c.Type)
-	return !ok || s.canSeeSection(u, sec.ID)
+	return s.visibility().CollectionAllowed(u, c)
 }
 
 func (s *Server) collectionMetadata(c *core.Collection) model.Metadata {
