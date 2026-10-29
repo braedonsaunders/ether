@@ -33,7 +33,15 @@ func device(r *http.Request) frontend.Device {
 	if len(p) == 0 {
 		p, _ = authhdr.MediaBrowser(r.Header.Get("X-Emby-Authorization"))
 	}
-	return frontend.Device{ID: p["DeviceId"], Client: p["Client"], Product: p["Client"], Version: p["Version"], DeviceName: p["Device"]}
+	get := func(key, header string) string {
+		if value := p[key]; value != "" {
+			return value
+		}
+		return r.Header.Get(header)
+	}
+	client := get("Client", "X-Emby-Client")
+	return frontend.Device{ID: get("DeviceId", "X-Emby-Device-Id"), Client: client, Product: client, Version: get("Version", "X-Emby-Client-Version"), DeviceName: get("Device", "X-Emby-Device-Name")}
+
 }
 func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 	token := authhdr.MediaBrowserToken(r)

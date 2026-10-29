@@ -63,6 +63,16 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	dev := device(r)
+	if values := route.Query(r.URL.Query(), "MaxStreamingBitrate"); len(values) == 1 {
+		n, e := strconv.Atoi(values[0])
+		if e != nil || n < 0 {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		if body.DeviceProfile.MaxStreamingBitrate == 0 || n < body.DeviceProfile.MaxStreamingBitrate {
+			body.DeviceProfile.MaxStreamingBitrate = n
+		}
+	}
 	capability, err := i.host.Capabilities.Build(r.Context(), frontend.CapabilityRequest{Viewer: v, Device: caps.DeviceInfo{Protocol: i.protocol, ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, Profile: body.DeviceProfile, UserAgent: r.UserAgent()})
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
@@ -75,6 +85,35 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.SubtitleStreamIndex != nil {
 		opts.SubtitleStream = *body.SubtitleStreamIndex
+	}
+	for _, field := range []struct {
+		name string
+		dest *int
+	}{{"AudioStreamIndex", &opts.AudioStream}, {"SubtitleStreamIndex", &opts.SubtitleStream}} {
+		values := route.Query(r.URL.Query(), field.name)
+		if len(values) > 1 {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		if len(values) == 1 {
+			n, e := strconv.Atoi(values[0])
+			if e != nil || n < -1 {
+				http.Error(w, "Bad Request", 400)
+				return
+			}
+			*field.dest = n
+		}
+	}
+	if values := route.Query(r.URL.Query(), "StartTimeTicks"); len(values) > 1 {
+		http.Error(w, "Bad Request", 400)
+		return
+	} else if len(values) == 1 {
+		n, e := strconv.ParseInt(values[0], 10, 64)
+		if e != nil {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		body.StartTimeTicks = n
 	}
 	if body.StartTimeTicks < 0 || body.StartTimeTicks > (1<<63-1)/100 {
 		http.Error(w, "Bad Request", 400)

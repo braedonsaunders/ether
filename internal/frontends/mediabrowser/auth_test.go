@@ -176,3 +176,20 @@ func TestQuickConnectOwnerSetting(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 }
+
+func TestLegacyDeviceHeaders(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Emby-Client", "App")
+	r.Header.Set("X-Emby-Device-Id", "stable-id")
+	r.Header.Set("X-Emby-Device-Name", "TV")
+	r.Header.Set("X-Emby-Client-Version", "1.0")
+	d := device(r)
+	if d.ID != "stable-id" || d.Client != "App" || d.DeviceName != "TV" || d.Version != "1.0" {
+		t.Fatal(d)
+	}
+	r.Header.Set("Authorization", `Emby Client="Other", DeviceId="header-id"`)
+	d = device(r)
+	if d.ID != "header-id" || d.Client != "Other" || d.DeviceName != "TV" {
+		t.Fatal(d)
+	}
+}
