@@ -1,0 +1,23 @@
+{
+  "protocol": "jellyfin",
+  "client": "Jellyfin native client request patterns (Android TV, Swiftfin, Findroid, Streamyfin, JellyCon; Infuse documented behavior)",
+  "source": {
+    "repo": "jellyfin/jellyfin-androidtv; jellyfin/Swiftfin; Findroid/Findroid; Streamyfin/Streamyfin; jellycon/JellyCon; Firecore Infuse support docs",
+    "commit": "rolling upstream heads; see files for refresh pointers",
+    "files": ["jellyfin-androidtv: jellyfin-apiclient/src/main/java/org/jellyfin/apiclient/interceptor/", "Swiftfin: Shared/Extensions/URLRequest+Authorization.swift", "Findroid: core/network/", "Streamyfin: src/services/", "JellyCon: resources/lib/", "Infuse: https://support.firecore.com/hc/en-us/articles/215090947-Jellyfin"]
+  },
+  "headers": {"Authorization": "MediaBrowser Client=\"{client}\", Device=\"{device}\", DeviceId=\"{stable-device-id}\", Version=\"{version}\", Token=\"{access-token}\"", "Accept": "application/json", "Content-Type": "application/json"},
+  "authorization": {"format": "MediaBrowser key/value authorization parameters; sign-in commonly POSTs username/password to /Users/AuthenticateByName, then sends returned AccessToken in Token parameter", "example": "MediaBrowser Client=\"Findroid\", Device=\"Android\", DeviceId=\"redacted\", Version=\"x.y\", Token=\"{token}\""},
+  "flows": {
+    "connect": [{"name":"system info","method":"GET","path":"/System/Info/Public"},{"name":"public users","method":"GET","path":"/Users/Public"}],
+    "sign_in": [{"name":"authenticate","method":"POST","path":"/Users/AuthenticateByName","headers":{"Content-Type":"application/json"}}],
+    "home": [{"name":"user views","method":"GET","path":"/Users/{userId}/Views"},{"name":"resume","method":"GET","path":"/Users/{userId}/Items/Resume"},{"name":"next up","method":"GET","path":"/Shows/NextUp?UserId={userId}"}],
+    "library_browse": [{"name":"items","method":"GET","path":"/Users/{userId}/Items?ParentId={parentId}&SortBy=SortName"}],
+    "item_detail": [{"name":"item","method":"GET","path":"/Users/{userId}/Items/{itemId}"},{"name":"similar","method":"GET","path":"/Items/{itemId}/Similar"}],
+    "play_direct": [{"name":"playback info","method":"POST","path":"/Items/{itemId}/PlaybackInfo"},{"name":"stream","method":"GET","path":"/Videos/{itemId}/stream?Static=true"}],
+    "play_transcode": [{"name":"playback info","method":"POST","path":"/Items/{itemId}/PlaybackInfo"},{"name":"HLS master","method":"GET","path":"/Videos/{itemId}/master.m3u8?DeviceId={deviceId}"}],
+    "progress_reporting": [{"name":"playing","method":"POST","path":"/Sessions/Playing"},{"name":"progress","method":"POST","path":"/Sessions/Playing/Progress"}],
+    "mark_watched": [{"name":"played","method":"POST","path":"/Users/{userId}/PlayedItems/{itemId}"}],
+    "stop": [{"name":"stopped","method":"POST","path":"/Sessions/Playing/Stopped"}]
+  }
+}
