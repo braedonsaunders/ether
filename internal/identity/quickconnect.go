@@ -104,7 +104,19 @@ func (q *QuickConnect) Initiate(ctx context.Context, surface string, device core
 
 // Approve binds a pending, unexpired code to an active viewer exactly once.
 func (q *QuickConnect) Approve(ctx context.Context, code string, viewerID int64) error {
-	res, err := q.db.ExecContext(ctx, `UPDATE identity_quickconnect SET viewer_id=? WHERE code=? AND viewer_id IS NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, viewerID, code, q.now().UnixMilli(), viewerID)
+	return q.approve(ctx, "", code, viewerID)
+}
+
+// ApproveSurface restricts an approval to a request for the given surface.
+func (q *QuickConnect) ApproveSurface(ctx context.Context, surface, code string, viewerID int64) error {
+	if surface == "" {
+		return core.ErrUnauthorized
+	}
+	return q.approve(ctx, surface, code, viewerID)
+}
+
+func (q *QuickConnect) approve(ctx context.Context, surface, code string, viewerID int64) error {
+	res, err := q.db.ExecContext(ctx, `UPDATE identity_quickconnect SET viewer_id=? WHERE code=? AND (?='' OR surface=?) AND viewer_id IS NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, viewerID, code, surface, surface, q.now().UnixMilli(), viewerID)
 	if err != nil {
 		return err
 	}
@@ -123,6 +135,18 @@ func (q *QuickConnect) Approve(ctx context.Context, code string, viewerID int64)
 var ErrQuickConnectPending = errors.New("identity: quick connect pending")
 
 func (q *QuickConnect) Poll(ctx context.Context, secret string) (string, error) {
+	return q.poll(ctx, "", secret)
+}
+
+// PollSurface verifies the surface atomically before consuming the request.
+func (q *QuickConnect) PollSurface(ctx context.Context, surface, secret string) (string, error) {
+	if surface == "" {
+		return "", core.ErrUnauthorized
+	}
+	return q.poll(ctx, surface, secret)
+}
+
+func (q *QuickConnect) poll(ctx context.Context, requestedSurface, secret string) (string, error) {
 	hash, ok := secretHash(secret)
 	if !ok {
 		return "", core.ErrUnauthorized
@@ -135,10 +159,10 @@ func (q *QuickConnect) Poll(ctx context.Context, secret string) (string, error) 
 	now := q.now().UnixMilli()
 	var viewer int64
 	var surface, device, client, product, version string
-	err = tx.QueryRowContext(ctx, `UPDATE identity_quickconnect SET consumed=1 WHERE secret_hash=? AND viewer_id IS NOT NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1) RETURNING viewer_id,surface,device_id,client,product,version`, hash, now).Scan(&viewer, &surface, &device, &client, &product, &version)
+	err = tx.QueryRowContext(ctx, `UPDATE identity_quickconnect SET consumed=1 WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NOT NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1) RETURNING viewer_id,surface,device_id,client,product,version`, hash, requestedSurface, requestedSurface, now).Scan(&viewer, &surface, &device, &client, &product, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		var pending int
-		e := tx.QueryRowContext(ctx, `SELECT 1 FROM identity_quickconnect WHERE secret_hash=? AND viewer_id IS NULL AND consumed=0 AND expires>?`, hash, now).Scan(&pending)
+		e := tx.QueryRowContext(ctx, `SELECT 1 FROM identity_quickconnect WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NULL AND consumed=0 AND expires>?`, hash, requestedSurface, requestedSurface, now).Scan(&pending)
 		if e == nil {
 			return "", ErrQuickConnectPending
 		}

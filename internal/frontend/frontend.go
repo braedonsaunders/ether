@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"sort"
 	"sync"
 
@@ -82,9 +83,32 @@ type Instance interface {
 	Close(context.Context) error
 }
 
-// SurfaceIdentity is bound to one protocol by the host factory.
+// SurfaceIdentity is bound to one protocol by the host factory. Quick Connect
+// approval requires a viewer obtained from a successfully authenticated session;
+// frontends must not construct a viewer from untrusted request data.
 type SurfaceIdentity interface {
 	Resolve(context.Context, string) (*core.Viewer, error)
+	SignIn(context.Context, string, string, core.Device) (string, error)
+	QuickConnectInitiate(context.Context, core.Device) (code, secret string, err error)
+	QuickConnectPoll(context.Context, string) (string, error)
+	QuickConnectApprove(context.Context, *core.Viewer, string) error
+	Revoke(context.Context, string) error
+	SetupComplete() bool
+}
+
+type clientIPKey struct{}
+
+// WithClientIP supplies the verified network peer for authentication rate
+// limits. A frontend must derive it from the transport and trusted proxies,
+// never an untrusted forwarding header. Missing or invalid addresses fail closed.
+func WithClientIP(ctx context.Context, ip netip.Addr) context.Context {
+	return context.WithValue(ctx, clientIPKey{}, ip.Unmap())
+}
+
+// ClientIP returns the verified peer carried by WithClientIP.
+func ClientIP(ctx context.Context) (netip.Addr, bool) {
+	ip, ok := ctx.Value(clientIPKey{}).(netip.Addr)
+	return ip, ok && ip.IsValid()
 }
 
 // BindIdentity prevents a frontend from choosing a different authentication surface.
@@ -103,6 +127,32 @@ func (b boundIdentity) Resolve(ctx context.Context, credential string) (*core.Vi
 	}
 	return b.resolver.Resolve(ctx, string(b.surface), credential)
 }
+
+// ErrIdentityUnavailable means this host does not implement credential issuance.
+var ErrIdentityUnavailable = errors.New("frontend identity operation unavailable")
+
+// ErrRateLimited means the verified network peer has exceeded an identity limit.
+var ErrRateLimited = errors.New("frontend identity rate limited")
+
+// ErrQuickConnectPending means the code has not yet been approved.
+var ErrQuickConnectPending = errors.New("frontend quick connect pending")
+
+// BindIdentity alone binds resolution; app-hosted implementations additionally
+// provide credential issuance and Quick Connect operations.
+func (boundIdentity) SignIn(context.Context, string, string, core.Device) (string, error) {
+	return "", ErrIdentityUnavailable
+}
+func (boundIdentity) QuickConnectInitiate(context.Context, core.Device) (string, string, error) {
+	return "", "", ErrIdentityUnavailable
+}
+func (boundIdentity) QuickConnectPoll(context.Context, string) (string, error) {
+	return "", ErrIdentityUnavailable
+}
+func (boundIdentity) QuickConnectApprove(context.Context, *core.Viewer, string) error {
+	return ErrIdentityUnavailable
+}
+func (boundIdentity) Revoke(context.Context, string) error { return ErrIdentityUnavailable }
+func (boundIdentity) SetupComplete() bool                  { return false }
 
 type Settings map[string]any
 
@@ -127,6 +177,8 @@ type Host struct {
 	Log        *slog.Logger
 	// ClientSeen reports an authenticated client's protocol-specific device ID.
 	ClientSeen func(deviceID string)
+	// ClientIP resolves the transport peer using the configured trusted proxies.
+	ClientIP func(*http.Request) (netip.Addr, bool)
 }
 
 var ErrNotRegistered = errors.New("frontend not registered")

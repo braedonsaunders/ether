@@ -147,3 +147,54 @@ func (f Sessions) Events(c context.Context, s frontend.EventScope) (<-chan front
 
 var _ frontend.Experience = Experience{}
 var _ frontend.Sessions = Sessions{}
+
+// Identity implements a configurable surface-bound identity for protocol tests.
+type Identity struct {
+	ResolveFunc       func(context.Context, string) (*core.Viewer, error)
+	SignInFunc        func(context.Context, string, string, core.Device) (string, error)
+	InitiateFunc      func(context.Context, core.Device) (string, string, error)
+	PollFunc          func(context.Context, string) (string, error)
+	ApproveFunc       func(context.Context, *core.Viewer, string) error
+	RevokeFunc        func(context.Context, string) error
+	SetupCompleteFunc func() bool
+}
+
+func (f Identity) Resolve(ctx context.Context, credential string) (*core.Viewer, error) {
+	if f.ResolveFunc != nil {
+		return f.ResolveFunc(ctx, credential)
+	}
+	return nil, core.ErrUnauthorized
+}
+func (f Identity) SignIn(ctx context.Context, user, password string, d core.Device) (string, error) {
+	if f.SignInFunc != nil {
+		return f.SignInFunc(ctx, user, password, d)
+	}
+	return "", frontend.ErrIdentityUnavailable
+}
+func (f Identity) QuickConnectInitiate(ctx context.Context, d core.Device) (string, string, error) {
+	if f.InitiateFunc != nil {
+		return f.InitiateFunc(ctx, d)
+	}
+	return "", "", frontend.ErrIdentityUnavailable
+}
+func (f Identity) QuickConnectPoll(ctx context.Context, secret string) (string, error) {
+	if f.PollFunc != nil {
+		return f.PollFunc(ctx, secret)
+	}
+	return "", frontend.ErrIdentityUnavailable
+}
+func (f Identity) QuickConnectApprove(ctx context.Context, viewer *core.Viewer, code string) error {
+	if f.ApproveFunc != nil {
+		return f.ApproveFunc(ctx, viewer, code)
+	}
+	return frontend.ErrIdentityUnavailable
+}
+func (f Identity) Revoke(ctx context.Context, grant string) error {
+	if f.RevokeFunc != nil {
+		return f.RevokeFunc(ctx, grant)
+	}
+	return frontend.ErrIdentityUnavailable
+}
+func (f Identity) SetupComplete() bool { return f.SetupCompleteFunc != nil && f.SetupCompleteFunc() }
+
+var _ frontend.SurfaceIdentity = Identity{}

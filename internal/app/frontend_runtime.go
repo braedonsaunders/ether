@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -45,6 +46,22 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	if err != nil {
 		return nil, err
 	}
+	local, err := identity.NewLocal(a.db)
+	if err != nil {
+		return nil, err
+	}
+	login, err := identity.NewLoginLimiter(a.db, 15*time.Minute, 30, 8, nil)
+	if err != nil {
+		return nil, err
+	}
+	poll, err := identity.NewPollLimiter(a.db, time.Minute, 120, 60, nil)
+	if err != nil {
+		return nil, err
+	}
+	quick, err := identity.NewQuickConnect(a.db, 10*time.Minute, 30*24*time.Hour, nil)
+	if err != nil {
+		return nil, err
+	}
 	resolver, err := identity.NewResolver(a.users, grants)
 	if err != nil {
 		return nil, err
@@ -52,7 +69,9 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: sessions.NewEventBus(a.clusterNode(), a.users.ActiveUser), discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
-		return frontend.Host{Identity: frontend.BindIdentity(resolver, id), Events: r.events, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, Config: func() frontend.Settings {
+		return frontend.Host{Identity: surfaceIdentity{surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: r.events, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: func(req *http.Request) (netip.Addr, bool) {
+			return identity.ClientNet(req, identity.ProxyPrefixes(a.cfg.Get().Server.TrustedProxyCIDRs)...)
+		}, Config: func() frontend.Settings {
 			settings, err := r.control.Settings(r.ctx, id)
 			if err != nil {
 				return frontend.Settings{}

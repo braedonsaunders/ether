@@ -1,0 +1,97 @@
+package app
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/identity"
+)
+
+type surfaceIdentity struct {
+	surface     frontend.Protocol
+	resolver    *identity.Resolver
+	local       *identity.Local
+	grants      *identity.Grants
+	quick       *identity.QuickConnect
+	login, poll *identity.LoginLimiter
+}
+
+func (s surfaceIdentity) Resolve(ctx context.Context, credential string) (*core.Viewer, error) {
+	return s.resolver.Resolve(ctx, string(s.surface), credential)
+}
+func (s surfaceIdentity) allow(ctx context.Context, limiter *identity.LoginLimiter, key string) error {
+	ip, ok := frontend.ClientIP(ctx)
+	if !ok || ip.IsUnspecified() || ip.IsMulticast() {
+		return core.ErrUnauthorized
+	}
+	allowed, err := limiter.Allow(ctx, key, ip)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return frontend.ErrRateLimited
+	}
+	return nil
+}
+func (s surfaceIdentity) SignIn(ctx context.Context, username, password string, device core.Device) (string, error) {
+	if s.surface == "plex" {
+		return "", core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.login, username); err != nil {
+		return "", err
+	}
+	viewer, link, err := s.local.Authenticate(ctx, username, password)
+	if err != nil {
+		return "", err
+	}
+	return s.grants.Issue(ctx, viewer, &link, string(s.surface), device)
+}
+func (s surfaceIdentity) QuickConnectInitiate(ctx context.Context, device core.Device) (string, string, error) {
+	if s.surface == "plex" {
+		return "", "", core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.login, "quickconnect-init"); err != nil {
+		return "", "", err
+	}
+	return s.quick.Initiate(ctx, string(s.surface), device)
+}
+func (s surfaceIdentity) QuickConnectPoll(ctx context.Context, secret string) (string, error) {
+	if s.surface == "plex" {
+		return "", core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.poll, secret); err != nil {
+		return "", err
+	}
+	grant, err := s.quick.PollSurface(ctx, string(s.surface), secret)
+	if errors.Is(err, identity.ErrQuickConnectPending) {
+		return "", frontend.ErrQuickConnectPending
+	}
+	return grant, err
+}
+func (s surfaceIdentity) QuickConnectApprove(ctx context.Context, viewer *core.Viewer, code string) error {
+	if s.surface == "plex" || viewer == nil || viewer.ID <= 0 {
+		return core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.login, "quickconnect-approve"); err != nil {
+		return err
+	}
+	return s.quick.ApproveSurface(ctx, string(s.surface), code, viewer.ID)
+}
+func (s surfaceIdentity) Revoke(ctx context.Context, credential string) error {
+	if s.surface == "plex" {
+		return core.ErrUnauthorized
+	}
+	viewer, err := s.grants.Resolve(ctx, string(s.surface), credential)
+	if err != nil {
+		return err
+	}
+	hash := sha256.Sum256([]byte(credential))
+	return s.grants.RevokeGrant(ctx, viewer.ID, hex.EncodeToString(hash[:]))
+}
+func (surfaceIdentity) SetupComplete() bool { return identity.ProtocolSetupComplete() }
+
+var _ frontend.SurfaceIdentity = surfaceIdentity{}
