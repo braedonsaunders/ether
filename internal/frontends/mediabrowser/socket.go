@@ -46,7 +46,7 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 	}
 	var events <-chan frontend.Event
 	if i.host.Events != nil {
-		events, _ = i.host.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: i.protocol})
+		events, _ = i.host.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: i.protocol, Device: device(r)})
 	}
 	var keepAlive any = 60
 	if i.protocol == "emby" {
@@ -142,6 +142,24 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 		case event, ok := <-events:
 			if !ok {
 				events = nil
+				continue
+			}
+			if event.Type == "SessionCommand" {
+				dev := device(r)
+				if event.Command == nil || dev.ID == "" || event.TargetProtocol != i.protocol || event.TargetDeviceID != dev.ID {
+					continue
+				}
+				command := map[frontend.CommandKind]string{frontend.CommandStop: "Stop", frontend.CommandPause: "Pause", frontend.CommandUnpause: "Unpause", frontend.CommandSeek: "Seek"}[event.Command.Kind]
+				if command == "" {
+					continue
+				}
+				data := map[string]any{"Command": command}
+				if event.Command.Kind == frontend.CommandSeek {
+					data["SeekPositionTicks"] = event.Command.Position.Nanoseconds() / 100
+				}
+				if write(map[string]any{"MessageType": "Playstate", "Data": data}) != nil {
+					return
+				}
 				continue
 			}
 			if event.Type != "UserDataChanged" || i.host.Experience == nil {

@@ -20,6 +20,18 @@ func (e socketEvents) Subscribe(_ context.Context, _ frontend.EventScope) (<-cha
 	return e, nil
 }
 
+type deviceSocketEvents struct {
+	ch chan frontend.Event
+	t  *testing.T
+}
+
+func (e deviceSocketEvents) Subscribe(_ context.Context, scope frontend.EventScope) (<-chan frontend.Event, error) {
+	if scope.Device.ID != "tv" || scope.Protocol != "jellyfin" {
+		e.t.Errorf("incorrect event scope: %+v", scope)
+	}
+	return e.ch, nil
+}
+
 type sessionSocketEvents struct{ lifecycle chan frontend.Event }
 
 func (e sessionSocketEvents) Subscribe(_ context.Context, scope frontend.EventScope) (<-chan frontend.Event, error) {
@@ -111,6 +123,34 @@ func TestSocketUserDataUsesCurrentFavoriteAndRating(t *testing.T) {
 	}
 	if err := json.Unmarshal(b, &msg); err != nil || len(msg.Data.UserDataList) != 1 || !msg.Data.UserDataList[0].IsFavorite || !msg.Data.UserDataList[0].Likes || msg.Data.UserDataList[0].Rating != 8 {
 		t.Fatal(string(b), err)
+	}
+}
+
+func TestSocketPlaystateUsesTargetedBrokerCommand(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	events := make(chan frontend.Event, 2)
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Events: deviceSocketEvents{ch: events, t: t}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(inst.Handler())
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/socket?api_key=grant&DeviceId=tv", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	if _, _, err = c.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	events <- frontend.Event{Type: "SessionCommand", TargetProtocol: "jellyfin", TargetDeviceID: "other", Command: &frontend.Command{Kind: frontend.CommandPause}}
+	events <- frontend.Event{Type: "SessionCommand", TargetProtocol: "jellyfin", TargetDeviceID: "tv", Command: &frontend.Command{Kind: frontend.CommandSeek, Position: 3 * time.Second}}
+	_, body, err := c.Read(ctx)
+	if err != nil || !strings.Contains(string(body), `"MessageType":"Playstate"`) || !strings.Contains(string(body), `"Command":"Seek"`) || !strings.Contains(string(body), `"SeekPositionTicks":30000000`) {
+		t.Fatal(string(body), err)
 	}
 }
 
