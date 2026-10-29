@@ -44,6 +44,10 @@ func TestFrontendArtworkUsesPlexSelectionAndRechecksVisibility(t *testing.T) {
 	if plex.Code != 200 || !bytes.Equal(data, plex.Body.Bytes()) {
 		t.Fatal("selected artwork differs from Plex")
 	}
+	poster.Width, poster.Height, poster.BlurHash = 1200, 1800, "00TI:j"
+	if _, _, err := source.Read(context.Background(), req, poster, frontend.ArtworkTransform{Width: 300}); err != nil {
+		t.Fatalf("metadata changed artwork identity: %v", err)
+	}
 	restricted := friendUser
 	restricted.MaxContentRating = "PG"
 	req.Viewer = &restricted

@@ -90,7 +90,7 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 			return core.ErrNotAvailable
 		}
 		for _, candidate := range images {
-			if candidate == image {
+			if frontend.SameImage(candidate, image) {
 				return nil
 			}
 		}
@@ -117,7 +117,7 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 		return core.ErrNotAvailable
 	}
 	for _, candidate := range images {
-		if candidate == image {
+		if frontend.SameImage(candidate, image) {
 			return nil
 		}
 	}

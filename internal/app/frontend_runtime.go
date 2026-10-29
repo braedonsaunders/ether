@@ -95,13 +95,15 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	var channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
 	if a.tmdb != nil {
 		variants := newArtworkVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
-		source := plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get, Raster: artworkpkg.NewSVGRasterizer()}
+		source := &plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get, Raster: artworkpkg.NewSVGRasterizer()}
 		if a.episodeorder != nil {
 			source.VirtualSeason = a.episodeorder.CachedVirtualSeason
 		}
 		if a.images != nil {
 			source.URLImages = a.images
 		}
+		metadata := newArtworkMetadataQueue(ctx, a.db, a.users.ActiveUser, source.Read)
+		source.Metadata = metadata.get
 		artwork = source
 		channelArtwork = source.ChannelImage
 	}

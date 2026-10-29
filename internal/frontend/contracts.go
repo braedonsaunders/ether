@@ -208,6 +208,15 @@ type Image struct {
 	// Subject identifies an entity within the authorized item, such as the
 	// tmdb:<id> person whose credit owns a portrait. It is part of the grant.
 	Subject string
+	// Width and Height describe the cached source pixels; zero means unknown.
+	Width, Height int
+	// BlurHash is a cached preview of the source; empty means unavailable.
+	BlurHash string
+}
+
+// SameImage compares stable authorization identity, excluding optional metadata.
+func SameImage(a, b Image) bool {
+	return a.Kind == b.Kind && a.Path == b.Path && a.Tag == b.Tag && a.Subject == b.Subject
 }
 
 const (

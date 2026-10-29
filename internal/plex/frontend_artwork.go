@@ -34,6 +34,8 @@ type FrontendArtwork struct {
 	Server *Server
 	// Variants must be cache-only; it may schedule a bounded background fill.
 	Variants func(*core.Title, string) (*tmdb.Images, bool)
+	// Metadata reads cached facts and may enqueue a bounded background fill.
+	Metadata func(context.Context, frontend.ArtworkRequest, frontend.Image) frontend.Image
 	// VirtualSeason reads only the viewer's existing episode-order layout.
 	VirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	URLImages     interface {
@@ -256,7 +258,11 @@ func (a FrontendArtwork) List(ctx context.Context, req frontend.ArtworkRequest) 
 	}
 	out := make([]frontend.Image, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, e.image)
+		img := e.image
+		if a.Metadata != nil {
+			img = a.Metadata(ctx, req, img)
+		}
+		out = append(out, img)
 	}
 	return out, complete, nil
 }
@@ -294,7 +300,7 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		return nil, "", err
 	}
 	for _, entry := range entries {
-		if entry.image != img {
+		if !frontend.SameImage(entry.image, img) {
 			continue
 		}
 		if policy, ok := a.Server.d.AccessPolicy.(core.UserPolicySource); ok {
