@@ -63,6 +63,7 @@ var opaqueTextID = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f
 var textDate = regexp.MustCompile(`\b[0-9]{4}-[0-9]{2}-[0-9]{2}(?:T[0-9:.+Z-]+)?\b`)
 var hostPath = regexp.MustCompile(`(?i)/(?:users|home|mnt|media|srv|volumes)/[^\s"<>]+`)
 var inlineSecret = regexp.MustCompile(`(?i)\b(st|api_key|access_token|token)=([^&\s"\x27]+)`)
+var websocketTicket = regexp.MustCompile(`(?i)silo\.ticket\.[A-Za-z0-9_-]+`)
 var secretQuery = regexp.MustCompile(`(?i)([?&](?:api_key|access_token|token|authorization|st)=)[^&\s"']+`)
 
 const textLimit = 16 << 20
@@ -275,7 +276,7 @@ func (r *Recorder) secretList() []string {
 }
 func sensitiveKey(k string) bool {
 	n := strings.ToLower(k)
-	return strings.Contains(n, "token") || strings.Contains(n, "password") || n == "pw" || n == "api_key" || n == "apikey" || n == "st" || n == "authorization" || n == "username" || n == "cookie"
+	return strings.Contains(n, "token") || strings.Contains(n, "ticket") || strings.Contains(n, "password") || n == "pw" || n == "device_code" || n == "user_code" || n == "match_code" || n == "api_key" || n == "apikey" || n == "st" || n == "authorization" || n == "username" || n == "cookie"
 }
 func (r *Recorder) slot(value string) string {
 	if v, ok := r.ids[value]; ok {
@@ -353,6 +354,9 @@ func safeRequestHeaders(h http.Header, secrets []string) http.Header {
 	}
 	if h.Get("Sec-Websocket-Key") != "" {
 		out.Set("Sec-Websocket-Key", "${websocket_key}")
+	}
+	if v := out.Get("Sec-Websocket-Protocol"); v != "" {
+		out.Set("Sec-Websocket-Protocol", websocketTicket.ReplaceAllStringFunc(v, func(string) string { return "silo.ticket.${ticket}" }))
 	}
 	if out.Get("If-Range") != "" {
 		out.Set("If-Range", "${etag}")

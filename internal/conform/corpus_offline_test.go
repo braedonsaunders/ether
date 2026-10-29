@@ -49,7 +49,7 @@ func TestRecordedMediaBrowserCorpora(t *testing.T) {
 						t.Errorf("%s: %v", name, err)
 						continue
 					}
-					if (r.Status < 200 || r.Status >= 400) && !(r.Status == 404 && req.ExpectedStatus == 404) {
+					if (r.Status < 200 || r.Status >= 400) && !(req.FixtureOnly && req.ExpectedStatus == r.Status) {
 						t.Errorf("%s: unexpected status %d", name, r.Status)
 					}
 					if r.Kind == "binary-range" {
@@ -106,7 +106,7 @@ func TestRecordedSiloCorpus(t *testing.T) {
 				t.Errorf("%s: %v", name, err)
 				continue
 			}
-			if (r.Status < 200 || r.Status >= 400) && !(r.Status == 404 && req.ExpectedStatus == 404) {
+			if (r.Status < 200 || r.Status >= 400) && !(req.FixtureOnly && req.ExpectedStatus == r.Status) {
 				t.Errorf("%s: status %d", name, r.Status)
 			}
 			if strings.Contains(req.Name, "playback plan") {

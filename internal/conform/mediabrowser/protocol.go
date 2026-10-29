@@ -559,7 +559,7 @@ func scrub(v any) any {
 	case map[string]any:
 		for k, val := range x {
 			n := strings.ToLower(k)
-			if strings.Contains(n, "token") || strings.Contains(n, "password") || n == "pw" || n == "username" || n == "serverid" || n == "server_id" || n == "servername" || n == "friendlyname" || n == "machinename" || strings.HasSuffix(n, "path") || strings.HasSuffix(n, "url") || strings.HasSuffix(n, "uri") || strings.HasPrefix(n, "date") || strings.HasSuffix(n, "date") {
+			if strings.Contains(n, "token") || strings.Contains(n, "ticket") || strings.Contains(n, "password") || n == "pw" || n == "device_code" || n == "user_code" || n == "match_code" || n == "username" || n == "serverid" || n == "server_id" || n == "servername" || n == "friendlyname" || n == "machinename" || strings.HasSuffix(n, "path") || strings.HasSuffix(n, "url") || strings.HasSuffix(n, "uri") || strings.HasPrefix(n, "date") || strings.HasSuffix(n, "date") {
 				x[k] = "[REDACTED]"
 			} else {
 				x[k] = scrub(val)

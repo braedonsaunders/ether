@@ -57,12 +57,13 @@ func FixturesFromCapture(dir, protocol, client, profileRoot, fixtureRoot string)
 		req := profileRequest{Method: entry.Request.Method, Path: entry.Request.Path, Headers: map[string]string{}}
 		for k, vs := range entry.Request.Headers {
 			if len(vs) > 0 {
-				req.Headers[k] = strings.Join(vs, ", ")
+				req.Headers[k] = websocketTicket.ReplaceAllStringFunc(strings.Join(vs, ", "), func(string) string { return "silo.ticket.${ticket}" })
 			}
 		}
 		req.FixtureOnly = req.Method != http.MethodGet && req.Method != http.MethodHead
-		if entry.Response.Status == http.StatusNotFound {
+		if entry.Response.Status < 200 || entry.Response.Status >= 400 {
 			req.ExpectedStatus = entry.Response.Status
+			req.FixtureOnly = true
 		}
 		if entry.Response.Kind == "binary-range" {
 			req.Binary = true
@@ -89,6 +90,7 @@ func FixturesFromCapture(dir, protocol, client, profileRoot, fixtureRoot string)
 		seen[string(key)] = true
 		req.Name = fmt.Sprintf("captured-%06d", entry.Sequence)
 		p.Flows["captured"] = append(p.Flows["captured"], req)
+		entry.Response = (&mediabrowser.Protocol{}).Redact(entry.Response)
 		entry.Response.Body = redactObjectKeys(entry.Response.Body, keys)
 		responses = append(responses, entry.Response)
 	}
