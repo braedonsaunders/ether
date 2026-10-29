@@ -18,6 +18,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -338,47 +339,12 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 	resolvePlaySubtitle(p, ps.Info)
 	s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
 	applySelections(p, ps.Info, s.audioLanguages(pr.User))
-	dec := core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: ps.Info.Container, AudioStream: p.opts.AudioStream, SubtitleStream: p.opts.SubtitleStream}
-	if s.d.Transcoder != nil {
-		dec = s.d.Transcoder.Decide(ps.Info, p.caps, p.opts)
-	} else {
-		dec = transcode.Decide(ps.Info, p.caps, p.opts, transcode.Policy{RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps})
-		if dec.Kind != core.DecisionDirectPlay {
-			s.d.Playback.Stop(ps.ID)
-			return t, nil, core.Decision{}, fmt.Errorf("this client requires media conversion; install or configure FFmpeg")
-		}
-	}
-	// Usenet sources can change during failover. A copy-only remux gives
-	// MDE clients fresh container headers at the resumed timestamp. A
-	// session flagged RequiresRemux (direct-play failover found no
-	// exact-size replacement) gets the same treatment for every client.
-	// Debrid exposes a stable HTTP file: keep a compatible client's direct
-	// play decision instead of adding a segmented-Matroska demuxer and an
-	// ffmpeg process. Needed conversions still follow the normal decision.
-	requiresRemux := ps.RequiresRemux
-	if rr, ok := s.d.Playback.(core.RemuxRequirer); ok && rr.RequiresRemux(ps.ID) {
-		requiresRemux = true
-	}
-	preferRemux := p.mde && onDemandSession(ps) && ps.Resolution.Release.Protocol != core.ProtocolTorrent
-	if (preferRemux || requiresRemux) && p.opts.DirectStream && onDemandSession(ps) && dec.Kind == core.DecisionDirectPlay && s.d.Transcoder != nil {
-		dec.Kind = core.DecisionRemux
-		dec.VideoCopy, dec.AudioCopy = true, true
-		videoCodec, audioCodec := "", ""
-		if v := ps.Info.Video(); v != nil {
-			videoCodec = v.Codec
-		}
-		for _, st := range ps.Info.Streams {
-			if st.Type == "audio" && st.Index == dec.AudioStream {
-				audioCodec = st.Codec
-				break
-			}
-		}
-		if p.protocol == core.ProtocolDASH {
-			dec.Container = transcode.ContainerFMP4
-		} else {
-			dec.Container = transcode.HLSContainer(p.caps, videoCodec, audioCodec)
-		}
-		dec.Reason = "Direct stream preserves playback across source changes."
+	dec, err := sessions.Decide(s.d.Playback, s.d.Transcoder, sessions.DecisionRequest{
+		Session: ps, Caps: p.caps, Options: p.opts, PreferRemux: p.mde,
+		Protocol: p.protocol, RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,
+	})
+	if err != nil {
+		return t, nil, core.Decision{}, err
 	}
 	if v := ps.Info.Video(); v != nil {
 		s.log.Debug("playback media decision", "key", p.key, "client", pr.ClientID, "device", pr.Device, "model", pr.Model, "platformVersion", pr.PlatformVersion, "video", v.Codec, "videoProfile", v.Profile, "height", v.Height, "bitDepth", v.BitDepth, "transfer", v.ColorTransfer, "dvProfile", v.DolbyVisionProfile, "dvLevel", v.DolbyVisionLevel, "dvCompatibility", v.DolbyVisionCompatibilityID, "kind", dec.Kind, "outputContainer", dec.Container, "videoCopy", dec.VideoCopy, "audioCopy", dec.AudioCopy, "hdrCap", p.caps.HDR10, "dvCap", p.caps.DolbyVision, "profileExtra", pr.ProfileExtra)
