@@ -408,6 +408,14 @@ func containsString(ids []string, id string) bool {
 	return false
 }
 func (s *Service) allowed(ctx context.Context, u *core.User, c Channel, p *Programme) bool {
+	var lookup func(context.Context, core.RatingKey) (*core.Title, error)
+	if s.o.Catalog != nil {
+		lookup = s.o.Catalog.Get
+	}
+	return s.allowedWithLookup(ctx, u, c, p, lookup, false)
+}
+
+func (s *Service) allowedWithLookup(ctx context.Context, u *core.User, c Channel, p *Programme, lookup func(context.Context, core.RatingKey) (*core.Title, error), strict bool) bool {
 	if u == nil || !c.Enabled {
 		return false
 	}
@@ -428,31 +436,69 @@ func (s *Service) allowed(ctx context.Context, u *core.User, c Channel, p *Progr
 	if catalog.RatingExceeds(rating, u.MaxContentRating) || catalog.RatingExceeds(rating, pol.MaxRating) {
 		return false
 	}
-	if p != nil && p.Item.Key != 0 && s.o.Catalog != nil {
-		t, err := s.o.Catalog.Get(ctx, p.Item.Key)
-		if err != nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, pol.MaxRating) {
+	if p != nil && p.Item.Key != 0 && (lookup != nil || strict) {
+		if lookup == nil {
 			return false
 		}
-		if len(u.AllowedSections) > 0 {
-			section := 1
-			if t.Type != core.TypeMovie {
-				section = 2
+		checkTitle := func(t *core.Title) bool {
+			if t == nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, pol.MaxRating) {
+				return false
 			}
-			ok := false
-			for _, id := range u.AllowedSections {
-				if id == section {
-					ok = true
+			if len(u.AllowedSections) > 0 {
+				section := 1
+				if t.Type != core.TypeMovie {
+					section = 2
+				}
+				ok := false
+				for _, id := range u.AllowedSections {
+					if id == section {
+						ok = true
+					}
+				}
+				if !ok {
+					return false
 				}
 			}
-			if !ok {
+			if s.o.Allowed != nil && !s.o.Allowed(u, t) {
+				return false
+			}
+			return true
+		}
+		t, err := lookup(ctx, p.Item.Key)
+		if err != nil || !checkTitle(t) || (strict && t.Key != p.Item.Key) {
+			return false
+		}
+		if strict && t.ShowKey != 0 {
+			show, err := lookup(ctx, t.ShowKey)
+			if err != nil || show == nil || show.Key != t.ShowKey || !checkTitle(show) {
 				return false
 			}
 		}
-		if s.o.Allowed != nil && !s.o.Allowed(u, t) {
-			return false
-		}
 	}
 	return true
+}
+
+// AllowedChannelCached checks one channel and its current programme using
+// local title facts only. Missing programme title or inherited show facts fail
+// closed. The supplied lookup must not perform network or release resolution.
+func (s *Service) AllowedChannelCached(ctx context.Context, u *core.User, id string, cached func(context.Context, core.RatingKey) (*core.Title, error)) error {
+	c, err := s.Channel(ctx, id)
+	if err != nil {
+		return err
+	}
+	now := s.o.Now()
+	programmes, err := s.programmes(ctx, c, now, now.Add(time.Second))
+	if err != nil {
+		return err
+	}
+	var current *Programme
+	if len(programmes) > 0 {
+		current = &programmes[0]
+	}
+	if !s.allowedWithLookup(ctx, u, c, current, cached, true) {
+		return core.ErrNotFound
+	}
+	return nil
 }
 func (s *Service) AllowedChannels(ctx context.Context, u *core.User) ([]Channel, error) {
 	cs, err := s.Channels(ctx)

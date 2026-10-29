@@ -67,6 +67,17 @@ func (s surface) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	http.NotFound(w, r)
 }
+func (s surface) ServeMediaAccess(w http.ResponseWriter, r *http.Request, a frontend.SessionAccess) {
+	if a.Protocol != s.protocol {
+		http.NotFound(w, r)
+		return
+	}
+	if scoped, ok := s.broker.(frontend.ScopedMedia); ok {
+		scoped.ServeMediaAccess(w, r, a)
+		return
+	}
+	http.NotFound(w, r)
+}
 func (s surface) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
 	if a.Protocol != s.protocol {
 		return core.ErrUnauthorized

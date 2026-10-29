@@ -26,9 +26,15 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		return "", err
 	}
 	defer unlock()
-	s, _, err = b.access(ctx, a, id)
+	s, viewer, err := b.access(ctx, a, id)
 	if err != nil {
 		return "", err
+	}
+	if viewer.ID != s.public.ViewerID {
+		viewer, err = b.deps.ActiveViewer(ctx, s.public.ViewerID)
+	}
+	if err != nil || !b.currentMediaPolicy(ctx, viewer, s) {
+		return "", core.ErrUnauthorized
 	}
 	if req.Format != frontend.StreamDirect && req.Format != frontend.StreamHLS && req.Format != frontend.StreamDASH {
 		return "", core.ErrNotAvailable
@@ -133,15 +139,35 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 
 // ServeMedia validates a session-scoped capability on every request.
 func (b *Broker) ServeMedia(w http.ResponseWriter, r *http.Request) {
-	b.serveMedia("", w, r)
+	b.serveMedia("", nil, w, r)
 }
 
 // ServeMediaFor binds a mounted handler to its protocol surface.
 func (b *Broker) ServeMediaFor(protocol frontend.Protocol, w http.ResponseWriter, r *http.Request) {
-	b.serveMedia(protocol, w, r)
+	b.serveMedia(protocol, nil, w, r)
 }
 
-func (b *Broker) serveMedia(protocol frontend.Protocol, w http.ResponseWriter, r *http.Request) {
+// ServeMediaAccess additionally binds the grant to the authenticated device.
+func (b *Broker) ServeMediaAccess(w http.ResponseWriter, r *http.Request, a frontend.SessionAccess) {
+	b.serveMedia(a.Protocol, &a, w, r)
+}
+
+func (b *Broker) currentMediaPolicy(ctx context.Context, viewer *core.Viewer, s *brokerSession) bool {
+	if viewer == nil || viewer.ID != s.public.ViewerID || !b.permitted(viewer, s.caps) {
+		return false
+	}
+	if s.live {
+		return b.deps.Live != nil && b.deps.Live.Allowed(ctx, viewer, s.public.Channel) == nil
+	}
+	lookup := b.deps.MediaLookup
+	if lookup == nil {
+		lookup = b.deps.Lookup
+	}
+	title, err := lookup(ctx, viewer, s.public.Device, s.public.Item)
+	return err == nil && title != nil && title.Key == s.public.Item && (title.Released.IsZero() || !title.Released.After(b.deps.Now()))
+}
+
+func (b *Broker) serveMedia(protocol frontend.Protocol, access *frontend.SessionAccess, w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.NotFound(w, r)
 		return
@@ -171,6 +197,10 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, w http.ResponseWriter, r
 		http.NotFound(w, r)
 		return
 	}
+	if access != nil && (access.Owner || access.Viewer == nil || access.Viewer.ID != s.public.ViewerID || access.Protocol == "" || access.Device.ID == "" || access.Device.ID != s.public.Device.ID) {
+		http.NotFound(w, r)
+		return
+	}
 	viewer, ok := AuthenticateGrant(r.Context(), r.Method, parts[1], GrantBinding{Token: s.grant, ViewerID: s.public.ViewerID, Started: true}, func(ctx context.Context, id int64) *core.Viewer {
 		v, e := b.deps.ActiveViewer(ctx, id)
 		if e != nil {
@@ -179,6 +209,12 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, w http.ResponseWriter, r
 		return v
 	})
 	if !ok || viewer.ID != s.public.ViewerID || !b.permitted(viewer, s.caps) {
+		http.NotFound(w, r)
+		return
+	}
+	// Grants do not freeze library, rating, release, or channel permissions.
+	// Check the current policy before handing any bytes to a backend.
+	if !b.currentMediaPolicy(r.Context(), viewer, s) {
 		http.NotFound(w, r)
 		return
 	}

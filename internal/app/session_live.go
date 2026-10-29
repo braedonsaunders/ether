@@ -11,19 +11,13 @@ import (
 	"github.com/braedonsaunders/ether/internal/livetv"
 )
 
-type sessionLive struct{ service *livetv.Service }
+type sessionLive struct {
+	service *livetv.Service
+	cached  func(context.Context, core.RatingKey) (*core.Title, error)
+}
 
 func (l sessionLive) Allowed(ctx context.Context, viewer *core.Viewer, id string) error {
-	channels, err := l.service.AllowedChannels(ctx, viewer)
-	if err != nil {
-		return err
-	}
-	for _, channel := range channels {
-		if channel.ID == id {
-			return nil
-		}
-	}
-	return core.ErrNotFound
+	return l.service.AllowedChannelCached(ctx, viewer, id, l.cached)
 }
 func (l sessionLive) Tune(ctx context.Context, viewer *core.Viewer, id string, caps core.ClientCaps, clientSession string) (string, error) {
 	info, err := l.service.TuneWithSession(ctx, viewer, id, caps, clientSession)

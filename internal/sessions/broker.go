@@ -31,6 +31,10 @@ type BrokerDeps struct {
 	// it replaces SelectTracks and must preserve the unscoped behavior.
 	SelectScopedTracks func(context.Context, *core.Viewer, core.Device, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
 	Lookup             func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
+	// MediaLookup checks current title policy using local facts only; it must
+	// never resolve a release or fetch remote metadata on a segment request.
+	// If nil, Lookup must satisfy the same requirement.
+	MediaLookup        func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
 	Playback           core.Playback
 	Transcoder         core.Transcoder
 	Progress           ProgressWriter
@@ -479,6 +483,10 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	return session, nil
 }
 func (b *Broker) access(ctx context.Context, a frontend.SessionAccess, id string) (*brokerSession, *core.Viewer, error) {
+	return b.accessSession(ctx, a, id, true)
+}
+
+func (b *Broker) accessSession(ctx context.Context, a frontend.SessionAccess, id string, enforcePlaybackPolicy bool) (*brokerSession, *core.Viewer, error) {
 	viewer, err := b.viewer(ctx, a.Viewer)
 	if err != nil {
 		return nil, nil, err
@@ -500,7 +508,7 @@ func (b *Broker) access(ctx context.Context, a frontend.SessionAccess, id string
 	if a.Owner && !owner {
 		return nil, nil, core.ErrUnauthorized
 	}
-	if !b.permitted(viewer, s.caps) && !owner {
+	if enforcePlaybackPolicy && !b.permitted(viewer, s.caps) && !owner {
 		return nil, nil, core.ErrUnauthorized
 	}
 	return s, viewer, nil
@@ -564,7 +572,7 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 	return visible, nil
 }
 func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
-	s, v, err := b.access(ctx, a, id)
+	s, v, err := b.accessSession(ctx, a, id, t.State != "stopped")
 	if errors.Is(err, core.ErrNotFound) {
 		retired, retiredErr := b.retiredAccess(ctx, a, id)
 		if retiredErr != nil {
@@ -585,7 +593,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		return err
 	}
 	defer unlock()
-	s, v, err = b.access(ctx, a, id)
+	s, v, err = b.accessSession(ctx, a, id, t.State != "stopped")
 	if err != nil {
 		return err
 	}
@@ -594,6 +602,14 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		if err != nil || v == nil {
 			return core.ErrUnauthorized
 		}
+	}
+	// A revoked session may still stop and release resources, but cannot write
+	// further progress after its title or channel becomes inaccessible.
+	if !b.currentMediaPolicy(ctx, v, s) {
+		if t.State == "stopped" {
+			return b.stopLocked(ctx, s)
+		}
+		return core.ErrUnauthorized
 	}
 	if b.cluster != nil && s.public.Protocol != "plex" {
 		active, err := b.cluster.store.active(ctx, s.public.ID)
@@ -666,7 +682,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	return nil
 }
 func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) error {
-	s, _, err := b.access(ctx, a, id)
+	s, _, err := b.accessSession(ctx, a, id, false)
 	if errors.Is(err, core.ErrNotFound) {
 		if b.cluster == nil {
 			return nil
@@ -706,7 +722,7 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 		return err
 	}
 	defer unlock()
-	s, _, err = b.access(ctx, a, id)
+	s, _, err = b.accessSession(ctx, a, id, false)
 	if err != nil {
 		return err
 	}

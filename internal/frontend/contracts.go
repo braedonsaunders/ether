@@ -535,6 +535,12 @@ type SessionAccess struct {
 	Owner    bool
 }
 
+// ScopedMedia serves a stream only to the authenticated device that owns it.
+// The scoped URL's grant and current playback policy are also checked.
+type ScopedMedia interface {
+	ServeMediaAccess(http.ResponseWriter, *http.Request, SessionAccess)
+}
+
 // Owner requests owner scope; the subscriber must verify active owner status.
 type EventScope struct {
 	Viewer *core.Viewer

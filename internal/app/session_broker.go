@@ -29,7 +29,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	}
 	var live sessions.LiveBackend
 	if a.livetv != nil {
-		live = sessionLive{service: a.livetv}
+		live = sessionLive{service: a.livetv, cached: a.catalog.CachedGet}
 	}
 	visibility := experience.Visibility{Policy: a.safety, GetTitle: a.catalog.Get, SectionFor: func(t core.MediaType) (int, bool) {
 		want := core.TypeMovie
@@ -85,6 +85,9 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 			}
 			return title, nil
 		},
+		MediaLookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+			return cachedSessionTitle(ctx, v, key, a.catalog.CachedGet, visibility)
+		},
 		Playback: a.playback, Transcoder: tc, Progress: a.state,
 		ActiveViewer: func(ctx context.Context, id int64) (*core.Viewer, error) {
 			v, err := a.users.ActiveUser(ctx, id)
@@ -113,6 +116,20 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		},
 		OnEventError: func(err error) { a.log.Warn("session event publication failed", "err", err) },
 	})
+}
+
+// cachedSessionTitle checks both the item and inherited show using only the
+// local mirror. Missing facts fail closed; it never refreshes remote metadata.
+func cachedSessionTitle(ctx context.Context, viewer *core.Viewer, key core.RatingKey, cached func(context.Context, core.RatingKey) (*core.Title, error), visibility experience.Visibility) (*core.Title, error) {
+	title, err := cached(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	visibility.GetTitle = cached
+	if title == nil || title.Key != key || !visibility.Playable(ctx, viewer, title) {
+		return nil, core.ErrNotFound
+	}
+	return title, nil
 }
 
 // subscribeSessionState publishes committed state invalidations once and keeps

@@ -18,9 +18,15 @@ import (
 // SubtitleURL authorizes a subtitle by the session's probed stream index.
 // The returned URL contains only the scoped stream capability.
 func (b *Broker) SubtitleURL(ctx context.Context, a frontend.SessionAccess, id string, index int, format string) (string, error) {
-	s, _, err := b.access(ctx, a, id)
+	s, viewer, err := b.access(ctx, a, id)
 	if err != nil {
 		return "", err
+	}
+	if viewer.ID != s.public.ViewerID {
+		viewer, err = b.deps.ActiveViewer(ctx, s.public.ViewerID)
+	}
+	if err != nil || !b.currentMediaPolicy(ctx, viewer, s) {
+		return "", core.ErrUnauthorized
 	}
 	format = strings.ToLower(format)
 	if index < 0 || (format != "vtt" && format != "srt") {
