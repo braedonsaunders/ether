@@ -38,7 +38,7 @@ func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 	}); err != nil {
 		return nil, err
 	}
-	inst := &instance{host: host, info: info, router: r, port: 8096}
+	inst := &instance{host: host, info: info, router: r}
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err
 	}
@@ -58,20 +58,21 @@ type instance struct {
 	host   frontend.Host
 	info   PublicInfo
 	router *route.Router
-	port   int
 }
 
 func (i *instance) Handler() http.Handler { return StripPrefix("/jellyfin", i.router) }
-func (i *instance) Listeners() []frontend.ListenerSpec {
+func (i *instance) listenerPort() int {
 	settings := frontend.Settings{}
 	if i.host.Config != nil {
 		settings = i.host.Config()
 	}
-	port := 8096
 	if n, ok := settings["port"].(float64); ok && n > 0 && n <= 65535 {
-		port = int(n)
+		return int(n)
 	}
-	return []frontend.ListenerSpec{{Address: fmt.Sprintf(":%d", port)}, {Shared: true, PathPrefix: "/jellyfin"}}
+	return 8096
+}
+func (i *instance) Listeners() []frontend.ListenerSpec {
+	return []frontend.ListenerSpec{{Address: fmt.Sprintf(":%d", i.listenerPort())}, {Shared: true, PathPrefix: "/jellyfin"}}
 }
 func (i *instance) Discovery() []frontend.Announcer {
 	settings := frontend.Settings{}
@@ -81,10 +82,7 @@ func (i *instance) Discovery() []frontend.Announcer {
 	if enabled, ok := settings["discovery"].(bool); ok && !enabled {
 		return nil
 	}
-	port := 8096
-	if n, ok := settings["port"].(float64); ok && n > 0 && n <= 65535 {
-		port = int(n)
-	}
+	port := i.listenerPort()
 	info := i.info
 	if name, ok := settings["serverName"].(string); ok && name != "" {
 		info.ServerName = name
