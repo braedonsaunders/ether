@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Opt-in preliminary GET timings; read lab passwords from stdin, never disk."""
-import json, subprocess, sys, urllib.request, urllib.error
+import json, subprocess, sys, urllib.request, urllib.error, urllib.error
 
 secrets = json.load(sys.stdin)
 
@@ -18,6 +18,7 @@ def login(base, user, password):
     return result['AccessToken'], result['User']['Id']
 
 all_results = {}
+cleanup_failures = []
 for protocol, reference, ether in [('jellyfin','http://127.0.0.1:8096','http://127.0.0.1:18096'),('emby','http://127.0.0.1:8097/emby','http://127.0.0.1:18097')]:
     tokens = []
     try:
@@ -32,7 +33,12 @@ for protocol, reference, ether in [('jellyfin','http://127.0.0.1:8096','http://1
         proc=subprocess.run(['docker','exec','-i','prism-scorecard-qsb','scorecard','-config','/dev/stdin'],input=json.dumps(config),text=True,capture_output=True,check=True)
         all_results[protocol]=json.loads(proc.stdout)
     finally:
-        for base,token in tokens:
+        for index,(base,token) in enumerate(tokens):
             try: request(base,'/Sessions/Logout',token,body={})
-            except (urllib.error.URLError,ValueError): pass
+            except Exception as exc:
+                if isinstance(exc,urllib.error.HTTPError):exc.close()
+                failure={'protocol':protocol,'target':'reference' if index==0 else 'ether'}
+                cleanup_failures.append(failure);print('logout failed for '+protocol+' '+failure['target'],file=sys.stderr)
+all_results['_cleanup_failures']=cleanup_failures
 print(json.dumps(all_results,indent=2))
+if cleanup_failures: sys.exit(1)

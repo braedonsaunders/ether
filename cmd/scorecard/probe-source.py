@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Inspect fixture playback plans without asserting a client decision; secrets on stdin."""
-import json, sys, urllib.request
+import json, sys, urllib.request, urllib.error
 credentials = json.load(sys.stdin)
 
 def query(base, path, token='', body=None):
@@ -11,6 +11,7 @@ def query(base, path, token='', body=None):
     with urllib.request.urlopen(request, timeout=120) as response:
         return json.load(response)
 
+cleanup_failures=[]
 for label, base, user in [('reference','http://127.0.0.1:8096',credentials),('ether','http://127.0.0.1:18096',{'username':'fixture-viewer','password':'fixture-password'})]:
     account = query(base, '/Users/AuthenticateByName', body={'Username':user['username'],'Pw':user['password']})
     token, uid = account['AccessToken'], account['User']['Id']
@@ -24,4 +25,7 @@ for label, base, user in [('reference','http://127.0.0.1:8096',credentials),('et
         print(label,'media sources',len(sources),'declared direct play',sum(bool(x.get('SupportsDirectPlay')) for x in sources),'declared transcode',sum(bool(x.get('SupportsTranscoding')) for x in sources))
     finally:
         try: query(base, '/Sessions/Logout', token, {})
-        except Exception: pass
+        except Exception as exc:
+            if isinstance(exc,urllib.error.HTTPError):exc.close()
+            cleanup_failures.append(label);print('logout failed for '+label,file=sys.stderr)
+if cleanup_failures: sys.exit(1)

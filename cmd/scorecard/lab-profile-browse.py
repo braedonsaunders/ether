@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run only recorded profile GETs with matching response projections; credentials on stdin."""
-import json, subprocess, sys, urllib.request
+import json, subprocess, sys, urllib.request, urllib.error
 secrets=json.load(sys.stdin)
 
 def request(base,path,token='',body=None):
@@ -21,6 +21,7 @@ def projection(response):
     rows=sorted((x.get('Name',''),x.get('Type',''),x.get('CollectionType',''),x.get('IndexNumber') or 0,x.get('ParentIndexNumber') or 0) for x in items)
     return {'total':response.get('TotalRecordCount',len(items)),'items':rows}
 
+cleanup_failures=[]
 output={'caveat':'Preflight compares visible item projections; views may match by collection type despite different configured names. Metadata, viewer policies and bytes are not fully aligned, so timings remain exploratory.','protocols':{}}
 for protocol,reference,ether,profile,viewProbe,spec in [
  ('jellyfin','http://127.0.0.1:8096','http://127.0.0.1:18096','/profiles/jellyfin/swiftfin.json','user views','/specs/jellyfin-openapi-12.4.json'),
@@ -51,7 +52,12 @@ for protocol,reference,ether,profile,viewProbe,spec in [
             results=json.loads(proc.stdout)
         output['protocols'][protocol]={'preflight':preflight,'results':results}
     finally:
-        for base,token in logins:
+        for index,(base,token) in enumerate(logins):
             try:request(base,'/Sessions/Logout',token,{})
-            except Exception:pass
+            except Exception as exc:
+                if isinstance(exc,urllib.error.HTTPError):exc.close()
+                failure={'protocol':protocol,'target':'reference' if index==0 else 'ether'}
+                cleanup_failures.append(failure);print('logout failed for '+protocol+' '+failure['target'],file=sys.stderr)
+output['cleanup_failures']=cleanup_failures
 print(json.dumps(output,indent=2))
+if cleanup_failures:sys.exit(1)

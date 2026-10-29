@@ -167,3 +167,8 @@ successful-response and first-byte percentiles. These intervals assume
 independent samples and can understate uncertainty for correlated requests;
 point-estimate winners are not significance tests. Missing intervals mean the
 sample count is insufficient, not zero uncertainty.
+The lab drivers attempt logout for every successfully authenticated session;
+a logout failure is recorded without credentials and exits nonzero. Earlier
+reports created before this check do not prove their reference grants were
+revoked. The offline lifecycle test is `python3 -B
+cmd/scorecard/lab_cleanup_test.py`.
