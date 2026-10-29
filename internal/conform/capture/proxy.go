@@ -3,6 +3,7 @@ package capture
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -127,6 +128,10 @@ func New(protocol, client, dir string, upstream *url.URL) (*Recorder, error) {
 			s.response.limit = textLimit
 		}
 		s.textResponse = isText
+		s.responseEncoding = resp.Header.Get("Content-Encoding")
+		if isText && s.responseEncoding != "" && !strings.EqualFold(s.responseEncoding, "identity") {
+			s.entry.Response.Headers.Del("Content-Length")
+		}
 		resp.Body = &readCapture{ReadCloser: resp.Body, c: s.response, onClose: s.finish}
 		return nil
 	}
@@ -142,6 +147,7 @@ type state struct {
 	entry             Entry
 	request, response *collector
 	textResponse      bool
+	responseEncoding  string
 	once              sync.Once
 }
 
@@ -562,6 +568,22 @@ func (s *state) finish() {
 			body, total, complete := s.response.snapshot()
 			if s.textResponse {
 				s.entry.ResponseTruncated = !complete || total > int64(len(body))
+				if !s.entry.ResponseTruncated && s.responseEncoding != "" && !strings.EqualFold(s.responseEncoding, "identity") {
+					if strings.EqualFold(s.responseEncoding, "gzip") {
+						zr, err := gzip.NewReader(bytes.NewReader(body))
+						if err == nil {
+							body, err = io.ReadAll(io.LimitReader(zr, textLimit+1))
+							if closeErr := zr.Close(); err == nil {
+								err = closeErr
+							}
+						}
+						if err != nil || len(body) > textLimit {
+							s.entry.ResponseTruncated = true
+						}
+					} else {
+						s.entry.ResponseTruncated = true
+					}
+				}
 				if isJSON(s.entry.Response.Headers.Get("Content-Type")) && len(body) > 0 && !json.Valid(body) {
 					s.entry.ResponseTruncated = true
 				}

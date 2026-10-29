@@ -3,6 +3,7 @@ package capture
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -19,6 +20,58 @@ import (
 	"testing"
 	"time"
 )
+
+func TestProxyForwardsAndCapturesChunkedJSON(t *testing.T) {
+	for _, compressed := range []bool{false, true} {
+		t.Run(fmt.Sprint(compressed), func(t *testing.T) {
+			payload := []byte(`{"Name":"movie","AccessToken":"secret"}`)
+			wire := payload
+			if compressed {
+				var b bytes.Buffer
+				z := gzip.NewWriter(&b)
+				_, _ = z.Write(payload)
+				_ = z.Close()
+				wire = b.Bytes()
+			}
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if compressed {
+					w.Header().Set("Content-Encoding", "gzip")
+				}
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				_, _ = w.Write(wire)
+			}))
+			defer up.Close()
+			u, _ := url.Parse(up.URL)
+			dir := t.TempDir()
+			rec, err := New("jellyfin", "infuse", dir, u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			proxy := httptest.NewServer(rec)
+			defer proxy.Close()
+			req, _ := http.NewRequest("GET", proxy.URL, nil)
+			req.Header.Set("Accept-Encoding", "gzip")
+			resp, err := proxy.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil || !bytes.Equal(got, wire) {
+				t.Fatalf("forwarded body changed: %v", err)
+			}
+			if compressed && resp.Header.Get("Content-Encoding") != "gzip" {
+				t.Fatal("gzip header lost")
+			}
+			entry := readEntry(t, dir, 1)
+			if entry.ResponseTruncated || !json.Valid(entry.Response.Body) || bytes.Contains(entry.Response.Body, []byte("secret")) {
+				t.Fatalf("invalid captured response: %+v", entry)
+			}
+		})
+	}
+}
 
 func readEntry(t *testing.T, dir string, n int) Entry {
 	t.Helper()
