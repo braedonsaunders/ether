@@ -160,7 +160,7 @@ func TestPlaybackQueryPassesSelectionsAndVerifiedPeer(t *testing.T) {
 		return frontend.CapabilityResult{}, nil
 	}}
 	broker := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
-		if r.Intent.Position != 2*time.Second || r.Intent.Options.AudioStream != 3 || r.Intent.Options.SubtitleStream != -1 || r.Intent.AllowTranscoding == nil || *r.Intent.AllowTranscoding {
+		if r.Intent.Position != 2*time.Second || r.Intent.Options.AudioStream != 3 || r.Intent.Options.SubtitleStream != -1 || !r.Intent.AudioSet || !r.Intent.SubtitleSet || r.Intent.AllowTranscoding == nil || *r.Intent.AllowTranscoding {
 			t.Fatal(r.Intent)
 		}
 		planned = true

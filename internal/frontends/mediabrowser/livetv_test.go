@@ -63,3 +63,48 @@ func TestLiveTVUsesViewerScopedHost(t *testing.T) {
 		}
 	}
 }
+
+func TestLivePlaybackUsesAuthorizedChannelTarget(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	guid, _ := ids.StringGUID(ids.Channel, "channel-1")
+	var estimate, opened bool
+	live := frontendtest.LiveTV{ResolveChannelFunc: func(_ context.Context, v *frontend.Viewer, id string) (frontend.LiveChannel, error) {
+		if v != viewer || id != guid {
+			t.Fatal(v, id)
+		}
+		return frontend.LiveChannel{ID: "channel-1"}, nil
+	}}
+	broker := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
+		if r.Channel != "channel-1" || r.Item != 0 {
+			t.Fatal(r)
+		}
+		estimate = r.Intent.Estimate
+		return frontend.PlayPlan{ID: "plan", Estimated: estimate}, nil
+	}, OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+		opened = true
+		return frontend.Session{ID: "session"}, nil
+	}, StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, _ string, r frontend.StreamRequest) (string, error) {
+		if r.Format != frontend.StreamHLS {
+			t.Fatal(r)
+		}
+		return "/sessions/media/session/scoped/index.m3u8", nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, LiveTV: live, Sessions: broker, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/Items/"+guid+"/PlaybackInfo", strings.NewReader(body))
+		r.Header.Set("X-Emby-Token", "grant")
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if w := call(`{}`); w.Code != 200 || !estimate || opened {
+		t.Fatal(w.Code, estimate, opened)
+	}
+	if w := call(`{"IsPlayback":true}`); w.Code != 200 || estimate || !opened || !strings.Contains(w.Body.String(), "/sessions/media/") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

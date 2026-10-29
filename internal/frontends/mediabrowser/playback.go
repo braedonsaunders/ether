@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,10 +51,21 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	wireID := r.PathValue("id")
+	key, err := ids.ParseRatingKeyGUID(wireID)
+	channel := ""
 	if err != nil {
-		http.NotFound(w, r)
-		return
+		if i.host.LiveTV == nil {
+			http.NotFound(w, r)
+			return
+		}
+		ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
+		if e != nil || ch.ID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		channel = ch.ID
+		key = 0
 	}
 	var body playbackRequest
 	if r.Body != nil && r.ContentLength != 0 {
@@ -86,10 +98,12 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	if body.SubtitleStreamIndex != nil {
 		opts.SubtitleStream = *body.SubtitleStreamIndex
 	}
+	audioSet, subtitleSet := body.AudioStreamIndex != nil, body.SubtitleStreamIndex != nil
 	for _, field := range []struct {
 		name string
 		dest *int
-	}{{"AudioStreamIndex", &opts.AudioStream}, {"SubtitleStreamIndex", &opts.SubtitleStream}} {
+		set  *bool
+	}{{"AudioStreamIndex", &opts.AudioStream, &audioSet}, {"SubtitleStreamIndex", &opts.SubtitleStream, &subtitleSet}} {
 		values := route.Query(r.URL.Query(), field.name)
 		if len(values) > 1 {
 			http.Error(w, "Bad Request", 400)
@@ -102,6 +116,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			*field.dest = n
+			*field.set = true
 		}
 	}
 	if values := route.Query(r.URL.Query(), "StartTimeTicks"); len(values) > 1 {
@@ -120,8 +135,8 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allowed := queryBool(r, "EnableTranscoding", boolValue(body.EnableTranscoding, true))
-	intent := frontend.PlayIntent{Estimate: !playback, Options: opts, Position: time.Duration(body.StartTimeTicks) * 100 * time.Nanosecond, AllowTranscoding: &allowed}
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Caps: capability.Client, Intent: intent})
+	intent := frontend.PlayIntent{Estimate: !playback, Options: opts, Position: time.Duration(body.StartTimeTicks) * 100 * time.Nanosecond, AllowTranscoding: &allowed, AudioSet: audioSet, SubtitleSet: subtitleSet}
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Caps: capability.Client, Intent: intent})
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)
 		return
@@ -130,7 +145,11 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Playback unavailable", 422)
 		return
 	}
-	source := map[string]any{"Id": ids.RatingKeyGUID(key), "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
+	sourceID := ids.RatingKeyGUID(key)
+	if channel != "" {
+		sourceID = wireID
+	}
+	source := map[string]any{"Id": sourceID, "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
 	playID := ""
 	if playback {
 		session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: i.protocol, PlanID: plan.ID, Viewer: v, Device: dev})
@@ -139,7 +158,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		format := frontend.StreamDirect
-		if plan.Decision.Kind != "directplay" {
+		if channel != "" || plan.Decision.Kind != "directplay" {
 			format = frontend.StreamHLS
 		}
 		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
@@ -227,7 +246,7 @@ func (i *instance) playbackRoutes() error {
 
 type timelineRequest struct {
 	PlaySessionId, ItemId string
-	PositionTicks         int64
+	PositionTicks         json.Number
 	IsPaused              bool
 }
 
@@ -242,9 +261,17 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 		return
 	}
 	var body timelineRequest
-	if decode(r, &body) != nil || body.PlaySessionId == "" || body.PositionTicks < 0 || body.PositionTicks > (1<<63-1)/100 {
+	if decode(r, &body) != nil || body.PlaySessionId == "" {
 		http.Error(w, "Bad Request", 400)
 		return
+	}
+	ticks := int64(0)
+	if body.PositionTicks != "" {
+		ticks, err = body.PositionTicks.Int64()
+		if err != nil || ticks < 0 || ticks > (1<<63-1)/100 {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
 	}
 	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: i.protocol}
 	state := "playing"
@@ -254,7 +281,7 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 	if stopped {
 		state = "stopped"
 	}
-	err = i.host.Sessions.Report(r.Context(), access, body.PlaySessionId, frontend.Timeline{PlaybackID: body.PlaySessionId, Position: time.Duration(body.PositionTicks) * 100 * time.Nanosecond, State: state})
+	err = i.host.Sessions.Report(r.Context(), access, body.PlaySessionId, frontend.Timeline{PlaybackID: body.PlaySessionId, Position: time.Duration(ticks) * 100 * time.Nanosecond, State: state})
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
@@ -280,9 +307,19 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	channel := ""
 	if err != nil {
-		http.NotFound(w, r)
-		return
+		if i.host.LiveTV == nil {
+			http.NotFound(w, r)
+			return
+		}
+		ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), viewer, r.PathValue("id"))
+		if e != nil || ch.ID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		channel = ch.ID
+		key = 0
 	}
 	name := strings.ToLower(r.PathValue("name"))
 	format := frontend.StreamDirect
@@ -311,7 +348,7 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := ""
 	for _, session := range sessions {
-		if session.Item != key || session.Protocol != i.protocol || session.Device.ID != access.Device.ID {
+		if session.Item != key || session.Channel != channel || session.Protocol != i.protocol || session.Device.ID != access.Device.ID {
 			continue
 		}
 		if len(vals) == 1 && vals[0] != "" && session.ID != vals[0] {
