@@ -175,7 +175,9 @@ func TestLabPlaybackDecisions(t *testing.T) {
 					if err := reference.readDirect(profileName, m.referenceItem, refSource, refResult.Session); err != nil {
 						t.Fatal("reference client direct request failed", err)
 					}
+					t.Log("reference client direct read succeeded")
 				}
+				t.Logf("requested delivery: reference=%s target=%s", refDelivery, targetDelivery)
 				if targetDelivery == "direct" {
 					if profileName == "jellycon-default" {
 						t.Logf("request target GET /Videos/%s/stream?static=true&PlaySessionId=[redacted]&MediaSourceId=%s authorization=[redacted]", m.variant, m.variant)
