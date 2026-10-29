@@ -436,6 +436,28 @@ func (p *Protocol) Compare(a, b conform.Response) conform.Report {
 	return report
 }
 
+// CompareRequest treats the target's extra ETag on direct range streams as
+// informational. Ether uses that validator for correct If-Range resumption.
+func (p *Protocol) CompareRequest(req conform.Request, reference, target conform.Response) conform.Report {
+	report := p.Compare(reference, target)
+	path, _, _ := strings.Cut(req.Path, "?")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 4 && (strings.EqualFold(parts[0], "jellyfin") || strings.EqualFold(parts[0], "emby")) {
+		parts = parts[1:]
+	}
+	if req.Method != http.MethodGet || req.RangeKind == "" || reference.Kind != "binary-range" || target.Kind != "binary-range" || len(parts) != 3 || !strings.EqualFold(parts[0], "Videos") || parts[1] == "" || !(strings.EqualFold(parts[2], "stream") || strings.HasPrefix(strings.ToLower(parts[2]), "stream.")) {
+		return report
+	}
+	for index := range report.Differences {
+		diff := &report.Differences[index]
+		if diff.Path == "$headers.ETag" && diff.Kind == conform.KindHeader && diff.Reference == false && diff.Target == true {
+			diff.Kind = conform.KindValue
+			diff.Blocking = false
+		}
+	}
+	return report
+}
+
 func emptyEmbyReferenceAddresses(a, b conform.Response) bool {
 	if a.Status != 200 || b.Status != 200 {
 		return false

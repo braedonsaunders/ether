@@ -16,6 +16,25 @@ import (
 	"time"
 )
 
+func TestExtraETagIsInformationalOnlyForDirectRangeStreams(t *testing.T) {
+	p := &Protocol{Dialect: "jellyfin"}
+	ref := conform.Response{Status: 206, Kind: "binary-range", RangeKind: "start", BodyLength: 4, Headers: http.Header{"Content-Range": {"bytes 0-3/100"}, "Content-Length": {"4"}}}
+	target := ref
+	target.Headers = ref.Headers.Clone()
+	target.Headers.Set("ETag", `"representation"`)
+	request := conform.Request{Method: "GET", Path: "/Videos/${item_id}/stream?Static=true", RangeKind: "start"}
+	if report := p.CompareRequest(request, ref, target); report.Blocking() != 0 || len(report.Differences) != 1 || report.Differences[0].Kind != conform.KindValue {
+		t.Fatal(report)
+	}
+	if report := p.CompareRequest(request, target, ref); report.Blocking() == 0 {
+		t.Fatal("missing target ETag was ignored")
+	}
+	request.Path = "/Videos/${item_id}/master.m3u8"
+	if report := p.CompareRequest(request, ref, target); report.Blocking() == 0 {
+		t.Fatal("non-stream ETag was ignored")
+	}
+}
+
 func TestLoadFetchAlignAndRedact(t *testing.T) {
 	dir := t.TempDir()
 	profile := `{"protocol":"jellyfin","client":"tv","headers":{"Accept":"application/json"},"flows":{"home":[{"name":"items","method":"GET","path":"/Items"}]}}`

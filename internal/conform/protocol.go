@@ -25,3 +25,9 @@ type Protocol interface {
 type ResponseObserver interface {
 	Observe(Request, Response, map[string]string)
 }
+
+// RequestComparer permits narrowly scoped protocol rules that depend on the
+// request being compared. Protocols without it retain the ordinary comparer.
+type RequestComparer interface {
+	CompareRequest(Request, Response, Response) Report
+}

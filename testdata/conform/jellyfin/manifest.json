@@ -13,5 +13,16 @@
   "protocol": "jellyfin",
   "referenceVersion": "12.4",
   "profileDirectory": "internal/conform/profiles/jellyfin",
-  "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored."
+  "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored.",
+  "intentionalDifferences": [
+    {
+      "id": "direct-stream-extra-etag",
+      "method": "GET",
+      "route": "/Videos/{itemId}/stream[.ext]",
+      "kind": "binary-range",
+      "path": "$headers.ETag",
+      "direction": "target-only",
+      "reason": "Ether emits an ETag for If-Range resume; an additional HTTP validator is valid even when the reference omits it."
+    }
+  ]
 }

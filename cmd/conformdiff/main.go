@@ -379,7 +379,14 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 					if observer, ok := p.(pmsconform.ResponseObserver); ok {
 						observer.Observe(j.req, b, targetIDs.Values)
 					}
-					r := p.Compare(a, scrubSecrets(p.Redact(b), targetIDs.Values, token)).WithRequest(profile, formatName(j.json), j.req.Path)
+					target := scrubSecrets(p.Redact(b), targetIDs.Values, token)
+					var r pmsconform.Report
+					if contextual, ok := p.(pmsconform.RequestComparer); ok {
+						r = contextual.CompareRequest(j.req, a, target)
+					} else {
+						r = p.Compare(a, target)
+					}
+					r = r.WithRequest(profile, formatName(j.json), j.req.Path)
 					results <- result{r}
 				}
 			}()
