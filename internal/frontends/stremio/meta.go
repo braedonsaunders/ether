@@ -17,6 +17,7 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	i.observeClient(credential)
 	typ, raw := r.PathValue("type"), r.PathValue("id")
 	if !strings.HasSuffix(raw, ".json") {
 		http.NotFound(w, r)

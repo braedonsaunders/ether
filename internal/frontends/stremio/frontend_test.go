@@ -324,3 +324,23 @@ func TestRegisteredRoutesMatchMountedFrontend(t *testing.T) {
 
 	}
 }
+
+func TestOnlyAuthenticatedClientsAreCounted(t *testing.T) {
+	var seen []string
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
+		if token != "valid" {
+			return nil, errors.New("invalid")
+		}
+		return &frontend.Viewer{ID: 7}, nil
+	}}, Experience: frontendtest.Experience{}, Sessions: frontendtest.Sessions{}, ClientSeen: func(id string) { seen = append(seen, id) }}
+	inst, err := (Frontend{}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, credential := range []string{"invalid", "valid", "valid"} {
+		inst.Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/stremio/"+credential+"/manifest.json", nil))
+	}
+	if len(seen) != 2 || seen[0] == "" || seen[0] != seen[1] || strings.Contains(seen[0], "valid") {
+		t.Fatalf("unexpected clients: %+v", seen)
+	}
+}

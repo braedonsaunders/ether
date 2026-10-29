@@ -38,6 +38,7 @@ func (i *instance) stream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	i.observeClient(credential)
 	if i.host.LazyStreams == nil || i.host.Capabilities == nil || i.host.ClientIP == nil {
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 		return

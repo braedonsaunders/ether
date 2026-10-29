@@ -101,6 +101,12 @@ func (*instance) Status(context.Context) frontend.Status {
 func (*instance) Close(context.Context) error { return nil }
 func (i *instance) Routes() []route.Route     { return i.router.Routes() }
 
+func (i *instance) observeClient(credential string) {
+	if i.host.ClientSeen != nil {
+		i.host.ClientSeen(deviceFor(credential).ID)
+	}
+}
+
 func (i *instance) manifest(w http.ResponseWriter, r *http.Request) {
 	credential := r.PathValue("credential")
 	viewer, err := i.host.Identity.Resolve(r.Context(), credential)
@@ -108,6 +114,7 @@ func (i *instance) manifest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	i.observeClient(credential)
 	w.Header().Set("Content-Type", "application/json")
 	catalogs := []any{
 		map[string]any{"type": "movie", "id": "ether-movies", "name": "Ether Movies", "extra": []any{map[string]any{"name": "search"}, map[string]any{"name": "skip"}, map[string]any{"name": "genre"}}},
