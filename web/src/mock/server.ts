@@ -1888,6 +1888,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const req = body as {
           config?: { dailyLimit?: number; dailyGrabs?: number };
           import?: boolean;
+          sync?: boolean;
         };
         const found = [
           { id: "prowlarr-1", name: "Prowlarr Usenet", protocol: "usenet" as const },
@@ -1910,7 +1911,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
             ...found.filter((ix) => !have.has(ix.id)),
           ];
         }
-        return json({ indexers: found, imported: Boolean(req.import) });
+        return json({
+          indexers: found,
+          imported: Boolean(req.import),
+          ...(req.sync
+            ? { removals: [], removed: 0, keptEdited: [], approvedRemovals: [], plan: "mock-plan" }
+            : {}),
+        });
       }
       case "GET /subtitle-sync":
         return json([

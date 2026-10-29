@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,8 +28,8 @@ type ProwlarrDiscovery struct {
 	Warnings               []string         `json:"warnings,omitempty"`
 	// PresentIDs are the scoped IDs of every enabled indexer the source
 	// reported, including ones filtered out below (unknown protocol).
-	// It is diagnostic only: Ether's import is additive (upsert only),
-	// so no caller may use this list to remove stored indexers.
+	// The plain import is additive and never uses this list to remove
+	// stored indexers; only an explicit, owner-confirmed sync plan may.
 	PresentIDs []string `json:"presentIds,omitempty"`
 }
 
@@ -60,6 +61,65 @@ func ProwlarrIDPrefix(cfg config.Prowlarr) string {
 		return ""
 	}
 	return "prowlarr-" + prowlarrScope(base.String()) + "-"
+}
+
+// ProwlarrLocallyEdited reports whether a stored indexer carrying this
+// instance's ID prefix no longer matches the identity discovery would
+// have generated for it, i.e. the owner edited it locally after import.
+// An entry is locally edited when ANY of these holds:
+//
+//   - the ID suffix after "prowlarr-<scope>-" is not numeric;
+//   - the URL is not the generated proxy URL "<configured base>/<id>"
+//     (base in its saved spelling, without canonicalisation — see #55);
+//   - the name does not carry the generated "[<scope>:<id>]" marker.
+//
+// This pattern rule is the only check possible for entries the source no
+// longer reports. For entries still present, ProwlarrDiffersFromGenerated
+// also detects limit/priority/enabled/category edits. Callers must only
+// ask about same-scope entries.
+func ProwlarrLocallyEdited(cfg config.Prowlarr, ix config.Indexer) bool {
+	prefix := ProwlarrIDPrefix(cfg)
+	if prefix == "" || !strings.HasPrefix(ix.ID, prefix) {
+		return false
+	}
+	suffix := strings.TrimPrefix(ix.ID, prefix)
+	if suffix == "" {
+		return true
+	}
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			return true
+		}
+	}
+	base, err := normalizeProwlarrBase(cfg.URL)
+	if err != nil {
+		return true
+	}
+	if ix.URL != base.String()+"/"+suffix {
+		return true
+	}
+	marker := "[" + prowlarrScope(base.String()) + ":" + suffix + "]"
+	return !strings.Contains(ix.Name, marker)
+}
+
+// ProwlarrDiffersFromGenerated reports whether a stored indexer differs
+// from the entry discovery just generated for the same source indexer:
+// Name, URL, DailyLimit, DailyGrabs, Priority, Enabled, Protocol and the
+// movie/TV category lists. APIKey is excluded (copied from the current
+// settings on every import, so a key rotation must not mark every entry
+// as edited forever). An explicit sync must NOT overwrite or remove an
+// entry this reports as edited; the plain additive import keeps its
+// historical upsert behaviour.
+func ProwlarrDiffersFromGenerated(stored, generated config.Indexer) bool {
+	return stored.Name != generated.Name ||
+		stored.URL != generated.URL ||
+		stored.DailyLimit != generated.DailyLimit ||
+		stored.DailyGrabs != generated.DailyGrabs ||
+		stored.Priority != generated.Priority ||
+		stored.Enabled != generated.Enabled ||
+		stored.Protocol != generated.Protocol ||
+		!slices.Equal(stored.MovieCategories, generated.MovieCategories) ||
+		!slices.Equal(stored.TVCategories, generated.TVCategories)
 }
 
 // MaxRateLimitPause is the shared cap on a service-requested pause,
@@ -170,8 +230,8 @@ func DiscoverProwlarrReport(ctx context.Context, cfg config.Prowlarr, opts Optio
 		seen[item.ID] = true
 		id := "prowlarr-" + scope + "-" + strconv.Itoa(item.ID)
 		// Present at the source (enabled), even if unimportable below.
-		// Diagnostic only — import stays additive and never removes a
-		// stored indexer that is absent from this list.
+		// The plain import stays additive and never removes a stored
+		// indexer absent from this list; only an explicit sync may.
 		present = append(present, id)
 		if protocol != "usenet" && protocol != "1" && !torrent {
 			// Counted and reported, not silently dropped: the owner should

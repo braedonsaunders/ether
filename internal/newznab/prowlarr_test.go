@@ -223,6 +223,44 @@ func TestProwlarrIDPrefixGoldenVector(t *testing.T) {
 	}
 }
 
+// Local-edit detection vs the generated entry: only API-key rotation
+// (copied from the current settings on every import) is ignored.
+func TestProwlarrDiffersFromGenerated(t *testing.T) {
+	generated := config.Indexer{ID: "prowlarr-x-4", Name: "Prowlarr / News [x:4]", URL: "http://h/4", APIKey: "k1", DailyLimit: 1, DailyGrabs: 2, Priority: 3, Enabled: true, MovieCategories: []int{2000}}
+	if ProwlarrDiffersFromGenerated(generated, generated) {
+		t.Fatal("identical entry reported as edited")
+	}
+	rotated := generated
+	rotated.APIKey = "k2"
+	if ProwlarrDiffersFromGenerated(rotated, generated) {
+		t.Fatal("API-key rotation alone must not mark an entry as edited")
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*config.Indexer)
+	}{
+		{"name", func(x *config.Indexer) { x.Name = "Mine" }},
+		{"url", func(x *config.Indexer) { x.URL = "http://elsewhere/4" }},
+		{"dailyLimit", func(x *config.Indexer) { x.DailyLimit = 99 }},
+		{"dailyGrabs", func(x *config.Indexer) { x.DailyGrabs = 99 }},
+		{"priority", func(x *config.Indexer) { x.Priority = 99 }},
+		{"enabled", func(x *config.Indexer) { x.Enabled = false }},
+		{"protocol", func(x *config.Indexer) { x.Protocol = "torrent" }},
+		{"categories", func(x *config.Indexer) { x.MovieCategories = []int{2000, 2010} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := generated
+			// Deep-copy slices so mutations don't alias generated.
+			stored.MovieCategories = slices.Clone(generated.MovieCategories)
+			stored.TVCategories = slices.Clone(generated.TVCategories)
+			tc.mutate(&stored)
+			if !ProwlarrDiffersFromGenerated(stored, generated) {
+				t.Fatalf("edit to %s not detected", tc.name)
+			}
+		})
+	}
+}
+
 // A valid future HTTP-date Retry-After is accepted and converted to a
 // seconds value inside the remaining window (not dropped as past).
 func TestProwlarrDiscovery429FutureHTTPDateRetryAfter(t *testing.T) {
