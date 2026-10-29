@@ -23,6 +23,7 @@ type Experience struct {
 	LibraryItemsFunc         func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (core.Page, error)
 	SetPlayedFunc            func(context.Context, *core.Viewer, core.RatingKey) error
 	SetUnplayedFunc          func(context.Context, *core.Viewer, core.RatingKey) error
+	SetWatchlistFunc         func(context.Context, *core.Viewer, core.RatingKey, bool) error
 	SetFavoriteFunc          func(context.Context, *core.Viewer, core.RatingKey, bool) error
 	SetRatingFunc            func(context.Context, *core.Viewer, core.RatingKey, float64) error
 	RemoveFromContinueFunc   func(context.Context, *core.Viewer, core.RatingKey) error
@@ -431,4 +432,11 @@ func (f Identity) Refresh(ctx context.Context, token string, d core.Device) (str
 		return f.RefreshFunc(ctx, token, d)
 	}
 	return "", "", frontend.ErrIdentityUnavailable
+}
+
+func (f Experience) SetWatchlist(c context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
+	if f.SetWatchlistFunc != nil {
+		return f.SetWatchlistFunc(c, v, k, on)
+	}
+	return nil
 }

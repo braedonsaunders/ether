@@ -164,6 +164,7 @@ type WatchStatus struct {
 	ViewCount    int           `json:"viewCount"`
 	LastViewedAt time.Time     `json:"lastViewedAt,omitempty"`
 	UserRating   float64       `json:"userRating,omitempty"` // 0-10
+	InWatchlist  bool          `json:"inWatchlist,omitempty"`
 	IsFavorite   bool          `json:"isFavorite,omitempty"` // Derived from the viewer’s favorites set.
 	Duration     time.Duration `json:"duration,omitempty"`
 	UpdatedAt    time.Time     `json:"updatedAt"`

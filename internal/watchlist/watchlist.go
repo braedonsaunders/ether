@@ -156,6 +156,13 @@ func (s *Service) Remind(ctx context.Context, u *core.User, key core.RatingKey) 
 	}
 	return s.upsert(ctx, u.ID, "manual", *t)
 }
+
+// Contains reports membership from any watchlist source for one viewer.
+func (s *Service) Contains(ctx context.Context, userID int64, key core.RatingKey) (bool, error) {
+	var present bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM watchlist_items WHERE user_id=? AND item_key=?)`, userID, key).Scan(&present)
+	return present, err
+}
 func (s *Service) Remove(ctx context.Context, userID int64, key core.RatingKey) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM watchlist_items WHERE user_id=? AND item_key=?`, userID, key)
 	return err

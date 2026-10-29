@@ -273,6 +273,7 @@ type Experience interface {
 	SetPlayed(context.Context, *core.Viewer, core.RatingKey) error
 	SetUnplayed(context.Context, *core.Viewer, core.RatingKey) error
 	SetFavorite(context.Context, *core.Viewer, core.RatingKey, bool) error
+	SetWatchlist(context.Context, *core.Viewer, core.RatingKey, bool) error
 	SetEntityFavorite(context.Context, *core.Viewer, FavoriteRef, bool) error
 	EntityFavorites(context.Context, *core.Viewer, []FavoriteRef) (map[FavoriteRef]bool, error)
 	SetRating(context.Context, *core.Viewer, core.RatingKey, float64) error

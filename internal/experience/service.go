@@ -41,6 +41,8 @@ type ServiceDeps struct {
 	// Favorites manages the stable, per-viewer Favorites playlist mapping.
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
+	IsWatchlisted           func(context.Context, *core.User, core.RatingKey) (bool, error)
+	SetWatchlistSource      func(context.Context, *core.User, core.RatingKey, bool) error
 	RemoveContinue          func(context.Context, *core.User, core.RatingKey) error
 	CanFavoriteEntity       func(context.Context, *core.User, frontend.FavoriteRef) bool
 	SetEntityFavoriteSource func(context.Context, *core.User, frontend.FavoriteRef, bool) error
@@ -319,6 +321,9 @@ func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.
 	if s.d.IsFavorite != nil {
 		d.UserData.IsFavorite, err = s.d.IsFavorite(ctx, v, title.Key)
 	}
+	if err == nil && s.d.IsWatchlisted != nil {
+		d.UserData.InWatchlist, err = s.d.IsWatchlisted(ctx, v, title.Key)
+	}
 	return d, err
 }
 func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
@@ -487,6 +492,17 @@ func (s *Service) UserData(ctx context.Context, viewer *core.Viewer, keys []core
 			data[key] = status
 		}
 	}
+	if s.d.IsWatchlisted != nil {
+		for _, key := range allowed {
+			value, e := s.d.IsWatchlisted(ctx, v, key)
+			if e != nil {
+				return nil, e
+			}
+			status := data[key]
+			status.InWatchlist = value
+			data[key] = status
+		}
+	}
 	return data, nil
 }
 
@@ -567,6 +583,14 @@ func (s *Service) SetFavorite(ctx context.Context, v *core.Viewer, k core.Rating
 		}
 		_, err := s.d.Favorites(ctx, u, k, on)
 		return err
+	})
+}
+func (s *Service) SetWatchlist(ctx context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
+	return s.mutate(ctx, v, k, func(u *core.User) error {
+		if s.d.SetWatchlistSource == nil {
+			return core.ErrNotAvailable
+		}
+		return s.d.SetWatchlistSource(ctx, u, k, on)
 	})
 }
 func (s *Service) SetRating(ctx context.Context, v *core.Viewer, k core.RatingKey, rating float64) error {

@@ -45,11 +45,12 @@ func TestServiceEnforcesVisibilityBeforePagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.d.IsWatchlisted = func(_ context.Context, _ *core.User, k core.RatingKey) (bool, error) { return k == visible.Key, nil }
 	s.d.IsFavorite = func(_ context.Context, _ *core.User, key core.RatingKey) (bool, error) {
 		return key == visible.Key, nil
 	}
 	detail, err := s.Item(ctx, frontend.ItemRequest{Viewer: &core.User{ID: 1}, Key: visible.Key})
-	if err != nil || !detail.UserData.IsFavorite {
+	if err != nil || !detail.UserData.IsFavorite || !detail.UserData.InWatchlist {
 		t.Fatalf("favorite item: %+v %v", detail, err)
 	}
 	parentDetail, err := s.Item(ctx, frontend.ItemRequest{Viewer: &core.User{ID: 1}, Key: parent.Key})
@@ -64,7 +65,7 @@ func TestServiceEnforcesVisibilityBeforePagination(t *testing.T) {
 		t.Fatal("adult item exposed")
 	}
 	data, err := s.UserData(ctx, &core.User{ID: 1}, []core.RatingKey{hidden.Key, visible.Key})
-	if err != nil || len(data) != 1 || !data[visible.Key].IsFavorite {
+	if err != nil || len(data) != 1 || !data[visible.Key].IsFavorite || !data[visible.Key].InWatchlist {
 		t.Fatalf("userdata %+v %v", data, err)
 	}
 	if _, err := s.Views(ctx, &core.User{ID: 2}); err == nil {
@@ -103,6 +104,7 @@ func TestMutationsRequireVisibleActiveViewer(t *testing.T) {
 	state := &mutationState{}
 	title := &core.Title{Key: core.MovieKey(4), Type: core.TypeMovie}
 	favoriteCalls := 0
+	watchlistCalls := 0
 	s := &Service{d: ServiceDeps{Active: func(_ context.Context, id int64) (*core.User, error) {
 		if id == 1 {
 			return &core.User{ID: 1}, nil
@@ -112,6 +114,7 @@ func TestMutationsRequireVisibleActiveViewer(t *testing.T) {
 		favoriteCalls++
 		return true, nil
 	}}}
+	s.d.SetWatchlistSource = func(_ context.Context, _ *core.User, _ core.RatingKey, _ bool) error { watchlistCalls++; return nil }
 	v := &core.User{ID: 1}
 	if err := s.SetPlayed(ctx, v, title.Key); err != nil {
 		t.Fatal(err)
@@ -128,12 +131,18 @@ func TestMutationsRequireVisibleActiveViewer(t *testing.T) {
 	if err := s.SetFavorite(ctx, v, title.Key, false); err != nil {
 		t.Fatal(err)
 	}
-	if state.watched != 1 || state.unwatched != 1 || state.rating != 7 || favoriteCalls != 2 {
+	if err := s.SetWatchlist(ctx, v, title.Key, true); err != nil {
+		t.Fatal(err)
+	}
+	if state.watched != 1 || state.unwatched != 1 || state.rating != 7 || favoriteCalls != 2 || watchlistCalls != 1 {
 		t.Fatal("mutation was not routed")
 	}
 	title.Adult = true
 	if err := s.SetPlayed(ctx, v, title.Key); err == nil || state.watched != 1 {
 		t.Fatal("hidden title mutated")
+	}
+	if err := s.SetWatchlist(ctx, v, title.Key, false); err == nil || watchlistCalls != 1 {
+		t.Fatal("hidden watchlist mutation")
 	}
 	if err := s.SetFavorite(ctx, &core.User{ID: 2}, title.Key, true); err == nil || favoriteCalls != 2 {
 		t.Fatal("inactive viewer mutated favorites")

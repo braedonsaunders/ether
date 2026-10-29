@@ -292,6 +292,27 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		return a.favorites.Set(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()}, on)
 	}, IsFavorite: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
 		return a.favorites.Has(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()})
+	}, IsWatchlisted: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
+		if a.watchlist == nil {
+			return false, core.ErrNotAvailable
+		}
+		return a.watchlist.Contains(ctx, u.ID, k)
+	}, SetWatchlistSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
+		if a.watchlist == nil {
+			return core.ErrNotAvailable
+		}
+		var err error
+		if on {
+			err = a.watchlist.Remind(ctx, u, k)
+		} else {
+			err = a.watchlist.Remove(ctx, u.ID, k)
+		}
+		if err == nil && a.sessionEvents != nil {
+			if e := a.sessionEvents.Publish(ctx, frontend.Event{Type: "UserDataChanged", ViewerID: u.ID, Item: k, OriginProtocol: protocol}); e != nil && a.log != nil {
+				a.log.Warn("watchlist event publication failed", "err", e)
+			}
+		}
+		return err
 	}, RemoveContinue: func(ctx context.Context, u *core.User, k core.RatingKey) error {
 		if a.discoveryPersonal != nil {
 			if err := a.discoveryPersonal.RemoveContinue(ctx, u.ID, k); err != nil {

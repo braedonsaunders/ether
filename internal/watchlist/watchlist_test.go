@@ -316,3 +316,28 @@ func TestAvailabilityRetractsAfterConfirmedMissingRelease(t *testing.T) {
 		t.Fatal("new availability transition not notified")
 	}
 }
+
+func TestContainsViewerAndMutation(t *testing.T) {
+	s, _, _, _, _, _ := setup(t)
+	ctx := context.Background()
+	u := &core.User{ID: 1}
+	key := core.MovieKey(1)
+	if err := s.Remind(ctx, u, key); err != nil {
+		t.Fatal(err)
+	}
+	yes, err := s.Contains(ctx, 1, key)
+	if err != nil || !yes {
+		t.Fatalf("membership %v %v", yes, err)
+	}
+	yes, err = s.Contains(ctx, 2, key)
+	if err != nil || yes {
+		t.Fatalf("viewer isolation %v %v", yes, err)
+	}
+	if err = s.Remove(ctx, 1, key); err != nil {
+		t.Fatal(err)
+	}
+	yes, err = s.Contains(ctx, 1, key)
+	if err != nil || yes {
+		t.Fatalf("removal %v %v", yes, err)
+	}
+}
