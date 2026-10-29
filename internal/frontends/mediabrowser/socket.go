@@ -93,7 +93,10 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 			}
 			id := ids.RatingKeyGUID(event.Item)
 			userID, _ := ids.GUID(ids.User, viewer.ID)
-			payload := map[string]any{"UserId": userID, "UserDataList": []any{map[string]any{"Key": id, "ItemId": id, "PlaybackPositionTicks": st.ViewOffset.Nanoseconds() / 100, "PlayCount": st.ViewCount, "Played": st.ViewCount > 0, "Rating": st.UserRating}}}
+			dataDTO := i.userDataDTO(id, st)
+			dataDTO["Key"] = id
+			dataDTO["ItemId"] = id
+			payload := map[string]any{"UserId": userID, "UserDataList": []any{dataDTO}}
 			if write(map[string]any{"MessageType": "UserDataChanged", "Data": payload}) != nil {
 				return
 			}
