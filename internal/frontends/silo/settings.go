@@ -34,6 +34,7 @@ func (i *instance) settingsRoutes() error {
 	}{
 		{"GET", "/api/v2/settings/contract/capabilities", i.settingsCapabilities},
 		{"GET", "/api/v2/settings/contract", i.settingsContract},
+		{"GET", "/api/v2/settings/overlay-config", i.settingsOverlayConfig},
 		{"GET", "/api/v2/settings/values/effective", i.settingValues},
 		{"PUT", "/api/v2/settings/values/{key}", i.settingWrite},
 		{"DELETE", "/api/v2/settings/values/{key}", i.settingWrite},
@@ -43,6 +44,20 @@ func (i *instance) settingsRoutes() error {
 		}
 	}
 	return nil
+}
+
+// settingsOverlayConfig supplies this surface's presentation defaults when
+// the viewer has not saved an overlay or quick-action preference.
+func (i *instance) settingsOverlayConfig(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	reply(w, http.StatusOK, map[string]any{
+		"enabled": true, "defaults": nil,
+		"quick_actions_enabled": false, "quick_actions_default": "both",
+	})
 }
 
 type storedSetting struct {

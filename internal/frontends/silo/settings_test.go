@@ -128,6 +128,13 @@ func TestRevisionEightSettingsRoundTrip(t *testing.T) {
 	if routeResponse.Code != http.StatusOK {
 		t.Fatalf("capability route: %d %s", routeResponse.Code, routeResponse.Body.String())
 	}
+	overlayReq := httptest.NewRequest("GET", "/api/v2/settings/overlay-config", nil)
+	overlayReq.Header.Set("Authorization", "Bearer grant")
+	overlayResponse := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(overlayResponse, overlayReq)
+	if overlayResponse.Code != http.StatusOK || !strings.Contains(overlayResponse.Body.String(), `"quick_actions_default":"both"`) {
+		t.Fatalf("overlay defaults: %d %s", overlayResponse.Code, overlayResponse.Body.String())
+	}
 	request := func(method, path, body string, handler http.HandlerFunc, key string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Authorization", "Bearer grant")
