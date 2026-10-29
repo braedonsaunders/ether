@@ -172,6 +172,8 @@ type ItemRequest struct {
 	Key    core.RatingKey
 }
 type ItemQuery struct {
+	// AdjacentTo selects the anchor and its immediately neighboring visible items.
+	AdjacentTo    core.RatingKey
 	Offset, Limit int
 	Sort          core.SortOrder
 	Desc          bool

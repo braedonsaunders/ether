@@ -138,6 +138,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		inner := q
 		inner.Offset = 0
 		inner.Limit = 0
+		inner.AdjacentTo = 0
 		inner.Sort = ""
 		inner.Desc = false
 		for _, lib := range s.d.Libraries {
@@ -152,6 +153,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		}
 		if err = sortTitles(all, q); err != nil {
 			return core.Page{}, err
+		}
+		if q.AdjacentTo != 0 {
+			return adjacentTitles(all, q)
 		}
 		total := len(all)
 		start := min(max(q.Offset, 0), total)
@@ -252,6 +256,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		if err := sortTitles(permitted, q); err != nil {
 			return core.Page{}, err
 		}
+	}
+	if q.AdjacentTo != 0 {
+		return adjacentTitles(permitted, q)
 	}
 	total := len(permitted)
 	start := min(max(q.Offset, 0), total)
@@ -423,6 +430,9 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 		if err = sortTitles(items, q); err != nil {
 			return core.Page{}, err
 		}
+		if q.AdjacentTo != 0 {
+			return adjacentTitles(items, q)
+		}
 		total := len(items)
 		start := min(max(q.Offset, 0), total)
 		end := total
@@ -461,6 +471,9 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 	}
 	if err := sortTitles(out, q); err != nil {
 		return core.Page{}, err
+	}
+	if q.AdjacentTo != 0 {
+		return adjacentTitles(out, q)
 	}
 	total := len(out)
 	start := min(max(q.Offset, 0), total)
