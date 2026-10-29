@@ -74,6 +74,9 @@ func TestEstimateIssuesLazyPathWithoutOpeningPlayback(t *testing.T) {
 				t.Fatal("detail resolved a release")
 			}
 			return frontend.PlayPlan{Estimated: true, DirectPlay: true}, nil
+		}, OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			t.Fatal("estimate opened playback")
+			return frontend.Session{}, nil
 		}},
 		Capabilities: frontendtest.Capabilities{}, LazyStreams: stub,
 		SurfaceURL: func(context.Context, *http.Request) (string, error) { return "http://192.0.2.5:8096/jellyfin", nil },
