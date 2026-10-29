@@ -47,3 +47,63 @@ func TestCloseWithCanceledContextStopsEncoderAndSource(t *testing.T) {
 	}
 	b.Close(ctx)
 }
+
+type delayedStartTranscoder struct {
+	*fakeMediaTranscoder
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (d *delayedStartTranscoder) StartHLS(ctx context.Context, r core.HLSRequest) (core.HLSSession, error) {
+	close(d.entered)
+	<-d.release
+	return d.fakeMediaTranscoder.StartHLS(ctx, r)
+}
+func TestCanceledStreamStartReleasesEncoder(t *testing.T) {
+	ctx := context.Background()
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	playback := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	transcoder := &delayedStartTranscoder{fakeMediaTranscoder: &fakeMediaTranscoder{sessions: map[string]*fakeMediaSession{}}, entered: make(chan struct{}), release: make(chan struct{})}
+	b, err := NewBroker(BrokerDeps{Events: events, Playback: playback, Transcoder: transcoder, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	v, d := &core.Viewer{ID: 1}, core.Device{ID: "tv"}
+	plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: v, Device: d, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := b.Open(ctx, frontend.OpenRequest{Viewer: v, Device: d, Protocol: "jellyfin", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		_, err := b.StartStream(reqCtx, frontend.SessionAccess{Viewer: v, Device: d, Protocol: "jellyfin"}, session.ID, frontend.StreamRequest{Format: frontend.StreamHLS})
+		done <- err
+	}()
+	select {
+	case <-transcoder.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("start did not enter transcoder")
+	}
+	cancel()
+	close(transcoder.release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("start error %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled start did not finish")
+	}
+	if len(transcoder.sessions) != 0 {
+		t.Fatal("canceled start leaked encoder")
+	}
+}

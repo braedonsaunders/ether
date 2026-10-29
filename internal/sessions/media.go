@@ -110,6 +110,19 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		b.deps.Transcoder.Stop(id)
 		return "", core.ErrNotAvailable
 	}
+	// StartHLS owns a detached lifetime, but a request canceled during startup
+	// must not leave an encoder and permit behind. Close also prevents a
+	// concurrently starting encoder from surviving shutdown.
+	b.mu.Lock()
+	closed := b.closed
+	b.mu.Unlock()
+	if err := ctx.Err(); err != nil || closed {
+		b.deps.Transcoder.Stop(id)
+		if err != nil {
+			return "", err
+		}
+		return "", core.ErrNotAvailable
+	}
 	if req.Format == frontend.StreamDASH {
 		if _, ok := hs.(core.DASHSession); !ok {
 			b.deps.Transcoder.Stop(id)
