@@ -2,8 +2,11 @@ package mediabrowser
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -72,9 +75,41 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 	}
 	return v, token, err
 }
-func userDTO(v *frontend.Viewer) map[string]any {
+func (i *instance) userDTO(v *frontend.Viewer) map[string]any {
 	id, _ := ids.GUID(ids.User, v.ID)
-	return map[string]any{"Id": id, "Name": v.Username, "Policy": map[string]any{"IsAdministrator": v.IsOwner, "IsDisabled": false, "AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "EnableMediaPlayback": true, "EnableAudioPlaybackTranscoding": true, "EnableVideoPlaybackTranscoding": true, "EnablePlaybackRemuxing": true}, "Configuration": map[string]any{}}
+	return map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": map[string]any{"IsAdministrator": v.IsOwner, "IsDisabled": false, "AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "EnableMediaPlayback": true, "EnableAudioPlaybackTranscoding": true, "EnableVideoPlaybackTranscoding": true, "EnablePlaybackRemuxing": true}, "Configuration": map[string]any{}}
+}
+func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]any {
+	d := device(r)
+	userID, _ := ids.GUID(ids.User, v.ID)
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%d:%s", i.protocol, v.ID, d.ID)))
+	sessionID := hex.EncodeToString(sum[:16])
+	peer := ""
+	if i.host.ClientIP != nil {
+		if ip, ok := i.host.ClientIP(r); ok {
+			peer = ip.String()
+		}
+	}
+	now := time.Now().UTC()
+	state := map[string]any{"CanSeek": false, "IsPaused": false, "IsMuted": false, "RepeatMode": "RepeatNone"}
+	session := map[string]any{"Id": sessionID, "UserId": userID, "UserName": v.Username, "ServerId": i.info.ID, "Client": d.Client, "DeviceId": d.ID, "DeviceName": d.DeviceName, "ApplicationVersion": d.Version, "LastActivityDate": now, "RemoteEndPoint": peer, "AdditionalUsers": []any{}, "PlayableMediaTypes": []any{}, "SupportedCommands": []any{}, "SupportsRemoteControl": false, "PlayState": state}
+	if i.protocol == "jellyfin" {
+		state["PlaybackOrder"] = "Default"
+		session["IsActive"] = true
+		session["HasCustomDeviceName"] = false
+		session["SupportsMediaControl"] = false
+		session["NowPlayingQueue"] = []any{}
+		session["Capabilities"] = map[string]any{"PlayableMediaTypes": []any{}, "SupportedCommands": []any{}, "SupportsMediaControl": false, "SupportsPersistentIdentifier": d.ID != ""}
+	} else {
+		state["PlaybackRate"] = 1
+		state["Shuffle"] = false
+		state["SleepTimerMode"] = "None"
+		state["SubtitleOffset"] = 0
+		session["Protocol"] = r.Proto
+		session["PlaylistIndex"] = 0
+		session["PlaylistLength"] = 0
+	}
+	return session
 }
 func (i *instance) result(w http.ResponseWriter, r *http.Request, token string) {
 	v, err := i.host.Identity.Resolve(r.Context(), token)
@@ -82,7 +117,7 @@ func (i *instance) result(w http.ResponseWriter, r *http.Request, token string) 
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
-	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": userDTO(v), "SessionInfo": map[string]any{}})
+	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.userDTO(v), "SessionInfo": i.sessionDTO(r, v)})
 }
 func identityError(w http.ResponseWriter, err error) {
 	if errors.Is(err, frontend.ErrRateLimited) {
@@ -141,7 +176,7 @@ func (i *instance) routes() error {
 				http.Error(w, "Unauthorized", 401)
 				return
 			}
-			jsonReply(w, userDTO(v))
+			jsonReply(w, i.userDTO(v))
 		}},
 		{"POST", "/Sessions/Logout", func(w http.ResponseWriter, r *http.Request) {
 			_, token, err := i.viewer(r)
