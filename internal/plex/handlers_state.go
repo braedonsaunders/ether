@@ -95,13 +95,7 @@ func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		s.transcodes.touch(id, s.now())
-		if s.d.Transcoder != nil {
-			if output, ok := s.d.Transcoder.Session(id); ok {
-				if activity, ok := output.(core.SessionActivity); ok {
-					activity.PlaybackState(state)
-				}
-			}
-		}
+		sessions.NotifyTranscodeActivity(s.d.Transcoder, id, state)
 	}
 	pqItem, _ := strconv.ParseInt(q.Get("playQueueItemID"), 10, 64)
 	if pqItem > 0 {

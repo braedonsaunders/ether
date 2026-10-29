@@ -606,6 +606,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if toucher, ok := b.deps.Playback.(interface{ Touch(string) }); ok && (t.State == "playing" || t.State == "paused") {
 		toucher.Touch(s.playID)
 	}
+	NotifyTranscodeActivity(b.deps.Transcoder, s.public.ID, t.State)
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
 		progress.PlaybackProgress(s.public.ViewerID, s.clientID, s.public.Item, t.Position, t.State)
 	}
