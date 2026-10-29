@@ -342,6 +342,9 @@ type PlayPlan struct {
 	Estimated bool
 	Media     core.MediaInfo
 	Decision  core.Decision
+	// Alternatives are evaluated against this same source and client policy.
+	// DirectStream denotes copy-only remux, without encoding either stream.
+	DirectPlay, DirectStream, Transcoding bool
 }
 type OpenRequest struct {
 	Protocol Protocol

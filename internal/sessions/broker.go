@@ -345,7 +345,8 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	}
 	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now()}
 	b.mu.Unlock()
-	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec}, nil
+	direct, remux, transcoding := b.planAlternatives(ps, req)
+	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec, DirectPlay: direct, DirectStream: remux, Transcoding: transcoding}, nil
 }
 func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.Session, error) {
 	v, err := b.viewer(ctx, req.Viewer)
