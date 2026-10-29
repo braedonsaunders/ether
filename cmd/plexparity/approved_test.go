@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
+	"net/http"
 	"testing"
 )
 
@@ -27,5 +29,22 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 	a := capture{viewer: "owner"}
 	if ok, err := approved(a, a); err != nil || ok {
 		t.Fatalf("unrestricted approval: %v %v", ok, err)
+	}
+}
+
+func TestApprovedHeadersOnlyPermitValidBodyLengths(t *testing.T) {
+	a := capture{response: protocol.Response{Headers: http.Header{"Content-Length": {"3"}, "Cache-Control": {"no-cache"}}, Body: []byte("old")}}
+	b := capture{response: protocol.Response{Headers: http.Header{"Content-Length": {"4"}, "Cache-Control": {"no-cache"}}, Body: []byte("new!")}}
+	if !approvedHeaders(a, b) {
+		t.Fatal("expected matching headers with valid lengths")
+	}
+	b.response.Headers.Set("Cache-Control", "public")
+	if approvedHeaders(a, b) {
+		t.Fatal("unrelated header difference accepted")
+	}
+	b.response.Headers.Set("Cache-Control", "no-cache")
+	b.response.Headers.Set("Content-Length", "99")
+	if approvedHeaders(a, b) {
+		t.Fatal("invalid content length accepted")
 	}
 }

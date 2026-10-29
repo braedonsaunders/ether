@@ -9,6 +9,7 @@ func browsingPaths() []string {
 		"/library/collections", "/library/collections/{{collectionKey}}/children", "/library/collections/{{collectionKey}}/items",
 		"/hubs/continueWatching/items", "/hubs/home/continueWatching", "/hubs/home/onDeck", "/hubs/home/recentlyAdded", "/hubs/sections/{{section}}/continueWatching/items",
 		"/hubs/metadata/{{movieKey}}", "/hubs/metadata/{{movieKey}}/related", "/hubs/metadata/{{movieKey}}/postplay", "/hubs/search/voice?query=fixture", "/search?query=fixture",
+		"/tv.plex.providers.epg.xmltv:1/grid?beginsAt=1792324800&endsAt=1792328400", "/tv.plex.providers.epg.xmltv:1/channels/fixture-channel", "/livetv/epg/channels", "/livetv/guide.xml",
 		"/playlists", "/playlists/all", "/playlists/{{playlistKey}}/items", "/status/sessions/history/all", "/servers", "/clients", "/devices", "/activities", "/security/resources", "/system/agents", "/transcode/sessions",
 	}
 }

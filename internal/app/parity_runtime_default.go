@@ -19,3 +19,5 @@ func parityTMDBOptions() []tmdb.Option         { return nil }
 func parityCollectionOptions() []collections.Option { return nil }
 
 func parityWarmPersonalization(context.Context, *App) error { return nil }
+
+func parityPlexTVBaseURL() string { return "" }

@@ -13,6 +13,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/collections"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/recommend"
@@ -150,6 +151,15 @@ func seed(ctx context.Context, dir string) error {
 		if _, err = st.Create(ctx, u.ID, "Fixture playlist", []core.RatingKey{core.MovieKey(10001), core.MovieKey(10002)}); err != nil {
 			return err
 		}
+	}
+	tv, err := livetv.New(livetv.Options{DB: db, Catalog: cat, Now: now})
+	if err != nil {
+		return err
+	}
+	_, err = tv.SaveChannel(ctx, livetv.Channel{ID: "fixture-channel", Number: "101", Name: "Fixture TV", Kind: "virtual", Enabled: true, Epoch: fixtureNow, Seed: 42, Items: []livetv.Item{{Key: core.MovieKey(10001), Title: "Fixture Movie 001", DurationMS: 5400000}, {Key: core.MovieKey(10002), Title: "Fixture Movie 002", DurationMS: 5400000}}})
+	tv.Close()
+	if err != nil {
+		return err
 	}
 	cols, err := collections.New(db, cat, nil)
 	if err != nil {

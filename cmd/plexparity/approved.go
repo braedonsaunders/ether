@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"strconv"
 
 	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
 )
@@ -49,4 +51,24 @@ func approved(a, b capture) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// An approved body change can also change Content-Length. All other
+// normalized headers must match, and both lengths must describe their body.
+func approvedHeaders(a, b capture) bool {
+	x, y := normalizeHeaders(a.response.Headers), normalizeHeaders(b.response.Headers)
+	for _, item := range []struct {
+		h    map[string][]string
+		size int
+	}{{x, len(a.response.Body)}, {y, len(b.response.Body)}} {
+		for _, key := range []string{"Content-Length", "X-Plex-Content-Original-Length"} {
+			if values, ok := item.h[key]; ok {
+				if len(values) != 1 || values[0] != strconv.Itoa(item.size) {
+					return false
+				}
+				delete(item.h, key)
+			}
+		}
+	}
+	return reflect.DeepEqual(x, y)
 }

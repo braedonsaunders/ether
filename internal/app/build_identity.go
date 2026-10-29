@@ -17,7 +17,7 @@ func (a *App) buildIdentity(ctx context.Context, cfg config.Config) error {
 	dataDir := a.opts.DataDir
 	var err error
 	// plex.tv, users, certificates, LAN discovery.
-	if a.plextv, err = plextv.New(plextv.Options{Identity: plextv.ServerIdentity(cfg, ""), VersionSource: func() string { return plextv.PMSVersion(a.cfg.Get()) }}); err != nil {
+	if a.plextv, err = plextv.New(plextv.Options{BaseURL: parityPlexTVBaseURL(), Identity: plextv.ServerIdentity(cfg, ""), VersionSource: func() string { return plextv.PMSVersion(a.cfg.Get()) }}); err != nil {
 		return fmt.Errorf("plex.tv client: %w", err)
 	}
 	if a.users, err = auth.New(context.Background(), a.db, auth.Options{

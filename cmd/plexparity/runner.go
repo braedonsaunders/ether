@@ -62,6 +62,8 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	tracker := &fixtureTracker{}
 	tmdb := httptest.NewServer(trackedTMDBFixture(tracker))
 	defer tmdb.Close()
+	plexTV := httptest.NewServer(plextvFixture())
+	defer plexTV.Close()
 	transcripts := make([]transcript, 0, 2)
 	for i, bin := range []string{baseline, candidate} {
 		dest := filepath.Join(dir, "server")
@@ -78,6 +80,8 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		addr := "127.0.0.1"
 		port := 32400
 		if err := c.Update(func(c *config.Config) error {
+			c.Plex.Token = "parity-owner"
+			c.Plex.OwnerPlexID = 1
 			c.Server.BindAddress = addr
 			c.Server.Port = port
 			c.Cache.Dir = filepath.Join(dest, "cache")
@@ -99,7 +103,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		cmd := exec.CommandContext(runCtx, bin, "--data-dir", dest)
 		cmd.Stdout = log
 		cmd.Stderr = log
-		cmd.Env = append(os.Environ(), "ETHER_PARITY_TMDB_URL="+tmdb.URL+"/3")
+		cmd.Env = append(os.Environ(), "ETHER_PARITY_TMDB_URL="+tmdb.URL+"/3", "ETHER_PARITY_PLEXTV_URL="+plexTV.URL)
 		if err = cmd.Start(); err != nil {
 			cancel()
 			log.Close()

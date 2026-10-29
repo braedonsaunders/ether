@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -27,6 +29,15 @@ func TestSeed(t *testing.T) {
 	a, err := auth.New(ctx, db, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	tv, err := livetv.New(livetv.Options{DB: db, Now: func() time.Time { return fixtureNow }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tv.Close()
+	programs, err := tv.Guide(ctx, &core.User{ID: 1, IsOwner: true}, fixtureNow, fixtureNow.Add(time.Hour))
+	if err != nil || len(programs) == 0 {
+		t.Fatalf("live TV fixture guide empty: %v %v", programs, err)
 	}
 	for _, table := range []string{"catalog_titles", "state_watch", "state_history", "state_playlists", "watchlist_items", "trackprefs_rules", "personalize_home_layout", "personalize_row_impressions"} {
 		var n int

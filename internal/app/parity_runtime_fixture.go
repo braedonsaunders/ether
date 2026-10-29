@@ -43,3 +43,5 @@ func parityWarmPersonalization(ctx context.Context, a *App) error {
 	}
 	return nil
 }
+
+func parityPlexTVBaseURL() string { return os.Getenv("ETHER_PARITY_PLEXTV_URL") }
