@@ -1912,6 +1912,17 @@ export function createFakeServer(opts: FakeOptions = {}) {
         }
         return json({ indexers: found, imported: Boolean(req.import) });
       }
+      case "GET /subtitle-sync":
+        return json([
+          {
+            id: "abc123",
+            language: "pt-br",
+            release: "Some.Movie.2024.1080p.WEB-DL-GROUP",
+            fetchedAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+            key: "1000000000000550",
+            fileName: "abc123.srt",
+          },
+        ]);
       case "GET /disk":
         return json({
           path: q.get("path") ?? "",

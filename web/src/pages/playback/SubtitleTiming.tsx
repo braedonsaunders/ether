@@ -6,9 +6,21 @@ import { Field, NumberInput } from "../../components/fields";
 import { ErrorPanel, LoadingRows, MutationError } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { apiFetch } from "../../lib/api";
+import { formatDateTime, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 
-type CachedSubtitle = { id: string; language: string; release: string };
+// `key` is the title's Plex ratingKey when the backend could recover it
+// from its selection index; the cache itself stores no title name, so the
+// release name below is the human-readable identifier. `fileName` is the
+// sidecar file on disk and `fetchedAt` when it was downloaded.
+type CachedSubtitle = {
+  id: string;
+  language: string;
+  release: string;
+  fetchedAt?: string;
+  key?: string;
+  fileName?: string;
+};
 
 const subtitleName = (s: CachedSubtitle) =>
   `${s.release || "Downloaded subtitle"} · ${s.language || "Unknown language"}`;
@@ -55,11 +67,20 @@ export function SubtitleTiming() {
             {
               key: "release",
               header: "Release",
-              search: (s) => `${s.release} ${s.language}`,
+              search: (s) => `${s.release} ${s.language} ${s.key ?? ""} ${s.fileName ?? ""}`,
               sortValue: (s) => (s.release || "").toLowerCase(),
               cell: (s) => (
-                <span className="break-all font-medium text-fg">
-                  {s.release || "Downloaded subtitle"}
+                <span className="block">
+                  <span className="break-all font-medium text-fg">
+                    {s.release || "Downloaded subtitle"}
+                  </span>
+                  {s.key || s.fileName ? (
+                    <span className="mt-0.5 block break-all text-xs text-fg-subtle">
+                      {[s.key ? `Title key ${s.key}` : null, s.fileName]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  ) : null}
                 </span>
               ),
             },
@@ -68,6 +89,16 @@ export function SubtitleTiming() {
               header: "Language",
               sortValue: (s) => s.language,
               cell: (s) => <span className="text-fg-muted">{s.language || "Unknown"}</span>,
+            },
+            {
+              key: "fetchedAt",
+              header: "Downloaded",
+              sortValue: (s) => s.fetchedAt ?? "",
+              cell: (s) => (
+                <span className="text-fg-muted" title={formatDateTime(s.fetchedAt)}>
+                  {relativeTime(s.fetchedAt)}
+                </span>
+              ),
             },
             {
               key: "action",

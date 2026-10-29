@@ -249,6 +249,19 @@ describe("Playback", () => {
     expect(screen.getByText("RTX Video: Unavailable")).toBeInTheDocument();
   });
 
+  it("identifies cached subtitles by release, title key and download age, and opens the sync drawer", async () => {
+    renderApp("/playback/subtitles");
+    expect(
+      await screen.findByText("Some.Movie.2024.1080p.WEB-DL-GROUP", {}, WAIT),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Title key 1000000000000550 · abc123\.srt/)).toBeInTheDocument();
+    expect(screen.getByText("pt-br")).toBeInTheDocument();
+    expect(screen.getByText(/3 hours ago/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Adjust timing for Some\.Movie/ }));
+    expect(await screen.findByRole("dialog", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Offset (milliseconds)")).toBeInTheDocument();
+  });
+
   it("saves nested server enhancement settings without losing transcoding preferences", async () => {
     const { fake } = renderApp("/playback");
     await screen.findByRole("button", { name: "RTX Video Super Resolution" }, WAIT);
