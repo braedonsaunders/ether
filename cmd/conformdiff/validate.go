@@ -12,17 +12,29 @@ import (
 // validateFixture validates one recorded response against a locally cached spec.
 func validateFixture(args []string) error {
 	f := flag.NewFlagSet("validate", flag.ContinueOnError)
-	spec := f.String("spec", "", "cached OpenAPI or Swagger JSON file")
+	spec := f.String("spec", "", "OpenAPI or Swagger JSON file")
+	protocol := f.String("protocol", "", "protocol whose pinned cached spec should be used")
+	cache := f.String("cache", "", "spec cache directory")
+	manifest := f.String("manifest", "internal/conform/specs/manifest.json", "pinned spec manifest")
 	fixture := f.String("fixture", "", "recorded response fixture")
 	method := f.String("method", "GET", "HTTP method")
 	path := f.String("path", "", "request path")
 	if err := f.Parse(args); err != nil {
 		return err
 	}
-	if *spec == "" || *fixture == "" || *path == "" {
-		return fmt.Errorf("validate requires -spec, -fixture and -path")
+	if (*spec == "" && *protocol == "") || *fixture == "" || *path == "" {
+		return fmt.Errorf("validate requires -protocol or -spec, plus -fixture and -path")
 	}
-	b, err := os.ReadFile(*spec)
+	var b []byte
+	var err error
+	if *protocol != "" {
+		if *spec != "" {
+			return fmt.Errorf("choose -protocol or -spec")
+		}
+		b, err = openapi.CachedSpec(*manifest, *protocol, *cache)
+	} else {
+		b, err = os.ReadFile(*spec)
+	}
 	if err != nil {
 		return err
 	}
