@@ -186,6 +186,14 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if denied.Code != http.StatusUnauthorized {
 		t.Fatalf("cross-device media: %d", denied.Code)
 	}
+	spoofProgress := httptest.NewRequest("POST", "/api/v2/playback/"+sessionID+"/progress", strings.NewReader(`{"installation_id":"`+inst.(*instance).installationID()+`","sequence":1,"position":5,"is_paused":false}`))
+	spoofProgress.Header.Set("Authorization", "Bearer another-device-grant")
+	spoofProgress.Header.Set("X-Silo-Device-Id", "tv")
+	denied = httptest.NewRecorder()
+	inst.Handler().ServeHTTP(denied, spoofProgress)
+	if denied.Code != http.StatusUnauthorized || timeline.Sequence != 0 {
+		t.Fatalf("cross-device progress: %d %+v", denied.Code, timeline)
+	}
 
 	var body map[string]any
 	if json.Unmarshal(w.Body.Bytes(), &body) != nil || body["outcome"] != "playable" {

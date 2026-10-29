@@ -65,7 +65,7 @@ type startRequest struct {
 }
 
 func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
-	v, _, err := i.viewer(r)
+	v, _, err := i.deviceViewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
@@ -367,7 +367,7 @@ type progressRequest struct {
 }
 
 func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
-	v, _, err := i.viewer(r)
+	v, _, err := i.deviceViewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
