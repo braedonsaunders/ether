@@ -12,7 +12,7 @@ func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, medi
 	}
 	// Containers can hold audio alone; a video stream is required before
 	// describing the source as video.
-	if media.Video() == nil {
+	if media.Estimated || media.Video() == nil {
 		return
 	}
 	switch strings.ToLower(media.Container) {

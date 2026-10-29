@@ -51,6 +51,9 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 	if v.PartCount != nil && *v.PartCount >= 0 {
 		m["PartCount"] = *v.PartCount
 	}
+	if v.Media.Estimated {
+		return
+	}
 	if len(v.Media.Chapters) > 0 {
 		chapters := make([]any, 0, len(v.Media.Chapters))
 		for index, chapter := range v.Media.Chapters {
