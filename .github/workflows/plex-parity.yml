@@ -30,7 +30,7 @@ jobs:
           if [ "$status" -eq 2 ]; then
             detail=$(grep '^coverage incomplete:' /tmp/plex-parity-report.txt | tail -1)
             if [ -z "$detail" ]; then echo '::error::Parity returned incomplete without a coverage report'; exit 1; fi
-            echo "::warning::$detail"
-            exit 0
+            echo "::error::$detail"
+            exit 2
           fi
           exit "$status"

@@ -39,6 +39,7 @@ func missingRoutes() []string {
 	paths = append(paths, "/livetv/sessions/1", "/livetv/sessions/1/0/index.m3u8", "/livetv/sessions/1/0/program/1/0.ts", "/media/subscriptions/1", "/media/grabbers/operations/1")
 	paths = append(paths, "/downloadQueue/1", "/downloadQueue/1/items", "/downloadQueue/1/items/1", "/downloadQueue/1/item/1/decision", "/downloadQueue/1/item/1/media")
 	paths = append(paths, "/library/parts/1/indexes/sd", "/library/parts/1/indexes/sd/0", "/library/metadata/1/subtitles", "/library/streams/1", "/video/:/transcode/universal/subtitles")
+	paths = append(paths, "/livetv/sessions/1/0/dash/0/header", "/livetv/sessions/1/0/relay/0.ts", "/livetv/sessions/1/0/resource/1")
 	var missing []string
 	for _, route := range server.RouteInventory().Routes {
 		if route.Method != http.MethodGet {
