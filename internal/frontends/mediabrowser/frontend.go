@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
 
@@ -164,6 +165,6 @@ func (i *instance) Discovery() []frontend.Announcer {
 	return []frontend.Announcer{&discovery{info: info, port: port, listenPort: 7359}}
 }
 func (i *instance) Status(context.Context) frontend.Status {
-	return frontend.Status{TargetVersion: i.info.Version, Conformance: "in progress"}
+	return frontend.Status{TargetVersion: i.info.Version, Conformance: conformance.Status(string(i.protocol), i.info.Version)}
 }
 func (i *instance) Close(context.Context) error { i.cancel(); return nil }

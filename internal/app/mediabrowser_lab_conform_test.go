@@ -11,6 +11,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plextv"
@@ -38,7 +39,9 @@ import (
 
 // Run: LAB_ENV=/path/to/lab.env LAB_JELLYFIN_URL=http://host:8096 LAB_EMBY_URL=http://host:8097/emby go test -tags plexparity,conformlab ./internal/app -run TestMediaBrowserLabConformance -count=1 -v
 // LAB_REPORT_DIR optionally retains redacted JSON reports; otherwise only counts
-// are printed. Credentials and generated media stay in a private temporary dir.
+// are printed. LAB_SUMMARY_PATH optionally writes release evidence (native
+// clients are never certified by this harness). Credentials and generated
+// media stay in a private temporary dir.
 func TestMediaBrowserLabConformance(t *testing.T) {
 	path := os.Getenv("LAB_ENV")
 	if path == "" {
@@ -64,6 +67,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	ctx := context.Background()
 	a, viewer, cleanup := newAlignedLabFixture(t, jellyfinRef)
 	defer cleanup()
+	summary := conformance.Manifest{Schema: 1, Protocols: map[string]conformance.Summary{}}
 	for _, spec := range []struct {
 		proto, client string
 		reference     labReferenceData
@@ -74,6 +78,8 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 				t.Fatal(e)
 			}
 			defer a.frontends.registry.Unmount(ctx, core.Protocol(spec.proto))
+			combined := map[string]bool{}
+			validEvidence := true
 			var seq atomic.Uint32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				n := seq.Add(1)
@@ -194,11 +200,16 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					out, err := cmd.Output()
 					var partial conform.Report
 					if e = json.Unmarshal(out, &partial); e != nil {
+						validEvidence = false
 						t.Errorf("%s %s %s invalid report: %v", spec.proto, mode, clientName, err)
 						continue
 					}
 					for _, diff := range partial.Differences {
+						if diff.Kind == conform.KindRequestError {
+							validEvidence = false
+						}
 						if mode == "live" && diff.Kind == conform.KindStatus && diff.Reference == float64(http.StatusUnauthorized) {
+							validEvidence = false
 							t.Errorf("%s %s reference authorization expired; comparison is invalid", spec.proto, clientName)
 							break
 						}
@@ -229,6 +240,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 							path = "$request"
 						}
 						unique[d.Endpoint+"|"+path+"|"+d.Kind] = true
+						combined[d.Endpoint+"|"+path+"|"+d.Kind] = true
 					}
 				}
 				keys := make([]string, 0, len(unique))
@@ -244,8 +256,21 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					t.Errorf("%s %s has %d unique blocking differences", spec.proto, mode, len(keys))
 				}
 			}
+			if validEvidence {
+				count := len(combined)
+				summary.Protocols[spec.proto] = conformance.Summary{ProtocolVersion: inst.Status(ctx).TargetVersion, Date: time.Now().UTC().Format(time.RFC3339), Blocking: &count, CertifiedClients: []string{}}
+			}
 
 		})
+	}
+	if path := os.Getenv("LAB_SUMMARY_PATH"); path != "" {
+		output, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(path, append(output, '\n'), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
