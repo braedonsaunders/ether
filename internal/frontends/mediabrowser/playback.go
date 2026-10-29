@@ -3,6 +3,7 @@ package mediabrowser
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -130,6 +131,11 @@ func mediaStreams(streams []frontend.StreamInfo) []any {
 	return out
 }
 func (i *instance) playbackRoutes() error {
+	for _, method := range []string{"GET", "HEAD"} {
+		if err := i.router.Handle(method, "/Videos/{id}/{name}", http.HandlerFunc(i.streamAlias)); err != nil {
+			return err
+		}
+	}
 	if err := i.router.Handle("GET", "/MediaSegments/{itemId}", http.HandlerFunc(i.mediaSegments)); err != nil {
 		return err
 	}
@@ -200,4 +206,67 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// streamAlias translates client-generated URLs into broker-owned, scoped URLs.
+func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
+	viewer, _, err := i.viewer(r)
+	if err != nil || viewer == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Sessions == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	name := strings.ToLower(r.PathValue("name"))
+	format := frontend.StreamDirect
+	switch {
+	case name == "stream", strings.HasPrefix(name, "stream."):
+	case name == "master.m3u8":
+		format = frontend.StreamHLS
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	vals := route.Query(r.URL.Query(), "PlaySessionId")
+	if len(vals) != 1 || vals[0] == "" {
+		http.Error(w, "Missing session", 400)
+		return
+	}
+	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: "jellyfin"}
+	sessions, err := i.host.Sessions.Sessions(r.Context(), access)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	found := false
+	for _, s := range sessions {
+		if s.ID == vals[0] && s.Item == key && s.Protocol == "jellyfin" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	url, err := i.host.Sessions.StartStream(r.Context(), access, vals[0], frontend.StreamRequest{Format: format})
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	if !strings.HasPrefix(url, "/sessions/media/") || strings.ContainsAny(url, "\r\n") {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
+		url = prefix + url
+	}
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }

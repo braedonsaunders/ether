@@ -98,3 +98,34 @@ func TestTimelineReportsAndStops(t *testing.T) {
 		t.Fatal(states)
 	}
 }
+
+func TestStreamAliasChecksSessionItemAndOmitsCredential(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	calls := 0
+	sessions := frontendtest.Sessions{SessionsFunc: func(context.Context, frontend.SessionAccess) ([]frontend.Session, error) {
+		return []frontend.Session{{ID: "session", Item: 5, Protocol: "jellyfin"}}, nil
+	}, StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, id string, req frontend.StreamRequest) (string, error) {
+		calls++
+		if id != "session" || req.Format != frontend.StreamHLS {
+			t.Fatal(id, req)
+		}
+		return "/sessions/media/session/scoped/index.m3u8", nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(key frontend.RatingKey) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/jellyfin/Videos/"+ids.RatingKeyGUID(key)+"/master.m3u8?PlaySessionId=session&api_key=secret", nil)
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if w := call(6); w.Code != 404 || calls != 0 {
+		t.Fatal(w.Code, calls)
+	}
+	if w := call(5); w.Code != 307 || calls != 1 || w.Header().Get("Location") != "/jellyfin/sessions/media/session/scoped/index.m3u8" || strings.Contains(w.Header().Get("Location"), "secret") {
+		t.Fatal(w.Code, w.Header(), calls)
+	}
+}
