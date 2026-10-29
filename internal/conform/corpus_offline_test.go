@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/conform/mediabrowser"
+	"github.com/braedonsaunders/ether/internal/conform/silo"
 )
 
 // The recorded corpus is the offline oracle until front-end tests can exercise
@@ -65,5 +67,61 @@ func TestRecordedMediaBrowserCorpora(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRecordedSiloCorpus(t *testing.T) {
+	p, err := silo.Load(filepath.Join("profiles", "silo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join("..", "..", "testdata", "conform", "silo")
+	b, err := os.ReadFile(filepath.Join(root, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Protocol      string            `json:"protocol"`
+		FixtureCounts map[string]int    `json:"fixtureCounts"`
+		RequestErrors []json.RawMessage `json:"requestErrors"`
+	}
+	if err = json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Protocol != "silo" || len(m.RequestErrors) != 0 {
+		t.Fatal("invalid Silo manifest")
+	}
+	for client := range p.Clients() {
+		requests := p.Corpus(client)
+		if m.FixtureCounts[client] != len(requests) {
+			t.Errorf("%s: fixture count does not match profile", client)
+		}
+		for _, req := range requests {
+			name := p.FixtureName(client, req, true)
+			r, err := conform.LoadFixture(filepath.Join(root, client, name+".json"))
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+				continue
+			}
+			if r.Status < 200 || r.Status >= 400 {
+				t.Errorf("%s: status %d", name, r.Status)
+			}
+			if strings.Contains(req.Name, "playback plan") {
+				var body struct {
+					Outcome string `json:"outcome"`
+				}
+				if err = json.Unmarshal(r.Body, &body); err != nil {
+					t.Error(err)
+					continue
+				}
+				expected := "playable"
+				if strings.HasPrefix(req.Name, "play_transcode_") {
+					expected = "adaptation_unavailable"
+				}
+				if body.Outcome != expected {
+					t.Errorf("%s: outcome %q", name, body.Outcome)
+				}
+			}
+		}
 	}
 }

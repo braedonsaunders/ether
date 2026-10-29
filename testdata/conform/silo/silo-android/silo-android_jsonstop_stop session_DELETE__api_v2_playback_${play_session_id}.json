@@ -1,0 +1,21 @@
+{
+  "status": 200,
+  "headers": {
+    "Cache-Control": [
+      "no-store"
+    ],
+    "Content-Type": [
+      "application/json"
+    ],
+    "Date": [
+      "Thu, 29 Oct 2026 [REDACTED_IP] GMT"
+    ],
+    "Vary": [
+      "Accept-Encoding"
+    ],
+    "X-Request-Id": [
+      "3ba60ab13613429bdfb1144c"
+    ]
+  },
+  "body": "eyJhY2NlcHRlZCI6eyJpc19wYXVzZWQiOmZhbHNlLCJwb3NpdGlvbiI6NjM0LCJzZXF1ZW5jZSI6M30sImhpc3RvcnlfaWQiOiJiMDcwZDlhNi0xMjM2LTQ1ZDQtOWNjYS00NWM5ODJmMjkwZWIiLCJvdXRjb21lIjoic3RvcHBlZCIsInN0b3BfaWQiOiJbUkVEQUNURURdIn0="
+}
