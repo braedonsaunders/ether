@@ -449,7 +449,7 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	state := "available"
-	_, hasDeviceIdentity := i.host.Identity.(deviceIdentity)
+	_, hasDeviceIdentity := i.host.Identity.(frontend.DeviceIdentity)
 	_, hasScopedMedia := i.host.Sessions.(frontend.ScopedMedia)
 	allowed := i.host.Sessions != nil && i.host.Capabilities != nil && hasDeviceIdentity && hasScopedMedia
 	if !allowed {
@@ -464,7 +464,7 @@ func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	_, hasDeviceIdentity := i.host.Identity.(deviceIdentity)
+	_, hasDeviceIdentity := i.host.Identity.(frontend.DeviceIdentity)
 	available := i.host.Sessions != nil && i.host.Events != nil && i.host.Tickets != nil && hasDeviceIdentity
 	state, protocol := "not_configured", ""
 	if available {

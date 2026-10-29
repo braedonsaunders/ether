@@ -108,7 +108,7 @@ func siloControlCommand(command *frontend.Command) (string, map[string]any) {
 }
 
 func (i *instance) controlSocket(w http.ResponseWriter, r *http.Request) {
-	_, hasDeviceIdentity := i.host.Identity.(deviceIdentity)
+	_, hasDeviceIdentity := i.host.Identity.(frontend.DeviceIdentity)
 	if i.host.Tickets == nil || i.host.Events == nil || i.host.Sessions == nil || !hasDeviceIdentity {
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 		return

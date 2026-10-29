@@ -35,14 +35,8 @@ func device(r *http.Request) frontend.Device {
 	return frontend.Device{ID: r.Header.Get("X-Silo-Device-Id"), Client: client, Product: client, Version: r.Header.Get("X-Silo-Client-Version"), DeviceName: r.Header.Get("X-Silo-Device-Name"), Platform: r.Header.Get("X-Silo-Device-Platform")}
 }
 
-// deviceIdentity authenticates the stored grant binding without updating grant
-// activity. A device header alone is never proof of possession.
-type deviceIdentity interface {
-	ResolveDevice(context.Context, string, frontend.Device) (*frontend.Viewer, time.Time, error)
-}
-
 func (i *instance) resolveDevice(ctx context.Context, token string, d frontend.Device) (*frontend.Viewer, int64, error) {
-	identity, ok := i.host.Identity.(deviceIdentity)
+	identity, ok := i.host.Identity.(frontend.DeviceIdentity)
 	if !ok || d.ID == "" {
 		return nil, 0, errors.New("device authentication unavailable")
 	}
@@ -227,8 +221,13 @@ func (i *instance) deviceStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	details, err := i.host.Identity.QuickConnectDetails(i.identityContext(r), secret)
+	if err != nil || details.ExpiresAt.IsZero() || time.Until(details.ExpiresAt) < time.Second {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
 	complete := verify + "?code=" + url.QueryEscape(code)
-	reply(w, 201, map[string]any{"device_code": secret, "user_code": code, "match_code": code, "verification_uri": verify, "verification_uri_complete": complete, "expires_at": time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339), "expires_in": 600, "interval": 5, "device_name": b.Name, "device_platform": b.Platform, "client_purpose": "device_login", "temporary": false})
+	reply(w, 201, map[string]any{"device_code": secret, "user_code": code, "match_code": code, "verification_uri": verify, "verification_uri_complete": complete, "expires_at": details.ExpiresAt.UTC().Format(time.RFC3339Nano), "expires_in": int64(time.Until(details.ExpiresAt) / time.Second), "interval": 5, "device_name": b.Name, "device_platform": b.Platform, "client_purpose": "device_login", "temporary": false})
 }
 func (i *instance) devicePoll(w http.ResponseWriter, r *http.Request) {
 	var b struct {

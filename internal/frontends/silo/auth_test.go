@@ -179,7 +179,7 @@ func TestDevicePairing(t *testing.T) {
 			if s != "secret" {
 				return frontend.QuickConnectDetails{}, errors.New("bad")
 			}
-			return frontend.QuickConnectDetails{Approved: approved, Device: frontend.Device{ID: "tv"}}, nil
+			return frontend.QuickConnectDetails{Approved: approved, Device: frontend.Device{ID: "tv"}, ExpiresAt: time.Now().Add(73 * time.Second)}, nil
 		},
 		PollFunc: func(context.Context, string) (string, error) { return "access", nil },
 		ResolveFunc: func(_ context.Context, s string) (*frontend.Viewer, error) {
@@ -209,6 +209,12 @@ func TestDevicePairing(t *testing.T) {
 	w := call("/api/v2/auth/device/start", `{"device_name":"TV","device_platform":"tvos"}`)
 	if w.Code != 201 || !strings.Contains(w.Body.String(), "https://ether.example/ether/me?code=ABC234") {
 		t.Fatalf("start %d %s", w.Code, w.Body.String())
+	}
+	var pairing struct {
+		ExpiresIn int64 `json:"expires_in"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &pairing); err != nil || pairing.ExpiresIn < 60 || pairing.ExpiresIn > 73 {
+		t.Fatalf("pairing must use stored expiry: %s", w.Body.String())
 	}
 	w = call("/api/v2/auth/device/poll", `{"device_code":"secret"}`)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"pending"`) {

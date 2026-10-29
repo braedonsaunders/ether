@@ -47,7 +47,7 @@ func (*controlTestTickets) Active(context.Context, frontend.Ticket) (bool, error
 func TestControlUnavailableWithoutDeviceAuthentication(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
 	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
-	host := frontend.Host{Identity: identity, Sessions: frontendtest.Sessions{}, Capabilities: frontendtest.Capabilities{}, Tickets: &controlTestTickets{}, Events: eventSource{make(chan frontend.Event)}}
+	host := frontend.Host{Identity: struct{ frontend.SurfaceIdentity }{identity}, Sessions: frontendtest.Sessions{}, Capabilities: frontendtest.Capabilities{}, Tickets: &controlTestTickets{}, Events: eventSource{make(chan frontend.Event)}}
 	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
 	if err != nil {
 		t.Fatal(err)
