@@ -109,6 +109,9 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if reused.Code != http.StatusOK {
 		t.Fatalf("durable capability status %d", reused.Code)
 	}
+	if pb.prepares != 1 || len(pb.Sessions()) != 1 {
+		t.Fatalf("handler recreation opened another session: %d", pb.prepares)
+	}
 	var serialized string
 	if err := db.QueryRow(`SELECT request FROM sessions_lazy_streams LIMIT 1`).Scan(&serialized); err != nil {
 		t.Fatal(err)
