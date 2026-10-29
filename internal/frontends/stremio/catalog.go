@@ -109,14 +109,24 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		var views []frontend.View
 		views, err = i.host.Experience.Views(r.Context(), viewer)
 		if err == nil {
+			offset := q.Offset
 			for _, view := range views {
 				if string(view.Type) != map[string]string{"movie": "movie", "series": "show"}[typ] {
 					continue
 				}
+				query := q
+				query.Offset = offset
+				query.Limit = q.Limit - len(titles)
 				var page frontend.Page
-				page, err = i.host.Experience.LibraryItems(r.Context(), viewer, device, view.ID, q)
-				titles = page.Items
-				break
+				page, err = i.host.Experience.LibraryItems(r.Context(), viewer, device, view.ID, query)
+				if err != nil {
+					break
+				}
+				titles = append(titles, page.Items...)
+				if len(titles) >= q.Limit {
+					break
+				}
+				offset = max(0, offset-page.Total)
 			}
 		}
 	}

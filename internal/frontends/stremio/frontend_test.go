@@ -186,3 +186,35 @@ func TestSeriesMetaPaginatesEpisodes(t *testing.T) {
 		t.Fatalf("missing episode: status=%d calls=%d", rec.Code, calls)
 	}
 }
+
+func TestCatalogPaginatesAcrossLibraries(t *testing.T) {
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}
+	experience := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "first", Type: "movie"}, {ID: "second", Type: "movie"}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, view string, q frontend.ItemQuery) (frontend.Page, error) {
+			if view == "first" {
+				if q.Offset != 2 {
+					t.Fatalf("first offset %d", q.Offset)
+				}
+				return frontend.Page{Total: 2}, nil
+			}
+			if view != "second" || q.Offset != 0 {
+				t.Fatalf("second: %s %+v", view, q)
+			}
+			title := frontend.Title{Title: "Second library", Type: "movie"}
+			title.IDs.TMDB = 42
+			return frontend.Page{Items: []frontend.Title{title}, Total: 1}, nil
+		},
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/catalog/movie/ether-movies/skip=2.json", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Second library") {
+		t.Fatalf("catalog: %d %s", rec.Code, rec.Body.String())
+	}
+}
