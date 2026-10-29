@@ -227,6 +227,9 @@ func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]an
 					session[key] = value
 				}
 			}
+			if caps.SupportsRemoteControl != nil {
+				session["SupportsRemoteControl"] = *caps.SupportsRemoteControl
+			}
 		}
 	}
 	return session
@@ -246,9 +249,6 @@ func sessionCapabilitiesDTO(c frontend.SessionCapabilities) map[string]any {
 	}
 	if c.SupportsPersistentIdentifier != nil {
 		m["SupportsPersistentIdentifier"] = *c.SupportsPersistentIdentifier
-	}
-	if c.SupportsRemoteControl != nil {
-		m["SupportsRemoteControl"] = *c.SupportsRemoteControl
 	}
 	if len(c.DeviceProfile) > 0 {
 		m["DeviceProfile"] = c.DeviceProfile
@@ -290,6 +290,7 @@ func (i *instance) routes() error {
 		m, p string
 		h    http.HandlerFunc
 	}{
+		{"GET", "/Sessions", i.sessionList},
 		{"GET", "/System/Info", func(w http.ResponseWriter, r *http.Request) {
 			v, _, err := i.viewer(r)
 			if err != nil || v == nil {
