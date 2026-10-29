@@ -302,7 +302,7 @@ func (i *instance) result(w http.ResponseWriter, r *http.Request, token string) 
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
-	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.userDTO(r, v), "SessionInfo": i.sessionDTO(r, v)})
+	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.userDTOWithTimes(r, v, token), "SessionInfo": i.sessionDTO(r, v)})
 }
 func identityError(w http.ResponseWriter, err error) {
 	if errors.Is(err, frontend.ErrRateLimited) {
@@ -380,12 +380,12 @@ func (i *instance) routes() error {
 			i.result(w, r, token)
 		}},
 		{"GET", "/Users/Me", func(w http.ResponseWriter, r *http.Request) {
-			v, _, err := i.viewer(r)
+			v, token, err := i.viewer(r)
 			if err != nil || v == nil {
 				http.Error(w, "Unauthorized", 401)
 				return
 			}
-			jsonReply(w, i.userDTO(r, v))
+			jsonReply(w, i.userDTOWithTimes(r, v, token))
 		}},
 		{"POST", "/Sessions/Logout", func(w http.ResponseWriter, r *http.Request) {
 			_, token, err := i.viewer(r)
