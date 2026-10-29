@@ -61,27 +61,40 @@ func (s *ViewerTimes) Observe(ctx context.Context, viewerID int64) error {
 		return errors.New("identity: invalid observation time")
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if last := s.recent[viewerID]; last > 0 && (at < last || at-last < activityInterval.Milliseconds()) {
+	previous := s.recent[viewerID]
+	if previous > 0 && (at < previous || at-previous < activityInterval.Milliseconds()) {
+		s.mu.Unlock()
 		return nil
-	}
-	result, err := s.db.ExecContext(ctx, `INSERT INTO identity_viewer_times(viewer_id,last_activity) VALUES(?,?)
- ON CONFLICT(viewer_id) DO UPDATE SET last_activity=excluded.last_activity
- WHERE excluded.last_activity>=identity_viewer_times.last_activity+?`, viewerID, at, activityInterval.Milliseconds())
-	if err != nil {
-		return err
-	}
-	if rows, e := result.RowsAffected(); e != nil {
-		return e
-	} else if rows == 0 {
-		if err = s.db.QueryRowContext(ctx, `SELECT last_activity FROM identity_viewer_times WHERE viewer_id=?`, viewerID).Scan(&at); err != nil {
-			return err
-		}
 	}
 	if len(s.recent) >= 4096 {
 		s.recent = make(map[int64]int64)
 	}
 	s.recent[viewerID] = at
+	s.mu.Unlock()
+
+	result, err := s.db.ExecContext(ctx, `INSERT INTO identity_viewer_times(viewer_id,last_activity) VALUES(?,?)
+ ON CONFLICT(viewer_id) DO UPDATE SET last_activity=excluded.last_activity
+ WHERE excluded.last_activity>=identity_viewer_times.last_activity+?`, viewerID, at, activityInterval.Milliseconds())
+	stored := at
+	if err == nil {
+		var rows int64
+		rows, err = result.RowsAffected()
+		if err == nil && rows == 0 {
+			err = s.db.QueryRowContext(ctx, `SELECT last_activity FROM identity_viewer_times WHERE viewer_id=?`, viewerID).Scan(&stored)
+		}
+	}
+	s.mu.Lock()
+	if s.recent[viewerID] == at {
+		if err != nil {
+			s.recent[viewerID] = previous
+		} else {
+			s.recent[viewerID] = stored
+		}
+	}
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
