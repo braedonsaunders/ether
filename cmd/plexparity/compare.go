@@ -220,6 +220,24 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 					return result, fmt.Errorf("%s %s %s start failed: status=%d error=%v body=%q", viewer, name, mode.name, response.Status, err, response.Body)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:" + path, false, response})
+				// Follow the server-generated stream grant; never invent an ID.
+				var uri string
+				for _, line := range strings.Split(string(response.Body), "\n") {
+					if line != "" && !strings.HasPrefix(line, "#") {
+						uri = line
+						break
+					}
+				}
+				if uri == "" {
+					return result, fmt.Errorf("%s %s missing HLS media URI", viewer, name)
+				}
+				playlistPath := "/video/:/transcode/universal/" + uri
+				req.Path = playlistPath
+				playlist, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+				if err != nil || playlist.Status != http.StatusOK || !bytes.HasPrefix(playlist.Body, []byte("#EXTM3U")) {
+					return result, fmt.Errorf("%s %s media playlist failed: %d %v", viewer, name, playlist.Status, err)
+				}
+				result.captures = append(result.captures, capture{viewer, name, "playback:media-playlist:" + mode.name, false, playlist})
 				stop := "/video/:/transcode/universal/stop?session=" + session
 				req.Path = stop
 				response, err = protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
