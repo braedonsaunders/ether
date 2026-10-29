@@ -109,11 +109,24 @@ func TestQuickConnectStatusDoesNotRedeem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	spec, specErr := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
+	var doc *openapi.Document
+	if specErr == nil {
+		doc, specErr = openapi.Parse(spec)
+	}
+	if specErr != nil && !os.IsNotExist(specErr) {
+		t.Fatal(specErr)
+	}
 	call := func(method, path, body, token string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("X-Emby-Token", token)
 		inst.Handler().ServeHTTP(w, r)
+		if doc != nil && w.Code == 200 {
+			if e := doc.Validate(method, path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
+				t.Errorf("%s: %v", path, e)
+			}
+		}
 		return w
 	}
 	if w := call("POST", "/QuickConnect/Initiate", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"Code":"123456"`) {

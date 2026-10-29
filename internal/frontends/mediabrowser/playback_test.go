@@ -85,6 +85,14 @@ func TestTimelineReportsAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
+	var doc *openapi.Document
+	if e == nil {
+		doc, e = openapi.Parse(spec)
+	}
+	if e != nil && !os.IsNotExist(e) {
+		t.Fatal(e)
+	}
 	for _, p := range []string{"/Sessions/Playing/Progress", "/Sessions/Playing/Stopped"} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("POST", p, strings.NewReader(`{"PlaySessionId":"session","PositionTicks":10000000}`))
@@ -92,6 +100,11 @@ func TestTimelineReportsAndStops(t *testing.T) {
 		inst.Handler().ServeHTTP(w, r)
 		if w.Code != 204 {
 			t.Fatal(w.Code, w.Body.String())
+		}
+		if doc != nil {
+			if e := doc.Validate("POST", p, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
+				t.Fatal(e)
+			}
 		}
 	}
 	if strings.Join(states, ",") != "playing,stopped,stop" {
