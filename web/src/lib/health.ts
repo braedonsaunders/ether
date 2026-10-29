@@ -388,6 +388,7 @@ export function computeHealth(
 // ---- Now playing --------------------------------------------------------------
 
 export interface NowPlaying {
+  protocol: string;
   id: string;
   key: string;
   title: string;
@@ -431,6 +432,7 @@ export function normalizeSessions(v: unknown): NowPlaying[] {
     else if (typeof offsetMs === "number" && Number.isFinite(offsetMs) && durationMs > 0)
       progress = Math.max(0, Math.min(1, offsetMs / durationMs));
     return {
+      protocol: str(pick(client, "protocol", "Protocol")) || "plex",
       id: str(pick(s, "ID", "id")),
       key: String(pick(s, "Key", "key") ?? ""),
       title: str(pick(s, "TitleName", "titleName", "title")) || t("Untitled"),

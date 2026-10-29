@@ -169,6 +169,7 @@ type App struct {
 	safety            *safety.Service
 	updates           *updateState
 	frontends         *frontendRuntime
+	frontendClients   *frontendClients
 	plexServer        *plex.Server
 	handler           http.Handler
 	instanceLock      *instanceLock

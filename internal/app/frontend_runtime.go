@@ -52,7 +52,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: sessions.NewEventBus(a.clusterNode(), a.users.ActiveUser), discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
-		return frontend.Host{Identity: frontend.BindIdentity(resolver, id), Events: r.events, Log: a.log.With("frontend", id), Config: func() frontend.Settings {
+		return frontend.Host{Identity: frontend.BindIdentity(resolver, id), Events: r.events, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, Config: func() frontend.Settings {
 			settings, err := r.control.Settings(r.ctx, id)
 			if err != nil {
 				return frontend.Settings{}
@@ -61,6 +61,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		}}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
+	r.control.clientCount = a.frontendClients.count
 	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		r.events.Close()
 		cancel()

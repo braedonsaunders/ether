@@ -71,6 +71,22 @@ func TestAuth(t *testing.T) {
 	}
 }
 
+func TestClientSeenOnlyAfterAuthentication(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	var seen []string
+	f.srv.d.Hooks.OnClientSeen = func(id string) { seen = append(seen, id) }
+	f.request(t, http.MethodGet, "/identity", map[string]string{"X-Plex-Token": "", "X-Plex-Client-Identifier": "public"})
+	f.request(t, http.MethodGet, "/library/sections", map[string]string{"X-Plex-Token": "bad", "X-Plex-Client-Identifier": "unauthorized"})
+	if len(seen) != 0 {
+		t.Fatalf("observed unauthenticated clients: %v", seen)
+	}
+	f.request(t, http.MethodGet, "/library/sections", map[string]string{"X-Plex-Token": friendToken, "X-Plex-Client-Identifier": "device"})
+	if len(seen) != 1 || seen[0] != "device" {
+		t.Fatalf("seen = %v", seen)
+	}
+}
+
 func TestSectionRestriction(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()

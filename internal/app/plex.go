@@ -32,6 +32,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		Platform:          plexPlatform(),
 	}
 	hooks := plex.Hooks{
+		OnClientSeen: func(id string) { a.frontendClients.observe("plex", id) },
 		OnTimeline: func(u *core.User, key core.RatingKey, offset, duration time.Duration, state string) {
 			if u != nil {
 				// Plex renews/stops the requesting client's exact session.

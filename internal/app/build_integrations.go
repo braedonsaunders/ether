@@ -52,6 +52,8 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	a.buildExtras()
+	a.frontendClients = newFrontendClients(a.db, a.log.With("component", "frontend-clients"), nil)
+	a.closers = append(a.closers, a.frontendClients.Close)
 	_, err = a.buildPlex(cfg)
 	if err != nil {
 		return fmt.Errorf("plex front end: %w", err)

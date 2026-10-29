@@ -56,6 +56,12 @@ function backend() {
               SpeedBps: 125000,
               Client: { deviceName: "Phone" },
             },
+            {
+              ID: "other",
+              TitleName: "Other film",
+              Username: "Alex",
+              Client: { deviceName: "TV", protocol: "jellyfin" },
+            },
           ],
         };
       else if (url.endsWith("/stats/infrastructure"))
@@ -129,6 +135,12 @@ describe("Activity", () => {
     renderAt("/activity");
     expect(await screen.findByText("Example film", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("Sam · Phone")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "jellyfin" } });
+    expect(screen.queryByText("Example film")).toBeNull();
+    expect(screen.getByText("Other film")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "plex" } });
+    expect(screen.queryByText("Other film")).toBeNull();
+    expect(within(screen.getByText("Example film").closest("li")!).getByText("plex")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Stop stream" }));
     await waitFor(() =>
       expect(

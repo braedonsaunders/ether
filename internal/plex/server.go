@@ -50,6 +50,8 @@ type Identity struct {
 // Hooks are optional callbacks into other components. They run on their own
 // goroutine and must be safe for concurrent use.
 type Hooks struct {
+	// OnClientSeen receives the client identifier after authentication.
+	OnClientSeen func(clientID string)
 	// OnTimeline is called for every timeline update (prefetch uses it).
 	OnTimeline func(user *core.User, key core.RatingKey, offset, duration time.Duration, state string)
 	// OnScrobble is called when a user marks an item watched.

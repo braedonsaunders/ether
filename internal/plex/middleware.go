@@ -176,6 +176,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				}
 			}
 			pr.User = u
+			if s.d.Hooks.OnClientSeen != nil {
+				s.d.Hooks.OnClientSeen(pr.ClientID)
+			}
 			next.ServeHTTP(w, r)
 		case err == nil, errors.Is(err, core.ErrUnauthorized), errors.Is(err, core.ErrNotFound):
 			writeHTTPError(w, http.StatusUnauthorized)

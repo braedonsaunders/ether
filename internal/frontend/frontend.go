@@ -124,6 +124,8 @@ type Host struct {
 	Images     Images
 	Config     func() Settings
 	Log        *slog.Logger
+	// ClientSeen reports an authenticated client's protocol-specific device ID.
+	ClientSeen func(deviceID string)
 }
 
 var ErrNotRegistered = errors.New("frontend not registered")

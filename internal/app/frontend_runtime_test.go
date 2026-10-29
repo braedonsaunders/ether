@@ -58,7 +58,7 @@ func TestPlexFrontendStatusUsesMainListener(t *testing.T) {
 		t.Fatal(list, err)
 	}
 	item := list[0]
-	if item.Descriptor.ID != frontend.Protocol("plex") || !item.Enabled || len(item.Status.Addresses) != 1 || item.Status.Addresses[0] != "192.0.2.8:32450" || !item.Status.LiveStreamsKnown || item.Status.Clients24hKnown {
+	if item.Descriptor.ID != frontend.Protocol("plex") || !item.Enabled || len(item.Status.Addresses) != 1 || item.Status.Addresses[0] != "192.0.2.8:32450" || !item.Status.LiveStreamsKnown || !item.Status.Clients24hKnown {
 		t.Fatal(item)
 	}
 }
