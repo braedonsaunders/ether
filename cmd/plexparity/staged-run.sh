@@ -31,7 +31,7 @@ replacements = {
   ('personalize.Options{\n', 'personalize.Options{\n        Now: parityClock(),\n'),
   ('a.closers = append(a.closers, a.personalize.Close)', 'if err := parityWarmPersonalization(ctx, a); err != nil { a.personalize.Close(); return err }\n\ta.closers = append(a.closers, a.personalize.Close)')],
  "build_identity.go": [('plextv.Options{Identity:', 'plextv.Options{BaseURL: parityPlexTVBaseURL(), Identity:'), ('auth.Options{\n', 'auth.Options{\n        Now: parityClock(),\n')],
- "build_sources.go": [('resolver.New(a.sources, a.media,', 'resolver.New(parityIndexer(a.sources), parityHealth(a.media),'), ('resolver.Options{SearchObserved:', 'resolver.Options{Now: parityClock(), SearchObserved:')],
+ "build_sources.go": [('resolver.New(a.sources, a.media,', 'resolver.New(parityIndexer(a.sources, dataDir), parityHealth(a.media, dataDir),'), ('resolver.Options{SearchObserved:', 'resolver.Options{Now: parityClock(), SearchObserved:')],
  "build_playback.go": [('Engine:     a.media,', 'Engine:     parityEngine(a.media, dataDir),'), ('playback.Options{DataDir:', 'playback.Options{Now: parityClock(), DataDir:')],
  "livetv.go": [('livetv.Options{DB: a.db', 'livetv.Options{Now: parityClock(), DB: a.db')],
  "collections.go": [('return []collections.Option{', 'return append([]collections.Option{'), ('\n\t}\n}', '\n\t}, parityCollectionOptions()...)\n}')],
@@ -40,6 +40,8 @@ replacements = {
 for name, changes in replacements.items():
  path = root / name
  text = path.read_text()
+ if name == 'build_sources.go':
+  text = text.replace('resolver.New(parityIndexer(a.sources), parityHealth(a.media),', 'resolver.New(parityIndexer(a.sources, dataDir), parityHealth(a.media, dataDir),')
  for old, new in changes:
   if new in text: continue
   if name == 'app.go' and 'catalogue sync' in old and 'if parityRunCatalogueWorkers()' in text: continue
