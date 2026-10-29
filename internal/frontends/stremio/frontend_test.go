@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 
@@ -304,5 +305,22 @@ func TestSeriesMetadataUsesCanonicalKeysForVirtualOrder(t *testing.T) {
 	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/grant/meta/series/tmdb:42.json", nil))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"tmdb:42:3:8"`) || !strings.Contains(rec.Body.String(), `"season":1`) || !strings.Contains(rec.Body.String(), `"episode":2`) {
 		t.Fatalf("metadata: %d %s", rec.Code, rec.Body.String())
+
+	}
+}
+
+func TestRegisteredRoutesMatchMountedFrontend(t *testing.T) {
+	got, err := RegisteredRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, Experience: frontendtest.Experience{}, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := inst.(frontend.RouteSource).Routes()
+	if !slices.Equal(got, actual) {
+		t.Fatalf("inventory differs: %+v vs %+v", got, actual)
+
 	}
 }

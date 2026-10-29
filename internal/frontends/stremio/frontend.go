@@ -23,30 +23,47 @@ func (Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instance,
 	if host.Identity == nil || host.Experience == nil || host.Sessions == nil {
 		return nil, errors.New("stremio requires identity, experience and sessions")
 	}
-	i := &instance{host: host, router: &route.Router{}}
-	if err := i.router.Handle(http.MethodGet, "/{credential}/manifest.json", http.HandlerFunc(i.manifest)); err != nil {
+	i := &instance{host: host}
+	if err := i.registerRoutes(); err != nil {
 		return nil, err
+	}
+	return i, nil
+}
+
+// RegisteredRoutes enumerates the same routes mounted by the frontend.
+func RegisteredRoutes() ([]route.Route, error) {
+	i := &instance{}
+	if err := i.registerRoutes(); err != nil {
+		return nil, err
+	}
+	return i.router.Routes(), nil
+}
+
+func (i *instance) registerRoutes() error {
+	i.router = &route.Router{}
+	if err := i.router.Handle(http.MethodGet, "/{credential}/manifest.json", http.HandlerFunc(i.manifest)); err != nil {
+		return err
 	}
 	for _, pattern := range []string{"/{credential}/catalog/{type}/{id}", "/{credential}/catalog/{type}/{id}/{extra}"} {
 		if err := i.router.Handle(http.MethodGet, pattern, http.HandlerFunc(i.catalog)); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if err := i.router.Handle(http.MethodGet, "/{credential}/meta/{type}/{id}", http.HandlerFunc(i.meta)); err != nil {
-		return nil, err
+		return err
 	}
 	if err := i.router.Handle(http.MethodGet, "/image/{secret}", http.HandlerFunc(i.image)); err != nil {
-		return nil, err
+		return err
 	}
 	if err := i.router.Handle(http.MethodGet, "/{credential}/stream/{type}/{id}", http.HandlerFunc(i.stream)); err != nil {
-		return nil, err
+		return err
 	}
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		if err := i.router.Handle(method, "/sessions/lazy/{rest...}", http.HandlerFunc(i.serveLazy)); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return i, nil
+	return nil
 }
 
 type instance struct {

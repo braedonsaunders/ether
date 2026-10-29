@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontends/mediabrowser"
+	"github.com/braedonsaunders/ether/internal/frontends/stremio"
 	"github.com/braedonsaunders/ether/internal/plex"
 )
 
@@ -21,12 +22,19 @@ func routes(args []string) error {
 		return err
 	}
 	switch *protocol {
-	case "plex", "jellyfin", "emby", "silo":
+	case "plex", "jellyfin", "emby", "silo", "stremio":
 	default:
 		return fmt.Errorf("unknown protocol %q", *protocol)
 	}
 	if *protocol == "plex" {
 		return json.NewEncoder(os.Stdout).Encode(plex.RouteInventory())
+	}
+	if *protocol == "stremio" {
+		registered, err := stremio.RegisteredRoutes()
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(conform.RouteInventory{Available: true, Routes: registered})
 	}
 	if *protocol == "jellyfin" {
 		inv, err := jellyfinRoutes(context.Background())
