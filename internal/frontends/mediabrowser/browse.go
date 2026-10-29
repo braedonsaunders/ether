@@ -266,6 +266,18 @@ func (i *instance) browseRoutes() error {
 		if people := i.peopleDTO(r, v, token, d); len(people) > 0 {
 			dto["People"] = people
 		}
+		if len(d.Tracks) > 0 {
+			streams := mediaStreams(d.Tracks)
+			if i.protocol == "emby" {
+				for _, stream := range streams {
+					delete(stream.(map[string]any), "IsOriginal")
+				}
+			}
+			dto["MediaStreams"] = streams
+		}
+		if i.protocol == "jellyfin" {
+			dto["EnableMediaSourceDisplay"] = len(d.Versions) > 1
+		}
 		if len(d.Versions) > 0 {
 			sources := make([]any, 0, len(d.Versions))
 			for _, version := range d.Versions {

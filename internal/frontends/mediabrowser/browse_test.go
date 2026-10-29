@@ -23,6 +23,25 @@ func TestItemDoesNotAdvertiseUnsupportedDeleteOrDownload(t *testing.T) {
 	}
 }
 
+func TestItemDetailIncludesExperienceTrackMetadata(t *testing.T) {
+	v := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}
+	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie"}, Tracks: []frontend.StreamInfo{{Type: "video", Index: 2, Codec: "h264"}}}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/Items/"+ids.RatingKeyGUID(5), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"MediaStreams":[`) || !strings.Contains(w.Body.String(), `"Codec":"h264"`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
 func TestBrowseUsesExperienceAndValidatesSpec(t *testing.T) {
 	user := &frontend.Viewer{ID: 7, Username: "viewer"}
 	title := frontend.Title{Key: 5, Type: "movie", Title: "A", Runtime: time.Minute}
