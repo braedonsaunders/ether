@@ -6,7 +6,7 @@
       "url": "https://repo.jellyfin.org/files/openapi/stable/jellyfin-openapi-12.4.json",
       "sha256": "02a6064916b7e08f1f1d8d7ffc1fb1c7623df0e378729fcd7fd353766868036e",
       "format": "openapi-3",
-      "latest_url": "https://repo.jellyfin.org/files/openapi/stable/jellyfin-openapi.json"
+      "latest_url": "https://repo.jellyfin.org/files/openapi/stable/"
     },
     {
       "protocol": "emby",
