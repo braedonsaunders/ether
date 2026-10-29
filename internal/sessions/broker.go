@@ -48,9 +48,12 @@ type BrokerDeps struct {
 	OnTimeline         func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string)
 	Events             *EventBus
 	OnEventError       func(error)
-	OpenSubtitle       func(string, string) (io.ReadCloser, string, error)
-	ExtractSubtitle    func(context.Context, string, int, string, io.Writer) error
-	Now                func() time.Time
+	// OnProfileDiagnostic is an optional fixture hook. Values are closed enums
+	// only; the callback receives no media, identity or client-supplied data.
+	OnProfileDiagnostic func(ProfileDiagnostic)
+	OpenSubtitle        func(string, string) (io.ReadCloser, string, error)
+	ExtractSubtitle     func(context.Context, string, int, string, io.Writer) error
+	Now                 func() time.Time
 }
 
 type brokerPlan struct {

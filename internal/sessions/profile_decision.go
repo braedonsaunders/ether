@@ -9,6 +9,25 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+// ProfileDiagnostic is a redacted reason emitted only to an explicitly
+// installed diagnostic hook. It never includes client profile values.
+type ProfileDiagnostic string
+
+const (
+	ProfileRequiredConditionUnknown ProfileDiagnostic = "required_condition_unknown"
+	ProfileDirectRejected           ProfileDiagnostic = "direct_rejected"
+	ProfileDeliveryRejected         ProfileDiagnostic = "delivery_rejected"
+	ProfileFallbackTranscode        ProfileDiagnostic = "fallback_transcode"
+	ProfileFallbackRemux            ProfileDiagnostic = "fallback_remux"
+	ProfileNoDelivery               ProfileDiagnostic = "no_delivery"
+)
+
+func (b *Broker) profileDiagnostic(event ProfileDiagnostic) {
+	if b.deps.OnProfileDiagnostic != nil {
+		b.deps.OnProfileDiagnostic(event)
+	}
+}
+
 func decisionEncodes(d core.Decision, info core.MediaInfo) bool {
 	if d.Kind == core.DecisionTranscode {
 		return true
@@ -232,6 +251,43 @@ func profileRestrictions(p *core.ClientCapabilityProfiles, info core.MediaInfo, 
 	return true
 }
 
+func profileUnknownRequired(p *core.ClientCapabilityProfiles, info core.MediaInfo, d core.Decision) bool {
+	video, audio := info.Video(), profileStream(info, "audio", d.AudioStream)
+	for _, c := range p.Containers {
+		if (c.MediaType == "" || strings.EqualFold(c.MediaType, "video")) && profileContains(c.Containers, info.Container) {
+			_, unknown := evaluateProfileConditions(c.Conditions, info, video)
+			if unknown {
+				return true
+			}
+		}
+	}
+	for _, c := range p.Codecs {
+		var stream *core.StreamInfo
+		switch strings.ToLower(c.MediaType) {
+		case "video":
+			stream = video
+		case "audio", "videoaudio":
+			stream = audio
+		default:
+			continue
+		}
+		if stream == nil || !profileContains(c.Codecs, stream.Codec) || !profileContains(c.Containers, info.Container) {
+			continue
+		}
+		applies, unknown := evaluateProfileConditions(c.ApplyConditions, info, stream)
+		if unknown {
+			return true
+		}
+		if applies {
+			_, unknown = evaluateProfileConditions(c.Conditions, info, stream)
+			if unknown {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func profileDirectAllowed(p *core.ClientCapabilityProfiles, info core.MediaInfo, d core.Decision) bool {
 	if p == nil {
 		return true
@@ -318,26 +374,65 @@ func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (
 	if d.Kind == core.DecisionDirectPlay && profileDirectAllowed(req.Caps.Profiles, ps.Info, d) {
 		return d, nil
 	}
+	if d.Kind == core.DecisionDirectPlay {
+		b.profileDiagnostic(ProfileDirectRejected)
+		if b.deps.OnProfileDiagnostic != nil && profileUnknownRequired(req.Caps.Profiles, ps.Info, d) {
+			b.profileDiagnostic(ProfileRequiredConditionUnknown)
+		}
+	}
 	allowed := func(d core.Decision) bool {
 		return req.Intent.AllowTranscoding == nil || *req.Intent.AllowTranscoding || !decisionEncodes(d, ps.Info)
 	}
 	if d.Kind != core.DecisionDirectPlay && allowed(d) && (profileDeliveryAllowed(req.Caps.Profiles, d, ps.Info, "hls") || profileDeliveryAllowed(req.Caps.Profiles, d, ps.Info, "dash")) {
 		return d, nil
 	}
+	if d.Kind != core.DecisionDirectPlay {
+		b.profileDiagnostic(ProfileDeliveryRejected)
+	}
 	for _, candidate := range req.Caps.Profiles.Transcoding {
 		if !strings.EqualFold(candidate.Delivery, "hls") && !strings.EqualFold(candidate.Delivery, "dash") {
 			continue
 		}
-		caps := req.Caps
-		caps.VideoCodecs = candidate.VideoCodecs
-		caps.AudioCodecs = candidate.AudioCodecs
-		caps.HLSContainers = candidate.Containers
-		opts := req.Intent.Options
-		opts.DirectPlay = false
-		d, err = Decide(b.deps.Playback, b.deps.Transcoder, DecisionRequest{Session: ps, Caps: caps, Options: opts, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true})
-		if err == nil && d.Kind != core.DecisionDirectPlay && allowed(d) && profileDeliveryAllowed(req.Caps.Profiles, d, ps.Info, candidate.Delivery) {
-			return d, nil
+		try := func(videoCodecs []string) (core.Decision, bool) {
+			caps := req.Caps
+			caps.VideoCodecs = videoCodecs
+			caps.AudioCodecs = candidate.AudioCodecs
+			caps.HLSContainers = candidate.Containers
+			opts := req.Intent.Options
+			opts.DirectPlay = false
+			decision, err := Decide(b.deps.Playback, b.deps.Transcoder, DecisionRequest{Session: ps, Caps: caps, Options: opts, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true})
+			return decision, err == nil && decision.Kind != core.DecisionDirectPlay && allowed(decision) && profileDeliveryAllowed(req.Caps.Profiles, decision, ps.Info, candidate.Delivery)
+		}
+		if decision, ok := try(candidate.VideoCodecs); ok {
+			if decision.Kind == core.DecisionTranscode {
+				b.profileDiagnostic(ProfileFallbackTranscode)
+			} else {
+				b.profileDiagnostic(ProfileFallbackRemux)
+			}
+			return decision, nil
+		}
+		// A combined codec list may repeatedly select source copy even when
+		// its required profile predicates reject that source. Try individually
+		// declared alternatives, retaining all audio and container constraints.
+		// The transcoder currently emits H.264 or HEVC. Trying these fixed
+		// outputs bounds work independently of untrusted profile list length.
+		for _, codec := range []string{"h264", "hevc"} {
+			if !profileContains(candidate.VideoCodecs, codec) {
+				continue
+			}
+			if len(req.Caps.VideoCodecs) > 0 && !req.Caps.SupportsVideo(codec) {
+				continue
+			}
+			if decision, ok := try([]string{codec}); ok {
+				if decision.Kind == core.DecisionTranscode {
+					b.profileDiagnostic(ProfileFallbackTranscode)
+				} else {
+					b.profileDiagnostic(ProfileFallbackRemux)
+				}
+				return decision, nil
+			}
 		}
 	}
+	b.profileDiagnostic(ProfileNoDelivery)
 	return core.Decision{}, core.ErrNotAvailable
 }

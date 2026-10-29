@@ -82,3 +82,41 @@ func TestProfileDecisionChoosesDeclaredFallbackAndSubtitle(t *testing.T) {
 		t.Fatal("audio conversion must count as transcoding")
 	}
 }
+
+func TestUnknownHEVCConditionTriesDeclaredH264Transcode(t *testing.T) {
+	info := core.MediaInfo{Container: "mp4", Streams: []core.StreamInfo{{Index: 0, Type: "video", Codec: "hevc", Width: 3840, Height: 2160}, {Index: 1, Type: "audio", Codec: "ac3", Channels: 6}}}
+	profiles := &core.ClientCapabilityProfiles{
+		DirectPlay:  []core.ClientDirectPlayProfile{{MediaType: "video", Containers: []string{"mp4"}, VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"ac3"}}},
+		Codecs:      []core.ClientCodecProfile{{MediaType: "video", Codecs: []string{"hevc"}, Conditions: []core.ClientProfileCondition{{Property: "VideoRangeType", Operator: "NotEquals", Value: "DOVI", Required: true}}}},
+		Transcoding: []core.ClientTranscodeProfile{{MediaType: "video", Delivery: "hls", Containers: []string{"mpegts"}, VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3"}, MaxAudioChannels: "6"}},
+	}
+	caps := core.ClientCaps{Profiles: profiles, Containers: []string{"mp4"}, VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3"}, HLSContainers: []string{"mpegts"}}
+	req := frontend.PlanRequest{Caps: caps, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: 1, SubtitleStream: -1}}}
+	var events []ProfileDiagnostic
+	b := &Broker{deps: BrokerDeps{Transcoder: profileTranscoder{}, OnProfileDiagnostic: func(event ProfileDiagnostic) { events = append(events, event) }}}
+	if profileDirectAllowed(profiles, info, core.Decision{Kind: core.DecisionDirectPlay, AudioStream: 1}) {
+		t.Fatal("unknown required HEVC predicate was accepted")
+	}
+	d, err := b.decideProfile(&core.PlaySession{Info: info}, req)
+	if err != nil || d.Kind != core.DecisionTranscode || d.VideoCodec != "h264" || !profileDeliveryAllowed(profiles, d, info, "hls") {
+		t.Fatalf("declared H.264 fallback: %+v %v", d, err)
+	}
+	if len(events) != 3 || events[0] != ProfileDirectRejected || events[1] != ProfileRequiredConditionUnknown || events[2] != ProfileFallbackTranscode {
+		t.Fatalf("unexpected redacted decision diagnostics: %v", events)
+	}
+	denied := false
+	req.Intent.AllowTranscoding = &denied
+	if _, err = b.decideProfile(&core.PlaySession{Info: info}, req); err == nil {
+		t.Fatal("transcoding prohibition ignored")
+	}
+	req.Intent.AllowTranscoding = nil
+	profiles.Transcoding[0].VideoCodecs = []string{"hevc"}
+	if _, err = b.decideProfile(&core.PlaySession{Info: info}, req); err == nil {
+		t.Fatal("undeclared H.264 fallback was selected")
+	}
+	profiles.Transcoding[0].VideoCodecs = []string{"h264", "hevc"}
+	profiles.Transcoding[0].MaxAudioChannels = "1"
+	if _, err = b.decideProfile(&core.PlaySession{Info: info}, req); err == nil {
+		t.Fatal("fallback ignored declared audio channel limit")
+	}
+}
