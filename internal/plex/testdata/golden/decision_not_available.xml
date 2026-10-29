@@ -8,7 +8,7 @@
 <Rating image="themoviedb://image.rating" type="audience" value="8.4" />
 <Director filter="director=7467" id="7467" tag="Mara Ellison" tagKey="tmdb-person-7467" />
 <Writer filter="writer=7468" id="7468" tag="Sasha Petrov" tagKey="tmdb-person-7468" />
-<Role filter="actor=287" id="287" role="Alex Mercer" tag="Theo Varga" tagKey="tmdb-person-287" thumb="https://image.tmdb.org/t/p/w185/brad.jpg" />
+<Role filter="actor=287" id="287" role="Alex Mercer" tag="Theo Varga" tagKey="tmdb-person-287" thumb="/library/metadata/1000000000000550/person/actor/L2JyYWQuanBn" />
 <Role filter="actor=819" id="819" role="The Narrator" tag="Lucas Brandt" tagKey="tmdb-person-819" />
 </Video>
 </MediaContainer>

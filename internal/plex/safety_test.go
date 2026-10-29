@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"github.com/braedonsaunders/ether/internal/core"
 	"net/http"
 	"net/http/httptest"
@@ -357,4 +358,164 @@ func TestAvailabilityDoesNotInterruptAnOpenViewerSession(t *testing.T) {
 	if f.srv.visibleTitle(t.Context(), &core.User{ID: 2}, &fightClub) {
 		t.Fatal("active viewer granted access to another viewer")
 	}
+}
+
+func TestCastPortraitTranscodeVisibility(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.Exec(`CREATE TABLE catalog_titles(key INTEGER,adult INTEGER,poster TEXT,backdrop TEXT,still TEXT,logo TEXT); CREATE TABLE catalog_credits(key INTEGER,thumb TEXT);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture()
+	defer f.srv.Close()
+	f.srv.d.DB = db
+	f.srv.d.Auth.(*fakeAuth).users["kid"] = core.User{ID: 30, MaxContentRating: "PG"}
+	cases := []struct {
+		name        string
+		key         core.RatingKey
+		rating      string
+		adult       bool
+		unavailable bool
+		want        int
+	}{
+		{"visible", core.MovieKey(1001), "PG", false, false, 200}, {"forbidden", core.MovieKey(1002), "R", false, false, 404}, {"future", core.MovieKey(1003), "PG", false, true, 404}, {"adult", core.MovieKey(1004), "PG", true, false, 404}, {"unknown-release", core.MovieKey(1005), "PG", false, false, 404},
+	}
+	f.srv.d.Auth.(*fakeAuth).users["tvonly"] = core.User{ID: 31, AllowedSections: []int{2}}
+	for _, c := range cases {
+		portrait := "/" + c.name + "-actor.jpg"
+		title := core.Title{Key: c.key, Type: core.TypeMovie, Title: c.name, ContentRating: c.rating, Adult: c.adult, Released: fixedNow.Add(-time.Hour), Cast: []core.Person{{Name: "Actor", TMDB: 123, ThumbPath: portrait}}}
+		if c.unavailable {
+			title.Released = fixedNow.Add(48 * time.Hour)
+		}
+		if c.name == "unknown-release" {
+			title.Released = time.Time{}
+		}
+		if c.want == 200 {
+			title.Directors = []core.Person{{Name: "Director", TMDB: 124, ThumbPath: "/director.jpg"}}
+			title.Writers = []core.Person{{Name: "Writer", TMDB: 125, ThumbPath: "/writer.jpg"}}
+			for _, p := range []string{"/director.jpg", "/writer.jpg"} {
+				if _, err := db.Exec(`INSERT INTO catalog_credits VALUES(?,?)`, c.key, p); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		f.catalog.titles[c.key] = title
+		if _, err := db.Exec(`INSERT INTO catalog_titles VALUES(?,?, '', '', '', '')`, c.key, c.adult); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO catalog_credits VALUES(?,?)`, c.key, portrait); err != nil {
+			t.Fatal(err)
+		}
+		if c.want == 200 {
+			rec := f.get(t, "/library/metadata/"+c.key.String(), "X-Plex-Token", "kid", "Accept", "application/json")
+			mc := decodeJSON(t, rec)
+			items := mc["Metadata"].([]any)
+			roles := items[0].(map[string]any)["Role"].([]any)
+			thumb := roles[0].(map[string]any)["thumb"].(string)
+			rec = f.get(t, "/photo/:/transcode?width=100&url="+url.QueryEscape(thumb), "X-Plex-Token", "kid")
+			if rec.Code != 200 {
+				t.Errorf("rendered role portrait: got %d", rec.Code)
+			}
+			if direct := f.get(t, thumb, "X-Plex-Token", "kid"); direct.Code != 200 {
+				t.Errorf("direct portrait: %d", direct.Code)
+			}
+			if blocked := f.get(t, "/photo/:/transcode?url="+url.QueryEscape(thumb), "X-Plex-Token", "tvonly"); blocked.Code != 404 {
+				t.Errorf("section blocked: %d", blocked.Code)
+			}
+			for _, tag := range []string{"Director", "Writer"} {
+				tags := items[0].(map[string]any)[tag].([]any)
+				personThumb := tags[0].(map[string]any)["thumb"].(string)
+				if got := f.get(t, "/photo/:/transcode?url="+url.QueryEscape(personThumb), "X-Plex-Token", "kid"); got.Code != 200 {
+					t.Errorf("%s portrait: %d", tag, got.Code)
+				}
+			}
+			if rec = f.get(t, "/photo/:/transcode?width=100&url="+url.QueryEscape(thumb)); rec.Code != 200 {
+				t.Errorf("owner portrait: got %d", rec.Code)
+			}
+			if f.art.count("/t/p/w185/visible-actor.jpg") == 0 {
+				t.Error("owner dimensions did not fetch w185 profile")
+			}
+			reordered := title
+			reordered.Cast = []core.Person{{Name: "Other", ThumbPath: "/other.jpg"}, title.Cast[0]}
+			f.catalog.titles[c.key] = reordered
+			if got := f.get(t, thumb, "X-Plex-Token", "kid"); got.Code != 200 || f.art.count("/t/p/w185/other.jpg") != 0 {
+				t.Errorf("reordered portrait: %d", got.Code)
+			}
+			reordered.Cast = reordered.Cast[:1]
+			f.catalog.titles[c.key] = reordered
+			if got := f.get(t, thumb, "X-Plex-Token", "kid"); got.Code != 404 {
+				t.Errorf("removed portrait: %d", got.Code)
+			}
+
+		} else {
+			thumb := "/library/metadata/" + c.key.String() + "/person/actor/" + base64.RawURLEncoding.EncodeToString([]byte(portrait))
+			rec := f.get(t, "/photo/:/transcode?url="+url.QueryEscape(thumb), "X-Plex-Token", "kid")
+			if rec.Code != c.want {
+				t.Errorf("%s: got %d", c.name, rec.Code)
+			}
+		}
+	}
+	for _, raw := range []string{"https://image.tmdb.org/t/p/w185/unknown.jpg", "https://example.com/a.jpg"} {
+		if rec := f.get(t, "/photo/:/transcode?url="+url.QueryEscape(raw), "X-Plex-Token", "kid"); rec.Code != 404 {
+			t.Errorf("unknown %s: %d", raw, rec.Code)
+		}
+	}
+}
+
+type portraitCountingCatalog struct {
+	*fakeCatalog
+	calls  int
+	cancel context.CancelFunc
+}
+
+func (c *portraitCountingCatalog) Get(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+	c.calls++
+	t, err := c.fakeCatalog.Get(ctx, key)
+	if c.cancel != nil {
+		c.cancel()
+	}
+	return t, err
+}
+
+func TestPersonPortraitUsesOnlyScopedTitleAndHonorsCancellation(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	cat := &portraitCountingCatalog{fakeCatalog: f.catalog}
+	f.srv.d.Catalog = cat
+	f.srv.d.Auth.(*fakeAuth).users["kid"] = core.User{ID: 30, MaxContentRating: "PG"}
+	for i := 0; i < 100; i++ {
+		k := core.MovieKey(int64(2000 + i))
+		f.catalog.titles[k] = core.Title{Key: k, Type: core.TypeMovie, ContentRating: "R", Released: fixedNow.Add(-time.Hour), Cast: []core.Person{{ThumbPath: "/shared.jpg"}}}
+	}
+	k := core.MovieKey(3000)
+	f.catalog.titles[k] = core.Title{Key: k, Type: core.TypeMovie, ContentRating: "PG", Released: fixedNow.Add(-time.Hour), Cast: []core.Person{{ThumbPath: "/shared.jpg"}}}
+	path := "/library/metadata/" + k.String() + "/person/actor/" + base64.RawURLEncoding.EncodeToString([]byte("/shared.jpg"))
+	if rec := f.get(t, "/photo/:/transcode?url="+url.QueryEscape(path), "X-Plex-Token", "kid"); rec.Code != 200 {
+		t.Fatalf("portrait: %d", rec.Code)
+	}
+	if cat.calls != 1 {
+		t.Fatalf("catalog lookups = %d, want 1", cat.calls)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("GET", path, nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	f.srv.servePersonImage(rec, req, k, "actor", base64.RawURLEncoding.EncodeToString([]byte("/shared.jpg")))
+	if cat.calls != 1 {
+		t.Fatalf("canceled request did %d lookups", cat.calls-1)
+	}
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	cat.cancel = cancel2
+	before := f.art.count("/t/p/w185/shared.jpg")
+	req = httptest.NewRequest("GET", path, nil).WithContext(ctx2)
+	rec = httptest.NewRecorder()
+	f.srv.servePersonImage(rec, req, k, "actor", base64.RawURLEncoding.EncodeToString([]byte("/shared.jpg")))
+	if rec.Code != http.StatusNotFound || f.art.count("/t/p/w185/shared.jpg") != before {
+		t.Fatal("late cancellation served or fetched portrait")
+	}
+
 }

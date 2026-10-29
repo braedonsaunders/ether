@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -321,10 +322,10 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	}
 	if t.Type != core.TypeShow || detail {
 		// Show tiles in PMS lists carry Role tags only.
-		m.Director = s.personTags(t.Directors, "director", maxTags, detail, false)
-		m.Writer = s.personTags(t.Writers, "writer", maxTags, detail, false)
+		m.Director = s.personTags(t.Key, t.Directors, "director", maxTags, detail, false)
+		m.Writer = s.personTags(t.Key, t.Writers, "writer", maxTags, detail, false)
 	}
-	m.Role = s.personTags(t.Cast, "actor", maxTags, detail, true)
+	m.Role = s.personTags(t.Key, t.Cast, "actor", maxTags, detail, true)
 	if t.CollectionID > 0 && t.CollectionName != "" {
 		tag := model.Tag{Tag: t.CollectionName}
 		if detail {
@@ -428,7 +429,7 @@ func (s *Server) imageTags(t *core.Title, show *core.Title) []model.Image {
 	return out
 }
 
-func (s *Server) personTags(ps []core.Person, kind string, max int, detail, withRole bool) []model.Tag {
+func (s *Server) personTags(key core.RatingKey, ps []core.Person, kind string, max int, detail, withRole bool) []model.Tag {
 	var out []model.Tag
 	for i, p := range ps {
 		if i >= max {
@@ -447,7 +448,7 @@ func (s *Server) personTags(ps []core.Person, kind string, max int, detail, with
 				tag.Role = p.Role
 			}
 			if p.ThumbPath != "" {
-				tag.Thumb = s.d.ImageURL(p.ThumbPath, "w185")
+				tag.Thumb = "/library/metadata/" + key.String() + "/person/" + kind + "/" + base64.RawURLEncoding.EncodeToString([]byte(p.ThumbPath))
 			}
 		}
 		out = append(out, tag)

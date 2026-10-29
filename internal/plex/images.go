@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -352,6 +353,58 @@ func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, u stri
 	}
 }
 
+// Person artwork is scoped to one title so authorization requires one catalog lookup.
+func (s *Server) servePersonImage(w http.ResponseWriter, r *http.Request, key core.RatingKey, kind, identity string) {
+	if r.Context().Err() != nil {
+		return
+	}
+	t, err := s.d.Catalog.Get(r.Context(), key)
+	if r.Context().Err() != nil || err != nil || t == nil || !t.IsReleased(s.now()) || !s.visibleTitle(r.Context(), FromContext(r.Context()).User, t) {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	var people []core.Person
+	switch kind {
+	case "actor":
+		people = t.Cast
+	case "director":
+		people = t.Directors
+	case "writer":
+		people = t.Writers
+	default:
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(identity)
+	if err != nil || len(raw) == 0 {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	var imagePath string
+	for _, person := range people {
+		if person.ThumbPath == string(raw) {
+			imagePath = person.ThumbPath
+			break
+		}
+	}
+	if imagePath == "" {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	// Keep the same w185 profile URL emitted by metadata before proxying; poster widths are not profile configuration. Width and height are intentionally ignored.
+	s.serveRemoteImage(w, r, s.d.ImageURL(imagePath, "w185"))
+}
+func (s *Server) handlePersonImage(w http.ResponseWriter, r *http.Request) {
+	key, err := core.ParseRatingKey(chi.URLParam(r, "key"))
+	if err != nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	s.servePersonImage(w, r, key, chi.URLParam(r, "kind"), chi.URLParam(r, "identity"))
+}
+
+var personImageRe = regexp.MustCompile(`^/library/metadata/(\d+)/person/(actor|director|writer)/([A-Za-z0-9_-]+)$`)
+
 var metadataImageRe = regexp.MustCompile(`^/library/(?:metadata|collections)/(\d+)/(thumb|art|poster|banner|clearLogo|composite|squareArt)(?:/\d+)?$`)
 var playlistImageRe = regexp.MustCompile(`^/playlists/(\d+)/(composite|thumb|art)(?:/\d+)?$`)
 var discoveryImageRe = regexp.MustCompile(`^/library/metadata/(\d+)/discoveryPoster/[^/]+$`)
@@ -401,6 +454,15 @@ func (s *Server) handlePhotoTranscode(w http.ResponseWriter, r *http.Request) {
 			effective.Set("width", strconv.Itoa(width))
 			r.URL.RawQuery = effective.Encode()
 			s.serveDiscoveryPoster(w, r, key, params.Get("kind"), params.Get("lang"))
+			return
+		}
+		if m := personImageRe.FindStringSubmatch(path); m != nil {
+			key, err := core.ParseRatingKey(m[1])
+			if err != nil {
+				writeHTTPError(w, http.StatusNotFound)
+				return
+			}
+			s.servePersonImage(w, r, key, m[2], m[3])
 			return
 		}
 		if m := metadataImageRe.FindStringSubmatch(path); m != nil {
