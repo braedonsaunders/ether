@@ -88,6 +88,9 @@ func TestLiveTVUsesViewerScopedHost(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), "News") {
 			t.Fatal(path, w.Code, w.Body.String())
 		}
+		if strings.HasPrefix(path, "/LiveTv/Programs") && !strings.Contains(w.Body.String(), `"StartDate":"2026-01-01T12:00:00.0000000Z"`) {
+			t.Fatal("programme timestamp precision", w.Body.String())
+		}
 		if doc != nil {
 			if err := doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
 				t.Fatal(path, err)
