@@ -42,6 +42,18 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 	} else if stream.Type == "video" && !stream.Interlaced {
 		delete(dto, "IsInterlaced")
 	}
+	parts := strings.Split(stream.SampleAspectRatio, ":")
+	var n, d int
+	if stream.Type == "video" && len(parts) == 2 {
+		var errN, errD error
+		n, errN = strconv.Atoi(parts[0])
+		d, errD = strconv.Atoi(parts[1])
+		if errN == nil && errD == nil && n > 0 && d > 0 && n <= 100000 && d <= 100000 {
+			dto["IsAnamorphic"] = n != d
+		} else {
+			n, d = 0, 0
+		}
+	}
 	if stream.DisplayAspectRatio != "" {
 		dto["AspectRatio"] = stream.DisplayAspectRatio
 		return
@@ -49,13 +61,7 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 	if stream.Type != "video" || stream.Width <= 0 || stream.Height <= 0 || stream.Width > 100000 || stream.Height > 100000 {
 		return
 	}
-	parts := strings.Split(stream.SampleAspectRatio, ":")
-	if len(parts) != 2 {
-		return
-	}
-	n, errN := strconv.Atoi(parts[0])
-	d, errD := strconv.Atoi(parts[1])
-	if errN != nil || errD != nil || n <= 0 || d <= 0 || n > 100000 || d > 100000 {
+	if n == 0 || d == 0 {
 		return
 	}
 	w, h := int64(stream.Width)*int64(n), int64(stream.Height)*int64(d)
