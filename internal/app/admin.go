@@ -35,6 +35,7 @@ func (a *App) buildAdmin() http.Handler {
 		ViewerAlerts:    &notify.ViewerAlerts{DB: a.db, Active: a.users.ActiveUser},
 		ViewerPush:      a.viewerPush(),
 		ActiveViewer:    a.users.ActiveUser,
+		ViewerPortalURL: a.frontends.viewerPortalURL,
 		Invites:         invites,
 		SetViewerActive: a.users.SetOwnerEnabled,
 		LocalOwnerConfigured: func(ctx context.Context) bool {

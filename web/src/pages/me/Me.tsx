@@ -6,6 +6,7 @@ import { FavoritesMirror } from "./FavoritesMirror";
 import { FavoriteEpisodeAlerts } from "./FavoriteEpisodeAlerts";
 import { ViewerPush } from "./ViewerPush";
 import { NotInterested, type NotInterestedEntry } from "./NotInterested";
+import { ConnectApps } from "./ConnectApps";
 import { EtherLogo } from "../../components/brand";
 
 const SESSION_KEY = "ether.viewerPortal";
@@ -317,6 +318,7 @@ export default function Me() {
             />
             <NotInterested load={loadNotInterested} restore={restoreInterest} />
             <SignInMethods base="/me" token={token} />
+            <ConnectApps base="/me" token={token} />
             <Button
               variant="outline"
               type="button"

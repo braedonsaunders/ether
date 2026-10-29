@@ -19,6 +19,7 @@ import { viewerName } from "../../components/pickers";
 import { t, tn } from "../../i18n";
 import SignInMethods from "../me/SignInMethods";
 import { FavoritesMirror } from "../me/FavoritesMirror";
+import { ConnectApps } from "../me/ConnectApps";
 import { FavoriteEpisodeAlerts } from "../me/FavoriteEpisodeAlerts";
 import { getToken } from "../../lib/api";
 import { api, apiFetch, errorMessage } from "../../lib/api";
@@ -193,6 +194,7 @@ export default function ViewerProfile() {
             />
           ) : null}
           <SignInMethods base={`/users/${id}`} token={getToken()} owner />
+          <ConnectApps base={`/viewers/${id}`} token={getToken()} />
         </div>
       ) : (
         <div className="space-y-6">

@@ -94,6 +94,7 @@ type Deps struct {
 	ViewerAlerts         ViewerAlertPreferences
 	ViewerPush           ViewerPushService
 	ActiveViewer         func(context.Context, int64) (*core.User, error)
+	ViewerPortalURL      func(context.Context, *http.Request) (string, error)
 	LocalIdentity        *identity.Local
 	IdentityGrants       *identity.Grants
 	IdentityLimiter      *identity.LoginLimiter
@@ -282,6 +283,8 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/me/not-interested/restore", h.portalNotInterested)
 	mux.HandleFunc("GET /api/me/favorites-mirror", h.portalFavoritesMirror)
 	mux.HandleFunc("POST /api/me/favorites-mirror", h.portalFavoritesMirror)
+	mux.HandleFunc("GET /api/me/apps", h.portalConnectApps)
+	mux.HandleFunc("POST /api/me/apps/{surface}", h.portalConnectApps)
 	mux.HandleFunc("POST /api/me/link/plex", h.limitIdentityAuth(h.handlePlexLinkStart))
 	mux.HandleFunc("GET /api/me/link/plex/{handle}", h.limitIdentityPoll(h.handlePlexLinkPoll))
 	mux.HandleFunc("POST /api/me/invite", h.handleInviteCreate)
@@ -302,6 +305,8 @@ func (h *Handler) routes() *http.ServeMux {
 	api("GET /api/viewers/{id}/favorite-episode-alert", h.ownerFavoriteEpisodeAlert)
 	api("GET /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
 	api("POST /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
+	api("GET /api/viewers/{id}/apps", h.ownerConnectApps)
+	api("POST /api/viewers/{id}/apps/{surface}", h.ownerConnectApps)
 	api("GET /api/frontends", h.frontendList)
 	api("GET /api/frontends/qr", h.frontendQR)
 	api("GET /api/frontends/{id}/status", h.frontendStatus)
