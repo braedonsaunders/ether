@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
@@ -151,12 +152,13 @@ func (i *instance) routes() error {
 				http.Error(w, "Quick Connect disabled", 401)
 				return
 			}
-			code, secret, err := i.host.Identity.QuickConnectInitiate(i.identityContext(r), device(r))
+			dev := device(r)
+			code, secret, err := i.host.Identity.QuickConnectInitiate(i.identityContext(r), dev)
 			if err != nil {
 				identityError(w, err)
 				return
 			}
-			jsonReply(w, map[string]any{"Code": code, "Secret": secret, "Authenticated": false})
+			jsonReply(w, map[string]any{"Code": code, "Secret": secret, "Authenticated": false, "DeviceId": dev.ID, "DeviceName": dev.DeviceName, "AppName": dev.Client, "AppVersion": dev.Version, "DateAdded": time.Now().UTC()})
 		}},
 		{"GET", "/QuickConnect/Connect", func(w http.ResponseWriter, r *http.Request) {
 			secret := route.Query(r.URL.Query(), "secret")
