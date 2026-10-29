@@ -412,6 +412,9 @@ func (i *instance) playbackRoutes() error {
 				http.Error(w, "Unavailable", 503)
 				return
 			}
+			if i.protocol == "emby" {
+				i.embyMediaHeaders(w, r)
+			}
 			i.host.Sessions.ServeMedia(w, r)
 		})); err != nil {
 			return err
