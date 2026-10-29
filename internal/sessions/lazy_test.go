@@ -139,7 +139,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil)
 		r.Header.Set("Range", "bytes=0-2")
-		lazy.ServeAuthenticated(w, r, "account-credential-secret", authenticated)
+		lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, r, "account-credential-secret", authenticated)
 		if w.Code != http.StatusOK {
 			t.Fatalf("authenticated range %d: %d", i, w.Code)
 		}
@@ -148,7 +148,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 		t.Fatalf("authenticated ranges did not reuse a session: prepares=%d", pb.prepares)
 	}
 	headAuth := httptest.NewRecorder()
-	lazy.ServeAuthenticated(headAuth, httptest.NewRequest(http.MethodHead, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(headAuth, httptest.NewRequest(http.MethodHead, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
 	if headAuth.Code == http.StatusOK || pb.prepares != 2 {
 		t.Fatal("authenticated HEAD opened playback")
 	}
