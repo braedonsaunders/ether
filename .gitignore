@@ -24,5 +24,6 @@ node_modules/
 !/packaging/community/README.md
 /scripts/lab/lab.env
 /scripts/lab/data/
+/scripts/lab/.conform/
 
 /internal/conform/specs/.downloaded/
