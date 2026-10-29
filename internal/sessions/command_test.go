@@ -72,7 +72,7 @@ func TestCommandAuthorizationAndTargetedDelivery(t *testing.T) {
 	}
 	select {
 	case got := <-target:
-		if got.Command == nil || got.Command.Kind != frontend.CommandSeek || got.Command.Position != time.Minute {
+		if got.Command == nil || got.Command.Kind != frontend.CommandSeek || got.Command.Position != time.Minute || got.ActorViewerID != viewer.ID {
 			t.Fatalf("command %+v", got)
 		}
 	case <-time.After(time.Second):
@@ -98,7 +98,7 @@ func TestCommandAuthorizationAndTargetedDelivery(t *testing.T) {
 	}
 	select {
 	case got := <-target:
-		if got.Command == nil || got.Command.Kind != frontend.CommandStop {
+		if got.Command == nil || got.Command.Kind != frontend.CommandStop || got.ActorViewerID != 1 {
 			t.Fatalf("stop %+v", got)
 		}
 	case <-time.After(time.Second):

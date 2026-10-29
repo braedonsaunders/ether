@@ -433,10 +433,13 @@ type Command struct {
 	ControllerSessionID string
 }
 type Event struct {
-	Type      string
-	ViewerID  int64
-	Item      core.RatingKey
-	SessionID string
+	Type     string
+	ViewerID int64
+	// ActorViewerID is set from the authenticated actor for SessionCommand;
+	// zero denotes a system-originated stop without an authenticated actor.
+	ActorViewerID int64
+	Item          core.RatingKey
+	SessionID     string
 	// SubjectKind and SubjectID identify non-title user data such as a
 	// favorite person, collection or channel. Item remains the title key.
 	SubjectKind     string

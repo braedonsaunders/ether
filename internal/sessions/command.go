@@ -62,7 +62,7 @@ func (b *Broker) Command(ctx context.Context, actor *core.Viewer, id string, cmd
 		if target.ViewerID != v.ID && !owner {
 			return core.ErrUnauthorized
 		}
-		event := frontend.Event{Type: "SessionCommand", ViewerID: target.ViewerID, SessionID: id, TargetProtocol: target.Protocol, TargetDeviceID: target.Device.ID, Command: &cmd}
+		event := frontend.Event{Type: "SessionCommand", ViewerID: target.ViewerID, ActorViewerID: v.ID, SessionID: id, TargetProtocol: target.Protocol, TargetDeviceID: target.Device.ID, Command: &cmd}
 		publishErr := b.deps.Events.Publish(ctx, event)
 		if cmd.Kind == frontend.CommandStop {
 			stopErr := b.Stop(ctx, frontend.SessionAccess{Viewer: v, Owner: owner, Protocol: target.Protocol, Device: target.Device}, id)
