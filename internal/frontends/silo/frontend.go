@@ -47,6 +47,9 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 	if err := i.mutationRoutes(); err != nil {
 		return nil, err
 	}
+	if err := i.settingsRoutes(); err != nil {
+		return nil, err
+	}
 	if err := i.browseRoutes(); err != nil {
 		return nil, err
 	}
@@ -83,7 +86,7 @@ func (i *instance) Listeners() []frontend.ListenerSpec {
 }
 func (*instance) Discovery() []frontend.Announcer { return nil }
 func (*instance) Status(context.Context) frontend.Status {
-	return frontend.Status{Conformance: "in progress"}
+	return frontend.Status{Conformance: "unverified"}
 }
 func (*instance) Close(context.Context) error { return nil }
 func (i *instance) Routes() []route.Route     { return i.router.Routes() }
