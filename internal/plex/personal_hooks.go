@@ -74,37 +74,27 @@ func (s *Server) relatedAfterPostPlay(ctx context.Context, pr *Request, mc *mode
 	if s.d.Recommender == nil {
 		return
 	}
-	fetch := count
-	for {
-		hubs, err := s.d.Recommender.Related(ctx, pr.User, key, fetch)
+	var hubs []core.Hub
+	rows, err := experience.LoadRelated(ctx, pr.User, s.visibility(), count, seen, func(ctx context.Context, fetch int) ([]experience.RelatedCandidate, error) {
+		var err error
+		hubs, err = s.d.Recommender.Related(ctx, pr.User, key, fetch)
 		if err != nil {
-			s.log.Debug("postplay related hubs", "key", key, "err", err)
-			return
+			return nil, err
 		}
-		trial := cloneSeen(seen)
-		needsMore := false
-		filtered := make([]core.Hub, 0, len(hubs))
-		for _, h := range hubs {
-			items := experience.UniqueRelated(ctx, pr.User, s.visibility(), h.Items, trial, count)
-			if len(items) < count && len(h.Items) >= fetch {
-				needsMore = true
-			}
-			if len(items) > 0 {
-				h.Items = items
-				filtered = append(filtered, h)
-			}
+		rows := make([]experience.RelatedCandidate, len(hubs))
+		for i, hub := range hubs {
+			rows[i] = experience.RelatedCandidate{Index: i, Items: hub.Items}
 		}
-		if needsMore && fetch < 1000 && ctx.Err() == nil {
-			fetch = min(fetch*2, 1000)
-			continue
-		}
-		for key, value := range trial {
-			seen[key] = value
-		}
-		for _, h := range filtered {
-			mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}))
-		}
+		return rows, nil
+	})
+	if err != nil {
+		s.log.Debug("postplay related hubs", "key", key, "err", err)
 		return
+	}
+	for _, row := range rows {
+		h := hubs[row.Index]
+		h.Items = row.Items
+		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}))
 	}
 }
 

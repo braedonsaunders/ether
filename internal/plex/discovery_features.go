@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/overlays"
 	"github.com/braedonsaunders/ether/internal/personalize"
@@ -120,21 +121,24 @@ func (s *Server) discoveryHubs(ctx context.Context, pr *Request, limit int) []hu
 		return nil
 	}
 	var out []hubSpec
-	add := func(hubs []core.Hub) {
-		for _, h := range hubs {
-			h.Items = s.visibleTitles(pr.User, h.Items)
-			if len(h.Items) > 0 {
-				out = append(out, hubSpec{Hub: h})
-			}
+	add := func(hubs []core.Hub, purpose core.RowPurpose) {
+		candidates := make([]experience.DiscoveryCandidate, len(hubs))
+		for i, hub := range hubs {
+			candidates[i] = experience.DiscoveryCandidate{Index: i, Purpose: purpose, Items: hub.Items}
+		}
+		for _, row := range experience.FilterDiscovery(ctx, pr.User, s.visibility(), candidates) {
+			h := hubs[row.Index]
+			h.Items = row.Items
+			out = append(out, hubSpec{Hub: h})
 		}
 	}
 	if d.Watchlist != nil {
 		h, _ := d.Watchlist.Hubs(ctx, pr.User, limit)
-		add(h)
+		add(h, core.RowPurpose("watchlist"))
 	}
 	if d.Personal != nil {
 		h, _ := d.Personal.Hubs(ctx, pr.User, limit)
-		add(h)
+		add(h, core.RowPurpose("recommendation"))
 	}
 	return out
 }
