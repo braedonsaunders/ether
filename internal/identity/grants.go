@@ -187,7 +187,7 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	copyViewer := *viewer
 	copyViewer.IsOwner = owner == 1
 	viewer = &copyViewer
-	res, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET last_used=?,expires=? WHERE hash=? AND surface=? AND revoked=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, now, now+g.ttl.Milliseconds(), hash, surface, now, id)
+	res, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET last_used=?,expires=? WHERE hash=? AND surface=? AND revoked=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (origin<>'dlna_guest' OR ?='dlna'))`, now, now+g.ttl.Milliseconds(), hash, surface, now, id, surface)
 	if err != nil {
 		return nil, err
 	}

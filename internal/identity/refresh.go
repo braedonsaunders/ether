@@ -66,7 +66,7 @@ func (g *Grants) IssueRefresh(ctx context.Context, surface, access string, devic
 		return "", e
 	}
 	defer tx.Rollback()
-	res, e := tx.ExecContext(ctx, `INSERT INTO identity_refresh_families(id,viewer_id,surface,device_id,current_hash,access_hash,absolute_expiry,idle_expiry) SELECT ?,g.viewer_id,g.surface,g.device_id,?,?,?,? FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1`, family, rh, ah, now+refreshAbsolute.Milliseconds(), now+refreshIdle.Milliseconds(), ah, surface, device.ID, now)
+	res, e := tx.ExecContext(ctx, `INSERT INTO identity_refresh_families(id,viewer_id,surface,device_id,current_hash,access_hash,absolute_expiry,idle_expiry) SELECT ?,g.viewer_id,g.surface,g.device_id,?,?,?,? FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, family, rh, ah, now+refreshAbsolute.Milliseconds(), now+refreshIdle.Milliseconds(), ah, surface, device.ID, now)
 	if e != nil {
 		return "", e
 	}
@@ -95,7 +95,7 @@ func (g *Grants) Refresh(ctx context.Context, surface, token string, device core
 		return "", "", core.ErrUnauthorized
 	}
 	var memberID int64
-	e := g.db.QueryRowContext(ctx, `SELECT f.viewer_id FROM identity_refresh_tokens t JOIN identity_refresh_families f ON f.id=t.family_id JOIN auth_users u ON u.id=f.viewer_id WHERE t.hash=? AND f.surface=? AND f.device_id=? AND u.active=1`, old, surface, device.ID).Scan(&memberID)
+	e := g.db.QueryRowContext(ctx, `SELECT f.viewer_id FROM identity_refresh_tokens t JOIN identity_refresh_families f ON f.id=t.family_id JOIN auth_users u ON u.id=f.viewer_id WHERE t.hash=? AND f.surface=? AND f.device_id=? AND u.active=1 AND (u.origin<>'dlna_guest' OR f.surface='dlna')`, old, surface, device.ID).Scan(&memberID)
 	if errors.Is(e, sql.ErrNoRows) {
 		return "", "", core.ErrUnauthorized
 	}
@@ -124,10 +124,10 @@ func (g *Grants) Refresh(ctx context.Context, surface, token string, device core
 	var family string
 	var viewer int64
 	var oldAccess string
-	e = tx.QueryRowContext(ctx, `UPDATE identity_refresh_families SET current_hash=?,access_hash=?,idle_expiry=? WHERE current_hash=? AND surface=? AND device_id=? AND revoked=0 AND absolute_expiry>? AND idle_expiry>? AND EXISTS(SELECT 1 FROM auth_users WHERE id=viewer_id AND active=1) AND EXISTS(SELECT 1 FROM identity_grants WHERE hash=identity_refresh_families.access_hash AND revoked=0) RETURNING id,viewer_id`, rh, ah, now+refreshIdle.Milliseconds(), old, surface, device.ID, now, now).Scan(&family, &viewer)
+	e = tx.QueryRowContext(ctx, `UPDATE identity_refresh_families SET current_hash=?,access_hash=?,idle_expiry=? WHERE current_hash=? AND surface=? AND device_id=? AND revoked=0 AND absolute_expiry>? AND idle_expiry>? AND EXISTS(SELECT 1 FROM auth_users WHERE id=identity_refresh_families.viewer_id AND active=1 AND (origin<>'dlna_guest' OR identity_refresh_families.surface='dlna')) AND EXISTS(SELECT 1 FROM identity_grants WHERE hash=identity_refresh_families.access_hash AND revoked=0) RETURNING id,viewer_id`, rh, ah, now+refreshIdle.Milliseconds(), old, surface, device.ID, now, now).Scan(&family, &viewer)
 	if errors.Is(e, sql.ErrNoRows) {
 		var currentAccess string
-		err := tx.QueryRowContext(ctx, `UPDATE identity_refresh_families SET revoked=1 WHERE id=(SELECT family_id FROM identity_refresh_tokens WHERE hash=?) AND surface=? AND device_id=? AND current_hash<>? AND revoked=0 AND absolute_expiry>? AND idle_expiry>? AND EXISTS(SELECT 1 FROM auth_users WHERE id=viewer_id AND active=1) RETURNING access_hash`, old, surface, device.ID, old, now, now).Scan(&currentAccess)
+		err := tx.QueryRowContext(ctx, `UPDATE identity_refresh_families SET revoked=1 WHERE id=(SELECT family_id FROM identity_refresh_tokens WHERE hash=?) AND surface=? AND device_id=? AND current_hash<>? AND revoked=0 AND absolute_expiry>? AND idle_expiry>? AND EXISTS(SELECT 1 FROM auth_users WHERE id=identity_refresh_families.viewer_id AND active=1 AND (origin<>'dlna_guest' OR identity_refresh_families.surface='dlna')) RETURNING access_hash`, old, surface, device.ID, old, now, now).Scan(&currentAccess)
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", "", core.ErrUnauthorized
 		}
@@ -151,7 +151,7 @@ func (g *Grants) Refresh(ctx context.Context, surface, token string, device core
 	if _, e = tx.ExecContext(ctx, `UPDATE identity_grants SET revoked=1 WHERE hash=?`, oldAccess); e != nil {
 		return "", "", e
 	}
-	res, e := tx.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,g.viewer_id,g.identity_id,g.surface,g.device_id,g.client,g.product,g.version,?,?,? FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND u.active=1`, ah, now, now, now+g.ttl.Milliseconds(), oldAccess, viewer)
+	res, e := tx.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,g.viewer_id,g.identity_id,g.surface,g.device_id,g.client,g.product,g.version,?,?,? FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, ah, now, now, now+g.ttl.Milliseconds(), oldAccess, viewer)
 	if e != nil {
 		return "", "", e
 	}

@@ -449,7 +449,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*core.User, e
 
 	s.mu.RLock()
 	if id, ok := s.tokens[h]; ok {
-		u := s.activeUser(id)
+		u := s.activePlexUser(id)
 		s.mu.RUnlock()
 		if u != nil {
 			s.touch(u.ID, now)
@@ -458,7 +458,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*core.User, e
 		return nil, core.ErrUnauthorized
 	}
 	if e, ok := s.pos[h]; ok && now.Before(e.expires) {
-		u := s.activeUser(e.userID)
+		u := s.activePlexUser(e.userID)
 		s.mu.RUnlock()
 		if u != nil {
 			s.touch(u.ID, now)
@@ -486,6 +486,15 @@ func (s *Service) activeUser(id int64) *core.User {
 	}
 	u := r.effective()
 	return &u
+}
+
+// activePlexUser excludes local-only DLNA guests from Plex credentials.
+// Callers hold s.mu, as for activeUser.
+func (s *Service) activePlexUser(id int64) *core.User {
+	if row := s.users[id]; row == nil || row.Origin == "dlna_guest" {
+		return nil
+	}
+	return s.activeUser(id)
 }
 
 // validate asks plex.tv, collapsing concurrent requests for one token.
@@ -579,7 +588,7 @@ func (s *Service) validateOnce(ctx context.Context, token, h string) (*core.User
 	s.evictLocked()
 	s.pos[h] = cacheEntry{userID: localID, expires: s.o.Now().Add(s.o.CacheTTL)}
 	delete(s.neg, h)
-	u := s.activeUser(localID)
+	u := s.activePlexUser(localID)
 	s.mu.Unlock()
 	if u == nil {
 		return nil, core.ErrUnauthorized
@@ -603,7 +612,7 @@ func (s *Service) stale(h string, cause error) (*core.User, error) {
 	e, ok := s.pos[h]
 	var u *core.User
 	if ok && now.Before(e.expires.Add(s.o.StaleTTL)) {
-		u = s.activeUser(e.userID)
+		u = s.activePlexUser(e.userID)
 	}
 	s.mu.RUnlock()
 	if u != nil {

@@ -37,7 +37,7 @@ func (s *Service) IssueDelegation(ctx context.Context, userID int64) (string, er
 	}
 	token := delegationPrefix + rand.Text()
 	result, err := s.db.ExecContext(ctx, `INSERT INTO auth_delegations(token_hash,user_id,expires_at)
- SELECT ?,id,? FROM auth_users WHERE id=? AND active=1
+ SELECT ?,id,? FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest'
  AND (SELECT COUNT(*) FROM auth_delegations WHERE user_id=?)<64`, HashToken(token), now.Add(delegationTTL).Unix(), userID, userID)
 	if err != nil {
 		return "", err
@@ -61,7 +61,7 @@ func (s *Service) authenticateDelegation(ctx context.Context, token string) (*co
 	if err != nil {
 		return nil, err
 	}
-	r, err := scanRow(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM auth_users WHERE id=? AND active=1`, id))
+	r, err := scanRow(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest'`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, core.ErrUnauthorized
 	}
