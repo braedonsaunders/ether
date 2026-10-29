@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -19,16 +20,24 @@ func (i *instance) sessionList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	sessions, err := i.host.Sessions.Sessions(r.Context(), frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol, Owner: viewer.IsOwner && !viewer.Delegated})
+	items, err := i.sessionRows(r.Context(), viewer, device(r))
 	if err != nil {
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 		return
+	}
+	jsonReply(w, items)
+}
+
+func (i *instance) sessionRows(ctx context.Context, viewer *frontend.Viewer, device frontend.Device) ([]any, error) {
+	sessions, err := i.host.Sessions.Sessions(ctx, frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: i.protocol, Owner: viewer.IsOwner && !viewer.Delegated})
+	if err != nil {
+		return nil, err
 	}
 	items := make([]any, 0, len(sessions))
 	for _, session := range sessions {
 		items = append(items, i.brokerSessionDTO(viewer, session))
 	}
-	jsonReply(w, items)
+	return items, nil
 }
 
 func (i *instance) brokerSessionDTO(viewer *frontend.Viewer, session frontend.Session) map[string]any {

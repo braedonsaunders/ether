@@ -20,6 +20,55 @@ func (e socketEvents) Subscribe(_ context.Context, _ frontend.EventScope) (<-cha
 	return e, nil
 }
 
+type sessionSocketEvents struct{ lifecycle chan frontend.Event }
+
+func (e sessionSocketEvents) Subscribe(_ context.Context, scope frontend.EventScope) (<-chan frontend.Event, error) {
+	if scope.Owner {
+		return e.lifecycle, nil
+	}
+	return make(chan frontend.Event), nil
+}
+
+func TestSocketSessionsSubscriptionUsesBrokerSnapshots(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1, Username: "owner", IsOwner: true}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	events := sessionSocketEvents{lifecycle: make(chan frontend.Event, 1)}
+	broker := frontendtest.Sessions{SessionsFunc: func(_ context.Context, a frontend.SessionAccess) ([]frontend.Session, error) {
+		if a.Viewer != viewer || !a.Owner {
+			t.Fatal(a)
+		}
+		return []frontend.Session{{ID: "session", ViewerID: 1, StartedAt: time.Now(), MediaPath: "/secret"}}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: broker, Events: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(inst.Handler())
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/socket?api_key=grant", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	if _, _, err = c.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.Write(ctx, websocket.MessageText, []byte(`{"MessageType":"SessionsStart"}`)); err != nil {
+		t.Fatal(err)
+	}
+	check := func() {
+		_, b, err := c.Read(ctx)
+		if err != nil || !strings.Contains(string(b), `"MessageType":"Sessions"`) || !strings.Contains(string(b), `"Id":"session"`) || strings.Contains(string(b), "/secret") {
+			t.Fatal(string(b), err)
+		}
+	}
+	check()
+	events.lifecycle <- frontend.Event{Type: "SessionUpdated"}
+	check()
+}
+
 func TestSocketUserDataUsesCurrentFavoriteAndRating(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
@@ -95,7 +144,7 @@ func TestSocketAuthenticationAndKeepAlive(t *testing.T) {
 		t.Fatal(err)
 	}
 	var msg map[string]any
-	if json.Unmarshal(b, &msg) != nil || msg["MessageType"] != "ForceKeepAlive" {
+	if json.Unmarshal(b, &msg) != nil || msg["MessageType"] != "ForceKeepAlive" || msg["Data"] != float64(60) || len(msg["MessageId"].(string)) != 36 {
 		t.Fatal(string(b))
 	}
 	if err = c.Write(ctx, websocket.MessageText, []byte(`{"MessageType":"KeepAlive"}`)); err != nil {

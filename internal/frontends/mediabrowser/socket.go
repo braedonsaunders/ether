@@ -2,7 +2,9 @@ package mediabrowser
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -26,7 +28,14 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 	stop := context.AfterFunc(i.life, cancel)
 	defer stop()
 	defer cancel()
-	write := func(v any) error {
+	write := func(v map[string]any) error {
+		var id [16]byte
+		if _, err := rand.Read(id[:]); err != nil {
+			return err
+		}
+		id[6] = (id[6] & 0x0f) | 0x40
+		id[8] = (id[8] & 0x3f) | 0x80
+		v["MessageId"] = fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:])
 		b, e := json.Marshal(v)
 		if e != nil {
 			return e
@@ -39,8 +48,29 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 	if i.host.Events != nil {
 		events, _ = i.host.Events.Subscribe(ctx, frontend.EventScope{Viewer: viewer, Protocol: i.protocol})
 	}
-	if write(map[string]any{"MessageType": "ForceKeepAlive", "Data": "0,30"}) != nil {
+	var keepAlive any = 60
+	if i.protocol == "emby" {
+		keepAlive = "0,30"
+	}
+	if write(map[string]any{"MessageType": "ForceKeepAlive", "Data": keepAlive}) != nil {
 		return
+	}
+	var sessionEvents <-chan frontend.Event
+	var cancelSessions context.CancelFunc
+	defer func() {
+		if cancelSessions != nil {
+			cancelSessions()
+		}
+	}()
+	writeSessions := func() error {
+		if i.host.Sessions == nil {
+			return nil
+		}
+		rows, err := i.sessionRows(ctx, viewer, device(r))
+		if err != nil {
+			return err
+		}
+		return write(map[string]any{"MessageType": "Sessions", "Data": rows})
 	}
 	incoming := make(chan string, 1)
 	go func() {
@@ -72,6 +102,40 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 			}
 			if msg == "KeepAlive" {
 				if write(map[string]any{"MessageType": "KeepAlive"}) != nil {
+					return
+				}
+			} else if msg == "SessionsStart" {
+				if cancelSessions != nil {
+					cancelSessions()
+					cancelSessions = nil
+					sessionEvents = nil
+				}
+				if i.host.Events != nil {
+					sessionCtx, stopSessions := context.WithCancel(ctx)
+					ch, err := i.host.Events.Subscribe(sessionCtx, frontend.EventScope{Viewer: viewer, Owner: viewer.IsOwner && !viewer.Delegated, Protocol: i.protocol})
+					if err != nil {
+						stopSessions()
+					} else {
+						sessionEvents, cancelSessions = ch, stopSessions
+					}
+				}
+				if writeSessions() != nil {
+					return
+				}
+			} else if msg == "SessionsStop" {
+				if cancelSessions != nil {
+					cancelSessions()
+					cancelSessions = nil
+				}
+				sessionEvents = nil
+			}
+		case event, ok := <-sessionEvents:
+			if !ok {
+				sessionEvents = nil
+				continue
+			}
+			if event.Type == "SessionStarted" || event.Type == "SessionUpdated" || event.Type == "SessionStopped" {
+				if writeSessions() != nil {
 					return
 				}
 			}
