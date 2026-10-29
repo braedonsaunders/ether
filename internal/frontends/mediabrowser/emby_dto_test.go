@@ -34,7 +34,7 @@ func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
 }
 
 func TestEmbyItemBaseDoesNotChangeJellyfin(t *testing.T) {
-	title := frontend.Title{Title: "Example", SortTitle: "Example, The"}
+	title := frontend.Title{Title: "Example", SortTitle: "Example, The", Type: "movie", IDs: core.IDs{IMDB: "tt1234567", TMDB: 42}}
 	emby := (&instance{protocol: "emby"}).itemDTO(title, frontend.WatchStatus{})
 	jellyfin := (&instance{protocol: "jellyfin"}).itemDTO(title, frontend.WatchStatus{})
 	if emby["LockData"] != false || emby["ForcedSortName"] != title.SortTitle {
@@ -42,5 +42,13 @@ func TestEmbyItemBaseDoesNotChangeJellyfin(t *testing.T) {
 	}
 	if _, ok := jellyfin["LockData"]; ok {
 		t.Fatalf("Emby field leaked to Jellyfin: %#v", jellyfin)
+	}
+	urls := emby["ExternalUrls"].([]any)
+	if len(urls) != 2 || urls[0].(map[string]string)["Url"] != "https://www.imdb.com/title/tt1234567/" || urls[1].(map[string]string)["Url"] != "https://www.themoviedb.org/movie/42" {
+		t.Fatalf("external URLs: %#v", urls)
+	}
+	invalid := (&instance{protocol: "emby"}).itemDTO(frontend.Title{IDs: core.IDs{IMDB: "tt1/../../unsafe"}}, frontend.WatchStatus{})
+	if _, ok := invalid["ExternalUrls"]; ok {
+		t.Fatal("invalid provider ID produced a URL")
 	}
 }

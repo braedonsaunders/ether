@@ -1,6 +1,11 @@
 package mediabrowser
 
-import "github.com/braedonsaunders/ether/internal/frontend"
+import (
+	"strconv"
+	"strings"
+
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
 
 // embyItemDTO adds facts that apply to both Emby list and detail items.
 func (i *instance) embyItemDTO(m map[string]any, t frontend.Title, _ frontend.WatchStatus) {
@@ -9,6 +14,25 @@ func (i *instance) embyItemDTO(m map[string]any, t frontend.Title, _ frontend.Wa
 	m["LockedFields"] = []string{}
 	if t.SortTitle != "" {
 		m["ForcedSortName"] = t.SortTitle
+	}
+	urls := []any{}
+	if id := t.IDs.IMDB; len(id) > 2 && strings.HasPrefix(id, "tt") && strings.Trim(id[2:], "0123456789") == "" {
+		urls = append(urls, map[string]string{"Name": "IMDb", "Url": "https://www.imdb.com/title/" + id + "/"})
+	}
+	if t.IDs.TMDB > 0 {
+		kind := ""
+		switch t.Type {
+		case "movie":
+			kind = "movie"
+		case "show":
+			kind = "tv"
+		}
+		if kind != "" {
+			urls = append(urls, map[string]string{"Name": "The Movie Database", "Url": "https://www.themoviedb.org/" + kind + "/" + strconv.FormatInt(t.IDs.TMDB, 10)})
+		}
+	}
+	if len(urls) > 0 {
+		m["ExternalUrls"] = urls
 	}
 }
 
