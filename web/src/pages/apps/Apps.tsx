@@ -112,7 +112,11 @@ function ConnectDevice({ info }: { info: FrontendInfo }) {
       setQR(undefined);
     };
   }, [open, url]);
-  if (!info.enabled || !url) return null;
+  if (!info.enabled) return null;
+  if (["stremio", "webdav", "m3u"].includes(info.descriptor.id)) {
+    return <Link className="text-primary underline" to="/me">{t("Connect a device")}</Link>;
+  }
+  if (!url) return null;
   return (
     <div>
       <Button onClick={() => setOpen(!open)} aria-expanded={open}>
