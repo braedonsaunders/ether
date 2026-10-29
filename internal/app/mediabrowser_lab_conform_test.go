@@ -40,6 +40,8 @@ import (
 )
 
 // Run: LAB_ENV=/path/to/lab.env LAB_JELLYFIN_URL=http://host:8096 LAB_EMBY_URL=http://host:8097/emby go test -tags plexparity,conformlab ./internal/app -run TestMediaBrowserLabConformance -count=1 -v
+// LAB_ENV=env reads the four adult credential variables from the process environment;
+// this permits a private --env-file /dev/stdin in a disposable worker container.
 // LAB_REPORT_DIR optionally retains redacted JSON reports; otherwise only counts
 // are printed. LAB_SUMMARY_PATH optionally writes release evidence (native
 // clients are never certified by this harness). Credentials and generated
@@ -598,6 +600,15 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 }
 
 func readLabSettings(path string) (map[string]string, error) {
+	if path == "env" {
+		values := map[string]string{}
+		for _, key := range []string{"JELLYFIN_ADULT_USER", "JELLYFIN_ADULT_PASSWORD", "EMBY_ADULT_USER", "EMBY_ADULT_PASSWORD"} {
+			if value, ok := os.LookupEnv(key); ok {
+				values[key] = value
+			}
+		}
+		return values, nil
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open LAB_ENV: %w", err)
@@ -768,5 +779,16 @@ func TestLabProbeProxyRevokesIssuedCredentials(t *testing.T) {
 	stop()
 	if resp.StatusCode != 200 || logouts.Load() != 1 {
 		t.Fatal(resp.StatusCode, logouts.Load())
+	}
+}
+
+func TestReadLabSettingsFromEnvironment(t *testing.T) {
+	t.Setenv("JELLYFIN_ADULT_USER", "fixture-user")
+	t.Setenv("JELLYFIN_ADULT_PASSWORD", "fixture-password")
+	t.Setenv("EMBY_ADULT_USER", "emby-user")
+	t.Setenv("EMBY_ADULT_PASSWORD", "emby-password")
+	settings, err := readLabSettings("env")
+	if err != nil || settings["JELLYFIN_ADULT_USER"] != "fixture-user" || settings["JELLYFIN_ADULT_PASSWORD"] != "fixture-password" || settings["EMBY_ADULT_USER"] != "emby-user" || settings["EMBY_ADULT_PASSWORD"] != "emby-password" {
+		t.Fatal("environment settings were not loaded")
 	}
 }
