@@ -45,6 +45,25 @@ func iptvCapture(ctx context.Context, client *http.Client, base, viewer, name st
 		if err != nil || list.Status != http.StatusOK || !bytes.HasPrefix(list.Body, []byte("#EXTM3U")) {
 			return nil, fmt.Errorf("IPTV %s playlist: status=%d error=%v body=%s", ch, list.Status, err, list.Body)
 		}
+		if bytes.Contains(list.Body, []byte("/relay/")) {
+			deadline := time.NewTimer(30 * time.Second)
+			for !bytes.Contains(list.Body, []byte("#EXT-X-ENDLIST")) {
+				select {
+				case <-ctx.Done():
+					deadline.Stop()
+					return nil, ctx.Err()
+				case <-deadline.C:
+					return nil, fmt.Errorf("IPTV relay did not finish fixture playlist: %s", list.Body)
+				case <-time.After(100 * time.Millisecond):
+				}
+				list, err = fetch(http.MethodGet, root+"/0/index.m3u8")
+				if err != nil || list.Status != http.StatusOK {
+					deadline.Stop()
+					return nil, fmt.Errorf("IPTV relay playlist: status=%d error=%v", list.Status, err)
+				}
+			}
+			deadline.Stop()
+		}
 		out = append(out, capture{viewer, name, "iptv:" + ch + ":playlist", false, list})
 		var child string
 		for _, line := range strings.Split(string(list.Body), "\n") {
