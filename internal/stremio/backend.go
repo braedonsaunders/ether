@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -32,6 +33,9 @@ const (
 	maxTrackers = 8
 	// manifestTTL is how long a fetched manifest's served types are reused.
 	manifestTTL = time.Hour
+	// skipWarnInterval throttles the skipped-streams warning: at most one
+	// per Backend (hence per addon host) in the window.
+	skipWarnInterval = time.Hour
 )
 
 // Backend is a newznab.Backend for one Stremio addon: the indexer Client
@@ -40,10 +44,12 @@ type Backend struct {
 	base   *url.URL
 	client *http.Client
 
-	mu         sync.Mutex
-	manifest   *Manifest
-	manifestAt time.Time
-	now        func() time.Time
+	mu           sync.Mutex
+	manifest     *Manifest
+	manifestAt   time.Time
+	now          func() time.Time
+	lastSkipWarn time.Time
+	skipWarned   bool
 }
 
 var _ newznab.Backend = (*Backend)(nil)
@@ -131,7 +137,31 @@ func (b *Backend) Search(ctx context.Context, req core.SearchRequest, reserve fu
 		}
 		return nil, err
 	}
-	return convert(answer.Streams, req, packs), nil
+	rels, skippedNoHash, skippedAmbiguous := convert(answer.Streams, req, packs)
+	b.logSkipped(skippedNoHash, skippedAmbiguous)
+	return rels, nil
+}
+
+// logSkipped warns about hash-caused skips at most once per
+// skipWarnInterval per Backend; later searches inside the window are
+// demoted to Debug. Só o host: a URL do addon pode carregar credenciais
+// na path/query.
+func (b *Backend) logSkipped(skippedNoHash, skippedAmbiguous int) {
+	if skippedNoHash == 0 && skippedAmbiguous == 0 {
+		return
+	}
+	now := b.now()
+	b.mu.Lock()
+	throttled := b.skipWarned && now.Sub(b.lastSkipWarn) < skipWarnInterval
+	if !throttled {
+		b.lastSkipWarn, b.skipWarned = now, true
+	}
+	b.mu.Unlock()
+	if throttled {
+		slog.Default().Debug("stremio: streams skipped without a usable info hash", "host", b.base.Host, "skippedNoHash", skippedNoHash, "skippedAmbiguous", skippedAmbiguous)
+		return
+	}
+	slog.Default().Warn("stremio: streams skipped without a usable info hash", "host", b.base.Host, "skippedNoHash", skippedNoHash, "skippedAmbiguous", skippedAmbiguous)
 }
 
 // serves reports whether the addon answers kind, from a manifest fetched
@@ -185,24 +215,36 @@ type stream struct {
 	} `json:"behaviorHints"`
 }
 
+// guidSuffix is the per-file part of a release GUID: the file index when
+// the addon gives one, else the requested episode for series.
+func guidSuffix(s *stream, req core.SearchRequest, packs bool) string {
+	switch {
+	case packs:
+		return ""
+	case s.FileIdx != nil && *s.FileIdx >= 0:
+		return "/" + strconv.Itoa(*s.FileIdx)
+	case req.Type != core.TypeMovie:
+		return fmt.Sprintf("/s%de%d", req.Season, req.Episode)
+	}
+	return ""
+}
+
 // convert turns addon streams into torrent releases, best first as the
-// addon ordered them. Streams without a BitTorrent info hash (direct
-// links, Usenet) are skipped.
-func convert(streams []stream, req core.SearchRequest, packs bool) []core.Release {
-	out := make([]core.Release, 0, min(len(streams), maxResults))
+// addon ordered them. skippedNoHash counts only streams whose sole cause
+// of discard is a missing hash: the name/pack filters (pure, so running
+// them first does not change which releases come out, nor their order)
+// run before the hash check, streams with conflicting hash labels count
+// separately as skippedAmbiguous, and duplicate no-hash streams (same
+// chosen name, URL and GUID suffix — the key the release seen-map would
+// use, minus the hash itself) count at most once. Including streams
+// beyond maxResults: the count walks every stream, but only the first
+// maxResults valid ones become releases.
+func convert(streams []stream, req core.SearchRequest, packs bool) (out []core.Release, skippedNoHash, skippedAmbiguous int) {
+	out = make([]core.Release, 0, min(len(streams), maxResults))
 	seen := make(map[string]bool, len(streams))
+	seenSkipped := make(map[string]bool, len(streams))
 	for i := range streams {
-		if len(out) == maxResults {
-			break
-		}
 		s := &streams[i]
-		hash := newznab.NormalizeInfoHash(s.InfoHash)
-		if hash == "" {
-			hash = hashFromURL(s.URL)
-		}
-		if hash == "" {
-			continue
-		}
 		text := s.Description
 		if text == "" {
 			text = s.Title
@@ -217,14 +259,26 @@ func convert(streams []stream, req core.SearchRequest, packs bool) []core.Releas
 		} else if name = pickName(req, file, torrent); name == "" {
 			continue
 		}
-		guid := "btih:" + hash
-		switch {
-		case packs:
-		case s.FileIdx != nil && *s.FileIdx >= 0:
-			guid += "/" + strconv.Itoa(*s.FileIdx)
-		case req.Type != core.TypeMovie:
-			guid += fmt.Sprintf("/s%de%d", req.Season, req.Episode)
+		hash, ambiguous := streamHash(s)
+		if ambiguous || hash == "" {
+			key := name + "\x00" + s.URL + "\x00" + guidSuffix(s, req, packs)
+			if ambiguous {
+				key = "ambiguous\x00" + key
+			}
+			if !seenSkipped[key] {
+				seenSkipped[key] = true
+				if ambiguous {
+					skippedAmbiguous++
+				} else {
+					skippedNoHash++
+				}
+			}
+			continue
 		}
+		if len(out) == maxResults {
+			continue
+		}
+		guid := "btih:" + hash + guidSuffix(s, req, packs)
 		if seen[guid] {
 			continue
 		}
@@ -241,7 +295,7 @@ func convert(streams []stream, req core.SearchRequest, packs bool) []core.Releas
 			Info:      describe(name, file, torrent),
 			Protocol:  core.ProtocolTorrent,
 			InfoHash:  hash,
-			MagnetURL: newznab.MagnetFor(hash, firstNonEmpty(torrent, name), trackers(s.Sources)),
+			MagnetURL: newznab.MagnetFor(hash, firstNonEmpty(torrent, name), streamTrackers(s)),
 			Category:  movieCategory,
 		}
 		if req.Type != core.TypeMovie {
@@ -250,7 +304,7 @@ func convert(streams []stream, req core.SearchRequest, packs bool) []core.Releas
 		rel.DebridCached, rel.DebridUncached = debridHints(s.Name)
 		out = append(out, rel)
 	}
-	return out
+	return out, skippedNoHash, skippedAmbiguous
 }
 
 // imdbID normalises an IMDb id to "tt" + digits, or "".
@@ -267,22 +321,183 @@ func imdbID(id string) string {
 	return "tt" + id
 }
 
-// hashFromURL reads explicit hash query fields or the known Torrentio-style
-// /resolve/{provider}/{credential}/{hash}/... route. Arbitrary hexadecimal
+// streamHash merges the hashes a stream labels explicitly: its infoHash
+// field, its URL and its sources. Distinct labels conflict: ambiguous
+// reports it and "" wins, rather than a guess — a conflict is not an
+// absence, so callers can count it apart from a merely missing hash.
+// Uma fonte rotulada internamente em conflito (ambiguous) também impõe
+// "" — mesmo com um hash válido em outra fonte.
+// Valores inválidos, sim, são ausência e não bloqueiam um hash válido.
+// Unlabelled hex in names, titles, descriptions or file names never counts.
+func streamHash(s *stream) (hash string, ambiguous bool) {
+	urlHash, urlAmbiguous := hashFromURL(s.URL)
+	if urlAmbiguous {
+		return "", true
+	}
+	srcHash, srcAmbiguous := hashFromSources(s.Sources)
+	if srcAmbiguous {
+		return "", true
+	}
+	hash = newznab.NormalizeInfoHash(s.InfoHash)
+	for _, candidate := range []string{urlHash, srcHash} {
+		if candidate == "" {
+			continue
+		}
+		if hash != "" && candidate != hash {
+			return "", true
+		}
+		hash = candidate
+	}
+	return hash, false
+}
+
+// magnetValues parses a magnet URI's query, tolerating unescaped junk in
+// other parameters (same tolerance as newznab.InfoHashFromMagnet).
+func magnetValues(magnet string) url.Values {
+	q := magnet[strings.IndexByte(magnet, ':')+1:]
+	q = strings.TrimPrefix(q, "?")
+	values, err := url.ParseQuery(q)
+	if err != nil {
+		values = url.Values{}
+		for _, part := range strings.Split(q, "&") {
+			if k, v, ok := strings.Cut(part, "="); ok {
+				if uv, uerr := url.QueryUnescape(v); uerr == nil {
+					v = uv
+				}
+				values.Add(k, v)
+			}
+		}
+	}
+	return values
+}
+
+// hashFromMagnet extracts the v1 info hash from a magnet URI's
+// xt=urn:btih: parameters. ambiguous reports two or more distinct valid
+// hashes inside the same magnet; invalid xt values are absence.
+func hashFromMagnet(magnet string) (hash string, ambiguous bool) {
+	if !strings.HasPrefix(strings.ToLower(magnet), "magnet:") {
+		return "", false
+	}
+	for _, xt := range magnetValues(magnet)["xt"] {
+		if lower := strings.ToLower(xt); strings.HasPrefix(lower, "urn:btih:") {
+			candidate := newznab.NormalizeInfoHash(xt[len("urn:btih:"):])
+			if candidate == "" {
+				continue
+			}
+			if hash != "" && candidate != hash {
+				return "", true
+			}
+			hash = candidate
+		}
+	}
+	return hash, false
+}
+
+// magnetTrackers extracts a magnet URI's tr= announce URLs.
+func magnetTrackers(magnet string) []string {
+	if !strings.HasPrefix(strings.ToLower(magnet), "magnet:") {
+		return nil
+	}
+	var out []string
+	for key, values := range magnetValues(magnet) {
+		if !strings.EqualFold(key, "tr") {
+			continue
+		}
+		for _, tr := range values {
+			if tr = strings.TrimSpace(tr); tr != "" {
+				out = append(out, tr)
+			}
+		}
+	}
+	return out
+}
+
+// streamMagnets collects every original magnet a stream carries: its URL
+// itself, a ?magnet= query value, or a magnet among its sources.
+func streamMagnets(s *stream) []string {
+	var magnets []string
+	raw := strings.TrimSpace(s.URL)
+	if strings.HasPrefix(strings.ToLower(raw), "magnet:") {
+		magnets = append(magnets, raw)
+	} else if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
+		for key, values := range u.Query() {
+			if strings.EqualFold(key, "magnet") {
+				magnets = append(magnets, values...)
+			}
+		}
+	}
+	for _, source := range s.Sources {
+		if source = strings.TrimSpace(source); strings.HasPrefix(strings.ToLower(source), "magnet:") {
+			magnets = append(magnets, source)
+		}
+	}
+	return magnets
+}
+
+// hashFromSources reads "dht:<hash>" sources and magnet sources.
+// ambiguous reports an internal conflict — between sources, or inside a
+// single magnet source — distinguishing it from absence ("", false):
+// invalid values are absence and never make a source ambiguous.
+func hashFromSources(sources []string) (hash string, ambiguous bool) {
+	for _, source := range sources {
+		source = strings.TrimSpace(source)
+		var candidate string
+		if strings.HasPrefix(strings.ToLower(source), "dht:") {
+			candidate = newznab.NormalizeInfoHash(source[len("dht:"):])
+		} else {
+			var magnetAmbiguous bool
+			candidate, magnetAmbiguous = hashFromMagnet(source)
+			if magnetAmbiguous {
+				return "", true
+			}
+		}
+		if candidate == "" {
+			continue
+		}
+		if hash != "" && candidate != hash {
+			return "", true
+		}
+		hash = candidate
+	}
+	return hash, false
+}
+
+// hashFromURL reads a magnet URL, explicit hash query fields (including a
+// magnet carried in ?magnet=) or the known Torrentio-style
+// /resolve/{provider}/{credential}/{hash}/... route. ambiguous reports an
+// internal conflict within the URL itself (e.g. ?info_hash=A&info_hash=B,
+// or a magnet with two distinct xt hashes), distinguishing it from
+// absence ("", false): invalid values are absence. Arbitrary hexadecimal
 // URL values may be credentials or opaque IDs, not torrent identities.
-func hashFromURL(raw string) string {
+func hashFromURL(raw string) (hash string, ambiguous bool) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(strings.ToLower(raw), "magnet:") {
+		return hashFromMagnet(raw)
+	}
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		return ""
+		return "", false
 	}
-	hash := ""
 	for key, values := range u.Query() {
 		switch strings.ToLower(key) {
 		case "infohash", "info_hash", "hash", "btih":
 			for _, value := range values {
 				if candidate := newznab.NormalizeInfoHash(value); candidate != "" {
 					if hash != "" && candidate != hash {
-						return ""
+						return "", true
+					}
+					hash = candidate
+				}
+			}
+		case "magnet":
+			for _, value := range values {
+				candidate, magnetAmbiguous := hashFromMagnet(value)
+				if magnetAmbiguous {
+					return "", true
+				}
+				if candidate != "" {
+					if hash != "" && candidate != hash {
+						return "", true
 					}
 					hash = candidate
 				}
@@ -290,7 +505,7 @@ func hashFromURL(raw string) string {
 		}
 	}
 	if hash != "" {
-		return hash
+		return hash, false
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	for i := 0; i+3 < len(parts); i++ {
@@ -300,10 +515,10 @@ func hashFromURL(raw string) string {
 		switch strings.ToLower(parts[i+1]) {
 		case config.DebridRealDebrid, config.DebridAllDebrid, config.DebridPremiumize,
 			config.DebridTorBox, config.DebridDebridLink, config.DebridOffcloud:
-			return newznab.NormalizeInfoHash(parts[i+3])
+			return newznab.NormalizeInfoHash(parts[i+3]), false
 		}
 	}
-	return ""
+	return "", false
 }
 
 // videoExt reports whether a file name ends in a video container.
@@ -499,6 +714,35 @@ func parseSize(text string) int64 {
 	}
 	shift := map[string]uint{"": 0, "K": 10, "M": 20, "G": 30, "T": 40}[strings.ToUpper(m[2])]
 	return int64(v * float64(uint64(1)<<shift))
+}
+
+// streamTrackers returns the announce URLs carried into the generated
+// magnet: the tr= of every original magnet (URL, ?magnet= or sources)
+// plus the stream's "tracker:" sources, deduplicated and capped at
+// maxTrackers. Without an original magnet it is exactly trackers(sources).
+func streamTrackers(s *stream) []string {
+	var out []string
+	add := func(tr string) {
+		tr = strings.TrimSpace(tr)
+		if tr == "" || len(out) == maxTrackers {
+			return
+		}
+		for _, x := range out {
+			if x == tr {
+				return
+			}
+		}
+		out = append(out, tr)
+	}
+	for _, magnet := range streamMagnets(s) {
+		for _, tr := range magnetTrackers(magnet) {
+			add(tr)
+		}
+	}
+	for _, tr := range trackers(s.Sources) {
+		add(tr)
+	}
+	return out
 }
 
 // trackers returns the announce URLs of a stream's "tracker:" sources.

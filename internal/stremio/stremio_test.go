@@ -1,14 +1,17 @@
 package stremio
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
@@ -246,6 +249,125 @@ func TestSearchKeyedAddonReadsHashesAndCachedMarkers(t *testing.T) {
 	}
 }
 
+func TestSearchURLOnlyStreamsAreSkippedAndLogged(t *testing.T) {
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	body := `{"streams":[
+	 {"name":"Direct","title":"Movie 2014 1080p BluRay x264-GRP","url":"https://cdn.example/video.mp4"},
+	 {"name":"Direct2","title":"Movie 2014 720p BluRay x264-GRP","url":"https://cdn.example/other.mp4"}
+	]}`
+	f := &fakeAddon{streams: map[string]string{"/stream/movie/tt0816692.json": body}}
+	srv := httptest.NewServer(f.handler(t))
+	defer srv.Close()
+	b := backendFor(t, srv.URL+"/realdebrid="+secret+"/manifest.json")
+	rels, err := b.Search(t.Context(), core.SearchRequest{Type: core.TypeMovie, IDs: core.IDs{IMDB: "tt0816692"}, Title: "Movie", Year: 2014}, noReserve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rels) != 0 {
+		t.Fatalf("want 0 releases from URL-only streams, got %+v", rels)
+	}
+	log := buf.String()
+	if !strings.Contains(log, "level=WARN") || !strings.Contains(log, "skippedNoHash=2") || !strings.Contains(log, "skippedAmbiguous=0") || !strings.Contains(log, "host="+strings.TrimPrefix(srv.URL, "http://")) {
+		t.Fatalf("log sem host/contador observável: %q", log)
+	}
+	if strings.Contains(log, secret) || strings.Contains(log, "cdn.example") || strings.Contains(log, "/stream/") {
+		t.Fatalf("log vazou URL/credencial: %q", log)
+	}
+	// O contador também é observável direto no convert.
+	if _, skipped, ambiguous := convert([]stream{
+		{Title: "Movie 2014 1080p", URL: "https://cdn.example/video.mp4"},
+		{Title: "Movie 2014 720p", URL: "https://cdn.example/other.mp4"},
+	}, core.SearchRequest{Type: core.TypeMovie, Title: "Movie"}, false); skipped != 2 || ambiguous != 0 {
+		t.Fatalf("skippedNoHash=%d skippedAmbiguous=%d want 2/0", skipped, ambiguous)
+	}
+}
+
+// Contador honesto: só conta quem seria release se tivesse hash —
+// duplicata sem-hash conta 1x, sem-nome não conta, e hash conflitante
+// conta à parte como ambíguo, nunca como "without hash".
+func TestConvertSkippedCountsOnlyHashCausedSkips(t *testing.T) {
+	rels, skipped, ambiguous := convert([]stream{
+		{Title: "Movie 2014 1080p BluRay x264-GRP", URL: "https://cdn.example/video.mp4"},
+		{Title: "Movie 2014 1080p BluRay x264-GRP", URL: "https://cdn.example/video.mp4"}, // duplicata exata
+		{Title: "Movie 2014 720p BluRay x264-GRP", URL: "https://cdn.example/other.mp4"},
+		{URL: "https://cdn.example/unnamed.mp4"},                                                          // sem nome: morreria de qualquer jeito
+		{Title: "Movie 2014 2160p BluRay x264-GRP", InfoHash: hashA, URL: "magnet:?xt=urn:btih:" + hashB}, // ambíguo
+		{Title: "Movie 2014 2160p BluRay x264-GRP", InfoHash: hashA, URL: "magnet:?xt=urn:btih:" + hashB}, // ambíguo duplicado
+	}, core.SearchRequest{Type: core.TypeMovie, Title: "Movie"}, false)
+	if len(rels) != 0 || skipped != 2 || ambiguous != 1 {
+		t.Fatalf("rels=%d skippedNoHash=%d skippedAmbiguous=%d want 0/2/1", len(rels), skipped, ambiguous)
+	}
+
+	// Fora-de-pack não conta; pack sem hash conta (1x mesmo duplicado).
+	rels, skipped, ambiguous = convert([]stream{
+		{Title: "Show S01E02 1080p WEB-DL H 264-XYZ"},
+		{Title: "Show (2008) S01 (2160p WEB-DL H265 DDP 5.1 - GRP)"},
+		{Title: "Show (2008) S01 (2160p WEB-DL H265 DDP 5.1 - GRP)"},
+	}, core.SearchRequest{Type: core.TypeEpisode, Title: "Show", Season: 1}, true)
+	if len(rels) != 0 || skipped != 1 || ambiguous != 0 {
+		t.Fatalf("packs: rels=%d skippedNoHash=%d skippedAmbiguous=%d want 0/1/0", len(rels), skipped, ambiguous)
+	}
+}
+
+// Throttle: 3 Search seguidas com skips geram 1 Warn; após a janela,
+// warn de novo. Relógio falso injetado em b.now, sem sleep.
+func TestSearchSkipWarnThrottledPerBackend(t *testing.T) {
+	var buf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	body := `{"streams":[
+	 {"name":"Direct","title":"Movie 2014 1080p BluRay x264-GRP","url":"https://cdn.example/video.mp4"}
+	]}`
+	f := &fakeAddon{streams: map[string]string{"/stream/movie/tt0816692.json": body}}
+	srv := httptest.NewServer(f.handler(t))
+	defer srv.Close()
+	b := backendFor(t, srv.URL)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	b.now = func() time.Time { return now }
+	req := core.SearchRequest{Type: core.TypeMovie, IDs: core.IDs{IMDB: "tt0816692"}, Title: "Movie", Year: 2014}
+	for i := 0; i < 3; i++ {
+		if _, err := b.Search(t.Context(), req, noReserve); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := strings.Count(buf.String(), "level=WARN"); n != 1 {
+		t.Fatalf("3 searches seguidas: %d WARN, want 1: %q", n, buf.String())
+	}
+	now = now.Add(skipWarnInterval + time.Minute)
+	if _, err := b.Search(t.Context(), req, noReserve); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(buf.String(), "level=WARN"); n != 2 {
+		t.Fatalf("após a janela: %d WARN, want 2: %q", n, buf.String())
+	}
+	if !strings.Contains(buf.String(), "skippedNoHash=1") || !strings.Contains(buf.String(), "skippedAmbiguous=0") {
+		t.Fatalf("warn sem os dois contadores: %q", buf.String())
+	}
+}
+
+func TestSearchMagnetStreamBecomesRelease(t *testing.T) {
+	body := `{"streams":[
+	 {"name":"Magnet","title":"Movie 2014 1080p BluRay x264-GRP\n👤 12 💾 2 GB","url":"magnet:?xt=urn:btih:` + hashA + `&dn=Movie"}
+	]}`
+	f := &fakeAddon{streams: map[string]string{"/stream/movie/tt0816692.json": body}}
+	srv := httptest.NewServer(f.handler(t))
+	defer srv.Close()
+	b := backendFor(t, srv.URL)
+	rels, err := b.Search(t.Context(), core.SearchRequest{Type: core.TypeMovie, IDs: core.IDs{IMDB: "tt0816692"}, Title: "Movie", Year: 2014}, noReserve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rels) != 1 || rels[0].InfoHash != hashA || !strings.HasPrefix(rels[0].MagnetURL, "magnet:?xt=urn:btih:"+hashA) {
+		t.Fatalf("magnet stream não virou release: %+v", rels)
+	}
+}
+
 func TestSearchWithoutIMDbOrForShowsAsksNothing(t *testing.T) {
 	f := &fakeAddon{}
 	srv := httptest.NewServer(f.handler(t))
@@ -355,7 +477,8 @@ func FuzzConvert(f *testing.F) {
 		s := []stream{{Name: text, Title: text, Description: text, InfoHash: hashA, URL: text}}
 		req := core.SearchRequest{Type: core.TypeEpisode, Title: title, Season: season, Episode: episode}
 		for _, packs := range []bool{false, true} {
-			for _, r := range convert(s, req, packs) {
+			rels, _, _ := convert(s, req, packs)
+			for _, r := range rels {
 				if r.InfoHash != hashA || r.Protocol != core.ProtocolTorrent {
 					t.Fatalf("%+v", r)
 				}
@@ -368,7 +491,7 @@ func FuzzConvert(f *testing.F) {
 // supplies the quality facts ranking needs.
 func TestEpisodeFileBorrowsQualityFromTorrentName(t *testing.T) {
 	s := []stream{{Title: "Show S01 2160p WEB-DL DV HEVC DDP5.1 Atmos-GRP\nShow S01E02 Episode Title.mkv\n👤 9 💾 7 GB", InfoHash: hashA}}
-	rels := convert(s, core.SearchRequest{Type: core.TypeEpisode, Title: "Show", Season: 1, Episode: 2}, false)
+	rels, _, _ := convert(s, core.SearchRequest{Type: core.TypeEpisode, Title: "Show", Season: 1, Episode: 2}, false)
 	if len(rels) != 1 {
 		t.Fatalf("%+v", rels)
 	}
