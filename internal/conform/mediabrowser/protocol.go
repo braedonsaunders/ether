@@ -6,11 +6,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,11 +30,14 @@ type Profile struct {
 	Flows    map[string][]Probe `json:"flows"`
 }
 type Probe struct {
-	Name    string            `json:"name"`
-	Method  string            `json:"method"`
-	Path    string            `json:"path"`
-	Headers map[string]string `json:"headers"`
-	Body    json.RawMessage   `json:"body,omitempty"`
+	Name       string            `json:"name"`
+	Method     string            `json:"method"`
+	Path       string            `json:"path"`
+	Headers    map[string]string `json:"headers"`
+	Body       json.RawMessage   `json:"body,omitempty"`
+	BodyBase64 string            `json:"body_base64,omitempty"`
+	RangeKind  string            `json:"range_kind,omitempty"`
+	Binary     bool              `json:"binary,omitempty"`
 }
 type Protocol struct {
 	Dialect  string
@@ -64,6 +69,18 @@ func Load(dialect, dir string) (*Protocol, error) {
 		name := strings.TrimSuffix(filepath.Base(file), ".json")
 		if profile.Protocol != dialect || profile.Client == "" || !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`).MatchString(name) {
 			return nil, fmt.Errorf("%s: invalid protocol or client", file)
+		}
+		for _, requests := range profile.Flows {
+			for _, request := range requests {
+				if request.BodyBase64 != "" {
+					if len(request.Body) > 0 {
+						return nil, fmt.Errorf("%s: request has two bodies", file)
+					}
+					if _, err := base64.StdEncoding.DecodeString(request.BodyBase64); err != nil {
+						return nil, fmt.Errorf("%s: invalid body_base64", file)
+					}
+				}
+			}
 		}
 		if _, ok := p.profiles[name]; ok {
 			return nil, fmt.Errorf("duplicate client %q", name)
@@ -118,8 +135,19 @@ func (p *Protocol) Corpus(profile string) []conform.Request {
 			if method == "" {
 				method = http.MethodGet
 			}
-			base := conform.Request{Name: k + "_" + r.Name, Method: method, Path: r.Path, Headers: map[string]http.Header{profile + "-json": h}, Body: r.Body}
-			if binaryPath(method, r.Path) {
+			body := []byte(r.Body)
+			if r.BodyBase64 != "" {
+				decoded, err := base64.StdEncoding.DecodeString(r.BodyBase64)
+				if err != nil {
+					continue
+				}
+				body = decoded
+			}
+			base := conform.Request{Name: k + "_" + r.Name, Method: method, Path: r.Path, Headers: map[string]http.Header{profile + "-json": h}, Body: body}
+			if r.RangeKind != "" {
+				base.RangeKind = r.RangeKind
+				out = append(out, base)
+			} else if r.Binary || binaryPath(method, r.Path) {
 				for _, kind := range []string{"start", "middle", "suffix"} {
 					item := base
 					item.Name += "_" + kind
@@ -227,6 +255,8 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 		path = strings.ReplaceAll(path, "{{"+k+"}}", v)
 		path = strings.ReplaceAll(path, "${"+k+"}", v)
 	}
+	path = strings.ReplaceAll(path, "${access_token}", url.QueryEscape(token))
+	path = strings.ReplaceAll(path, "${token}", url.QueryEscape(token))
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.ContainsAny(path, "{}") {
 		return conform.Response{}, fmt.Errorf("unresolved or invalid request path %q", r.Path)
 	}
@@ -234,6 +264,9 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 	for key, value := range vars {
 		escaped := strconv.Quote(value)
 		escaped = escaped[1 : len(escaped)-1]
+		if strings.HasPrefix(strings.ToLower(r.Headers[profile+"-json"].Get("Content-Type")), "application/x-www-form-urlencoded") {
+			escaped = url.QueryEscape(value)
+		}
 		bodyText = strings.ReplaceAll(bodyText, "${"+key+"}", escaped)
 	}
 	if strings.Contains(bodyText, "${") {
@@ -241,13 +274,20 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 	}
 	req, err := http.NewRequestWithContext(ctx, r.Method, strings.TrimRight(base, "/")+path, bytes.NewReader([]byte(bodyText)))
 	if err != nil {
-		return conform.Response{}, err
+		return conform.Response{}, fmt.Errorf("invalid request URL")
 	}
 	for k, values := range r.Headers[profile+"-json"] {
 		for _, v := range values {
 			for key, value := range vars {
 				v = strings.ReplaceAll(v, "${"+key+"}", value)
 				v = strings.ReplaceAll(v, "{{"+key+"}}", value)
+			}
+			if strings.Contains(v, "${websocket_key}") {
+				var key [16]byte
+				if _, err := rand.Read(key[:]); err != nil {
+					return conform.Response{}, err
+				}
+				v = strings.ReplaceAll(v, "${websocket_key}", base64.StdEncoding.EncodeToString(key[:]))
 			}
 			v = strings.ReplaceAll(v, "${access_token}", token)
 			v = strings.ReplaceAll(v, "${token}", token)
@@ -276,9 +316,14 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 			req.Header.Set("X-Emby-Token", token)
 		}
 	}
+	var rangeValue string
 	if r.RangeKind != "" {
-		var rangeValue string
 		switch r.RangeKind {
+		case "captured":
+			rangeValue = req.Header.Get("Range")
+			if !boundedRange(rangeValue) {
+				return conform.Response{}, fmt.Errorf("captured range is not bounded to 65536 bytes")
+			}
 		case "start":
 			rangeValue = "bytes=0-65535"
 		case "suffix":
@@ -313,6 +358,9 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 		return conform.Response{}, fmt.Errorf("request failed (%T)", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		return conform.Response{Status: resp.StatusCode, Headers: resp.Header.Clone(), Kind: "websocket"}, nil
+	}
 	limit := int64((16 << 20) + 1)
 	if r.RangeKind != "" {
 		limit = 65537
@@ -346,7 +394,7 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 			}
 		}
 		sum := sha256.Sum256(body)
-		return conform.Response{Status: resp.StatusCode, Headers: headers, Kind: "binary-range", RangeKind: r.RangeKind, BodyLength: int64(observedLength), SHA256: hex.EncodeToString(sum[:]), Truncated: truncated, ReferenceDefect: defect}, nil
+		return conform.Response{Status: resp.StatusCode, Headers: headers, Kind: "binary-range", RangeKind: r.RangeKind, BodyLength: int64(observedLength), SHA256: hex.EncodeToString(sum[:]), Truncated: truncated, ReferenceDefect: defect, RequestRange: rangeValue}, nil
 	}
 	if len(body) > 16<<20 {
 		return conform.Response{}, fmt.Errorf("response exceeds 16 MiB limit")
@@ -357,6 +405,12 @@ func (p *Protocol) FixtureName(profile string, r conform.Request, jsonMode bool)
 	return conform.FixtureName(profile, r.Name+"_"+r.Method+"_"+r.Path, jsonMode)
 }
 func (p *Protocol) Compare(a, b conform.Response) conform.Report {
+	if bytes.HasPrefix(bytes.TrimSpace(a.Body), []byte("#EXTM3U")) || bytes.HasPrefix(bytes.TrimSpace(b.Body), []byte("#EXTM3U")) {
+		return conform.ComparePlaylist(a, b)
+	}
+	if a.Kind == "websocket" || b.Kind == "websocket" {
+		return conform.CompareHeaders(a, b, []string{"Connection", "Upgrade"})
+	}
 	if a.Kind == "binary-range" || b.Kind == "binary-range" {
 		return conform.CompareBinary(a, b)
 	}
@@ -388,7 +442,7 @@ func scrub(v any) any {
 	case map[string]any:
 		for k, val := range x {
 			n := strings.ToLower(k)
-			if strings.Contains(n, "token") || strings.Contains(n, "password") || n == "pw" || n == "username" || n == "serverid" || n == "server_id" || strings.HasSuffix(n, "path") || strings.HasSuffix(n, "url") || strings.HasSuffix(n, "uri") || strings.HasPrefix(n, "date") || strings.HasSuffix(n, "date") {
+			if strings.Contains(n, "token") || strings.Contains(n, "password") || n == "pw" || n == "username" || n == "serverid" || n == "server_id" || n == "servername" || n == "friendlyname" || n == "machinename" || strings.HasSuffix(n, "path") || strings.HasSuffix(n, "url") || strings.HasSuffix(n, "uri") || strings.HasPrefix(n, "date") || strings.HasSuffix(n, "date") {
 				x[k] = "[REDACTED]"
 			} else {
 				x[k] = scrub(val)
@@ -409,7 +463,7 @@ func scrub(v any) any {
 
 var isoDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(?:T|$)`)
 
-var secretQuery = regexp.MustCompile(`(?i)([?&](?:api_key|access_token|token|authorization)=)[^&\s"']+`)
+var secretQuery = regexp.MustCompile(`(?i)([?&](?:api_key|access_token|token|authorization|st)=)[^&\s"']+`)
 
 func redactText(b []byte) []byte { return secretQuery.ReplaceAll(b, []byte("${1}[REDACTED]")) }
 
@@ -420,7 +474,7 @@ func binaryPath(method, path string) bool {
 		return false
 	}
 	path = strings.ToLower(strings.SplitN(path, "?", 2)[0])
-	return strings.HasSuffix(path, "/stream") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, ".mp4")
+	return path == "${segment_url}" || strings.HasSuffix(path, "/stream") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".m4s") || strings.HasSuffix(path, ".mp4")
 }
 
 func newUUID() (string, error) {
@@ -431,4 +485,23 @@ func newUUID() (string, error) {
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:]), nil
+}
+
+func boundedRange(value string) bool {
+	if !strings.HasPrefix(value, "bytes=") || strings.Contains(value, ",") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(value, "bytes="), "-")
+	if len(parts) != 2 {
+		return false
+	}
+	end, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || end < 0 {
+		return false
+	}
+	if parts[0] == "" {
+		return end > 0 && end <= 65536
+	}
+	start, err := strconv.ParseInt(parts[0], 10, 64)
+	return err == nil && start >= 0 && end >= start && end-start < 65536
 }

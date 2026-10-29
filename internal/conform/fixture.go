@@ -23,6 +23,7 @@ type Response struct {
 	SHA256          string           `json:"sha256,omitempty"`
 	Truncated       bool             `json:"truncated,omitempty"`
 	ReferenceDefect *ReferenceDefect `json:"reference_defect,omitempty"`
+	RequestRange    string           `json:"requestRange,omitempty"`
 }
 
 // DiscoveredIDs holds per-server identifiers used to make templated probes target real items.

@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -115,6 +116,9 @@ func CompareHeaders(a, b Response, headers []string) Report {
 		if av != bv && !(k == "Access-Control-Allow-Origin" && redacted(av)) {
 			add(Difference{Path: "$headers." + k, Kind: KindHeader, Reference: av, Target: bv})
 		}
+	}
+	if a.Status == http.StatusSwitchingProtocols && b.Status == http.StatusSwitchingProtocols {
+		return r
 	}
 	as, ae := buildSchema(a.Body)
 	bs, be := buildSchema(b.Body)

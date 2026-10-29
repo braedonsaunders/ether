@@ -33,6 +33,12 @@ func run(args []string) error {
 		return fmt.Errorf("usage: conformdiff record|compare|live [flags]")
 	}
 	cmd := args[0]
+	if cmd == "proxy" {
+		return proxyCommand(args[1:])
+	}
+	if cmd == "profile-from-capture" {
+		return profileFromCapture(args[1:])
+	}
 	if cmd == "routes" {
 		return routes(args[1:])
 	}
@@ -525,7 +531,7 @@ func readVariables(path string) (map[string]string, error) {
 
 func scrubSecrets(r pmsconform.Response, variables map[string]string, token string) pmsconform.Response {
 	secrets := []string{token}
-	for _, key := range []string{"username", "password", "access_token", "server_id", "device_id", "user_id", "profile_id", "installation_id", "play_session_id", "session_id", "stop_id", "playback_attempt_id", "playback_attempt_id_direct", "playback_attempt_id_transcode"} {
+	for _, key := range []string{"username", "password", "access_token", "server_id", "device_id", "user_id", "profile_id", "installation_id", "play_session_id", "session_id", "stop_id", "playback_attempt_id", "playback_attempt_id_direct", "playback_attempt_id_transcode", "stream_url", "segment_url", "stream_token"} {
 		secrets = append(secrets, variables[key])
 	}
 	return pmsconform.RedactSecrets(r, secrets...)

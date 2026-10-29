@@ -85,12 +85,51 @@ func checkRange(r Response) error {
 		if start != total/2 {
 			return fmt.Errorf("range does not start at midpoint")
 		}
+	case "captured":
+		if err := checkRequestedRange(r.RequestRange, start, end, total); err != nil {
+			return err
+		}
 	case "suffix":
 		if end != total-1 {
 			return fmt.Errorf("range does not end at file end")
 		}
 	default:
 		return fmt.Errorf("unknown range kind")
+	}
+	return nil
+}
+
+func checkRequestedRange(value string, start, end, total int64) error {
+	if !strings.HasPrefix(value, "bytes=") {
+		return fmt.Errorf("missing captured Range")
+	}
+	parts := strings.Split(strings.TrimPrefix(value, "bytes="), "-")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid captured Range")
+	}
+	last, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || last < 0 {
+		return fmt.Errorf("invalid captured Range")
+	}
+	if parts[0] == "" {
+		expected := total - last
+		if expected < 0 {
+			expected = 0
+		}
+		if start != expected || end != total-1 {
+			return fmt.Errorf("suffix response mismatch")
+		}
+		return nil
+	}
+	first, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid captured Range")
+	}
+	if last >= total {
+		last = total - 1
+	}
+	if start != first || end != last {
+		return fmt.Errorf("range response mismatch")
 	}
 	return nil
 }
