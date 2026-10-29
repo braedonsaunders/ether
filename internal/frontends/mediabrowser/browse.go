@@ -119,6 +119,9 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 		}
 		m["IndexNumber"] = t.Season
 	}
+	if i.protocol == "emby" {
+		i.embyItemDTO(m, t, state)
+	}
 	return m
 }
 func (i *instance) queryResult(items []any, total, offset int) map[string]any {
@@ -295,6 +298,9 @@ func (i *instance) browseRoutes() error {
 		}
 		if len(backdrops) > 0 {
 			dto["BackdropImageTags"] = backdrops
+		}
+		if i.protocol == "emby" {
+			i.embyItemDetailDTO(dto, d)
 		}
 		jsonReply(w, dto)
 	}

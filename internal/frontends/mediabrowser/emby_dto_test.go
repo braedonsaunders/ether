@@ -1,0 +1,42 @@
+package mediabrowser
+
+import (
+	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
+	i := &instance{}
+	m := map[string]any{}
+	i.embyItemDetailDTO(m, frontend.ItemDetail{})
+	if _, ok := m["Size"]; ok || m["SupportsSync"] != false {
+		t.Fatalf("unknown source facts: %#v", m)
+	}
+	added := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	i.embyItemDetailDTO(m, frontend.ItemDetail{Versions: []frontend.Version{{AddedAt: added, Media: core.MediaInfo{
+		Container: "mp4", Size: 123, BitrateKbps: 456, Streams: []core.StreamInfo{{Type: "video", Width: 1920, Height: 1080}},
+	}}}})
+	if m["DateCreated"] != added || m["Container"] != "mp4" || m["Size"] != int64(123) || m["Bitrate"] != 456000 || m["Width"] != 1920 || m["Height"] != 1080 {
+		t.Fatalf("source facts: %#v", m)
+	}
+	ambiguous := map[string]any{}
+	i.embyItemDetailDTO(ambiguous, frontend.ItemDetail{Versions: []frontend.Version{{Media: core.MediaInfo{Size: 123}}, {Media: core.MediaInfo{Size: 456}}}})
+	if _, ok := ambiguous["Size"]; ok {
+		t.Fatalf("selected an unspecified version: %#v", ambiguous)
+	}
+}
+
+func TestEmbyItemBaseDoesNotChangeJellyfin(t *testing.T) {
+	title := frontend.Title{Title: "Example", SortTitle: "Example, The"}
+	emby := (&instance{protocol: "emby"}).itemDTO(title, frontend.WatchStatus{})
+	jellyfin := (&instance{protocol: "jellyfin"}).itemDTO(title, frontend.WatchStatus{})
+	if emby["LockData"] != false || emby["ForcedSortName"] != title.SortTitle {
+		t.Fatalf("Emby base fields: %#v", emby)
+	}
+	if _, ok := jellyfin["LockData"]; ok {
+		t.Fatalf("Emby field leaked to Jellyfin: %#v", jellyfin)
+	}
+}
