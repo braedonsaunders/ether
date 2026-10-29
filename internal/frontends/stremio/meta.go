@@ -58,7 +58,14 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 				if string(episode.Type) != "episode" {
 					continue
 				}
-				episodeID, e := ids.FormatStremio(ids.StremioID{Source: "tmdb", ID: strconv.FormatInt(key.TMDB(), 10), HasEpisode: true, Season: episode.Season, Episode: episode.Episode})
+				// The displayed episode order can be virtual. Stremio identifiers
+				// must still resolve to the canonical catalogue episode key.
+				canonical := ids.StremioID{Source: "tmdb", ID: strconv.FormatInt(key.TMDB(), 10), HasEpisode: true, Season: episode.Key.Season(), Episode: episode.Key.Episode()}
+				resolved, e := ids.StremioTMDBKey("series", canonical)
+				if e != nil || resolved != episode.Key {
+					continue
+				}
+				episodeID, e := ids.FormatStremio(canonical)
 				if e != nil {
 					continue
 				}

@@ -172,7 +172,11 @@ func TestSeriesMetaPaginatesEpisodes(t *testing.T) {
 			count := min(500, 501-q.Offset)
 			items := make([]frontend.Title, count)
 			for j := range items {
-				items[j] = frontend.Title{Type: "episode", Title: "Episode", Season: 1, Episode: q.Offset + j + 1}
+				key, err := ids.StremioTMDBKey("series", ids.StremioID{Source: "tmdb", ID: "42", HasEpisode: true, Season: 1, Episode: q.Offset + j + 1})
+				if err != nil {
+					t.Fatal(err)
+				}
+				items[j] = frontend.Title{Key: key, Type: "episode", Title: "Episode", Season: 1, Episode: q.Offset + j + 1}
 			}
 			return frontend.Page{Items: items, Total: 501}, nil
 		},
@@ -276,5 +280,29 @@ func TestCatalogArtworkUsesScopedImageGrant(t *testing.T) {
 	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/image/opaque-image", nil))
 	if rec.Code != 200 || rec.Body.String() != "poster" {
 		t.Fatalf("poster: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSeriesMetadataUsesCanonicalKeysForVirtualOrder(t *testing.T) {
+	key, err := ids.StremioTMDBKey("series", ids.StremioID{Source: "tmdb", ID: "42", HasEpisode: true, Season: 3, Episode: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}, Sessions: frontendtest.Sessions{}, Experience: frontendtest.Experience{
+		ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: req.Key, Title: "Series", Type: "show"}}, nil
+		},
+		ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{Items: []frontend.Title{{Key: key, Type: "episode", Title: "Episode", Season: 1, Episode: 2}}, Total: 1}, nil
+		},
+	}}
+	inst, err := (Frontend{}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/grant/meta/series/tmdb:42.json", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"tmdb:42:3:8"`) || !strings.Contains(rec.Body.String(), `"season":1`) || !strings.Contains(rec.Body.String(), `"episode":2`) {
+		t.Fatalf("metadata: %d %s", rec.Code, rec.Body.String())
 	}
 }
