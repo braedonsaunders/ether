@@ -78,6 +78,8 @@ func (s surfaceLiveTV) Guide(ctx context.Context, v *core.Viewer, q frontend.Liv
 			allowed[c.ID] = true
 		}
 	}
+	// TODO: bound upstream guide materialization after policy filtering; retain
+	// the existing Plex scheduling semantics while applying a response cap here.
 	programmes, err := s.app.livetv.Guide(ctx, viewer, q.From, q.Until)
 	if err != nil {
 		return nil, err
