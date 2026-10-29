@@ -3,7 +3,9 @@ package mediabrowser
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -14,6 +16,29 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
+
+func TestItemDetailPassesVerifiedPeer(t *testing.T) {
+	peer := netip.MustParseAddr("192.0.2.5")
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	experience := frontendtest.Experience{ItemFunc: func(ctx context.Context, _ frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if got, ok := frontend.ClientIP(ctx); !ok || got != peer {
+			return frontend.ItemDetail{}, errors.New("missing verified peer")
+		}
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie"}}, nil
+	}}
+	inst, err := (Emby{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, ClientIP: func(*http.Request) (netip.Addr, bool) { return peer, true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/Items/"+ids.RatingKeyGUID(5), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
 
 func TestItemDoesNotAdvertiseUnsupportedDeleteOrDownload(t *testing.T) {
 	i := &instance{protocol: "jellyfin"}

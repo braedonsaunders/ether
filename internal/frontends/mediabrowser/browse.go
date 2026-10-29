@@ -260,7 +260,7 @@ func (i *instance) browseRoutes() error {
 			http.Error(w, "Unavailable", 503)
 			return
 		}
-		d, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
+		d, err := i.host.Experience.Item(i.identityContext(r), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
 		if err != nil {
 			http.NotFound(w, r)
 			return
