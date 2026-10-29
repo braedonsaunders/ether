@@ -149,8 +149,12 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	ignorePatterns := append([]string(nil), p.IgnorePaths()...)
 	if *ignore != "" {
-		re, e := regexp.Compile(*ignore)
+		ignorePatterns = append(ignorePatterns, *ignore)
+	}
+	for _, pattern := range ignorePatterns {
+		re, e := regexp.Compile(pattern)
 		if e != nil {
 			return fmt.Errorf("--ignore: %w", e)
 		}

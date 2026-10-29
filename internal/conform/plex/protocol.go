@@ -27,3 +27,5 @@ func (Protocol) FixtureName(profile string, r conform.Request, jsonMode bool) st
 func (Protocol) Compare(a, b conform.Response) conform.Report { return conform.Compare(a, b) }
 
 func (Protocol) Redact(r conform.Response) conform.Response { return r }
+
+func (Protocol) IgnorePaths() []string { return nil }

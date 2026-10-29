@@ -307,3 +307,5 @@ func scrub(v any) any {
 var secretQuery = regexp.MustCompile(`(?i)([?&](?:api_key|access_token|token|authorization)=)[^&\s"']+`)
 
 func redactText(b []byte) []byte { return secretQuery.ReplaceAll(b, []byte("${1}[REDACTED]")) }
+
+func (p *Protocol) IgnorePaths() []string { return nil }

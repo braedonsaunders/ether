@@ -14,6 +14,8 @@ type Protocol interface {
 	Discover(context.Context, *http.Client, string, string, string, *DiscoveredIDs) DiscoveredIDs
 	Fetch(context.Context, *http.Client, string, string, Request, string, map[string]string, bool) (Response, error)
 	FixtureName(profile string, request Request, jsonMode bool) string
+	// IgnorePaths supplies regular expressions for protocol-specific differences.
+	IgnorePaths() []string
 	Redact(response Response) Response
 	Compare(reference, target Response) Report
 }
