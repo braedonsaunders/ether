@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Idempotently configure users, libraries and per-viewer state.
-# Run on the Mac with tunnel.sh open. Content lives on gpu-workstation in
-# ~/prism-reference-lab/media and is mounted read-only by all three servers.
+# Run on the Mac; servers are reached directly at LAB_HOST (default
+# 192.168.68.66). For the SSH fallback, set LAB_HOST=127.0.0.1 and
+# LAB_PORT_BASE=18096 after starting tunnel.sh. Media is mounted read-only.
 # Seed sources: Blender Foundation open movies (CC BY 3.0) and The Scene / The
 # Scene 2.0 from Internet Archive (CC BY-NC-ND 3.0); do not transcode those TV files.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-LAB_PORT_BASE="${LAB_PORT_BASE:-18096}"
-python3 - "$here/lab.env" "$LAB_PORT_BASE" <<'PY'
+LAB_HOST="${LAB_HOST:-192.168.68.66}"
+LAB_PORT_BASE="${LAB_PORT_BASE:-8096}"
+python3 - "$here/lab.env" "$LAB_HOST" "$LAB_PORT_BASE" <<'PY'
 import json,sys,urllib.error,urllib.parse,urllib.request
 E=dict(line.rstrip('\n').split('=',1) for line in open(sys.argv[1]) if '=' in line)
-port_base=int(sys.argv[2])
+lab_host=sys.argv[2]
+port_base=int(sys.argv[3])
 def call(base,path,method='GET',body=None,headers=None):
  h={'Accept':'application/json','Content-Type':'application/json'};h.update(headers or {})
  req=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers=h,method=method)
@@ -53,8 +56,8 @@ def ensure_mb(base,users,owner,owner_pw,adult,adult_pw,child,child_pw,client,emb
  return h,adult_auth,items
 # The owner and accounts are created through each server's startup/admin APIs. JF 12.x
 # auth tokens must be carried in MediaBrowser Authorization; X-Emby-Token returns 401.
-jbase=f'http://127.0.0.1:{port_base}'; jh,juid,jitems=ensure_mb(jbase,[],E['JELLYFIN_OWNER_USER'],E['JELLYFIN_OWNER_PASSWORD'],E['JELLYFIN_ADULT_USER'],E['JELLYFIN_ADULT_PASSWORD'],E['JELLYFIN_CHILD_USER'],E['JELLYFIN_CHILD_PASSWORD'],'Jellyfin Prism Seed')
-ebase=f'http://127.0.0.1:{port_base+1}/emby'; eh,euid,eitems=ensure_mb(ebase,[],E['EMBY_OWNER_USER'],E['EMBY_OWNER_PASSWORD'],E['EMBY_ADULT_USER'],E['EMBY_ADULT_PASSWORD'],E['EMBY_CHILD_USER'],E['EMBY_CHILD_PASSWORD'],'Emby Prism Seed',True)
+jbase=f'http://{lab_host}:{port_base}'; jh,juid,jitems=ensure_mb(jbase,[],E['JELLYFIN_OWNER_USER'],E['JELLYFIN_OWNER_PASSWORD'],E['JELLYFIN_ADULT_USER'],E['JELLYFIN_ADULT_PASSWORD'],E['JELLYFIN_CHILD_USER'],E['JELLYFIN_CHILD_PASSWORD'],'Jellyfin Prism Seed')
+ebase=f'http://{lab_host}:{port_base+1}/emby'; eh,euid,eitems=ensure_mb(ebase,[],E['EMBY_OWNER_USER'],E['EMBY_OWNER_PASSWORD'],E['EMBY_ADULT_USER'],E['EMBY_ADULT_PASSWORD'],E['EMBY_CHILD_USER'],E['EMBY_CHILD_PASSWORD'],'Emby Prism Seed',True)
 def mb_state(base,headers,uid,items):
  rows=items.get('Items',[])
  chosen=[(next((x for x in rows if 'Big Buck Bunny' in x['Name']),None),'favorite'),(next((x for x in rows if 'The Scene S01E01' in x.get('Path','')),None),'played'),(next((x for x in rows if 'The Scene S01E02' in x.get('Path','')),None),'progress')]
@@ -67,7 +70,7 @@ def mb_state(base,headers,uid,items):
  print('adult state updated for',sum(bool(i) for i,_ in chosen),'items')
 mb_state(jbase,jh,juid,jitems); mb_state(ebase,eh,euid,eitems)
 # Silo build-1810 uses native /api/v2 (not Jellyfin compatibility routes).
-sbase=f'http://127.0.0.1:{port_base+2}'
+sbase=f'http://{lab_host}:{port_base+2}'
 try:
  _,s=call(sbase,'/api/v2/auth/login','POST',{'username':E['SILO_OWNER_USER'],'password':E['SILO_OWNER_PASSWORD']})
 except RuntimeError:

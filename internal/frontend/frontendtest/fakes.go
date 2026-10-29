@@ -3,6 +3,7 @@ package frontendtest
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -236,6 +237,7 @@ var _ frontend.Sessions = Sessions{}
 // Identity implements a configurable surface-bound identity for protocol tests.
 type Identity struct {
 	ResolveFunc       func(context.Context, string) (*core.Viewer, error)
+	PublicViewersFunc func(context.Context) ([]frontend.PublicViewer, error)
 	SignInFunc        func(context.Context, string, string, core.Device) (string, error)
 	InitiateFunc      func(context.Context, core.Device) (string, string, error)
 	StatusFunc        func(context.Context, string) (bool, error)
@@ -251,6 +253,12 @@ func (f Identity) Resolve(ctx context.Context, credential string) (*core.Viewer,
 		return f.ResolveFunc(ctx, credential)
 	}
 	return nil, core.ErrUnauthorized
+}
+func (f Identity) PublicViewers(ctx context.Context) ([]frontend.PublicViewer, error) {
+	if f.PublicViewersFunc != nil {
+		return f.PublicViewersFunc(ctx)
+	}
+	return nil, nil
 }
 func (f Identity) SignIn(ctx context.Context, user, password string, d core.Device) (string, error) {
 	if f.SignInFunc != nil {
@@ -311,3 +319,66 @@ func (f Capabilities) Build(ctx context.Context, req frontend.CapabilityRequest)
 }
 
 var _ frontend.Capabilities = Capabilities{}
+
+// Preferences is a configurable fake for protocol presentation state.
+type Preferences struct {
+	GetFunc    func(context.Context, *core.Viewer, string, string) (json.RawMessage, error)
+	PutFunc    func(context.Context, *core.Viewer, string, string, json.RawMessage) error
+	DeleteFunc func(context.Context, *core.Viewer, string, string) error
+}
+
+func (f Preferences) Get(ctx context.Context, v *core.Viewer, client, key string) (json.RawMessage, error) {
+	if f.GetFunc != nil {
+		return f.GetFunc(ctx, v, client, key)
+	}
+	return nil, core.ErrNotFound
+}
+func (f Preferences) Put(ctx context.Context, v *core.Viewer, client, key string, data json.RawMessage) error {
+	if f.PutFunc != nil {
+		return f.PutFunc(ctx, v, client, key, data)
+	}
+	return nil
+}
+func (f Preferences) Delete(ctx context.Context, v *core.Viewer, client, key string) error {
+	if f.DeleteFunc != nil {
+		return f.DeleteFunc(ctx, v, client, key)
+	}
+	return nil
+}
+
+var _ frontend.Preferences = Preferences{}
+
+// LiveTV is a configurable fake for viewer-scoped live television.
+type LiveTV struct {
+	ChannelsFunc         func(context.Context, *core.Viewer) ([]frontend.LiveChannel, error)
+	GuideFunc            func(context.Context, *core.Viewer, frontend.LiveGuideQuery) ([]frontend.LiveProgramme, error)
+	ResolveChannelFunc   func(context.Context, *core.Viewer, string) (frontend.LiveChannel, error)
+	ResolveProgrammeFunc func(context.Context, *core.Viewer, string, frontend.LiveGuideQuery) (frontend.LiveProgramme, error)
+}
+
+func (f LiveTV) Channels(ctx context.Context, v *core.Viewer) ([]frontend.LiveChannel, error) {
+	if f.ChannelsFunc != nil {
+		return f.ChannelsFunc(ctx, v)
+	}
+	return nil, nil
+}
+func (f LiveTV) Guide(ctx context.Context, v *core.Viewer, q frontend.LiveGuideQuery) ([]frontend.LiveProgramme, error) {
+	if f.GuideFunc != nil {
+		return f.GuideFunc(ctx, v, q)
+	}
+	return nil, nil
+}
+func (f LiveTV) ResolveChannelGUID(ctx context.Context, v *core.Viewer, id string) (frontend.LiveChannel, error) {
+	if f.ResolveChannelFunc != nil {
+		return f.ResolveChannelFunc(ctx, v, id)
+	}
+	return frontend.LiveChannel{}, core.ErrNotFound
+}
+func (f LiveTV) ResolveProgrammeGUID(ctx context.Context, v *core.Viewer, id string, q frontend.LiveGuideQuery) (frontend.LiveProgramme, error) {
+	if f.ResolveProgrammeFunc != nil {
+		return f.ResolveProgrammeFunc(ctx, v, id, q)
+	}
+	return frontend.LiveProgramme{}, core.ErrNotFound
+}
+
+var _ frontend.LiveTV = LiveTV{}

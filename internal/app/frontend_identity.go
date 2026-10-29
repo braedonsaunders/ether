@@ -12,6 +12,7 @@ import (
 )
 
 type surfaceIdentity struct {
+	settings    func() frontend.Settings
 	surface     frontend.Protocol
 	resolver    *identity.Resolver
 	local       *identity.Local
@@ -36,6 +37,21 @@ func (s surfaceIdentity) allow(ctx context.Context, limiter *identity.LoginLimit
 		return frontend.ErrRateLimited
 	}
 	return nil
+}
+
+// PublicViewers returns only active local sign-in names when the owner enables the picker.
+func (s surfaceIdentity) PublicViewers(ctx context.Context) ([]frontend.PublicViewer, error) {
+	if s.surface == "plex" || s.settings == nil || s.local == nil {
+		return []frontend.PublicViewer{}, nil
+	}
+	enabled, _ := s.settings()["publicViewerPicker"].(bool)
+	if !enabled {
+		return []frontend.PublicViewer{}, nil
+	}
+	if err := s.allow(ctx, s.login, "public-viewers"); err != nil {
+		return nil, err
+	}
+	return s.local.PublicViewers(ctx)
 }
 func (s surfaceIdentity) SignIn(ctx context.Context, username, password string, device core.Device) (string, error) {
 	if s.surface == "plex" {

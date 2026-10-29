@@ -9,6 +9,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
+	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/transcode"
@@ -26,6 +27,11 @@ type surfaceCapabilities struct {
 func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
 	// Protocol is assigned by the host; a client cannot opt into another rule set.
 	req.Device.Protocol = s.surface
+	ip, ok := frontend.ClientIP(ctx)
+	if !ok || ip.IsUnspecified() || ip.IsMulticast() {
+		return frontend.CapabilityResult{}, core.ErrUnauthorized
+	}
+	req.Device.Remote = !identity.LAN(ip)
 	declared, err := (caps.Builder{}).Build(ctx, req.Device, req.Profile, req.ProtocolInfo, req.UserAgent)
 	if err != nil {
 		return frontend.CapabilityResult{}, err

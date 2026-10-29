@@ -234,6 +234,7 @@
   "m_01b0c9928627cc": "Chiave di accesso (facoltativa)",
   "m_01b3ea25da318d": "Impostazioni che ogni nodo mantiene",
   "m_01b5a99921e30a": "Scarica {name}",
+  "m_01b6a81e56578f": "Mostra i nomi dei visualizzatori locali nella schermata di accesso",
   "m_01b6fc82452a72": "Qui compaiono solo i titoli già usciti. Le soglie di popolarità e di voti si gestiscono nelle impostazioni del catalogo.",
   "m_01b765f613779a": "Salva la regola",
   "m_01b8f611e345ed": "Una sola richiesta rileva molte release. Ether le confronta con i metadati del catalogo locale senza cercare ogni titolo.",

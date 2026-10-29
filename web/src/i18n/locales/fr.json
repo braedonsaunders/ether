@@ -234,6 +234,7 @@
   "m_01b0c9928627cc": "Clé d’accès (facultatif)",
   "m_01b3ea25da318d": "Paramètres conservés par chaque nœud",
   "m_01b5a99921e30a": "Télécharger {name}",
+  "m_01b6a81e56578f": "Afficher les noms des spectateurs locaux sur l'écran de connexion",
   "m_01b6fc82452a72": "Seuls les titres déjà sortis apparaissent ici. Les seuils de popularité et de votes se gèrent dans les paramètres du catalogue.",
   "m_01b765f613779a": "Enregistrer la règle",
   "m_01b8f611e345ed": "Une seule requête découvre de nombreuses releases. Ether les fait correspondre aux métadonnées du catalogue local sans rechercher chaque titre.",

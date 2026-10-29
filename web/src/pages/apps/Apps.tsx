@@ -38,7 +38,13 @@ type FrontendInfo = {
     warnings?: string[];
   };
 };
-type Settings = { port?: number; serverName?: string; discovery?: boolean; quickConnect?: boolean };
+type Settings = {
+  port?: number;
+  serverName?: string;
+  discovery?: boolean;
+  quickConnect?: boolean;
+  publicViewerPicker?: boolean;
+};
 const tabs = localized(
   () =>
     [
@@ -313,6 +319,18 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
                 onChange={(e) => setDraft({ ...draft, quickConnect: e.currentTarget.checked })}
               />
               {t("Quick Connect")}
+            </label>
+          )}
+          {(id === "jellyfin" || id === "emby") && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft.publicViewerPicker ?? false}
+                onChange={(e) =>
+                  setDraft({ ...draft, publicViewerPicker: e.currentTarget.checked })
+                }
+              />
+              {t("Show local viewer names on the sign-in screen")}
             </label>
           )}
         </Section>

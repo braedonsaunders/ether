@@ -1,5 +1,6 @@
-# Run only in Ubuntu-24.04 on gpu-workstation. Ports bind to WSL loopback;
-# use tunnel.sh from the Mac. Never run this stack on the Mac or HYPERV03.
+# Run on bb-worker-server. Service ports bind to the LAN for direct client access.
+# tunnel.sh is a fallback for clients that cannot reach 192.168.68.66 directly.
+# Never run this stack on the Mac or HYPERV03.
 services:
   # Silo's build-1810 image expects the Jellyfin FFmpeg layout configured in
   # playback.ffmpeg_path. Seed that exact package tree into a private volume.
@@ -14,7 +15,7 @@ services:
   jellyfin:
     image: jellyfin/jellyfin:12.4@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771
     container_name: prism-jellyfin
-    ports: ["127.0.0.1:8096:8096"]
+    ports: ["0.0.0.0:8096:8096"]
     volumes:
       - ./data/jellyfin/config:/config
       - ./data/jellyfin/cache:/cache
@@ -23,7 +24,7 @@ services:
   emby:
     image: emby/embyserver:4.10.2.0@sha256:7082c63b10a2fcb3805a7eaebba407d5723bc57c085c9f0b29b7d0a702765cc1
     container_name: prism-emby
-    ports: ["127.0.0.1:8097:8096"]
+    ports: ["0.0.0.0:8097:8096"]
     volumes:
       - ./data/emby/config:/config
       - ./media:/media:ro
@@ -38,7 +39,7 @@ services:
     depends_on:
       silo-ffmpeg-seed:
         condition: service_completed_successfully
-    ports: ["127.0.0.1:8098:8080"]
+    ports: ["0.0.0.0:8098:8080"]
     volumes:
       - ./data/silo:/config
       - ./media:/mnt/media:ro

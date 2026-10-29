@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# From the Mac: create localhost forwards into the WSL-only reference lab.
-# Set LAB_PORT_BASE (or pass a base port) to avoid colliding with another worker.
-# Example: LAB_PORT_BASE=18396 scripts/lab/tunnel.sh
+# Fallback only: from the Mac, forward localhost ports to bb-worker-server.
+# Direct access is the default: http://192.168.68.66:8096/8097/8098.
+# Use a private port range, for example LAB_PORT_BASE=18396.
 set -euo pipefail
 
 action=start
@@ -45,7 +45,7 @@ if [[ "$action" == down ]]; then
   if [[ "$command_line" != *"-L ${port_jellyfin}:127.0.0.1:8096"* || \
         "$command_line" != *"-L ${port_emby}:127.0.0.1:8097"* || \
         "$command_line" != *"-L ${port_silo}:127.0.0.1:8098"* || \
-        "$command_line" != *"gpu-workstation"* ]]; then
+        "$command_line" != *"braedon@100.123.220.120"* ]]; then
     echo "pid $ssh_pid does not match this lab tunnel; leaving it untouched" >&2
     exit 1
   fi
@@ -78,7 +78,7 @@ ssh -N -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
   -L "${port_jellyfin}:127.0.0.1:8096" \
   -L "${port_emby}:127.0.0.1:8097" \
-  -L "${port_silo}:127.0.0.1:8098" gpu-workstation &
+  -L "${port_silo}:127.0.0.1:8098" braedon@100.123.220.120 &
 ssh_pid=$!
 printf '%s\n' "$ssh_pid" > "$pidfile"
 

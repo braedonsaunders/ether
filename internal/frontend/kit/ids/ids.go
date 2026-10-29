@@ -2,6 +2,7 @@
 package ids
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -23,11 +24,13 @@ const (
 	Studio
 	Session
 	Playlist
+	Channel
+	Programme
 )
 
 var ErrInvalid = errors.New("invalid identifier")
 
-func validKind(k Kind) bool { return k >= Item && k <= Playlist }
+func validKind(k Kind) bool { return k >= Item && k <= Programme }
 
 // GUID encodes a signed identifier in a kind-specific 128-bit namespace.
 func GUID(kind Kind, id int64) (string, error) {
@@ -165,3 +168,18 @@ func FormatStremio(id StremioID) (string, error) {
 
 func (Codecs) ParseStremio(value string) (StremioID, error) { return ParseStremio(value) }
 func (Codecs) FormatStremio(id StremioID) (string, error)   { return FormatStremio(id) }
+
+// StringGUID maps opaque channel/programme IDs into distinct namespaces.
+// It is deterministic but not reversible; resolution requires the host's
+// viewer-filtered LiveTV lookup.
+func StringGUID(kind Kind, value string) (string, error) {
+	if (kind != Channel && kind != Programme) || value == "" {
+		return "", ErrInvalid
+	}
+	h := sha256.Sum256([]byte(value))
+	var out [16]byte
+	binary.BigEndian.PutUint64(out[:8], uint64(kind))
+	copy(out[8:], h[:8])
+	return hex.EncodeToString(out[:]), nil
+}
+func (Codecs) StringGUID(kind Kind, value string) (string, error) { return StringGUID(kind, value) }

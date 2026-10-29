@@ -8,6 +8,8 @@ import (
 
 // CapabilityRequest describes client declarations, not a claim about playback.
 // Viewer must come from the authenticated session when user rules are desired.
+// Build requires WithClientIP using Host.ClientIP on the current request; the
+// host derives network locality and ignores the caller's Remote claim.
 type CapabilityRequest struct {
 	Viewer       *core.Viewer
 	Device       caps.DeviceInfo

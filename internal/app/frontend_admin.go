@@ -86,7 +86,7 @@ func validateFrontendSettings(s frontend.Settings, protocolValidator bool) error
 			if _, ok := v.(string); !ok {
 				return errors.New("invalid server name")
 			}
-		case "discovery", "quickConnect":
+		case "discovery", "quickConnect", "publicViewerPicker":
 			if _, ok := v.(bool); !ok {
 				return fmt.Errorf("invalid %s", k)
 			}

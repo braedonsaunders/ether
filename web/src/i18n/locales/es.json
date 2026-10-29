@@ -234,6 +234,7 @@
   "m_01b0c9928627cc": "Clave de acceso (opcional)",
   "m_01b3ea25da318d": "Ajustes que conserva cada nodo",
   "m_01b5a99921e30a": "Descargar {name}",
+  "m_01b6a81e56578f": "Mostrar los nombres de los espectadores locales en la pantalla de inicio de sesión",
   "m_01b6fc82452a72": "Aquí solo aparecen los títulos ya estrenados. Los umbrales de popularidad y de votos se gestionan en los ajustes del catálogo.",
   "m_01b765f613779a": "Guardar regla",
   "m_01b8f611e345ed": "Una solicitud descubre muchos lanzamientos. Ether los compara con los metadatos del catálogo local sin buscar cada título.",
