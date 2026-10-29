@@ -48,6 +48,7 @@ type brokerPlan struct {
 	source   *core.PlaySession
 	decision core.Decision
 	created  time.Time
+	etag     string
 	live     bool
 }
 type brokerSession struct {
@@ -341,6 +342,7 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	id := rand.Text()
+	etag := sourceRevision(ps)
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
@@ -354,10 +356,10 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 			delete(b.plans, key)
 		}
 	}
-	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now()}
+	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now(), etag: etag}
 	b.mu.Unlock()
 	direct, remux, transcoding := b.planAlternatives(ps, req)
-	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec, DirectPlay: direct, DirectStream: remux, Transcoding: transcoding}, nil
+	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec, DirectPlay: direct, DirectStream: remux, Transcoding: transcoding, ETag: etag}, nil
 }
 func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.Session, error) {
 	v, err := b.viewer(ctx, req.Viewer)
@@ -408,6 +410,11 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	}
 	ps, ok := b.deps.Playback.Session(p.source.ID)
 	if !ok || ps == nil || ps.UserID != v.ID || ps.ClientID != p.request.Caps.ClientID || ps.Key != p.request.Item {
+		return frontend.Session{}, core.ErrNotAvailable
+	}
+	// A plan's tag must not describe a source that failed over before Open.
+	// Ask the frontend to re-plan instead of handing it a stale revision.
+	if p.etag != "" && sourceRevision(ps) != p.etag {
 		return frontend.Session{}, core.ErrNotAvailable
 	}
 	id, grant := rand.Text(), rand.Text()

@@ -369,6 +369,9 @@ type PlayPlan struct {
 	// Alternatives are evaluated against this same source and client policy.
 	// DirectStream denotes copy-only remux, without encoding either stream.
 	DirectPlay, DirectStream, Transcoding bool
+	// ETag identifies the resolved immutable source when available; it is
+	// empty when the backend cannot prove a stable source identity.
+	ETag string
 }
 type OpenRequest struct {
 	Protocol Protocol
