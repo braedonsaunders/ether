@@ -344,7 +344,10 @@ func (s *Service) AuthorizeArtwork(ctx context.Context, viewer *core.Viewer, dev
 		title, err := s.d.CachedGet(ctx, key)
 		visibility := s.d.Visibility
 		visibility.GetTitle = s.d.CachedGet
-		if err != nil || title == nil || title.Key != key || visibility.SectionFor == nil {
+		if err != nil {
+			return nil, err
+		}
+		if title == nil || title.Key != key || visibility.SectionFor == nil {
 			return nil, core.ErrNotFound
 		}
 		section, ok := visibility.SectionFor(title.Type)
