@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -39,7 +40,11 @@ func (paritySource) FetchNZB(context.Context, core.Release) ([]byte, error) {
 }
 func (paritySource) Check(context.Context, []byte) (bool, error) { return true, nil }
 func (s paritySource) Open(_ context.Context, id string, _ []byte) (core.MediaSource, error) {
-	f, err := os.Open(filepath.Join(s.dir, "parity.mp4"))
+	filename := "parity.mp4"
+	if strings.HasPrefix(id, "fixture-10004-") {
+		filename = "parity-tracks.mp4"
+	}
+	f, err := os.Open(filepath.Join(s.dir, filename))
 	if err != nil {
 		return nil, err
 	}

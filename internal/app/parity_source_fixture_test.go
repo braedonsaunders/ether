@@ -47,3 +47,19 @@ func TestParitySourceProvidesHTTPRelease(t *testing.T) {
 		t.Fatalf("HTTP fixture releases=%+v err=%v", releases, err)
 	}
 }
+
+func TestParitySourceUsesDistinctMultitrackMedia(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "parity-tracks.mp4"), []byte("multitrack"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	media, err := (paritySource{dir: dir}).Open(context.Background(), "fixture-10004-0-0", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer media.Close()
+	buf := make([]byte, 10)
+	if _, err := media.ReadAt(buf, 0); err != nil || string(buf) != "multitrack" {
+		t.Fatalf("media=%q error=%v", buf, err)
+	}
+}

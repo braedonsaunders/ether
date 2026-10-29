@@ -542,6 +542,15 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 			result.captures = append(result.captures, capture{viewer, name, "playback:dash:stop", false, stopped})
 		}
 	}
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			tracks, err := trackIdentity(ctx, client, base, viewer, name, profiles[name].Headers)
+			if err != nil {
+				return result, err
+			}
+			result.captures = append(result.captures, tracks...)
+		}
+	}
 	// Termination requires an actual tracked playback, not a made-up session.
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 		for _, name := range names {
