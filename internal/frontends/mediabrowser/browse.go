@@ -270,12 +270,7 @@ func (i *instance) browseRoutes() error {
 			dto["People"] = people
 		}
 		if len(d.Tracks) > 0 {
-			streams := mediaStreams(d.Tracks)
-			if i.protocol == "emby" {
-				for _, stream := range streams {
-					delete(stream.(map[string]any), "IsOriginal")
-				}
-			}
+			streams := i.mediaStreams(d.Tracks)
 			dto["MediaStreams"] = streams
 		}
 		if i.protocol == "jellyfin" {
@@ -284,7 +279,7 @@ func (i *instance) browseRoutes() error {
 		if len(d.Versions) > 0 {
 			sources := make([]any, 0, len(d.Versions))
 			for _, version := range d.Versions {
-				source := mediaSourceDTO(version.ID, version.Media)
+				source := i.mediaSourceDTO(version.ID, version.Media)
 				source["Name"] = version.Name
 				source["HasSegments"] = len(d.Markers) > 0
 				i.mediaSourceDialect(source)

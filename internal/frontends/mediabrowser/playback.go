@@ -180,7 +180,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	} else if version != "" {
 		sourceID = version
 	}
-	source := mediaSourceDTO(sourceID, plan.Media)
+	source := i.mediaSourceDTO(sourceID, plan.Media)
 	if plan.ETag != "" {
 		source["ETag"] = plan.ETag
 	}
@@ -219,7 +219,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			url = prefix + url
 		}
 		if subtitleService := i.host.Sessions; subtitleService != nil {
-			streams := mediaStreams(plan.Media.Streams)
+			streams := i.mediaStreams(plan.Media.Streams)
 			for n, stream := range plan.Media.Streams {
 				if stream.Type != "subtitle" {
 					continue
@@ -281,6 +281,22 @@ func mediaSourceDTO(id string, media frontend.MediaInfo) map[string]any {
 	}
 	addChapters(source, media)
 	return source
+}
+
+func (i *instance) mediaSourceDTO(id string, media frontend.MediaInfo) map[string]any {
+	source := mediaSourceDTO(id, media)
+	source["MediaStreams"] = i.mediaStreams(media.Streams)
+	return source
+}
+
+func (i *instance) mediaStreams(streams []frontend.StreamInfo) []any {
+	out := mediaStreams(streams)
+	if i.protocol == "emby" {
+		for n, stream := range streams {
+			i.embyMediaStreamDTO(out[n].(map[string]any), stream)
+		}
+	}
+	return out
 }
 
 func mediaStreams(streams []frontend.StreamInfo) []any {
