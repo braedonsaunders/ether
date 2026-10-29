@@ -284,6 +284,46 @@ type labFixtureOptions struct {
 	AudioTitle string
 	// ConfigureTitle may add reference-derived metadata to the isolated seed.
 	ConfigureTitle func(*core.Title)
+	// PublicViewerPicker enables only explicitly named protocol pickers.
+	// Omitted entries retain the default-off security behavior.
+	PublicViewerPicker map[string]bool
+}
+
+func configureLabPickers(c *config.Config, pickers map[string]bool) error {
+	if len(pickers) == 0 {
+		return nil
+	}
+	if c.Frontends == nil {
+		c.Frontends = map[string]config.Frontend{}
+	}
+	for protocol, enabled := range pickers {
+		if protocol != "jellyfin" && protocol != "emby" {
+			return fmt.Errorf("invalid picker protocol %q", protocol)
+		}
+		surface := c.Frontends[protocol]
+		if surface.Settings == nil {
+			surface.Settings = map[string]any{}
+		}
+		surface.Settings["publicViewerPicker"] = enabled
+		c.Frontends[protocol] = surface
+	}
+	return nil
+}
+
+func TestLabPickerSettingsArePerProtocol(t *testing.T) {
+	cfg := &config.Config{}
+	if err := configureLabPickers(cfg, nil); err != nil || len(cfg.Frontends) != 0 {
+		t.Fatal("default picker must remain off")
+	}
+	if err := configureLabPickers(cfg, map[string]bool{"emby": true}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Frontends["emby"].Settings["publicViewerPicker"] != true || cfg.Frontends["jellyfin"].Settings["publicViewerPicker"] != nil {
+		t.Fatal("picker leaked across protocols")
+	}
+	if err := configureLabPickers(cfg, map[string]bool{"silo": true}); err == nil {
+		t.Fatal("accepted unsupported picker")
+	}
 }
 
 // newAlignedLabFixture supplies an isolated real app with fake playback and artwork for opt-in lab tests.
@@ -366,6 +406,11 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		c.Plex.Token = "fixture-owner-token"
 		c.Transcode.FFmpegPath = ffmpeg
 		c.Server.MaxStreams = 30
+		if len(options) == 1 {
+			if err := configureLabPickers(c, options[0].PublicViewerPicker); err != nil {
+				return err
+			}
+		}
 		for i := range c.Quality.Profiles {
 			c.Quality.Profiles[i].MinSizeMBPerMin = 0
 			c.Quality.Profiles[i].MaxSizeMBPerMin = 0
