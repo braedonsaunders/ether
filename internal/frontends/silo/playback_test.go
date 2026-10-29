@@ -28,6 +28,7 @@ func (fileIDs) Resolve(_ context.Context, s, k string, n int32) (string, error) 
 }
 func TestPlaybackUsesScopedBroker(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
+	sessionID := "8c2d329e-71d2-4ea1-9b57-95187baeb0aa"
 	hdr10Plus := true
 	var planned frontend.PlanRequest
 	var streamed frontend.StreamRequest
@@ -40,14 +41,14 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		if r.PlanID != "plan" {
 			t.Fatal("wrong plan")
 		}
-		return frontend.Session{ID: "session"}, nil
+		return frontend.Session{ID: sessionID}, nil
 	}, StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, _ string, r frontend.StreamRequest) (string, error) {
 		streamed = r
-		return "/sessions/media/session/scoped/master.m3u8", nil
+		return "/sessions/media/" + sessionID + "/scoped/master.m3u8", nil
 	}, SessionsFunc: func(_ context.Context, _ frontend.SessionAccess) ([]frontend.Session, error) {
-		return []frontend.Session{{ID: "session", ViewerID: 7, Protocol: "silo", Device: frontend.Device{ID: "tv"}}}, nil
+		return []frontend.Session{{ID: sessionID, ViewerID: 7, Protocol: "silo", Device: frontend.Device{ID: "tv"}}}, nil
 	}, ServeMediaFunc: func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/sessions/media/session/scoped/master.m3u8" {
+		if r.URL.Path != "/sessions/media/"+sessionID+"/scoped/master.m3u8" {
 			t.Fatal(r.URL.Path)
 		}
 		w.WriteHeader(200)
@@ -101,14 +102,14 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
 	}
-	if !strings.Contains(w.Body.String(), "/api/v2/stream/session/scoped/master.m3u8") {
+	if !strings.Contains(w.Body.String(), "/api/v2/stream/"+sessionID+"/scoped/master.m3u8") || !strings.Contains(w.Body.String(), `"session_id":"`+sessionID+`"`) {
 		t.Fatal("media URL not native", w.Body.String())
 	}
 	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":0,"subtitle_track_index":0}`)
 	if w.Code != 201 || planned.Intent.Options.AudioStream != 2 || planned.Intent.Options.SubtitleStream != 5 {
 		t.Fatalf("track ordinal mapping: %d %+v", w.Code, planned.Intent.Options)
 	}
-	media := call("GET", "/api/v2/stream/session/scoped/master.m3u8", "")
+	media := call("GET", "/api/v2/stream/"+sessionID+"/scoped/master.m3u8", "")
 	if media.Code != 200 {
 		t.Fatalf("media %d", media.Code)
 	}
@@ -117,7 +118,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if json.Unmarshal(w.Body.Bytes(), &body) != nil || body["outcome"] != "playable" {
 		t.Fatalf("response %s", w.Body.String())
 	}
-	w = call("POST", "/api/v2/playback/session/progress", `{"installation_id":"install","sequence":1,"position":60,"is_paused":false}`)
+	w = call("POST", "/api/v2/playback/"+sessionID+"/progress", `{"installation_id":"install","sequence":1,"position":60,"is_paused":false}`)
 	if w.Code != 200 || timeline.Position != time.Minute || timeline.State != "playing" || timeline.Sequence != 1 {
 		t.Fatalf("progress %d %+v", w.Code, timeline)
 	}
@@ -126,15 +127,15 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		if parseErr != nil {
 			t.Fatal(parseErr)
 		}
-		if err := doc.Validate("POST", "/api/v2/playback/session/progress", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+		if err := doc.Validate("POST", "/api/v2/playback/"+sessionID+"/progress", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
 			t.Errorf("progress spec: %v", err)
 		}
 	}
-	w = call("DELETE", "/api/v2/playback/session", `{"installation_id":"install","stop_id":"stop"}`)
-	if w.Code != 200 || stopped != "session" || !strings.Contains(w.Body.String(), `"stop_id":"stop"`) {
+	w = call("DELETE", "/api/v2/playback/"+sessionID, `{"installation_id":"install","stop_id":"stop"}`)
+	if w.Code != 200 || stopped != sessionID || !strings.Contains(w.Body.String(), `"stop_id":"stop"`) {
 		t.Fatalf("stop without final sample: %d %s", w.Code, w.Body.String())
 	}
-	w = call("DELETE", "/api/v2/playback/session", `{"installation_id":"install","stop_id":"stop","sequence":2}`)
+	w = call("DELETE", "/api/v2/playback/"+sessionID, `{"installation_id":"install","stop_id":"stop","sequence":2}`)
 	if w.Code != 400 {
 		t.Fatalf("partial final sample: %d %s", w.Code, w.Body.String())
 	}
