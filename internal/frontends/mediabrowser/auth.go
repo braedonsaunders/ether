@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -75,9 +76,63 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 	}
 	return v, token, err
 }
-func (i *instance) userDTO(v *frontend.Viewer) map[string]any {
+func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	id, _ := ids.GUID(ids.User, v.ID)
-	return map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": map[string]any{"IsAdministrator": v.IsOwner, "IsDisabled": false, "AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "EnableMediaPlayback": true, "EnableAudioPlaybackTranscoding": true, "EnableVideoPlaybackTranscoding": true, "EnablePlaybackRemuxing": true}, "Configuration": map[string]any{}}
+	policy := map[string]any{"IsAdministrator": v.IsOwner && !v.Delegated, "IsDisabled": false, "AuthenticationProviderId": "Ether"}
+	if i.protocol == "jellyfin" {
+		policy["PasswordResetProviderId"] = "Ether"
+	}
+	result := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": policy, "Configuration": map[string]any{}}
+	if i.host.ViewerCapabilities == nil {
+		return result
+	}
+	var ip netip.Addr
+	if i.host.ClientIP != nil {
+		ip, _ = i.host.ClientIP(r)
+	}
+	caps, err := i.host.ViewerCapabilities(r.Context(), v, device(r), ip)
+	if err != nil {
+		return result
+	}
+	if caps.IsOwner != nil {
+		policy["IsAdministrator"] = *caps.IsOwner
+	}
+	if caps.CanPlayRemote != nil {
+		policy["EnableRemoteAccess"] = *caps.CanPlayRemote
+	}
+	if caps.CanUseLiveTV != nil {
+		policy["EnableLiveTvAccess"] = *caps.CanUseLiveTV
+	}
+	if caps.CanTranscode != nil {
+		policy["EnableVideoPlaybackTranscoding"] = *caps.CanTranscode
+		policy["EnableAudioPlaybackTranscoding"] = *caps.CanTranscode
+	}
+	if caps.CanDownload != nil {
+		policy["EnableContentDownloading"] = *caps.CanDownload
+	}
+	if caps.RemoteBitrateKbps != nil {
+		policy["RemoteClientBitrateLimit"] = *caps.RemoteBitrateKbps * 1000
+	}
+	if caps.HasLocalPassword != nil {
+		result["HasPassword"] = *caps.HasLocalPassword
+		result["HasConfiguredPassword"] = *caps.HasLocalPassword
+	}
+	if caps.AllowedLibraries != nil {
+		folders := make([]string, 0, len(*caps.AllowedLibraries))
+		for _, view := range *caps.AllowedLibraries {
+			n, e := ids.ParseDecimal(view.ID)
+			if e != nil {
+				continue
+			}
+			guid, e := ids.GUID(ids.View, n)
+			if e == nil {
+				folders = append(folders, guid)
+			}
+		}
+		policy["EnableAllFolders"] = false
+		policy["EnabledFolders"] = folders
+	}
+	return result
 }
 func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	d := device(r)
@@ -117,7 +172,7 @@ func (i *instance) result(w http.ResponseWriter, r *http.Request, token string) 
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
-	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.userDTO(v), "SessionInfo": i.sessionDTO(r, v)})
+	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.userDTO(r, v), "SessionInfo": i.sessionDTO(r, v)})
 }
 func identityError(w http.ResponseWriter, err error) {
 	if errors.Is(err, frontend.ErrRateLimited) {
@@ -176,7 +231,7 @@ func (i *instance) routes() error {
 				http.Error(w, "Unauthorized", 401)
 				return
 			}
-			jsonReply(w, i.userDTO(v))
+			jsonReply(w, i.userDTO(r, v))
 		}},
 		{"POST", "/Sessions/Logout", func(w http.ResponseWriter, r *http.Request) {
 			_, token, err := i.viewer(r)

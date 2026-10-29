@@ -2,6 +2,7 @@ package mediabrowser
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -212,5 +213,38 @@ func TestPublicViewerPickerUsesVerifiedPeer(t *testing.T) {
 	inst.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/Users/Public", nil))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Name":"alice"`) {
 		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 3, Username: "alice"}
+	no := false
+	yes := true
+	bitrate := 5000
+	views := []frontend.View{{ID: "1", Name: "Movies"}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	host := frontend.Host{Identity: ident, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("198.51.100.7"), true }, ViewerCapabilities: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, ip netip.Addr) (frontend.ViewerCapabilities, error) {
+		if v != viewer || ip.String() != "198.51.100.7" {
+			t.Fatal(v, ip)
+		}
+		return frontend.ViewerCapabilities{CanPlayRemote: &no, CanUseLiveTV: &yes, RemoteBitrateKbps: &bitrate, HasLocalPassword: &yes, AllowedLibraries: &views}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/Users/Me", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var result struct {
+		HasPassword bool
+		Policy      map[string]any
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !result.HasPassword || result.Policy["EnableRemoteAccess"] != false || result.Policy["EnableLiveTvAccess"] != true || result.Policy["RemoteClientBitrateLimit"] != float64(5000000) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := result.Policy["EnableVideoPlaybackTranscoding"]; ok {
+		t.Fatal("unknown transcoding policy advertised")
 	}
 }
