@@ -49,6 +49,10 @@ func (i *instance) resolveFilters(r *http.Request, v *frontend.Viewer, q *fronte
 	for _, field := range []struct{ name, kind string }{{"GenreIds", "genre"}, {"StudioIds", "studio"}, {"PersonIds", "person"}} {
 		for _, value := range route.Query(r.URL.Query(), field.name) {
 			for _, id := range strings.Split(value, ",") {
+				id, err := i.resolveNamedFacetWireID(r.Context(), field.kind, id)
+				if err != nil {
+					return err
+				}
 				facet, e := i.host.Experience.ResolveFacet(r.Context(), v, device(r), view, field.kind, id)
 				if e != nil {
 					return e

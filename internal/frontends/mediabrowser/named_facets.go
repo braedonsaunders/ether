@@ -36,7 +36,10 @@ func (i *instance) addNamedFacets(r *http.Request, viewer *frontend.Viewer, deta
 		result := make([]any, 0, len(names))
 		for _, name := range names {
 			if id := authorized[name]; id != "" {
-				result = append(result, map[string]any{"Id": id, "Name": name})
+				wireID, ok := i.namedFacetWireID(r.Context(), group.kind, id)
+				if ok {
+					result = append(result, map[string]any{"Id": wireID, "Name": name})
+				}
 			}
 		}
 		if len(result) > 0 {

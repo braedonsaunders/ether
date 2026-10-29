@@ -32,16 +32,32 @@ func TestItemDetailPassesVerifiedPeer(t *testing.T) {
 		}
 		return map[string]string{"Drama": "genre-id"}, nil
 	}}
-	inst, err := (Emby{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, ClientIP: func(*http.Request) (netip.Addr, bool) { return peer, true }})
+	inst, err := (Emby{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, IDs: ids.Codecs{Allocator: embyFacetAllocator{}}, ClientIP: func(*http.Request) (netip.Addr, bool) { return peer, true }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("GET", "/Items/"+ids.RatingKeyGUID(5), nil)
+	userID, _ := ids.GUID(ids.User, viewer.ID)
+	path := "/Users/" + userID + "/Items/" + ids.RatingKeyGUID(5)
+	r := httptest.NewRequest("GET", path, nil)
 	r.Header.Set("X-Emby-Token", "grant")
 	w := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(w, r)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"GenreItems":[{"Id":"genre-id","Name":"Drama"}]`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"GenreItems":[{"Id":7,"Name":"Drama"}]`) {
 		t.Fatal(w.Code, w.Body.String())
+	}
+	spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", "emby", "")
+	if os.IsNotExist(err) {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := openapi.Parse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+		t.Fatal(err)
 	}
 }
 
