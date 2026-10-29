@@ -77,3 +77,46 @@ func TestProfilePreferencesRoundTrip(t *testing.T) {
 		t.Fatalf("readback %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestProfileQualityUsesSharedPlaybackPreference(t *testing.T) {
+	v := &frontend.Viewer{ID: 7, Username: "alice", CreatedAt: time.Unix(10000, 0), UpdatedAt: time.Unix(11000, 0)}
+	var raw json.RawMessage
+	prefs := frontendtest.Preferences{
+		GetFunc: func(context.Context, *frontend.Viewer, string, string) (json.RawMessage, error) {
+			if raw == nil {
+				return nil, frontend.ErrPreferencesNotFound
+			}
+			return raw, nil
+		},
+		PutFunc: func(_ context.Context, _ *frontend.Viewer, _, _ string, b json.RawMessage) error {
+			raw = append([]byte(nil), b...)
+			return nil
+		},
+	}
+	tracks := &settingsTracks{tracks: frontend.TrackPreferences{SubtitleMode: "off"}}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}, Preferences: prefs, TrackPreferences: tracks, Experience: frontendtest.Experience{}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer grant")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	w := request("PATCH", "/api/v2/profiles/7", `{"max_playback_quality":"1080p"}`)
+	if w.Code != 200 || tracks.height != 1080 || !strings.Contains(w.Body.String(), `"max_playback_quality":"1080p"`) {
+		t.Fatalf("write: %d %s height=%d", w.Code, w.Body.String(), tracks.height)
+	}
+	tracks.height = 2160 // Another frontend changes the shared rule.
+	w = request("GET", "/api/v2/profiles", "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"max_playback_quality":"2160p"`) {
+		t.Fatalf("shared read: %d %s", w.Code, w.Body.String())
+	}
+	w = request("PATCH", "/api/v2/profiles/7", `{"max_playback_quality":null}`)
+	if w.Code != 200 || tracks.height != 0 {
+		t.Fatalf("clear: %d %s height=%d", w.Code, w.Body.String(), tracks.height)
+	}
+}

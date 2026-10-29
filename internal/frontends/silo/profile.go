@@ -36,6 +36,16 @@ func (i *instance) profileData(r *http.Request, v *frontend.Viewer) (map[string]
 	if err != nil {
 		return nil, err
 	}
+	if scoped, ok := i.host.TrackPreferences.(frontend.ScopedTrackPreferenceService); ok {
+		_, _, height, _, _, err := scoped.GetScoped(r.Context(), v, frontend.TrackScope{})
+		if err != nil {
+			return nil, err
+		}
+		p["max_playback_quality"] = ""
+		if height > 0 {
+			p["max_playback_quality"] = strconv.Itoa(height) + "p"
+		}
+	}
 	subtitle := ""
 	if len(tracks.SubtitleLanguages) > 0 {
 		subtitle = tracks.SubtitleLanguages[0]
@@ -131,6 +141,7 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var maturity *string
+	var maxHeight *int
 	tracksChanged := false
 	for k, raw := range patch {
 		switch k {
@@ -165,7 +176,22 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 			}
 			tracks.SubtitleMode = mode
 			tracksChanged = true
-		case "avatar", "quality_preference", "language", "preferred_metadata_language", "auto_skip_intro", "auto_skip_credits", "auto_skip_recap", "auto_play_next_preview", "show_forced_subtitles", "max_playback_quality":
+		case "max_playback_quality":
+			var quality *string
+			if json.Unmarshal(raw, &quality) != nil {
+				http.Error(w, "Bad Request", 400)
+				return
+			}
+			height := 0
+			if quality != nil && *quality != "" {
+				height = map[string]int{"1080p": 1080, "2160p": 2160}[*quality]
+				if height == 0 {
+					http.Error(w, "Unsupported", 422)
+					return
+				}
+			}
+			maxHeight = &height
+		case "avatar", "quality_preference", "language", "preferred_metadata_language", "auto_skip_intro", "auto_skip_credits", "auto_skip_recap", "auto_play_next_preview", "show_forced_subtitles":
 			var value any
 			if json.Unmarshal(raw, &value) != nil {
 				http.Error(w, "Bad Request", 400)
@@ -206,6 +232,21 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 	if tracksChanged {
 		if err = i.host.TrackPreferences.SetSubtitle(r.Context(), v, tracks.SubtitleLanguages, tracks.SubtitleMode); err != nil {
 			http.Error(w, "Bad Request", 400)
+			return
+		}
+	}
+	if maxHeight != nil {
+		scoped, ok := i.host.TrackPreferences.(frontend.ScopedTrackPreferenceService)
+		if !ok {
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+		quality := "auto"
+		if *maxHeight > 0 {
+			quality = strconv.Itoa(*maxHeight) + "p"
+		}
+		if scoped.SetHeight(r.Context(), v, *maxHeight, quality) != nil {
+			http.Error(w, "Unavailable", 503)
 			return
 		}
 	}
