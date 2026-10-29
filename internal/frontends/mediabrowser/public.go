@@ -2,6 +2,7 @@
 package mediabrowser
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -57,12 +58,14 @@ func PublicRoutes(r *route.Router, info PublicInfo) error {
 	return nil
 }
 
+type prefixKey struct{}
+
 // StripPrefix accepts the optional protocol prefix while preserving the rest
 // of the request for the router. It does not mutate the incoming request.
 func StripPrefix(prefix string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if len(r.URL.Path) >= len(prefix) && strings.EqualFold(r.URL.Path[:len(prefix)], prefix) && (len(r.URL.Path) == len(prefix) || r.URL.Path[len(prefix)] == '/') {
-			clone := r.Clone(r.Context())
+			clone := r.Clone(context.WithValue(r.Context(), prefixKey{}, prefix))
 			u := *r.URL
 			clone.URL = &u
 			clone.URL.Path = r.URL.Path[len(prefix):]

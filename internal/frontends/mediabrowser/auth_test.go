@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -83,11 +84,11 @@ func TestQuickConnectStatusDoesNotRedeem(t *testing.T) {
 			return nil, errors.New("bad grant")
 		},
 		InitiateFunc: func(context.Context, frontend.Device) (string, string, error) { return "123456", "secret", nil },
-		StatusFunc: func(_ context.Context, secret string) (bool, error) {
+		DetailsFunc: func(_ context.Context, secret string) (frontend.QuickConnectDetails, error) {
 			if secret != "secret" {
-				return false, errors.New("invalid")
+				return frontend.QuickConnectDetails{}, errors.New("invalid")
 			}
-			return approved, nil
+			return frontend.QuickConnectDetails{Approved: approved, Secret: secret, Code: "123456", CreatedAt: time.Now()}, nil
 		},
 		ApproveFunc: func(_ context.Context, v *frontend.Viewer, code string) error {
 			if v.ID != 1 || code != "123456" {

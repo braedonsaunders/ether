@@ -152,12 +152,12 @@ func (i *instance) routes() error {
 				http.Error(w, "Bad Request", 400)
 				return
 			}
-			approved, err := i.host.Identity.QuickConnectStatus(i.identityContext(r), secret[0])
+			details, err := i.host.Identity.QuickConnectDetails(i.identityContext(r), secret[0])
 			if err != nil {
 				identityError(w, err)
 				return
 			}
-			jsonReply(w, map[string]any{"Authenticated": approved, "Secret": secret[0]})
+			jsonReply(w, map[string]any{"Authenticated": details.Approved, "Secret": details.Secret, "Code": details.Code, "DeviceId": details.Device.ID, "DeviceName": details.Device.DeviceName, "AppName": details.Device.Client, "AppVersion": details.Device.Version, "DateAdded": details.CreatedAt})
 		}},
 		{"POST", "/QuickConnect/Authorize", func(w http.ResponseWriter, r *http.Request) {
 			v, _, err := i.viewer(r)

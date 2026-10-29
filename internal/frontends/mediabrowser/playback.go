@@ -1,0 +1,200 @@
+package mediabrowser
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
+)
+
+type playbackRequest struct {
+	DeviceProfile       caps.DeviceProfile `json:"DeviceProfile"`
+	IsPlayback          bool               `json:"IsPlayback"`
+	EnableDirectPlay    *bool              `json:"EnableDirectPlay"`
+	EnableDirectStream  *bool              `json:"EnableDirectStream"`
+	EnableTranscoding   *bool              `json:"EnableTranscoding"`
+	StartTimeTicks      int64              `json:"StartTimeTicks"`
+	AudioStreamIndex    *int               `json:"AudioStreamIndex"`
+	SubtitleStreamIndex *int               `json:"SubtitleStreamIndex"`
+}
+
+func boolValue(p *bool, def bool) bool {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+func queryBool(r *http.Request, key string, def bool) bool {
+	values := route.Query(r.URL.Query(), key)
+	if len(values) != 1 {
+		return def
+	}
+	v, err := strconv.ParseBool(values[0])
+	if err != nil {
+		return def
+	}
+	return v
+}
+func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Sessions == nil || i.host.Capabilities == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body playbackRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if decode(r, &body) != nil {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+	}
+	dev := device(r)
+	capability, err := i.host.Capabilities.Build(r.Context(), frontend.CapabilityRequest{Viewer: v, Device: caps.DeviceInfo{Protocol: "jellyfin", ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, Profile: body.DeviceProfile, UserAgent: r.UserAgent()})
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	playback := queryBool(r, "IsPlayback", body.IsPlayback)
+	opts := frontend.DecideOptions{DirectPlay: queryBool(r, "EnableDirectPlay", boolValue(body.EnableDirectPlay, true)), DirectStream: queryBool(r, "EnableDirectStream", boolValue(body.EnableDirectStream, true)), AudioStream: -1, SubtitleStream: -1}
+	if body.AudioStreamIndex != nil {
+		opts.AudioStream = *body.AudioStreamIndex
+	}
+	if body.SubtitleStreamIndex != nil {
+		opts.SubtitleStream = *body.SubtitleStreamIndex
+	}
+	if body.StartTimeTicks < 0 || body.StartTimeTicks > (1<<63-1)/100 {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	intent := frontend.PlayIntent{Estimate: !playback, Options: opts, Position: time.Duration(body.StartTimeTicks) * 100 * time.Nanosecond}
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: "jellyfin", Item: key, Caps: capability.Client, Intent: intent})
+	if err != nil {
+		http.Error(w, "Playback unavailable", 503)
+		return
+	}
+	if !queryBool(r, "EnableTranscoding", boolValue(body.EnableTranscoding, true)) && plan.Decision.Kind == "transcode" {
+		http.Error(w, "Playback unavailable", 422)
+		return
+	}
+	source := map[string]any{"Id": ids.RatingKeyGUID(key), "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
+	playID := ""
+	if playback {
+		session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "jellyfin", PlanID: plan.ID, Viewer: v, Device: dev})
+		if err != nil {
+			http.Error(w, "Playback unavailable", 503)
+			return
+		}
+		format := frontend.StreamDirect
+		if plan.Decision.Kind != "directplay" {
+			format = frontend.StreamHLS
+		}
+		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: "jellyfin"}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
+		if err != nil {
+			_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: "jellyfin"}, session.ID)
+			http.Error(w, "Playback unavailable", 503)
+			return
+		}
+		if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
+			url = prefix + url
+		}
+		playID = session.ID
+		if format == frontend.StreamDirect {
+			source["Path"] = url
+		} else {
+			source["TranscodingUrl"] = url
+			source["TranscodingSubProtocol"] = "hls"
+			source["TranscodingContainer"] = "ts"
+		}
+	}
+	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
+}
+func mediaStreams(streams []frontend.StreamInfo) []any {
+	out := make([]any, 0, len(streams))
+	for _, s := range streams {
+		kind := map[string]string{"video": "Video", "audio": "Audio", "subtitle": "Subtitle"}[s.Type]
+		out = append(out, map[string]any{"Index": s.Index, "Type": kind, "Codec": s.Codec, "Language": s.Language, "IsDefault": s.Default, "IsForced": s.Forced, "Width": s.Width, "Height": s.Height, "Channels": s.Channels})
+	}
+	return out
+}
+func (i *instance) playbackRoutes() error {
+	for _, entry := range []struct {
+		path    string
+		stopped bool
+	}{{"/Sessions/Playing", false}, {"/Sessions/Playing/Progress", false}, {"/Sessions/Playing/Stopped", true}} {
+		stop := entry.stopped
+		if err := i.router.Handle("POST", entry.path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { i.timeline(w, r, stop) })); err != nil {
+			return err
+		}
+	}
+	if err := i.router.Handle("POST", "/Items/{id}/PlaybackInfo", http.HandlerFunc(i.playbackInfo)); err != nil {
+		return err
+	}
+	for _, method := range []string{"GET", "HEAD"} {
+		if err := i.router.Handle(method, "/sessions/media/{path...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if i.host.Sessions == nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			i.host.Sessions.ServeMedia(w, r)
+		})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type timelineRequest struct {
+	PlaySessionId, ItemId string
+	PositionTicks         int64
+	IsPaused              bool
+}
+
+func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Sessions == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	var body timelineRequest
+	if decode(r, &body) != nil || body.PlaySessionId == "" || body.PositionTicks < 0 || body.PositionTicks > (1<<63-1)/100 {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: "jellyfin"}
+	state := "playing"
+	if body.IsPaused {
+		state = "paused"
+	}
+	if stopped {
+		state = "stopped"
+	}
+	err = i.host.Sessions.Report(r.Context(), access, body.PlaySessionId, frontend.Timeline{PlaybackID: body.PlaySessionId, Position: time.Duration(body.PositionTicks) * 100 * time.Nanosecond, State: state})
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	if stopped {
+		if err = i.host.Sessions.Stop(r.Context(), access, body.PlaySessionId); err != nil {
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
