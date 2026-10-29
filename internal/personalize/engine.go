@@ -534,6 +534,10 @@ func toHubs(rows []core.HomeRow) []core.Hub {
 // home is the one code path behind /hubs, /hubs/sections/{id} and the
 // owner's Home preview.
 func (e *Engine) home(ctx context.Context, user *core.User, hc core.HubContext, section core.MediaType, limit int, wait bool) core.HomePreview {
+	return e.homeWithPolicy(ctx, user, hc, section, limit, wait, nil)
+}
+
+func (e *Engine) homeWithPolicy(ctx context.Context, user *core.User, hc core.HubContext, section core.MediaType, limit int, wait bool, allow func(context.Context, *core.User, *core.Title) bool) core.HomePreview {
 	if limit <= 0 {
 		limit = 12
 	}
@@ -576,31 +580,55 @@ func (e *Engine) home(ctx context.Context, user *core.User, hc core.HubContext, 
 		key.lead = lead.sig
 	}
 	_, draft := ctx.Value(draftLayoutKey{}).(core.HomeLayout)
+	var policyContinue []candItem
+	if allow != nil && section == "" {
+		policyContinue = e.continueFrom(ctx, inprog)
+	}
 	hidden := map[core.RatingKey]bool{}
-	if e.opts.FilterAvailable != nil {
+	if e.opts.FilterAvailable != nil || allow != nil {
 		var pool []core.Title
+		seen := map[core.RatingKey]bool{}
 		for _, row := range append(append([]*candRow{}, m.rows...), owner...) {
 			for _, it := range row.items {
 				pool = append(pool, it.t)
-				hidden[it.t.Key] = true
+				hidden[it.t.Key] = e.opts.FilterAvailable != nil
 			}
 			for _, items := range row.typed {
 				for _, it := range items {
 					pool = append(pool, it.t)
-					hidden[it.t.Key] = true
+					hidden[it.t.Key] = e.opts.FilterAvailable != nil
 				}
 			}
 		}
-		for _, t := range e.opts.FilterAvailable(ctx, pool) {
-			delete(hidden, t.Key)
+		if e.opts.FilterAvailable != nil {
+			for _, t := range e.opts.FilterAvailable(ctx, pool) {
+				delete(hidden, t.Key)
+			}
+		}
+		if allow != nil {
+			for _, candidate := range policyContinue {
+				pool = append(pool, candidate.t)
+			}
+			for i := range pool {
+				t := &pool[i]
+				if !seen[t.Key] {
+					seen[t.Key] = true
+					if ctx.Err() != nil || !allow(ctx, &u, t) {
+						hidden[t.Key] = true
+					}
+				}
+			}
 		}
 		keys := make([]int64, 0, len(hidden))
-		for k := range hidden {
-			keys = append(keys, int64(k))
+		for k, blocked := range hidden {
+			if blocked {
+				keys = append(keys, int64(k))
+			}
 		}
 		sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 		key.limits += fmt.Sprint(keys)
 	}
+
 	if ent, ok := e.memoGet(key); ok && !draft {
 		e.touchPresentation(key, m.generic)
 		p.Rows, p.HomeDeduped = ent.rows, ent.deduped
@@ -617,7 +645,11 @@ func (e *Engine) home(ctx context.Context, user *core.User, hc core.HubContext, 
 	a.explore = clamp(a.explore*tune.exploreScale(), 0, 1)
 	if section == "" {
 		a.pageLen = e.opts.MaxHomeRows
-		a.cw = e.continueFrom(ctx, inprog)
+		if allow != nil {
+			a.cw = policyContinue
+		} else {
+			a.cw = e.continueFrom(ctx, inprog)
+		}
 	} else {
 		a.pageLen = e.opts.MaxSectionRows
 	}

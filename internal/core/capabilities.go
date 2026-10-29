@@ -78,6 +78,13 @@ type HomeCandidateSource interface {
 	HomeCandidatesFor(context.Context, *User, HubContext, int) ([]Hub, error)
 }
 
+// PolicyHomeCandidateSource filters a viewer's candidate pool before ranking
+// and row limits. The caller supplies a fail-closed visibility predicate.
+type PolicyHomeCandidateSource interface {
+	HomeCandidatesWithPolicy(context.Context, *User, HubContext, int, func(context.Context, *User, *Title) bool) ([]Hub, error)
+	SectionCandidatesWithPolicy(context.Context, *User, MediaType, HubContext, int, func(context.Context, *User, *Title) bool) ([]Hub, error)
+}
+
 // HomeLayoutSource exposes the optional FinalizeHome capability.
 type HomeLayoutSource interface {
 	FinalizeHome(context.Context, *User, HubContext, string, []Hub) ([]Hub, error)

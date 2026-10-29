@@ -596,6 +596,33 @@ var _ core.NeutralHomeLayoutSource = (*Engine)(nil)
 func (e *Engine) HomeCandidatesFor(ctx context.Context, u *core.User, hc core.HubContext, limit int) ([]core.Hub, error) {
 	return toHubs(e.home(ctx, u, hc, "", limit, false).Rows), nil
 }
+
+// HomeCandidatesWithPolicy applies per-request visibility before ranking.
+func (e *Engine) HomeCandidatesWithPolicy(ctx context.Context, u *core.User, hc core.HubContext, limit int, allow func(context.Context, *core.User, *core.Title) bool) ([]core.Hub, error) {
+	if allow == nil {
+		return nil, errors.New("personalize: missing visibility policy")
+	}
+	p := e.homeWithPolicy(ctx, u, hc, "", limit, false, allow)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return toHubs(p.Rows), nil
+}
+
+// SectionCandidatesWithPolicy applies viewer visibility before section ranking.
+func (e *Engine) SectionCandidatesWithPolicy(ctx context.Context, u *core.User, section core.MediaType, hc core.HubContext, limit int, allow func(context.Context, *core.User, *core.Title) bool) ([]core.Hub, error) {
+	if allow == nil {
+		return nil, errors.New("personalize: missing visibility policy")
+	}
+	p := e.homeWithPolicy(ctx, u, hc, section, limit, false, allow)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return toHubs(p.Rows), nil
+}
+
+var _ core.PolicyHomeCandidateSource = (*Engine)(nil)
+
 func (e *Engine) SectionCandidatesFor(ctx context.Context, u *core.User, t core.MediaType, hc core.HubContext, limit int) ([]core.Hub, error) {
 	return toHubs(e.home(ctx, u, hc, t, limit, false).Rows), nil
 }
