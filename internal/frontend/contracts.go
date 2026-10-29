@@ -4,6 +4,7 @@ package frontend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -311,6 +312,20 @@ type PlexHints struct {
 }
 
 type StreamFormat string
+
+// ErrTranscodeCapacity classifies an exhausted shared encoder budget.
+var ErrTranscodeCapacity = errors.New("transcode capacity exhausted")
+
+// TranscodeCapacityError carries a suggested retry delay. Capacity is checked
+// atomically at stream start and is not reserved by an earlier Plan.
+type TranscodeCapacityError struct {
+	RetryAfter time.Duration
+	Cause      error
+}
+
+func (e *TranscodeCapacityError) Error() string        { return ErrTranscodeCapacity.Error() }
+func (e *TranscodeCapacityError) Unwrap() error        { return e.Cause }
+func (e *TranscodeCapacityError) Is(target error) bool { return target == ErrTranscodeCapacity }
 
 const (
 	StreamDirect StreamFormat = "direct"
