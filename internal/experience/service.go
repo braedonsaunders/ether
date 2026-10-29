@@ -175,6 +175,20 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	if library == nil || !SectionAllowed(v, id) || s.d.Browse == nil {
 		return core.Page{}, core.ErrNotFound
 	}
+	// Recursive show browsing can produce show roots and episodes only. Skip
+	// the entire library when neither type can satisfy the requested filter.
+	if q.Recursive && library.Type == core.TypeShow && len(q.Types) > 0 {
+		possible := false
+		for _, typ := range q.Types {
+			if typ == core.TypeShow || typ == core.TypeEpisode {
+				possible = true
+				break
+			}
+		}
+		if !possible {
+			return core.Page{Items: []core.Title{}, Total: 0}, nil
+		}
+	}
 	var permitted []core.Title
 	expand := q.Recursive && library.Type == core.TypeShow
 	if expand && s.d.Grandchildren == nil {
