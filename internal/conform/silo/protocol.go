@@ -2,6 +2,7 @@
 package silo
 
 import (
+	"encoding/json"
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/conform/mediabrowser"
 )
@@ -19,3 +20,20 @@ func Load(dir string) (*Protocol, error) {
 	}
 	return &Protocol{p}, nil
 }
+
+// Observe carries only a playable session into subsequent ordered flow probes.
+func (*Protocol) Observe(request conform.Request, response conform.Response, vars map[string]string) {
+	if request.Path != "/api/v2/playback/start" || response.Status < 200 || response.Status >= 300 || vars == nil {
+		return
+	}
+	var result struct {
+		Outcome   string `json:"outcome"`
+		SessionID string `json:"session_id"`
+	}
+	if json.Unmarshal(response.Body, &result) == nil && result.Outcome == "playable" && result.SessionID != "" {
+		vars["play_session_id"] = result.SessionID
+		vars["session_id"] = result.SessionID
+	}
+}
+
+var _ conform.ResponseObserver = (*Protocol)(nil)

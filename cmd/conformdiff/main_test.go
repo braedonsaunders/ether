@@ -14,6 +14,7 @@ import (
 
 	pmsconform "github.com/braedonsaunders/ether/internal/conform"
 	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
+	"github.com/braedonsaunders/ether/internal/conform/silo"
 )
 
 func TestFilterReport(t *testing.T) {
@@ -155,5 +156,53 @@ func TestRecordRejectsEmptyCorpus(t *testing.T) {
 	_, err := record(conformplex.Protocol{}, nil, "http://unused", "", t.TempDir(), "web", "/no-such-route", time.Second, 1)
 	if err == nil {
 		t.Fatal("empty recording was reported as success")
+	}
+}
+func TestSiloPlaybackFlowsCarrySession(t *testing.T) {
+	dir := t.TempDir()
+	profile := `{"protocol":"silo","client":"test","flows":{"play_direct":[{"name":"start","method":"POST","path":"/api/v2/playback/start","body":{"playback_attempt_id":"${playback_attempt_id}"}}],"progress_reporting":[{"name":"progress","method":"POST","path":"/api/v2/playback/${play_session_id}/progress"}]}}`
+	if err := os.WriteFile(filepath.Join(dir, "silo.json"), []byte(profile), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := silo.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attempt string
+	var progress bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v2/playback/start" {
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			attempt = body["playback_attempt_id"]
+			w.Write([]byte(`{"outcome":"playable","session_id":"private-session-123"}`))
+			return
+		}
+		if r.URL.Path == "/api/v2/playback/private-session-123/progress" {
+			progress = true
+			w.Write([]byte(`{}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	out := t.TempDir()
+	report, err := record(p, map[string]string{}, srv.URL, "", out, "silo", "", 3*time.Second, 2)
+	if err != nil || report.Blocking() != 0 {
+		t.Fatalf("record: %+v %v", report, err)
+	}
+	if len(attempt) != 36 || !progress {
+		t.Fatalf("attempt or propagated session missing")
+	}
+	for _, r := range p.Corpus("silo") {
+		f := filepath.Join(out, "silo", p.FixtureName("silo", r, true)+".json")
+		fixture, err := pmsconform.LoadFixture(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(fixture.Body, []byte("private-session-123")) {
+			t.Fatal("session leaked to fixture")
+		}
 	}
 }
