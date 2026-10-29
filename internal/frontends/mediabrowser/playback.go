@@ -80,13 +80,14 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", 400)
 		return
 	}
-	intent := frontend.PlayIntent{Estimate: !playback, Options: opts, Position: time.Duration(body.StartTimeTicks) * 100 * time.Nanosecond}
+	allowed := queryBool(r, "EnableTranscoding", boolValue(body.EnableTranscoding, true))
+	intent := frontend.PlayIntent{Estimate: !playback, Options: opts, Position: time.Duration(body.StartTimeTicks) * 100 * time.Nanosecond, AllowTranscoding: &allowed}
 	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Caps: capability.Client, Intent: intent})
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)
 		return
 	}
-	if !queryBool(r, "EnableTranscoding", boolValue(body.EnableTranscoding, true)) && plan.Decision.Kind == "transcode" {
+	if !allowed && plan.Decision.Kind == "transcode" {
 		http.Error(w, "Playback unavailable", 422)
 		return
 	}

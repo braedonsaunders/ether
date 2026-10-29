@@ -17,7 +17,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	var calls []string
 	sessions := frontendtest.Sessions{PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
-		if req.Viewer != viewer || req.Protocol != "jellyfin" || req.Item != 5 || req.Intent.Options.DirectStream {
+		if req.Viewer != viewer || req.Protocol != "jellyfin" || req.Item != 5 || req.Intent.Options.DirectStream || req.Intent.AllowTranscoding == nil || *req.Intent.AllowTranscoding {
 			t.Fatal(req)
 		}
 		if req.Intent.Estimate {
@@ -46,7 +46,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 		inst.Handler().ServeHTTP(w, r)
 		return w
 	}
-	w := call(`{"EnableDirectStream":false}`)
+	w := call(`{"EnableDirectStream":false,"EnableTranscoding":false}`)
 	if w.Code != 200 || strings.Join(calls, ",") != "estimate" {
 		t.Fatal(w.Code, w.Body.String(), calls)
 	}
@@ -62,7 +62,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
 	}
-	if w := call(`{"IsPlayback":true,"EnableDirectStream":false}`); w.Code != 200 || strings.Join(calls, ",") != "estimate,plan,open,stream" || !strings.Contains(w.Body.String(), "/jellyfin/sessions/media/") {
+	if w := call(`{"IsPlayback":true,"EnableDirectStream":false,"EnableTranscoding":false}`); w.Code != 200 || strings.Join(calls, ",") != "estimate,plan,open,stream" || !strings.Contains(w.Body.String(), "/jellyfin/sessions/media/") {
 		t.Fatal(w.Code, w.Body.String(), calls)
 	}
 }
