@@ -80,6 +80,6 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 	}
 	b.sessions[id] = s
 	b.mu.Unlock()
-	b.publish(ctx, frontend.Event{Type: "SessionStarted", ViewerID: viewer.ID, SessionID: id})
+	b.publish(ctx, sessionEvent("SessionStarted", session, nil))
 	return session, nil
 }

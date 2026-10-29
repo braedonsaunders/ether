@@ -444,9 +444,9 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		if old.playID != ps.ID {
 			b.deps.Playback.Stop(old.playID)
 		}
-		b.publish(ctx, frontend.Event{Type: "SessionStopped", ViewerID: old.public.ViewerID, Item: old.public.Item, SessionID: old.public.ID})
+		b.publish(ctx, sessionEvent("SessionStopped", old.public, nil))
 	}
-	b.publish(ctx, frontend.Event{Type: "SessionStarted", ViewerID: v.ID, Item: session.Item, SessionID: id})
+	b.publish(ctx, sessionEvent("SessionStarted", session, nil))
 	return session, nil
 }
 func (b *Broker) access(ctx context.Context, a frontend.SessionAccess, id string) (*brokerSession, *core.Viewer, error) {
@@ -570,7 +570,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		}
 	}
 	if s.live {
-		b.publish(ctx, frontend.Event{Type: "SessionUpdated", ViewerID: s.public.ViewerID, SessionID: id})
+		b.publish(ctx, sessionEvent("SessionUpdated", s.public, &t))
 		if t.State == "stopped" {
 			return b.stopLocked(ctx, s)
 		}
@@ -599,7 +599,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if b.deps.OnTimeline != nil {
 		b.deps.OnTimeline(v, s.public.Item, t.Position, t.Duration, t.State)
 	}
-	b.publish(ctx, frontend.Event{Type: "SessionUpdated", ViewerID: s.public.ViewerID, Item: s.public.Item, SessionID: id})
+	b.publish(ctx, sessionEvent("SessionUpdated", s.public, &t))
 	if t.State == "stopped" {
 		return b.stopLocked(ctx, s)
 	}
@@ -672,7 +672,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	b.bindings.Remove(s.public.ID)
 	if s.live {
 		err := b.deps.Live.Stop(ctx, &core.Viewer{ID: s.public.ViewerID}, s.playID)
-		b.publish(ctx, frontend.Event{Type: "SessionStopped", ViewerID: s.public.ViewerID, SessionID: s.public.ID})
+		b.publish(ctx, sessionEvent("SessionStopped", s.public, nil))
 		return err
 	}
 	if b.deps.Transcoder != nil {
@@ -681,7 +681,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	if !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
 		b.deps.Playback.Stop(s.playID)
 	}
-	b.publish(ctx, frontend.Event{Type: "SessionStopped", ViewerID: s.public.ViewerID, Item: s.public.Item, SessionID: s.public.ID})
+	b.publish(ctx, sessionEvent("SessionStopped", s.public, nil))
 	return nil
 }
 

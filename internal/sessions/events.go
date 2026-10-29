@@ -120,6 +120,14 @@ func (b *EventBus) deliver(event frontend.Event) {
 			command := *event.Command
 			copy.Command = &command
 		}
+		if event.Session != nil {
+			session := *event.Session
+			copy.Session = &session
+		}
+		if event.Timeline != nil {
+			timeline := *event.Timeline
+			copy.Timeline = &timeline
+		}
 		select {
 		case s.pending <- copy:
 		default:

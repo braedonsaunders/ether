@@ -402,6 +402,8 @@ type Event struct {
 	OriginClientID  string
 	Command         *Command
 	TargetProtocol  Protocol
+	Session         *Session
+	Timeline        *Timeline
 }
 
 // SessionAccess binds client operations to an authenticated viewer and surface.
