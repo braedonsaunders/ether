@@ -25,7 +25,7 @@ import {
   useLLMProviders,
   withProvider,
 } from "../components/llm";
-import { api, newId } from "../lib/api";
+import { api, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
 import { DEBRID_KINDS } from "./sources/Debrid";
@@ -176,6 +176,8 @@ export default function Setup() {
   const [cfg, setCfg] = useState<EtherConfig | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [step, setStep] = useState(0);
+  const [choosing, setChoosing] = useState(true);
+  const [frontends, setFrontends] = useState<Record<string, boolean>>({ plex: true });
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const [cacheRestartRequired, setCacheRestartRequired] = useState(false);
@@ -186,6 +188,10 @@ export default function Setup() {
   // A build with a bundled TMDB key needs none from the owner.
   const [tmdbBundled, setTmdbBundled] = useState(false);
   useEffect(() => {
+    void api
+      .bootstrap()
+      .then((boot) => setLocalDone(Boolean(boot.ownerConfigured)))
+      .catch(() => {});
     api
       .setupStatus()
       .then((s) => {
@@ -198,6 +204,9 @@ export default function Setup() {
   const [optTests, setOptTests] = useState<Record<string, TestState>>({});
   const [pin, setPin] = useState<{ id: string; code: string; authUrl: string } | null>(null);
   const [pinDone, setPinDone] = useState(false);
+  const [localDone, setLocalDone] = useState(false);
+  const [localUsername, setLocalUsername] = useState("");
+  const [localPassword, setLocalPassword] = useState("");
   const [claimMsg, setClaimMsg] = useState("");
   const [disk, setDisk] = useState<DiskInfo | null>(null);
   const pollRef = useRef<number | null>(null);
@@ -212,6 +221,12 @@ export default function Setup() {
       .getConfig()
       .then((c) => {
         setCfg(c);
+        if (c.frontends)
+          setFrontends(
+            Object.fromEntries(
+              Object.entries(c.frontends).map(([id, value]) => [id, value.enabled]),
+            ),
+          );
         setPinDone(Boolean(c.plex.token));
         setLoadError(null);
       })
@@ -350,7 +365,7 @@ export default function Setup() {
     () =>
       cfg
         ? canAdvance(step, {
-            plexDone: Boolean(cfg.plex.claimed && cfg.plex.token),
+            plexDone: Boolean(cfg.plex.claimed && cfg.plex.token) || localDone,
             providers: cfg.usenet.providers ?? [],
             indexers: cfg.indexers ?? [],
             providerTests,
@@ -362,7 +377,17 @@ export default function Setup() {
             skipped,
           })
         : false,
-    [cfg, step, providerTests, indexerTests, debridTests, optTests, tmdbBundled, skipped],
+    [
+      cfg,
+      step,
+      providerTests,
+      indexerTests,
+      debridTests,
+      optTests,
+      tmdbBundled,
+      skipped,
+      localDone,
+    ],
   );
 
   if (loadError && !cfg)
@@ -396,6 +421,58 @@ export default function Setup() {
         <Button onClick={() => navigate("/cache")}>Open cache settings</Button>
       </div>
     );
+
+  if (choosing) {
+    const options = [
+      ["plex", "Plex"],
+      ["jellyfin", "Jellyfin"],
+      ["emby", "Emby"],
+      ["silo", "Silo"],
+      ["stremio", "Stremio"],
+      ["webdav", "Files"],
+    ];
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-5 p-6">
+        <EtherMark size={40} />
+        <h1 className="text-xl font-semibold">Where will your household watch?</h1>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {options.map(([id, label]) => (
+            <label
+              key={id}
+              className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-surface p-4"
+            >
+              <Checkbox
+                checked={Boolean(frontends[id!])}
+                onChange={(e) => setFrontends({ ...frontends, [id!]: e.currentTarget.checked })}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <MutationError error={error} />
+        <Button
+          disabled={saving || !Object.values(frontends).some(Boolean)}
+          onClick={() => {
+            const section = Object.fromEntries(
+              options.map(([id]) => [id, { enabled: Boolean(frontends[id!]) }]),
+            );
+            setSaving(true);
+            setError(null);
+            void api
+              .putConfig({ ...cfg, frontends: section })
+              .then((saved) => {
+                setCfg(saved);
+                setChoosing(false);
+              })
+              .catch(setError)
+              .finally(() => setSaving(false));
+          }}
+        >
+          Save and continue
+        </Button>
+      </div>
+    );
+  }
 
   const providers = cfg.usenet.providers ?? [];
   const indexers = cfg.indexers ?? [];
@@ -455,7 +532,7 @@ export default function Setup() {
             <div>
               <h1 className="text-lg font-semibold text-fg">Set up Ether</h1>
               <p className="text-sm text-fg-muted">
-                Five quick steps and your Plex apps will find Ether like any other server.
+                Complete the steps below to set up your household.
               </p>
             </div>
           </div>
@@ -529,10 +606,52 @@ export default function Setup() {
           </AlertDescription>
         </Alert>
       ) : null}
-      <h2 className="text-base font-semibold text-fg">{STEPS[step]!.heading}</h2>
+      <h2 className="text-base font-semibold text-fg">
+        {step === 0 && !frontends.plex ? "Create your owner account" : STEPS[step]!.heading}
+      </h2>
       <MutationError error={error} />
 
-      {step === 0 ? (
+      {step === 0 && !frontends.plex ? (
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setSaving(true);
+            setError(null);
+            void api
+              .localSetup(localUsername, localPassword)
+              .then(({ token }) => {
+                setToken(token);
+                setLocalPassword("");
+                setLocalDone(true);
+              })
+              .catch(setError)
+              .finally(() => setSaving(false));
+          }}
+        >
+          <Field label="Username" htmlFor="setup-owner-username">
+            <Input
+              id="setup-owner-username"
+              autoComplete="username"
+              value={localUsername}
+              onChange={(e) => setLocalUsername(e.currentTarget.value)}
+            />
+          </Field>
+          <Field label="Password" htmlFor="setup-owner-password">
+            <Input
+              id="setup-owner-password"
+              type="password"
+              autoComplete="new-password"
+              value={localPassword}
+              onChange={(e) => setLocalPassword(e.currentTarget.value)}
+            />
+          </Field>
+          <Button type="submit" disabled={saving || localDone || !localUsername || !localPassword}>
+            {localDone ? "Owner created" : "Create owner"}
+          </Button>
+        </form>
+      ) : null}
+      {step === 0 && frontends.plex ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
             Ether registers with your Plex account like a fresh Plex Media Server, so the official
@@ -1055,8 +1174,8 @@ export default function Setup() {
           </div>
           <Alert variant="info">
             <AlertDescription>
-              Finishing setup locks this admin page to your Plex account. You can reopen setup later
-              from Connectivity.
+              Finishing setup locks this admin page to your owner account. You can reopen setup
+              later from Connectivity.
             </AlertDescription>
           </Alert>
         </div>

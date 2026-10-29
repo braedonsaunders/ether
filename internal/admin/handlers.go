@@ -77,8 +77,29 @@ func SetupStatus(cfg config.Config) (steps []SetupStep, complete bool) {
 	return steps, complete
 }
 
+// setupStatus uses the existing Plex requirement for legacy installs; once
+// front ends are selected, a Plex-free household instead needs a local owner.
+func (h *Handler) setupStatus(r *http.Request) ([]SetupStep, bool) {
+	cfg := h.deps.Config.Get()
+	steps, complete := SetupStatus(cfg)
+	if cfg.Frontends != nil && !cfg.Frontends["plex"].Enabled {
+		for i := range steps {
+			if steps[i].ID == "plex" {
+				steps[i].Title = "Create local owner"
+				steps[i].Complete = h.deps.LocalOwnerConfigured != nil && h.deps.LocalOwnerConfigured(r.Context())
+				if steps[i].Complete {
+					steps[i].Detail = "created"
+				} else {
+					steps[i].Detail = "not created"
+				}
+			}
+		}
+	}
+	return steps, complete
+}
+
 func (h *Handler) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
-	steps, complete := SetupStatus(h.deps.Config.Get())
+	steps, complete := h.setupStatus(r)
 	requiredDone := true
 	for _, s := range steps {
 		if s.Required && !s.Complete {
@@ -97,13 +118,13 @@ func (h *Handler) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		Force bool `json:"force"`
 	}
 	_ = decodeJSONLenient(r, &body) // empty body tolerated
-	steps, _ := SetupStatus(h.deps.Config.Get())
+	steps, _ := h.setupStatus(r)
 	// Never even when forced: after setup only the server's Plex owner can
 	// open the admin UI, so finishing unclaimed would lock everyone out.
 	for _, s := range steps {
 		if s.ID == "plex" && !s.Complete {
 			writeError(w, http.StatusConflict, "plex_required",
-				"sign in to Plex and claim this server first: after setup only its Plex owner can open this page")
+				"create a local owner or claim Plex before completing setup")
 			return
 		}
 	}

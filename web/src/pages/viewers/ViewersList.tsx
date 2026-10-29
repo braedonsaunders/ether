@@ -10,6 +10,7 @@ import type { Viewer } from "../../lib/contract";
 import { formatDateTime, formatNumber, parseTime, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
+import { CreateViewer } from "./ManageViewers";
 import { ViewerDefaults } from "./Defaults";
 import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
@@ -24,7 +25,7 @@ export default function ViewersList({ tab = "people" }: { tab?: Tab } = {}) {
   return (
     <DomainPage
       title="Viewers"
-      description="Current viewers and imported history, with access synced from Plex."
+      description="Manage household viewers and imported history."
       base="/viewers"
       tabs={TABS}
       active={tab}
@@ -73,6 +74,12 @@ function People() {
     );
   return (
     <div className="space-y-4">
+      <CreateViewer
+        onCreated={() => {
+          void state.reload();
+          void users.reload();
+        }}
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PlexAccessNote />
         <Select

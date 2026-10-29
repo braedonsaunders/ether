@@ -16,6 +16,8 @@ import { Meter } from "../../components/charts";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { titleSubtitle } from "../../components/Poster";
 import { viewerName } from "../../components/pickers";
+import SignInMethods from "../me/SignInMethods";
+import { getToken } from "../../lib/api";
 import { api, errorMessage } from "../../lib/api";
 import type { Viewer, ViewerDetail } from "../../lib/contract";
 import { formatDateTime, formatNumber, relativeTime } from "../../lib/format";
@@ -27,9 +29,10 @@ import { ViewerWatchlist } from "./sections/ViewerWatchlist";
 import { TasteView } from "./TasteView";
 import { ViewerAccess } from "./ViewerAccess";
 import { ViewerPlayback } from "./ViewerPlayback";
-import { PlexAccessNote, ViewerStatus } from "./ViewerStatus";
+import { Membership } from "./ManageViewers";
+import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
-const TABS = ["taste", "activity", "home", "access", "playback", "watchlist"] as const;
+const TABS = ["taste", "activity", "home", "access", "playback", "watchlist", "sign-in"] as const;
 type Tab = (typeof TABS)[number];
 function asTab(raw: string | undefined): Tab | undefined {
   return raw && (TABS as readonly string[]).includes(raw) ? (raw as Tab) : undefined;
@@ -122,6 +125,7 @@ export default function ViewerProfile() {
             { key: "access", label: "Limits & preferences" },
             { key: "playback", label: "Audio & subtitles" },
             { key: "watchlist", label: "Watchlist" },
+            { key: "sign-in", label: "Sign-in methods & devices" },
           ]}
         />
       }
@@ -142,6 +146,17 @@ export default function ViewerProfile() {
         <ViewerAccess key={id} viewer={v} />
       ) : tab === "playback" ? (
         <ViewerPlayback key={id} viewer={v} />
+      ) : tab === "sign-in" ? (
+        <div className="space-y-6">
+          {!v.isOwner ? (
+            <Membership
+              id={id}
+              active={viewerStatus(v) === "active"}
+              onChange={() => void viewer.reload()}
+            />
+          ) : null}
+          <SignInMethods base={`/users/${id}`} token={getToken()} owner />
+        </div>
       ) : (
         <ViewerWatchlist viewerId={id} />
       )}

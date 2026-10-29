@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"errors"
+	"github.com/braedonsaunders/ether/internal/identity"
 	"net"
 	"net/http"
 	"strconv"
@@ -130,7 +131,7 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 // parse attaches the parsed request context.
 func (s *Server) parse(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pr := ParseRequest(r)
+		pr := ParseRequest(r, identity.ProxyPrefixes(s.cfg().Server.TrustedProxyCIDRs)...)
 		next.ServeHTTP(w, r.WithContext(withRequest(r.Context(), pr)))
 	})
 }

@@ -15,6 +15,24 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState<{ code: string; authUrl: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const localSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      const result = await api.localSignIn(username, password);
+      if (!cancelled.current) {
+        setToken(result.token);
+        onReady();
+      }
+    } catch (err) {
+      if (!cancelled.current) setError(err);
+    } finally {
+      if (!cancelled.current) setBusy(false);
+    }
+  };
   const cancelled = useRef(false);
   const popupRef = useRef<Window | null>(null);
   useEffect(() => {
@@ -77,9 +95,7 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
         <div className="mb-6 flex flex-col items-center text-center">
           <EtherLogo className="w-48" />
           <h1 className="sr-only">{boot.serverName || "Ether"}</h1>
-          <p className="mt-4 text-sm text-fg-muted">
-            Sign in with the Plex account that owns this server.
-          </p>
+          <p className="mt-4 text-sm text-fg-muted">Sign in to the owner account.</p>
         </div>
         {error ? (
           <Alert variant="destructive" className="mb-4" role="alert">
@@ -109,9 +125,34 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
             .
           </p>
         ) : null}
+        <form onSubmit={(e) => void localSignIn(e)} className="mt-5 space-y-3">
+          <Label htmlFor="local-username">Username</Label>
+          <Input
+            id="local-username"
+            autoComplete="username"
+            value={username}
+            onChange={(e) => setUsername(e.currentTarget.value)}
+          />
+          <Label htmlFor="local-password">Password</Label>
+          <Input
+            id="local-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.currentTarget.value)}
+          />
+          <Button
+            type="submit"
+            variant="outline"
+            className="w-full"
+            disabled={busy || !username || !password}
+          >
+            Sign in
+          </Button>
+        </form>
         <TokenFallback onReady={onReady} />
         <p className="mt-6 text-center text-xs text-fg-subtle">
-          Your Plex account must own this Ether server.
+          Only the owner can access this console.
         </p>
       </Card>
     </main>

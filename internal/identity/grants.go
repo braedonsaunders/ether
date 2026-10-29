@@ -119,7 +119,8 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	now := g.now().UnixMilli()
 	var stored string
 	var id int64
-	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, surface, now).Scan(&stored, &id)
+	var owner int
+	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id,u.is_owner FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, surface, now).Scan(&stored, &id, &owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, core.ErrUnauthorized
 	}
@@ -133,6 +134,11 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	if err != nil {
 		return nil, err
 	}
+	// Owner privileges follow the shared database even if a node's viewer
+	// cache has not yet received a role-change invalidation.
+	copyViewer := *viewer
+	copyViewer.IsOwner = owner == 1
+	viewer = &copyViewer
 	res, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET last_used=?,expires=? WHERE hash=? AND surface=? AND revoked=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, now, now+g.ttl.Milliseconds(), hash, surface, now, id)
 	if err != nil {
 		return nil, err

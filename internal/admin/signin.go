@@ -18,8 +18,9 @@ type pinHandles struct {
 }
 
 type pinHandle struct {
-	pinID   string
-	expires time.Time
+	viewerID int64
+	pinID    string
+	expires  time.Time
 }
 
 const pinHandleTTL = 15 * time.Minute
@@ -102,4 +103,23 @@ func (h *Handler) handleSignInPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"done": true, "token": token})
+}
+
+func (p *pinHandles) addLinked(pinID string, viewerID int64) string {
+	handle := p.add(pinID)
+	p.mu.Lock()
+	v := p.m[handle]
+	v.viewerID = viewerID
+	p.m[handle] = v
+	p.mu.Unlock()
+	return handle
+}
+func (p *pinHandles) linked(handle string, viewerID int64) (string, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	v, ok := p.m[handle]
+	if !ok || v.viewerID != viewerID || time.Now().After(v.expires) {
+		return "", false
+	}
+	return v.pinID, true
 }

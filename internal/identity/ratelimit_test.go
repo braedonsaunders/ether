@@ -63,3 +63,46 @@ func TestLoginLimiterCleanupIsBounded(t *testing.T) {
 		t.Fatalf("remaining: %d %v", count, err)
 	}
 }
+
+func TestPollingLimitsAreIndependentOfLogin(t *testing.T) {
+	db := store.OpenTest(t)
+	now := time.Unix(1000, 0)
+	ctx := context.Background()
+	ip := netip.MustParseAddr("192.0.2.1")
+	login, _ := NewLoginLimiter(db, 15*time.Minute, 30, 8, func() time.Time { return now })
+	poll, _ := NewPollLimiter(db, time.Minute, 120, 60, func() time.Time { return now })
+	// A complete ten-minute PIN flow, polling every two seconds, is admitted.
+	for n := 0; n < 300; n++ {
+		ok, err := poll.Allow(ctx, "opaque-handle", ip)
+		if err != nil || !ok {
+			t.Fatalf("poll %d: %v %v", n, ok, err)
+		}
+		now = now.Add(2 * time.Second)
+	}
+	for n := 0; n < 8; n++ {
+		ok, err := login.Allow(ctx, "alice", ip)
+		if err != nil || !ok {
+			t.Fatalf("login %d: %v %v", n, ok, err)
+		}
+	}
+	// A poll cleanup must not delete a still-valid longer login window.
+	now = now.Add(2 * time.Minute)
+	if _, err := poll.Cleanup(ctx, 100); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := login.Allow(ctx, "alice", ip)
+	if err != nil || ok {
+		t.Fatalf("login budget reset by polling: %v %v", ok, err)
+	}
+	// An abusive burst of the same polling handle is bounded.
+	for n := 0; n < 60; n++ {
+		ok, err = poll.Allow(ctx, "new-handle", ip)
+		if err != nil || !ok {
+			t.Fatalf("burst %d: %v %v", n, ok, err)
+		}
+	}
+	ok, err = poll.Allow(ctx, "new-handle", ip)
+	if err != nil || ok {
+		t.Fatalf("poll abuse admitted: %v %v", ok, err)
+	}
+}

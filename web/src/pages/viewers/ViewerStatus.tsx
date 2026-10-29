@@ -17,6 +17,8 @@ export function ViewerStatus({ viewer }: { viewer: Viewer }) {
 }
 export function PlexAccessNote({ viewer }: { viewer?: Viewer }) {
   const status = viewer ? viewerStatus(viewer) : undefined;
+  if (viewer && !viewer.plexId)
+    return <p className="text-sm text-fg-muted">Access is managed by the owner.</p>;
   return (
     <p className="text-sm text-fg-muted">
       {status === "imported"
@@ -24,7 +26,7 @@ export function PlexAccessNote({ viewer }: { viewer?: Viewer }) {
         : status === "inactive"
           ? "This viewer no longer has server access. Their history is retained. "
           : ""}
-      Sharing and server access are managed on{" "}
+      Plex sharing is managed on{" "}
       <a
         href={PLEX_ACCESS_URL}
         target="_blank"

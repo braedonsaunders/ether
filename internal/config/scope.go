@@ -32,6 +32,7 @@ func (s Scope) String() string {
 // sectionScopes classifies every top-level key of Config whose whole value
 // shares one scope.
 var sectionScopes = map[string]Scope{
+	"frontends":     Shared,
 	"posters":       Shared,
 	"sharedCache":   Shared,
 	"availability":  Shared,
@@ -57,6 +58,7 @@ var sectionScopes = map[string]Scope{
 // and node-local settings.
 var mixedSections = map[string]map[string]Scope{
 	"server": {
+		"trustedProxyCIDRs":  Local,
 		"port":               Local,
 		"bindAddress":        Local,
 		"logLevel":           Local,

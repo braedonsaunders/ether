@@ -2,13 +2,13 @@ package plex
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"net/netip"
 	"strconv"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -82,7 +82,7 @@ func plexParam(r *http.Request, name string) string {
 
 // ParseRequest builds the request context from an HTTP request. Forwarded
 // addresses are considered only for a loopback peer (a local reverse proxy).
-func ParseRequest(r *http.Request) *Request {
+func ParseRequest(r *http.Request, trusted ...netip.Prefix) *Request {
 	pr := &Request{
 		Token:              plexParam(r, "X-Plex-Token"),
 		ClientID:           plexParam(r, "X-Plex-Client-Identifier"),
@@ -130,8 +130,9 @@ func ParseRequest(r *http.Request) *Request {
 	if wantsJSON(r) {
 		pr.Format = model.JSON
 	}
-	pr.RemoteIP = clientIP(r)
-	pr.Remote = !isLocalAddr(pr.RemoteIP)
+	var local bool
+	pr.RemoteIP, local = identity.ClientNet(r, trusted...)
+	pr.Remote = !local
 	return pr
 }
 
@@ -195,59 +196,6 @@ func acceptQ(params string) float64 {
 		return q
 	}
 	return 1
-}
-
-// clientIP is the peer address, or a forwarded address for a loopback proxy.
-// Scan from the proxy end for a public hop: a client-controlled local prefix
-// must not hide the public address appended by a proxy. Entirely local chains
-// use the nearest hop. This is conservative LAN classification, not identity.
-func clientIP(r *http.Request) netip.Addr {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	ip, err := netip.ParseAddr(strings.Trim(host, "[]"))
-	if err != nil {
-		return netip.Addr{}
-	}
-	ip = ip.Unmap()
-	if ip.IsLoopback() {
-		if values := r.Header.Values("X-Forwarded-For"); len(values) > 0 {
-			hops := strings.Split(strings.Join(values, ","), ",")
-			var nearest netip.Addr
-			for i := len(hops) - 1; i >= 0; i-- {
-				fip, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
-				if err != nil {
-					return netip.Addr{} // malformed forwarding is never local
-				}
-				fip = fip.Unmap()
-				if !isLocalAddr(fip) {
-					return fip
-				}
-				if !nearest.IsValid() {
-					nearest = fip
-				}
-			}
-			return nearest
-		}
-		if xr := r.Header.Get("X-Real-IP"); xr != "" {
-			if fip, err := netip.ParseAddr(strings.TrimSpace(xr)); err == nil {
-				return fip.Unmap()
-			}
-			return netip.Addr{}
-		}
-	}
-	return ip
-}
-
-var cgnat = netip.MustParsePrefix("100.64.0.0/10") // Tailscale and other overlays
-
-// isLocalAddr reports whether ip is on a LAN-like network.
-func isLocalAddr(ip netip.Addr) bool {
-	if !ip.IsValid() {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || cgnat.Contains(ip)
 }
 
 // window applies the client's paging request to a list of n items and

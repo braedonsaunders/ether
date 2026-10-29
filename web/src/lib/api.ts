@@ -185,6 +185,10 @@ export type TestFn = () => Promise<TestResult>;
 export const api = {
   // ---- Bootstrap, sign-in, setup -----------------------------------------
   bootstrap: () => apiFetch<Bootstrap>("/bootstrap"),
+  localSignIn: (username: string, password: string) =>
+    post<{ token: string }>("/auth/local", { username, password }),
+  localSetup: (username: string, password: string) =>
+    post<{ token: string }>("/setup/local", { username, password }),
   signInStart: () => post<{ handle: string; code: string; authUrl: string }>("/auth/pin"),
   signInPoll: (handle: string) =>
     apiFetch<{ done: boolean; token?: string }>(`/auth/pin/${encodeURIComponent(handle)}`),

@@ -166,6 +166,13 @@ function renderWizard(configure?: (fake: ReturnType<typeof createFakeServer>) =>
   return fake;
 }
 
+async function selectPlex() {
+  expect(
+    await screen.findByRole("heading", { name: "Where will your household watch?" }),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+}
+
 describe("setup wizard", () => {
   it.each([false, true])("ignores an older disk response (failure=%s)", async (failOld) => {
     const pending: { resolve: (d: DiskInfo) => void; reject: (e: Error) => void }[] = [];
@@ -176,6 +183,7 @@ describe("setup wizard", () => {
         }),
     );
     const fake = renderWizard();
+    await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     for (const heading of ["Usenet providers", "Indexers and addons"]) {
@@ -221,6 +229,7 @@ describe("setup wizard", () => {
       f.state.config.plex.claimed = false;
       f.state.config.plex.ownerUsername = "";
     });
+    await selectPlex();
     await screen.findByRole("button", { name: "Sign in to plex.tv" });
     vi.useFakeTimers();
     const open = vi.spyOn(window, "open").mockReturnValue(null);
@@ -248,6 +257,7 @@ describe("setup wizard", () => {
       f.state.config.plex.claimed = false;
       f.state.config.plex.ownerUsername = "";
     });
+    await selectPlex();
     await screen.findByRole("button", { name: "Sign in to plex.tv" });
     vi.useFakeTimers();
     vi.spyOn(window, "open").mockReturnValue(null);
@@ -280,6 +290,7 @@ describe("setup wizard", () => {
     renderWizard((f) => {
       f.state.config.plex.claimed = false;
     });
+    await selectPlex();
     const button = await screen.findByRole("button", { name: "Claim server" });
     let finish!: (v: { ok: boolean }) => void;
     vi.spyOn(api, "claim").mockImplementation(
@@ -299,6 +310,7 @@ describe("setup wizard", () => {
 
   it("keeps the required cache restart visible after finishing setup", async () => {
     const fake = renderWizard();
+    await selectPlex();
     vi.spyOn(api, "setupComplete").mockResolvedValue({
       setupComplete: true,
       requiredComplete: true,
@@ -333,6 +345,7 @@ describe("setup wizard", () => {
       f.state.config.usenet.providers = [];
       f.state.config.indexers = [];
     });
+    await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Usenet providers" });
@@ -359,6 +372,7 @@ describe("setup wizard", () => {
       f.state.config.usenet.providers = [];
       f.state.config.indexers = [];
     });
+    await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Debrid accounts" });
@@ -403,6 +417,7 @@ describe("setup wizard", () => {
       f.state.config.usenet.providers = [];
       f.state.config.indexers = [];
     });
+    await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     for (const heading of ["Usenet providers", "Indexers and addons"]) {
@@ -422,6 +437,7 @@ describe("setup wizard", () => {
         f.state.config.usenet.providers = [];
         f.state.config.indexers = [];
       });
+      await selectPlex();
       await screen.findByText(/Signed in as alice/);
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
       await screen.findByRole("heading", { name: "Usenet providers" });
@@ -445,6 +461,7 @@ describe("setup wizard", () => {
       f.state.config.plex.claimed = false;
       f.state.config.plex.ownerUsername = "";
     });
+    await selectPlex();
     await screen.findByRole("button", { name: "Sign in to plex.tv" });
     vi.useFakeTimers();
     vi.spyOn(window, "open").mockReturnValue(null);
@@ -496,6 +513,7 @@ describe("setup wizard", () => {
     const fake = renderWizard((f) => {
       f.state.config.plex.claimed = false;
     });
+    await selectPlex();
     const claim = vi
       .spyOn(api, "claim")
       .mockRejectedValueOnce(new Error("Plex unavailable"))
@@ -515,14 +533,33 @@ describe("setup wizard", () => {
     expect(screen.getByRole("button", { name: "Save and continue" })).toBeEnabled();
   });
 
+  it("creates a local owner when Plex is not selected", async () => {
+    renderWizard((f) => {
+      f.state.config.plex.token = "";
+      f.state.config.plex.claimed = false;
+    });
+    const create = vi.spyOn(api, "localSetup").mockResolvedValue({ token: "local-session" });
+    await screen.findByRole("heading", { name: "Where will your household watch?" });
+    fireEvent.click(screen.getByLabelText("Plex"));
+    fireEvent.click(screen.getByLabelText("Jellyfin"));
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await screen.findByRole("heading", { name: "Create your owner account" });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create owner" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith("owner", "secret"));
+    expect(await screen.findByRole("button", { name: "Owner created" })).toBeDisabled();
+  });
+
   it("walks from a claimed Plex step to providers and gates on the provider test", async () => {
     const fake = renderWizard();
+    await selectPlex();
     expect(await screen.findByText(/Signed in as alice/)).toBeInTheDocument();
     const next = screen.getByRole("button", { name: "Save and continue" });
     expect(next).toBeEnabled();
     fireEvent.click(next);
     expect(await screen.findByRole("heading", { name: "Usenet providers" })).toBeInTheDocument();
-    expect(calls(fake, "PUT", "/config")).toHaveLength(1);
+    expect(calls(fake, "PUT", "/config")).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "Save and continue" })[0]).toBeDisabled();
     fireEvent.click(screen.getAllByRole("button", { name: /^Test$/ })[0]!);
     await waitFor(() => expect(screen.getAllByText(/OK · \d+ ms/).length).toBeGreaterThan(0));
@@ -536,6 +573,7 @@ describe("setup wizard", () => {
 
   it("the skip-test checkbox unblocks an untested step", async () => {
     renderWizard();
+    await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Usenet providers" });
@@ -546,6 +584,7 @@ describe("setup wizard", () => {
 
   it("an unfinished setup sends the owner to the wizard instead of Home", async () => {
     renderApp("/", { bootstrap: { setupComplete: false } });
+    await selectPlex();
     expect(await screen.findByRole("heading", { name: "Set up Ether" })).toBeInTheDocument();
     expect(screen.getAllByText("Finish setup").length).toBeGreaterThan(0);
   });

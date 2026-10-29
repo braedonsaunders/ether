@@ -211,6 +211,7 @@ export interface PosterProviderConfig {
 }
 
 export interface EtherConfig {
+  frontends?: Record<string, { enabled: boolean }>;
   posters?: PosterProviderConfig;
   availability?: AvailabilityConfig;
   server: {
@@ -409,6 +410,7 @@ export interface Bootstrap {
   ok: boolean;
   version: string;
   setupComplete: boolean;
+  ownerConfigured?: boolean;
   authenticated: boolean;
   authRequired: boolean;
   serverName: string;

@@ -449,14 +449,23 @@ function Gate({ onReady }: { onReady: () => void }) {
   );
 }
 
+const Me = lazy(() => import("./pages/me/Me"));
+
 export default function App() {
+  const location = useLocation();
   const [ready, setReady] = useState(false);
   const onReady = useCallback(() => setReady(true), []);
   return (
     <ThemeProvider {...theme}>
       <UiLinkProvider link={RouterAnchor}>
-        <Gate onReady={onReady} />
-        <BrandSplash ready={ready} />
+        {location.pathname === "/me" ? (
+          <Suspense fallback={<PageFallback />}>
+            <Me />
+          </Suspense>
+        ) : (
+          <Gate onReady={onReady} />
+        )}
+        {location.pathname !== "/me" ? <BrandSplash ready={ready} /> : null}
         <Toaster richColors closeButton position="bottom-right" />
         <ConfirmRoot />
         <PromptRoot />

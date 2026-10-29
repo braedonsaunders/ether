@@ -22,8 +22,10 @@ import (
 )
 
 type Config struct {
-	Posters      Posters      `json:"posters"`
-	Availability Availability `json:"availability"`
+	// Frontends selects protocol listeners by their registered ID.
+	Frontends    map[string]Frontend `json:"frontends,omitempty"`
+	Posters      Posters             `json:"posters"`
+	Availability Availability        `json:"availability"`
 	// SharedCache is the cluster-wide NAS policy. Mount paths stay in Cache.
 	SharedCache   *Cache        `json:"sharedCache,omitempty"`
 	Server        Server        `json:"server"`
@@ -51,7 +53,14 @@ type Config struct {
 	SetupComplete bool         `json:"setupComplete"`
 }
 
+// Frontend holds the enabled state of a protocol front end.
+type Frontend struct {
+	Enabled bool `json:"enabled"`
+}
+
 type Server struct {
+	// TrustedProxyCIDRs are proxy peer networks whose forwarding headers are trusted.
+	TrustedProxyCIDRs []string `json:"trustedProxyCIDRs,omitempty"`
 	// Port for the Plex API and web UI. PMS uses 32400.
 	Port         int    `json:"port"`
 	BindAddress  string `json:"bindAddress"`

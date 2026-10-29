@@ -133,3 +133,31 @@ func TestResolverSeparatesPlexAndGrants(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+type staleOwner struct{}
+
+func (staleOwner) ActiveUser(_ context.Context, id int64) (*core.User, error) {
+	return &core.User{ID: id, IsOwner: true}, nil
+}
+func TestGrantOwnerRoleUsesCurrentDatabase(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,is_owner,created_at,updated_at) VALUES(1,1,0,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(db, staleOwner{}, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := grants.Issue(ctx, 1, nil, "owner", core.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := grants.Resolve(ctx, "owner", token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.IsOwner {
+		t.Fatal("stale owner role accepted")
+	}
+}

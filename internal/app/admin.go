@@ -11,6 +11,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/plextv"
@@ -21,7 +22,32 @@ import (
 )
 
 func (a *App) buildAdmin() http.Handler {
+	local, _ := identity.NewLocal(a.db)
+	grants, _ := identity.NewGrants(a.db, a.users, 30*24*time.Hour, nil)
+	limiter, _ := identity.NewLoginLimiter(a.db, 15*time.Minute, 30, 8, nil)
+	pollLimiter, _ := identity.NewPollLimiter(a.db, time.Minute, 120, 60, nil)
+	quick, _ := identity.NewQuickConnect(a.db, 10*time.Minute, 30*24*time.Hour, nil)
+	invites, _ := identity.NewInvite(a.db, 24*time.Hour, 30*24*time.Hour, nil)
 	return admin.New(admin.Deps{
+		Invites:         invites,
+		SetViewerActive: a.users.SetOwnerEnabled,
+		LocalOwnerConfigured: func(ctx context.Context) bool {
+			owner, err := a.users.Owner(ctx)
+			if err != nil {
+				return false
+			}
+			links, err := local.Links(ctx, owner.ID)
+			if err != nil {
+				return true
+			} // fail closed if identity storage is unavailable
+			for _, link := range links {
+				if link.Provider == "local" {
+					return true
+				}
+			}
+			return false
+		},
+		AuthenticatePlex: a.users.Authenticate, LinkPlex: a.users.LinkPlex, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, PollLimiter: pollLimiter, QuickConnect: quick, RefreshViewers: a.users.RefreshViewers, OwnerConfigured: func(ctx context.Context) bool { _, err := a.users.Owner(ctx); return err == nil },
 		Config:        a.cfg,
 		Extensions:    a.extensionHandlers(),
 		ValidateExtra: a.validateExtra,
