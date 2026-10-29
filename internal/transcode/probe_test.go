@@ -34,6 +34,8 @@ func mustParse(t *testing.T, name string) core.MediaInfo {
 func TestParseProbeGolden(t *testing.T) {
 	sec := func(f float64) time.Duration { return time.Duration(f * float64(time.Second)) }
 	boolean := func(v bool) *bool { return &v }
+	integer := func(v int) *int { return &v }
+	rate := func(v float64) *float64 { return &v }
 	tests := []struct {
 		file string
 		want core.MediaInfo
@@ -128,6 +130,47 @@ func TestParseProbeGolden(t *testing.T) {
 			for i := range tt.want.Streams {
 				tt.want.Streams[i].DefaultDisposition = boolean(tt.want.Streams[i].Default)
 				tt.want.Streams[i].ForcedDisposition = boolean(tt.want.Streams[i].Forced)
+			}
+			// Assert the additional probe facts without changing the legacy fields.
+			v := &tt.want.Streams[0]
+			switch tt.file {
+			case "mkv_hevc_hdr10.json":
+				v.ProbedLevel = integer(153)
+				v.PixelFormat = "yuv420p10le"
+				v.TimeBase = "1/1000"
+				v.ReferenceFrames = integer(1)
+				v.DisplayAspectRatio = "16:9"
+				v.FieldOrder = "progressive"
+				v.ProbedInterlaced = boolean(false)
+				v.AverageFrameRate = rate(24000.0 / 1001)
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
+				tt.want.Streams[1].TimeBase = "1/1000"
+			case "mkv_dv_p8.json":
+				v.PixelFormat = "yuv420p10le"
+				v.AverageFrameRate = rate(24000.0 / 1001)
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
+				v.DolbyVisionConfigurationPresent = boolean(true)
+				v.DolbyVisionBLCompatibilityIDPresent = boolean(true)
+				v.ProbedDolbyVisionProfile = integer(8)
+				v.ProbedDolbyVisionLevel = integer(6)
+			case "mp4_h264_aac.json":
+				v.ProbedLevel = integer(40)
+				v.PixelFormat = "yuv420p"
+				v.CodecTag = "avc1"
+				v.TimeBase = "1/12288"
+				v.BitsPerRawSample = integer(8)
+				v.AverageFrameRate = rate(24)
+				v.ReferenceFrameRate = rate(24)
+				tt.want.Streams[1].CodecTag = "mp4a"
+				tt.want.Streams[2].CodecTag = "tx3g"
+			case "mkv_truehd_atmos.json":
+				v.PixelFormat = "yuv420p"
+				v.AverageFrameRate = rate(24000.0 / 1001)
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
+				tt.want.Streams[1].BitsPerRawSample = integer(24)
+			case "mkv_pgs.json":
+				v.PixelFormat = "yuv420p"
+				v.ReferenceFrameRate = rate(24000.0 / 1001)
 			}
 			got := mustParse(t, tt.file)
 			if !reflect.DeepEqual(got, tt.want) {

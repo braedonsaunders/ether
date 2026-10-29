@@ -8,7 +8,9 @@ import (
 
 func TestPublicMediaDetachesDispositionAndVisionFlags(t *testing.T) {
 	yes := true
-	source := core.MediaInfo{Streams: []core.StreamInfo{{Type: "subtitle", DefaultDisposition: &yes, ForcedDisposition: &yes, HearingImpaired: &yes, Original: &yes, VisualImpaired: &yes, Commentary: &yes, Dub: &yes, HDR10Plus: &yes, DolbyVisionBLPresent: &yes, ExternalURL: "secret"}}}
+	number := 4
+	rate := 24.0
+	source := core.MediaInfo{Streams: []core.StreamInfo{{Type: "subtitle", DefaultDisposition: &yes, ForcedDisposition: &yes, HearingImpaired: &yes, Original: &yes, VisualImpaired: &yes, Commentary: &yes, Dub: &yes, HDR10Plus: &yes, ProbedInterlaced: &yes, DolbyVisionConfigurationPresent: &yes, DolbyVisionBLCompatibilityIDPresent: &yes, NALLengthSize: &number, ReferenceFrames: &number, BitsPerRawSample: &number, ProbedLevel: &number, ProbedDolbyVisionProfile: &number, ProbedDolbyVisionLevel: &number, AverageFrameRate: &rate, ReferenceFrameRate: &rate, DolbyVisionBLPresent: &yes, ExternalURL: "secret"}}}
 	visible := publicMedia(source)
 	if visible.Streams[0].ExternalURL != "" {
 		t.Fatal("source URL exposed")
@@ -21,8 +23,19 @@ func TestPublicMediaDetachesDispositionAndVisionFlags(t *testing.T) {
 	*visible.Streams[0].Commentary = false
 	*visible.Streams[0].Dub = false
 	*visible.Streams[0].HDR10Plus = false
+	*visible.Streams[0].ProbedInterlaced = false
+	*visible.Streams[0].DolbyVisionConfigurationPresent = false
+	*visible.Streams[0].DolbyVisionBLCompatibilityIDPresent = false
+	*visible.Streams[0].NALLengthSize = 0
+	*visible.Streams[0].ReferenceFrames = 0
+	*visible.Streams[0].BitsPerRawSample = 0
+	*visible.Streams[0].ProbedLevel = 0
+	*visible.Streams[0].ProbedDolbyVisionProfile = 0
+	*visible.Streams[0].ProbedDolbyVisionLevel = 0
+	*visible.Streams[0].AverageFrameRate = 0
+	*visible.Streams[0].ReferenceFrameRate = 0
 	*visible.Streams[0].DolbyVisionBLPresent = false
-	if !yes {
+	if !yes || number != 4 || rate != 24 {
 		t.Fatal("returned stream flags mutated source")
 	}
 }

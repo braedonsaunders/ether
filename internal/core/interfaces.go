@@ -407,8 +407,21 @@ type StreamInfo struct {
 	Width              int     `json:"width,omitempty"`
 	Height             int     `json:"height,omitempty"`
 	FrameRate          float64 `json:"frameRate,omitempty"`
-	BitDepth           int     `json:"bitDepth,omitempty"`
-	ColorTransfer      string  `json:"colorTransfer,omitempty"` // smpte2084 = HDR10, arib-std-b67 = HLG
+	// Optional probe facts are nil/empty when the source did not report them.
+	AverageFrameRate   *float64 `json:"averageFrameRate,omitempty"`
+	ReferenceFrameRate *float64 `json:"referenceFrameRate,omitempty"`
+	DisplayAspectRatio string   `json:"displayAspectRatio,omitempty"`
+	PixelFormat        string   `json:"pixelFormat,omitempty"`
+	CodecTag           string   `json:"codecTag,omitempty"`
+	TimeBase           string   `json:"timeBase,omitempty"`
+	NALLengthSize      *int     `json:"nalLengthSize,omitempty"`
+	ReferenceFrames    *int     `json:"referenceFrames,omitempty"`
+	BitsPerRawSample   *int     `json:"bitsPerRawSample,omitempty"`
+	ProbedLevel        *int     `json:"probedLevel,omitempty"`
+	FieldOrder         string   `json:"fieldOrder,omitempty"`
+	ProbedInterlaced   *bool    `json:"probedInterlaced,omitempty"`
+	BitDepth           int      `json:"bitDepth,omitempty"`
+	ColorTransfer      string   `json:"colorTransfer,omitempty"` // smpte2084 = HDR10, arib-std-b67 = HLG
 	// Signalled picture format, in ffprobe's names; empty when the stream
 	// and container leave it unspecified (decoders then assume square
 	// pixels and limited range).
@@ -435,10 +448,14 @@ type StreamInfo struct {
 
 	// Configuration-record facts are optional: codec tags alone do not
 	// establish whether the enhancement/base layers or RPU are present.
-	DolbyVisionVersion    string `json:"dolbyVisionVersion,omitempty"`
-	DolbyVisionBLPresent  *bool  `json:"dolbyVisionBLPresent,omitempty"`
-	DolbyVisionELPresent  *bool  `json:"dolbyVisionELPresent,omitempty"`
-	DolbyVisionRPUPresent *bool  `json:"dolbyVisionRPUPresent,omitempty"`
+	DolbyVisionConfigurationPresent     *bool  `json:"dolbyVisionConfigurationPresent,omitempty"`
+	DolbyVisionBLCompatibilityIDPresent *bool  `json:"dolbyVisionBLCompatibilityIdPresent,omitempty"`
+	ProbedDolbyVisionProfile            *int   `json:"probedDolbyVisionProfile,omitempty"`
+	ProbedDolbyVisionLevel              *int   `json:"probedDolbyVisionLevel,omitempty"`
+	DolbyVisionVersion                  string `json:"dolbyVisionVersion,omitempty"`
+	DolbyVisionBLPresent                *bool  `json:"dolbyVisionBLPresent,omitempty"`
+	DolbyVisionELPresent                *bool  `json:"dolbyVisionELPresent,omitempty"`
+	DolbyVisionRPUPresent               *bool  `json:"dolbyVisionRPUPresent,omitempty"`
 }
 
 type Chapter struct {

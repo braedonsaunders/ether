@@ -171,7 +171,19 @@ func copyRequest(r frontend.PlanRequest) frontend.PlanRequest {
 	return r
 }
 func copyStream(stream core.StreamInfo) core.StreamInfo {
-	for _, field := range []**bool{&stream.DefaultDisposition, &stream.ForcedDisposition, &stream.HearingImpaired, &stream.Original, &stream.VisualImpaired, &stream.Commentary, &stream.Dub, &stream.HDR10Plus, &stream.DolbyVisionBLPresent, &stream.DolbyVisionELPresent, &stream.DolbyVisionRPUPresent} {
+	for _, field := range []**bool{&stream.DefaultDisposition, &stream.ForcedDisposition, &stream.HearingImpaired, &stream.Original, &stream.VisualImpaired, &stream.Commentary, &stream.Dub, &stream.HDR10Plus, &stream.DolbyVisionBLPresent, &stream.DolbyVisionELPresent, &stream.DolbyVisionRPUPresent, &stream.ProbedInterlaced, &stream.DolbyVisionConfigurationPresent, &stream.DolbyVisionBLCompatibilityIDPresent} {
+		if *field != nil {
+			value := **field
+			*field = &value
+		}
+	}
+	for _, field := range []**int{&stream.NALLengthSize, &stream.ReferenceFrames, &stream.BitsPerRawSample, &stream.ProbedLevel, &stream.ProbedDolbyVisionProfile, &stream.ProbedDolbyVisionLevel} {
+		if *field != nil {
+			value := **field
+			*field = &value
+		}
+	}
+	for _, field := range []**float64{&stream.AverageFrameRate, &stream.ReferenceFrameRate} {
 		if *field != nil {
 			value := **field
 			*field = &value

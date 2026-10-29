@@ -152,7 +152,7 @@ type ffprobeStream struct {
 	FieldOrder     string            `json:"field_order"`
 	Extradata      string            `json:"extradata"`
 	Index          int               `json:"index"`
-	Level          int               `json:"level"`
+	Level          *int              `json:"level"`
 	CodecName      string            `json:"codec_name"`
 	CodecType      string            `json:"codec_type"`
 	CodecTagString string            `json:"codec_tag_string"`
@@ -165,6 +165,10 @@ type ffprobeStream struct {
 	ColorSpace     string            `json:"color_space"`
 	ColorRange     string            `json:"color_range"`
 	SAR            string            `json:"sample_aspect_ratio"`
+	DAR            string            `json:"display_aspect_ratio"`
+	TimeBase       string            `json:"time_base"`
+	NALLengthSize  json.RawMessage   `json:"nal_length_size"`
+	Refs           *int              `json:"refs"`
 	RFrameRate     string            `json:"r_frame_rate"`
 	AvgFrameRate   string            `json:"avg_frame_rate"`
 	BitsPerRaw     string            `json:"bits_per_raw_sample"`
@@ -235,7 +239,13 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	}
 	si.Codec = NormalizeCodec(s.CodecName)
 	si.Profile = s.Profile
-	si.Level = s.Level
+	if s.Level != nil {
+		si.Level = *s.Level
+		if *s.Level >= 0 {
+			v := *s.Level
+			si.ProbedLevel = &v
+		}
+	}
 	si.Language = normalizeLanguage(tag(s.Tags, "language"))
 	si.Title = tag(s.Tags, "title")
 	si.Default = s.Disposition["default"] == 1
@@ -257,6 +267,13 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 			*field.dst = &set
 		}
 	}
+	if tag := s.CodecTagString; tag != "" && tag != "[0][0][0][0]" && tag != "0x0000" {
+		si.CodecTag = tag
+	}
+	si.TimeBase = probedTimeBase(s.TimeBase)
+	if n, err := strconv.Atoi(strings.TrimSpace(s.BitsPerRaw)); err == nil && n > 0 {
+		si.BitsPerRawSample = &n
+	}
 	si.BitrateKbps = int(atoi64(s.BitRate) / 1000)
 	if si.BitrateKbps == 0 {
 		// mkvmerge statistics tags
@@ -271,7 +288,28 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 	case "video":
 		si.Width, si.Height = s.Width, s.Height
 		si.Interlaced = s.FieldOrder != "" && s.FieldOrder != "unknown" && s.FieldOrder != "progressive"
+		switch s.FieldOrder {
+		case "progressive", "tt", "bb", "tb", "bt":
+			si.FieldOrder = s.FieldOrder
+			v := s.FieldOrder != "progressive"
+			si.ProbedInterlaced = &v
+		}
+		si.PixelFormat = probedColour(s.PixFmt)
+		si.DisplayAspectRatio = probedSAR(s.DAR)
+		if s.Refs != nil && *s.Refs >= 0 {
+			v := *s.Refs
+			si.ReferenceFrames = &v
+		}
+		if v, ok := optionalProbeInt(s.NALLengthSize); ok && v > 0 {
+			si.NALLengthSize = &v
+		}
 		avg, nominal := parseRate(s.AvgFrameRate), parseRate(s.RFrameRate)
+		if v := exactProbeRate(s.AvgFrameRate); v > 0 {
+			si.AverageFrameRate = &v
+		}
+		if v := exactProbeRate(s.RFrameRate); v > 0 {
+			si.ReferenceFrameRate = &v
+		}
 		// A material rate disagreement is evidence against a steady frame clock.
 		si.VariableFrameRate = avg > 0 && nominal > 0 && (avg/nominal < 0.999 || avg/nominal > 1.001)
 		si.FrameRate = avg
@@ -295,6 +333,30 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 					si.HDR10Plus = &present
 				}
 			}
+			if sd["side_data_type"] == "DOVI configuration record" {
+				v := true
+				si.DolbyVisionConfigurationPresent = &v
+			}
+			if _, ok := sd["dv_profile"].(float64); ok {
+				v := true
+				si.DolbyVisionConfigurationPresent = &v
+			}
+			if flag, ok := sd["dovi_config_present"].(float64); ok && (flag == 0 || flag == 1) {
+				v := flag == 1
+				si.DolbyVisionConfigurationPresent = &v
+			}
+			if _, ok := sd["dv_bl_signal_compatibility_id"].(float64); ok {
+				v := true
+				si.DolbyVisionBLCompatibilityIDPresent = &v
+			}
+			if flag, ok := sd["dv_bl_compat_id_present"].(float64); ok && (flag == 0 || flag == 1) {
+				v := flag == 1
+				si.DolbyVisionBLCompatibilityIDPresent = &v
+			}
+			if profile, ok := sd["dv_profile"].(float64); ok && profile >= 0 && profile == math.Trunc(profile) {
+				v := int(profile)
+				si.ProbedDolbyVisionProfile = &v
+			}
 			if major, ok := sd["dv_version_major"].(float64); ok {
 				minor, _ := sd["dv_version_minor"].(float64)
 				si.DolbyVisionVersion = fmt.Sprintf("%d.%d", int(major), int(minor))
@@ -314,6 +376,10 @@ func mapStream(s ffprobeStream) (core.StreamInfo, bool) {
 			}
 			if level, ok := sd["dv_level"].(float64); ok {
 				si.DolbyVisionLevel = int(level)
+				if level >= 0 && level == math.Trunc(level) {
+					v := int(level)
+					si.ProbedDolbyVisionLevel = &v
+				}
 			}
 			if compat, ok := sd["dv_bl_signal_compatibility_id"].(float64); ok {
 				si.DolbyVisionCompatibilityID = int(compat)
@@ -389,6 +455,45 @@ func isImageCodec(c string) bool {
 
 // probedSAR keeps a signalled sample aspect ratio; ffprobe reports 0:1
 // (or nothing) when neither stream nor container carries one.
+func probedTimeBase(s string) string {
+	n, d, ok := strings.Cut(s, "/")
+	num, e1 := strconv.ParseInt(n, 10, 64)
+	den, e2 := strconv.ParseInt(d, 10, 64)
+	if !ok || e1 != nil || e2 != nil || num <= 0 || den <= 0 {
+		return ""
+	}
+	return s
+}
+
+func optionalProbeInt(raw json.RawMessage) (int, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return 0, false
+	}
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		text = string(raw)
+	}
+	v, err := strconv.Atoi(text)
+	return v, err == nil
+}
+
+func exactProbeRate(s string) float64 {
+	n, d, ok := strings.Cut(s, "/")
+	if !ok {
+		return 0
+	}
+	num, e1 := strconv.ParseFloat(n, 64)
+	den, e2 := strconv.ParseFloat(d, 64)
+	if e1 != nil || e2 != nil || num <= 0 || den <= 0 || math.IsNaN(num) || math.IsNaN(den) || math.IsInf(num, 0) || math.IsInf(den, 0) {
+		return 0
+	}
+	value := num / den
+	if math.IsInf(value, 0) || math.IsNaN(value) {
+		return 0
+	}
+	return value
+}
+
 func probedSAR(s string) string {
 	n, d, ok := strings.Cut(s, ":")
 	if !ok || atoi64(n) <= 0 || atoi64(d) <= 0 {

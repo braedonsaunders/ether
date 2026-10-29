@@ -82,6 +82,55 @@ func normalizeForNative(want, got *core.MediaInfo) {
 		// Native probing does not yet report these ffprobe dispositions. Keep
 		// comparing each one whenever native probing starts supplying it.
 		if i < len(got.Streams) {
+			g := &got.Streams[i]
+			if g.AverageFrameRate == nil {
+				w.AverageFrameRate = nil
+			}
+			if g.ReferenceFrameRate == nil {
+				w.ReferenceFrameRate = nil
+			}
+			if g.DisplayAspectRatio == "" {
+				w.DisplayAspectRatio = ""
+			}
+			if g.PixelFormat == "" {
+				w.PixelFormat = ""
+			}
+			if g.CodecTag == "" {
+				w.CodecTag = ""
+			}
+			if g.TimeBase == "" {
+				w.TimeBase = ""
+			}
+			if g.FieldOrder == "" {
+				w.FieldOrder = ""
+			}
+			if g.NALLengthSize == nil {
+				w.NALLengthSize = nil
+			}
+			if g.ReferenceFrames == nil {
+				w.ReferenceFrames = nil
+			}
+			if g.BitsPerRawSample == nil {
+				w.BitsPerRawSample = nil
+			}
+			if g.ProbedLevel == nil {
+				w.ProbedLevel = nil
+			}
+			if g.ProbedInterlaced == nil {
+				w.ProbedInterlaced = nil
+			}
+			if g.DolbyVisionConfigurationPresent == nil {
+				w.DolbyVisionConfigurationPresent = nil
+			}
+			if g.DolbyVisionBLCompatibilityIDPresent == nil {
+				w.DolbyVisionBLCompatibilityIDPresent = nil
+			}
+			if g.ProbedDolbyVisionProfile == nil {
+				w.ProbedDolbyVisionProfile = nil
+			}
+			if g.ProbedDolbyVisionLevel == nil {
+				w.ProbedDolbyVisionLevel = nil
+			}
 			if got.Streams[i].DefaultDisposition == nil {
 				w.DefaultDisposition = nil
 			}
