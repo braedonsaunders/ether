@@ -126,6 +126,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				a.log.Error("frontend experience unavailable", "surface", id, "err", err)
 			}
 		}
+		tickets, _ := identity.NewTicketService(a.db, id, grants, nil)
 		var imageGrants frontend.ImageGrants
 		if id != "plex" {
 			if artwork != nil {
@@ -134,7 +135,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				imageGrants, _ = identity.NewImageGrantService(a.db, id, grants, func() frontend.Experience { return experience }, a.images, 10*time.Minute, nil)
 			}
 		}
-		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, ViewerCapabilities: a.viewerCapabilities(local, experience), ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: sessions.BindSurface(r.broker, id), Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: sessions.BindEvents(r.events, id), Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, Config: settings}
+		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, ViewerCapabilities: a.viewerCapabilities(local, experience), ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: sessions.BindSurface(r.broker, id), Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: sessions.BindEvents(r.events, id), Tickets: tickets, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, Config: settings}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.clientCount = a.frontendClients.count

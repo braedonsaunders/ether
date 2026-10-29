@@ -206,6 +206,7 @@ type Host struct {
 	Identity           SurfaceIdentity
 	IDs                ids.Codecs
 	Events             Subscriber
+	Tickets            Tickets
 	Images             Images
 	ImageGrants        ImageGrants
 	Config             func() Settings
