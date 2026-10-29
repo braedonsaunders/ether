@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/clusterbus"
@@ -14,16 +15,19 @@ import (
 const brokerStopTopic = "sessions:broker-stop"
 const brokerReportTopic = "sessions:broker-report"
 const brokerRetireTopic = "sessions:broker-retire"
+const brokerOwnershipTopic = "sessions:ownership-changed"
 
 type brokerCluster struct {
-	store             clusterStore
-	node              clusterbus.Node
-	broker            *Broker
-	stop              chan struct{}
-	done              chan struct{}
-	unsubscribe       func()
-	unsubscribeReport func()
-	unsubscribeRetire func()
+	store                clusterStore
+	node                 clusterbus.Node
+	broker               *Broker
+	stop                 chan struct{}
+	done                 chan struct{}
+	unsubscribe          func()
+	unsubscribeReport    func()
+	unsubscribeRetire    func()
+	unsubscribeOwnership func()
+	kick                 chan struct{}
 }
 
 type remoteStop struct {
@@ -49,7 +53,7 @@ type remoteRetired struct {
 }
 
 func startBrokerCluster(b *Broker, db *sql.DB, node clusterbus.Node) (*brokerCluster, error) {
-	c := &brokerCluster{store: clusterStore{db: db, node: node.NodeID()}, node: node, broker: b, stop: make(chan struct{}), done: make(chan struct{})}
+	c := &brokerCluster{store: clusterStore{db: db, node: node.NodeID()}, node: node, broker: b, stop: make(chan struct{}), done: make(chan struct{}), kick: make(chan struct{}, 1)}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	err := c.store.cleanup(ctx)
 	cancel()
@@ -59,6 +63,12 @@ func startBrokerCluster(b *Broker, db *sql.DB, node clusterbus.Node) (*brokerClu
 	c.unsubscribe = node.Subscribe(brokerStopTopic, c.receiveStop)
 	c.unsubscribeReport = node.Subscribe(brokerReportTopic, c.receiveReport)
 	c.unsubscribeRetire = node.Subscribe(brokerRetireTopic, c.receiveRetired)
+	c.unsubscribeOwnership = node.Subscribe(brokerOwnershipTopic, func([]byte) {
+		select {
+		case c.kick <- struct{}{}:
+		default:
+		}
+	})
 	go c.heartbeat()
 	return c, nil
 }
@@ -72,6 +82,10 @@ func (c *brokerCluster) heartbeat() {
 		case <-c.stop:
 			return
 		case <-ticker.C:
+		case <-c.kick:
+		}
+		{
+			c.reconcile()
 			c.broker.mu.Lock()
 			ids := make([]string, 0, len(c.broker.sessions))
 			for id := range c.broker.sessions {
@@ -96,12 +110,70 @@ func (c *brokerCluster) close() {
 	c.unsubscribe()
 	c.unsubscribeReport()
 	c.unsubscribeRetire()
+	c.unsubscribeOwnership()
 	close(c.stop)
 	<-c.done
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := c.store.cleanup(ctx); err != nil && c.broker.deps.OnEventError != nil {
 		c.broker.deps.OnEventError(err)
+	}
+}
+
+func (c *brokerCluster) ownershipChanged(ctx context.Context) {
+	if err := c.node.Publish(ctx, brokerOwnershipTopic, nil); err != nil && c.broker.deps.OnEventError != nil {
+		c.broker.deps.OnEventError(err)
+	}
+}
+
+// Recheck the elected row while holding the existing owner gate; a losing
+// node tears down only its own output and never sends Stop to the device.
+func (c *brokerCluster) reconcile() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := c.store.db.QueryContext(ctx, `SELECT id FROM plex_sessions WHERE node_id=? AND active=0 AND COALESCE(protocol,'plex')<>'plex'`, c.store.node)
+	if err != nil {
+		if c.broker.deps.OnEventError != nil {
+			c.broker.deps.OnEventError(err)
+		}
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		if c.broker.deps.OnEventError != nil {
+			c.broker.deps.OnEventError(err)
+		}
+		return
+	}
+	for _, id := range ids {
+		c.broker.mu.Lock()
+		s := c.broker.sessions[id]
+		if s != nil {
+			copy := *s
+			s = &copy
+		}
+		c.broker.mu.Unlock()
+		if s == nil {
+			continue
+		}
+		unlock, err := c.broker.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", s.public.ViewerID, s.clientID))
+		if err != nil {
+			continue
+		}
+		var active int
+		err = c.store.db.QueryRowContext(ctx, `SELECT active FROM plex_sessions WHERE id=? AND node_id=?`, id, c.store.node).Scan(&active)
+		if err == nil && active == 0 {
+			_ = c.broker.stopLocked(ctx, s)
+		}
+		unlock()
 	}
 }
 

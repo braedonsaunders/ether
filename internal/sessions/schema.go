@@ -50,4 +50,15 @@ ALTER TABLE plex_sessions ADD COLUMN device_data TEXT;
 		updated_at BIGINT NOT NULL,
 		PRIMARY KEY (viewer_id, protocol, device_id)
 	);`)
+	store.Register("sessions", 4, `
+ALTER TABLE plex_sessions ADD COLUMN active INTEGER NOT NULL DEFAULT 1;
+UPDATE plex_sessions SET active=0
+WHERE protocol IS NOT NULL AND protocol<>'plex' AND surface IS NOT NULL AND device_id IS NOT NULL
+AND EXISTS (SELECT 1 FROM plex_sessions newer WHERE newer.user_id=plex_sessions.user_id
+ AND newer.surface=plex_sessions.surface AND newer.device_id=plex_sessions.device_id
+ AND newer.protocol IS NOT NULL AND newer.protocol<>'plex'
+ AND (newer.session_key>plex_sessions.session_key OR (newer.session_key=plex_sessions.session_key AND newer.id>plex_sessions.id)));
+CREATE UNIQUE INDEX sessions_active_device ON plex_sessions(user_id,surface,device_id)
+ WHERE active=1 AND protocol IS NOT NULL AND protocol<>'plex' AND surface IS NOT NULL AND device_id IS NOT NULL;
+`)
 }

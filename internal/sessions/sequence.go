@@ -18,7 +18,10 @@ func (b *Broker) acceptSequence(ctx context.Context, s *brokerSession, sequence 
 		encoded := fmt.Sprintf("%020d", sequence)
 		for attempts := 0; attempts < 16; attempts++ {
 			var old sql.NullString
-			err := b.cluster.store.db.QueryRowContext(ctx, `SELECT report_sequence FROM plex_sessions WHERE id=? AND node_id=? AND COALESCE(protocol,'plex')<>'plex'`, s.public.ID, b.cluster.store.node).Scan(&old)
+			err := b.cluster.store.db.QueryRowContext(ctx, `SELECT report_sequence FROM plex_sessions WHERE id=? AND node_id=? AND COALESCE(protocol,'plex')<>'plex' AND active=1`, s.public.ID, b.cluster.store.node).Scan(&old)
+			if err == sql.ErrNoRows {
+				return false, noop, nil
+			}
 			if err != nil {
 				return false, noop, err
 			}
@@ -29,7 +32,7 @@ func (b *Broker) acceptSequence(ctx context.Context, s *brokerSession, sequence 
 			if old.Valid {
 				previous = old.String
 			}
-			result, err := b.cluster.store.db.ExecContext(ctx, `UPDATE plex_sessions SET report_sequence=? WHERE id=? AND node_id=? AND COALESCE(protocol,'plex')<>'plex' AND (report_sequence=? OR (report_sequence IS NULL AND CAST(? AS TEXT) IS NULL))`, encoded, s.public.ID, b.cluster.store.node, previous, previous)
+			result, err := b.cluster.store.db.ExecContext(ctx, `UPDATE plex_sessions SET report_sequence=? WHERE id=? AND node_id=? AND COALESCE(protocol,'plex')<>'plex' AND active=1 AND (report_sequence=? OR (report_sequence IS NULL AND CAST(? AS TEXT) IS NULL))`, encoded, s.public.ID, b.cluster.store.node, previous, previous)
 			if err != nil {
 				return false, noop, err
 			}

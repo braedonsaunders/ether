@@ -26,6 +26,45 @@ func (b *Broker) rememberRetiredLocked(s *brokerSession) {
 	b.retired[s.public.ID] = retiredSession{viewerID: s.public.ViewerID, protocol: s.public.Protocol, deviceID: s.public.Device.ID, until: now.Add(2 * time.Hour)}
 }
 
+// collectSupersededLocked keeps one active playback for a viewer, surface and
+// device, regardless of which item or channel that device opens next.
+func (b *Broker) collectSupersededLocked(replacement *brokerSession) []*brokerSession {
+	var old []*brokerSession
+	for id, s := range b.sessions {
+		if s.public.ViewerID == replacement.public.ViewerID && s.clientID == replacement.clientID {
+			delete(b.sessions, id)
+			b.rememberRetiredLocked(s)
+			old = append(old, s)
+		}
+	}
+	return old
+}
+
+func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession, newSource string) {
+	for _, old := range entries {
+		b.bindings.Remove(old.public.ID)
+		if b.cluster != nil {
+			if err := b.cluster.store.remove(ctx, old.public.ID); err != nil && b.deps.OnEventError != nil {
+				b.deps.OnEventError(err)
+			}
+			b.cluster.announceRetired(ctx, old)
+		}
+		if old.live {
+			if old.playID != newSource && b.deps.Live != nil {
+				_ = b.deps.Live.Stop(ctx, &core.Viewer{ID: old.public.ViewerID}, old.playID)
+			}
+		} else {
+			if b.deps.Transcoder != nil {
+				b.deps.Transcoder.Stop(old.public.ID)
+			}
+			if old.playID != newSource {
+				b.deps.Playback.Stop(old.playID)
+			}
+		}
+		b.publish(ctx, sessionEvent("SessionStopped", old.public, nil))
+	}
+}
+
 // retiredAccess keeps late reports harmless while preserving viewer/device
 // authorization for the short-lived supersession history.
 func (b *Broker) retiredAccess(ctx context.Context, a frontend.SessionAccess, id string) (bool, error) {

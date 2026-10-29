@@ -30,6 +30,15 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	if err != nil {
 		return "", err
 	}
+	if b.cluster != nil && s.public.Protocol != "plex" {
+		active, err := b.cluster.store.active(ctx, s.public.ID)
+		if err != nil {
+			return "", err
+		}
+		if !active {
+			return "", core.ErrNotAvailable
+		}
+	}
 	if req.Format != frontend.StreamDirect && req.Format != frontend.StreamHLS && req.Format != frontend.StreamDASH {
 		return "", core.ErrNotAvailable
 	}

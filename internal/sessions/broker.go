@@ -425,31 +425,12 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	}
 	b.bindings.Put(&Binding[frontend.PlayIntent]{ID: id, UserID: v.ID, ClientID: s.clientID, Key: session.Item, PlayID: ps.ID, PlaybackID: s.playbackID, Requested: p.request.Intent, Decision: p.decision, Info: ps.Info, Caps: s.caps, Opts: s.opts, UpdatedAt: b.deps.Now()})
 	b.owners.BindFor("broker", v.ID, s.clientID, session.Item, s.playbackID, ps.ID, true, b.deps.Now())
-	var superseded []*brokerSession
-	for oldID, old := range b.sessions {
-		if !old.live && old.public.ViewerID == v.ID && old.clientID == s.clientID && old.public.Item == session.Item {
-			delete(b.sessions, oldID)
-			b.rememberRetiredLocked(old)
-			superseded = append(superseded, old)
-		}
-	}
+	superseded := b.collectSupersededLocked(s)
 	b.sessions[id] = s
 	b.mu.Unlock()
-	for _, old := range superseded {
-		b.bindings.Remove(old.public.ID)
-		if b.deps.Transcoder != nil {
-			b.deps.Transcoder.Stop(old.public.ID)
-		}
-		if b.cluster != nil {
-			if err := b.cluster.store.remove(ctx, old.public.ID); err != nil && b.deps.OnEventError != nil {
-				b.deps.OnEventError(err)
-			}
-			b.cluster.announceRetired(ctx, old)
-		}
-		if old.playID != ps.ID {
-			b.deps.Playback.Stop(old.playID)
-		}
-		b.publish(ctx, sessionEvent("SessionStopped", old.public, nil))
+	b.finishSuperseded(ctx, superseded, ps.ID)
+	if b.cluster != nil {
+		b.cluster.ownershipChanged(ctx)
 	}
 	b.publish(ctx, sessionEvent("SessionStarted", session, nil))
 	return session, nil
@@ -521,12 +502,23 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 			}
 		}
 	}
+	visible := out[:0]
 	for i := range out {
+		if b.cluster != nil && out[i].Protocol != "plex" {
+			active, err := b.cluster.store.current(ctx, out[i].ID)
+			if err != nil {
+				return nil, err
+			}
+			if !active {
+				continue
+			}
+		}
 		if err := b.enrichCapabilities(ctx, &out[i]); err != nil {
 			return nil, err
 		}
+		visible = append(visible, out[i])
 	}
-	return out, nil
+	return visible, nil
 }
 func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
 	s, v, err := b.access(ctx, a, id)
@@ -558,6 +550,15 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		v, err = b.deps.ActiveViewer(ctx, s.public.ViewerID)
 		if err != nil || v == nil {
 			return core.ErrUnauthorized
+		}
+	}
+	if b.cluster != nil && s.public.Protocol != "plex" {
+		active, err := b.cluster.store.active(ctx, s.public.ID)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return nil
 		}
 	}
 	accepted, rollbackSequence, err := b.acceptSequence(ctx, s, t.Sequence)

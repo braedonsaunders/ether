@@ -82,8 +82,13 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 		_ = b.deps.Live.Stop(ctx, viewer, liveID)
 		return frontend.Session{}, core.ErrNotAvailable
 	}
+	superseded := b.collectSupersededLocked(s)
 	b.sessions[id] = s
 	b.mu.Unlock()
+	b.finishSuperseded(ctx, superseded, liveID)
+	if b.cluster != nil {
+		b.cluster.ownershipChanged(ctx)
+	}
 	b.publish(ctx, sessionEvent("SessionStarted", session, nil))
 	return session, nil
 }
