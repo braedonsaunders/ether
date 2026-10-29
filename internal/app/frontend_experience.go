@@ -257,6 +257,12 @@ func (a *App) newSurfaceExperience(protocol core.Protocol) (frontend.Experience,
 		if a.playback != nil {
 			caps := core.ClientCaps{Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
 			info := a.playback.Estimate(ctx, title, caps)
+			markerInfo := experience.MarkerMedia(u, device, title.Key, info, a.playback.SessionFor)
+			if a.markers != nil {
+				result.Markers = experience.ItemMarkers(ctx, a.markers, title.Key, markerInfo)
+			} else {
+				result.Markers = experience.ItemMarkers(ctx, nil, title.Key, markerInfo)
+			}
 			if a.subtitles != nil {
 				info.Streams = append(info.Streams, (plexSubtitles{a}).CachedSidecars(ctx, title, u, info.Streams)...)
 			}
