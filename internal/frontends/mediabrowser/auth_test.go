@@ -195,3 +195,22 @@ func TestLegacyDeviceHeaders(t *testing.T) {
 		t.Fatal(d)
 	}
 }
+
+func TestPublicViewerPickerUsesVerifiedPeer(t *testing.T) {
+	ident := frontendtest.Identity{PublicViewersFunc: func(ctx context.Context) ([]frontend.PublicViewer, error) {
+		ip, ok := frontend.ClientIP(ctx)
+		if !ok || ip.String() != "192.0.2.4" {
+			return nil, errors.New("missing peer")
+		}
+		return []frontend.PublicViewer{{ID: 3, Name: "alice"}}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.0.2.4"), true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/Users/Public", nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Name":"alice"`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

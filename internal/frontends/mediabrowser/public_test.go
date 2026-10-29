@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/conform"
@@ -30,7 +31,7 @@ func TestPublicRoutes(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/Users/Public", nil))
-	if w.Code != 200 || w.Body.String() != "[]" {
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != "[]" {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()

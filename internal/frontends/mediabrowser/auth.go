@@ -233,3 +233,20 @@ func (i *instance) routes() error {
 	}
 	return nil
 }
+
+func (i *instance) publicViewers(w http.ResponseWriter, r *http.Request) {
+	viewers, err := i.host.Identity.PublicViewers(i.identityContext(r))
+	if err != nil {
+		identityError(w, err)
+		return
+	}
+	items := make([]any, 0, len(viewers))
+	for _, viewer := range viewers {
+		id, e := ids.GUID(ids.User, viewer.ID)
+		if e != nil {
+			continue
+		}
+		items = append(items, map[string]any{"Id": id, "Name": viewer.Name, "ServerId": i.info.ID, "HasPassword": true})
+	}
+	jsonReply(w, items)
+}

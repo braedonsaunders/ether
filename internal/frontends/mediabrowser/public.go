@@ -21,9 +21,12 @@ type PublicInfo struct {
 // A user picker is intentionally not exposed until the host can supply its
 // authorized list of visible viewers.
 func PublicRoutes(r *route.Router, info PublicInfo) error {
-	return publicRoutes(r, func() PublicInfo { return info })
+	return publicRoutes(r, func() PublicInfo { return info }, nil)
 }
-func publicRoutes(r *route.Router, getInfo func() PublicInfo) error {
+func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.HandlerFunc) error {
+	if picker == nil {
+		picker = func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, []any{}) }
+	}
 	handlers := []struct {
 		method, path string
 		handler      http.HandlerFunc
@@ -60,10 +63,7 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo) error {
 		{"POST", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, getInfo().ProductName) }},
 		{"GET", "/web", webPage},
 		{"GET", "/web/{path...}", webPage},
-		{"GET", "/Users/Public", func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			_, _ = w.Write([]byte("[]"))
-		}},
+		{"GET", "/Users/Public", picker},
 		{"GET", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(getInfo().ProductName)

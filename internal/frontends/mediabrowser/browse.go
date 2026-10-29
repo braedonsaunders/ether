@@ -140,7 +140,7 @@ func (i *instance) browseRoutes() error {
 		}
 	}
 	detail := func(w http.ResponseWriter, r *http.Request) {
-		v, _, err := i.viewer(r)
+		v, token, err := i.viewer(r)
 		if err != nil || v == nil {
 			http.Error(w, "Unauthorized", 401)
 			return
@@ -159,7 +159,11 @@ func (i *instance) browseRoutes() error {
 			http.NotFound(w, r)
 			return
 		}
-		jsonReply(w, itemDTO(d.Title, d.UserData))
+		dto := itemDTO(d.Title, d.UserData)
+		if tags := i.imageTags(r, d, token); len(tags) > 0 {
+			dto["ImageTags"] = tags
+		}
+		jsonReply(w, dto)
 	}
 	endpoints := []struct {
 		path    string

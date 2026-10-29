@@ -41,21 +41,26 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 		info.ProductName = "Emby Server"
 	}
 	r := &route.Router{}
+
+	inst := &instance{host: host, info: info, router: r, protocol: protocol}
 	if err := publicRoutes(r, func() PublicInfo {
-		cfg := frontend.Settings{}
-		if host.Config != nil {
-			cfg = host.Config()
-		}
 		current := info
-		name, ok := cfg["serverName"].(string)
-		if ok && name != "" {
-			current.ServerName = name
+		if host.Config != nil {
+			cfg := host.Config()
+			if name, ok := cfg["serverName"].(string); ok && name != "" {
+				current.ServerName = name
+			}
 		}
 		return current
-	}); err != nil {
+	}, inst.publicViewers); err != nil {
 		return nil, err
 	}
-	inst := &instance{host: host, info: info, router: r, protocol: protocol}
+
+	for _, method := range []string{"GET", "HEAD"} {
+		if err := r.Handle(method, "/Items/{itemId}/Images/{imageType}", http.HandlerFunc(inst.image)); err != nil {
+			return nil, err
+		}
+	}
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err
 	}
