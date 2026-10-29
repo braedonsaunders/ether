@@ -560,7 +560,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 			return core.ErrUnauthorized
 		}
 	}
-	accepted, err := b.acceptSequence(ctx, s, t.Sequence)
+	accepted, rollbackSequence, err := b.acceptSequence(ctx, s, t.Sequence)
 	if err != nil {
 		return err
 	}
@@ -576,6 +576,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 			reportedID = s.playbackID
 		}
 		if b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, reportedID) {
+			rollbackSequence()
 			if b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
 				return b.stopLocked(ctx, s)
 			}
@@ -601,6 +602,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	}
 	ctx = state.WithOrigin(ctx, state.Origin{Surface: s.public.Protocol, SessionID: s.public.ID, ClientID: s.public.Device.ID})
 	if err := RecordProgress(ctx, b.deps.Progress, s.public.ViewerID, s.public.Item, t.Position, t.Duration, t.State); err != nil {
+		rollbackSequence()
 		return err
 	}
 	if toucher, ok := b.deps.Playback.(interface{ Touch(string) }); ok && (t.State == "playing" || t.State == "paused") {
