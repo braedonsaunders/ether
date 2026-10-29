@@ -228,6 +228,7 @@
   "m_01b0c9928627cc": "Käyttöavain (valinnainen)",
   "m_01b3ea25da318d": "Asetukset, jotka kukin solmu säilyttää",
   "m_01b5a99921e30a": "Lataa: {name}",
+  "m_01b6a81e56578f": "Näytä paikallisten katsojien nimet kirjautumisnäytössä",
   "m_01b6fc82452a72": "Tässä näkyvät vain julkaistut nimikkeet. Suosion ja äänten kynnysarvoja hallitaan Katalogin asetuksissa.",
   "m_01b765f613779a": "Tallenna sääntö",
   "m_01b8f611e345ed": "Yksi pyyntö löytää monta julkaisua. Ether täsmäyttää ne paikallisiin katalogin metatietoihin hakematta jokaista nimikettä erikseen.",

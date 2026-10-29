@@ -320,6 +320,25 @@ describe("Settings", () => {
     expect(screen.getByRole("region", { name: "Unsaved changes" })).toBeVisible();
   });
 
+  it("lets the owner opt in to the Jellyfin public viewer picker", async () => {
+    const { fake } = renderApp("/apps/jellyfin");
+    const picker = await screen.findByLabelText(
+      "Show local viewer names on the sign-in screen",
+      {},
+      WAIT,
+    );
+    expect(picker).not.toBeChecked();
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(
+      () => expect(calls(fake, "PUT", "/frontends/jellyfin/settings")).toHaveLength(1),
+      WAIT,
+    );
+    expect(calls(fake, "PUT", "/frontends/jellyfin/settings")[0]!.body).toMatchObject({
+      publicViewerPicker: true,
+    });
+  });
+
   it("redirects old Connectivity links to the matching Apps tab", async () => {
     renderApp("/remote-access/secure");
     expect(await screen.findByRole("heading", { name: "Apps" }, WAIT)).toBeInTheDocument();

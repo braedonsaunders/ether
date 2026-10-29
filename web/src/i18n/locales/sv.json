@@ -228,6 +228,7 @@
   "m_01b0c9928627cc": "Åtkomstnyckel (valfri)",
   "m_01b3ea25da318d": "Inställningar som varje nod behåller",
   "m_01b5a99921e30a": "Ladda ned {name}",
+  "m_01b6a81e56578f": "Visa lokala tittarnamn på inloggningsskärmen",
   "m_01b6fc82452a72": "Endast utgivna titlar visas här. Gränser för popularitet och röster hanteras i Katalogsinställningar.",
   "m_01b765f613779a": "Spara regel",
   "m_01b8f611e345ed": "En förfrågan upptäcker många releaser. Ether matchar dem mot lokal katalogmetadata utan att söka efter varje titel.",

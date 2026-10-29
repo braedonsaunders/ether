@@ -228,6 +228,7 @@
   "m_01b0c9928627cc": "Access key (optional)",
   "m_01b3ea25da318d": "Settings each node keeps",
   "m_01b5a99921e30a": "Download {name}",
+  "m_01b6a81e56578f": "Show local viewer names on the sign-in screen",
   "m_01b6fc82452a72": "Only released titles appear here. Popularity and vote thresholds are managed in Catalog settings.",
   "m_01b765f613779a": "Save rule",
   "m_01b8f611e345ed": "One request discovers many releases. Ether matches them against local catalogue metadata without searching every title.",

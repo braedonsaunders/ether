@@ -240,6 +240,7 @@
   "m_01b0c9928627cc": "Přístupový klíč (volitelné)",
   "m_01b3ea25da318d": "Nastavení, která si uchovává každý uzel",
   "m_01b5a99921e30a": "Stáhnout {name}",
+  "m_01b6a81e56578f": "Zobrazovat místní jména diváků na přihlašovací obrazovce",
   "m_01b6fc82452a72": "Zobrazují se jen vydané tituly. Prahové hodnoty popularity a hlasů se spravují v nastavení katalogu.",
   "m_01b765f613779a": "Uložit pravidlo",
   "m_01b8f611e345ed": "Jeden požadavek objeví mnoho vydání. Ether je porovná s místními metadaty katalogu, aniž by vyhledával každý titul.",

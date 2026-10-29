@@ -234,6 +234,7 @@
   "m_01b0c9928627cc": "Chave de acesso (opcional)",
   "m_01b3ea25da318d": "Configurações que cada nó mantém",
   "m_01b5a99921e30a": "Baixar {name}",
+  "m_01b6a81e56578f": "Mostrar nomes de visualizadores locais na tela de login",
   "m_01b6fc82452a72": "Somente títulos já lançados aparecem aqui. Os limites de popularidade e de votos são gerenciados nas Configurações do catálogo.",
   "m_01b765f613779a": "Salvar regra",
   "m_01b8f611e345ed": "Uma solicitação descobre muitos releases. O Ether os compara com os metadados do catálogo local sem pesquisar cada título.",

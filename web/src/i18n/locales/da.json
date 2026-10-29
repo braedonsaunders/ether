@@ -228,6 +228,7 @@
   "m_01b0c9928627cc": "Adgangsnøgle (valgfrit)",
   "m_01b3ea25da318d": "Indstillinger, som hver node beholder",
   "m_01b5a99921e30a": "Download {name}",
+  "m_01b6a81e56578f": "Vis lokale seernavne på loginskærmen",
   "m_01b6fc82452a72": "Kun udgivne titler vises her. Grænser for popularitet og stemmer administreres i Katalogindstillinger.",
   "m_01b765f613779a": "Gem regel",
   "m_01b8f611e345ed": "Én forespørgsel finder mange udgivelser. Ether matcher dem mod lokale katalogmetadata uden at søge efter hver titel.",
