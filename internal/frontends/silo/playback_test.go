@@ -113,6 +113,14 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if media.Code != 200 {
 		t.Fatalf("media %d", media.Code)
 	}
+	wrongDevice := httptest.NewRequest("GET", "/api/v2/stream/"+sessionID+"/scoped/master.m3u8", nil)
+	wrongDevice.Header.Set("Authorization", "Bearer account-secret")
+	wrongDevice.Header.Set("X-Silo-Device-Id", "other")
+	denied := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(denied, wrongDevice)
+	if denied.Code != http.StatusNotFound {
+		t.Fatalf("cross-device media: %d", denied.Code)
+	}
 
 	var body map[string]any
 	if json.Unmarshal(w.Body.Bytes(), &body) != nil || body["outcome"] != "playable" {

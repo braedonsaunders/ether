@@ -517,7 +517,7 @@ func (i *instance) playbackRoutes() error {
 			}
 			found := false
 			for _, session := range sessions {
-				if session.ID == parts[0] && session.ViewerID == viewer.ID && session.Protocol == "silo" {
+				if session.ID == parts[0] && session.ViewerID == viewer.ID && session.Protocol == "silo" && d.ID != "" && session.Device.ID == d.ID {
 					found = true
 					break
 				}
