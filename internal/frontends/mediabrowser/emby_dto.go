@@ -45,6 +45,12 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 		return
 	}
 	v := d.Versions[0]
+	if v.FileName != "" && v.FileName != "." && v.FileName != ".." && !strings.ContainsAny(v.FileName, "/\\\x00\r\n") {
+		m["FileName"] = v.FileName
+	}
+	if v.PartCount != nil && *v.PartCount >= 0 {
+		m["PartCount"] = *v.PartCount
+	}
 	if len(v.Media.Chapters) > 0 {
 		chapters := make([]any, 0, len(v.Media.Chapters))
 		for index, chapter := range v.Media.Chapters {

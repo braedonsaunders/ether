@@ -16,13 +16,14 @@ func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
 		t.Fatalf("unknown source facts: %#v", m)
 	}
 	added := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
-	i.embyItemDetailDTO(m, frontend.ItemDetail{Versions: []frontend.Version{{AddedAt: added, Media: core.MediaInfo{
+	parts := 1
+	i.embyItemDetailDTO(m, frontend.ItemDetail{Versions: []frontend.Version{{AddedAt: added, FileName: "movie.mp4", PartCount: &parts, Media: core.MediaInfo{
 		Container: "mp4", Size: 123, BitrateKbps: 456, Streams: []core.StreamInfo{{Type: "video", Width: 1920, Height: 1080}}, Chapters: []core.Chapter{{Title: "Opening", Start: time.Second}},
 	}}}})
 	if _, ok := m["DateCreated"]; ok {
 		t.Fatal("catalogue fallback was presented as a source creation date")
 	}
-	if m["Container"] != "mp4" || m["Size"] != int64(123) || m["Bitrate"] != 456000 || m["Width"] != 1920 || m["Height"] != 1080 {
+	if m["FileName"] != "movie.mp4" || m["PartCount"] != 1 || m["Container"] != "mp4" || m["Size"] != int64(123) || m["Bitrate"] != 456000 || m["Width"] != 1920 || m["Height"] != 1080 {
 		t.Fatalf("source facts: %#v", m)
 	}
 	chapter := m["Chapters"].([]any)[0].(map[string]any)
@@ -33,6 +34,11 @@ func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
 	i.embyItemDetailDTO(ambiguous, frontend.ItemDetail{Versions: []frontend.Version{{Media: core.MediaInfo{Size: 123}}, {Media: core.MediaInfo{Size: 456}}}})
 	if _, ok := ambiguous["Size"]; ok {
 		t.Fatalf("selected an unspecified version: %#v", ambiguous)
+	}
+	unsafe := map[string]any{}
+	i.embyItemDetailDTO(unsafe, frontend.ItemDetail{Versions: []frontend.Version{{FileName: "private/secret.mkv"}}})
+	if _, ok := unsafe["FileName"]; ok {
+		t.Fatal("source path leaked as a filename")
 	}
 }
 
