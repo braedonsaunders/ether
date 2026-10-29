@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -36,6 +37,46 @@ func TestManifestRequiresSurfaceGrantAndProvidesCORS(t *testing.T) {
 		if rec.Code != tc.status || rec.Header().Get("Access-Control-Allow-Origin") != "*" || rec.Header().Get("Cache-Control") != "private, no-store" {
 			t.Fatalf("%s %s: status=%d headers=%v", tc.method, tc.path, rec.Code, rec.Header())
 		}
+	}
+}
+
+type lazyFixture struct{ issued bool }
+
+func (f *lazyFixture) Issue(_ context.Context, credential string, request frontend.PlanRequest) (string, error) {
+	if credential != "grant" || request.Protocol != "stremio" || request.Item.TMDB() != 42 || !request.Intent.Options.DirectPlay {
+		return "", errors.New("wrong scope")
+	}
+	f.issued = true
+	return "/sessions/lazy/scoped/file", nil
+}
+func (*lazyFixture) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusPartialContent)
+}
+
+func TestStreamUsesLazyCapabilityAndNeverOpensOnDiscovery(t *testing.T) {
+	lazy := &lazyFixture{}
+	host := frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
+			if token != "grant" {
+				return nil, errors.New("invalid")
+			}
+			return &frontend.Viewer{ID: 7}, nil
+		}},
+		Experience: frontendtest.Experience{}, Sessions: frontendtest.Sessions{OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			t.Fatal("stream discovery opened playback")
+			return frontend.Session{}, nil
+		}}, LazyStreams: lazy,
+		Capabilities: frontendtest.Capabilities{}, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.168.1.7"), true },
+		SecurePortalURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/ether/me", nil },
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/stremio/grant/stream/movie/tmdb:42.json", nil))
+	if w.Code != 200 || !lazy.issued || !strings.Contains(w.Body.String(), "https://ether.example/stremio/sessions/lazy/scoped/file") || strings.Contains(w.Body.String(), "grant") {
+		t.Fatalf("response: %d %s", w.Code, w.Body.String())
 	}
 }
 

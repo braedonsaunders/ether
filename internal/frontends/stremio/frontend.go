@@ -38,6 +38,14 @@ func (Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instance,
 	if err := i.router.Handle(http.MethodGet, "/image/{secret}", http.HandlerFunc(i.image)); err != nil {
 		return nil, err
 	}
+	if err := i.router.Handle(http.MethodGet, "/{credential}/stream/{type}/{id}", http.HandlerFunc(i.stream)); err != nil {
+		return nil, err
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if err := i.router.Handle(method, "/sessions/lazy/{rest...}", http.HandlerFunc(i.serveLazy)); err != nil {
+			return nil, err
+		}
+	}
 	return i, nil
 }
 

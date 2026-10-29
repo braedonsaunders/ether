@@ -27,12 +27,12 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	key, err := ids.StremioTMDBKey(typ, id)
+	device := deviceFor(credential)
+	key, err := i.resolveID(r, viewer, device, typ, id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	device := deviceFor(credential)
 	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device, Key: key})
 	if err != nil {
 		http.NotFound(w, r)
