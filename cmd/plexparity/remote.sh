@@ -30,4 +30,4 @@ fi
 rsync -az --exclude .git --exclude node_modules --exclude web/node_modules --exclude dist/ffmpeg "$root/" "$host:$remote/driver/"
 rsync -az "$root/cmd/plexparity/" "$host:$remote/harness/"
 rsync -az "$root/internal/app/parity_runtime_default.go" "$root/internal/app/parity_runtime_fixture.go" "$root/internal/app/parity_source_default.go" "$root/internal/app/parity_source_fixture.go" "$host:$remote/harness/"
-ssh -o BatchMode=yes "$host" bash -s -- "$remote" < "$root/cmd/plexparity/staged-run.sh"
+ssh -o BatchMode=yes "$host" bash -s -- "$remote" "${ETHER_PARITY_ATTRIBUTION:-0}" < "$root/cmd/plexparity/staged-run.sh"

@@ -63,7 +63,8 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	tracker := &fixtureTracker{}
 	tmdb := httptest.NewServer(trackedTMDBFixture(tracker))
 	defer tmdb.Close()
-	plexTV := httptest.NewServer(plextvFixture())
+	plexTracker := &fixtureTracker{}
+	plexTV := httptest.NewServer(trackedPlexTVFixture(plexTracker))
 	defer plexTV.Close()
 	transcripts := make([]transcript, 0, 2)
 	for i, bin := range []string{baseline, candidate} {
@@ -167,6 +168,9 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		if missing := tracker.failures(); len(missing) > 0 && captureErr == nil {
 			captureErr = fmt.Errorf("TMDB fixture does not implement %v", missing)
 		}
+		if missing := plexTracker.failures(); len(missing) > 0 && captureErr == nil {
+			captureErr = fmt.Errorf("Plex.tv fixture does not implement %v", missing)
+		}
 		if captureErr != nil {
 			b, _ := os.ReadFile(log.Name())
 			if len(b) > 8192 {
@@ -183,6 +187,9 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	}
 	if n > 0 {
 		return fmt.Errorf("%d unapproved response differences", n)
+	}
+	if os.Getenv("ETHER_PARITY_ATTRIBUTION") == "1" {
+		return incompleteCoverage{[]string{"artwork probes skipped for historical attribution"}}
 	}
 	if missing := missingRoutes(); len(missing) > 0 {
 		return incompleteCoverage{missing}

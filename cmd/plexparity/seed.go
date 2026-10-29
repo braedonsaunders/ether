@@ -14,6 +14,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/livetv"
+	"github.com/braedonsaunders/ether/internal/overlays"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/recommend"
@@ -45,6 +46,7 @@ func seed(ctx context.Context, dir string) error {
 		c.Plex.Claimed = true
 		c.Plex.OwnerUsername = "owner"
 		c.Plex.UseUPnP = false
+		c.Markers.TheIntroDB = false
 		return nil
 	}); err != nil {
 		return err
@@ -62,6 +64,9 @@ func seed(ctx context.Context, dir string) error {
 	released := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := int64(1); i <= 60; i++ {
 		title := core.Title{Key: core.MovieKey(10000 + i), Type: core.TypeMovie, IDs: core.IDs{TMDB: 10000 + i}, Title: fmt.Sprintf("Fixture Movie %03d", i), Year: 2020, Released: released, Runtime: 90 * time.Minute, Language: "en", ContentRating: "PG", Genres: []string{"Drama"}, Rating: 7, VoteCount: 1000, Popularity: float64(100 - i)}
+		title.PosterPath = "/fixture.jpg"
+		title.BackdropPath = "/fixture.jpg"
+		title.Cast = []core.Person{{TMDB: 123, Name: "Fixture Actor", ThumbPath: "/fixture.jpg"}}
 		if i <= 12 {
 			title.CollectionID = 40001
 			title.CollectionName = "Fixture Collection"
@@ -76,15 +81,27 @@ func seed(ctx context.Context, dir string) error {
 	for i := int64(1); i <= 20; i++ {
 		id := 20000 + i
 		show := core.Title{Key: core.ShowKey(id), Type: core.TypeShow, IDs: core.IDs{TMDB: id}, Title: fmt.Sprintf("Fixture Show %03d", i), Year: 2020, Released: released, Language: "en", ContentRating: "TV-PG", Genres: []string{"Drama"}, Rating: 7, VoteCount: 1000, Popularity: float64(100 - i), ChildCount: 1, LeafCount: 4}
+		if i == 1 {
+			// Episode history predates the child's later restriction; the
+			// episode itself has no rating and inherits this show rating.
+			show.ContentRating = "TV-MA"
+		}
+		show.PosterPath = "/fixture.jpg"
+		show.BackdropPath = "/fixture.jpg"
 		if err = cat.UpsertTitle(ctx, show, true); err != nil {
 			return err
 		}
 		season := core.Title{Key: core.SeasonKey(id, 1), Type: core.TypeSeason, ShowKey: show.Key, ShowIDs: show.IDs, ShowTitle: show.Title, Season: 1, Title: "Season 1", Released: released, ChildCount: 4, LeafCount: 4}
+		season.PosterPath = "/fixture.jpg"
+		season.BackdropPath = "/fixture.jpg"
 		if err = cat.UpsertTitle(ctx, season, false); err != nil {
 			return err
 		}
 		for ep := 1; ep <= 4; ep++ {
 			t := core.Title{Key: core.EpisodeKey(id, 1, ep), Type: core.TypeEpisode, ShowKey: show.Key, ShowIDs: show.IDs, ShowTitle: show.Title, SeasonTitle: season.Title, Season: 1, Episode: ep, Title: fmt.Sprintf("Episode %d", ep), Released: released, Runtime: 45 * time.Minute}
+			t.StillPath = "/fixture.jpg"
+			t.PosterPath = "/fixture.jpg"
+			t.BackdropPath = "/fixture.jpg"
 			if err = cat.UpsertTitle(ctx, t, false); err != nil {
 				return err
 			}
@@ -112,6 +129,9 @@ func seed(ctx context.Context, dir string) error {
 	defer st.Close(ctx)
 	prefs := trackprefs.New(db)
 	watch := watchlist.New(db, watchlist.Options{Catalog: cat, Now: now})
+	if err = watch.SaveSettings(ctx, watchlist.Settings{Enabled: true, CheckHours: 6}); err != nil {
+		return err
+	}
 	for _, u := range list {
 		u.AudioLanguages = []string{"en", "fr"}
 		u.SubtitleLanguages = []string{"en"}
@@ -127,6 +147,18 @@ func seed(ctx context.Context, dir string) error {
 		}
 		if err = watch.Remind(ctx, &u, core.MovieKey(10022)); err != nil {
 			return err
+		}
+		// Restricted watchlists deliberately exceed a shelf and interleave
+		// disallowed titles, as can happen when restrictions are added later.
+		if u.Username == "teen" || u.Username == "child" {
+			beforeRestriction := u
+			beforeRestriction.MaxContentRating = ""
+			beforeRestriction.AllowedSections = nil
+			for i := int64(23); i <= 60; i++ {
+				if err = watch.Remind(ctx, &beforeRestriction, core.MovieKey(10000+i)); err != nil {
+					return err
+				}
+			}
 		}
 		if err = users.UpdateUser(ctx, u); err != nil {
 			return err
@@ -151,6 +183,10 @@ func seed(ctx context.Context, dir string) error {
 		if _, err = st.Create(ctx, u.ID, "Fixture playlist", []core.RatingKey{core.MovieKey(10001), core.MovieKey(10002)}); err != nil {
 			return err
 		}
+	}
+	overlay := overlays.New(db, overlays.Options{Now: now})
+	if err = overlay.SaveSettings(ctx, overlays.Settings{Enabled: true, Ratings: true}); err != nil {
+		return err
 	}
 	tv, err := livetv.New(livetv.Options{DB: db, Catalog: cat, Now: now})
 	if err != nil {

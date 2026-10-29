@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"image"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,5 +65,33 @@ func TestTMDBMissingEndpointsAreRecorded(t *testing.T) {
 	resp.Body.Close()
 	if paths := tracker.failures(); len(paths) != 1 || paths[0] != "/3/missing" {
 		t.Fatalf("missing paths = %v", paths)
+	}
+	resp, err = http.Get(srv.URL + "/3/images/w500/missing.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown image status = %d", resp.StatusCode)
+	}
+	if paths := tracker.failures(); len(paths) != 2 || paths[0] != "/3/images/w500/missing.jpg" {
+		t.Fatalf("missing paths = %v", paths)
+	}
+}
+
+func TestTMDBFixtureServesRealImages(t *testing.T) {
+	srv := httptest.NewServer(tmdbFixture())
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/3/images/w500/fixture.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/jpeg" {
+		t.Fatalf("image response: %v", resp.Status)
+	}
+	im, format, err := image.Decode(resp.Body)
+	if err != nil || format != "jpeg" || im.Bounds().Dx() != 320 || im.Bounds().Dy() != 180 {
+		t.Fatalf("image=%v format=%s error=%v", im, format, err)
 	}
 }

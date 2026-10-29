@@ -38,3 +38,27 @@ func TestSegmentTimestampNormalizationIsScoped(t *testing.T) {
 		t.Fatal("nonsegment timestamp removed")
 	}
 }
+
+func TestBinaryPayloadIsNeverNormalized(t *testing.T) {
+	for _, path := range []string{"image:/thumb", "playback:segment:transcode"} {
+		a := capture{path: path, response: protocol.Response{Body: []byte("X-Ether-Stream-Token=one")}}
+		b := capture{path: path, response: protocol.Response{Body: []byte("X-Ether-Stream-Token=two")}}
+		if bytes.Equal(normalizeCaptureBody(a), normalizeCaptureBody(b)) {
+			t.Fatalf("binary bytes normalized for %s", path)
+		}
+	}
+}
+
+func TestDelegationTokenNormalizationIsScoped(t *testing.T) {
+	for _, bodies := range [][2]string{{`<MediaContainer token="one"/>`, `<MediaContainer token="two"/>`}, {`{"token":"one"}`, `{"token":"two"}`}} {
+		a := capture{path: "/security/token", response: protocol.Response{Body: []byte(bodies[0])}}
+		b := capture{path: "/security/token", response: protocol.Response{Body: []byte(bodies[1])}}
+		if !bytes.Equal(normalizeCaptureBody(a), normalizeCaptureBody(b)) {
+			t.Fatal("delegation token was not normalized")
+		}
+		a.path, b.path = "/identity", "/identity"
+		if bytes.Equal(normalizeCaptureBody(a), normalizeCaptureBody(b)) {
+			t.Fatal("token normalization escaped its route")
+		}
+	}
+}

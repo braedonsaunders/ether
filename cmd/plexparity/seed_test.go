@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/store"
+	"github.com/braedonsaunders/ether/internal/watchlist"
 )
 
 func TestSeed(t *testing.T) {
@@ -26,6 +27,10 @@ func TestSeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	settings, err := watchlist.New(db, watchlist.Options{}).Settings(ctx)
+	if err != nil || !settings.Enabled || settings.Plex || settings.Trakt {
+		t.Fatalf("offline watchlist settings: %+v %v", settings, err)
+	}
 	a, err := auth.New(ctx, db, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +54,12 @@ func TestSeed(t *testing.T) {
 		u, err := a.Authenticate(ctx, token)
 		if err != nil || u == nil {
 			t.Fatalf("%s: user=%v err=%v", token, u, err)
+		}
+		if u.Username == "teen" || u.Username == "child" {
+			var count int
+			if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM watchlist_items WHERE user_id=?`, u.ID).Scan(&count); err != nil || count < 30 {
+				t.Fatalf("%s watchlist pool count=%d err=%v", token, count, err)
+			}
 		}
 		st := state.New(db, state.Options{})
 		w, err := st.Get(ctx, u.ID, core.MovieKey(10020))

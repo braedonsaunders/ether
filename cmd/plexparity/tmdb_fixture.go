@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"net/http"
 	"sort"
 	"strconv"
@@ -37,12 +41,24 @@ func (f *fixtureTracker) failures() []string {
 }
 func tmdbFixture() http.Handler { return trackedTMDBFixture(nil) }
 func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
+	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	for y := 0; y < 180; y++ {
+		for x := 0; x < 320; x++ {
+			img.Set(x, y, color.RGBA{uint8(x), uint8(y), uint8(x + y), 255})
+		}
+	}
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 90}); err != nil {
+		panic(err)
+	}
 	movies := make([]map[string]any, 0, 60)
 	shows := make([]map[string]any, 0, 20)
 	for i := 1; i <= 60; i++ {
 		movies = append(movies, map[string]any{"id": 10000 + i, "title": fmt.Sprintf("Fixture Movie %03d", i), "release_date": "2020-01-01", "original_language": "en", "popularity": 100 - i, "vote_average": 7, "vote_count": 1000, "genre_ids": []int{18}, "genres": []map[string]any{{"id": 18, "name": "Drama"}}, "runtime": 90, "media_type": "movie"})
 	}
 	for i := range movies {
+		movies[i]["poster_path"] = "/fixture.jpg"
+		movies[i]["backdrop_path"] = "/fixture.jpg"
 		rating := "PG"
 		if (i+1)%3 == 0 {
 			rating = "R"
@@ -55,12 +71,31 @@ func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
 	for i := 1; i <= 20; i++ {
 		shows = append(shows, map[string]any{"id": 20000 + i, "name": fmt.Sprintf("Fixture Show %03d", i), "first_air_date": "2020-01-01", "original_language": "en", "popularity": 100 - i, "vote_average": 7, "vote_count": 1000, "genre_ids": []int{18}, "genres": []map[string]any{{"id": 18, "name": "Drama"}}, "media_type": "tv", "number_of_seasons": 1, "number_of_episodes": 4, "seasons": []map[string]any{{"id": 30000 + i, "name": "Season 1", "season_number": 1, "episode_count": 4, "air_date": "2020-01-01"}}})
 	}
-	for _, show := range shows {
-		show["content_ratings"] = map[string]any{"results": []map[string]any{{"iso_3166_1": "US", "rating": "TV-PG"}}}
+	for i, show := range shows {
+		show["poster_path"] = "/fixture.jpg"
+		show["backdrop_path"] = "/fixture.jpg"
+		rating := "TV-PG"
+		if i == 0 {
+			rating = "TV-MA"
+		}
+		show["content_ratings"] = map[string]any{"results": []map[string]any{{"iso_3166_1": "US", "rating": rating}}}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "unsupported method", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/3/images/") {
+			parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/3/images/"), "/")
+			if len(parts) == 2 && parts[1] == "fixture.jpg" && (parts[0] == "original" || parts[0] == "w92" || parts[0] == "w185" || parts[0] == "w300" || parts[0] == "w342" || parts[0] == "w500" || parts[0] == "w780" || parts[0] == "w1280") {
+				w.Header().Set("Content-Type", "image/jpeg")
+				_, _ = w.Write(encoded.Bytes())
+				return
+			}
+			if tracker != nil {
+				tracker.record(r.URL.Path)
+			}
+			http.NotFound(w, r)
 			return
 		}
 		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/3/"), "/")
@@ -68,7 +103,7 @@ func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
 		var result any
 		switch {
 		case path == "collection/40001":
-			result = map[string]any{"id": 40001, "name": "Fixture Collection", "parts": movies[:12]}
+			result = map[string]any{"id": 40001, "name": "Fixture Collection", "poster_path": "/fixture.jpg", "backdrop_path": "/fixture.jpg", "parts": movies[:12]}
 		case path == "configuration":
 			result = map[string]any{"images": map[string]any{"base_url": "http://127.0.0.1/fixture-images/", "secure_base_url": "http://127.0.0.1/fixture-images/"}}
 		case path == "genre/movie/list" || path == "genre/tv/list":
