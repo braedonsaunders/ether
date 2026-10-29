@@ -3,6 +3,7 @@ package frontend
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -360,6 +361,20 @@ type Session struct {
 	Item          core.RatingKey
 	Channel       string
 	StartedAt     time.Time
+	Capabilities  *SessionCapabilities
+}
+
+// SessionCapabilities are declared by an authenticated device on one surface.
+// URL fields are metadata and must never be fetched by the broker.
+type SessionCapabilities struct {
+	PlayableMediaTypes           []string
+	SupportedCommands            []string
+	SupportsMediaControl         *bool
+	SupportsPersistentIdentifier *bool
+	SupportsRemoteControl        *bool
+	DeviceProfile                json.RawMessage
+	AppStoreURL                  string
+	IconURL                      string
 }
 type Timeline struct {
 	// PlaybackID may be empty for clients that do not send one. The broker
@@ -444,6 +459,8 @@ type Sessions interface {
 	Report(context.Context, SessionAccess, string, Timeline) error
 	Stop(context.Context, SessionAccess, string) error
 	Command(context.Context, *core.Viewer, string, Command) error
+	UpdateCapabilities(context.Context, SessionAccess, SessionCapabilities) error
+	Capabilities(context.Context, SessionAccess) (SessionCapabilities, error)
 	Sessions(context.Context, SessionAccess) ([]Session, error)
 	Recover(context.Context, string, string, time.Duration) error
 	TranscodeFor(context.Context, string) (core.HLSSession, bool)

@@ -162,18 +162,20 @@ func (f Experience) RemoveFromContinue(c context.Context, v *core.Viewer, k core
 
 // Sessions implements frontend.Sessions with optional function hooks.
 type Sessions struct {
-	PlanFunc         func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error)
-	OpenFunc         func(context.Context, frontend.OpenRequest) (frontend.Session, error)
-	StartStreamFunc  func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error)
-	SubtitleURLFunc  func(context.Context, frontend.SessionAccess, string, int, string) (string, error)
-	ServeMediaFunc   func(http.ResponseWriter, *http.Request)
-	ReportFunc       func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error
-	StopFunc         func(context.Context, frontend.SessionAccess, string) error
-	CommandFunc      func(context.Context, *core.Viewer, string, frontend.Command) error
-	SessionsFunc     func(context.Context, frontend.SessionAccess) ([]frontend.Session, error)
-	RecoverFunc      func(context.Context, string, string, time.Duration) error
-	TranscodeForFunc func(context.Context, string) (core.HLSSession, bool)
-	EventsFunc       func(context.Context, frontend.EventScope) (<-chan frontend.Event, error)
+	PlanFunc               func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error)
+	OpenFunc               func(context.Context, frontend.OpenRequest) (frontend.Session, error)
+	StartStreamFunc        func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error)
+	SubtitleURLFunc        func(context.Context, frontend.SessionAccess, string, int, string) (string, error)
+	ServeMediaFunc         func(http.ResponseWriter, *http.Request)
+	ReportFunc             func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error
+	StopFunc               func(context.Context, frontend.SessionAccess, string) error
+	CommandFunc            func(context.Context, *core.Viewer, string, frontend.Command) error
+	UpdateCapabilitiesFunc func(context.Context, frontend.SessionAccess, frontend.SessionCapabilities) error
+	CapabilitiesFunc       func(context.Context, frontend.SessionAccess) (frontend.SessionCapabilities, error)
+	SessionsFunc           func(context.Context, frontend.SessionAccess) ([]frontend.Session, error)
+	RecoverFunc            func(context.Context, string, string, time.Duration) error
+	TranscodeForFunc       func(context.Context, string) (core.HLSSession, bool)
+	EventsFunc             func(context.Context, frontend.EventScope) (<-chan frontend.Event, error)
 }
 
 func (f Sessions) Plan(c context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
@@ -224,6 +226,18 @@ func (f Sessions) Command(c context.Context, actor *core.Viewer, id string, cmd 
 		return f.CommandFunc(c, actor, id, cmd)
 	}
 	return nil
+}
+func (f Sessions) UpdateCapabilities(c context.Context, a frontend.SessionAccess, v frontend.SessionCapabilities) error {
+	if f.UpdateCapabilitiesFunc != nil {
+		return f.UpdateCapabilitiesFunc(c, a, v)
+	}
+	return nil
+}
+func (f Sessions) Capabilities(c context.Context, a frontend.SessionAccess) (frontend.SessionCapabilities, error) {
+	if f.CapabilitiesFunc != nil {
+		return f.CapabilitiesFunc(c, a)
+	}
+	return frontend.SessionCapabilities{}, nil
 }
 func (f Sessions) Sessions(c context.Context, a frontend.SessionAccess) ([]frontend.Session, error) {
 	if f.SessionsFunc != nil {

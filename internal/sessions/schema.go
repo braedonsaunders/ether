@@ -42,4 +42,12 @@ ALTER TABLE plex_sessions ADD COLUMN device_id TEXT;
 ALTER TABLE plex_sessions ADD COLUMN device_data TEXT;
 `)
 	store.Register("sessions", 2, `ALTER TABLE plex_sessions ADD COLUMN report_sequence TEXT;`)
+	store.Register("sessions", 3, `CREATE TABLE sessions_devices (
+		viewer_id BIGINT NOT NULL,
+		protocol TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		capabilities TEXT NOT NULL,
+		updated_at BIGINT NOT NULL,
+		PRIMARY KEY (viewer_id, protocol, device_id)
+	);`)
 }

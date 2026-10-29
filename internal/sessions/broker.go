@@ -83,6 +83,7 @@ type Broker struct {
 	plans        map[string]brokerPlan
 	sessions     map[string]*brokerSession
 	retired      map[string]retiredSession
+	devices      map[deviceKey]frontend.SessionCapabilities
 	owners       *PlaybackOwners
 	gates        *Lifecycle
 	bindings     *BindingTable[frontend.PlayIntent]
@@ -105,7 +106,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if coord.Owners == nil || coord.Gates == nil {
 		return nil, errors.New("sessions: invalid coordination")
 	}
-	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
+	b := &Broker{deps: d, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -405,7 +406,10 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		playbackID = id
 	}
 	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/file", Protocol: req.Protocol, ViewerID: v.ID, Device: p.request.Device, Item: p.request.Item, StartedAt: b.deps.Now()}
-	s := &brokerSession{public: session, grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding}
+	if err := b.enrichCapabilities(ctx, &session); err != nil {
+		return frontend.Session{}, err
+	}
+	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding}
 	if b.cluster != nil && session.Protocol != "plex" {
 		if err := b.cluster.store.put(ctx, session, ps.ID, *v, b.deps.Now()); err != nil {
 			return frontend.Session{}, err
@@ -517,6 +521,11 @@ func (b *Broker) Sessions(ctx context.Context, a frontend.SessionAccess) ([]fron
 			}
 		}
 	}
+	for i := range out {
+		if err := b.enrichCapabilities(ctx, &out[i]); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
 }
 func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string, t frontend.Timeline) error {
@@ -557,6 +566,9 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	}
 	if !accepted {
 		return nil
+	}
+	if err := b.enrichCapabilities(ctx, &s.public); err != nil && b.deps.OnEventError != nil {
+		b.deps.OnEventError(err)
 	}
 	if !s.live {
 		reportedID := t.PlaybackID

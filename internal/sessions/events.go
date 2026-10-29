@@ -122,6 +122,10 @@ func (b *EventBus) deliver(event frontend.Event) {
 		}
 		if event.Session != nil {
 			session := *event.Session
+			if session.Capabilities != nil {
+				c := copyCapabilities(*session.Capabilities)
+				session.Capabilities = &c
+			}
 			copy.Session = &session
 		}
 		if event.Timeline != nil {

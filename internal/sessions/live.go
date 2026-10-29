@@ -62,7 +62,11 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 	}
 	id, grant := rand.Text(), rand.Text()
 	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/live/index.m3u8", Protocol: req.Protocol, ViewerID: viewer.ID, Device: p.request.Device, Channel: p.request.Channel, StartedAt: b.deps.Now()}
-	s := &brokerSession{public: session, grant: grant, playID: liveID, clientID: p.request.Caps.ClientID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, live: true}
+	if err := b.enrichCapabilities(ctx, &session); err != nil {
+		_ = b.deps.Live.Stop(ctx, viewer, liveID)
+		return frontend.Session{}, err
+	}
+	s := &brokerSession{public: copySession(session), grant: grant, playID: liveID, clientID: p.request.Caps.ClientID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, live: true}
 	if b.cluster != nil && session.Protocol != "plex" {
 		if err := b.cluster.store.put(ctx, session, liveID, *viewer, b.deps.Now()); err != nil {
 			_ = b.deps.Live.Stop(ctx, viewer, liveID)
