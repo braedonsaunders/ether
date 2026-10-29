@@ -71,3 +71,19 @@ func Decide(playback core.Playback, transcoder core.Transcoder, r DecisionReques
 	}
 	return dec, nil
 }
+
+// HLSDecision applies the v39 start-time decision rules. A client may reject
+// direct play after its initial decision; in that case reconsider is called
+// before selecting the segmented output.
+func HLSDecision(dec core.Decision, allowDirect bool, reconsider func() core.Decision) core.Decision {
+	if dec.Kind == core.DecisionDirectPlay && !allowDirect {
+		dec = reconsider()
+	}
+	if dec.Kind == core.DecisionDirectPlay {
+		dec.Kind, dec.VideoCopy, dec.AudioCopy, dec.Container = core.DecisionRemux, true, true, "mpegts"
+	}
+	if dec.Container == "" {
+		dec.Container = "mpegts"
+	}
+	return dec
+}

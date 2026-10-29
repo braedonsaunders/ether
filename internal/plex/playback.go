@@ -778,22 +778,11 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
 
-	dec := entry.decision
-	if dec.Kind == core.DecisionDirectPlay && !p.opts.DirectPlay {
-		// An MDE client got "direct play OK" from the decision, judged the
-		// media unplayable itself and now asks for a stream: decide again
-		// without direct play so a needed transcode isn't a plain remux.
+	dec := sessions.HLSDecision(entry.decision, p.opts.DirectPlay, func() core.Decision {
 		resolvePlaySubtitle(&p, ps.Info)
 		applySelections(&p, ps.Info, s.audioLanguages(pr.User))
-		dec = s.d.Transcoder.Decide(ps.Info, p.caps, p.opts)
-	}
-	if dec.Kind == core.DecisionDirectPlay {
-		// The client asked for HLS anyway: remux.
-		dec.Kind, dec.VideoCopy, dec.AudioCopy, dec.Container = core.DecisionRemux, true, true, "mpegts"
-	}
-	if dec.Container == "" {
-		dec.Container = "mpegts"
-	}
+		return s.d.Transcoder.Decide(ps.Info, p.caps, p.opts)
+	})
 	if existing, ok := s.d.Transcoder.Session(p.sessionID); ok && existing != nil {
 		if entry.started && entry.offset == p.offset {
 			unlockEncoder()

@@ -40,3 +40,15 @@ func TestDecisionRemuxOverride(t *testing.T) {
 		t.Fatalf("required remux %+v, %v", got, err)
 	}
 }
+
+func TestHLSDecisionReconsidersClientRejection(t *testing.T) {
+	called := false
+	got := HLSDecision(core.Decision{Kind: core.DecisionDirectPlay}, false, func() core.Decision { called = true; return core.Decision{Kind: core.DecisionTranscode} })
+	if !called || got.Kind != core.DecisionTranscode || got.Container != "mpegts" {
+		t.Fatalf("decision %+v, reconsider=%v", got, called)
+	}
+	got = HLSDecision(core.Decision{Kind: core.DecisionDirectPlay}, true, func() core.Decision { t.Fatal("unexpected reconsider"); return core.Decision{} })
+	if got.Kind != core.DecisionRemux || !got.VideoCopy || !got.AudioCopy || got.Container != "mpegts" {
+		t.Fatalf("decision %+v", got)
+	}
+}
