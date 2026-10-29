@@ -136,3 +136,28 @@ func ParseStremio(value string) (StremioID, error) {
 	}
 	return result, nil
 }
+
+// FormatStremio encodes an external identifier and optional episode in the
+// same format accepted by ParseStremio. IMDb identifiers retain leading zeros.
+func FormatStremio(id StremioID) (string, error) {
+	var value string
+	switch id.Source {
+	case "tmdb":
+		value = "tmdb:" + id.ID
+	case "imdb":
+		value = id.ID
+	default:
+		return "", ErrInvalid
+	}
+	if id.HasEpisode {
+		value += ":" + strconv.Itoa(id.Season) + ":" + strconv.Itoa(id.Episode)
+	}
+	parsed, err := ParseStremio(value)
+	if err != nil || parsed != id {
+		return "", ErrInvalid
+	}
+	return value, nil
+}
+
+func (Codecs) ParseStremio(value string) (StremioID, error) { return ParseStremio(value) }
+func (Codecs) FormatStremio(id StremioID) (string, error)   { return FormatStremio(id) }
