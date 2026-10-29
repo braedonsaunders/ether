@@ -859,3 +859,13 @@ if needed.
 Stremio requires an HTTPS address. If the portal cannot create an install
 link, add a certificate under **Apps → Secure connections** and try again.
 Catalogue items and streams follow the viewer's library and safety settings.
+
+## Read-only WebDAV
+
+After an owner enables **Files** under **Apps**, a viewer can create a WebDAV
+app password in the viewer portal under **Connect an app**. Copy the address,
+username and password into a WebDAV client such as Infuse, VLC, Kodi or rclone.
+The password is shown once; revoke the connection under **Devices** if it is
+lost or no longer needed. Each viewer sees only media allowed by their account.
+The Movies, TV and Collections folders are read-only. Opening a file starts a
+normal Ether playback session and counts toward the viewer's stream limits.
