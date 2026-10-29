@@ -23,6 +23,51 @@ func (p probeFixture) RespondDiscovery(_ context.Context, r frontend.DiscoveryRe
 	return []byte(p.response + " " + r.Endpoint), true
 }
 
+type blockingProbe struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (p blockingProbe) RespondDiscovery(context.Context, frontend.DiscoveryRequest) ([]byte, bool) {
+	close(p.entered)
+	<-p.release
+	return []byte("late"), true
+}
+
+func TestDisabledSurfaceCannotReplyToInflightProbe(t *testing.T) {
+	d := newSharedDiscovery(context.Background())
+	d.listen = func() (net.PacketConn, error) { return net.ListenPacket("udp4", "127.0.0.1:0") }
+	p := blockingProbe{entered: make(chan struct{}), release: make(chan struct{})}
+	endpoint := func(context.Context, frontend.Protocol, netip.AddrPort) (string, error) { return "http://example", nil }
+	if err := d.add("jellyfin", discoveryEntry{p, endpoint}); err != nil {
+		t.Fatal(err)
+	}
+	defer d.close()
+	d.mu.Lock()
+	addr := d.conn.LocalAddr().String()
+	d.mu.Unlock()
+	client, err := net.Dial("udp4", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if _, err = client.Write([]byte("probe")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.entered:
+	case <-time.After(time.Second):
+		t.Fatal("probe not delivered")
+	}
+	d.remove("jellyfin")
+	close(p.release)
+	_ = client.SetReadDeadline(time.Now().Add(150 * time.Millisecond))
+	buf := make([]byte, 32)
+	if n, err := client.Read(buf); err == nil {
+		t.Fatalf("disabled surface replied: %q", buf[:n])
+	}
+}
+
 type discoveryFrontend struct {
 	id    frontend.Protocol
 	probe string
