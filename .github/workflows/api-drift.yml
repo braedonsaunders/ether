@@ -35,7 +35,7 @@ jobs:
             title='API drift check failed'
             { echo 'The scheduled API drift check failed. See the workflow run for details.'; echo; echo '```'; cat "$RUNNER_TEMP/api-drift.log"; echo '```'; } > "$RUNNER_TEMP/issue.md"
           elif [ -s "$RUNNER_TEMP/api-drift.md" ]; then
-            title='API endpoint drift detected'
+            title='API drift and reference defects'
             cp "$RUNNER_TEMP/api-drift.md" "$RUNNER_TEMP/issue.md"
           else
             exit 0

@@ -270,6 +270,35 @@ func makeChange(protocol, kind, k string, used, implemented map[string]bool) cha
 	}
 	return change{protocol, kind, parts[0], parts[1], priority}
 }
+
+// openDefects reports locally recorded reference issues without claiming to
+// recheck server behavior; that requires the reference lab.
+func openDefects(protocol string) ([]string, error) {
+	path := filepath.Join("testdata", "conform", protocol, "reference-defects.json")
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		Defects []struct{ ID, Detail, Observed, Status string } `json:"defects"`
+	}
+	if err = json.Unmarshal(b, &doc); err != nil {
+		return nil, err
+	}
+	var notes []string
+	for _, d := range doc.Defects {
+		if d.Status == "open" {
+			if d.ID == "" {
+				return nil, fmt.Errorf("reference defect has no id")
+			}
+			notes = append(notes, fmt.Sprintf("%s reference defect %s (%s): %s; lab recheck required", protocol, d.ID, d.Observed, d.Detail))
+		}
+	}
+	return notes, nil
+}
 func run() error {
 	manifest := flag.String("manifest", "internal/conform/specs/manifest.json", "spec manifest")
 	bin := flag.String("conformdiff", "conformdiff", "conformdiff executable")
@@ -291,6 +320,11 @@ func run() error {
 	var changes []change
 	var notes []string
 	for _, s := range doc.Specs {
+		defects, err := openDefects(s.Protocol)
+		if err != nil {
+			return err
+		}
+		notes = append(notes, defects...)
 		old, err := fetch(s.URL)
 		if err != nil {
 			return err
@@ -351,7 +385,20 @@ func run() error {
 	}
 	if len(changes) == 0 {
 		fmt.Println("No endpoint drift detected.")
-		return os.WriteFile(*out, nil, 0644)
+		var defects []string
+		for _, n := range notes {
+			if strings.Contains(n, " reference defect ") {
+				defects = append(defects, n)
+			}
+		}
+		if len(defects) == 0 {
+			return os.WriteFile(*out, nil, 0644)
+		}
+		report := "# Open reference defects\n\n"
+		for _, n := range defects {
+			report += "- " + n + "\n"
+		}
+		return os.WriteFile(*out, []byte(report), 0644)
 	}
 	rank := map[string]int{"used-by-clients": 0, "implemented": 1, "other": 2}
 	sort.Slice(changes, func(i, j int) bool {

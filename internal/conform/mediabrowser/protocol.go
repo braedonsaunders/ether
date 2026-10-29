@@ -302,8 +302,18 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 		return conform.Response{}, err
 	}
 	if r.RangeKind != "" {
+		var defect *conform.ReferenceDefect
+		truncated := false
+		observedLength := len(body)
 		if len(body) > 65536 {
-			return conform.Response{}, fmt.Errorf("range response exceeds 65536 bytes")
+			var first, last, total int64
+			_, parseErr := fmt.Sscanf(resp.Header.Get("Content-Range"), "bytes %d-%d/%d", &first, &last, &total)
+			if p.Dialect != "emby" || r.RangeKind != "suffix" || resp.StatusCode != http.StatusPartialContent || len(body) != 65537 || resp.Header.Get("Content-Length") != "65537" || parseErr != nil || first != 0 || last != 65536 || total <= 65537 {
+				return conform.Response{}, fmt.Errorf("range response exceeds 65536 bytes")
+			}
+			truncated = true
+			body = body[:65536]
+			defect = &conform.ReferenceDefect{ID: "emby-suffix-range-ignored", Detail: "bytes=-65536 was served as bytes 0-65536", Observed: "Emby 4.10.2"}
 		}
 		headers := http.Header{}
 		for _, k := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag", "Cache-Control"} {
@@ -316,7 +326,7 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 			}
 		}
 		sum := sha256.Sum256(body)
-		return conform.Response{Status: resp.StatusCode, Headers: headers, Kind: "binary-range", RangeKind: r.RangeKind, BodyLength: int64(len(body)), SHA256: hex.EncodeToString(sum[:])}, nil
+		return conform.Response{Status: resp.StatusCode, Headers: headers, Kind: "binary-range", RangeKind: r.RangeKind, BodyLength: int64(observedLength), SHA256: hex.EncodeToString(sum[:]), Truncated: truncated, ReferenceDefect: defect}, nil
 	}
 	if len(body) > 16<<20 {
 		return conform.Response{}, fmt.Errorf("response exceeds 16 MiB limit")

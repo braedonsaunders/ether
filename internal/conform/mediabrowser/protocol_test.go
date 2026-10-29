@@ -3,6 +3,8 @@ package mediabrowser
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"github.com/braedonsaunders/ether/internal/conform"
 	"net/http"
@@ -145,5 +147,35 @@ func TestBinaryRangeFixturesDoNotContainMedia(t *testing.T) {
 		if bytes.Contains(saved, []byte("QUFBQUFB")) {
 			t.Fatal("fixture contains media data")
 		}
+	}
+}
+func TestKnownEmbySuffixDefectIsTruncated(t *testing.T) {
+	dir := t.TempDir()
+	profile := `{"protocol":"emby","client":"test","flows":{"play_direct":[{"name":"stream","method":"GET","path":"/video/stream"}]}}`
+	if err := os.WriteFile(filepath.Join(dir, "web.json"), []byte(profile), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Load("emby", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Range", "bytes 0-65536/200000")
+		w.Header().Set("Content-Length", "65537")
+		w.WriteHeader(206)
+		w.Write(bytes.Repeat([]byte{'x'}, 65537))
+	}))
+	defer server.Close()
+	req := p.Corpus("web")[2]
+	r, err := p.Fetch(context.Background(), server.Client(), server.URL, "", req, "web", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Truncated || r.BodyLength != 65537 || len(r.Body) != 0 || r.ReferenceDefect == nil {
+		t.Fatalf("invalid defect capture: %+v", r)
+	}
+	sum := sha256.Sum256(bytes.Repeat([]byte{'x'}, 65536))
+	if r.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatal("hash did not cover bounded prefix")
 	}
 }

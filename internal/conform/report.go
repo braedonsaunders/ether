@@ -127,6 +127,9 @@ func containsString(xs []string, x string) bool {
 // value differences), followed by a count table.
 func WriteSummary(w io.Writer, r Report, values bool) {
 	sums := Summarize(r)
+	for _, d := range r.ReferenceDefects {
+		fmt.Fprintf(w, "REFERENCE DEFECT: %s (%s): %s\n", d.ID, d.Observed, d.Detail)
+	}
 	for _, line := range r.Discovery {
 		fmt.Fprintf(w, "INFO: %s\n", line)
 	}
@@ -206,6 +209,9 @@ func clientList(cs []string) string {
 // WriteText prints every difference grouped by request (client, format,
 // endpoint).
 func WriteText(w io.Writer, r Report, values bool) {
+	for _, d := range r.ReferenceDefects {
+		fmt.Fprintf(w, "REFERENCE DEFECT: %s (%s): %s\n", d.ID, d.Observed, d.Detail)
+	}
 	for _, line := range r.Discovery {
 		fmt.Fprintf(w, "INFO: %s\n", line)
 	}

@@ -54,8 +54,9 @@ type Difference struct {
 
 // Report is the result of comparing responses.
 type Report struct {
-	Differences []Difference `json:"differences"`
-	Discovery   []string     `json:"discovery,omitempty"`
+	Differences      []Difference      `json:"differences"`
+	Discovery        []string          `json:"discovery,omitempty"`
+	ReferenceDefects []ReferenceDefect `json:"reference_defects,omitempty"`
 	// Endpoints lists every endpoint compared, so summaries can show
 	// endpoints without differences too.
 	Endpoints []string `json:"endpoints,omitempty"`

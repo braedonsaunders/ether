@@ -112,6 +112,11 @@ func run(args []string) error {
 	}
 	var report pmsconform.Report
 	switch cmd {
+	case "defects":
+		if *protocol != "emby" || *ref == "" {
+			return fmt.Errorf("defects requires -protocol emby and -reference URL")
+		}
+		return checkDefects(p, referenceVars, *ref, *refToken, *client, *timeout, *concurrency)
 	case "record":
 		if *server == "" {
 			*server = *ref
@@ -325,7 +330,7 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 			req  pmsconform.Request
 			json bool
 		}
-		type result struct{ diff []pmsconform.Difference }
+		type result struct{ report pmsconform.Report }
 		jobs := make(chan job)
 		results := make(chan result)
 		var wg sync.WaitGroup
@@ -340,7 +345,7 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 						d := errorDifference(profile, j.req, fmt.Errorf("load fixture: %w", e))
 						d.Format = formatName(j.json)
 						fmt.Fprintf(os.Stderr, "ERROR %s: %v\n", d.Path, d.Reference)
-						results <- result{[]pmsconform.Difference{d}}
+						results <- result{pmsconform.Report{Differences: []pmsconform.Difference{d}}}
 						continue
 					}
 					b, e := p.Fetch(ctx, client, base, token, j.req, profile, targetIDs.Values, j.json)
@@ -348,11 +353,11 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 						d := errorDifference(profile, j.req, e)
 						d.Format = formatName(j.json)
 						fmt.Fprintf(os.Stderr, "ERROR %s: %v\n", d.Path, d.Reference)
-						results <- result{[]pmsconform.Difference{d}}
+						results <- result{pmsconform.Report{Differences: []pmsconform.Difference{d}}}
 						continue
 					}
 					r := p.Compare(a, scrubSecrets(p.Redact(b), variables, token)).WithRequest(profile, formatName(j.json), j.req.Path)
-					results <- result{r.Differences}
+					results <- result{r}
 				}
 			}()
 		}
@@ -367,7 +372,8 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 			close(results)
 		}()
 		for r := range results {
-			out.Differences = append(out.Differences, r.diff...)
+			out.Differences = append(out.Differences, r.report.Differences...)
+			out.ReferenceDefects = append(out.ReferenceDefects, r.report.ReferenceDefects...)
 		}
 	}
 	return out, nil
@@ -387,6 +393,7 @@ func errorDifference(profile string, req pmsconform.Request, e error) pmsconform
 func mergeReports(a, b pmsconform.Report) pmsconform.Report {
 	a.Differences = append(a.Differences, b.Differences...)
 	a.Discovery = append(a.Discovery, b.Discovery...)
+	a.ReferenceDefects = append(a.ReferenceDefects, b.ReferenceDefects...)
 	return a
 }
 func emit(w io.Writer, r pmsconform.Report, format string, summary, values bool) {
@@ -394,9 +401,10 @@ func emit(w io.Writer, r pmsconform.Report, format string, summary, values bool)
 		var v any = r
 		if summary {
 			v = struct {
-				Discovery []string                     `json:"discovery,omitempty"`
-				Endpoints []pmsconform.EndpointSummary `json:"endpoints"`
-			}{r.Discovery, pmsconform.Summarize(r)}
+				Discovery        []string                     `json:"discovery,omitempty"`
+				ReferenceDefects []pmsconform.ReferenceDefect `json:"reference_defects,omitempty"`
+				Endpoints        []pmsconform.EndpointSummary `json:"endpoints"`
+			}{r.Discovery, r.ReferenceDefects, pmsconform.Summarize(r)}
 		}
 		b, _ := json.MarshalIndent(v, "", "  ")
 		fmt.Fprintln(w, string(b))

@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// ReferenceDefect records a known behavior of a reference, never an Ether requirement.
+type ReferenceDefect struct {
+	ID       string `json:"id"`
+	Detail   string `json:"detail"`
+	Observed string `json:"observed"`
+}
+
 // CompareBinary compares range semantics, not media bytes or cross-server hashes.
 func CompareBinary(a, b Response) Report {
 	var r Report
@@ -30,7 +37,9 @@ func CompareBinary(a, b Response) Report {
 			add("$headers."+name, KindHeader, x, y)
 		}
 	}
-	if err := checkRange(a); err != nil {
+	if a.ReferenceDefect != nil && knownDefect(a) {
+		r.ReferenceDefects = append(r.ReferenceDefects, *a.ReferenceDefect)
+	} else if err := checkRange(a); err != nil {
 		add("$reference.range", KindHeader, "valid", err.Error())
 	}
 	if err := checkRange(b); err != nil {
@@ -38,6 +47,18 @@ func CompareBinary(a, b Response) Report {
 	}
 	return r
 }
+func knownDefect(r Response) bool {
+	if r.ReferenceDefect == nil || r.ReferenceDefect.ID != "emby-suffix-range-ignored" || r.RangeKind != "suffix" || r.Status != 206 || !r.Truncated || r.BodyLength != 65537 || r.Headers.Get("Content-Length") != "65537" {
+		return false
+	}
+	var first, last, total int64
+	_, err := fmt.Sscanf(r.Headers.Get("Content-Range"), "bytes %d-%d/%d", &first, &last, &total)
+	return err == nil && first == 0 && last == 65536 && total > 65537
+}
+
+// ValidateBinary checks a live response against strict byte-range semantics.
+func ValidateBinary(r Response) error { return checkRange(r) }
+
 func checkRange(r Response) error {
 	if r.Status != 206 {
 		return fmt.Errorf("expected status 206, got %d", r.Status)

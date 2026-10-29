@@ -14,13 +14,15 @@ import (
 
 // Response is a captured HTTP response.
 type Response struct {
-	Status     int         `json:"status"`
-	Headers    http.Header `json:"headers"`
-	Body       []byte      `json:"body"`
-	Kind       string      `json:"kind,omitempty"`
-	RangeKind  string      `json:"rangeKind,omitempty"`
-	BodyLength int64       `json:"bodyLength,omitempty"`
-	SHA256     string      `json:"sha256,omitempty"`
+	Status          int              `json:"status"`
+	Headers         http.Header      `json:"headers"`
+	Body            []byte           `json:"body"`
+	Kind            string           `json:"kind,omitempty"`
+	RangeKind       string           `json:"rangeKind,omitempty"`
+	BodyLength      int64            `json:"bodyLength,omitempty"`
+	SHA256          string           `json:"sha256,omitempty"`
+	Truncated       bool             `json:"truncated,omitempty"`
+	ReferenceDefect *ReferenceDefect `json:"reference_defect,omitempty"`
 }
 
 // DiscoveredIDs holds per-server identifiers used to make templated probes target real items.
