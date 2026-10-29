@@ -48,32 +48,42 @@ type config struct {
 	TimeoutMS     int        `json:"timeout_ms,omitempty"`
 	CacheState    string     `json:"cache_state,omitempty"`
 }
+type quantileInterval struct {
+	Lower float64 `json:"lower_ms"`
+	Upper float64 `json:"upper_ms"`
+}
 type measurement struct {
-	P50                 float64        `json:"p50_ms"`
-	P95                 float64        `json:"p95_ms"`
-	P99                 float64        `json:"p99_ms"`
-	TTFBP50             float64        `json:"ttfb_p50_ms"`
-	TTFBP95             float64        `json:"ttfb_p95_ms"`
-	TTFBP99             float64        `json:"ttfb_p99_ms"`
-	AllScheduledP50     float64        `json:"all_scheduled_p50_ms"`
-	AllScheduledP95     float64        `json:"all_scheduled_p95_ms"`
-	AllScheduledP99     float64        `json:"all_scheduled_p99_ms"`
-	QueueP50            float64        `json:"queue_p50_ms"`
-	QueueP95            float64        `json:"queue_p95_ms"`
-	QueueP99            float64        `json:"queue_p99_ms"`
-	WallSeconds         float64        `json:"wall_seconds"`
-	StartedAt           time.Time      `json:"started_at"`
-	EndedAt             time.Time      `json:"ended_at"`
-	SuccessfulPerSecond float64        `json:"successful_per_second"`
-	HTTPSuccesses       int            `json:"http_successes"`
-	ValidSuccesses      int            `json:"valid_successes"`
-	Resource            *resourceDelta `json:"resource,omitempty"`
-	ResourceError       string         `json:"resource_error,omitempty"`
-	Timeouts            int            `json:"timeouts"`
-	Errors              int            `json:"errors"`
-	SchemaErrors        int            `json:"schema_errors"`
-	SchemaUncovered     int            `json:"schema_uncovered"`
-	Samples             int            `json:"samples"`
+	P50CI95             *quantileInterval `json:"p50_ci95,omitempty"`
+	P95CI95             *quantileInterval `json:"p95_ci95,omitempty"`
+	P99CI95             *quantileInterval `json:"p99_ci95,omitempty"`
+	TTFBP50CI95         *quantileInterval `json:"ttfb_p50_ci95,omitempty"`
+	TTFBP95CI95         *quantileInterval `json:"ttfb_p95_ci95,omitempty"`
+	TTFBP99CI95         *quantileInterval `json:"ttfb_p99_ci95,omitempty"`
+	P50                 float64           `json:"p50_ms"`
+	P95                 float64           `json:"p95_ms"`
+	P99                 float64           `json:"p99_ms"`
+	TTFBP50             float64           `json:"ttfb_p50_ms"`
+	TTFBP95             float64           `json:"ttfb_p95_ms"`
+	TTFBP99             float64           `json:"ttfb_p99_ms"`
+	AllScheduledP50     float64           `json:"all_scheduled_p50_ms"`
+	AllScheduledP95     float64           `json:"all_scheduled_p95_ms"`
+	AllScheduledP99     float64           `json:"all_scheduled_p99_ms"`
+	QueueP50            float64           `json:"queue_p50_ms"`
+	QueueP95            float64           `json:"queue_p95_ms"`
+	QueueP99            float64           `json:"queue_p99_ms"`
+	WallSeconds         float64           `json:"wall_seconds"`
+	StartedAt           time.Time         `json:"started_at"`
+	EndedAt             time.Time         `json:"ended_at"`
+	SuccessfulPerSecond float64           `json:"successful_per_second"`
+	HTTPSuccesses       int               `json:"http_successes"`
+	ValidSuccesses      int               `json:"valid_successes"`
+	Resource            *resourceDelta    `json:"resource,omitempty"`
+	ResourceError       string            `json:"resource_error,omitempty"`
+	Timeouts            int               `json:"timeouts"`
+	Errors              int               `json:"errors"`
+	SchemaErrors        int               `json:"schema_errors"`
+	SchemaUncovered     int               `json:"schema_uncovered"`
+	Samples             int               `json:"samples"`
 }
 type result struct {
 	Name            string      `json:"name"`
@@ -263,13 +273,41 @@ func measureScheduled(client *http.Client, t target, samples, concurrency int, s
 		m.P50 = percentile(durations, 50)
 		m.P95 = percentile(durations, 95)
 		m.P99 = percentile(durations, 99)
+		m.P50CI95 = quantileCI(durations, .5)
+		m.P95CI95 = quantileCI(durations, .95)
+		m.P99CI95 = quantileCI(durations, .99)
 		m.TTFBP50 = percentile(firstBytes, 50)
 		m.TTFBP95 = percentile(firstBytes, 95)
 		m.TTFBP99 = percentile(firstBytes, 99)
+		m.TTFBP50CI95 = quantileCI(firstBytes, .5)
+		m.TTFBP95CI95 = quantileCI(firstBytes, .95)
+		m.TTFBP99CI95 = quantileCI(firstBytes, .99)
 	}
 	return m
 }
 func percentile(v []float64, p int) float64 { return v[(len(v)*p+99)/100-1] }
+
+// quantileCI is a normal approximation to binomial order-statistic bounds.
+// It deliberately omits intervals when either tail has too few observations.
+func quantileCI(sorted []float64, p float64) *quantileInterval {
+	n := float64(len(sorted))
+	variance := n * p * (1 - p)
+	if variance < 10 {
+		return nil
+	}
+	center := n * p
+	spread := 1.96 * math.Sqrt(variance)
+	lower := int(math.Floor(center - spread))
+	upper := int(math.Ceil(center + spread))
+	if lower < 1 {
+		lower = 1
+	}
+	if upper > len(sorted) {
+		upper = len(sorted)
+	}
+	return &quantileInterval{Lower: sorted[lower-1], Upper: sorted[upper-1]}
+}
+
 func winner(a, b measurement) string {
 	if a.Errors > 0 || b.Errors > 0 || a.SchemaErrors > 0 || b.SchemaErrors > 0 || a.SchemaUncovered > 0 || b.SchemaUncovered > 0 || a.ResourceError != "" || b.ResourceError != "" {
 		return "inconclusive"

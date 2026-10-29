@@ -127,3 +127,17 @@ func TestRepetitionsAlternateServerOrder(t *testing.T) {
 		t.Fatalf("order %v rows %+v err %v", order, rows, err)
 	}
 }
+
+func TestQuantileUncertaintyRequiresTailSamples(t *testing.T) {
+	values := make([]float64, 2000)
+	for i := range values {
+		values[i] = float64(i + 1)
+	}
+	if quantileCI(values[:100], .99) != nil {
+		t.Fatal("p99 interval claimed with too few tail observations")
+	}
+	ci := quantileCI(values, .99)
+	if ci == nil || ci.Lower > 1980 || ci.Upper < 1980 || ci.Lower >= ci.Upper {
+		t.Fatalf("bad order-statistic interval: %+v", ci)
+	}
+}

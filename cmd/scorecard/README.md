@@ -160,3 +160,10 @@ are included only if they remain in the measured cgroup. The tool does not yet
 measure CPU per verified stream-minute, perform mixed churn/failure injection,
 or control cold caches; no extended soak should run without aligned fixtures,
 resource isolation and the coordinator's reservation.
+
+When each quantile has enough tail observations (n·p·(1−p) >= 10), the
+collector emits approximate 95% binomial order-statistic intervals for
+successful-response and first-byte percentiles. These intervals assume
+independent samples and can understate uncertainty for correlated requests;
+point-estimate winners are not significance tests. Missing intervals mean the
+sample count is insufficient, not zero uncertainty.
