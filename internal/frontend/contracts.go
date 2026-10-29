@@ -275,7 +275,10 @@ type ItemDetail struct {
 	// source, codec, stream slot or transcode capacity will be available.
 	CanPlay *bool
 	Tracks  []core.StreamInfo
-	Images  []Image
+	// TracksEstimated marks a set containing synthesized playback estimates.
+	// These streams must not be presented as facts about a resolved source.
+	TracksEstimated bool
+	Images          []Image
 	// ImagesAuthoritative reports whether Images describes the currently selected
 	// authorized artwork. Background discovery may add alternatives later.
 	ImagesAuthoritative bool

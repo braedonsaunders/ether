@@ -49,9 +49,15 @@ func TestServiceEnforcesVisibilityBeforePagination(t *testing.T) {
 	s.d.IsFavorite = func(_ context.Context, _ *core.User, key core.RatingKey) (bool, error) {
 		return key == visible.Key, nil
 	}
+	s.d.Enrich = func(_ context.Context, _ *core.User, _ core.Device, title *core.Title) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: *title, Tracks: []core.StreamInfo{{Type: "audio", Codec: "flac"}}}, nil
+	}
 	detail, err := s.Item(ctx, frontend.ItemRequest{Viewer: &core.User{ID: 1}, Key: visible.Key})
 	if err != nil || !detail.UserData.IsFavorite || !detail.UserData.InWatchlist {
 		t.Fatalf("favorite item: %+v %v", detail, err)
+	}
+	if detail.TracksEstimated || len(detail.Tracks) != 1 || detail.Tracks[0].Codec != "flac" {
+		t.Fatalf("authoritative fake tracks changed: %+v", detail)
 	}
 	parentDetail, err := s.Item(ctx, frontend.ItemRequest{Viewer: &core.User{ID: 1}, Key: parent.Key})
 	if err != nil || parentDetail.UserData.IsFavorite {

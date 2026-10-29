@@ -137,6 +137,9 @@ func TestSurfaceExperienceArtworkFollowsItemAuthorization(t *testing.T) {
 	if err != nil || detail.ImagesAuthoritative || len(detail.Images) != 1 || detail.Images[0].Path != "opaque" {
 		t.Fatalf("incomplete: %+v %v", detail, err)
 	}
+	if a.playback == nil || len(detail.Tracks) == 0 || !detail.TracksEstimated {
+		t.Fatalf("synthetic playback tracks must carry estimate provenance: %+v", detail)
+	}
 	selector, ok := experience.(frontend.ItemArtwork)
 	if !ok {
 		t.Fatal("lightweight artwork policy missing")
