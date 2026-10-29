@@ -783,11 +783,7 @@ func (s *Server) vibeSearch(ctx context.Context, pr *Request, query string) (*co
 	if searcher == nil || pr == nil {
 		return nil, nil, false, nil
 	}
-	c, items, ok, err := searcher.VibeCollection(ctx, pr.User, query)
-	if err != nil || !ok {
-		return c, items, ok, err
-	}
-	return c, s.filterAllowed(pr.User, items), true, nil
+	return (experience.VibeSearch{Source: searcher, Visibility: s.visibility()}).Find(ctx, pr.User, query)
 }
 
 func (s *Server) collectionDirectory(ctx context.Context, c *core.Collection) model.Directory {
