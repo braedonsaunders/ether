@@ -260,8 +260,12 @@ func (i *instance) browseRoutes() error {
 			}
 			dto["MediaSources"] = sources
 		}
-		if tags := i.imageTags(r, d, token); len(tags) > 0 {
+		tags, backdrops := i.imageTags(r, d, token)
+		if len(tags) > 0 {
 			dto["ImageTags"] = tags
+		}
+		if len(backdrops) > 0 {
+			dto["BackdropImageTags"] = backdrops
 		}
 		jsonReply(w, dto)
 	}

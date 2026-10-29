@@ -67,6 +67,9 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 		if err := r.Handle(method, "/Items/{itemId}/Images/{imageType}", http.HandlerFunc(inst.image)); err != nil {
 			return nil, err
 		}
+		if err := r.Handle(method, "/Items/{itemId}/Images/{imageType}/{index}", http.HandlerFunc(inst.image)); err != nil {
+			return nil, err
+		}
 	}
 	for _, method := range []string{"GET", "POST"} {
 		if err := r.Handle(method, "/DisplayPreferences/{id}", http.HandlerFunc(inst.displayPreferences)); err != nil {

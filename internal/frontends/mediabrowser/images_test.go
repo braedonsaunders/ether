@@ -19,11 +19,11 @@ func (f *imageGrantsFake) Issue(_ context.Context, r frontend.ImageGrantRequest)
 		return "", errors.New("denied")
 	}
 	f.issued++
-	return "scoped-image", nil
+	return "scoped-image" + r.Image.Path, nil
 }
 func (*imageGrantsFake) Revoke(context.Context, string, string) error { return nil }
 func (*imageGrantsFake) Serve(w http.ResponseWriter, _ *http.Request, token string) {
-	if token != "scoped-image" {
+	if token != "scoped-image/poster" {
 		http.NotFound(w, nil)
 		return
 	}
@@ -33,7 +33,7 @@ func TestImagesRequireScopedGrant(t *testing.T) {
 	grants := &imageGrantsFake{}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 1}, nil }}
 	exp := frontendtest.Experience{ItemFunc: func(_ context.Context, r frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: frontend.Title{Key: r.Key, Type: "movie", Title: "Movie"}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/poster"}}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: r.Key, Type: "movie", Title: "Movie"}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/poster"}, {Kind: "poster", Path: "/alternate"}}}, nil
 	}}
 	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, ImageGrants: grants})
 	if err != nil {
@@ -44,7 +44,7 @@ func TestImagesRequireScopedGrant(t *testing.T) {
 	r := httptest.NewRequest("GET", "/Items/"+id, nil)
 	r.Header.Set("X-Emby-Token", "grant")
 	inst.Handler().ServeHTTP(w, r)
-	if w.Code != 200 || grants.issued != 1 || !strings.Contains(w.Body.String(), "scoped-image") {
+	if w.Code != 200 || grants.issued != 1 || !strings.Contains(w.Body.String(), "scoped-image/poster") {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	w = httptest.NewRecorder()
@@ -53,7 +53,7 @@ func TestImagesRequireScopedGrant(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 	w = httptest.NewRecorder()
-	inst.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/Items/"+id+"/Images/Primary?tag=scoped-image", nil))
+	inst.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/Items/"+id+"/Images/Primary?tag=scoped-image%2Fposter", nil))
 	if w.Code != 200 || w.Body.String() != "image" {
 		t.Fatal(w.Code, w.Body.String())
 	}

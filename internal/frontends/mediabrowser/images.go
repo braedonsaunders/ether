@@ -7,10 +7,11 @@ import (
 	"strings"
 )
 
-func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token string) map[string]any {
+func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token string) (map[string]any, []string) {
 	tags := map[string]any{}
+	backdrops := []string{}
 	if i.host.ImageGrants == nil || !detail.ImagesAuthoritative {
-		return tags
+		return tags, backdrops
 	}
 	for _, img := range detail.Images {
 		kind := ""
@@ -23,16 +24,25 @@ func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token 
 			kind = "Thumb"
 		case "banner":
 			kind = "Banner"
+		case "backdrop":
+			kind = "Backdrop"
 		}
 		if kind == "" {
 			continue
 		}
+		if _, exists := tags[kind]; exists && kind != "Backdrop" {
+			continue
+		}
 		grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: token, Device: device(r), Item: detail.Title.Key, Image: img})
 		if err == nil && grant != "" {
-			tags[kind] = grant
+			if kind == "Backdrop" {
+				backdrops = append(backdrops, grant)
+			} else {
+				tags[kind] = grant
+			}
 		}
 	}
-	return tags
+	return tags, backdrops
 }
 func (i *instance) image(w http.ResponseWriter, r *http.Request) {
 	if i.host.ImageGrants == nil {
