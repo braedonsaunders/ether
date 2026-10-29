@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -181,6 +182,10 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		sourceID = version
 	}
 	source := i.mediaSourceDTO(sourceID, plan.Media)
+	if channel != "" || plan.Decision.Kind == core.DecisionTranscode {
+		// These streams are produced by Ether, even when their input is remote.
+		source["IsRemote"] = false
+	}
 	if plan.ETag != "" {
 		source["ETag"] = plan.ETag
 	}
