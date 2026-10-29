@@ -49,8 +49,9 @@ type Difference struct {
 	Count int `json:"count,omitempty"`
 	// Nested is how many descendant paths of a missing or extra element
 	// were folded into this difference.
-	Nested   int  `json:"nested,omitempty"`
-	Blocking bool `json:"blocking"`
+	Nested   int    `json:"nested,omitempty"`
+	Blocking bool   `json:"blocking"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // Report is the result of comparing responses.

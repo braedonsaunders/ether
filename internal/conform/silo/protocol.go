@@ -2,7 +2,11 @@
 package silo
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -21,6 +25,99 @@ func Load(dir string) (*Protocol, error) {
 		return nil, err
 	}
 	return &Protocol{p}, nil
+}
+
+// Compare treats valid Silo HLS implementation choices as informational while
+// retaining structural and semantic failures as blocking.
+func (p *Protocol) Compare(reference, target conform.Response) conform.Report {
+	if bytes.HasPrefix(bytes.TrimSpace(reference.Body), []byte("#EXTM3U")) || bytes.HasPrefix(bytes.TrimSpace(target.Body), []byte("#EXTM3U")) {
+		return compareSiloPlaylist(reference, target)
+	}
+	return p.Protocol.Compare(reference, target)
+}
+
+func (p *Protocol) CompareRequest(_ conform.Request, reference, target conform.Response) conform.Report {
+	return p.Compare(reference, target)
+}
+
+// Fetch follows the first HLS variant when a target exposes a master ladder.
+// The corpus records a media playlist, so the subsequent segment probes must
+// resolve against the selected variant rather than treating it as a segment.
+func (p *Protocol) Fetch(ctx context.Context, client *http.Client, base, token string, request conform.Request, profile string, vars map[string]string, jsonMode bool) (conform.Response, error) {
+	response, err := p.Protocol.Fetch(ctx, client, base, token, request, profile, vars, jsonMode)
+	if err != nil || request.Path != "${stream_url}" || response.Status != http.StatusOK {
+		return response, err
+	}
+	seen := map[string]bool{}
+	for depth := 0; depth < 4; depth++ {
+		path, master, e := masterVariant(vars["stream_url"], response.Body)
+		if e != nil {
+			return conform.Response{}, e
+		}
+		if !master {
+			return response, nil
+		}
+		if seen[path] {
+			return conform.Response{}, fmt.Errorf("HLS playlist cycle")
+		}
+		seen[path] = true
+		vars["stream_url"] = path
+		next := request
+		next.Path = path
+		response, err = p.Protocol.Fetch(ctx, client, base, token, next, profile, vars, jsonMode)
+		if err != nil || response.Status != http.StatusOK {
+			return response, err
+		}
+	}
+	return conform.Response{}, fmt.Errorf("HLS master nesting limit exceeded")
+}
+
+func masterVariant(basePath string, body []byte) (string, bool, error) {
+	base, err := url.Parse(basePath)
+	if err != nil || base.IsAbs() || base.Host != "" {
+		return "", false, fmt.Errorf("invalid HLS playlist path")
+	}
+	want := false
+	definitions := map[string]string{}
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#EXT-X-DEFINE:") {
+			attrs := map[string]string{}
+			for _, match := range defineAttr.FindAllStringSubmatch(strings.TrimPrefix(line, "#EXT-X-DEFINE:"), -1) {
+				attrs[match[1]] = match[2]
+			}
+			if validVariable.MatchString(attrs["NAME"]) && attrs["VALUE"] != "" {
+				definitions[attrs["NAME"]] = attrs["VALUE"]
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
+			want = true
+			continue
+		}
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !want {
+			continue
+		}
+		for name, value := range definitions {
+			line = strings.ReplaceAll(line, "{$"+name+"}", value)
+		}
+		ref, e := url.Parse(line)
+		if e != nil || ref.IsAbs() || ref.Host != "" || strings.ContainsAny(line, "{}") {
+			return "", true, fmt.Errorf("invalid HLS variant")
+		}
+		path := relativePath(base.ResolveReference(ref).String())
+		if path == "" {
+			return "", true, fmt.Errorf("invalid HLS variant")
+		}
+		return path, true, nil
+	}
+	if want {
+		return "", true, fmt.Errorf("HLS master has no variant")
+	}
+	return "", false, nil
 }
 
 // Observe carries a playable session and its relative HLS paths into the

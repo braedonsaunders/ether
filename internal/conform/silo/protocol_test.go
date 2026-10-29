@@ -31,6 +31,24 @@ func TestSiloBearerProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestShippedProfilesSendDeviceIdentity(t *testing.T) {
+	p, err := Load("../profiles/silo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"silo-apple", "silo-android"} {
+		requests := p.Corpus(name)
+		if len(requests) == 0 {
+			t.Fatal("missing profile", name)
+		}
+		for _, request := range requests {
+			if got := request.Headers[name+"-json"].Get("X-Silo-Device-Id"); got != "${device_id}" {
+				t.Fatalf("%s %s device header = %q", name, request.Path, got)
+			}
+		}
+	}
+}
 func TestObserveHLSAndRejectExternalURLs(t *testing.T) {
 	p := &Protocol{}
 	v := map[string]string{}
@@ -61,5 +79,41 @@ func TestObserveExpandsHLSVariables(t *testing.T) {
 	p.Observe(conform.Request{Path: "${stream_url}"}, conform.Response{Status: 200, Body: []byte("#EXTM3U\nsegment.ts?{$missing}\n")}, vars)
 	if vars["segment_url"] != "" {
 		t.Fatal("undefined variable accepted")
+	}
+}
+
+func TestFetchDescendsMasterBeforeObservingSegment(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"protocol":"silo","client":"Silo","flows":{"play":[{"name":"stream","method":"GET","path":"${stream_url}"}]}}`
+	if err := os.WriteFile(filepath.Join(dir, "apple.json"), []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/master.m3u8":
+			w.Write([]byte("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000\nlevels/low.m3u8\n"))
+		case "/levels/low.m3u8":
+			w.Write([]byte("#EXTM3U\n#EXTINF:4,\nsegment.ts\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	vars := map[string]string{"stream_url": "/master.m3u8"}
+	request := p.Corpus("apple")[0]
+	response, err := p.Fetch(context.Background(), server.Client(), server.URL, "", request, "apple", vars, true)
+	if err != nil || vars["stream_url"] != "/levels/low.m3u8" {
+		t.Fatalf("variant: %v %v", vars, err)
+	}
+	p.Observe(request, response, vars)
+	if vars["segment_url"] != "/levels/segment.ts" {
+		t.Fatalf("segment: %v", vars)
+	}
+	if _, _, err = masterVariant("/master.m3u8", []byte("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://example.com/evil.m3u8\n")); err == nil {
+		t.Fatal("accepted cross-host variant")
 	}
 }

@@ -37,6 +37,64 @@ func TestFilterReport(t *testing.T) {
 	}
 }
 
+func TestBinaryComparisonRedactsAfterRangeValidation(t *testing.T) {
+	p, err := silo.Load("../../internal/conform/profiles/silo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := pmsconform.Response{Kind: "binary-range", RangeKind: "start", Status: 206, BodyLength: 2, Headers: http.Header{"Content-Type": []string{"video/mp2t"}, "Content-Range": []string{"bytes 0-1/2"}, "Content-Length": []string{"2"}}}
+	report := compareRedacted(p, pmsconform.Request{}, response, response, map[string]string{"profile_id": "2"}, "")
+	if report.Blocking() != 0 {
+		t.Fatalf("valid range was corrupted: %+v", report.Differences)
+	}
+	target := response
+	target.Headers = response.Headers.Clone()
+	target.Headers.Set("Content-Type", "video/secret")
+	report = compareRedacted(p, pmsconform.Request{}, response, target, map[string]string{"password": "secret"}, "")
+	encoded, _ := json.Marshal(report)
+	if report.Blocking() == 0 || strings.Contains(string(encoded), "secret") {
+		t.Fatalf("mismatch or redaction lost: %s", encoded)
+	}
+}
+
+func TestPlaylistComparisonRetainsDurationsBeforeRedaction(t *testing.T) {
+	p, err := silo.Load("../../internal/conform/profiles/silo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := pmsconform.Response{Status: 200, Headers: http.Header{"Content-Type": []string{"application/vnd.apple.mpegurl"}}, Body: []byte("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts\n#EXT-X-ENDLIST\n")}
+	b := a
+	b.Body = []byte("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts?token=secret\n#EXT-X-ENDLIST\n")
+	report := compareRedacted(p, pmsconform.Request{}, a, b, map[string]string{"profile_id": "2", "stream_token": "secret"}, "")
+	encoded, _ := json.Marshal(report)
+	if report.Blocking() != 0 || strings.Contains(string(encoded), "secret") {
+		t.Fatalf("playlist comparison: %s", encoded)
+	}
+}
+
+func TestOnlyReviewedMissingFieldIsInformational(t *testing.T) {
+	dir := t.TempDir()
+	manifest := `{"notApplicable":[{"endpoint":"/item","path":"$/file_path","reason":"no server filesystem","clientAudit":"optional and unused"}]}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rules, err := loadNotApplicable(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := pmsconform.Report{Differences: []pmsconform.Difference{{Path: "$/file_path", Kind: pmsconform.KindMissing, Blocking: true}, {Path: "$/file_path", Kind: pmsconform.KindExtra, Blocking: true}, {Path: "$/other", Kind: pmsconform.KindMissing, Blocking: true}}}
+	applyNotApplicable(&report, "/item", rules)
+	if report.Differences[0].Blocking || report.Differences[0].Reason == "" || !report.Differences[1].Blocking || !report.Differences[2].Blocking {
+		t.Fatalf("rules broadened: %+v", report.Differences)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(`{"notApplicable":[{"endpoint":"/item","path":"$/file_path","reason":"x"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = loadNotApplicable(dir); err == nil {
+		t.Fatal("accepted unaudited rule")
+	}
+}
+
 func TestCorpusFilter(t *testing.T) {
 	all := corpus(conformplex.Protocol{}, "web", "")
 	dec := corpus(conformplex.Protocol{}, "web", "/transcode/universal/decision")

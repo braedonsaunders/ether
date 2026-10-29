@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -314,6 +315,10 @@ func record(p pmsconform.Protocol, variables map[string]string, base, token, out
 	return report, nil
 }
 func compare(p pmsconform.Protocol, variables map[string]string, dir, base, token, sel, only string, timeout time.Duration, concurrency int) (pmsconform.Report, error) {
+	notApplicable, err := loadNotApplicable(dir)
+	if err != nil {
+		return pmsconform.Report{}, err
+	}
 	if _, ok := p.(pmsconform.ResponseObserver); ok {
 		concurrency = 1
 	}
@@ -385,14 +390,8 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 					if observer, ok := p.(pmsconform.ResponseObserver); ok {
 						observer.Observe(j.req, b, targetIDs.Values)
 					}
-					target := scrubSecrets(p.Redact(b), targetIDs.Values, token)
-					var r pmsconform.Report
-					if contextual, ok := p.(pmsconform.RequestComparer); ok {
-						r = contextual.CompareRequest(j.req, a, target)
-					} else {
-						r = p.Compare(a, target)
-					}
-					r = r.WithRequest(profile, formatName(j.json), j.req.Path)
+					r := compareRedacted(p, j.req, a, b, targetIDs.Values, token).WithRequest(profile, formatName(j.json), j.req.Path)
+					applyNotApplicable(&r, j.req.Path, notApplicable)
 					results <- result{r}
 				}
 			}()
@@ -416,6 +415,89 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 		}
 	}
 	return out, nil
+}
+
+func applyNotApplicable(report *pmsconform.Report, endpoint string, rules map[string]string) {
+	for index := range report.Differences {
+		d := &report.Differences[index]
+		if d.Kind != pmsconform.KindMissing {
+			continue
+		}
+		if reason, ok := rules[endpoint+"\x00"+d.Path]; ok {
+			d.Blocking = false
+			d.Reason = reason
+		}
+	}
+}
+
+// loadNotApplicable accepts only explicit reviewed endpoint/field pairs. A
+// missing field without both a reason and a client audit remains blocking.
+func loadNotApplicable(dir string) (map[string]string, error) {
+	result := map[string]string{}
+	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if os.IsNotExist(err) {
+		return result, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var manifest struct {
+		NotApplicable []struct{ Endpoint, Path, Reason, ClientAudit string } `json:"notApplicable"`
+	}
+	if err = json.Unmarshal(raw, &manifest); err != nil {
+		return nil, err
+	}
+	for _, rule := range manifest.NotApplicable {
+		if rule.Endpoint == "" || rule.Path == "" || rule.Reason == "" || rule.ClientAudit == "" {
+			return nil, fmt.Errorf("incomplete not-applicable manifest entry")
+		}
+		key := rule.Endpoint + "\x00" + rule.Path
+		if _, exists := result[key]; exists {
+			return nil, fmt.Errorf("duplicate not-applicable manifest entry")
+		}
+		result[key] = rule.Reason
+	}
+	return result, nil
+}
+
+// Binary range validation needs the exact structural headers. Compare those
+// before redaction, then scrub the resulting report before it can be emitted.
+// A short run-specific identifier must not turn "video/mp2t" or a byte range
+// into invalid syntax.
+func compareRedacted(p pmsconform.Protocol, request pmsconform.Request, reference, target pmsconform.Response, vars map[string]string, token string) pmsconform.Report {
+	clean := scrubSecrets(p.Redact(target), vars, token)
+	playlist := bytes.HasPrefix(bytes.TrimSpace(target.Body), []byte("#EXTM3U"))
+	if target.Kind == "binary-range" || playlist {
+		if clean.Headers == nil {
+			clean.Headers = http.Header{}
+		}
+		for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag", "Cache-Control"} {
+			clean.Headers.Del(name)
+			for _, value := range target.Headers.Values(name) {
+				clean.Headers.Add(name, value)
+			}
+		}
+	}
+	if playlist {
+		clean.Body = target.Body
+	}
+	var report pmsconform.Report
+	if contextual, ok := p.(pmsconform.RequestComparer); ok {
+		report = contextual.CompareRequest(request, reference, clean)
+	} else {
+		report = p.Compare(reference, clean)
+	}
+	if target.Kind == "binary-range" || playlist {
+		raw, err := json.Marshal(report)
+		if err != nil {
+			return pmsconform.Report{Differences: []pmsconform.Difference{{Path: "$report", Kind: pmsconform.KindRequestError, Blocking: true}}}
+		}
+		redacted := scrubSecrets(pmsconform.Response{Body: raw}, vars, token)
+		if json.Unmarshal(redacted.Body, &report) != nil {
+			return pmsconform.Report{Differences: []pmsconform.Difference{{Path: "$report", Kind: pmsconform.KindRequestError, Blocking: true}}}
+		}
+	}
+	return report
 }
 func fixtureName(profile, path string, jsonMode bool) string {
 	return pmsconform.FixtureName(profile, path, jsonMode)

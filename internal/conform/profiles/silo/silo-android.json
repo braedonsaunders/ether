@@ -15,7 +15,8 @@
     "Authorization": "Bearer ${access_token}",
     "X-Silo-Client": "Silo Android",
     "X-Silo-Client-Version": "${app_version}",
-    "X-Silo-Client-Build": "${app_build}"
+    "X-Silo-Client-Build": "${app_build}",
+    "X-Silo-Device-Id": "${device_id}"
   },
   "authorization": {
     "format": "Bearer access token returned from POST /api/v2/auth/login",

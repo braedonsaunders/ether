@@ -83,9 +83,10 @@ save("emby", emby_token, item_vars(emby_base, emby_token, emby_auth, "emby", emb
 
 silo_base = f"http://{lab_host}:{port_base + 2}"
 silo_user, silo_password = env["SILO_ADULT_USER"], env["SILO_ADULT_PASSWORD"]
-silo = call(silo_base, "/api/v2/auth/login", "POST", {"username": silo_user, "password": silo_password})
+silo_device = "prism-conform-adult"
+silo = call(silo_base, "/api/v2/auth/login", "POST", {"username": silo_user, "password": silo_password}, {"X-Silo-Device-Id": silo_device})
 silo_token = silo["access_token"]
-silo_auth = {"Authorization": "Bearer " + silo_token}
+silo_auth = {"Authorization": "Bearer " + silo_token, "X-Silo-Device-Id": silo_device}
 profiles = call(silo_base, "/api/v2/profiles", headers=silo_auth)
 profile_id = next((x["id"] for x in profiles.get("items", []) if x.get("is_primary")), profiles["items"][0]["id"])
 silo_auth["X-Profile-Id"] = profile_id
@@ -98,6 +99,7 @@ version = next((x for x in versions if x.get("resolution") == "1080p" and x.get(
 capabilities = call(silo_base, "/api/v2/playback/capabilities", headers=silo_auth)
 duration = int(version.get("duration") or 600)
 base_silo_values = {"username": silo_user, "password": silo_password, "access_token": silo_token,
+                    "device_id": silo_device,
                     "profile_id": profile_id, "library_id": str(movie_library["id"]),
                     "item_id": item["content_id"], "file_id": str(version["file_id"]),
                     "installation_id": capabilities["installation_id"], "duration_seconds": str(duration),

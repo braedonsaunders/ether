@@ -13,5 +13,15 @@
   "referenceVersion": "build-1810-omnibus",
   "profileDirectory": "internal/conform/profiles/silo",
   "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored.",
-  "hlsCoverage": "Playable direct and HLS transcode plans, playlist, and three segment ranges."
+  "hlsCoverage": "Playable direct and HLS transcode plans, playlist, and three segment ranges.",
+  "playlistSemanticNotes": [
+    {"tag":"#EXT-X-DEFINE", "reason":"URL variables are optional when segment URLs need no templating."},
+    {"tag":"#EXT-X-DISCONTINUITY", "reason":"A valid encoder boundary may be present when Ether restarts a stream."},
+    {"tag":"#EXT-X-INDEPENDENT-SEGMENTS", "reason":"A valid declaration that segments can be decoded independently is optional."},
+    {"field":"segment_count and target_duration", "reason":"Servers may segment the same duration differently; each playlist is validated and completed total duration is compared within tolerance."}
+  ],
+  "notApplicable": [
+    {"endpoint":"/api/v2/catalog/items/${item_id}", "path":"$/versions[]/file_path", "reason":"Ether has no authoritative server filesystem path; exposing an internal path would leak implementation details.", "clientAudit":"Silo Apple does not decode file_path; Silo Android retains it as nullable metadata and has no runtime reader."},
+    {"endpoint":"/api/v2/catalog/items/${item_id}", "path":"$/playback_variants[]/parts[]/versions[]/file_path", "reason":"Ether has no authoritative server filesystem path; exposing an internal path would leak implementation details.", "clientAudit":"Silo Apple does not decode file_path; Silo Android retains it as nullable metadata and has no runtime reader."}
+  ]
 }
