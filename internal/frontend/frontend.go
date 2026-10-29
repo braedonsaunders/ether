@@ -221,6 +221,9 @@ type Host struct {
 	SecurePortalURL func(context.Context, *http.Request) (string, error)
 	// SurfaceURL returns a reachable, verified base for this frontend's routes.
 	SurfaceURL func(context.Context, *http.Request) (string, error)
+	// LANViewer resolves the owner-selected active DLNA viewer only after
+	// trusted-proxy-aware network classification; other surfaces receive nil.
+	LANViewer func(context.Context, *http.Request) (*Viewer, error)
 	// ClientSeen reports an authenticated client's protocol-specific device ID.
 	ClientSeen func(deviceID string)
 	// ClientIP resolves the transport peer using the configured trusted proxies.
