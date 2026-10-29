@@ -56,11 +56,15 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 	if err := b.deps.Live.Allowed(ctx, viewer, p.request.Channel); err != nil {
 		return frontend.Session{}, err
 	}
+	id, err := sessionID(req.Protocol)
+	if err != nil {
+		return frontend.Session{}, err
+	}
 	liveID, err := b.deps.Live.Tune(ctx, viewer, p.request.Channel, p.request.Caps, p.request.Intent.ClientSessionID)
 	if err != nil {
 		return frontend.Session{}, capacityError(err)
 	}
-	id, grant := rand.Text(), rand.Text()
+	grant := rand.Text()
 	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/live/index.m3u8", Protocol: req.Protocol, ViewerID: viewer.ID, Device: p.request.Device, Channel: p.request.Channel, StartedAt: b.deps.Now()}
 	if err := b.enrichCapabilities(ctx, &session); err != nil {
 		_ = b.deps.Live.Stop(ctx, viewer, liveID)

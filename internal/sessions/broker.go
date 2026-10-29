@@ -439,7 +439,11 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if p.etag != "" && sourceRevision(ps) != p.etag {
 		return frontend.Session{}, core.ErrNotAvailable
 	}
-	id, grant := rand.Text(), rand.Text()
+	id, err := sessionID(req.Protocol)
+	if err != nil {
+		return frontend.Session{}, err
+	}
+	grant := rand.Text()
 	playbackID := p.request.Intent.PlaybackID
 	if playbackID == "" && req.Protocol != "plex" {
 		playbackID = id
