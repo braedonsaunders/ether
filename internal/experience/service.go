@@ -29,17 +29,19 @@ type ServiceDeps struct {
 	Visibility Visibility
 	Get        func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
-	CachedGet     func(context.Context, core.RatingKey) (*core.Title, error)
-	Children      func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Grandchildren func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Browse        func(context.Context, core.BrowseQuery) (core.Page, error)
-	SimilarSource func(context.Context, core.RatingKey, int) ([]core.Title, error)
-	Collections   core.Collections
-	Playlists     core.Playlists
-	State         core.State
-	Search        Search
-	Rows          *RowsService
-	Protocol      core.Protocol
+	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
+	// CachedVirtualSeason resolves a viewer's already-computed episode layout.
+	CachedVirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
+	SimilarSource       func(context.Context, core.RatingKey, int) ([]core.Title, error)
+	Collections         core.Collections
+	Playlists           core.Playlists
+	State               core.State
+	Search              Search
+	Rows                *RowsService
+	Protocol            core.Protocol
 	// Favorites manages the stable, per-viewer Favorites playlist mapping.
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
@@ -342,6 +344,9 @@ func (s *Service) AuthorizeArtwork(ctx context.Context, viewer *core.Viewer, dev
 		}
 	} else if s.d.CachedGet != nil {
 		title, err := s.d.CachedGet(ctx, key)
+		if errors.Is(err, core.ErrNotFound) && s.d.CachedVirtualSeason != nil {
+			title, err = s.d.CachedVirtualSeason(ctx, v, key)
+		}
 		visibility := s.d.Visibility
 		visibility.GetTitle = s.d.CachedGet
 		if err != nil {

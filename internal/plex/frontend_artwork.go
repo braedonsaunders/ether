@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -32,8 +33,10 @@ import (
 type FrontendArtwork struct {
 	Server *Server
 	// Variants must be cache-only; it may schedule a bounded background fill.
-	Variants  func(*core.Title, string) (*tmdb.Images, bool)
-	URLImages interface {
+	Variants func(*core.Title, string) (*tmdb.Images, bool)
+	// VirtualSeason reads only the viewer's existing episode-order layout.
+	VirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	URLImages     interface {
 		GetUntrustedURL(context.Context, string) ([]byte, string, error)
 	}
 	Raster *artwork.SVGRasterizer
@@ -50,14 +53,19 @@ type frontendArtworkEntry struct {
 	channelLogo                   string
 	channelNumber, channelName    string
 	ultra                         *model.UltraBlurColors
+	virtualSeason                 *core.Title
 }
 
 type artworkCacheOnlyKey struct{}
+type artworkVirtualSeasonKey struct{}
 
 // Artwork enumeration is called from item enrichment and must not start a
 // catalogue network fetch. Plex requests retain their existing Get behavior.
 func (s *Server) artworkTitle(ctx context.Context, key core.RatingKey) (*core.Title, error) {
 	if cacheOnly, _ := ctx.Value(artworkCacheOnlyKey{}).(bool); cacheOnly {
+		if title, ok := ctx.Value(artworkVirtualSeasonKey{}).(*core.Title); ok && title != nil && title.Key == key {
+			return title, nil
+		}
 		stored, ok := s.d.Catalog.(core.StoredTitleLookup)
 		if !ok {
 			return nil, core.ErrNotAvailable
@@ -114,6 +122,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		return nil, false, core.ErrNotFound
 	}
 	var title *core.Title
+	var virtualSeason *core.Title
 	var collectionVersion string
 	switch req.Item.Kind() {
 	case core.KindCollection, core.KindSmart:
@@ -135,7 +144,14 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		}
 		var err error
 		title, err = s.artworkTitle(ctx, req.Item)
-		if err != nil || title == nil || title.Key != req.Item || !title.IsReleased(s.now()) || !s.visibleTitle(ctx, req.Viewer, title) {
+		if errors.Is(err, core.ErrNotFound) && a.VirtualSeason != nil {
+			title, err = a.VirtualSeason(ctx, req.Viewer, req.Item)
+			if err == nil && title != nil {
+				virtualSeason = title
+				ctx = context.WithValue(ctx, artworkVirtualSeasonKey{}, title)
+			}
+		}
+		if err != nil || title == nil || title.Key != req.Item || (virtualSeason == nil && !title.IsReleased(s.now())) || !s.visibleTitle(ctx, req.Viewer, title) {
 			return nil, false, core.ErrNotFound
 		}
 	}
@@ -143,10 +159,11 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 	add := func(kind, source string, entry frontendArtworkEntry) {
 		ref := artworkReference(req, kind, source)
 		entry.image = frontend.Image{Kind: kind, Path: ref, Tag: ref, Subject: entry.subject}
+		entry.virtualSeason = virtualSeason
 		entries = append(entries, entry)
 	}
 	var decorated model.Metadata
-	if title != nil && s.d.Discovery != nil {
+	if title != nil && virtualSeason == nil && s.d.Discovery != nil {
 		decorated.Thumb, decorated.Art = "plain", "plain"
 		decorated.Image = []model.Image{{Type: "clearLogo", URL: "plain"}}
 		s.decorateDiscoveryMetadata(ctx, FromContext(ctx), title, &decorated)
@@ -190,7 +207,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		if artwork.ValidPath(title.StillPath) {
 			add(frontend.ImageStill, "still\x00"+title.StillPath, frontendArtworkEntry{remotePath: title.StillPath})
 		}
-		if a.Variants != nil {
+		if virtualSeason == nil && a.Variants != nil {
 			variants, ready := a.Variants(title, req.Device.Language)
 			if ready && variants != nil {
 				for _, group := range []struct {
@@ -305,6 +322,9 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 			return a.transformArtwork(ctx, img.Path, data, ct, transform)
 		}
 		ctx = context.WithValue(ctx, artworkCacheOnlyKey{}, true)
+		if entry.virtualSeason != nil {
+			ctx = context.WithValue(ctx, artworkVirtualSeasonKey{}, entry.virtualSeason)
+		}
 		ctx = withRequest(ctx, &Request{User: req.Viewer, Language: req.Device.Language, Product: req.Device.Product, Platform: req.Device.Platform, DeviceName: req.Device.DeviceName, ClientID: req.Device.ID})
 		r, err := http.NewRequestWithContext(ctx, http.MethodGet, "/?width="+strconv.Itoa(transform.Width), nil)
 		if err != nil {

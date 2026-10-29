@@ -336,6 +336,27 @@ func (s *Service) Get(ctx context.Context, u *core.User, k core.RatingKey) (*cor
 	}
 	return s.catalog.Get(ctx, k)
 }
+
+// CachedVirtualSeason returns only an already-computed, unexpired layout for
+// this viewer. It never refreshes preferences, the catalogue, or TMDB.
+func (s *Service) CachedVirtualSeason(_ context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
+	if u == nil || u.ID <= 0 || k.Kind() != core.KindSeason || k.Season() < virtualBase {
+		return nil, core.ErrNotFound
+	}
+	cacheKey := fmt.Sprintf("%d:%d", u.ID, showKey(k))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cached, ok := s.cache[cacheKey]
+	if !ok || cached.value == nil || !time.Now().Before(cached.expires) {
+		return nil, core.ErrNotFound
+	}
+	for _, season := range cached.value.seasons {
+		if season.Key == k {
+			return &season, nil
+		}
+	}
+	return nil, core.ErrNotFound
+}
 func (s *Service) Children(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
 	if k.Kind() != core.KindShow && k.Kind() != core.KindSeason {
 		return s.catalog.Children(ctx, k)

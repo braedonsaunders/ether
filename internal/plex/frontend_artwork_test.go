@@ -64,6 +64,31 @@ func TestFrontendArtworkUsesPlexSelectionAndRechecksVisibility(t *testing.T) {
 	}
 }
 
+func TestVirtualSeasonArtworkUsesCachedViewerLayout(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	key := core.SeasonKey(breakingBad.Key.TMDB(), 9000)
+	virtual := core.Title{Key: key, Type: core.TypeSeason, ShowKey: breakingBad.Key, PosterPath: breakingBad.PosterPath}
+	source := FrontendArtwork{Server: f.srv, VirtualSeason: func(_ context.Context, viewer *core.User, requested core.RatingKey) (*core.Title, error) {
+		if viewer.ID != ownerUser.ID || requested != key {
+			return nil, core.ErrNotFound
+		}
+		return &virtual, nil
+	}}
+	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: key}
+	images, complete, err := source.List(context.Background(), req)
+	if err != nil || !complete || len(images) == 0 || images[0].Kind != frontend.ImagePoster {
+		t.Fatalf("virtual artwork: %+v complete=%v err=%v", images, complete, err)
+	}
+	if data, _, err := source.Read(context.Background(), req, images[0], frontend.ArtworkTransform{}); err != nil || len(data) == 0 {
+		t.Fatalf("read virtual poster: %v", err)
+	}
+	req.Viewer = &friendUser
+	if _, _, err := source.Read(context.Background(), req, images[0], frontend.ArtworkTransform{}); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("other viewer acquired virtual artwork: %v", err)
+	}
+}
+
 func TestUltraBlurArtworkUsesPlexPalette(t *testing.T) {
 	colors := model.UltraBlurColors{TopLeft: "ff0000", TopRight: "00ff00", BottomLeft: "0000ff", BottomRight: "ffffff"}
 	data, ct, err := renderUltraBlur(colors, frontend.ArtworkTransform{Width: 2, Height: 2, Format: "png"})

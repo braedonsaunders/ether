@@ -235,6 +235,11 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			return a.episodeorder.Get(ctx, u, k)
 		}
 		return a.catalog.Get(ctx, k)
+	}, CachedVirtualSeason: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
+		if a.episodeorder == nil {
+			return nil, core.ErrNotFound
+		}
+		return a.episodeorder.CachedVirtualSeason(ctx, u, k)
 	}, Children: func(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
 		if a.episodeorder != nil {
 			return a.episodeorder.Children(ctx, u, k)

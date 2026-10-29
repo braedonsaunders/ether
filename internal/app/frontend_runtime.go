@@ -95,6 +95,9 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	if a.tmdb != nil {
 		variants := newArtworkVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
 		source := plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get, Raster: artworkpkg.NewSVGRasterizer()}
+		if a.episodeorder != nil {
+			source.VirtualSeason = a.episodeorder.CachedVirtualSeason
+		}
 		if a.images != nil {
 			source.URLImages = a.images
 		}
@@ -102,7 +105,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		channelArtwork = source.ChannelImage
 	}
 	experiences := make(map[frontend.Protocol]frontend.Experience)
-	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby"} {
+	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby", "silo"} {
 		experience, err := a.newSurfaceExperience(protocol, artwork)
 		if err != nil {
 			r.stateUnsub()

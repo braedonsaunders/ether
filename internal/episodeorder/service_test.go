@@ -2,12 +2,14 @@ package episodeorder
 
 import (
 	"context"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeSource struct{ group tmdb.EpisodeGroup }
@@ -64,6 +66,42 @@ func fixture(t *testing.T) *Service {
 	cat := fakeCatalog{eps: []core.Title{ep(0, 1), ep(1, 1), ep(1, 2), ep(1, 3)}}
 	src := fakeSource{tmdb.EpisodeGroup{EpisodeGroupSummary: tmdb.EpisodeGroupSummary{ID: "dvd", Name: "DVD", Type: 3}, Groups: []tmdb.EpisodeSubgroup{{ID: "one", Name: "Disc 1", Order: 0, Episodes: []tmdb.OrderedEpisode{{Episode: tmdb.Episode{SeasonNumber: 1, EpisodeNumber: 2}, Order: 0}, {Episode: tmdb.Episode{SeasonNumber: 0, EpisodeNumber: 1}, Order: 1}, {Episode: tmdb.Episode{SeasonNumber: 1, EpisodeNumber: 1}, Order: 2}}}}}}
 	return New(db, src, cat)
+}
+
+func TestCachedVirtualSeasonIsViewerScopedAndNeverRefreshes(t *testing.T) {
+	s := fixture(t)
+	ctx := context.Background()
+	viewer := &core.User{ID: 42}
+	key := core.SeasonKey(10, 9000)
+	if _, err := s.CachedVirtualSeason(ctx, viewer, key); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("cold cache: %v", err)
+	}
+	if err := s.Save(ctx, viewer.ID, core.ShowKey(10), Preference{GroupID: "dvd", Specials: "last"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Children(ctx, viewer, core.ShowKey(10)); err != nil {
+		t.Fatal(err)
+	}
+	title, err := s.CachedVirtualSeason(ctx, viewer, key)
+	if err != nil || title.Key != key || title.Title != "Disc 1" {
+		t.Fatalf("cached season: %+v %v", title, err)
+	}
+	title.Title = "changed"
+	if again, _ := s.CachedVirtualSeason(ctx, viewer, key); again.Title != "Disc 1" {
+		t.Fatal("caller changed cached title")
+	}
+	if _, err = s.CachedVirtualSeason(ctx, &core.User{ID: 43}, key); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("other viewer: %v", err)
+	}
+	s.mu.Lock()
+	for key, cached := range s.cache {
+		cached.expires = time.Now().Add(-time.Second)
+		s.cache[key] = cached
+	}
+	s.mu.Unlock()
+	if _, err = s.CachedVirtualSeason(ctx, viewer, key); !errors.Is(err, core.ErrNotFound) {
+		t.Fatalf("expired cache: %v", err)
+	}
 }
 func TestOrderingPreservesCanonicalIdentityAndSpecials(t *testing.T) {
 	s := fixture(t)
