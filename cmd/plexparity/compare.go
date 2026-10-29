@@ -585,6 +585,15 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 			}
 		}
 	}
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			events, err := notificationCapture(ctx, client, base, viewer, name, viewerIDs[viewer]["movieKey"], profiles[name].Headers)
+			if err != nil {
+				return result, fmt.Errorf("%s %s notifications: %w", viewer, name, err)
+			}
+			result.captures = append(result.captures, events...)
+		}
+	}
 	return result, nil
 }
 func diffTranscripts(a, b transcript, out io.Writer) (int, error) {

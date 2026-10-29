@@ -62,3 +62,15 @@ func TestDelegationTokenNormalizationIsScoped(t *testing.T) {
 		}
 	}
 }
+
+func TestWebsocketHandshakeTokenNormalizationIsScoped(t *testing.T) {
+	c := capture{path: "/:/websockets/notifications", response: protocol.Response{Headers: http.Header{"Sec-Websocket-Accept": {"random-challenge"}, "Upgrade": {"websocket"}}}}
+	got := normalizeCaptureHeaders(c)
+	if got.Get("Sec-WebSocket-Accept") != "<WEBSOCKET-HANDSHAKE-TOKEN>" || got.Get("Upgrade") != "websocket" {
+		t.Fatalf("headers=%v", got)
+	}
+	c.path = "/identity"
+	if normalizeCaptureHeaders(c).Get("Sec-WebSocket-Accept") != "random-challenge" {
+		t.Fatal("handshake normalization escaped websocket route")
+	}
+}

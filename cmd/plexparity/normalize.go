@@ -47,6 +47,11 @@ func normalizeHeaders(h http.Header) http.Header {
 // ephemeral bytes is a volatile filesystem timestamp, not media metadata.
 func normalizeCaptureHeaders(c capture) http.Header {
 	h := normalizeHeaders(c.response.Headers)
+	// Sec-WebSocket-Accept is the per-connection handshake token derived from
+	// the client's random challenge; compare every other handshake header.
+	if strings.HasPrefix(c.path, "/:/websocket") && h.Get("Sec-WebSocket-Accept") != "" {
+		h.Set("Sec-WebSocket-Accept", "<WEBSOCKET-HANDSHAKE-TOKEN>")
+	}
 	if strings.HasPrefix(c.path, "playback:segment:") || c.path == "playback:dash:header" || c.path == "playback:dash:0.m4s" {
 		h.Del("Last-Modified")
 	}
