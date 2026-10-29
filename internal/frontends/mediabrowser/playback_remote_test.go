@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
@@ -48,6 +50,20 @@ func TestPlaybackInfoReportsEtherProducedSourcesAsLocal(t *testing.T) {
 				var body struct{ MediaSources []struct{ IsRemote bool } }
 				if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.MediaSources) != 1 || body.MediaSources[0].IsRemote != tc.remote {
 					t.Fatal(w.Code, w.Body.String())
+				}
+				spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", protocol, "")
+				if os.IsNotExist(err) {
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				doc, err := openapi.Parse(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = doc.Validate("POST", "/Items/"+itemID+"/PlaybackInfo", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+					t.Fatal(err)
 				}
 			})
 		}
