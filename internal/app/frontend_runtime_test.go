@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
@@ -282,5 +283,31 @@ func TestStremioIsRegisteredForOwnerControls(t *testing.T) {
 	a.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/stremio/invalid/manifest.json", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("invalid grant: %d", w.Code)
+	}
+}
+
+func TestFrontendStatusCountsStreamsByProtocol(t *testing.T) {
+	counts := countFrontendStreams([]*core.PlaySession{{Client: core.ClientCaps{Protocol: "plex"}}, {Client: core.ClientCaps{}}, {Client: core.ClientCaps{Protocol: "stremio"}}, nil})
+	if counts["plex"] != 2 || counts["stremio"] != 1 || counts["jellyfin"] != 0 {
+		t.Fatalf("counts: %+v", counts)
+	}
+	a := setupTestApp(t, true)
+	calls := 0
+	a.frontends.control.streamCounts = func(context.Context) (map[frontend.Protocol]int, bool) { calls++; return counts, true }
+	infos, err := a.frontends.control.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, info := range infos {
+		if info.Descriptor.ID == "stremio" {
+			found = true
+			if !info.Status.LiveStreamsKnown || info.Status.LiveStreams != 1 {
+				t.Fatalf("status: %+v", info.Status)
+			}
+		}
+	}
+	if !found || calls != 1 {
+		t.Fatalf("found=%v calls=%d", found, calls)
 	}
 }

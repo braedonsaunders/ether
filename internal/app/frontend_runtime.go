@@ -172,6 +172,12 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	r.control.listeners.discovery = newSharedDiscovery(r.ctx)
 	r.control.listeners.discoveryEndpoint = r.discoveryEndpoint
 	r.control.clientCount = a.frontendClients.count
+	r.control.streamCounts = func(context.Context) (map[frontend.Protocol]int, bool) {
+		if a.playback == nil {
+			return nil, false
+		}
+		return countFrontendStreams((ownerPlayback{Playback: a.playback, app: a}).Sessions()), true
+	}
 	r.control.sharedStatus = r.sharedStatus
 	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		r.stateUnsub()
@@ -265,7 +271,7 @@ func (r *frontendRuntime) sharedStatus(id frontend.Protocol, status *frontend.St
 		status.ConnectURLs = append(status.ConnectURLs, connectionURLs(addr.String(), spec.PathPrefix, addresses)...)
 	}
 }
-func (r *frontendRuntime) plexStatus(context.Context) frontend.Status {
+func (r *frontendRuntime) plexStatus(ctx context.Context) frontend.Status {
 	r.mu.Lock()
 	addr := r.mainAddr
 	discoveryError := r.discoveryError
@@ -289,14 +295,27 @@ func (r *frontendRuntime) plexStatus(context.Context) frontend.Status {
 			}
 		}
 	}
-	if r.app.playback != nil {
-		for _, session := range (ownerPlayback{Playback: r.app.playback, app: r.app}).Sessions() {
-			if session.Client.Protocol == "" || session.Client.Protocol == "plex" {
-				st.LiveStreams++
-			}
-		}
+	if snapshot, ok := ctx.Value(frontendStreamCountsKey{}).(frontendStreamCounts); ok {
+		st.LiveStreams, st.LiveStreamsKnown = snapshot.counts["plex"], snapshot.known
+	} else if r.app.playback != nil {
+		st.LiveStreams = countFrontendStreams((ownerPlayback{Playback: r.app.playback, app: r.app}).Sessions())["plex"]
 	}
 	return st
+}
+
+func countFrontendStreams(sessions []*core.PlaySession) map[frontend.Protocol]int {
+	counts := make(map[frontend.Protocol]int)
+	for _, session := range sessions {
+		if session == nil {
+			continue
+		}
+		protocol := session.Client.Protocol
+		if protocol == "" {
+			protocol = "plex"
+		}
+		counts[frontend.Protocol(protocol)]++
+	}
+	return counts
 }
 func (r *frontendRuntime) reconcile(cfg config.Config) {
 	r.lifecycleMu.Lock()

@@ -13,6 +13,12 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+type frontendStreamCountsKey struct{}
+type frontendStreamCounts struct {
+	counts map[frontend.Protocol]int
+	known  bool
+}
+
 // frontendControl persists desired state and reconciles it on each node.
 type frontendControl struct {
 	registry     *frontend.Registry
@@ -21,6 +27,7 @@ type frontendControl struct {
 	mu           sync.Mutex
 	applied      map[frontend.Protocol]listenerSettings
 	clientCount  func(context.Context, frontend.Protocol) (int, bool)
+	streamCounts func(context.Context) (map[frontend.Protocol]int, bool)
 	sharedStatus func(frontend.Protocol, *frontend.Status)
 }
 type listenerSettings struct{ Port, Discovery any }
@@ -38,6 +45,12 @@ func (f *frontendControl) descriptor(id frontend.Protocol) (frontend.Descriptor,
 }
 func (f *frontendControl) List(ctx context.Context) ([]admin.FrontendInfo, error) {
 	cfg := f.config.Get()
+	var counts map[frontend.Protocol]int
+	var known bool
+	if f.streamCounts != nil {
+		counts, known = f.streamCounts(ctx)
+		ctx = context.WithValue(ctx, frontendStreamCountsKey{}, frontendStreamCounts{counts: counts, known: known})
+	}
 	out := make([]admin.FrontendInfo, 0)
 	for _, d := range f.registry.Descriptors() {
 		enabled := cfg.Frontends[string(d.ID)].Enabled
@@ -50,6 +63,9 @@ func (f *frontendControl) List(ctx context.Context) ([]admin.FrontendInfo, error
 		}
 		if f.clientCount != nil {
 			status.Clients24h, status.Clients24hKnown = f.clientCount(ctx, d.ID)
+		}
+		if known {
+			status.LiveStreams, status.LiveStreamsKnown = counts[d.ID], true
 		}
 		out = append(out, admin.FrontendInfo{Descriptor: d, Enabled: enabled, Status: status})
 	}
