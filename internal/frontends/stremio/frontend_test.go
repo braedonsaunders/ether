@@ -239,3 +239,42 @@ func TestIMDbEpisodeUsesPolicyCheckedExternalResolution(t *testing.T) {
 		t.Fatalf("stream: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestCatalogArtworkUsesScopedImageGrant(t *testing.T) {
+	title := frontend.Title{Key: 42, Title: "Visible", Type: "movie"}
+	title.IDs.TMDB = 42
+	host := frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }},
+		Experience: frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "movies", Type: "movie"}}, nil
+		}, LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{Items: []frontend.Title{title}, Total: 1}, nil
+		}},
+		Sessions: frontendtest.Sessions{}, SecurePortalURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/ether/me", nil },
+		ImageGrants: frontendtest.ImageGrants{IssueBatchFunc: func(_ context.Context, req frontend.ImageBatchRequest) ([]frontend.ImageBatchItem, error) {
+			if req.Credential != "grant" || len(req.Items) != 1 || req.Items[0] != 42 || req.Device.ID == "" {
+				t.Fatalf("bad image scope: %+v", req)
+			}
+			return []frontend.ImageBatchItem{{Item: 42, Authoritative: true, Images: []frontend.GrantedImage{{Secret: "opaque-image"}}}}, nil
+		}, ServeFunc: func(w http.ResponseWriter, _ *http.Request, secret string) {
+			if secret != "opaque-image" {
+				t.Fatal(secret)
+			}
+			_, _ = w.Write([]byte("poster"))
+		}},
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/grant/catalog/movie/ether-movies.json", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "https://ether.example/stremio/image/opaque-image") || strings.Contains(rec.Body.String(), "/grant/") {
+		t.Fatalf("catalog: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/image/opaque-image", nil))
+	if rec.Code != 200 || rec.Body.String() != "poster" {
+		t.Fatalf("poster: %d %s", rec.Code, rec.Body.String())
+	}
+}
