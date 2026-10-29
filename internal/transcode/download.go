@@ -68,11 +68,18 @@ func (m *Manager) NewDownloadRemuxer(cfg config.Downloads) (*DownloadRemuxer, er
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("transcode: download dir: %w", err)
 	}
-	// Nothing survives a restart: queue items live in memory, so any
-	// file here is stale.
+	// No ether-owned file survives a restart: queue items live in
+	// memory, so any remux output here is stale. Remove only the files
+	// RemuxDownload itself creates (see isRemuxDownloadFile), with no
+	// age gate — the same boot semantics as s-* sessions in cleanStale;
+	// that function's age gate is a separate layer. Anything else
+	// sharing the dir is not ours and is kept.
 	if entries, err := os.ReadDir(dir); err == nil {
 		for _, e := range entries {
-			_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+			if e.IsDir() || !isRemuxDownloadFile(e.Name()) {
+				continue
+			}
+			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
 	budget := cfg.DiskBudgetBytes
@@ -87,6 +94,18 @@ func (m *Manager) NewDownloadRemuxer(cfg config.Downloads) (*DownloadRemuxer, er
 		m: m, dir: dir, budget: budget,
 		sem: make(chan struct{}, n), files: map[string]int64{},
 	}, nil
+}
+
+// isRemuxDownloadFile reports whether name is one of the only files
+// RemuxDownload creates in the downloads dir: the finished
+// dl-<hex>.mp4 (see RemuxDownload) and the dl-<hex>.mp4.part partial it
+// renames into place.
+func isRemuxDownloadFile(name string) bool {
+	if !strings.HasPrefix(name, "dl-") {
+		return false
+	}
+	name = strings.TrimSuffix(name, ".part")
+	return len(name) > len("dl-") && strings.HasSuffix(name, ".mp4")
 }
 
 // downloadArgs builds the ffmpeg argument list for a copy remux.

@@ -234,3 +234,43 @@ func TestNewDownloadRemuxerCleansStaleFiles(t *testing.T) {
 		t.Fatalf("stale file survived startup cleanup: %v", err)
 	}
 }
+
+// Startup cleanup in NewDownloadRemuxer must remove only the files the
+// remuxer itself creates (dl-*.mp4 and their .part partials, with no age
+// gate) and preserve everything else sharing downloads/: unrelated files
+// and other apps' subdirs are not Ether's to delete. (The pre-existing
+// TestNewDownloadRemuxerCleansStaleFiles above never assumed a total
+// wipe — it only had a dl-* file — so it stays unchanged.)
+func TestNewDownloadRemuxerPreservesUnrelatedFiles(t *testing.T) {
+	fr := newFakeRunner()
+	m := newTestManager(t, fr, config.Transcode{})
+	dir := filepath.Join(m.tempDir, "downloads")
+	ether := []string{"dl-ab12cd34.mp4", "dl-ab12cd34.mp4.part"}
+	alien := []string{
+		"keep.txt",
+		"dl-notes.txt",                         // dl-* but not a name RemuxDownload creates
+		filepath.Join("other-app", "keep.txt"), // unrelated subdir
+	}
+	for _, rel := range append(append([]string{}, ether...), alien...) {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := m.NewDownloadRemuxer(config.Downloads{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range ether {
+		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
+			t.Errorf("ether file %s survived startup cleanup: %v", rel, err)
+		}
+	}
+	for _, rel := range alien {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Errorf("unrelated %s removed by startup cleanup: %v", rel, err)
+		}
+	}
+}
