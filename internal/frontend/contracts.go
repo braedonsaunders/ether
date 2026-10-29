@@ -195,7 +195,22 @@ type SearchPage struct {
 	TotalExact   bool
 	Continuation Continuation
 }
+// Image identifies an image authorized for an item. Path is an opaque,
+// server-owned source reference: callers must neither interpret it as a URL nor
+// construct one themselves. Tag changes when the selected artwork changes.
+// Older adapters may still return a TMDB path while migrating to opaque refs.
 type Image struct{ Kind, Path, Tag string }
+
+const (
+	ImagePoster   = "poster"
+	ImageBackdrop = "backdrop"
+	ImageLogo     = "logo"
+	ImageThumb    = "thumb"
+	ImageBanner   = "banner"
+	ImageStill    = "still"
+	ImagePerson   = "person"
+	ImageChannel  = "channel"
+)
 type Version struct {
 	ID, Name string
 	Media    core.MediaInfo
