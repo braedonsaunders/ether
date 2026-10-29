@@ -61,6 +61,17 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 			return nil, err
 		}
 	}
+	for _, method := range []string{"GET", "POST"} {
+		if err := r.Handle(method, "/DisplayPreferences/{id}", http.HandlerFunc(inst.displayPreferences)); err != nil {
+			return nil, err
+		}
+	}
+	if err := r.Handle("GET", "/LiveTv/Channels", http.HandlerFunc(inst.channels)); err != nil {
+		return nil, err
+	}
+	if err := r.Handle("GET", "/LiveTv/Programs", http.HandlerFunc(inst.programmes)); err != nil {
+		return nil, err
+	}
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err
 	}
