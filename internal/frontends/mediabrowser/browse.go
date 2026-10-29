@@ -280,7 +280,7 @@ func (i *instance) browseRoutes() error {
 		if people := i.peopleDTO(r, v, token, d); len(people) > 0 {
 			dto["People"] = people
 		}
-		if len(d.Tracks) > 0 {
+		if len(d.Tracks) > 0 && !d.TracksEstimated {
 			streams := i.mediaStreams(d.Tracks)
 			dto["MediaStreams"] = streams
 		}
