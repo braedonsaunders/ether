@@ -33,6 +33,19 @@ LG/Samsung TVs, and up to five TV devices for Android TV or Fire TV; Live TV
 requires Premiere. Availability and device limits can change, so consult Emby's
 matrix. Ether does not provide or emulate an Emby Premiere entitlement.
 
+## Silo apps
+
+Silo support is in development. Ether's Silo surface uses port 8090 by default;
+if that port is occupied, check the Apps page for the actual listening address.
+Add that address in the Silo app and sign in with an Ether viewer account, or
+approve the device's code in the viewer portal. A dash means the feature has
+not yet been verified on the named client.
+
+| Client | Version | Browse | Play | Resume | Watched | Subtitles | Device pairing |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Silo for Apple TV, iOS and macOS | Pending | — | — | — | — | — | — |
+| Silo for Android and Android TV | Pending | — | — | — | — | — | — |
+
 ## Set up
 
 The setup wizard signs you in to Plex, then asks where Ether streams from: a
