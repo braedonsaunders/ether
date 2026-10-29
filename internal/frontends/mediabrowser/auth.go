@@ -96,6 +96,9 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 		configuration["SubtitleLanguagePreference"] = v.SubtitleLanguages[0]
 	}
 	result := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": policy, "Configuration": configuration}
+	if i.protocol == "emby" && !v.CreatedAt.IsZero() {
+		result["DateCreated"] = v.CreatedAt.UTC()
+	}
 	if i.host.ViewerCapabilities == nil {
 		return result
 	}

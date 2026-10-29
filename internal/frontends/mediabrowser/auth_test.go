@@ -33,6 +33,15 @@ func TestDeviceIDFromStreamQuery(t *testing.T) {
 	}
 }
 
+func TestEmbyUserCreationDateIsIdentityOwned(t *testing.T) {
+	created := time.Date(2024, 3, 2, 1, 2, 3, 0, time.UTC)
+	i := &instance{protocol: "emby"}
+	got := i.userDTO(httptest.NewRequest("GET", "/Users/Me", nil), &frontend.Viewer{ID: 1, CreatedAt: created})
+	if got["DateCreated"] != created {
+		t.Fatal(got)
+	}
+}
+
 func TestSessionCapabilitiesRoundTrip(t *testing.T) {
 	v := &frontend.Viewer{ID: 9, Username: "viewer"}
 	var saved frontend.SessionCapabilities
