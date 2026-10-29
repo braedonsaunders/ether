@@ -19,6 +19,23 @@ import (
 
 type imageFixture struct{ calls int }
 
+type scopedArtworkFixture struct {
+	calls     int
+	request   frontend.ArtworkRequest
+	image     frontend.Image
+	transform frontend.ArtworkTransform
+}
+
+func (f *scopedArtworkFixture) List(context.Context, frontend.ArtworkRequest) ([]frontend.Image, bool, error) {
+	return nil, false, nil
+}
+
+func (f *scopedArtworkFixture) Read(_ context.Context, request frontend.ArtworkRequest, image frontend.Image, transform frontend.ArtworkTransform) ([]byte, string, error) {
+	f.calls++
+	f.request, f.image, f.transform = request, image, transform
+	return []byte("scoped"), "image/png", nil
+}
+
 func (i *imageFixture) Get(context.Context, string, int) ([]byte, string, error) {
 	i.calls++
 	return []byte("image"), "image/jpeg", nil
@@ -116,5 +133,53 @@ func TestImageGrantRevalidatesSessionMembershipAndArtwork(t *testing.T) {
 	}
 	if code := call(service, secret); code != 404 {
 		t.Fatal("membership ignored", code)
+	}
+}
+
+func TestImageGrantUsesScopedArtworkAndTransforms(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "tv", Language: "en"}
+	credential, err := grants.Issue(ctx, 1, nil, "jellyfin", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := frontend.Image{Kind: frontend.ImagePoster, Path: "opaque-reference", Tag: "v1"}
+	allowed := true
+	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if !allowed {
+			return frontend.ItemDetail{}, core.ErrNotFound
+		}
+		return frontend.ItemDetail{ImagesAuthoritative: true, Images: []frontend.Image{image}}, nil
+	}}
+	source := &scopedArtworkFixture{}
+	s, err := identity.NewArtworkImageGrantService(db, "jellyfin", grants, func() frontend.Experience { return experience }, source, time.Minute, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret, err := s.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: device, Item: core.MovieKey(42), Image: image})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	s.Serve(w, httptest.NewRequest("GET", "/?w=300&h=200&format=png&blur=1", nil), secret)
+	if w.Code != 200 || w.Body.String() != "scoped" || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("response: %d %q", w.Code, w.Body.String())
+	}
+	if source.calls != 1 || source.request.Viewer.ID != 1 || source.request.Device != device || source.request.Item != core.MovieKey(42) || source.image != image || source.transform != (frontend.ArtworkTransform{Width: 300, Height: 200, Format: "png", Blur: true}) {
+		t.Fatalf("bad source request: %+v", source)
+	}
+	allowed = false
+	w = httptest.NewRecorder()
+	s.Serve(w, httptest.NewRequest("GET", "/", nil), secret)
+	if w.Code != 404 || source.calls != 1 {
+		t.Fatal("hidden artwork reached source", w.Code, source.calls)
 	}
 }

@@ -31,8 +31,30 @@ type ImageGrantService struct {
 	grants     *Grants
 	experience func() frontend.Experience
 	images     ImageSource
+	artwork    frontend.Artwork
 	now        func() time.Time
 	ttl        time.Duration
+}
+
+// NewArtworkImageGrantService serves descriptors through the authorized
+// artwork source. The source is consulted again for every fetch, after the
+// session, viewer and Experience policy checks performed by Serve.
+func NewArtworkImageGrantService(db *sql.DB, surface frontend.Protocol, grants *Grants, experience func() frontend.Experience, artwork frontend.Artwork, ttl time.Duration, now func() time.Time) (*ImageGrantService, error) {
+	if artwork == nil {
+		return nil, errors.New("identity: missing artwork source")
+	}
+	s, err := NewImageGrantService(db, surface, grants, experience, unavailableImageSource{}, ttl, now)
+	if err != nil {
+		return nil, err
+	}
+	s.artwork = artwork
+	return s, nil
+}
+
+type unavailableImageSource struct{}
+
+func (unavailableImageSource) Get(context.Context, string, int) ([]byte, string, error) {
+	return nil, "", core.ErrNotAvailable
 }
 
 func NewImageGrantService(db *sql.DB, surface frontend.Protocol, grants *Grants, experience func() frontend.Experience, images ImageSource, ttl time.Duration, now func() time.Time) (*ImageGrantService, error) {
@@ -174,7 +196,28 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	if width <= 0 || width > 4000 {
 		width = 500
 	}
-	data, contentType, err := s.images.Get(r.Context(), img.Path, width)
+	var data []byte
+	var contentType string
+	if s.artwork != nil {
+		height, _ := strconv.Atoi(r.URL.Query().Get("h"))
+		if height < 0 || height > 4000 {
+			http.Error(w, "invalid image height", http.StatusBadRequest)
+			return
+		}
+		format := r.URL.Query().Get("format")
+		if format != "" && format != "jpeg" && format != "png" {
+			http.Error(w, "invalid image format", http.StatusBadRequest)
+			return
+		}
+		blur := r.URL.Query().Get("blur")
+		if blur != "" && blur != "0" && blur != "1" {
+			http.Error(w, "invalid image blur", http.StatusBadRequest)
+			return
+		}
+		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: core.RatingKey(item)}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur == "1"})
+	} else {
+		data, contentType, err = s.images.Get(r.Context(), img.Path, width)
+	}
 	if err != nil {
 		http.Error(w, "image unavailable", 502)
 		return
@@ -182,6 +225,7 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	h := w.Header()
 	h.Set("Content-Type", contentType)
 	h.Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
+	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "private, no-store")
 	h.Set("Content-Length", strconv.Itoa(len(data)))
 	if r.Method == http.MethodGet {
