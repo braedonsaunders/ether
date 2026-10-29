@@ -278,3 +278,51 @@ func TestViewerTimesRequiresSurfaceCredentialAndActiveOwner(t *testing.T) {
 		t.Fatalf("revoked credential: %v", err)
 	}
 }
+
+func TestSurfaceRefreshObservesActivityWithoutNewLogin(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	local, _ := identity.NewLocal(a.db)
+	viewerID, err := local.CreateViewer(ctx, "refresh-times", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	clock := func() time.Time { return now }
+	grants, err := identity.NewGrants(a.db, a.users, time.Hour, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := identity.NewResolver(a.users, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter, err := identity.NewPollLimiter(a.db, time.Minute, 100, 100, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := surfaceIdentity{surface: "silo", resolver: resolver, grants: grants, times: grants.ViewerTimes(), poll: limiter}
+	device := core.Device{ID: "tv"}
+	access, err := grants.IssueLogin(ctx, viewerID, nil, "silo", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refresh, err := s.IssueRefresh(ctx, access, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := now
+	now = now.Add(6 * time.Minute)
+	ctx = frontend.WithClientIP(ctx, netip.MustParseAddr("192.0.2.3"))
+	access, _, err = s.Refresh(ctx, refresh, device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ViewerTimes(ctx, access, viewerID)
+	if err != nil || !got.LastLogin.Equal(login) || !got.LastActivity.Equal(now) {
+		t.Fatalf("timestamps=%+v err=%v", got, err)
+	}
+}
