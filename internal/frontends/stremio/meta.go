@@ -44,21 +44,27 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 		meta["poster"] = poster
 	}
 	if typ == "series" {
-		page, e := i.host.Experience.Children(r.Context(), viewer, device, key, frontend.ItemQuery{Limit: 1000, Recursive: true})
-		if e != nil {
-			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		videos := make([]map[string]any, 0, len(page.Items))
-		for _, episode := range page.Items {
-			if string(episode.Type) != "episode" {
-				continue
-			}
-			episodeID, e := ids.FormatStremio(ids.StremioID{Source: "tmdb", ID: strconv.FormatInt(key.TMDB(), 10), HasEpisode: true, Season: episode.Season, Episode: episode.Episode})
+		videos := make([]map[string]any, 0)
+		for offset := 0; ; {
+			page, e := i.host.Experience.Children(r.Context(), viewer, device, key, frontend.ItemQuery{Offset: offset, Limit: 500, Recursive: true})
 			if e != nil {
-				continue
+				http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+				return
 			}
-			videos = append(videos, map[string]any{"id": episodeID, "title": episode.Title, "season": episode.Season, "episode": episode.Episode, "overview": episode.Summary})
+			for _, episode := range page.Items {
+				if string(episode.Type) != "episode" {
+					continue
+				}
+				episodeID, e := ids.FormatStremio(ids.StremioID{Source: "tmdb", ID: strconv.FormatInt(key.TMDB(), 10), HasEpisode: true, Season: episode.Season, Episode: episode.Episode})
+				if e != nil {
+					continue
+				}
+				videos = append(videos, map[string]any{"id": episodeID, "title": episode.Title, "season": episode.Season, "episode": episode.Episode, "overview": episode.Summary})
+			}
+			offset += len(page.Items)
+			if len(page.Items) == 0 || offset >= page.Total {
+				break
+			}
 		}
 		meta["videos"] = videos
 	}

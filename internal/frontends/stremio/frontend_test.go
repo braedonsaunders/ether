@@ -155,3 +155,34 @@ func TestRowCatalogSkipsUnsupportedEntries(t *testing.T) {
 		t.Fatalf("row: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestSeriesMetaPaginatesEpisodes(t *testing.T) {
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}
+	calls := 0
+	experience := frontendtest.Experience{
+		ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: req.Key, Title: "Long series", Type: "show"}}, nil
+		},
+		ChildrenFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, _ frontend.RatingKey, q frontend.ItemQuery) (frontend.Page, error) {
+			calls++
+			if q.Limit != 500 || !q.Recursive || q.Offset != (calls-1)*500 {
+				t.Fatalf("unexpected page query: %+v", q)
+			}
+			count := min(500, 501-q.Offset)
+			items := make([]frontend.Title, count)
+			for j := range items {
+				items[j] = frontend.Title{Type: "episode", Title: "Episode", Season: 1, Episode: q.Offset + j + 1}
+			}
+			return frontend.Page{Items: items, Total: 501}, nil
+		},
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/meta/series/tmdb:42.json", nil))
+	if rec.Code != http.StatusOK || calls != 2 || !strings.Contains(rec.Body.String(), `"episode":501`) {
+		t.Fatalf("missing episode: status=%d calls=%d", rec.Code, calls)
+	}
+}
