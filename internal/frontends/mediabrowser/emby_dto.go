@@ -56,9 +56,6 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 		}
 		m["Chapters"] = chapters
 	}
-	if !v.AddedAt.IsZero() {
-		m["DateCreated"] = v.AddedAt.UTC()
-	}
 	if v.Media.Container != "" {
 		m["Container"] = v.Media.Container
 	}

@@ -19,7 +19,10 @@ func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
 	i.embyItemDetailDTO(m, frontend.ItemDetail{Versions: []frontend.Version{{AddedAt: added, Media: core.MediaInfo{
 		Container: "mp4", Size: 123, BitrateKbps: 456, Streams: []core.StreamInfo{{Type: "video", Width: 1920, Height: 1080}}, Chapters: []core.Chapter{{Title: "Opening", Start: time.Second}},
 	}}}})
-	if m["DateCreated"] != added || m["Container"] != "mp4" || m["Size"] != int64(123) || m["Bitrate"] != 456000 || m["Width"] != 1920 || m["Height"] != 1080 {
+	if _, ok := m["DateCreated"]; ok {
+		t.Fatal("catalogue fallback was presented as a source creation date")
+	}
+	if m["Container"] != "mp4" || m["Size"] != int64(123) || m["Bitrate"] != 456000 || m["Width"] != 1920 || m["Height"] != 1080 {
 		t.Fatalf("source facts: %#v", m)
 	}
 	chapter := m["Chapters"].([]any)[0].(map[string]any)
