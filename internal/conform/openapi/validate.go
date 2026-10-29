@@ -114,7 +114,7 @@ func (d *Document) Validate(method, requestPath string, status int, contentType 
 		media := strings.TrimSpace(strings.Split(contentType, ";")[0])
 		entry := obj(content[media])
 		if entry == nil {
-			entry = obj(content["application/json"])
+			entry = obj(content["*/*"])
 		}
 		if entry == nil {
 			if len(body) == 0 {

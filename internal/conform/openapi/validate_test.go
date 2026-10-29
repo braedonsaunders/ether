@@ -19,6 +19,9 @@ func TestResponseValidation(t *testing.T) {
 			t.Errorf("%+v: %v", c, err)
 		}
 	}
+	if err = d.Validate("GET", "/Items/123", 200, "text/plain", []byte(`{"Id":"abc"}`)); err == nil {
+		t.Fatal("undocumented media type accepted")
+	}
 	if err = d.Validate("GET", "/Videos/abc/master.m3u8", 200, "application/vnd.apple.mpegurl", []byte("#EXTM3U")); err != nil {
 		t.Fatal(err)
 	}
