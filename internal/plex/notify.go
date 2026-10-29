@@ -14,6 +14,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // ---------------------------------------------------------------------------
@@ -39,86 +40,23 @@ type playEntry struct {
 	remoteTS *model.TranscodeSess
 }
 
-type sessionTracker struct {
-	mu      sync.Mutex
-	next    int
-	entries map[string]*playEntry
+type sessionTracker struct{ tracker *sessions.Tracker[playEntry] }
+
+func newSessionTracker() *sessionTracker {
+	return &sessionTracker{tracker: sessions.NewTracker(func(id string, key int) playEntry { return playEntry{id: id, sessionKey: key} }, func(e *playEntry) time.Time { return e.updatedAt })}
 }
-
-func newSessionTracker() *sessionTracker { return &sessionTracker{entries: map[string]*playEntry{}} }
-
 func trackID(userID int64, clientID, sessionID string) string {
 	return fmt.Sprintf("%d/%s/%s", userID, clientID, sessionID)
 }
-
-// has reports whether id is tracked.
-func (t *sessionTracker) has(id string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	_, ok := t.entries[id]
-	return ok
+func (t *sessionTracker) has(id string) bool        { return t.tracker.Has(id) }
+func (t *sessionTracker) ensure(id string, key int) { t.tracker.Ensure(id, key) }
+func (t *sessionTracker) update(id string, fn func(*playEntry)) playEntry {
+	return t.tracker.Update(id, fn)
 }
-
-// ensure starts tracking id with sessionKey key (allocated cluster-wide);
-// key 0, or an id already tracked, leaves numbering to update.
-func (t *sessionTracker) ensure(id string, key int) {
-	if key <= 0 {
-		return
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if _, ok := t.entries[id]; !ok {
-		t.entries[id] = &playEntry{id: id, sessionKey: key}
-	}
-}
-
-// update records a timeline event and returns a copy of the entry.
-func (t *sessionTracker) update(id string, fn func(e *playEntry)) playEntry {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.entries[id]
-	if !ok {
-		t.next++
-		e = &playEntry{id: id, sessionKey: t.next}
-		t.entries[id] = e
-	}
-	fn(e)
-	return *e
-}
-
-func (t *sessionTracker) remove(id string) (playEntry, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	e, ok := t.entries[id]
-	if !ok {
-		return playEntry{}, false
-	}
-	delete(t.entries, id)
-	return *e, true
-}
-
-func (t *sessionTracker) list() []playEntry {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	out := make([]playEntry, 0, len(t.entries))
-	for _, e := range t.entries {
-		out = append(out, *e)
-	}
-	return out
-}
-
-// expire drops entries without a timeline update for ttl and returns them.
+func (t *sessionTracker) remove(id string) (playEntry, bool) { return t.tracker.Remove(id) }
+func (t *sessionTracker) list() []playEntry                  { return t.tracker.List() }
 func (t *sessionTracker) expire(now time.Time, ttl time.Duration) []playEntry {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	var out []playEntry
-	for id, e := range t.entries {
-		if now.Sub(e.updatedAt) > ttl {
-			out = append(out, *e)
-			delete(t.entries, id)
-		}
-	}
-	return out
+	return t.tracker.Expire(now, ttl)
 }
 
 // ---------------------------------------------------------------------------

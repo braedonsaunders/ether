@@ -153,7 +153,7 @@ type Server struct {
 	queues            *playQueueStore
 	sessions          *sessionTracker
 	playbackOwners    *sessions.PlaybackOwners
-	playbackLifecycle *playbackLifecycle
+	playbackLifecycle *sessions.Lifecycle
 	transcodes        *transcodeTable
 	extraPlay         *extraPlayStore
 	selections        *selectionStore
@@ -210,7 +210,7 @@ func NewServer(d Deps) *Server {
 		queues:            newPlayQueueStore(),
 		sessions:          newSessionTracker(),
 		playbackOwners:    sessions.NewPlaybackOwners(),
-		playbackLifecycle: newPlaybackLifecycle(),
+		playbackLifecycle: sessions.NewLifecycle(),
 		transcodes:        newTranscodeTable(),
 		extraPlay:         newExtraPlayStore(),
 		selections:        newSelectionStore(),
