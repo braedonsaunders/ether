@@ -28,3 +28,17 @@ func TestRelatedBackfillsBeforeDeduplication(t *testing.T) {
 		t.Fatalf("unexpected rows %+v calls %d err %v", rows, calls, err)
 	}
 }
+
+func TestDiscoveryBackfillsAfterPolicy(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	v := Visibility{GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) { return &core.Title{Adult: true}, nil }}
+	rows := []core.Title{{Key: 1, ShowKey: 3}, {Key: 2}}
+	got := LoadDiscovery(ctx, &core.User{}, v, 1, func(_ context.Context, n int) []DiscoveryCandidate {
+		calls++
+		return []DiscoveryCandidate{{Index: 0, Purpose: "watchlist", Items: rows[:min(n, len(rows))]}}
+	})
+	if len(got) != 1 || len(got[0].Items) != 1 || got[0].Items[0].Key != 2 || calls != 2 {
+		t.Fatalf("unexpected results %+v calls %d", got, calls)
+	}
+}

@@ -121,24 +121,27 @@ func (s *Server) discoveryHubs(ctx context.Context, pr *Request, limit int) []hu
 		return nil
 	}
 	var out []hubSpec
-	add := func(hubs []core.Hub, purpose core.RowPurpose) {
-		candidates := make([]experience.DiscoveryCandidate, len(hubs))
-		for i, hub := range hubs {
-			candidates[i] = experience.DiscoveryCandidate{Index: i, Purpose: purpose, Items: hub.Items}
-		}
-		for _, row := range experience.FilterDiscovery(ctx, pr.User, s.visibility(), candidates) {
+	add := func(purpose core.RowPurpose, load func(context.Context, *core.User, int) ([]core.Hub, error)) {
+		var hubs []core.Hub
+		rows := experience.LoadDiscovery(ctx, pr.User, s.visibility(), limit, func(ctx context.Context, fetch int) []experience.DiscoveryCandidate {
+			hubs, _ = load(ctx, pr.User, fetch)
+			candidates := make([]experience.DiscoveryCandidate, len(hubs))
+			for i, hub := range hubs {
+				candidates[i] = experience.DiscoveryCandidate{Index: i, Purpose: purpose, Items: hub.Items}
+			}
+			return candidates
+		})
+		for _, row := range rows {
 			h := hubs[row.Index]
 			h.Items = row.Items
 			out = append(out, hubSpec{Hub: h})
 		}
 	}
 	if d.Watchlist != nil {
-		h, _ := d.Watchlist.Hubs(ctx, pr.User, limit)
-		add(h, core.RowPurpose("watchlist"))
+		add(core.RowPurpose("watchlist"), d.Watchlist.Hubs)
 	}
 	if d.Personal != nil {
-		h, _ := d.Personal.Hubs(ctx, pr.User, limit)
-		add(h, core.RowPurpose("recommendation"))
+		add(core.RowPurpose("recommendation"), d.Personal.Hubs)
 	}
 	return out
 }
