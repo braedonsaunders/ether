@@ -132,7 +132,7 @@ export default function ViewerProfile() {
             { key: "access", label: t("Limits & preferences") },
             { key: "playback", label: t("Audio & subtitles") },
             { key: "watchlist", label: t("Watchlist") },
-            { key: "sign-in", label: "Sign-in methods & devices" },
+            { key: "sign-in", label: t("Sign-in methods & devices") },
           ]}
         />
       }

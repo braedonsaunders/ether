@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsaunders/appkit-ui";
 import SignInMethods from "./SignInMethods";
@@ -18,8 +19,8 @@ async function request<T>(path: string, token: string, body?: unknown): Promise<
   if (!res.ok)
     throw new Error(
       res.status === 401
-        ? "Sign-in failed. Check your credentials."
-        : "The request could not be completed. Try again.",
+        ? t("Sign-in failed. Check your credentials.")
+        : t("The request could not be completed. Try again."),
     );
   return res.status === 204 ? (undefined as T) : (res.json() as Promise<T>);
 }
@@ -70,7 +71,7 @@ export default function Me() {
         if (!cancelled) {
           sessionStorage.removeItem(SESSION_KEY);
           setToken("");
-          setError("Your session has expired. Sign in again.");
+          setError(t("Your session has expired. Sign in again."));
         }
       });
     return () => {
@@ -88,9 +89,9 @@ export default function Me() {
       sessionStorage.setItem(SESSION_KEY, result.token);
       setToken(result.token);
       setInviteSecret("");
-      setMessage("Invite accepted. Set a password to sign in again.");
+      setMessage(t("Invite accepted. Set a password to sign in again."));
     } catch {
-      setError("This invite could not be accepted.");
+      setError(t("This invite could not be accepted."));
     } finally {
       setBusy(false);
     }
@@ -106,7 +107,7 @@ export default function Me() {
       setToken(result.token);
       setPassword("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Sign-in failed.");
+      setError(e instanceof Error ? e.message : t("Sign-in failed."));
     } finally {
       setBusy(false);
     }
@@ -133,9 +134,9 @@ export default function Me() {
           return;
         }
       }
-      if (!cancelled.current) setError("Sign-in timed out. Try again.");
+      if (!cancelled.current) setError(t("Sign-in timed out. Try again."));
     } catch {
-      if (!cancelled.current) setError("Sign-in failed. Try again.");
+      if (!cancelled.current) setError(t("Sign-in failed. Try again."));
     } finally {
       popup?.close();
       if (!cancelled.current) {
@@ -152,9 +153,9 @@ export default function Me() {
     try {
       await request("/quickconnect", token, { code });
       setCode("");
-      setMessage("Device approved.");
+      setMessage(t("Device approved."));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The request could not be completed.");
+      setError(e instanceof Error ? e.message : t("The request could not be completed."));
     } finally {
       setBusy(false);
     }
@@ -163,7 +164,7 @@ export default function Me() {
     <main className="grid min-h-screen place-items-center bg-bg-subtle p-4">
       <Card className="w-full max-w-sm space-y-5 p-7 shadow-lg">
         <EtherLogo className="mx-auto w-40" />
-        <h1 className="text-xl font-semibold text-fg">Viewer portal</h1>
+        <h1 className="text-xl font-semibold text-fg">{t("Viewer portal")}</h1>
         {error ? (
           <Alert variant="destructive" role="alert">
             <AlertDescription>{error}</AlertDescription>
@@ -176,13 +177,13 @@ export default function Me() {
         ) : null}
         {inviteSecret ? (
           <Button type="button" disabled={busy} onClick={() => void redeemInvite()}>
-            Accept invite
+            {t("Accept invite")}
           </Button>
         ) : null}
         {!token ? (
           <form className="space-y-4" onSubmit={login}>
             <div>
-              <Label htmlFor="me-username">Username</Label>
+              <Label htmlFor="me-username">{t("Username")}</Label>
               <Input
                 id="me-username"
                 autoComplete="username"
@@ -192,7 +193,7 @@ export default function Me() {
               />
             </div>
             <div>
-              <Label htmlFor="me-password">Password</Label>
+              <Label htmlFor="me-password">{t("Password")}</Label>
               <Input
                 id="me-password"
                 type="password"
@@ -203,7 +204,7 @@ export default function Me() {
               />
             </div>
             <Button type="submit" disabled={busy}>
-              Sign in
+              {t("Sign in")}
             </Button>
             <Button
               variant="outline"
@@ -211,12 +212,12 @@ export default function Me() {
               disabled={busy}
               onClick={() => void plexSignIn()}
             >
-              Sign in with Plex
+              {t("Sign in with Plex")}
             </Button>
             {pinURL ? (
               <p>
                 <a href={pinURL} target="_blank" rel="noreferrer">
-                  Open Plex sign-in
+                  {t("Open Plex sign-in")}
                 </a>
               </p>
             ) : null}
@@ -225,7 +226,7 @@ export default function Me() {
           <>
             <p className="text-sm text-fg-muted">{viewer.title || viewer.username}</p>
             <form className="space-y-3" onSubmit={approve}>
-              <Label htmlFor="me-code">Enter the code shown on your TV</Label>
+              <Label htmlFor="me-code">{t("Enter the code shown on your TV")}</Label>
               <Input
                 id="me-code"
                 value={code}
@@ -234,7 +235,7 @@ export default function Me() {
                 autoComplete="off"
               />
               <Button type="submit" disabled={busy}>
-                Approve device
+                {t("Approve device")}
               </Button>
             </form>
             <SignInMethods base="/me" token={token} />
@@ -247,11 +248,11 @@ export default function Me() {
                 setMessage("");
               }}
             >
-              Sign out
+              {t("Sign out")}
             </Button>
           </>
         ) : (
-          <p role="status">Loading…</p>
+          <p role="status">{t("Loading…")}</p>
         )}
       </Card>
     </main>

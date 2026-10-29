@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
-import { t } from "../../i18n";
+import { t, tx } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 
@@ -29,21 +29,25 @@ export function DeviceCapabilities() {
   return (
     <>
       <p className="max-w-3xl text-sm text-fg-muted">
-        This is a reference. Each app reports its actual codecs, display and receiver support when
-        it plays. To choose quality for a device, use{" "}
-        <Link to="/releases/rules" className="text-primary underline">
-          Client rules
-        </Link>
-        .
+        {tx(
+          "This is a reference. Each app reports its actual codecs, display and receiver support when it plays. To choose quality for a device, use {link}.",
+          {
+            link: (
+              <Link to="/releases/rules" className="text-primary underline">
+                {t("Client rules")}
+              </Link>
+            ),
+          },
+        )}
       </p>
       <label className="flex items-center gap-2 text-sm">
-        Protocol
+        {t("Protocol")}
         <select
-          aria-label="Protocol"
+          aria-label={t("Protocol")}
           value={protocol}
           onChange={(e) => setProtocol(e.currentTarget.value)}
         >
-          <option value="">All protocols</option>
+          <option value="">{t("All protocols")}</option>
           <option value="plex">Plex</option>
           <option value="jellyfin">Jellyfin</option>
           <option value="emby">Emby</option>
@@ -59,7 +63,7 @@ export function DeviceCapabilities() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Protocol</TableHead>
+                <TableHead>{t("Protocol")}</TableHead>
                 <TableHead>{t("App")}</TableHead>
                 <TableHead>Dolby Vision</TableHead>
                 <TableHead>{t("Subtitles")}</TableHead>

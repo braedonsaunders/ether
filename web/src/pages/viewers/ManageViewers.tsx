@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { useState, type FormEvent } from "react";
 import { Button, Input, Label } from "@braedonsaunders/appkit-ui";
 import { apiFetch, errorMessage } from "../../lib/api";
@@ -40,7 +41,7 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
   }
   return (
     <details className="rounded-lg border border-border bg-surface p-4">
-      <summary className="cursor-pointer font-medium">Add viewer</summary>
+      <summary className="cursor-pointer font-medium">{t("Add viewer")}</summary>
       <form className="mt-4 space-y-3" onSubmit={submit}>
         <label className="block text-sm">
           <input
@@ -49,7 +50,7 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
             checked={mode === "local"}
             onChange={() => setMode("local")}
           />{" "}
-          Username and password
+          {t("Username and password")}
         </label>
         <label className="block text-sm">
           <input
@@ -58,12 +59,12 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
             checked={mode === "invite"}
             onChange={() => setMode("invite")}
           />{" "}
-          Invite link
+          {t("Invite link")}
         </label>
         {mode === "local" ? (
           <>
             <div>
-              <Label htmlFor="new-viewer-username">Username</Label>
+              <Label htmlFor="new-viewer-username">{t("Username")}</Label>
               <Input
                 id="new-viewer-username"
                 value={username}
@@ -73,7 +74,7 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
               />
             </div>
             <div>
-              <Label htmlFor="new-viewer-password">Password</Label>
+              <Label htmlFor="new-viewer-password">{t("Password")}</Label>
               <Input
                 id="new-viewer-password"
                 type="password"
@@ -86,7 +87,7 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
           </>
         ) : (
           <div>
-            <Label htmlFor="new-viewer-display">Display name</Label>
+            <Label htmlFor="new-viewer-display">{t("Display name")}</Label>
             <Input
               id="new-viewer-display"
               value={display}
@@ -102,7 +103,7 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
         ) : null}
         {link ? <p className="break-all text-sm">{link}</p> : null}
         <Button type="submit" disabled={busy}>
-          {mode === "local" ? "Create viewer" : "Create invite"}
+          {mode === "local" ? t("Create viewer") : t("Create invite")}
         </Button>
       </form>
     </details>
@@ -143,7 +144,7 @@ export function Membership({
         </p>
       ) : null}
       <Button type="button" variant="outline" disabled={busy} onClick={() => void change()}>
-        {active ? "Deactivate viewer" : "Reactivate viewer"}
+        {active ? t("Deactivate viewer") : t("Reactivate viewer")}
       </Button>
     </div>
   );

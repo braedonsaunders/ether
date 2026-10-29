@@ -27,7 +27,7 @@ export default function ViewersList({ tab = "people" }: { tab?: Tab } = {}) {
   return (
     <DomainPage
       title={t("Viewers")}
-      description="Manage household viewers and imported history."
+      description={t("Manage household viewers and imported history.")}
       base="/viewers"
       tabs={TABS}
       active={tab}

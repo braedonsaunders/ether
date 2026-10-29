@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button, Input, Label } from "@braedonsaunders/appkit-ui";
 
@@ -48,7 +49,7 @@ export default function SignInMethods({
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-      if (!res.ok) throw new Error("The request could not be completed. Try again.");
+      if (!res.ok) throw new Error(t("The request could not be completed. Try again."));
       return res.json() as Promise<T>;
     },
     [base, token],
@@ -64,7 +65,7 @@ export default function SignInMethods({
   useEffect(() => {
     let cancelled = false;
     load().catch(() => {
-      if (!cancelled) setError("Sign-in methods and devices could not be loaded.");
+      if (!cancelled) setError(t("Sign-in methods and devices could not be loaded."));
     });
     return () => {
       cancelled = true;
@@ -78,10 +79,10 @@ export default function SignInMethods({
     try {
       await call("/password", { username, password });
       setPassword("");
-      setMessage("Password saved.");
+      setMessage(t("Password saved."));
       await load();
     } catch {
-      setError("The request could not be completed. Try again.");
+      setError(t("The request could not be completed. Try again."));
     } finally {
       setBusy(false);
     }
@@ -93,7 +94,7 @@ export default function SignInMethods({
       await call("/devices/revoke", { hash });
       await load();
     } catch {
-      setError("The request could not be completed. Try again.");
+      setError(t("The request could not be completed. Try again."));
     } finally {
       setBusy(false);
     }
@@ -117,13 +118,13 @@ export default function SignInMethods({
         );
         if (result.done) {
           await load();
-          setMessage("Plex account linked.");
+          setMessage(t("Plex account linked."));
           return;
         }
       }
-      if (!cancelled.current) setError("Sign-in timed out. Try again.");
+      if (!cancelled.current) setError(t("Sign-in timed out. Try again."));
     } catch {
-      if (!cancelled.current) setError("The Plex account could not be linked.");
+      if (!cancelled.current) setError(t("The Plex account could not be linked."));
     } finally {
       popup?.close();
       if (!cancelled.current) {
@@ -139,7 +140,7 @@ export default function SignInMethods({
       const result = await call<{ url: string }>("/invite", {});
       setInvite(new URL(result.url, window.location.origin).href);
     } catch {
-      setError("The request could not be completed. Try again.");
+      setError(t("The request could not be completed. Try again."));
     } finally {
       setBusy(false);
     }
@@ -157,7 +158,7 @@ export default function SignInMethods({
         </p>
       ) : null}
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Sign-in methods</h2>
+        <h2 className="text-lg font-semibold">{t("Sign-in methods")}</h2>
         <ul>
           {methods.map((m) => (
             <li key={m.id} className="text-sm">
@@ -168,12 +169,12 @@ export default function SignInMethods({
         {!owner ? (
           <div>
             <Button variant="outline" type="button" disabled={busy} onClick={() => void linkPlex()}>
-              Link Plex account
+              {t("Link Plex account")}
             </Button>
             {pinURL ? (
               <p>
                 <a href={pinURL} target="_blank" rel="noreferrer">
-                  Open Plex sign-in
+                  {t("Open Plex sign-in")}
                 </a>
               </p>
             ) : null}
@@ -181,7 +182,7 @@ export default function SignInMethods({
         ) : null}
         <form className="space-y-3" onSubmit={update}>
           <div>
-            <Label htmlFor={`${base}-username`}>Username</Label>
+            <Label htmlFor={`${base}-username`}>{t("Username")}</Label>
             <Input
               id={`${base}-username`}
               value={username}
@@ -191,7 +192,7 @@ export default function SignInMethods({
             />
           </div>
           <div>
-            <Label htmlFor={`${base}-password`}>New password</Label>
+            <Label htmlFor={`${base}-password`}>{t("New password")}</Label>
             <Input
               id={`${base}-password`}
               type="password"
@@ -202,7 +203,7 @@ export default function SignInMethods({
             />
           </div>
           <Button type="submit" disabled={busy}>
-            Set or reset password
+            {t("Set or reset password")}
           </Button>
         </form>
         {owner ? (
@@ -213,14 +214,14 @@ export default function SignInMethods({
               disabled={busy}
               onClick={() => void makeInvite()}
             >
-              Create invite link
+              {t("Create invite link")}
             </Button>
             {invite ? <p className="break-all text-sm">{invite}</p> : null}
           </div>
         ) : null}
       </section>
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Devices</h2>
+        <h2 className="text-lg font-semibold">{t("Devices")}</h2>
         {devices.length ? (
           <ul className="space-y-2">
             {devices.map((d) => (
@@ -234,13 +235,13 @@ export default function SignInMethods({
                   disabled={busy}
                   onClick={() => void revoke(d.hash)}
                 >
-                  Revoke
+                  {t("Revoke")}
                 </Button>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-fg-muted">No devices.</p>
+          <p className="text-sm text-fg-muted">{t("No devices.")}</p>
         )}
       </section>
     </div>

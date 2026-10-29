@@ -436,12 +436,12 @@ export default function Setup() {
       ["emby", "Emby"],
       ["silo", "Silo"],
       ["stremio", "Stremio"],
-      ["webdav", "Files"],
+      ["webdav", t("Files")],
     ];
     return (
       <div className="mx-auto w-full max-w-2xl space-y-5 p-6">
         <EtherMark size={40} />
-        <h1 className="text-xl font-semibold">Where will your household watch?</h1>
+        <h1 className="text-xl font-semibold">{t("Where will your household watch?")}</h1>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {options.map(([id, label]) => (
             <label
@@ -475,7 +475,7 @@ export default function Setup() {
               .finally(() => setSaving(false));
           }}
         >
-          Save and continue
+          {t("Save and continue")}
         </Button>
       </div>
     );
@@ -539,7 +539,7 @@ export default function Setup() {
             <div>
               <h1 className="text-lg font-semibold text-fg">{t("Set up Ether")}</h1>
               <p className="text-sm text-fg-muted">
-                Complete the steps below to set up your household.
+                {t("Complete the steps below to set up your household.")}
               </p>
             </div>
           </div>
@@ -621,7 +621,7 @@ export default function Setup() {
         </Alert>
       ) : null}
       <h2 className="text-base font-semibold text-fg">
-        {step === 0 && !frontends.plex ? "Create your owner account" : STEPS[step]!.heading}
+        {step === 0 && !frontends.plex ? t("Create your owner account") : STEPS[step]!.heading}
       </h2>
       <MutationError error={error} />
 
@@ -643,7 +643,7 @@ export default function Setup() {
               .finally(() => setSaving(false));
           }}
         >
-          <Field label="Username" htmlFor="setup-owner-username">
+          <Field label={t("Username")} htmlFor="setup-owner-username">
             <Input
               id="setup-owner-username"
               autoComplete="username"
@@ -651,7 +651,7 @@ export default function Setup() {
               onChange={(e) => setLocalUsername(e.currentTarget.value)}
             />
           </Field>
-          <Field label="Password" htmlFor="setup-owner-password">
+          <Field label={t("Password")} htmlFor="setup-owner-password">
             <Input
               id="setup-owner-password"
               type="password"
@@ -661,7 +661,7 @@ export default function Setup() {
             />
           </Field>
           <Button type="submit" disabled={saving || localDone || !localUsername || !localPassword}>
-            {localDone ? "Owner created" : "Create owner"}
+            {localDone ? t("Owner created") : t("Create owner")}
           </Button>
         </form>
       ) : null}
@@ -1223,7 +1223,9 @@ export default function Setup() {
           </div>
           <Alert variant="info">
             <AlertDescription>
-              Finishing setup locks this admin page to your owner account. You can reopen setup later from Connectivity.
+              {t(
+                "Finishing setup locks this admin page to your owner account. You can reopen setup later from Connectivity.",
+              )}
             </AlertDescription>
           </Alert>
         </div>

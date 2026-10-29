@@ -102,9 +102,7 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
         <div className="mb-6 flex flex-col items-center text-center">
           <EtherLogo className="w-48" />
           <h1 className="sr-only">{boot.serverName || "Ether"}</h1>
-          <p className="mt-4 text-sm text-fg-muted">
-            Sign in to the owner account.
-          </p>
+          <p className="mt-4 text-sm text-fg-muted">{t("Sign in to the owner account.")}</p>
         </div>
         {error ? (
           <Alert variant="destructive" className="mb-4" role="alert">
@@ -137,14 +135,14 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
           </p>
         ) : null}
         <form onSubmit={(e) => void localSignIn(e)} className="mt-5 space-y-3">
-          <Label htmlFor="local-username">Username</Label>
+          <Label htmlFor="local-username">{t("Username")}</Label>
           <Input
             id="local-username"
             autoComplete="username"
             value={username}
             onChange={(e) => setUsername(e.currentTarget.value)}
           />
-          <Label htmlFor="local-password">Password</Label>
+          <Label htmlFor="local-password">{t("Password")}</Label>
           <Input
             id="local-password"
             type="password"
@@ -158,12 +156,12 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
             className="w-full"
             disabled={busy || !username || !password}
           >
-            Sign in
+            {t("Sign in")}
           </Button>
         </form>
         <TokenFallback onReady={onReady} />
         <p className="mt-6 text-center text-xs text-fg-subtle">
-          Only the owner can access this console.
+          {t("Only the owner can access this console.")}
         </p>
       </Card>
     </main>

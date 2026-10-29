@@ -208,24 +208,24 @@ export function ClientRulesTab() {
         {draft ? (
           <SettingsSection title={t("Match")}>
             <SettingsRow
-              title="Protocol"
-              description="Choose which kind of app this rule matches."
+              title={t("Protocol")}
+              description={t("Choose which kind of app this rule matches.")}
               control={
                 <div className="w-56">
                   <SearchSelect
                     value={draft.protocol ?? ""}
                     onChange={(v) => set({ protocol: v || undefined })}
                     options={[
-                      { value: "", label: "Any protocol" },
+                      { value: "", label: t("Any protocol") },
                       { value: "plex", label: "Plex" },
                       { value: "jellyfin", label: "Jellyfin" },
                       { value: "emby", label: "Emby" },
                       { value: "silo", label: "Silo" },
                       { value: "stremio", label: "Stremio" },
-                      { value: "webdav", label: "Files" },
+                      { value: "webdav", label: t("Files") },
                       { value: "dlna", label: "DLNA" },
                     ]}
-                    ariaLabel="Protocol"
+                    ariaLabel={t("Protocol")}
                     searchable={false}
                   />
                 </div>
@@ -233,7 +233,7 @@ export function ClientRulesTab() {
             />
             <SettingsRow
               title={t("Device")}
-              description="The app’s product name."
+              description={t("The app’s product name.")}
               control={
                 <div className="w-56">
                   <SearchSelect
