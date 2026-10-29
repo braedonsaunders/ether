@@ -62,160 +62,8 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	embyRef := labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
 	defer embyRef.logout(t)
 	ctx := context.Background()
-	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
-	for y := 0; y < 180; y++ {
-		for x := 0; x < 320; x++ {
-			img.Set(x, y, color.RGBA{uint8(x), uint8(y), uint8(x + y), 255})
-		}
-	}
-	var jpegBytes bytes.Buffer
-	if err := jpeg.Encode(&jpegBytes, img, &jpeg.Options{Quality: 90}); err != nil {
-		t.Fatal(err)
-	}
-	tmdb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/3/images/") && strings.HasSuffix(r.URL.Path, "/fixture.jpg") {
-			w.Header().Set("Content-Type", "image/jpeg")
-			_, _ = w.Write(jpegBytes.Bytes())
-			return
-		}
-		if (strings.HasPrefix(r.URL.Path, "/3/movie/") || strings.HasPrefix(r.URL.Path, "/3/tv/")) && (strings.HasSuffix(r.URL.Path, "/recommendations") || strings.HasSuffix(r.URL.Path, "/similar")) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"page":1,"total_pages":1,"total_results":1,"results":[{"id":987654321,"title":"Future hidden title","name":"Future hidden title","release_date":"2099-01-01","first_air_date":"2099-01-01"}]}`)
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer tmdb.Close()
-	t.Setenv("ETHER_PARITY_TMDB_URL", tmdb.URL+"/3")
-	dir := t.TempDir()
-	ffmpeg, e := exec.LookPath("ffmpeg")
-	if e != nil {
-		t.Fatal("ffmpeg is required for the opt-in lab harness")
-	}
-	makeMedia := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "15", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", filepath.Join(dir, "parity.mp4"))
-	if output, e := makeMedia.CombinedOutput(); e != nil {
-		t.Fatalf("generate fixture media: %v: %s", e, output)
-	}
-	cfg, e := config.Open(dir)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = cfg.Update(func(c *config.Config) error {
-		c.SetupComplete = true
-		c.Catalog.TMDBKey = "fake-tmdb-key"
-		c.Plex.Token = "fixture-owner-token"
-		c.Transcode.FFmpegPath = ffmpeg
-		c.Server.MaxStreams = 30
-		for i := range c.Quality.Profiles {
-			c.Quality.Profiles[i].MinSizeMBPerMin = 0
-			c.Quality.Profiles[i].MaxSizeMBPerMin = 0
-		}
-		return nil
-	}); e != nil {
-		t.Fatal(e)
-	}
-	a, e := New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer a.Close()
-	imageConfig := &tmdbpkg.Configuration{}
-	imageConfig.Images.BaseURL = tmdb.URL + "/3/images/"
-	imageConfig.Images.SecureBaseURL = imageConfig.Images.BaseURL
-	a.tmdb.SetConfiguration(imageConfig)
-	if e = a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "fixture-owner-token"); e != nil {
-		t.Fatal(e)
-	}
-	viewer, e := a.users.Owner(ctx)
-	if e != nil {
-		t.Fatal(e)
-	}
-	local, _ := identity.NewLocal(a.db)
-	if e = local.Create(ctx, viewer.ID, "fixture-viewer", "fixture-password"); e != nil {
-		t.Fatal(e)
-	}
-	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People", nil)
-	request.Header.Set("X-Emby-Token", jellyfinRef.token)
-	request.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="lab-conform", Version="1", Token="`+jellyfinRef.token+`"`)
-	resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(request)
-	if e != nil {
-		t.Fatal("lab listing unavailable")
-	}
-	var listing struct {
-		Items []struct {
-			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating string
-			ProviderIds                                                           map[string]string
-			IndexNumber, ParentIndexNumber, ProductionYear                        int
-			RunTimeTicks                                                          int64
-			CommunityRating                                                       float64
-			Genres, ProductionLocations, Taglines                                 []string
-			Studios                                                               []struct{ Name string }
-			People                                                                []struct{ Name, Role, Type string }
-		}
-	}
-	e = json.NewDecoder(resp.Body).Decode(&listing)
-	resp.Body.Close()
-	if e != nil {
-		t.Fatal(e)
-	}
-	for _, x := range listing.Items {
-		tmdbID, _ := strconv.ParseInt(x.ProviderIds["Tmdb"], 10, 64)
-		tvdb, _ := strconv.ParseInt(x.ProviderIds["Tvdb"], 10, 64)
-		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
-		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
-		title.Genres, title.Countries = x.Genres, x.ProductionLocations
-		if len(x.Taglines) > 0 {
-			title.Tagline = x.Taglines[0]
-		}
-		for _, studio := range x.Studios {
-			title.Studios = append(title.Studios, studio.Name)
-		}
-		for _, person := range x.People {
-			p := core.Person{Name: person.Name, Role: person.Role}
-			switch person.Type {
-			case "Actor":
-				title.Cast = append(title.Cast, p)
-			case "Director":
-				title.Directors = append(title.Directors, p)
-			case "Writer":
-				title.Writers = append(title.Writers, p)
-			}
-		}
-		switch x.Type {
-		case "Movie":
-			if tmdbID == 0 {
-				continue
-			}
-			title.Key = core.MovieKey(tmdbID)
-			title.Type = core.TypeMovie
-		case "Series":
-			if tmdbID != 91461 {
-				continue
-			}
-			title.Key = core.ShowKey(tmdbID)
-			title.Type = core.TypeShow
-		case "Season":
-			title.Key = core.SeasonKey(91461, x.IndexNumber)
-			title.Type = core.TypeSeason
-			title.ShowKey = core.ShowKey(91461)
-			title.Season = x.IndexNumber
-		case "Episode":
-			title.Key = core.EpisodeKey(91461, x.ParentIndexNumber, x.IndexNumber)
-			title.Type = core.TypeEpisode
-			title.ShowKey = core.ShowKey(91461)
-			title.ShowIDs = core.IDs{TMDB: 91461}
-			title.Season = x.ParentIndexNumber
-			title.Episode = x.IndexNumber
-		default:
-			continue
-		}
-		if e = a.catalog.UpsertTitle(ctx, title, true); e != nil {
-			t.Fatal(e)
-		}
-	}
-	if _, err := a.catalog.Similar(ctx, core.MovieKey(10378), 5); err != nil {
-		t.Fatal(err)
-	}
+	a, viewer, cleanup := newAlignedLabFixture(t, jellyfinRef)
+	defer cleanup()
 	for _, spec := range []struct {
 		proto, client string
 		reference     labReferenceData
@@ -399,6 +247,173 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 
 		})
 	}
+}
+
+// newAlignedLabFixture supplies an isolated real app with fake playback and artwork for opt-in lab tests.
+func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData) (*App, *core.User, func()) {
+	t.Helper()
+	ctx := context.Background()
+	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	for y := 0; y < 180; y++ {
+		for x := 0; x < 320; x++ {
+			img.Set(x, y, color.RGBA{uint8(x), uint8(y), uint8(x + y), 255})
+		}
+	}
+	var jpegBytes bytes.Buffer
+	if err := jpeg.Encode(&jpegBytes, img, &jpeg.Options{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	tmdb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/3/images/") && strings.HasSuffix(r.URL.Path, "/fixture.jpg") {
+			w.Header().Set("Content-Type", "image/jpeg")
+			_, _ = w.Write(jpegBytes.Bytes())
+			return
+		}
+		if (strings.HasPrefix(r.URL.Path, "/3/movie/") || strings.HasPrefix(r.URL.Path, "/3/tv/")) && (strings.HasSuffix(r.URL.Path, "/recommendations") || strings.HasSuffix(r.URL.Path, "/similar")) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"page":1,"total_pages":1,"total_results":1,"results":[{"id":987654321,"title":"Future hidden title","name":"Future hidden title","release_date":"2099-01-01","first_air_date":"2099-01-01"}]}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Setenv("ETHER_PARITY_TMDB_URL", tmdb.URL+"/3")
+	dir := t.TempDir()
+	var a *App
+	cleanup := sync.OnceFunc(func() {
+		if a != nil {
+			a.Close()
+		}
+		tmdb.Close()
+	})
+	t.Cleanup(cleanup)
+	ffmpeg, e := exec.LookPath("ffmpeg")
+	if e != nil {
+		t.Fatal("ffmpeg is required for the opt-in lab harness")
+	}
+	makeMedia := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "15", "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", filepath.Join(dir, "parity.mp4"))
+	if output, e := makeMedia.CombinedOutput(); e != nil {
+		t.Fatalf("generate fixture media: %v: %s", e, output)
+	}
+	cfg, e := config.Open(dir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = cfg.Update(func(c *config.Config) error {
+		c.SetupComplete = true
+		c.Catalog.TMDBKey = "fake-tmdb-key"
+		c.Plex.Token = "fixture-owner-token"
+		c.Transcode.FFmpegPath = ffmpeg
+		c.Server.MaxStreams = 30
+		for i := range c.Quality.Profiles {
+			c.Quality.Profiles[i].MinSizeMBPerMin = 0
+			c.Quality.Profiles[i].MaxSizeMBPerMin = 0
+		}
+		return nil
+	}); e != nil {
+		t.Fatal(e)
+	}
+	a, e = New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if e != nil {
+		t.Fatal(e)
+	}
+	imageConfig := &tmdbpkg.Configuration{}
+	imageConfig.Images.BaseURL = tmdb.URL + "/3/images/"
+	imageConfig.Images.SecureBaseURL = imageConfig.Images.BaseURL
+	a.tmdb.SetConfiguration(imageConfig)
+	if e = a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "fixture-owner-token"); e != nil {
+		t.Fatal(e)
+	}
+	viewer, e := a.users.Owner(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	local, _ := identity.NewLocal(a.db)
+	if e = local.Create(ctx, viewer.ID, "fixture-viewer", "fixture-password"); e != nil {
+		t.Fatal(e)
+	}
+	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People", nil)
+	request.Header.Set("X-Emby-Token", jellyfinRef.token)
+	request.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="lab-conform", Version="1", Token="`+jellyfinRef.token+`"`)
+	resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(request)
+	if e != nil {
+		t.Fatal("lab listing unavailable")
+	}
+	var listing struct {
+		Items []struct {
+			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating string
+			ProviderIds                                                           map[string]string
+			IndexNumber, ParentIndexNumber, ProductionYear                        int
+			RunTimeTicks                                                          int64
+			CommunityRating                                                       float64
+			Genres, ProductionLocations, Taglines                                 []string
+			Studios                                                               []struct{ Name string }
+			People                                                                []struct{ Name, Role, Type string }
+		}
+	}
+	e = json.NewDecoder(resp.Body).Decode(&listing)
+	resp.Body.Close()
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, x := range listing.Items {
+		tmdbID, _ := strconv.ParseInt(x.ProviderIds["Tmdb"], 10, 64)
+		tvdb, _ := strconv.ParseInt(x.ProviderIds["Tvdb"], 10, 64)
+		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
+		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
+		title.Genres, title.Countries = x.Genres, x.ProductionLocations
+		if len(x.Taglines) > 0 {
+			title.Tagline = x.Taglines[0]
+		}
+		for _, studio := range x.Studios {
+			title.Studios = append(title.Studios, studio.Name)
+		}
+		for _, person := range x.People {
+			p := core.Person{Name: person.Name, Role: person.Role}
+			switch person.Type {
+			case "Actor":
+				title.Cast = append(title.Cast, p)
+			case "Director":
+				title.Directors = append(title.Directors, p)
+			case "Writer":
+				title.Writers = append(title.Writers, p)
+			}
+		}
+		switch x.Type {
+		case "Movie":
+			if tmdbID == 0 {
+				continue
+			}
+			title.Key = core.MovieKey(tmdbID)
+			title.Type = core.TypeMovie
+		case "Series":
+			if tmdbID != 91461 {
+				continue
+			}
+			title.Key = core.ShowKey(tmdbID)
+			title.Type = core.TypeShow
+		case "Season":
+			title.Key = core.SeasonKey(91461, x.IndexNumber)
+			title.Type = core.TypeSeason
+			title.ShowKey = core.ShowKey(91461)
+			title.Season = x.IndexNumber
+		case "Episode":
+			title.Key = core.EpisodeKey(91461, x.ParentIndexNumber, x.IndexNumber)
+			title.Type = core.TypeEpisode
+			title.ShowKey = core.ShowKey(91461)
+			title.ShowIDs = core.IDs{TMDB: 91461}
+			title.Season = x.ParentIndexNumber
+			title.Episode = x.IndexNumber
+		default:
+			continue
+		}
+		if e = a.catalog.UpsertTitle(ctx, title, true); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if _, err := a.catalog.Similar(ctx, core.MovieKey(10378), 5); err != nil {
+		t.Fatal(err)
+	}
+	return a, viewer, cleanup
 }
 
 type labReferenceData struct {
