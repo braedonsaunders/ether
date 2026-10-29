@@ -829,7 +829,8 @@ ON CONFLICT(plex_id) DO UPDATE SET
 	title=CASE WHEN excluded.title<>'' THEN excluded.title ELSE auth_users.title END,
 	email=CASE WHEN excluded.email<>'' THEN excluded.email ELSE auth_users.email END,
 	thumb=CASE WHEN excluded.thumb<>'' THEN excluded.thumb ELSE auth_users.thumb END,
-	is_owner=1, active=1, owner_enabled=1, plex_shared=1, origin='owner', updated_at=excluded.updated_at`,
+	is_owner=1, active=1, owner_enabled=1, plex_shared=1, origin='owner', updated_at=excluded.updated_at
+WHERE auth_users.origin<>'dlna_guest'`,
 		a.ID, a.UUID, a.Username, title, a.Email, a.Thumb, b2i(a.Home), now, now); err != nil {
 		return fmt.Errorf("auth: save owner: %w", err)
 	}
@@ -904,6 +905,7 @@ ON CONFLICT(plex_id) DO UPDATE SET
  active=CASE WHEN auth_users.is_owner=1 THEN 1 WHEN auth_users.owner_enabled=1 THEN excluded.active ELSE 0 END,
 	origin=CASE WHEN auth_users.origin='owner' THEN auth_users.origin ELSE 'friend' END,
 	plex_sections=excluded.plex_sections, updated_at=excluded.updated_at
+WHERE auth_users.origin<>'dlna_guest'
 RETURNING id`,
 				f.PlexID, f.UUID, f.Username, f.DisplayName(), f.Email, f.Thumb, b2i(f.Home), b2i(f.Restricted),
 				b2i(!f.Pending), b2i(!f.Pending), string(secs), now, now, f.Title, f.Title).Scan(&uid); err != nil {

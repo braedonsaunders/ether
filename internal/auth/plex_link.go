@@ -19,7 +19,7 @@ func init() {
 // to another viewer. It runs inside the same transaction as membership sync.
 func upsertPlexLink(ctx context.Context, tx *sql.Tx, plexID int64, display string, now int64) error {
 	res, err := tx.ExecContext(ctx, `INSERT INTO identity_links(viewer_id,provider,subject,display,verified_at)
- SELECT id,'plex',?,?,? FROM auth_users WHERE plex_id=?
+ SELECT id,'plex',?,?,? FROM auth_users WHERE plex_id=? AND origin<>'dlna_guest'
  ON CONFLICT(provider,subject) DO UPDATE SET display=excluded.display,verified_at=excluded.verified_at
  WHERE identity_links.viewer_id=excluded.viewer_id`, strconv.FormatInt(plexID, 10), display, now, plexID)
 	if err != nil {
@@ -44,7 +44,7 @@ func backfillPlexLinks(ctx context.Context, db *sql.DB) error {
 	}
 	defer tx.Rollback()
 	_, err = tx.ExecContext(ctx, `INSERT INTO identity_links(viewer_id,provider,subject,display,verified_at)
- SELECT id,'plex',CAST(plex_id AS TEXT),title,updated_at FROM auth_users WHERE plex_id IS NOT NULL
+ SELECT id,'plex',CAST(plex_id AS TEXT),title,updated_at FROM auth_users WHERE plex_id IS NOT NULL AND origin<>'dlna_guest'
  ON CONFLICT(provider,subject) DO NOTHING`)
 	if err != nil {
 		return fmt.Errorf("auth: backfill Plex identities: %w", err)

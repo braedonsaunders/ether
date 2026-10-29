@@ -9,6 +9,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/safety"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -170,5 +171,37 @@ func TestGuestOriginRejectsLegacyPlexAndDelegationCredentials(t *testing.T) {
 	}
 	if _, err = service.ActiveUser(ctx, id); err != nil {
 		t.Fatalf("guest unavailable to DLNA: %v", err)
+	}
+}
+
+func TestGuestCannotBeBackfilledOrPromotedToPlexOwner(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	local, err := identity.NewLocal(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := local.CreateDLNAGuest(ctx, "Guest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE auth_users SET plex_id=123 WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	service, err := auth.New(ctx, db, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_links WHERE viewer_id=? AND provider='plex'`, id).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("backfilled guest Plex link: %d %v", count, err)
+	}
+	if err = service.SetOwner(ctx, plextv.Account{ID: 123, Username: "guest"}, "server-token"); err == nil {
+		t.Fatal("guest promoted to Plex owner")
+	}
+	var origin string
+	var owner int
+	if err = db.QueryRowContext(ctx, `SELECT origin,is_owner FROM auth_users WHERE id=?`, id).Scan(&origin, &owner); err != nil || origin != "dlna_guest" || owner != 0 {
+		t.Fatalf("guest changed: %q %d %v", origin, owner, err)
 	}
 }
