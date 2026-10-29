@@ -151,3 +151,9 @@ func TestValidateFixture(t *testing.T) {
 		t.Fatal("undocumented path accepted")
 	}
 }
+func TestRecordRejectsEmptyCorpus(t *testing.T) {
+	_, err := record(conformplex.Protocol{}, nil, "http://unused", "", t.TempDir(), "web", "/no-such-route", time.Second, 1)
+	if err == nil {
+		t.Fatal("empty recording was reported as success")
+	}
+}

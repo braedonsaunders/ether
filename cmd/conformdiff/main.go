@@ -218,6 +218,10 @@ func record(p pmsconform.Protocol, variables map[string]string, base, token, out
 	report := pmsconform.Report{}
 	var mu sync.Mutex
 	for _, profile := range profiles(p, sel) {
+		requests := corpus(p, profile, only)
+		if len(requests) == 0 {
+			return report, fmt.Errorf("no requests match client %q and filter %q", profile, only)
+		}
 		// A partial recording reuses the saved IDs so the new fixtures
 		// describe the same items as the rest of the set.
 		ids, e := loadDiscovery(out, profile)
@@ -268,7 +272,7 @@ func record(p pmsconform.Protocol, variables map[string]string, base, token, out
 				}
 			}()
 		}
-		for _, req := range corpus(p, profile, only) {
+		for _, req := range requests {
 			for _, jm := range p.Formats() {
 				jobs <- job{req, jm}
 			}
@@ -287,7 +291,11 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 	defer cancel()
 	out := pmsconform.Report{}
 	for _, profile := range profiles(p, sel) {
-		for _, req := range corpus(p, profile, only) {
+		requests := corpus(p, profile, only)
+		if len(requests) == 0 {
+			return out, fmt.Errorf("no requests match client %q and filter %q", profile, only)
+		}
+		for _, req := range requests {
 			found := false
 			for _, endpoint := range out.Endpoints {
 				if endpoint == req.Path {
@@ -349,7 +357,7 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 			}()
 		}
 		go func() {
-			for _, req := range corpus(p, profile, only) {
+			for _, req := range requests {
 				for _, jm := range p.Formats() {
 					jobs <- job{req, jm}
 				}
