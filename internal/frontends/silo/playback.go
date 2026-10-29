@@ -450,7 +450,7 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 	}
 	state := "available"
 	_, hasDeviceIdentity := i.host.Identity.(deviceIdentity)
-	_, hasScopedMedia := i.host.Sessions.(scopedMedia)
+	_, hasScopedMedia := i.host.Sessions.(frontend.ScopedMedia)
 	allowed := i.host.Sessions != nil && i.host.Capabilities != nil && hasDeviceIdentity && hasScopedMedia
 	if !allowed {
 		state = "not_configured"
@@ -474,12 +474,6 @@ func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Re
 }
 
 type sharedPrefix struct{}
-
-// scopedMedia binds the authenticated device to the exact broker session.
-// Its policy checks are performed by the broker on every media request.
-type scopedMedia interface {
-	ServeMediaAccess(http.ResponseWriter, *http.Request, frontend.SessionAccess)
-}
 
 func (i *instance) playbackRoutes() error {
 	if err := i.router.Handle("GET", "/api/v2/playback/sessions/control/capabilities", http.HandlerFunc(i.playbackControlCapabilities)); err != nil {
@@ -518,7 +512,7 @@ func (i *instance) playbackRoutes() error {
 				http.NotFound(w, r)
 				return
 			}
-			media, ok := i.host.Sessions.(scopedMedia)
+			media, ok := i.host.Sessions.(frontend.ScopedMedia)
 			if !ok {
 				http.Error(w, "Unavailable", 503)
 				return
