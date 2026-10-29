@@ -109,7 +109,7 @@
       {
         "name": "HLS playlist",
         "method": "GET",
-        "path": "/Videos/${item_id}/master.m3u8?DeviceId=${device_id}"
+        "path": "/Videos/${item_id}/master.m3u8?DeviceId=${device_id}&MediaSourceId=${media_source_id}&PlaySessionId=${play_session_id}"
       }
     ],
     "progress_reporting": [
