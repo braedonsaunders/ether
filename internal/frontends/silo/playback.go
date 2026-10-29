@@ -429,6 +429,22 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 }
 
 func playbackError(w http.ResponseWriter, err error) {
+	if errors.Is(err, frontend.ErrSessionBusy) {
+		var busy *frontend.SessionBusyError
+		if errors.As(err, &busy) && busy.RetryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(busy.RetryAfter.Seconds()))))
+		}
+		requestID, idErr := controlCommandID()
+		if idErr != nil {
+			http.Error(w, "Playback unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("X-Request-ID", requestID)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "about:blank", "title": "Playback temporarily unavailable", "status": 503, "detail": "Playback admission is busy; retry later.", "instance": "urn:silo:request:" + requestID})
+		return
+	}
 	if errors.Is(err, frontend.ErrTranscodeCapacity) {
 		var cap *frontend.TranscodeCapacityError
 		if errors.As(err, &cap) && cap.RetryAfter > 0 {

@@ -19,6 +19,25 @@ import (
 
 type fileIDs struct{}
 
+func TestPlaybackAdmissionBusyReturnsRetryableProblem(t *testing.T) {
+	w := httptest.NewRecorder()
+	playbackError(w, &frontend.SessionBusyError{RetryAfter: 1500 * time.Millisecond})
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "2" || w.Header().Get("Content-Type") != "application/problem+json" || strings.Contains(w.Body.String(), "transcode") {
+		t.Fatalf("busy response: %d %v %s", w.Code, w.Header(), w.Body.String())
+	}
+	if data, err := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", ""); err == nil {
+		doc, err := openapi.Parse(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = doc.Validate("POST", "/api/v2/playback/start", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
 type fakeBroker = frontendtest.Sessions
 type testScopedMedia struct{ fakeBroker }
 
