@@ -217,6 +217,7 @@ func readResourceSample(cgroup, proc string) (resourceSample, error) {
 			continue
 		}
 		var parent string
+		seenRSS, seenThreads, seenParent := false, false, false
 		for _, line := range strings.Split(status, "\n") {
 			v := strings.Fields(line)
 			if len(v) < 2 {
@@ -224,8 +225,10 @@ func readResourceSample(cgroup, proc string) (resourceSample, error) {
 			}
 			switch v[0] {
 			case "PPid:":
+				seenParent = true
 				parent = v[1]
 			case "VmRSS:":
+				seenRSS = true
 				n, e := strconv.ParseUint(v[1], 10, 64)
 				if e != nil {
 					s.ProcessReadErrors++
@@ -233,6 +236,7 @@ func readResourceSample(cgroup, proc string) (resourceSample, error) {
 					s.RSSSum += n * 1024
 				}
 			case "Threads:":
+				seenThreads = true
 				n, e := strconv.Atoi(v[1])
 				if e != nil {
 					s.ProcessReadErrors++
@@ -240,6 +244,9 @@ func readResourceSample(cgroup, proc string) (resourceSample, error) {
 					s.Threads += n
 				}
 			}
+		}
+		if !seenRSS || !seenThreads || !seenParent {
+			s.ProcessReadErrors++
 		}
 		if ids[parent] {
 			s.ChildCount++
