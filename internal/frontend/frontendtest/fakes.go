@@ -331,7 +331,7 @@ func (f Preferences) Get(ctx context.Context, v *core.Viewer, client, key string
 	if f.GetFunc != nil {
 		return f.GetFunc(ctx, v, client, key)
 	}
-	return nil, core.ErrNotFound
+	return nil, frontend.ErrPreferencesNotFound
 }
 func (f Preferences) Put(ctx context.Context, v *core.Viewer, client, key string, data json.RawMessage) error {
 	if f.PutFunc != nil {

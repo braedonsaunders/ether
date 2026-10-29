@@ -48,7 +48,7 @@ func (s Preferences) Get(ctx context.Context, viewer *core.Viewer, client, key s
 	var raw string
 	err := s.db.QueryRowContext(ctx, `SELECT p.value FROM frontend_preferences p JOIN auth_users u ON u.id=p.viewer_id WHERE p.viewer_id=? AND p.surface=? AND p.client=? AND p.pref_key=? AND u.active=1`, viewer.ID, string(s.surface), client, key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, core.ErrNotFound
+		return nil, frontend.ErrPreferencesNotFound
 	}
 	if err != nil {
 		return nil, err
