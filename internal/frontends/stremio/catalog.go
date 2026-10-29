@@ -141,7 +141,10 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		id := "tmdb:" + strconv.FormatInt(title.IDs.TMDB, 10)
-		meta := map[string]any{"id": id, "type": typ, "name": title.Title, "description": title.Summary, "releaseInfo": strconv.Itoa(title.Year)}
+		meta := map[string]any{"id": id, "type": typ, "name": title.Title, "description": title.Summary}
+		if title.Year > 0 {
+			meta["releaseInfo"] = strconv.Itoa(title.Year)
+		}
 		if poster := posters[title.Key]; poster != "" {
 			meta["poster"] = poster
 		}

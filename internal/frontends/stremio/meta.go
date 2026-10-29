@@ -39,7 +39,10 @@ func (i *instance) meta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := detail.Title
-	meta := map[string]any{"id": strings.TrimSuffix(raw, ".json"), "type": typ, "name": title.Title, "description": title.Summary, "releaseInfo": strconv.Itoa(title.Year), "genres": title.Genres}
+	meta := map[string]any{"id": strings.TrimSuffix(raw, ".json"), "type": typ, "name": title.Title, "description": title.Summary, "genres": title.Genres}
+	if title.Year > 0 {
+		meta["releaseInfo"] = strconv.Itoa(title.Year)
+	}
 	if poster := i.artwork(r, credential, device, []frontend.Title{title})[title.Key]; poster != "" {
 		meta["poster"] = poster
 	}
