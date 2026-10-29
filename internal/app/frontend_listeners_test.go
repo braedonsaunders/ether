@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"syscall"
 	"testing"
 )
@@ -128,5 +129,66 @@ func TestFrontendConnectionURLs(t *testing.T) {
 	}
 	if got := connectionURLs("[2001:db8::1]:8090", "", nil); len(got) != 1 || got[0] != "http://[2001:db8::1]:8090" {
 		t.Fatal(got)
+	}
+}
+
+type sharedFrontend struct {
+	id     frontend.Protocol
+	prefix string
+}
+
+func (f sharedFrontend) Describe() frontend.Descriptor { return frontend.Descriptor{ID: f.id} }
+func (f sharedFrontend) Mount(context.Context, frontend.Host) (frontend.Instance, error) {
+	return sharedInstance(f), nil
+}
+
+type sharedInstance sharedFrontend
+
+func (i sharedInstance) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, string(i.id)) })
+}
+func (i sharedInstance) Listeners() []frontend.ListenerSpec {
+	return []frontend.ListenerSpec{{Shared: true, PathPrefix: i.prefix}}
+}
+func (i sharedInstance) Discovery() []frontend.Announcer        { return nil }
+func (i sharedInstance) Status(context.Context) frontend.Status { return frontend.Status{} }
+func (i sharedInstance) Close(context.Context) error            { return nil }
+func TestSharedFrontendPaths(t *testing.T) {
+	ctx := context.Background()
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	m := newFrontendListeners(reg)
+	for _, f := range []sharedFrontend{{"files", "/files"}, {"nested", "/files/media"}, {"conflict", "/files"}, {"owner", "/ether/test"}} {
+		if err := reg.Register(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.start(ctx, "files"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.start(ctx, "nested"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.start(ctx, "conflict"); err == nil {
+		t.Fatal("duplicate prefix accepted")
+	}
+	if err := m.start(ctx, "owner"); err == nil {
+		t.Fatal("owner console path accepted")
+	}
+	for path, want := range map[string]string{"/files": "files", "/files/media/x": "nested"} {
+		handler := m.sharedHandler(path)
+		if handler == nil {
+			t.Fatal(path)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Body.String() != want {
+			t.Fatal(path, w.Body.String())
+		}
+	}
+	if m.sharedHandler("/files-other") != nil || m.sharedHandler("/else") != nil {
+		t.Fatal("matched outside prefix")
+	}
+	if err := m.close(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -111,7 +111,8 @@ type Subscriber interface {
 	Subscribe(context.Context, EventScope) (<-chan Event, error)
 }
 
-// Images serves artwork through an explicit host-owned boundary.
+// Images serves TMDB artwork via GET or HEAD with query parameters path and w.
+// Frontends must authorize access to the item before calling it.
 type Images interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }

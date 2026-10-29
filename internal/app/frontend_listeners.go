@@ -26,11 +26,12 @@ type frontendListeners struct {
 	failures map[frontend.Protocol]string
 }
 type runningFrontend struct {
-	servers    []*http.Server
-	listeners  []net.Listener
-	announcers []frontend.Announcer
-	warnings   []string
-	prefixes   []string
+	servers        []*http.Server
+	listeners      []net.Listener
+	announcers     []frontend.Announcer
+	warnings       []string
+	prefixes       []string
+	sharedPrefixes []string
 }
 
 func newFrontendListeners(r *frontend.Registry) *frontendListeners {
@@ -64,6 +65,30 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 	}
 	for _, spec := range inst.Listeners() {
 		if spec.Shared {
+			if inst.Handler() == nil {
+				err = errors.New("frontend returned nil handler")
+				break
+			}
+			if id != "plex" {
+				prefix := strings.TrimSuffix(spec.PathPrefix, "/")
+				if prefix == "" || !strings.HasPrefix(prefix, "/") || prefix == "/ether" || strings.HasPrefix(prefix, "/ether/") {
+					err = errors.New("invalid shared listener path")
+					break
+				}
+				m.mu.Lock()
+				for _, running := range m.running {
+					for _, existing := range running.sharedPrefixes {
+						if existing == prefix {
+							err = errors.New("shared listener path already in use")
+						}
+					}
+				}
+				m.mu.Unlock()
+				if err != nil {
+					break
+				}
+				run.sharedPrefixes = append(run.sharedPrefixes, prefix)
+			}
 			continue
 		}
 		if spec.TLS {
@@ -138,6 +163,29 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 				m.mu.Unlock()
 			}
 		}()
+	}
+	return nil
+}
+
+// sharedHandler chooses the longest mounted path, leaving the owner console
+// and Plex's root handler to the app's main mux.
+func (m *frontendListeners) sharedHandler(path string) http.Handler {
+	m.mu.Lock()
+	var chosen frontend.Protocol
+	longest := 0
+	for id, running := range m.running {
+		for _, prefix := range running.sharedPrefixes {
+			if (path == prefix || strings.HasPrefix(path, prefix+"/")) && len(prefix) > longest {
+				chosen, longest = id, len(prefix)
+			}
+		}
+	}
+	m.mu.Unlock()
+	if longest == 0 {
+		return nil
+	}
+	if instance, ok := m.registry.Instance(chosen); ok {
+		return instance.Handler()
 	}
 	return nil
 }

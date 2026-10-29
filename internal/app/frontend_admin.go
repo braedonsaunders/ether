@@ -15,12 +15,13 @@ import (
 
 // frontendControl persists desired state and reconciles it on each node.
 type frontendControl struct {
-	registry    *frontend.Registry
-	listeners   *frontendListeners
-	config      *config.Store
-	mu          sync.Mutex
-	applied     map[frontend.Protocol]listenerSettings
-	clientCount func(context.Context, frontend.Protocol) (int, bool)
+	registry     *frontend.Registry
+	listeners    *frontendListeners
+	config       *config.Store
+	mu           sync.Mutex
+	applied      map[frontend.Protocol]listenerSettings
+	clientCount  func(context.Context, frontend.Protocol) (int, bool)
+	sharedStatus func(frontend.Protocol, *frontend.Status)
 }
 type listenerSettings struct{ Port, Discovery any }
 
@@ -44,6 +45,9 @@ func (f *frontendControl) List(ctx context.Context) ([]admin.FrontendInfo, error
 			enabled = true
 		}
 		status := f.listeners.status(ctx, d.ID)
+		if f.sharedStatus != nil {
+			f.sharedStatus(d.ID, &status)
+		}
 		if f.clientCount != nil {
 			status.Clients24h, status.Clients24hKnown = f.clientCount(ctx, d.ID)
 		}

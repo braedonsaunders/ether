@@ -48,6 +48,29 @@ func TestPlexRegistryTogglePreservesHandler(t *testing.T) {
 		t.Fatal("Plex response changed after remount")
 	}
 }
+
+func TestSharedFrontendRemainsAvailableWhenPlexIsOff(t *testing.T) {
+	a := setupTestApp(t, true)
+	if err := a.frontends.registry.Register(sharedFrontend{"files", "/files"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.frontends.control.listeners.start(context.Background(), "files"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.frontends.control.Toggle(context.Background(), "plex", false); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/files/one", nil))
+	if w.Code != http.StatusOK || w.Body.String() != "files" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/identity", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatal(w.Code)
+	}
+}
 func TestPlexFrontendStatusUsesMainListener(t *testing.T) {
 	a := setupTestApp(t, true)
 	a.frontends.mu.Lock()

@@ -52,7 +52,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: sessions.NewEventBus(a.clusterNode(), a.users.ActiveUser), discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
-		return frontend.Host{Identity: frontend.BindIdentity(resolver, id), Events: r.events, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, Config: func() frontend.Settings {
+		return frontend.Host{Identity: frontend.BindIdentity(resolver, id), Events: r.events, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, Config: func() frontend.Settings {
 			settings, err := r.control.Settings(r.ctx, id)
 			if err != nil {
 				return frontend.Settings{}
@@ -62,6 +62,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.clientCount = a.frontendClients.count
+	r.control.sharedStatus = r.sharedStatus
 	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		r.events.Close()
 		cancel()
@@ -78,6 +79,10 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 }
 func (r *frontendRuntime) plexHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if handler := r.control.listeners.sharedHandler(req.URL.Path); handler != nil {
+			handler.ServeHTTP(w, req)
+			return
+		}
 		inst, ok := r.registry.Instance("plex")
 		if !ok {
 			http.NotFound(w, req)
@@ -95,6 +100,30 @@ func (r *frontendRuntime) plexListeners() []frontend.ListenerSpec {
 		address = addr.String()
 	}
 	return []frontend.ListenerSpec{{Address: address, PathPrefix: "/", Shared: true}}
+}
+
+func (r *frontendRuntime) sharedStatus(id frontend.Protocol, status *frontend.Status) {
+	if id == "plex" {
+		return
+	}
+	instance, ok := r.registry.Instance(id)
+	if !ok {
+		return
+	}
+	r.mu.Lock()
+	addr := r.mainAddr
+	r.mu.Unlock()
+	if addr == nil {
+		return
+	}
+	for _, spec := range instance.Listeners() {
+		if !spec.Shared {
+			continue
+		}
+		status.Addresses = append(status.Addresses, addr.String()+spec.PathPrefix)
+		addresses, _ := net.InterfaceAddrs()
+		status.ConnectURLs = append(status.ConnectURLs, connectionURLs(addr.String(), spec.PathPrefix, addresses)...)
+	}
 }
 func (r *frontendRuntime) plexStatus(context.Context) frontend.Status {
 	r.mu.Lock()
