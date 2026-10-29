@@ -10,9 +10,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/markers"
 )
 
-// MarkerSource finds ranges in an already-probed release. It does not resolve media.
+// MarkerSource finds locally cached ranges in an already-probed release.
 type MarkerSource interface {
-	Markers(context.Context, core.RatingKey, core.MediaInfo) ([]markers.Marker, error)
+	CachedMarkers(context.Context, core.RatingKey, core.MediaInfo) ([]markers.Marker, error)
 }
 
 // MarkerMedia selects an existing source only for the authenticated viewer,
@@ -36,7 +36,7 @@ func ItemMarkers(ctx context.Context, source MarkerSource, key core.RatingKey, i
 	}
 	ranges := markers.FromChapters(info)
 	if source != nil {
-		found, err := source.Markers(ctx, key, info)
+		found, err := source.CachedMarkers(ctx, key, info)
 		if err == nil || len(found) > 0 {
 			ranges = found
 		}

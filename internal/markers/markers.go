@@ -163,6 +163,20 @@ func (s *Service) Markers(ctx context.Context, key core.RatingKey, info core.Med
 	return s.applyStingers(ctx, key, info, out), err
 }
 
+// CachedMarkers uses chapters and locally cached ranges only. It never fetches
+// or aligns remote markers, making it safe for non-resolving detail pages.
+func (s *Service) CachedMarkers(ctx context.Context, key core.RatingKey, info core.MediaInfo) ([]Marker, error) {
+	if info.Estimated || info.Duration <= 0 {
+		return nil, nil
+	}
+	out := FromChapters(info)
+	cached, ok, err := s.cached(ctx, key, info.Duration)
+	if err == nil && ok {
+		out = merge(out, cached)
+	}
+	return s.applyStingers(ctx, key, info, out), err
+}
+
 // applyStingers detects mid-/post-credits scenes (chapters first, then
 // resumed dialogue from already-available subtitle text) and cuts them
 // out of the credits markers.

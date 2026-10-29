@@ -2,6 +2,7 @@ package markers
 
 import (
 	"context"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 	"io"
@@ -48,6 +49,37 @@ func TestRemoteDurationCacheAndChapters(t *testing.T) {
 	m = FromChapters(info)
 	if len(m) != 1 || m[0].StartMS != 1000 {
 		t.Fatal(m)
+	}
+}
+
+type markerCountingTransport struct{ calls int }
+
+func (t *markerCountingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	t.calls++
+	return nil, errors.New("unexpected network request")
+}
+
+func TestCachedMarkersNeverFetchesOnMissOrHit(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	transport := &markerCountingTransport{}
+	s := New(Options{DB: db, Enabled: true, HTTPClient: &http.Client{Transport: transport}})
+	key := core.EpisodeKey(42, 1, 2)
+	info := core.MediaInfo{Duration: 10 * time.Minute, Chapters: []core.Chapter{{Title: "Intro", Start: time.Second, End: 20 * time.Second}}}
+	got, err := s.CachedMarkers(ctx, key, info)
+	if err != nil || len(got) != 1 || got[0].Type != "intro" || transport.calls != 0 {
+		t.Fatalf("cache miss: %+v, %v, calls=%d", got, err, transport.calls)
+	}
+	if err := s.Put(ctx, key, info.Duration, []Marker{{Type: "credits", StartMS: 500000, EndMS: 590000}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.CachedMarkers(ctx, key, info)
+	if err != nil || len(got) != 2 || got[1].Type != "credits" || transport.calls != 0 {
+		t.Fatalf("cache hit: %+v, %v, calls=%d", got, err, transport.calls)
 	}
 }
 

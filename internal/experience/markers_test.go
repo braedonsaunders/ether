@@ -17,7 +17,7 @@ type fakeMarkerSource struct {
 	err    error
 }
 
-func (s *fakeMarkerSource) Markers(_ context.Context, key core.RatingKey, _ core.MediaInfo) ([]markers.Marker, error) {
+func (s *fakeMarkerSource) CachedMarkers(_ context.Context, key core.RatingKey, _ core.MediaInfo) ([]markers.Marker, error) {
 	s.calls++
 	s.key = key
 	return append([]markers.Marker(nil), s.ranges...), s.err
