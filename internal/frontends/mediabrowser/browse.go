@@ -288,6 +288,7 @@ func (i *instance) browseRoutes() error {
 			for _, version := range d.Versions {
 				source := i.mediaSourceDTO(version.ID, version.Media)
 				source["Name"] = version.Name
+				i.versionSourceFacts(source, version)
 				i.mediaSourceDialect(source)
 				if i.protocol == "emby" {
 					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)
@@ -295,6 +296,7 @@ func (i *instance) browseRoutes() error {
 				sources = append(sources, source)
 			}
 			dto["MediaSources"] = sources
+			i.versionItemFacts(dto, d.Versions)
 		}
 		tags, backdrops := i.imageTags(r, d, token)
 		if len(tags) > 0 {
