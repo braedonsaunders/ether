@@ -3,10 +3,13 @@ package mediabrowser
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
+	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
@@ -140,5 +143,38 @@ func TestStreamAliasChecksSessionItemAndOmitsCredential(t *testing.T) {
 	}
 	if w := call(5); w.Code != 307 || calls != 1 || w.Header().Get("Location") != "/jellyfin/sessions/media/session/scoped/index.m3u8" || strings.Contains(w.Header().Get("Location"), "secret") {
 		t.Fatal(w.Code, w.Header(), calls)
+	}
+}
+
+func TestPlaybackQueryPassesSelectionsAndVerifiedPeer(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	capsCalled := false
+	planned := false
+	capabilities := frontendtest.Capabilities{BuildFunc: func(ctx context.Context, r frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
+		ip, ok := frontend.ClientIP(ctx)
+		if !ok || ip.String() != "192.0.2.1" || r.Profile.MaxStreamingBitrate != 4000000 {
+			t.Fatal(ip, r.Profile)
+		}
+		capsCalled = true
+		return frontend.CapabilityResult{}, nil
+	}}
+	broker := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
+		if r.Intent.Position != 2*time.Second || r.Intent.Options.AudioStream != 3 || r.Intent.Options.SubtitleStream != -1 || r.Intent.AllowTranscoding == nil || *r.Intent.AllowTranscoding {
+			t.Fatal(r.Intent)
+		}
+		planned = true
+		return frontend.PlayPlan{Estimated: true}, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: broker, Capabilities: capabilities, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.0.2.1"), true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?startTimeTicks=20000000&audioStreamIndex=3&subtitleStreamIndex=-1&maxStreamingBitrate=4000000&enableTranscoding=false", strings.NewReader(`{}`))
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !capsCalled || !planned {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }

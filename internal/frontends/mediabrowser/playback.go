@@ -151,6 +151,26 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
 			url = prefix + url
 		}
+		if subtitleService, ok := i.host.Sessions.(subtitleBroker); ok {
+			streams := mediaStreams(plan.Media.Streams)
+			for n, stream := range plan.Media.Streams {
+				if stream.Type != "subtitle" {
+					continue
+				}
+				subtitleURL, e := subtitleService.SubtitleURL(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, stream.Index, "vtt")
+				if e != nil || !strings.HasPrefix(subtitleURL, "/sessions/media/") || strings.ContainsAny(subtitleURL, "\r\n") {
+					continue
+				}
+				if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
+					subtitleURL = prefix + subtitleURL
+				}
+				dto := streams[n].(map[string]any)
+				dto["DeliveryUrl"] = subtitleURL
+				dto["DeliveryMethod"] = "External"
+				dto["SupportsExternalStream"] = true
+			}
+			source["MediaStreams"] = streams
+		}
 		playID = session.ID
 		if format == frontend.StreamDirect {
 			source["Path"] = url

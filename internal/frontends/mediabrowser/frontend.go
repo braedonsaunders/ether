@@ -79,6 +79,11 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 	if err := r.Handle("GET", "/LiveTv/Programs", http.HandlerFunc(inst.programmes)); err != nil {
 		return nil, err
 	}
+	for _, method := range []string{"GET", "HEAD"} {
+		if err := r.Handle(method, "/Videos/{id}/{source}/Subtitles/{index}/{name}", http.HandlerFunc(inst.subtitle)); err != nil {
+			return nil, err
+		}
+	}
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err
 	}
