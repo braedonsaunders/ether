@@ -63,4 +63,15 @@ func TestDLNAGuestIsPasswordlessAndSurfaceRestricted(t *testing.T) {
 	if err = local.LinkPlex(ctx, id, 123, "Plex"); err == nil {
 		t.Fatal("Plex link accepted")
 	}
+	quick, err := identity.NewQuickConnect(db, time.Minute, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := quick.Initiate(ctx, "jellyfin", core.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = quick.Approve(ctx, code, id); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("quick connect: %v", err)
+	}
 }

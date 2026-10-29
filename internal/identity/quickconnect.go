@@ -118,7 +118,7 @@ func (q *QuickConnect) ApproveSurface(ctx context.Context, surface, code string,
 }
 
 func (q *QuickConnect) approve(ctx context.Context, surface, code string, viewerID int64) error {
-	res, err := q.db.ExecContext(ctx, `UPDATE identity_quickconnect SET viewer_id=? WHERE code=? AND (?='' OR surface=?) AND viewer_id IS NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, viewerID, code, surface, surface, q.now().UnixMilli(), viewerID)
+	res, err := q.db.ExecContext(ctx, `UPDATE identity_quickconnect SET viewer_id=? WHERE code=? AND (?='' OR surface=?) AND viewer_id IS NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest')`, viewerID, code, surface, surface, q.now().UnixMilli(), viewerID)
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func (q *QuickConnect) poll(ctx context.Context, requestedSurface, secret string
 	now := q.now().UnixMilli()
 	var viewer int64
 	var surface, device, client, product, version string
-	err = tx.QueryRowContext(ctx, `UPDATE identity_quickconnect SET consumed=1 WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NOT NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1) RETURNING viewer_id,surface,device_id,client,product,version`, hash, requestedSurface, requestedSurface, now).Scan(&viewer, &surface, &device, &client, &product, &version)
+	err = tx.QueryRowContext(ctx, `UPDATE identity_quickconnect SET consumed=1 WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NOT NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1 AND origin<>'dlna_guest') RETURNING viewer_id,surface,device_id,client,product,version`, hash, requestedSurface, requestedSurface, now).Scan(&viewer, &surface, &device, &client, &product, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		var pending int
 		e := tx.QueryRowContext(ctx, `SELECT 1 FROM identity_quickconnect WHERE secret_hash=? AND (?='' OR surface=?) AND viewer_id IS NULL AND consumed=0 AND expires>?`, hash, requestedSurface, requestedSurface, now).Scan(&pending)
