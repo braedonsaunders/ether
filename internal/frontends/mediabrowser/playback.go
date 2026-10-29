@@ -273,7 +273,7 @@ func mediaSourceDTO(id string, media frontend.MediaInfo) map[string]any {
 		"Id": id, "Container": media.Container, "RunTimeTicks": media.Duration.Nanoseconds() / 100, "Size": media.Size, "Bitrate": media.BitrateKbps * 1000,
 		"Protocol": "Http", "Type": "Default", "IsRemote": true, "ReadAtNativeFramerate": false, "IgnoreDts": false, "IgnoreIndex": false, "GenPtsInput": false,
 		"SupportsDirectPlay": false, "SupportsDirectStream": false, "SupportsTranscoding": false, "IsInfiniteStream": false,
-		"RequiresOpening": false, "RequiresClosing": false, "RequiresLooping": false, "SupportsProbing": false, "TranscodingSubProtocol": "http", "HasSegments": false,
+		"RequiresOpening": false, "RequiresClosing": false, "RequiresLooping": false, "SupportsProbing": !media.Estimated && len(media.Streams) > 0, "TranscodingSubProtocol": "http", "HasSegments": false,
 		"Formats": []string{}, "MediaAttachments": []any{}, "RequiredHttpHeaders": map[string]string{}, "MediaStreams": mediaStreams(media.Streams),
 	}
 	addChapters(source, media)
