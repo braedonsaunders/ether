@@ -65,9 +65,27 @@ func (i *instance) requestStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	reply(w, 200, map[string]any{"requests_enabled": false, "rating_restrictions_enforced": false, "follow_supported": false, "season_requests_supported": false, "missing_seasons_requestable": false, "download_progress_supported": false, "watchlist_titles_supported": false, "watchlist_requests": false, "discover_rows_supported": false, "revision": "ether-v1", "state": "unsupported", "allowed": false})
 }
+
+func (i *instance) aiCapability(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/metadata-ai") {
+		reply(w, http.StatusOK, map[string]any{"revision": "ether-metadata-ai-v1", "state": "unsupported", "allowed": false, "on_view": "off"})
+		return
+	}
+	reply(w, http.StatusOK, map[string]any{"revision": "ether-subtitle-ai-v1", "state": "unsupported", "allowed": false, "enabled": false, "transcribe_enabled": false})
+}
 func (i *instance) publicRoutes() error {
 	if err := i.router.Handle("PATCH", "/api/v2/profiles/{id}", http.HandlerFunc(i.patchProfile)); err != nil {
 		return err
+	}
+	for _, path := range []string{"/api/v2/capabilities/metadata-ai", "/api/v2/subtitles/ai/status"} {
+		if err := i.router.Handle("GET", path, http.HandlerFunc(i.aiCapability)); err != nil {
+			return err
+		}
 	}
 	for _, e := range []struct {
 		path string

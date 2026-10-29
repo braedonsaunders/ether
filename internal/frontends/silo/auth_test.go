@@ -108,6 +108,8 @@ func TestCurrentClientCapabilityDiscovery(t *testing.T) {
 		{"/api/v2/auth/oauth/capabilities", `"state":"unsupported"`, false},
 		{"/api/v2/auth/external-sign-in/capabilities", `"state":"unsupported"`, false},
 		{"/api/v2/playback/sessions/control/capabilities", `"available":false`, true},
+		{"/api/v2/capabilities/metadata-ai", `"state":"unsupported"`, true},
+		{"/api/v2/subtitles/ai/status", `"enabled":false`, true},
 	} {
 		r := httptest.NewRequest("GET", tc.path, nil)
 		if tc.authenticated {
