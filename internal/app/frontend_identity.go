@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -41,6 +42,15 @@ func (s surfaceIdentity) ViewerTimes(ctx context.Context, credential string, tar
 	}
 	return s.times.Get(ctx, viewer.ID, target)
 }
+
+// ResolveDevice binds validation to the stored surface and device without writes.
+func (s surfaceIdentity) ResolveDevice(ctx context.Context, credential string, device core.Device) (*core.Viewer, time.Time, error) {
+	if s.surface == "" || s.surface == "plex" || s.grants == nil {
+		return nil, time.Time{}, core.ErrUnauthorized
+	}
+	return s.grants.ResolveDevice(ctx, string(s.surface), credential, device)
+}
+
 func (s surfaceIdentity) allow(ctx context.Context, limiter *identity.LoginLimiter, key string) error {
 	ip, ok := frontend.ClientIP(ctx)
 	if !ok || ip.IsUnspecified() || ip.IsMulticast() {
@@ -165,3 +175,5 @@ func (s surfaceIdentity) Revoke(ctx context.Context, credential string) error {
 func (surfaceIdentity) SetupComplete() bool { return identity.ProtocolSetupComplete() }
 
 var _ frontend.SurfaceIdentity = surfaceIdentity{}
+
+var _ frontend.DeviceIdentity = surfaceIdentity{}

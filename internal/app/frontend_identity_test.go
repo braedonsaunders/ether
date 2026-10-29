@@ -326,3 +326,42 @@ func TestSurfaceRefreshObservesActivityWithoutNewLogin(t *testing.T) {
 		t.Fatalf("timestamps=%+v err=%v", got, err)
 	}
 }
+
+func TestDeviceIdentityBindsSurfaceAndRejectsPlex(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	local, err := identity.NewLocal(a.db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewerID, err := local.CreateViewer(ctx, "device-check", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.users.RefreshViewers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 0)
+	grants, err := identity.NewGrants(a.db, a.users, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "apple-tv"}
+	token, err := grants.Issue(ctx, viewerID, nil, "silo", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	surface := surfaceIdentity{surface: "silo", grants: grants}
+	viewer, expires, err := surface.ResolveDevice(ctx, token, device)
+	if err != nil || viewer == nil || viewer.ID != viewerID || !expires.Equal(now.Add(time.Hour)) {
+		t.Fatalf("viewer=%+v expires=%s err=%v", viewer, expires, err)
+	}
+	surface.surface = "emby"
+	if _, _, err = surface.ResolveDevice(ctx, token, device); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("cross surface: %v", err)
+	}
+	surface.surface = "plex"
+	if _, _, err = surface.ResolveDevice(ctx, token, device); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("Plex grant: %v", err)
+	}
+}

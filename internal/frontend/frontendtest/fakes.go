@@ -339,6 +339,7 @@ type Identity struct {
 	IssueRefreshFunc  func(context.Context, string, core.Device) (string, error)
 	RefreshFunc       func(context.Context, string, core.Device) (string, string, error)
 	ResolveFunc       func(context.Context, string) (*core.Viewer, error)
+	ResolveDeviceFunc func(context.Context, string, core.Device) (*core.Viewer, time.Time, error)
 	ViewerTimesFunc   func(context.Context, string, int64) (frontend.ViewerTimes, error)
 	PublicViewersFunc func(context.Context) ([]frontend.PublicViewer, error)
 	SignInFunc        func(context.Context, string, string, core.Device) (string, error)
@@ -362,6 +363,12 @@ func (f Identity) ViewerTimes(ctx context.Context, credential string, viewerID i
 		return f.ViewerTimesFunc(ctx, credential, viewerID)
 	}
 	return frontend.ViewerTimes{}, frontend.ErrIdentityUnavailable
+}
+func (f Identity) ResolveDevice(ctx context.Context, credential string, device core.Device) (*core.Viewer, time.Time, error) {
+	if f.ResolveDeviceFunc != nil {
+		return f.ResolveDeviceFunc(ctx, credential, device)
+	}
+	return nil, time.Time{}, frontend.ErrIdentityUnavailable
 }
 func (f Identity) PublicViewers(ctx context.Context) ([]frontend.PublicViewer, error) {
 	if f.PublicViewersFunc != nil {
