@@ -195,15 +195,10 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 			if event.Type != "UserDataChanged" || i.host.Experience == nil {
 				continue
 			}
-			data, e := i.host.Experience.UserData(ctx, viewer, []frontend.RatingKey{event.Item})
-			if e != nil {
-				continue
-			}
-			st, ok := data[event.Item]
+			id, st, ok := i.eventUserData(ctx, viewer, device(r), event)
 			if !ok {
 				continue
 			}
-			id := ids.RatingKeyGUID(event.Item)
 			userID, _ := ids.GUID(ids.User, viewer.ID)
 			dataDTO := i.userDataDTO(id, st)
 			dataDTO["Key"] = id

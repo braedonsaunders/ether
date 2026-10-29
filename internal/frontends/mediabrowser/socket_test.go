@@ -127,6 +127,43 @@ func TestSocketUserDataUsesCurrentFavoriteAndRating(t *testing.T) {
 	}
 }
 
+func TestSocketPersonFavoriteUsesAuthorizedSubject(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	personID, _ := ids.GUID(ids.User, 12)
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	events := make(socketEvents, 1)
+	exp := frontendtest.Experience{ResolveEventSubjectFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, ref frontend.FavoriteRef) (frontend.ResolvedEventSubject, error) {
+		if v != viewer || ref.Kind != frontend.FavoritePerson || ref.ID != "tmdb:12" {
+			return frontend.ResolvedEventSubject{}, errors.New("denied")
+		}
+		return frontend.ResolvedEventSubject{Ref: ref, PersonFacetID: personID, Favorite: true}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Events: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(inst.Handler())
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/socket?api_key=grant", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	if _, _, err = c.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	events <- frontend.Event{Type: "UserDataChanged", SubjectKind: "person", SubjectID: "tmdb:12"}
+	_, body, err := c.Read(ctx)
+	if err != nil || !strings.Contains(string(body), personID) || !strings.Contains(string(body), `"IsFavorite":true`) {
+		t.Fatal(string(body), err)
+	}
+	if _, _, ok := inst.(*instance).eventUserData(ctx, viewer, frontend.Device{}, frontend.Event{SubjectKind: "person", SubjectID: "tmdb:13"}); ok {
+		t.Fatal("unauthorized person event accepted")
+	}
+}
+
 func TestSocketPlaystateUsesTargetedBrokerCommand(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
