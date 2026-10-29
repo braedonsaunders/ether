@@ -21,6 +21,9 @@ Downloads: not supported.
 | Jellyfin for Android TV | Pending | — | — | — | — | — | — | — | — |
 | Swiftfin | Pending | — | — | — | — | — | — | — | — |
 | Findroid | Pending | — | — | — | — | — | — | — | — |
+| Streamyfin | Pending | — | — | — | — | — | — | — | — |
+| JellyCon | Pending | — | — | — | — | — | — | — | — |
+| Jellyfin for Roku | Pending | — | — | — | — | — | — | — | — |
 | Emby apps | Pending | — | — | — | — | — | — | — | — |
 
 Jellyfin for Android phones and Jellyfin Desktop are unsupported: they wrap
