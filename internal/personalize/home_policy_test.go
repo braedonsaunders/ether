@@ -150,3 +150,30 @@ func TestPolicyHomeChecksLiveContinue(t *testing.T) {
 		}
 	}
 }
+
+func TestRestrictedSectionHomeLeadUsesVisibleHome(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	viewer := &core.User{ID: 1}
+	sciFiFan(h, 1)
+	h.rebuild(*viewer)
+	hc := hubContext(testNow, core.DeviceTV)
+	layout := h.e.layoutForContext(ctx)
+	legacy := h.e.homeLeadFor(ctx, viewer, hc, layout, 12, false, nil)
+	var blocked core.RatingKey
+	for key := range legacy.keys {
+		blocked = key
+		break
+	}
+	if blocked == 0 {
+		t.Fatal("fixture has no Home lead")
+	}
+	filtered := h.e.homeLeadFor(ctx, viewer, hc, layout, 12, false, func(_ context.Context, _ *core.User, title *core.Title) bool { return tasteKey(title.Key) != blocked })
+	if filtered.keys[blocked] {
+		t.Fatal("restricted Home lead retained a denied title")
+	}
+	again := h.e.homeLeadFor(ctx, viewer, hc, layout, 12, false, nil)
+	if !reflect.DeepEqual(legacy, again) {
+		t.Fatal("restricted lead changed unrestricted Home")
+	}
+}

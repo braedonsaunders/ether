@@ -347,24 +347,75 @@ func (s *Server) hubContext(pr *Request, section int) core.HubContext {
 // recommendHome asks for Home rows, with the request context when the
 // recommender adapts to it.
 func (s *Server) recommendHome(ctx context.Context, pr *Request, hc core.HubContext, count int) ([]core.Hub, error) {
+	restricted := s.viewerRestricted(pr.User)
+	if restricted {
+		if c, ok := s.d.Recommender.(core.PolicyHomeCandidateSource); ok {
+			hubs, err := c.HomeCandidatesWithPolicy(ctx, pr.User, hc, count, s.visibility().Visible)
+			if err != nil {
+				return nil, err
+			}
+			return s.filterFallbackHubs(ctx, pr.User, hubs), nil
+		}
+	}
+	var hubs []core.Hub
+	var err error
 	if c, ok := s.d.Recommender.(core.HomeCandidateSource); ok {
-		return c.HomeCandidatesFor(ctx, pr.User, hc, count)
+		hubs, err = c.HomeCandidatesFor(ctx, pr.User, hc, count)
+	} else if cr, ok := s.d.Recommender.(core.ContextualRecommender); ok {
+		hubs, err = cr.HomeHubsFor(ctx, pr.User, hc, count)
+	} else {
+		hubs, err = s.d.Recommender.HomeHubs(ctx, pr.User, count)
 	}
-	if cr, ok := s.d.Recommender.(core.ContextualRecommender); ok {
-		return cr.HomeHubsFor(ctx, pr.User, hc, count)
+	if restricted && err == nil {
+		hubs = s.filterFallbackHubs(ctx, pr.User, hubs)
 	}
-	return s.d.Recommender.HomeHubs(ctx, pr.User, count)
+	return hubs, err
 }
 
 // recommendSection asks for a library section's rows.
 func (s *Server) recommendSection(ctx context.Context, pr *Request, t core.MediaType, hc core.HubContext, count int) ([]core.Hub, error) {
+	restricted := s.viewerRestricted(pr.User)
+	if restricted {
+		if c, ok := s.d.Recommender.(core.PolicyHomeCandidateSource); ok {
+			hubs, err := c.SectionCandidatesWithPolicy(ctx, pr.User, t, hc, count, s.visibility().Visible)
+			if err != nil {
+				return nil, err
+			}
+			return s.filterFallbackHubs(ctx, pr.User, hubs), nil
+		}
+	}
+	var hubs []core.Hub
+	var err error
 	if c, ok := s.d.Recommender.(core.SectionCandidateSource); ok {
-		return c.SectionCandidatesFor(ctx, pr.User, t, hc, count)
+		hubs, err = c.SectionCandidatesFor(ctx, pr.User, t, hc, count)
+	} else if cr, ok := s.d.Recommender.(core.ContextualRecommender); ok {
+		hubs, err = cr.SectionHubsFor(ctx, pr.User, t, hc, count)
+	} else {
+		hubs, err = s.d.Recommender.SectionHubs(ctx, pr.User, t, count)
 	}
-	if cr, ok := s.d.Recommender.(core.ContextualRecommender); ok {
-		return cr.SectionHubsFor(ctx, pr.User, t, hc, count)
+	if restricted && err == nil {
+		hubs = s.filterFallbackHubs(ctx, pr.User, hubs)
 	}
-	return s.d.Recommender.SectionHubs(ctx, pr.User, t, count)
+	return hubs, err
+}
+
+// Legacy/custom sources cannot filter before their own ranking and limits.
+// Apply full visibility before returning their rows; their finite candidate
+// pools may leave short shelves but cannot bypass inherited or availability policy.
+func (s *Server) filterFallbackHubs(ctx context.Context, user *core.User, hubs []core.Hub) []core.Hub {
+	visibility := s.visibility()
+	out := make([]core.Hub, len(hubs))
+	copy(out, hubs)
+	for i := range out {
+		items := make([]core.Title, 0, len(out[i].Items))
+		for _, item := range out[i].Items {
+			if visibility.Visible(ctx, user, &item) {
+				items = append(items, item)
+			}
+		}
+		out[i].Items = items
+	}
+	return out
 }
 
 // recordImpressions hands the rows actually written, in response order, to

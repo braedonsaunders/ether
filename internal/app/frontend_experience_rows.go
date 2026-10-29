@@ -271,7 +271,7 @@ func (a *App) experienceContinue(ctx context.Context, viewer *core.User, librari
 
 // experienceAdditionalRows supplies the viewer's real playlist, watchlist and
 // live rows; the shared row service applies policy before delivery.
-func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequest, playlists core.Playlists) ([]frontend.Row, error) {
+func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequest, playlists core.Playlists, visibility experience.Visibility) ([]frontend.Row, error) {
 	if req.Placement != frontend.PlacementHome || req.Viewer == nil {
 		return nil, nil
 	}
@@ -285,15 +285,16 @@ func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequ
 			rows = append(rows, frontend.Row{ID: "playlists", Title: "Recent Playlists", Purpose: core.RowPurpose("playlist"), Entries: entries, More: more})
 		}
 	}
+	restricted := !req.Viewer.IsOwner && (req.Viewer.MaxContentRating != "" || len(req.Viewer.AllowedSections) > 0 || a.safety.Restricted(req.Viewer))
 	if a.watchlist != nil {
-		hubs, err := a.watchlist.Hubs(ctx, req.Viewer, req.Limit)
+		hubs, err := loadExperienceDiscovery(ctx, req.Viewer, req.Limit, restricted, visibility, a.watchlist.Hubs)
 		if err != nil {
 			return nil, err
 		}
 		rows = append(rows, experienceHubRows(hubs)...)
 	}
 	if a.discoveryPersonal != nil {
-		hubs, err := a.discoveryPersonal.Hubs(ctx, req.Viewer, req.Limit)
+		hubs, err := loadExperienceDiscovery(ctx, req.Viewer, req.Limit, restricted, visibility, a.discoveryPersonal.Hubs)
 		if err != nil {
 			return nil, err
 		}
@@ -310,4 +311,35 @@ func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequ
 		}
 	}
 	return rows, nil
+}
+
+// loadExperienceDiscovery expands only restricted discovery pools. Ranked
+// personalization rows remain assembled once with their original visit seed.
+func loadExperienceDiscovery(ctx context.Context, viewer *core.User, limit int, restricted bool, visibility experience.Visibility, load func(context.Context, *core.User, int) ([]core.Hub, error)) ([]core.Hub, error) {
+	if !restricted {
+		return load(ctx, viewer, limit)
+	}
+	var hubs []core.Hub
+	var loadErr error
+	rows := experience.LoadDiscovery(ctx, viewer, visibility, limit, func(ctx context.Context, fetch int) []experience.DiscoveryCandidate {
+		hubs, loadErr = load(ctx, viewer, fetch)
+		if loadErr != nil {
+			return nil
+		}
+		candidates := make([]experience.DiscoveryCandidate, len(hubs))
+		for i, hub := range hubs {
+			candidates[i] = experience.DiscoveryCandidate{Index: i, Items: hub.Items}
+		}
+		return candidates
+	})
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	out := make([]core.Hub, 0, len(rows))
+	for _, row := range rows {
+		h := hubs[row.Index]
+		h.Items = row.Items
+		out = append(out, h)
+	}
+	return out, nil
 }

@@ -45,7 +45,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	source := experienceRowSource{kind: a.personalize.SemanticRowKind, load: func(ctx context.Context, req frontend.RowRequest) ([]core.Hub, error) {
 		return a.productionExperienceRows(ctx, req, libs, vis)
 	}, additional: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-		return a.experienceAdditionalRows(ctx, req, a.playlists)
+		return a.experienceAdditionalRows(ctx, req, a.playlists, vis)
 	}}
 	allowEntry := func(ctx context.Context, u *core.User, kind, id string) bool {
 		switch frontend.RowEntryKind(kind) {

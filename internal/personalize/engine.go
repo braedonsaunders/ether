@@ -580,7 +580,7 @@ func (e *Engine) homeWithPolicy(ctx context.Context, user *core.User, hc core.Hu
 	// (the draft layout's switch and Home in a preview).
 	var lead *homeLead
 	if section != "" && resolveDedupeHome(layoutDoc, u.ID, sectionName(section)) {
-		lead = e.homeLeadFor(ctx, &u, hc, layoutDoc, limit, wait)
+		lead = e.homeLeadFor(ctx, &u, hc, layoutDoc, limit, wait, allow)
 	}
 	key := memoKey{client: hc.ClientID, session: hc.SessionID, user: u.ID, section: section, bucket: hc.Bucket(), day: day, hour: hc.Now.Hour(), limit: limit, model: m.version,
 		layout: layoutVer, stats: stats.at.UnixNano(), owner: ownerVer, cw: progressSig(inprog),

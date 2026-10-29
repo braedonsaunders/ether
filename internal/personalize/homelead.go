@@ -43,10 +43,10 @@ func (l *homeLead) holds(rowID string, k core.RatingKey) bool {
 // homeLeadFor computes the Home lead for a section request: the Home
 // assembly for the same viewer and context (memoised, or the draft layout
 // in a preview), arranged for the Home's page length.
-func (e *Engine) homeLeadFor(ctx context.Context, user *core.User, hc core.HubContext, layout core.HomeLayout, limit int, wait bool) *homeLead {
+func (e *Engine) homeLeadFor(ctx context.Context, user *core.User, hc core.HubContext, layout core.HomeLayout, limit int, wait bool, allow func(context.Context, *core.User, *core.Title) bool) *homeLead {
 	hhc := hc
 	hhc.SectionID = 0
-	p := e.home(ctx, user, hhc, "", limit, wait)
+	p := e.homeWithPolicy(ctx, user, hhc, "", limit, wait, allow)
 	rows := arrangeLayout(p.Rows, layout, userID(user), hhc, surfHome, e.opts.MaxHomeRows)
 	return leadFromRows(rows, min(limit, leadItems))
 }
