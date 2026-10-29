@@ -84,16 +84,41 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 }
 func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	id, _ := ids.GUID(ids.User, v.ID)
-	policy := map[string]any{"IsAdministrator": v.IsOwner && !v.Delegated, "IsDisabled": false, "AuthenticationProviderId": "Ether"}
+	// Jellyfin's Kotlin SDK requires these keys even where its OpenAPI schema
+	// omits `required`. Unsupported features are false; the broker and host
+	// remain authoritative for every actual operation.
+	policy := map[string]any{
+		"IsAdministrator": v.IsOwner && !v.Delegated, "IsHidden": false, "IsDisabled": false,
+		"EnableUserPreferenceAccess": i.host.Preferences != nil, "EnableRemoteControlOfOtherUsers": v.IsOwner && !v.Delegated,
+		"EnableSharedDeviceControl": false, "EnableRemoteAccess": false, "EnableLiveTvManagement": false, "EnableLiveTvAccess": false,
+		"EnableMediaPlayback": i.host.Sessions != nil, "EnablePlaybackRemuxing": i.host.Sessions != nil,
+		// TODO(ViewerCapabilities.CanTranscodeAudio/CanTranscodeVideo): replace
+		// these broker-availability defaults with the host's configured policy.
+		"EnableAudioPlaybackTranscoding": i.host.Sessions != nil, "EnableVideoPlaybackTranscoding": i.host.Sessions != nil,
+		"ForceRemoteSourceTranscoding": false, "EnableContentDeletion": false, "EnableContentDownloading": false,
+		"EnableSyncTranscoding": false, "EnableMediaConversion": false, "EnableAllDevices": true, "EnableAllChannels": true,
+		"EnableAllFolders": len(v.AllowedSections) == 0, "InvalidLoginAttemptCount": 0, "LoginAttemptsBeforeLockout": -1,
+		"MaxActiveSessions": v.StreamLimit, "EnablePublicSharing": false, "RemoteClientBitrateLimit": 0,
+		"AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "SyncPlayAccess": "None",
+	}
 	if i.protocol == "jellyfin" {
 		policy["PasswordResetProviderId"] = "Ether"
 	}
-	configuration := map[string]any{"RememberAudioSelections": true, "RememberSubtitleSelections": true}
+	// Presentation defaults mirror Jellyfin's UserConfiguration constructor.
+	configuration := map[string]any{"PlayDefaultAudioTrack": true, "DisplayMissingEpisodes": false, "GroupedFolders": []string{}, "SubtitleMode": "Default", "DisplayCollectionsView": false, "EnableLocalPassword": false, "OrderedViews": []string{}, "LatestItemsExcludes": []string{}, "MyMediaExcludes": []string{}, "HidePlayedInLatest": true, "RememberAudioSelections": true, "RememberSubtitleSelections": true, "EnableNextEpisodeAutoPlay": true}
 	if len(v.AudioLanguages) > 0 {
 		configuration["AudioLanguagePreference"] = v.AudioLanguages[0]
 	}
 	if len(v.SubtitleLanguages) > 0 {
 		configuration["SubtitleLanguagePreference"] = v.SubtitleLanguages[0]
+	}
+	if i.host.TrackPreferences != nil {
+		if prefs, err := i.host.TrackPreferences.Get(r.Context(), v); err == nil {
+			modes := map[string]string{"off": "None", "forced-only": "OnlyForced", "always": "Always"}
+			if mode, ok := modes[prefs.SubtitleMode]; ok {
+				configuration["SubtitleMode"] = mode
+			}
+		}
 	}
 	result := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": policy, "Configuration": configuration}
 	if i.protocol == "emby" && !v.CreatedAt.IsZero() {

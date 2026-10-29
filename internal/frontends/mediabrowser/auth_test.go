@@ -303,7 +303,7 @@ func TestViewerPolicyUsesAuthoritativeCapabilities(t *testing.T) {
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !result.HasPassword || result.Policy["EnableRemoteAccess"] != false || result.Policy["EnableLiveTvAccess"] != true || result.Policy["RemoteClientBitrateLimit"] != float64(5000000) {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	if _, ok := result.Policy["EnableVideoPlaybackTranscoding"]; ok {
-		t.Fatal("unknown transcoding policy advertised")
+	if result.Policy["EnableVideoPlaybackTranscoding"] != false {
+		t.Fatal("transcoding must be unavailable without a broker")
 	}
 }
