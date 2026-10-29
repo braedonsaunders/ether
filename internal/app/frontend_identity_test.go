@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"net/netip"
 	"testing"
 	"time"
@@ -12,6 +13,27 @@ import (
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plextv"
 )
+
+func TestFrontendClientIPAcceptsPublicPeersAndRejectsSpoofedHeaders(t *testing.T) {
+	a := setupTestApp(t, true)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "198.51.100.4:1234"
+	req.Header.Set("X-Forwarded-For", "192.168.1.5")
+	ip, ok := a.frontendClientIP(req)
+	if !ok || ip.String() != "198.51.100.4" {
+		t.Fatal(ip, ok)
+	}
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "198.51.100.9")
+	ip, ok = a.frontendClientIP(req)
+	if !ok || ip.String() != "198.51.100.9" {
+		t.Fatal(ip, ok)
+	}
+	req.Header.Set("X-Forwarded-For", "invalid")
+	if ip, ok = a.frontendClientIP(req); ok || ip.IsValid() {
+		t.Fatal(ip, ok)
+	}
+}
 
 func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 	a := setupTestApp(t, true)
