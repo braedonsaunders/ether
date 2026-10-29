@@ -76,19 +76,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	wireID := r.PathValue("id")
 	key, err := ids.ParseRatingKeyGUID(wireID)
 	channel := ""
-	if err != nil {
-		if i.host.LiveTV == nil {
-			http.NotFound(w, r)
-			return
-		}
-		ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
-		if e != nil || ch.ID == "" {
-			http.NotFound(w, r)
-			return
-		}
-		channel = ch.ID
-		key = 0
-	}
+	itemIDError := err
 	var body playbackRequest
 	if r.Body != nil && r.ContentLength != 0 {
 		if decode(r, &body) != nil {
@@ -111,6 +99,27 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
+	}
+	scope := frontend.VersionScope{Viewer: v, Device: dev, Protocol: i.protocol, Caps: capability.Client}
+	versionFromItem := ""
+	if itemIDError != nil {
+		if i.host.VersionHandles != nil {
+			if target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, wireID); e == nil && target.Item != 0 {
+				key, versionFromItem = target.Item, wireID
+			}
+		}
+		if versionFromItem == "" {
+			if i.host.LiveTV == nil {
+				http.NotFound(w, r)
+				return
+			}
+			ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, wireID)
+			if e != nil || ch.ID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			channel, key = ch.ID, 0
+		}
 	}
 	playback := queryBool(r, "IsPlayback", body.IsPlayback)
 	opts := frontend.DecideOptions{DirectPlay: queryBool(r, "EnableDirectPlay", boolValue(body.EnableDirectPlay, true)), DirectStream: queryBool(r, "EnableDirectStream", boolValue(body.EnableDirectStream, true)), AudioStream: -1, SubtitleStream: -1}
@@ -167,11 +176,23 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	if len(idsQuery) == 1 {
 		sourceID = idsQuery[0]
 	}
-	version := ""
+	version := versionFromItem
 	if sourceID != "" && !strings.EqualFold(sourceID, wireID) {
 		if parsed, e := ids.ParseRatingKeyGUID(sourceID); e != nil || parsed != key || channel != "" {
 			version = sourceID
 		}
+	}
+	if version != "" {
+		if channel != "" || i.host.VersionHandles == nil {
+			http.NotFound(w, r)
+			return
+		}
+		target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, version)
+		if e != nil || target.Item != key || (versionFromItem != "" && !sameVersionHandle(version, versionFromItem)) {
+			http.NotFound(w, r)
+			return
+		}
+		intent.ExactVersion = true
 	}
 	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, Caps: capability.Client, Intent: intent}
 	plan, err := i.host.Sessions.Plan(r.Context(), planRequest)
@@ -207,7 +228,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	playID := ""
-	if !playback && channel == "" && version == "" && opts.DirectPlay {
+	if !playback && channel == "" && opts.DirectPlay {
 		if path := i.lazySourceURL(r, credential, planRequest); path != "" {
 			source["Path"] = path
 		}
@@ -487,18 +508,27 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
 	channel := ""
+	version := ""
+	var versionScope frontend.VersionScope
 	if err != nil {
-		if i.host.LiveTV == nil {
-			http.NotFound(w, r)
-			return
+		versionScope, err = i.versionScope(r, viewer)
+		if err == nil {
+			if target, e := i.host.VersionHandles.Resolve(i.identityContext(r), versionScope, r.PathValue("id")); e == nil && target.Item != 0 {
+				key, version = target.Item, r.PathValue("id")
+			}
 		}
-		ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), viewer, r.PathValue("id"))
-		if e != nil || ch.ID == "" {
-			http.NotFound(w, r)
-			return
+		if version == "" {
+			if i.host.LiveTV == nil {
+				http.NotFound(w, r)
+				return
+			}
+			ch, e := i.host.LiveTV.ResolveChannelGUID(r.Context(), viewer, r.PathValue("id"))
+			if e != nil || ch.ID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			channel, key = ch.ID, 0
 		}
-		channel = ch.ID
-		key = 0
 	}
 	name := strings.ToLower(r.PathValue("name"))
 	format := frontend.StreamDirect
@@ -540,6 +570,10 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		sessionID = session.ID
 	}
 	if sessionID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if version != "" && i.host.VersionHandles.MatchSession(i.identityContext(r), versionScope, version, sessionID) != nil {
 		http.NotFound(w, r)
 		return
 	}

@@ -259,10 +259,21 @@ func (i *instance) browseRoutes() error {
 			http.Error(w, "Unauthorized", 401)
 			return
 		}
-		key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+		wireID := r.PathValue("id")
+		key, err := ids.ParseRatingKeyGUID(wireID)
+		versionID := ""
 		if err != nil {
-			http.NotFound(w, r)
-			return
+			scope, e := i.versionScope(r, v)
+			if e != nil {
+				http.NotFound(w, r)
+				return
+			}
+			target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, wireID)
+			if e != nil || target.Item == 0 {
+				http.NotFound(w, r)
+				return
+			}
+			key, versionID = target.Item, wireID
 		}
 		if i.host.Experience == nil {
 			http.Error(w, "Unavailable", 503)
@@ -274,6 +285,9 @@ func (i *instance) browseRoutes() error {
 			return
 		}
 		dto := i.itemDTO(d.Title, d.UserData)
+		if versionID != "" {
+			dto["Id"] = versionID
+		}
 		if p := i.virtualPaths(r, v, []frontend.RatingKey{d.Title.Key})[d.Title.Key]; p != "" {
 			dto["Path"] = p
 		}
@@ -285,23 +299,40 @@ func (i *instance) browseRoutes() error {
 			dto["MediaStreams"] = streams
 		}
 		if i.protocol == "jellyfin" {
-			dto["EnableMediaSourceDisplay"] = len(d.Versions) > 1
+			dto["EnableMediaSourceDisplay"] = false
 		}
-		if len(d.Versions) > 0 {
+		if len(d.Versions) > 0 && i.host.VersionHandles != nil {
 			sources := make([]any, 0, len(d.Versions))
+			scope, scopeErr := i.versionScope(r, v)
 			for _, version := range d.Versions {
-				source := i.detailMediaSourceDTO(version.ID, version.Media)
+				if scopeErr != nil {
+					break
+				}
+				handle, e := i.host.VersionHandles.Issue(i.identityContext(r), scope, key, version.ID)
+				if e != nil || handle == "" {
+					continue
+				}
+				source := i.detailMediaSourceDTO(handle, version.Media)
 				source["Name"] = version.Name
 				i.versionSourceFacts(source, version)
+				plan := frontend.PlanRequest{Viewer: v, Device: scope.Device, Protocol: i.protocol, Item: key, Version: handle, Caps: scope.Caps, Intent: frontend.PlayIntent{Estimate: true, ExactVersion: true, Options: frontend.DecideOptions{DirectPlay: true}}}
+				if path := i.lazySourceURL(r, token, plan); path != "" {
+					source["Path"] = path
+				}
 				i.mediaSourceDialect(source)
 				if i.protocol == "emby" {
 					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)
 				}
 				sources = append(sources, source)
 			}
-			dto["MediaSources"] = sources
-			i.versionItemFacts(dto, d.Versions)
+			if len(sources) > 0 {
+				dto["MediaSources"] = sources
+			}
+			if i.protocol == "jellyfin" {
+				dto["EnableMediaSourceDisplay"] = len(sources) > 1
+			}
 		}
+		i.versionItemFacts(dto, d.Versions)
 		tags, backdrops, imageMetadata := i.imageTags(r, d, token)
 		for key, value := range imageMetadata {
 			dto[key] = value

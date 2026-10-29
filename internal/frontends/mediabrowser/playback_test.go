@@ -228,7 +228,7 @@ func TestVersionSelectionDelegatesToBroker(t *testing.T) {
 		return frontend.PlayPlan{Estimated: true}, nil
 	}}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
-	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: broker, Capabilities: frontendtest.Capabilities{}})
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: broker, Capabilities: frontendtest.Capabilities{}, VersionHandles: &testVersionHandles{item: 5, handle: "variant-1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
