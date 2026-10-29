@@ -143,6 +143,9 @@ func TestCurrentClientCapabilityDiscovery(t *testing.T) {
 		{"/api/v2/playback/sessions/control/capabilities", `"available":false`, true},
 		{"/api/v2/capabilities/metadata-ai", `"state":"unsupported"`, true},
 		{"/api/v2/subtitles/ai/status", `"enabled":false`, true},
+		{"/api/v2/shuffles/capabilities", `"scope_kinds":[]`, true},
+		{"/api/v2/subtitles/providers/status", `"providers":[]`, true},
+		{"/api/v2/watch-together/capabilities", `"allowed":false`, true},
 	} {
 		r := httptest.NewRequest("GET", tc.path, nil)
 		if tc.authenticated {

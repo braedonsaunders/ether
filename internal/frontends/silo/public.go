@@ -81,12 +81,38 @@ func (i *instance) aiCapability(w http.ResponseWriter, r *http.Request) {
 	}
 	reply(w, http.StatusOK, map[string]any{"revision": "ether-subtitle-ai-v1", "state": "unsupported", "allowed": false, "enabled": false, "transcribe_enabled": false})
 }
+
+func (i *instance) optionalCapability(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	base := map[string]any{"revision": "ether-unsupported-v1", "state": "unsupported", "allowed": false}
+	switch r.URL.Path {
+	case "/api/v2/shuffles/capabilities":
+		base["scope_kinds"] = []string{}
+	case "/api/v2/subtitles/providers/status":
+		base["schema_version"], base["enabled"], base["providers"] = 1, false, []string{}
+	case "/api/v2/watch-together/capabilities":
+		for _, key := range []string{"staged_selection", "lobby_ready", "connection_replaced", "selection_mode_switch", "member_state", "picker", "vote_host_override", "stop_playback"} {
+			base[key] = false
+		}
+		base["max_member_state_ids"], base["socket_protocol"] = 0, ""
+	}
+	reply(w, http.StatusOK, base)
+}
 func (i *instance) publicRoutes() error {
 	if err := i.router.Handle("PATCH", "/api/v2/profiles/{id}", http.HandlerFunc(i.patchProfile)); err != nil {
 		return err
 	}
 	for _, path := range []string{"/api/v2/capabilities/metadata-ai", "/api/v2/subtitles/ai/status"} {
 		if err := i.router.Handle("GET", path, http.HandlerFunc(i.aiCapability)); err != nil {
+			return err
+		}
+	}
+	for _, path := range []string{"/api/v2/shuffles/capabilities", "/api/v2/subtitles/providers/status", "/api/v2/watch-together/capabilities"} {
+		if err := i.router.Handle("GET", path, http.HandlerFunc(i.optionalCapability)); err != nil {
 			return err
 		}
 	}
