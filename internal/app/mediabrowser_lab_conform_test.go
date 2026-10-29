@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/identity"
@@ -118,6 +120,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			if err != nil || itemResp.StatusCode != 200 || item.ImageTags["Primary"] == "" {
 				t.Fatal("item artwork not issued", itemResp.StatusCode, err)
 			}
+			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, login.AccessToken, itemID)
 			imgResp, err := srv.Client().Get(srv.URL + "/Items/" + itemID + "/Images/Primary?tag=" + url.QueryEscape(item.ImageTags["Primary"]))
 			if err != nil {
 				t.Fatal(err)
@@ -224,6 +227,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 						_ = a.stopOwnerSession(session.ID)
 					}
 				}
+				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID)
 				if reportDir := os.Getenv("LAB_REPORT_DIR"); reportDir != "" {
 					if err := os.MkdirAll(reportDir, 0700); err != nil {
 						t.Fatal(err)
@@ -791,4 +795,65 @@ func TestReadLabSettingsFromEnvironment(t *testing.T) {
 	if err != nil || settings["JELLYFIN_ADULT_USER"] != "fixture-user" || settings["JELLYFIN_ADULT_PASSWORD"] != "fixture-password" || settings["EMBY_ADULT_USER"] != "emby-user" || settings["EMBY_ADULT_PASSWORD"] != "emby-password" {
 		t.Fatal("environment settings were not loaded")
 	}
+}
+
+// labTraceMediaDetail records only policy-authorized source counts and wire
+// field presence. It never logs credentials, media paths or source names.
+func labTraceMediaDetail(t *testing.T, a *App, viewer *core.User, protocol, stage, referenceItem string, srv *httptest.Server, token, itemID string) {
+	if os.Getenv("LAB_TRACE_DETAIL") != "1" {
+		return
+	}
+	t.Helper()
+	experience, err := a.newSurfaceExperience(core.Protocol(protocol))
+	if err != nil {
+		t.Error("detail trace experience unavailable")
+		return
+	}
+	detail, err := experience.Item(context.Background(), frontend.ItemRequest{Viewer: viewer, Key: core.MovieKey(10378)})
+	if err != nil {
+		t.Error("detail trace item unavailable")
+		return
+	}
+	req, err := http.NewRequest("GET", srv.URL+"/Items/"+itemID, nil)
+	if err != nil {
+		t.Error("detail trace request invalid")
+		return
+	}
+	req.Header.Set("X-Emby-Token", token)
+	response, err := srv.Client().Do(req)
+	if err != nil {
+		t.Error("detail trace request failed")
+		return
+	}
+	defer response.Body.Close()
+	var body map[string]any
+	if response.StatusCode != 200 || json.NewDecoder(io.LimitReader(response.Body, 4<<20)).Decode(&body) != nil {
+		t.Error("detail trace response unavailable")
+		return
+	}
+	sources, _ := body["MediaSources"].([]any)
+	streams, _ := body["MediaStreams"].([]any)
+	fields := []string{}
+	for _, key := range []string{"MediaSources", "MediaStreams", "Container", "Bitrate", "Size", "Width", "Height", "UserData"} {
+		if _, ok := body[key]; ok {
+			fields = append(fields, key)
+		}
+	}
+	versionHashes := make([]string, 0, len(detail.Versions))
+	for _, version := range detail.Versions {
+		if version.ID != "" {
+			sum := sha256.Sum256([]byte(version.ID))
+			versionHashes = append(versionHashes, hex.EncodeToString(sum[:8]))
+		}
+	}
+	sourceHashes := make([]string, 0, len(sources))
+	for _, value := range sources {
+		if source, ok := value.(map[string]any); ok {
+			if id, ok := source["Id"].(string); ok && id != "" {
+				sum := sha256.Sum256([]byte(id))
+				sourceHashes = append(sourceHashes, hex.EncodeToString(sum[:8]))
+			}
+		}
+	}
+	t.Logf("detail_trace protocol=%s stage=%s reference_item=%s target_item=%s authorized_versions=%d version_hashes=%v wire_sources=%d source_hashes=%v wire_streams=%d fields=%v", protocol, stage, referenceItem, itemID, len(detail.Versions), versionHashes, len(sources), sourceHashes, len(streams), fields)
 }
