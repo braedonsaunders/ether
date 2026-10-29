@@ -11,6 +11,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
 func TestManifestRequiresSurfaceGrantAndProvidesCORS(t *testing.T) {
@@ -216,5 +217,25 @@ func TestCatalogPaginatesAcrossLibraries(t *testing.T) {
 	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/catalog/movie/ether-movies/skip=2.json", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Second library") {
 		t.Fatalf("catalog: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestIMDbEpisodeUsesPolicyCheckedExternalResolution(t *testing.T) {
+	lazy := &lazyFixture{}
+	experience := frontendtest.Experience{ResolveExternalFunc: func(_ context.Context, viewer *frontend.Viewer, device frontend.Device, req frontend.ExternalRequest) (frontend.RatingKey, error) {
+		if viewer.ID != 7 || device.ID == "" || req.Source != "imdb" || req.ID != "tt1234567" || req.Type != "show" || req.Season == nil || *req.Season != 2 || req.Episode == nil || *req.Episode != 3 {
+			t.Fatalf("unexpected resolution: %+v", req)
+		}
+		return ids.StremioTMDBKey("series", ids.StremioID{Source: "tmdb", ID: "42", HasEpisode: true, Season: 2, Episode: 3})
+	}}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}, Experience: experience, Sessions: frontendtest.Sessions{}, LazyStreams: lazy, Capabilities: frontendtest.Capabilities{}, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.168.1.7"), true }, SecurePortalURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/ether/me", nil }}
+	inst, err := (Frontend{}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/grant/stream/series/tt1234567:2:3.json", nil))
+	if rec.Code != http.StatusOK || !lazy.issued {
+		t.Fatalf("stream: %d %s", rec.Code, rec.Body.String())
 	}
 }
