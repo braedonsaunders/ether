@@ -11,7 +11,12 @@ type Connection = {
 };
 const names: Record<string, string> = { stremio: "Stremio", webdav: "WebDAV", m3u: "M3U" };
 
-export function ConnectApps({ base, token }: { base: string; token: string }) {
+export function ConnectApps(props: { base: string; token: string }) {
+  // A secret belongs to one viewer, even if a mint finishes after navigation.
+  return <ConnectAppsSession key={`${props.base}\u0000${props.token}`} {...props} />;
+}
+
+function ConnectAppsSession({ base, token }: { base: string; token: string }) {
   const [apps, setApps] = useState<string[]>([]);
   const [connection, setConnection] = useState<Connection>();
   const [showQR, setShowQR] = useState(false);
