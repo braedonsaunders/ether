@@ -283,11 +283,13 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 	}
 	sequence := []string{
 		"/:/timeline?ratingKey={{movieKey}}&key=%2Flibrary%2Fmetadata%2F{{movieKey}}&state=playing&time=1200000&duration=5400000",
-		"/hubs/continueWatching", "/hubs",
+		"/hubs/continueWatching", "/library/onDeck", "/hubs",
+		"/:/timeline?ratingKey={{movieKey}}&key=%2Flibrary%2Fmetadata%2F{{movieKey}}&state=paused&time=1250000&duration=5400000",
+		"/hubs/continueWatching", "/library/onDeck", "/hubs",
 		"/:/scrobble?identifier=com.plexapp.plugins.library&key={{episodeKey}}",
 		"/library/onDeck", "/hubs",
 		"/:/timeline?ratingKey={{movieKey}}&key=%2Flibrary%2Fmetadata%2F{{movieKey}}&state=stopped&time=1300000&duration=5400000",
-		"/hubs/continueWatching", "/hubs",
+		"/hubs/continueWatching", "/library/onDeck", "/hubs",
 		"/:/progress?key={{movieKey}}&state=paused&time=900000",
 		"/hubs/continueWatching",
 		"/:/rate?key={{movieKey}}&rating=8", "/library/metadata/{{movieKey}}",
@@ -411,6 +413,12 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 				return result, fmt.Errorf("%s %s direct playback failed: status=%d bytes=%d error=%v", viewer, name, direct.Status, len(direct.Body), err)
 			}
 			result.captures = append(result.captures, capture{viewer, name, "playback:" + directPath, false, direct})
+			directReq.Path = "/library/parts/{{movieKey}}/file.mp4"
+			shortPart, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, directReq, name, viewerIDs[viewer], false)
+			if err != nil || shortPart.Status != http.StatusPartialContent || len(shortPart.Body) != 4096 {
+				return result, fmt.Errorf("%s %s short direct part failed: status=%d bytes=%d error=%v", viewer, name, shortPart.Status, len(shortPart.Body), err)
+			}
+			result.captures = append(result.captures, capture{viewer, name, "playback:short-part", false, shortPart})
 			h.Del("Range")
 			directStopPath := "/video/:/transcode/universal/stop?session=" + directSession
 			directReq.Path = directStopPath
@@ -502,6 +510,14 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 				result.captures = append(result.captures, capture{viewer, name, "playback:" + stop, false, response})
 			}
 			dashSession := id + "-dash"
+			dashDecisionPath := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=dash&session=" + dashSession + "&directPlay=0&directStream=1"
+			h.Set("Accept", "application/xml")
+			dashDecisionReq := protocol.Request{Method: http.MethodGet, Path: dashDecisionPath, Headers: map[string]http.Header{name: h}}
+			dashDecision, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, dashDecisionReq, name, viewerIDs[viewer], false)
+			if err != nil || dashDecision.Status != http.StatusOK || requireDecision(dashDecision.Body, "remux") != nil {
+				return result, fmt.Errorf("%s %s DASH decision: status=%d error=%v body=%s", viewer, name, dashDecision.Status, err, dashDecision.Body)
+			}
+			result.captures = append(result.captures, capture{viewer, name, "playback:dash:decision", false, dashDecision})
 			dashPath := "/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=dash&session=" + dashSession + "&directPlay=0&directStream=1"
 			h.Set("Accept", "application/dash+xml")
 			dashReq := protocol.Request{Method: http.MethodGet, Path: dashPath, Headers: map[string]http.Header{name: h}}
