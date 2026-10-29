@@ -227,6 +227,12 @@ type Version struct {
 	// used for Plex AddedAt (updated time, then original release time).
 	AddedAt time.Time
 	Media   core.MediaInfo
+	// Source facts are absent unless they are known for this version. FileName
+	// is a basename only; DateModified is never a catalogue fallback date.
+	FileName     string     `json:"fileName,omitempty"`
+	PartCount    *int       `json:"partCount,omitempty"`
+	ETag         string     `json:"etag,omitempty"`
+	DateModified *time.Time `json:"dateModified,omitempty"`
 }
 type Marker struct {
 	Type       string
