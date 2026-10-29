@@ -40,10 +40,7 @@ func TestMigrationDependenciesOrderAndValidate(t *testing.T) {
 	delete(dependencies, "zeta")
 	regMu.Unlock()
 	RegisterAfter("middle", "missing")
-	defer func() {
-		if recover() == nil {
-			t.Fatal("missing dependency was accepted")
-		}
-	}()
-	registered()
+	if got := registered(); len(got) != 4 {
+		t.Fatalf("partial registry: %d", len(got))
+	}
 }

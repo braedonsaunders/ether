@@ -47,8 +47,8 @@ var (
 
 // RegisterAfter declares component-level migration dependencies. Every
 // migration of a dependency is applied before any migration of component.
-// Unrelated components retain their alphabetical order. A missing dependency
-// or dependency cycle is a programming error and fails migration startup.
+// Unrelated components retain their alphabetical order. Dependencies absent
+// from a partial binary are ignored; cycles fail migration startup.
 func RegisterAfter(component string, dependsOn ...string) {
 	regMu.Lock()
 	defer regMu.Unlock()
@@ -321,11 +321,6 @@ func registered() []migration {
 		}
 		groups[m.component] = append(groups[m.component], m)
 	}
-	for component := range deps {
-		if _, ok := groups[component]; !ok {
-			panic("store: migration dependencies declared for missing component " + component)
-		}
-	}
 	state := make(map[string]uint8, len(groups))
 	ordered := make([]migration, 0, len(ms))
 	var visit func(string)
@@ -337,7 +332,7 @@ func registered() []migration {
 			panic("store: cyclic migration dependency involving " + component)
 		}
 		if _, ok := groups[component]; !ok {
-			panic("store: missing migration dependency " + component)
+			return
 		}
 		state[component] = 1
 		for _, requirement := range deps[component] {
