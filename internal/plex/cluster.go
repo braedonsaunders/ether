@@ -16,7 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/plex/model"
-	"github.com/braedonsaunders/ether/internal/store"
+	_ "github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // Clustering. A clustered node (Deps.Cluster set) shares with the others:
@@ -35,34 +35,6 @@ import (
 //     moves to another node keeps its queue.
 //
 // A standalone server (no Deps.Cluster) does none of this.
-func init() {
-	store.Register("plex", 2, `
-CREATE TABLE plex_sessions (
-	id          TEXT    PRIMARY KEY,
-	node_id     TEXT    NOT NULL,
-	user_id     INTEGER NOT NULL,
-	session_key INTEGER NOT NULL,
-	data        TEXT    NOT NULL,
-	updated_at  INTEGER NOT NULL
-);
-CREATE INDEX plex_sessions_node ON plex_sessions(node_id);
-CREATE TABLE plex_counters (
-	name  TEXT    PRIMARY KEY,
-	value INTEGER NOT NULL
-);
-INSERT INTO plex_counters(name, value) VALUES ('session_key', 0);
-INSERT INTO plex_counters(name, value) VALUES ('playqueue_item', 0);
-CREATE TABLE plex_playqueues (
-	id         INTEGER PRIMARY KEY,
-	user_id    INTEGER NOT NULL,
-	rev        INTEGER NOT NULL,
-	data       TEXT    NOT NULL,
-	updated_at INTEGER NOT NULL
-);
-CREATE INDEX plex_playqueues_user ON plex_playqueues(user_id);
-CREATE INDEX plex_playqueues_updated ON plex_playqueues(updated_at);
-`)
-}
 
 // Cluster topics.
 const (
