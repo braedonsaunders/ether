@@ -155,3 +155,67 @@ func TestSearchHintsUsesExperience(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestLibraryQueriesUseNeutralFilters(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 2}
+	called := false
+	exp := frontendtest.Experience{LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, id string, q frontend.ItemQuery) (frontend.Page, error) {
+		called = true
+		if v != viewer || id != "2" || q.Offset != 4 || q.Limit != 3 || !q.Recursive || len(q.Types) != 1 || q.Types[0] != "movie" || len(q.Filter.Genres) != 1 || q.Filter.Genres[0] != "Drama" || q.Filter.YearFrom != 2020 || q.Watched == nil || *q.Watched || q.Favorite == nil || !*q.Favorite {
+			t.Fatal(id, q)
+		}
+		return frontend.Page{Items: []frontend.Title{{Key: 5, Type: "movie", Title: "Found"}}, Total: 9}, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := ids.GUID(ids.View, 2)
+	path := "/Items?ParentId=" + id + "&Recursive=true&StartIndex=4&Limit=3&IncludeItemTypes=Movie&Genres=Drama&Years=2020&Filters=IsUnplayed,IsFavorite"
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", path, nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !called || !strings.Contains(w.Body.String(), `"TotalRecordCount":9`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
+	if os.IsNotExist(e) {
+		return
+	}
+	if e != nil {
+		t.Fatal(e)
+	}
+	doc, e := openapi.Parse(spec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
+		t.Fatal(e)
+	}
+}
+
+func TestLikesUseAtomicExperienceMutation(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	called := false
+	exp := frontendtest.Experience{SetLikesFunc: func(_ context.Context, v *frontend.Viewer, key frontend.RatingKey, like *bool) error {
+		called = true
+		if v != viewer || key != 5 || like == nil || *like {
+			t.Fatal(v, key, like)
+		}
+		return nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/UserItems/"+ids.RatingKeyGUID(5)+"/Rating?likes=false", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !called {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

@@ -23,9 +23,20 @@ func queryInt(r *http.Request, name string, def int) int {
 	}
 	return n
 }
+func userDataDTO(id string, st frontend.WatchStatus) map[string]any {
+	data := map[string]any{"Key": id, "ItemId": id, "PlaybackPositionTicks": st.ViewOffset.Nanoseconds() / 100, "PlayCount": st.ViewCount, "Played": st.ViewCount > 0, "Rating": st.UserRating}
+	if st.UserRating >= 7 {
+		data["Likes"] = true
+	} else if st.UserRating >= 1 && st.UserRating <= 3 {
+		data["Likes"] = false
+	} else {
+		data["Likes"] = nil
+	}
+	return data
+}
 func itemDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	kind := map[frontend.MediaType]string{"movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode"}[t.Type]
-	m := map[string]any{"Id": ids.RatingKeyGUID(t.Key), "Name": t.Title, "Type": kind, "LocationType": "FileSystem", "IsFolder": t.Type == "show" || t.Type == "season", "Overview": t.Summary, "ProductionYear": t.Year, "RunTimeTicks": t.Runtime.Nanoseconds() / 100, "UserData": map[string]any{"Key": ids.RatingKeyGUID(t.Key), "PlaybackPositionTicks": state.ViewOffset.Nanoseconds() / 100, "PlayCount": state.ViewCount, "Played": state.ViewCount > 0, "Rating": state.UserRating}}
+	m := map[string]any{"Id": ids.RatingKeyGUID(t.Key), "Name": t.Title, "Type": kind, "LocationType": "FileSystem", "IsFolder": t.Type == "show" || t.Type == "season", "Overview": t.Summary, "ProductionYear": t.Year, "RunTimeTicks": t.Runtime.Nanoseconds() / 100, "UserData": userDataDTO(ids.RatingKeyGUID(t.Key), state)}
 	if t.ShowKey != 0 {
 		m["SeriesId"] = ids.RatingKeyGUID(t.ShowKey)
 		m["SeriesName"] = t.ShowTitle
@@ -153,7 +164,7 @@ func (i *instance) browseRoutes() error {
 	endpoints := []struct {
 		path    string
 		handler http.HandlerFunc
-	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/Users/{userId}/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/UserItems/Resume", rowHandler(frontend.RowContinue, false)}, {"/Users/{userId}/Items/Resume", rowHandler(frontend.RowContinue, false)}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Search/Hints", i.search}, {"/Shows/{id}/Seasons", i.children}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
+	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/Users/{userId}/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/UserItems/Resume", rowHandler(frontend.RowContinue, false)}, {"/Users/{userId}/Items/Resume", rowHandler(frontend.RowContinue, false)}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Items", i.items}, {"/Users/{userId}/Items", i.items}, {"/Items/{id}/Similar", i.similar}, {"/Items/{id}/Ancestors", i.ancestors}, {"/Search/Hints", i.search}, {"/Shows/{id}/Seasons", i.children}, {"/Shows/{id}/Episodes", i.episodes}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
 	for _, e := range endpoints {
 		if err := add("GET", e.path, e.handler); err != nil {
 			return err
@@ -169,6 +180,46 @@ func itemQuery(r *http.Request) frontend.ItemQuery {
 	}
 	if values := route.Query(r.URL.Query(), "SortOrder"); len(values) == 1 {
 		q.Desc = strings.EqualFold(values[0], "Descending")
+	}
+
+	q.Recursive = queryBool(r, "Recursive", false)
+	if values := route.Query(r.URL.Query(), "IncludeItemTypes"); len(values) == 1 {
+		for _, typ := range strings.Split(values[0], ",") {
+			switch strings.ToLower(strings.TrimSpace(typ)) {
+			case "movie":
+				q.Types = append(q.Types, "movie")
+			case "series":
+				q.Types = append(q.Types, "show")
+			case "season":
+				q.Types = append(q.Types, "season")
+			case "episode":
+				q.Types = append(q.Types, "episode")
+			}
+		}
+	}
+	if values := route.Query(r.URL.Query(), "Genres"); len(values) == 1 && values[0] != "" {
+		q.Filter.Genres = strings.Split(values[0], ",")
+	}
+	if values := route.Query(r.URL.Query(), "Years"); len(values) == 1 {
+		if year, e := strconv.Atoi(values[0]); e == nil {
+			q.Filter.YearFrom = year
+			q.Filter.YearTo = year
+		}
+	}
+	for _, value := range route.Query(r.URL.Query(), "Filters") {
+		for _, f := range strings.Split(value, ",") {
+			switch strings.ToLower(f) {
+			case "isplayed":
+				v := true
+				q.Watched = &v
+			case "isunplayed":
+				v := false
+				q.Watched = &v
+			case "isfavorite":
+				v := true
+				q.Favorite = &v
+			}
+		}
 	}
 	return q
 }
@@ -240,4 +291,128 @@ func (i *instance) search(w http.ResponseWriter, r *http.Request) {
 		hints = append(hints, map[string]any{"Id": id, "ItemId": id, "Name": t.Title, "Type": kind, "ProductionYear": t.Year, "IsFolder": t.Type == "show" || t.Type == "season"})
 	}
 	jsonReply(w, map[string]any{"SearchHints": hints, "TotalRecordCount": result.Page.Total})
+}
+
+func (i *instance) items(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	parent := route.Query(r.URL.Query(), "ParentId")
+	if len(parent) != 1 {
+		http.Error(w, "ParentId required", 400)
+		return
+	}
+	q := itemQuery(r)
+	var page frontend.Page
+	if id, e := ids.ParseGUID(ids.View, parent[0]); e == nil {
+		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), ids.Decimal(id), q)
+	} else if key, e := ids.ParseRatingKeyGUID(parent[0]); e == nil {
+		page, err = i.host.Experience.Children(r.Context(), v, device(r), key, q)
+	} else {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	i.page(w, r, v, page, q.Offset)
+}
+func (i *instance) similar(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := itemQuery(r)
+	p, err := i.host.Experience.Similar(r.Context(), v, device(r), key, q)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	i.page(w, r, v, p.Page, q.Offset)
+}
+func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	titles, err := i.host.Experience.Ancestors(r.Context(), v, device(r), key)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	keys := make([]frontend.RatingKey, 0, len(titles))
+	for _, t := range titles {
+		keys = append(keys, t.Key)
+	}
+	state, err := i.host.Experience.UserData(r.Context(), v, keys)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	items := make([]any, 0, len(titles))
+	for _, t := range titles {
+		items = append(items, itemDTO(t, state[t.Key]))
+	}
+	jsonReply(w, items)
+}
+
+func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := itemQuery(r)
+	q.Types = []frontend.MediaType{"episode"}
+	q.Recursive = true
+	if vals := route.Query(r.URL.Query(), "Season"); len(vals) == 1 {
+		season, e := strconv.Atoi(vals[0])
+		if e != nil || season < 0 {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		q.Season = &season
+	}
+	page, err := i.host.Experience.Children(r.Context(), v, device(r), key, q)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	i.page(w, r, v, page, q.Offset)
 }
