@@ -7,13 +7,149 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/retryafter"
 )
+
+// ProwlarrDiscovery is the result of a successful Prowlarr discovery: the
+// importable indexers plus what was left out and why, so a preview can
+// report skips instead of dropping them silently (same pattern as the
+// quality-profile import's Skipped/Warnings).
+type ProwlarrDiscovery struct {
+	Indexers               []config.Indexer `json:"indexers"`
+	SkippedUnknownProtocol int              `json:"skippedUnknownProtocol"`
+	Warnings               []string         `json:"warnings,omitempty"`
+	// PresentIDs are the scoped IDs of every enabled indexer the source
+	// reported, including ones filtered out below (unknown protocol).
+	// For reporting/dedup only: a discovery that returns HTTP 200 with
+	// valid JSON is TREATED as an authoritative list — the Prowlarr API
+	// offers no proof of completeness (no total/count to check against),
+	// so sync trusts it, like Prowlarr's own FullSync does. PresentIDs
+	// therefore do not prove the discovery was complete, and they do NOT
+	// protect unknown-protocol copies from reconciliation (see below).
+	PresentIDs []string `json:"presentIds,omitempty"`
+}
+
+// prowlarrScope fingerprints a Prowlarr base URL; indexer IDs are
+// "prowlarr-<scope>-<id>", so the scope ties an imported indexer to the
+// instance (and base path) it came from.
+func prowlarrScope(base string) string {
+	sum := sha256.Sum256([]byte(base))
+	return hex.EncodeToString(sum[:6])
+}
+
+// normalizeProwlarrBase parses and validates a Prowlarr base URL exactly
+// as discovery requires, then canonicalises it so the same instance always
+// yields the same scope: scheme/host lower-cased and a default port
+// (80/http, 443/https) dropped. It is the single normalisation used by
+// both DiscoverProwlarrReport and ProwlarrIDPrefix, so the prefix the
+// reconciler computes is by construction a prefix of discovered IDs.
+func normalizeProwlarrBase(raw string) (*url.URL, error) {
+	base, err := url.Parse(strings.TrimRight(raw, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("prowlarr: URL must be an HTTP(S) base URL")
+	}
+	base.Scheme = strings.ToLower(base.Scheme)
+	if base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") || base.User != nil || base.RawQuery != "" || base.Fragment != "" {
+		return nil, fmt.Errorf("prowlarr: URL must be an HTTP(S) base URL")
+	}
+	host := strings.ToLower(base.Hostname())
+	port := base.Port()
+	if (base.Scheme == "http" && port == "80") || (base.Scheme == "https" && port == "443") {
+		port = ""
+	}
+	switch {
+	case port != "":
+		base.Host = net.JoinHostPort(host, port)
+	case strings.Contains(host, ":"):
+		base.Host = "[" + host + "]"
+	default:
+		base.Host = host
+	}
+	base.Path = strings.TrimRight(base.Path, "/")
+	base.RawPath = ""
+	return base, nil
+}
+
+// ProwlarrIDPrefix returns the ID prefix of indexers imported from cfg's
+// Prowlarr instance ("prowlarr-<scope>-"), or "" when the URL is not a
+// usable base URL (same validation as discovery). The "prowlarr-*" ID
+// namespace is managed by the sync: reconciliation only touches IDs in
+// that namespace (this exact prefix, plus proven legacy spellings), so
+// ordinary manual indexers and imports from another Prowlarr
+// instance/base are not candidates for removal. Conversely, an entry
+// hand-written into the config with a forged "prowlarr-<scope>-" ID is
+// indistinguishable from an imported one and enters the sync's scope.
+func ProwlarrIDPrefix(cfg config.Prowlarr) string {
+	base, err := normalizeProwlarrBase(cfg.URL)
+	if err != nil {
+		return ""
+	}
+	return "prowlarr-" + prowlarrScope(base.String()) + "-"
+}
+
+// MaxRateLimitPause is the shared cap on a service-requested pause,
+// exported so HTTP handlers cap Retry-After exactly like this client
+// instead of duplicating a literal bound.
+const MaxRateLimitPause = maxRateLimitPause
+
+// ProwlarrStoredIndexerMatchesPrefix proves whether a stored indexer came
+// from the Prowlarr instance identified by prefix, even when its ID was
+// minted before base-URL normalisation (old scope spelling). Discovery
+// generates Indexer.URL as "<base>/<numeric id>", so stripping that final
+// segment, normalising the remaining base exactly as discovery does and
+// re-deriving its scope must reproduce prefix for the same instance.
+// matches is only meaningful when determinable is true; an unparseable
+// URL or one whose final segment is not the ID suffix proves nothing.
+func ProwlarrStoredIndexerMatchesPrefix(stored config.Indexer, prefix string) (matches, determinable bool) {
+	idx := strings.LastIndex(stored.ID, "-")
+	if idx < 0 || prefix == "" {
+		return false, false
+	}
+	suffix := stored.ID[idx+1:]
+	if suffix == "" {
+		return false, false
+	}
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			return false, false
+		}
+	}
+	u, err := url.Parse(strings.TrimRight(stored.URL, "/"))
+	if err != nil || u.Host == "" {
+		return false, false
+	}
+	seg := "/" + suffix
+	if !strings.HasSuffix(u.Path, seg) {
+		return false, false
+	}
+	u.Path = strings.TrimSuffix(u.Path, seg)
+	u.RawPath = ""
+	base, err := normalizeProwlarrBase(u.String())
+	if err != nil {
+		return false, false
+	}
+	return "prowlarr-"+prowlarrScope(base.String())+"-" == prefix, true
+}
+
+// validatedRetryAfter canonicalises a Retry-After header for propagation:
+// only values retryafter.Parse accepts (delay-seconds or a future
+// HTTP-date) survive, capped like the Newznab client's pause; empty,
+// malformed or past values become "" so callers never forward them.
+func validatedRetryAfter(v string) string {
+	d, ok := retryafter.Parse(v, time.Now(), maxRateLimitPause)
+	if !ok {
+		return ""
+	}
+	return strconv.FormatInt(int64(d/time.Second), 10)
+}
 
 type prowlarrIndexer struct {
 	ID           int             `json:"id"`
@@ -35,16 +171,27 @@ type prowlarrIndexer struct {
 // Prowlarr's /{id}/api alias is intentionally used so ordinary Newznab URL
 // construction and all existing budget enforcement apply unchanged.
 func DiscoverProwlarr(ctx context.Context, cfg config.Prowlarr, opts Options) ([]config.Indexer, error) {
-	base, err := url.Parse(strings.TrimRight(cfg.URL, "/"))
-	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") || base.User != nil || base.RawQuery != "" || base.Fragment != "" {
-		return nil, fmt.Errorf("prowlarr: URL must be an HTTP(S) base URL")
+	report, err := DiscoverProwlarrReport(ctx, cfg, opts)
+	if err != nil {
+		return nil, err
+	}
+	return report.Indexers, nil
+}
+
+// DiscoverProwlarrReport is DiscoverProwlarr plus a count (and warning) for
+// enabled indexers skipped because Prowlarr reported a protocol Ether
+// cannot use.
+func DiscoverProwlarrReport(ctx context.Context, cfg config.Prowlarr, opts Options) (ProwlarrDiscovery, error) {
+	base, err := normalizeProwlarrBase(cfg.URL)
+	if err != nil {
+		return ProwlarrDiscovery{}, err
 	}
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("prowlarr: API key is required")
+		return ProwlarrDiscovery{}, fmt.Errorf("prowlarr: API key is required")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base.String()+"/api/v1/indexer", nil)
 	if err != nil {
-		return nil, err
+		return ProwlarrDiscovery{}, err
 	}
 	req.Header.Set("X-Api-Key", cfg.APIKey)
 	req.Header.Set("Accept", "application/json")
@@ -54,37 +201,60 @@ func DiscoverProwlarr(ctx context.Context, cfg config.Prowlarr, opts Options) ([
 	}
 	resp, err := cl.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("prowlarr: discovery failed")
+		return ProwlarrDiscovery{}, fmt.Errorf("prowlarr: discovery failed")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		// Propagate Retry-After exactly like the Newznab client does for a
+		// 429 (see Client.get/recordRateLimit): callers can inspect the
+		// *RateLimitError instead of guessing a pause.
+		return ProwlarrDiscovery{}, &RateLimitError{RetryAfter: validatedRetryAfter(resp.Header.Get("Retry-After")), Err: fmt.Errorf("prowlarr: discovery HTTP %d", resp.StatusCode)}
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("prowlarr: discovery HTTP %d", resp.StatusCode)
+		return ProwlarrDiscovery{}, fmt.Errorf("prowlarr: discovery HTTP %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
 	if err != nil {
-		return nil, err
+		return ProwlarrDiscovery{}, err
 	}
 	if len(data) > 4<<20 {
-		return nil, fmt.Errorf("prowlarr: response exceeds 4 MiB")
+		return ProwlarrDiscovery{}, fmt.Errorf("prowlarr: response exceeds 4 MiB")
 	}
 	var items []prowlarrIndexer
 	if err = json.Unmarshal(data, &items); err != nil {
-		return nil, fmt.Errorf("prowlarr: invalid indexer response: %w", err)
+		return ProwlarrDiscovery{}, fmt.Errorf("prowlarr: invalid indexer response: %w", err)
 	}
-	sum := sha256.Sum256([]byte(base.String()))
-	scope := hex.EncodeToString(sum[:6])
+	scope := prowlarrScope(base.String())
 	var out []config.Indexer
+	var present []string
+	skippedUnknown := 0
 	seen := map[int]bool{}
 	for _, item := range items {
 		// Prowlarr's public API serializes protocol as "usenet" or "torrent"
 		// (older exports can contain its enum values 1 and 2).
 		protocol := strings.ToLower(strings.Trim(string(item.Protocol), "\""))
 		torrent := protocol == "torrent" || protocol == "2"
-		if !item.Enable || item.ID <= 0 || seen[item.ID] || (protocol != "usenet" && protocol != "1" && !torrent) {
+		if !item.Enable || item.ID <= 0 || seen[item.ID] {
 			continue
 		}
+		// Mark seen before any filtering so a duplicated source entry —
+		// importable or not — is counted/reported exactly once.
 		seen[item.ID] = true
 		id := "prowlarr-" + scope + "-" + strconv.Itoa(item.ID)
+		// Present at the source (enabled), even if unimportable below.
+		// Sync decision: on a discovery treated as authoritative (HTTP 200
+		// + valid JSON; the API offers no completeness proof) an
+		// unknown-protocol indexer is non-importable, so reconciliation
+		// removes its local copy (the warning below explains why);
+		// PresentIDs only records what was reported, it does not protect
+		// that copy.
+		present = append(present, id)
+		if protocol != "usenet" && protocol != "1" && !torrent {
+			// Counted and reported, not silently dropped: the owner should
+			// learn that an enabled indexer cannot be imported.
+			skippedUnknown++
+			continue
+		}
 		c := config.Indexer{ID: id, Name: "Prowlarr / " + item.Name + " [" + scope + ":" + strconv.Itoa(item.ID) + "]", URL: base.String() + "/" + strconv.Itoa(item.ID), APIKey: cfg.APIKey, DailyLimit: cfg.DailyLimit, DailyGrabs: cfg.DailyGrabs, Priority: cfg.Priority + item.Priority, Enabled: true}
 		if torrent {
 			c.Protocol = "torrent"
@@ -99,5 +269,12 @@ func DiscoverProwlarr(ctx context.Context, cfg config.Prowlarr, opts Options) ([
 		}
 		out = append(out, c)
 	}
-	return out, nil
+	report := ProwlarrDiscovery{Indexers: out, SkippedUnknownProtocol: skippedUnknown, PresentIDs: present}
+	if skippedUnknown > 0 {
+		report.Warnings = append(report.Warnings, fmt.Sprintf("skipped %d Prowlarr indexer(s) with an unsupported protocol (only usenet/torrent can be imported)", skippedUnknown))
+		if opts.Logger != nil {
+			opts.Logger.Warn("prowlarr discovery skipped indexers with unsupported protocol", "skipped", skippedUnknown)
+		}
+	}
+	return report, nil
 }

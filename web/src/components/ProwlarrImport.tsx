@@ -1,4 +1,13 @@
-import { Badge, Button, Input, SettingsSection, toast } from "@braedonsaunders/appkit-ui";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Button,
+  Input,
+  SettingsSection,
+  toast,
+} from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
 import { apiFetch, errorMessage } from "../lib/api";
 import { SettingsRow } from "./SettingsRow";
@@ -13,6 +22,13 @@ type Result = {
     protocol?: string;
   }[];
   imported: boolean;
+  /** Previously imported indexers removed because they left the source. */
+  removed?: number;
+  /** Legacy-spelling indexers kept because their stored endpoint could not be proven to be this instance. */
+  staleProwlarrIndexers?: number;
+  /** Enabled source indexers skipped for an unsupported protocol. */
+  skippedUnknownProtocol?: number;
+  warnings?: string[];
 };
 
 /** Preview and import the Usenet and torrent indexers a Prowlarr instance already manages. */
@@ -106,6 +122,32 @@ export function ProwlarrImport({ onImported }: { onImported?: () => void }) {
           ))}
         </ul>
       )}
+      {result && (result.removed || result.skippedUnknownProtocol) ? (
+        <p className="text-sm text-fg-muted">
+          {[
+            result.removed
+              ? `Removed ${result.removed} previously imported indexer${result.removed === 1 ? "" : "s"} no longer at the source`
+              : "",
+            result.skippedUnknownProtocol
+              ? `Skipped ${result.skippedUnknownProtocol} indexer${result.skippedUnknownProtocol === 1 ? "" : "s"} with an unsupported protocol`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      ) : null}
+      {result?.warnings?.length ? (
+        <Alert variant="warning">
+          <AlertTitle>Worth knowing</AlertTitle>
+          <AlertDescription>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {result.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }
