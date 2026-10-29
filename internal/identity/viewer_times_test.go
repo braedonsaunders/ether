@@ -55,6 +55,13 @@ func TestViewerTimesObserveActualEventsAndAuthorize(t *testing.T) {
 	if err != nil || !got.LastLogin.Equal(now) || !got.LastActivity.Equal(now) {
 		t.Fatalf("login %+v %v", got, err)
 	}
+	olderGrants, _ := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now.Add(-time.Hour) })
+	if _, err = olderGrants.IssueLogin(ctx, 1, nil, "emby", core.Device{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = times.Get(ctx, 1, 1); err != nil || !got.LastLogin.Equal(now) {
+		t.Fatalf("older login regressed: %+v %v", got, err)
+	}
 	now = now.Add(2 * time.Minute)
 	if err = times.Observe(ctx, 1); err != nil {
 		t.Fatal(err)
