@@ -9,15 +9,16 @@ import (
 )
 
 type discovery struct {
-	info PublicInfo
-	port int
-	mu   sync.Mutex
-	conn *net.UDPConn
-	done chan struct{}
+	info       PublicInfo
+	port       int
+	listenPort int
+	mu         sync.Mutex
+	conn       *net.UDPConn
+	done       chan struct{}
 }
 
 func (d *discovery) Start(ctx context.Context) error {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: 7359})
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: d.listenPort})
 	if err != nil {
 		return err
 	}

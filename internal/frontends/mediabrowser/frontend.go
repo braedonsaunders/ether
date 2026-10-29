@@ -72,7 +72,7 @@ func (i *instance) Listeners() []frontend.ListenerSpec {
 }
 func (i *instance) Discovery() []frontend.Announcer {
 	if i.discoveryEnabled {
-		return []frontend.Announcer{&discovery{info: i.info, port: i.port}}
+		return []frontend.Announcer{&discovery{info: i.info, port: i.port, listenPort: 7359}}
 	}
 	return nil
 }
