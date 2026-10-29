@@ -13,6 +13,7 @@ import (
 
 // Experience implements frontend.Experience with optional function hooks.
 type Experience struct {
+	PersonFacetIDsFunc       func(context.Context, *core.Viewer, core.Device, core.RatingKey, []int64) (map[int64]string, error)
 	ResolveFacetFunc         func(context.Context, *core.Viewer, core.Device, string, string, string) (core.FacetValue, error)
 	SetLikesFunc             func(context.Context, *core.Viewer, core.RatingKey, *bool) error
 	SetEntityFavoriteFunc    func(context.Context, *core.Viewer, frontend.FavoriteRef, bool) error
@@ -85,6 +86,12 @@ func (f Experience) ResolveFacet(c context.Context, v *core.Viewer, d core.Devic
 		return f.ResolveFacetFunc(c, v, d, view, kind, id)
 	}
 	return core.FacetValue{}, nil
+}
+func (f Experience) PersonFacetIDs(c context.Context, v *core.Viewer, d core.Device, key core.RatingKey, ids []int64) (map[int64]string, error) {
+	if f.PersonFacetIDsFunc != nil {
+		return f.PersonFacetIDsFunc(c, v, d, key, ids)
+	}
+	return nil, nil
 }
 func (f Experience) Facets(c context.Context, v *core.Viewer, d core.Device, id, name string) ([]core.FacetValue, error) {
 	if f.FacetsFunc != nil {

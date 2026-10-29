@@ -271,6 +271,10 @@ type Experience interface {
 	Ancestors(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]core.Title, error)
 	Facets(context.Context, *core.Viewer, core.Device, string, string) ([]core.FacetValue, error)
 	ResolveFacet(context.Context, *core.Viewer, core.Device, string, string, string) (core.FacetValue, error)
+	// PersonFacetIDs returns IDs only for credited people of an authorized title.
+	// Episode-only credits may not appear in library-wide Facets or ResolveFacet.
+	// Requests are bounded to 256 positive TMDB IDs; missing credits are omitted.
+	PersonFacetIDs(context.Context, *core.Viewer, core.Device, core.RatingKey, []int64) (map[int64]string, error)
 	Search(context.Context, *core.Viewer, core.Device, string, ItemQuery) (SearchPage, error)
 	UserData(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 	SetPlayed(context.Context, *core.Viewer, core.RatingKey) error
