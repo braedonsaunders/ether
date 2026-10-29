@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "headers": {
+    "Content-Language": [
+      "en-US"
+    ],
+    "Content-Type": [
+      "application/json; charset=utf-8"
+    ],
+    "Date": [
+      "Thu, 29 Oct 2026 [REDACTED_IP] GMT"
+    ],
+    "Server": [
+      "Kestrel"
+    ],
+    "Vary": [
+      "Accept-Encoding"
+    ],
+    "X-Response-Time-Ms": [
+      "6.4203"
+    ]
+  },
+  "body": "W10="
+}

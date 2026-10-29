@@ -1,0 +1,22 @@
+{
+  "status": 206,
+  "headers": {
+    "Accept-Ranges": [
+      "bytes"
+    ],
+    "Content-Length": [
+      "65536"
+    ],
+    "Content-Range": [
+      "bytes 632950913-633016448/633016449"
+    ],
+    "Content-Type": [
+      "video/mp4"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "suffix",
+  "bodyLength": 65536,
+  "sha256": "fce6ef48c8083e9d6b37b01372c7bc8d2b498fdfa9f75a7e3ba33f74e260a466"
+}

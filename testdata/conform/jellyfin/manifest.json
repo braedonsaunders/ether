@@ -1,0 +1,17 @@
+{
+  "discoveryWarnings": [],
+  "fixtureCounts": {
+    "findroid": 19,
+    "jellycon": 19,
+    "jellyfin-androidtv": 19,
+    "streamyfin": 19,
+    "swiftfin": 19
+  },
+  "fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.",
+  "requestErrors": null,
+  "trimmedResponses": [],
+  "protocol": "jellyfin",
+  "referenceVersion": "12.4",
+  "profileDirectory": "internal/conform/profiles/jellyfin",
+  "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored."
+}

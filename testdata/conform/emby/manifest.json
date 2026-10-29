@@ -1,0 +1,13 @@
+{
+  "discoveryWarnings": [],
+  "fixtureCounts": {
+    "emby-sdk": 18
+  },
+  "fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.",
+  "requestErrors": null,
+  "trimmedResponses": [],
+  "protocol": "emby",
+  "referenceVersion": "4.10.2",
+  "profileDirectory": "internal/conform/profiles/emby",
+  "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored."
+}

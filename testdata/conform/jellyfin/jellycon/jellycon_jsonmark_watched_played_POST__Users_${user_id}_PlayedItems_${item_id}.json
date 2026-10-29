@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "headers": {
+    "Content-Language": [
+      "en-US"
+    ],
+    "Content-Type": [
+      "application/json; charset=utf-8"
+    ],
+    "Date": [
+      "Thu, 29 Oct 2026 [REDACTED_IP] GMT"
+    ],
+    "Server": [
+      "Kestrel"
+    ],
+    "Vary": [
+      "Accept-Encoding"
+    ],
+    "X-Response-Time-Ms": [
+      "7.8067"
+    ]
+  },
+  "body": "eyJJc0Zhdm9yaXRlIjp0cnVlLCJJdGVtSWQiOiI4NzQ4MTJlYWZhMTliZWViYjg0MmFhODJlOTc2ODc4ZiIsIktleSI6IjEwMzc4IiwiTGFzdFBsYXllZERhdGUiOiJbUkVEQUNURURdIiwiUGxheUNvdW50Ijo5LCJQbGF5YmFja1Bvc2l0aW9uVGlja3MiOjAsIlBsYXllZCI6dHJ1ZX0="
+}
