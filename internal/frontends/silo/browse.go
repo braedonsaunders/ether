@@ -207,6 +207,18 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	}
 	out["cast"] = cast
 	out["crew"] = crew
+	if len(d.Extras) > 0 {
+		videos := make([]any, 0, len(d.Extras))
+		for _, extra := range d.Extras {
+			if extra.Source == "" || extra.SourceID == "" {
+				continue
+			}
+			videos = append(videos, map[string]any{"name": extra.Title, "kind": extra.Kind, "site": strings.ToLower(extra.Source), "site_key": extra.SourceID, "language": extra.Language, "is_official": extra.Official})
+		}
+		if len(videos) > 0 {
+			out["videos"] = videos
+		}
+	}
 	out["versions"] = []any{}
 	out["ratings"] = []any{}
 	out["subtitles"] = []any{}
@@ -254,6 +266,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				}
 				items := make([]any, 0, len(versions))
 				defaultID := ""
+				var defaultDuration int64
 				for _, version := range versions {
 					if !siloSourceHasKnownHDR10Plus(version.Media) {
 						continue
@@ -267,6 +280,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 					id := strconv.FormatInt(int64(file), 10)
 					if defaultID == "" {
 						defaultID = id
+						if !version.Media.Estimated && (version.ID != "" || !plan.Estimated) {
+							defaultDuration = int64(version.Media.Duration.Seconds())
+						}
 					}
 					if version.AddedAt.IsZero() {
 						http.Error(w, "Version timestamp unavailable", 503)
@@ -275,6 +291,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 					resolution, video, audio := "", "", ""
 					hdr := false
 					audioTracks := []any{}
+					videoTracks := []any{}
 					for _, stream := range version.Media.Streams {
 						if stream.Type == "video" {
 							video = stream.Codec
@@ -282,6 +299,51 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 								resolution = strconv.Itoa(stream.Height) + "p"
 							}
 							hdr = stream.ColorTransfer == "smpte2084" || stream.ColorTransfer == "arib-std-b67" || stream.DolbyVision
+							track := map[string]any{"codec": stream.Codec, "color_range": "unknown", "dv_enhancement_layer": "unknown"}
+							if stream.ColorRange != "" {
+								track["color_range"] = stream.ColorRange
+							}
+							if stream.HDR10Plus != nil {
+								track["hdr10_plus"] = *stream.HDR10Plus
+							} else if stream.ColorTransfer != "smpte2084" {
+								track["hdr10_plus"] = false
+							}
+							if stream.DolbyVisionELPresent != nil && !*stream.DolbyVisionELPresent {
+								track["dv_enhancement_layer"] = "none"
+							}
+							if stream.Width > 0 {
+								track["width"] = stream.Width
+							}
+							if stream.Height > 0 {
+								track["height"] = stream.Height
+							}
+							if stream.BitDepth > 0 {
+								track["bit_depth"] = stream.BitDepth
+							}
+							if stream.BitrateKbps > 0 {
+								track["bitrate"] = stream.BitrateKbps
+							}
+							if stream.Profile != "" {
+								track["profile"] = stream.Profile
+							}
+							if stream.Level > 0 {
+								track["level"] = stream.Level
+							}
+							if stream.Title != "" {
+								track["title"] = stream.Title
+							}
+							if stream.FrameRate > 0 {
+								track["frame_rate"] = strconv.FormatFloat(stream.FrameRate, 'f', 3, 64)
+							}
+							// These booleans are mandatory in Silo's track DTO. Only
+							// publish a track when their presence is established by
+							// the probe; missing metadata is not proof of absence.
+							if stream.DolbyVisionVersion != "" && stream.DolbyVisionCompatibilityID > 0 && stream.Interlaced {
+								track["dv_config_present"] = true
+								track["dv_bl_compat_id_present"] = true
+								track["interlaced"] = true
+								videoTracks = append(videoTracks, track)
+							}
 						}
 						if stream.Type == "audio" && audio == "" {
 							audio = stream.Codec
@@ -322,11 +384,20 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 					if len(audioTracks) > 0 {
 						item["audio_tracks"] = audioTracks
 					}
+					if len(videoTracks) > 0 {
+						item["video_tracks"] = videoTracks
+					}
 					items = append(items, item)
 				}
 				out["versions"] = items
 				if len(items) > 0 {
-					out["playback_variants"] = []any{map[string]any{"variant_id": "default", "default_file_id": defaultID, "part_count": 1, "parts": []any{map[string]any{"part_index": 1, "default_file_id": defaultID, "versions": items}}}}
+					part := map[string]any{"part_index": 1, "default_file_id": defaultID, "versions": items}
+					group := map[string]any{"variant_id": "default", "default_file_id": defaultID, "part_count": 1, "parts": []any{part}}
+					if defaultDuration > 0 {
+						part["total_duration"] = defaultDuration
+						group["total_duration"] = defaultDuration
+					}
+					out["playback_variants"] = []any{group}
 				}
 
 			}
