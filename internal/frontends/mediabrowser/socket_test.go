@@ -58,3 +58,29 @@ func TestSocketAuthenticationAndKeepAlive(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
+
+func TestClosingFrontendClosesSocket(t *testing.T) {
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 1}, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(inst.Handler())
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/socket?api_key=grant", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	if _, _, err = c.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = inst.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = c.Read(ctx); err == nil {
+		t.Fatal("socket remained open")
+	}
+}

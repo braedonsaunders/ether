@@ -42,7 +42,14 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 	}
 	r := &route.Router{}
 
-	inst := &instance{host: host, info: info, router: r, protocol: protocol}
+	life, cancel := context.WithCancel(ctx)
+	inst := &instance{host: host, info: info, router: r, protocol: protocol, life: life, cancel: cancel}
+	mounted := false
+	defer func() {
+		if !mounted {
+			cancel()
+		}
+	}()
 	if err := publicRoutes(r, func() PublicInfo {
 		current := info
 		if host.Config != nil {
@@ -84,11 +91,14 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 	if err := inst.routes(); err != nil {
 		return nil, err
 	}
+	mounted = true
 	return inst, nil
 }
 
 type instance struct {
 	protocol frontend.Protocol
+	life     context.Context
+	cancel   context.CancelFunc
 	host     frontend.Host
 	info     PublicInfo
 	router   *route.Router
@@ -148,4 +158,4 @@ func (i *instance) Discovery() []frontend.Announcer {
 func (i *instance) Status(context.Context) frontend.Status {
 	return frontend.Status{TargetVersion: i.info.Version, Conformance: "in progress"}
 }
-func (i *instance) Close(context.Context) error { return nil }
+func (i *instance) Close(context.Context) error { i.cancel(); return nil }

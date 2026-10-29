@@ -23,6 +23,8 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	ctx, cancel := context.WithCancel(r.Context())
+	stop := context.AfterFunc(i.life, cancel)
+	defer stop()
 	defer cancel()
 	write := func(v any) error {
 		b, e := json.Marshal(v)
