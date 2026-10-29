@@ -168,6 +168,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		sourceID = version
 	}
 	source := map[string]any{"Id": sourceID, "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
+	addChapters(source, plan.Media)
 	source["Protocol"] = "Http"
 	source["Type"] = "Default"
 	source["IsRemote"] = true
@@ -236,6 +237,9 @@ func mediaStreams(streams []frontend.StreamInfo) []any {
 	for _, s := range streams {
 		kind := map[string]string{"video": "Video", "audio": "Audio", "subtitle": "Subtitle"}[s.Type]
 		m := map[string]any{"Index": s.Index, "Type": kind, "Codec": s.Codec, "Language": s.Language, "IsDefault": s.Default, "IsForced": s.Forced, "IsExternal": s.External, "Width": s.Width, "Height": s.Height, "Channels": s.Channels}
+		if s.Type == "video" {
+			m["IsInterlaced"] = s.Interlaced
+		}
 		if s.Profile != "" {
 			m["Profile"] = s.Profile
 		}
@@ -263,6 +267,17 @@ func mediaStreams(streams []frontend.StreamInfo) []any {
 		out = append(out, m)
 	}
 	return out
+}
+
+func addChapters(source map[string]any, media frontend.MediaInfo) {
+	if len(media.Chapters) == 0 {
+		return
+	}
+	chapters := make([]any, 0, len(media.Chapters))
+	for _, chapter := range media.Chapters {
+		chapters = append(chapters, map[string]any{"Name": chapter.Title, "StartPositionTicks": chapter.Start.Nanoseconds() / 100})
+	}
+	source["Chapters"] = chapters
 }
 func (i *instance) playbackRoutes() error {
 	for _, method := range []string{"GET", "HEAD"} {

@@ -3,6 +3,7 @@ package mediabrowser
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
+	"github.com/braedonsaunders/ether/internal/core"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -15,6 +16,24 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
+
+func TestMediaDetailsPreserveChapterAndInterlaceMetadata(t *testing.T) {
+	media := frontend.MediaInfo{Chapters: []core.Chapter{{Title: "Opening", Start: 15 * time.Second}}, Streams: []frontend.StreamInfo{{Type: "video", Index: 0, Interlaced: true}, {Type: "audio", Index: 1}}}
+	source := map[string]any{}
+	addChapters(source, media)
+	chapters := source["Chapters"].([]any)
+	chapter := chapters[0].(map[string]any)
+	if chapter["Name"] != "Opening" || chapter["StartPositionTicks"] != int64(150000000) {
+		t.Fatal(chapter)
+	}
+	streams := mediaStreams(media.Streams)
+	if streams[0].(map[string]any)["IsInterlaced"] != true {
+		t.Fatal(streams)
+	}
+	if _, exists := streams[1].(map[string]any)["IsInterlaced"]; exists {
+		t.Fatal(streams)
+	}
+}
 
 func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}

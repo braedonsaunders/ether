@@ -256,7 +256,9 @@ func (i *instance) browseRoutes() error {
 		if len(d.Versions) > 0 {
 			sources := make([]any, 0, len(d.Versions))
 			for _, version := range d.Versions {
-				sources = append(sources, map[string]any{"Id": version.ID, "Name": version.Name, "Container": version.Media.Container, "RunTimeTicks": version.Media.Duration.Nanoseconds() / 100, "Bitrate": version.Media.BitrateKbps * 1000, "Size": version.Media.Size, "MediaStreams": mediaStreams(version.Media.Streams)})
+				source := map[string]any{"Id": version.ID, "Name": version.Name, "Container": version.Media.Container, "RunTimeTicks": version.Media.Duration.Nanoseconds() / 100, "Bitrate": version.Media.BitrateKbps * 1000, "Size": version.Media.Size, "MediaStreams": mediaStreams(version.Media.Streams)}
+				addChapters(source, version.Media)
+				sources = append(sources, source)
 			}
 			dto["MediaSources"] = sources
 		}
