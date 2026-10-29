@@ -20,3 +20,12 @@ func TestAssembleHomePlacementAndDeduplication(t *testing.T) {
 		t.Fatalf("default continue: %v", got)
 	}
 }
+
+func TestCompleteHomeProducerOrder(t *testing.T) {
+	var got []string
+	add := func(s string) func() { return func() { got = append(got, s) } }
+	CompleteHome(true, add("playlist"), add("discovery"), add("live"), add("selection"), add("layout"))
+	if !reflect.DeepEqual(got, []string{"playlist", "discovery", "live", "selection", "layout"}) {
+		t.Fatalf("order %v", got)
+	}
+}

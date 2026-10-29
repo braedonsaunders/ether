@@ -101,6 +101,7 @@ type RowPaint struct {
 type Row struct {
 	ID, Title    string
 	Purpose      RowPurpose
+	Kind         string // Stable semantic producer kind, independent of protocol.
 	Layout       RowLayout
 	Style        string
 	Promoted     bool

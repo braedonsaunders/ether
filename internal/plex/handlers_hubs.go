@@ -14,6 +14,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -251,6 +252,7 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	hc := s.hubContext(pr, 0)
 	mc := hubContainer()
 	served := map[string]core.Hub{} // rendered rows by identifier, for impressions
+	projections := map[string]frontend.Row{}
 	var hubs []core.Hub
 	if s.d.Recommender != nil {
 		var err error
@@ -265,35 +267,45 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	}
 	// Rendering remains in Plex: its generated identifier governs dedupe and
 	// its exact metadata is kept for the response and impression accounting.
-	var rendered model.Hub
+	var projected homeProjection
 	experience.AssembleHome(candidates, q.Get("excludeContinueWatching") != "1", promotedOnly, "home.continue", func() {
 		spec := s.continueHub(ctx, pr, cwHome, Section{}, count)
-		mh := s.renderHub(ctx, pr, spec, hubCtx{})
-		mc.Hub = append(mc.Hub, mh)
-		served[mh.HubIdentifier] = spec.Hub
+		projection := s.projectHomeHub(ctx, pr, spec)
+		mc.Hub = append(mc.Hub, projection.Rendered)
+		projections[projection.Rendered.HubIdentifier] = projection.Row
+		served[projection.Rendered.HubIdentifier] = projection.Spec.Hub
 	}, func(candidate experience.HomeCandidate) string {
-		rendered = s.renderHub(ctx, pr, hubSpec{Hub: hubs[candidate.Index]}, hubCtx{})
-		return rendered.HubIdentifier
+		projected = s.projectHomeHub(ctx, pr, hubSpec{Hub: hubs[candidate.Index]})
+		return projected.Rendered.HubIdentifier
 	}, func(candidate experience.HomeCandidate) {
-		mc.Hub = append(mc.Hub, rendered)
-		served[rendered.HubIdentifier] = hubs[candidate.Index]
+		mc.Hub = append(mc.Hub, projected.Rendered)
+		projections[projected.Rendered.HubIdentifier] = projected.Row
+		served[projected.Rendered.HubIdentifier] = projected.Spec.Hub
 	})
-	if len(sections) == 0 {
-		if h, ok := s.playlistsHub(ctx, pr, count); ok {
+	experience.CompleteHome(len(sections) == 0, func() {
+		if h, row, ok := s.playlistsHubProjection(ctx, pr, count); ok {
+			projections[h.HubIdentifier] = row
 			mc.Hub = append(mc.Hub, h)
 		}
-	}
-	for _, hs := range s.discoveryHubs(ctx, pr, count) {
-		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hs, hubCtx{}))
-		served[hs.ID] = hs.Hub
-	}
-	if h := s.liveTVHub(r); h != nil {
-		mc.Hub = append(mc.Hub, *h)
-	}
-	if ids := q["identifier"]; len(ids) > 0 {
-		mc.Hub = filterHubs(mc.Hub, ids)
-	}
-	mc.Hub = s.finalizeHomeRows(ctx, pr, hc, "home", mc.Hub)
+	}, func() {
+		for _, hs := range s.discoveryHubs(ctx, pr, count) {
+			p := s.projectHomeHub(ctx, pr, hs)
+			projections[p.Rendered.HubIdentifier] = p.Row
+			mc.Hub = append(mc.Hub, p.Rendered)
+			served[hs.ID] = hs.Hub
+		}
+	}, func() {
+		if h, row := s.liveTVHubProjection(r); h != nil {
+			projections[h.HubIdentifier] = row
+			mc.Hub = append(mc.Hub, *h)
+		}
+	}, func() {
+		if ids := q["identifier"]; len(ids) > 0 {
+			mc.Hub = filterHubs(mc.Hub, ids)
+		}
+	}, func() {
+		mc.Hub = s.arrangePlexHome(ctx, pr, hc, mc.Hub, projections)
+	})
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, hc, mc.Hub, served)
@@ -379,16 +391,21 @@ func (s *Server) recordImpressions(pr *Request, hc core.HubContext, written []mo
 // user's playlists, most recently updated first. Omitted when there are
 // none.
 func (s *Server) playlistsHub(ctx context.Context, pr *Request, count int) (model.Hub, bool) {
+	h, _, ok := s.playlistsHubProjection(ctx, pr, count)
+	return h, ok
+}
+
+func (s *Server) playlistsHubProjection(ctx context.Context, pr *Request, count int) (model.Hub, frontend.Row, bool) {
 	if s.d.Playlists == nil || pr.User == nil {
-		return model.Hub{}, false
+		return model.Hub{}, frontend.Row{}, false
 	}
 	pls, err := s.d.Playlists.List(ctx, pr.User.ID)
 	if err != nil {
 		s.log.Warn("playlists hub", "err", err)
-		return model.Hub{}, false
+		return model.Hub{}, frontend.Row{}, false
 	}
 	if len(pls) == 0 {
-		return model.Hub{}, false
+		return model.Hub{}, frontend.Row{}, false
 	}
 	sort.SliceStable(pls, func(i, j int) bool { return pls[i].UpdatedAt.After(pls[j].UpdatedAt) })
 	more := len(pls) > count
@@ -405,14 +422,20 @@ func (s *Server) playlistsHub(ctx context.Context, pr *Request, count int) (mode
 		Style:         "shelf",
 		Promoted:      model.Ptr(true),
 	}
+	row := frontend.Row{ID: "home.playlists", Title: "Recent Playlists", Purpose: core.RowPurpose("playlist"), Style: "shelf", Promoted: true, More: more}
 	keys := make([]string, 0, len(pls))
 	for i := range pls {
 		h.Metadata = append(h.Metadata, s.playlistMetadata(ctx, &pls[i]))
+		if pls[i].UserID == pr.User.ID {
+			p := pls[i]
+			p.Items = nil
+			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryPlaylist, Playlist: &p})
+		}
 		keys = append(keys, pls[i].Key.String())
 	}
 	h.Size = len(h.Metadata)
 	h.HubKey = "/library/metadata/" + strings.Join(keys, ",")
-	return h, true
+	return h, row, true
 }
 
 func filterHubs(hs []model.Hub, ids []string) []model.Hub {

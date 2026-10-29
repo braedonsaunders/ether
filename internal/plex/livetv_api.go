@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/go-chi/chi/v5"
@@ -255,6 +256,10 @@ func liveProgrammeMetadata(c livetv.Channel, p livetv.Programme) model.Metadata 
 var errLiveBadRequest = errors.New("invalid guide request")
 
 func (s *Server) liveGuideMetadata(r *http.Request) ([]model.Metadata, error) {
+	return s.liveGuideMetadataCapture(r, nil)
+}
+
+func (s *Server) liveGuideMetadataCapture(r *http.Request, captured *[]livetv.Programme) ([]model.Metadata, error) {
 	from := s.now()
 	until := from.Add(time.Second)
 	q := r.URL.Query()
@@ -319,6 +324,9 @@ func (s *Server) liveGuideMetadata(r *http.Request) ([]model.Metadata, error) {
 			continue
 		}
 		out = append(out, liveProgrammeMetadata(byID[p.ChannelID], p))
+		if captured != nil {
+			*captured = append(*captured, p)
+		}
 	}
 	return out, nil
 }
@@ -345,16 +353,22 @@ func (s *Server) handleLiveWatchNow(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, &model.MediaContainer{Size: 1, Identifier: livetv.Provider, Type: []model.MetaType{{Active: true, Key: liveProviderPath + "/watchnow/all", Title: "All Channels", Type: "mixed"}}})
 }
 func (s *Server) liveTVHub(r *http.Request) *model.Hub {
+	h, _ := s.liveTVHubProjection(r)
+	return h
+}
+
+func (s *Server) liveTVHubProjection(r *http.Request) (*model.Hub, frontend.Row) {
 	if !s.liveTVEnabled() {
-		return nil
+		return nil, frontend.Row{}
 	}
-	md, err := s.liveGuideMetadata(r)
+	var programmes []livetv.Programme
+	md, err := s.liveGuideMetadataCapture(r, &programmes)
 	if err != nil {
-		return nil
+		return nil, frontend.Row{}
 	}
 	cs, err := s.d.LiveTV.AllowedChannels(r.Context(), FromContext(r.Context()).User)
 	if err != nil {
-		return nil
+		return nil, frontend.Row{}
 	}
 	found := map[string]bool{}
 	for _, item := range md {
@@ -374,12 +388,48 @@ func (s *Server) liveTVHub(r *http.Request) *model.Hub {
 		}
 	}
 	if len(md) == 0 {
-		return nil
+		return nil, frontend.Row{}
 	}
 	if len(md) > 24 {
 		md = md[:24]
 	}
-	return &model.Hub{Key: liveProviderPath + "/watchnow/all", Title: "On Now", Type: "mixed", HubIdentifier: "livetv.onnow", Context: "hub.livetv.onnow", Size: len(md), Style: "shelf", Promoted: model.Ptr(true), Metadata: md}
+	h := &model.Hub{Key: liveProviderPath + "/watchnow/all", Title: "On Now", Type: "mixed", HubIdentifier: "livetv.onnow", Context: "hub.livetv.onnow", Size: len(md), Style: "shelf", Promoted: model.Ptr(true), Metadata: md}
+	row := frontend.Row{ID: "livetv.onnow", Title: "On Now", Purpose: frontend.RowLive, Style: "shelf", Promoted: true}
+	channels := make(map[string]livetv.Channel, len(cs))
+	for _, c := range cs {
+		channels[c.ID] = c
+	}
+	for _, item := range md {
+		var id string
+		for _, media := range item.Media {
+			for _, attr := range media.Extra {
+				if attr.Name == "channelIdentifier" {
+					id, _ = attr.Value.(string)
+				}
+			}
+		}
+		c, ok := channels[id]
+		if !ok {
+			continue
+		}
+		entry := &frontend.RowLiveChannel{ID: c.ID, Number: c.Number, Name: c.Name, Logo: liveLogo(c), GuideReference: c.GuideID}
+		now := s.now()
+		for _, p := range programmes {
+			if p.ChannelID != id || !p.End.After(now) {
+				continue
+			}
+			programme := &frontend.RowProgramme{ID: p.ID, Title: p.Item.Title, Start: p.Start, End: p.End, Item: p.Item.Key}
+			if !p.Start.After(now) {
+				if entry.Current == nil || p.Start.Before(entry.Current.Start) {
+					entry.Current = programme
+				}
+			} else if entry.Next == nil || p.Start.Before(entry.Next.Start) {
+				entry.Next = programme
+			}
+		}
+		row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryLiveChannel, LiveChannel: entry})
+	}
+	return h, row
 }
 func (s *Server) liveChannelMetadata(c livetv.Channel) model.Metadata {
 	return model.Metadata{RatingKey: "channel-" + c.ID, Key: liveProviderPath + "/channels/" + url.PathEscape(c.ID), Type: "clip", Title: c.Name, Summary: "Live channel. No programme guide supplied.", Thumb: liveLogo(c), ContentRating: c.Rating, Extra: []model.Attr{model.A("live", true), model.A("dvrChannel", true)}, Media: []model.Media{{Protocol: "livetv", Extra: []model.Attr{model.A("origin", "livetv"), model.A("channelIdentifier", c.ID), model.A("channelTitle", c.Name), model.A("channelVcn", c.Number), model.A("onAir", true)}}}}
