@@ -12,12 +12,13 @@ import (
 
 // Experience implements frontend.Experience with optional function hooks.
 type Experience struct {
-	ViewsFunc    func(context.Context, *core.Viewer) ([]frontend.View, error)
-	RowsFunc     func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
-	ItemFunc     func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error)
-	ChildrenFunc func(context.Context, *core.Viewer, core.Device, core.RatingKey, frontend.ItemQuery) (core.Page, error)
-	SearchFunc   func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (frontend.SearchPage, error)
-	UserDataFunc func(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
+	ReportRowInteractionFunc func(context.Context, frontend.RowInteraction) error
+	ViewsFunc                func(context.Context, *core.Viewer) ([]frontend.View, error)
+	RowsFunc                 func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
+	ItemFunc                 func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error)
+	ChildrenFunc             func(context.Context, *core.Viewer, core.Device, core.RatingKey, frontend.ItemQuery) (core.Page, error)
+	SearchFunc               func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (frontend.SearchPage, error)
+	UserDataFunc             func(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 }
 
 func (f Experience) Views(c context.Context, v *core.Viewer) ([]frontend.View, error) {
@@ -56,6 +57,15 @@ func (f Experience) UserData(c context.Context, v *core.Viewer, k []core.RatingK
 	}
 	return nil, nil
 }
+
+func (f Experience) ReportRowInteraction(c context.Context, interaction frontend.RowInteraction) error {
+	if f.ReportRowInteractionFunc != nil {
+		return f.ReportRowInteractionFunc(c, interaction)
+	}
+	return nil
+}
+
+var _ frontend.RowInteractionReporter = Experience{}
 
 // Sessions implements frontend.Sessions with optional function hooks.
 type Sessions struct {
