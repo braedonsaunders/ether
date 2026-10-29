@@ -64,7 +64,7 @@ func TestSchemaValidatedExtraFieldsRemainInformational(t *testing.T) {
 	headers := http.Header{"Content-Type": {"application/json"}}
 	reference := conform.Response{Status: 200, Headers: headers, Body: []byte(`{}`)}
 	target := conform.Response{Status: 200, Headers: headers, Body: []byte(`{"original_language":"en","not_a_contract_field":"unexpected"}`)}
-	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/api/v2/catalog/items/movie-tmdb-10378"}, reference, target)
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/api/v2/catalog/items/${item_id}"}, reference, target)
 	var known, unknown *conform.Difference
 	for n := range report.Differences {
 		switch report.Differences[n].Path {
