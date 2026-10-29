@@ -48,6 +48,9 @@ func (i *instance) userDataDTO(id string, st frontend.WatchStatus) map[string]an
 func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	kind := map[frontend.MediaType]string{"movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode"}[t.Type]
 	m := map[string]any{"Id": ids.RatingKeyGUID(t.Key), "Name": t.Title, "Type": kind, "LocationType": "FileSystem", "IsFolder": t.Type == "show" || t.Type == "season", "Overview": t.Summary, "ProductionYear": t.Year, "RunTimeTicks": t.Runtime.Nanoseconds() / 100, "UserData": i.userDataDTO(ids.RatingKeyGUID(t.Key), state)}
+	if i.protocol == "emby" {
+		delete(m, "LocationType")
+	}
 	providers := map[string]string{}
 	if t.IDs.TMDB > 0 {
 		providers["Tmdb"] = strconv.FormatInt(t.IDs.TMDB, 10)
@@ -259,6 +262,7 @@ func (i *instance) browseRoutes() error {
 				source := mediaSourceDTO(version.ID, version.Media)
 				source["Name"] = version.Name
 				source["HasSegments"] = len(d.Markers) > 0
+				i.mediaSourceDialect(source)
 				sources = append(sources, source)
 			}
 			dto["MediaSources"] = sources

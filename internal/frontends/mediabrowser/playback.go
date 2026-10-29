@@ -245,7 +245,25 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			source["TranscodingContainer"] = "ts"
 		}
 	}
+	i.mediaSourceDialect(source)
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
+}
+
+func (i *instance) mediaSourceDialect(source map[string]any) {
+	if i.protocol != "emby" {
+		return
+	}
+	// These Jellyfin properties are absent from Emby's pinned DTO.
+	for _, key := range []string{"GenPtsInput", "HasSegments", "IgnoreDts", "IgnoreIndex", "MediaAttachments"} {
+		delete(source, key)
+	}
+	if streams, ok := source["MediaStreams"].([]any); ok {
+		for _, stream := range streams {
+			if dto, ok := stream.(map[string]any); ok {
+				delete(dto, "IsOriginal")
+			}
+		}
+	}
 }
 
 // mediaSourceDTO describes the operations this frontend offers, not an

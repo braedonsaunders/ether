@@ -14,6 +14,30 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 )
 
+func TestEmbyOmitsJellyfinOnlyDTOFields(t *testing.T) {
+	i := &instance{protocol: "emby"}
+	user := i.userDTO(httptest.NewRequest("GET", "/Users/Me", nil), &frontend.Viewer{ID: 1})
+	policy, config := user["Policy"].(map[string]any), user["Configuration"].(map[string]any)
+	for _, key := range []string{"ForceRemoteSourceTranscoding", "LoginAttemptsBeforeLockout", "MaxActiveSessions", "PasswordResetProviderId", "SyncPlayAccess"} {
+		if _, ok := policy[key]; ok {
+			t.Fatal(key)
+		}
+	}
+	if _, ok := config["GroupedFolders"]; ok {
+		t.Fatal(config)
+	}
+	source := mediaSourceDTO("source", frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video"}}})
+	i.mediaSourceDialect(source)
+	for _, key := range []string{"GenPtsInput", "HasSegments", "IgnoreDts", "IgnoreIndex", "MediaAttachments"} {
+		if _, ok := source[key]; ok {
+			t.Fatal(key)
+		}
+	}
+	if _, ok := source["MediaStreams"].([]any)[0].(map[string]any)["IsOriginal"]; ok {
+		t.Fatal(source)
+	}
+}
+
 func TestEmbySurfaceAndAuthentication(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1, Username: "alice"}
 	ident := frontendtest.Identity{SignInFunc: func(_ context.Context, u, p string, d frontend.Device) (string, error) {

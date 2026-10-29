@@ -120,6 +120,14 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 			}
 		}
 	}
+	if i.protocol == "emby" {
+		for _, key := range []string{"ForceRemoteSourceTranscoding", "LoginAttemptsBeforeLockout", "MaxActiveSessions", "PasswordResetProviderId", "SyncPlayAccess"} {
+			delete(policy, key)
+		}
+		policy["SimultaneousStreamLimit"] = v.StreamLimit
+		delete(configuration, "DisplayCollectionsView")
+		delete(configuration, "GroupedFolders")
+	}
 	result := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": policy, "Configuration": configuration}
 	if i.protocol == "emby" && !v.CreatedAt.IsZero() {
 		result["DateCreated"] = v.CreatedAt.UTC()
@@ -208,8 +216,13 @@ func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]an
 		caps, err := i.host.Sessions.Capabilities(r.Context(), frontend.SessionAccess{Viewer: v, Device: d, Protocol: i.protocol})
 		if err == nil {
 			c := sessionCapabilitiesDTO(caps)
-			session["Capabilities"] = c
+			if i.protocol == "jellyfin" {
+				session["Capabilities"] = c
+			}
 			for _, key := range []string{"PlayableMediaTypes", "SupportedCommands", "SupportsRemoteControl", "SupportsMediaControl"} {
+				if i.protocol == "emby" && key == "SupportsMediaControl" {
+					continue
+				}
 				if value, ok := c[key]; ok {
 					session[key] = value
 				}
