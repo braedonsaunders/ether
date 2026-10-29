@@ -52,3 +52,33 @@ func TestSecurePortalPrefersReachableLocalPlexDirect(t *testing.T) {
 		t.Fatalf("unbound local: %q %v", got, err)
 	}
 }
+
+func TestSurfaceLANAddressUsesActualBoundPort(t *testing.T) {
+	_, network, _ := net.ParseCIDR("192.168.1.0/24")
+	interfaces := []remote.InterfaceAddr{{IP: net.ParseIP("192.168.1.5"), Net: network}}
+	peer := netip.MustParseAddr("192.168.1.9")
+	local := &net.TCPAddr{IP: net.ParseIP("192.168.1.5"), Port: 8097}
+	got, ok := surfaceLANAddress(peer, local, []string{"0.0.0.0:8097"}, []string{""}, interfaces)
+	if !ok || got != "http://192.168.1.5:8097" {
+		t.Fatalf("dedicated port: %q %v", got, ok)
+	}
+	if _, ok = surfaceLANAddress(peer, &net.TCPAddr{IP: local.IP, Port: 32400}, []string{"0.0.0.0:8097"}, []string{""}, interfaces); ok {
+		t.Fatal("accepted different listener")
+	}
+	if _, ok = surfaceLANAddress(netip.MustParseAddr("8.8.8.8"), local, []string{"0.0.0.0:8097"}, []string{""}, interfaces); ok {
+		t.Fatal("exposed LAN URL to remote peer")
+	}
+}
+
+func TestSurfaceSharedAddressPreservesPublishedPrefix(t *testing.T) {
+	got, err := surfaceSharedAddress("https://ether.example/base/ether/me", []string{"/jellyfin"})
+	if err != nil || got != "https://ether.example/base/jellyfin" {
+		t.Fatalf("shared address: %q %v", got, err)
+	}
+	if _, err := surfaceSharedAddress("https://ether.example/base/ether/me", nil); err == nil {
+		t.Fatal("missing shared mount accepted")
+	}
+	if _, err := surfaceSharedAddress("https://ether.example/base", []string{"/jellyfin"}); err == nil {
+		t.Fatal("invalid portal path accepted")
+	}
+}

@@ -217,6 +217,8 @@ type Host struct {
 	ViewerPortalURL func(context.Context, *http.Request) (string, error)
 	// SecurePortalURL selects a verified reachable HTTPS portal address.
 	SecurePortalURL func(context.Context, *http.Request) (string, error)
+	// SurfaceURL returns a reachable, verified base for this frontend's routes.
+	SurfaceURL func(context.Context, *http.Request) (string, error)
 	// ClientSeen reports an authenticated client's protocol-specific device ID.
 	ClientSeen func(deviceID string)
 	// ClientIP resolves the transport peer using the configured trusted proxies.

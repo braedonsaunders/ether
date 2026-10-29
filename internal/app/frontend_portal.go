@@ -9,9 +9,84 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/remote"
 )
+
+func (r *frontendRuntime) surfaceURL(ctx context.Context, id frontend.Protocol, req *http.Request) (string, error) {
+	ip, ok := r.app.frontendClientIP(req)
+	if !ok {
+		return "", errors.New("client address unavailable")
+	}
+	r.control.listeners.mu.Lock()
+	run := r.control.listeners.running[id]
+	var addresses, prefixes, shared []string
+	if run != nil {
+		for _, listener := range run.listeners {
+			addresses = append(addresses, listener.Addr().String())
+		}
+		prefixes = append(prefixes, run.prefixes...)
+		shared = append(shared, run.sharedPrefixes...)
+	}
+	r.control.listeners.mu.Unlock()
+	if run == nil {
+		return "", errors.New("frontend unavailable")
+	}
+	local, _ := req.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	var interfaces []remote.InterfaceAddr
+	if identity.LAN(ip) {
+		interfaces, _ = remote.LANAddresses(remote.LANOptions{IncludeIPv6: true})
+	}
+	if base, ok := surfaceLANAddress(ip, local, addresses, prefixes, interfaces); ok {
+		return base, nil
+	}
+	portal, err := r.viewerPortalURL(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return surfaceSharedAddress(portal, shared)
+}
+
+func surfaceSharedAddress(portal string, shared []string) (string, error) {
+	u, err := url.Parse(portal)
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !strings.HasSuffix(u.Path, "/ether/me") {
+		return "", errors.New("portal address unavailable")
+	}
+	for _, prefix := range shared {
+		if prefix != "" {
+			u.Path = strings.TrimSuffix(u.Path, "/ether/me") + prefix
+			return strings.TrimRight(u.String(), "/"), nil
+		}
+	}
+	return "", errors.New("no reachable frontend address")
+}
+
+func surfaceLANAddress(peer netip.Addr, local net.Addr, addresses, prefixes []string, interfaces []remote.InterfaceAddr) (string, bool) {
+	if local == nil || !identity.LAN(peer) {
+		return "", false
+	}
+	_, localPort, err := net.SplitHostPort(local.String())
+	if err != nil {
+		return "", false
+	}
+	for index, address := range addresses {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil || port != localPort {
+			continue
+		}
+		portal, err := portalLANAddress(peer, host, port, interfaces)
+		if err == nil {
+			u, _ := url.Parse(portal)
+			u.Path = ""
+			if index < len(prefixes) {
+				u.Path = prefixes[index]
+			}
+			return strings.TrimRight(u.String(), "/"), true
+		}
+	}
+	return "", false
+}
 
 // viewerPortalURL uses the verified client address and the main listener's
 // published network addresses; it never trusts request Host or forwarded host.
