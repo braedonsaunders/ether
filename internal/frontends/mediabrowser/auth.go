@@ -490,7 +490,14 @@ func (i *instance) publicViewers(w http.ResponseWriter, r *http.Request) {
 		if e != nil {
 			continue
 		}
-		items = append(items, map[string]any{"Id": id, "Name": viewer.Name, "ServerId": i.info.ID, "HasPassword": true})
+		item := map[string]any{"Id": id, "Name": viewer.Name, "ServerId": i.info.ID}
+		if viewer.HasConfiguredPassword != nil {
+			item["HasPassword"] = *viewer.HasConfiguredPassword
+			if i.protocol == "emby" {
+				item["HasConfiguredPassword"] = *viewer.HasConfiguredPassword
+			}
+		}
+		items = append(items, item)
 	}
 	jsonReply(w, items)
 }
