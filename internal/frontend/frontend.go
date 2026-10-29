@@ -30,6 +30,7 @@ type ListenerSpec struct {
 }
 type Status struct {
 	Addresses     []string `json:"addresses"`
+	ConnectURLs   []string `json:"connectUrls,omitempty"`
 	LAN           string   `json:"lan"`
 	WAN           string   `json:"wan"`
 	Clients24h    int      `json:"clients24h"`

@@ -95,3 +95,19 @@ func FuzzStremio(f *testing.F) {
 	f.Add("tmdb:123")
 	f.Fuzz(func(t *testing.T, s string) { _, _ = ParseStremio(s) })
 }
+
+func TestFormatStremio(t *testing.T) {
+	for _, raw := range []string{"tmdb:123", "tmdb:123:0:1", "tt0816692", "tt0903747:1:2"} {
+		id, err := ParseStremio(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := FormatStremio(id)
+		if err != nil || got != raw {
+			t.Fatal(got, err)
+		}
+	}
+	if _, err := FormatStremio(StremioID{Source: "imdb", ID: "tt1", Season: 1}); err == nil {
+		t.Fatal("ignored episode fields")
+	}
+}
