@@ -11,7 +11,7 @@ import (
 )
 
 func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
-	viewer, _, err := i.viewer(r)
+	viewer, token, err := i.viewer(r)
 	if err != nil || viewer == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
@@ -33,7 +33,20 @@ func (i *instance) channels(w http.ResponseWriter, r *http.Request) {
 		if e != nil {
 			continue
 		}
-		items = append(items, map[string]any{"Id": id, "Name": ch.Name, "Number": ch.Number, "Type": "TvChannel", "IsFolder": false, "UserData": map[string]any{"Key": id, "IsFavorite": ch.Favorite}})
+		item := map[string]any{"Id": id, "Name": ch.Name, "Number": ch.Number, "Type": "TvChannel", "IsFolder": false, "UserData": map[string]any{"Key": id, "IsFavorite": ch.Favorite}}
+		if i.host.ImageGrants != nil {
+			for _, img := range ch.Images {
+				if img.Kind != frontend.ImageChannel {
+					continue
+				}
+				grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: token, Device: device(r), Channel: ch.ID, Image: img})
+				if err == nil && grant != "" {
+					item["ImageTags"] = map[string]string{"Primary": grant}
+					break
+				}
+			}
+		}
+		items = append(items, item)
 	}
 	jsonReply(w, i.queryResult(items, len(channels), offset))
 }
@@ -48,7 +61,7 @@ func (i *instance) programmes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	q := frontend.LiveGuideQuery{From: now, Until: now.Add(24 * time.Hour), Limit: queryInt(r, "Limit", 100)}
+	q := frontend.LiveGuideQuery{From: now, Until: now.Add(24 * time.Hour), Limit: queryInt(r, "Limit", 100), Device: device(r)}
 	for _, p := range []struct {
 		name string
 		dest *time.Time

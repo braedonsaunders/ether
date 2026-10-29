@@ -6,6 +6,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -13,6 +14,36 @@ import (
 	"testing"
 	"time"
 )
+
+type channelGrants struct{ requests []frontend.ImageGrantRequest }
+
+func (g *channelGrants) Issue(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
+	g.requests = append(g.requests, req)
+	return "channel-grant", nil
+}
+func (*channelGrants) Revoke(context.Context, string, string) error { return nil }
+func (*channelGrants) Serve(w http.ResponseWriter, _ *http.Request, _ string) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func TestLiveChannelImageUsesChannelScopedGrant(t *testing.T) {
+	grants := &channelGrants{}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 1}, nil }}
+	live := frontendtest.LiveTV{ChannelsFunc: func(context.Context, *frontend.Viewer) ([]frontend.LiveChannel, error) {
+		return []frontend.LiveChannel{{ID: "channel-1", Name: "News", Images: []frontend.Image{{Kind: frontend.ImageChannel, Path: "opaque"}}}}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, LiveTV: live, ImageGrants: grants})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/LiveTv/Channels", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "channel-grant") || len(grants.requests) != 1 || grants.requests[0].Channel != "channel-1" || grants.requests[0].Item != 0 || grants.requests[0].Credential != "grant" {
+		t.Fatal(w.Code, w.Body.String(), grants.requests)
+	}
+}
 
 func TestLiveTVUsesViewerScopedHost(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
@@ -29,7 +60,7 @@ func TestLiveTVUsesViewerScopedHost(t *testing.T) {
 		}
 		return frontend.LiveChannel{ID: "channel-1"}, nil
 	}, GuideFunc: func(_ context.Context, v *frontend.Viewer, q frontend.LiveGuideQuery) ([]frontend.LiveProgramme, error) {
-		if v != viewer || len(q.Channels) != 1 || q.Channels[0] != "channel-1" || !q.From.Equal(start) {
+		if v != viewer || len(q.Channels) != 1 || q.Channels[0] != "channel-1" || !q.From.Equal(start) || q.Device.ID != "guide-device" {
 			t.Fatal(v, q)
 		}
 		return []frontend.LiveProgramme{{ID: "program-1", ChannelID: "channel-1", Title: "News", Start: start, End: start.Add(time.Hour)}}, nil
@@ -52,6 +83,7 @@ func TestLiveTVUsesViewerScopedHost(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", path, nil)
 		r.Header.Set("X-Emby-Token", "grant")
+		r.Header.Set("Authorization", `MediaBrowser DeviceId="guide-device"`)
 		inst.Handler().ServeHTTP(w, r)
 		if w.Code != 200 || !strings.Contains(w.Body.String(), "News") {
 			t.Fatal(path, w.Code, w.Body.String())
