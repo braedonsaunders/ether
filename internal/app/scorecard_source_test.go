@@ -190,8 +190,67 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 		t.Fatal(e)
 	}
 	sourceID := scorecardReleaseID(second)
-	url := "/Items/" + ids.RatingKeyGUID(core.MovieKey(123)) + "/PlaybackInfo"
-	body, _ := json.Marshal(map[string]any{"IsPlayback": true, "MediaSourceId": sourceID})
+	itemID := ids.RatingKeyGUID(core.MovieKey(123))
+	requestAuth := `MediaBrowser Client="test", DeviceId="test", Token="` + login.AccessToken + `"`
+	req = httptest.NewRequest("GET", "/Items/"+itemID, nil)
+	req.Header.Set("Authorization", requestAuth)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("item detail HTTP %d", rr.Code)
+	}
+	var detail struct {
+		MediaSources []struct {
+			ID string `json:"Id"`
+		} `json:"MediaSources"`
+	}
+	if e = json.Unmarshal(rr.Body.Bytes(), &detail); e != nil || len(detail.MediaSources) != 2 {
+		t.Fatalf("item detail offers %d sources: %v", len(detail.MediaSources), e)
+	}
+	handle, otherHandle := "", ""
+	for _, offered := range detail.MediaSources {
+		if offered.ID == "" || offered.ID == sourceID {
+			t.Fatal("version is not opaque")
+		}
+		req = httptest.NewRequest("GET", "/__scorecard/offer?handle="+offered.ID, nil)
+		req.RemoteAddr = "127.0.0.1:1"
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		var mapped struct {
+			Handle         string `json:"handle"`
+			ItemID         string `json:"item_id"`
+			ReleaseID      string `json:"release_id"`
+			ExpectedSHA256 string `json:"expected_sha256"`
+		}
+		if rr.Code != 200 || json.Unmarshal(rr.Body.Bytes(), &mapped) != nil {
+			t.Fatalf("offer mapping HTTP %d", rr.Code)
+		}
+		if mapped.ItemID != itemID || mapped.Handle != offered.ID {
+			t.Fatal("offer parent or handle mismatch")
+		}
+		if mapped.ReleaseID == sourceID && mapped.ExpectedSHA256 == second.SHA256 {
+			handle = offered.ID
+		} else {
+			otherHandle = offered.ID
+		}
+	}
+	if handle == "" {
+		t.Fatal("matching version not offered")
+	}
+	for _, tc := range []struct {
+		handler http.Handler
+		remote  string
+	}{{h, "192.0.2.1:1"}, {handlers["emby"], "127.0.0.1:1"}} {
+		req = httptest.NewRequest("GET", "/__scorecard/offer?handle="+handle, nil)
+		req.RemoteAddr = tc.remote
+		rr = httptest.NewRecorder()
+		tc.handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("offer escaped scope: HTTP %d", rr.Code)
+		}
+	}
+	url := "/Items/" + itemID + "/PlaybackInfo"
+	body, _ := json.Marshal(map[string]any{"IsPlayback": true, "MediaSourceId": handle})
 	req = httptest.NewRequest("POST", url, strings.NewReader(string(body)))
 	req.Header.Set("Authorization", `MediaBrowser Client="test", DeviceId="test", Token="`+login.AccessToken+`"`)
 	req.Header.Set("Content-Type", "application/json")
@@ -238,10 +297,26 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1"
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	var check struct{ Match bool }
-	if e = json.Unmarshal(rr.Body.Bytes(), &check); e != nil || !check.Match {
+	var check struct {
+		Match     bool   `json:"match"`
+		ReleaseID string `json:"release_id"`
+		SourceID  string `json:"source_id"`
+		Actual    string `json:"actual_sha256"`
+	}
+	if e = json.Unmarshal(rr.Body.Bytes(), &check); e != nil || !check.Match || check.ReleaseID != sourceID || check.SourceID != sourceID || check.Actual != second.SHA256 {
 		t.Fatalf("verification %s: %v", rr.Body.String(), e)
 	}
+	if otherHandle == "" {
+		t.Fatal("missing other offered handle")
+	}
+	req = httptest.NewRequest("GET", "/Videos/"+otherHandle+"/stream?static=true&PlaySessionId="+plan.PlaySessionId+"&MediaSourceId="+otherHandle, nil)
+	req.Header.Set("Authorization", requestAuth)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("different handle matched session: HTTP %d", rr.Code)
+	}
+
 }
 
 func TestScorecardVariantsUsePreparedProbe(t *testing.T) {

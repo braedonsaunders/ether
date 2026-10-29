@@ -284,6 +284,36 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 				_ = json.NewEncoder(w).Encode(a.frontends.broker.ScorecardSessions(r.Context()))
 				return
 			}
+			if r.URL.Path == "/__scorecard/offer" && r.Method == http.MethodGet {
+				// A mapping is evidence only when the handle was first obtained
+				// from this viewer's authenticated item-detail response. This
+				// fixture-only endpoint does not authorize playback.
+				handle := r.URL.Query().Get("handle")
+				if len(handle) != 36 {
+					http.NotFound(w, r)
+					return
+				}
+				var item int64
+				var release string
+				err := a.db.QueryRowContext(r.Context(), `SELECT item_id,release_id FROM sessions_version_handles WHERE handle=? AND surface=?`, handle, string(p)).Scan(&item, &release)
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				entry, err := (scorecardSource{dir}).lookup(release)
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(struct {
+					Handle         string `json:"handle"`
+					ItemID         string `json:"item_id"`
+					ReleaseID      string `json:"release_id"`
+					ExpectedSHA256 string `json:"expected_sha256"`
+				}{handle, ids.RatingKeyGUID(core.RatingKey(item)), release, entry.SHA256})
+				return
+			}
 			if r.URL.Path == "/__scorecard/sessions" && r.Method == http.MethodGet {
 				type row struct {
 					ID             string `json:"id"`

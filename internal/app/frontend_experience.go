@@ -293,7 +293,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		}
 		if a.resolver != nil {
 			caps := core.ClientCaps{Product: device.Product, Platform: device.Platform, DeviceName: device.DeviceName, ClientID: device.ID, Version: device.Version}
-			versions, err := a.resolver.Variants(ctx, core.ResolveRequest{Title: title, User: u, Client: caps}, 4)
+			versions, err := scorecardVariants(ctx, a, u, title, caps)
 			if err != nil {
 				return frontend.ItemDetail{}, err
 			}

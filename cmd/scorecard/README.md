@@ -54,8 +54,8 @@ reference separately and retain the resulting manifest as evidence.
 
 This remains an experimental harness: state copied from the listing is limited
 to played/progress, reference versions can have independent state even though
-Ether has one title, broker version selection is not yet verified, and the
-stubbed TMDB responses do not reproduce the complete offline parity fixture.
+Ether has one title, selected-source verification must be performed per session,
+and the stubbed TMDB responses do not reproduce the complete offline parity fixture.
 Do not treat its results as fairness-certified without checking catalogue,
 viewer state, selected file, media bytes and client requests on both sides.
 
@@ -65,9 +65,15 @@ metadata; it does not probe during a measured request. On the loopback listener,
 `GET /__scorecard/sessions` lists each active playback's session ID, resolved
 release ID, source ID and expected SHA-256. `GET /__scorecard/verify?id=SESSION`
 reads the actual selected MediaSource and returns its SHA-256 and `match`;
-run this outside the timed interval. A comparison is valid only if the requested
-variant ID, selected release and source IDs agree and the verified hash matches
-the reference file. Diagnostics contain no credentials or file paths.
+run this outside the timed interval. For opaque versions, obtain a handle from the authenticated item's
+`MediaSources` response, then query the fixture-only loopback endpoint
+`GET /__scorecard/offer?handle=HANDLE` to correlate it with the seeded item,
+release and expected SHA-256. An offer mapping by itself is not authorization
+or proof that a handle was offered to the current viewer; only use handles from
+the authenticated response. The broker session must bind that handle to the
+same viewer, device, protocol and item. A comparison is valid only if that
+selected release and source agree and the actual verified hash matches the
+reference file. Diagnostics contain no credentials or file paths.
 `GET /__scorecard/broker` links the protocol PlaySessionId to `playback_id`
 and reports the broker plan decision and stream format. When a transcoder is
 active, it also reports the actual transcoder decision and copy flags. Treat
