@@ -349,8 +349,8 @@ func (s *Service) SearchWithHash(ctx context.Context, title *core.Title, lang, r
 		if len(a.Files) == 0 {
 			continue
 		}
-		if lang != "" && a.Language != "" && normLang(a.Language) != normLang(lang) {
-			continue // the API matched a different language variant
+		if lang != "" && a.Language != "" && langMatchTier(lang, a.Language) == 0 {
+			continue // the API matched a different language or another region
 		}
 		out = append(out, Candidate{
 			HashMatch: a.HashMatch, FileID: a.Files[0].FileID, FileName: a.Files[0].FileName, Language: a.Language,
@@ -804,66 +804,109 @@ func (s *Service) fetchAndCache(ctx context.Context, id string, c Candidate) (st
 	})
 }
 
-// normLang folds "en"/"eng"/"EN"/"en-US" to a comparable 2-letter code,
-// keeping the region for Portuguese and Chinese (pt-br vs pt-pt, zh-tw vs
-// zh-cn are distinct subtitle languages, as OpenSubtitles treats them).
-// Must agree with normLang/lang in internal/plex and internal/trackprefs.
+// normLang folds "en"/"eng"/"EN"/"en-US" to a comparable code. The region
+// is kept only for pt and zh (pt-br/pt-pt, zh-cn/zh-tw, as OpenSubtitles
+// splits those): "por" folds to the generic "pt" and "pob" to "pt-br".
 func normLang(l string) string {
 	l = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(l)), "_", "-")
 	if l == "pob" {
 		return "pt-br"
 	}
-	if strings.HasPrefix(l, "pt-") || strings.HasPrefix(l, "zh-") {
-		return l
-	}
-	if i := strings.IndexAny(l, "-_"); i > 0 {
-		l = l[:i]
-	}
+	base, region, _ := strings.Cut(l, "-")
+	region, _, _ = strings.Cut(region, "-")
 	// ISO 639-2 -> 639-1 for common embedded-track codes.
-	switch l {
+	switch base {
 	case "eng":
-		return "en"
+		base = "en"
 	case "spa":
-		return "es"
+		base = "es"
 	case "fre", "fra":
-		return "fr"
+		base = "fr"
 	case "ger", "deu":
-		return "de"
+		base = "de"
 	case "ita":
-		return "it"
+		base = "it"
 	case "por":
-		return "pt"
+		base = "pt"
+	case "pob":
+		base, region = "pt", "br"
 	case "dut", "nld":
-		return "nl"
+		base = "nl"
 	case "jpn":
-		return "ja"
+		base = "ja"
 	case "kor":
-		return "ko"
+		base = "ko"
 	case "chi", "zho":
-		return "zh"
+		base = "zh"
 	case "rus":
-		return "ru"
+		base = "ru"
 	case "ara":
-		return "ar"
+		base = "ar"
 	case "hin":
-		return "hi"
+		base = "hi"
 	case "swe":
-		return "sv"
+		base = "sv"
 	case "nor":
-		return "no"
+		base = "no"
 	case "dan":
-		return "da"
+		base = "da"
 	case "fin":
-		return "fi"
+		base = "fi"
 	case "pol":
-		return "pl"
+		base = "pl"
 	case "tur":
-		return "tr"
+		base = "tr"
+	default:
+		if len(base) > 2 {
+			base = base[:2]
+		}
 	}
-	if len(l) > 2 {
-		return l[:2]
+	if (base == "pt" || base == "zh") && region != "" {
+		return base + "-" + region
 	}
-	return l
+	return base
+}
+
+func splitNormLang(n string) (base, region string) {
+	base, region, _ = strings.Cut(n, "-")
+	return base, region
+}
+
+// Language-matching semantics — must agree with internal/subtitles,
+// internal/trackprefs and internal/plex (keep the three in sync):
+//   - exact (pt-br × pt-br, pt × pt, por normalised to pt): tier 3, full match;
+//   - generic want × regional track (pt/por × pt-br, zh × zh-tw): tier 2 —
+//     a generic preference accepts any region of the language;
+//   - regional want × generic track (pt-br × pt, zh-tw × zh): tier 1, weak —
+//     accepted, but it never beats tier 3 or tier 2 for the same want;
+//   - different regions (pt-br × pt-pt, zh-cn × zh-tw): tier 0, no match.
+//
+// Direction matters only for coverage (MissingLanguages): an embedded
+// regional track satisfies a generic want (tier ≥ 2), but an embedded
+// generic track does NOT satisfy a regional want (tier 1 still downloads).
+// sameLanguage (plex) is the symmetric view: tier > 0, i.e. exact, or the
+// same base with at least one generic side.
+func langMatchTier(want, track string) int {
+	w, t := normLang(want), normLang(track)
+	if w == "" || t == "" {
+		return 0
+	}
+	if w == t {
+		return 3
+	}
+	wb, wr := splitNormLang(w)
+	tb, tr := splitNormLang(t)
+	if wb != tb {
+		return 0
+	}
+	switch {
+	case wr == "" && tr != "":
+		return 2
+	case wr != "" && tr == "":
+		return 1
+	default:
+		return 0
+	}
 }
 
 // queryLang maps a normalised language to the code OpenSubtitles expects in
@@ -885,21 +928,33 @@ func MissingLanguages(user *core.User, embedded []core.StreamInfo) []string {
 	if user == nil {
 		return nil
 	}
-	have := map[string]bool{}
+	var have []string
 	for _, st := range embedded {
 		if st.Type == "subtitle" && st.Language != "" {
-			have[normLang(st.Language)] = true
+			have = append(have, normLang(st.Language))
 		}
 	}
 	var out []string
 	seen := map[string]bool{}
 	for _, l := range user.SubtitleLanguages {
 		n := normLang(l)
-		if n == "" || have[n] || seen[n] {
+		if n == "" || seen[n] {
 			continue
 		}
 		seen[n] = true
-		out = append(out, n)
+		// Directional coverage (see langMatchTier): a regional embedded
+		// track satisfies a generic want (tier 2), but a generic embedded
+		// track does not satisfy a regional want (tier 1) — download it.
+		covered := false
+		for _, h := range have {
+			if langMatchTier(n, h) >= 2 {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, n)
+		}
 	}
 	return out
 }

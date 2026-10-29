@@ -25,8 +25,14 @@ func TestLanguagePtBREndToEnd(t *testing.T) {
 	if !sameLanguage(sidecar.Language, "pt-BR") || !sameLanguage(sidecar.Language, "pob") {
 		t.Fatalf("plex: %q must be the same language as pt-BR/pob", sidecar.Language)
 	}
-	if sameLanguage(sidecar.Language, "pt-PT") || sameLanguage(sidecar.Language, "pt") {
-		t.Fatalf("plex: %q must not collapse into generic/European Portuguese", sidecar.Language)
+	if sameLanguage(sidecar.Language, "pt-PT") {
+		t.Fatalf("plex: %q must not collapse into European Portuguese", sidecar.Language)
+	}
+	// B3: sameLanguage is the symmetric tier>0 view, so a pt-BR track
+	// weakly matches generic pt (tier 1) — distinctness lives in the
+	// tiers/MissingLanguages/languageTag, not in collapsing to equality.
+	if !sameLanguage(sidecar.Language, "pt") {
+		t.Fatalf("plex: %q must weakly match generic pt (B3 tier 1)", sidecar.Language)
 	}
 	if got := languageTag(sidecar.Language); got != "pt-br" {
 		t.Fatalf("plex: languageTag(pt-BR sidecar)=%q want pt-br", got)

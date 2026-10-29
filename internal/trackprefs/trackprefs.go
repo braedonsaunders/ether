@@ -158,41 +158,89 @@ func (s *Service) choice(ctx context.Context, user int64, key core.RatingKey, ki
 	return c, err == nil, err
 }
 
-// lang normalises a language code, keeping the region for Portuguese and
-// Chinese (pt-br vs pt-pt, zh-tw vs zh-cn are distinct subtitle languages).
-// Must agree with normLang in internal/subtitles and internal/plex.
+// lang normalises a language code like subtitles.normLang: the region is
+// kept only for pt and zh ("por" → generic "pt", "pob" → "pt-br").
 func lang(s string) string {
 	s = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), "_", "-")
 	if s == "pob" {
 		return "pt-br"
 	}
-	if strings.HasPrefix(s, "pt-") || strings.HasPrefix(s, "zh-") {
-		return s
-	}
-	s = strings.Split(s, "-")[0]
-	switch s {
+	base, region, _ := strings.Cut(s, "-")
+	region, _, _ = strings.Cut(region, "-")
+	switch base {
 	case "eng":
-		return "en"
+		base = "en"
 	case "fre", "fra":
-		return "fr"
+		base = "fr"
 	case "ger", "deu":
-		return "de"
+		base = "de"
 	case "spa":
-		return "es"
+		base = "es"
 	case "jpn":
-		return "ja"
+		base = "ja"
 	case "ita":
-		return "it"
+		base = "it"
 	case "por":
-		return "pt"
+		base = "pt"
+	case "pob":
+		base, region = "pt", "br"
 	case "chi", "zho":
-		return "zh"
+		base = "zh"
 	case "kor":
-		return "ko"
+		base = "ko"
 	case "rus":
-		return "ru"
+		base = "ru"
+	default:
+		if len(base) > 2 {
+			base = base[:2]
+		}
 	}
-	return s
+	if (base == "pt" || base == "zh") && region != "" {
+		return base + "-" + region
+	}
+	return base
+}
+
+func splitLang(n string) (base, region string) {
+	base, region, _ = strings.Cut(n, "-")
+	return base, region
+}
+
+// Language-matching semantics — must agree with internal/subtitles,
+// internal/trackprefs and internal/plex (keep the three in sync):
+//   - exact (pt-br × pt-br, pt × pt, por normalised to pt): tier 3, full match;
+//   - generic want × regional track (pt/por × pt-br, zh × zh-tw): tier 2 —
+//     a generic preference accepts any region of the language;
+//   - regional want × generic track (pt-br × pt, zh-tw × zh): tier 1, weak —
+//     accepted, but it never beats tier 3 or tier 2 for the same want;
+//   - different regions (pt-br × pt-pt, zh-cn × zh-tw): tier 0, no match.
+//
+// Direction matters only for coverage (MissingLanguages): an embedded
+// regional track satisfies a generic want (tier ≥ 2), but an embedded
+// generic track does NOT satisfy a regional want (tier 1 still downloads).
+// sameLanguage (plex) is the symmetric view: tier > 0, i.e. exact, or the
+// same base with at least one generic side.
+func langMatchTier(want, track string) int {
+	w, t := lang(want), lang(track)
+	if w == "" || t == "" {
+		return 0
+	}
+	if w == t {
+		return 3
+	}
+	wb, wr := splitLang(w)
+	tb, tr := splitLang(t)
+	if wb != tb {
+		return 0
+	}
+	switch {
+	case wr == "" && tr != "":
+		return 2
+	case wr != "" && tr == "":
+		return 1
+	default:
+		return 0
+	}
 }
 
 // sdh reports whether a track title carries an SDH/CC marker. The marker
@@ -255,13 +303,29 @@ func delimitedMarker(v, marker string) bool {
 		from = i + 1
 	}
 }
+
+// rankLanguage scores a track against the wanted languages. The tier
+// penalties (40/80) exceed every non-language bonus in pick (default 5 +
+// style 10 + forced-style 10), so for the same want a weak tier-1 track
+// can never beat a tier-2 or exact tier-3 track on those bonuses alone.
 func rankLanguage(code string, want []string) int {
+	best := 0
 	for i, v := range want {
-		if lang(code) != "" && lang(code) == lang(v) {
-			return 1000 - i*20
+		score := 1000 - i*20
+		switch langMatchTier(v, code) {
+		case 3:
+		case 2:
+			score -= 40
+		case 1:
+			score -= 80
+		default:
+			continue
+		}
+		if score > best {
+			best = score
 		}
 	}
-	return 0
+	return best
 }
 func pick(streams []core.StreamInfo, kind string, want []string, style string, forcedOnly bool, memory *Choice) int {
 	best, score := -1, -100000

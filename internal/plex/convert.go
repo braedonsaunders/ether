@@ -744,10 +744,20 @@ func extendedTitle(st core.StreamInfo, display, codec string) string {
 // first. Multi-language releases often flag a dub as default.
 func pickAudio(info core.MediaInfo, langs []string) int {
 	for _, lang := range langs {
+		// Within one wanted language the best tier wins (exact before
+		// generic-want×regional before regional-want×generic); preference
+		// order across languages still dominates.
+		best, bestTier := -1, 0
 		for i, st := range info.Streams {
-			if st.Type == "audio" && sameLanguage(st.Language, lang) {
-				return i
+			if st.Type != "audio" {
+				continue
 			}
+			if tier := langMatchTier(lang, st.Language); tier > bestTier {
+				best, bestTier = i, tier
+			}
+		}
+		if best >= 0 {
+			return best
 		}
 	}
 	first := -1
@@ -1009,20 +1019,16 @@ var lang3to1 = func() map[string]string {
 	return m
 }()
 
-// normLang normalises a language code, keeping the region for Portuguese
-// and Chinese (pt-br vs pt-pt, zh-tw vs zh-cn are distinct subtitle
-// languages). Must agree with normLang/lang in internal/subtitles and
-// internal/trackprefs.
+// normLang normalises a language code to its base language only: the
+// region is dropped even for pt/zh. languageName/languageCode3/languageTag
+// want the base code; langCanonical keeps the region where it matters.
 func normLang(code string) string {
 	c := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(code)), "_", "-")
-	if c == "pob" {
-		return "pt-br"
-	}
-	if strings.HasPrefix(c, "pt-") || strings.HasPrefix(c, "zh-") {
-		return c
-	}
-	if i := strings.IndexAny(c, "-_"); i > 0 {
+	if i := strings.IndexAny(c, "-"); i > 0 {
 		c = c[:i]
+	}
+	if c == "pob" {
+		return "pt"
 	}
 	if len(c) == 3 {
 		if two, ok := lang3to1[c]; ok {
@@ -1032,7 +1038,72 @@ func normLang(code string) string {
 	return c
 }
 
-func sameLanguage(a, b string) bool { return a != "" && normLang(a) == normLang(b) }
+// langCanonical is normLang plus the region, kept only for pt and zh
+// ("por" → generic "pt", "pob" → "pt-br"). normLang itself stays base-only:
+// languageName/languageCode3/languageTag want the base code.
+func langCanonical(code string) string {
+	c := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(code)), "_", "-")
+	if c == "pob" {
+		return "pt-br"
+	}
+	baseRaw, region, _ := strings.Cut(c, "-")
+	region, _, _ = strings.Cut(region, "-")
+	base := normLang(baseRaw)
+	if baseRaw == "pob" {
+		base, region = "pt", "br"
+	}
+	if (base == "pt" || base == "zh") && region != "" {
+		return base + "-" + region
+	}
+	return base
+}
+
+func splitCanonicalLang(n string) (base, region string) {
+	base, region, _ = strings.Cut(n, "-")
+	return base, region
+}
+
+// Language-matching semantics — must agree with internal/subtitles,
+// internal/trackprefs and internal/plex (keep the three in sync):
+//   - exact (pt-br × pt-br, pt × pt, por normalised to pt): tier 3, full match;
+//   - generic want × regional track (pt/por × pt-br, zh × zh-tw): tier 2 —
+//     a generic preference accepts any region of the language;
+//   - regional want × generic track (pt-br × pt, zh-tw × zh): tier 1, weak —
+//     accepted, but it never beats tier 3 or tier 2 for the same want;
+//   - different regions (pt-br × pt-pt, zh-cn × zh-tw): tier 0, no match.
+//
+// Direction matters only for coverage (MissingLanguages): an embedded
+// regional track satisfies a generic want (tier ≥ 2), but an embedded
+// generic track does NOT satisfy a regional want (tier 1 still downloads).
+// sameLanguage (plex) is the symmetric view: tier > 0, i.e. exact, or the
+// same base with at least one generic side.
+func langMatchTier(want, track string) int {
+	w, t := langCanonical(want), langCanonical(track)
+	if w == "" || t == "" {
+		return 0
+	}
+	if w == t {
+		return 3
+	}
+	wb, wr := splitCanonicalLang(w)
+	tb, tr := splitCanonicalLang(t)
+	if wb != tb {
+		return 0
+	}
+	switch {
+	case wr == "" && tr != "":
+		return 2
+	case wr != "" && tr == "":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// sameLanguage is the symmetric view of langMatchTier: true when the tier
+// is > 0 in either reading — exact, or the same base with at least one
+// generic side (pt × pt-br true; pt-br × pt-pt false).
+func sameLanguage(a, b string) bool { return a != "" && b != "" && langMatchTier(a, b) > 0 }
 
 // langEntry looks a code up in languages, falling back to the base
 // language for region-preserving codes (pt-br -> pt).
@@ -1067,7 +1138,7 @@ func languageCode3(code string) string {
 
 func languageTag(code string) string {
 	// A preserved region is part of the tag (pt-br, zh-tw).
-	if n := normLang(code); strings.Contains(n, "-") {
+	if n := langCanonical(code); strings.Contains(n, "-") {
 		return n
 	}
 	if l, ok := langEntry(code); ok {
