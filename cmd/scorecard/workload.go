@@ -536,6 +536,10 @@ func executeWorkloadStep(ctx context.Context, client *http.Client, target worklo
 		body = bytes.NewReader(encoded)
 	}
 	requestCtx, cancel := context.WithCancel(ctx)
+	if client.Timeout > 0 {
+		cancel()
+		requestCtx, cancel = context.WithTimeout(ctx, client.Timeout)
+	}
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, step.Method, requestURL, body)
 	if err != nil {
@@ -577,7 +581,7 @@ func executeWorkloadStep(ctx context.Context, client *http.Client, target worklo
 		return 0, true, nil
 	}
 	if step.Kind == "media" {
-		return verifyWorkloadMedia(ctx, resp.Body, step, vars, verify)
+		return verifyWorkloadMedia(requestCtx, resp.Body, step, vars, verify)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, step.MaxBytes+1))
 	if err != nil {

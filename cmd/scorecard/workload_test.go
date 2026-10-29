@@ -163,3 +163,28 @@ func TestMixedWorkloadCountsAllOutcomesAndInterruptions(t *testing.T) {
 		t.Fatalf("interruption hidden: %+v", run)
 	}
 }
+
+func TestWorkloadDecodeTimeoutIsCountedAndCleanupRuns(t *testing.T) {
+	media := []byte("bytes")
+	digest := sha256.Sum256(media)
+	var cleanup atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/logout" {
+			cleanup.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		_, _ = w.Write(media)
+	}))
+	defer s.Close()
+	client := s.Client()
+	client.Timeout = 20 * time.Millisecond
+	cfg := workloadConfig{TimeoutMS: 1000, Flows: map[string]workloadFlow{"play": {RequiresMedia: true, Steps: []workloadStep{
+		{Kind: "media", Method: "GET", Path: "/media", ExpectedStatus: 200, MaxBytes: 100, ExpectedSHA256: hex.EncodeToString(digest[:]), ExpectedDurationMS: 1000},
+		{Kind: "cleanup", Method: "POST", Path: "/logout", ExpectedStatus: 204, MaxBytes: 100},
+	}}}}
+	ev := runWorkloadFlow(context.Background(), client, cfg, workloadTarget{BaseURL: s.URL}, workloadArrival{Client: "c", Flow: "play"}, func(ctx context.Context, _ string) (int64, error) { <-ctx.Done(); return 0, ctx.Err() })
+	if !ev.TimedOut || ev.Error != "timeout" || ev.Completed || cleanup.Load() != 1 {
+		t.Fatalf("timeout or cleanup lost: %+v", ev)
+	}
+}
