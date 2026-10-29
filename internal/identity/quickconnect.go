@@ -25,6 +25,7 @@ CREATE TABLE identity_quickconnect (
 );
 CREATE INDEX identity_quickconnect_expiry ON identity_quickconnect(expires);
 `)
+	store.Register("identity_quickconnect", 2, `ALTER TABLE identity_quickconnect ADD COLUMN device_name TEXT NOT NULL DEFAULT ''; ALTER TABLE identity_quickconnect ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;`)
 }
 
 // QuickConnect is a shared, one-use approval broker. HTTP handlers must rate
@@ -87,7 +88,8 @@ func (q *QuickConnect) Initiate(ctx context.Context, surface string, device core
 		if err != nil {
 			return
 		}
-		res, e := q.db.ExecContext(ctx, `INSERT INTO identity_quickconnect(code,secret_hash,surface,device_id,client,product,version,expires) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(code) DO NOTHING`, code, hash, surface, device.ID, device.Client, device.Product, device.Version, q.now().Add(q.ttl).UnixMilli())
+		now := q.now()
+		res, e := q.db.ExecContext(ctx, `INSERT INTO identity_quickconnect(code,secret_hash,surface,device_id,client,product,version,device_name,created_at,expires) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(code) DO NOTHING`, code, hash, surface, device.ID, device.Client, device.Product, device.Version, device.DeviceName, now.UnixMilli(), now.Add(q.ttl).UnixMilli())
 		if e != nil {
 			return "", "", e
 		}
@@ -136,23 +138,43 @@ var ErrQuickConnectPending = errors.New("identity: quick connect pending")
 
 // StatusSurface reports approval without consuming the secret or issuing a grant.
 func (q *QuickConnect) StatusSurface(ctx context.Context, surface, secret string) (bool, error) {
+	details, err := q.DetailsSurface(ctx, surface, secret)
+	return details.Approved, err
+}
+
+type QuickConnectDetails struct {
+	Approved  bool
+	Code      string
+	Device    core.Device
+	CreatedAt time.Time
+}
+
+// DetailsSurface reads metadata without consuming a valid surface-bound secret.
+func (q *QuickConnect) DetailsSurface(ctx context.Context, surface, secret string) (QuickConnectDetails, error) {
+	var details QuickConnectDetails
 	hash, ok := secretHash(secret)
 	if !ok || surface == "" {
-		return false, core.ErrUnauthorized
+		return details, core.ErrUnauthorized
 	}
 	var viewer sql.NullInt64
 	var active bool
-	err := q.db.QueryRowContext(ctx, `SELECT viewer_id, EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1) FROM identity_quickconnect WHERE secret_hash=? AND surface=? AND consumed=0 AND expires>?`, hash, surface, q.now().UnixMilli()).Scan(&viewer, &active)
+	var created, expires int64
+	err := q.db.QueryRowContext(ctx, `SELECT code,device_id,client,product,version,device_name,created_at,expires,viewer_id, EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1) FROM identity_quickconnect WHERE secret_hash=? AND surface=? AND consumed=0 AND expires>?`, hash, surface, q.now().UnixMilli()).Scan(&details.Code, &details.Device.ID, &details.Device.Client, &details.Device.Product, &details.Device.Version, &details.Device.DeviceName, &created, &expires, &viewer, &active)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, core.ErrUnauthorized
+		return details, core.ErrUnauthorized
 	}
 	if err != nil {
-		return false, err
+		return details, err
 	}
 	if viewer.Valid && !active {
-		return false, core.ErrUnauthorized
+		return details, core.ErrUnauthorized
 	}
-	return viewer.Valid, nil
+	if created == 0 {
+		created = expires - q.ttl.Milliseconds()
+	}
+	details.CreatedAt = time.UnixMilli(created)
+	details.Approved = viewer.Valid
+	return details, nil
 }
 
 func (q *QuickConnect) Poll(ctx context.Context, secret string) (string, error) {

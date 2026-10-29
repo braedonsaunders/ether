@@ -9,7 +9,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/retryafter"
-	"github.com/braedonsaunders/ether/internal/transcode"
 	"net/http"
 	"strconv"
 	"time"
@@ -18,8 +17,13 @@ import (
 func (a *App) playbackPolicyHandler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /policy", func(w http.ResponseWriter, r *http.Request) {
+		policies, err := a.clientPolicies(r.Context())
+		if err != nil {
+			http.Error(w, "device policy unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"policies": transcode.ClientPolicies()})
+		_ = json.NewEncoder(w).Encode(map[string]any{"policies": policies})
 	})
 	m.HandleFunc("POST /prowlarr", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {

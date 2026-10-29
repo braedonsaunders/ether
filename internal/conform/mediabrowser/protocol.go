@@ -24,10 +24,11 @@ import (
 )
 
 type Profile struct {
-	Protocol string             `json:"protocol"`
-	Client   string             `json:"client"`
-	Headers  map[string]string  `json:"headers"`
-	Flows    map[string][]Probe `json:"flows"`
+	Protocol      string             `json:"protocol"`
+	Client        string             `json:"client"`
+	Headers       map[string]string  `json:"headers"`
+	Flows         map[string][]Probe `json:"flows"`
+	ProfileStatus string             `json:"profile_status"`
 }
 type Probe struct {
 	Name       string            `json:"name"`

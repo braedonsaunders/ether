@@ -55,7 +55,7 @@ func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 	grants, _ := identity.NewGrants(a.db, a.users, time.Hour, nil)
 	resolver, _ := identity.NewResolver(a.users, grants)
 	login, _ := identity.NewLoginLimiter(a.db, time.Minute, 100, 10, nil)
-	poll, _ := identity.NewPollLimiter(a.db, time.Minute, 100, 10, nil)
+	poll, _ := identity.NewPollLimiter(a.db, time.Minute, 100, 20, nil)
 	quick, _ := identity.NewQuickConnect(a.db, time.Minute, time.Hour, nil)
 	jf := surfaceIdentity{surface: "jellyfin", resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}
 	emby := jf
@@ -84,9 +84,16 @@ func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 	if err := emby.Revoke(ctx, token); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatal("cross-surface revoke", err)
 	}
-	code, secret, err := jf.QuickConnectInitiate(ctx, core.Device{ID: "tablet"})
+	code, secret, err := jf.QuickConnectInitiate(ctx, core.Device{ID: "tablet", DeviceName: "Family tablet", Client: "Jellyfin", Product: "Jellyfin TV", Version: "1.2"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	details, err := jf.QuickConnectDetails(ctx, secret)
+	if err != nil || details.Approved || details.Code != code || details.Secret != secret || details.Device.DeviceName != "Family tablet" || details.Device.Client != "Jellyfin" || details.CreatedAt.IsZero() {
+		t.Fatal(details, err)
+	}
+	if _, err := emby.QuickConnectDetails(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("cross-surface details", err)
 	}
 	if approved, err := jf.QuickConnectStatus(ctx, secret); err != nil || approved {
 		t.Fatal("pending status", approved, err)
@@ -102,6 +109,9 @@ func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 	}
 	if err := jf.QuickConnectApprove(ctx, viewer, code); err != nil {
 		t.Fatal(err)
+	}
+	if details, err := jf.QuickConnectDetails(ctx, secret); err != nil || !details.Approved || details.Code != code {
+		t.Fatal("approved details", details, err)
 	}
 	for i := 0; i < 2; i++ {
 		if approved, err := jf.QuickConnectStatus(ctx, secret); err != nil || !approved {

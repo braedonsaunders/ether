@@ -77,12 +77,20 @@ func TestPlexFrontendStatusUsesMainListener(t *testing.T) {
 	a.frontends.mainAddr = &net.TCPAddr{IP: net.ParseIP("192.0.2.8"), Port: 32450}
 	a.frontends.mu.Unlock()
 	list, err := a.frontends.control.List(context.Background())
-	if err != nil || len(list) != 1 {
-		t.Fatal(list, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	item := list[0]
-	if item.Descriptor.ID != frontend.Protocol("plex") || !item.Enabled || len(item.Status.Addresses) != 1 || item.Status.Addresses[0] != "192.0.2.8:32450" || !item.Status.LiveStreamsKnown || !item.Status.Clients24hKnown {
-		t.Fatal(item)
+	found := false
+	for _, item := range list {
+		if item.Descriptor.ID == frontend.Protocol("plex") {
+			found = true
+			if !item.Enabled || len(item.Status.Addresses) != 1 || item.Status.Addresses[0] != "192.0.2.8:32450" || !item.Status.LiveStreamsKnown || !item.Status.Clients24hKnown {
+				t.Fatal(item)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Plex missing", list)
 	}
 }
 
@@ -169,8 +177,20 @@ func TestPlexDiscoveryFailureDoesNotUnmount(t *testing.T) {
 	a.frontends.discovery = failed
 	a.frontends.start(context.Background(), &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 32400})
 	list, err := a.frontends.control.List(context.Background())
-	if err != nil || len(list) != 1 || len(list[0].Status.Warnings) != 1 {
-		t.Fatal(list, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range list {
+		if item.Descriptor.ID == "plex" {
+			found = true
+			if len(item.Status.Warnings) != 1 {
+				t.Fatal(item)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Plex missing", list)
 	}
 	if _, ok := a.frontends.registry.Instance("plex"); !ok {
 		t.Fatal("discovery failure unmounted Plex")

@@ -1986,6 +1986,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
               subtitleCodecs: ["srt"],
               notes: "Reported by the app",
             },
+            {
+              protocol: "stremio",
+              family: "Stremio TV",
+              dolbyVisionProfiles: [],
+              subtitleCodecs: ["srt"],
+              notes: "Reported by the app",
+            },
           ],
         });
       case "POST /playback/prowlarr": {
