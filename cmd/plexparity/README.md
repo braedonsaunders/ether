@@ -10,3 +10,9 @@ differences but incomplete route coverage. CI currently warns on exit 2.
 `c2057bfe` restricted Home backfill: not exercised by fixture; covered by
 experience unit tests. Do not allowlist a difference without an exact, verified
 response pair and its commit attribution.
+
+Intentional difference `42ef28ac`: viewers who saved scoped language or
+quality overrides have those preferences applied to Plex playback selection.
+The no-override path is covered by `TestNoScopedOverridesPreserveSelection`
+and `TestScopedQualityOnlyTightensPlexRequest`. This is recorded for
+attribution only: no response is allowlisted without a verified exact pair.
