@@ -182,10 +182,46 @@ func (d *Document) validate(schema any, v any, path string, depth int) error {
 		return err
 	}
 	if v == nil {
+		if values, ok := s["enum"].([]any); ok {
+			allowed := false
+			for _, item := range values {
+				if item == nil {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return fmt.Errorf("%s: value outside enum", path)
+			}
+		}
 		if s["nullable"] == true || s["type"] == "null" {
 			return nil
 		}
+		if kinds, ok := s["type"].([]any); ok {
+			for _, kind := range kinds {
+				if kind == "null" {
+					return nil
+				}
+			}
+		}
 		return fmt.Errorf("%s: null not allowed", path)
+	}
+	if kinds, ok := s["type"].([]any); ok {
+		for _, kind := range kinds {
+			name, ok := kind.(string)
+			if !ok || name == "null" {
+				continue
+			}
+			clone := make(map[string]any, len(s))
+			for k, val := range s {
+				clone[k] = val
+			}
+			clone["type"] = name
+			if d.validate(clone, v, path, depth+1) == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s: no matching schema type", path)
 	}
 	for _, kind := range []string{"allOf", "anyOf", "oneOf"} {
 		if variants, ok := s[kind].([]any); ok {

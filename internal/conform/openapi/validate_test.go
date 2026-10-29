@@ -52,3 +52,16 @@ func TestLiteralPathPrecedence(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOpenAPI31NullableTypeUnion(t *testing.T) {
+	doc, err := Parse([]byte(`{"openapi":"3.1.0","paths":{"/x":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object","required":["age"],"properties":{"age":{"type":["integer","null"]}}}}}}}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = doc.Validate("GET", "/x", 200, "application/json", []byte(`{"age":null}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err = doc.Validate("GET", "/x", 200, "application/json", []byte(`{"age":"invalid"}`)); err == nil {
+		t.Fatal("invalid union type accepted")
+	}
+}
