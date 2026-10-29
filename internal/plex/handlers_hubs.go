@@ -198,7 +198,7 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 }
 
 func (s *Server) recentlyAddedHub(ctx context.Context, pr *Request, sec Section, count int) (hubSpec, error) {
-	items, more, err := experience.RecentlyAdded(ctx, pr.User, sec.Type, count, s.d.Catalog.Browse)
+	items, more, err := experience.RecentlyAdded(ctx, pr.User, sec.Type, count, s.visibility(), s.d.Catalog.Browse)
 	if err != nil {
 		return hubSpec{}, err
 	}
