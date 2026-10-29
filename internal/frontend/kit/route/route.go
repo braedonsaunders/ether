@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 
@@ -18,8 +19,9 @@ type registered struct {
 	handler http.Handler
 }
 type Router struct {
-	mu     sync.RWMutex
-	routes []registered
+	mu      sync.RWMutex
+	routes  []registered
+	ordered []registered
 }
 
 // Handle registers a literal/parameter route. Parameters use {name}; a final
@@ -53,7 +55,29 @@ func (r *Router) Handle(method, pattern string, h http.Handler) error {
 		}
 	}
 	r.routes = append(r.routes, registered{Route{Method: method, Pattern: pattern}, parts, h})
+	r.ordered = append([]registered(nil), r.routes...)
+	sort.SliceStable(r.ordered, func(i, j int) bool { return moreSpecific(r.ordered[i].parts, r.ordered[j].parts) })
 	return nil
+}
+
+// moreSpecific ranks literals ahead of parameters and tail captures.
+// Registration order breaks ties; Routes retains registration order.
+func moreSpecific(a, b []string) bool {
+	rank := func(part string) int {
+		if !strings.HasPrefix(part, "{") {
+			return 3
+		}
+		if strings.HasSuffix(part, "...}") {
+			return 1
+		}
+		return 2
+	}
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if ar, br := rank(a[i]), rank(b[i]); ar != br {
+			return ar > br
+		}
+	}
+	return len(a) > len(b)
 }
 func (r *Router) Routes() []Route {
 	r.mu.RLock()
@@ -67,7 +91,7 @@ func (r *Router) Routes() []Route {
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(req.URL.Path, "/"), "/")
 	r.mu.RLock()
-	entries := append([]registered(nil), r.routes...)
+	entries := append([]registered(nil), r.ordered...)
 	r.mu.RUnlock()
 	methodMismatch := false
 	for _, e := range entries {

@@ -46,3 +46,28 @@ func TestWildcardAndQuery(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestRouterPrefersLiteralsThenParametersThenTail(t *testing.T) {
+	var r Router
+	for _, item := range []struct{ pattern, value string }{
+		{"/items/{tail...}", "tail"}, {"/items/{id}", "parameter"}, {"/Items/Latest", "literal"},
+		{"/items/{id}/details", "detail"}, {"/items/fixed/{id}", "fixed"},
+	} {
+		value := item.value
+		if err := r.Handle("GET", item.pattern, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(value)) })); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct{ path, want string }{
+		{"/ITEMS/latest", "literal"}, {"/items/other", "parameter"}, {"/items/other/details", "detail"}, {"/items/fixed/details", "fixed"}, {"/items/a/b/c", "tail"},
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", tc.path, nil))
+		if w.Code != 200 || w.Body.String() != tc.want {
+			t.Fatalf("%s: %d %q", tc.path, w.Code, w.Body.String())
+		}
+	}
+	if got := r.Routes()[0].Pattern; got != "/items/{tail...}" {
+		t.Fatalf("inventory order changed: %s", got)
+	}
+}
