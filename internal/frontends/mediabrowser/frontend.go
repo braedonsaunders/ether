@@ -146,24 +146,9 @@ func (i *instance) listenerPort() int {
 func (i *instance) Listeners() []frontend.ListenerSpec {
 	return []frontend.ListenerSpec{{Address: fmt.Sprintf(":%d", i.listenerPort())}, {Shared: true, PathPrefix: "/" + string(i.protocol)}}
 }
-func (i *instance) Discovery() []frontend.Announcer {
-	if i.protocol != "jellyfin" {
-		return nil
-	}
-	settings := frontend.Settings{}
-	if i.host.Config != nil {
-		settings = i.host.Config()
-	}
-	if enabled, ok := settings["discovery"].(bool); ok && !enabled {
-		return nil
-	}
-	port := i.listenerPort()
-	info := i.info
-	if name, ok := settings["serverName"].(string); ok && name != "" {
-		info.ServerName = name
-	}
-	return []frontend.Announcer{&discovery{info: info, port: port, listenPort: 7359}}
-}
+
+// UDP discovery is multiplexed by the host via DiscoveryResponder.
+func (i *instance) Discovery() []frontend.Announcer { return nil }
 func (i *instance) Status(context.Context) frontend.Status {
 	return frontend.Status{TargetVersion: i.info.Version, Conformance: conformance.Status(string(i.protocol), i.info.Version)}
 }

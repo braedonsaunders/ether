@@ -3,71 +3,43 @@ package mediabrowser
 import (
 	"context"
 	"encoding/json"
-	"net"
-	"strconv"
+	"net/url"
 	"strings"
-	"sync"
+
+	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
-type discovery struct {
-	info       PublicInfo
-	port       int
-	listenPort int
-	mu         sync.Mutex
-	conn       *net.UDPConn
-	done       chan struct{}
+// RespondDiscovery describes only this enabled surface; the host owns the
+// shared UDP socket and supplies a verified, reachable endpoint.
+func (i *instance) RespondDiscovery(_ context.Context, request frontend.DiscoveryRequest) ([]byte, bool) {
+	expected := "who is JellyfinServer?"
+	if i.protocol == "emby" {
+		expected = "who is EmbyServer?"
+	}
+	if !strings.EqualFold(string(request.Data), expected) {
+		return nil, false
+	}
+	settings := frontend.Settings{}
+	if i.host.Config != nil {
+		settings = i.host.Config()
+	}
+	if enabled, ok := settings["discovery"].(bool); ok && !enabled {
+		return nil, false
+	}
+	endpoint, err := url.Parse(request.Endpoint)
+	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+		return nil, false
+	}
+	name := i.info.ServerName
+	if configured, ok := settings["serverName"].(string); ok && configured != "" {
+		name = configured
+	}
+	response := map[string]string{"Address": request.Endpoint, "Id": i.info.ID, "Name": name}
+	if i.protocol == "jellyfin" {
+		response["EndpointAddress"] = endpoint.Hostname()
+	}
+	encoded, err := json.Marshal(response)
+	return encoded, err == nil
 }
 
-func (d *discovery) Start(ctx context.Context) error {
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: d.listenPort})
-	if err != nil {
-		return err
-	}
-	d.mu.Lock()
-	d.conn = conn
-	d.done = make(chan struct{})
-	done := d.done
-	d.mu.Unlock()
-	go func() {
-		defer close(done)
-		buf := make([]byte, 1024)
-		for {
-			n, peer, e := conn.ReadFromUDP(buf)
-			if e != nil {
-				return
-			}
-			if !strings.EqualFold(string(buf[:n]), "Who is JellyfinServer?") {
-				continue
-			}
-			source, e := net.DialUDP("udp4", nil, peer)
-			if e != nil {
-				continue
-			}
-			local := source.LocalAddr().(*net.UDPAddr).IP
-			_ = source.Close()
-			address := net.JoinHostPort(local.String(), strconv.Itoa(d.port))
-			b, _ := json.Marshal(map[string]string{"Address": "http://" + address, "Id": d.info.ID, "Name": d.info.ServerName, "EndpointAddress": local.String()})
-			_, _ = conn.WriteToUDP(b, peer)
-		}
-	}()
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = d.Close()
-		case <-done:
-		}
-	}()
-	return nil
-}
-func (d *discovery) Close() error {
-	d.mu.Lock()
-	conn, done := d.conn, d.done
-	d.conn = nil
-	d.mu.Unlock()
-	if conn == nil {
-		return nil
-	}
-	err := conn.Close()
-	<-done
-	return err
-}
+var _ frontend.DiscoveryResponder = (*instance)(nil)
