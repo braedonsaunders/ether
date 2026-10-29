@@ -492,6 +492,10 @@ func (b *Broker) accessSession(ctx context.Context, a frontend.SessionAccess, id
 		return nil, nil, err
 	}
 	b.mu.Lock()
+	if b.closed {
+		b.mu.Unlock()
+		return nil, nil, core.ErrNotAvailable
+	}
 	s, ok := b.sessions[id]
 	if ok {
 		copy := *s
@@ -814,8 +818,12 @@ func (b *Broker) Close(ctx context.Context) {
 	}
 	b.closed = true
 	var ids, planned []string
+	seen := make(map[string]bool)
 	for _, s := range b.sessions {
-		ids = append(ids, s.playID)
+		if !seen[s.playID] {
+			ids = append(ids, s.playID)
+			seen[s.playID] = true
+		}
 	}
 	for _, p := range b.plans {
 		if p.source != nil {
@@ -824,8 +832,14 @@ func (b *Broker) Close(ctx context.Context) {
 	}
 	b.plans = make(map[string]brokerPlan)
 	b.mu.Unlock()
+	// Shutdown must still release sessions when its caller has already been
+	// canceled; bound the cleanup so an unresponsive gate cannot block forever.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
 	for _, id := range ids {
-		b.StopPlayback(ctx, id)
+		if !b.StopPlayback(cleanupCtx, id) && b.deps.OnEventError != nil {
+			b.deps.OnEventError(fmt.Errorf("sessions: could not stop playback %s during shutdown", id))
+		}
 	}
 	for _, id := range planned {
 		b.deps.Playback.Stop(id)

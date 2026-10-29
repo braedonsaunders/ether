@@ -1,0 +1,49 @@
+package sessions
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+func TestCloseWithCanceledContextStopsEncoderAndSource(t *testing.T) {
+	ctx := context.Background()
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	playback := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	transcoder := &fakeMediaTranscoder{sessions: map[string]*fakeMediaSession{}}
+	b, err := NewBroker(BrokerDeps{Events: events, Playback: playback, Transcoder: transcoder, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, d := &core.Viewer{ID: 1}, core.Device{ID: "tv"}
+	plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: v, Device: d, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := b.Open(ctx, frontend.OpenRequest{Viewer: v, Device: d, Protocol: "jellyfin", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "jellyfin"}
+	if _, err = b.StartStream(ctx, a, s.ID, frontend.StreamRequest{Format: frontend.StreamHLS}); err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	b.Close(canceled)
+	if len(transcoder.sessions) != 0 || len(playback.Sessions()) != 0 {
+		t.Fatal("canceled shutdown leaked encoder or source")
+	}
+	if _, err = b.StartStream(ctx, a, s.ID, frontend.StreamRequest{Format: frontend.StreamHLS}); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("closed broker restarted stream: %v", err)
+	}
+	b.Close(ctx)
+}
