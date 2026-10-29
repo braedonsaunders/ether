@@ -2,12 +2,75 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/plextv"
 )
+
+type artworkProbe struct {
+	calls    int
+	complete bool
+	err      error
+}
+
+func (p *artworkProbe) List(_ context.Context, req frontend.ArtworkRequest) ([]frontend.Image, bool, error) {
+	p.calls++
+	return []frontend.Image{{Kind: frontend.ImagePoster, Path: "opaque"}}, p.complete, p.err
+}
+func (*artworkProbe) Read(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	return nil, "", core.ErrNotAvailable
+}
+
+func TestSurfaceExperienceArtworkFollowsItemAuthorization(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := a.users.Owner(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	title := core.Title{Key: core.MovieKey(42), Type: core.TypeMovie, IDs: core.IDs{TMDB: 42}, Title: "Artwork test", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}
+	if err := a.catalog.UpsertTitle(ctx, title, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1,detail_at=? WHERE key=?`, time.Now().Unix(), int64(title.Key)); err != nil {
+		t.Fatal(err)
+	}
+	probe := &artworkProbe{}
+	availability := a.availability
+	a.availability = nil
+	t.Cleanup(func() { a.availability = availability })
+	experience, err := a.newSurfaceExperience("jellyfin", probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := frontend.ItemRequest{Viewer: owner, Key: title.Key}
+	detail, err := experience.Item(ctx, request)
+	if err != nil || detail.ImagesAuthoritative || len(detail.Images) != 1 || detail.Images[0].Path != "opaque" {
+		t.Fatalf("incomplete: %+v %v", detail, err)
+	}
+	probe.complete = true
+	detail, err = experience.Item(ctx, request)
+	if err != nil || !detail.ImagesAuthoritative {
+		t.Fatalf("complete: %+v %v", detail, err)
+	}
+	probe.err = errors.New("source unavailable")
+	detail, err = experience.Item(ctx, request)
+	if err != nil || detail.ImagesAuthoritative || len(detail.Images) != 0 {
+		t.Fatalf("source failure: %+v %v", detail, err)
+	}
+	before := probe.calls
+	request.Viewer = &core.Viewer{ID: owner.ID + 10000, IsOwner: true}
+	if _, err := experience.Item(ctx, request); err == nil || probe.calls != before {
+		t.Fatal("unauthorized viewer reached artwork")
+	}
+}
 
 type captureExperienceFrontend struct{ host *frontend.Host }
 

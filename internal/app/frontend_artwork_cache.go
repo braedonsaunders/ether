@@ -9,7 +9,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
-// artworkVariantsQueue keeps item enrichment cache-only. One bounded worker
+// artworkVariantsQueue keeps item enrichment cache-only. Bounded workers
 // fills missing TMDB responses and coalesces concurrent requests per item and
 // language. It stops when the frontend runtime's context is cancelled.
 type artworkVariantsQueue struct {
@@ -32,7 +32,9 @@ type artworkVariantJob struct {
 
 func newArtworkVariantsQueue(ctx context.Context, cached func(*core.Title, string) (*tmdb.Images, bool), fetch func(context.Context, *core.Title, string) (*tmdb.Images, error)) *artworkVariantsQueue {
 	q := &artworkVariantsQueue{ctx: ctx, cached: cached, fetch: fetch, jobs: make(chan artworkVariantJob, 128), pending: make(map[artworkVariantKey]bool), retry: make(map[artworkVariantKey]time.Time)}
-	go q.run()
+	for i := 0; i < 4; i++ {
+		go q.run()
+	}
 	return q
 }
 

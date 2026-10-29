@@ -86,9 +86,14 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		cancel()
 		return nil, err
 	}
+	var artwork frontend.Artwork
+	if a.tmdb != nil {
+		variants := newArtworkVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
+		artwork = plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get}
+	}
 	experiences := make(map[frontend.Protocol]frontend.Experience)
 	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby"} {
-		experience, err := a.newSurfaceExperience(protocol)
+		experience, err := a.newSurfaceExperience(protocol, artwork)
 		if err != nil {
 			r.stateUnsub()
 			r.broker.Close(context.Background())
@@ -108,14 +113,18 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		experience := experiences[id]
 		if experience == nil {
 			var err error
-			experience, err = a.newSurfaceExperience(id)
+			experience, err = a.newSurfaceExperience(id, artwork)
 			if err != nil {
 				a.log.Error("frontend experience unavailable", "surface", id, "err", err)
 			}
 		}
 		var imageGrants frontend.ImageGrants
 		if id != "plex" {
-			imageGrants, _ = identity.NewImageGrantService(a.db, id, grants, func() frontend.Experience { return experience }, a.images, 10*time.Minute, nil)
+			if artwork != nil {
+				imageGrants, _ = identity.NewArtworkImageGrantService(a.db, id, grants, func() frontend.Experience { return experience }, artwork, 10*time.Minute, nil)
+			} else {
+				imageGrants, _ = identity.NewImageGrantService(a.db, id, grants, func() frontend.Experience { return experience }, a.images, 10*time.Minute, nil)
+			}
 		}
 		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, ViewerCapabilities: a.viewerCapabilities(local, experience), ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), LiveTV: surfaceLiveTV{app: a}, Sessions: sessions.BindSurface(r.broker, id), Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll}, Events: sessions.BindEvents(r.events, id), Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, Config: settings}
 	})

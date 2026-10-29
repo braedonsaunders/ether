@@ -24,7 +24,7 @@ func situationFor(req frontend.RowRequest) core.HomeSituation {
 
 // newSurfaceExperience builds an explicitly surface-bound service. A shared
 // situation is inserted by surfaceExperience.Rows before ranking and receipt issuance.
-func (a *App) newSurfaceExperience(protocol core.Protocol) (frontend.Experience, error) {
+func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.Artwork) (frontend.Experience, error) {
 	if a.users == nil || a.catalog == nil || a.safety == nil || a.state == nil || a.personalize == nil || a.favorites == nil || a.playlists == nil || a.db == nil {
 		return nil, errors.New("experience: dependencies unavailable")
 	}
@@ -319,13 +319,42 @@ func (a *App) newSurfaceExperience(protocol core.Protocol) (frontend.Experience,
 	if err != nil {
 		return nil, err
 	}
-	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol}, nil
+	var artworkSource frontend.Artwork
+	if len(artwork) > 0 {
+		artworkSource = artwork[0]
+	}
+	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser}, nil
 }
 
 type surfaceExperience struct {
 	*experience.Service
 	receipts *experience.Receipts
 	protocol core.Protocol
+	artwork  frontend.Artwork
+	active   func(context.Context, int64) (*core.User, error)
+}
+
+func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+	detail, err := s.Service.Item(ctx, req)
+	if err != nil || s.artwork == nil {
+		return detail, err
+	}
+	// The service has already authorized the item. Resolve the active user
+	// again before passing it to the artwork policy; do not trust caller fields.
+	detail.Images = nil
+	detail.ImagesAuthoritative = false
+	if req.Viewer == nil {
+		return detail, nil
+	}
+	viewer, err := s.active(ctx, req.Viewer.ID)
+	if err != nil || viewer == nil {
+		return detail, nil
+	}
+	images, complete, err := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Device: req.Device, Item: req.Key})
+	if err == nil {
+		detail.Images, detail.ImagesAuthoritative = images, complete
+	}
+	return detail, nil
 }
 
 func (s *surfaceExperience) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
