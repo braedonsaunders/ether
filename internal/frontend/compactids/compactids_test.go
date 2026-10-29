@@ -56,3 +56,26 @@ func TestStableScopedConcurrentAllocation(t *testing.T) {
 		t.Fatal("cross kind resolved")
 	}
 }
+
+func TestCompactExhaustionKeepsExistingReferences(t *testing.T) {
+	db := store.OpenTest(t)
+	a, err := compactids.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	id, err := a.Compact(ctx, "silo", "file", "existing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`UPDATE frontend_compact_id_counters SET last_id=2147483647 WHERE surface='silo' AND kind='file'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Compact(ctx, "silo", "file", "new"); err == nil {
+		t.Fatal("allocation exceeded int32")
+	}
+	again, err := a.Compact(ctx, "silo", "file", "existing")
+	if err != nil || again != id {
+		t.Fatalf("existing %d %v", again, err)
+	}
+}
