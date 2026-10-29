@@ -1,0 +1,482 @@
+[
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "26f1fa2bf493a9808eb286e3ae22b1b5e993cc18d35745efa44721021e53c2db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "ef38445c793cbd7b93ce2e4ab9032015867debf55d0dcb6e49554d6c971c4f77"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0372d2198a6df9f68db046f2a1b0d17d52ca0bf52573209abfade7df680fb9e9"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1e4464d8e08e3edc01ef45d8fcf894f039735888c8dd3386bacf9195337d5756"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "abd406300b7dfcd3cef14a99537065ffd4adc8dbc05c71ebbd568e11acba18f0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "78880154ea350b79fb093926c3b5193bfa99ee6cc4182a56e93c7f86b553b7d4"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "f6fad16edacc13f18cee06ded35ca8b39d59dffbf0420d49f1485edfff792534"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "38e762b621ed75173ce621eda3be125095c495debe2b69d3cb5647adf6bfdfc4"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "26f1fa2bf493a9808eb286e3ae22b1b5e993cc18d35745efa44721021e53c2db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "ef38445c793cbd7b93ce2e4ab9032015867debf55d0dcb6e49554d6c971c4f77"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0372d2198a6df9f68db046f2a1b0d17d52ca0bf52573209abfade7df680fb9e9"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1e4464d8e08e3edc01ef45d8fcf894f039735888c8dd3386bacf9195337d5756"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "26f1fa2bf493a9808eb286e3ae22b1b5e993cc18d35745efa44721021e53c2db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "ef38445c793cbd7b93ce2e4ab9032015867debf55d0dcb6e49554d6c971c4f77"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0372d2198a6df9f68db046f2a1b0d17d52ca0bf52573209abfade7df680fb9e9"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1e4464d8e08e3edc01ef45d8fcf894f039735888c8dd3386bacf9195337d5756"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3b79df6166728f5a3f76293df25033d7199d5bd640d55ac9e157ed341641fff8"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "810ffe7c1f495a736276081c5f19bfde057932eb253f7f2060a17ace87dbfbdd"
+    }
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "98e3e6aa1c46f3cced42874a4274828f82a7a9e139c3c9232a470102338703f8"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5d31ed1c0455dd57fe8837851951045f3a858d408d601c8f529fa698eca38326"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "9612ffb7fc73331b89c46cbaf70c2598fb8667235b5d0974050f2840f4a3faa1"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "361ccc06c46c3a2b128b90d998be9ed3f2e188c65e0dc54b8135a9947376d4e5"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3d096421b949f21576ce8f43c8adc0e82a5e19ac89a5041693d5c2ea954050e7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0bfe9800b1eda18952df328a400f9417f99c3f8c6ad8d2e41bed52ceed00073b"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "71f44da1739689acb4686b7b3b2c1c33472b789727aa7ff5571ce0aae550cfe6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "57562ba925b890edb5b4074455c2c61d62c9d62fc8a6f3041be92e12a54b0d2a"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5c8b1f86367c6bef7e44b282a974eb65ebb83043ffb61cf5d1a487c92b7ccb03"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9183b95bc333ed9e8bde1cf9201462cad37269dd94ac7543554bfdafdf23e8bb"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "a291eab6f4cf00108e40f36c698c8f42ec86b06ef3079155ab4226b6d7d4b233"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "4a19491e1b8398932acbff4761eea18e86e82c72d05f866c5d3de925142f1e0b"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "789d03b798a9e38b6b55da1d6595374b7d64586e2e27ad259397d39379911e82"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "118201a260390b9fb32e2dd796f8711fe94754ac940066575e797c2a52a7b63a"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "920e8bea616df07f81d6c1b9dd2f7930e2e1b3512c18b5818e01a9708c842519"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7047f34c32aa1ac7674ae5978ffffc756e940673fe8c803ad561f1f5eaf9aff7"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "30940285290049eb1ee6c2fc4fb2c4871f9e554a23a8fa5ce2029770efc9d142"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4a22bdde9c6731020a71237bc07de44783e5e8da29f5e15336b3092c6e435f77"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "9612ffb7fc73331b89c46cbaf70c2598fb8667235b5d0974050f2840f4a3faa1"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "361ccc06c46c3a2b128b90d998be9ed3f2e188c65e0dc54b8135a9947376d4e5"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3d096421b949f21576ce8f43c8adc0e82a5e19ac89a5041693d5c2ea954050e7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0bfe9800b1eda18952df328a400f9417f99c3f8c6ad8d2e41bed52ceed00073b"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "71f44da1739689acb4686b7b3b2c1c33472b789727aa7ff5571ce0aae550cfe6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "57562ba925b890edb5b4074455c2c61d62c9d62fc8a6f3041be92e12a54b0d2a"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5c8b1f86367c6bef7e44b282a974eb65ebb83043ffb61cf5d1a487c92b7ccb03"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9183b95bc333ed9e8bde1cf9201462cad37269dd94ac7543554bfdafdf23e8bb"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "9612ffb7fc73331b89c46cbaf70c2598fb8667235b5d0974050f2840f4a3faa1"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "361ccc06c46c3a2b128b90d998be9ed3f2e188c65e0dc54b8135a9947376d4e5"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3d096421b949f21576ce8f43c8adc0e82a5e19ac89a5041693d5c2ea954050e7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0bfe9800b1eda18952df328a400f9417f99c3f8c6ad8d2e41bed52ceed00073b"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "71f44da1739689acb4686b7b3b2c1c33472b789727aa7ff5571ce0aae550cfe6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "57562ba925b890edb5b4074455c2c61d62c9d62fc8a6f3041be92e12a54b0d2a"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5c8b1f86367c6bef7e44b282a974eb65ebb83043ffb61cf5d1a487c92b7ccb03"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9183b95bc333ed9e8bde1cf9201462cad37269dd94ac7543554bfdafdf23e8bb"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "9c47e935efe12135ad92a5937535e65a349611082ea081f57fec38a706d5c5bc"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6ca2ba1e51cc7c50acd61706f3f7ea02aaae092b10c74dd9f1b0ebffd217a664"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cb5e56d909851b51495452dad2ce0c63a2c423a3e93cf866e98747aee8ccf458"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "4dff889a3bf9a2e678568a748925e10d0662000769a3653448a36f2d10c0e9bb"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cd8b48570e1f6c5aaef7c990af2b00670ebcc2b81cfe5a5ae49a819db0e94d92"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "dc5f4183babca423a71f8be43f5366ec226afc013f056015d183158c79b481fa"
+    }
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "43b5b7e2e3520894637d3494c2428298e58178c359bae51cd9cda1fe0bf7c5af"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b8b95ee9e45477d2677ad3675b62dd3b9fc874f10a2ab57372d49fab1f7ed347"
+    }
+  }
+]

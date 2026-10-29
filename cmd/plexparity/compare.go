@@ -87,6 +87,15 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 		}
 		if x.response.Status != y.response.Status || !bytes.Equal(x.response.Body, y.response.Body) || x.response.Headers.Get("Content-Type") != y.response.Headers.Get("Content-Type") {
 			n++
+			ok, err := approved(x, y)
+			if err != nil {
+				return n, err
+			}
+			label := "REGRESSION"
+			if ok {
+				label = "APPROVED c82a7830"
+			}
+			fmt.Fprintf(out, "%s ", label)
 			fmt.Fprintf(out, "viewer=%s client=%s json=%t route=%s\nbaseline status=%d content-type=%q body=%q\ncandidate status=%d content-type=%q body=%q\n", x.viewer, x.client, x.json, x.path, x.response.Status, x.response.Headers.Get("Content-Type"), x.response.Body, y.response.Status, y.response.Headers.Get("Content-Type"), y.response.Body)
 		}
 	}
