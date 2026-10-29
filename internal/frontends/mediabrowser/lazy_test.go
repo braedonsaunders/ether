@@ -46,3 +46,14 @@ func TestLazySourceURLUsesTrustedSurfaceAndScopedGrant(t *testing.T) {
 		t.Fatal(rec.Code)
 	}
 }
+
+func TestLazySourceURLFailsClosedWithoutTrustedBase(t *testing.T) {
+	for _, base := range []string{"", "ftp://ether.example", "http://user:pass@ether.example", "http://ether.example?token=secret", "//attacker.invalid"} {
+		stub := &lazyStub{path: "/sessions/lazy/grant/file"}
+		i := &instance{host: frontend.Host{LazyStreams: stub, SurfaceURL: func(context.Context, *http.Request) (string, error) { return base, nil }}}
+		got := i.lazySourceURL(httptest.NewRequest("GET", "http://attacker.invalid/", nil), "account-secret", frontend.PlanRequest{})
+		if got != "" || stub.credential != "" {
+			t.Fatalf("accepted invalid base %q: %q", base, got)
+		}
+	}
+}
