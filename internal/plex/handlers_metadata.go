@@ -480,7 +480,9 @@ func (s *Server) handleSimilar(w http.ResponseWriter, r *http.Request) {
 	if n, _ := strconv.Atoi(r.URL.Query().Get("count")); n > 0 {
 		limit = min(n, 100)
 	}
-	items, err := s.d.Catalog.Similar(ctx, k, limit)
+	items, err := s.recommendationCandidates(ctx, pr.User, limit, func(ctx context.Context, fetch int) ([]core.Title, error) {
+		return s.d.Catalog.Similar(ctx, k, fetch)
+	})
 	if err != nil && !errors.Is(err, core.ErrNotFound) {
 		s.writeErr(w, r, err)
 		return

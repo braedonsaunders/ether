@@ -351,6 +351,21 @@ func TestSimilarReturnsHonestContinuationAndFilters(t *testing.T) {
 	}
 }
 
+func TestSimilarNotInterestedFiltersBeforePagination(t *testing.T) {
+	ctx := context.Background()
+	v := &core.User{ID: 1}
+	base := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie}
+	items := []core.Title{{Key: core.MovieKey(2), Type: core.TypeMovie}, {Key: core.MovieKey(3), Type: core.TypeMovie}}
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return v, nil }, Get: func(context.Context, *core.User, core.RatingKey) (*core.Title, error) { return &base, nil }, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, SimilarSource: func(context.Context, core.RatingKey, int) ([]core.Title, error) { return items, nil }, FilterRecommendations: func(_ context.Context, _ *core.User, ts []core.Title) ([]core.Title, error) { return ts[1:], nil }}}
+	page, err := s.Similar(ctx, v, core.Device{}, base.Key, frontend.ItemQuery{Limit: 1})
+	if err != nil || page.Page.Total != 1 || len(page.Page.Items) != 1 || page.Page.Items[0].Key != items[1].Key {
+		t.Fatalf("recommendation filter applied after page: %+v %v", page, err)
+	}
+	if _, err = s.item(ctx, v, base.Key); err != nil {
+		t.Fatalf("direct item changed: %v", err)
+	}
+}
+
 func TestAggregateLibrariesRespectsViewerSections(t *testing.T) {
 	v := &core.User{ID: 1, AllowedSections: []int{1}}
 	movie := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Movie"}

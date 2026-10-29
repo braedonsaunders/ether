@@ -12,6 +12,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/llm"
+	"github.com/braedonsaunders/ether/internal/notinterested"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/recommend"
 	"github.com/braedonsaunders/ether/internal/simkl"
@@ -51,6 +52,15 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	})
 	if err != nil {
 		return fmt.Errorf("favorites: %w", err)
+	}
+	a.notInterested, err = notinterested.New(notinterested.Options{DB: a.db, Active: a.users.ActiveUser,
+		Allowed: func(ctx context.Context, u *core.User, key core.RatingKey) bool {
+			return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: key.String()}, visibility)
+		},
+		Changed: a.notInterestedChanged,
+	})
+	if err != nil {
+		return fmt.Errorf("not interested: %w", err)
 	}
 	a.playlists, err = favorites.NewPlaylists(basePlaylists, a.favorites)
 	if err != nil {
@@ -95,7 +105,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 			return a.availability.FilterDiscovery(ctx, ts)
 		},
 		UserPolicy: a.safety.UserPolicy, Allowed: a.safety.Allowed,
-		LLM: a.llm, Trakt: a.trakt, Playlists: a.playlists, Favorites: a.favoriteSignals,
+		LLM: a.llm, Trakt: a.trakt, Playlists: a.playlists, Favorites: a.favoriteSignals, NotInterested: a.notInterestedSignals, NotInterestedSnapshot: a.notInterestedSnapshot,
 		ExtraHomeRows: a.extraHomeRows,
 		Dependencies: func(scorer core.PersonalScorer) (core.Recommender, core.CollectionRows, error) {
 			opts := append(a.collectionOptions(cfg), collections.WithState(a.state), collections.WithAuth(a.users), collections.WithScorer(scorer), collections.WithVibeRefiner(a.llm))

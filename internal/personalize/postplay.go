@@ -48,7 +48,11 @@ func (e *Engine) PostPlay(ctx context.Context, user *core.User, justWatched core
 		u = *user
 	}
 	tk := tasteKey(justWatched)
-	ck := postplayKey{user: u.ID, key: tk}
+	excluded, exclusionSig, err := e.exclusions(ctx, &u)
+	if err != nil {
+		return nil, err
+	}
+	ck := postplayKey{user: u.ID, key: tk, exclusions: exclusionSig}
 	hs := e.hookState()
 	hs.mu.Lock()
 	if ent := hs.postplay[ck]; ent != nil && ent.hour == hc.Now.Hour() && hc.Now.Sub(ent.at) < postplayTTL && len(ent.picks) >= limit {
@@ -58,7 +62,7 @@ func (e *Engine) PostPlay(ctx context.Context, user *core.User, justWatched core
 	}
 	hs.mu.Unlock()
 
-	picks, err := e.rankPostPlay(ctx, &u, justWatched, tk, hc, limit)
+	picks, err := e.rankPostPlay(ctx, &u, justWatched, tk, hc, limit, excluded)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +82,7 @@ func (e *Engine) PostPlay(ctx context.Context, user *core.User, justWatched core
 	return picks, nil
 }
 
-func (e *Engine) rankPostPlay(ctx context.Context, user *core.User, justWatched, tk core.RatingKey, hc core.HubContext, limit int) ([]core.PostPlayPick, error) {
+func (e *Engine) rankPostPlay(ctx context.Context, user *core.User, justWatched, tk core.RatingKey, hc core.HubContext, limit int, excluded excludedTitles) ([]core.PostPlayPick, error) {
 	src, err := e.catalog.Get(ctx, tk)
 	if err != nil {
 		return nil, fmt.Errorf("postplay: just-watched title: %w", err)
@@ -99,7 +103,7 @@ func (e *Engine) rankPostPlay(ctx context.Context, user *core.User, justWatched,
 	pool := map[core.RatingKey]*cand{}
 	add := func(items []core.Title, similar bool) {
 		for _, t := range items {
-			if t.Key == tk || t.Key == justWatched {
+			if t.Key == tk || t.Key == justWatched || excluded.contains(&t) {
 				continue
 			}
 			c := pool[t.Key]
@@ -126,7 +130,7 @@ func (e *Engine) rankPostPlay(ctx context.Context, user *core.User, justWatched,
 					seenSelf = true
 					continue
 				}
-				if seenSelf && franchiseNext == 0 && !e.postplayWatched(ctx, user, ts, &t, now) {
+				if seenSelf && franchiseNext == 0 && !excluded.contains(&t) && !e.postplayWatched(ctx, user, ts, &t, now) {
 					franchiseNext = t.Key
 				}
 			}

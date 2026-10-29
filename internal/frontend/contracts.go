@@ -259,6 +259,15 @@ type ItemDetail struct {
 	Extras              []Extra
 }
 
+// ResolvedEventSubject is viewer-authorized current data for an event entity.
+// PersonFacetID shares the namespace used by person facets.
+type ResolvedEventSubject struct {
+	Ref           FavoriteRef
+	PersonFacetID string
+	Favorite      bool
+	UserData      *core.WatchStatus
+}
+
 // Experience applies viewer policy before returning any data. Browse operations
 // must not resolve or open a release. Policy is applied before pagination and limits.
 type Experience interface {
@@ -275,14 +284,19 @@ type Experience interface {
 	// Episode-only credits may not appear in library-wide Facets or ResolveFacet.
 	// Requests are bounded to 256 positive TMDB IDs; missing credits are omitted.
 	PersonFacetIDs(context.Context, *core.Viewer, core.Device, core.RatingKey, []int64) (map[int64]string, error)
+	// NamedFacetIDs resolves exact genre or studio names on one visible title.
+	// A request contains at most 256 nonempty names; missing names are omitted.
+	NamedFacetIDs(context.Context, *core.Viewer, core.Device, core.RatingKey, string, []string) (map[string]string, error)
 	Search(context.Context, *core.Viewer, core.Device, string, ItemQuery) (SearchPage, error)
 	UserData(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 	SetPlayed(context.Context, *core.Viewer, core.RatingKey) error
 	SetUnplayed(context.Context, *core.Viewer, core.RatingKey) error
 	SetFavorite(context.Context, *core.Viewer, core.RatingKey, bool) error
+	SetNotInterested(context.Context, *core.Viewer, core.RatingKey, bool) error
 	SetWatchlist(context.Context, *core.Viewer, core.RatingKey, bool) error
 	SetEntityFavorite(context.Context, *core.Viewer, FavoriteRef, bool) error
 	EntityFavorites(context.Context, *core.Viewer, []FavoriteRef) (map[FavoriteRef]bool, error)
+	ResolveEventSubject(context.Context, *core.Viewer, core.Device, FavoriteRef) (ResolvedEventSubject, error)
 	SetRating(context.Context, *core.Viewer, core.RatingKey, float64) error
 	SetLikes(context.Context, *core.Viewer, core.RatingKey, *bool) error
 	RemoveFromContinue(context.Context, *core.Viewer, core.RatingKey) error

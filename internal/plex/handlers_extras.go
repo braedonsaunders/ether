@@ -667,15 +667,18 @@ func (s *Server) cinemaTrailerKeys(ctx context.Context, pr *Request, feature cor
 	if n > extras.MaxExtras {
 		n = extras.MaxExtras
 	}
-	candidates, err := s.d.Catalog.Similar(ctx, feature, 24)
-	if err != nil || len(candidates) == 0 {
-		page, perr := s.d.Catalog.Browse(ctx, core.BrowseQuery{
-			Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortPopularity, Desc: true, Limit: 24,
-		})
-		if perr != nil {
-			return nil
+	candidates, err := s.recommendationCandidates(ctx, pr.User, 24, func(ctx context.Context, fetch int) ([]core.Title, error) {
+		items, err := s.d.Catalog.Similar(ctx, feature, fetch)
+		if err == nil && len(items) > 0 {
+			return items, nil
 		}
-		candidates = page.Items
+		page, err := s.d.Catalog.Browse(ctx, core.BrowseQuery{
+			Filter: core.Filter{Type: core.TypeMovie}, Sort: core.SortPopularity, Desc: true, Limit: fetch,
+		})
+		return page.Items, err
+	})
+	if err != nil {
+		return nil
 	}
 	candidates = s.visibleTitles(pr.User, candidates)
 	state := s.stateFor(ctx, pr, candidates)

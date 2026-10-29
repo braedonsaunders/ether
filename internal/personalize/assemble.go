@@ -15,6 +15,7 @@ import (
 type assembly struct {
 	visit    int64 // fixed for this browsing visit; new visits vary discovery rows
 	hidden   map[core.RatingKey]bool
+	excluded excludedTitles
 	previous []presentedRow // currently browsed positions; never bypass eligibility
 	model    *userModel
 	owner    []*candRow // owner collection rows for this context
@@ -506,7 +507,7 @@ func (a *assembly) contextItems(c *candRow) []candItem {
 	}
 	out := make([]candItem, 0, len(src))
 	for _, it := range src {
-		if a.hidden[it.t.Key] || !a.typeOK(&it.t) {
+		if a.hidden[it.t.Key] || !a.typeOK(&it.t) || (c.kind != KindContinue && c.kind != KindUpNext && c.kind != KindFavorites && c.source == core.RowSourceEngine && a.excluded.contains(&it.t)) {
 			continue
 		}
 		if c.kind == KindShortOnTime && !isShort(&it.t) {

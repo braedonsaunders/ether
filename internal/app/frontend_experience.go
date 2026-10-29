@@ -230,7 +230,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
-	deps := experience.ServiceDeps{Active: a.users.ActiveUser, Libraries: libs, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, SimilarSource: a.catalog.Similar, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
+	deps := experience.ServiceDeps{Active: a.users.ActiveUser, Libraries: libs, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
 		if a.episodeorder != nil {
 			return a.episodeorder.Get(ctx, u, k)
 		}
@@ -298,6 +298,11 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		return a.favorites.Set(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()}, on)
 	}, IsFavorite: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
 		return a.favorites.Has(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()})
+	}, IsNotInterested: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
+		return a.notInterested.Has(ctx, u, k)
+	}, SetNotInterestedSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
+		_, err := a.notInterested.Set(ctx, u, k, on)
+		return err
 	}, IsWatchlisted: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
 		if a.watchlist == nil {
 			return false, core.ErrNotAvailable

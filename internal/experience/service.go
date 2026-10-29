@@ -31,20 +31,23 @@ type ServiceDeps struct {
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
 	// CachedVirtualSeason resolves a viewer's already-computed episode layout.
-	CachedVirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
-	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
-	SimilarSource       func(context.Context, core.RatingKey, int) ([]core.Title, error)
-	Collections         core.Collections
-	Playlists           core.Playlists
-	State               core.State
-	Search              Search
-	Rows                *RowsService
-	Protocol            core.Protocol
+	CachedVirtualSeason   func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Children              func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Grandchildren         func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Browse                func(context.Context, core.BrowseQuery) (core.Page, error)
+	SimilarSource         func(context.Context, core.RatingKey, int) ([]core.Title, error)
+	FilterRecommendations func(context.Context, *core.User, []core.Title) ([]core.Title, error)
+	Collections           core.Collections
+	Playlists             core.Playlists
+	State                 core.State
+	Search                Search
+	Rows                  *RowsService
+	Protocol              core.Protocol
 	// Favorites manages the stable, per-viewer Favorites playlist mapping.
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
+	IsNotInterested         func(context.Context, *core.User, core.RatingKey) (bool, error)
+	SetNotInterestedSource  func(context.Context, *core.User, core.RatingKey, bool) error
 	IsWatchlisted           func(context.Context, *core.User, core.RatingKey) (bool, error)
 	SetWatchlistSource      func(context.Context, *core.User, core.RatingKey, bool) error
 	RemoveContinue          func(context.Context, *core.User, core.RatingKey) error
@@ -325,6 +328,9 @@ func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.
 	if s.d.IsFavorite != nil {
 		d.UserData.IsFavorite, err = s.d.IsFavorite(ctx, v, title.Key)
 	}
+	if err == nil && s.d.IsNotInterested != nil {
+		d.UserData.IsNotInterested, err = s.d.IsNotInterested(ctx, v, title.Key)
+	}
 	if err == nil && s.d.IsWatchlisted != nil {
 		d.UserData.InWatchlist, err = s.d.IsWatchlisted(ctx, v, title.Key)
 	}
@@ -530,6 +536,17 @@ func (s *Service) UserData(ctx context.Context, viewer *core.Viewer, keys []core
 			data[key] = status
 		}
 	}
+	if s.d.IsNotInterested != nil {
+		for _, key := range allowed {
+			value, e := s.d.IsNotInterested(ctx, v, key)
+			if e != nil {
+				return nil, e
+			}
+			status := data[key]
+			status.IsNotInterested = value
+			data[key] = status
+		}
+	}
 	if s.d.IsWatchlisted != nil {
 		for _, key := range allowed {
 			value, e := s.d.IsWatchlisted(ctx, v, key)
@@ -613,6 +630,14 @@ func (s *Service) SetPlayed(ctx context.Context, v *core.Viewer, k core.RatingKe
 }
 func (s *Service) SetUnplayed(ctx context.Context, v *core.Viewer, k core.RatingKey) error {
 	return s.setPlayed(ctx, v, k, false)
+}
+func (s *Service) SetNotInterested(ctx context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
+	return s.mutate(ctx, v, k, func(u *core.User) error {
+		if s.d.SetNotInterestedSource == nil {
+			return core.ErrNotAvailable
+		}
+		return s.d.SetNotInterestedSource(ctx, u, k, on)
+	})
 }
 func (s *Service) SetFavorite(ctx context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
 	return s.mutate(ctx, v, k, func(u *core.User) error {
@@ -715,6 +740,12 @@ func (s *Service) Similar(ctx context.Context, viewer *core.Viewer, device core.
 	candidates, err := s.d.SimilarSource(ctx, key, 1000)
 	if err != nil {
 		return frontend.SearchPage{}, err
+	}
+	if s.d.FilterRecommendations != nil {
+		candidates, err = s.d.FilterRecommendations(ctx, v, candidates)
+		if err != nil {
+			return frontend.SearchPage{}, err
+		}
 	}
 	items := make([]core.Title, 0, len(candidates))
 	for i := range candidates {

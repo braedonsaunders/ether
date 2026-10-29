@@ -159,15 +159,16 @@ type Recommender interface {
 // Watch state (internal/state)
 
 type WatchStatus struct {
-	Key          RatingKey     `json:"key"`
-	ViewOffset   time.Duration `json:"viewOffset"`
-	ViewCount    int           `json:"viewCount"`
-	LastViewedAt time.Time     `json:"lastViewedAt,omitempty"`
-	UserRating   float64       `json:"userRating,omitempty"` // 0-10
-	InWatchlist  bool          `json:"inWatchlist,omitempty"`
-	IsFavorite   bool          `json:"isFavorite,omitempty"` // Derived from the viewer’s favorites set.
-	Duration     time.Duration `json:"duration,omitempty"`
-	UpdatedAt    time.Time     `json:"updatedAt"`
+	Key             RatingKey     `json:"key"`
+	ViewOffset      time.Duration `json:"viewOffset"`
+	ViewCount       int           `json:"viewCount"`
+	LastViewedAt    time.Time     `json:"lastViewedAt,omitempty"`
+	UserRating      float64       `json:"userRating,omitempty"` // 0-10
+	InWatchlist     bool          `json:"inWatchlist,omitempty"`
+	IsFavorite      bool          `json:"isFavorite,omitempty"`      // Derived from the viewer’s favorites set.
+	IsNotInterested bool          `json:"isNotInterested,omitempty"` // Derived from the viewer’s recommendation exclusions.
+	Duration        time.Duration `json:"duration,omitempty"`
+	UpdatedAt       time.Time     `json:"updatedAt"`
 }
 
 type HistoryEntry struct {

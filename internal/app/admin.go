@@ -31,6 +31,7 @@ func (a *App) buildAdmin() http.Handler {
 	invites, _ := identity.NewInvite(a.db, 24*time.Hour, 30*24*time.Hour, nil)
 	return admin.New(admin.Deps{
 		FavoritesMirror: a.favorites,
+		NotInterested:   notInterestedPortal{a},
 		ViewerAlerts:    &notify.ViewerAlerts{DB: a.db, Active: a.users.ActiveUser},
 		ViewerPush:      a.viewerPush(),
 		ActiveViewer:    a.users.ActiveUser,

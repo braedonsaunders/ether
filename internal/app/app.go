@@ -31,6 +31,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/migrate"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/notify"
+	"github.com/braedonsaunders/ether/internal/notinterested"
 	"github.com/braedonsaunders/ether/internal/overlays"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/playback"
@@ -118,26 +119,27 @@ type App struct {
 	// (heartbeated; see rolling.go).
 	draining atomic.Bool
 
-	tmdb        *tmdb.Client
-	catalog     *catalog.Catalog
-	collections *collections.Service
-	images      *artwork.Images
-	favorites   *favorites.Service
-	playlists   core.Playlists
-	state       *state.State
-	trakt       *trakt.Client
-	simklDevice *simkl.DeviceManager
-	llm         *llm.Service
-	recommend   *recommend.Recommender
-	personalize *personalize.Engine
-	subtitles   *subtitles.Service
-	fetcher     *usenet.Fetcher
-	cache       *segcache.Cache
-	cacheConfig atomic.Pointer[config.Cache]
-	engine      *stream.Engine
-	indexers    *newznab.Manager
-	sites       *cardigann.Service // built-in indexer sites from owner-installed definitions
-	addons      *stremio.Service   // Stremio stream addons configured as indexers
+	tmdb          *tmdb.Client
+	catalog       *catalog.Catalog
+	collections   *collections.Service
+	images        *artwork.Images
+	favorites     *favorites.Service
+	notInterested *notinterested.Service
+	playlists     core.Playlists
+	state         *state.State
+	trakt         *trakt.Client
+	simklDevice   *simkl.DeviceManager
+	llm           *llm.Service
+	recommend     *recommend.Recommender
+	personalize   *personalize.Engine
+	subtitles     *subtitles.Service
+	fetcher       *usenet.Fetcher
+	cache         *segcache.Cache
+	cacheConfig   atomic.Pointer[config.Cache]
+	engine        *stream.Engine
+	indexers      *newznab.Manager
+	sites         *cardigann.Service // built-in indexer sites from owner-installed definitions
+	addons        *stremio.Service   // Stremio stream addons configured as indexers
 	// Debrid: torrent releases stream through owner debrid accounts. The
 	// wrappers dispatch on the payload and delegate Usenet to engine and
 	// indexers, so every consumer uses media and sources.

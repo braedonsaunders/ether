@@ -78,7 +78,9 @@ type userModel struct {
 	builtAt time.Time
 	took    time.Duration
 	// version identifies the build (memo keys).
-	version uint64
+	version             uint64
+	preferenceRevision  uint64
+	preferenceSignature string
 }
 
 // builder builds one userModel.

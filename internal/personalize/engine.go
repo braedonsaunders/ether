@@ -69,8 +69,12 @@ type FavoriteSignal struct {
 
 type Options struct {
 	// Favorites is optional; nil or empty leaves existing ranking unchanged.
-	Favorites       func(context.Context, *core.User) ([]FavoriteSignal, error)
-	FilterAvailable func(context.Context, []core.Title) []core.Title
+	Favorites func(context.Context, *core.User) ([]FavoriteSignal, error)
+	// NotInterested supplies explicit recommendation exclusions for this viewer.
+	NotInterested func(context.Context, *core.User) ([]NotInterestedSignal, error)
+	// NotInterestedSnapshot returns signals and their atomically-read shared revision.
+	NotInterestedSnapshot func(context.Context, *core.User) ([]NotInterestedSignal, uint64, error)
+	FilterAvailable       func(context.Context, []core.Title) []core.Title
 	// Owner previews use the same effective viewer and title policy as Plex.
 	UserPolicy func(*core.User) *core.User
 	Allowed    func(*core.User, *core.Title) bool
@@ -383,15 +387,22 @@ func (e *Engine) SectionHubs(ctx context.Context, user *core.User, t core.MediaT
 // Taste, Same Vibe Under 105 Minutes, and high-affinity craft/auteur matches)
 // when the viewer's model is warm.
 func (e *Engine) Related(ctx context.Context, user *core.User, key core.RatingKey, limit int) ([]core.Hub, error) {
+	excluded, _, err := e.exclusions(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	fetch := limit
+	if len(excluded) > 0 {
+		fetch = min(max(limit, 12)*4, 1000)
+	}
 	var hubs []core.Hub
-	var err error
 	if e.opts.Base != nil {
-		hubs, err = e.opts.Base.Related(ctx, user, key, limit)
+		hubs, err = e.opts.Base.Related(ctx, user, key, fetch)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		items, serr := e.catalog.Similar(ctx, key, limit)
+		items, serr := e.catalog.Similar(ctx, key, fetch)
 		if serr != nil {
 			return nil, serr
 		}
@@ -400,12 +411,43 @@ func (e *Engine) Related(ctx context.Context, user *core.User, key core.RatingKe
 			hubs = []core.Hub{{ID: "movie.similar", Title: "More Like This", Context: "hub.movie.similar", Style: "shelf", Items: items}}
 		}
 	}
-	return e.enrichRelated(ctx, user, key, limit, hubs), nil
+	if len(excluded) > 0 {
+		for i := range hubs {
+			items := make([]core.Title, 0, len(hubs[i].Items))
+			for _, item := range hubs[i].Items {
+				if !excluded.contains(&item) {
+					items = append(items, item)
+				}
+			}
+			hubs[i].Items = items
+		}
+	}
+	hubs = e.enrichRelated(ctx, user, key, fetch, hubs, excluded)
+	if len(excluded) == 0 {
+		return hubs, nil
+	}
+	out := make([]core.Hub, 0, len(hubs))
+	for _, h := range hubs {
+		items := make([]core.Title, 0, len(h.Items))
+		for _, item := range h.Items {
+			if !excluded.contains(&item) {
+				items = append(items, item)
+				if limit > 0 && len(items) >= limit {
+					break
+				}
+			}
+		}
+		if len(items) > 0 {
+			h.Items = items
+			out = append(out, h)
+		}
+	}
+	return out, nil
 }
 
 // enrichRelated appends personalized detail shelves from the viewer's warm
 // model without blocking on a rebuild.
-func (e *Engine) enrichRelated(ctx context.Context, user *core.User, key core.RatingKey, limit int, base []core.Hub) []core.Hub {
+func (e *Engine) enrichRelated(ctx context.Context, user *core.User, key core.RatingKey, limit int, base []core.Hub, excluded excludedTitles) []core.Hub {
 	if user == nil || user.ID == 0 {
 		return base
 	}
@@ -415,6 +457,13 @@ func (e *Engine) enrichRelated(ctx context.Context, user *core.User, key core.Ra
 	e.mu.Lock()
 	m := e.models[user.ID]
 	e.mu.Unlock()
+	if m != nil && e.opts.NotInterestedSnapshot != nil {
+		signals, revision, err := e.opts.NotInterestedSnapshot(ctx, user)
+		_, signature := snapshotSet(signals, revision)
+		if err != nil || m.preferenceSignature != signature {
+			return base
+		}
+	}
 	if m == nil || m.generic || m.taste == nil || m.taste.Confidence < minPersonalConfidence {
 		return base
 	}
@@ -438,7 +487,7 @@ func (e *Engine) enrichRelated(ctx context.Context, user *core.User, key core.Ra
 	seenCand := map[core.RatingKey]bool{key: true, tk: true}
 	for _, r := range m.rows {
 		for _, it := range r.items {
-			if it.t.Type == relType && !seenCand[it.t.Key] && recommend.ContentRatingAllowed(it.t.ContentRating, user.MaxContentRating) {
+			if it.t.Type == relType && !excluded.contains(&it.t) && !seenCand[it.t.Key] && recommend.ContentRatingAllowed(it.t.ContentRating, user.MaxContentRating) {
 				seenCand[it.t.Key] = true
 				cands = append(cands, it.t)
 			}
@@ -558,6 +607,11 @@ func (e *Engine) homeWithPolicy(ctx context.Context, user *core.User, hc core.Hu
 		u = *user
 	}
 	p := core.HomePreview{GeneratedAt: e.now(), Context: hc, Rows: []core.HomeRow{}}
+	excluded, exclusionSig, exclusionErr := e.exclusions(ctx, &u)
+	if exclusionErr != nil {
+		e.log.Warn("personalize: recommendation exclusions unavailable", "user", u.ID, "err", exclusionErr)
+		return p
+	}
 	m := e.modelFor(ctx, &u, wait)
 	if m == nil {
 		return p
@@ -584,7 +638,7 @@ func (e *Engine) homeWithPolicy(ctx context.Context, user *core.User, hc core.Hu
 	}
 	key := memoKey{client: hc.ClientID, session: hc.SessionID, user: u.ID, section: section, bucket: hc.Bucket(), day: day, hour: hc.Now.Hour(), limit: limit, model: m.version,
 		layout: layoutVer, stats: stats.at.UnixNano(), owner: ownerVer, cw: progressSig(inprog),
-		limits: u.MaxContentRating + "|" + fmt.Sprint(u.AllowedSections, u.IsOwner), intent: intentVer, tuning: tune.key()}
+		limits: u.MaxContentRating + "|" + fmt.Sprint(u.AllowedSections, u.IsOwner), intent: intentVer, tuning: tune.key(), exclusions: exclusionSig}
 	if lead != nil {
 		key.lead = lead.sig
 	}
@@ -645,7 +699,7 @@ func (e *Engine) homeWithPolicy(ctx context.Context, user *core.User, hc core.Hu
 	}
 	a := &assembly{
 		minRow: max(e.opts.MinRowItems, 0),
-		hidden: hidden,
+		hidden: hidden, excluded: excluded,
 		layout: &layoutDoc,
 		model:  m, user: u, hc: hc, section: section, limit: limit, owner: owner,
 		global: stats.global, arms: stats.users[u.ID], allowed: e.allowedFor(&u), explore: e.opts.Exploration, day: day,
@@ -700,6 +754,7 @@ type memoKey struct {
 	intent          uint64 // live session-intent version (#32); 0 = none
 	tuning          string // the page's resolved dials
 	lead            uint64 // what the Home leads with (Movies/TV dedupe); 0 = none
+	exclusions      string // current explicit recommendation exclusions
 }
 
 type memoEntry struct {

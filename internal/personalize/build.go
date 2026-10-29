@@ -128,6 +128,17 @@ func (e *Engine) buildAndStore(ctx context.Context, userID int64) (*userModel, e
 		}
 		return nil, err
 	}
+	if !m.generic && e.opts.NotInterestedSnapshot != nil {
+		signals, revision, err := e.opts.NotInterestedSnapshot(bctx, &u)
+		if err != nil {
+			return nil, err
+		}
+		_, signature := snapshotSet(signals, revision)
+		if signature != m.preferenceSignature {
+			e.request(userID)
+			return nil, fmt.Errorf("personalize: preference changed during model build")
+		}
+	}
 	e.mu.Lock()
 	if old := e.models[userID]; old == nil || !old.builtAt.After(m.builtAt) {
 		e.version++
@@ -145,11 +156,21 @@ func (e *Engine) buildAndStore(ctx context.Context, userID int64) (*userModel, e
 // model (and their own is queued); with wait set (owner preview) the call
 // waits for the viewer's own build instead.
 func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *userModel {
+	var signature string
+	revisionOK := true
+	if e.opts.NotInterestedSnapshot != nil && user != nil && user.ID > 0 {
+		signals, rev, err := e.opts.NotInterestedSnapshot(ctx, user)
+		revisionOK = err == nil
+		_, signature = snapshotSet(signals, rev)
+	}
 	e.mu.Lock()
 	if user.ID != 0 || user.Username != "" {
 		e.users[user.ID] = *user
 	}
 	m := e.models[user.ID]
+	if !revisionOK || (m != nil && e.opts.NotInterestedSnapshot != nil && m.preferenceSignature != signature) {
+		m = nil
+	}
 	stale := m != nil && e.now().Sub(m.builtAt) > e.opts.ModelTTL
 	e.mu.Unlock()
 	if m != nil && !stale {
@@ -167,7 +188,7 @@ func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *user
 		e.mu.Lock()
 		m = e.models[user.ID]
 		e.mu.Unlock()
-		if m != nil {
+		if m != nil && revisionOK && (e.opts.NotInterestedSnapshot == nil || m.preferenceSignature == signature) {
 			return m
 		}
 	}
@@ -189,7 +210,7 @@ func (e *Engine) modelFor(ctx context.Context, user *core.User, wait bool) *user
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if m := e.models[user.ID]; m != nil {
+	if m := e.models[user.ID]; m != nil && revisionOK && (e.opts.NotInterestedSnapshot == nil || m.preferenceSignature == signature) {
 		return m
 	}
 	return e.models[genericID]
@@ -289,6 +310,8 @@ func (e *Engine) buildModel(ctx context.Context, user core.User, generic bool) (
 		statuses: map[core.RatingKey]core.WatchStatus{}, memo: map[string][]core.Title{}, fits: map[core.RatingKey]fitMemo{},
 		hydrateLeft: hydrateBudget}
 	fatigue := map[core.RatingKey]float64{}
+	var preferenceRevision uint64
+	var preferenceSignature string
 	if generic {
 		b.taste = buildTaste(tasteInput{userID: user.ID, now: start, loc: e.loc})
 	} else {
@@ -297,6 +320,8 @@ func (e *Engine) buildModel(ctx context.Context, user core.User, generic bool) (
 			return nil, err
 		}
 		b.taste = buildTaste(in)
+		preferenceRevision = in.preferenceRevision
+		preferenceSignature = in.preferenceSignature
 		b.touched = touched
 		for k, days := range in.shownDays {
 			if days >= 2 {
@@ -311,7 +336,7 @@ func (e *Engine) buildModel(ctx context.Context, user core.User, generic bool) (
 		}
 		rows = append(rows, e.runGenerator(g, b)...)
 	}
-	m := &userModel{user: user, generic: generic, taste: b.taste, rows: rows, fatigue: fatigue, builtAt: start,
+	m := &userModel{user: user, generic: generic, taste: b.taste, rows: rows, fatigue: fatigue, builtAt: start, preferenceRevision: preferenceRevision, preferenceSignature: preferenceSignature,
 		crowd: b.crowd().features(), buzz: b.buzz().scores()}
 	m.took = e.now().Sub(start)
 	return m, nil
@@ -349,6 +374,20 @@ func (e *Engine) gatherTaste(ctx context.Context, user core.User) (tasteInput, m
 			return in, nil, fmt.Errorf("favorites: %w", err)
 		}
 		in.favorites = favorites
+	}
+	if e.opts.NotInterestedSnapshot != nil {
+		signals, revision, err := e.opts.NotInterestedSnapshot(ctx, &user)
+		if err != nil {
+			return in, nil, fmt.Errorf("not interested: %w", err)
+		}
+		in.notInterested, in.preferenceRevision = signals, revision
+		_, in.preferenceSignature = snapshotSet(signals, revision)
+	} else if e.opts.NotInterested != nil {
+		signals, err := e.opts.NotInterested(ctx, &user)
+		if err != nil {
+			return in, nil, fmt.Errorf("not interested: %w", err)
+		}
+		in.notInterested = signals
 	}
 	touched := map[core.RatingKey]bool{}
 	var err error
@@ -452,6 +491,14 @@ func (e *Engine) gatherTaste(ctx context.Context, user core.User) (tasteInput, m
 			key := tasteKey(favorite.Key)
 			if _, ok := latest[key]; !ok || favorite.AddedAt.After(latest[key]) {
 				latest[key] = favorite.AddedAt
+			}
+		}
+	}
+	for _, signal := range in.notInterested {
+		if signal.Key != 0 {
+			key := tasteKey(signal.Key)
+			if _, ok := latest[key]; !ok || signal.AddedAt.After(latest[key]) {
+				latest[key] = signal.AddedAt
 			}
 		}
 	}

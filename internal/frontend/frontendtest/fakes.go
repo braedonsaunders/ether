@@ -13,6 +13,9 @@ import (
 
 // Experience implements frontend.Experience with optional function hooks.
 type Experience struct {
+	ResolveEventSubjectFunc  func(context.Context, *core.Viewer, core.Device, frontend.FavoriteRef) (frontend.ResolvedEventSubject, error)
+	SetNotInterestedFunc     func(context.Context, *core.Viewer, core.RatingKey, bool) error
+	NamedFacetIDsFunc        func(context.Context, *core.Viewer, core.Device, core.RatingKey, string, []string) (map[string]string, error)
 	PersonFacetIDsFunc       func(context.Context, *core.Viewer, core.Device, core.RatingKey, []int64) (map[int64]string, error)
 	ResolveFacetFunc         func(context.Context, *core.Viewer, core.Device, string, string, string) (core.FacetValue, error)
 	SetLikesFunc             func(context.Context, *core.Viewer, core.RatingKey, *bool) error
@@ -87,6 +90,12 @@ func (f Experience) ResolveFacet(c context.Context, v *core.Viewer, d core.Devic
 	}
 	return core.FacetValue{}, nil
 }
+func (f Experience) NamedFacetIDs(c context.Context, v *core.Viewer, d core.Device, key core.RatingKey, kind string, names []string) (map[string]string, error) {
+	if f.NamedFacetIDsFunc != nil {
+		return f.NamedFacetIDsFunc(c, v, d, key, kind, names)
+	}
+	return nil, nil
+}
 func (f Experience) PersonFacetIDs(c context.Context, v *core.Viewer, d core.Device, key core.RatingKey, ids []int64) (map[int64]string, error) {
 	if f.PersonFacetIDsFunc != nil {
 		return f.PersonFacetIDsFunc(c, v, d, key, ids)
@@ -139,6 +148,12 @@ func (f Experience) SetUnplayed(c context.Context, v *core.Viewer, k core.Rating
 	}
 	return nil
 }
+func (f Experience) SetNotInterested(c context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
+	if f.SetNotInterestedFunc != nil {
+		return f.SetNotInterestedFunc(c, v, k, on)
+	}
+	return nil
+}
 func (f Experience) SetFavorite(c context.Context, v *core.Viewer, k core.RatingKey, on bool) error {
 	if f.SetFavoriteFunc != nil {
 		return f.SetFavoriteFunc(c, v, k, on)
@@ -150,6 +165,12 @@ func (f Experience) SetEntityFavorite(c context.Context, v *core.Viewer, ref fro
 		return f.SetEntityFavoriteFunc(c, v, ref, on)
 	}
 	return nil
+}
+func (f Experience) ResolveEventSubject(c context.Context, v *core.Viewer, d core.Device, ref frontend.FavoriteRef) (frontend.ResolvedEventSubject, error) {
+	if f.ResolveEventSubjectFunc != nil {
+		return f.ResolveEventSubjectFunc(c, v, d, ref)
+	}
+	return frontend.ResolvedEventSubject{}, core.ErrNotFound
 }
 func (f Experience) EntityFavorites(c context.Context, v *core.Viewer, refs []frontend.FavoriteRef) (map[frontend.FavoriteRef]bool, error) {
 	if f.EntityFavoritesFunc != nil {
