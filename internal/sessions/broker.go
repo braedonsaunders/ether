@@ -178,6 +178,7 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	req.Viewer = &viewerCopy
 	req.Caps.Protocol = req.Protocol
 	req.Caps.ClientID = clientKey(req.Protocol, req.Device)
+	applySubtitleProfiles(&req.Caps)
 	if req.Caps.Remote && b.deps.RemoteBitrateLimit != nil {
 		if limit := b.deps.RemoteBitrateLimit(); limit > 0 && (req.Caps.MaxBitrateKbps == 0 || limit < req.Caps.MaxBitrateKbps) {
 			req.Caps.MaxBitrateKbps = limit
@@ -243,14 +244,14 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	if ps == nil {
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
-	dec, err := Decide(b.deps.Playback, b.deps.Transcoder, DecisionRequest{Session: ps, Caps: req.Caps, Options: req.Intent.Options, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true})
+	dec, err := b.decideProfile(ps, req)
 	if err != nil {
 		if !existed {
 			b.deps.Playback.Stop(ps.ID)
 		}
 		return frontend.PlayPlan{}, err
 	}
-	if req.Intent.AllowTranscoding != nil && !*req.Intent.AllowTranscoding && dec.Kind == core.DecisionTranscode {
+	if req.Intent.AllowTranscoding != nil && !*req.Intent.AllowTranscoding && decisionEncodes(dec, ps.Info) {
 		if !existed {
 			b.deps.Playback.Stop(ps.ID)
 		}

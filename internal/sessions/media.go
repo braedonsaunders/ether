@@ -86,7 +86,10 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	} else {
 		dec = HLSDecision(dec, s.opts.DirectPlay, func() core.Decision { return b.deps.Transcoder.Decide(ps.Info, s.caps, s.opts) })
 	}
-	if s.allowTranscoding != nil && !*s.allowTranscoding && dec.Kind == core.DecisionTranscode {
+	if s.allowTranscoding != nil && !*s.allowTranscoding && decisionEncodes(dec, ps.Info) {
+		return "", core.ErrNotAvailable
+	}
+	if !profileDeliveryAllowed(s.caps.Profiles, dec, ps.Info, string(req.Format)) {
 		return "", core.ErrNotAvailable
 	}
 	if dec.Kind == core.DecisionRemux && !s.opts.DirectStream {
