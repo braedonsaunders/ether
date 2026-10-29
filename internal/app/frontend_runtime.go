@@ -17,6 +17,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontends/mediabrowser"
 	"github.com/braedonsaunders/ether/internal/frontends/silo"
+	"github.com/braedonsaunders/ether/internal/frontends/stremio"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plex"
@@ -190,6 +191,12 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return nil, err
 	}
 	if err := r.registry.Register(silo.Frontend{MachineID: cfg.Server.MachineIdentifier}); err != nil {
+		r.stateUnsub()
+		r.broker.Close(context.Background())
+		cancel()
+		return nil, err
+	}
+	if err := r.registry.Register(stremio.Frontend{}); err != nil {
 		r.stateUnsub()
 		r.broker.Close(context.Background())
 		cancel()

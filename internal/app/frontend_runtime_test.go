@@ -75,10 +75,10 @@ func TestSharedFrontendRemainsAvailableWhenPlexIsOff(t *testing.T) {
 
 func TestSharedFrontendRunsOnDualListenerTLS(t *testing.T) {
 	a := setupTestApp(t, true)
-	if err := a.frontends.registry.Register(sharedFrontend{"stremio", "/stremio"}); err != nil {
+	if err := a.frontends.registry.Register(sharedFrontend{"tls-fixture", "/stremio"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.frontends.control.listeners.start(context.Background(), "stremio"); err != nil {
+	if err := a.frontends.control.listeners.start(context.Background(), "tls-fixture"); err != nil {
 		t.Fatal(err)
 	}
 	fixture := httptest.NewTLSServer(http.NotFoundHandler())
@@ -100,7 +100,7 @@ func TestSharedFrontendRunsOnDualListenerTLS(t *testing.T) {
 	}
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
-	if err != nil || res.StatusCode != http.StatusOK || string(body) != "stremio" {
+	if err != nil || res.StatusCode != http.StatusOK || string(body) != "tls-fixture" {
 		t.Fatalf("TLS response: %d %q %v", res.StatusCode, body, err)
 	}
 }
@@ -261,5 +261,26 @@ func TestPlexFreeSetupKeepsOwnerConsole(t *testing.T) {
 	}
 	if got := call("/ether/api/bootstrap"); got.Code != http.StatusOK {
 		t.Fatal(got.Code, got.Body)
+	}
+}
+
+func TestStremioIsRegisteredForOwnerControls(t *testing.T) {
+	a := setupTestApp(t, true)
+	found := false
+	for _, descriptor := range a.frontends.registry.Descriptors() {
+		if descriptor.ID == "stremio" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Stremio missing from registry")
+	}
+	if err := a.frontends.control.listeners.start(context.Background(), "stremio"); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/stremio/invalid/manifest.json", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("invalid grant: %d", w.Code)
 	}
 }
