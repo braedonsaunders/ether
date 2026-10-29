@@ -179,3 +179,24 @@ func TestPlaybackQueryPassesSelectionsAndVerifiedPeer(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func TestVersionSelectionDelegatesToBroker(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	var version string
+	broker := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
+		version = r.Version
+		return frontend.PlayPlan{Estimated: true}, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: broker, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId=variant-1", strings.NewReader(`{}`))
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || version != "variant-1" {
+		t.Fatal(w.Code, version, w.Body.String())
+	}
+}

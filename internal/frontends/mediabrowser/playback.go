@@ -14,6 +14,7 @@ import (
 )
 
 type playbackRequest struct {
+	MediaSourceId       string             `json:"MediaSourceId"`
 	DeviceProfile       caps.DeviceProfile `json:"DeviceProfile"`
 	IsPlayback          bool               `json:"IsPlayback"`
 	EnableDirectPlay    *bool              `json:"EnableDirectPlay"`
@@ -136,7 +137,22 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	allowed := queryBool(r, "EnableTranscoding", boolValue(body.EnableTranscoding, true))
 	intent := frontend.PlayIntent{Estimate: !playback, Options: opts, Position: time.Duration(body.StartTimeTicks) * 100 * time.Nanosecond, AllowTranscoding: &allowed, AudioSet: audioSet, SubtitleSet: subtitleSet}
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Caps: capability.Client, Intent: intent})
+	sourceID := body.MediaSourceId
+	idsQuery := route.Query(r.URL.Query(), "MediaSourceId")
+	if len(idsQuery) > 1 {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	if len(idsQuery) == 1 {
+		sourceID = idsQuery[0]
+	}
+	version := ""
+	if sourceID != "" && !strings.EqualFold(sourceID, wireID) {
+		if parsed, e := ids.ParseRatingKeyGUID(sourceID); e != nil || parsed != key || channel != "" {
+			version = sourceID
+		}
+	}
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, Caps: capability.Client, Intent: intent})
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)
 		return
@@ -145,9 +161,11 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Playback unavailable", 422)
 		return
 	}
-	sourceID := ids.RatingKeyGUID(key)
+	sourceID = ids.RatingKeyGUID(key)
 	if channel != "" {
 		sourceID = wireID
+	} else if version != "" {
+		sourceID = version
 	}
 	source := map[string]any{"Id": sourceID, "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
 	source["Protocol"] = "Http"

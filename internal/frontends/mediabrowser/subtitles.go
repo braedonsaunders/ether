@@ -25,10 +25,6 @@ func (i *instance) subtitle(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if source := r.PathValue("source"); source != ids.RatingKeyGUID(key) {
-		http.NotFound(w, r)
-		return
-	}
 	index, err := strconv.Atoi(r.PathValue("index"))
 	if err != nil || index < 0 {
 		http.NotFound(w, r)
