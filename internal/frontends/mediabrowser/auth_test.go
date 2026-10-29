@@ -62,7 +62,7 @@ func TestSessionCapabilitiesRoundTrip(t *testing.T) {
 	}
 	dto := inst.(*instance).sessionDTO(r, v)
 	capDTO := dto["Capabilities"].(map[string]any)
-	if capDTO["SupportsRemoteControl"] != true || !strings.Contains(string(capDTO["DeviceProfile"].(json.RawMessage)), "TV") {
+	if capDTO["SupportsRemoteControl"] != true || capDTO["SupportsMediaControl"] != false || capDTO["SupportsPersistentIdentifier"] != false || dto["LastPlaybackCheckIn"] != (time.Time{}) || !strings.Contains(string(capDTO["DeviceProfile"].(json.RawMessage)), "TV") {
 		t.Fatal(capDTO)
 	}
 }

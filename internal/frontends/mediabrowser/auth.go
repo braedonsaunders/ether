@@ -162,6 +162,8 @@ func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]an
 	state := map[string]any{"CanSeek": false, "IsPaused": false, "IsMuted": false, "RepeatMode": "RepeatNone"}
 	session := map[string]any{"Id": sessionID, "UserId": userID, "UserName": v.Username, "ServerId": i.info.ID, "Client": d.Client, "DeviceId": d.ID, "DeviceName": d.DeviceName, "ApplicationVersion": d.Version, "LastActivityDate": now, "RemoteEndPoint": peer, "AdditionalUsers": []any{}, "PlayableMediaTypes": []any{}, "SupportedCommands": []any{}, "SupportsRemoteControl": false, "PlayState": state}
 	if i.protocol == "jellyfin" {
+		// This sign-in response precedes any playback check-in.
+		session["LastPlaybackCheckIn"] = time.Time{}
 		state["PlaybackOrder"] = "Default"
 		session["IsActive"] = true
 		session["HasCustomDeviceName"] = false
@@ -200,7 +202,7 @@ func sessionCapabilitiesDTO(c frontend.SessionCapabilities) map[string]any {
 	if commands == nil {
 		commands = []string{}
 	}
-	m := map[string]any{"PlayableMediaTypes": mediaTypes, "SupportedCommands": commands}
+	m := map[string]any{"PlayableMediaTypes": mediaTypes, "SupportedCommands": commands, "SupportsMediaControl": false, "SupportsPersistentIdentifier": false}
 	if c.SupportsMediaControl != nil {
 		m["SupportsMediaControl"] = *c.SupportsMediaControl
 	}
