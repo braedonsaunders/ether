@@ -24,11 +24,15 @@ Downloads: not supported.
 | Streamyfin | Pending | — | — | — | — | — | — | — | — |
 | JellyCon | Pending | — | — | — | — | — | — | — | — |
 | Jellyfin for Roku | Pending | — | — | — | — | — | — | — | — |
-| Emby apps | Pending | — | — | — | — | — | — | — | — |
+| Emby Web (externally hosted) | Pending | — | — | — | — | — | — | — | — |
+| Emby for Apple TV | 2.0.9 (pending) | — | — | — | — | — | — | — | — |
 
 Jellyfin for Android phones and Jellyfin Desktop are unsupported: they wrap
 Jellyfin Web, which Ether does not ship. Ether's `/web` page gives connection
 instructions; it is not a browser media player.
+Ether does not bundle Emby Web; the externally hosted client has not yet been
+certified against Ether. Emby for Apple TV 2.0.9 is installed for testing, but
+its capture and feature checks are still pending.
 
 Emby's own app restrictions still apply. Its [Premiere feature matrix](https://support.emby.media/support/articles/Premiere-Feature-Matrix.html)
 lists full playback in the iOS and Android mobile apps as requiring an App
