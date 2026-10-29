@@ -836,3 +836,16 @@ changes. A new client session or five minutes without browsing starts a fresh
 selection. Clients that do not send a session identifier use the idle boundary;
 Ether cannot distinguish an immediate app reopen from an ordinary refresh on
 those clients. Continue Watching remains live throughout.
+
+## Stremio addon
+
+An owner can enable Stremio under **Apps**. Each viewer can then open the
+viewer portal, choose **Connect an app**, and create an individual Stremio
+install link. Open the link in Stremio or copy it to the device running the
+app. Keep this link private: it gives access to that viewer's permitted media.
+The viewer can revoke the connection under **Devices** and create another one
+if needed.
+
+Stremio requires an HTTPS address. If the portal cannot create an install
+link, add a certificate under **Apps → Secure connections** and try again.
+Catalogue items and streams follow the viewer's library and safety settings.
