@@ -142,7 +142,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			}
 		}
 		tickets, _ := identity.NewTicketService(a.db, id, grants, nil)
-		lazy, lazyErr := sessions.NewLazyStreams(a.db, r.broker, id, grants, time.Hour)
+		lazy, lazyErr := sessions.NewLazyStreams(a.db, r.broker, id, grants, time.Hour, func(req *http.Request) bool { ip, ok := a.frontendClientIP(req); return !ok || !identity.LAN(ip) })
 		if lazyErr != nil {
 			a.log.Error("lazy streams unavailable", "surface", id, "err", lazyErr)
 		}

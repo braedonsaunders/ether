@@ -34,12 +34,13 @@ type lazyStreams struct {
 	protocol frontend.Protocol
 	grants   LazyGrants
 	ttl      time.Duration
+	remote   func(*http.Request) bool
 }
 
 // NewLazyStreams creates a surface-bound durable, reusable capability issuer.
 // Capabilities live at most one hour and are revalidated on every request.
-func NewLazyStreams(db *sql.DB, b *Broker, protocol frontend.Protocol, grants LazyGrants, ttl time.Duration) (frontend.LazyStreams, error) {
-	if db == nil || b == nil || protocol == "" || grants == nil {
+func NewLazyStreams(db *sql.DB, b *Broker, protocol frontend.Protocol, grants LazyGrants, ttl time.Duration, remote func(*http.Request) bool) (frontend.LazyStreams, error) {
+	if db == nil || b == nil || protocol == "" || grants == nil || remote == nil {
 		return nil, errors.New("sessions: missing lazy stream dependency")
 	}
 	if ttl <= 0 {
@@ -48,7 +49,7 @@ func NewLazyStreams(db *sql.DB, b *Broker, protocol frontend.Protocol, grants La
 	if ttl > time.Hour {
 		return nil, errors.New("sessions: lazy stream lifetime exceeds one hour")
 	}
-	return &lazyStreams{db: db, broker: b, protocol: protocol, grants: grants, ttl: ttl}, nil
+	return &lazyStreams{db: db, broker: b, protocol: protocol, grants: grants, ttl: ttl, remote: remote}, nil
 }
 
 func lazyHash(token string) string {
@@ -123,6 +124,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Viewer = viewer
+	req.Caps.Remote = req.Caps.Remote || s.remote(r)
 	// Recheck the current safety and title policy even when reusing a session.
 	title, err := s.broker.deps.Lookup(ctx, viewer, req.Device, req.Item)
 	if err != nil || title == nil || title.Key != req.Item || !s.broker.permitted(viewer, req.Caps) || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
@@ -149,7 +151,13 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.broker.mu.Unlock()
 	access := frontend.SessionAccess{Viewer: viewer, Device: req.Device, Protocol: s.protocol}
 	if id != "" {
-		if _, _, err := s.broker.access(ctx, access, id); err != nil {
+		if existing, _, err := s.broker.access(ctx, access, id); err != nil {
+			id = ""
+		} else if req.Caps.Remote && !existing.caps.Remote {
+			if err := s.broker.Stop(ctx, access, id); err != nil {
+				http.NotFound(w, r)
+				return
+			}
 			id = ""
 		}
 	}

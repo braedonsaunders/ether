@@ -47,7 +47,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	events := NewEventBus(nil, active)
 	defer events.Close()
 	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
-	b, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: func() time.Time { return now }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+	b, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(_ *core.Viewer, remote bool, _ time.Time) bool { return !remote }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: func() time.Time { return now }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
 		return &core.Title{Key: k}, nil
 	}})
 	if err != nil {
@@ -55,7 +55,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	}
 	defer b.Close(ctx)
 	grants := &fakeLazyGrants{}
-	lazy, err := NewLazyStreams(db, b, "stremio", grants, time.Hour)
+	lazy, err := NewLazyStreams(db, b, "stremio", grants, time.Hour, func(r *http.Request) bool { return r.Header.Get("X-Test-Remote") == "yes" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,8 +105,15 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if pb.prepares != 1 || len(pb.Sessions()) != 1 {
 		t.Fatalf("opens %d sessions %d", pb.prepares, len(pb.Sessions()))
 	}
+	remoteRequest := httptest.NewRequest(http.MethodGet, path, nil)
+	remoteRequest.Header.Set("X-Test-Remote", "yes")
+	remoteResponse := httptest.NewRecorder()
+	lazy.ServeHTTP(remoteResponse, remoteRequest)
+	if remoteResponse.Code != http.StatusNotFound {
+		t.Fatalf("remote policy bypass: %d", remoteResponse.Code)
+	}
 	// A fresh surface handler can redeem the durable capability from the DB.
-	restarted, err := NewLazyStreams(db, b, "stremio", grants, time.Hour)
+	restarted, err := NewLazyStreams(db, b, "stremio", grants, time.Hour, func(r *http.Request) bool { return r.Header.Get("X-Test-Remote") == "yes" })
 	if err != nil {
 		t.Fatal(err)
 	}
