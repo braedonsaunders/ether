@@ -11,4 +11,7 @@ func TestParityHooksDisabledInProduction(t *testing.T) {
 	if !parityRunCatalogueWorkers() || !parityRunRegistrar() {
 		t.Fatal("production workers disabled")
 	}
+	if parityRefreshEvery() != 0 || parityRankerOptions().TrainEvery != 0 {
+		t.Fatal("production personalization scheduling changed")
+	}
 }

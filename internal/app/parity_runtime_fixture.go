@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/collections"
+	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 	"os"
 	"time"
@@ -14,6 +15,16 @@ import (
 
 func parityClock() func() time.Time {
 	return func() time.Time { return time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC) }
+}
+
+// The harness explicitly warms each real viewer model before listening.
+// Avoid a second scheduler-triggered rebuild racing that initial warmup.
+func parityRefreshEvery() time.Duration { return -1 }
+
+// Preserve the default learned-ranker training schedule while the model
+// refresh scheduler is disabled. Inference and serve logging remain enabled.
+func parityRankerOptions() personalize.RankerOptions {
+	return personalize.RankerOptions{TrainEvery: 6 * time.Hour}
 }
 func parityCatalogueOptions() []catalog.Option {
 	return []catalog.Option{catalog.WithNow(parityClock())}
@@ -32,6 +43,9 @@ func parityCollectionOptions() []collections.Option {
 
 // Warm every real viewer model before the listener accepts fixture requests.
 func parityWarmPersonalization(ctx context.Context, a *App) error {
+	if err := a.personalize.ParityWaitForGeneric(ctx); err != nil {
+		return err
+	}
 	users, err := a.users.Users(ctx)
 	if err != nil {
 		return err

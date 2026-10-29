@@ -2,12 +2,14 @@
 set -euo pipefail
 root=$1
 attribution=${2:-0}
+crowd_diag=${3:-0}
 case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
+case "$crowd_diag" in 0|1) ;; *) echo 'invalid crowd diagnostic mode' >&2; exit 1;; esac
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
  fi
- python3 - "$root/$tree" <<'PYCODE'
+ python3 - "$root/$tree" "$crowd_diag" <<'PYCODE'
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1]) / "internal/app"
 replacements = {
@@ -44,14 +46,54 @@ for name, changes in replacements.items():
   if text.count(old) != 1: raise SystemExit(f"cannot apply parity seam: {path}: expected exactly one {old!r}")
   text = text.replace(old, new, 1)
  path.write_text(text)
+personal = root / 'build_personalization.go'
+data = personal.read_text()
+if not re.search(r'RefreshEvery:\s*parityRefreshEvery\(\)', data):
+ data, count = re.subn(r'(personalize\.Options\{\s*Now:\s*parityClock\(\),)', r'\1\n        RefreshEvery: parityRefreshEvery(),', data, count=1)
+ if count != 1: raise SystemExit('cannot apply parity scheduler seam')
+if not re.search(r'Ranker:\s*parityRankerOptions\(\)', data):
+ data, count = re.subn(r'(RefreshEvery:\s*parityRefreshEvery\(\),)', r'\1\n        Ranker: parityRankerOptions(),', data, count=1)
+ if count != 1: raise SystemExit('cannot preserve parity ranker schedule')
+personal.write_text(data)
 checks = {
  "build_identity.go": r'auth\.Options\{\s*Now:\s*parityClock\(\)',
  "build_personalization.go": r'personalize\.Options\{\s*Now:\s*parityClock\(\)',
 }
 for name, pattern in checks.items():
  if not re.search(pattern, (root / name).read_text()): raise SystemExit(f"missing clock seam in {name}")
+if sys.argv[2] == '1':
+ path = root.parent / 'personalize/crowd.go'
+ data = path.read_text()
+ needle = '\t\tce.score = 1 - math.Exp(-sum*(1+crowdConsensusBonus*float64(n-1))/crowdScale)'
+ if data.count(needle) != 1: raise SystemExit('cannot instrument crowd scoring')
+ data = data.replace(needle, needle + '\n\t\tif k == core.MovieKey(10027) || k == core.MovieKey(10031) { fmt.Printf("PARITY_CROWD key=%d sum=%.17g score=%.17g votes=%v hop2=%v house=%.17g\\n", k, sum, ce.score, ce.votes, ce.hop2Votes, ce.house) }', 1)
+ needle = '\tfinishCrowd(g)\n\tb.crowdG = g'
+ if data.count(needle) != 1: raise SystemExit('cannot instrument viewer crowd graph')
+ data = data.replace(needle, '\tfinishCrowd(g)\n\tfor _, k := range []core.RatingKey{core.MovieKey(10027), core.MovieKey(10031)} { if ce := g.items[k]; ce != nil { fmt.Printf("PARITY_CROWD user=%d key=%d score=%.17g votes=%v hop2=%v house=%.17g\\n", b.user.ID, k, ce.score, ce.votes, ce.hop2Votes, ce.house) } }\n\tb.crowdG = g', 1)
+ path.write_text(data)
+ diag = root.parent / 'personalize/zz_parity_diag.go'
+ diag.write_text('''package personalize
+import "fmt"
+func parityDiagItems(items []candItem) string { s := ""; for _, x := range items { s += fmt.Sprintf(" %d:%.17g:%.17g:%.17g", x.t.Key, x.base, x.fit, x.qual) }; return s }
+''')
+ path = root.parent / 'personalize/generators.go'
+ data = path.read_text()
+ needle = '\t\tverb := "finished"'
+ if data.count(needle) != 1: raise SystemExit('cannot instrument because generator')
+ data = data.replace(needle, '\t\tif b.user.ID == 1 && (s.Key == core.MovieKey(10001) || s.Key == core.MovieKey(10003)) { raw := ""; for i, t := range sim { raw += fmt.Sprintf(" %d:%d", i, t.Key) }; fmt.Printf("PARITY_CROWD generator user=%d seed=%d raw=%s ranked=%s\\n", b.user.ID, s.Key, raw, parityDiagItems(items)) }\n' + needle, 1)
+ path.write_text(data)
+ path = root.parent / 'personalize/assemble.go'
+ data = path.read_text()
+ needle = '\treturn a.keepPreviouslyShown(c, eligible, out)'
+ if data.count(needle) != 1: raise SystemExit('cannot instrument context items')
+ data = data.replace(needle, '\tres := a.keepPreviouslyShown(c, eligible, out)\n\tif a.user.ID == 1 && (c.id == "because.1000000000010001" || c.id == "because.1000000000010003") { fmt.Printf("PARITY_CROWD context user=%d row=%s limit=%d previous=%v items=%s\\n", a.user.ID, c.id, a.limit, a.previous, parityDiagItems(res)) }\n\treturn res', 1)
+ needle = '\t\tout := make([]core.HomeRow, 0, len(sel))'
+ if data.count(needle) != 1: raise SystemExit('cannot instrument draft')
+ data = data.replace(needle, '\t\tif a.user.ID == 1 { msg := ""; for _, row := range sel { msg += fmt.Sprintf(" %s=[%s]", row.hubID, parityDiagItems(picked[row])) }; fmt.Printf("PARITY_CROWD fill user=%d limit=%d previous=%v rows=%s\\n", a.user.ID, a.limit, a.previous, msg) }\n' + needle, 1)
+ path.write_text(data)
 PYCODE
  cp "$root/harness/parity_runtime_default.go" "$root/harness/parity_runtime_fixture.go" "$root/harness/parity_source_default.go" "$root/harness/parity_source_fixture.go" "$root/$tree/internal/app/"
+ cp "$root/harness/parity_wait_fixture.go" "$root/$tree/internal/personalize/"
 done
 mkdir -p "$root/baseline/cmd/parityseed" "$root/candidate/cmd/plexparity"
 cp "$root/harness/seed.go" "$root/baseline/cmd/parityseed/seed.go"
@@ -65,7 +107,7 @@ docker run --rm --network none \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e ETHER_PARITY_ATTRIBUTION="$attribution" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
  cd /baseline

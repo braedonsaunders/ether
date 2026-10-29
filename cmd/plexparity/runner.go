@@ -165,6 +165,15 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		cancel()
 		<-done
 		log.Close()
+		if os.Getenv("ETHER_PARITY_CROWD_DIAG") == "1" {
+			if contents, err := os.ReadFile(log.Name()); err == nil {
+				for _, line := range strings.Split(string(contents), "\n") {
+					if strings.HasPrefix(line, "PARITY_CROWD ") {
+						fmt.Fprintf(out, "server=%d %s\n", i, line)
+					}
+				}
+			}
+		}
 		if missing := tracker.failures(); len(missing) > 0 && captureErr == nil {
 			captureErr = fmt.Errorf("TMDB fixture does not implement %v", missing)
 		}

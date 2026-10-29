@@ -17,9 +17,10 @@ trap cleanup EXIT
 mkdir -p "$dir/baseline" "$dir/candidate" "$dir/driver" "$dir/harness" "$dir/work"
 git archive "$baseline" | tar -xf - -C "$dir/baseline"
 git archive "$candidate" | tar -xf - -C "$dir/candidate"
-rsync -a --exclude .git --exclude node_modules --exclude dist/ffmpeg "$root/" "$dir/driver/"
+rsync -a --exclude .git --exclude node_modules --exclude dist/ffmpeg --exclude scripts/lab/lab.env --exclude .conform --exclude '.env*' --exclude prod.env --exclude '*.pem' --exclude '*.key' "$root/" "$dir/driver/"
 rsync -a "$root/cmd/plexparity/" "$dir/harness/"
 cp "$root/internal/app/parity_runtime_default.go" "$root/internal/app/parity_runtime_fixture.go" "$root/internal/app/parity_source_default.go" "$root/internal/app/parity_source_fixture.go" "$dir/harness/"
+cp "$root/internal/personalize/parity_wait_fixture.go" "$dir/harness/"
 bash "$root/scripts/fetch-ffmpeg.sh" linux-amd64
 mkdir -p "$HOME/prism-test/.cache/ffmpeg/linux-amd64"
 cp -a "$root/dist/ffmpeg/linux-amd64/." "$HOME/prism-test/.cache/ffmpeg/linux-amd64/"

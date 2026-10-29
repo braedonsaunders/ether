@@ -95,8 +95,10 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	})
 	// Per-viewer Homes, built in the background and served to Plex.
 	if a.personalize, err = personalize.New(personalize.Options{
-		Now: parityClock(),
-		DB:  a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
+		Now:          parityClock(),
+		RefreshEvery: parityRefreshEvery(),
+		Ranker:       parityRankerOptions(),
+		DB:           a.db, Catalog: a.catalog, State: a.state, Events: a.state, Users: a.users,
 		FilterAvailable: func(ctx context.Context, ts []core.Title) []core.Title {
 			ts = a.catalog.FilterVisibility(ctx, ts)
 			if a.availability == nil {
