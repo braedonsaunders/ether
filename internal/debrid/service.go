@@ -876,9 +876,12 @@ func (s *Service) acquireOn(ctx context.Context, e *entry, base Payload, choose 
 	findStarted := time.Now()
 	_, _, torrentID := s.knownFor(ctx, e.cfg.ID, hash)
 	if torrentID == "" {
-		if fast, ok := e.p.(knownTorrentFinder); ok {
+		if fast, ok := e.p.(knownTorrentFinder); ok && !core.IsBackgroundCheck(ctx) {
 			// Providers with atomic cached-only create + duplicate recovery
 			// can reuse known IDs without listing the whole account first.
+			// Background checks cannot create anything: they must use the
+			// read-only lookup to discover items added by another client or
+			// before this process started, even when the local cache is cold.
 			torrentID = fast.findKnown(hash)
 		} else if id, err := e.p.Find(ctx, hash); err == nil {
 			torrentID = id

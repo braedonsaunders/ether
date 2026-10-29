@@ -43,6 +43,45 @@ func TestTorBoxColdAcquireNeverListsTheAccountBeforeCreatingCachedItem(t *testin
 	}
 }
 
+func TestTorBoxBackgroundDiscoversExistingAccountTorrent(t *testing.T) {
+	for _, cached := range []bool{true, false} {
+		t.Run(fmt.Sprintf("accountReady=%t", cached), func(t *testing.T) {
+			f := &fakeTorBox{cached: cached}
+			base := f.handler(t)
+			var lists, writes atomic.Int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					writes.Add(1)
+				}
+				if r.URL.Path == "/torrents/mylist" && r.URL.Query().Get("id") == "" {
+					lists.Add(1)
+				}
+				base.ServeHTTP(w, r)
+			}))
+			defer srv.Close()
+			p := newTorBox(testKey, fastOpts(srv.URL))
+			cfg := config.Debrid{CachedOnly: false, Providers: []config.DebridProvider{{ID: "tb", Kind: "torbox", APIKey: testKey, Enabled: true}}}
+			svc := NewService(cfg, Options{NewProvider: func(config.DebridProvider, ProviderOptions) (Provider, error) { return p, nil }})
+			ctx := core.WithBackgroundBudget(t.Context(), func(context.Context, string, string, int64) error { return nil })
+			payload, err := svc.Acquire(ctx, core.Release{ID: "existing-episode", Name: "Show.S01", Protocol: core.ProtocolTorrent, InfoHash: testHash, Target: &core.ReleaseTarget{Season: 1, Episode: 2}})
+			if cached {
+				if err != nil || !IsPayload(payload) {
+					t.Fatalf("existing ready account item was not discovered: %v", err)
+				}
+				got, err := DecodePayload(payload)
+				if err != nil || got.TorrentID != "77" || got.FileID != "1" {
+					t.Fatalf("wrong torrent/file: %+v %v", got, err)
+				}
+			} else if !errors.Is(err, ErrUnsupported) {
+				t.Fatalf("unknown background availability: %v", err)
+			}
+			if lists.Load() != 1 || writes.Load() != 0 {
+				t.Fatalf("background discovery: lists=%d writes=%d", lists.Load(), writes.Load())
+			}
+		})
+	}
+}
+
 func TestTorBoxDuplicateCreateRecoversExistingTorrentByHash(t *testing.T) {
 	f := &fakeTorBox{cached: true}
 	base := f.handler(t)
