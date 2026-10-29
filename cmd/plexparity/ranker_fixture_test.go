@@ -28,15 +28,21 @@ func TestTrainedRankerFixtureIsActiveAndDeterministic(t *testing.T) {
 			t.Fatal(err)
 		}
 		var p struct {
-			Insight          core.RankerInsight `json:"insight"`
-			HoldoutPositives int                `json:"holdout_positives"`
-			HoldoutNegatives int                `json:"holdout_negatives"`
+			Insight          core.RankerInsight            `json:"insight"`
+			HoldoutPositives int                           `json:"holdout_positives"`
+			HoldoutNegatives int                           `json:"holdout_negatives"`
+			HoldoutViewers   map[string]rankerHoldoutClass `json:"holdout_viewers"`
 		}
 		if err = json.Unmarshal(proof, &p); err != nil {
 			t.Fatal(err)
 		}
 		if !p.Insight.Active || p.Insight.Examples < 2000 || p.Insight.Positives < 30 || p.Insight.AUC < 0.55 || p.Insight.AUC < p.Insight.BaselineAUC+0.02 || p.HoldoutPositives < 5 || p.HoldoutNegatives < 20 {
 			t.Fatalf("ranker gate not independently satisfied: %+v", p)
+		}
+		for _, name := range []string{"owner", "adult", "teen", "child", "friend"} {
+			if counts := p.HoldoutViewers[name]; counts.Positives == 0 || counts.Negatives == 0 {
+				t.Fatalf("%s missing held-out class: %+v", name, counts)
+			}
 		}
 		db, err := store.Open(ctx, dir)
 		if err != nil {
