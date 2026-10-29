@@ -28,16 +28,9 @@ func (s surfaceTrackPreferences) Get(ctx context.Context, v *frontend.Viewer) (f
 	}
 	return frontend.TrackPreferences{AudioLanguages: rules.AudioLanguages, SubtitleLanguages: rules.SubtitleLanguages, SubtitleMode: rules.SubtitleMode}, nil
 }
-func (s surfaceTrackPreferences) Set(ctx context.Context, v *frontend.Viewer, p frontend.TrackPreferences) error {
+func (s surfaceTrackPreferences) SetSubtitle(ctx context.Context, v *frontend.Viewer, languages []string, mode string) error {
 	if err := s.active(ctx, v); err != nil {
 		return err
 	}
-	rules, err := s.app.trackprefs.GetRules(ctx, v.ID)
-	if err != nil {
-		return err
-	}
-	rules.AudioLanguages = p.AudioLanguages
-	rules.SubtitleLanguages = p.SubtitleLanguages
-	rules.SubtitleMode = p.SubtitleMode
-	return s.app.trackprefs.PutRules(ctx, v.ID, rules)
+	return s.app.trackprefs.SetSubtitlePreferences(ctx, v.ID, languages, mode)
 }

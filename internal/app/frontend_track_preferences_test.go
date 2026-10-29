@@ -32,7 +32,7 @@ func TestTrackPreferencesAreSharedAndViewerScoped(t *testing.T) {
 	}
 	p.SubtitleMode = "always"
 	p.SubtitleLanguages = []string{"fr"}
-	if err = svc.Set(ctx, v, p); err != nil {
+	if err = svc.SetSubtitle(ctx, v, p.SubtitleLanguages, p.SubtitleMode); err != nil {
 		t.Fatal(err)
 	}
 	actual, err := a.trackprefs.GetRules(ctx, id)

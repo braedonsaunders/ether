@@ -8,5 +8,5 @@ type TrackPreferences struct {
 }
 type TrackPreferenceService interface {
 	Get(context.Context, *Viewer) (TrackPreferences, error)
-	Set(context.Context, *Viewer, TrackPreferences) error
+	SetSubtitle(context.Context, *Viewer, []string, string) error
 }

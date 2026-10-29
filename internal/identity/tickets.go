@@ -91,7 +91,7 @@ func (s *TicketService) Consume(ctx context.Context, token, purpose string) (fro
 	now := s.now().UnixMilli()
 	var viewerID int64
 	var data string
-	err := s.db.QueryRowContext(ctx, `DELETE FROM frontend_tickets WHERE hash=? AND surface=? AND purpose=? AND expires>? AND EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=frontend_tickets.source_hash AND g.viewer_id=frontend_tickets.viewer_id AND g.surface=frontend_tickets.surface AND g.revoked=0 AND g.expires>? AND u.active=1) RETURNING viewer_id,device`, hash, string(s.surface), purpose, now, now).Scan(&viewerID, &data)
+	err := s.db.QueryRowContext(ctx, `DELETE FROM frontend_tickets WHERE hash=? AND surface=? AND purpose=? AND expires>? AND EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=frontend_tickets.source_hash AND g.viewer_id=frontend_tickets.viewer_id AND g.surface=frontend_tickets.surface AND g.revoked=0 AND g.expires>? AND u.active=1) RETURNING viewer_id,device,source_hash`, hash, string(s.surface), purpose, now, now).Scan(&viewerID, &data, &out.SourceHash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, core.ErrUnauthorized
 	}
@@ -107,4 +107,14 @@ func (s *TicketService) Consume(ctx context.Context, token, purpose string) (fro
 	}
 	out.Viewer = v
 	return out, nil
+}
+
+// Active rechecks the issuing grant and membership for a live socket.
+func (s *TicketService) Active(ctx context.Context, t frontend.Ticket) (bool, error) {
+	if t.Viewer == nil || t.Viewer.ID <= 0 || t.SourceHash == "" || t.Device.ID == "" {
+		return false, core.ErrUnauthorized
+	}
+	var valid bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1)`, t.SourceHash, string(s.surface), t.Viewer.ID, t.Device.ID, s.now().UnixMilli()).Scan(&valid)
+	return valid, err
 }

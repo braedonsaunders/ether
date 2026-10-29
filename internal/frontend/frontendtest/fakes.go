@@ -452,7 +452,7 @@ func (f Experience) SetWatchlist(c context.Context, v *core.Viewer, k core.Ratin
 // TrackPreferences is a configurable fake for shared viewer track settings.
 type TrackPreferences struct {
 	GetFunc func(context.Context, *core.Viewer) (frontend.TrackPreferences, error)
-	SetFunc func(context.Context, *core.Viewer, frontend.TrackPreferences) error
+	SetFunc func(context.Context, *core.Viewer, []string, string) error
 }
 
 func (f TrackPreferences) Get(ctx context.Context, v *core.Viewer) (frontend.TrackPreferences, error) {
@@ -461,9 +461,9 @@ func (f TrackPreferences) Get(ctx context.Context, v *core.Viewer) (frontend.Tra
 	}
 	return frontend.TrackPreferences{}, frontend.ErrPreferencesNotFound
 }
-func (f TrackPreferences) Set(ctx context.Context, v *core.Viewer, p frontend.TrackPreferences) error {
+func (f TrackPreferences) SetSubtitle(ctx context.Context, v *core.Viewer, languages []string, mode string) error {
 	if f.SetFunc != nil {
-		return f.SetFunc(ctx, v, p)
+		return f.SetFunc(ctx, v, languages, mode)
 	}
 	return frontend.ErrPreferencesNotFound
 }

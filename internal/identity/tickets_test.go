@@ -46,6 +46,9 @@ func TestTicketCrossNodeScopeAndExpiry(t *testing.T) {
 	if err != nil || got.Viewer.ID != 1 || got.Device.ID != "tv" {
 		t.Fatalf("consume: %+v %v", got, err)
 	}
+	if ok, err := node2.Active(ctx, got); err != nil || !ok {
+		t.Fatalf("active %v %v", ok, err)
+	}
 	if _, err = node1.Consume(ctx, ticket, "events-ws"); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("replay %v", err)
 	}
@@ -86,6 +89,9 @@ func TestTicketCrossNodeScopeAndExpiry(t *testing.T) {
 	}
 	if _, err = db.Exec(`UPDATE auth_users SET active=0 WHERE id=1`); err != nil {
 		t.Fatal(err)
+	}
+	if ok, err := node2.Active(ctx, got); err != nil || ok {
+		t.Fatalf("inactive live ticket %v %v", ok, err)
 	}
 	if _, err = node2.Consume(ctx, ticket, "events-ws"); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("inactive: %v", err)

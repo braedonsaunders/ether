@@ -6,8 +6,11 @@ import "context"
 type Ticket struct {
 	Viewer *Viewer
 	Device Device
+	// SourceHash identifies the issuing grant for host-side revalidation only.
+	SourceHash string
 }
 type Tickets interface {
 	Issue(context.Context, string, Device, string) (string, error)
 	Consume(context.Context, string, string) (Ticket, error)
+	Active(context.Context, Ticket) (bool, error)
 }

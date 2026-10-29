@@ -298,3 +298,59 @@ func (s *Service) Memory(ctx context.Context, user int64) ([]SavedChoice, error)
 	}
 	return out, nil
 }
+
+// SetSubtitlePreferences updates only subtitle fields, preserving concurrent
+// audio and other rule changes. The compare-and-swap is shared across nodes.
+func (s *Service) SetSubtitlePreferences(ctx context.Context, user int64, languages []string, mode string) error {
+	if user <= 0 {
+		return errors.New("invalid user")
+	}
+	for attempt := 0; attempt < 16; attempt++ {
+		var old string
+		err := s.db.QueryRowContext(ctx, `SELECT rules FROM trackprefs_rules WHERE user_id=?`, user).Scan(&old)
+		exists := err == nil
+		var rules Rules
+		if errors.Is(err, sql.ErrNoRows) {
+			rules, err = s.GetRules(ctx, user)
+		} else if err == nil {
+			rules = Default()
+			err = json.Unmarshal([]byte(old), &rules)
+		}
+		if err != nil {
+			return err
+		}
+		rules.SubtitleLanguages = append([]string(nil), languages...)
+		rules.SubtitleMode = mode
+		if err = rules.Validate(); err != nil {
+			return err
+		}
+		data, err := json.Marshal(rules)
+		if err != nil {
+			return err
+		}
+		var res sql.Result
+		if exists {
+			res, err = s.db.ExecContext(ctx, `UPDATE trackprefs_rules SET rules=? WHERE user_id=? AND rules=? AND EXISTS(SELECT 1 FROM auth_users WHERE id=? AND active=1)`, string(data), user, old, user)
+		} else {
+			res, err = s.db.ExecContext(ctx, `INSERT INTO trackprefs_rules(user_id,rules) SELECT ?,? WHERE EXISTS(SELECT 1 FROM auth_users WHERE id=? AND active=1) ON CONFLICT(user_id) DO NOTHING`, user, string(data), user)
+		}
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 1 {
+			return nil
+		}
+		var active int
+		if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_users WHERE id=? AND active=1`, user).Scan(&active); err != nil {
+			return err
+		}
+		if active == 0 {
+			return core.ErrUnauthorized
+		}
+	}
+	return errors.New("trackprefs: concurrent update retry limit")
+}
