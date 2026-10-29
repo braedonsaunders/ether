@@ -32,6 +32,9 @@ func run(args []string) error {
 		return fmt.Errorf("usage: conformdiff record|compare|live [flags]")
 	}
 	cmd := args[0]
+	if cmd == "routes" {
+		return routes(args[1:])
+	}
 	if cmd == "validate" {
 		return validateFixture(args[1:])
 	}
