@@ -18,15 +18,15 @@ func (i *instance) image(w http.ResponseWriter, r *http.Request) {
 
 // imageBase obtains an owner-selected reachable address, not an untrusted Host header.
 func (i *instance) imageBase(r *http.Request) *url.URL {
-	if i.host.ViewerPortalURL == nil {
+	if i.host.SecurePortalURL == nil {
 		return nil
 	}
-	portal, err := i.host.ViewerPortalURL(r.Context(), r)
+	portal, err := i.host.SecurePortalURL(r.Context(), r)
 	if err != nil {
 		return nil
 	}
 	u, err := url.Parse(portal)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return nil
 	}
 	if !strings.HasSuffix(u.Path, "/ether/me") {
