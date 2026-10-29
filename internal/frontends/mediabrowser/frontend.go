@@ -40,6 +40,9 @@ func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 	}
 	enabled, _ := settings["discovery"].(bool)
 	inst := &instance{host: host, info: info, router: r, port: port, discoveryEnabled: enabled}
+	if err := inst.browseRoutes(); err != nil {
+		return nil, err
+	}
 	if err := inst.routes(); err != nil {
 		return nil, err
 	}
