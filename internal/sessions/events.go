@@ -115,8 +115,13 @@ func (b *EventBus) deliver(event frontend.Event) {
 		if s.protocol != "" && s.protocol == event.OriginProtocol && (event.Type == "UserDataChanged" || event.Type == "WatchStateChanged") {
 			continue
 		}
+		copy := event
+		if event.Command != nil {
+			command := *event.Command
+			copy.Command = &command
+		}
 		select {
-		case s.pending <- event:
+		case s.pending <- copy:
 		default:
 			delete(b.subs, s)
 			close(s.done)
