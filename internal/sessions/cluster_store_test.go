@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -124,13 +125,39 @@ func TestClusterBrokerListsStopsAndOrdersReportsAcrossNodes(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT report_sequence FROM plex_sessions WHERE id=?`, s.ID).Scan(&last); err != nil || last != "00000000000000000003" {
 		t.Fatalf("stored sequence=%q err=%v", last, err)
 	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, report := range []struct {
+		broker   *Broker
+		sequence uint64
+	}{{a, 4}, {b, 5}} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- report.broker.Report(ctx, access, s.ID, frontend.Timeline{Sequence: report.sequence, Position: time.Duration(report.sequence) * time.Minute, State: "playing"})
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if progress.position != 5*time.Minute {
+		t.Fatalf("concurrent reports ended at %v", progress.position)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT report_sequence FROM plex_sessions WHERE id=?`, s.ID).Scan(&last); err != nil || last != "00000000000000000005" {
+		t.Fatalf("concurrent sequence=%q err=%v", last, err)
+	}
+	priorCalls := progress.calls
 	if err := b.Report(ctx, access, s.ID, frontend.Timeline{Sequence: ^uint64(0), Position: 5 * time.Minute, Duration: time.Hour, State: "playing"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.Report(ctx, access, s.ID, frontend.Timeline{Sequence: 3, Position: time.Minute, Duration: time.Hour, State: "playing"}); err != nil {
 		t.Fatal(err)
 	}
-	if progress.calls != 4 || progress.position != 5*time.Minute {
+	if progress.calls != priorCalls+1 || progress.position != 5*time.Minute {
 		t.Fatalf("uint64 sequence ordering: %+v", progress)
 	}
 	select {
