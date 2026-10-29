@@ -241,6 +241,7 @@ type Experience interface {
 	Similar(context.Context, *core.Viewer, core.Device, core.RatingKey, ItemQuery) (SearchPage, error)
 	Ancestors(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]core.Title, error)
 	Facets(context.Context, *core.Viewer, core.Device, string, string) ([]core.FacetValue, error)
+	ResolveFacet(context.Context, *core.Viewer, core.Device, string, string, string) (core.FacetValue, error)
 	Search(context.Context, *core.Viewer, core.Device, string, ItemQuery) (SearchPage, error)
 	UserData(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 	SetPlayed(context.Context, *core.Viewer, core.RatingKey) error
