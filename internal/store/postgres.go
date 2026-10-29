@@ -225,6 +225,7 @@ func migratePostgres(ctx context.Context, db *sql.DB, gate MigrationGate) error 
 		}
 		for _, match := range reSeedInsert.FindAllStringSubmatch(m.sqlFor(Postgres), -1) {
 			seeded[match[1]] = true
+			seeded[strings.ToLower(match[1])] = true // PostgreSQL folds unquoted identifiers.
 		}
 		// No arguments: pgx sends this over the simple query protocol, which
 		// accepts several ;-separated statements in one round trip.

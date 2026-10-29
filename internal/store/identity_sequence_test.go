@@ -11,7 +11,7 @@ func TestPostgresSeededMigrationAdvancesIdentity(t *testing.T) {
 	ctx := context.Background()
 	regMu.Lock()
 	saved := migrations
-	migrations = append(append([]migration(nil), saved...), migration{component: "zz_identity_seed_test", version: 1, sql: `CREATE TABLE identity_seed_test(id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL); INSERT INTO identity_seed_test(id,label) VALUES(10,'seed')`})
+	migrations = append(append([]migration(nil), saved...), migration{component: "zz_identity_seed_test", version: 1, sql: `CREATE TABLE identity_seed_test(id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL); INSERT INTO IDENTITY_SEED_TEST(id,label) VALUES(10,'seed')`})
 	regMu.Unlock()
 	defer func() { regMu.Lock(); migrations = saved; regMu.Unlock() }()
 	db, err := OpenTestPostgres(ctx, u)
