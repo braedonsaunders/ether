@@ -199,8 +199,10 @@ type Images interface {
 type Host struct {
 	Experience         Experience
 	ViewerCapabilities ViewerCapabilitiesFunc
+	ViewerPolicy       ViewerPolicy
 	Capabilities       Capabilities
 	Preferences        Preferences
+	TrackPreferences   TrackPreferenceService
 	LiveTV             LiveTV
 	Sessions           Sessions
 	Identity           SurfaceIdentity

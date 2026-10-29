@@ -7,6 +7,7 @@ import "github.com/braedonsaunders/ether/internal/core"
 type Viewer = core.Viewer
 type Device = core.Device
 type Title = core.Title
+type Person = core.Person
 type RatingKey = core.RatingKey
 type MediaType = core.MediaType
 type Page = core.Page

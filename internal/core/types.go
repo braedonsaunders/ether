@@ -126,6 +126,9 @@ var (
 // User is a Plex account with access to this server: the owner or a friend
 // the owner shared with on plex.tv.
 type User struct {
+	// Timestamps are internal identity metadata and do not change existing wire JSON.
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 	// Delegated marks short-lived server credentials; these never grant owner access.
 	Delegated bool   `json:"-"`
 	ID        int64  `json:"id"` // local id

@@ -280,15 +280,15 @@ func HashToken(token string) string {
 }
 
 const userCols = `id, COALESCE(plex_id, 0), uuid, username, title, email, thumb, is_owner, is_home, restricted, active, origin,
-	plex_sections, stream_limit, max_content_rating, subtitle_languages, audio_languages, allowed_sections, last_seen_at`
+	plex_sections, stream_limit, max_content_rating, subtitle_languages, audio_languages, allowed_sections, last_seen_at, CASE WHEN created_at>0 THEN created_at ELSE COALESCE((SELECT MIN(event_time) FROM (SELECT verified_at AS event_time FROM identity_links WHERE viewer_id=auth_users.id AND verified_at>0 UNION ALL SELECT created_at AS event_time FROM auth_tokens WHERE user_id=auth_users.id AND created_at>0 UNION ALL SELECT last_seen_at AS event_time WHERE last_seen_at>0) AS known_times),0) END, updated_at`
 
 func scanRow(sc interface{ Scan(...any) error }) (*row, error) {
 	var r row
 	var isOwner, home, restricted, active int
 	var plexSecs, subs, auds, secs string
-	var lastSeen int64
+	var lastSeen, created, updated int64
 	if err := sc.Scan(&r.ID, &r.PlexID, &r.UUID, &r.Username, &r.Title, &r.Email, &r.Thumb, &isOwner, &home,
-		&restricted, &active, &r.Origin, &plexSecs, &r.StreamLimit, &r.MaxContentRating, &subs, &auds, &secs, &lastSeen); err != nil {
+		&restricted, &active, &r.Origin, &plexSecs, &r.StreamLimit, &r.MaxContentRating, &subs, &auds, &secs, &lastSeen, &created, &updated); err != nil {
 		return nil, err
 	}
 	r.IsOwner, r.Home, r.Restricted, r.Active = isOwner == 1, home == 1, restricted == 1, active == 1
@@ -296,6 +296,14 @@ func scanRow(sc interface{ Scan(...any) error }) (*row, error) {
 	_ = json.Unmarshal([]byte(subs), &r.SubtitleLanguages)
 	_ = json.Unmarshal([]byte(auds), &r.AudioLanguages)
 	_ = json.Unmarshal([]byte(secs), &r.AllowedSections)
+	if created > 0 {
+		r.CreatedAt = time.Unix(created, 0).UTC()
+	}
+	if updated > 0 {
+		r.UpdatedAt = time.Unix(updated, 0).UTC()
+	} else if created > 0 {
+		r.UpdatedAt = r.CreatedAt
+	}
 	if lastSeen > 0 {
 		r.LastSeen = time.Unix(lastSeen, 0)
 	}
