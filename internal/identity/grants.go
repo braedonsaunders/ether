@@ -51,6 +51,7 @@ type ActiveViewer interface {
 type Grants struct {
 	db      *sql.DB
 	viewers ActiveViewer
+	times   *ViewerTimes
 	ttl     time.Duration
 	now     func() time.Time
 }
@@ -62,7 +63,11 @@ func NewGrants(db *sql.DB, viewers ActiveViewer, ttl time.Duration, now func() t
 	if now == nil {
 		now = time.Now
 	}
-	return &Grants{db: db, viewers: viewers, ttl: ttl, now: now}, nil
+	times, err := NewViewerTimes(db, now)
+	if err != nil {
+		return nil, err
+	}
+	return &Grants{db: db, viewers: viewers, times: times, ttl: ttl, now: now}, nil
 }
 
 // IsGrantCredential distinguishes Ether grants from credentials belonging to
@@ -84,15 +89,23 @@ func grantHash(credential string) (string, bool) {
 
 // Issue creates a new independent credential for a device and surface.
 func (g *Grants) Issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
-	return g.issue(ctx, viewerID, identityID, surface, device, false)
+	return g.issue(ctx, viewerID, identityID, surface, device, false, false)
 }
 
 // IssueLogin atomically issues a grant and records a successful explicit sign-in.
 func (g *Grants) IssueLogin(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
-	return g.issue(ctx, viewerID, identityID, surface, device, true)
+	return g.issue(ctx, viewerID, identityID, surface, device, true, false)
 }
 
-func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device, login bool) (string, error) {
+// IssueOwnerLogin admits only an active owner and records the sign-in atomically.
+func (g *Grants) IssueOwnerLogin(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device) (string, error) {
+	return g.issue(ctx, viewerID, identityID, surface, device, true, true)
+}
+
+// ViewerTimes returns the database-backed event observer owned by this grant service.
+func (g *Grants) ViewerTimes() *ViewerTimes { return g.times }
+
+func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, surface string, device core.Device, login, ownerOnly bool) (string, error) {
 	if surface == "" || viewerID <= 0 {
 		return "", errors.New("identity: surface and viewer required")
 	}
@@ -119,7 +132,11 @@ func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, s
 		defer tx.Rollback()
 		exec = tx
 	}
-	result, err := exec.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1)`, hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), viewerID)
+	ownerFlag := 0
+	if ownerOnly {
+		ownerFlag = 1
+	}
+	result, err := exec.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (?=0 OR is_owner=1))`, hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), viewerID, ownerFlag)
 	if err != nil {
 		return "", err
 	}
@@ -181,6 +198,8 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	if n != 1 {
 		return nil, core.ErrUnauthorized
 	}
+	// Activity is an observation, never a reason to reject a valid credential.
+	_ = g.times.Observe(ctx, viewer.ID)
 	return viewer, nil
 }
 
@@ -221,6 +240,7 @@ func (g *Grants) ValidateGrantReference(ctx context.Context, surface, reference 
 	if viewer == nil || viewer.ID != viewerID {
 		return core.ErrUnauthorized
 	}
+	_ = g.times.Observe(ctx, viewer.ID)
 	return nil
 }
 

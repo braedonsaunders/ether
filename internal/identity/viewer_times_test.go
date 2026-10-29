@@ -44,6 +44,12 @@ func TestViewerTimesObserveActualEventsAndAuthorize(t *testing.T) {
 	if _, err = grants.Issue(ctx, 1, nil, "jellyfin", core.Device{}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = grants.IssueOwnerLogin(ctx, 1, nil, "owner", core.Device{}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("non-owner sign-in: %v", err)
+	}
+	if err = times.RecordOwnerLogin(ctx, 1); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("non-owner external sign-in: %v", err)
+	}
 	unknown, err = times.Get(ctx, 1, 1)
 	if err != nil || !unknown.LastLogin.IsZero() || !unknown.LastActivity.IsZero() {
 		t.Fatalf("mint invented event %+v %v", unknown, err)

@@ -41,7 +41,11 @@ func (h *Handler) localLogin(w http.ResponseWriter, r *http.Request, surface str
 		writeError(w, 401, "unauthorized", "invalid credentials")
 		return
 	}
-	token, err := h.deps.IdentityGrants.Issue(r.Context(), viewerID, &identityID, surface, core.Device{Client: "Ether browser"})
+	issue := h.deps.IdentityGrants.IssueLogin
+	if surface == "owner" {
+		issue = h.deps.IdentityGrants.IssueOwnerLogin
+	}
+	token, err := issue(r.Context(), viewerID, &identityID, surface, core.Device{Client: "Ether browser"})
 	if err != nil {
 		writeError(w, 401, "unauthorized", "invalid credentials")
 		return
@@ -94,7 +98,7 @@ func (h *Handler) localLoginBody(w http.ResponseWriter, r *http.Request, body lo
 		writeError(w, 500, "unavailable", "sign in unavailable")
 		return
 	}
-	token, err := h.deps.IdentityGrants.Issue(r.Context(), viewerID, &identityID, "owner", core.Device{Client: "Ether browser"})
+	token, err := h.deps.IdentityGrants.IssueOwnerLogin(r.Context(), viewerID, &identityID, "owner", core.Device{Client: "Ether browser"})
 	if err != nil {
 		writeError(w, 500, "unavailable", "sign in unavailable")
 		return
@@ -186,7 +190,7 @@ func (h *Handler) handlePortalPINPoll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 401, "unauthorized", "sign in rejected")
 		return
 	}
-	grant, err := h.deps.IdentityGrants.Issue(r.Context(), u.ID, nil, "viewer-portal", core.Device{Client: "Ether browser"})
+	grant, err := h.deps.IdentityGrants.IssueLogin(r.Context(), u.ID, nil, "viewer-portal", core.Device{Client: "Ether browser"})
 	if err != nil {
 		writeError(w, 401, "unauthorized", "sign in rejected")
 		return

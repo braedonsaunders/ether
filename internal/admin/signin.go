@@ -102,6 +102,13 @@ func (h *Handler) handleSignInPoll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "not_owner", "That Plex account doesn't own this server. Sign in as the owner.")
 		return
 	}
+	// This is a completed external owner sign-in, not ordinary token use.
+	// Preserve the existing Plex sign-in response if observation is unavailable.
+	if h.deps.IdentityGrants != nil && h.deps.AuthenticatePlex != nil {
+		if viewer, e := h.deps.AuthenticatePlex(r.Context(), token); e == nil && viewer != nil {
+			_ = h.deps.IdentityGrants.ViewerTimes().RecordOwnerLogin(r.Context(), viewer.ID)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"done": true, "token": token})
 }
 

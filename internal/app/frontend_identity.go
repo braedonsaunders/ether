@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"log/slog"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -20,7 +19,6 @@ type surfaceIdentity struct {
 	grants      *identity.Grants
 	quick       *identity.QuickConnect
 	times       *identity.ViewerTimes
-	log         *slog.Logger
 	login, poll *identity.LoginLimiter
 }
 
@@ -28,15 +26,7 @@ func (s surfaceIdentity) Resolve(ctx context.Context, credential string) (*core.
 	if s.resolver == nil {
 		return nil, core.ErrUnauthorized
 	}
-	viewer, err := s.resolver.Resolve(ctx, string(s.surface), credential)
-	if err == nil && viewer != nil && s.times != nil {
-		// A failed observation must not turn a valid credential into an outage;
-		// it remains unknown until a later authenticated request records it.
-		if observeErr := s.times.Observe(ctx, viewer.ID); observeErr != nil && s.log != nil {
-			s.log.Warn("viewer activity observation failed", slog.Any("error", observeErr))
-		}
-	}
-	return viewer, err
+	return s.resolver.Resolve(ctx, string(s.surface), credential)
 }
 func (s surfaceIdentity) ViewerTimes(ctx context.Context, credential string, target int64) (frontend.ViewerTimes, error) {
 	if s.times == nil || target <= 0 {
@@ -94,11 +84,7 @@ func (s surfaceIdentity) SignIn(ctx context.Context, username, password string, 
 	return s.grants.IssueLogin(ctx, viewer, &link, string(s.surface), device)
 }
 func (s surfaceIdentity) IssueRefresh(ctx context.Context, access string, device core.Device) (string, error) {
-	refresh, err := s.grants.IssueRefresh(ctx, string(s.surface), access, device)
-	if err == nil {
-		_, _ = s.Resolve(ctx, access)
-	}
-	return refresh, err
+	return s.grants.IssueRefresh(ctx, string(s.surface), access, device)
 }
 func (s surfaceIdentity) Refresh(ctx context.Context, token string, device core.Device) (string, string, error) {
 	if err := s.allow(ctx, s.poll, "refresh"); err != nil {

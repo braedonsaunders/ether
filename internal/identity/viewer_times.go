@@ -50,6 +50,31 @@ func recordLogin(ctx context.Context, tx *sql.Tx, viewerID, at int64) error {
 	return err
 }
 
+// RecordOwnerLogin records a completed external owner sign-in after the
+// external provider has authenticated it. Active owner status is rechecked.
+func (s *ViewerTimes) RecordOwnerLogin(ctx context.Context, viewerID int64) error {
+	if viewerID <= 0 {
+		return core.ErrUnauthorized
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var owner int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM auth_users WHERE id=? AND active=1 AND is_owner=1`, viewerID).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return core.ErrUnauthorized
+	}
+	if err != nil {
+		return err
+	}
+	if err = recordLogin(ctx, tx, viewerID, s.now().UnixMilli()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // Observe records an authenticated request at most once per viewer per node
 // per interval. Failed writes are not cached; an older node cannot regress data.
 func (s *ViewerTimes) Observe(ctx context.Context, viewerID int64) error {
