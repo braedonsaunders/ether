@@ -422,6 +422,32 @@ func (f Capabilities) Build(ctx context.Context, req frontend.CapabilityRequest)
 
 var _ frontend.Capabilities = Capabilities{}
 
+// VirtualPaths supplies configurable viewer-scoped virtual paths.
+type VirtualPaths struct {
+	PathFunc  func(context.Context, *core.Viewer, core.Device, core.RatingKey) (string, error)
+	PathsFunc func(context.Context, *core.Viewer, core.Device, []core.RatingKey) (map[core.RatingKey]string, error)
+	BaseFunc  func(context.Context, *http.Request) (string, error)
+}
+
+func (f VirtualPaths) Path(ctx context.Context, v *core.Viewer, d core.Device, key core.RatingKey) (string, error) {
+	if f.PathFunc != nil {
+		return f.PathFunc(ctx, v, d, key)
+	}
+	return "", core.ErrNotFound
+}
+func (f VirtualPaths) Paths(ctx context.Context, v *core.Viewer, d core.Device, keys []core.RatingKey) (map[core.RatingKey]string, error) {
+	if f.PathsFunc != nil {
+		return f.PathsFunc(ctx, v, d, keys)
+	}
+	return map[core.RatingKey]string{}, nil
+}
+func (f VirtualPaths) Base(ctx context.Context, r *http.Request) (string, error) {
+	if f.BaseFunc != nil {
+		return f.BaseFunc(ctx, r)
+	}
+	return "", core.ErrNotAvailable
+}
+
 // Preferences is a configurable fake for protocol presentation state.
 type Preferences struct {
 	GetFunc    func(context.Context, *core.Viewer, string, string) (json.RawMessage, error)

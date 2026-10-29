@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -55,6 +57,46 @@ func TestVirtualPathsRespectViewerPolicyAndDisambiguate(t *testing.T) {
 	}
 	if _, err = s.Path(context.Background(), &core.Viewer{ID: 8}, core.Device{}, first.Key); !errors.Is(err, core.ErrNotFound) {
 		t.Fatalf("hidden item: %v", err)
+	}
+}
+
+func TestVirtualPathsBatchSharesLibraryScanAndOmitsHidden(t *testing.T) {
+	first := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Film"}
+	second := core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, Title: "Film"}
+	var scans int
+	experience := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *core.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "movies", Type: core.TypeMovie}}, nil
+		},
+		LibraryItemsFunc: func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (core.Page, error) {
+			scans++
+			return core.Page{Items: []core.Title{first, second}}, nil
+		},
+	}
+	s := surfaceVirtualPaths{experience: experience}
+	got, err := s.Paths(context.Background(), &core.Viewer{ID: 7}, core.Device{}, []core.RatingKey{first.Key, second.Key, first.Key, core.MovieKey(999)})
+	if err != nil || scans != 1 || len(got) != 2 || got[first.Key] == got[second.Key] {
+		t.Fatalf("batch: %+v scans=%d err=%v", got, scans, err)
+	}
+	keys := make([]core.RatingKey, 51)
+	for n := range keys {
+		keys[n] = core.MovieKey(int64(n + 1))
+	}
+	if _, err := s.Paths(context.Background(), &core.Viewer{ID: 7}, core.Device{}, keys); err == nil {
+		t.Fatal("unbounded batch accepted")
+	}
+}
+
+func TestVirtualPathBaseFailsClosedWhenWebDAVDisabled(t *testing.T) {
+	enabled := false
+	s := surfaceVirtualPaths{enabled: func() bool { return enabled }, base: func(context.Context, *http.Request) (string, error) { return "https://ether.example/webdav", nil }}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if _, err := s.Base(context.Background(), req); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatal(err)
+	}
+	enabled = true
+	if got, err := s.Base(context.Background(), req); err != nil || got != "https://ether.example/webdav" {
+		t.Fatal(got, err)
 	}
 }
 
