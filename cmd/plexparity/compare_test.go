@@ -36,3 +36,13 @@ func TestDiffTranscripts(t *testing.T) {
 		t.Fatal("mismatched fixture IDs accepted")
 	}
 }
+
+func TestRestrictedRoutesDoNotAutomaticallyApproveDifferences(t *testing.T) {
+	a := transcript{ids: map[string]string{}, captures: []capture{{viewer: "teen", client: "web", path: "/search?query=fixture", response: protocol.Response{Status: 200, Body: []byte("unexpected")}}}}
+	b := transcript{ids: map[string]string{}, captures: []capture{{viewer: "teen", client: "web", path: "/search?query=fixture", response: protocol.Response{Status: 200, Body: []byte("different")}}}}
+	var out bytes.Buffer
+	n, err := diffTranscripts(a, b, &out)
+	if err != nil || n != 1 || !strings.Contains(out.String(), "REGRESSION") {
+		t.Fatalf("n=%d err=%v report=%s", n, err, out.String())
+	}
+}

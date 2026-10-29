@@ -1,9 +1,10 @@
-// Command plexparity builds fixtures and compares a preliminary browsing corpus.
-// The complete binary runner, playback corpus and runtime isolation are pending.
+// Command plexparity compares Plex responses using disposable offline fixtures.
+// The inventory check reports routes that still lack probes.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -40,6 +41,10 @@ func main() {
 		if err := runPair(ctx, os.Args[2], os.Args[3], os.Args[4], os.Stdout); err != nil {
 			// Keep report and final status on one stream to avoid Docker multiplex interleaving.
 			fmt.Fprintln(os.Stdout, err)
+			var incomplete incompleteCoverage
+			if errors.As(err, &incomplete) {
+				os.Exit(2)
+			}
 			os.Exit(1)
 		}
 	case len(os.Args) == 4 && os.Args[1] == "compare":

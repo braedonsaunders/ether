@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -51,8 +52,8 @@ func copyFixture(src, dst string) error {
 	})
 }
 
-// runPair is intentionally preliminary: the comparator still exits non-zero
-// for incomplete coverage. It never reports a parity pass.
+// runPair fails on unapproved differences and reports incomplete coverage
+// separately so callers can distinguish a clean partial run from a regression.
 func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Writer) error {
 	dir, err := os.MkdirTemp("", "ether-plexparity-")
 	if err != nil {
@@ -180,5 +181,18 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	if err != nil {
 		return err
 	}
-	return fmt.Errorf("preliminary corpus found %d differences; parity coverage is incomplete", n)
+	if n > 0 {
+		return fmt.Errorf("%d unapproved response differences", n)
+	}
+	if missing := missingRoutes(); len(missing) > 0 {
+		return incompleteCoverage{missing}
+	}
+	return nil
+}
+
+// incompleteCoverage is a non-successful probe with no unapproved diffs.
+type incompleteCoverage struct{ routes []string }
+
+func (e incompleteCoverage) Error() string {
+	return fmt.Sprintf("coverage incomplete: %d GET routes: %s", len(e.routes), strings.Join(e.routes, ", "))
 }

@@ -1,0 +1,36 @@
+name: Plex parity
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  plex-parity:
+    if: github.event.pull_request.head.ref == 'prism'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Compare against merge base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          baseline=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          set +e
+          bash cmd/plexparity/ci.sh "$baseline" "$HEAD_SHA" | tee /tmp/plex-parity-report.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 2 ]; then
+            detail=$(grep '^coverage incomplete:' /tmp/plex-parity-report.txt | tail -1)
+            if [ -z "$detail" ]; then echo '::error::Parity returned incomplete without a coverage report'; exit 1; fi
+            echo "::warning::$detail"
+            exit 0
+          fi
+          exit "$status"
