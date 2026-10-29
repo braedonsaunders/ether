@@ -14,6 +14,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // renderOpts controls how much of an item is rendered.
@@ -457,16 +458,7 @@ func (s *Server) personTags(ps []core.Person, kind string, max int, detail, with
 // mediaInfoFor is the media info shown for a title: the live session's when
 // one exists for this client, otherwise the playback estimate.
 func (s *Server) mediaInfoFor(ctx context.Context, pr *Request, t *core.Title) (core.MediaInfo, *core.PlaySession) {
-	if s.d.Playback == nil {
-		return core.MediaInfo{Estimated: true, Duration: t.Runtime}, nil
-	}
-	if pr.User != nil {
-		if ps, ok := s.d.Playback.SessionFor(pr.User.ID, pr.ClientID, t.Key); ok && ps != nil {
-			return ps.Info, ps
-		}
-	}
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
-	return s.d.Playback.Estimate(ctx, t, caps), nil
+	return sessions.Estimate(ctx, s.d.Playback, pr.User, pr.ClientID, t, func() core.ClientCaps { return pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps) })
 }
 
 // mediaFor renders the virtual Media/Part of a playable title: one per
