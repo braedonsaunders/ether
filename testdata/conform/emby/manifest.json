@@ -20,5 +20,23 @@
       "direction": "target-only",
       "reason": "Ether emits an ETag for If-Range resume; an additional HTTP validator is valid even when the reference omits it."
     }
+  ],
+  "documentedPrivacyDifferences": [
+    {
+      "method": "GET",
+      "path": "/Users/Public",
+      "field": "$[]/LastLoginDate",
+      "referenceEvidence": "emby-sdk/emby-sdk_jsonconnect_public users_GET__Users_Public.json records this field in the unauthenticated Emby 4.10.2 response.",
+      "etherBehavior": "Omitted from the public picker to avoid disclosing viewer login history before authentication. Authenticated user responses expose observed, credential-authorized values when known.",
+      "comparison": "blocking pending reviewed policy-difference handling and client-dependence audit"
+    },
+    {
+      "method": "GET",
+      "path": "/Users/Public",
+      "field": "$[]/LastActivityDate",
+      "referenceEvidence": "emby-sdk/emby-sdk_jsonconnect_public users_GET__Users_Public.json records this field in the unauthenticated Emby 4.10.2 response.",
+      "etherBehavior": "Omitted from the public picker to avoid disclosing viewer activity before authentication. Authenticated user responses expose observed, credential-authorized values when known.",
+      "comparison": "blocking pending reviewed policy-difference handling and client-dependence audit"
+    }
   ]
 }
