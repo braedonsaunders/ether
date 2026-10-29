@@ -10,6 +10,8 @@ import (
 type LazyStreams interface {
 	Issue(context.Context, string, PlanRequest) (string, error)
 	ServeHTTP(http.ResponseWriter, *http.Request)
+	// ServeAuthenticated streams an authenticated GET using a stable broker session.
+	ServeAuthenticated(http.ResponseWriter, *http.Request, string, PlanRequest)
 }
 
 // LANLazyStreams issues a capability only for the currently selected DLNA

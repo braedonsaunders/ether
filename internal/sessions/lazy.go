@@ -2,9 +2,11 @@ package sessions
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -58,6 +60,10 @@ func lazyHash(token string) string {
 }
 
 func (s *lazyStreams) Issue(ctx context.Context, credential string, req frontend.PlanRequest) (string, error) {
+	return s.issue(ctx, credential, req, false)
+}
+
+func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend.PlanRequest, stable bool) (string, error) {
 	if req.Protocol != s.protocol || req.Device.ID == "" || req.Viewer == nil || req.Intent.Plex != nil || req.Item == 0 || req.Channel != "" {
 		return "", core.ErrUnauthorized
 	}
@@ -80,13 +86,49 @@ func (s *lazyStreams) Issue(ctx context.Context, credential string, req frontend
 		return "", core.ErrNotAvailable
 	}
 	token := rand.Text()
+	if stable {
+		// This token never leaves the process: it keys an authenticated path's
+		// reusable session and cannot be used as the issuing credential.
+		mac := hmac.New(sha256.New, []byte(ref))
+		_, _ = mac.Write([]byte("ether-authenticated-lazy-v1\x00"))
+		_, _ = mac.Write(data)
+		token = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	}
 	now := s.broker.deps.Now()
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions_lazy_streams WHERE expires<=?`, now.UnixMilli())
-	_, err = s.db.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?)`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), now.Add(s.ttl).UnixMilli())
+	_, err = s.db.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?) ON CONFLICT(hash) DO UPDATE SET expires=excluded.expires`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), now.Add(s.ttl).UnixMilli())
 	if err != nil {
 		return "", err
 	}
+	if stable {
+		s.broker.mu.Lock()
+		if entry, ok := s.broker.lazySessions[lazyHash(token)]; ok {
+			entry.expires = now.Add(s.ttl).UnixMilli()
+			s.broker.lazySessions[lazyHash(token)] = entry
+		}
+		s.broker.mu.Unlock()
+	}
 	return "/sessions/lazy/" + token + "/file", nil
+}
+
+// ServeAuthenticated is for a surface such as WebDAV that authenticates every
+// GET and has a stable logical path rather than an issued capability URL.
+func (s *lazyStreams) ServeAuthenticated(w http.ResponseWriter, r *http.Request, credential string, req frontend.PlanRequest) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	path, err := s.issue(r.Context(), credential, req, true)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	clone := r.Clone(r.Context())
+	u := *r.URL
+	u.Path = path
+	u.RawPath = ""
+	clone.URL = &u
+	s.ServeHTTP(w, clone)
 }
 
 func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -46,7 +46,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
 	events := NewEventBus(nil, active)
 	defer events.Close()
-	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 3}
 	b, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(_ *core.Viewer, remote bool, _ time.Time) bool { return !remote }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: func() time.Time { return now }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
 		return &core.Title{Key: k}, nil
 	}})
@@ -133,6 +133,25 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if strings.Contains(serialized, "account-credential-secret") || strings.Contains(serialized, "grant-reference") {
 		t.Fatal("credential or grant reference in serialized playback request")
 	}
+	authenticated := req
+	authenticated.Device.ID = "webdav-device"
+	for i := 0; i < 2; i++ {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil)
+		r.Header.Set("Range", "bytes=0-2")
+		lazy.ServeAuthenticated(w, r, "account-credential-secret", authenticated)
+		if w.Code != http.StatusOK {
+			t.Fatalf("authenticated range %d: %d", i, w.Code)
+		}
+	}
+	if pb.prepares != 2 || len(pb.Sessions()) != 2 {
+		t.Fatalf("authenticated ranges did not reuse a session: prepares=%d", pb.prepares)
+	}
+	headAuth := httptest.NewRecorder()
+	lazy.ServeAuthenticated(headAuth, httptest.NewRequest(http.MethodHead, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
+	if headAuth.Code == http.StatusOK || pb.prepares != 2 {
+		t.Fatal("authenticated HEAD opened playback")
+	}
 	other := req
 	other.Device.ID = "other-install"
 	secondPath, err := lazy.Issue(ctx, "account-credential-secret", other)
@@ -145,7 +164,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	grants.mu.Unlock()
 	midOpen := httptest.NewRecorder()
 	lazy.ServeHTTP(midOpen, httptest.NewRequest(http.MethodGet, secondPath, nil))
-	if midOpen.Code != http.StatusNotFound || len(pb.Sessions()) != 1 {
+	if midOpen.Code != http.StatusNotFound || len(pb.Sessions()) != 2 {
 		t.Fatalf("revocation during open: status=%d sessions=%d", midOpen.Code, len(pb.Sessions()))
 	}
 	grants.mu.Lock()
