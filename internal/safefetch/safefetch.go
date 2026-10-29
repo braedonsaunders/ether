@@ -18,6 +18,23 @@
 // Any other destination — including every redirect hop away from the
 // trusted origin — must be public. Redirects are revalidated on each hop
 // both by CheckRedirect (scheme/length) and by the dialer (address).
+//
+// Two further invariants keep the dial-time check from being bypassed:
+//
+//   - No proxy. Guarded transports always dial the destination directly
+//     (Proxy is forced to nil, so neither a proxy configured on the base
+//     transport nor HTTP_PROXY/HTTPS_PROXY in the environment is ever
+//     used). A proxy would be dialed instead of the destination, so the
+//     guard would validate the proxy's address and the proxy would then
+//     happily fetch a private target. Fetching indexers and definition
+//     sources therefore deliberately ignores proxy configuration.
+//   - Separate connection pools per policy. A guarded client carries
+//     two transports with independent pools: one only ever dials the
+//     exact trusted origin, the other only ever dials public addresses.
+//     Each request (and each redirect hop) is routed to one pool by its
+//     own destination, so a connection opened to a private trusted
+//     origin can never be reused by a later untrusted request to the
+//     same host — reuse would skip the dial (and its check) entirely.
 package safefetch
 
 import (
@@ -176,20 +193,96 @@ func trustedOrigin(ctx context.Context) string {
 	return ""
 }
 
+// originKey returns the host:port key for u, filling in the scheme's
+// default port. It identifies an origin exactly as WithTrustedOrigin
+// records it.
+func originKey(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return hostPortKey(u.Hostname(), port)
+}
+
+// SameOrigin reports whether two URLs share exactly the same host:port
+// (with default ports filled in). It is how callers decide whether a
+// fetch targets the owner-configured origin at all.
+func SameOrigin(a, b string) bool {
+	ua, errA := url.Parse(strings.TrimSpace(a))
+	ub, errB := url.Parse(strings.TrimSpace(b))
+	if errA != nil || errB != nil || ua.Hostname() == "" || ub.Hostname() == "" {
+		return false
+	}
+	return originKey(ua) == originKey(ub)
+}
+
+// WithTrustedOriginFor marks trusted as the trusted origin only when
+// rawURL actually targets that exact origin; any other rawURL gets an
+// explicitly untrusted (public-only) context. Callers select the policy
+// per fetch with this instead of marking every request trusted and
+// relying on the dialer to sort it out: a request for a feed-supplied
+// URL on another host is public from the start, and a trusted client
+// can never be aimed at a different host.
+func WithTrustedOriginFor(ctx context.Context, trusted, rawURL string) context.Context {
+	if SameOrigin(trusted, rawURL) {
+		return WithTrustedOrigin(ctx, trusted)
+	}
+	// Clear any trust an outer context may carry: this fetch is public.
+	return context.WithValue(ctx, trustedOriginKey{}, "")
+}
+
+// isTrustedRequest reports whether req's destination is exactly the
+// trusted origin marked in its context.
+func isTrustedRequest(req *http.Request) bool {
+	trusted := trustedOrigin(req.Context())
+	return trusted != "" && trusted == originKey(req.URL)
+}
+
 // DialContext resolves the host in addr, refuses non-public addresses
 // (unless addr is exactly the context's trusted origin) and dials a
 // validated address. Because the check happens here, it applies to the
 // initial request and to every redirect hop alike.
 func (g *Guard) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return g.dialChecked(ctx, network, addr, false)
+}
+
+// publicDialContext is the public pool's dialer: it refuses non-public
+// addresses unconditionally, even if the request context marks a
+// trusted origin — the public pool must never open (or lend) a
+// connection to a private address.
+func (g *Guard) publicDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return g.dialChecked(ctx, network, addr, false)
+}
+
+// trustedDialContext is the trusted pool's dialer: it only dials addr
+// when addr is exactly the context's trusted origin, and refuses
+// everything else outright (the routing in transport.RoundTrip should
+// already guarantee this; the dialer re-checks as defence in depth).
+func (g *Guard) trustedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return g.dialChecked(ctx, network, addr, true)
+}
+
+func (g *Guard) dialChecked(ctx context.Context, network, addr string, trustedPool bool) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
+	}
+	trusted := trustedOrigin(ctx) == hostPortKey(host, port)
+	if trustedPool && !trusted {
+		return nil, fmt.Errorf("%w: %s is not the trusted origin", ErrBlocked, addr)
+	}
+	if !trustedPool {
+		// The public pool ignores any trusted origin in the context.
+		trusted = false
 	}
 	ips, err := g.resolve(ctx, host)
 	if err != nil {
 		return nil, err
 	}
-	trusted := trustedOrigin(ctx) == hostPortKey(host, port)
 	var lastErr error
 	blocked := false
 	for _, ip := range ips {
@@ -227,48 +320,106 @@ func (g *Guard) checkRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+// transport routes each request to one of two transports with
+// separate connection pools, chosen by the request's own policy:
+// requests to exactly the context's trusted origin go to the trusted
+// pool (which may dial private addresses, that origin only); every
+// other request goes to the public pool (public addresses only).
+// Because the pools never share connections, a connection opened to a
+// private trusted origin cannot be reused by an untrusted request —
+// reuse would skip the dial and its address check. The routing runs
+// per RoundTrip, so each redirect hop is routed by its own destination.
 type transport struct {
-	base  http.RoundTripper
-	guard *Guard
+	public  http.RoundTripper
+	trusted http.RoundTripper
+	guard   *Guard
 }
 
-// RoundTrip refuses non-http(s) requests outright; address validation
-// happens in the base transport's guarded DialContext. A custom
-// RoundTripper without a dialer cannot be address-checked, but the
-// scheme check still applies.
+// RoundTrip refuses non-http(s) requests outright and routes the rest
+// by policy; address validation happens in the chosen pool's guarded
+// dialer.
 func (t transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if (req.URL.Scheme != "http" && req.URL.Scheme != "https") || req.URL.Hostname() == "" {
 		return nil, fmt.Errorf("%w: %q is not an http(s) URL with a host", ErrBlocked, req.URL.Redacted())
 	}
-	return t.base.RoundTrip(req)
+	if isTrustedRequest(req) {
+		return t.trusted.RoundTrip(req)
+	}
+	return t.public.RoundTrip(req)
+}
+
+// policyTransport builds one pool's transport from base. A
+// *http.Transport base is cloned — Clone gives the clone its own
+// connection pool — with Proxy forced to nil (guarded fetches never
+// use a proxy, configured or from the environment: the guard must dial
+// and validate the destination itself, not hand the request to a
+// proxy that would fetch an unchecked target) and with the dial hooks
+// replaced by the pool's guarded dialer. Dial/DialTLS/DialTLSContext,
+// when set, would bypass DialContext, so they are dropped (the
+// transport then performs any TLS handshake over the guarded dial).
+func (g *Guard) policyTransport(base http.RoundTripper, trusted bool) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	dial := g.publicDialContext
+	if trusted {
+		dial = g.trustedDialContext
+	}
+	if ht, ok := base.(*http.Transport); ok {
+		clone := ht.Clone()
+		clone.Proxy = nil
+		clone.DialContext = dial
+		clone.Dial = nil
+		clone.DialTLSContext = nil
+		clone.DialTLS = nil
+		clone.OnProxyConnectResponse = nil
+		return clone
+	}
+	// A custom RoundTripper has no dialer or pool the guard can split
+	// or reconfigure; validate the destination before handing over
+	// instead (trusted: exact origin only; public: resolves public).
+	return policyRoundTripper{base: base, guard: g, trusted: trusted}
+}
+
+type policyRoundTripper struct {
+	base    http.RoundTripper
+	guard   *Guard
+	trusted bool
+}
+
+func (p policyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if p.trusted {
+		if !isTrustedRequest(req) {
+			return nil, fmt.Errorf("%w: %q is not the trusted origin", ErrBlocked, req.URL.Redacted())
+		}
+		return p.base.RoundTrip(req)
+	}
+	if err := p.guard.ValidatePublicURL(req.Context(), req.URL.String()); err != nil {
+		return nil, err
+	}
+	return p.base.RoundTrip(req)
 }
 
 // Transport returns a RoundTripper that validates destinations at dial
-// time. A *http.Transport base is cloned with its DialContext replaced;
-// any other base (including nil, meaning http.DefaultTransport) is
-// wrapped as-is.
+// time, with separate trusted-origin and public connection pools and
+// no proxy (see the package documentation). A nil base means
+// http.DefaultTransport.
 func (g *Guard) Transport(base http.RoundTripper) http.RoundTripper {
 	if g == nil {
 		g = &Guard{}
 	}
-	if base == nil {
-		base = http.DefaultTransport
+	return transport{
+		public:  g.policyTransport(base, false),
+		trusted: g.policyTransport(base, true),
+		guard:   g,
 	}
-	if ht, ok := base.(*http.Transport); ok {
-		clone := ht.Clone()
-		// DialTLSContext, when set, would bypass DialContext for TLS;
-		// drop it so https fetches are dial-checked too (the transport
-		// then performs the handshake itself over the guarded dial).
-		clone.DialContext = g.DialContext
-		clone.DialTLSContext = nil
-		base = clone
-	}
-	return transport{base: base, guard: g}
 }
 
 // Client returns a copy of base whose transport and redirect policy are
-// guarded. The caller marks the owner-configured origin per request
-// with WithTrustedOrigin on the request context.
+// guarded. The caller selects the policy per request: the
+// owner-configured origin via WithTrustedOrigin/WithTrustedOriginFor
+// on the request context (trusted pool), anything else without it
+// (public pool).
 func (g *Guard) Client(base *http.Client) *http.Client {
 	if g == nil {
 		g = &Guard{}

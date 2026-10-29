@@ -252,12 +252,13 @@ func (c *Client) apiURL(params url.Values) (string, error) {
 	return base + "?" + q.Encode(), nil
 }
 
-// trustedCtx marks the destination origin Ether may reach even on a
-// private address: the indexer base URL the owner configured (a LAN
-// indexer is legitimate). Everything else a fetch touches — an absolute
-// NZB URL from a feed, a redirect away from the indexer — must resolve
-// to a public address, enforced at dial time by safefetch so DNS
-// rebinding between check and connect cannot sneak past. When the owner
+// trustedCtx selects the safefetch policy for one fetch explicitly:
+// the trusted-origin policy only when rawURL targets exactly the
+// indexer origin the owner configured (a LAN indexer is legitimate);
+// every other URL — an absolute NZB URL from a feed, a download link on
+// another host — is fetched with the public policy from the start.
+// Redirects are re-routed per hop by safefetch, so a redirect away
+// from the indexer also lands in the public pool. When the owner
 // configured no usable base URL (direct internal calls in tests), the
 // fetch URL's own origin takes its place.
 func (c *Client) trustedCtx(ctx context.Context, rawURL string) context.Context {
@@ -265,7 +266,7 @@ func (c *Client) trustedCtx(ctx context.Context, rawURL string) context.Context 
 	if u, err := url.Parse(trusted); err != nil || u.Host == "" {
 		trusted = rawURL
 	}
-	return safefetch.WithTrustedOrigin(ctx, trusted)
+	return safefetch.WithTrustedOriginFor(ctx, trusted, rawURL)
 }
 
 // get performs a GET and returns the body, mapping HTTP failures to

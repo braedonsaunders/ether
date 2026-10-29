@@ -107,7 +107,11 @@ func (s *Service) fetchSource(ctx context.Context, rawURL string, limit int64, t
 	if trusted == "" {
 		trusted = s.sourceTrustedURL()
 	}
-	req, err := http.NewRequestWithContext(safefetch.WithTrustedOrigin(ctx, trusted), http.MethodGet, rawURL, nil)
+	// Explicit policy selection per fetch: the trusted-origin policy
+	// only when rawURL targets exactly the trusted (owner-configured
+	// source listing) origin; anything the listing handed back on
+	// another host is public from the start.
+	req, err := http.NewRequestWithContext(safefetch.WithTrustedOriginFor(ctx, trusted, rawURL), http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}

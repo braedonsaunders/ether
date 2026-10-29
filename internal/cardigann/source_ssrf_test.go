@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 
@@ -52,6 +53,32 @@ func TestInstallFromSourceBlocksPrivateDownloadURL(t *testing.T) {
 	}
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("internal server hit %d times, want 0", got)
+	}
+}
+
+// Regression (owner review): a proxy configured on the owner's HTTP
+// client must not carry a listing-supplied metadata URL anywhere —
+// guarded source fetches ignore proxies and validate the destination
+// themselves.
+func TestInstallFromSourceWithConfiguredProxyDoesNotReachProxy(t *testing.T) {
+	ctx := context.Background()
+	var proxyHits atomic.Int32
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyHits.Add(1)
+		w.Write(readFixture(t, "public.yml"))
+	}))
+	defer proxySrv.Close()
+	proxyURL, _ := url.Parse(proxySrv.URL)
+
+	src := sourceWithDownloadURL(t, "http://169.254.169.254/latest/meta-data/evil.yml")
+	s := newTestService(t, config.IndexerSites{})
+	s.sourceHC = (&safefetch.Guard{}).Client(&http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}})
+	s.ApplyConfig(config.Config{IndexerSites: config.IndexerSites{DefinitionsURL: src.URL + "/listing"}})
+	if _, err := s.InstallFromSource(ctx, "evil"); !errors.Is(err, safefetch.ErrBlocked) {
+		t.Fatalf("InstallFromSource(metadata, proxy configured) err = %v, want ErrBlocked", err)
+	}
+	if got := proxyHits.Load(); got != 0 {
+		t.Fatalf("proxy hit %d times, want 0", got)
 	}
 }
 

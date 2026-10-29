@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 
@@ -37,6 +38,63 @@ func TestFetchNZBBlocksFeedURLToPrivateHost(t *testing.T) {
 	}
 	if got := hits.Load(); got != 0 {
 		t.Fatalf("internal server hit %d times, want 0", got)
+	}
+}
+
+// Regression (owner review): a proxy configured on the owner's HTTP
+// client must not carry an untrusted feed URL to the metadata address
+// — guarded fetches ignore proxies and dial (and validate) directly.
+func TestFetchNZBWithConfiguredProxyDoesNotReachProxy(t *testing.T) {
+	var proxyHits atomic.Int32
+	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyHits.Add(1)
+		fmt.Fprint(w, fakeNZB)
+	}))
+	defer proxySrv.Close()
+	proxyURL, _ := url.Parse(proxySrv.URL)
+
+	c := New(testConfig("https://indexer.example"), nil, Options{
+		HTTPClient: &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}},
+	})
+	rel := core.Release{ID: "ssrf-proxy", Name: "X", NZBURL: "http://169.254.169.254/latest/meta-data"}
+	if _, err := c.FetchNZB(context.Background(), rel); !errors.Is(err, safefetch.ErrBlocked) {
+		t.Fatalf("FetchNZB(metadata, proxy configured) err = %v, want ErrBlocked", err)
+	}
+	if got := proxyHits.Load(); got != 0 {
+		t.Fatalf("proxy hit %d times, want 0", got)
+	}
+}
+
+// Regression (owner review): a connection opened to the private
+// indexer while it was the owner-configured origin must not be reused
+// by a later untrusted fetch to the same host:port. Once the config
+// points elsewhere, that host is just another feed-supplied private
+// destination and is blocked; with a shared pool the second fetch
+// would reuse the open connection and skip the dial check.
+func TestFetchNZBUntrustedSameHostAfterTrustedFetchBlocked(t *testing.T) {
+	var hits atomic.Int32
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		fmt.Fprint(w, fakeNZB)
+	}))
+	defer internal.Close()
+
+	c := New(testConfig(internal.URL), nil, Options{})
+	rel := core.Release{ID: "ssrf-pool1", GUID: "g1", Name: "X", NZBURL: internal.URL + "/nzb?id=g1"}
+	if _, err := c.FetchNZB(context.Background(), rel); err != nil {
+		t.Fatalf("trusted indexer FetchNZB: %v", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("hits = %d, want 1 after trusted fetch", got)
+	}
+
+	c.UpdateConfig(testConfig("https://indexer.example"))
+	rel = core.Release{ID: "ssrf-pool2", GUID: "g2", Name: "X", NZBURL: internal.URL + "/nzb?id=g2"}
+	if _, err := c.FetchNZB(context.Background(), rel); !errors.Is(err, safefetch.ErrBlocked) {
+		t.Fatalf("untrusted FetchNZB to previously trusted host err = %v, want ErrBlocked", err)
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("internal server hit %d times, want 1 (trusted fetch only)", got)
 	}
 }
 
