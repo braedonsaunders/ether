@@ -39,16 +39,70 @@ type View struct {
 	Name string
 	Type core.MediaType
 }
+
+// RowEntryKind identifies a neutral entry independently of wire formats.
+type RowEntryKind string
+
+const (
+	RowEntryTitle       RowEntryKind = "title"
+	RowEntryCollection  RowEntryKind = "collection"
+	RowEntryPlaylist    RowEntryKind = "playlist"
+	RowEntryLiveChannel RowEntryKind = "liveChannel"
+	RowEntryDirectory   RowEntryKind = "directory"
+)
+
+// RowEntry is a tagged union: Kind identifies the one non-nil payload.
+// Handle is an opaque, server-issued interaction capability scoped to the
+// viewer and device; it is not an account credential.
+type RowEntry struct {
+	Kind        RowEntryKind
+	Handle      string
+	Title       *core.Title
+	Collection  *core.Collection
+	Playlist    *core.Playlist
+	LiveChannel *RowLiveChannel
+	Directory   *RowDirectory
+}
+
+// RowLiveChannel contains viewer-visible channel metadata, never source URLs.
+type RowLiveChannel struct {
+	ID, Number, Name, Logo string
+}
+
+// RowDirectory identifies a browsable destination in the experience.
+type RowDirectory struct {
+	ID, Title, Description, Image string
+	Kind                          string
+}
+
+// RowLayout describes Home Designer presentation selected by experience.
+type RowLayout struct {
+	Order int
+	Style string
+	Paint RowPaint
+}
+
+// RowPaint carries optional presentation colors and artwork references.
+type RowPaint struct {
+	Background, Foreground, Accent string
+	Artwork                        string
+}
+
 type Row struct {
 	ID, Title    string
 	Purpose      RowPurpose
+	Layout       RowLayout
 	Style        string
 	Promoted     bool
 	Rank         int
 	ImpressionID string
-	Items        []core.Title
-	More         bool
-	Collection   core.RatingKey
+	// Handle is a server-issued row interaction capability.
+	Handle string
+	// Entries is the ordered heterogeneous row; Items remains for compatibility.
+	Entries    []RowEntry
+	Items      []core.Title
+	More       bool
+	Collection core.RatingKey
 }
 type RowRequest struct {
 	Viewer    *core.Viewer
@@ -58,6 +112,29 @@ type RowRequest struct {
 	Item      core.RatingKey
 	Limit     int
 }
+
+// RowInteractionKind is a viewer action on an issued row or entry.
+type RowInteractionKind string
+
+const (
+	RowImpression RowInteractionKind = "impression"
+	RowClick      RowInteractionKind = "click"
+	RowPlay       RowInteractionKind = "play"
+)
+
+type RowInteraction struct {
+	Viewer *core.Viewer
+	Device core.Device
+	Handle string
+	Kind   RowInteractionKind
+}
+
+// RowInteractionReporter validates issued handles, membership and device scope
+// before recording actions. Clients must never construct handles or contexts.
+type RowInteractionReporter interface {
+	ReportRowInteraction(context.Context, RowInteraction) error
+}
+
 type ItemRequest struct {
 	Viewer *core.Viewer
 	Device core.Device
