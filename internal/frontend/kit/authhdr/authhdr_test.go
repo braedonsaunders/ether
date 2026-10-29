@@ -39,8 +39,24 @@ func TestHeaders(t *testing.T) {
 		t.Fatal("accepted malformed bearer")
 	}
 }
+func TestEmbyAuthorization(t *testing.T) {
+	values, err := MediaBrowser(`Emby Client="Living%20Room", Token="session-token"`)
+	if err != nil || values["Client"] != "Living Room" || values["Token"] != "session-token" {
+		t.Fatal(values, err)
+	}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", `Emby Client="TV", Token="session-token"`)
+	if got := MediaBrowserToken(r); got != "session-token" {
+		t.Fatal(got)
+	}
+	r.Header.Set("Authorization", `Emby token="wrong-case"`)
+	if got := MediaBrowserToken(r); got != "" {
+		t.Fatal("accepted wrong-case key", got)
+	}
+}
 func FuzzMediaBrowser(f *testing.F) {
 	f.Add(`MediaBrowser Client="TV", Token="abc"`)
+	f.Add(`Emby Client="TV", Token="abc"`)
 	f.Add("")
 	f.Fuzz(func(t *testing.T, s string) { _, _ = MediaBrowser(s) })
 }

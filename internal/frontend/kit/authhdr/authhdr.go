@@ -12,11 +12,11 @@ import (
 var ErrMalformed = errors.New("malformed authorization header")
 
 // MediaBrowser parses the case-sensitive key/value parameters of a
-// MediaBrowser authorization value. Quoted values may contain commas and
+// MediaBrowser or Emby authorization value. Quoted values may contain commas and
 // backslash-escaped quotes. Percent escapes are decoded after parsing.
 func MediaBrowser(value string) (map[string]string, error) {
 	scheme, rest, ok := strings.Cut(strings.TrimSpace(value), " ")
-	if !ok || !strings.EqualFold(scheme, "MediaBrowser") {
+	if !ok || (!strings.EqualFold(scheme, "MediaBrowser") && !strings.EqualFold(scheme, "Emby")) {
 		return nil, ErrMalformed
 	}
 	out := make(map[string]string)
