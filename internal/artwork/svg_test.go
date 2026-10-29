@@ -44,6 +44,7 @@ func TestSVGRasterizerBoundsAndCache(t *testing.T) {
 		[]byte(`<svg><use href="#self"/></svg>`),
 		[]byte(`<svg viewBox="0 0 10 10"><path d="M1e100 0"/></svg>`),
 		[]byte(`<svg>` + strings.Repeat(`<path d="M0 0"/>`, 257) + `</svg>`),
+		[]byte(`<svg viewBox="0 0 10 10">` + strings.Repeat(`<rect width="1" height="1"/>`, 257) + `</svg>`),
 		bytes.Repeat([]byte("x"), maxSVGBytes+1),
 	} {
 		if _, _, err := r.Rasterize(context.Background(), "bad", invalid, opts); !errors.Is(err, ErrSVG) {

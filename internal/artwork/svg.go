@@ -284,7 +284,7 @@ func (r *SVGRasterizer) Rasterize(ctx context.Context, reference string, data []
 	key := rasterKey(reference, data, opts)
 	return r.execute(ctx, key, func(ctx context.Context) (image.Image, error) {
 		icon, err := oksvg.ReadIconStream(bytes.NewReader(data), oksvg.StrictErrorMode)
-		if err != nil || icon == nil || icon.ViewBox.W < 1e-6 || icon.ViewBox.H < 1e-6 || math.IsNaN(icon.ViewBox.W) || math.IsNaN(icon.ViewBox.H) || math.IsNaN(icon.ViewBox.X) || math.IsNaN(icon.ViewBox.Y) || math.IsInf(icon.ViewBox.W, 0) || math.IsInf(icon.ViewBox.H, 0) || math.IsInf(icon.ViewBox.X, 0) || math.IsInf(icon.ViewBox.Y, 0) || icon.ViewBox.W > 1e6 || icon.ViewBox.H > 1e6 || math.Abs(icon.ViewBox.X) > 1e6 || math.Abs(icon.ViewBox.Y) > 1e6 {
+		if err != nil || icon == nil || len(icon.SVGPaths) > 256 || icon.ViewBox.W < 1e-6 || icon.ViewBox.H < 1e-6 || math.IsNaN(icon.ViewBox.W) || math.IsNaN(icon.ViewBox.H) || math.IsNaN(icon.ViewBox.X) || math.IsNaN(icon.ViewBox.Y) || math.IsInf(icon.ViewBox.W, 0) || math.IsInf(icon.ViewBox.H, 0) || math.IsInf(icon.ViewBox.X, 0) || math.IsInf(icon.ViewBox.Y, 0) || icon.ViewBox.W > 1e6 || icon.ViewBox.H > 1e6 || math.Abs(icon.ViewBox.X) > 1e6 || math.Abs(icon.ViewBox.Y) > 1e6 {
 			return nil, ErrSVG
 		}
 		width, height := opts.Width, opts.Height
