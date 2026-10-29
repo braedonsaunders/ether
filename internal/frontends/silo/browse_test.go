@@ -193,7 +193,7 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	key := frontend.RatingKey(1000000000000001)
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}
 	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Film", Released: time.Unix(10000, 0)}, Extras: []frontend.Extra{{Title: "Trailer", Kind: "trailer", Source: "YouTube", SourceID: "clip", Language: "en"}}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Film", Released: time.Unix(10000, 0)}, Markers: []frontend.Marker{{Type: "intro", Start: time.Second, End: 10 * time.Second}}, Extras: []frontend.Extra{{Title: "Trailer", Kind: "trailer", Source: "YouTube", SourceID: "clip", Language: "en"}}}, nil
 	}}
 	sess := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 		if !r.Intent.Estimate {
@@ -225,6 +225,15 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	if strings.Contains(w.Body.String(), `"total_duration"`) {
 		t.Errorf("estimate advertised as exact part duration: %s", w.Body.String())
 	}
+	watchPath := "/api/v2/watch/" + ids.RatingKeyGUID(key)
+	req := httptest.NewRequest("GET", watchPath, nil)
+	req.Header.Set("Authorization", "Bearer grant")
+	req.Header.Set("X-Silo-Device-Id", "tv")
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, req)
+	if strings.Contains(rec.Body.String(), `"marker_segments"`) || strings.Contains(rec.Body.String(), `"intro"`) {
+		t.Errorf("unbound marker exposed as file-specific: %s", rec.Body.String())
+	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", "")
 	if e == nil {
 		doc, e := openapi.Parse(spec)
@@ -234,14 +243,11 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 		if e = doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
 			t.Errorf("detail spec: %v", e)
 		}
-		watchPath := "/api/v2/watch/" + ids.RatingKeyGUID(key)
-		req := httptest.NewRequest("GET", watchPath, nil)
-		req.Header.Set("Authorization", "Bearer grant")
-		req.Header.Set("X-Silo-Device-Id", "tv")
-		rec := httptest.NewRecorder()
-		inst.Handler().ServeHTTP(rec, req)
-		if e = doc.Validate("GET", watchPath, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()); e != nil {
-			t.Errorf("watch spec: %v", e)
+		// Silo requires marker_segments, but until the broker exposes a
+		// version-bound known/unknown result an empty list would invent a fact.
+		// Keep this incompatibility explicit until the binding contract lands.
+		if e = doc.Validate("GET", watchPath, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()); e == nil || !strings.Contains(e.Error(), "marker_segments") {
+			t.Errorf("expected unknown-marker schema gap, got %v", e)
 		}
 
 	} else if !os.IsNotExist(e) {

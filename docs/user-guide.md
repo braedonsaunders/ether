@@ -55,6 +55,8 @@ PQ video variants with unknown HDR10+ metadata are not offered until the
 server can determine that metadata; SDR and HLG variants remain available.
 For media with an unknown transfer function, Silo's required HDR10+ boolean
 means HDR10+ has not been positively identified; the media remains playable.
+Watch details omit marker ranges until they can be bound to the selected file;
+this is an outstanding Silo schema and skip-intro compatibility gap.
 
 | Client | Version | Browse | Play | Resume | Watched | Subtitles | Device pairing |
 | --- | --- | --- | --- | --- | --- | --- | --- |

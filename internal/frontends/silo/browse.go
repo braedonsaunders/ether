@@ -476,7 +476,6 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			item["duration_seconds"] = source["duration"]
-			item["marker_segments"] = []any{}
 			item["trickplay_available"] = false
 			versions = append(versions, item)
 		}
@@ -491,12 +490,6 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		if len(versions) > 0 {
 			defaultID := versions[0].(map[string]any)["file_id"]
 			watch["playback_variants"] = []any{map[string]any{"variant_id": "default", "part_count": 1, "default_file_id": defaultID, "parts": []any{map[string]any{"part_index": 1, "default_file_id": defaultID, "versions": versions}}}}
-		}
-		for _, marker := range d.Markers {
-			name := map[string]string{"intro": "intro", "credits": "credits", "recap": "recap"}[marker.Type]
-			if name != "" {
-				watch[name] = map[string]any{"start_seconds": marker.Start.Seconds(), "end_seconds": marker.End.Seconds()}
-			}
 		}
 		st := d.UserData
 		if st.ViewOffset > 0 || st.ViewCount > 0 {
