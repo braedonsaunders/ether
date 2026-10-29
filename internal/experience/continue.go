@@ -127,13 +127,30 @@ func (c Continue) InProgress(ctx context.Context, viewer *core.User, t core.Medi
 	if c.State == nil || viewer == nil {
 		return nil, nil
 	}
-	sts, err := c.State.InProgress(ctx, viewer.ID, limit*2+10)
-	if err != nil {
-		if c.OnError != nil {
-			c.OnError(err)
+	// State exposes a limit rather than an offset, so widen the prefix only
+	// while filtering leaves gaps. Bound work for viewers with large histories.
+	request := limit*2 + 10
+	maxRequest := max(request, 1000)
+	var previous []core.Title
+	var previousState map[core.RatingKey]core.WatchStatus
+	for {
+		sts, err := c.State.InProgress(ctx, viewer.ID, request)
+		if err != nil {
+			if c.OnError != nil {
+				c.OnError(err)
+			}
+			return previous, previousState
 		}
-		return nil, nil
+		out, state := c.inProgressBatch(ctx, viewer, t, limit, sts)
+		if limit <= 0 || len(out) >= limit || len(sts) < request || request >= maxRequest || ctx.Err() != nil {
+			return out, state
+		}
+		previous, previousState = out, state
+		request = min(request*2, maxRequest)
 	}
+}
+
+func (c Continue) inProgressBatch(ctx context.Context, viewer *core.User, t core.MediaType, limit int, sts []core.WatchStatus) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
 	keys := make([]core.RatingKey, 0, len(sts))
 	state := make(map[core.RatingKey]core.WatchStatus, len(sts))
 	for _, st := range sts {

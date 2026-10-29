@@ -106,3 +106,53 @@ func TestContinueHonorsInheritedPolicyAndActiveSource(t *testing.T) {
 		t.Fatalf("inherited policy or active-source exception failed: %+v %+v", got, state)
 	}
 }
+
+type prefixContinueState struct {
+	continueState
+	limits []int
+}
+
+func (s *prefixContinueState) InProgress(_ context.Context, _ int64, limit int) ([]core.WatchStatus, error) {
+	s.limits = append(s.limits, limit)
+	return s.statuses[:min(limit, len(s.statuses))], nil
+}
+
+func TestContinueBackfillsPastHiddenCandidates(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	state := &prefixContinueState{}
+	for i := int64(1); i <= 13; i++ {
+		state.statuses = append(state.statuses, core.WatchStatus{Key: core.MovieKey(i), LastViewedAt: now.Add(-time.Duration(i) * time.Second)})
+	}
+	c := Continue{State: state, GetTitles: func(_ context.Context, keys []core.RatingKey) []core.Title {
+		out := make([]core.Title, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, core.Title{Key: key, Type: core.TypeMovie})
+		}
+		return out
+	}, Visible: func(_ context.Context, _ *core.User, title *core.Title) bool { return title.Key == core.MovieKey(13) }, SectionAllowed: func(*core.User, core.MediaType) bool { return true }}
+	got, statuses := c.InProgress(context.Background(), &core.User{ID: 1}, core.TypeMovie, 1)
+	if len(got) != 1 || got[0].Key != core.MovieKey(13) || len(statuses) != 1 {
+		t.Fatalf("missing older visible item: %+v %+v", got, statuses)
+	}
+	if len(state.limits) != 2 || state.limits[0] != 12 || state.limits[1] != 24 {
+		t.Fatalf("unexpected backfill requests: %v", state.limits)
+	}
+}
+
+func TestContinueBackfillStopsAtBound(t *testing.T) {
+	state := &prefixContinueState{}
+	for i := int64(1); i <= 1100; i++ {
+		state.statuses = append(state.statuses, core.WatchStatus{Key: core.MovieKey(i)})
+	}
+	c := Continue{State: state, GetTitles: func(_ context.Context, keys []core.RatingKey) []core.Title {
+		out := make([]core.Title, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, core.Title{Key: key, Type: core.TypeMovie})
+		}
+		return out
+	}, Visible: func(context.Context, *core.User, *core.Title) bool { return false }, SectionAllowed: func(*core.User, core.MediaType) bool { return true }}
+	got, _ := c.InProgress(context.Background(), &core.User{ID: 1}, core.TypeMovie, 1)
+	if len(got) != 0 || len(state.limits) == 0 || state.limits[len(state.limits)-1] != 1000 {
+		t.Fatalf("backfill exceeded its bound: %d %v", len(got), state.limits)
+	}
+}
