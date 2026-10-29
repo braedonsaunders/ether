@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // ---------------------------------------------------------------------------
@@ -101,28 +102,15 @@ type selection struct {
 }
 
 type selectionStore struct {
-	mu sync.Mutex
-	m  map[[2]int64]selection
+	store *sessions.Selections[selection]
 }
 
-func newSelectionStore() *selectionStore { return &selectionStore{m: map[[2]int64]selection{}} }
-
-func (s *selectionStore) get(userID, partID int64) selection {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.m[[2]int64{userID, partID}]
+func newSelectionStore() *selectionStore {
+	return &selectionStore{store: sessions.NewSelections[selection]()}
 }
-
+func (s *selectionStore) get(userID, partID int64) selection { return s.store.Get(userID, partID) }
 func (s *selectionStore) update(userID, partID int64, fn func(*selection)) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.m) > 100_000 {
-		s.m = map[[2]int64]selection{}
-	}
-	k := [2]int64{userID, partID}
-	sel := s.m[k]
-	fn(&sel)
-	s.m[k] = sel
+	s.store.Update(userID, partID, fn)
 }
 
 // ---------------------------------------------------------------------------
