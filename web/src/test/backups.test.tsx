@@ -123,9 +123,15 @@ describe("Backups & import", () => {
     const download = await screen.findByRole("button", {
       name: "Download ether-2026-10-18.tar.gz",
     });
-    expect(download).toBeDisabled();
+    expect(download).toBeEnabled();
+    fireEvent.click(download);
+    expect(screen.getByLabelText("Backup password")).toHaveFocus();
+    expect(screen.getByRole("alert")).toHaveTextContent("At least 12 characters");
+    expect(screen.getByRole("alert")).toHaveTextContent("restoring one asks for it again");
+    expect(calls.some((c) => c.url.includes("/backups/export/"))).toBe(false);
     fireEvent.change(screen.getByLabelText("Backup password"), { target: { value: "too short" } });
-    expect(download).toBeDisabled();
+    fireEvent.click(download);
+    expect(calls.some((c) => c.url.includes("/backups/export/"))).toBe(false);
     fireEvent.change(screen.getByLabelText("Backup password"), {
       target: { value: "correct horse battery" },
     });

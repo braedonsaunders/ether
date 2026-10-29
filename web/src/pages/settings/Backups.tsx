@@ -10,7 +10,7 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { Download, FileUp, Plus } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { useClustered } from "./Cluster";
 import { NumberInput } from "../../components/fields";
@@ -244,6 +244,8 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
   // Held in memory only: never saved, and gone when the page closes.
   const [password, setPassword] = useState("");
   const passwordOK = password.length >= MIN_BACKUP_PASSWORD;
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const [passwordPrompt, setPasswordPrompt] = useState(false);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const { busy, run } = useBusy();
@@ -384,6 +386,11 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
               >
                 <Input
                   id="backup-password"
+                  ref={passwordInput}
+                  aria-invalid={passwordPrompt && !passwordOK}
+                  aria-describedby={
+                    passwordPrompt && !passwordOK ? "backup-password-prompt" : undefined
+                  }
                   type="password"
                   autoComplete="new-password"
                   spellCheck={false}
@@ -391,6 +398,18 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                   onChange={(e) => setPassword(e.currentTarget.value)}
                 />
               </SettingsRow>
+              {passwordPrompt && !passwordOK ? (
+                <Alert variant="warning" role="alert" id="backup-password-prompt">
+                  <AlertDescription>
+                    {t("Enter a backup password to download")}
+                    {". "}
+                    {t(
+                      "Downloads are encrypted with it and restoring one asks for it again. At least {min} characters; Ether does not keep it.",
+                      { min: MIN_BACKUP_PASSWORD },
+                    )}
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               {data ? (
                 <PagedTable
                   rows={data.snapshots ?? []}
@@ -432,28 +451,36 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                       header: "",
                       align: "right",
                       cell: (s) => (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy || s.remote || !passwordOK}
-                          title={
-                            s.remote
-                              ? s.node
+                        <div className="flex flex-col items-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busy || s.remote}
+                            aria-label={t("Download {name}", { name: s.name })}
+                            onClick={() => {
+                              if (!passwordOK) {
+                                setPasswordPrompt(true);
+                                passwordInput.current?.focus();
+                                passwordInput.current?.scrollIntoView?.({ block: "center" });
+                                return;
+                              }
+                              void run(() => exportBackup(s.name, password));
+                            }}
+                          >
+                            <Download size={14} /> {t("Download")}
+                          </Button>
+                          {s.remote ? (
+                            <p className="max-w-xs text-xs text-fg-muted">
+                              {s.node
                                 ? t("Stored on {node}: download it from that node's admin page", {
                                     node: s.node,
                                   })
                                 : t(
                                     "Stored on another node: download it from that node's admin page",
-                                  )
-                              : !passwordOK
-                                ? t("Enter a backup password to download")
-                                : undefined
-                          }
-                          aria-label={t("Download {name}", { name: s.name })}
-                          onClick={() => void run(() => exportBackup(s.name, password))}
-                        >
-                          <Download size={14} /> {t("Download")}
-                        </Button>
+                                  )}
+                            </p>
+                          ) : null}
+                        </div>
                       ),
                     },
                   ]}

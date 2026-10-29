@@ -325,6 +325,9 @@ describe("Cluster details elsewhere", () => {
     expect(within(snaps).getByText("attic")).toBeInTheDocument();
     const remote = fake.state.backups.find((b) => b.remote)!;
     expect(within(snaps).getByRole("button", { name: `Download ${remote.name}` })).toBeDisabled();
+    expect(
+      within(snaps).getByText("Stored on attic: download it from that node's admin page"),
+    ).toBeVisible();
     const dir = await screen.findByLabelText("Shared backup folder", {}, WAIT);
     fireEvent.change(dir, { target: { value: "/mnt/backups/ether" } });
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
