@@ -33,10 +33,35 @@ func (s *Server) postPlayPicks(ctx context.Context, pr *Request, key core.Rating
 	return picks
 }
 
+// postPlayRow expands candidates only when filtering or deduplication leaves
+// room and the source returned a full page. Seen is committed once.
+func (s *Server) postPlayRow(ctx context.Context, pr *Request, key core.RatingKey, count int, seen map[core.RatingKey]bool) experience.PostPlayRow {
+	fetch := count
+	for {
+		picks := s.postPlayPicks(ctx, pr, key, fetch)
+		trial := cloneSeen(seen)
+		row := experience.PostPlay(ctx, picks, pr.User, s.visibility(), trial, count)
+		if len(row.Items) >= count || len(picks) < fetch || fetch >= 1000 || ctx.Err() != nil {
+			for key, value := range trial {
+				seen[key] = value
+			}
+			return row
+		}
+		fetch = min(fetch*2, 1000)
+	}
+}
+
+func cloneSeen(seen map[core.RatingKey]bool) map[core.RatingKey]bool {
+	out := make(map[core.RatingKey]bool, len(seen))
+	for key, value := range seen {
+		out[key] = value
+	}
+	return out
+}
+
 // postPlayHub renders ranked picks as one hub in post-play shape. The
 // prefix follows the just-watched title's family, like Related's hubs.
-func (s *Server) postPlayHub(ctx context.Context, pr *Request, key core.RatingKey, picks []core.PostPlayPick) (model.Hub, bool) {
-	row := experience.PostPlay(picks, pr.User, s.visibility())
+func (s *Server) postPlayHub(ctx context.Context, pr *Request, key core.RatingKey, row experience.PostPlayRow) (model.Hub, bool) {
 	items := row.Items
 	if len(items) == 0 {
 		return model.Hub{}, false
@@ -59,18 +84,37 @@ func (s *Server) relatedAfterPostPlay(ctx context.Context, pr *Request, mc *mode
 	if s.d.Recommender == nil {
 		return
 	}
-	hubs, err := s.d.Recommender.Related(ctx, pr.User, key, count)
-	if err != nil {
-		s.log.Debug("postplay related hubs", "key", key, "err", err)
-		return
-	}
-	for _, h := range hubs {
-		items := experience.UniqueRelated(h.Items, seen)
-		if len(items) == 0 {
+	fetch := count
+	for {
+		hubs, err := s.d.Recommender.Related(ctx, pr.User, key, fetch)
+		if err != nil {
+			s.log.Debug("postplay related hubs", "key", key, "err", err)
+			return
+		}
+		trial := cloneSeen(seen)
+		needsMore := false
+		filtered := make([]core.Hub, 0, len(hubs))
+		for _, h := range hubs {
+			items := experience.UniqueRelated(ctx, pr.User, s.visibility(), h.Items, trial, count)
+			if len(items) < count && len(h.Items) >= fetch {
+				needsMore = true
+			}
+			if len(items) > 0 {
+				h.Items = items
+				filtered = append(filtered, h)
+			}
+		}
+		if needsMore && fetch < 1000 && ctx.Err() == nil {
+			fetch = min(fetch*2, 1000)
 			continue
 		}
-		h.Items = items
-		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}))
+		for key, value := range trial {
+			seen[key] = value
+		}
+		for _, h := range filtered {
+			mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}))
+		}
+		return
 	}
 }
 

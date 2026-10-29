@@ -745,17 +745,8 @@ func (s *Server) handlePostplay(w http.ResponseWriter, r *http.Request) {
 		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, h, hubCtx{related: k}))
 		seen[h.Items[0].Key] = true
 	}
-	if picks := s.postPlayPicks(ctx, pr, k, count); len(picks) > 0 {
-		// Skip whatever Up Next already covers so the queue never
-		// repeats the next episode as a "recommendation".
-		kept := picks[:0:0]
-		for _, p := range picks {
-			if !seen[p.Title.Key] {
-				seen[p.Title.Key] = true
-				kept = append(kept, p)
-			}
-		}
-		if mh, ok := s.postPlayHub(ctx, pr, k, kept); ok {
+	if row := s.postPlayRow(ctx, pr, k, count, seen); len(row.Items) > 0 {
+		if mh, ok := s.postPlayHub(ctx, pr, k, row); ok {
 			mc.Hub = append(mc.Hub, mh)
 		}
 	}

@@ -252,3 +252,40 @@ func TestDetailHooksOptOut(t *testing.T) {
 		t.Errorf("intent recorded while opted out: %v", rec.opens)
 	}
 }
+
+type limitedPostplayRecommender struct {
+	fakeRecommender
+	picks         []core.PostPlayPick
+	items         []core.Title
+	pickLimits    []int
+	relatedLimits []int
+}
+
+func (r *limitedPostplayRecommender) PostPlay(_ context.Context, _ *core.User, _ core.RatingKey, _ core.HubContext, n int) ([]core.PostPlayPick, error) {
+	r.pickLimits = append(r.pickLimits, n)
+	return r.picks[:min(n, len(r.picks))], nil
+}
+func (r *limitedPostplayRecommender) Related(_ context.Context, _ *core.User, _ core.RatingKey, n int) ([]core.Hub, error) {
+	r.relatedLimits = append(r.relatedLimits, n)
+	return []core.Hub{{ID: "movie.similar", Items: r.items[:min(n, len(r.items))]}}, nil
+}
+func TestPostPlayBackfillsFilteredCandidates(t *testing.T) {
+	f, _ := hookFixture(t, true)
+	hidden := alien
+	hidden.Adult = true
+	visible := breakingBad
+	r := &limitedPostplayRecommender{picks: []core.PostPlayPick{{Title: hidden}, {Title: visible}}, items: []core.Title{hidden, visible}}
+	f.srv.d.Recommender = r
+	pr := &Request{User: &ownerUser}
+	seen := map[core.RatingKey]bool{}
+	row := f.srv.postPlayRow(context.Background(), pr, 0, 1, seen)
+	if len(row.Items) != 1 || row.Items[0].Key != visible.Key || len(r.pickLimits) != 2 || seen[hidden.Key] {
+		t.Fatalf("row %+v, limits %v, seen %v", row, r.pickLimits, seen)
+	}
+	mc := hubContainer()
+	seen = map[core.RatingKey]bool{}
+	f.srv.relatedAfterPostPlay(context.Background(), pr, mc, 0, 1, seen)
+	if len(mc.Hub) != 1 || len(mc.Hub[0].Metadata) != 1 || len(r.relatedLimits) != 2 || seen[hidden.Key] || !seen[visible.Key] {
+		t.Fatalf("related %+v, limits %v, seen %v", mc.Hub, r.relatedLimits, seen)
+	}
+}
