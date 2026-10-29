@@ -45,6 +45,8 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 
 	life, cancel := context.WithCancel(ctx)
 	inst := &instance{host: host, info: info, router: r, protocol: protocol, life: life, cancel: cancel}
+	unmatched := &unmatchedLogger{}
+	r.SetUnmatched(func(req *http.Request, status int) { unmatched.log(inst, req, status) })
 	mounted := false
 	defer func() {
 		if !mounted {
