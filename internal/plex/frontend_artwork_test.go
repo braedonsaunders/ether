@@ -10,6 +10,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
@@ -59,6 +60,27 @@ func TestFrontendArtworkUsesPlexSelectionAndRechecksVisibility(t *testing.T) {
 	f.catalog.mu.Unlock()
 	if _, _, err := source.Read(context.Background(), req, poster, frontend.ArtworkTransform{}); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("stale reference: %v", err)
+	}
+}
+
+func TestUltraBlurArtworkUsesPlexPalette(t *testing.T) {
+	colors := model.UltraBlurColors{TopLeft: "ff0000", TopRight: "00ff00", BottomLeft: "0000ff", BottomRight: "ffffff"}
+	data, ct, err := renderUltraBlur(colors, frontend.ArtworkTransform{Width: 2, Height: 2, Format: "png"})
+	if err != nil || ct != "image/png" {
+		t.Fatal(ct, err)
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		x, y    int
+		r, g, b uint32
+	}{{0, 0, 65535, 0, 0}, {1, 0, 0, 65535, 0}, {0, 1, 0, 0, 65535}, {1, 1, 65535, 65535, 65535}} {
+		r, g, b, _ := img.At(tc.x, tc.y).RGBA()
+		if r != tc.r || g != tc.g || b != tc.b {
+			t.Fatalf("corner %d,%d: %d %d %d", tc.x, tc.y, r, g, b)
+		}
 	}
 }
 
