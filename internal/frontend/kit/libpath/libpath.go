@@ -4,6 +4,7 @@ package libpath
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -54,4 +55,53 @@ func Episode(title core.Title) string {
 // Collection places a safe filename beneath a collection directory.
 func Collection(name, filename string) string {
 	return path.Join("Collections", Safe(name), Safe(filename))
+}
+
+// NamedKey names a sibling using its stable catalogue identity.
+type NamedKey struct {
+	Name string
+	Key  core.RatingKey
+}
+
+// Disambiguate returns one stable name per key. Names that collide on
+// case-insensitive filesystems acquire their rating key as a suffix.
+func Disambiguate(items []NamedKey) map[core.RatingKey]string {
+	byKey := make(map[core.RatingKey]string, len(items))
+	for _, item := range items {
+		if item.Key != 0 {
+			byKey[item.Key] = Safe(item.Name)
+		}
+	}
+	keys := make([]core.RatingKey, 0, len(byKey))
+	counts := map[string]int{}
+	for key, name := range byKey {
+		keys = append(keys, key)
+		counts[strings.ToLower(name)]++
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	used := map[string]bool{}
+	result := make(map[core.RatingKey]string, len(keys))
+	// Reserve unique original names before allocating generated suffixes.
+	for _, key := range keys {
+		name := byKey[key]
+		if counts[strings.ToLower(name)] == 1 {
+			used[strings.ToLower(name)] = true
+			result[key] = name
+		}
+	}
+	for _, key := range keys {
+		if _, ok := result[key]; ok {
+			continue
+		}
+		name := byKey[key]
+		for {
+			name += fmt.Sprintf(" [%d]", key)
+			if !used[strings.ToLower(name)] {
+				break
+			}
+		}
+		used[strings.ToLower(name)] = true
+		result[key] = name
+	}
+	return result
 }

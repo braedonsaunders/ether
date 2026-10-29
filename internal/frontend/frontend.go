@@ -204,6 +204,7 @@ type Host struct {
 	Preferences        Preferences
 	TrackPreferences   TrackPreferenceService
 	LiveTV             LiveTV
+	VirtualPaths       VirtualPaths
 	Sessions           Sessions
 	LazyStreams        LazyStreams
 	Identity           SurfaceIdentity

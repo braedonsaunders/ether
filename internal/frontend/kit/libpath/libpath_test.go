@@ -32,3 +32,12 @@ func TestLibraryPathsAndSafeNames(t *testing.T) {
 		}
 	}
 }
+
+func TestDisambiguateIsStableAndAvoidsReservedNames(t *testing.T) {
+	items := []NamedKey{{Name: "Film", Key: 1}, {Name: "film", Key: 2}, {Name: "Film [1]", Key: 3}}
+	a := Disambiguate(items)
+	b := Disambiguate([]NamedKey{items[2], items[1], items[0]})
+	if a[1] != b[1] || a[2] != b[2] || a[3] != b[3] || strings.EqualFold(a[1], a[2]) || strings.EqualFold(a[1], a[3]) {
+		t.Fatalf("names: %+v %+v", a, b)
+	}
+}
