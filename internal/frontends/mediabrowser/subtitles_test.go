@@ -42,3 +42,30 @@ func TestSubtitleUsesScopedBrokerURL(t *testing.T) {
 		t.Fatal(w.Code, location, broker.calls)
 	}
 }
+
+func TestPlaybackInfoAdvertisesScopedTextSubtitle(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	broker := &subtitleFake{baseSessions: frontendtest.Sessions{
+		PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+			return frontend.PlayPlan{ID: "plan", Decision: frontend.Decision{Kind: "directplay"}, Media: frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "subtitle", Index: 2}}}}, nil
+		},
+		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			return frontend.Session{ID: "session"}, nil
+		},
+		StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+			return "/sessions/media/session/scoped/file", nil
+		},
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: broker, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true}`))
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"IsTextSubtitleStream":true`) || !strings.Contains(w.Body.String(), `"SupportsExternalStream":true`) || !strings.Contains(w.Body.String(), "/sessions/media/session/scoped/subtitles/") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

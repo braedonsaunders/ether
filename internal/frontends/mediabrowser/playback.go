@@ -230,6 +230,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 				dto := streams[n].(map[string]any)
 				dto["DeliveryUrl"] = subtitleURL
 				dto["DeliveryMethod"] = "External"
+				dto["IsTextSubtitleStream"] = true
 				dto["SupportsExternalStream"] = true
 			}
 			source["MediaStreams"] = streams
