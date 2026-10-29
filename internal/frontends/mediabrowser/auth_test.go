@@ -17,6 +17,56 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 )
 
+func TestDeviceIDFromStreamQuery(t *testing.T) {
+	r := httptest.NewRequest("GET", "/Videos/item/stream?DeviceId=tv", nil)
+	if got := device(r).ID; got != "tv" {
+		t.Fatal(got)
+	}
+	r.Header.Set("Authorization", `MediaBrowser DeviceId="header"`)
+	if got := device(r).ID; got != "header" {
+		t.Fatal(got)
+	}
+	r.Header.Del("Authorization")
+	r = httptest.NewRequest("GET", "/Videos/item/stream?DeviceId=tv&deviceid=other", nil)
+	if got := device(r).ID; got != "" {
+		t.Fatal(got)
+	}
+}
+
+func TestSessionCapabilitiesRoundTrip(t *testing.T) {
+	v := &frontend.Viewer{ID: 9, Username: "viewer"}
+	var saved frontend.SessionCapabilities
+	sessions := frontendtest.Sessions{UpdateCapabilitiesFunc: func(_ context.Context, access frontend.SessionAccess, caps frontend.SessionCapabilities) error {
+		if access.Viewer != v || access.Device.ID != "tv" || access.Protocol != "jellyfin" {
+			t.Fatal(access)
+		}
+		saved = caps
+		return nil
+	}, CapabilitiesFunc: func(_ context.Context, access frontend.SessionAccess) (frontend.SessionCapabilities, error) {
+		if access.Viewer != v || access.Device.ID != "tv" {
+			t.Fatal(access)
+		}
+		return saved, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/Sessions/Capabilities/Full", strings.NewReader(`{"PlayableMediaTypes":["Video"],"SupportedCommands":["Pause"],"SupportsRemoteControl":true,"DeviceProfile":{"Name":"TV"}}`))
+	r.Header.Set("Authorization", `MediaBrowser Token="valid", DeviceId="tv"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 204 || saved.SupportsRemoteControl == nil || !*saved.SupportsRemoteControl {
+		t.Fatal(w.Code, saved)
+	}
+	dto := inst.(*instance).sessionDTO(r, v)
+	capDTO := dto["Capabilities"].(map[string]any)
+	if capDTO["SupportsRemoteControl"] != true || !strings.Contains(string(capDTO["DeviceProfile"].(json.RawMessage)), "TV") {
+		t.Fatal(capDTO)
+	}
+}
+
 func TestAuthentication(t *testing.T) {
 	v := &frontend.Viewer{ID: 9, Username: "alice"}
 	var revoked string
@@ -32,7 +82,7 @@ func TestAuthentication(t *testing.T) {
 		}
 		return "valid", nil
 	}, RevokeFunc: func(_ context.Context, token string) error { revoked = token; return nil }}
-	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.0.2.4"), true }})
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: frontendtest.Sessions{}, ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.0.2.4"), true }})
 	if err != nil {
 		t.Fatal(err)
 	}

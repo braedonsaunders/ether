@@ -41,7 +41,13 @@ func device(r *http.Request) frontend.Device {
 		if value := p[key]; value != "" {
 			return value
 		}
-		return r.Header.Get(header)
+		if value := r.Header.Get(header); value != "" {
+			return value
+		}
+		if values := route.Query(r.URL.Query(), key); len(values) == 1 {
+			return values[0]
+		}
+		return ""
 	}
 	client := get("Client", "X-Emby-Client")
 	return frontend.Device{ID: get("DeviceId", "X-Emby-Device-Id"), Client: client, Product: client, Version: get("Version", "X-Emby-Client-Version"), DeviceName: get("Device", "X-Emby-Device-Name")}
@@ -171,7 +177,49 @@ func (i *instance) sessionDTO(r *http.Request, v *frontend.Viewer) map[string]an
 		session["PlaylistIndex"] = 0
 		session["PlaylistLength"] = 0
 	}
+	if i.host.Sessions != nil {
+		caps, err := i.host.Sessions.Capabilities(r.Context(), frontend.SessionAccess{Viewer: v, Device: d, Protocol: i.protocol})
+		if err == nil {
+			c := sessionCapabilitiesDTO(caps)
+			session["Capabilities"] = c
+			for _, key := range []string{"PlayableMediaTypes", "SupportedCommands", "SupportsRemoteControl", "SupportsMediaControl"} {
+				if value, ok := c[key]; ok {
+					session[key] = value
+				}
+			}
+		}
+	}
 	return session
+}
+
+func sessionCapabilitiesDTO(c frontend.SessionCapabilities) map[string]any {
+	mediaTypes, commands := c.PlayableMediaTypes, c.SupportedCommands
+	if mediaTypes == nil {
+		mediaTypes = []string{}
+	}
+	if commands == nil {
+		commands = []string{}
+	}
+	m := map[string]any{"PlayableMediaTypes": mediaTypes, "SupportedCommands": commands}
+	if c.SupportsMediaControl != nil {
+		m["SupportsMediaControl"] = *c.SupportsMediaControl
+	}
+	if c.SupportsPersistentIdentifier != nil {
+		m["SupportsPersistentIdentifier"] = *c.SupportsPersistentIdentifier
+	}
+	if c.SupportsRemoteControl != nil {
+		m["SupportsRemoteControl"] = *c.SupportsRemoteControl
+	}
+	if len(c.DeviceProfile) > 0 {
+		m["DeviceProfile"] = c.DeviceProfile
+	}
+	if c.AppStoreURL != "" {
+		m["AppStoreUrl"] = c.AppStoreURL
+	}
+	if c.IconURL != "" {
+		m["IconUrl"] = c.IconURL
+	}
+	return m
 }
 func (i *instance) result(w http.ResponseWriter, r *http.Request, token string) {
 	v, err := i.host.Identity.Resolve(r.Context(), token)
@@ -214,6 +262,29 @@ func (i *instance) routes() error {
 			v, _, err := i.viewer(r)
 			if err != nil || v == nil {
 				http.Error(w, "Unauthorized", 401)
+				return
+			}
+			if i.host.Sessions == nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			var body struct {
+				PlayableMediaTypes           []string
+				SupportedCommands            []string
+				SupportsMediaControl         *bool
+				SupportsPersistentIdentifier *bool
+				SupportsRemoteControl        *bool
+				DeviceProfile                json.RawMessage
+				AppStoreURL                  string `json:"AppStoreUrl"`
+				IconURL                      string `json:"IconUrl"`
+			}
+			if decode(r, &body) != nil {
+				http.Error(w, "Bad Request", 400)
+				return
+			}
+			caps := frontend.SessionCapabilities{PlayableMediaTypes: body.PlayableMediaTypes, SupportedCommands: body.SupportedCommands, SupportsMediaControl: body.SupportsMediaControl, SupportsPersistentIdentifier: body.SupportsPersistentIdentifier, SupportsRemoteControl: body.SupportsRemoteControl, DeviceProfile: body.DeviceProfile, AppStoreURL: body.AppStoreURL, IconURL: body.IconURL}
+			if err := i.host.Sessions.UpdateCapabilities(r.Context(), frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: i.protocol}, caps); err != nil {
+				http.Error(w, "Unavailable", 503)
 				return
 			}
 			w.WriteHeader(204)
