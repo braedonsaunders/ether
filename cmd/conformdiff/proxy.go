@@ -84,3 +84,17 @@ func profileFromCapture(args []string) error {
 	}
 	return capture.ProfileFromCapture(*dir, *protocol, *client, *out)
 }
+
+func fixturesFromCapture(args []string) error {
+	f := flag.NewFlagSet("fixtures-from-capture", flag.ContinueOnError)
+	protocol := f.String("protocol", "", "protocol")
+	client := f.String("client", "", "client name")
+	dir := f.String("capture", "", "capture directory")
+	if err := f.Parse(args); err != nil {
+		return err
+	}
+	if *dir == "" {
+		return fmt.Errorf("fixtures-from-capture requires -capture")
+	}
+	return capture.FixturesFromCapture(*dir, *protocol, *client, "internal/conform/profiles", "testdata/conform")
+}

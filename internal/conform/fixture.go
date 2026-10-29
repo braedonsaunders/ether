@@ -210,4 +210,6 @@ type Request struct {
 	Headers            map[string]http.Header
 	Body               []byte
 	RangeKind          string
+	FixtureOnly        bool
+	ExpectedStatus     int
 }

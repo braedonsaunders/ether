@@ -36,6 +36,9 @@ func run(args []string) error {
 	if cmd == "proxy" {
 		return proxyCommand(args[1:])
 	}
+	if cmd == "fixtures-from-capture" {
+		return fixturesFromCapture(args[1:])
+	}
 	if cmd == "profile-from-capture" {
 		return profileFromCapture(args[1:])
 	}
@@ -295,6 +298,9 @@ func record(p pmsconform.Protocol, variables map[string]string, base, token, out
 			}()
 		}
 		for _, req := range requests {
+			if req.FixtureOnly {
+				continue
+			}
 			for _, jm := range p.Formats() {
 				jobs <- job{req, jm}
 			}
@@ -393,6 +399,9 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 		}
 		go func() {
 			for _, req := range requests {
+				if req.FixtureOnly {
+					continue
+				}
 				for _, jm := range p.Formats() {
 					jobs <- job{req, jm}
 				}

@@ -31,14 +31,16 @@ type Profile struct {
 	ProfileStatus string             `json:"profile_status"`
 }
 type Probe struct {
-	Name       string            `json:"name"`
-	Method     string            `json:"method"`
-	Path       string            `json:"path"`
-	Headers    map[string]string `json:"headers"`
-	Body       json.RawMessage   `json:"body,omitempty"`
-	BodyBase64 string            `json:"body_base64,omitempty"`
-	RangeKind  string            `json:"range_kind,omitempty"`
-	Binary     bool              `json:"binary,omitempty"`
+	Name           string            `json:"name"`
+	Method         string            `json:"method"`
+	Path           string            `json:"path"`
+	Headers        map[string]string `json:"headers"`
+	Body           json.RawMessage   `json:"body,omitempty"`
+	BodyBase64     string            `json:"body_base64,omitempty"`
+	RangeKind      string            `json:"range_kind,omitempty"`
+	Binary         bool              `json:"binary,omitempty"`
+	FixtureOnly    bool              `json:"fixture_only,omitempty"`
+	ExpectedStatus int               `json:"expected_status,omitempty"`
 }
 type Protocol struct {
 	Dialect  string
@@ -144,7 +146,7 @@ func (p *Protocol) Corpus(profile string) []conform.Request {
 				}
 				body = decoded
 			}
-			base := conform.Request{Name: k + "_" + r.Name, Method: method, Path: r.Path, Headers: map[string]http.Header{profile + "-json": h}, Body: body}
+			base := conform.Request{Name: k + "_" + r.Name, Method: method, Path: r.Path, Headers: map[string]http.Header{profile + "-json": h}, Body: body, FixtureOnly: r.FixtureOnly, ExpectedStatus: r.ExpectedStatus}
 			if r.RangeKind != "" {
 				base.RangeKind = r.RangeKind
 				out = append(out, base)
@@ -232,6 +234,9 @@ func (p *Protocol) Discover(ctx context.Context, c *http.Client, base, token, pr
 	return out
 }
 func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string, r conform.Request, profile string, vars map[string]string, jsonMode bool) (conform.Response, error) {
+	if r.FixtureOnly {
+		return conform.Response{}, fmt.Errorf("fixture-only request cannot be replayed")
+	}
 	if p.Dialect == "silo" && (r.Path == "/api/v2/playback/start" || (r.Method == http.MethodDelete && strings.HasPrefix(r.Path, "/api/v2/playback/"))) {
 		if vars == nil {
 			return conform.Response{}, fmt.Errorf("Silo playback requires mutable run variables")

@@ -49,7 +49,7 @@ func TestRecordedMediaBrowserCorpora(t *testing.T) {
 						t.Errorf("%s: %v", name, err)
 						continue
 					}
-					if r.Status < 200 || r.Status >= 400 {
+					if (r.Status < 200 || r.Status >= 400) && !(r.Status == 404 && req.ExpectedStatus == 404) {
 						t.Errorf("%s: unexpected status %d", name, r.Status)
 					}
 					if r.Kind == "binary-range" {
@@ -57,6 +57,9 @@ func TestRecordedMediaBrowserCorpora(t *testing.T) {
 							t.Errorf("%s: invalid binary fixture", name)
 						}
 						if r.ReferenceDefect == nil {
+							if req.FixtureOnly && (r.Truncated || r.RequestRange == "") {
+								continue
+							}
 							if err := conform.ValidateBinary(r); err != nil {
 								t.Errorf("%s: %v", name, err)
 							}
@@ -103,7 +106,7 @@ func TestRecordedSiloCorpus(t *testing.T) {
 				t.Errorf("%s: %v", name, err)
 				continue
 			}
-			if r.Status < 200 || r.Status >= 400 {
+			if (r.Status < 200 || r.Status >= 400) && !(r.Status == 404 && req.ExpectedStatus == 404) {
 				t.Errorf("%s: status %d", name, r.Status)
 			}
 			if strings.Contains(req.Name, "playback plan") {

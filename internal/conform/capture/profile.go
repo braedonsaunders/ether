@@ -19,14 +19,16 @@ type capturedProfile struct {
 	Flows    map[string][]profileRequest `json:"flows"`
 }
 type profileRequest struct {
-	Name       string            `json:"name"`
-	Method     string            `json:"method"`
-	Path       string            `json:"path"`
-	Headers    map[string]string `json:"headers,omitempty"`
-	Body       json.RawMessage   `json:"body,omitempty"`
-	BodyBase64 string            `json:"body_base64,omitempty"`
-	RangeKind  string            `json:"range_kind,omitempty"`
-	Binary     bool              `json:"binary,omitempty"`
+	Name           string            `json:"name"`
+	Method         string            `json:"method"`
+	Path           string            `json:"path"`
+	Headers        map[string]string `json:"headers,omitempty"`
+	Body           json.RawMessage   `json:"body,omitempty"`
+	BodyBase64     string            `json:"body_base64,omitempty"`
+	RangeKind      string            `json:"range_kind,omitempty"`
+	Binary         bool              `json:"binary,omitempty"`
+	FixtureOnly    bool              `json:"fixture_only,omitempty"`
+	ExpectedStatus int               `json:"expected_status,omitempty"`
 }
 
 // ProfileFromCapture converts an ordered capture into an explicitly captured profile.
