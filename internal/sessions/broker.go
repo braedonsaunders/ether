@@ -451,6 +451,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 			if err := b.cluster.store.remove(ctx, old.public.ID); err != nil && b.deps.OnEventError != nil {
 				b.deps.OnEventError(err)
 			}
+			b.cluster.announceRetired(ctx, old)
 		}
 		if old.playID != ps.ID {
 			b.deps.Playback.Stop(old.playID)

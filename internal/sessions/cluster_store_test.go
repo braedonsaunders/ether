@@ -179,8 +179,24 @@ func TestClusterBrokerListsStopsAndOrdersReportsAcrossNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = a.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", PlanID: p.ID}); err != nil {
+	superseded, err := a.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", PlanID: p.ID})
+	if err != nil {
 		t.Fatal(err)
+	}
+	p, err = a.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := a.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", PlanID: p.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Report(ctx, access, superseded.ID, frontend.Timeline{State: "stopped"}); err != nil {
+		t.Fatalf("late report on other node: %v", err)
+	}
+	list, err = b.Sessions(ctx, owner)
+	if err != nil || len(list) != 1 || list[0].ID != current.ID {
+		t.Fatalf("supersession on other node: %+v %v", list, err)
 	}
 	playing := a.deps.Playback.Sessions()
 	if len(playing) != 1 || !b.StopPlayback(ctx, playing[0].ID) {

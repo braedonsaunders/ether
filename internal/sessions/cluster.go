@@ -13,6 +13,7 @@ import (
 
 const brokerStopTopic = "sessions:broker-stop"
 const brokerReportTopic = "sessions:broker-report"
+const brokerRetireTopic = "sessions:broker-retire"
 
 type brokerCluster struct {
 	store             clusterStore
@@ -22,6 +23,7 @@ type brokerCluster struct {
 	done              chan struct{}
 	unsubscribe       func()
 	unsubscribeReport func()
+	unsubscribeRetire func()
 }
 
 type remoteStop struct {
@@ -39,6 +41,12 @@ type remoteReport struct {
 	Owner              bool
 	Timeline           frontend.Timeline
 }
+type remoteRetired struct {
+	ID       string
+	ViewerID int64
+	Protocol frontend.Protocol
+	DeviceID string
+}
 
 func startBrokerCluster(b *Broker, db *sql.DB, node clusterbus.Node) (*brokerCluster, error) {
 	c := &brokerCluster{store: clusterStore{db: db, node: node.NodeID()}, node: node, broker: b, stop: make(chan struct{}), done: make(chan struct{})}
@@ -50,6 +58,7 @@ func startBrokerCluster(b *Broker, db *sql.DB, node clusterbus.Node) (*brokerClu
 	}
 	c.unsubscribe = node.Subscribe(brokerStopTopic, c.receiveStop)
 	c.unsubscribeReport = node.Subscribe(brokerReportTopic, c.receiveReport)
+	c.unsubscribeRetire = node.Subscribe(brokerRetireTopic, c.receiveRetired)
 	go c.heartbeat()
 	return c, nil
 }
@@ -86,6 +95,7 @@ func (c *brokerCluster) heartbeat() {
 func (c *brokerCluster) close() {
 	c.unsubscribe()
 	c.unsubscribeReport()
+	c.unsubscribeRetire()
 	close(c.stop)
 	<-c.done
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -93,6 +103,31 @@ func (c *brokerCluster) close() {
 	if err := c.store.cleanup(ctx); err != nil && c.broker.deps.OnEventError != nil {
 		c.broker.deps.OnEventError(err)
 	}
+}
+
+func (c *brokerCluster) announceRetired(ctx context.Context, s *brokerSession) {
+	data, err := json.Marshal(remoteRetired{ID: s.public.ID, ViewerID: s.public.ViewerID, Protocol: s.public.Protocol, DeviceID: s.public.Device.ID})
+	if err == nil {
+		err = c.node.Publish(ctx, brokerRetireTopic, data)
+	}
+	if err != nil && c.broker.deps.OnEventError != nil {
+		c.broker.deps.OnEventError(err)
+	}
+}
+func (c *brokerCluster) receiveRetired(data []byte) {
+	var r remoteRetired
+	if json.Unmarshal(data, &r) != nil || r.ID == "" || r.ViewerID <= 0 || r.Protocol == "" || r.DeviceID == "" {
+		return
+	}
+	c.broker.mu.Lock()
+	defer c.broker.mu.Unlock()
+	if len(c.broker.retired) >= 4096 {
+		for key := range c.broker.retired {
+			delete(c.broker.retired, key)
+			break
+		}
+	}
+	c.broker.retired[r.ID] = retiredSession{viewerID: r.ViewerID, protocol: r.Protocol, deviceID: r.DeviceID, until: c.broker.deps.Now().Add(2 * time.Hour)}
 }
 
 func (c *brokerCluster) forwardReport(ctx context.Context, a frontend.SessionAccess, id string, timeline frontend.Timeline) error {
