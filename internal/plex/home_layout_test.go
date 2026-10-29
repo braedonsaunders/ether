@@ -34,3 +34,23 @@ func TestFinalLayoutReceivesRenderedAvailability(t *testing.T) {
 		t.Fatal("layout changed original Plex metadata")
 	}
 }
+
+func TestHomeRowAssemblyStableForSameCandidates(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.srv.d.Recommender = &fakeRecommender{home: []core.Hub{
+		{ID: "home.top10.today", Title: "Top 10", Type: core.TypeMovie, Promoted: true, Items: []core.Title{fightClub}},
+		{ID: "home.shortontime", Title: "Short on Time", Type: core.TypeMovie, Promoted: true, Items: []core.Title{alien}},
+	}}
+	for _, path := range []string{"/hubs", "/hubs/promoted"} {
+		first := hubIDs(t, f.get(t, path, "Accept", "application/json").Body.Bytes())
+		second := hubIDs(t, f.get(t, path, "Accept", "application/json").Body.Bytes())
+		want := []string{"home.continue", "home.top10.today", "home.shortontime"}
+		if !reflect.DeepEqual(first, want) {
+			t.Fatalf("%s: unexpected row order: %v", path, first)
+		}
+		if !reflect.DeepEqual(first, second) {
+			t.Fatalf("%s: row order changed: %v != %v", path, first, second)
+		}
+	}
+}
