@@ -93,6 +93,17 @@ describe("Sources", () => {
   });
 });
 
+describe("Playback devices", () => {
+  it("filters device capabilities by protocol", async () => {
+    renderApp("/playback/devices");
+    expect(await screen.findByText("Plex Web", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "jellyfin" } });
+    expect(screen.queryByText("Plex Web")).not.toBeInTheDocument();
+    expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
+  });
+});
+
 describe("Releases", () => {
   it("edits client rules in a drawer using a device and named viewer", async () => {
     const { fake } = renderApp("/releases/rules");
@@ -101,13 +112,14 @@ describe("Releases", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit rule 1" }));
     const drawer = await screen.findByRole("dialog", { name: "Rule 1" });
     expect(within(drawer).getByRole("button", { name: "Device" })).toBeInTheDocument();
+    await choose("Protocol", "Plex");
     await choose("Device", "Plex Web");
     await choose("Viewer", "The Kids");
     await choose("Profile", "1080p");
     fireEvent.click(screen.getByRole("button", { name: "Save rule" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/quality")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/quality")[0]!.body).toMatchObject({
-      rules: [{ product: "Plex Web", userId: 3, profile: "1080p" }],
+      rules: [{ protocol: "plex", product: "Plex Web", userId: 3, profile: "1080p" }],
     });
   });
 

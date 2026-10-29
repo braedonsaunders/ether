@@ -1888,6 +1888,25 @@ export function createFakeServer(opts: FakeOptions = {}) {
       case "POST /test/trakt":
       case "POST /test/opensubtitles":
         return json({ ok: true, durationMs: 40 + (hash(route) % 200) });
+      case "GET /playback/policy":
+        return json({
+          policies: [
+            {
+              protocol: "plex",
+              family: "Plex Web",
+              dolbyVisionProfiles: [],
+              subtitleCodecs: ["srt"],
+              notes: "Browser capabilities",
+            },
+            {
+              protocol: "jellyfin",
+              family: "Jellyfin TV",
+              dolbyVisionProfiles: [5],
+              subtitleCodecs: ["srt"],
+              notes: "Reported by the app",
+            },
+          ],
+        });
       case "POST /playback/prowlarr": {
         const req = body as {
           config?: { dailyLimit?: number; dailyGrabs?: number };
