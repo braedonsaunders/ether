@@ -220,8 +220,12 @@ func (i *instance) browseRoutes() error {
 			}
 			items := make([]any, 0, len(page))
 			images := i.gridImages(r, keys)
+			paths := i.virtualPaths(r, v, keys)
 			for _, title := range page {
 				item := i.itemDTO(title, state[title.Key])
+				if p := paths[title.Key]; p != "" {
+					item["Path"] = p
+				}
 				for key, value := range images[title.Key] {
 					item[key] = value
 				}
@@ -266,6 +270,9 @@ func (i *instance) browseRoutes() error {
 			return
 		}
 		dto := i.itemDTO(d.Title, d.UserData)
+		if p := i.virtualPaths(r, v, []frontend.RatingKey{d.Title.Key})[d.Title.Key]; p != "" {
+			dto["Path"] = p
+		}
 		if people := i.peopleDTO(r, v, token, d); len(people) > 0 {
 			dto["People"] = people
 		}
@@ -376,8 +383,12 @@ func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.View
 	}
 	items := make([]any, 0, len(page.Items))
 	images := i.gridImages(r, keys)
+	paths := i.virtualPaths(r, v, keys)
 	for _, title := range page.Items {
 		item := i.itemDTO(title, state[title.Key])
+		if p := paths[title.Key]; p != "" {
+			item["Path"] = p
+		}
 		for key, value := range images[title.Key] {
 			item[key] = value
 		}
@@ -529,8 +540,13 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items := make([]any, 0, len(titles))
+	paths := i.virtualPaths(r, v, keys)
 	for _, t := range titles {
-		items = append(items, i.itemDTO(t, state[t.Key]))
+		item := i.itemDTO(t, state[t.Key])
+		if p := paths[t.Key]; p != "" {
+			item["Path"] = p
+		}
+		items = append(items, item)
 	}
 	jsonReply(w, items)
 }
