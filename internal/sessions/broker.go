@@ -117,6 +117,7 @@ func copyRequest(r frontend.PlanRequest) frontend.PlanRequest {
 	for k, v := range r.Caps.VideoProfiles {
 		r.Caps.VideoProfiles[k] = slices.Clone(v)
 	}
+	r.Caps.Profiles = cloneClientProfiles(r.Caps.Profiles)
 	r.Intent.Options.AudioFilters = slices.Clone(r.Intent.Options.AudioFilters)
 	if r.Intent.Plex != nil {
 		p := *r.Intent.Plex
