@@ -12,7 +12,8 @@ import pathlib, re, sys
 root = pathlib.Path(sys.argv[1]) / "internal/app"
 replacements = {
  "app.go": [('	background.start(func() { a.cluster.RunAsLeader(ctx, "catalogue sync", a.catalog.Run) })\n\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "trending charts", a.catalog.RunTrends) })', '\tif parityRunCatalogueWorkers() {\n\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "catalogue sync", a.catalog.Run) })\n\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "trending charts", a.catalog.RunTrends) })\n\t}'),
- ('\tif a.clustered() {\n\t\tbackground.start(func() { a.runRegistrarAsLeader(ctx) })\n\t\tbackground.start(func() { a.registrar.RunPortMapping(ctx) })\n\t} else if err := a.registrar.Start(ctx); err != nil {\n\t\ta.log.Warn("plex.tv registrar", "err", err)\n\t}', '\tif parityRunRegistrar() {\n\t\tif a.clustered() {\n\t\t\tbackground.start(func() { a.runRegistrarAsLeader(ctx) })\n\t\t\tbackground.start(func() { a.registrar.RunPortMapping(ctx) })\n\t\t} else if err := a.registrar.Start(ctx); err != nil {\n\t\t\ta.log.Warn("plex.tv registrar", "err", err)\n\t\t}\n\t}')],
+ ('\tif a.clustered() {\n\t\tbackground.start(func() { a.runRegistrarAsLeader(ctx) })\n\t\tbackground.start(func() { a.registrar.RunPortMapping(ctx) })\n\t} else if err := a.registrar.Start(ctx); err != nil {\n\t\ta.log.Warn("plex.tv registrar", "err", err)\n\t}', '\tif parityRunRegistrar() {\n\t\tif a.clustered() {\n\t\t\tbackground.start(func() { a.runRegistrarAsLeader(ctx) })\n\t\t\tbackground.start(func() { a.registrar.RunPortMapping(ctx) })\n\t\t} else if err := a.registrar.Start(ctx); err != nil {\n\t\t\ta.log.Warn("plex.tv registrar", "err", err)\n\t\t}\n\t}'),
+ ('\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "watchlist sync", a.watchlist.Run) })', '\tif parityRunCatalogueWorkers() {\n\t\tbackground.start(func() { a.cluster.RunAsLeader(ctx, "watchlist sync", a.watchlist.Run) })\n\t}')],
  "build_catalogue.go": [
   ('log.With("component", "tmdb"))', 'log.With("component", "tmdb"), parityTMDBOptions()...)'),
   ('a.catalogOptions()...)', 'append(a.catalogOptions(), parityCatalogueOptions()...)...)'),
@@ -35,6 +36,7 @@ for name, changes in replacements.items():
   if new in text: continue
   if name == 'app.go' and 'catalogue sync' in old and 'if parityRunCatalogueWorkers()' in text: continue
   if name == 'app.go' and 'a.registrar.Start(ctx)' in old and 'if parityRunRegistrar()' in text: continue
+  if name == 'app.go' and 'watchlist sync' in old and re.search(r'if parityRunCatalogueWorkers\(\)\s*\{\s*background\.start\(func\(\) \{ a\.cluster\.RunAsLeader\(ctx, "watchlist sync"', text): continue
   if old.startswith('a.closers = append(a.closers, a.tmdb.Close)') and 'parityConfigureTMDB(a.tmdb)' in text: continue
   if old.startswith('a.closers = append(a.closers, a.personalize.Close)') and 'parityWarmPersonalization(ctx, a)' in text: continue
   if old == 'auth.Options{\n' and re.search(r'auth\.Options\{\s*Now:\s*parityClock\(\)', text): continue

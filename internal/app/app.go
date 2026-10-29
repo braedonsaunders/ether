@@ -448,7 +448,9 @@ func (a *App) Run(ctx context.Context) error {
 	if a.clustered() {
 		background.start(func() { a.sampleHealth(ctx) })
 	}
-	background.start(func() { a.cluster.RunAsLeader(ctx, "watchlist sync", a.watchlist.Run) })
+	if parityRunCatalogueWorkers() {
+		background.start(func() { a.cluster.RunAsLeader(ctx, "watchlist sync", a.watchlist.Run) })
+	}
 	background.start(func() { a.ratings.Run(ctx) })
 	background.start(func() { a.plexDiscovery.Run(ctx) })
 	background.start(func() {
