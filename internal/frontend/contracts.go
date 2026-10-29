@@ -233,6 +233,7 @@ type Version struct {
 	PartCount    *int       `json:"partCount,omitempty"`
 	ETag         string     `json:"etag,omitempty"`
 	DateModified *time.Time `json:"dateModified,omitempty"`
+	PublishedAt  *time.Time `json:"publishedAt,omitempty"`
 }
 type Marker struct {
 	Type       string

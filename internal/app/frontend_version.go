@@ -12,7 +12,7 @@ func frontendVersion(title *core.Title, version core.ReleaseVariant) frontend.Ve
 	out := frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info, AddedAt: versionAddedAt(title, version.Release.PubDate)}
 	if !version.Release.PubDate.IsZero() {
 		modified := version.Release.PubDate
-		out.DateModified = &modified
+		out.PublishedAt = &modified
 	}
 	return out
 }

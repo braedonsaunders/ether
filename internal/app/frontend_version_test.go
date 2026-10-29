@@ -13,7 +13,7 @@ func TestFrontendVersionExposesOnlyReleaseSourceFacts(t *testing.T) {
 	title := &core.Title{UpdatedAt: titleDate}
 	v := core.ReleaseVariant{ID: "release-id", Label: "1080p", Release: core.Release{Name: "/private/folder/movie.mkv?token=secret", PubDate: published}}
 	got := frontendVersion(title, v)
-	if got.DateModified == nil || !got.DateModified.Equal(published) || !got.AddedAt.Equal(published) {
+	if got.PublishedAt == nil || !got.PublishedAt.Equal(published) || got.DateModified != nil || !got.AddedAt.Equal(published) {
 		t.Fatalf("publication fact lost: %+v", got)
 	}
 	if got.FileName != "" || got.PartCount != nil || got.ETag != "" {
@@ -21,7 +21,7 @@ func TestFrontendVersionExposesOnlyReleaseSourceFacts(t *testing.T) {
 	}
 	v.Release.PubDate = time.Time{}
 	got = frontendVersion(title, v)
-	if got.DateModified != nil || !got.AddedAt.Equal(titleDate) {
+	if got.DateModified != nil || got.PublishedAt != nil || !got.AddedAt.Equal(titleDate) {
 		t.Fatalf("catalogue date treated as release metadata: %+v", got)
 	}
 }
