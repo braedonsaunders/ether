@@ -283,7 +283,16 @@ func (r *Recorder) safePath(u *url.URL) string {
 		if err == nil && (opaqueID.MatchString(decoded) || (i > 0 && userPathID(parts[i-1], decoded))) {
 			parts[i] = "${" + r.slot(decoded) + "}"
 		} else if err == nil {
-			parts[i] = string(conform.Redact([]byte(part)))
+			safe := decoded
+			for secret := range r.secrets {
+				if secret != "" && strings.Contains(safe, secret) {
+					safe = strings.ReplaceAll(safe, secret, "[REDACTED]")
+				}
+			}
+			safe = string(conform.Redact([]byte(safe)))
+			if safe != decoded {
+				parts[i] = url.PathEscape(safe)
+			}
 		}
 	}
 	path := strings.Join(parts, "/")
@@ -618,37 +627,26 @@ func mediaBrowserHeader(value string, withToken bool) string {
 	return out
 }
 
+var captureTemplate = regexp.MustCompile(`\$\{[A-Za-z0-9_-]+\}`)
+
 func redactRequestHeaders(h http.Header, secrets []string) http.Header {
 	out := h.Clone()
 	for k, values := range out {
-		if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "X-Emby-Authorization") || strings.EqualFold(k, "X-Emby-Token") || strings.EqualFold(k, "Cookie") || strings.EqualFold(k, "Sec-WebSocket-Key") {
-			continue
-		}
 		for i, v := range values {
-			values[i] = string(conform.RedactSecrets(conform.Response{Body: []byte(v)}, secrets...).Body)
+			var result strings.Builder
+			last := 0
+			for _, bounds := range captureTemplate.FindAllStringIndex(v, -1) {
+				piece := v[last:bounds[0]]
+				result.Write(conform.RedactSecrets(conform.Response{Body: []byte(piece)}, secrets...).Body)
+				result.WriteString(v[bounds[0]:bounds[1]])
+				last = bounds[1]
+			}
+			result.Write(conform.RedactSecrets(conform.Response{Body: []byte(v[last:])}, secrets...).Body)
+			values[i] = result.String()
 		}
 		out[k] = values
 	}
 	return out
-}
-
-func isForm(contentType string) bool {
-	m, _, _ := mime.ParseMediaType(contentType)
-	return m == "application/x-www-form-urlencoded"
-}
-func sanitizeForm(body []byte) []byte {
-	v, err := url.ParseQuery(string(body))
-	if err != nil {
-		return nil
-	}
-	for k := range v {
-		if privateField(k) {
-			v[k] = []string{"[REDACTED]"}
-		} else if strings.Contains(strings.ToLower(k), "path") {
-			v[k] = []string{"[REDACTED]"}
-		}
-	}
-	return []byte(v.Encode())
 }
 
 func userPathID(parent, value string) bool {
@@ -689,4 +687,21 @@ func scrubText(body []byte) []byte {
 	body = inlineSecret.ReplaceAll(body, []byte("${1}=[REDACTED]"))
 	body = textDate.ReplaceAll(body, []byte("[REDACTED_DATE]"))
 	return hostPath.ReplaceAll(body, []byte("[REDACTED_PATH]"))
+}
+
+func isForm(contentType string) bool {
+	m, _, _ := mime.ParseMediaType(contentType)
+	return m == "application/x-www-form-urlencoded"
+}
+func sanitizeForm(body []byte) []byte {
+	v, err := url.ParseQuery(string(body))
+	if err != nil {
+		return nil
+	}
+	for k := range v {
+		if privateField(k) || strings.Contains(strings.ToLower(k), "path") {
+			v[k] = []string{"[REDACTED]"}
+		}
+	}
+	return []byte(v.Encode())
 }

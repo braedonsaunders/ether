@@ -423,3 +423,24 @@ func TestProxyStreamsBeforeUpstreamCompletes(t *testing.T) {
 		t.Fatal("binary stream capture incorrect")
 	}
 }
+func TestCaptureRedactsEncodedEmailInPath(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	defer up.Close()
+	u, _ := url.Parse(up.URL)
+	dir := t.TempDir()
+	rec, err := New("silo", "apple", dir, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(rec)
+	defer srv.Close()
+	resp, err := srv.Client().Get(srv.URL + "/lookup/alice%40example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	entry := readEntry(t, dir, 1)
+	if strings.Contains(strings.ToLower(entry.Request.Path), "alice") || strings.Contains(strings.ToLower(entry.Request.Path), "example.com") {
+		t.Fatal("encoded email leaked into path")
+	}
+}
