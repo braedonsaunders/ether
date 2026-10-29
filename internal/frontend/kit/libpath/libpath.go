@@ -24,6 +24,10 @@ func Safe(value string) string {
 	if value == "" {
 		return "Untitled"
 	}
+	base := strings.ToUpper(strings.SplitN(value, ".", 2)[0])
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || (len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9') {
+		value = "_" + value
+	}
 	return value
 }
 

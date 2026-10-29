@@ -23,6 +23,9 @@ func TestLibraryPathsAndSafeNames(t *testing.T) {
 	if got := Collection("..", "../trailer.mkv"); got != "Collections/Untitled/trailer.mkv" {
 		t.Fatal(got)
 	}
+	if got := Safe("CON.mkv"); got != "_CON.mkv" {
+		t.Fatalf("reserved device: %q", got)
+	}
 	for _, name := range []string{"", ".", "..", "/", "\x00"} {
 		if got := Safe(name); got == "" || got == "." || got == ".." || strings.ContainsAny(got, "/\\") {
 			t.Fatal(name, got)
