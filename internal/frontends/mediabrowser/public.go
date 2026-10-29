@@ -38,6 +38,10 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo) error {
 				}
 				address = scheme + "://" + r.Host
 			}
+			if info.ProductName == "Emby Server" {
+				jsonReply(w, map[string]any{"Id": info.ID, "ServerName": info.ServerName, "Version": info.Version, "LocalAddress": address, "LocalAddresses": []string{address}, "RemoteAddresses": []string{address}, "WanAddress": address})
+				return
+			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(struct {
 				ID                     string `json:"Id"`
