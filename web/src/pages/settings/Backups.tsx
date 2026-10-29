@@ -624,8 +624,12 @@ function useImportPlan(reviewId: string) {
 function useViewerChoice(users: EtherUser[] | null) {
   const [viewer, setViewer] = useState("");
   useEffect(() => {
-    if (!viewer && users?.[0]) setViewer(String(users[0].id));
-  }, [users, viewer]);
+    if (users?.[0]) {
+      const defaultViewer = String(users[0].id);
+      // A viewer may be chosen while this default update is still queued.
+      setViewer((current) => current || defaultViewer);
+    }
+  }, [users]);
   return [viewer, setViewer] as const;
 }
 
