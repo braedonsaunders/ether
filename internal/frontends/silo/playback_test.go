@@ -69,12 +69,17 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := func(method, path, body string) *httptest.ResponseRecorder {
+		body = strings.ReplaceAll(body, `"installation_id":"install"`, `"installation_id":"`+inst.(*instance).installationID()+`"`)
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer account-secret")
 		req.Header.Set("X-Silo-Device-Id", "tv")
 		w := httptest.NewRecorder()
 		inst.Handler().ServeHTTP(w, req)
 		return w
+	}
+	bad := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"stale","playback_attempt_id":"attempt"}`)
+	if bad.Code != 409 || !strings.Contains(bad.Body.String(), `"type":"/problems/installation_changed"`) {
+		t.Fatalf("stale installation: %d %s", bad.Code, bad.Body.String())
 	}
 	w := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","start_position":12}`)
 	if w.Code != 201 || strings.Contains(w.Body.String(), "account-secret") || planned.Version != "cut" || planned.Item != 1000000000000001 || streamed.Format != frontend.StreamHLS {

@@ -18,6 +18,16 @@ type fileReference struct {
 	Version string `json:"version,omitempty"`
 }
 
+func (i *instance) installationID() string {
+	return i.id[:8] + "-" + i.id[8:12] + "-" + "4" + i.id[13:16] + "-" + "8" + i.id[17:20] + "-" + i.id[20:]
+}
+
+func installationChanged(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": "/problems/installation_changed", "title": "Playback installation changed", "status": http.StatusConflict, "detail": "Refresh playback capabilities before retrying."})
+}
+
 // A PQ stream can contain HDR10+ metadata; absent probe evidence is unknown.
 // Non-PQ video cannot carry HDR10+.
 func siloSourceHasKnownHDR10Plus(media frontend.MediaInfo) bool {
@@ -67,6 +77,10 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	var b startRequest
 	if decode(r, &b) != nil || b.Protocol != 3 || b.InstallationID == "" || b.Attempt == "" || b.Position < 0 || math.IsNaN(b.Position) || math.IsInf(b.Position, 0) || b.Position > float64((1<<63-1)/int64(time.Second)) {
 		http.Error(w, "Bad Request", 400)
+		return
+	}
+	if b.InstallationID != i.installationID() {
+		installationChanged(w)
 		return
 	}
 	if b.ProfileID != "" && b.ProfileID != strconv.FormatInt(v.ID, 10) {
@@ -367,6 +381,10 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", 400)
 		return
 	}
+	if b.InstallationID != i.installationID() {
+		installationChanged(w)
+		return
+	}
 	state := "playing"
 	if b.Paused {
 		state = "paused"
@@ -422,8 +440,7 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 	if !allowed {
 		state = "not_configured"
 	}
-	installation := i.id[:8] + "-" + i.id[8:12] + "-" + "4" + i.id[13:16] + "-" + "8" + i.id[17:20] + "-" + i.id[20:]
-	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": installation, "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
+	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": i.installationID(), "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
 }
 
 func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Request) {
