@@ -25,14 +25,14 @@ func (f *imageBatchFake) IssueBatch(_ context.Context, request frontend.ImageBat
 	}
 	f.batches++
 	if f.batches == 1 {
-		return []frontend.ImageBatchItem{{Item: request.Items[0], Authoritative: true, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "scoped-poster"}, {Image: frontend.Image{Kind: frontend.ImageBackdrop}, Secret: "scoped-backdrop"}}}, {Item: request.Items[1], Authoritative: false, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "untrusted"}}}}, nil
+		return []frontend.ImageBatchItem{{Item: request.Items[0], Authoritative: true, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster, Width: 600, Height: 300, BlurHash: "gridhash"}, Secret: "scoped-poster"}, {Image: frontend.Image{Kind: frontend.ImageBackdrop}, Secret: "scoped-backdrop"}}}, {Item: request.Items[1], Authoritative: false, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "untrusted"}}}}, nil
 	}
 	return nil, nil
 }
 
 func TestGridArtworkUsesBoundedAuthorizedBatches(t *testing.T) {
 	grants := &imageBatchFake{}
-	i := &instance{host: frontend.Host{ImageGrants: grants}}
+	i := &instance{protocol: "jellyfin", host: frontend.Host{ImageGrants: grants}}
 	keys := make([]frontend.RatingKey, 51)
 	for n := range keys {
 		keys[n] = frontend.RatingKey(n + 1)
@@ -42,6 +42,9 @@ func TestGridArtworkUsesBoundedAuthorizedBatches(t *testing.T) {
 	images := i.gridImages(r, keys)
 	if grants.batches != 2 || len(images) != 1 || images[keys[0]]["ImageTags"].(map[string]string)["Primary"] != "scoped-poster" || images[keys[0]]["BackdropImageTags"].([]string)[0] != "scoped-backdrop" {
 		t.Fatal(grants.batches, images)
+	}
+	if images[keys[0]]["PrimaryImageAspectRatio"] != float64(2) || images[keys[0]]["ImageBlurHashes"].(map[string]any)["Primary"].(map[string]string)["scoped-poster"] != "gridhash" {
+		t.Fatal(images)
 	}
 }
 
@@ -64,7 +67,7 @@ func TestImagesRequireScopedGrant(t *testing.T) {
 	grants := &imageGrantsFake{}
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 1}, nil }}
 	exp := frontendtest.Experience{ItemFunc: func(_ context.Context, r frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: frontend.Title{Key: r.Key, Type: "movie", Title: "Movie"}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/poster"}, {Kind: "poster", Path: "/alternate"}}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: r.Key, Type: "movie", Title: "Movie"}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/poster", Width: 400, Height: 200, BlurHash: "blurhash-primary"}, {Kind: "poster", Path: "/alternate", Width: 3, Height: 4, BlurHash: "alternate"}}}, nil
 	}}
 	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, ImageGrants: grants})
 	if err != nil {
@@ -78,6 +81,9 @@ func TestImagesRequireScopedGrant(t *testing.T) {
 	if w.Code != 200 || grants.issued != 1 || !strings.Contains(w.Body.String(), "scoped-image/poster") {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	if !strings.Contains(w.Body.String(), `"PrimaryImageAspectRatio":2`) || !strings.Contains(w.Body.String(), `"ImageBlurHashes":{"Primary":{"scoped-image/poster":"blurhash-primary"}}`) || strings.Contains(w.Body.String(), "alternate") {
+		t.Fatal(w.Body.String())
+	}
 	w = httptest.NewRecorder()
 	inst.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/Items/"+id+"/Images/Primary", nil))
 	if w.Code != 404 {
@@ -87,5 +93,23 @@ func TestImagesRequireScopedGrant(t *testing.T) {
 	inst.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/Items/"+id+"/Images/Primary?tag=scoped-image%2Fposter", nil))
 	if w.Code != 200 || w.Body.String() != "image" {
 		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestImageMetadataRequiresGrantedAndKnownDescriptor(t *testing.T) {
+	i := &instance{protocol: "jellyfin"}
+	dto := map[string]any{}
+	i.addImageMetadata(dto, "Primary", "", frontend.Image{Width: 400, Height: 200, BlurHash: "secret"})
+	if len(dto) != 0 {
+		t.Fatal(dto)
+	}
+	i.addImageMetadata(dto, "Primary", "grant", frontend.Image{})
+	if len(dto) != 0 {
+		t.Fatal(dto)
+	}
+	emby := &instance{protocol: "emby"}
+	emby.addImageMetadata(dto, "Primary", "grant", frontend.Image{Width: 400, Height: 200, BlurHash: "hidden"})
+	if dto["PrimaryImageAspectRatio"] != float64(2) || dto["ImageBlurHashes"] != nil {
+		t.Fatal(dto)
 	}
 }

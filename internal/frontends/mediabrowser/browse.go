@@ -298,7 +298,10 @@ func (i *instance) browseRoutes() error {
 			dto["MediaSources"] = sources
 			i.versionItemFacts(dto, d.Versions)
 		}
-		tags, backdrops := i.imageTags(r, d, token)
+		tags, backdrops, imageMetadata := i.imageTags(r, d, token)
+		for key, value := range imageMetadata {
+			dto[key] = value
+		}
 		if len(tags) > 0 {
 			dto["ImageTags"] = tags
 		}
