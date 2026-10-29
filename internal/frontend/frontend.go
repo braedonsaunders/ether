@@ -197,18 +197,19 @@ type Images interface {
 	ServeHTTP(http.ResponseWriter, *http.Request)
 }
 type Host struct {
-	Experience   Experience
-	Capabilities Capabilities
-	Preferences  Preferences
-	LiveTV       LiveTV
-	Sessions     Sessions
-	Identity     SurfaceIdentity
-	IDs          ids.Codecs
-	Events       Subscriber
-	Images       Images
-	ImageGrants  ImageGrants
-	Config       func() Settings
-	Log          *slog.Logger
+	Experience         Experience
+	ViewerCapabilities ViewerCapabilitiesFunc
+	Capabilities       Capabilities
+	Preferences        Preferences
+	LiveTV             LiveTV
+	Sessions           Sessions
+	Identity           SurfaceIdentity
+	IDs                ids.Codecs
+	Events             Subscriber
+	Images             Images
+	ImageGrants        ImageGrants
+	Config             func() Settings
+	Log                *slog.Logger
 	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
 	ViewerPortalURL func(context.Context, *http.Request) (string, error)
 	// ClientSeen reports an authenticated client's protocol-specific device ID.

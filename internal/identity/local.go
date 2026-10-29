@@ -125,3 +125,10 @@ func (l *Local) Authenticate(ctx context.Context, username, password string) (vi
 	}
 	return viewerID, identityID, nil
 }
+
+// HasPassword reports whether an active viewer has a local password identity.
+func (l *Local) HasPassword(ctx context.Context, viewerID int64) (bool, error) {
+	var found bool
+	err := l.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM identity_links i JOIN auth_users u ON u.id=i.viewer_id WHERE i.viewer_id=? AND i.provider='local' AND i.password_hash<>'' AND u.active=1)`, viewerID).Scan(&found)
+	return found, err
+}
