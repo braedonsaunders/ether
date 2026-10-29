@@ -90,6 +90,7 @@ type SurfaceIdentity interface {
 	Resolve(context.Context, string) (*core.Viewer, error)
 	SignIn(context.Context, string, string, core.Device) (string, error)
 	QuickConnectInitiate(context.Context, core.Device) (code, secret string, err error)
+	QuickConnectStatus(context.Context, string) (approved bool, err error)
 	QuickConnectPoll(context.Context, string) (string, error)
 	QuickConnectApprove(context.Context, *core.Viewer, string) error
 	Revoke(context.Context, string) error
@@ -144,6 +145,9 @@ func (boundIdentity) SignIn(context.Context, string, string, core.Device) (strin
 }
 func (boundIdentity) QuickConnectInitiate(context.Context, core.Device) (string, string, error) {
 	return "", "", ErrIdentityUnavailable
+}
+func (boundIdentity) QuickConnectStatus(context.Context, string) (bool, error) {
+	return false, ErrIdentityUnavailable
 }
 func (boundIdentity) QuickConnectPoll(context.Context, string) (string, error) {
 	return "", ErrIdentityUnavailable

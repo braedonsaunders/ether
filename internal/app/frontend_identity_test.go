@@ -88,6 +88,12 @@ func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if approved, err := jf.QuickConnectStatus(ctx, secret); err != nil || approved {
+		t.Fatal("pending status", approved, err)
+	}
+	if _, err := emby.QuickConnectStatus(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("cross-surface status", err)
+	}
 	if _, err := jf.QuickConnectPoll(ctx, secret); !errors.Is(err, frontend.ErrQuickConnectPending) {
 		t.Fatal(err)
 	}
@@ -96,6 +102,11 @@ func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 	}
 	if err := jf.QuickConnectApprove(ctx, viewer, code); err != nil {
 		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if approved, err := jf.QuickConnectStatus(ctx, secret); err != nil || !approved {
+			t.Fatal("approved status", approved, err)
+		}
 	}
 	if _, err := emby.QuickConnectPoll(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatal("cross-surface poll", err)
@@ -109,6 +120,9 @@ func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 	}
 	if _, err := jf.QuickConnectPoll(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatal("reused secret", err)
+	}
+	if _, err := jf.QuickConnectStatus(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("consumed status", err)
 	}
 	if err := jf.Revoke(ctx, token); err != nil {
 		t.Fatal(err)

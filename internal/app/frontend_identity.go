@@ -72,6 +72,16 @@ func (s surfaceIdentity) QuickConnectPoll(ctx context.Context, secret string) (s
 	}
 	return grant, err
 }
+
+func (s surfaceIdentity) QuickConnectStatus(ctx context.Context, secret string) (bool, error) {
+	if s.surface == "plex" {
+		return false, core.ErrUnauthorized
+	}
+	if err := s.allow(ctx, s.poll, secret); err != nil {
+		return false, err
+	}
+	return s.quick.StatusSurface(ctx, string(s.surface), secret)
+}
 func (s surfaceIdentity) QuickConnectApprove(ctx context.Context, viewer *core.Viewer, code string) error {
 	if s.surface == "plex" || viewer == nil || viewer.ID <= 0 {
 		return core.ErrUnauthorized

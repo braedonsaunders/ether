@@ -134,6 +134,27 @@ func (q *QuickConnect) approve(ctx context.Context, surface, code string, viewer
 // ErrQuickConnectPending means that approval has not yet happened.
 var ErrQuickConnectPending = errors.New("identity: quick connect pending")
 
+// StatusSurface reports approval without consuming the secret or issuing a grant.
+func (q *QuickConnect) StatusSurface(ctx context.Context, surface, secret string) (bool, error) {
+	hash, ok := secretHash(secret)
+	if !ok || surface == "" {
+		return false, core.ErrUnauthorized
+	}
+	var viewer sql.NullInt64
+	var active bool
+	err := q.db.QueryRowContext(ctx, `SELECT viewer_id, EXISTS (SELECT 1 FROM auth_users WHERE id=identity_quickconnect.viewer_id AND active=1) FROM identity_quickconnect WHERE secret_hash=? AND surface=? AND consumed=0 AND expires>?`, hash, surface, q.now().UnixMilli()).Scan(&viewer, &active)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, core.ErrUnauthorized
+	}
+	if err != nil {
+		return false, err
+	}
+	if viewer.Valid && !active {
+		return false, core.ErrUnauthorized
+	}
+	return viewer.Valid, nil
+}
+
 func (q *QuickConnect) Poll(ctx context.Context, secret string) (string, error) {
 	return q.poll(ctx, "", secret)
 }
