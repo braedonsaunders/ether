@@ -133,10 +133,11 @@ const (
 )
 
 type RowInteraction struct {
-	Viewer *core.Viewer
-	Device core.Device
-	Handle string
-	Kind   RowInteractionKind
+	Viewer   *core.Viewer
+	Device   core.Device
+	Protocol Protocol
+	Handle   string
+	Kind     RowInteractionKind
 }
 
 // RowInteractionReporter validates issued handles, membership and device scope
