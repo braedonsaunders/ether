@@ -37,6 +37,14 @@ func TestLocalOwnerAndPortalIsolation(t *testing.T) {
 	}
 	decode(t, setup, &v)
 	ownerGrant := v.Token
+	owner, err := users.Owner(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := grants.ViewerTimes().Get(ctx, owner.ID, owner.ID)
+	if err != nil || events.LastLogin.IsZero() || events.LastActivity.IsZero() {
+		t.Fatalf("owner setup did not record sign-in: %+v %v", events, err)
+	}
 	// Setup must close to unauthenticated LAN clients immediately after local creation.
 	r0 := req("GET", "/ether/api/config", "")
 	if res := serve(h, r0); res.Code != 401 && res.Code != 403 {
