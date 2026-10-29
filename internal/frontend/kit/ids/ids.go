@@ -66,6 +66,9 @@ func ParseGUID(kind Kind, value string) (int64, error) {
 }
 
 func RatingKeyGUID(key core.RatingKey) string { s, _ := GUID(Item, int64(key)); return s }
+
+// IsSeries reports whether a decoded item key represents a series.
+func IsSeries(key core.RatingKey) bool { return key.Kind() == core.KindShow }
 func ParseRatingKeyGUID(value string) (core.RatingKey, error) {
 	n, err := ParseGUID(Item, value)
 	return core.RatingKey(n), err

@@ -12,10 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
-	"github.com/braedonsaunders/ether/internal/langtag"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/language"
 )
 
 // settingDefinition records the revision-8 wire vocabulary, not an Ether
@@ -89,8 +88,7 @@ func (d settingDefinition) valid(raw json.RawMessage) bool {
 		if !ok {
 			return false
 		}
-		_, ok = langtag.ParseBCP47(v)
-		return ok
+		return language.Valid(v)
 	case "enum":
 		v, ok := value.(string)
 		if !ok {
@@ -227,7 +225,7 @@ func (i *instance) settingScope(r *http.Request, viewer *frontend.Viewer, scope 
 			id = q.Get("series_ids")
 		}
 		key, err := ids.ParseRatingKeyGUID(id)
-		if err != nil || key.Kind() != core.KindShow || i.host.Experience == nil {
+		if err != nil || !ids.IsSeries(key) || i.host.Experience == nil {
 			return "", false
 		}
 		_, err = i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: key})
