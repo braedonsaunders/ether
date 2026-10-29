@@ -211,7 +211,7 @@ func seed(ctx context.Context, dir string) error {
 		return err
 	}
 
-	engine, err := personalize.New(personalize.Options{DB: db, Catalog: cat, State: st, Events: st, Users: users, Playlists: st.Playlists(), Now: now, Location: time.UTC, RefreshEvery: -1, Dependencies: func(sc core.PersonalScorer) (core.Recommender, core.CollectionRows, error) {
+	engine, err := personalize.New(personalize.Options{DB: db, Catalog: cat, State: st, Events: st, Users: users, Playlists: st.Playlists(), Now: now, Location: time.UTC, RefreshEvery: -1, RebuildDebounce: time.Hour, Dependencies: func(sc core.PersonalScorer) (core.Recommender, core.CollectionRows, error) {
 		c, err := collections.New(db, cat, nil, collections.WithState(st), collections.WithAuth(users), collections.WithScorer(sc))
 		if err != nil {
 			return nil, nil, err
@@ -241,6 +241,50 @@ func seed(ctx context.Context, dir string) error {
 			return fmt.Errorf("no personalization rows for %s", u.Username)
 		}
 		engine.RecordImpressions(&u, hc, hubs)
+		engine.Flush(ctx)
+		var played core.RatingKey
+		for _, hub := range hubs {
+			for _, item := range hub.Items {
+				if (item.Type == core.TypeMovie || item.Type == core.TypeEpisode) && (played == 0 || item.Key < played) {
+					played = item.Key
+				}
+			}
+		}
+		if played == 0 {
+			return fmt.Errorf("no playable impressed item for %s", u.Username)
+		}
+		// Real progress events flow through state and the personalization
+		// subscriber, which attributes the play to the impressed row.
+		if err = st.Progress(ctx, u.ID, played, 5*time.Minute, 90*time.Minute, "playing"); err != nil {
+			return err
+		}
+		if err = st.Progress(ctx, u.ID, played, 30*time.Minute, 90*time.Minute, "stopped"); err != nil {
+			return err
+		}
+		deadline := time.NewTimer(10 * time.Second)
+		for {
+			var count int
+			err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM personalize_plays WHERE user_id=? AND item_key=? AND hub_id<>'' AND max_fraction>=0.3`, u.ID, played).Scan(&count)
+			if err != nil {
+				deadline.Stop()
+				return err
+			}
+			if count > 0 {
+				deadline.Stop()
+				break
+			}
+			select {
+			case <-ctx.Done():
+				deadline.Stop()
+				return ctx.Err()
+			case <-deadline.C:
+				return fmt.Errorf("attributed personalization play missing for %s", u.Username)
+			case <-time.After(10 * time.Millisecond):
+			}
+		}
+		if err = engine.Refresh(ctx, &u); err != nil {
+			return err
+		}
 	}
 	engine.Flush(ctx)
 	return nil
