@@ -55,6 +55,30 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 	}
 	sort.Strings(names)
 	result := transcript{ids: ids.Values}
+	if os.Getenv("ETHER_PARITY_DOWNLOADS_ONLY") == "1" {
+		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+			for _, name := range names {
+				captures, err := downloadCapture(ctx, client, base, viewer, name, ids.Values["movieKey"], profiles[name].Headers)
+				if err != nil {
+					return result, fmt.Errorf("%s %s downloads: %w", viewer, name, err)
+				}
+				result.captures = append(result.captures, captures...)
+			}
+		}
+		return result, nil
+	}
+	if os.Getenv("ETHER_PARITY_LIVETV_ONLY") == "1" {
+		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+			for _, name := range names {
+				captures, err := liveTVCapture(ctx, client, base, viewer, name, profiles[name].Headers)
+				if err != nil {
+					return result, fmt.Errorf("%s %s live TV: %w", viewer, name, err)
+				}
+				result.captures = append(result.captures, captures...)
+			}
+		}
+		return result, nil
+	}
 	if os.Getenv("ETHER_PARITY_NOTIFICATIONS_ONLY") == "1" {
 		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 			for _, name := range names {
@@ -604,6 +628,15 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 				return result, fmt.Errorf("%s %s notifications: %w", viewer, name, err)
 			}
 			result.captures = append(result.captures, events...)
+		}
+	}
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		for _, name := range names {
+			captures, err := liveTVCapture(ctx, client, base, viewer, name, profiles[name].Headers)
+			if err != nil {
+				return result, fmt.Errorf("%s %s live TV: %w", viewer, name, err)
+			}
+			result.captures = append(result.captures, captures...)
 		}
 	}
 	return result, nil

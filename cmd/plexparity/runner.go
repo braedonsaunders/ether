@@ -203,6 +203,12 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	if os.Getenv("ETHER_PARITY_NOTIFICATIONS_ONLY") == "1" {
 		return incompleteCoverage{[]string{"only notification probes executed"}}
 	}
+	if os.Getenv("ETHER_PARITY_LIVETV_ONLY") == "1" {
+		return incompleteCoverage{[]string{"only live TV probes executed"}}
+	}
+	if os.Getenv("ETHER_PARITY_DOWNLOADS_ONLY") == "1" {
+		return incompleteCoverage{[]string{"only download probes executed"}}
+	}
 	if missing := missingRoutes(); len(missing) > 0 {
 		return incompleteCoverage{missing}
 	}
