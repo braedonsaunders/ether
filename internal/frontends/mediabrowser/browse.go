@@ -281,7 +281,6 @@ func (i *instance) browseRoutes() error {
 			for _, version := range d.Versions {
 				source := i.mediaSourceDTO(version.ID, version.Media)
 				source["Name"] = version.Name
-				source["HasSegments"] = len(d.Markers) > 0
 				i.mediaSourceDialect(source)
 				if i.protocol == "emby" {
 					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)

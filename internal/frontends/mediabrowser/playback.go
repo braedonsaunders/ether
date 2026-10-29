@@ -191,11 +191,6 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
 	source["IsInfiniteStream"] = channel != ""
-	if channel == "" && i.host.Experience != nil {
-		if detail, e := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: dev, Key: key}); e == nil {
-			source["HasSegments"] = len(detail.Markers) > 0
-		}
-	}
 	for _, stream := range plan.Media.Streams {
 		if stream.Type == "audio" && stream.Default {
 			source["DefaultAudioStreamIndex"] = stream.Index
@@ -284,6 +279,8 @@ func mediaSourceDTO(id string, media frontend.MediaInfo) map[string]any {
 		"Id": id, "Container": media.Container, "RunTimeTicks": media.Duration.Nanoseconds() / 100, "Size": media.Size, "Bitrate": media.BitrateKbps * 1000,
 		"Protocol": "Http", "Type": "Default", "IsRemote": true, "ReadAtNativeFramerate": false, "IgnoreDts": false, "IgnoreIndex": false, "GenPtsInput": false,
 		"SupportsDirectPlay": false, "SupportsDirectStream": false, "SupportsTranscoding": false, "IsInfiniteStream": false,
+		// Jellyfin's strict SDK requires a boolean. Until the broker exposes
+		// version-scoped marker status, use the conservative false fallback.
 		"RequiresOpening": false, "RequiresClosing": false, "RequiresLooping": false, "SupportsProbing": !media.Estimated && len(media.Streams) > 0, "TranscodingSubProtocol": "http", "HasSegments": false,
 		"Formats": []string{}, "MediaAttachments": []any{}, "RequiredHttpHeaders": map[string]string{}, "MediaStreams": mediaStreams(media.Streams),
 	}

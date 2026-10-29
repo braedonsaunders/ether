@@ -28,6 +28,9 @@ func TestPlaybackInfoReportsEtherProducedSourcesAsLocal(t *testing.T) {
 				host := frontend.Host{
 					Identity:     frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }},
 					Capabilities: frontendtest.Capabilities{},
+					Experience: frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+						return frontend.ItemDetail{Markers: []frontend.Marker{{Type: "intro"}}}, nil
+					}},
 					Sessions: frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
 						return frontend.PlayPlan{ID: "plan", Decision: frontend.Decision{Kind: tc.kind}}, nil
 					}},
@@ -50,6 +53,9 @@ func TestPlaybackInfoReportsEtherProducedSourcesAsLocal(t *testing.T) {
 				var body struct{ MediaSources []struct{ IsRemote bool } }
 				if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.MediaSources) != 1 || body.MediaSources[0].IsRemote != tc.remote {
 					t.Fatal(w.Code, w.Body.String())
+				}
+				if strings.Contains(w.Body.String(), `"HasSegments":true`) {
+					t.Fatal("session markers were attributed to an unrelated source", w.Body.String())
 				}
 				spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", protocol, "")
 				if os.IsNotExist(err) {
