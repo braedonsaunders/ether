@@ -1,0 +1,39 @@
+# Run only in Ubuntu-24.04 on gpu-workstation. Ports bind to WSL loopback;
+# use tunnel.sh from the Mac. Never run this stack on the Mac or HYPERV03.
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:12.4@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771
+    container_name: prism-jellyfin
+    ports: ["127.0.0.1:8096:8096"]
+    volumes:
+      - ./data/jellyfin/config:/config
+      - ./data/jellyfin/cache:/cache
+      - ./media:/media:ro
+    restart: unless-stopped
+  emby:
+    image: emby/embyserver:4.10.2.0@sha256:7082c63b10a2fcb3805a7eaebba407d5723bc57c085c9f0b29b7d0a702765cc1
+    container_name: prism-emby
+    ports: ["127.0.0.1:8097:8096"]
+    volumes:
+      - ./data/emby/config:/config
+      - ./media:/media:ro
+    environment:
+      - UID=1000
+      - GID=1000
+    restart: unless-stopped
+  silo:
+    # Digest of the current upstream pre-release omnibus image.
+    image: ghcr.io/silo-server/silo-server:aio@sha256:bd5f1bbd88fc01a7f03f57c4baeadb8a6bcf26d16c90d8c85b92e06351e0e18c
+    container_name: prism-silo
+    ports: ["127.0.0.1:8098:8080"]
+    volumes:
+      - ./data/silo:/config
+      - ./media:/mnt/media:ro
+    environment:
+      ENABLE_JELLYFIN_COMPAT: "false"
+      PORT: "8080"
+      MEDIA_ROOT: /mnt/media
+      SILO_DATA_ROOT: /config
+      SECRET_KEY: ${SILO_SECRET_KEY:?set in lab.env}
+      ENABLE_REDIS: "true"
+    restart: unless-stopped
