@@ -131,6 +131,9 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 		delete(configuration, "GroupedFolders")
 	}
 	result := map[string]any{"Id": id, "Name": v.Username, "ServerId": i.info.ID, "Policy": policy, "Configuration": configuration}
+	if i.protocol == "emby" {
+		defer i.embyUserDTO(result)
+	}
 	if i.protocol == "emby" && !v.CreatedAt.IsZero() {
 		result["DateCreated"] = v.CreatedAt.UTC()
 	}
