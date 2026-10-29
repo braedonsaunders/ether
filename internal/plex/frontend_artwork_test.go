@@ -7,6 +7,7 @@ import (
 	"image"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -81,6 +82,44 @@ func TestUltraBlurArtworkUsesPlexPalette(t *testing.T) {
 		if r != tc.r || g != tc.g || b != tc.b {
 			t.Fatalf("corner %d,%d: %d %d %d", tc.x, tc.y, r, g, b)
 		}
+	}
+}
+
+func TestPersonArtworkIsBoundToCreditAndParent(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	source := FrontendArtwork{Server: f.srv}
+	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: fightClub.Key}
+	images, _, err := source.List(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var portrait frontend.Image
+	for _, img := range images {
+		if img.Kind == frontend.ImagePerson && img.Subject == "tmdb:287" {
+			portrait = img
+			break
+		}
+	}
+	if portrait.Path == "" {
+		t.Fatal("credit-scoped portrait missing")
+	}
+	if data, _, err := source.Read(context.Background(), req, portrait, frontend.ArtworkTransform{}); err != nil || len(data) == 0 {
+		t.Fatalf("portrait: %v", err)
+	}
+	forged := portrait
+	forged.Subject = "tmdb:819"
+	if _, _, err := source.Read(context.Background(), req, forged, frontend.ArtworkTransform{}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("forged credit: %v", err)
+	}
+	other := alien
+	other.Released = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	f.catalog.mu.Lock()
+	f.catalog.titles[other.Key] = other
+	f.catalog.mu.Unlock()
+	req.Item = other.Key
+	if _, _, err := source.Read(context.Background(), req, portrait, frontend.ArtworkTransform{}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("other title: %v", err)
 	}
 }
 

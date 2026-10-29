@@ -201,7 +201,12 @@ type SearchPage struct {
 // server-owned source reference: callers must neither interpret it as a URL nor
 // construct one themselves. Tag changes when the selected artwork changes.
 // Older adapters may still return a TMDB path while migrating to opaque refs.
-type Image struct{ Kind, Path, Tag string }
+type Image struct {
+	Kind, Path, Tag string
+	// Subject identifies an entity within the authorized item, such as the
+	// tmdb:<id> person whose credit owns a portrait. It is part of the grant.
+	Subject string
+}
 
 const (
 	ImagePoster   = "poster"

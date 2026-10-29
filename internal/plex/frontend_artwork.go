@@ -40,6 +40,7 @@ type FrontendArtwork struct {
 type frontendArtworkEntry struct {
 	image                         frontend.Image
 	element, personKind, personID string
+	subject                       string
 	discoveryKind                 string
 	discovery                     bool
 	remotePath                    string
@@ -138,7 +139,7 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 	var entries []frontendArtworkEntry
 	add := func(kind, source string, entry frontendArtworkEntry) {
 		ref := artworkReference(req, kind, source)
-		entry.image = frontend.Image{Kind: kind, Path: ref, Tag: ref}
+		entry.image = frontend.Image{Kind: kind, Path: ref, Tag: ref, Subject: entry.subject}
 		entries = append(entries, entry)
 	}
 	var decorated model.Metadata
@@ -206,11 +207,12 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 			people []core.Person
 		}{{"actor", title.Cast}, {"director", title.Directors}, {"writer", title.Writers}} {
 			for _, person := range group.people {
-				if person.ThumbPath == "" {
+				if person.ThumbPath == "" || person.TMDB <= 0 {
 					continue
 				}
 				id := base64.RawURLEncoding.EncodeToString([]byte(person.ThumbPath))
-				add(frontend.ImagePerson, group.kind+"\x00"+person.ThumbPath, frontendArtworkEntry{personKind: group.kind, personID: id})
+				subject := "tmdb:" + strconv.FormatInt(person.TMDB, 10)
+				add(frontend.ImagePerson, group.kind+"\x00"+subject+"\x00"+person.ThumbPath, frontendArtworkEntry{personKind: group.kind, personID: id, subject: subject})
 			}
 		}
 	}

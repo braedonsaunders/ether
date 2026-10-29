@@ -56,7 +56,7 @@ func TestImageGrantRevalidatesSessionMembershipAndArtwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	image := frontend.Image{Kind: "poster", Path: "/poster.jpg", Tag: "v1"}
+	image := frontend.Image{Kind: "person", Path: "opaque-portrait", Tag: "v1", Subject: "tmdb:287"}
 	authoritative := false
 	allowed := true
 	experience := frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
@@ -83,6 +83,11 @@ func TestImageGrantRevalidatesSessionMembershipAndArtwork(t *testing.T) {
 	wrong.Image.Path = "/other.jpg"
 	if _, err := service.Issue(ctx, wrong); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatal("unlisted image", err)
+	}
+	wrong = request
+	wrong.Image.Subject = "tmdb:819"
+	if _, err := service.Issue(ctx, wrong); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatal("unlisted subject", err)
 	}
 	secret, err := service.Issue(ctx, request)
 	if err != nil {
@@ -112,6 +117,11 @@ func TestImageGrantRevalidatesSessionMembershipAndArtwork(t *testing.T) {
 		t.Fatal("artwork change ignored", code)
 	}
 	image.Tag = "v1"
+	image.Subject = "tmdb:819"
+	if code := call(service, secret); code != 404 {
+		t.Fatal("credit change ignored", code)
+	}
+	image.Subject = "tmdb:287"
 	now = now.Add(time.Minute)
 	if code := call(service, secret); code != 404 {
 		t.Fatal("expiry ignored", code)
