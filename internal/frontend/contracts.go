@@ -255,8 +255,12 @@ type Experience interface {
 }
 
 type PlayIntent struct {
-	Estimate        bool
-	Options         core.DecideOptions
+	Estimate bool
+	Options  core.DecideOptions
+	// Set flags distinguish omitted choices from stream index zero and
+	// an explicit subtitle-off choice (SubtitleStream == -1).
+	AudioSet        bool
+	SubtitleSet     bool
 	Position        time.Duration
 	ClientSessionID string
 	PlaybackID      string

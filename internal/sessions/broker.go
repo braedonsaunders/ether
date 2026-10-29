@@ -24,6 +24,7 @@ type BrokerDeps struct {
 	DB                 *sql.DB
 	Cluster            clusterbus.Node
 	Live               LiveBackend
+	SelectTracks       func(context.Context, *core.Viewer, *core.Title, core.MediaInfo, core.DecideOptions, bool, bool) (core.DecideOptions, error)
 	Lookup             func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
 	Playback           core.Playback
 	Transcoder         core.Transcoder
@@ -243,6 +244,16 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	}
 	if ps == nil {
 		return frontend.PlayPlan{}, core.ErrNotAvailable
+	}
+	if b.deps.SelectTracks != nil {
+		selected, err := b.deps.SelectTracks(ctx, v, title, ps.Info, req.Intent.Options, req.Intent.AudioSet, req.Intent.SubtitleSet)
+		if err != nil {
+			if !existed {
+				b.deps.Playback.Stop(ps.ID)
+			}
+			return frontend.PlayPlan{}, err
+		}
+		req.Intent.Options = selected
 	}
 	dec, err := b.decideProfile(ps, req)
 	if err != nil {

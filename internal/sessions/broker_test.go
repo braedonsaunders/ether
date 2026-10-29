@@ -92,6 +92,41 @@ func (fakeBrokerTranscoder) StartHLS(context.Context, core.HLSRequest) (core.HLS
 func (fakeBrokerTranscoder) Session(string) (core.HLSSession, bool) { return nil, false }
 func (fakeBrokerTranscoder) Stop(string)                            {}
 func (fakeBrokerTranscoder) HWAccel() core.HWAccel                  { return core.HWAccel{} }
+
+type selectionTranscoder struct {
+	fakeBrokerTranscoder
+	audio, subtitle int
+}
+
+func (s *selectionTranscoder) Decide(_ core.MediaInfo, _ core.ClientCaps, opts core.DecideOptions) core.Decision {
+	s.audio, s.subtitle = opts.AudioStream, opts.SubtitleStream
+	return core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: "mp4"}
+}
+func TestBrokerAppliesTrackSelectionsBeforeDecision(t *testing.T) {
+	ctx := context.Background()
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	tc := &selectionTranscoder{}
+	b, err := NewBroker(BrokerDeps{Events: events, Playback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}, Transcoder: tc, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}, SelectTracks: func(_ context.Context, _ *core.Viewer, _ *core.Title, _ core.MediaInfo, opts core.DecideOptions, audioSet, subtitleSet bool) (core.DecideOptions, error) {
+		if !audioSet || !subtitleSet {
+			t.Fatal("explicit flags lost")
+		}
+		opts.AudioStream = 12
+		opts.SubtitleStream = -1
+		return opts, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	_, err = b.Plan(ctx, frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "d"}, Protocol: "jellyfin", Item: core.MovieKey(1), Intent: frontend.PlayIntent{AudioSet: true, SubtitleSet: true, Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil || tc.audio != 12 || tc.subtitle != -1 {
+		t.Fatalf("selected audio=%d subtitle=%d err=%v", tc.audio, tc.subtitle, err)
+	}
+}
 func TestBrokerMultiProtocolAdmissionAndMedia(t *testing.T) {
 	ctx := context.Background()
 	p := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 5}

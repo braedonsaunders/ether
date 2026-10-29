@@ -43,6 +43,13 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	}}
 	return sessions.NewBroker(sessions.BrokerDeps{
 		DB: a.db, Cluster: a.clusterNode(), Live: live,
+		SelectTracks: func(ctx context.Context, viewer *core.Viewer, title *core.Title, info core.MediaInfo, opts core.DecideOptions, audioSet, subtitleSet bool) (core.DecideOptions, error) {
+			if a.trackprefs == nil {
+				return opts, nil
+			}
+			prefs := experience.TrackPreferences{Source: a.trackprefs, GetTitle: a.catalog.Get}
+			return selectBrokerTracks(ctx, prefs, viewer, title, info, opts, audioSet, subtitleSet, func(err error) { a.log.Warn("track preferences unavailable", "err", err) })
+		},
 		Lookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
 			title, err := a.catalog.Get(ctx, key)
 			if err != nil {
