@@ -90,6 +90,39 @@ func readEntry(t *testing.T, dir string, n int) Entry {
 	t.Fatalf("missing capture %d", n)
 	return Entry{}
 }
+
+func TestCaptureDistinguishesProxyFailureFromReferenceError(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "reference unavailable", http.StatusBadGateway)
+	}))
+	u, _ := url.Parse(up.URL)
+	dir := t.TempDir()
+	rec, err := New("jellyfin", "infuse", dir, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := httptest.NewServer(rec)
+	defer proxy.Close()
+	resp, err := proxy.Client().Get(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if got := readEntry(t, dir, 1).ResponseOrigin; got != "reference" {
+		t.Fatalf("reference origin: %q", got)
+	}
+	up.Close()
+	resp, err = proxy.Client().Get(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	entry := readEntry(t, dir, 2)
+	if entry.ResponseOrigin != "proxy-error" || entry.Response.Status != http.StatusBadGateway {
+		t.Fatalf("proxy failure: %+v", entry)
+	}
+}
 func TestProxyRedactsAndForwards(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Emby-Token") != "secret-token" {

@@ -34,6 +34,7 @@ type Entry struct {
 	Client            string           `json:"client"`
 	Request           Request          `json:"request"`
 	Response          conform.Response `json:"response"`
+	ResponseOrigin    string           `json:"response_origin,omitempty"`
 	RequestTruncated  bool             `json:"request_truncated,omitempty"`
 	ResponseTruncated bool             `json:"response_truncated,omitempty"`
 }
@@ -98,6 +99,7 @@ func New(protocol, client, dir string, upstream *url.URL) (*Recorder, error) {
 	r.proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, e error) {
 		if s, ok := req.Context().Value(stateKey{}).(*state); ok {
 			s.entry.Response.Status = http.StatusBadGateway
+			s.entry.ResponseOrigin = "proxy-error"
 			s.finish()
 		}
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
@@ -108,6 +110,7 @@ func New(protocol, client, dir string, upstream *url.URL) (*Recorder, error) {
 			return nil
 		}
 		s.entry.Response.Status = resp.StatusCode
+		s.entry.ResponseOrigin = "reference"
 		s.entry.Response.Headers = safeResponseHeaders(resp.Header)
 		if location := resp.Header.Get("Location"); location != "" {
 			if u, e := url.Parse(location); e == nil {
