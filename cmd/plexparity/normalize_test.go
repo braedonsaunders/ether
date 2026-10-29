@@ -33,6 +33,10 @@ func TestSegmentTimestampNormalizationIsScoped(t *testing.T) {
 	if normalizeCaptureHeaders(segment).Get("Last-Modified") != "" {
 		t.Fatal("segment timestamp retained")
 	}
+	segment.path = "livetv:program-segment"
+	if normalizeCaptureHeaders(segment).Get("Last-Modified") != "" || segment.response.Headers.Get("Last-Modified") == "" {
+		t.Fatal("live segment timestamp was not scoped to the comparison")
+	}
 	segment.path = "/library/metadata/1"
 	if normalizeCaptureHeaders(segment).Get("Last-Modified") == "" {
 		t.Fatal("nonsegment timestamp removed")
@@ -46,6 +50,12 @@ func TestBinaryPayloadIsNeverNormalized(t *testing.T) {
 		if bytes.Equal(normalizeCaptureBody(a), normalizeCaptureBody(b)) {
 			t.Fatalf("binary bytes normalized for %s", path)
 		}
+	}
+	a := capture{path: "trickplay:frame", response: protocol.Response{Headers: http.Header{"Content-Type": {"image/jpeg"}}, Body: []byte("X-Ether-Stream-Token=one")}}
+	b := a
+	b.response.Body = []byte("X-Ether-Stream-Token=two")
+	if bytes.Equal(normalizeCaptureBody(a), normalizeCaptureBody(b)) {
+		t.Fatal("JPEG frame bytes were normalized")
 	}
 }
 

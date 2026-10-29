@@ -6,11 +6,15 @@ crowd_diag=${3:-0}
 notifications_only=${4:-0}
 livetv_only=${5:-0}
 downloads_only=${6:-0}
+trickplay_only=${7:-0}
+subtitles_only=${8:-0}
 case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
 case "$crowd_diag" in 0|1) ;; *) echo 'invalid crowd diagnostic mode' >&2; exit 1;; esac
 case "$notifications_only" in 0|1) ;; *) echo 'invalid notification-only mode' >&2; exit 1;; esac
 case "$livetv_only" in 0|1) ;; *) echo 'invalid live TV-only mode' >&2; exit 1;; esac
 case "$downloads_only" in 0|1) ;; *) echo 'invalid downloads-only mode' >&2; exit 1;; esac
+case "$trickplay_only" in 0|1) ;; *) echo 'invalid trickplay-only mode' >&2; exit 1;; esac
+case "$subtitles_only" in 0|1) ;; *) echo 'invalid subtitles-only mode' >&2; exit 1;; esac
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -28,6 +32,7 @@ replacements = {
   ('a.closers = append(a.closers, a.tmdb.Close)', 'parityConfigureTMDB(a.tmdb)\n\ta.closers = append(a.closers, a.tmdb.Close)')],
  "build_personalization.go": [
   ('state.Options{Logger:', 'state.Options{Now: parityClock(), Logger:'),
+  ('subtitles.Options{\n', 'subtitles.Options{\n        BaseURL: paritySubtitleBaseURL(),\n        Now: parityClock(),\n'),
   ('personalize.Options{\n', 'personalize.Options{\n        Now: parityClock(),\n'),
   ('a.closers = append(a.closers, a.personalize.Close)', 'if err := parityWarmPersonalization(ctx, a); err != nil { a.personalize.Close(); return err }\n\ta.closers = append(a.closers, a.personalize.Close)')],
  "build_identity.go": [('plextv.Options{Identity:', 'plextv.Options{BaseURL: parityPlexTVBaseURL(), Identity:'), ('auth.Options{\n', 'auth.Options{\n        Now: parityClock(),\n')],
@@ -121,7 +126,7 @@ docker run --rm --network none \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
  cd /baseline

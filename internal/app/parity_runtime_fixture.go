@@ -60,6 +60,8 @@ func parityWarmPersonalization(ctx context.Context, a *App) error {
 
 func parityPlexTVBaseURL() string { return os.Getenv("ETHER_PARITY_PLEXTV_URL") }
 
+func paritySubtitleBaseURL() string { return os.Getenv("ETHER_PARITY_SUBTITLES_URL") }
+
 // Fixture catalogue is pre-seeded; asynchronous refresh would race requests.
 func parityRunCatalogueWorkers() bool { return false }
 

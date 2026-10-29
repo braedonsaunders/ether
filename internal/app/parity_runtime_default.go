@@ -25,6 +25,8 @@ func parityWarmPersonalization(context.Context, *App) error { return nil }
 
 func parityPlexTVBaseURL() string { return "" }
 
+func paritySubtitleBaseURL() string { return "" }
+
 func parityRunCatalogueWorkers() bool { return true }
 
 func parityRunRegistrar() bool { return true }

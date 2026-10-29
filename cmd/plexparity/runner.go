@@ -66,6 +66,9 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	plexTracker := &fixtureTracker{}
 	plexTV := httptest.NewServer(trackedPlexTVFixture(plexTracker))
 	defer plexTV.Close()
+	subtitleTracker := &fixtureTracker{}
+	subtitles := httptest.NewServer(subtitleFixture(subtitleTracker))
+	defer subtitles.Close()
 	transcripts := make([]transcript, 0, 2)
 	for i, bin := range []string{baseline, candidate} {
 		dest := filepath.Join(dir, "server")
@@ -88,6 +91,11 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 			c.Server.Port = port
 			c.Cache.Dir = filepath.Join(dest, "cache")
 			c.Transcode.TempDir = filepath.Join(dest, "transcode")
+			if os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1" {
+				c.OpenSubtitles.Enabled = true
+				c.OpenSubtitles.APIKey = "parity-fixture"
+				c.Cache.DisableSpeculation = true
+			}
 			return nil
 		}); err != nil {
 			return err
@@ -105,7 +113,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		cmd := exec.CommandContext(runCtx, bin, "--data-dir", dest)
 		cmd.Stdout = log
 		cmd.Stderr = log
-		cmd.Env = append(os.Environ(), "ETHER_PARITY_TMDB_URL="+tmdb.URL+"/3", "ETHER_PARITY_PLEXTV_URL="+plexTV.URL)
+		cmd.Env = append(os.Environ(), "ETHER_PARITY_TMDB_URL="+tmdb.URL+"/3", "ETHER_PARITY_PLEXTV_URL="+plexTV.URL, "ETHER_PARITY_SUBTITLES_URL="+subtitles.URL)
 		if err = cmd.Start(); err != nil {
 			cancel()
 			log.Close()
@@ -180,6 +188,9 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		if missing := plexTracker.failures(); len(missing) > 0 && captureErr == nil {
 			captureErr = fmt.Errorf("Plex.tv fixture does not implement %v", missing)
 		}
+		if missing := subtitleTracker.failures(); len(missing) > 0 && captureErr == nil {
+			captureErr = fmt.Errorf("subtitle fixture does not implement %v", missing)
+		}
 		if captureErr != nil {
 			b, _ := os.ReadFile(log.Name())
 			if len(b) > 8192 {
@@ -208,6 +219,12 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	}
 	if os.Getenv("ETHER_PARITY_DOWNLOADS_ONLY") == "1" {
 		return incompleteCoverage{[]string{"only download probes executed"}}
+	}
+	if os.Getenv("ETHER_PARITY_TRICKPLAY_ONLY") == "1" {
+		return incompleteCoverage{[]string{"only trickplay probes executed"}}
+	}
+	if os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1" {
+		return incompleteCoverage{[]string{"only subtitle probes executed"}}
 	}
 	if missing := missingRoutes(); len(missing) > 0 {
 		return incompleteCoverage{missing}
