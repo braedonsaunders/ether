@@ -82,6 +82,9 @@ func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
+			if tracker != nil {
+				tracker.record(r.Method + " " + r.URL.Path)
+			}
 			http.Error(w, "unsupported method", http.StatusMethodNotAllowed)
 			return
 		}
