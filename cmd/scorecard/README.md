@@ -87,3 +87,11 @@ identity, and reports every spec operation with exact method/template matching.
 A missing registration is a review candidate: alternate routes, wildcard
 handlers, licensing and feature applicability can change the conclusion. A
 registered route does not establish complete behavior.
+
+Recorded MediaBrowser text GETs can also drive a scenario: set `profile_file`
+to a JSON profile under `internal/conform/profiles`, and set `flow` and `probe`
+to the recorded names. In this mode each target `url` is a base URL and each
+`variables` object supplies its own ID and device substitutions; `headers` can
+supply the authenticated token. Missing variables, binary, fixture-only and
+non-GET probes are rejected. Response content and state still need separate
+alignment checks before timings can be interpreted as fair comparisons.

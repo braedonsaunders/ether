@@ -16,13 +16,17 @@ import (
 )
 
 type target struct {
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	URL       string            `json:"url"`
+	Headers   map[string]string `json:"headers"`
+	Variables map[string]string `json:"variables,omitempty"`
 }
 type scenario struct {
-	Name      string `json:"name"`
-	Reference target `json:"reference"`
-	Ether     target `json:"ether"`
+	Name        string `json:"name"`
+	ProfileFile string `json:"profile_file,omitempty"`
+	Flow        string `json:"flow,omitempty"`
+	Probe       string `json:"probe,omitempty"`
+	Reference   target `json:"reference"`
+	Ether       target `json:"ether"`
 }
 type config struct {
 	Samples     int        `json:"samples"`
@@ -41,6 +45,8 @@ type result struct {
 	Reference   measurement `json:"reference"`
 	Ether       measurement `json:"ether"`
 	Winner      string      `json:"winner"`
+	P50Winner   string      `json:"p50_winner"`
+	P95Winner   string      `json:"p95_winner"`
 }
 
 func measure(client *http.Client, t target, samples, concurrency int) measurement {
@@ -114,6 +120,18 @@ func winner(a, b measurement) string {
 	}
 	return "mixed"
 }
+func metricWinner(reference, ether float64, refErrors, etherErrors int) string {
+	if refErrors > 0 || etherErrors > 0 {
+		return "inconclusive"
+	}
+	if reference == ether {
+		return "tie"
+	}
+	if ether < reference {
+		return "ether"
+	}
+	return "reference"
+}
 func run(c config) ([]result, error) {
 	if c.Samples < 1 || len(c.Concurrency) == 0 || len(c.Scenarios) == 0 {
 		return nil, errors.New("samples, concurrency and scenarios are required")
@@ -122,6 +140,13 @@ func run(c config) ([]result, error) {
 	defer client.CloseIdleConnections()
 	var out []result
 	for _, s := range c.Scenarios {
+		if s.ProfileFile != "" {
+			var err error
+			s, err = profileScenario(s)
+			if err != nil {
+				return nil, err
+			}
+		}
 		if s.Name == "" || s.Reference.URL == "" || s.Ether.URL == "" {
 			return nil, errors.New("scenario requires name and both URLs")
 		}
@@ -131,7 +156,7 @@ func run(c config) ([]result, error) {
 			}
 			a := measure(client, s.Reference, c.Samples, n)
 			b := measure(client, s.Ether, c.Samples, n)
-			out = append(out, result{s.Name, n, a, b, winner(a, b)})
+			out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, a.Errors, b.Errors), P95Winner: metricWinner(a.P95, b.P95, a.Errors, b.Errors)})
 		}
 	}
 	return out, nil

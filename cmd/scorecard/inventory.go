@@ -30,10 +30,8 @@ type inventoryReport struct {
 	Routes     []inventoryRow `json:"routes"`
 }
 
-var templateVariable = regexp.MustCompile(`\{[^{}]+\}`)
-
 func normalizeRoute(path string) string {
-	return strings.ToLower(templateVariable.ReplaceAllString(strings.TrimSuffix(path, "/"), "{}"))
+	return strings.ToLower(regexp.MustCompile(`\{[^{}]+\}`).ReplaceAllString(strings.TrimSuffix(path, "/"), "{}"))
 }
 func inventory(args []string) error {
 	fs := flag.NewFlagSet("inventory", flag.ContinueOnError)
