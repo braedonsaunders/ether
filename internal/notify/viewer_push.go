@@ -118,9 +118,9 @@ func (p *ViewerPush) Registered(ctx context.Context, viewer *core.User, endpoint
 	if err := p.Preferences.authorized(ctx, viewer); err != nil {
 		return false, err
 	}
-	var found int
+	var found bool
 	err := p.Preferences.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM viewer_push_subscriptions WHERE viewer_id=? AND endpoint_hash=?)`, viewer.ID, pushHash(endpoint)).Scan(&found)
-	return found != 0, err
+	return found, err
 }
 
 // PurgeViewer removes all destinations after membership deactivation or revocation.
@@ -275,12 +275,12 @@ func (p *ViewerPush) Drain(ctx context.Context) error {
 		if !allowed {
 			continue
 		}
-		var current int
+		var current bool
 		err = p.Preferences.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM viewer_push_subscriptions s JOIN viewer_alert_preferences p ON p.viewer_id=s.viewer_id JOIN identity_grants g ON g.hash=s.grant_hash AND g.viewer_id=s.viewer_id AND g.surface='viewer-portal' AND g.revoked=0 AND g.expires>? JOIN viewer_episode_alerts a ON a.viewer_id=s.viewer_id AND a.episode_key=? WHERE s.viewer_id=? AND s.endpoint_hash=? AND s.subscription=? AND p.enabled=1 AND p.enabled_at=a.preference_generation AND s.created_at<a.detected_at)`, now.UnixMilli(), item.key, item.id, item.hash, item.sealed).Scan(&current)
 		if err != nil {
 			return err
 		}
-		if current == 0 {
+		if !current {
 			continue
 		}
 		event := Event{Title: item.show, Message: item.episode, Kind: "viewer.episode", At: now}
