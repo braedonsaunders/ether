@@ -227,6 +227,13 @@ func TestNewDownloadRemuxerCleansStaleFiles(t *testing.T) {
 	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Sob a política única de limpeza, só some quem passou de
+	// staleDownloadAge: o fixture precisa ser velho de verdade (mtime),
+	// não apenas ter "stale" no nome.
+	old := time.Now().Add(-2 * staleDownloadAge)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := m.NewDownloadRemuxer(config.Downloads{}); err != nil {
 		t.Fatal(err)
 	}
@@ -235,12 +242,13 @@ func TestNewDownloadRemuxerCleansStaleFiles(t *testing.T) {
 	}
 }
 
-// Startup cleanup in NewDownloadRemuxer must remove only the files the
-// remuxer itself creates (dl-*.mp4 and their .part partials, with no age
-// gate) and preserve everything else sharing downloads/: unrelated files
-// and other apps' subdirs are not Ether's to delete. (The pre-existing
-// TestNewDownloadRemuxerCleansStaleFiles above never assumed a total
-// wipe — it only had a dl-* file — so it stays unchanged.)
+// Startup cleanup in NewDownloadRemuxer follows the single stale-download
+// policy (see staleDownloadAge): it must remove only the files the remuxer
+// itself creates (dl-*.mp4 and their .part partials), and only once stale,
+// preserving everything else sharing downloads/: unrelated files and other
+// apps' subdirs are not Ether's to delete. Fixtures ether-owned são
+// envelhecidos via Chtimes porque, frescos, a política manda preservá-los
+// (ver TestNewDownloadRemuxerKeepsFreshDownloadFiles).
 func TestNewDownloadRemuxerPreservesUnrelatedFiles(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{})
@@ -260,6 +268,16 @@ func TestNewDownloadRemuxerPreservesUnrelatedFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Envelhece os ether-owned (e o dl-notes.txt, para provar que o predicado
+	// isRemuxDownloadFile — e não o prefixo dl-* — decide): sem passar de
+	// staleDownloadAge nada disso seria removível pela política única.
+	old := time.Now().Add(-2 * staleDownloadAge)
+	for _, rel := range append(append([]string{}, ether...), "dl-notes.txt") {
+		p := filepath.Join(dir, rel)
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := m.NewDownloadRemuxer(config.Downloads{}); err != nil {
 		t.Fatal(err)
 	}
@@ -271,6 +289,34 @@ func TestNewDownloadRemuxerPreservesUnrelatedFiles(t *testing.T) {
 	for _, rel := range alien {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("unrelated %s removed by startup cleanup: %v", rel, err)
+		}
+	}
+}
+
+// Teste-chave da política única: um dl-* fresco (mtime agora, dentro de
+// staleDownloadAge) pode ser de outro processo ou de um restart recente e
+// sobrevive à criação do remuxer no boot — só o velho (> staleDownloadAge)
+// é removido, aqui e em cleanStaleDownloads.
+func TestNewDownloadRemuxerKeepsFreshDownloadFiles(t *testing.T) {
+	fr := newFakeRunner()
+	m := newTestManager(t, fr, config.Transcode{})
+	dir := filepath.Join(m.tempDir, "downloads")
+	fresh := []string{"dl-ab12cd34.mp4", "dl-ab12cd34.mp4.part"}
+	for _, rel := range fresh {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := m.NewDownloadRemuxer(config.Downloads{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, rel := range fresh {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Errorf("fresh download file %s removed by startup cleanup: %v", rel, err)
 		}
 	}
 }

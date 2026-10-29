@@ -261,11 +261,15 @@ func New(cfg config.Transcode, logger *slog.Logger, opts ...Option) (*Manager, e
 	return m, nil
 }
 
-// staleDownloadAge is how old a downloads/dl-* file must be before
-// cleanStale may remove it. An active download remux writes its .part
-// file continuously, so its mtime keeps advancing; a crash orphan stops
-// advancing and crosses this age. A fresh dl-* may therefore still be
-// live (notably one owned by another process) and is kept.
+// staleDownloadAge is how old a remux download file must be before the
+// single stale-download policy may remove it. That policy — only files
+// matching isRemuxDownloadFile, and only once older than this age — is
+// implemented once in cleanStaleDownloads and applied by both cleanStale
+// (boot, via New) and NewDownloadRemuxer (download.go). An active download
+// remux writes its .part file continuously, so its mtime keeps advancing;
+// a crash orphan stops advancing and crosses this age. A fresh dl-* may
+// therefore still be live (notably one owned by another process, or left
+// by a recent restart) and is kept by both callers.
 const staleDownloadAge = time.Hour
 
 // cleanStale removes artifacts left by a previous process. It runs only
@@ -280,8 +284,10 @@ const staleDownloadAge = time.Hour
 //     cleanStale cannot tell another process's live s-* session sharing
 //     the same tempDir from an orphan, so cluster/multi-instance
 //     deployments must give each instance a distinct TempDir.
-//   - downloads/dl-* offline-download files (and their .part partials),
-//     but only once stale (see staleDownloadAge).
+//   - downloads/ offline-download files matching isRemuxDownloadFile
+//     (dl-*.mp4 and their .part partials), but only once stale (see
+//     staleDownloadAge) — the same single policy NewDownloadRemuxer
+//     applies, via cleanStaleDownloads.
 func (m *Manager) cleanStale() {
 	entries, err := os.ReadDir(m.tempDir)
 	if err != nil {
@@ -297,9 +303,13 @@ func (m *Manager) cleanStale() {
 	}
 }
 
-// cleanStaleDownloads removes only the dl-* files DownloadRemuxer creates
-// in its dir, and only once they are older than staleDownloadAge;
-// unrelated files sharing the dir, and fresh dl-* files, are kept.
+// cleanStaleDownloads is the single stale-download cleanup policy,
+// shared by cleanStale (boot, via New) and NewDownloadRemuxer
+// (download.go): it removes only the files DownloadRemuxer creates in
+// its dir (isRemuxDownloadFile: dl-*.mp4 and their .part partials —
+// never e.g. dl-notas.txt), and only once they are older than
+// staleDownloadAge; unrelated files sharing the dir, and fresh dl-*
+// files, are kept.
 func cleanStaleDownloads(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -307,7 +317,7 @@ func cleanStaleDownloads(dir string) {
 	}
 	cutoff := time.Now().Add(-staleDownloadAge)
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), "dl-") {
+		if e.IsDir() || !isRemuxDownloadFile(e.Name()) {
 			continue
 		}
 		info, err := e.Info()

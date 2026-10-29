@@ -745,6 +745,7 @@ func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
 		"other/keep.txt",
 		"keep.txt",
 		"downloads/keep.txt",       // unrelated file inside the downloads dir
+		"downloads/dl-notas.txt",   // dl-* mas não é arquivo do remuxer (isRemuxDownloadFile): nem velho some
 		"downloads/dl-fresh99.mp4", // fresh dl-*: may be a live download
 		"downloads/dl-fresh99.mp4.part",
 		"s-notes.txt", // s-* file, not a session dir
@@ -766,6 +767,11 @@ func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
 		if err := os.Chtimes(p, old, old); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// dl-notas.txt também velho: se o predicado fosse só o prefixo dl-*,
+	// ele sumiria — isRemuxDownloadFile é quem deve decidir.
+	if err := os.Chtimes(filepath.Join(dir, "downloads/dl-notas.txt"), old, old); err != nil {
+		t.Fatal(err)
 	}
 	(&Manager{tempDir: dir}).cleanStale()
 	if _, err := os.Stat(filepath.Join(dir, "s-old-1234")); !os.IsNotExist(err) {

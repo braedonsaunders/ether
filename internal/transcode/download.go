@@ -62,26 +62,19 @@ type DownloadRemuxer struct {
 var _ core.DownloadRemuxer = (*DownloadRemuxer)(nil)
 
 // NewDownloadRemuxer prepares the download temp dir under the transcode
-// temp dir and removes files a previous process left behind.
+// temp dir and removes stale files a previous process left behind.
 func (m *Manager) NewDownloadRemuxer(cfg config.Downloads) (*DownloadRemuxer, error) {
 	dir := filepath.Join(m.tempDir, "downloads")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("transcode: download dir: %w", err)
 	}
-	// No ether-owned file survives a restart: queue items live in
-	// memory, so any remux output here is stale. Remove only the files
-	// RemuxDownload itself creates (see isRemuxDownloadFile), with no
-	// age gate — the same boot semantics as s-* sessions in cleanStale;
-	// that function's age gate is a separate layer. Anything else
-	// sharing the dir is not ours and is kept.
-	if entries, err := os.ReadDir(dir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() || !isRemuxDownloadFile(e.Name()) {
-				continue
-			}
-			_ = os.Remove(filepath.Join(dir, e.Name()))
-		}
-	}
+	// Aplica a política única de limpeza de downloads,
+	// cleanStaleDownloads (manager.go) — a mesma do cleanStale no boot:
+	// só arquivos que RemuxDownload cria (isRemuxDownloadFile) e só após
+	// staleDownloadAge. Um dl-* fresco pode ser de outro processo ou de
+	// um restart recente e sobrevive; qualquer outra coisa no dir não é
+	// nossa e é mantida.
+	cleanStaleDownloads(dir)
 	budget := cfg.DiskBudgetBytes
 	if budget <= 0 {
 		budget = 20 << 30
