@@ -77,6 +77,9 @@ type sessionEncoding struct {
 	endSeg   int // last segment of the input once a run hit EOF; -1 unknown
 	failures int // consecutive runs that failed without output
 	failErr  error
+	// hevcFallbackWarned latches the HEVC->libx264 fallback warning to
+	// at most once per session (warned from startRunLocked, under mu).
+	hevcFallbackWarned bool
 }
 
 // sessionDelivery owns one aspect of the session. Fields are guarded by Session.mu.

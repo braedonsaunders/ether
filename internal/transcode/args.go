@@ -2,6 +2,7 @@ package transcode
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -110,6 +111,24 @@ func videoEncoder(codec string, accel core.HWAccel, f features) (name string, hw
 	default:
 		return "libx264", false
 	}
+}
+
+// warnVideoEncoderFallback logs the otherwise silent HEVC->H.264 fallback
+// in videoEncoder: HEVC was requested but neither a hardware HEVC encoder
+// nor libx265 is available, so the run encodes libx264 instead. It is a
+// no-op for every other encoder choice. It reports whether it warned so
+// the per-session caller can latch it to at most once per session
+// (videoEncoder itself is pure and runs several times per run).
+func warnVideoEncoderFallback(log *slog.Logger, codec string, accel core.HWAccel, f features) bool {
+	if log == nil || codec != "hevc" {
+		return false
+	}
+	if enc, hw := videoEncoder(codec, accel, f); !hw && enc == "libx264" {
+		log.Warn("HEVC requested but no HEVC encoder available; falling back to libx264",
+			"requestedCodec", codec, "encoder", enc)
+		return true
+	}
+	return false
 }
 
 // buildArgs assembles the ffmpeg command line for a run: HLS, or DASH

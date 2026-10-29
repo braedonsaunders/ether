@@ -1,6 +1,8 @@
 package transcode
 
 import (
+	"bytes"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -100,6 +102,42 @@ func inputIndex(args []string) int {
 		}
 	}
 	return -1
+}
+
+// HEVC without libx265 and without a hardware HEVC encoder silently fell
+// back to libx264; the fallback decision must now emit a structured Warn,
+// and only for that decision.
+func TestVideoEncoderHEVCWithoutLibx265WarnsFallback(t *testing.T) {
+	noX265 := features{encoders: map[string]bool{"libx264": true}}
+	if enc, hw := videoEncoder("hevc", core.HWAccel{Name: AccelNone}, noX265); enc != "libx264" || hw {
+		t.Fatalf("videoEncoder(hevc, no libx265) = %q, hw=%v; want libx264, false", enc, hw)
+	}
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	warnVideoEncoderFallback(log, "hevc", core.HWAccel{Name: AccelNone}, noX265)
+	out := buf.String()
+	for _, want := range []string{"level=WARN", "falling back to libx264", "requestedCodec=hevc", "encoder=libx264"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("fallback log %q missing %q", out, want)
+		}
+	}
+	// No warning when HEVC is actually encodable, or H.264 was requested.
+	for _, tc := range []struct {
+		name  string
+		codec string
+		accel core.HWAccel
+		feat  features
+	}{
+		{"libx265 present", "hevc", core.HWAccel{Name: AccelNone}, features{encoders: map[string]bool{"libx265": true}}},
+		{"hw hevc present", "hevc", core.HWAccel{Name: AccelNVENC, Encoders: []string{"hevc_nvenc"}}, noX265},
+		{"h264 requested", "h264", core.HWAccel{Name: AccelNone}, noX265},
+	} {
+		buf.Reset()
+		warnVideoEncoderFallback(log, tc.codec, tc.accel, tc.feat)
+		if buf.Len() != 0 {
+			t.Errorf("%s: unexpected log %q", tc.name, buf.String())
+		}
+	}
 }
 
 func TestBuildArgsRemuxTS(t *testing.T) {

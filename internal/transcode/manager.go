@@ -261,16 +261,60 @@ func New(cfg config.Transcode, logger *slog.Logger, opts ...Option) (*Manager, e
 	return m, nil
 }
 
-// cleanStale removes session directories left by a previous process.
+// staleDownloadAge is how old a downloads/dl-* file must be before
+// cleanStale may remove it. An active download remux writes its .part
+// file continuously, so its mtime keeps advancing; a crash orphan stops
+// advancing and crosses this age. A fresh dl-* may therefore still be
+// live (notably one owned by another process) and is kept.
+const staleDownloadAge = time.Hour
+
+// cleanStale removes artifacts left by a previous process. It runs only
+// from New, before this process has created any session. Only names
+// Ether itself creates under tempDir are touched; anything else in a
+// shared temp dir is kept:
+//
+//   - s-* session dirs, including everything nested in them: run-* DASH
+//     run dirs, c-* chunk dirs, rung-* rendition dirs and dash chunk-*
+//     files. These are removed unconditionally (pre-existing behaviour).
+//     That is only sound assuming a single process owns tempDir:
+//     cleanStale cannot tell another process's live s-* session sharing
+//     the same tempDir from an orphan, so cluster/multi-instance
+//     deployments must give each instance a distinct TempDir.
+//   - downloads/dl-* offline-download files (and their .part partials),
+//     but only once stale (see staleDownloadAge).
 func (m *Manager) cleanStale() {
 	entries, err := os.ReadDir(m.tempDir)
 	if err != nil {
 		return
 	}
 	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), "s-") {
+		switch {
+		case e.IsDir() && strings.HasPrefix(e.Name(), "s-"):
 			_ = os.RemoveAll(filepath.Join(m.tempDir, e.Name()))
+		case e.IsDir() && e.Name() == "downloads":
+			cleanStaleDownloads(filepath.Join(m.tempDir, e.Name()))
 		}
+	}
+}
+
+// cleanStaleDownloads removes only the dl-* files DownloadRemuxer creates
+// in its dir, and only once they are older than staleDownloadAge;
+// unrelated files sharing the dir, and fresh dl-* files, are kept.
+func cleanStaleDownloads(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := time.Now().Add(-staleDownloadAge)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), "dl-") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
 	}
 }
 

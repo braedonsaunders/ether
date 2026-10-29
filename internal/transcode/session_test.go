@@ -1,6 +1,7 @@
 package transcode
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -720,6 +722,113 @@ func TestNewStaleCleanupAndNoFFmpeg(t *testing.T) {
 	_, err := New(config.Transcode{FFmpegPath: dir + "/missing"}, nil, WithRunner(fr))
 	if !errors.Is(err, ErrFFmpegNotFound) {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// cleanStale (boot only, see New) must remove Ether-owned orphans —
+// session dirs with their nested DASH run-*/chunk and chunk c-* dirs, and
+// downloads/dl-* files older than staleDownloadAge — and nothing else in
+// a shared temp dir: fresh dl-* files (a live remux keeps writing its
+// .part, advancing mtime) and unrelated files survive.
+func TestCleanStaleRemovesOnlyEtherOrphans(t *testing.T) {
+	dir := t.TempDir()
+	ether := []string{
+		"s-old-1234/run-3/chunk-0-00001.m4s", // DASH run dir + chunk inside a session
+		"s-old-1234/run-3/init-0.m4s",
+		"s-old-1234/c-1/00000.ts", // chunk dir inside a session
+		"s-old-1234/rung-720p/00000.ts",
+		"s-old-1234/seg-0-00001.m4s",
+		"downloads/dl-ab12cd34.mp4",
+		"downloads/dl-ab12cd34.mp4.part",
+	}
+	alien := []string{
+		"other/keep.txt",
+		"keep.txt",
+		"downloads/keep.txt",       // unrelated file inside the downloads dir
+		"downloads/dl-fresh99.mp4", // fresh dl-*: may be a live download
+		"downloads/dl-fresh99.mp4.part",
+		"s-notes.txt", // s-* file, not a session dir
+	}
+	for _, rel := range append(append([]string{}, ether...), alien...) {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Age only the stale downloads past staleDownloadAge (1h); the fresh
+	// dl-* above keep their just-written mtime.
+	old := time.Now().Add(-2 * time.Hour)
+	for _, rel := range ether[5:] {
+		p := filepath.Join(dir, rel)
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	(&Manager{tempDir: dir}).cleanStale()
+	if _, err := os.Stat(filepath.Join(dir, "s-old-1234")); !os.IsNotExist(err) {
+		t.Errorf("stale session dir kept: %v", err)
+	}
+	for _, rel := range ether[5:] { // the aged downloads/dl-* orphans
+		if _, err := os.Stat(filepath.Join(dir, rel)); !os.IsNotExist(err) {
+			t.Errorf("ether orphan %s kept: %v", rel, err)
+		}
+	}
+	for _, rel := range alien {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Errorf("unrelated/fresh %s removed: %v", rel, err)
+		}
+	}
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// Wiring: a real session (fake runner) whose runs fall back HEVC->libx264
+// must warn at most once per session, however many runs startRunLocked
+// starts (StartHLS's first run plus a seek restart here). Removing the
+// call site in startRunLocked makes the count 0 and fails this test.
+func TestSessionHEVCEncoderFallbackWarnsOncePerSession(t *testing.T) {
+	fr := newFakeRunner()
+	m := newTestManager(t, fr, config.Transcode{})
+	var buf lockedBuffer
+	m.log = slog.New(slog.NewTextHandler(&buf, nil))
+	// No HW HEVC and no libx265: HEVC encodes fall back to libx264.
+	m.hw = core.HWAccel{Name: AccelNone}
+	m.feat = features{encoders: map[string]bool{"libx264": true}}
+
+	req := transcodeRequest(t, "hevc-fallback-once")
+	req.Decision.VideoCodec = "hevc"
+	req.Decision.VideoCopy = false
+	s := startSession(t, m, req) // first run: warns
+
+	s.mu.Lock()
+	err := s.startRunLocked(5, false) // seek restart: must not warn again
+	s.mu.Unlock()
+	if err != nil {
+		t.Fatalf("second startRunLocked: %v", err)
+	}
+	if n := fr.startCount(); n != 2 {
+		t.Fatalf("ffmpeg starts = %d, want 2 (two runs went through startRunLocked)", n)
+	}
+	if n := strings.Count(buf.String(), "falling back to libx264"); n != 1 {
+		t.Errorf("HEVC fallback warnings = %d, want exactly 1 per session; log:\n%s", n, buf.String())
 	}
 }
 

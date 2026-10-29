@@ -245,6 +245,10 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		// The first segment needs its whole span, and a GOP either side.
 		go hint(spec.Input, spec.Start, spec.Start+2*s.segDur)
 	}
+	if !spec.Decision.VideoCopy && !s.hevcFallbackWarned {
+		// Caller holds s.mu (startRunLocked), guarding hevcFallbackWarned.
+		s.hevcFallbackWarned = warnVideoEncoderFallback(s.log, spec.Decision.VideoCodec, spec.Accel, spec.Features)
+	}
 	args := buildArgs(spec)
 	runLog := s.log.With("run", r.seq)
 	var pp progressParser
