@@ -1,19 +1,16 @@
 {
+  "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored.",
+  "capturePolicy": "Captured reference responses; proxy errors excluded; mutating requests fixture-only; listings trimmed to 50 entries; binary bytes omitted.",
   "discoveryWarnings": [],
   "fixtureCounts": {
     "findroid": 19,
+    "infuse-jellyfin": 78,
     "jellycon": 19,
     "jellyfin-androidtv": 19,
     "streamyfin": 19,
     "swiftfin": 19
   },
   "fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.",
-  "requestErrors": null,
-  "trimmedResponses": [],
-  "protocol": "jellyfin",
-  "referenceVersion": "12.4",
-  "profileDirectory": "internal/conform/profiles/jellyfin",
-  "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored.",
   "intentionalDifferences": [
     {
       "id": "direct-stream-extra-etag",
@@ -24,5 +21,10 @@
       "direction": "target-only",
       "reason": "Ether emits an ETag for If-Range resume; an additional HTTP validator is valid even when the reference omits it."
     }
-  ]
+  ],
+  "profileDirectory": "internal/conform/profiles/jellyfin",
+  "protocol": "jellyfin",
+  "referenceVersion": "12.4",
+  "requestErrors": null,
+  "trimmedResponses": []
 }

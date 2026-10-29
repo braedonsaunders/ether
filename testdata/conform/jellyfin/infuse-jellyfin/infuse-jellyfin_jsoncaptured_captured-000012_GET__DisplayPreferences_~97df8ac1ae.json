@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "headers": {
+    "Content-Type": [
+      "application/json; charset=utf-8"
+    ]
+  },
+  "body": "eyJDbGllbnQiOiJlbWJ5IiwiQ3VzdG9tUHJlZnMiOnsiY2hyb21lY2FzdFZlcnNpb24iOiJzdGFibGUiLCJkYXNoYm9hcmRUaGVtZSI6bnVsbCwiZW5hYmxlTmV4dFZpZGVvSW5mb092ZXJsYXkiOiJGYWxzZSIsInNraXBCYWNrTGVuZ3RoIjoiMTAwMDAiLCJza2lwRm9yd2FyZExlbmd0aCI6IjMwMDAwIiwidHZob21lIjpudWxsfSwiSWQiOiIke2lkXzc4fSIsIlByaW1hcnlJbWFnZUhlaWdodCI6MjUwLCJQcmltYXJ5SW1hZ2VXaWR0aCI6MjUwLCJSZW1lbWJlckluZGV4aW5nIjpmYWxzZSwiUmVtZW1iZXJTb3J0aW5nIjpmYWxzZSwiU2Nyb2xsRGlyZWN0aW9uIjoiSG9yaXpvbnRhbCIsIlNob3dCYWNrZHJvcCI6dHJ1ZSwiU2hvd1NpZGViYXIiOmZhbHNlLCJTb3J0QnkiOiJTb3J0TmFtZSIsIlNvcnRPcmRlciI6IkFzY2VuZGluZyJ9"
+}

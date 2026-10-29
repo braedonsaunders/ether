@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "headers": {
+    "Content-Type": [
+      "application/json; charset=utf-8"
+    ]
+  },
+  "body": "eyJJZCI6IltSRURBQ1RFRF0iLCJMb2NhbEFkZHJlc3MiOiJodHRwOi8vW1JFREFDVEVEX0lQXTo4MDk2IiwiT3BlcmF0aW5nU3lzdGVtIjoiIiwiUHJvZHVjdE5hbWUiOiJKZWxseWZpbiBTZXJ2ZXIiLCJTZXJ2ZXJOYW1lIjoiW1JFREFDVEVEXSIsIlN0YXJ0dXBXaXphcmRDb21wbGV0ZWQiOnRydWUsIlZlcnNpb24iOiIxMi40LjAifQ=="
+}
