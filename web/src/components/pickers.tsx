@@ -9,6 +9,7 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { Plus, Search, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { localized, t, tn } from "../i18n";
 import { api, errorMessage, isAbort } from "../lib/api";
 import type {
   FacetName,
@@ -21,6 +22,7 @@ import type {
 import { useDebouncedValue } from "../lib/hooks";
 import { Artwork } from "./Artwork";
 import { titleSubtitle } from "./Poster";
+import { useLocale } from "../i18n/react";
 
 // ---- Facets ---------------------------------------------------------------------
 
@@ -75,25 +77,28 @@ export function FacetPicker({
   placeholder?: string;
 }) {
   const { values, error } = useFacet(type, facet);
+  const { locale } = useLocale();
   const options = useMemo(() => {
     const opts = (values ?? []).map((v) => ({
       value: v.key,
       label: v.title,
-      description: v.count ? `${v.count.toLocaleString()} titles` : undefined,
+      description: v.count ? tn(v.count, "{count} title", "{count} titles") : undefined,
     }));
     // Keep values that aren't in the facet list (e.g. from a template) selectable.
     for (const v of value)
       if (!opts.some((o) => o.value === v))
         opts.push({ value: v, label: v, description: undefined });
     return opts;
-  }, [values, value]);
+  }, [values, value, locale]);
   if (error) {
     return (
       <TextListFallback
         value={value}
         onChange={onChange}
         ariaLabel={ariaLabel}
-        hint={`Couldn't load the list: ${errorMessage(error)}. Type values separated by commas.`}
+        hint={t("Couldn't load the list: {error}. Type values separated by commas.", {
+          error: errorMessage(error),
+        })}
       />
     );
   }
@@ -103,8 +108,11 @@ export function FacetPicker({
       onChange={onChange}
       options={options}
       ariaLabel={ariaLabel}
-      placeholder={values === null ? "Loading…" : (placeholder ?? "Choose…")}
-      searchPlaceholder="Search…"
+      placeholder={values === null ? t("Loading…") : (placeholder ?? t("Choose…"))}
+      searchPlaceholder={t("Search…")}
+      noMatchesLabel={t("No matches")}
+      clearLabel={t("Clear")}
+      selectAllLabel={t("Select all")}
       clearable
       maxVisibleValues={4}
     />
@@ -166,7 +174,11 @@ export function FacetSelect({
       onChange={onChange}
       options={options}
       ariaLabel={ariaLabel}
-      placeholder={values === null ? "Loading…" : "Choose…"}
+      placeholder={values === null ? t("Loading…") : t("Choose…")}
+      searchPlaceholder={t("Search…")}
+      noMatchesLabel={t("No matches")}
+      selectLabel={t("Select")}
+      closeLabel={t("Close")}
       searchable
     />
   );
@@ -180,14 +192,14 @@ export interface Picked {
   image?: string;
 }
 
-const LOOKUP_NOUN: Record<LookupKind, string> = {
-  person: "people",
-  keyword: "keywords",
-  company: "studios",
-  network: "networks",
-  collection: "collections",
-  watchProvider: "services",
-};
+const LOOKUP_PLACEHOLDER = localized<Record<LookupKind, string>>(() => ({
+  person: t("Search people…"),
+  keyword: t("Search keywords…"),
+  company: t("Search studios…"),
+  network: t("Search networks…"),
+  collection: t("Search collections…"),
+  watchProvider: t("Search services…"),
+}));
 
 /**
  * Async search-as-you-type picker backed by /catalog/lookup. Multi mode shows
@@ -277,7 +289,7 @@ export function LookupPicker({
               {v.name}
               <button
                 type="button"
-                aria-label={`Remove ${v.name}`}
+                aria-label={t("Remove {name}", { name: v.name })}
                 onClick={() => onChange(value.filter((x) => x.id !== v.id))}
                 className="ml-0.5 rounded-full p-0.5 text-fg-subtle hover:bg-surface-hover hover:text-fg"
               >
@@ -302,7 +314,7 @@ export function LookupPicker({
             aria-autocomplete="list"
             className="pl-8"
             value={q}
-            placeholder={placeholder ?? `Search ${LOOKUP_NOUN[kind]}…`}
+            placeholder={placeholder ?? LOOKUP_PLACEHOLDER[kind]}
             onFocus={() => setOpen(true)}
             onChange={(e) => {
               setQ(e.currentTarget.value);
@@ -324,7 +336,7 @@ export function LookupPicker({
         </div>
       ) : (
         <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
-          Change
+          {t("Change")}
         </Button>
       )}
       {open && (results.length > 0 || loading || error || debounced.trim().length >= 2) ? (
@@ -334,11 +346,13 @@ export function LookupPicker({
           className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-lg border border-border bg-elevated p-1 shadow-lg"
         >
           {loading && results.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-fg-muted">Searching…</li>
+            <li className="px-3 py-2 text-sm text-fg-muted">{t("Searching…")}</li>
           ) : null}
           {error ? <li className="px-3 py-2 text-sm text-danger">{error}</li> : null}
           {!loading && !error && results.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-fg-muted">No matches for “{debounced}”</li>
+            <li className="px-3 py-2 text-sm text-fg-muted">
+              {t("No matches for “{query}”", { query: debounced })}
+            </li>
           ) : null}
           {results.map((r, i) => {
             const picked = value.some((v) => v.id === r.id);
@@ -363,7 +377,7 @@ export function LookupPicker({
                     ) : null}
                   </span>
                   {picked ? (
-                    <Badge variant="success">Added</Badge>
+                    <Badge variant="success">{t("Added")}</Badge>
                   ) : (
                     <Plus size={14} className="text-fg-subtle" />
                   )}
@@ -384,9 +398,9 @@ export function TitleSearch({
   onPick,
   type,
   excludeKeys,
-  placeholder = "Search the catalogue…",
+  placeholder = t("Search the catalogue…"),
 }: {
-  onPick: (t: TitleCard) => void;
+  onPick: (title: TitleCard) => void;
   type?: string;
   excludeKeys?: Set<string>;
   placeholder?: string;
@@ -429,33 +443,42 @@ export function TitleSearch({
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
           placeholder={placeholder}
-          aria-label="Search titles"
+          aria-label={t("Search titles")}
         />
       </div>
-      {loading ? <p className="text-xs text-fg-muted">Searching…</p> : null}
+      {loading ? <p className="text-xs text-fg-muted">{t("Searching…")}</p> : null}
       {error ? <p className="text-xs text-danger">{error}</p> : null}
       {!loading && !error && debounced.trim().length >= 2 && items.length === 0 ? (
-        <p className="text-xs text-fg-muted">No titles match “{debounced}”.</p>
+        <p className="text-xs text-fg-muted">
+          {t("No titles match “{query}”.", { query: debounced })}
+        </p>
       ) : null}
       {items.length ? (
-        <ul className="max-h-72 space-y-1 overflow-auto" aria-label="Search results">
-          {items.map((t) => {
-            const added = excludeKeys?.has(t.key);
+        <ul className="max-h-72 space-y-1 overflow-auto" aria-label={t("Search results")}>
+          {items.map((item) => {
+            const added = excludeKeys?.has(item.key);
             return (
-              <li key={t.key}>
+              <li key={item.key}>
                 <button
                   type="button"
                   disabled={added}
-                  onClick={() => onPick(t)}
+                  onClick={() => onPick(item)}
                   className="flex w-full items-center gap-2.5 rounded-md p-1.5 text-left text-sm hover:bg-surface-hover disabled:opacity-60"
                 >
-                  <Artwork src={t.poster} alt="" title="" className="h-12 w-8 shrink-0 rounded" />
+                  <Artwork
+                    src={item.poster}
+                    alt=""
+                    title=""
+                    className="h-12 w-8 shrink-0 rounded"
+                  />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-fg">{t.title}</span>
-                    <span className="block truncate text-xs text-fg-muted">{titleSubtitle(t)}</span>
+                    <span className="block truncate text-fg">{item.title}</span>
+                    <span className="block truncate text-xs text-fg-muted">
+                      {titleSubtitle(item)}
+                    </span>
                   </span>
                   {added ? (
-                    <Badge variant="secondary">Added</Badge>
+                    <Badge variant="secondary">{t("Added")}</Badge>
                   ) : (
                     <Plus size={14} className="text-fg-subtle" />
                   )}

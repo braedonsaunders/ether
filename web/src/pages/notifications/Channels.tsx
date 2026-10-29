@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { Badge, Button, EmptyState, confirmDialog, toast } from "@braedonsaunders/appkit-ui";
 import { BellRing, Pencil, Plus, Send, Smartphone, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -42,7 +43,7 @@ export function Channels({
         method: "PUT",
         body: JSON.stringify(channel),
       });
-      toast.success("Channel saved");
+      toast.success(t("Channel saved"));
       setOpen(false);
       await onChanged();
     } catch (e) {
@@ -68,33 +69,37 @@ export function Channels({
   const test = (c: Channel) =>
     run(c.id, async () => {
       await apiFetch(`/notifications/${c.id}/test`, { method: "POST", body: "{}" });
-      toast.success("Test accepted by destination", {
-        description: "Check your inbox or device. The result is saved in Delivery history.",
+      toast.success(t("Test accepted by destination"), {
+        description: t("Check your inbox or device. The result is saved in Delivery history."),
       });
     });
 
   const remove = async (c: Channel) => {
     const ok = await confirmDialog({
-      title: "Delete channel?",
-      message: `${channelName(c)} stops receiving alerts. Its delivery history is kept.`,
-      confirmLabel: "Delete",
+      title: t("Delete channel?"),
+      message: t("{channel} stops receiving alerts. Its delivery history is kept.", {
+        channel: channelName(c),
+      }),
+      confirmLabel: t("Delete"),
       tone: "danger",
     });
     if (ok)
       await run(c.id, async () => {
         await apiFetch(`/notifications/${c.id}`, { method: "DELETE" });
-        toast.success("Channel deleted");
+        toast.success(t("Channel deleted"));
       });
   };
 
   return (
     <>
       <Section
-        title="Channels"
-        description="Send alerts about playback, sources and the server to the apps you already use."
+        title={t("Channels")}
+        description={t(
+          "Send alerts about playback, sources and the server to the apps you already use.",
+        )}
         actions={
           <Button size="sm" onClick={() => edit(blankChannel(), true)}>
-            <Plus size={14} /> New channel
+            <Plus size={14} /> {t("New channel")}
           </Button>
         }
         bodyClassName={data.channels.length ? "divide-y divide-border" : undefined}
@@ -107,12 +112,14 @@ export function Channels({
                   <p className="font-medium text-fg">{channelName(c)}</p>
                   <Badge variant="secondary">{transportLabel(c.kind)}</Badge>
                   <Badge variant={c.enabled ? "success" : "outline"}>
-                    {c.enabled ? "On" : "Off"}
+                    {c.enabled ? t("On") : t("Off")}
                   </Badge>
                 </div>
                 <p className="text-xs text-fg-muted">
-                  {c.events.length ? c.events.map(eventLabel).join(", ") : "No events selected"}
-                  {c.digestMinutes ? ` · digest every ${c.digestMinutes} min` : ""}
+                  {c.events.length ? c.events.map(eventLabel).join(", ") : t("No events selected")}
+                  {c.digestMinutes
+                    ? ` · ${t("digest every {minutes} min", { minutes: c.digestMinutes })}`
+                    : ""}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -129,7 +136,7 @@ export function Channels({
                     })
                   }
                 >
-                  {c.enabled ? "Pause" : "Resume"}
+                  {c.enabled ? t("Pause") : t("Resume")}
                 </Button>
                 <Button
                   variant="outline"
@@ -137,17 +144,17 @@ export function Channels({
                   disabled={busy === c.id}
                   onClick={() => void test(c)}
                 >
-                  <Send size={14} /> Send test
+                  <Send size={14} /> {t("Send test")}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => edit(c)}>
-                  <Pencil size={14} /> Edit
+                  <Pencil size={14} /> {t("Edit")}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={busy === c.id}
                   onClick={() => void remove(c)}
-                  aria-label={`Delete ${channelName(c)}`}
+                  aria-label={t("Delete {channel}", { channel: channelName(c) })}
                 >
                   <Trash2 size={14} />
                 </Button>
@@ -157,24 +164,25 @@ export function Channels({
         ) : (
           <EmptyState
             icon={<BellRing />}
-            title="No channels yet"
-            description="Add a webhook, Discord, Slack, Telegram, email, ntfy or Gotify channel to get alerts."
+            title={t("No channels yet")}
+            description={t(
+              "Add a webhook, Discord, Slack, Telegram, email, ntfy or Gotify channel to get alerts.",
+            )}
           />
         )}
       </Section>
 
       <BrowserPush data={data} onChanged={onChanged} />
       <Section
-        title="Alerts on your phone"
-        description="Choose where you want to receive background alerts."
+        title={t("Alerts on your phone")}
+        description={t("Choose where you want to receive background alerts.")}
       >
         <div className="flex items-start gap-3 text-sm text-fg-muted">
           <Smartphone size={18} className="mt-0.5 shrink-0" />
           <p>
-            Use browser push on this device, or create an ntfy, Gotify, Telegram or email channel.
-            Those apps can alert you while the dashboard is closed. On iPhone and iPad, add Ether to
-            your Home Screen over HTTPS, open it there, and connect that device. Each device has its
-            own event rules.
+            {t(
+              "Use browser push on this device, or create an ntfy, Gotify, Telegram or email channel. Those apps can alert you while the dashboard is closed. On iPhone and iPad, add Ether to your Home Screen over HTTPS, open it there, and connect that device. Each device has its own event rules.",
+            )}
           </p>
         </div>
       </Section>

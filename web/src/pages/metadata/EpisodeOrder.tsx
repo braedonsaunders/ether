@@ -6,6 +6,7 @@ import { MetadataWorkspace } from "./MetadataWorkspace";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel } from "../../components/feedback";
 import { Section } from "../../components/layout";
+import { localized, t, tn } from "../../i18n";
 import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { TitleCard } from "../../lib/contract";
 import type { EtherUser } from "../../lib/types";
@@ -29,15 +30,15 @@ type Episode = {
   group: string;
   index: number;
 };
-const KIND: Record<number, string> = {
-  1: "Original air date",
-  2: "Absolute",
-  3: "DVD",
-  4: "Digital",
-  5: "Story arc",
-  6: "Production",
-  7: "TV",
-};
+const KIND: Record<number, string> = localized(() => ({
+  1: t("Original air date"),
+  2: t("Absolute"),
+  3: t("DVD"),
+  4: t("Digital"),
+  5: t("Story arc"),
+  6: t("Production"),
+  7: t("TV"),
+}));
 const viewerLabel = (u: EtherUser) => u.title || u.username;
 
 /** Find a show, then edit its episode order (a record) in a drawer. */
@@ -52,7 +53,7 @@ export function EpisodeOrders() {
     try {
       setResults(await api.searchCatalog(query, "show", 15));
     } catch (e) {
-      toast.error("Search failed", { description: errorMessage(e) });
+      toast.error(t("Search failed"), { description: errorMessage(e) });
     } finally {
       setBusy(false);
     }
@@ -63,8 +64,10 @@ export function EpisodeOrders() {
         aside={
           <>
             <Section
-              title="Episode order"
-              description="Present a show in DVD, absolute or story order in Plex. Playback, release matching and watch history always use TMDB's original numbering."
+              title={t("Episode order")}
+              description={t(
+                "Present a show in DVD, absolute or story order in Plex. Playback, release matching and watch history always use TMDB's original numbering.",
+              )}
             >
               <form
                 className="flex max-w-xl gap-2"
@@ -74,21 +77,22 @@ export function EpisodeOrders() {
                 }}
               >
                 <Input
-                  aria-label="Find a show"
+                  aria-label={t("Find a show")}
                   value={query}
                   onChange={(e) => setQuery(e.currentTarget.value)}
-                  placeholder="Show title"
+                  placeholder={t("Show title")}
                 />
                 <Button type="submit" variant="outline" disabled={busy || !query.trim()}>
-                  <Search size={14} /> Search
+                  <Search size={14} /> {t("Search")}
                 </Button>
               </form>
             </Section>
             <div className="metadata-note">
               <Tv size={17} />
               <p>
-                Orders change how episodes appear in Plex. Watch history and playback keep their
-                original identities.
+                {t(
+                  "Orders change how episodes appear in Plex. Watch history and playback keep their original identities.",
+                )}
               </p>
             </div>
           </>
@@ -97,20 +101,22 @@ export function EpisodeOrders() {
           results === null ? (
             <div className="metadata-empty">
               <Tv size={24} />
-              <h2>Select a show</h2>
-              <p>Search for a series to manage its default episode order and viewer overrides.</p>
+              <h2>{t("Select a show")}</h2>
+              <p>
+                {t("Search for a series to manage its default episode order and viewer overrides.")}
+              </p>
               <div className="metadata-empty-options">
-                <span>Aired order</span>
-                <span>DVD order</span>
-                <span>Story order</span>
-                <span>Viewer overrides</span>
+                <span>{t("Aired order")}</span>
+                <span>{t("DVD order")}</span>
+                <span>{t("Story order")}</span>
+                <span>{t("Viewer overrides")}</span>
               </div>
             </div>
           ) : (
             <div>
               <div className="metadata-preview-toolbar">
                 <div>
-                  <h2>{results.length} series found</h2>
+                  <h2>{tn(results.length, "{count} series found", "{count} series found")}</h2>
                 </div>
               </div>
               {results.length ? (
@@ -119,7 +125,11 @@ export function EpisodeOrders() {
                     <button
                       type="button"
                       key={item.key}
-                      aria-label={`${item.title}${item.year ? ` (${item.year})` : ""}`}
+                      aria-label={
+                        item.year
+                          ? t("{title} ({year})", { title: item.title, year: item.year })
+                          : item.title
+                      }
                       onClick={() => setShow(item)}
                       className="flex items-center gap-4 rounded-xl border border-border bg-surface p-3 text-left hover:bg-surface-hover"
                     >
@@ -131,16 +141,16 @@ export function EpisodeOrders() {
                       />
                       <span className="min-w-0 flex-1">
                         <strong className="block text-sm font-medium">{item.title}</strong>
-                        <span className="text-xs text-fg-muted">{item.year || "TV series"}</span>
+                        <span className="text-xs text-fg-muted">{item.year || t("TV series")}</span>
                         <span className="mt-2 flex items-center gap-1 text-xs text-fg-muted">
-                          Explore orders <ArrowRight size={12} />
+                          {t("Explore orders")} <ArrowRight size={12} />
                         </span>
                       </span>
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-fg-muted">No shows match “{query}”.</p>
+                <p className="text-sm text-fg-muted">{t("No shows match “{query}”.", { query })}</p>
               )}
             </div>
           )
@@ -167,21 +177,21 @@ function ShowOrderDrawer({ show, onClose }: { show: TitleCard | null; onClose: (
     <Drawer
       open={show !== null}
       onClose={onClose}
-      title={show?.title ?? "Episode order"}
-      description="Episode order for this show"
+      title={show?.title ?? t("Episode order")}
+      description={t("Episode order for this show")}
       size="lg"
     >
       {!show ? null : groups.error ? (
         <ErrorPanel error={groups.error} onRetry={() => void groups.reload()} />
       ) : groups.loading && !groups.data ? (
         <div className="py-10 text-center">
-          <Spinner size={20} label="Loading episode orders" />
+          <Spinner size={20} label={t("Loading episode orders")} />
         </div>
       ) : (
         <div className="space-y-6">
-          <section className="space-y-4" aria-label="Default order">
+          <section className="space-y-4" aria-label={t("Default order")}>
             <div>
-              <h3 className="text-sm font-semibold text-fg">Default for every viewer</h3>
+              <h3 className="text-sm font-semibold text-fg">{t("Default for every viewer")}</h3>
             </div>
             <OrderEditor
               showKey={show.key}
@@ -190,17 +200,20 @@ function ShowOrderDrawer({ show, onClose }: { show: TitleCard | null; onClose: (
               onChanged={() => setVersion((v) => v + 1)}
             />
           </section>
-          <section className="space-y-2 border-t border-border pt-5" aria-label="Viewer overrides">
+          <section
+            className="space-y-2 border-t border-border pt-5"
+            aria-label={t("Viewer overrides")}
+          >
             <div>
-              <h3 className="text-sm font-semibold text-fg">Viewer overrides</h3>
+              <h3 className="text-sm font-semibold text-fg">{t("Viewer overrides")}</h3>
               <p className="text-xs text-fg-muted">
-                Give one viewer a different order for this show.
+                {t("Give one viewer a different order for this show.")}
               </p>
             </div>
             {users.error ? (
               <ErrorPanel error={users.error} />
             ) : !users.data ? (
-              <Spinner size={16} label="Loading viewers" />
+              <Spinner size={16} label={t("Loading viewers")} />
             ) : (
               <ul className="divide-y divide-border rounded-lg border border-border">
                 {users.data.map((u) => (
@@ -220,8 +233,15 @@ function ShowOrderDrawer({ show, onClose }: { show: TitleCard | null; onClose: (
       <Drawer
         open={viewer !== null}
         onClose={() => setViewer(null)}
-        title={viewer ? `${show?.title ?? "Show"} for ${viewerLabel(viewer)}` : "Viewer order"}
-        description="This viewer's episode order for the show"
+        title={
+          viewer
+            ? t("{show} for {viewer}", {
+                show: show?.title ?? t("Show"),
+                viewer: viewerLabel(viewer),
+              })
+            : t("Viewer order")
+        }
+        description={t("This viewer's episode order for the show")}
         size="lg"
       >
         {show && viewer ? (
@@ -258,17 +278,17 @@ function ViewerOverrideRow({
       <span className="min-w-0 truncate text-sm text-fg">{viewerLabel(user)}</span>
       <span className="flex shrink-0 items-center gap-2">
         {custom === null ? null : custom ? (
-          <Badge variant="info">Custom for this viewer</Badge>
+          <Badge variant="info">{t("Custom for this viewer")}</Badge>
         ) : (
-          <Badge variant="secondary">Uses default</Badge>
+          <Badge variant="secondary">{t("Uses default")}</Badge>
         )}
         <Button
           variant="outline"
           size="sm"
-          aria-label={`Edit order for ${viewerLabel(user)}`}
+          aria-label={t("Edit order for {viewer}", { viewer: viewerLabel(user) })}
           onClick={onEdit}
         >
-          {custom ? "Edit" : "Customise"}
+          {custom ? t("Edit") : t("Customise")}
         </Button>
       </span>
     </li>
@@ -313,7 +333,7 @@ function OrderEditor({
   if (!saved.data)
     return (
       <div className="py-6 text-center">
-        <Spinner size={18} label="Loading episode order" />
+        <Spinner size={18} label={t("Loading episode order")} />
       </div>
     );
   const scope = viewerId ? `order-${viewerId}` : "order-default";
@@ -323,12 +343,12 @@ function OrderEditor({
     <div className="space-y-4">
       {inherited ? (
         <p className="text-sm text-fg-muted">
-          This viewer uses the default order. Saving makes a custom order for them.
+          {t("This viewer uses the default order. Saving makes a custom order for them.")}
         </p>
       ) : null}
       <div className="space-y-1.5">
         <label htmlFor={`${scope}-group`} className="block text-sm font-medium text-fg">
-          Episode order
+          {t("Episode order")}
         </label>
         <select
           id={`${scope}-group`}
@@ -336,16 +356,21 @@ function OrderEditor({
           value={pref.groupId}
           onChange={(e) => setPref({ ...pref, groupId: e.currentTarget.value })}
         >
-          <option value="">TMDB aired order</option>
+          <option value="">{t("TMDB aired order")}</option>
           {groups.map((g) => (
             <option key={g.id} value={g.id}>
-              {g.name} · {KIND[g.type] || "Alternate"} · {g.episode_count} episodes
+              {tn(
+                g.episode_count,
+                "{name} · {kind} · {count} episode",
+                "{name} · {kind} · {count} episodes",
+                { name: g.name, kind: KIND[g.type] || t("Alternate") },
+              )}
             </option>
           ))}
         </select>
         {groups.length === 0 ? (
           <p className="text-xs text-fg-muted">
-            TMDB has no alternate episode orders for this show.
+            {t("TMDB has no alternate episode orders for this show.")}
           </p>
         ) : chosen?.description ? (
           <p className="text-xs text-fg-muted">{chosen.description}</p>
@@ -353,7 +378,7 @@ function OrderEditor({
       </div>
       <div className="space-y-1.5">
         <label htmlFor={`${scope}-specials`} className="block text-sm font-medium text-fg">
-          Specials not in this order
+          {t("Specials not in this order")}
         </label>
         <select
           id={`${scope}-specials`}
@@ -361,13 +386,14 @@ function OrderEditor({
           value={pref.specials}
           onChange={(e) => setPref({ ...pref, specials: e.currentTarget.value })}
         >
-          <option value="last">After regular episodes</option>
-          <option value="first">Before regular episodes</option>
-          <option value="hidden">Hide specials</option>
+          <option value="last">{t("After regular episodes")}</option>
+          <option value="first">{t("Before regular episodes")}</option>
+          <option value="hidden">{t("Hide specials")}</option>
         </select>
         <p className="text-xs text-fg-muted">
-          Specials the order places keep their spot. Hiding specials removes every season 0 episode
-          from browse lists. Episodes the order leaves out appear under Other episodes.
+          {t(
+            "Specials the order places keep their spot. Hiding specials removes every season 0 episode from browse lists. Episodes the order leaves out appear under Other episodes.",
+          )}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -382,11 +408,11 @@ function OrderEditor({
               saved.setData(next);
               setEpisodes(await apiFetch<Episode[]>(`${path}/preview`));
               onChanged();
-              toast.success("Episode order saved");
+              toast.success(t("Episode order saved"));
             })
           }
         >
-          Save episode order
+          {t("Save episode order")}
         </Button>
         <Button
           variant="outline"
@@ -395,7 +421,7 @@ function OrderEditor({
             void perform(async () => setEpisodes(await apiFetch<Episode[]>(`${path}/preview`)))
           }
         >
-          Preview saved order
+          {t("Preview saved order")}
         </Button>
         {viewerId === 0 || !inherited ? (
           <Button
@@ -406,11 +432,13 @@ function OrderEditor({
                 saved.setData(await apiFetch<Preference>(path, { method: "DELETE" }));
                 setEpisodes([]);
                 onChanged();
-                toast.success(viewerId ? "Uses the default again" : "Default reset to aired order");
+                toast.success(
+                  viewerId ? t("Uses the default again") : t("Default reset to aired order"),
+                );
               })
             }
           >
-            {viewerId ? "Use default" : "Reset to aired order"}
+            {viewerId ? t("Use default") : t("Reset to aired order")}
           </Button>
         ) : null}
       </div>
@@ -419,9 +447,9 @@ function OrderEditor({
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-bg-subtle text-xs text-fg-muted">
               <tr>
-                <th className="px-3 py-2 font-medium">Position</th>
-                <th className="px-3 py-2 font-medium">Episode</th>
-                <th className="px-3 py-2 font-medium">Original number</th>
+                <th className="px-3 py-2 font-medium">{t("Position")}</th>
+                <th className="px-3 py-2 font-medium">{t("Episode")}</th>
+                <th className="px-3 py-2 font-medium">{t("Original number")}</th>
               </tr>
             </thead>
             <tbody>
@@ -432,7 +460,10 @@ function OrderEditor({
                   </td>
                   <td className="px-3 py-2">{ep.title}</td>
                   <td className="px-3 py-2 tabular-nums">
-                    S{ep.canonicalSeason} E{ep.canonicalEpisode}
+                    {t("S{season} E{episode}", {
+                      season: ep.canonicalSeason,
+                      episode: ep.canonicalEpisode,
+                    })}
                   </td>
                 </tr>
               ))}

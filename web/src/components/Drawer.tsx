@@ -8,6 +8,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { t } from "../i18n";
 
 const DrawerContext = createContext(false);
 
@@ -38,12 +39,12 @@ export function Drawer({ title, stacked, bodyClassName, children, ...props }: Dr
           "[&_fieldset]:min-w-0",
           bodyClassName ?? "overflow-y-auto px-4 py-5 sm:px-6",
         )}
-        title={<RecordTitle>{title ?? "Editor"}</RecordTitle>}
+        title={<RecordTitle>{title ?? t("Editor")}</RecordTitle>}
       >
         <Suspense
           fallback={
             <div className="grid min-h-32 flex-1 place-items-center p-6">
-              <Spinner size={20} label="Loading editor" />
+              <Spinner size={20} label={t("Loading editor")} />
             </div>
           }
         >

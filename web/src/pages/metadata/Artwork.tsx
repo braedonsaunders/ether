@@ -9,6 +9,7 @@ import { Section } from "../../components/layout";
 import { TitleSearch } from "../../components/pickers";
 import { titleSubtitle } from "../../components/Poster";
 import { SaveBar, useDraft } from "../../components/SaveBar";
+import { localized, t } from "../../i18n";
 import { api, apiFetch } from "../../lib/api";
 import type { TitleCard } from "../../lib/contract";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
@@ -32,34 +33,41 @@ type Art = {
   pinnedPoster?: string;
   pinnedBackdrop?: string;
 };
-const OPTIONS = [
-  {
-    key: "status",
-    label: "Release status badge",
-    hint: "Recent releases, unwatched new episodes and seasons.",
-  },
-  {
-    key: "quality",
-    label: "Quality badge",
-    hint: "Last verified playback: resolution, HDR, Dolby Vision and Atmos.",
-  },
-  {
-    key: "ratings",
-    label: "Rating badges",
-    hint: "TMDB by default; cached provider scores when configured.",
-  },
-  {
-    key: "details",
-    label: "Title details",
-    hint: "Year, runtime and content rating from the catalogue.",
-  },
-  {
-    key: "personalize",
-    label: "Match posters to taste",
-    hint: "Choose tagged artwork for each viewer.",
-  },
-  { key: "localize", label: "Localized artwork", hint: "Follow the language requested by Plex." },
-] as const;
+const OPTIONS = localized(
+  () =>
+    [
+      {
+        key: "status",
+        label: t("Release status badge"),
+        hint: t("Recent releases, unwatched new episodes and seasons."),
+      },
+      {
+        key: "quality",
+        label: t("Quality badge"),
+        hint: t("Last verified playback: resolution, HDR, Dolby Vision and Atmos."),
+      },
+      {
+        key: "ratings",
+        label: t("Rating badges"),
+        hint: t("TMDB by default; cached provider scores when configured."),
+      },
+      {
+        key: "details",
+        label: t("Title details"),
+        hint: t("Year, runtime and content rating from the catalogue."),
+      },
+      {
+        key: "personalize",
+        label: t("Match posters to taste"),
+        hint: t("Choose tagged artwork for each viewer."),
+      },
+      {
+        key: "localize",
+        label: t("Localized artwork"),
+        hint: t("Follow the language requested by Plex."),
+      },
+    ] as const,
+);
 
 export function ArtworkSettings() {
   const doc = useAsync(
@@ -80,8 +88,8 @@ export function ArtworkSettings() {
     const titles = [
       ...new Map(
         (result.items ?? [])
-          .filter((t) => t.poster && (t.type === "movie" || t.type === "show"))
-          .map((t) => [t.key, t]),
+          .filter((card) => card.poster && (card.type === "movie" || card.type === "show"))
+          .map((card) => [card.key, card]),
       ).values(),
     ];
     for (let i = titles.length - 1; i > 0; i--) {
@@ -92,7 +100,7 @@ export function ArtworkSettings() {
   }, []);
   const [pickedTitle, setTitle] = useState<TitleCard | null>(null);
   const title = pickedTitle ?? samples.data?.[0] ?? null;
-  const alternatives = (samples.data ?? []).filter((t) => t.key !== title?.key);
+  const alternatives = (samples.data ?? []).filter((card) => card.key !== title?.key);
   const refreshTitle = () => {
     if (alternatives.length)
       setTitle(alternatives[Math.floor(Math.random() * alternatives.length)]!);
@@ -132,7 +140,7 @@ export function ArtworkSettings() {
   if (!draft || !preview)
     return (
       <MetadataWorkspace
-        aside={<Spinner size={20} label="Loading artwork settings" />}
+        aside={<Spinner size={20} label={t("Loading artwork settings")} />}
         main={null}
       />
     );
@@ -147,8 +155,8 @@ export function ArtworkSettings() {
       });
       doc.setData(normalizeOverlays(next));
       setNonce((n) => n + 1);
-      toast.success("Artwork settings saved", {
-        description: "Plex picks up the new artwork when it refreshes.",
+      toast.success(t("Artwork settings saved"), {
+        description: t("Plex picks up the new artwork when it refreshes."),
       });
     } catch (e) {
       setError(e);
@@ -163,28 +171,28 @@ export function ArtworkSettings() {
         fitPreview
         actions={
           <Badge variant={dirty ? "warning" : "secondary"}>
-            {dirty ? "Unsaved design" : "Saved design"}
+            {dirty ? t("Unsaved design") : t("Saved design")}
           </Badge>
         }
         aside={
           <>
             <div className="metadata-enable">
               <div>
-                <label htmlFor="overlay-enabled">Ether posters</label>
-                <p>Serve customized posters in Plex</p>
+                <label htmlFor="overlay-enabled">{t("Ether posters")}</label>
+                <p>{t("Serve customized posters in Plex")}</p>
               </div>
               <Switch
                 id="overlay-enabled"
-                aria-label="Ether posters"
+                aria-label={t("Ether posters")}
                 checked={draft.enabled}
                 disabled={saving}
                 onChange={(e) => set({ enabled: e.currentTarget.checked })}
               />
             </div>
             <PosterProviders onSaved={() => setNonce((n) => n + 1)} />
-            <section className="metadata-control-section" aria-label="Design presets">
+            <section className="metadata-control-section" aria-label={t("Design presets")}>
               <div className="metadata-section-title">
-                <h3>Preset</h3>
+                <h3>{t("Preset")}</h3>
               </div>
               <div className="metadata-presets">
                 {PRESETS.map((p) => {
@@ -193,14 +201,14 @@ export function ArtworkSettings() {
                   );
                   return (
                     <button
-                      key={p.name}
+                      key={p.key}
                       type="button"
                       className={cn("metadata-preset", selected && "selected")}
                       aria-pressed={selected}
                       disabled={saving}
                       onClick={() => set(p.settings)}
                     >
-                      <span className={`metadata-preset-art preset-${p.name.toLowerCase()}`}>
+                      <span className={`metadata-preset-art preset-${p.key}`}>
                         <span style={{ background: p.settings.accent }} />
                         {selected && <Check size={13} />}
                       </span>
@@ -213,23 +221,23 @@ export function ArtworkSettings() {
             </section>
             <fieldset disabled={!draft.enabled || saving} className="metadata-control-section">
               <div className="metadata-section-title">
-                <h3>Badge appearance</h3>
+                <h3>{t("Badge appearance")}</h3>
               </div>
               <label className="metadata-field">
-                Badge finish
+                {t("Badge finish")}
                 <select
                   className={nativeSelect}
                   value={draft.style}
                   onChange={(e) => set({ style: e.currentTarget.value as Overlays["style"] })}
                 >
-                  <option value="glass">Glass</option>
-                  <option value="solid">Solid</option>
-                  <option value="minimal">Minimal</option>
+                  <option value="glass">{t("Glass")}</option>
+                  <option value="solid">{t("Solid")}</option>
+                  <option value="minimal">{t("Minimal")}</option>
                 </select>
               </label>
               <div className="metadata-field-row">
                 <label className="metadata-field">
-                  Placement
+                  {t("Placement")}
                   <select
                     className={nativeSelect}
                     value={draft.position}
@@ -237,32 +245,32 @@ export function ArtworkSettings() {
                       set({ position: e.currentTarget.value as Overlays["position"] })
                     }
                   >
-                    <option value="bottom">Bottom</option>
-                    <option value="top">Top</option>
+                    <option value="bottom">{t("Bottom")}</option>
+                    <option value="top">{t("Top")}</option>
                   </select>
                 </label>
                 <label className="metadata-field">
-                  Badge size
+                  {t("Badge size")}
                   <select
                     className={nativeSelect}
                     value={draft.size}
                     onChange={(e) => set({ size: e.currentTarget.value as Overlays["size"] })}
                   >
-                    <option value="small">Small</option>
-                    <option value="medium">Medium</option>
-                    <option value="large">Large</option>
+                    <option value="small">{t("Small")}</option>
+                    <option value="medium">{t("Medium")}</option>
+                    <option value="large">{t("Large")}</option>
                   </select>
                 </label>
               </div>
               <div className="metadata-field">
-                <span>Accent colour</span>
+                <span>{t("Accent colour")}</span>
                 <div className="metadata-swatches">
                   {[
-                    ["#d4a574", "Sand"],
-                    ["#a7c4b5", "Sage"],
-                    ["#9ab6d4", "Glacier"],
-                    ["#c0a6d8", "Lavender"],
-                    ["#e8e4dc", "Pearl"],
+                    ["#d4a574", t("Sand")],
+                    ["#a7c4b5", t("Sage")],
+                    ["#9ab6d4", t("Glacier")],
+                    ["#c0a6d8", t("Lavender")],
+                    ["#e8e4dc", t("Pearl")],
                   ].map(([color, name]) => (
                     <button
                       type="button"
@@ -275,10 +283,10 @@ export function ArtworkSettings() {
                       {draft.accent === color && <Check size={16} />}
                     </button>
                   ))}
-                  <label className="metadata-custom-color" title="Custom accent">
+                  <label className="metadata-custom-color" title={t("Custom accent")}>
                     <input
                       type="color"
-                      aria-label="Custom accent"
+                      aria-label={t("Custom accent")}
                       value={draft.accent}
                       onChange={(e) => set({ accent: e.currentTarget.value })}
                     />
@@ -288,18 +296,20 @@ export function ArtworkSettings() {
                 </div>
               </div>
             </fieldset>
-            <section className="metadata-control-section" aria-label="Poster layers">
+            <section className="metadata-control-section" aria-label={t("Poster layers")}>
               <div className="metadata-section-title">
-                <h3>Poster layers</h3>
+                <h3>{t("Poster layers")}</h3>
                 <span className="text-[10px] text-fg-muted">
-                  {explanation.loading || draft !== preview ? "Checking title…" : "Live title data"}
+                  {explanation.loading || draft !== preview
+                    ? t("Checking title…")
+                    : t("Live title data")}
                 </span>
               </div>
               {explanation.error && !explanation.loading ? (
                 <p className="text-xs text-fg-muted">
-                  Preview data unavailable.{" "}
+                  {t("Preview data unavailable.")}{" "}
                   <button className="underline" onClick={() => void explanation.reload()}>
-                    Retry title data
+                    {t("Retry title data")}
                   </button>
                 </p>
               ) : null}
@@ -332,25 +342,25 @@ export function ArtworkSettings() {
               ))}
             </section>
             <Section
-              title="Preview title"
-              description="Try your design on artwork from your catalogue."
+              title={t("Preview title")}
+              description={t("Try your design on artwork from your catalogue.")}
             >
-              <TitleSearch placeholder="Search movies and shows…" onPick={setTitle} />
+              <TitleSearch placeholder={t("Search movies and shows…")} onPick={setTitle} />
               {title && (
                 <Button size="sm" variant="ghost" onClick={() => setPinning(title)}>
-                  <Pin size={13} /> Edit this title’s artwork
+                  <Pin size={13} /> {t("Edit this title’s artwork")}
                 </Button>
               )}
               <div className="metadata-field-row">
                 <label className="metadata-field">
-                  Preview as
+                  {t("Preview as")}
                   <select
                     className={nativeSelect}
                     value={previewUser ?? ""}
                     onChange={(e) => setViewer(Number(e.currentTarget.value))}
                   >
                     <option value="" disabled>
-                      Select a viewer
+                      {t("Select a viewer")}
                     </option>
                     {users.data?.map((u) => (
                       <option key={u.id} value={u.id}>
@@ -360,7 +370,7 @@ export function ArtworkSettings() {
                   </select>
                 </label>
                 <label className="metadata-field">
-                  Preview language
+                  {t("Preview language")}
                   <Input
                     value={lang}
                     onChange={(e) => setLang(e.currentTarget.value)}
@@ -373,10 +383,10 @@ export function ArtworkSettings() {
               ) : null}
             </Section>
             <Section
-              title="Title artwork"
-              description="Give an individual title its own poster or backdrop."
+              title={t("Title artwork")}
+              description={t("Give an individual title its own poster or backdrop.")}
             >
-              <TitleSearch placeholder="Find a title to customise…" onPick={setPinning} />
+              <TitleSearch placeholder={t("Find a title to customise…")} onPick={setPinning} />
             </Section>
           </>
         }
@@ -384,25 +394,25 @@ export function ArtworkSettings() {
           <>
             <div className="metadata-preview-toolbar">
               <div className="metadata-preview-title" aria-live="polite">
-                <h2 title={title?.title}>{title?.title ?? "Artwork preview"}</h2>
-                <p>{title ? titleSubtitle(title) : "Catalogue artwork"}</p>
+                <h2 title={title?.title}>{title?.title ?? t("Artwork preview")}</h2>
+                <p>{title ? titleSubtitle(title) : t("Catalogue artwork")}</p>
               </div>
               <Button
                 size="sm"
                 variant="ghost"
-                aria-label="Try another artwork"
-                title="Try another artwork"
+                aria-label={t("Try another artwork")}
+                title={t("Try another artwork")}
                 disabled={!alternatives.length || samples.loading}
                 onClick={refreshTitle}
               >
                 <RefreshCw size={15} />
               </Button>
-              <div className="metadata-view-switch" aria-label="Preview view">
+              <div className="metadata-view-switch" aria-label={t("Preview view")}>
                 {(
                   [
-                    ["poster", "Poster"],
-                    ["library", "Library"],
-                    ["compare", "Compare"],
+                    ["poster", t("Poster")],
+                    ["library", t("Library")],
+                    ["compare", t("Compare")],
                   ] as const
                 ).map(([key, label]) => (
                   <button
@@ -429,19 +439,20 @@ export function ArtworkSettings() {
             ) : (
               <div className="metadata-stage metadata-artwork-empty">
                 {samples.loading ? (
-                  <Spinner size={22} label="Loading catalogue artwork" />
+                  <Spinner size={22} label={t("Loading catalogue artwork")} />
                 ) : samples.error ? (
                   <ErrorPanel error={samples.error} onRetry={() => void samples.reload()} />
                 ) : (
                   <>
                     <ImageIcon size={28} />
-                    <h2>No catalogue artwork yet</h2>
+                    <h2>{t("No catalogue artwork yet")}</h2>
                     <p>
-                      Search for a movie or show in Preview title, or refresh after your catalogue
-                      has synced.
+                      {t(
+                        "Search for a movie or show in Preview title, or refresh after your catalogue has synced.",
+                      )}
                     </p>
                     <Button size="sm" variant="outline" onClick={() => void samples.reload()}>
-                      Reload catalogue artwork
+                      {t("Reload catalogue artwork")}
                     </Button>
                   </>
                 )}
@@ -451,15 +462,17 @@ export function ArtworkSettings() {
               <span className="metadata-live-dot" />
               <span>
                 {mode === "library"
-                  ? "Library preview · Plex layouts vary"
+                  ? t("Library preview · Plex layouts vary")
                   : !explanation.loading &&
                       explanationData &&
                       draft.enabled &&
                       explanationData.labels.length === 0
-                    ? "No selected badges available · see Poster layers"
-                    : "Originals preserved · available badges only"}
+                    ? t("No selected badges available · see Poster layers")
+                    : t("Originals preserved · available badges only")}
               </span>
-              <Badge variant="outline">{draft.enabled ? "Ether design" : "Original artwork"}</Badge>
+              <Badge variant="outline">
+                {draft.enabled ? t("Ether design") : t("Original artwork")}
+              </Badge>
             </div>
           </>
         }
@@ -543,7 +556,7 @@ function TitleArtworkDrawer({
         method: "PUT",
         body: JSON.stringify(art),
       });
-      toast.success("Artwork saved", { description: title.title });
+      toast.success(t("Artwork saved"), { description: title.title });
       onSaved();
       onClose();
     } catch (e) {
@@ -557,8 +570,8 @@ function TitleArtworkDrawer({
     <Drawer
       open={title !== null}
       onClose={onClose}
-      title={title?.title ?? "Title artwork"}
-      description="Pick the poster and backdrop Plex shows for this title."
+      title={title?.title ?? t("Title artwork")}
+      description={t("Pick the poster and backdrop Plex shows for this title.")}
       size="xl"
       footer={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
@@ -567,14 +580,14 @@ function TitleArtworkDrawer({
             disabled={!choices}
             onClick={() => setArt({ ...art, pinnedPoster: "", pinnedBackdrop: "" })}
           >
-            <RotateCcw size={14} /> Use automatic choices
+            <RotateCcw size={14} /> {t("Use automatic choices")}
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button disabled={!choices || saving} onClick={() => void save()}>
-              {saving ? "Saving…" : "Save title artwork"}
+              {saving ? t("Saving…") : t("Save title artwork")}
             </Button>
           </div>
         </div>
@@ -584,17 +597,18 @@ function TitleArtworkDrawer({
         <ErrorPanel error={loadError} />
       ) : !choices ? (
         <div className="py-10 text-center">
-          <Spinner size={20} label="Loading artwork choices" />
+          <Spinner size={20} label={t("Loading artwork choices")} />
         </div>
       ) : (
         <div className="space-y-6">
           {saveError ? <MutationError error={saveError} /> : null}
-          <section className="space-y-3" aria-label="Posters">
+          <section className="space-y-3" aria-label={t("Posters")}>
             <div>
-              <h3 className="text-sm font-semibold text-fg">Poster</h3>
+              <h3 className="text-sm font-semibold text-fg">{t("Poster")}</h3>
               <p className="text-xs text-fg-muted">
-                Click a poster to pin it for everyone. Tag posters with the genres or people they
-                feature so taste matching can pick one per viewer.
+                {t(
+                  "Click a poster to pin it for everyone. Tag posters with the genres or people they feature so taste matching can pick one per viewer.",
+                )}
               </p>
             </div>
             {choices.posters?.length ? (
@@ -606,7 +620,11 @@ function TitleArtworkDrawer({
                       <button
                         type="button"
                         aria-pressed={pinned}
-                        aria-label={`Pin poster (${variant.language || "textless"})`}
+                        aria-label={
+                          variant.language
+                            ? t("Pin poster ({language})", { language: variant.language })
+                            : t("Pin poster (textless)")
+                        }
                         className={cn(
                           "relative block w-full overflow-hidden rounded-lg border-2",
                           pinned ? "border-primary" : "border-transparent",
@@ -615,18 +633,22 @@ function TitleArtworkDrawer({
                       >
                         <Artwork
                           src={`https://image.tmdb.org/t/p/w185${variant.path}`}
-                          alt={`Poster (${variant.language || "textless"})`}
+                          alt={
+                            variant.language
+                              ? t("Poster ({language})", { language: variant.language })
+                              : t("Poster (textless)")
+                          }
                           className="aspect-[2/3]"
                         />
                         {pinned ? (
                           <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[11px] font-medium text-primary-fg">
-                            <Pin size={11} /> Pinned
+                            <Pin size={11} /> {t("Pinned")}
                           </span>
                         ) : null}
                       </button>
                       <ListInput
-                        ariaLabel={`Focus tags for ${variant.path}`}
-                        placeholder="Drama, actor name"
+                        ariaLabel={t("Focus tags for {path}", { path: variant.path })}
+                        placeholder={t("Drama, actor name")}
                         value={art.posters?.find((p) => p.path === variant.path)?.tags ?? []}
                         onChange={(tags) =>
                           setArt((current) => ({
@@ -644,20 +666,27 @@ function TitleArtworkDrawer({
               </div>
             ) : (
               <p className="flex items-center gap-2 text-sm text-fg-muted">
-                <ImageIcon size={14} /> TMDB has no alternate posters for this title.
+                <ImageIcon size={14} /> {t("TMDB has no alternate posters for this title.")}
               </p>
             )}
           </section>
           <section className="space-y-2">
             <label htmlFor="pinned-backdrop" className="block text-sm font-semibold text-fg">
-              Backdrop
+              {t("Backdrop")}
             </label>
             <div className="metadata-backdrops">
               {choices.backdrops?.map((v, index) => (
                 <button
                   type="button"
                   key={v.path}
-                  aria-label={`Pin backdrop ${index + 1} (${v.language || "textless"})`}
+                  aria-label={
+                    v.language
+                      ? t("Pin backdrop {number} ({language})", {
+                          number: index + 1,
+                          language: v.language,
+                        })
+                      : t("Pin backdrop {number} (textless)", { number: index + 1 })
+                  }
                   aria-pressed={art.pinnedBackdrop === v.path}
                   onClick={() =>
                     setArt({ ...art, pinnedBackdrop: art.pinnedBackdrop === v.path ? "" : v.path })
@@ -669,7 +698,7 @@ function TitleArtworkDrawer({
                 >
                   <Artwork
                     src={`https://image.tmdb.org/t/p/w300${v.path}`}
-                    alt={`Backdrop ${index + 1}`}
+                    alt={t("Backdrop {number}", { number: index + 1 })}
                     className="aspect-video"
                   />
                 </button>
@@ -681,10 +710,13 @@ function TitleArtworkDrawer({
               value={art.pinnedBackdrop || ""}
               onChange={(e) => setArt({ ...art, pinnedBackdrop: e.currentTarget.value })}
             >
-              <option value="">Automatic textless backdrop</option>
+              <option value="">{t("Automatic textless backdrop")}</option>
               {choices.backdrops?.map((v) => (
                 <option key={v.path} value={v.path}>
-                  {v.language || "Textless"} · {v.path}
+                  {t("{language} · {path}", {
+                    language: v.language || t("Textless"),
+                    path: v.path,
+                  })}
                 </option>
               ))}
             </select>

@@ -18,9 +18,11 @@ import { ErrorPanel } from "../../components/feedback";
 import { TestButton, type TestState } from "../../components/fields";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { LevelBadge } from "../../components/status";
+import { localized, t, tn } from "../../i18n";
 import { api, apiFetch, ApiError, type TestFn } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import type { EtherConfig } from "../../lib/types";
+import { SimklIntegration } from "./SimklIntegration";
 import { LanguageFeatures } from "./LanguageFeatures";
 import { LanguageModelSettings } from "./LanguageModel";
 import { asObj, GenericFields, SchemaField, type FieldGroup } from "./SchemaForm";
@@ -49,21 +51,21 @@ interface Service {
   test: (value: Obj) => ReturnType<TestFn>;
 }
 
-const SERVICES: Service[] = [
+const SERVICES: Service[] = localized(() => [
   {
     tab: "trakt",
     configKey: "trakt",
     endpoint: "trakt",
     label: "Trakt",
     groups: S.TRAKT,
-    testLabel: "Test Trakt",
+    testLabel: t("Test Trakt"),
     test: (v) => api.testTrakt(v as EtherConfig["trakt"]),
   },
   {
     tab: "llm",
     configKey: "llm",
     endpoint: "llm",
-    label: "Language model",
+    label: t("Language model"),
     groups: [],
     form: ({ value, saved, onChange, errors, footer }) => (
       <LanguageModelSettings
@@ -74,7 +76,7 @@ const SERVICES: Service[] = [
         footer={footer}
       />
     ),
-    testLabel: "Test endpoint",
+    testLabel: t("Test endpoint"),
     test: (v) => api.testLLM(v as EtherConfig["llm"]),
   },
   {
@@ -83,10 +85,10 @@ const SERVICES: Service[] = [
     endpoint: "opensubtitles",
     label: "OpenSubtitles",
     groups: S.OPENSUBTITLES,
-    testLabel: "Test OpenSubtitles",
+    testLabel: t("Test OpenSubtitles"),
     test: (v) => api.testOpenSubtitles(v as EtherConfig["openSubtitles"]),
   },
-];
+]);
 
 /**
  * Integrations: an overview of every integration with its live status,
@@ -111,18 +113,18 @@ export function ConnectedServices({ tab }: { tab: ServiceTab }) {
   const [tests, setTests] = useState<Record<string, TestState>>({});
 
   const runTest = useCallback((s: Service, value: Obj) => {
-    setTests((t) => ({ ...t, [s.configKey]: { status: "running" } }));
+    setTests((prev) => ({ ...prev, [s.configKey]: { status: "running" } }));
     s.test(value).then(
       (r) =>
-        setTests((t) => ({
-          ...t,
+        setTests((prev) => ({
+          ...prev,
           [s.configKey]: r.ok
             ? { status: "ok", durationMs: r.durationMs }
-            : { status: "fail", message: r.error ?? "failed" },
+            : { status: "fail", message: r.error ?? t("failed") },
         })),
       (e) =>
-        setTests((t) => ({
-          ...t,
+        setTests((prev) => ({
+          ...prev,
           [s.configKey]: { status: "fail", message: (e as Error).message },
         })),
     );
@@ -139,7 +141,7 @@ export function ConnectedServices({ tab }: { tab: ServiceTab }) {
     try {
       // Each service saves through its own endpoint so the server validates it alone.
       for (const s of changed) await api.putSection(s.endpoint, draft[s.configKey]);
-      toast.success("Settings saved", { description: changed.map((s) => s.label).join(", ") });
+      toast.success(t("Settings saved"), { description: changed.map((s) => s.label).join(", ") });
       await config.reload();
       void refreshDashboard();
     } catch (e) {
@@ -161,13 +163,18 @@ export function ConnectedServices({ tab }: { tab: ServiceTab }) {
   if (!cfg || !draft)
     return (
       <div className="py-10 text-center">
-        <Spinner size={20} label="Loading settings" />
+        <Spinner size={20} label={t("Loading settings")} />
       </div>
     );
 
   return (
     <>
-      {tab === "overview" ? <ServiceOverview cfg={cfg} /> : null}
+      {tab === "overview" ? (
+        <>
+          <ServiceOverview cfg={cfg} />
+          <SimklIntegration />
+        </>
+      ) : null}
       {SERVICES.filter((s) => s.tab === tab).map((s) => {
         const value = draft[s.configKey] ?? {};
         const set = (next: Obj) => setDraft({ ...draft, [s.configKey]: next });
@@ -246,8 +253,12 @@ const linkClass = buttonVariants({ variant: "outline", size: "sm" });
 
 /** On, off, or switched on but missing what it needs. */
 function switchStatus(enabled: boolean, ready: boolean, missing: string) {
-  if (!enabled) return <Badge variant="secondary">Off</Badge>;
-  return ready ? <Badge variant="success">On</Badge> : <Badge variant="warning">{missing}</Badge>;
+  if (!enabled) return <Badge variant="secondary">{t("Off")}</Badge>;
+  return ready ? (
+    <Badge variant="success">{t("On")}</Badge>
+  ) : (
+    <Badge variant="warning">{missing}</Badge>
+  );
 }
 
 interface Integration {
@@ -288,120 +299,122 @@ function ServiceOverview({ cfg }: { cfg: EtherConfig }) {
     {
       name: "Plex",
       icon: <Tv size={icon} />,
-      description: "Your Plex account, sign-in and remote access. How every Plex app finds Ether.",
+      description: t(
+        "Your Plex account, sign-in and remote access. How every Plex app finds Ether.",
+      ),
       status:
         cfg.plex.claimed && cfg.plex.token ? (
           remote ? (
             <LevelBadge level={remote.level} label={remote.summary} />
           ) : (
-            <Badge variant="success">Signed in</Badge>
+            <Badge variant="success">{t("Signed in")}</Badge>
           )
         ) : (
-          <Badge variant="warning">Not signed in</Badge>
+          <Badge variant="warning">{t("Not signed in")}</Badge>
         ),
       href: "/remote-access",
-      action: "Connectivity",
+      action: t("Connectivity"),
     },
     {
       name: "TMDB",
       icon: <Clapperboard size={icon} />,
-      description: "Titles, artwork and details for the whole catalogue.",
+      description: t("Titles, artwork and details for the whole catalogue."),
       status: catalog ? <LevelBadge level={catalog.level} label={catalog.summary} /> : null,
       href: "/catalog/settings",
-      action: "Catalog settings",
+      action: t("Catalog settings"),
     },
     {
       name: "Debrid",
       icon: <Cloud size={icon} />,
-      description: "Stream torrent releases through your own debrid account.",
+      description: t("Stream torrent releases through your own debrid account."),
       status: debridAccounts ? (
-        <Badge variant="success">
-          {debridAccounts === 1 ? "1 account" : `${debridAccounts} accounts`}
-        </Badge>
+        <Badge variant="success">{tn(debridAccounts, "{count} account", "{count} accounts")}</Badge>
       ) : (
-        <Badge variant="secondary">Not connected</Badge>
+        <Badge variant="secondary">{t("Not connected")}</Badge>
       ),
       href: "/sources/debrid",
-      action: "Sources › Debrid",
+      action: t("Sources › Debrid"),
     },
   ];
   const optional: Integration[] = [
     {
       name: "Trakt",
       icon: <History size={icon} />,
-      description: "Sync watch history and lists with Trakt.",
-      status: switchStatus(cfg.trakt.enabled, Boolean(cfg.trakt.clientId), "Needs a client ID"),
+      description: t("Sync watch history and lists with Trakt."),
+      status: switchStatus(cfg.trakt.enabled, Boolean(cfg.trakt.clientId), t("Needs a client ID")),
       href: "/services/trakt",
-      action: cfg.trakt.enabled ? "Manage Trakt" : "Set up Trakt",
+      action: cfg.trakt.enabled ? t("Manage Trakt") : t("Set up Trakt"),
     },
     {
-      name: "Language model",
+      name: t("Language model"),
       icon: <Sparkles size={icon} />,
-      description: "Describe-it collections, themed Home rows, natural-language search and recaps.",
-      status: switchStatus(cfg.llm.enabled, Boolean(cfg.llm.model), "Needs a model"),
+      description: t(
+        "Describe-it collections, themed Home rows, natural-language search and recaps.",
+      ),
+      status: switchStatus(cfg.llm.enabled, Boolean(cfg.llm.model), t("Needs a model")),
       href: "/services/llm",
-      action: cfg.llm.enabled ? "Manage language model" : "Set up a language model",
+      action: cfg.llm.enabled ? t("Manage language model") : t("Set up a language model"),
     },
     {
       name: "OpenSubtitles",
       icon: <Captions size={icon} />,
-      description: "Fetch subtitles when a release doesn't include them.",
+      description: t("Fetch subtitles when a release doesn't include them."),
       status: switchStatus(
         cfg.openSubtitles.enabled,
         Boolean(cfg.openSubtitles.apiKey),
-        "Needs an API key",
+        t("Needs an API key"),
       ),
       href: "/services/opensubtitles",
-      action: cfg.openSubtitles.enabled ? "Manage OpenSubtitles" : "Set up OpenSubtitles",
+      action: cfg.openSubtitles.enabled ? t("Manage OpenSubtitles") : t("Set up OpenSubtitles"),
     },
     {
-      name: "OMDb and MDBList",
+      name: t("OMDb and MDBList"),
       icon: <Star size={icon} />,
-      description: "IMDb, Rotten Tomatoes and other rating badges in Plex.",
+      description: t("IMDb, Rotten Tomatoes and other rating badges in Plex."),
       status: ratings ? (
         ratings.enabled ? (
-          <Badge variant="success">Connected · {providerName}</Badge>
+          <Badge variant="success">{t("Connected · {provider}", { provider: providerName })}</Badge>
         ) : (
-          <Badge variant="secondary">Not connected</Badge>
+          <Badge variant="secondary">{t("Not connected")}</Badge>
         )
       ) : null,
       href: "/metadata/ratings",
-      action: "Metadata › Ratings",
+      action: t("Metadata › Ratings"),
     },
     {
       name: "TheIntroDB",
       icon: <SkipForward size={icon} />,
-      description: "Intro and credits markers so viewers can skip them.",
+      description: t("Intro and credits markers so viewers can skip them."),
       status:
         "theIntroDb" in markers ? (
           markers.theIntroDb ? (
-            <Badge variant="success">On</Badge>
+            <Badge variant="success">{t("On")}</Badge>
           ) : (
-            <Badge variant="secondary">Off</Badge>
+            <Badge variant="secondary">{t("Off")}</Badge>
           )
         ) : null,
       href: "/playback/markers",
-      action: "Playback › Markers",
+      action: t("Playback › Markers"),
     },
     {
       name: "Prowlarr",
       icon: <ListPlus size={icon} />,
-      description: "Import the Usenet and torrent indexers you already manage.",
+      description: t("Import the Usenet and torrent indexers you already manage."),
       status: null,
       href: "/sources/indexers",
-      action: "Sources › Indexers",
+      action: t("Sources › Indexers"),
     },
   ];
   return (
     <>
       <IntegrationGroup
-        title="Essentials"
-        description="How Plex apps reach Ether, where titles come from, and torrent streaming."
+        title={t("Essentials")}
+        description={t("How Plex apps reach Ether, where titles come from, and torrent streaming.")}
         items={essentials}
       />
       <IntegrationGroup
-        title="Optional"
-        description="Extras that make Ether smarter. Everything works without them."
+        title={t("Optional")}
+        description={t("Extras that make Ether smarter. Everything works without them.")}
         items={optional}
       />
     </>

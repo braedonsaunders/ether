@@ -12,21 +12,25 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { localized, t, tn } from "../../i18n";
 import { useRouteTab } from "../../components/layout";
 import { CacheOverview } from "./CacheOverview";
 import { CacheExplorer } from "./CacheExplorer";
-const CACHE_TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "explorer", label: "Explorer" },
-  { key: "preloading", label: "Preloading" },
-] as const;
+const CACHE_TABS = localized(
+  () =>
+    [
+      { key: "overview", label: t("Overview") },
+      { key: "explorer", label: t("Explorer") },
+      { key: "preloading", label: t("Preloading") },
+    ] as const,
+);
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel } from "../../components/feedback";
 import { Field, NumberInput } from "../../components/fields";
 import { useDraft, useUnsavedGuard } from "../../components/SaveBar";
 import { Workspace } from "../../components/workspace";
 import { api, apiFetch } from "../../lib/api";
-import { formatBytes } from "../../lib/format";
+import { formatBytes, formatNumber, formatPercent } from "../../lib/format";
 import { useAsync, useInterval } from "../../lib/hooks";
 import type { EtherConfig } from "../../lib/types";
 
@@ -82,15 +86,17 @@ export type CacheSnapshot = {
 const GiB = 1024 ** 3,
   MiB = 1024 ** 2;
 export const PRESETS: {
+  key: string;
   name: string;
   space: string;
   description: string;
   values: Partial<Policy>;
-}[] = [
+}[] = localized(() => [
   {
-    name: "Feather",
+    key: "feather",
+    name: t("Feather"),
     space: "256 MiB",
-    description: "A small footprint. Just the useful moments.",
+    description: t("A small footprint. Just the useful moments."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -107,9 +113,10 @@ export const PRESETS: {
     },
   },
   {
-    name: "Everyday",
+    key: "everyday",
+    name: t("Everyday"),
     space: "32 GiB",
-    description: "Quick starts and room for recent watches.",
+    description: t("Quick starts and room for recent watches."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -126,9 +133,10 @@ export const PRESETS: {
     },
   },
   {
-    name: "Encore",
+    key: "encore",
+    name: t("Encore"),
     space: "250 GiB",
-    description: "Give household favourites a longer stay.",
+    description: t("Give household favourites a longer stay."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -145,9 +153,10 @@ export const PRESETS: {
     },
   },
   {
-    name: "Deep shelf",
+    key: "deep-shelf",
+    name: t("Deep shelf"),
     space: "750 GiB",
-    description: "Keep more of what everyone comes back to.",
+    description: t("Keep more of what everyone comes back to."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -164,9 +173,10 @@ export const PRESETS: {
     },
   },
   {
-    name: "Cinema node",
+    key: "cinema-node",
+    name: t("Cinema node"),
     space: "2 TiB",
-    description: "A managed shelf of complete movies and TV episodes.",
+    description: t("A managed shelf of complete movies and TV episodes."),
     values: {
       mode: "adaptive",
       budgetBytes: 2048 * GiB,
@@ -191,9 +201,10 @@ export const PRESETS: {
     },
   },
   {
-    name: "Edge library",
+    key: "edge-library",
+    name: t("Edge library"),
     space: "20 TiB",
-    description: "Thousands of films. A shelf that fills itself.",
+    description: t("Thousands of films. A shelf that fills itself."),
     values: {
       mode: "adaptive",
       budgetBytes: 20480 * GiB,
@@ -217,7 +228,7 @@ export const PRESETS: {
       preloadHistoryDays: 90,
     },
   },
-];
+]);
 
 function Toggle({
   title,
@@ -279,6 +290,7 @@ export default function Cache() {
   const [advanced, setAdvanced] = useState(false);
   const [editor, setEditor] = useState<"profiles" | "policy" | null>(null);
   const [profileChoice, setProfileChoice] = useState<{
+    key: string;
     name: string;
     values: Partial<Policy>;
   } | null>(null);
@@ -298,7 +310,7 @@ export default function Cache() {
       await live.reload();
       setEditor(null);
       setProfileChoice(null);
-      toast.success("Cache policy saved");
+      toast.success(t("Cache policy saved"));
     } catch (e) {
       setError(e);
     } finally {
@@ -314,7 +326,7 @@ export default function Cache() {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
       await live.reload();
-      if (path === "warm") toast.success("Resume warming requested");
+      if (path === "warm") toast.success(t("Resume warming requested"));
     } catch (e) {
       setError(e);
     } finally {
@@ -324,7 +336,10 @@ export default function Cache() {
   async function clearBlock(releaseId: string, title: string) {
     if (
       !window.confirm(
-        `Clear cached bytes for ${title} and block this release from future playback? Active or paused playback must be stopped first. Protected bytes may remain until background work ends. You can unblock it in the release controls.`,
+        t(
+          "Clear cached bytes for {title} and block this release from future playback? Active or paused playback must be stopped first. Protected bytes may remain until background work ends. You can unblock it in the release controls.",
+          { title },
+        ),
       )
     )
       return;
@@ -346,12 +361,12 @@ export default function Cache() {
   }
   if (!draft)
     return (
-      <Workspace title="Cache">
+      <Workspace title={t("Cache")}>
         {config.error ? (
           <ErrorPanel error={config.error} onRetry={() => void config.reload()} />
         ) : (
           <div className="grid flex-1 place-items-center">
-            <Spinner label="Loading cache" />
+            <Spinner label={t("Loading cache")} />
           </div>
         )}
       </Workspace>
@@ -362,21 +377,26 @@ export default function Cache() {
   const savedPreset = PRESETS.find((p) =>
     Object.entries(p.values).every(([k, v]) => saved[k as keyof Policy] === v),
   );
-  const policyName = saved.mode === "off" ? "Pass-through" : savedPreset?.name || "Custom policy";
+  const policyName =
+    saved.mode === "off" ? t("Pass-through") : savedPreset?.name || t("Custom policy");
   const enabled = draft.mode !== "off",
     speculate = enabled && !draft.disableSpeculation;
   return (
     <Workspace
-      title="Cache"
-      subtitle="Storage, playback readiness, and background activity."
+      title={t("Cache")}
+      subtitle={t("Storage, playback readiness, and background activity.")}
       actions={
         <>
-          {dirty && <Badge variant="warning">Unsaved policy</Badge>}
+          {dirty && <Badge variant="warning">{t("Unsaved policy")}</Badge>}
           <Badge variant="secondary">
-            {snap?.shared ? (snap.clustered ? "Shared cluster pool" : "NAS storage") : "This node"}
+            {snap?.shared
+              ? snap.clustered
+                ? t("Shared cluster pool")
+                : t("NAS storage")
+              : t("This node")}
           </Badge>
           <Button size="sm" onClick={() => setEditor("policy")}>
-            <Settings2 size={14} /> {dirty ? "Resume editing" : "Edit policy"}
+            <Settings2 size={14} /> {dirty ? t("Resume editing") : t("Edit policy")}
           </Button>
         </>
       }
@@ -387,8 +407,9 @@ export default function Cache() {
             role="status"
             className="shrink-0 border-b border-warning/20 bg-warning/10 px-5 py-2 text-xs text-warning"
           >
-            Storage change saved. Restart this node to use the new backend or folder. The overview
-            shows the currently active cache.
+            {t(
+              "Storage change saved. Restart this node to use the new backend or folder. The overview shows the currently active cache.",
+            )}
           </div>
         )}
         {snap?.storageError && (
@@ -396,24 +417,31 @@ export default function Cache() {
             role="alert"
             className="shrink-0 border-b border-danger/20 bg-danger/10 px-5 py-2 text-xs text-danger"
           >
-            {snap.storageError}. Cache writes are suspended until the mount and database are
-            available.
+            {t("{error}. Cache writes are suspended until the mount and database are available.", {
+              error: snap.storageError,
+            })}
           </div>
         )}
         <div className="shrink-0 border-b border-border bg-surface px-4 sm:px-6">
           <SubtabNav
-            ariaLabel="Cache sections"
+            ariaLabel={t("Cache sections")}
             active={tab}
             onSelect={(key) => navigate(`/cache/${key}`)}
-            tabs={CACHE_TABS.map((t) =>
-              t.key === "explorer" && snap?.releases.length
-                ? { ...t, count: snap.releases.length }
-                : t,
+            tabs={CACHE_TABS.map((tabDef) =>
+              tabDef.key === "explorer" && snap?.releases.length
+                ? { ...tabDef, count: snap.releases.length }
+                : tabDef,
             )}
           />
         </div>
         <main
-          aria-label={`Cache ${tab}`}
+          aria-label={
+            tab === "overview"
+              ? t("Cache overview")
+              : tab === "explorer"
+                ? t("Cache explorer")
+                : t("Cache preloading")
+          }
           className={cn(
             "app-scroll flex min-h-0 flex-1 flex-col bg-bg",
             tab === "overview" ? "overflow-y-auto cockpit:overflow-hidden" : "overflow-hidden",
@@ -437,12 +465,12 @@ export default function Cache() {
                 name={
                   snap?.policy
                     ? snap.policy.mode === "off"
-                      ? "Pass-through"
+                      ? t("Pass-through")
                       : (PRESETS.find((p) =>
                           Object.entries(p.values).every(
                             ([k, v]) => snap.policy?.[k as keyof Policy] === v,
                           ),
-                        )?.name ?? "Custom policy")
+                        )?.name ?? t("Custom policy"))
                     : policyName
                 }
                 freeBytes={disk.data?.freeBytes}
@@ -471,9 +499,9 @@ export default function Cache() {
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[.18em] text-primary">
-                      Managed local library
+                      {t("Managed local library")}
                     </p>
-                    <h2 className="mt-1 text-lg font-semibold">Preload activity</h2>
+                    <h2 className="mt-1 text-lg font-semibold">{t("Preload activity")}</h2>
                   </div>
                   <Button
                     variant="secondary"
@@ -481,53 +509,53 @@ export default function Cache() {
                     disabled={busy !== null || !config.data?.cache.preloadEnabled}
                     onClick={() => void action("preload", { paused: !snap?.preload.paused })}
                   >
-                    {snap?.preload.paused ? "Resume preloading" : "Pause preloading"}
+                    {snap?.preload.paused ? t("Resume preloading") : t("Pause preloading")}
                   </Button>
                 </div>
                 <div className="space-y-4 p-4">
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <p className="text-2xl font-semibold">{snap?.preload.ready ?? 0}</p>
-                      <p className="text-xs text-fg-muted">Sources preloaded</p>
+                      <p className="text-xs text-fg-muted">{t("Sources preloaded")}</p>
                     </div>
                     <div>
                       <p className="text-2xl font-semibold">
                         {formatBytes(snap?.preload.allocated ?? 0)}
                       </p>
-                      <p className="text-xs text-fg-muted">Reserved, including overhead</p>
+                      <p className="text-xs text-fg-muted">{t("Reserved, including overhead")}</p>
                     </div>
                     <div>
                       <p className="text-2xl font-semibold">
                         {formatBytes(config.data?.cache.preloadBudgetBytes ?? 0)}
                       </p>
-                      <p className="text-xs text-fg-muted">Preload allocation</p>
+                      <p className="text-xs text-fg-muted">{t("Preload allocation")}</p>
                     </div>
                   </div>
                   <div className="rounded-lg bg-bg-subtle p-3">
                     <p className="text-sm font-medium">
                       {snap?.preload.paused
-                        ? "Paused"
+                        ? t("Paused")
                         : snap?.preload.state === "filling"
                           ? snap.preload.title
                           : snap?.preload.state === "resolving"
-                            ? `Finding a source for ${snap.preload.title}`
+                            ? t("Finding a source for {title}", { title: snap.preload.title })
                             : !saved.preloadEnabled
-                              ? "Preloading disabled"
+                              ? t("Preloading disabled")
                               : snap?.preload.state === "selecting"
-                                ? "Selecting titles"
+                                ? t("Selecting titles")
                                 : snap?.preload.state === "ready"
-                                  ? "Selection pass complete"
-                                  : "Waiting for the next pass"}
+                                  ? t("Selection pass complete")
+                                  : t("Waiting for the next pass")}
                     </p>
                     <p className="mt-1 text-xs text-fg-muted">
                       {snap?.preload.message ||
-                        "Enable movie and TV preloading to build a local shelf."}
+                        t("Enable movie and TV preloading to build a local shelf.")}
                     </p>
                     {snap?.preload.state === "filling" && (
                       <>
                         <div
                           role="progressbar"
-                          aria-label="Current preload"
+                          aria-label={t("Current preload")}
                           aria-valuenow={snap.preload.fetched}
                           aria-valuemax={snap.preload.size}
                           className="mt-3 h-1.5 overflow-hidden rounded bg-primary/10"
@@ -548,18 +576,21 @@ export default function Cache() {
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
                     <p className="text-xs text-fg-muted">
                       {config.data?.cache.preloadDuringPlayback
-                        ? "May run during playback"
-                        : "Waits during playback"}{" "}
+                        ? t("May run during playback")
+                        : t("Waits during playback")}{" "}
                       ·{" "}
                       {config.data?.cache.preloadRateMiB
-                        ? `${config.data.cache.preloadRateMiB} MiB/s limit`
-                        : "No bandwidth cap"}
+                        ? t("{rate} MiB/s limit", { rate: config.data.cache.preloadRateMiB })
+                        : t("No bandwidth cap")}
                     </p>
                   </div>
                   {(snap?.preload.failed ?? 0) > 0 && (
                     <p className="text-xs text-fg-muted">
-                      {snap?.preload.failed} attempts skipped or interrupted this run. Unavailable
-                      or oversized titles do not stop the shelf.
+                      {tn(
+                        snap?.preload.failed ?? 0,
+                        "{count} attempt skipped or interrupted this run. Unavailable or oversized titles do not stop the shelf.",
+                        "{count} attempts skipped or interrupted this run. Unavailable or oversized titles do not stop the shelf.",
+                      )}
                     </p>
                   )}
                 </div>
@@ -568,14 +599,17 @@ export default function Cache() {
                 <div className="flex items-start justify-between gap-3 border-b border-border p-4">
                   <div>
                     <h2 className="flex items-center gap-2 text-sm font-semibold">
-                      <Sparkles size={16} className="text-primary" /> Why these titles?
+                      <Sparkles size={16} className="text-primary" /> {t("Why these titles?")}
                     </h2>
                     <p className="mt-1 text-xs text-fg-muted">
-                      Highest-ranked selections from the last pass · {snap?.preload.viewers ?? 0}{" "}
-                      active viewers considered
+                      {tn(
+                        snap?.preload.viewers ?? 0,
+                        "Highest-ranked selections from the last pass · {count} active viewer considered",
+                        "Highest-ranked selections from the last pass · {count} active viewers considered",
+                      )}
                     </p>
                   </div>
-                  <Badge>Explainable selection</Badge>
+                  <Badge>{t("Explainable selection")}</Badge>
                 </div>
                 {snap?.preload.selection?.length ? (
                   <div className="divide-y divide-border">
@@ -588,18 +622,24 @@ export default function Cache() {
                           <div className="flex items-center gap-2">
                             <span className="truncate text-sm font-medium">{item.title}</span>
                             <span className="shrink-0 text-[10px] uppercase text-fg-subtle">
-                              {item.type === "episode" ? "TV" : "Film"}
+                              {item.type === "episode" ? t("TV") : t("Film")}
                             </span>
                           </div>
                           <p className="mt-1 text-xs text-fg-muted">{item.reason}</p>
                           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-fg-subtle">
-                            <span>Catalogue {Math.round(item.catalogue)}/100</span>
-                            <span>Household {Math.round(item.household)}/100</span>
+                            <span>
+                              {t("Catalogue {score}/100", { score: Math.round(item.catalogue) })}
+                            </span>
+                            <span>
+                              {t("Household {score}/100", { score: Math.round(item.household) })}
+                            </span>
                           </div>
                         </div>
                         <span
                           className="shrink-0 rounded-md bg-primary/10 px-2 py-1 font-mono text-xs text-primary"
-                          aria-label={`Selection score ${Math.round(item.score)} out of 100`}
+                          aria-label={t("Selection score {score} out of 100", {
+                            score: Math.round(item.score),
+                          })}
                         >
                           {Math.round(item.score)}
                         </span>
@@ -608,14 +648,15 @@ export default function Cache() {
                   </div>
                 ) : (
                   <p className="p-4 text-sm leading-relaxed text-fg-muted">
-                    Enable preloading and save to build your first selection. Movies blend discovery
-                    with household favourites; TV keeps a rolling window of episodes ready. Scores
-                    appear after the next selection pass.
+                    {t(
+                      "Enable preloading and save to build your first selection. Movies blend discovery with household favourites; TV keeps a rolling window of episodes ready. Scores appear after the next selection pass.",
+                    )}
                   </p>
                 )}
                 <p className="border-t border-border px-4 py-3 text-[10px] text-fg-subtle">
-                  Scores rank cache candidates, not predicted viewing probabilities. TV windows
-                  taper by episode distance. Selection does not guarantee source availability.
+                  {t(
+                    "Scores rank cache candidates, not predicted viewing probabilities. TV windows taper by episode distance. Selection does not guarantee source availability.",
+                  )}
                 </p>
               </section>
             </div>
@@ -630,16 +671,16 @@ export default function Cache() {
         }}
         title={
           editor === "profiles"
-            ? "Choose a cache profile"
+            ? t("Choose a cache profile")
             : profileChoice
-              ? "Review your cache profile"
-              : "Edit cache policy"
+              ? t("Review your cache profile")
+              : t("Edit cache policy")
         }
         size="lg"
         footer={
           editor === "profiles" ? (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-fg-muted">1 / Choose a starting point</span>
+              <span className="text-xs text-fg-muted">{t("1 / Choose a starting point")}</span>
               <Button
                 disabled={!profileChoice}
                 onClick={() => {
@@ -649,7 +690,7 @@ export default function Cache() {
                   }
                 }}
               >
-                Review profile <ArrowUpRight size={14} />
+                {t("Review profile")} <ArrowUpRight size={14} />
               </Button>
             </div>
           ) : (
@@ -663,10 +704,10 @@ export default function Cache() {
                 }}
                 disabled={saving}
               >
-                Discard changes
+                {t("Discard changes")}
               </Button>
               <Button onClick={() => void save()} disabled={!dirty || saving}>
-                {saving ? "Saving…" : "Save policy"}
+                {saving ? t("Saving…") : t("Save policy")}
               </Button>
             </div>
           )
@@ -675,19 +716,22 @@ export default function Cache() {
         {editor === "profiles" ? (
           <div className="space-y-4">
             <p className="text-sm leading-relaxed text-fg-muted">
-              Pick a starting point, then review the budget and behavior. Nothing changes until you
-              save.
+              {t(
+                "Pick a starting point, then review the budget and behavior. Nothing changes until you save.",
+              )}
             </p>
             <p className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-fg-muted">
-              Cinema node and Edge library enable full movie and episode preloading. All sizes and
-              limits can be customized in the next step.
+              {t(
+                "Cinema node and Edge library enable full movie and episode preloading. All sizes and limits can be customized in the next step.",
+              )}
             </p>
             <button
               type="button"
-              aria-pressed={profileChoice?.name === "Pass-through"}
+              aria-pressed={profileChoice?.key === "pass-through"}
               onClick={() =>
                 setProfileChoice({
-                  name: "Pass-through",
+                  key: "pass-through",
+                  name: t("Pass-through"),
                   values: {
                     mode: "off",
                     budgetBytes: 0,
@@ -700,16 +744,16 @@ export default function Cache() {
 
               className={cn(
                 "flex w-full items-center gap-3 rounded-xl border p-3 text-left transition hover:border-primary/60",
-                profileChoice?.name === "Pass-through"
+                profileChoice?.key === "pass-through"
                   ? "border-primary bg-primary/10"
                   : "border-border bg-surface",
               )}
             >
               <Leaf size={18} className="text-primary" />
               <span className="flex-1">
-                <span className="block text-sm font-semibold">Pass-through</span>
+                <span className="block text-sm font-semibold">{t("Pass-through")}</span>
                 <span className="block text-xs text-fg-muted">
-                  No persistent media. Stream and move on.
+                  {t("No persistent media. Stream and move on.")}
                 </span>
               </span>
               <span className="text-xs text-primary">0 B</span>
@@ -717,13 +761,13 @@ export default function Cache() {
             <div className="grid grid-cols-2 gap-2">
               {PRESETS.map((p, i) => (
                 <button
-                  key={p.name}
+                  key={p.key}
                   type="button"
-                  aria-pressed={profileChoice?.name === p.name}
+                  aria-pressed={profileChoice?.key === p.key}
                   onClick={() => setProfileChoice(p)}
                   className={cn(
                     "relative rounded-xl border p-3 text-left transition hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    profileChoice?.name === p.name
+                    profileChoice?.key === p.key
                       ? "border-primary bg-primary/10"
                       : "border-border bg-surface",
                   )}
@@ -738,7 +782,7 @@ export default function Cache() {
                     ) : (
                       <HardDrive size={16} />
                     )}
-                    {profileChoice?.name === p.name && <Check size={14} className="text-primary" />}
+                    {profileChoice?.key === p.key && <Check size={14} className="text-primary" />}
                   </span>
                   <span className="mt-3 block text-sm font-semibold">{p.name}</span>
                   <span className="block text-xs text-primary">{p.space}</span>
@@ -755,33 +799,34 @@ export default function Cache() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[.16em] text-primary">
-                    {profileChoice ? "Review your preset" : "Your starting point"}
+                    {profileChoice ? t("Review your preset") : t("Your starting point")}
                   </p>
                   <p className="mt-1 text-sm font-semibold">{profileChoice?.name ?? policyName}</p>
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => setEditor("profiles")}>
-                  <ArrowLeft size={14} /> Back to presets
+                  <ArrowLeft size={14} /> {t("Back to presets")}
                 </Button>
               </div>
               <p className="mt-2 text-xs leading-relaxed text-fg-muted">
-                Choose a different preset at any time, then customize it here. Your current policy
-                stays active until you save.
+                {t(
+                  "Choose a different preset at any time, then customize it here. Your current policy stays active until you save.",
+                )}
               </p>
             </div>
             {error ? <ErrorPanel error={error} /> : null}
-            <section aria-label="Cache storage" className="space-y-3">
+            <section aria-label={t("Cache storage")} className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Where your cache lives</h3>
+                <h3 className="text-sm font-semibold">{t("Where your cache lives")}</h3>
                 <Badge variant="secondary">
                   {draft.storage === "shared" && snap?.clustered
-                    ? "Cluster policy"
-                    : "Server policy"}
+                    ? t("Cluster policy")
+                    : t("Server policy")}
                 </Badge>
               </div>
               <div
                 className="grid grid-cols-2 gap-3"
                 role="radiogroup"
-                aria-label="Storage backend"
+                aria-label={t("Storage backend")}
               >
                 <button
                   type="button"
@@ -796,9 +841,9 @@ export default function Cache() {
                   )}
                 >
                   <HardDrive size={18} className="mb-2 text-primary" />
-                  <span className="block text-sm font-medium">Local disk</span>
+                  <span className="block text-sm font-medium">{t("Local disk")}</span>
                   <span className="mt-1 block text-xs text-fg-muted">
-                    An independent cache on this node.
+                    {t("An independent cache on this node.")}
                   </span>
                 </button>
                 <button
@@ -816,27 +861,35 @@ export default function Cache() {
                   )}
                 >
                   <Network size={18} className="mb-2 text-primary" />
-                  <span className="block text-sm font-medium">Shared NAS</span>
+                  <span className="block text-sm font-medium">{t("Shared NAS")}</span>
                   <span className="mt-1 block text-xs text-fg-muted">
                     {snap?.clustered
-                      ? "One library and budget across your cluster."
-                      : "Keep your cache on a mounted network share."}
+                      ? t("One library and budget across your cluster.")
+                      : t("Keep your cache on a mounted network share.")}
                   </span>
                 </button>
               </div>
               {draft.storage === "shared" && (
                 <p className="rounded-lg bg-primary/5 p-3 text-xs leading-relaxed text-fg-muted">
                   {snap?.clustered
-                    ? "Mount the same NAS share on every participating node. Each node may use a different mount path. Budgets, retention, pins, and preloading are shared; saving this policy updates all members of the pool."
-                    : "Mount your NAS share on this server and choose a dedicated folder. Your media cache lives on the NAS; its database stays on this server. No cluster is required. To let multiple Ether servers use the same cache folder, connect them in a cluster first."}
+                    ? t(
+                        "Mount the same NAS share on every participating node. Each node may use a different mount path. Budgets, retention, pins, and preloading are shared; saving this policy updates all members of the pool.",
+                      )
+                    : t(
+                        "Mount your NAS share on this server and choose a dedicated folder. Your media cache lives on the NAS; its database stays on this server. No cluster is required. To let multiple Ether servers use the same cache folder, connect them in a cluster first.",
+                      )}
                 </p>
               )}
               <Field
                 label={
-                  draft.storage === "shared" ? "NAS mount path on this node" : "Cache directory"
+                  draft.storage === "shared"
+                    ? t("NAS mount path on this node")
+                    : t("Cache directory")
                 }
                 htmlFor="cache-dir"
-                hint="Changing storage or its folder requires a node restart. Existing cache bytes stay in their original folder."
+                hint={t(
+                  "Changing storage or its folder requires a node restart. Existing cache bytes stay in their original folder.",
+                )}
               >
                 <Input
                   id="cache-dir"
@@ -847,8 +900,10 @@ export default function Cache() {
               </Field>
             </section>
             <Field
-              label="Media disk budget"
-              hint="Zero means unlimited, not disabled. Choose No persistent media below to turn disk caching off."
+              label={t("Media disk budget")}
+              hint={t(
+                "Zero means unlimited, not disabled. Choose No persistent media below to turn disk caching off.",
+              )}
               htmlFor="cache-budget"
             >
               <div className="flex items-center gap-2">
@@ -862,7 +917,7 @@ export default function Cache() {
                   }
                 />
                 <select
-                  aria-label="Budget unit"
+                  aria-label={t("Budget unit")}
                   value={unit}
                   onChange={(e) => setUnit(e.target.value as "GiB" | "TiB")}
                   className="rounded border border-border bg-surface p-2 text-xs"
@@ -875,7 +930,7 @@ export default function Cache() {
             {disk.data && draft.dir === activeDirectory && (
               <p className="flex items-center gap-2 text-xs text-fg-muted">
                 <HardDrive size={13} />
-                {formatBytes(disk.data.freeBytes)} currently free
+                {t("{size} currently free", { size: formatBytes(disk.data.freeBytes) })}
               </p>
             )}
             {disk.data &&
@@ -884,15 +939,17 @@ export default function Cache() {
               draft.budgetBytes > 0 &&
               draft.budgetBytes - used > disk.data.freeBytes && (
                 <p className="rounded-lg bg-warning/10 p-3 text-xs text-warning">
-                  This budget needs more space than is currently free. Choose a smaller budget.
+                  {t(
+                    "This budget needs more space than is currently free. Choose a smaller budget.",
+                  )}
                 </p>
               )}
             <div className="border-t border-border pt-5">
               <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-fg-subtle">
-                02 / What stays
+                {t("02 / What stays")}
               </p>
               <label className="mt-3 block text-sm font-medium" htmlFor="cache-mode">
-                Retention strategy
+                {t("Retention strategy")}
               </label>
               <select
                 id="cache-mode"
@@ -905,21 +962,27 @@ export default function Cache() {
                 }
                 className="mt-2 w-full rounded-lg border border-border bg-surface p-2.5 text-sm"
               >
-                <option value="off">No persistent media</option>
-                <option value="demand">Keep what is streamed</option>
-                <option value="adaptive">Favour repeat watches</option>
+                <option value="off">{t("No persistent media")}</option>
+                <option value="demand">{t("Keep what is streamed")}</option>
+                <option value="adaptive">{t("Favour repeat watches")}</option>
               </select>
               <p className="mt-2 text-xs leading-relaxed text-fg-muted">
                 {!enabled
-                  ? "New media bytes bypass disk. Unprotected existing bytes are released; playback and pinned bytes remain protected."
+                  ? t(
+                      "New media bytes bypass disk. Unprotected existing bytes are released; playback and pinned bytes remain protected.",
+                    )
                   : draft.mode === "adaptive"
-                    ? "Repeat plays earn extra time before eviction. Popularity is learned from playback, never from background reads."
-                    : "Keep recently used bytes. The oldest unprotected segments make room first."}
+                    ? t(
+                        "Repeat plays earn extra time before eviction. Popularity is learned from playback, never from background reads.",
+                      )
+                    : t(
+                        "Keep recently used bytes. The oldest unprotected segments make room first.",
+                      )}
               </p>
             </div>
             <Field
-              label="Expire after inactivity"
-              hint="Days since last cache use. Zero keeps bytes until space is needed."
+              label={t("Expire after inactivity")}
+              hint={t("Days since last cache use. Zero keeps bytes until space is needed.")}
               htmlFor="cache-retention"
             >
               <NumberInput
@@ -932,32 +995,36 @@ export default function Cache() {
             </Field>
             <div className="border-t border-border pt-5">
               <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-fg-subtle">
-                03 / Think ahead
+                {t("03 / Think ahead")}
               </p>
               <Toggle
-                title="Allow opening and resume warming"
-                description="Let Ether fetch small windows before Play. Turn off for strictly on-demand media."
+                title={t("Allow opening and resume warming")}
+                description={t(
+                  "Let Ether fetch small windows before Play. Turn off for strictly on-demand media.",
+                )}
                 checked={speculate}
                 disabled={!enabled}
                 onChange={(v) => patch({ disableSpeculation: !v })}
               />
               <Toggle
-                title="Warm detail pages"
-                description="Opening a movie or episode prepares its source and opening bytes. Shows warm their On Deck episode when supported."
+                title={t("Warm detail pages")}
+                description={t(
+                  "Opening a movie or episode prepares its source and opening bytes. Shows warm their On Deck episode when supported.",
+                )}
                 checked={draft.detailWarmup !== "off"}
                 disabled={!speculate}
                 onChange={(v) => patch({ detailWarmup: v ? "on" : "off" })}
               />
               <Toggle
-                title="Prepare the next episode"
-                description="Warm the opening near the end of the current episode."
+                title={t("Prepare the next episode")}
+                description={t("Warm the opening near the end of the current episode.")}
                 checked={draft.prefetchNextEpisode}
                 disabled={!speculate}
                 onChange={(v) => patch({ prefetchNextEpisode: v })}
               />
               <Toggle
-                title="Keep resume points warm"
-                description="Periodically refresh a small window around Continue Watching."
+                title={t("Keep resume points warm")}
+                description={t("Periodically refresh a small window around Continue Watching.")}
                 checked={draft.keepInProgressWarm}
                 disabled={!speculate}
                 onChange={(v) => patch({ keepInProgressWarm: v })}
@@ -965,11 +1032,13 @@ export default function Cache() {
             </div>
             <div className="border-t border-border pt-5">
               <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-fg-subtle">
-                04 / Your local library
+                {t("04 / Your local library")}
               </p>
               <Toggle
-                title="Preload movies & TV"
-                description="Proactively fill a dedicated part of your cache from the local catalogue using your sources and quality rules. This downloads complete movie and episode sources."
+                title={t("Preload movies & TV")}
+                description={t(
+                  "Proactively fill a dedicated part of your cache from the local catalogue using your sources and quality rules. This downloads complete movie and episode sources.",
+                )}
                 checked={draft.preloadEnabled ?? false}
                 disabled={!enabled}
                 onChange={(v) =>
@@ -984,8 +1053,8 @@ export default function Cache() {
               {draft.preloadEnabled && (
                 <div className="space-y-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
                   <Field
-                    label="Preload allocation (GiB)"
-                    hint="Part of the total budget, not additional storage."
+                    label={t("Preload allocation (GiB)")}
+                    hint={t("Part of the total budget, not additional storage.")}
                     htmlFor="preload-budget"
                   >
                     <NumberInput
@@ -995,38 +1064,38 @@ export default function Cache() {
                       onChange={(n) => patch({ preloadBudgetBytes: Math.round(n * GiB) })}
                     />
                   </Field>
-                  <Field label="Include in your shelf" htmlFor="preload-content">
+                  <Field label={t("Include in your shelf")} htmlFor="preload-content">
                     <select
                       id="preload-content"
                       className="w-full rounded border border-border bg-surface p-2 text-sm"
                       value={draft.preloadContent || "mixed"}
                       onChange={(e) => patch({ preloadContent: e.target.value })}
                     >
-                      <option value="mixed">Movies & TV episodes</option>
-                      <option value="movies">Movies only</option>
-                      <option value="tv">TV episodes only</option>
+                      <option value="mixed">{t("Movies & TV episodes")}</option>
+                      <option value="movies">{t("Movies only")}</option>
+                      <option value="tv">{t("TV episodes only")}</option>
                     </select>
                   </Field>
-                  <Field label="Selection strategy" htmlFor="preload-source">
+                  <Field label={t("Selection strategy")} htmlFor="preload-source">
                     <select
                       id="preload-source"
                       className="w-full rounded border border-border bg-surface p-2 text-sm"
                       value={draft.preloadSource || "smart"}
                       onChange={(e) => patch({ preloadSource: e.target.value })}
                     >
-                      <option value="smart">Smart household blend</option>
-                      <option value="popular">Catalogue popularity</option>
-                      <option value="recent">Newest releases</option>
+                      <option value="smart">{t("Smart household blend")}</option>
+                      <option value="popular">{t("Catalogue popularity")}</option>
+                      <option value="recent">{t("Newest releases")}</option>
                     </select>
                   </Field>
                   {(!draft.preloadSource || draft.preloadSource === "smart") && (
                     <div className="space-y-3 rounded-lg border border-primary/20 bg-surface p-3">
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <label htmlFor="household-weight" className="font-medium">
-                          Household influence
+                          {t("Household influence")}
                         </label>
                         <span className="font-mono text-primary">
-                          {draft.preloadHouseholdWeight ?? 65}%
+                          {formatPercent((draft.preloadHouseholdWeight ?? 65) / 100)}
                         </span>
                       </div>
                       <input
@@ -1040,19 +1109,20 @@ export default function Cache() {
                         onChange={(e) => patch({ preloadHouseholdWeight: Number(e.target.value) })}
                       />
                       <div className="flex justify-between text-[10px] text-fg-subtle">
-                        <span>Catalogue discovery</span>
-                        <span>Your household</span>
+                        <span>{t("Catalogue discovery")}</span>
+                        <span>{t("Your household")}</span>
                       </div>
                       <p className="text-[11px] leading-relaxed text-fg-muted">
-                        Recent repeat viewing, shared favourites and genre interests guide the
-                        shelf. Older viewing fades; no history falls back to catalogue popularity.
+                        {t(
+                          "Recent repeat viewing, shared favourites and genre interests guide the shelf. Older viewing fades; no history falls back to catalogue popularity.",
+                        )}
                       </p>
                     </div>
                   )}
                   <Field
-                    label="Learn from"
+                    label={t("Learn from")}
                     htmlFor="household-scope"
-                    hint="Also determines whose TV progress guides episode selection."
+                    hint={t("Also determines whose TV progress guides episode selection.")}
                   >
                     <select
                       id="household-scope"
@@ -1060,15 +1130,17 @@ export default function Cache() {
                       value={draft.preloadHouseholdScope || "home"}
                       onChange={(e) => patch({ preloadHouseholdScope: e.target.value })}
                     >
-                      <option value="home">Owner & Plex Home members</option>
-                      <option value="all">All active shared viewers</option>
+                      <option value="home">{t("Owner & Plex Home members")}</option>
+                      <option value="all">{t("All active shared viewers")}</option>
                     </select>
                   </Field>
                   {draft.preloadContent !== "movies" && (
                     <Field
-                      label="Episode window per show"
+                      label={t("Episode window per show")}
                       htmlFor="episode-window"
-                      hint="A rolling shelf around current viewing positions. New shows start at episode one; different viewers share this limit."
+                      hint={t(
+                        "A rolling shelf around current viewing positions. New shows start at episode one; different viewers share this limit.",
+                      )}
                     >
                       <NumberInput
                         id="episode-window"
@@ -1080,35 +1152,39 @@ export default function Cache() {
                     </Field>
                   )}
                   <p className="text-[11px] text-fg-muted">
-                    Room for roughly {Math.floor((draft.preloadBudgetBytes ?? 0) / (8 * GiB))}{" "}
-                    movie-sized sources at 8 GiB each. Episode sizes vary; both share this
-                    allocation.
+                    {tn(
+                      Math.floor((draft.preloadBudgetBytes ?? 0) / (8 * GiB)),
+                      "Room for roughly {count} movie-sized source at 8 GiB each. Episode sizes vary; both share this allocation.",
+                      "Room for roughly {count} movie-sized sources at 8 GiB each. Episode sizes vary; both share this allocation.",
+                    )}
                   </p>
                 </div>
               )}
             </div>
             <Button variant="secondary" className="w-full" onClick={() => setAdvanced(true)}>
-              <Settings2 size={15} /> Fine tune policy <ArrowUpRight size={14} />
+              <Settings2 size={15} /> {t("Fine tune policy")} <ArrowUpRight size={14} />
             </Button>
             <p className="text-[11px] leading-relaxed text-fg-subtle">
-              Live streams and pinned releases can exceed the budget. Expiry never removes protected
-              bytes. This budget covers media segments; artwork, metadata and transcode output use
-              separate storage.
+              {t(
+                "Live streams and pinned releases can exceed the budget. Expiry never removes protected bytes. This budget covers media segments; artwork, metadata and transcode output use separate storage.",
+              )}
             </p>
             <Drawer
               open={advanced}
               onClose={() => setAdvanced(false)}
-              title="Fine tune your cache"
+              title={t("Fine tune your cache")}
               size="lg"
             >
               <div className="space-y-6 p-1">
                 <p className="text-sm text-fg-muted">
-                  Changes join your draft. Save the policy when you’re ready.
+                  {t("Changes join your draft. Save the policy when you’re ready.")}
                 </p>
                 <Field
-                  label="Household history window (days)"
+                  label={t("Household history window (days)")}
                   htmlFor="history-window"
-                  hint="Recent views count more; frequency is capped per viewer. Completed watches and reviewed imports contribute, never preload activity."
+                  hint={t(
+                    "Recent views count more; frequency is capped per viewer. Completed watches and reviewed imports contribute, never preload activity.",
+                  )}
                 >
                   <NumberInput
                     id="history-window"
@@ -1119,8 +1195,10 @@ export default function Cache() {
                   />
                 </Field>
                 <Field
-                  label="Maximum preloaded titles"
-                  hint="Up to 5,000. The allocation still limits how many fit."
+                  label={t("Maximum preloaded titles")}
+                  hint={t("Up to {max}. The allocation still limits how many fit.", {
+                    max: formatNumber(5000),
+                  })}
                   htmlFor="preload-count"
                 >
                   <NumberInput
@@ -1132,8 +1210,10 @@ export default function Cache() {
                   />
                 </Field>
                 <Field
-                  label="Preload speed (MiB/s)"
-                  hint="Average payload cap, with short bursts for each 16 MiB window. Zero removes the cap."
+                  label={t("Preload speed (MiB/s)")}
+                  hint={t(
+                    "Average payload cap, with short bursts for each 16 MiB window. Zero removes the cap.",
+                  )}
                   htmlFor="preload-rate"
                 >
                   <NumberInput
@@ -1145,8 +1225,8 @@ export default function Cache() {
                   />
                 </Field>
                 <Field
-                  label="Keep disk space free (GiB)"
-                  hint="Preloading waits below this reserve. Zero uses the 5 GiB default."
+                  label={t("Keep disk space free (GiB)")}
+                  hint={t("Preloading waits below this reserve. Zero uses the 5 GiB default.")}
                   htmlFor="preload-reserve"
                 >
                   <NumberInput
@@ -1157,14 +1237,18 @@ export default function Cache() {
                   />
                 </Field>
                 <Toggle
-                  title="Preload during playback"
-                  description="Otherwise, complete-title filling waits while viewers are streaming. Opening and next-episode warming use their separate controls."
+                  title={t("Preload during playback")}
+                  description={t(
+                    "Otherwise, complete-title filling waits while viewers are streaming. Opening and next-episode warming use their separate controls.",
+                  )}
                   checked={draft.preloadDuringPlayback ?? false}
                   onChange={(v) => patch({ preloadDuringPlayback: v })}
                 />
                 <Field
-                  label="Opening window (MiB)"
-                  hint="2–64 MiB for detail pages. Larger windows use more bandwidth; startup still depends on the source and client."
+                  label={t("Opening window (MiB)")}
+                  hint={t(
+                    "2–64 MiB for detail pages. Larger windows use more bandwidth; startup still depends on the source and client.",
+                  )}
                   htmlFor="cache-opening"
                 >
                   <NumberInput
@@ -1175,7 +1259,7 @@ export default function Cache() {
                     onChange={(n) => patch({ detailBytes: Math.round(n * MiB) })}
                   />
                 </Field>
-                <Field label="Next episode / resume window (MiB)" htmlFor="cache-prefetch">
+                <Field label={t("Next episode / resume window (MiB)")} htmlFor="cache-prefetch">
                   <NumberInput
                     id="cache-prefetch"
                     min={1}
@@ -1183,7 +1267,7 @@ export default function Cache() {
                     onChange={(n) => patch({ prefetchBytes: Math.round(n * MiB) })}
                   />
                 </Field>
-                <Field label="Prepare next episode at (%)" htmlFor="cache-trigger">
+                <Field label={t("Prepare next episode at (%)")} htmlFor="cache-trigger">
                   <NumberInput
                     id="cache-trigger"
                     min={1}
@@ -1193,8 +1277,10 @@ export default function Cache() {
                   />
                 </Field>
                 <Field
-                  label="Replay credit (hours per repeat play)"
-                  hint="Adaptive mode gives up to eight repeat plays a recency credit. It never overrides expiry or pins. Credit fades out after 30 days without a play."
+                  label={t("Replay credit (hours per repeat play)")}
+                  hint={t(
+                    "Adaptive mode gives up to eight repeat plays a recency credit. It never overrides expiry or pins. Credit fades out after 30 days without a play.",
+                  )}
                   htmlFor="cache-boost"
                 >
                   <NumberInput
@@ -1206,8 +1292,10 @@ export default function Cache() {
                   />
                 </Field>
                 <Field
-                  label="Resume protection share (%)"
-                  hint="Maximum share of the budget assigned to in-progress releases. The most recently watched are considered first."
+                  label={t("Resume protection share (%)")}
+                  hint={t(
+                    "Maximum share of the budget assigned to in-progress releases. The most recently watched are considered first.",
+                  )}
                   htmlFor="cache-share"
                 >
                   <NumberInput
@@ -1219,8 +1307,10 @@ export default function Cache() {
                   />
                 </Field>
                 <Field
-                  label="Resume protection age"
-                  hint="A duration such as 720h (30 days). Abandoned titles lose their resume pin after this interval."
+                  label={t("Resume protection age")}
+                  hint={t(
+                    "A duration such as 720h (30 days). Abandoned titles lose their resume pin after this interval.",
+                  )}
                   htmlFor="cache-age"
                 >
                   <Input
@@ -1230,11 +1320,11 @@ export default function Cache() {
                   />
                 </Field>
                 <p className="text-xs leading-relaxed text-fg-muted">
-                  Detail warming is rate limited and pauses during active playback. Trailer and
-                  post-play warming also require background warming here and their own feature
-                  settings.
+                  {t(
+                    "Detail warming is rate limited and pauses during active playback. Trailer and post-play warming also require background warming here and their own feature settings.",
+                  )}
                 </p>
-                <Button onClick={() => setAdvanced(false)}>Done</Button>
+                <Button onClick={() => setAdvanced(false)}>{t("Done")}</Button>
               </div>
             </Drawer>
           </div>

@@ -52,6 +52,8 @@ import type {
   UsenetProvider,
 } from "./types";
 
+import { t } from "../i18n";
+
 const TOKEN_KEY = "ether-admin-token";
 
 // A browser may allow reads while rejecting writes (quota/privacy settings).
@@ -117,7 +119,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     res = await fetch(API_BASE + path, { ...init, headers: authHeaders(init) });
   } catch (e) {
     if (isAbort(e)) throw e;
-    throw new ApiError(0, "network", `Could not reach the Ether server: ${(e as Error).message}`);
+    throw new ApiError(
+      0,
+      "network",
+      t("Could not reach the Ether server: {error}", { error: (e as Error).message }),
+    );
   }
   const text = await res.text();
   let data: unknown = null;
@@ -135,7 +141,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     throw new ApiError(
       res.status,
       err?.code ?? "http",
-      err?.message ?? `Request failed (${res.status})`,
+      err?.message ?? t("Request failed ({status})", { status: res.status }),
       err?.fields,
     );
   }
@@ -157,7 +163,12 @@ export function imageNeedsFetch(src: string | null | undefined): boolean {
 /** Fetch an authenticated binary resource (artwork) as a Blob. */
 export async function apiBlob(url: string, signal?: AbortSignal): Promise<Blob> {
   const res = await fetch(url, { headers: authHeaders({}), signal });
-  if (!res.ok) throw new ApiError(res.status, "http", `Image request failed (${res.status})`);
+  if (!res.ok)
+    throw new ApiError(
+      res.status,
+      "http",
+      t("Image request failed ({status})", { status: res.status }),
+    );
   return res.blob();
 }
 
@@ -389,7 +400,7 @@ export function newId(prefix: string): string {
 /** Turn any thrown value into a sentence for the owner. */
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 401) return "Your session has expired. Sign in again.";
+    if (err.status === 401) return t("Your session has expired. Sign in again.");
     return err.message;
   }
   if (err instanceof Error) return err.message;

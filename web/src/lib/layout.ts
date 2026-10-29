@@ -10,6 +10,7 @@ import type {
   RowStatus,
   TuningDial,
 } from "./contract";
+import { getLocale, localized, t, tn } from "../i18n";
 
 /**
  * Home Designer helpers for the layered layout: an Everyone template,
@@ -22,57 +23,48 @@ export type LayerKey = "global" | number;
 
 export const EMPTY_LAYOUT: HomeLayout = { global: [], viewers: [] };
 
-export const SECTIONS: { value: LayoutSection; label: string }[] = [
-  { value: "home", label: "Home" },
-  { value: "movies", label: "Movies" },
-  { value: "shows", label: "TV" },
-];
-export const DEVICES: { value: Device; label: string }[] = [
-  { value: "tv", label: "TV" },
-  { value: "mobile", label: "Phone" },
-  { value: "web", label: "Web" },
-  { value: "desktop", label: "Desktop" },
-];
-export const DAYPARTS: { value: Daypart; label: string }[] = [
-  { value: "morning", label: "Morning" },
-  { value: "afternoon", label: "Afternoon" },
-  { value: "evening", label: "Evening" },
-  { value: "late", label: "Late" },
-];
-export const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const;
+export const SECTIONS = localized<{ value: LayoutSection; label: string }[]>(() => [
+  { value: "home", label: t("Home") },
+  { value: "movies", label: t("Movies") },
+  { value: "shows", label: t("TV") },
+]);
+export const DEVICES = localized<{ value: Device; label: string }[]>(() => [
+  { value: "tv", label: t("TV") },
+  { value: "mobile", label: t("Phone") },
+  { value: "web", label: t("Web") },
+  { value: "desktop", label: t("Desktop") },
+]);
+export const DAYPARTS = localized<{ value: Daypart; label: string }[]>(() => [
+  { value: "morning", label: t("Morning") },
+  { value: "afternoon", label: t("Afternoon") },
+  { value: "evening", label: t("Evening") },
+  { value: "late", label: t("Late") },
+]);
+/** Short month names, January first, in the active language. */
+export const MONTHS = localized<readonly string[]>(() => {
+  const fmt = new Intl.DateTimeFormat(getLocale(), { month: "short", timeZone: "UTC" });
+  return Array.from({ length: 12 }, (_, i) => fmt.format(Date.UTC(2000, i, 15)));
+});
 
-export const STATUS_LABEL: Record<RowStatus, string> = {
-  always: "Always",
-  eligible: "Eligible",
-  off: "Off",
-};
-export const STATUS_HINT: Record<RowStatus, string> = {
-  always: "On the page whenever it has titles",
-  eligible: "Personalization decides whether and where",
-  off: "Never shown",
-};
+export const STATUS_LABEL = localized<Record<RowStatus, string>>(() => ({
+  always: t("Always"),
+  eligible: t("Eligible"),
+  off: t("Off"),
+}));
+export const STATUS_HINT = localized<Record<RowStatus, string>>(() => ({
+  always: t("On the page whenever it has titles"),
+  eligible: t("Personalization decides whether and where"),
+  off: t("Never shown"),
+}));
 
 /** Priority steps the owner picks from (ranking weight). */
-export const PRIORITIES: { value: number; label: string }[] = [
-  { value: 0.3, label: "Much lower" },
-  { value: 0.6, label: "Lower" },
-  { value: 1, label: "Normal" },
-  { value: 1.5, label: "Higher" },
-  { value: 2.5, label: "Much higher" },
-];
+export const PRIORITIES = localized<{ value: number; label: string }[]>(() => [
+  { value: 0.3, label: t("Much lower") },
+  { value: 0.6, label: t("Lower") },
+  { value: 1, label: t("Normal") },
+  { value: 1.5, label: t("Higher") },
+  { value: 2.5, label: t("Much higher") },
+]);
 
 /** Rows Plex builds outside the engine's arrangement (no policies). */
 export const FRONT_END_ROWS = new Set<string>();
@@ -146,12 +138,12 @@ export function isoDate(d: Date): string {
 }
 
 export function describeWhen(w: LayoutWhen | undefined, dayNames: readonly string[]): string {
-  if (!hasWhen(w)) return "Any time";
+  if (!hasWhen(w)) return t("Any time");
   const parts: string[] = [];
   if (w.days?.length) {
     const d = [...w.days].sort();
-    if (d.length === 5 && [1, 2, 3, 4, 5].every((x) => d.includes(x))) parts.push("Weekdays");
-    else if (d.length === 2 && d.includes(0) && d.includes(6)) parts.push("Weekends");
+    if (d.length === 5 && [1, 2, 3, 4, 5].every((x) => d.includes(x))) parts.push(t("Weekdays"));
+    else if (d.length === 2 && d.includes(0) && d.includes(6)) parts.push(t("Weekends"));
     else parts.push(d.map((x) => dayNames[x]).join(", "));
   }
   if (w.fromHour !== undefined || w.toHour !== undefined) {
@@ -169,9 +161,10 @@ export function describeWhen(w: LayoutWhen | undefined, dayNames: readonly strin
         .map((m) => MONTHS[m - 1])
         .join(", "),
     );
-  if (w.startDate && w.endDate) parts.push(`${w.startDate} to ${w.endDate}`);
-  else if (w.startDate) parts.push(`from ${w.startDate}`);
-  else if (w.endDate) parts.push(`until ${w.endDate}`);
+  if (w.startDate && w.endDate)
+    parts.push(t("{start} to {end}", { start: w.startDate, end: w.endDate }));
+  else if (w.startDate) parts.push(t("from {date}", { date: w.startDate }));
+  else if (w.endDate) parts.push(t("until {date}", { date: w.endDate }));
   return parts.join(" · ");
 }
 
@@ -588,16 +581,38 @@ export function freeSlot(doc: HomeLayout, layer: LayerKey, section: LayoutSectio
   return s;
 }
 
+/** What a policy chip describes; stable across languages, for filtering. */
+export type PolicyChipKind =
+  "slot" | "minSlot" | "maxSlot" | "priority" | "maxPerPage" | "maxDaysPerWeek" | "when";
+
+export interface PolicyChip {
+  kind: PolicyChipKind;
+  text: string;
+}
+
+/** Short chips that summarise a policy, tagged with what each one describes. */
+export function policyChipItems(p: RowPolicy, dayNames: readonly string[]): PolicyChip[] {
+  const out: PolicyChip[] = [];
+  if (p.slot) out.push({ kind: "slot", text: t("Slot {slot}", { slot: p.slot }) });
+  if (p.minSlot) out.push({ kind: "minSlot", text: t("Not above {slot}", { slot: p.minSlot }) });
+  if (p.maxSlot) out.push({ kind: "maxSlot", text: t("Not below {slot}", { slot: p.maxSlot }) });
+  if (p.priority && p.priority !== 1)
+    out.push({
+      kind: "priority",
+      text: PRIORITIES.find((x) => x.value === p.priority)?.label ?? `×${p.priority}`,
+    });
+  if (p.maxPerPage)
+    out.push({ kind: "maxPerPage", text: t("≤{count} per page", { count: p.maxPerPage }) });
+  if (p.maxDaysPerWeek)
+    out.push({
+      kind: "maxDaysPerWeek",
+      text: tn(p.maxDaysPerWeek, "{count} day a week", "{count} days a week"),
+    });
+  if (hasWhen(p.when)) out.push({ kind: "when", text: describeWhen(p.when, dayNames) });
+  return out;
+}
+
 /** Short chips that summarise a policy. */
 export function policyChips(p: RowPolicy, dayNames: readonly string[]): string[] {
-  const out: string[] = [];
-  if (p.slot) out.push(`Slot ${p.slot}`);
-  if (p.minSlot) out.push(`Not above ${p.minSlot}`);
-  if (p.maxSlot) out.push(`Not below ${p.maxSlot}`);
-  if (p.priority && p.priority !== 1)
-    out.push(PRIORITIES.find((x) => x.value === p.priority)?.label ?? `×${p.priority}`);
-  if (p.maxPerPage) out.push(`≤${p.maxPerPage} per page`);
-  if (p.maxDaysPerWeek) out.push(`${p.maxDaysPerWeek} days a week`);
-  if (hasWhen(p.when)) out.push(describeWhen(p.when, dayNames));
-  return out;
+  return policyChipItems(p, dayNames).map((c) => c.text);
 }

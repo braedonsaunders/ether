@@ -12,17 +12,18 @@ import { RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ErrorPanel, LoadingRows } from "../components/feedback";
 import { Segmented } from "../components/fields";
+import { getLocale, localized, t, tn } from "../i18n";
 import { api, errorMessage } from "../lib/api";
 import { useDebouncedValue } from "../lib/hooks";
 import type { LogEntry } from "../lib/types";
 
-const LEVELS = [
-  { value: "", label: "All" },
-  { value: "debug", label: "Debug+" },
-  { value: "info", label: "Info+" },
-  { value: "warn", label: "Warnings+" },
-  { value: "error", label: "Errors" },
-];
+const LEVELS = localized(() => [
+  { value: "", label: t("All") },
+  { value: "debug", label: t("Debug+") },
+  { value: "info", label: t("Info+") },
+  { value: "warn", label: t("Warnings+") },
+  { value: "error", label: t("Errors") },
+]);
 
 function levelVariant(l: string): "destructive" | "warning" | "info" | "secondary" {
   const v = l.toLowerCase();
@@ -62,16 +63,16 @@ export default function Logs() {
   }, [load]);
   useEffect(() => {
     if (!follow) return;
-    const t = window.setInterval(() => void load(), 2000);
-    return () => window.clearInterval(t);
+    const timer = window.setInterval(() => void load(), 2000);
+    return () => window.clearInterval(timer);
   }, [follow, load]);
 
   const clear = async () => {
     if (
       !(await confirmDialog({
-        title: "Clear logs?",
-        message: "The in-memory log buffer is emptied. Log files on disk are not affected.",
-        confirmLabel: "Clear",
+        title: t("Clear logs?"),
+        message: t("The in-memory log buffer is emptied. Log files on disk are not affected."),
+        confirmLabel: t("Clear"),
         tone: "danger",
       }))
     )
@@ -79,24 +80,28 @@ export default function Logs() {
     try {
       await api.clearLogs();
       await load();
-      toast.success("Logs cleared");
+      toast.success(t("Logs cleared"));
     } catch (e) {
-      toast.error("Couldn't clear logs", { description: errorMessage(e) });
+      toast.error(t("Couldn't clear logs"), { description: errorMessage(e) });
     }
   };
 
   return (
-    <section aria-label="Logs" className="space-y-6">
+    <section aria-label={t("Logs")} className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-fg-muted">
-          Newest entries first. {total.toLocaleString()} entries retained in memory.
+          {tn(
+            total,
+            "Newest entries first. {count} entry retained in memory.",
+            "Newest entries first. {count} entries retained in memory.",
+          )}
         </p>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void load()}>
-            <RefreshCw size={14} /> Reload
+            <RefreshCw size={14} /> {t("Reload")}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => void clear()}>
-            <Trash2 size={14} /> Clear
+            <Trash2 size={14} /> {t("Clear")}
           </Button>
         </div>
       </div>
@@ -110,22 +115,22 @@ export default function Logs() {
           <Input
             type="search"
             className="h-9 pl-8"
-            placeholder="Filter messages…"
+            placeholder={t("Filter messages…")}
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
-            aria-label="Filter logs"
+            aria-label={t("Filter logs")}
           />
         </div>
         <Segmented
-          ariaLabel="Minimum level"
+          ariaLabel={t("Minimum level")}
           size="sm"
           value={level}
           onChange={setLevel}
           options={LEVELS}
         />
         <label className="flex items-center gap-2 text-sm text-fg-muted">
-          <Switch checked={follow} onChange={(e) => setFollow(e.currentTarget.checked)} /> Live
-          updates
+          <Switch checked={follow} onChange={(e) => setFollow(e.currentTarget.checked)} />{" "}
+          {t("Live updates")}
         </label>
       </div>
 
@@ -136,18 +141,18 @@ export default function Logs() {
       ) : entries.length === 0 ? (
         <EmptyState
           icon={<ScrollText />}
-          title="No log entries match"
+          title={t("No log entries match")}
           description={
             q || level
-              ? "Try a broader filter."
-              : "The server hasn't logged anything since it started or was last cleared."
+              ? t("Try a broader filter.")
+              : t("The server hasn't logged anything since it started or was last cleared.")
           }
         />
       ) : (
         <div
           className="overflow-hidden rounded-xl border border-border bg-surface"
           role="log"
-          aria-label="Server logs"
+          aria-label={t("Server logs")}
         >
           <div className="max-h-[calc(100vh-15rem)] overflow-auto font-mono text-xs">
             {entries.map((e, i) => (
@@ -161,9 +166,9 @@ export default function Logs() {
                 <time
                   className="shrink-0 tabular-nums text-fg-subtle"
                   dateTime={e.time}
-                  title={new Date(e.time).toLocaleString()}
+                  title={new Date(e.time).toLocaleString(getLocale())}
                 >
-                  {new Date(e.time).toLocaleTimeString()}
+                  {new Date(e.time).toLocaleTimeString(getLocale())}
                 </time>
                 <Badge
                   variant={levelVariant(e.level)}

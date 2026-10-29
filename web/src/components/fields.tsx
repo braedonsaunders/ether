@@ -1,6 +1,7 @@
 import { Badge, Button, Input, Label, cn } from "@braedonsaunders/appkit-ui";
 import { CheckCircle2, Eye, EyeOff, PlugZap, XCircle } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
+import { t } from "../i18n";
 import { REDACTED } from "../lib/types";
 
 export function Field({
@@ -118,7 +119,7 @@ export function SecretInput({
             size="icon"
             className="shrink-0"
             onClick={() => setShown((s) => !s)}
-            aria-label={shown ? "Hide secret" : "Show secret"}
+            aria-label={shown ? t("Hide secret") : t("Show secret")}
           >
             {shown ? <EyeOff size={16} /> : <Eye size={16} />}
           </Button>
@@ -126,7 +127,7 @@ export function SecretInput({
       </div>
       {isStored ? (
         <p className="text-xs text-fg-muted">
-          Saved. Leave as is to keep it, or type a new value to replace it.
+          {t("Saved. Leave as is to keep it, or type a new value to replace it.")}
         </p>
       ) : null}
     </div>
@@ -140,7 +141,7 @@ export interface TestState {
 }
 
 export function TestButton({
-  label = "Test",
+  label = t("Test"),
   state,
   onTest,
   disabled,
@@ -159,16 +160,18 @@ export function TestButton({
         onClick={onTest}
         disabled={disabled || state.status === "running"}
       >
-        <PlugZap size={14} /> {state.status === "running" ? "Testing…" : label}
+        <PlugZap size={14} /> {state.status === "running" ? t("Testing…") : label}
       </Button>
       {state.status === "ok" ? (
         <Badge variant="success">
-          <CheckCircle2 size={12} /> OK{state.durationMs != null ? ` · ${state.durationMs} ms` : ""}
+          <CheckCircle2 size={12} />{" "}
+          {state.durationMs != null ? t("OK · {ms} ms", { ms: state.durationMs }) : t("OK")}
         </Badge>
       ) : null}
       {state.status === "fail" ? (
         <Badge variant="destructive" title={state.message}>
-          <XCircle size={12} /> Failed{state.message ? `: ${state.message}` : ""}
+          <XCircle size={12} />{" "}
+          {state.message ? t("Failed: {message}", { message: state.message }) : t("Failed")}
         </Badge>
       ) : null}
     </span>
@@ -300,7 +303,7 @@ export function ListInput({
       key={text}
       defaultValue={text}
       aria-label={ariaLabel}
-      placeholder={placeholder ?? "Comma-separated"}
+      placeholder={placeholder ?? t("Comma-separated")}
       onBlur={(e) => {
         const parts = e.currentTarget.value
           .split(",")

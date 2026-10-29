@@ -17,6 +17,7 @@ import { TitleSearch } from "../../components/pickers";
 import { titleSubtitle } from "../../components/Poster";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
+import { localized, t, tn } from "../../i18n";
 import { apiFetch, errorMessage } from "../../lib/api";
 import type { TitleCard } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
@@ -36,12 +37,12 @@ type RatingBadge = { source: string; value: number; scale: number };
 /** The server keeps the key and sends this placeholder back. */
 const STORED_KEY = "[configured]";
 
-const SCORE_CHOICES = [
-  { value: "", label: "Keep catalogue default" },
+const SCORE_CHOICES = localized(() => [
+  { value: "", label: t("Keep catalogue default") },
   { value: "imdb", label: "IMDb" },
-  { value: "tomatoes", label: "Rotten Tomatoes critics" },
-  { value: "popcorn", label: "Rotten Tomatoes audience (MDBList)" },
-];
+  { value: "tomatoes", label: t("Rotten Tomatoes critics") },
+  { value: "popcorn", label: t("Rotten Tomatoes audience (MDBList)") },
+]);
 
 /** OMDb / MDBList rating sources, edited in place, with a live badge check beside them. */
 export function RatingSources() {
@@ -54,7 +55,7 @@ export function RatingSources() {
   if (!draft)
     return (
       <div className="py-10 text-center">
-        <Spinner size={20} label="Loading rating settings" />
+        <Spinner size={20} label={t("Loading rating settings")} />
       </div>
     );
 
@@ -68,7 +69,7 @@ export function RatingSources() {
         body: JSON.stringify(draft),
       });
       doc.setData(next);
-      toast.success("Rating sources saved");
+      toast.success(t("Rating sources saved"));
     } catch (e) {
       setError(e);
     } finally {
@@ -82,17 +83,19 @@ export function RatingSources() {
         aside={
           <>
             <SettingsSection
-              title="Rating sources"
-              description="Show IMDb and Rotten Tomatoes scores in Plex using your own OMDb or MDBList key. Scores a source doesn't have stay blank."
+              title={t("Rating sources")}
+              description={t(
+                "Show IMDb and Rotten Tomatoes scores in Plex using your own OMDb or MDBList key. Scores a source doesn't have stay blank.",
+              )}
             >
               <SettingsRow
                 stacked
-                title={<label htmlFor="ratings-enabled">External ratings</label>}
-                description="Off: Plex shows the catalogue's own rating."
+                title={<label htmlFor="ratings-enabled">{t("External ratings")}</label>}
+                description={t("Off: Plex shows the catalogue's own rating.")}
                 control={
                   <Switch
                     id="ratings-enabled"
-                    aria-label="External ratings"
+                    aria-label={t("External ratings")}
                     checked={draft.enabled}
                     onChange={(e) => set({ enabled: e.currentTarget.checked })}
                   />
@@ -100,8 +103,10 @@ export function RatingSources() {
               />
               <SettingsRow
                 stacked
-                title={<label htmlFor="ratings-provider">Provider</label>}
-                description="OMDb has IMDb, Rotten Tomatoes critics and Metacritic. MDBList adds audience and Letterboxd scores."
+                title={<label htmlFor="ratings-provider">{t("Provider")}</label>}
+                description={t(
+                  "OMDb has IMDb, Rotten Tomatoes critics and Metacritic. MDBList adds audience and Letterboxd scores.",
+                )}
                 control={
                   <select
                     id="ratings-provider"
@@ -116,11 +121,11 @@ export function RatingSources() {
               />
               <SettingsRow
                 stacked
-                title={<label htmlFor="ratings-key">API key</label>}
+                title={<label htmlFor="ratings-key">{t("API key")}</label>}
                 description={
                   draft.apiKey === STORED_KEY
-                    ? "Saved. Leave as is to keep it, or type a new key to replace it."
-                    : "Your own key from the provider's website."
+                    ? t("Saved. Leave as is to keep it, or type a new key to replace it.")
+                    : t("Your own key from the provider's website.")
                 }
                 control={
                   <Input
@@ -139,8 +144,8 @@ export function RatingSources() {
               />
               {(
                 [
-                  ["critic", "Plex rating", "The main score on a title's page."],
-                  ["audience", "Plex audience rating", "The second score beside it."],
+                  ["critic", t("Plex rating"), t("The main score on a title's page.")],
+                  ["audience", t("Plex audience rating"), t("The second score beside it.")],
                 ] as const
               ).map(([key, label, hint]) => (
                 <SettingsRow
@@ -166,8 +171,8 @@ export function RatingSources() {
               ))}
               <SettingsRow
                 stacked
-                title={<label htmlFor="ratings-cache">Keep scores for</label>}
-                description="Hours before a title's scores are looked up again."
+                title={<label htmlFor="ratings-cache">{t("Keep scores for")}</label>}
+                description={t("Hours before a title's scores are looked up again.")}
                 control={
                   <span className="flex items-center gap-2">
                     <NumberInput
@@ -178,7 +183,9 @@ export function RatingSources() {
                       value={draft.cacheHours}
                       onChange={(n) => set({ cacheHours: n })}
                     />
-                    <span className="text-sm text-fg-muted">hours</span>
+                    <span className="text-sm text-fg-muted">
+                      {tn(draft.cacheHours, "hour", "hours")}
+                    </span>
                   </span>
                 }
               />
@@ -189,28 +196,28 @@ export function RatingSources() {
           <div className="space-y-4">
             <BadgePreview enabled={Boolean(doc.data?.enabled)} dirty={dirty} />
             <Section
-              title="Plex rating fields"
+              title={t("Plex rating fields")}
               description={
                 dirty
-                  ? "Draft selection. Save to apply to Plex."
-                  : "Current score mapping for title pages."
+                  ? t("Draft selection. Save to apply to Plex.")
+                  : t("Current score mapping for title pages.")
               }
             >
               <dl className="metadata-detail-list">
                 {[
-                  ["External ratings", draft.enabled ? "Enabled" : "Disabled"],
-                  ["Provider", draft.provider === "mdblist" ? "MDBList" : "OMDb"],
+                  [t("External ratings"), draft.enabled ? t("Enabled") : t("Disabled")],
+                  [t("Provider"), draft.provider === "mdblist" ? "MDBList" : "OMDb"],
                   [
-                    "Plex rating",
+                    t("Plex rating"),
                     SCORE_CHOICES.find((c) => c.value === draft.critic)?.label ||
-                      "Catalogue default",
+                      t("Catalogue default"),
                   ],
                   [
-                    "Audience rating",
+                    t("Audience rating"),
                     SCORE_CHOICES.find((c) => c.value === draft.audience)?.label ||
-                      "Catalogue default",
+                      t("Catalogue default"),
                   ],
-                  ["Cache lifetime", `${draft.cacheHours} hours`],
+                  [t("Cache lifetime"), tn(draft.cacheHours, "{count} hour", "{count} hours")],
                 ].map(([name, value]) => (
                   <div key={name}>
                     <dt>{name}</dt>
@@ -220,24 +227,26 @@ export function RatingSources() {
               </dl>
             </Section>
             <Section
-              title="Available scores"
-              description="Availability varies by title and provider. Missing scores stay blank."
+              title={t("Available scores")}
+              description={t(
+                "Availability varies by title and provider. Missing scores stay blank.",
+              )}
             >
               <table className="metadata-table">
                 <thead>
                   <tr>
-                    <th>Score</th>
+                    <th>{t("Score")}</th>
                     <th>OMDb</th>
                     <th>MDBList</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[
-                    ["IMDb", "Yes", "Yes"],
-                    ["Rotten Tomatoes critics", "Yes", "Yes"],
-                    ["Rotten Tomatoes audience", "—", "Yes"],
-                    ["Metacritic", "Yes", "Yes"],
-                    ["Letterboxd", "—", "Yes"],
+                    ["IMDb", t("Yes"), t("Yes")],
+                    [t("Rotten Tomatoes critics"), t("Yes"), t("Yes")],
+                    [t("Rotten Tomatoes audience"), "—", t("Yes")],
+                    ["Metacritic", t("Yes"), t("Yes")],
+                    ["Letterboxd", "—", t("Yes")],
                   ].map((row) => (
                     <tr key={row[0]}>
                       {row.map((cell, i) => (
@@ -271,28 +280,28 @@ function BadgePreview({ enabled, dirty }: { enabled: boolean; dirty: boolean }) 
   const [title, setTitle] = useState<TitleCard | null>(null);
   const [badges, setBadges] = useState<RatingBadge[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const refresh = async (t: TitleCard) => {
+  const refresh = async (card: TitleCard) => {
     setBusy(true);
     try {
       setBadges(
-        await apiFetch<RatingBadge[]>(`/discovery/ratings/refresh/${t.key}`, {
+        await apiFetch<RatingBadge[]>(`/discovery/ratings/refresh/${card.key}`, {
           method: "POST",
           body: "{}",
         }),
       );
     } catch (e) {
-      toast.error("Couldn't look up ratings", { description: errorMessage(e) });
+      toast.error(t("Couldn't look up ratings"), { description: errorMessage(e) });
     } finally {
       setBusy(false);
     }
   };
   return (
     <Section
-      title="Title badges"
+      title={t("Title badges")}
       description={
         enabled
-          ? "Check the scores Plex will show for a title."
-          : "Turn on external ratings and save to check a title's scores."
+          ? t("Check the scores Plex will show for a title.")
+          : t("Turn on external ratings and save to check a title's scores.")
       }
     >
       {title ? (
@@ -307,7 +316,7 @@ function BadgePreview({ enabled, dirty }: { enabled: boolean; dirty: boolean }) 
               variant="ghost"
               size="icon"
               className="size-8"
-              aria-label="Choose another title"
+              aria-label={t("Choose another title")}
               onClick={() => {
                 setTitle(null);
                 setBadges(null);
@@ -322,14 +331,16 @@ function BadgePreview({ enabled, dirty }: { enabled: boolean; dirty: boolean }) 
             disabled={busy || !enabled}
             onClick={() => void refresh(title)}
           >
-            <RefreshCw size={14} /> {busy ? "Looking up…" : "Refresh ratings"}
+            <RefreshCw size={14} /> {busy ? t("Looking up…") : t("Refresh ratings")}
           </Button>
           {dirty ? (
-            <p className="text-xs text-fg-muted">Uses your saved sources, not unsaved changes.</p>
+            <p className="text-xs text-fg-muted">
+              {t("Uses your saved sources, not unsaved changes.")}
+            </p>
           ) : null}
           {badges ? (
             badges.length ? (
-              <ul className="flex flex-wrap gap-1.5" aria-label="Rating badges">
+              <ul className="flex flex-wrap gap-1.5" aria-label={t("Rating badges")}>
                 {badges.map((b) => (
                   <li key={b.source}>
                     <Badge variant="outline">
@@ -339,12 +350,12 @@ function BadgePreview({ enabled, dirty }: { enabled: boolean; dirty: boolean }) 
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-fg-muted">No scores found for this title.</p>
+              <p className="text-sm text-fg-muted">{t("No scores found for this title.")}</p>
             )
           ) : null}
         </div>
       ) : (
-        <TitleSearch placeholder="Find a movie or show…" onPick={setTitle} />
+        <TitleSearch placeholder={t("Find a movie or show…")} onPick={setTitle} />
       )}
     </Section>
   );

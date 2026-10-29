@@ -21,8 +21,10 @@ import { Field, Segmented } from "../../components/fields";
 import { ClusterSetup } from "./ClusterSetup";
 import { Section } from "../../components/layout";
 import { SettingsRow } from "../../components/SettingsRow";
+import { pagedTableLabels } from "../../i18n/appkit-labels";
+import { localized, t, tn, tx } from "../../i18n";
 import { api, errorMessage } from "../../lib/api";
-import { formatDateTime, parseTime, plural, relativeTime } from "../../lib/format";
+import { formatDateTime, parseTime, relativeTime } from "../../lib/format";
 import { useAsync, useInterval, type AsyncState } from "../../lib/hooks";
 import type {
   ClusterNode,
@@ -62,32 +64,42 @@ function nodeName(n: ClusterNode): string {
 
 /** "videotoolbox", "Software" or "Unavailable" (no ffmpeg on the node). */
 export function transcodeLabel(n: ClusterNode): string {
-  if (!n.caps?.transcode) return "Unavailable";
+  if (!n.caps?.transcode) return t("Unavailable");
   const hw = n.caps.hwAccel;
-  return hw && hw !== "none" ? hw : "Software";
+  return hw && hw !== "none" ? hw : t("Software");
 }
 
 /** Server warnings plus conditions this node's own health reports. */
 export function clusterWarnings(s: ClusterStatus, now: Date = new Date()): string[] {
   // Server warnings are log-style sentences; capitalise them for the banner.
   const out = (s.warnings ?? []).map((w) => w.charAt(0).toUpperCase() + w.slice(1));
-  if (s.error) out.push(`Couldn't read the cluster's nodes from the database: ${s.error}`);
+  if (s.error)
+    out.push(t("Couldn't read the cluster's nodes from the database: {error}", { error: s.error }));
   const h = s.health;
   if (h) {
     const beat = parseTime(h.lastHeartbeat);
     if (!beat || now.getTime() - beat.getTime() > HEARTBEAT_STALE_MS)
       out.push(
         beat
-          ? `This node hasn't reached the database since ${relativeTime(beat, now)}. Streams keep playing, but other nodes may treat it as offline.`
-          : "This node hasn't reached the database yet.",
+          ? t(
+              "This node hasn't reached the database since {when}. Streams keep playing, but other nodes may treat it as offline.",
+              { when: relativeTime(beat, now) },
+            )
+          : t("This node hasn't reached the database yet."),
       );
     else if (!h.busConnected)
       out.push(
-        "This node's event connection to the database is down, so changes made on other nodes may reach it late.",
+        t(
+          "This node's event connection to the database is down, so changes made on other nodes may reach it late.",
+        ),
       );
     if (Math.abs(h.clockSkewNs ?? 0) > SKEW_WARN_NS)
       out.push(
-        `This node's clock is ${Math.round(Math.abs(h.clockSkewNs) / 1e9)} seconds off the database server's. Sync the clock (NTP) on every node.`,
+        tn(
+          Math.round(Math.abs(h.clockSkewNs) / 1e9),
+          "This node's clock is {count} second off the database server's. Sync the clock (NTP) on every node.",
+          "This node's clock is {count} seconds off the database server's. Sync the clock (NTP) on every node.",
+        ),
       );
   }
   return out;
@@ -95,9 +107,9 @@ export function clusterWarnings(s: ClusterStatus, now: Date = new Date()): strin
 
 export type TokenState = "used" | "expired" | "unused";
 
-export function tokenState(t: JoinTokenInfo, now: Date = new Date()): TokenState {
-  if (parseTime(t.usedAt)) return "used";
-  const exp = parseTime(t.expiresAt);
+export function tokenState(token: JoinTokenInfo, now: Date = new Date()): TokenState {
+  if (parseTime(token.usedAt)) return "used";
+  const exp = parseTime(token.expiresAt);
   if (exp && exp.getTime() <= now.getTime()) return "expired";
   return "unused";
 }
@@ -112,11 +124,11 @@ function sortNodes(nodes: ClusterNode[]): ClusterNode[] {
   );
 }
 
-function copy(text: string, what: string) {
+function copyToken(text: string) {
   void navigator.clipboard
     .writeText(text)
-    .then(() => toast.success(`${what} copied`))
-    .catch(() => toast.error(`Select and copy the ${what.toLowerCase()}`));
+    .then(() => toast.success(t("Token copied")))
+    .catch(() => toast.error(t("Select and copy the token")));
 }
 
 /**
@@ -159,7 +171,7 @@ export function ClusterOverview() {
     <>
       {warnings.length ? (
         <Alert variant="warning" role="status">
-          <AlertTitle>Cluster needs attention</AlertTitle>
+          <AlertTitle>{t("Cluster needs attention")}</AlertTitle>
           <AlertDescription>
             <ul className="list-disc space-y-1 pl-5">
               {warnings.map((w) => (
@@ -197,18 +209,18 @@ function Standalone({
     <>
       {message ? (
         <Alert variant="destructive" role="alert">
-          <AlertTitle>Cluster setup needs attention</AlertTitle>
+          <AlertTitle>{t("Cluster setup needs attention")}</AlertTitle>
           <AlertDescription>{message}</AlertDescription>
         </Alert>
       ) : null}
-      <SettingsSection title="This server">
+      <SettingsSection title={t("This server")}>
         <SettingsRow
-          title="Role"
-          description="Your data currently lives in this server’s SQLite database."
-          control={<Badge variant="secondary">Standalone (SQLite)</Badge>}
+          title={t("Role")}
+          description={t("Your data currently lives in this server’s SQLite database.")}
+          control={<Badge variant="secondary">{t("Standalone (SQLite)")}</Badge>}
         />
         {status.self?.version ? (
-          <SettingsRow title="Version" description={status.self.version} />
+          <SettingsRow title={t("Version")} description={status.self.version} />
         ) : null}
       </SettingsSection>
       <ClusterSetup available={available} onComplete={onComplete} />
@@ -218,7 +230,7 @@ function Standalone({
         target="_blank"
         rel="noreferrer"
       >
-        Read the cluster guide
+        {t("Read the cluster guide")}
       </a>
     </>
   );
@@ -251,15 +263,20 @@ function Nodes({
   const live = nodes.filter((n) => n.live).length;
   return (
     <Section
-      title="Nodes"
-      description={`${live} of ${plural(nodes.length, "node")} online. Open a node’s manager to change its local settings.`}
+      title={t("Nodes")}
+      description={tn(
+        nodes.length,
+        "{live} of {count} node online. Open a node’s manager to change its local settings.",
+        "{live} of {count} nodes online. Open a node’s manager to change its local settings.",
+        { live },
+      )}
       actions={
         <div className="flex gap-2">
           <Button size="sm" onClick={onAdd}>
-            <Plus size={14} /> Add node
+            <Plus size={14} /> {t("Add node")}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setManage(true)}>
-            Manage this node
+            {t("Manage this node")}
           </Button>
         </div>
       }
@@ -269,68 +286,76 @@ function Nodes({
         rowKey={(n) => n.id}
         pageSize={25}
         searchable={nodes.length > 8}
+        labels={pagedTableLabels()}
         empty={
           <EmptyState
-            title="No nodes reported"
-            description="The database couldn't be read. Nodes appear here once it can."
+            title={t("No nodes reported")}
+            description={t("The database couldn't be read. Nodes appear here once it can.")}
           />
         }
         columns={[
           {
             key: "name",
-            header: "Node",
+            header: t("Node"),
             search: (n) => `${nodeName(n)} ${n.version}`,
             cell: (n) => (
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="font-medium text-fg">{nodeName(n)}</span>
-                  {n.leader ? <Badge variant="info">Leader</Badge> : null}
-                  {n.id === status.self?.id ? <Badge variant="outline">This node</Badge> : null}
+                  {n.leader ? <Badge variant="info">{t("Leader")}</Badge> : null}
+                  {n.id === status.self?.id ? (
+                    <Badge variant="outline">{t("This node")}</Badge>
+                  ) : null}
                 </div>
                 <span className="block text-xs text-fg-muted">
-                  Version {n.version || "unknown"}
+                  {n.version
+                    ? t("Version {version}", { version: n.version })
+                    : t("Version unknown")}
                 </span>
               </div>
             ),
           },
           {
             key: "status",
-            header: "Status",
+            header: t("Status"),
             cell: (n) =>
               n.live && n.draining ? (
-                <Badge variant="warning">Paused</Badge>
+                <Badge variant="warning">{t("Paused")}</Badge>
               ) : n.live ? (
-                <Badge variant="success">Online</Badge>
+                <Badge variant="success">{t("Online")}</Badge>
               ) : (
                 <span className="flex flex-col items-start gap-0.5">
-                  <Badge variant="secondary">Offline</Badge>
+                  <Badge variant="secondary">{t("Offline")}</Badge>
                   <span className="text-xs text-fg-muted" title={formatDateTime(n.lastSeen)}>
-                    Last seen {relativeTime(n.lastSeen)}
+                    {t("Last seen {when}", { when: relativeTime(n.lastSeen) })}
                   </span>
                 </span>
               ),
           },
           {
             key: "load",
-            header: "Streams",
+            header: t("Streams"),
             align: "right",
             cell: (n) => (
-              <span className="tabular-nums" aria-label={`${nodeName(n)} streams`}>
+              <span
+                className="tabular-nums"
+                aria-label={t("{node} streams", { node: nodeName(n) })}
+              >
                 {n.live ? n.load : "—"}
               </span>
             ),
           },
           {
             key: "transcode",
-            header: "Transcoding",
+            header: t("Transcoding"),
             cell: (n) => <span className="text-fg-muted">{transcodeLabel(n)}</span>,
           },
           {
             key: "weight",
-            header: "Weight",
+            header: t("Weight"),
             align: "right",
             cell: (n) => (
-              <span className="tabular-nums" aria-label={`${nodeName(n)} weight`}>
+              <span className="tabular-nums" aria-label={t("{node} weight", { node: nodeName(n) })}>
                 {n.caps?.weight || 1}
               </span>
             ),
@@ -345,16 +370,17 @@ function Nodes({
                   href={managerURL(n)!}
                   target="_blank"
                   rel="noreferrer"
+                  aria-label={t("Open manager for {node}", { node: nodeName(n) })}
                 >
-                  Open manager<span className="sr-only"> for {nodeName(n)}</span>
+                  {t("Open manager")}
                 </a>
               ) : (
-                <span className="text-xs text-fg-muted">No address reported</span>
+                <span className="text-xs text-fg-muted">{t("No address reported")}</span>
               ),
           },
           {
             key: "ip",
-            header: "Public IP",
+            header: t("Public IP"),
             cell: (n) => <code className="text-xs text-fg-muted">{n.caps?.egressIp || "—"}</code>,
           },
         ]}
@@ -386,7 +412,7 @@ function NodeDrawer({
       const result = await api.updateClusterNode(body);
       setDraining(result.draining);
       onChanged();
-      toast.success("Node updated");
+      toast.success(t("Node updated"));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -397,11 +423,11 @@ function NodeDrawer({
     <Drawer
       open
       onClose={onClose}
-      title="Manage this node"
+      title={t("Manage this node")}
       description={nodeName(status.self)}
       footer={
         <Button variant="outline" onClick={onClose}>
-          Done
+          {t("Done")}
         </Button>
       }
     >
@@ -412,9 +438,11 @@ function NodeDrawer({
           </Alert>
         ) : null}
         <Field
-          label="Node weight"
+          label={t("Node weight")}
           htmlFor="cluster-weight"
-          hint="Relative share of account-wide provider connections and request budgets. A weight of 2 gets twice the share of a node with weight 1."
+          hint={t(
+            "Relative share of account-wide provider connections and request budgets. A weight of 2 gets twice the share of a node with weight 1.",
+          )}
         >
           <Input
             id="cluster-weight"
@@ -429,17 +457,19 @@ function NodeDrawer({
           disabled={busy || !Number.isInteger(weight) || weight < 1 || weight > 100}
           onClick={() => void save({ weight })}
         >
-          Save weight
+          {t("Save weight")}
         </Button>
-        <SettingsSection title="New streams">
+        <SettingsSection title={t("New streams")}>
           <SettingsRow
-            title={draining ? "Paused" : "Accepting streams"}
-            description="Pausing keeps current streams playing, hands scheduled work to another node and removes this node from published connections. It resumes automatically after a server restart."
+            title={draining ? t("Paused") : t("Accepting streams")}
+            description={t(
+              "Pausing keeps current streams playing, hands scheduled work to another node and removes this node from published connections. It resumes automatically after a server restart.",
+            )}
           />
         </SettingsSection>
         <Alert variant="warning">
           <AlertDescription>
-            Pausing the only available node prevents new playback until you resume it.
+            {t("Pausing the only available node prevents new playback until you resume it.")}
           </AlertDescription>
         </Alert>
         <Button
@@ -447,18 +477,24 @@ function NodeDrawer({
           disabled={busy}
           onClick={() => void save({ draining: !draining })}
         >
-          {draining ? "Resume new streams" : "Pause new streams"}
+          {draining ? t("Resume new streams") : t("Pause new streams")}
         </Button>
         <p className="text-sm text-fg-muted">
-          Change this node’s port, cache and transcoding hardware from{" "}
-          <Link className="underline" to="/server">
-            General settings
-          </Link>
-          . Use{" "}
-          <Link className="underline" to="/updates">
-            Updates
-          </Link>{" "}
-          for rolling cluster updates.
+          {tx(
+            "Change this node’s port, cache and transcoding hardware from {general}. Use {updates} for rolling cluster updates.",
+            {
+              general: (
+                <Link className="underline" to="/server">
+                  {t("General settings")}
+                </Link>
+              ),
+              updates: (
+                <Link className="underline" to="/updates">
+                  {t("Updates")}
+                </Link>
+              ),
+            },
+          )}
         </p>
       </div>
     </Drawer>
@@ -471,19 +507,21 @@ function SharedSettings({ status, settings }: { status: ClusterStatus; settings:
   const st = settings.data;
   const self = status.self;
   return (
-    <SettingsSection title="Shared settings">
+    <SettingsSection title={t("Shared settings")}>
       <SettingsRow
-        title="This node"
+        title={t("This node")}
         description={
           self?.id === status.leader
-            ? "Leads the cluster: it publishes the server to plex.tv and runs scheduled work."
-            : "A cluster member. Scheduled work runs on the leader."
+            ? t("Leads the cluster: it publishes the server to plex.tv and runs scheduled work.")
+            : t("A cluster member. Scheduled work runs on the leader.")
         }
         control={<Badge variant="info">{nodeName(self)}</Badge>}
       />
       <SettingsRow
-        title="Settings version"
-        description="Settings are stored in the database. A change on any node reaches the others within 30 seconds."
+        title={t("Settings version")}
+        description={t(
+          "Settings are stored in the database. A change on any node reaches the others within 30 seconds.",
+        )}
         control={
           st?.sharedVersion !== undefined ? (
             <span className="tabular-nums text-sm text-fg">v{st.sharedVersion}</span>
@@ -491,22 +529,24 @@ function SharedSettings({ status, settings }: { status: ClusterStatus; settings:
         }
       />
       <SettingsRow
-        title="Credential key"
-        description="Fingerprint of the key that encrypts stored credentials. It's the same on every node."
+        title={t("Credential key")}
+        description={t(
+          "Fingerprint of the key that encrypts stored credentials. It's the same on every node.",
+        )}
         control={st?.keyFingerprint ? <code className="text-xs">{st.keyFingerprint}</code> : null}
       />
       <SettingsRow
-        title="Settings each node keeps"
-        description={
-          <>
-            Port, listen address, log level, cache, transcoding hardware, the public port for its
-            port forward and the node's weight are set on each node, on that node's own{" "}
-            <Link to="/server" className="underline">
-              General
-            </Link>{" "}
-            page.
-          </>
-        }
+        title={t("Settings each node keeps")}
+        description={tx(
+          "Port, listen address, log level, cache, transcoding hardware, the public port for its port forward and the node's weight are set on each node, on that node's own {general} page.",
+          {
+            general: (
+              <Link to="/server" className="underline">
+                {t("General")}
+              </Link>
+            ),
+          },
+        )}
       />
       {settings.error ? (
         <div className="px-5 pb-4">
@@ -520,32 +560,35 @@ function SharedSettings({ status, settings }: { status: ClusterStatus; settings:
 const TOKEN_STATE: Record<
   TokenState,
   { label: string; variant: "success" | "secondary" | "warning" }
-> = {
-  unused: { label: "Unused", variant: "success" },
-  used: { label: "Used", variant: "secondary" },
-  expired: { label: "Expired", variant: "warning" },
-};
+> = localized(() => ({
+  unused: { label: t("Unused"), variant: "success" },
+  used: { label: t("Used"), variant: "secondary" },
+  expired: { label: t("Expired"), variant: "warning" },
+}));
 
 function JoinTokens({ settings }: { settings: SettingsState }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const tokens = settings.data?.joinTokens ?? [];
 
-  const revoke = async (t: JoinTokenInfo) => {
+  const revoke = async (token: JoinTokenInfo) => {
     const ok = await confirmDialog({
-      title: "Revoke join token?",
-      message: `Token ${t.id} stops working right away. Nodes that already joined are not affected.`,
-      confirmLabel: "Revoke",
+      title: t("Revoke join token?"),
+      message: t(
+        "Token {id} stops working right away. Nodes that already joined are not affected.",
+        { id: token.id },
+      ),
+      confirmLabel: t("Revoke"),
       tone: "danger",
     });
     if (!ok) return;
-    setBusy(t.id);
+    setBusy(token.id);
     try {
-      await api.revokeJoinToken(t.id);
+      await api.revokeJoinToken(token.id);
       await settings.reload();
-      toast.success("Join token revoked");
+      toast.success(t("Join token revoked"));
     } catch (e) {
-      toast.error("Couldn't revoke the token", { description: errorMessage(e) });
+      toast.error(t("Couldn't revoke the token"), { description: errorMessage(e) });
     } finally {
       setBusy(null);
     }
@@ -553,11 +596,13 @@ function JoinTokens({ settings }: { settings: SettingsState }) {
 
   return (
     <Section
-      title="Join tokens"
-      description="A new node joins with a one-time token created here. Each token works once and expires within the hour."
+      title={t("Join tokens")}
+      description={t(
+        "A new node joins with a one-time token created here. Each token works once and expires within the hour.",
+      )}
       actions={
         <Button size="sm" onClick={() => setOpen(true)}>
-          <Plus size={14} /> Create join token
+          <Plus size={14} /> {t("Create join token")}
         </Button>
       }
     >
@@ -566,52 +611,57 @@ function JoinTokens({ settings }: { settings: SettingsState }) {
       ) : (
         <PagedTable<JoinTokenInfo>
           rows={tokens}
-          rowKey={(t) => t.id}
+          rowKey={(token) => token.id}
           pageSize={10}
           searchable={false}
+          labels={pagedTableLabels()}
           empty={
             <EmptyState
               icon={<KeyRound />}
-              title="No join tokens"
-              description="Create one when you're ready to add a node."
+              title={t("No join tokens")}
+              description={t("Create one when you're ready to add a node.")}
             />
           }
           columns={[
             {
               key: "id",
-              header: "Token",
-              cell: (t) => <code className="text-xs">{t.id}</code>,
+              header: t("Token"),
+              cell: (token) => <code className="text-xs">{token.id}</code>,
             },
             {
               key: "created",
-              header: "Created",
-              cell: (t) => (
-                <span className="text-fg-muted" title={formatDateTime(t.createdAt)}>
-                  {relativeTime(t.createdAt)}
+              header: t("Created"),
+              cell: (token) => (
+                <span className="text-fg-muted" title={formatDateTime(token.createdAt)}>
+                  {relativeTime(token.createdAt)}
                 </span>
               ),
             },
             {
               key: "expires",
-              header: "Expires",
-              cell: (t) => (
-                <span className="text-fg-muted" title={formatDateTime(t.expiresAt)}>
-                  {tokenState(t) === "used" ? "—" : relativeTime(t.expiresAt)}
+              header: t("Expires"),
+              cell: (token) => (
+                <span className="text-fg-muted" title={formatDateTime(token.expiresAt)}>
+                  {tokenState(token) === "used" ? "—" : relativeTime(token.expiresAt)}
                 </span>
               ),
             },
             {
               key: "state",
-              header: "Status",
-              cell: (t) => {
-                const state = tokenState(t);
+              header: t("Status"),
+              cell: (token) => {
+                const state = tokenState(token);
                 return (
                   <span className="flex flex-col items-start gap-0.5">
                     <Badge variant={TOKEN_STATE[state].variant}>{TOKEN_STATE[state].label}</Badge>
                     {state === "used" ? (
-                      <span className="text-xs text-fg-muted" title={formatDateTime(t.usedAt)}>
-                        {t.usedBy ? `by ${t.usedBy}, ` : ""}
-                        {relativeTime(t.usedAt)}
+                      <span className="text-xs text-fg-muted" title={formatDateTime(token.usedAt)}>
+                        {token.usedBy
+                          ? t("by {node}, {when}", {
+                              node: token.usedBy,
+                              when: relativeTime(token.usedAt),
+                            })
+                          : relativeTime(token.usedAt)}
                       </span>
                     ) : null}
                   </span>
@@ -622,16 +672,16 @@ function JoinTokens({ settings }: { settings: SettingsState }) {
               key: "actions",
               header: "",
               align: "right",
-              cell: (t) =>
-                tokenState(t) === "used" ? null : (
+              cell: (token) =>
+                tokenState(token) === "used" ? null : (
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={busy === t.id}
-                    aria-label={`Revoke token ${t.id}`}
-                    onClick={() => void revoke(t)}
+                    disabled={busy === token.id}
+                    aria-label={t("Revoke token {id}", { id: token.id })}
+                    onClick={() => void revoke(token)}
                   >
-                    Revoke
+                    {t("Revoke")}
                   </Button>
                 ),
             },
@@ -645,11 +695,11 @@ function JoinTokens({ settings }: { settings: SettingsState }) {
   );
 }
 
-const TTL_OPTIONS = [
-  { value: "15", label: "15 minutes" },
-  { value: "30", label: "30 minutes" },
-  { value: "60", label: "1 hour" },
-];
+const TTL_OPTIONS = localized(() => [
+  { value: "15", label: tn(15, "{count} minute", "{count} minutes") },
+  { value: "30", label: tn(30, "{count} minute", "{count} minutes") },
+  { value: "60", label: tn(1, "{count} hour", "{count} hours") },
+]);
 
 function JoinTokenDrawer({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [ttl, setTtl] = useState("60");
@@ -663,7 +713,7 @@ function JoinTokenDrawer({ onClose, onCreated }: { onClose: () => void; onCreate
       setCreated(await api.createJoinToken(Number(ttl)));
       onCreated();
     } catch (e) {
-      toast.error("Couldn't create a join token", { description: errorMessage(e) });
+      toast.error(t("Couldn't create a join token"), { description: errorMessage(e) });
     } finally {
       setBusy(false);
     }
@@ -673,68 +723,81 @@ function JoinTokenDrawer({ onClose, onCreated }: { onClose: () => void; onCreate
     <Drawer
       open
       onClose={onClose}
-      title="Create join token"
-      description="Lets one new machine join this cluster."
+      title={t("Create join token")}
+      description={t("Lets one new machine join this cluster.")}
       size="lg"
       footer={
         created ? (
           <Button variant="outline" onClick={onClose}>
-            Done
+            {t("Done")}
           </Button>
         ) : (
           <Button disabled={busy} onClick={() => void create()}>
-            {busy ? "Creating…" : "Create join token"}
+            {busy ? t("Creating…") : t("Create join token")}
           </Button>
         )
       }
     >
       <div className="space-y-5">
         <Field
-          label="Valid for"
-          hint="Use the token before it expires; you can always create another."
+          label={t("Valid for")}
+          hint={t("Use the token before it expires; you can always create another.")}
         >
           {created ? (
-            <p className="text-sm text-fg">Expires {formatDateTime(created.expiresAt)}</p>
+            <p className="text-sm text-fg">
+              {t("Expires {when}", { when: formatDateTime(created.expiresAt) })}
+            </p>
           ) : (
-            <Segmented ariaLabel="Valid for" options={TTL_OPTIONS} value={ttl} onChange={setTtl} />
+            <Segmented
+              ariaLabel={t("Valid for")}
+              options={TTL_OPTIONS}
+              value={ttl}
+              onChange={setTtl}
+            />
           )}
         </Field>
         {created ? (
           <>
             <Alert variant="warning" role="alert">
-              <AlertTitle>Keep this token secret</AlertTitle>
+              <AlertTitle>{t("Keep this token secret")}</AlertTitle>
               <AlertDescription>
                 {created.warning ||
-                  "It contains the database password and the key that decrypts every stored credential."}{" "}
-                It's shown only once: after you close this drawer it can't be shown again.
+                  t(
+                    "It contains the database password and the key that decrypts every stored credential.",
+                  )}{" "}
+                {t("It's shown only once: after you close this drawer it can't be shown again.")}
               </AlertDescription>
             </Alert>
-            <Field label="Join token">
+            <Field label={t("Join token")}>
               <Textarea
-                aria-label="Join token"
+                aria-label={t("Join token")}
                 readOnly
                 rows={4}
                 value={created.token}
                 className="font-mono text-xs break-all"
               />
             </Field>
-            <Button variant="outline" size="sm" onClick={() => copy(created.token, "Token")}>
-              <Copy size={14} /> Copy token
+            <Button variant="outline" size="sm" onClick={() => copyToken(created.token)}>
+              <Copy size={14} /> {t("Copy token")}
             </Button>
             <Field
-              label="On the new machine"
-              hint="Open its Server Manager, choose Cluster → Join cluster and paste this token. Ether checks the connection, backs up its data and restarts automatically."
+              label={t("On the new machine")}
+              hint={t(
+                "Open its Server Manager, choose Cluster → Join cluster and paste this token. Ether checks the connection, backs up its data and restarts automatically.",
+              )}
             >
               <p className="text-sm text-fg-muted">
-                Install and open Ether on the new machine. You can join before completing its
-                standalone setup.
+                {t(
+                  "Install and open Ether on the new machine. You can join before completing its standalone setup.",
+                )}
               </p>
             </Field>
           </>
         ) : (
           <p className="text-sm text-fg-muted">
-            Paste the token into Cluster → Join cluster on the new machine. It is shown once and
-            contains the database password and the credential key, so treat it like a password.
+            {t(
+              "Paste the token into Cluster → Join cluster on the new machine. It is shown once and contains the database password and the credential key, so treat it like a password.",
+            )}
           </p>
         )}
       </div>

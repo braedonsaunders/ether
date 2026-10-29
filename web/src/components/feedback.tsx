@@ -8,11 +8,12 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import { t } from "../i18n";
 import { ApiError, errorMessage } from "../lib/api";
 
 export function LoadingRows({ rows = 3, className }: { rows?: number; className?: string }) {
   return (
-    <div className={className} role="status" aria-label="Loading">
+    <div className={className} role="status" aria-label={t("Loading")}>
       <div className="space-y-3">
         {Array.from({ length: rows }, (_, i) => (
           <Skeleton key={i} className="h-14 w-full rounded-lg" />
@@ -22,7 +23,7 @@ export function LoadingRows({ rows = 3, className }: { rows?: number; className?
   );
 }
 
-export function LoadingInline({ label = "Loading…" }: { label?: string }) {
+export function LoadingInline({ label = t("Loading…") }: { label?: string }) {
   return (
     <span role="status" className="inline-flex items-center gap-2 text-sm text-fg-muted">
       <Spinner size={14} label={label} /> {label}
@@ -38,7 +39,7 @@ export function PosterSkeletons({
   className?: string;
 }) {
   return (
-    <div className={className} role="status" aria-label="Loading titles">
+    <div className={className} role="status" aria-label={t("Loading titles")}>
       {Array.from({ length: count }, (_, i) => (
         <Skeleton key={i} className="aspect-[2/3] w-full rounded-md" />
       ))}
@@ -61,14 +62,14 @@ export function ErrorPanel({
     <Alert variant="destructive" className={className} role="alert">
       <AlertTitle>
         {error instanceof ApiError && error.status === 0
-          ? "Can't reach Ether"
-          : "Something went wrong"}
+          ? t("Can't reach Ether")
+          : t("Something went wrong")}
       </AlertTitle>
       <AlertDescription>
         <span className="block">{errorMessage(error)}</span>
         {onRetry ? (
           <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-            <RefreshCw size={14} /> Try again
+            <RefreshCw size={14} /> {t("Try again")}
           </Button>
         ) : null}
       </AlertDescription>
@@ -83,7 +84,7 @@ export function MutationError({ error }: { error: unknown }) {
   return (
     <Alert variant="destructive" role="alert">
       <AlertTitle>
-        {fields.length ? "Please fix the highlighted fields" : "Couldn't save"}
+        {fields.length ? t("Please fix the highlighted fields") : t("Couldn't save")}
       </AlertTitle>
       <AlertDescription>
         {fields.length ? (

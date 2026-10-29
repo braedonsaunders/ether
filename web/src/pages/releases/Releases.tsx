@@ -1,3 +1,4 @@
+import { localized, t } from "../../i18n";
 import { ConfigSection } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
 import * as S from "../settings/schema";
@@ -8,24 +9,29 @@ import { PinnedTab } from "./Pinned";
 import { QualityTab } from "./Quality";
 import { ScoringTab, StartupTab } from "./Scoring";
 
-const TABS = [
-  { key: "quality", label: "Quality profiles" },
-  { key: "rules", label: "Client rules" },
-  { key: "selection", label: "Selection rules" },
-  { key: "scoring", label: "Custom scoring" },
-  { key: "startup", label: "Playback start" },
-  { key: "pinned", label: "Pinned" },
-  { key: "blocklist", label: "Blocklist" },
-  { key: "history", label: "History" },
-] as const;
+const TABS = localized(
+  () =>
+    [
+      { key: "quality", label: t("Quality profiles") },
+      { key: "rules", label: t("Client rules") },
+      { key: "selection", label: t("Selection rules") },
+      { key: "scoring", label: t("Custom scoring") },
+      { key: "startup", label: t("Playback start") },
+      { key: "pinned", label: t("Pinned") },
+      { key: "blocklist", label: t("Blocklist") },
+      { key: "history", label: t("History") },
+    ] as const,
+);
 
 /** Which release Ether picks for each play, and why. */
 export default function Releases() {
   const tab = useRouteTab(TABS);
   return (
     <DomainPage
-      title="Releases"
-      description="Choose the quality you want. Ether ranks releases for the app playing them and fails over when one breaks; find a title to see why, pin a release or block one."
+      title={t("Releases")}
+      description={t(
+        "Choose the quality you want. Ether ranks releases for the app playing them and fails over when one breaks; find a title to see why, pin a release or block one.",
+      )}
       base="/releases"
       tabs={TABS}
       active={tab}
@@ -37,7 +43,7 @@ export default function Releases() {
           configKey="resolver"
           endpoint="resolver"
           groups={S.RESOLVER}
-          label="Release selection"
+          label={t("Release selection")}
           omit={[
             "optimisticStart",
             "healthRace",

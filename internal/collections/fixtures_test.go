@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -581,7 +582,18 @@ func newEnv(t *testing.T, eo ...envOpt) *env {
 	if o.catalogClient != nil {
 		catClient = o.catalogClient
 	}
-	cat, err := catalog.New(db, catClient, cfg, log)
+	// Seed every fixture row at the fixture reference time so they share one
+	// added_at (sort ties are part of the contract); the catalog follows the
+	// wall clock again once seeding is done.
+	var seeding atomic.Bool
+	seeding.Store(true)
+	clock := func() time.Time {
+		if seeding.Load() {
+			return ft.now
+		}
+		return time.Now()
+	}
+	cat, err := catalog.New(db, catClient, cfg, log, catalog.WithNow(clock))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,6 +607,7 @@ func newEnv(t *testing.T, eo ...envOpt) *env {
 			t.Fatal(err)
 		}
 	}
+	seeding.Store(false)
 	opts := []collections.Option{collections.WithIndexTTL(0), collections.WithLiveTTL(0), collections.WithoutDefaults(),
 		collections.WithCatalogConfig(func() config.Catalog { return cfg })}
 	if client != nil {

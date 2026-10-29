@@ -2,7 +2,8 @@ import { DashboardPanel } from "@braedonsaunders/appkit-dashboard/primitives";
 import { Badge, Button } from "@braedonsaunders/appkit-ui";
 import { ArrowUpRight, HardDrive, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import type { EtherConfig } from "../../lib/types";
-import { formatBytes } from "../../lib/format";
+import { t, tn } from "../../i18n";
+import { formatBytes, formatPercent } from "../../lib/format";
 import type { CacheSnapshot } from "./Cache";
 
 export function CacheOverview({
@@ -37,24 +38,38 @@ export function CacheOverview({
       <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           [
-            "Retained",
+            t("Retained"),
             s ? formatBytes(used) : "—",
-            `${s?.releases.length ?? 0} releases ${s?.shared ? (s.clustered ? "in the shared pool" : "on the NAS") : "on this node"}`,
+            s?.shared
+              ? s.clustered
+                ? tn(
+                    s.releases.length,
+                    "{count} release in the shared pool",
+                    "{count} releases in the shared pool",
+                  )
+                : tn(s.releases.length, "{count} release on the NAS", "{count} releases on the NAS")
+              : tn(
+                  s?.releases.length ?? 0,
+                  "{count} release on this node",
+                  "{count} releases on this node",
+                ),
           ],
           [
-            "Disk hit rate",
-            reads ? `${Math.round((s!.metrics.hits / reads) * 100)}%` : "—",
-            reads ? `${reads.toLocaleString()} disk lookups` : "Waiting for playback",
+            t("Disk hit rate"),
+            reads ? formatPercent(s!.metrics.hits / reads) : "—",
+            reads
+              ? tn(reads, "{count} disk lookup", "{count} disk lookups")
+              : t("Waiting for playback"),
           ],
           [
-            "Served locally",
+            t("Served locally"),
             s ? formatBytes(s.metrics.servedBytes) : "—",
-            s?.shared ? "Served by this node from NAS" : "Delivered from the disk cache",
+            s?.shared ? t("Served by this node from NAS") : t("Delivered from the disk cache"),
           ],
           [
-            "Space reclaimed",
+            t("Space reclaimed"),
             s ? formatBytes(s.metrics.evictedBytes) : "—",
-            "Released by cache retention",
+            t("Released by cache retention"),
           ],
         ].map(([label, value, hint]) => (
           <div key={label} className="rounded-xl border border-border bg-surface px-4 py-3.5">
@@ -66,7 +81,7 @@ export function CacheOverview({
       </div>
       <div className="grid gap-4 lg:grid-cols-12 cockpit:min-h-0 cockpit:flex-1">
         <DashboardPanel
-          title="Storage"
+          title={t("Storage")}
           icon={<HardDrive size={16} />}
           className="lg:col-span-5 cockpit:min-h-0"
           bodyClassName="flex flex-col gap-4 cockpit:overflow-y-auto"
@@ -75,14 +90,21 @@ export function CacheOverview({
               onClick={onExplore}
               className="text-xs font-medium text-primary hover:underline"
             >
-              Open explorer
+              {t("Open explorer")}
             </button>
           }
         >
           <div className="flex flex-wrap items-center justify-center gap-6 py-2">
             <div
               role="img"
-              aria-label={`${formatBytes(used)} retained${budget ? ` of ${formatBytes(budget)}` : ""}`}
+              aria-label={
+                budget
+                  ? t("{used} retained of {budget}", {
+                      used: formatBytes(used),
+                      budget: formatBytes(budget),
+                    })
+                  : t("{used} retained", { used: formatBytes(used) })
+              }
               className="relative grid h-36 w-36 shrink-0 place-items-center"
             >
               <svg
@@ -113,22 +135,26 @@ export function CacheOverview({
               </svg>
               <div className="text-center">
                 <p className="text-2xl font-semibold tabular-nums">
-                  {budget > 0 ? `${Math.round(percent)}%` : "—"}
+                  {budget > 0 ? formatPercent(percent / 100) : "—"}
                 </p>
                 <p className="text-[11px] text-fg-muted">
-                  {p.mode === "off" ? "writes off" : "of budget"}
+                  {p.mode === "off" ? t("writes off") : t("of budget")}
                 </p>
               </div>
             </div>
             <div className="min-w-0 space-y-3 text-sm">
               <div>
-                <p className="text-xs text-fg-muted">Media budget</p>
+                <p className="text-xs text-fg-muted">{t("Media budget")}</p>
                 <p className="font-semibold">
-                  {p.mode === "off" ? "Pass-through" : budget ? formatBytes(budget) : "Unlimited"}
+                  {p.mode === "off"
+                    ? t("Pass-through")
+                    : budget
+                      ? formatBytes(budget)
+                      : t("Unlimited")}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-fg-muted">Free on disk</p>
+                <p className="text-xs text-fg-muted">{t("Free on disk")}</p>
                 <p className="font-semibold">
                   {freeBytes === undefined ? "—" : formatBytes(freeBytes)}
                 </p>
@@ -149,9 +175,9 @@ export function CacheOverview({
             <div className="flex justify-between gap-3 text-[11px] text-fg-muted">
               <span>
                 <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                {formatBytes(protectedBytes)} protected
+                {t("{size} protected", { size: formatBytes(protectedBytes) })}
               </span>
-              <span>{formatBytes(used - protectedBytes)} reclaimable</span>
+              <span>{t("{size} reclaimable", { size: formatBytes(used - protectedBytes) })}</span>
             </div>
           </div>
           <p
@@ -162,44 +188,44 @@ export function CacheOverview({
           </p>
         </DashboardPanel>
         <DashboardPanel
-          title="Playback readiness"
+          title={t("Playback readiness")}
           icon={<Zap size={16} />}
           className="lg:col-span-4 cockpit:min-h-0"
           bodyClassName="flex flex-col gap-4 cockpit:overflow-y-auto"
           actions={
             <Badge variant={warming ? "success" : "secondary"}>
-              {warming ? "Enabled" : "On demand"}
+              {warming ? t("Enabled") : t("On demand")}
             </Badge>
           }
         >
           <div className="grid grid-cols-2 gap-3 rounded-lg bg-primary/5 p-3">
             <div>
               <p className="text-xl font-semibold tabular-nums">{s?.prefetch.running ?? 0}</p>
-              <p className="text-[11px] text-fg-muted">Warming now</p>
+              <p className="text-[11px] text-fg-muted">{t("Warming now")}</p>
             </div>
             <div>
               <p className="text-xl font-semibold tabular-nums">{s?.prefetch.queued ?? 0}</p>
-              <p className="text-[11px] text-fg-muted">Queued</p>
+              <p className="text-[11px] text-fg-muted">{t("Queued")}</p>
             </div>
           </div>
           <dl className="space-y-3 text-xs">
             {[
-              ["Detail-page openings", warming && p.detailWarmup !== "off"],
-              ["Next episode", warming && p.prefetchNextEpisode],
-              ["Resume warming", warming && p.keepInProgressWarm],
+              [t("Detail-page openings"), warming && p.detailWarmup !== "off"],
+              [t("Next episode"), warming && p.prefetchNextEpisode],
+              [t("Resume warming"), warming && p.keepInProgressWarm],
             ].map(([label, on]) => (
               <div key={String(label)} className="flex justify-between gap-3">
                 <dt className="text-fg-muted">{label}</dt>
                 <dd className={on ? "font-medium text-primary" : "text-fg-subtle"}>
-                  {on ? "On" : "Off"}
+                  {on ? t("On") : t("Off")}
                 </dd>
               </div>
             ))}
           </dl>
           <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-[11px] text-fg-muted">
-            <span>{s?.prefetch.completed ?? 0} completed</span>
-            <span>{s?.prefetch.failed ?? 0} failed</span>
-            <span>{s?.prefetch.dropped ?? 0} dropped</span>
+            <span>{tn(s?.prefetch.completed ?? 0, "{count} completed", "{count} completed")}</span>
+            <span>{tn(s?.prefetch.failed ?? 0, "{count} failed", "{count} failed")}</span>
+            <span>{tn(s?.prefetch.dropped ?? 0, "{count} dropped", "{count} dropped")}</span>
           </div>
           <Button
             variant="secondary"
@@ -208,11 +234,11 @@ export function CacheOverview({
             disabled={busy || !warming || !p.keepInProgressWarm}
             onClick={onWarm}
           >
-            Warm resumes <ArrowUpRight size={13} />
+            {t("Warm resumes")} <ArrowUpRight size={13} />
           </Button>
         </DashboardPanel>
         <DashboardPanel
-          title="Policy"
+          title={t("Policy")}
           icon={<ShieldCheck size={16} />}
           className="lg:col-span-3 cockpit:min-h-0"
           bodyClassName="flex flex-col gap-4 cockpit:overflow-y-auto"
@@ -221,27 +247,29 @@ export function CacheOverview({
             <p className="text-lg font-semibold">{name}</p>
             <p className="mt-1 text-xs text-fg-muted">
               {p.mode === "off"
-                ? "No persistent media"
+                ? t("No persistent media")
                 : p.mode === "adaptive"
-                  ? "Adaptive retention"
-                  : "Keep recently streamed media"}
+                  ? t("Adaptive retention")
+                  : t("Keep recently streamed media")}
             </p>
           </div>
           <dl className="space-y-3 text-xs">
             <div>
-              <dt className="text-fg-muted">Expires after</dt>
+              <dt className="text-fg-muted">{t("Expires after")}</dt>
               <dd className="mt-1">
-                {p.retentionDays ? `${p.retentionDays} inactive days` : "Only when space is needed"}
+                {p.retentionDays
+                  ? tn(p.retentionDays, "{count} inactive day", "{count} inactive days")
+                  : t("Only when space is needed")}
               </dd>
             </div>
             <div>
-              <dt className="text-fg-muted">Managed preloading</dt>
+              <dt className="text-fg-muted">{t("Managed preloading")}</dt>
               <dd className="mt-1">
                 {!p.preloadEnabled
-                  ? "Disabled"
+                  ? t("Disabled")
                   : s?.preload.paused
-                    ? "Paused"
-                    : `${s?.preload.ready ?? 0} sources ready`}
+                    ? t("Paused")
+                    : tn(s?.preload.ready ?? 0, "{count} source ready", "{count} sources ready")}
               </dd>
             </div>
           </dl>
@@ -249,16 +277,17 @@ export function CacheOverview({
             onClick={onPreloading}
             className="flex items-center gap-1.5 text-left text-xs text-primary hover:underline"
           >
-            <Sparkles size={13} /> View preloading <ArrowUpRight size={12} />
+            <Sparkles size={13} /> {t("View preloading")} <ArrowUpRight size={12} />
           </button>
           <Button variant="secondary" size="sm" className="mt-auto w-full" onClick={onProfile}>
-            Choose a cache profile
+            {t("Choose a cache profile")}
           </Button>
         </DashboardPanel>
       </div>
       <p className="shrink-0 text-[10px] text-fg-subtle">
-        Live data · refreshes every 5 seconds · hit rate, served and reclaimed counters are since
-        restart.
+        {t(
+          "Live data · refreshes every 5 seconds · hit rate, served and reclaimed counters are since restart.",
+        )}
       </p>
     </div>
   );

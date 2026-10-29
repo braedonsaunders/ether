@@ -4,8 +4,9 @@ import { useMemo } from "react";
 import { viewerName } from "../../components/pickers";
 import { ToolbarPicker, type ToolbarOption } from "../../components/ToolbarPicker";
 import type { HomeLayout, Viewer } from "../../lib/contract";
-import { plural } from "../../lib/format";
+import { t, tn } from "../../i18n";
 import { overrideCount, type LayerKey } from "../../lib/layout";
+import { useLocale } from "../../i18n/react";
 
 const globe = (size: number) => (
   <span
@@ -32,6 +33,7 @@ export function LayerSwitcher({
   viewers: Viewer[];
   draft: HomeLayout;
 }) {
+  const { locale } = useLocale();
   const options = useMemo(() => {
     const counted = viewers.map((v) => ({ v, n: overrideCount(draft, v.id) }));
     counted.sort(
@@ -40,36 +42,40 @@ export function LayerSwitcher({
     const out: ToolbarOption<string>[] = [
       {
         value: "global",
-        label: "Everyone",
-        hint: `The Plex Home all ${plural(viewers.length, "viewer")} get`,
+        label: t("Everyone"),
+        hint: tn(
+          viewers.length,
+          "The Plex Home all {count} viewer get",
+          "The Plex Home all {count} viewers get",
+        ),
         icon: globe(26),
       },
       ...counted.map(({ v, n }) => ({
         value: String(v.id),
         label: viewerName(v),
-        hint: v.isOwner ? "Owner" : `@${v.username}`,
+        hint: v.isOwner ? t("Owner") : `@${v.username}`,
         icon: <Avatar src={v.thumb} name={viewerName(v)} size={26} />,
-        group: "Overrides for one viewer",
+        group: t("Overrides for one viewer"),
         meta: n ? (
           <Badge variant="info" className="shrink-0">
-            {plural(n, "override")}
+            {tn(n, "{count} override", "{count} overrides")}
           </Badge>
         ) : undefined,
       })),
     ];
     return out;
-  }, [viewers, draft]);
+  }, [viewers, draft, locale]);
 
   const current = layer === "global" ? null : viewers.find((v) => v.id === layer);
   const count = layer === "global" ? 0 : overrideCount(draft, layer);
   return (
     <ToolbarPicker
-      ariaLabel="Editing layer"
+      ariaLabel={t("Editing layer")}
       value={String(layer)}
       onChange={(v) => onChange(v === "global" ? "global" : Number(v))}
       options={options}
       searchable={viewers.length > 6}
-      searchPlaceholder="Find a viewer…"
+      searchPlaceholder={t("Find a viewer…")}
       className="min-w-[8.5rem] flex-1 justify-start"
       trigger={
         <>
@@ -79,7 +85,11 @@ export function LayerSwitcher({
             globe(20)
           )}
           <span className="min-w-0 flex-1 truncate text-left">
-            {current ? viewerName(current) : layer === "global" ? "Everyone" : `Viewer ${layer}`}
+            {current
+              ? viewerName(current)
+              : layer === "global"
+                ? t("Everyone")
+                : t("Viewer {id}", { id: layer })}
           </span>
           {count ? (
             <span className="shrink-0 rounded-full bg-info/15 px-1.5 text-[11px] font-semibold tabular-nums text-info">

@@ -34,22 +34,24 @@ import { Meter, TimeBars } from "../components/charts";
 import { ErrorPanel, LoadingRows } from "../components/feedback";
 import { ServerPanel } from "../components/ServerPanel";
 import { LevelBadge, StatusDot } from "../components/status";
+import { getLocale, localized, t, tn, tx } from "../i18n";
 import { api } from "../lib/api";
 import type { ActivityDay, RowInsight } from "../lib/contract";
-import { formatNumber, formatPercent, formatRate, plural, relativeTime } from "../lib/format";
+import { formatNumber, formatPercent, formatRate, relativeTime } from "../lib/format";
 import { normalizeSessions, type HealthItem, type NowPlaying } from "../lib/health";
 import { useAsync } from "../lib/hooks";
 import { useTitle } from "../lib/titles";
+import { useLocale } from "../i18n/react";
 
 function greeting(now = new Date()): string {
   const h = now.getHours();
   return h < 5
-    ? "Good night"
+    ? t("Good night")
     : h < 12
-      ? "Good morning"
+      ? t("Good morning")
       : h < 17
-        ? "Good afternoon"
-        : "Good evening";
+        ? t("Good afternoon")
+        : t("Good evening");
 }
 
 /**
@@ -62,7 +64,11 @@ export default function Home() {
   const { boot, dashboard, dashboardError, refreshDashboard, health } = useApp();
   const activity = useAsync((_s) => api.activity(), []);
   const rows = useAsync((_s) => api.rowInsights(), []);
-  const sessions = useMemo(() => normalizeSessions(dashboard?.sections.sessions), [dashboard]);
+  const { locale } = useLocale();
+  const sessions = useMemo(
+    () => normalizeSessions(dashboard?.sections.sessions),
+    [dashboard, locale],
+  );
   const hw = dashboard?.sections.hwaccel as
     { hwaccel?: { name?: string }; ffmpeg?: string; error?: string } | undefined;
   const problems = health.filter((h) => h.level === "error" || h.level === "warn");
@@ -70,8 +76,8 @@ export default function Home() {
   const status = !dashboard
     ? null
     : problems.length
-      ? `${plural(problems.length, "thing")} ${problems.length === 1 ? "needs" : "need"} attention`
-      : "Everything is healthy";
+      ? tn(problems.length, "{count} thing needs attention", "{count} things need attention")
+      : t("Everything is healthy");
 
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
@@ -79,11 +85,16 @@ export default function Home() {
         <div className="reveal mx-auto flex w-full max-w-(--breakpoint-2xl) flex-col gap-4 p-4 sm:p-6 cockpit:h-full cockpit:max-w-none cockpit:min-h-0 cockpit:pb-5">
           <header className="flex shrink-0 flex-wrap items-end justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold text-fg">Overview</h1>
+              <h1 className="text-xl font-semibold text-fg">{t("Overview")}</h1>
               <p className="truncate text-sm text-fg-muted">
-                {greeting()}. {boot.serverName || "Ether"}
+                {t("{greeting}. {server}", {
+                  greeting: greeting(),
+                  server: boot.serverName || "Ether",
+                })}
                 {status ? ` · ${status}` : ""}
-                {sessions.length ? ` · ${plural(sessions.length, "stream")} live` : ""}
+                {sessions.length
+                  ? ` · ${tn(sessions.length, "{count} stream live", "{count} streams live")}`
+                  : ""}
               </p>
             </div>
             <Button
@@ -95,18 +106,21 @@ export default function Home() {
                 void rows.reload();
               }}
             >
-              <RefreshCw size={14} /> Refresh
+              <RefreshCw size={14} /> {t("Refresh")}
             </Button>
           </header>
 
           {!boot.setupComplete ? (
             <Alert variant="warning" className="shrink-0">
-              <AlertTitle>Setup isn't finished</AlertTitle>
+              <AlertTitle>{t("Setup isn't finished")}</AlertTitle>
               <AlertDescription>
-                Plex apps can't find Ether until setup is complete.{" "}
-                <Link className="font-medium underline" to="/setup">
-                  Continue setup
-                </Link>
+                {tx("Plex apps can't find Ether until setup is complete. {link}", {
+                  link: (
+                    <Link className="font-medium underline" to="/setup">
+                      {t("Continue setup")}
+                    </Link>
+                  ),
+                })}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -158,7 +172,7 @@ function NowPlayingPanel({
   const total = sessions.reduce((n, s) => n + s.speedBps, 0);
   return (
     <DashboardPanel
-      title="Now playing"
+      title={t("Now playing")}
       icon={<PlayCircle size={16} />}
       className={className}
       bodyClassName={scrollBody}
@@ -166,12 +180,12 @@ function NowPlayingPanel({
         <span className="flex items-center gap-2">
           {sessions.length ? (
             <Badge variant="info">
-              {plural(sessions.length, "stream")}
+              {tn(sessions.length, "{count} stream", "{count} streams")}
               {total > 0 ? ` · ${formatRate(total)}` : ""}
             </Badge>
           ) : null}
           <Link to="/activity/now" className="text-xs font-medium text-primary hover:underline">
-            Activity
+            {t("Activity")}
           </Link>
         </span>
       }
@@ -181,8 +195,8 @@ function NowPlayingPanel({
       ) : sessions.length === 0 ? (
         <EmptyState
           icon={<MonitorPlay />}
-          title="Nothing playing"
-          description="Streams appear here the moment someone presses play in Plex."
+          title={t("Nothing playing")}
+          description={t("Streams appear here the moment someone presses play in Plex.")}
           className="py-6"
         />
       ) : (
@@ -218,17 +232,17 @@ function SessionCard({ s }: { s: NowPlaying }) {
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             <Badge variant={s.decision === "transcode" ? "warning" : "success"}>
               {s.decision === "transcode"
-                ? "Transcoding"
+                ? t("Transcoding")
                 : s.decision === "copy"
-                  ? "Direct stream"
+                  ? t("Direct stream")
                   : s.decision
-                    ? "Direct play"
-                    : "Starting"}
+                    ? t("Direct play")
+                    : t("Starting")}
             </Badge>
-            {s.remote ? <Badge variant="info">Remote</Badge> : null}
+            {s.remote ? <Badge variant="info">{t("Remote")}</Badge> : null}
             {s.failovers ? (
               <Badge variant="warning">
-                {s.failovers} failover{s.failovers === 1 ? "" : "s"}
+                {tn(s.failovers, "{count} failover", "{count} failovers")}
               </Badge>
             ) : null}
             <Badge variant="secondary">{formatRate(s.speedBps)}</Badge>
@@ -238,11 +252,11 @@ function SessionCard({ s }: { s: NowPlaying }) {
               <Meter
                 onScrim
                 value={s.progress}
-                label={`Started ${relativeTime(s.startedAt)}`}
-                valueLabel={`${Math.round(s.progress * 100)}% watched`}
+                label={t("Started {time}", { time: relativeTime(s.startedAt) })}
+                valueLabel={t("{percent} watched", { percent: formatPercent(s.progress) })}
               />
             ) : (
-              <p className="text-xs opacity-80">Waiting for playback position</p>
+              <p className="text-xs opacity-80">{t("Waiting for playback position")}</p>
             )}
           </div>
           {s.decisionReason ? (
@@ -274,15 +288,17 @@ function HealthPanel({
   const severe = problems.some((h) => h.level === "error");
   return (
     <DashboardPanel
-      title="Health"
+      title={t("Health")}
       icon={<HeartPulse size={16} />}
       className={className}
       bodyClassName={cn("px-3 py-2", scrollBody)}
       actions={
         loading ? null : problems.length ? (
-          <Badge variant={severe ? "destructive" : "warning"}>{problems.length} to fix</Badge>
+          <Badge variant={severe ? "destructive" : "warning"}>
+            {tn(problems.length, "{count} to fix", "{count} to fix")}
+          </Badge>
         ) : (
-          <LevelBadge level="ok" label="All healthy" />
+          <LevelBadge level="ok" label={t("All healthy")} />
         )
       }
     >
@@ -293,7 +309,7 @@ function HealthPanel({
           {problems.length ? (
             <section
               role="region"
-              aria-label="Needs attention"
+              aria-label={t("Needs attention")}
               className={cn(
                 "mb-2 rounded-lg p-1",
                 severe ? "bg-danger-subtle" : "bg-warning-subtle",
@@ -317,13 +333,13 @@ function HealthPanel({
   );
 }
 
-const LEVEL_TEXT: Record<HealthItem["level"], string> = {
-  ok: "Healthy",
-  warn: "Degraded",
-  error: "Failing",
-  off: "Off",
-  unknown: "Unknown",
-};
+const LEVEL_TEXT: Record<HealthItem["level"], string> = localized(() => ({
+  ok: t("Healthy"),
+  warn: t("Degraded"),
+  error: t("Failing"),
+  off: t("Off"),
+  unknown: t("Unknown"),
+}));
 
 const LEVEL_TONE: Record<HealthItem["level"], string> = {
   ok: "text-success",
@@ -358,7 +374,7 @@ function HealthRow({ h, fix = false }: { h: HealthItem; fix?: boolean }) {
               to={h.href}
               className="relative z-10 shrink-0 text-xs font-medium text-primary hover:underline"
             >
-              Fix
+              {t("Fix")}
             </Link>
           ) : (
             <span className={cn("shrink-0 text-xs font-medium", LEVEL_TONE[h.level])}>
@@ -406,20 +422,20 @@ function ActivityPanel({
   }, [days]);
   const data = days.map((d) => ({
     key: d.date,
-    label: new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, {
+    label: new Date(`${d.date}T12:00:00`).toLocaleDateString(getLocale(), {
       month: "short",
       day: "numeric",
     }),
     value: d[metric],
     detail:
       metric === "plays"
-        ? `${formatNumber(d.hours, 1)} h · ${plural(d.uniqueViewers, "viewer")}`
-        : `${plural(d.plays, "play")} · ${plural(d.uniqueViewers, "viewer")}`,
+        ? `${t("{hours} h", { hours: formatNumber(d.hours, 1) })} · ${tn(d.uniqueViewers, "{count} viewer", "{count} viewers")}`
+        : `${tn(d.plays, "{count} play", "{count} plays")} · ${tn(d.uniqueViewers, "{count} viewer", "{count} viewers")}`,
   }));
   const na = state.error ? "—" : undefined;
   return (
     <DashboardPanel
-      title="Activity · last 30 days"
+      title={t("Activity · last 30 days")}
       icon={<BarChart3 size={16} />}
       className={className}
       bodyClassName="flex min-h-0 flex-col gap-3"
@@ -427,7 +443,7 @@ function ActivityPanel({
         <div className="flex items-center gap-1">
           <div
             role="radiogroup"
-            aria-label="Metric"
+            aria-label={t("Metric")}
             className="inline-flex rounded-md border border-border bg-bg-subtle p-0.5"
           >
             {(["plays", "hours"] as const).map((m) => (
@@ -439,7 +455,7 @@ function ActivityPanel({
                 onClick={() => setMetric(m)}
                 className={`rounded px-2 py-0.5 text-xs font-medium ${metric === m ? "bg-surface text-fg shadow-sm" : "text-fg-muted hover:text-fg"}`}
               >
-                {m === "plays" ? "Plays" : "Hours"}
+                {m === "plays" ? t("Plays") : t("Hours")}
               </button>
             ))}
           </div>
@@ -447,12 +463,12 @@ function ActivityPanel({
             variant="ghost"
             size="sm"
             className="h-7 px-2"
-            onClick={() => setAsTable((t) => !t)}
+            onClick={() => setAsTable((on) => !on)}
             aria-pressed={asTable}
-            title={asTable ? "Show chart" : "Show as table"}
+            title={asTable ? t("Show chart") : t("Show as table")}
           >
             {asTable ? <BarChart3 size={14} /> : <Table2 size={14} />}
-            <span className="sr-only">{asTable ? "Show chart" : "Show as table"}</span>
+            <span className="sr-only">{asTable ? t("Show chart") : t("Show as table")}</span>
           </Button>
         </div>
       }
@@ -463,23 +479,25 @@ function ActivityPanel({
         <>
           <dl className="grid shrink-0 grid-cols-3 gap-3">
             <Readout
-              label="Plays · 30 days"
+              label={t("Plays · 30 days")}
               value={na ?? formatNumber(totals.plays, 0)}
               detail={
                 totals.change === null
-                  ? "Across every viewer"
-                  : `${totals.change >= 0 ? "+" : "−"}${formatPercent(Math.abs(totals.change))} vs. prior`
+                  ? t("Across every viewer")
+                  : t("{change} vs. prior", {
+                      change: `${totals.change >= 0 ? "+" : "−"}${formatPercent(Math.abs(totals.change))}`,
+                    })
               }
             />
             <Readout
-              label="Hours watched"
+              label={t("Hours watched")}
               value={na ?? formatNumber(totals.hours, 0)}
-              detail="Last 30 days"
+              detail={t("Last 30 days")}
             />
             <Readout
-              label="Busiest day"
-              value={na ?? plural(totals.peakViewers, "viewer")}
-              detail="Peak in one day"
+              label={t("Busiest day")}
+              value={na ?? tn(totals.peakViewers, "{count} viewer", "{count} viewers")}
+              detail={t("Peak in one day")}
             />
           </dl>
           {state.error ? (
@@ -487,8 +505,8 @@ function ActivityPanel({
           ) : days.length === 0 ? (
             <EmptyState
               icon={<Activity />}
-              title="No plays yet"
-              description="Activity appears after the first title is watched."
+              title={t("No plays yet")}
+              description={t("Activity appears after the first title is watched.")}
               className="py-6"
             />
           ) : asTable ? (
@@ -496,10 +514,10 @@ function ActivityPanel({
               <Table containerClassName="border-0 shadow-none">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Day</TableHead>
-                    <TableHead className="text-right">Plays</TableHead>
-                    <TableHead className="text-right">Hours</TableHead>
-                    <TableHead className="text-right">Viewers</TableHead>
+                    <TableHead>{t("Day")}</TableHead>
+                    <TableHead className="text-right">{t("Plays")}</TableHead>
+                    <TableHead className="text-right">{t("Hours")}</TableHead>
+                    <TableHead className="text-right">{t("Viewers")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -521,7 +539,11 @@ function ActivityPanel({
               fill
               className="h-44 cockpit:h-auto cockpit:flex-1"
               data={data}
-              ariaLabel={`${metric === "plays" ? "Plays" : "Hours watched"} per day over the last 30 days`}
+              ariaLabel={
+                metric === "plays"
+                  ? t("Plays per day over the last 30 days")
+                  : t("Hours watched per day over the last 30 days")
+              }
               valueFormat={(v) => formatNumber(v, metric === "hours" ? 1 : 0)}
             />
           )}
@@ -542,13 +564,13 @@ function RowsPanel({
   const maxRate = Math.max(0.0001, ...rows.map((r) => r.playRate));
   return (
     <DashboardPanel
-      title="Best rows"
+      title={t("Best rows")}
       icon={<TrendingUp size={16} />}
       className={className}
       bodyClassName={scrollBody}
       actions={
         <Link to="/home" className="text-xs font-medium text-primary hover:underline">
-          Home
+          {t("Home")}
         </Link>
       }
     >
@@ -559,8 +581,8 @@ function RowsPanel({
       ) : rows.length === 0 ? (
         <EmptyState
           icon={<Film />}
-          title="No row data yet"
-          description="Once viewers browse Plex Home, the rows that lead to plays rank here."
+          title={t("No row data yet")}
+          description={t("Once viewers browse Plex Home, the rows that lead to plays rank here.")}
           className="py-6"
         />
       ) : (
@@ -568,7 +590,12 @@ function RowsPanel({
           {rows.map((r, i) => (
             <li
               key={r.hubId}
-              title={`${r.plays7d} plays from ${r.impressions7d} impressions in 7 days`}
+              title={tn(
+                r.plays7d,
+                "{count} play from {impressions} impressions in 7 days",
+                "{count} plays from {impressions} impressions in 7 days",
+                { impressions: formatNumber(r.impressions7d, 0) },
+              )}
             >
               <div className="mb-1 flex items-baseline justify-between gap-2 text-sm">
                 <span className="min-w-0 truncate text-fg">
@@ -586,7 +613,8 @@ function RowsPanel({
                 />
               </div>
               <p className="mt-0.5 text-[11px] text-fg-subtle">
-                {r.plays7d} plays · {formatNumber(r.impressions7d, 0)} impressions
+                {tn(r.plays7d, "{count} play", "{count} plays")} ·{" "}
+                {tn(r.impressions7d, "{count} impression", "{count} impressions")}
               </p>
             </li>
           ))}

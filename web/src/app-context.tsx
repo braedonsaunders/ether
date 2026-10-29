@@ -11,6 +11,7 @@ import {
 import { api } from "./lib/api";
 import { computeHealth, worstLevel, type HealthItem, type HealthLevel } from "./lib/health";
 import type { Bootstrap, DashboardData } from "./lib/types";
+import { useLocale } from "./i18n/react";
 
 interface AppState {
   boot: Bootstrap;
@@ -72,7 +73,8 @@ export function AppProvider({
     [],
   );
 
-  const health = useMemo(() => computeHealth(dashboard?.sections), [dashboard]);
+  const { locale } = useLocale();
+  const health = useMemo(() => computeHealth(dashboard?.sections), [dashboard, locale]);
   const overall = useMemo<HealthLevel>(() => {
     if (dashboardError) return "error";
     if (!dashboard) return "unknown";

@@ -21,7 +21,9 @@ import { ErrorPanel, PosterSkeletons } from "../../components/feedback";
 import { LevelBadge } from "../../components/status";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { Workspace } from "../../components/workspace";
+import { localized, t, tn } from "../../i18n";
 import { api } from "../../lib/api";
+import { fixed, formatNumber } from "../../lib/format";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
 import { LibraryVisibility } from "./LibraryVisibility";
 import { CatalogSettings } from "./CatalogSettings";
@@ -29,13 +31,13 @@ import { TitleInspector } from "./TitleInspector";
 import "./catalog.css";
 
 const PAGE_SIZE = 48;
-const SORTS = [
-  { value: "popularity", label: "Most popular" },
-  { value: "released", label: "Recently released" },
-  { value: "rating", label: "Highest rated" },
-  { value: "added", label: "Recently added" },
-  { value: "title", label: "Title A–Z" },
-];
+const SORTS = localized(() => [
+  { value: "popularity", label: t("Most popular") },
+  { value: "released", label: t("Recently released") },
+  { value: "rating", label: t("Highest rated") },
+  { value: "added", label: t("Recently added") },
+  { value: "title", label: t("Title A–Z") },
+]);
 
 export default function Catalog() {
   const { tab } = useParams();
@@ -47,15 +49,15 @@ export default function Catalog() {
   const status = health.find((h) => h.id === "catalog");
   return (
     <Workspace
-      title="Catalog"
-      subtitle="The movies and shows behind your Plex library."
+      title={t("Catalog")}
+      subtitle={t("The movies and shows behind your Plex library.")}
       actions={
         <>
           {status ? (
             <span className="hidden xl:inline-flex">
               <LevelBadge
                 level={status.level}
-                label={status.level === "ok" ? "Catalog healthy" : status.summary}
+                label={status.level === "ok" ? t("Catalog healthy") : status.summary}
               />
             </span>
           ) : null}
@@ -65,7 +67,7 @@ export default function Catalog() {
             onClick={() => navigate(visibility ? "/catalog" : "/catalog/visibility")}
           >
             <SlidersHorizontal size={14} />
-            Library visibility
+            {t("Library visibility")}
           </Button>
           <Button
             size="sm"
@@ -79,7 +81,7 @@ export default function Catalog() {
             }
           >
             {settings ? <ArrowLeft size={14} /> : <Settings2 size={14} />}
-            {settings ? "Back to catalog" : "Catalog settings"}
+            {settings ? t("Back to catalog") : t("Catalog settings")}
           </Button>
         </>
       }
@@ -173,19 +175,19 @@ function CatalogBrowser({
     <div className="catalog-scroll app-scroll">
       <div className="catalog-toolbar">
         <SubtabNav
-          ariaLabel="Catalog media type"
+          ariaLabel={t("Catalog media type")}
           active={type || "all"}
           onSelect={(v) => update("type", v === "all" ? "" : v)}
           tabs={[
-            { key: "all", label: "All titles" },
-            { key: "movie", label: "Movies" },
-            { key: "show", label: "TV shows" },
+            { key: "all", label: t("All titles") },
+            { key: "movie", label: t("Movies") },
+            { key: "show", label: t("TV shows") },
           ]}
         />
         <div className="catalog-tools">
           <Button size="sm" variant="ghost" onClick={() => setLookupOpen(true)}>
             <Search size={14} />
-            Find on TMDB
+            {t("Find on TMDB")}
           </Button>
           <Button
             size="sm"
@@ -196,15 +198,15 @@ function CatalogBrowser({
               void refreshHealth();
             }}
             disabled={busy}
-            aria-label="Reload catalog"
+            aria-label={t("Reload catalog")}
           >
             <RefreshCw size={14} className={busy ? "animate-spin" : ""} />
           </Button>
-          <div className="catalog-view-toggle" role="group" aria-label="Catalog layout">
+          <div className="catalog-view-toggle" role="group" aria-label={t("Catalog layout")}>
             <Button
               size="icon"
               variant={!list ? "secondary" : "ghost"}
-              aria-label="Poster view"
+              aria-label={t("Poster view")}
               aria-pressed={!list}
               onClick={() => update("view", "")}
             >
@@ -213,7 +215,7 @@ function CatalogBrowser({
             <Button
               size="icon"
               variant={list ? "secondary" : "ghost"}
-              aria-label="List view"
+              aria-label={t("List view")}
               aria-pressed={list}
               onClick={() => update("view", "list")}
             >
@@ -225,35 +227,35 @@ function CatalogBrowser({
       <div className="catalog-content">
         <aside
           className={`catalog-filters ${filtersOpen ? "is-open" : ""}`}
-          aria-label="Catalog filters"
+          aria-label={t("Catalog filters")}
         >
           <div className="catalog-filter-heading">
             <SlidersHorizontal size={14} />
-            <h3>Refine catalog</h3>
-            {hasFilters ? <button onClick={reset}>Reset</button> : null}
+            <h3>{t("Refine catalog")}</h3>
+            {hasFilters ? <button onClick={reset}>{t("Reset")}</button> : null}
           </div>
           <label className="catalog-field-label" htmlFor="catalog-search">
-            Find a title
+            {t("Find a title")}
           </label>
           <div className="relative">
             <Search size={15} className="absolute left-3 top-3 text-fg-subtle" />
             <Input
               id="catalog-search"
-              placeholder="Search catalog…"
+              placeholder={t("Search catalog…")}
               value={query}
               onChange={(e) => update("q", e.target.value, true)}
               className="pl-9"
             />
           </div>
           <div className="catalog-filter-field">
-            <span className="catalog-field-label">Genre</span>
+            <span className="catalog-field-label">{t("Genre")}</span>
             <ToolbarPicker
               className="w-full justify-between"
-              ariaLabel="Filter by genre"
+              ariaLabel={t("Filter by genre")}
               value={genre}
               onChange={(v) => update("genre", v)}
               options={[
-                { value: "", label: "All genres" },
+                { value: "", label: t("All genres") },
                 ...(genre && !facets.data?.genres.some((v) => v.key === genre)
                   ? [{ value: genre, label: genre }]
                   : []),
@@ -262,16 +264,16 @@ function CatalogBrowser({
             />
           </div>
           <div className="catalog-filter-field">
-            <span className="catalog-field-label">Decade</span>
+            <span className="catalog-field-label">{t("Decade")}</span>
             <ToolbarPicker
               className="w-full justify-between"
-              ariaLabel="Filter by decade"
+              ariaLabel={t("Filter by decade")}
               value={decade}
               onChange={(v) => update("decade", v)}
               options={[
-                { value: "", label: "All decades" },
+                { value: "", label: t("All decades") },
                 ...(decade && !facets.data?.decades.some((v) => v.key === decade)
-                  ? [{ value: decade, label: `${decade}s` }]
+                  ? [{ value: decade, label: t("{decade}s", { decade }) }]
                   : []),
                 ...(facets.data?.decades ?? []).map((v) => ({ value: v.key, label: v.title })),
               ]}
@@ -280,34 +282,39 @@ function CatalogBrowser({
           <ErrorPanel error={facets.error} onRetry={() => void facets.reload()} />
           <div className="catalog-policy">
             <Film size={18} />
-            <h4>Ready for discovery</h4>
+            <h4>{t("Ready for discovery")}</h4>
             <p>
-              Only released titles appear here. Popularity and vote thresholds are managed in
-              Catalog settings.
+              {t(
+                "Only released titles appear here. Popularity and vote thresholds are managed in Catalog settings.",
+              )}
             </p>
             <p>
-              This is a metadata library. Playback sources are resolved when a viewer presses play.
+              {t(
+                "This is a metadata library. Playback sources are resolved when a viewer presses play.",
+              )}
             </p>
           </div>
         </aside>
-        <section className="catalog-results" aria-label="Catalog titles" aria-busy={busy}>
+        <section className="catalog-results" aria-label={t("Catalog titles")} aria-busy={busy}>
           <div className="catalog-results-head">
             <div>
               <h3>
                 {query
-                  ? `Results for “${query}”`
+                  ? t("Results for “{query}”", { query })
                   : type === "movie"
-                    ? "Movies"
+                    ? t("Movies")
                     : type === "show"
-                      ? "TV shows"
-                      : "Movies & TV shows"}
+                      ? t("TV shows")
+                      : t("Movies & TV shows")}
               </h3>
               <p role="status">
                 {busy
-                  ? "Loading titles…"
+                  ? t("Loading titles…")
                   : results.error
-                    ? "Catalog could not be loaded"
-                    : `${total.toLocaleString()} ${hasFilters ? "matching " : ""}${total === 1 ? "title" : "titles"}`}
+                    ? t("Catalog could not be loaded")
+                    : hasFilters
+                      ? tn(total, "{count} matching title", "{count} matching titles")
+                      : tn(total, "{count} title", "{count} titles")}
               </p>
             </div>
             <div className="catalog-tools">
@@ -319,10 +326,10 @@ function CatalogBrowser({
                 onClick={() => setFiltersOpen(!filtersOpen)}
               >
                 <SlidersHorizontal size={14} />
-                Filters
+                {t("Filters")}
               </Button>
               <ToolbarPicker
-                ariaLabel="Sort titles"
+                ariaLabel={t("Sort titles")}
                 value={sort}
                 options={SORTS}
                 onChange={(v) => update("sort", v)}
@@ -334,14 +341,14 @@ function CatalogBrowser({
               {[
                 ["q", query],
                 ["genre", genre],
-                ["decade", decade ? `${decade}s` : ""],
+                ["decade", decade ? t("{decade}s", { decade }) : ""],
               ]
                 .filter(([, v]) => v)
                 .map(([key, label]) => (
                   <button
                     key={key}
                     onClick={() => update(key!, "")}
-                    aria-label={`Remove ${label} filter`}
+                    aria-label={t("Remove {filter} filter", { filter: label ?? "" })}
                   >
                     {label}
                     <X size={12} />
@@ -358,26 +365,28 @@ function CatalogBrowser({
               icon={<Search size={30} />}
               title={
                 hasFilters
-                  ? "No matching titles"
+                  ? t("No matching titles")
                   : page > 1
-                    ? "No titles on this page"
-                    : "Your catalog is getting started"
+                    ? t("No titles on this page")
+                    : t("Your catalog is getting started")
               }
               description={
                 hasFilters
-                  ? "Try another title or broaden your filters."
+                  ? t("Try another title or broaden your filters.")
                   : page > 1
-                    ? "The catalog may have changed since your last visit."
-                    : "Add a TMDB key in Catalog settings. Released movies and shows will appear after the catalog syncs."
+                    ? t("The catalog may have changed since your last visit.")
+                    : t(
+                        "Add a TMDB key in Catalog settings. Released movies and shows will appear after the catalog syncs.",
+                      )
               }
               action={
                 hasFilters ? (
                   <Button variant="outline" onClick={reset}>
-                    Clear filters
+                    {t("Clear filters")}
                   </Button>
                 ) : page > 1 ? (
                   <Button variant="outline" onClick={() => update("page", "")}>
-                    Back to first page
+                    {t("Back to first page")}
                   </Button>
                 ) : undefined
               }
@@ -390,7 +399,7 @@ function CatalogBrowser({
                     key={title.key}
                     className={list ? "catalog-list-item" : "catalog-poster"}
                     onClick={() => update("title", title.key)}
-                    aria-label={`Inspect ${title.title}`}
+                    aria-label={t("Inspect {title}", { title: title.title })}
                   >
                     <div className="catalog-poster-image">
                       <Artwork
@@ -401,42 +410,43 @@ function CatalogBrowser({
                       />
                       {!list ? (
                         <span className="catalog-inspect">
-                          Inspect title <ArrowRight size={13} />
+                          {t("Inspect title")} <ArrowRight size={13} />
                         </span>
                       ) : null}
                     </div>
                     <div className="catalog-title-copy">
                       <h4>{title.title}</h4>
                       <p>
-                        {title.year || "Year unknown"}
+                        {title.year || t("Year unknown")}
                         <span>·</span>
-                        {title.type === "show" ? "TV show" : "Movie"}
+                        {title.type === "show" ? t("TV show") : t("Movie")}
                       </p>
                       {list ? (
                         <p className="catalog-list-genres">
-                          {title.genres?.join(" · ") || "Genres unavailable"}
+                          {title.genres?.join(" · ") || t("Genres unavailable")}
                         </p>
                       ) : null}
                     </div>
                     {title.rating ? (
                       <span className="catalog-rating">
-                        <span aria-hidden>★</span> {title.rating.toFixed(1)}
+                        <span aria-hidden>★</span> {fixed(title.rating, 1)}
                       </span>
                     ) : null}
                     {list ? (
                       <>
-                        <Badge variant="secondary">{title.contentRating || "Unrated"}</Badge>
+                        <Badge variant="secondary">{title.contentRating || t("Unrated")}</Badge>
                         <ArrowRight size={15} className="text-fg-subtle" />
                       </>
                     ) : null}
                   </button>
                 ))}
               </div>
-              <nav className="catalog-pagination" aria-label="Catalog pages">
+              <nav className="catalog-pagination" aria-label={t("Catalog pages")}>
                 <span>
-                  {((page - 1) * PAGE_SIZE + 1).toLocaleString()}–
-                  {Math.min(page * PAGE_SIZE, total).toLocaleString()} of {total.toLocaleString()}{" "}
-                  titles
+                  {tn(total, "{from}–{to} of {count} title", "{from}–{to} of {count} titles", {
+                    from: formatNumber((page - 1) * PAGE_SIZE + 1),
+                    to: formatNumber(Math.min(page * PAGE_SIZE, total)),
+                  })}
                 </span>
                 <div className="catalog-tools">
                   <Button
@@ -446,10 +456,13 @@ function CatalogBrowser({
                     onClick={() => update("page", String(page - 1))}
                   >
                     <ArrowLeft size={14} />
-                    Previous
+                    {t("Previous")}
                   </Button>
                   <span>
-                    Page {page} of {Math.ceil(total / PAGE_SIZE).toLocaleString()}
+                    {t("Page {page} of {pages}", {
+                      page: formatNumber(page),
+                      pages: formatNumber(Math.ceil(total / PAGE_SIZE)),
+                    })}
                   </span>
                   <Button
                     variant="outline"
@@ -457,7 +470,7 @@ function CatalogBrowser({
                     disabled={page * PAGE_SIZE >= total}
                     onClick={() => update("page", String(page + 1))}
                   >
-                    Next
+                    {t("Next")}
                     <ArrowRight size={14} />
                   </Button>
                 </div>
@@ -469,15 +482,16 @@ function CatalogBrowser({
       <Drawer
         open={lookupOpen}
         onClose={() => setLookupOpen(false)}
-        title="Find a title on TMDB"
+        title={t("Find a title on TMDB")}
         size="md"
       >
         <p className="mb-5 text-sm text-fg-muted">
-          Look beyond your browsable library. Search for a released movie or show to inspect its
-          metadata.
+          {t(
+            "Look beyond your browsable library. Search for a released movie or show to inspect its metadata.",
+          )}
         </p>
         <TitleSearch
-          placeholder="Search movies and shows…"
+          placeholder={t("Search movies and shows…")}
           onPick={(title) => {
             setLookupOpen(false);
             update("title", title.key);

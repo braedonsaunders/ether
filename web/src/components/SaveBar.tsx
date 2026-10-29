@@ -11,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { t, tn } from "../i18n";
 import { MutationError } from "./feedback";
 
 /**
@@ -103,7 +104,13 @@ export function SaveBarHost({ children }: { children: ReactNode }) {
         error={errors[0]}
         message={
           single?.message ??
-          (dirty.length > 1 ? `${dirty.length} sections have unsaved changes` : undefined)
+          (dirty.length > 1
+            ? tn(
+                dirty.length,
+                "{count} section has unsaved changes",
+                "{count} sections have unsaved changes",
+              )
+            : undefined)
         }
         saveLabel={single?.saveLabel}
         onSave={async () => {
@@ -149,8 +156,8 @@ function SaveBarView({
   onSave,
   onDiscard,
   error,
-  saveLabel = "Save changes",
-  message = "You have unsaved changes",
+  saveLabel = t("Save changes"),
+  message = t("You have unsaved changes"),
   disabled = false,
 }: SaveBarProps) {
   useUnsavedGuard(dirty);
@@ -158,7 +165,7 @@ function SaveBarView({
   return (
     <div
       role="region"
-      aria-label="Unsaved changes"
+      aria-label={t("Unsaved changes")}
       className="fixed inset-x-3 bottom-20 z-40 mx-auto max-w-2xl rounded-xl border border-border bg-elevated px-4 py-3 shadow-lg md:bottom-5"
     >
       {error ? (
@@ -167,13 +174,13 @@ function SaveBarView({
         </div>
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-fg-muted">{dirty ? message : "Changes not saved"}</p>
+        <p className="text-sm text-fg-muted">{dirty ? message : t("Changes not saved")}</p>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={onDiscard} disabled={!dirty || saving}>
-            <RotateCcw size={14} /> Discard
+            <RotateCcw size={14} /> {t("Discard")}
           </Button>
           <Button size="sm" onClick={() => void onSave()} disabled={!dirty || saving || disabled}>
-            <Save size={14} /> {saving ? "Saving…" : saveLabel}
+            <Save size={14} /> {saving ? t("Saving…") : saveLabel}
           </Button>
         </div>
       </div>

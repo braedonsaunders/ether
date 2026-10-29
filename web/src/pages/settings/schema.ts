@@ -1,71 +1,72 @@
+import { localized, t } from "../../i18n";
 import type { FieldGroup } from "./SchemaForm";
 
-export const SERVER: FieldGroup[] = [
+export const SERVER: FieldGroup[] = localized(() => [
   {
-    title: "Server",
+    title: t("Server"),
     fields: [
       {
         key: "friendlyName",
-        label: "Server name",
+        label: t("Server name"),
         kind: "text",
-        help: "How the server appears in Plex apps.",
+        help: t("How the server appears in Plex apps."),
       },
       {
         key: "port",
-        label: "Port",
+        label: t("Port"),
         kind: "number",
         min: 1,
         max: 65535,
         step: 1,
-        help: "Plex apps expect 32400. A restart is needed after changing it.",
+        help: t("Plex apps expect 32400. A restart is needed after changing it."),
       },
       {
         key: "bindAddress",
-        label: "Listen address",
+        label: t("Listen address"),
         kind: "text",
-        help: "0.0.0.0 listens on every network interface.",
+        help: t("0.0.0.0 listens on every network interface."),
       },
       {
         key: "machineIdentifier",
-        label: "Machine identifier",
+        label: t("Machine identifier"),
         kind: "readonly",
-        help: "Generated on first run; never changes.",
+        help: t("Generated on first run; never changes."),
       },
     ],
   },
   {
-    title: "Streams",
+    title: t("Streams"),
     fields: [
       {
         key: "defaultStreamLimit",
-        label: "Streams per viewer",
+        label: t("Streams per viewer"),
         kind: "number",
         min: 0,
         step: 1,
-        help: "Default simultaneous streams for each viewer. 0 = unlimited.",
+        help: t("Default simultaneous streams for each viewer. 0 = unlimited."),
       },
       {
         key: "maxStreams",
-        label: "Server-wide limit",
+        label: t("Server-wide limit"),
         kind: "number",
         min: 0,
         step: 1,
-        help: "0 derives the limit from your Usenet connections.",
+        help: t("0 derives the limit from your Usenet connections."),
       },
       {
         key: "logLevel",
-        label: "Log level",
+        label: t("Log level"),
         kind: "select",
         options: [
-          { value: "debug", label: "Debug" },
-          { value: "info", label: "Info" },
-          { value: "warn", label: "Warnings" },
-          { value: "error", label: "Errors only" },
+          { value: "debug", label: t("Debug") },
+          { value: "info", label: t("Info") },
+          { value: "warn", label: t("Warnings") },
+          { value: "error", label: t("Errors only") },
         ],
       },
     ],
   },
-];
+]);
 
 /** server.* keys each cluster node keeps for itself (internal/config/scope.go). */
 const NODE_LOCAL_SERVER_KEYS = new Set(["port", "bindAddress", "logLevel"]);
@@ -84,292 +85,316 @@ export function clusterServerGroups(): FieldGroup[] {
   return [
     ...shared,
     {
-      title: "This node",
-      description: "These apply only to this node; every other setting is shared by the cluster.",
+      title: t("This node"),
+      description: t(
+        "These apply only to this node; every other setting is shared by the cluster.",
+      ),
       fields: [
         ...local,
         {
           key: "clusterWeight",
-          label: "Node weight",
+          label: t("Node weight"),
           kind: "number",
           min: 0,
           max: 100,
           step: 1,
-          help: "This node's share of each provider's connections and request limits, relative to the other nodes. 2 gets twice the share of a node at 1; 0 means 1.",
+          help: t(
+            "This node's share of each provider's connections and request limits, relative to the other nodes. 2 gets twice the share of a node at 1; 0 means 1.",
+          ),
         },
       ],
     },
   ];
 }
 
-export const PLEX: FieldGroup[] = [
+export const PLEX: FieldGroup[] = localized(() => [
   {
-    title: "Remote access",
-    description: "Let Plex apps reach Ether from outside your network.",
+    id: "remote",
+    title: t("Remote access"),
+    description: t("Let Plex apps reach Ether from outside your network."),
     fields: [
       {
         key: "remoteAccess",
-        label: "Allow remote access",
+        label: t("Allow remote access"),
         kind: "bool",
-        help: "Publishes your public address to plex.tv.",
+        help: t("Publishes your public address to plex.tv."),
       },
       {
         key: "useUpnp",
-        label: "Map the port automatically (UPnP)",
+        label: t("Map the port automatically (UPnP)"),
         kind: "bool",
-        help: "Asks your router to forward the port.",
+        help: t("Asks your router to forward the port."),
       },
       {
         key: "publicPort",
-        label: "Public port",
+        label: t("Public port"),
         kind: "number",
         min: 0,
         max: 65535,
         step: 1,
-        help: "The port forwarded on your router. 0 uses the server port.",
+        help: t("The port forwarded on your router. 0 uses the server port."),
       },
       {
         key: "publicHost",
-        label: "Public host name",
+        label: t("Public host name"),
         kind: "text",
-        help: "Optional. Leave empty to detect your public address.",
+        help: t("Optional. Leave empty to detect your public address."),
       },
       {
         key: "customUrls",
-        label: "Custom server URLs",
+        label: t("Custom server URLs"),
         kind: "list",
         placeholder: "https://ether.example.com:443",
-        help: "Extra addresses Plex apps should try, comma-separated.",
+        help: t("Extra addresses Plex apps should try, comma-separated."),
       },
     ],
   },
   {
-    title: "Secure connections",
+    id: "secure",
+    title: t("Secure connections"),
     fields: [
       {
         key: "secureConnections",
-        label: "Secure connections",
+        label: t("Secure connections"),
         kind: "select",
         options: [
-          { value: "required", label: "Required" },
-          { value: "preferred", label: "Preferred" },
-          { value: "disabled", label: "Disabled" },
+          { value: "required", label: t("Required") },
+          { value: "preferred", label: t("Preferred") },
+          { value: "disabled", label: t("Disabled") },
         ],
       },
       {
         key: "certFile",
-        label: "Certificate file",
+        label: t("Certificate file"),
         kind: "text",
         wide: true,
-        help: "Leave empty to use the plex.direct certificate Ether manages.",
+        help: t("Leave empty to use the plex.direct certificate Ether manages."),
       },
-      { key: "keyFile", label: "Key file", kind: "text", wide: true },
+      { key: "keyFile", label: t("Key file"), kind: "text", wide: true },
     ],
   },
   {
-    title: "Account",
+    id: "account",
+    title: t("Account"),
     fields: [
-      { key: "ownerUsername", label: "Owner", kind: "readonly" },
+      { key: "ownerUsername", label: t("Owner"), kind: "readonly" },
       {
         key: "claimed",
-        label: "Claimed",
+        label: t("Claimed"),
         kind: "bool",
-        help: "Set by the setup wizard when the server is linked to your Plex account. Turning it off signs the server out of Plex: it is removed from the account's devices so another account can claim it.",
+        help: t(
+          "Set by the setup wizard when the server is linked to your Plex account. Turning it off signs the server out of Plex: it is removed from the account's devices so another account can claim it.",
+        ),
       },
-      { key: "token", label: "Owner token", kind: "secret" },
-      { key: "clientIdentifier", label: "Client identifier", kind: "readonly" },
-      { key: "ownerPlexId", label: "Owner Plex ID", kind: "readonly" },
-      { key: "certHash", label: "plex.direct hash", kind: "readonly" },
+      { key: "token", label: t("Owner token"), kind: "secret" },
+      { key: "clientIdentifier", label: t("Client identifier"), kind: "readonly" },
+      { key: "ownerPlexId", label: t("Owner Plex ID"), kind: "readonly" },
+      { key: "certHash", label: t("plex.direct hash"), kind: "readonly" },
     ],
   },
   {
-    title: "Compatibility",
+    id: "compatibility",
+    title: t("Compatibility"),
     fields: [
       {
         key: "trackLatestVersion",
-        label: "Report the latest public PMS version",
+        label: t("Report the latest public PMS version"),
         kind: "bool",
-        help: "Off reports the version Ether is verified against. Plex apps turn on features by server version, so tracking can expose features Ether doesn't support.",
+        help: t(
+          "Off reports the version Ether is verified against. Plex apps turn on features by server version, so tracking can expose features Ether doesn't support.",
+        ),
       },
       {
         key: "compatibilityVersion",
-        label: "Compatibility version override",
+        label: t("Compatibility version override"),
         kind: "text",
-        help: "Leave empty to use the verified version, or the latest public version when tracking is on.",
+        help: t(
+          "Leave empty to use the verified version, or the latest public version when tracking is on.",
+        ),
       },
-      { key: "latestCompatibilityVersion", label: "Latest public PMS version", kind: "readonly" },
+      {
+        key: "latestCompatibilityVersion",
+        label: t("Latest public PMS version"),
+        kind: "readonly",
+      },
     ],
   },
-];
+]);
 
-export const CACHE: FieldGroup[] = [
+export const CACHE: FieldGroup[] = localized(() => [
   {
-    title: "Disk cache",
-    description: "Segments from Usenet are cached on disk so seeks and rewatches are instant.",
+    title: t("Disk cache"),
+    description: t("Segments from Usenet are cached on disk so seeks and rewatches are instant."),
     fields: [
-      { key: "dir", label: "Cache folder", kind: "text", wide: true },
+      { key: "dir", label: t("Cache folder"), kind: "text", wide: true },
       {
         key: "budgetBytes",
-        label: "Disk budget",
+        label: t("Disk budget"),
         kind: "bytes",
         unit: "GiB",
-        help: "The oldest segments are evicted when the cache reaches this size.",
+        help: t("The oldest segments are evicted when the cache reaches this size."),
       },
     ],
   },
   {
-    title: "Prefetch",
+    title: t("Prefetch"),
     fields: [
       {
         key: "prefetchNextEpisode",
-        label: "Prefetch the next episode",
+        label: t("Prefetch the next episode"),
         kind: "bool",
-        help: "Warms the opening of the next episode so it starts instantly.",
+        help: t("Warms the opening of the next episode so it starts instantly."),
       },
       {
         key: "nextEpisodeAt",
-        label: "Start prefetching at",
+        label: t("Start prefetching at"),
         kind: "number",
         min: 0,
         max: 1,
         step: 0.05,
-        help: "Fraction of the current episode watched (0–1).",
+        help: t("Fraction of the current episode watched (0–1)."),
       },
       {
         key: "prefetchBytes",
-        label: "Prefetch size",
+        label: t("Prefetch size"),
         kind: "bytes",
         unit: "MiB",
-        help: "How much of the next episode to pull ahead.",
+        help: t("How much of the next episode to pull ahead."),
       },
       {
         key: "keepInProgressWarm",
-        label: "Keep in-progress titles warm",
+        label: t("Keep in-progress titles warm"),
         kind: "bool",
-        help: "Keeps the resume point of unfinished titles cached.",
+        help: t("Keeps the resume point of unfinished titles cached."),
       },
       {
         key: "inProgressPinMaxAge",
-        label: "Stop keeping a title warm after",
+        label: t("Stop keeping a title warm after"),
         kind: "duration",
         placeholder: "720h",
-        help: "An unfinished title nobody has watched for this long loses its cache pin. Empty uses 30 days.",
+        help: t(
+          "An unfinished title nobody has watched for this long loses its cache pin. Empty uses 30 days.",
+        ),
       },
       {
         key: "inProgressPinPercent",
-        label: "Share of the cache for in-progress titles",
+        label: t("Share of the cache for in-progress titles"),
         kind: "number",
         min: 0,
         max: 100,
         step: 5,
-        help: "Percent of the disk budget unfinished titles may keep pinned; the least recently watched lose their pin first. 0 uses 50.",
+        help: t(
+          "Percent of the disk budget unfinished titles may keep pinned; the least recently watched lose their pin first. 0 uses 50.",
+        ),
       },
     ],
   },
-];
+]);
 
-export const CATALOG: FieldGroup[] = [
+export const CATALOG: FieldGroup[] = localized(() => [
   {
     title: "TMDB",
     fields: [
       {
         key: "tmdbKey",
-        label: "Your TMDB API key",
+        label: t("Your TMDB API key"),
         kind: "secret",
-        help: "Your personal TMDB v3 API key or v4 read-access token.",
+        help: t("Your personal TMDB v3 API key or v4 read-access token."),
       },
       {
         key: "language",
-        label: "Language",
+        label: t("Language"),
         kind: "text",
-        help: "Metadata language, e.g. en-US or fr-FR.",
+        help: t("Metadata language, e.g. en-US or fr-FR."),
       },
       {
         key: "region",
-        label: "Region",
+        label: t("Region"),
         kind: "text",
-        help: "Two-letter region for release dates and streaming availability.",
+        help: t("Two-letter region for release dates and streaming availability."),
       },
-      { key: "refreshInterval", label: "Refresh every", kind: "duration" },
+      { key: "refreshInterval", label: t("Refresh every"), kind: "duration" },
     ],
   },
   {
-    title: "What's browsable",
-    description: "Thresholds keep obscure titles out of Plex libraries; they remain searchable.",
+    title: t("What's browsable"),
+    description: t("Thresholds keep obscure titles out of Plex libraries; they remain searchable."),
     fields: [
-      { key: "minPopularity", label: "Minimum popularity", kind: "number", min: 0, step: 1 },
-      { key: "minVotes", label: "Minimum votes", kind: "number", min: 0, step: 10 },
-      { key: "includeAdult", label: "Include adult titles", kind: "bool" },
+      { key: "minPopularity", label: t("Minimum popularity"), kind: "number", min: 0, step: 1 },
+      { key: "minVotes", label: t("Minimum votes"), kind: "number", min: 0, step: 10 },
+      { key: "includeAdult", label: t("Include adult titles"), kind: "bool" },
       {
         key: "hideFranchiseCollections",
-        label: "Hide automatic franchise collections",
+        label: t("Hide automatic franchise collections"),
         kind: "bool",
-        help: "Hide TMDB franchise groups such as Zootopia from Plex's Collections tab. Your curated collections and Home rows stay available. Applies after saving; refresh the Collections tab in Plex.",
+        help: t(
+          "Hide TMDB franchise groups such as Zootopia from Plex's Collections tab. Your curated collections and Home rows stay available. Applies after saving; refresh the Collections tab in Plex.",
+        ),
       },
     ],
   },
-];
+]);
 
-export const RESOLVER: FieldGroup[] = [
+export const RESOLVER: FieldGroup[] = localized(() => [
   {
-    title: "Release selection",
+    title: t("Release selection"),
     fields: [
       {
         key: "allowCam",
-        label: "Allow CAM and telesync releases",
+        label: t("Allow CAM and telesync releases"),
         kind: "bool",
-        help: "Off by default: these are recorded in cinemas.",
+        help: t("Off by default: these are recorded in cinemas."),
       },
       {
         key: "maxCandidates",
-        label: "Releases to keep ready",
+        label: t("Releases to keep ready"),
         kind: "number",
         min: 0,
         step: 1,
-        help: "Fallback releases kept for instant failover.",
+        help: t("Fallback releases kept for instant failover."),
       },
       {
         key: "healthSamples",
-        label: "Health check samples",
+        label: t("Health check samples"),
         kind: "number",
         min: 0,
         step: 1,
-        help: "Articles checked before a release is trusted.",
+        help: t("Articles checked before a release is trusted."),
       },
-      { key: "searchCacheTtl", label: "Remember searches for", kind: "duration" },
-      { key: "unavailableCooloff", label: "Retry unavailable titles after", kind: "duration" },
+      { key: "searchCacheTtl", label: t("Remember searches for"), kind: "duration" },
+      { key: "unavailableCooloff", label: t("Retry unavailable titles after"), kind: "duration" },
     ],
   },
   {
-    title: "Blocklists",
+    title: t("Blocklists"),
     fields: [
       {
         key: "blockedGroups",
-        label: "Blocked release groups",
+        label: t("Blocked release groups"),
         kind: "list",
         placeholder: "GROUP1, GROUP2",
       },
       {
         key: "blockedTerms",
-        label: "Blocked terms",
+        label: t("Blocked terms"),
         kind: "list",
         placeholder: "hardcoded, korsub",
       },
     ],
   },
-];
+]);
 
-export const TRANSCODE: FieldGroup[] = [
+export const TRANSCODE: FieldGroup[] = localized(() => [
   {
-    title: "Transcoding",
+    title: t("Transcoding"),
     fields: [
       {
         key: "hwAccel",
-        label: "Hardware acceleration",
+        label: t("Hardware acceleration"),
         kind: "select",
         options: [
-          { value: "auto", label: "Automatic" },
-          { value: "none", label: "Off (software)" },
+          { value: "auto", label: t("Automatic") },
+          { value: "none", label: t("Off (software)") },
           { value: "videotoolbox", label: "VideoToolbox (Apple)" },
           { value: "nvenc", label: "NVENC (NVIDIA)" },
           { value: "qsv", label: "Quick Sync (Intel)" },
@@ -378,26 +403,33 @@ export const TRANSCODE: FieldGroup[] = [
       },
       {
         key: "vaapiDevice",
-        label: "VA-API device",
+        label: t("VA-API device"),
         kind: "text",
-        help: "Only for VA-API, e.g. /dev/dri/renderD128.",
+        help: t("Only for VA-API, e.g. /dev/dri/renderD128."),
       },
-      { key: "maxTranscodes", label: "Simultaneous transcodes", kind: "number", min: 0, step: 1 },
+      {
+        key: "maxTranscodes",
+        label: t("Simultaneous transcodes"),
+        kind: "number",
+        min: 0,
+        step: 1,
+      },
       {
         key: "remoteMaxBitrateKbps",
-        label: "Remote bitrate cap",
+        label: t("Remote bitrate cap"),
         kind: "number",
         min: 0,
         step: 500,
         unit: "kbps",
-        help: "0 = no cap.",
+        help: t("0 = no cap."),
       },
     ],
   },
   {
-    title: "Server video enhancement",
-    description:
+    title: t("Server video enhancement"),
+    description: t(
       "Use NVIDIA RTX Video Super Resolution on this server to improve lower-resolution video before streaming. On supported Windows x64 servers, enabling this installs and verifies the required runtime automatically. Enhancement uses additional GPU capacity.",
+    ),
     fields: [
       {
         key: "rtxVideo",
@@ -409,15 +441,17 @@ export const TRANSCODE: FieldGroup[] = [
             label: "RTX Video Super Resolution",
             kind: "select",
             options: [
-              { value: "off", label: "Off" },
-              { value: "auto", label: "Automatic · local streams" },
-              { value: "on", label: "On · eligible streams" },
+              { value: "off", label: t("Off") },
+              { value: "auto", label: t("Automatic · local streams") },
+              { value: "on", label: t("On · eligible streams") },
             ],
-            help: "Eligible videos are enhanced within the viewer's resolution and bitrate limits. Unsupported videos use ordinary playback.",
+            help: t(
+              "Eligible videos are enhanced within the viewer's resolution and bitrate limits. Unsupported videos use ordinary playback.",
+            ),
           },
           {
             key: "sourceMaxHeight",
-            label: "Enhance sources up to",
+            label: t("Enhance sources up to"),
             kind: "number",
             min: 144,
             max: 2160,
@@ -426,7 +460,7 @@ export const TRANSCODE: FieldGroup[] = [
           },
           {
             key: "targetMaxHeight",
-            label: "Enhanced resolution limit",
+            label: t("Enhanced resolution limit"),
             kind: "number",
             min: 144,
             max: 2160,
@@ -435,33 +469,37 @@ export const TRANSCODE: FieldGroup[] = [
           },
           {
             key: "quality",
-            label: "Enhancement quality",
+            label: t("Enhancement quality"),
             kind: "select",
             numeric: true,
             options: [
-              { value: "1", label: "Low" },
-              { value: "2", label: "Medium" },
-              { value: "3", label: "High" },
-              { value: "4", label: "Ultra" },
-              { value: "21", label: "Streaming medium" },
-              { value: "23", label: "Streaming ultra" },
+              { value: "1", label: t("Low") },
+              { value: "2", label: t("Medium") },
+              { value: "3", label: t("High") },
+              { value: "4", label: t("Ultra") },
+              { value: "21", label: t("Streaming medium") },
+              { value: "23", label: t("Streaming ultra") },
             ],
-            help: "Higher quality uses more GPU resources. Streaming modes require an Ampere or newer GPU. Start with Medium.",
+            help: t(
+              "Higher quality uses more GPU resources. Streaming modes require an Ampere or newer GPU. Start with Medium.",
+            ),
           },
           {
             key: "maxConcurrent",
-            label: "Simultaneous enhancements",
+            label: t("Simultaneous enhancements"),
             kind: "number",
             min: 1,
             max: 8,
             step: 1,
-            help: "Additional streams use ordinary playback when this limit is reached.",
+            help: t("Additional streams use ordinary playback when this limit is reached."),
           },
           {
             key: "executablePath",
-            label: "NVEnc executable path",
+            label: t("NVEnc executable path"),
             kind: "text",
-            help: "Optional path to your own NVEncC64.exe. Leave empty for automatic setup; custom installations are never overwritten.",
+            help: t(
+              "Optional path to your own NVEncC64.exe. Leave empty for automatic setup; custom installations are never overwritten.",
+            ),
           },
         ],
       },
@@ -472,103 +510,104 @@ export const TRANSCODE: FieldGroup[] = [
     fields: [
       {
         key: "ffmpegPath",
-        label: "ffmpeg path",
+        label: t("ffmpeg path"),
         kind: "text",
         wide: true,
-        help: "Leave empty to use the bundled ffmpeg.",
+        help: t("Leave empty to use the bundled ffmpeg."),
       },
-      { key: "ffprobePath", label: "ffprobe path", kind: "text", wide: true },
-      { key: "tempDir", label: "Temporary folder", kind: "text", wide: true },
+      { key: "ffprobePath", label: t("ffprobe path"), kind: "text", wide: true },
+      { key: "tempDir", label: t("Temporary folder"), kind: "text", wide: true },
     ],
   },
-];
+]);
 
-export const TRAKT: FieldGroup[] = [
+export const TRAKT: FieldGroup[] = localized(() => [
   {
     title: "Trakt",
-    description: "Sync watch history and lists with Trakt.",
+    description: t("Sync watch history and lists with Trakt."),
     fields: [
-      { key: "enabled", label: "Enabled", kind: "bool" },
-      { key: "clientId", label: "Client ID", kind: "text", wide: true },
-      { key: "clientSecret", label: "Client secret", kind: "secret" },
+      { key: "enabled", label: t("Enabled"), kind: "bool" },
+      { key: "clientId", label: t("Client ID"), kind: "text", wide: true },
+      { key: "clientSecret", label: t("Client secret"), kind: "secret" },
     ],
   },
-];
+]);
 
-export const OPENSUBTITLES: FieldGroup[] = [
+export const OPENSUBTITLES: FieldGroup[] = localized(() => [
   {
     title: "OpenSubtitles",
-    description: "Fetch subtitles when a release doesn't include them.",
+    description: t("Fetch subtitles when a release doesn't include them."),
     fields: [
-      { key: "enabled", label: "Enabled", kind: "bool" },
-      { key: "apiKey", label: "API key", kind: "secret" },
-      { key: "username", label: "Username", kind: "text" },
-      { key: "password", label: "Password", kind: "secret" },
+      { key: "enabled", label: t("Enabled"), kind: "bool" },
+      { key: "apiKey", label: t("API key"), kind: "secret" },
+      { key: "username", label: t("Username"), kind: "text" },
+      { key: "password", label: t("Password"), kind: "secret" },
     ],
   },
-];
+]);
 
-export const UPDATES: FieldGroup[] = [
+export const UPDATES: FieldGroup[] = localized(() => [
   {
-    title: "Release channel",
+    title: t("Release channel"),
     fields: [
       {
         key: "channel",
-        label: "Channel",
+        label: t("Channel"),
         kind: "select",
         options: [
-          { value: "stable", label: "Stable" },
-          { value: "beta", label: "Beta" },
+          { value: "stable", label: t("Stable") },
+          { value: "beta", label: t("Beta") },
         ],
       },
       {
         key: "autoUpdate",
-        label: "Install updates automatically",
+        label: t("Install updates automatically"),
         kind: "bool",
-        help: "Installs during the maintenance window, once nobody is watching.",
+        help: t("Installs during the maintenance window, once nobody is watching."),
       },
       {
         key: "maintenanceStart",
-        label: "Maintenance window starts",
+        label: t("Maintenance window starts"),
         kind: "text",
         placeholder: "03:00",
-        help: "24-hour local time.",
+        help: t("24-hour local time."),
       },
       {
         key: "maintenanceEnd",
-        label: "Maintenance window ends",
+        label: t("Maintenance window ends"),
         kind: "text",
         placeholder: "06:00",
-        help: "May wrap past midnight.",
+        help: t("May wrap past midnight."),
       },
       {
         key: "feedUrl",
-        label: "Update feed",
+        label: t("Update feed"),
         kind: "text",
         wide: true,
-        help: "Leave empty for the official feed.",
+        help: t("Leave empty for the official feed."),
       },
     ],
   },
-];
+]);
 
-export const SPIKE: FieldGroup[] = [
+export const SPIKE: FieldGroup[] = localized(() => [
   {
-    title: "Test playback with a local file",
-    description:
+    title: t("Test playback with a local file"),
+    description: t(
       "Serve a file from this computer to your Plex apps to tell whether a playback problem is the app or the stream. This is a diagnostic, not a library; turn it off when you're done.",
+    ),
     fields: [
-      { key: "enabled", label: "Serve test files", kind: "bool" },
+      { key: "enabled", label: t("Serve test files"), kind: "bool" },
       {
         key: "localFiles",
-        label: "Test files",
+        label: t("Test files"),
         kind: "list",
         placeholder: "/path/to/movie.mkv",
-        help: "Full paths to video files on this computer.",
+        help: t("Full paths to video files on this computer."),
       },
     ],
   },
-];
+]);
 
 export const QUALITY_SOURCES = [
   "remux",
@@ -583,215 +622,229 @@ export const QUALITY_SOURCES = [
 export const QUALITY_CODECS = ["av1", "hevc", "h264", "vp9", "mpeg2"];
 export const QUALITY_AUDIO = ["truehd", "dtshd", "eac3", "ac3", "dts", "aac", "flac", "opus"];
 
-export const MARKERS: FieldGroup[] = [
+export const MARKERS: FieldGroup[] = localized(() => [
   {
-    title: "Chapters and skip markers",
+    title: t("Chapters and skip markers"),
     fields: [
       {
         key: "theIntroDb",
-        label: "Look up intro and credits markers",
+        label: t("Look up intro and credits markers"),
         kind: "bool",
-        help: "Use the public TheIntroDB lookup, cached per episode and runtime.",
+        help: t("Use the public TheIntroDB lookup, cached per episode and runtime."),
       },
-      { key: "apiKey", label: "Optional TheIntroDB key", kind: "secret" },
+      { key: "apiKey", label: t("Optional TheIntroDB key"), kind: "secret" },
     ],
   },
-];
+]);
 
 /** Debrid section settings, edited in place under the provider list (Sources › Debrid). */
-export const DEBRID: FieldGroup[] = [
+export const DEBRID: FieldGroup[] = localized(() => [
   {
-    title: "Torrent handling",
+    title: t("Torrent handling"),
     fields: [
       {
         key: "cachedOnly",
-        label: "Cached torrents only",
+        label: t("Cached torrents only"),
         kind: "bool",
-        help: "Only use torrents your debrid service already holds. Nothing is downloaded and playback never waits. Turn off to have Ether send the best uncached release of a title to your first debrid service when someone presses Play; it plays once the download finishes (the app says so meanwhile).",
+        help: t(
+          "Only use torrents your debrid service already holds. Nothing is downloaded and playback never waits. Turn off to have Ether send the best uncached release of a title to your first debrid service when someone presses Play; it plays once the download finishes (the app says so meanwhile).",
+        ),
       },
       {
         key: "removeUncached",
-        label: "Remove uncached torrents",
+        label: t("Remove uncached torrents"),
         kind: "bool",
-        help: "Remove torrents Ether added that turned out not to be cached. Cached torrents stay on your account so the next play starts instantly and they are reused instead of re-added.",
+        help: t(
+          "Remove torrents Ether added that turned out not to be cached. Cached torrents stay on your account so the next play starts instantly and they are reused instead of re-added.",
+        ),
       },
     ],
   },
   {
-    title: "Advanced",
-    description: "Leave at 0 for the built-in behaviour.",
+    title: t("Advanced"),
+    description: t("Leave at 0 for the built-in behaviour."),
     fields: [
       {
         key: "chunkBytes",
-        label: "Largest range request",
+        label: t("Largest range request"),
         kind: "bytes",
         unit: "MiB",
-        help: "Requests start at 512 KiB for a fast first byte and grow up to this size. 0 = 8 MiB; at most 64 MiB.",
+        help: t(
+          "Requests start at 512 KiB for a fast first byte and grow up to this size. 0 = 8 MiB; at most 64 MiB.",
+        ),
       },
       {
         key: "readAheadChunks",
-        label: "Fixed read-ahead",
+        label: t("Fixed read-ahead"),
         kind: "number",
         min: -1,
         max: 32,
         step: 1,
-        unit: "chunks",
-        help: "0 adapts read-ahead to the measured download speed. Set up to 32 chunks to fix the window; -1 turns read-ahead off.",
+        unit: t("chunks"),
+        help: t(
+          "0 adapts read-ahead to the measured download speed. Set up to 32 chunks to fix the window; -1 turns read-ahead off.",
+        ),
       },
       {
         key: "maxConnections",
-        label: "Connections per file",
+        label: t("Connections per file"),
         kind: "number",
         min: 0,
         max: 16,
         step: 1,
-        help: "Concurrent range requests per open file. 0 = 4; at most 16.",
+        help: t("Concurrent range requests per open file. 0 = 4; at most 16."),
       },
     ],
   },
-];
+]);
 
 /** Plex offline downloads (General › Downloads). */
-export const DOWNLOADS: FieldGroup[] = [
+export const DOWNLOADS: FieldGroup[] = localized(() => [
   {
-    title: "Downloads",
-    description:
+    title: t("Downloads"),
+    description: t(
       "Lets Plex apps save titles for offline viewing. Ether remuxes each one on demand.",
+    ),
     fields: [
-      { key: "enabled", label: "Allow downloads", kind: "bool" },
+      { key: "enabled", label: t("Allow downloads"), kind: "bool" },
       {
         key: "allowFriends",
-        label: "Friends can download",
+        label: t("Friends can download"),
         kind: "bool",
-        help: "Off lets only you download. A viewer's access policy can still allow or deny it.",
+        help: t("Off lets only you download. A viewer's access policy can still allow or deny it."),
       },
       {
         key: "maxHeight",
-        label: "Highest resolution",
+        label: t("Highest resolution"),
         kind: "number",
         min: 0,
         step: 1,
         unit: "p",
-        help: "Downloads are capped at this height. 0 uses 1080p.",
+        help: t("Downloads are capped at this height. 0 uses 1080p."),
       },
     ],
   },
   {
-    title: "Limits",
+    title: t("Limits"),
     fields: [
       {
         key: "maxConcurrent",
-        label: "Downloads at once",
+        label: t("Downloads at once"),
         kind: "number",
         min: 0,
         step: 1,
-        help: "Across the whole server. 0 uses 2.",
+        help: t("Across the whole server. 0 uses 2."),
       },
       {
         key: "maxConcurrentPerUser",
-        label: "Downloads at once per viewer",
+        label: t("Downloads at once per viewer"),
         kind: "number",
         min: 0,
         step: 1,
-        help: "0 uses 1.",
+        help: t("0 uses 1."),
       },
       {
         key: "diskBudgetBytes",
-        label: "Temporary disk space",
+        label: t("Temporary disk space"),
         kind: "bytes",
         unit: "GiB",
-        help: "Maximum space for prepared downloads. Set to 0 to use the default limit of 20 GiB.",
+        help: t(
+          "Maximum space for prepared downloads. Set to 0 to use the default limit of 20 GiB.",
+        ),
       },
       {
         key: "expiry",
-        label: "Keep prepared files for",
+        label: t("Keep prepared files for"),
         kind: "duration",
-        help: "A finished download is deleted after this long if the app hasn't fetched it.",
+        help: t("A finished download is deleted after this long if the app hasn't fetched it."),
       },
     ],
   },
-];
+]);
 
 /** Per-viewer touches in Plex apps (General › Personalization). */
-export const PERSONALIZE: FieldGroup[] = [
+export const PERSONALIZE: FieldGroup[] = localized(() => [
   {
-    title: "Personalization",
-    description: "Per-viewer touches in Plex apps. Turn any off for plain Plex behaviour.",
+    title: t("Personalization"),
+    description: t("Per-viewer touches in Plex apps. Turn any off for plain Plex behaviour."),
     fields: [
       {
         key: "postPlay",
-        label: "Personal “up next” picks",
+        label: t("Personal “up next” picks"),
         kind: "bool",
-        help: "After a movie or finale, suggest what this viewer is most likely to watch next.",
+        help: t("After a movie or finale, suggest what this viewer is most likely to watch next."),
       },
       {
         key: "postPlayPrebuffer",
-        label: "Pre-buffer the top pick",
+        label: t("Pre-buffer the top pick"),
         kind: "bool",
-        help: "Warm the first suggestion in the last minutes so it starts instantly.",
+        help: t("Warm the first suggestion in the last minutes so it starts instantly."),
       },
       {
         key: "microReasons",
-        label: "Match and finish time on details",
+        label: t("Match and finish time on details"),
         kind: "bool",
-        help: "Show “96% Match · Ends at 10:45 PM” on a title's detail page.",
+        help: t("Show “96% Match · Ends at 10:45 PM” on a title's detail page."),
       },
       {
         key: "sessionIntent",
-        label: "Adapt Home to tonight's browsing",
+        label: t("Adapt Home to tonight's browsing"),
         kind: "bool",
-        help: "Titles a viewer opened but didn't play steer the rows they see next.",
+        help: t("Titles a viewer opened but didn't play steer the rows they see next."),
       },
       {
         key: "clockFormat",
-        label: "Finish time format",
+        label: t("Finish time format"),
         kind: "select",
         options: [
-          { value: "", label: "From the language" },
-          { value: "12h", label: "12-hour" },
-          { value: "24h", label: "24-hour" },
+          { value: "", label: t("From the language") },
+          { value: "12h", label: t("12-hour") },
+          { value: "24h", label: t("24-hour") },
         ],
       },
     ],
   },
-];
+]);
 
 /** Trailers and extras (General › Trailers & extras). */
-export const EXTRAS: FieldGroup[] = [
+export const EXTRAS: FieldGroup[] = localized(() => [
   {
-    title: "Trailers & extras",
-    description:
+    title: t("Trailers & extras"),
+    description: t(
       "TMDB only lists YouTube and Vimeo trailers, which Plex apps can't play. Point Ether at a yt-dlp-compatible tool you install to turn them into playable streams.",
+    ),
     fields: [
       {
         key: "enabled",
-        label: "Trailers and Cinema Trailers",
+        label: t("Trailers and Cinema Trailers"),
         kind: "bool",
-        help: "Without a working tool no extras are offered.",
+        help: t("Without a working tool no extras are offered."),
       },
       {
         key: "resolverCommand",
-        label: "Resolver command",
+        label: t("Resolver command"),
         kind: "text",
         wide: true,
         placeholder: "yt-dlp",
-        help: "Path or command name. Ether doesn't ship one.",
+        help: t("Path or command name. Ether doesn't ship one."),
       },
       {
         key: "resolverArgs",
-        label: "Arguments",
+        label: t("Arguments"),
         kind: "list",
         placeholder: "-g, -f, b[ext=mp4]/b, --no-playlist, {url}",
-        help: "Leave empty for the yt-dlp default. {url}, {site}, {key} and {id} are filled in; no shell is used.",
+        help: t(
+          "Leave empty for the yt-dlp default. {url}, {site}, {key} and {id} are filled in; no shell is used.",
+        ),
       },
-      { key: "resolverTimeout", label: "Give up after", kind: "duration" },
+      { key: "resolverTimeout", label: t("Give up after"), kind: "duration" },
       {
         key: "prewarmBytes",
-        label: "Pre-buffer the feature",
+        label: t("Pre-buffer the feature"),
         kind: "bytes",
         unit: "MiB",
-        help: "Buffered while the trailer plays, 32–64 MiB. 0 uses 48 MiB.",
+        help: t("Buffered while the trailer plays, 32–64 MiB. 0 uses 48 MiB."),
       },
     ],
   },
-];
+]);

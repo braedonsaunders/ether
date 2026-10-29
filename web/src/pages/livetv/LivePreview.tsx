@@ -1,7 +1,9 @@
 import { cn } from "@braedonsaunders/appkit-ui";
 import { Loader2, Maximize2, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "../../i18n";
 import { API_BASE, errorMessage, getToken } from "../../lib/api";
+import { fixed } from "../../lib/format";
 import { ChannelLogo } from "./ChannelLogo";
 import { tv, type Channel, type PreviewSession } from "./model";
 
@@ -54,7 +56,7 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
         const el = video.current;
         if (!live || !el) return;
         if (!Hls.isSupported()) {
-          fail("This browser can't play HLS through Media Source Extensions.");
+          fail(t("This browser can't play HLS through Media Source Extensions."));
           return;
         }
         const token = getToken();
@@ -74,18 +76,17 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
           if (data?.fatal)
             fail(
               (data.response?.code ?? 0) >= 400
-                ? `The stream returned HTTP ${data.response!.code}.`
-                : `Playback stopped (${data.details ?? "stream error"}).`,
+                ? t("The stream returned HTTP {code}.", { code: data.response!.code! })
+                : data.details
+                  ? t("Playback stopped ({details}).", { details: data.details })
+                  : t("Playback stopped (stream error)."),
             );
         });
         h.on(Hls.Events.LEVEL_SWITCHED, () => {
           const l = h.levels?.[h.currentLevel ?? 0];
           if (l)
             setQuality(
-              [
-                l.height ? `${l.height}p` : "",
-                l.bitrate ? `${(l.bitrate / 1e6).toFixed(1)} Mbps` : "",
-              ]
+              [l.height ? `${l.height}p` : "", l.bitrate ? `${fixed(l.bitrate / 1e6, 1)} Mbps` : ""]
                 .filter(Boolean)
                 .join(" · "),
             );
@@ -128,7 +129,7 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
   return (
     <div
       role="dialog"
-      aria-label={`Watching ${channel.name}`}
+      aria-label={t("Watching {channel}", { channel: channel.name })}
       className="fixed bottom-5 right-5 z-50 w-[min(24rem,calc(100vw-2.5rem))] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl ring-1 ring-black/40"
     >
       <div className="group relative aspect-video bg-black">
@@ -138,7 +139,7 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
           playsInline
           muted={muted}
           onPlaying={() => setPhase("playing")}
-          aria-label={`${channel.name} live`}
+          aria-label={t("{channel} live", { channel: channel.name })}
         />
         {phase !== "playing" ? (
           <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-zinc-900 via-black to-zinc-900">
@@ -146,17 +147,20 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
               <ChannelLogo name={channel.name} logo={channel.logo} seed={channel.id} size={44} />
               {phase === "tuning" ? (
                 <p className="flex items-center gap-2 text-sm text-white/80">
-                  <Loader2 size={14} className="animate-spin" /> Tuning {channel.name}…
+                  <Loader2 size={14} className="animate-spin" />{" "}
+                  {t("Tuning {channel}…", { channel: channel.name })}
                 </p>
               ) : (
                 <>
-                  <p className="text-sm text-white/90">{error || "Couldn't play this channel."}</p>
+                  <p className="text-sm text-white/90">
+                    {error || t("Couldn't play this channel.")}
+                  </p>
                   <button
                     type="button"
                     onClick={() => setAttempt((a) => a + 1)}
                     className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white hover:bg-white/20"
                   >
-                    <RotateCcw size={12} /> Try again
+                    <RotateCcw size={12} /> {t("Try again")}
                   </button>
                 </>
               )}
@@ -167,22 +171,22 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
         {/* top bar */}
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 bg-gradient-to-b from-black/80 to-transparent px-3 pb-6 pt-2.5">
           <span className="inline-flex items-center gap-1 rounded bg-danger px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-            <span className="size-1.5 animate-pulse rounded-full bg-white" /> Live
+            <span className="size-1.5 animate-pulse rounded-full bg-white" /> {t("Live")}
           </span>
           <span className="min-w-0 truncate text-xs font-medium text-white">
             {channel.number} · {channel.name}
           </span>
           <div className="pointer-events-auto ml-auto flex items-center gap-1">
-            <IconButton label={muted ? "Unmute" : "Mute"} onClick={toggleMute}>
+            <IconButton label={muted ? t("Unmute") : t("Mute")} onClick={toggleMute}>
               {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </IconButton>
             <IconButton
-              label="Full screen"
+              label={t("Full screen")}
               onClick={() => void video.current?.requestFullscreen?.().catch(() => undefined)}
             >
               <Maximize2 size={14} />
             </IconButton>
-            <IconButton label="Stop watching" onClick={onClose}>
+            <IconButton label={t("Stop watching")} onClick={onClose}>
               <X size={15} />
             </IconButton>
           </div>
@@ -202,7 +206,7 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
           </span>
           {session?.activeSourceName ? (
             <span className="shrink-0 rounded-full bg-white/15 px-2 py-0.5">
-              via {session.activeSourceName}
+              {t("via {source}", { source: session.activeSourceName })}
             </span>
           ) : null}
           {quality ? <span className="shrink-0 tabular-nums">{quality}</span> : null}

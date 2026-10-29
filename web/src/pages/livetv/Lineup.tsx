@@ -10,7 +10,8 @@ import {
   Star,
 } from "lucide-react";
 import { useState } from "react";
-import { formatNumber, plural, relativeTime } from "../../lib/format";
+import { t, tn } from "../../i18n";
+import { formatNumber, relativeTime } from "../../lib/format";
 import { ChannelLogo } from "./ChannelLogo";
 import {
   clock,
@@ -59,7 +60,7 @@ export function ChannelList({
   if (virtual.length)
     groups.push({
       key: "virtual",
-      title: "Virtual channels",
+      title: t("Virtual channels"),
       icon: <Sparkles size={12} />,
       items: virtual,
     });
@@ -142,7 +143,9 @@ function ChannelGroup({
                 className="w-full text-xs"
                 onClick={() => setLimit((l) => l + PAGE * 4)}
               >
-                Show {formatNumber(Math.min(items.length - limit, PAGE * 4))} more
+                {t("Show {count} more", {
+                  count: formatNumber(Math.min(items.length - limit, PAGE * 4)),
+                })}
               </Button>
             </li>
           ) : null}
@@ -203,7 +206,7 @@ function ChannelRow({
               <Star
                 size={11}
                 className="shrink-0 fill-warning text-warning"
-                aria-label="Favourite"
+                aria-label={t("Favourite")}
               />
             ) : null}
           </span>
@@ -220,21 +223,29 @@ function ChannelRow({
           ) : (
             <span className="block truncate text-xs text-fg-subtle">
               {!c.enabled
-                ? "Off air"
+                ? t("Off air")
                 : hasGuide === false
-                  ? "No guide data"
-                  : c.group || (c.kind === "virtual" ? "Virtual" : "Live")}
+                  ? t("No guide data")
+                  : c.group || (c.kind === "virtual" ? t("Virtual") : t("Live"))}
             </span>
           )}
         </span>
         {hasGuide === false && c.enabled ? (
-          <AlertTriangle size={13} className="shrink-0 text-warning" aria-label="No guide data" />
+          <AlertTriangle
+            size={13}
+            className="shrink-0 text-warning"
+            aria-label={t("No guide data")}
+          />
         ) : null}
       </button>
       <button
         type="button"
         onClick={() => onToggleFavorite(c)}
-        aria-label={c.favorite ? `Unfavourite ${c.name}` : `Favourite ${c.name}`}
+        aria-label={
+          c.favorite
+            ? t("Unfavourite {channel}", { channel: c.name })
+            : t("Favourite {channel}", { channel: c.name })
+        }
         aria-pressed={c.favorite}
         className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded-md bg-surface p-1 text-fg-subtle shadow-sm hover:text-warning focus-visible:block group-hover:block"
       >
@@ -242,7 +253,7 @@ function ChannelRow({
       </button>
       {live ? (
         <span className="sr-only">
-          On now: {live.item.title} until {clock(live.end)}
+          {t("On now: {title} until {time}", { title: live.item.title, time: clock(live.end) })}
         </span>
       ) : null}
     </li>
@@ -273,7 +284,7 @@ export function SourceList({
       <button
         type="button"
         onClick={() => onSelect({ kind: "coverage" })}
-        aria-label="Guide data coverage"
+        aria-label={t("Guide data coverage")}
         className={cn(
           "flex w-full items-center gap-3 rounded-xl border bg-surface p-3 text-left shadow-xs transition-colors hover:border-border-strong",
           selected.kind === "coverage"
@@ -297,13 +308,21 @@ export function SourceList({
           />
         </svg>
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-fg">Guide data</span>
+          <span className="block text-sm font-semibold text-fg">{t("Guide data")}</span>
           <span className="block text-xs text-fg-muted">
             {coveredCount === null
-              ? "Checking coverage…"
+              ? t("Checking coverage…")
               : missing
-                ? `${formatNumber(coveredCount)} of ${formatNumber(live.length)} channels have a guide · ${formatNumber(missing)} missing`
-                : `All ${formatNumber(live.length)} live channels have a guide`}
+                ? t("{covered} of {total} channels have a guide · {missing} missing", {
+                    covered: formatNumber(coveredCount),
+                    total: formatNumber(live.length),
+                    missing: formatNumber(missing),
+                  })
+                : tn(
+                    live.length,
+                    "All {count} live channel has a guide",
+                    "All {count} live channels have a guide",
+                  )}
           </span>
         </span>
         <ChevronRight size={15} className="shrink-0 text-fg-subtle" />
@@ -311,12 +330,13 @@ export function SourceList({
 
       <div className="space-y-1.5">
         <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-          Sources
+          {t("Sources")}
         </h2>
         {sources.length === 0 ? (
           <p className="px-1 text-xs text-fg-muted">
-            No sources yet. Add an M3U playlist for IPTV channels, or an XMLTV guide on its own to
-            give channels programme data.
+            {t(
+              "No sources yet. Add an M3U playlist for IPTV channels, or an XMLTV guide on its own to give channels programme data.",
+            )}
           </p>
         ) : null}
         {sources.map((s) => {
@@ -350,27 +370,37 @@ export function SourceList({
                     <KeyRound
                       size={12}
                       className="shrink-0 text-fg-subtle"
-                      aria-label={s.auth.type === "xtream" ? "Xtream login" : "Signs in"}
+                      aria-label={s.auth.type === "xtream" ? t("Xtream login") : t("Signs in")}
                     />
                   ) : null}
                   {s.lastError ? (
                     <Badge variant="destructive" className="shrink-0">
-                      Refresh failed
+                      {t("Refresh failed")}
                     </Badge>
                   ) : null}
                 </span>
                 <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-fg-muted">
-                  <span>{epgOnly ? "Guide only" : plural(s.channelCount ?? 0, "channel")}</span>
+                  <span>
+                    {epgOnly
+                      ? t("Guide only")
+                      : tn(s.channelCount ?? 0, "{count} channel", "{count} channels")}
+                  </span>
                   {s.guideChannelCount ? (
-                    <span>· {plural(s.guideChannelCount, "guide channel")}</span>
+                    <span>
+                      · {tn(s.guideChannelCount, "{count} guide channel", "{count} guide channels")}
+                    </span>
                   ) : null}
-                  {s.guideUntil ? <span>· through {dayClock(s.guideUntil)}</span> : null}
+                  {s.guideUntil ? (
+                    <span>· {t("through {time}", { time: dayClock(s.guideUntil) })}</span>
+                  ) : null}
                 </span>
                 <span className="block text-[11px] text-fg-subtle">
-                  Refreshed {relativeTime(s.updatedAt)}
                   {s.guideFrom && s.guideUntil
-                    ? ` · ${duration(Date.parse(s.guideUntil) - Date.parse(s.guideFrom))} of listings`
-                    : ""}
+                    ? t("Refreshed {when} · {span} of listings", {
+                        when: relativeTime(s.updatedAt),
+                        span: duration(Date.parse(s.guideUntil) - Date.parse(s.guideFrom)),
+                      })
+                    : t("Refreshed {when}", { when: relativeTime(s.updatedAt) })}
                 </span>
               </span>
             </button>

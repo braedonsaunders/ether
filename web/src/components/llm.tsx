@@ -1,9 +1,11 @@
 import { Button, SearchSelect, type SelectOption } from "@braedonsaunders/appkit-ui";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { t } from "../i18n";
 import { api, errorMessage, isAbort } from "../lib/api";
 import { useDebouncedValue } from "../lib/hooks";
 import type { EtherConfig, LLMModel, LLMProvider } from "../lib/types";
+import { useLocale } from "../i18n/react";
 
 type LLMConfig = EtherConfig["llm"];
 
@@ -58,7 +60,7 @@ export function providerOptions(providers: LLMProvider[] | null): SelectOption[]
   return (providers ?? []).map((p) => ({
     value: p.id,
     label: p.label,
-    group: p.local ? "Self-hosted" : "Hosted",
+    group: p.local ? t("Self-hosted") : t("Hosted"),
   }));
 }
 
@@ -120,6 +122,7 @@ export function ModelPicker({
     return () => ac.abort();
   }, [source, ready, reload]);
 
+  const { locale } = useLocale();
   const options = useMemo(() => {
     const out: SelectOption[] = (list.models ?? []).map((m) => ({
       value: m.id,
@@ -133,21 +136,21 @@ export function ModelPicker({
       out.unshift({
         value,
         label: value,
-        hint: list.models ? "Not in the provider's list" : undefined,
+        hint: list.models ? t("Not in the provider's list") : undefined,
       });
     const typed = query.trim();
     if (typed && !has(typed) && typed !== value)
-      out.unshift({ value: typed, label: typed, hint: "Use this model ID" });
+      out.unshift({ value: typed, label: typed, hint: t("Use this model ID") });
     return out;
-  }, [list.models, value, query]);
+  }, [list.models, value, query, locale]);
 
   let status: string | undefined;
   if (!ready)
     status = provider?.requiresBaseUrl
-      ? "Enter the endpoint URL to load its models, or type a model ID."
-      : "Enter the API key to load models, or type a model ID.";
-  else if (list.error) status = `Couldn't load models: ${list.error}`;
-  else if (list.models && !list.models.length) status = "No models found. Type a model ID.";
+      ? t("Enter the endpoint URL to load its models, or type a model ID.")
+      : t("Enter the API key to load models, or type a model ID.");
+  else if (list.error) status = t("Couldn't load models: {error}", { error: list.error });
+  else if (list.models && !list.models.length) status = t("No models found. Type a model ID.");
 
   return (
     <div className="flex gap-2">
@@ -160,16 +163,18 @@ export function ModelPicker({
           onChange(v);
         }}
         options={options}
-        ariaLabel="Model"
-        placeholder={loading ? "Loading models…" : "Choose a model"}
-        searchPlaceholder="Search or type a model ID…"
+        ariaLabel={t("Model")}
+        placeholder={loading ? t("Loading models…") : t("Choose a model")}
+        searchPlaceholder={t("Search or type a model ID…")}
         searchable
         loading={loading}
-        searchingLabel="Loading models…"
+        searchingLabel={t("Loading models…")}
         statusMessage={status}
         statusTone={list.error ? "error" : "muted"}
         onSearchChange={setQuery}
-        noMatchesLabel="No matching models"
+        noMatchesLabel={t("No matching models")}
+        selectLabel={t("Select")}
+        closeLabel={t("Close")}
         invalid={invalid}
       />
       <Button
@@ -177,8 +182,8 @@ export function ModelPicker({
         variant="outline"
         size="icon"
         className="shrink-0"
-        aria-label="Reload models"
-        title="Reload models"
+        aria-label={t("Reload models")}
+        title={t("Reload models")}
         disabled={!ready || loading}
         onClick={() => setReload((n) => n + 1)}
       >

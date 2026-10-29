@@ -2,6 +2,7 @@ import {
   AppShell,
   Button,
   ConfirmRoot,
+  DrawerTextProvider,
   Popover,
   PromptRoot,
   Spinner,
@@ -43,6 +44,7 @@ import {
   useRef,
   useState,
   type AnchorHTMLAttributes,
+  type ReactNode,
 } from "react";
 import {
   Link,
@@ -57,6 +59,8 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { AppProvider, useApp } from "./app-context";
+import { t } from "./i18n";
+import { I18nProvider, LanguagePicker } from "./i18n/react";
 import { Brand, BrandSplash, EtherMark } from "./components/brand";
 import { CommandSearch } from "./components/CommandSearch";
 import { Drawer } from "./components/Drawer";
@@ -122,44 +126,54 @@ function navigation(setupComplete: boolean): SidebarNavGroup[] {
           : [
               {
                 href: "/setup",
-                label: "Finish setup",
+                label: t("Finish setup"),
                 icon: <Sparkles size={icon} />,
                 mobile: true,
               },
             ]),
-        { href: "/", label: "Overview", icon: <Gauge size={icon} />, exact: true, mobile: true },
-        { href: "/activity", label: "Activity", icon: <ActivityIcon size={icon} />, mobile: true },
-        { href: "/viewers", label: "Viewers", icon: <Users size={icon} />, mobile: true },
+        { href: "/", label: t("Overview"), icon: <Gauge size={icon} />, exact: true, mobile: true },
+        {
+          href: "/activity",
+          label: t("Activity"),
+          icon: <ActivityIcon size={icon} />,
+          mobile: true,
+        },
+        { href: "/viewers", label: t("Viewers"), icon: <Users size={icon} />, mobile: true },
       ],
     },
     {
-      label: "In Plex",
+      label: t("In Plex"),
       items: [
-        { href: "/home", label: "Home", icon: <LayoutTemplate size={icon} /> },
-        { href: "/collections", label: "Collections", icon: <Layers size={icon} />, mobile: true },
-        { href: "/livetv", label: "Live TV", icon: <Tv size={icon} /> },
-        { href: "/catalog", label: "Catalog", icon: <Library size={icon} /> },
-        { href: "/metadata", label: "Metadata", icon: <Tags size={icon} /> },
+        { href: "/home", label: t("Home"), icon: <LayoutTemplate size={icon} /> },
+        {
+          href: "/collections",
+          label: t("Collections"),
+          icon: <Layers size={icon} />,
+          mobile: true,
+        },
+        { href: "/livetv", label: t("Live TV"), icon: <Tv size={icon} /> },
+        { href: "/catalog", label: t("Catalog"), icon: <Library size={icon} /> },
+        { href: "/metadata", label: t("Metadata"), icon: <Tags size={icon} /> },
       ],
     },
     {
-      label: "Streaming",
+      label: t("Streaming"),
       items: [
-        { href: "/sources", label: "Sources", icon: <Network size={icon} /> },
-        { href: "/releases", label: "Releases", icon: <ListFilter size={icon} /> },
-        { href: "/playback", label: "Playback", icon: <MonitorPlay size={icon} /> },
+        { href: "/sources", label: t("Sources"), icon: <Network size={icon} /> },
+        { href: "/releases", label: t("Releases"), icon: <ListFilter size={icon} /> },
+        { href: "/playback", label: t("Playback"), icon: <MonitorPlay size={icon} /> },
       ],
     },
     {
-      label: "Server",
+      label: t("Server"),
       items: [
-        { href: "/server", label: "General", icon: <Server size={icon} /> },
-        { href: "/cache", label: "Cache", icon: <HardDrive size={icon} /> },
-        { href: "/remote-access", label: "Connectivity", icon: <Globe size={icon} /> },
-        { href: "/services", label: "Integrations", icon: <Plug size={icon} /> },
-        { href: "/cluster", label: "Cluster", icon: <Boxes size={icon} /> },
-        { href: "/notifications", label: "Notifications", icon: <Bell size={icon} /> },
-        { href: "/maintenance", label: "Maintenance", icon: <LifeBuoy size={icon} /> },
+        { href: "/server", label: t("General"), icon: <Server size={icon} /> },
+        { href: "/cache", label: t("Cache"), icon: <HardDrive size={icon} /> },
+        { href: "/remote-access", label: t("Connectivity"), icon: <Globe size={icon} /> },
+        { href: "/services", label: t("Integrations"), icon: <Plug size={icon} /> },
+        { href: "/cluster", label: t("Cluster"), icon: <Boxes size={icon} /> },
+        { href: "/notifications", label: t("Notifications"), icon: <Bell size={icon} /> },
+        { href: "/maintenance", label: t("Maintenance"), icon: <LifeBuoy size={icon} /> },
       ],
     },
   ];
@@ -172,11 +186,11 @@ function HealthIndicator() {
   // expected, not problems: show progress instead of a red verdict.
   const settingUp = !boot.setupComplete;
   const label = settingUp
-    ? "Setting up"
+    ? t("Setting up")
     : overall === "ok" || overall === "off"
-      ? "All systems normal"
+      ? t("All systems normal")
       : overall === "unknown"
-        ? "Checking…"
+        ? t("Checking…")
         : LEVEL_LABEL[overall];
   return (
     <Popover
@@ -186,7 +200,7 @@ function HealthIndicator() {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          aria-label={`Server health: ${label}`}
+          aria-label={t("Server health: {status}", { status: label })}
           className="inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <StatusDot level={settingUp ? "unknown" : overall === "off" ? "ok" : overall} pulse />
@@ -196,15 +210,15 @@ function HealthIndicator() {
     >
       <div className="w-80 p-1">
         <p className="px-2 pb-2 pt-1 text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-          Server health
+          {t("Server health")}
         </p>
         {settingUp ? (
           <p className="px-2 pb-2 text-sm text-fg-muted">
-            Finish setup to bring everything online. Items below fill in as you go.
+            {t("Finish setup to bring everything online. Items below fill in as you go.")}
           </p>
         ) : null}
         {dashboardError && !dashboard ? (
-          <p className="px-2 pb-2 text-sm text-danger">Status is unavailable right now.</p>
+          <p className="px-2 pb-2 text-sm text-danger">{t("Status is unavailable right now.")}</p>
         ) : null}
         <ul className="space-y-0.5">
           {health.map((h) => (
@@ -269,7 +283,7 @@ function CollectionDrawer({ fresh = false }: { fresh?: boolean }) {
     <Drawer
       open
       onClose={close}
-      title={fresh ? "New collection" : "Edit collection"}
+      title={fresh ? t("New collection") : t("Edit collection")}
       size="2xl"
       bodyClassName="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
     >
@@ -281,7 +295,7 @@ function CollectionDrawer({ fresh = false }: { fresh?: boolean }) {
 function PageFallback() {
   return (
     <div className="grid flex-1 place-items-center p-10">
-      <Spinner size={22} label="Loading" />
+      <Spinner size={22} label={t("Loading")} />
     </div>
   );
 }
@@ -307,7 +321,7 @@ function Shell() {
       brand={
         <Link
           to="/"
-          aria-label="Ether home"
+          aria-label={t("Ether home")}
           className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           <Brand serverName={boot.serverName} />
@@ -317,7 +331,19 @@ function Shell() {
       header={
         <>
           <HealthIndicator />
-          <ThemeToggle collapsed />
+          <ThemeToggle
+            collapsed
+            labels={{
+              label: t("Theme"),
+              light: t("Light"),
+              dark: t("Dark"),
+              system: t("System"),
+              current: (mode) =>
+                t("Theme: {mode}", {
+                  mode: mode === "light" ? t("Light") : mode === "dark" ? t("Dark") : t("System"),
+                }),
+            }}
+          />
           {remoteSession ? (
             <Button
               variant="ghost"
@@ -327,22 +353,30 @@ function Shell() {
                 window.location.reload();
               }}
             >
-              <LogOut size={15} /> <span className="hidden sm:inline">Sign out</span>
+              <LogOut size={15} /> <span className="hidden sm:inline">{t("Sign out")}</span>
             </Button>
           ) : null}
         </>
       }
       sidebarFooter={
-        <p className="truncate px-1 text-xs text-fg-subtle" title={boot.serverName}>
-          {boot.serverName ? `${boot.serverName} · ` : "Ether "}
-          {versionLabel(boot.version)}
-        </p>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <p className="min-w-0 truncate px-1 text-xs text-fg-subtle" title={boot.serverName}>
+            {boot.serverName ? `${boot.serverName} · ` : "Ether "}
+            {versionLabel(boot.version)}
+          </p>
+          <LanguagePicker className="h-7 shrink-0 px-1.5 text-xs" />
+        </div>
       }
       sidebarCollapsedFooter={
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <LanguagePicker iconOnly className="h-7 px-1.5" />
           <EtherMark size={20} />
         </div>
       }
+      moreLabel={t("More")}
+      menuLabel={t("Menu")}
+      openNavigationLabel={t("Open navigation")}
+      primaryNavigationLabel={t("Primary navigation")}
       mobileTabCount={4}
     >
       <SaveBarHost>
@@ -425,7 +459,7 @@ function Gate({ onReady }: { onReady: () => void }) {
         ) : (
           <div className="flex flex-col items-center gap-3 text-sm text-fg-muted">
             <EtherMark size={40} motion="loop" />
-            <span role="status">Connecting to Ether…</span>
+            <span role="status">{t("Connecting to Ether…")}</span>
           </div>
         )}
       </main>
@@ -449,6 +483,30 @@ function Gate({ onReady }: { onReady: () => void }) {
   );
 }
 
+/** AppKit's shared dialogs and drawers, labelled in the active language. */
+function Chrome({ children }: { children: ReactNode }) {
+  return (
+    <DrawerTextProvider
+      value={{
+        close: t("Close"),
+        fullscreen: t("Fullscreen"),
+        exitFullscreen: t("Exit fullscreen"),
+      }}
+    >
+      {children}
+      <ConfirmRoot
+        labels={{
+          defaultTitle: t("Are you sure?"),
+          dangerTitle: t("Are you sure?"),
+          confirm: t("Confirm"),
+          cancel: t("Cancel"),
+        }}
+      />
+      <PromptRoot defaultConfirmLabel={t("Save")} defaultCancelLabel={t("Cancel")} />
+    </DrawerTextProvider>
+  );
+}
+
 const Me = lazy(() => import("./pages/me/Me"));
 
 export default function App() {
@@ -456,20 +514,18 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const onReady = useCallback(() => setReady(true), []);
   return (
-    <ThemeProvider {...theme}>
+    <I18nProvider>{() => <ThemeProvider {...theme}>
       <UiLinkProvider link={RouterAnchor}>
-        {location.pathname === "/me" ? (
+        <Chrome>{location.pathname === "/me" ? (
           <Suspense fallback={<PageFallback />}>
             <Me />
           </Suspense>
         ) : (
           <Gate onReady={onReady} />
         )}
-        {location.pathname !== "/me" ? <BrandSplash ready={ready} /> : null}
+        </Chrome>{location.pathname !== "/me" ? <BrandSplash ready={ready} /> : null}
         <Toaster richColors closeButton position="bottom-right" />
-        <ConfirmRoot />
-        <PromptRoot />
       </UiLinkProvider>
-    </ThemeProvider>
+    </ThemeProvider>}</I18nProvider>
   );
 }

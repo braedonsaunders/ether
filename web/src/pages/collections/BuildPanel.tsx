@@ -11,6 +11,7 @@ import { ActionMenu } from "../../components/ActionMenu";
 import { SectionHeading } from "../../components/feedback";
 import { ChipGroup, Field, NumberInput, Segmented } from "../../components/fields";
 import type { CollectionSpec, Rule, RuleField, SourceKind } from "../../lib/contract";
+import { t, tx } from "../../i18n";
 import { FIELDS, SORTS, SOURCE_KINDS, newRule, newSource } from "../../lib/rules";
 import { RuleRow } from "./RuleRow";
 import { SourceEditor } from "./SourceEditor";
@@ -58,52 +59,56 @@ export function BuildPanel({
     <div className="space-y-7">
       <section className="space-y-4">
         <Field
-          label="Description"
-          hint="Shown in Plex under the collection title."
+          label={t("Description")}
+          hint={t("Shown in Plex under the collection title.")}
           htmlFor="collection-description"
         >
           <Textarea
             id="collection-description"
             rows={2}
             value={spec.description ?? ""}
-            placeholder="What makes this collection special?"
+            placeholder={t("What makes this collection special?")}
             onChange={(e) => update({ description: e.currentTarget.value }, "description")}
           />
         </Field>
-        <Field label="Contains">
+        <Field label={t("Contains")}>
           <Segmented
-            ariaLabel="Media type"
+            ariaLabel={t("Media type")}
             value={spec.mediaType}
             onChange={(m) => update({ mediaType: m })}
             options={[
-              { value: "movie", label: "Movies" },
-              { value: "show", label: "TV shows" },
-              { value: "mixed", label: "Both" },
+              { value: "movie", label: t("Movies") },
+              { value: "show", label: t("TV shows") },
+              { value: "mixed", label: t("Both") },
             ]}
           />
         </Field>
         <Field
-          label="Release dates"
-          hint="Upcoming shows are new series by first air date; future episodes of existing shows are not included. Dates can change."
+          label={t("Release dates")}
+          hint={t(
+            "Upcoming shows are new series by first air date; future episodes of existing shows are not included. Dates can change.",
+          )}
         >
           <Segmented
-            ariaLabel="Release dates"
+            ariaLabel={t("Release dates")}
             value={spec.releaseMode ?? "released"}
             onChange={(releaseMode) =>
               update({ releaseMode, lookaheadDays: spec.lookaheadDays || 90 })
             }
             options={[
-              { value: "released", label: "Released" },
-              { value: "upcoming", label: "Upcoming" },
-              { value: "mixed", label: "Both" },
+              { value: "released", label: t("Released") },
+              { value: "upcoming", label: t("Upcoming") },
+              { value: "mixed", label: t("Both") },
             ]}
           />
         </Field>
         {spec.releaseMode && spec.releaseMode !== "released" && (
           <Field
-            label="Look ahead (days)"
+            label={t("Look ahead (days)")}
             htmlFor="lookahead-days"
-            hint="1–366 days. Upcoming titles use the whole catalogue source and TMDB discovery; playback is unavailable before the scheduled release date."
+            hint={t(
+              "1–366 days. Upcoming titles use the whole catalogue source and TMDB discovery; playback is unavailable before the scheduled release date.",
+            )}
           >
             <NumberInput
               id="lookahead-days"
@@ -129,20 +134,21 @@ export function BuildPanel({
             }
           />
           <span>
-            <strong>Local catalogue only</strong>
+            <strong>{t("Local catalogue only")}</strong>
             <span className="mt-1 block text-fg-muted">
-              Live matching without remote lookups. Ideal for genre, country and network
-              collections.
+              {t(
+                "Live matching without remote lookups. Ideal for genre, country and network collections.",
+              )}
             </span>
           </span>
         </label>
         <SectionHeading
           id="sources-h"
-          title="Sources"
-          description="Where candidate titles come from. Several sources are combined."
+          title={t("Sources")}
+          description={t("Where candidate titles come from. Several sources are combined.")}
           actions={
-            <ActionMenu items={sourceItems} variant="outline" size="sm" label="Add source">
-              <ListPlus size={14} /> Add source
+            <ActionMenu items={sourceItems} variant="outline" size="sm" label={t("Add source")}>
+              <ListPlus size={14} /> {t("Add source")}
             </ActionMenu>
           }
         />
@@ -166,38 +172,40 @@ export function BuildPanel({
       <section aria-labelledby="rules-h">
         <SectionHeading
           id="rules-h"
-          title="Rules"
-          description="Keep only titles that match."
+          title={t("Rules")}
+          description={t("Keep only titles that match.")}
           actions={
             <ActionMenu
               items={fieldMenu((f) => setRules("rules", [...spec.rules, newRule(f)]))}
               variant="outline"
               size="sm"
-              label="Add rule"
+              label={t("Add rule")}
             >
-              <Filter size={14} /> Add rule
+              <Filter size={14} /> {t("Add rule")}
             </ActionMenu>
           }
         />
         {spec.rules.length > 1 ? (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-            Include titles that match
-            <Segmented
-              ariaLabel="Match mode"
-              size="sm"
-              value={spec.match}
-              onChange={(m) => update({ match: m })}
-              options={[
-                { value: "all", label: "all" },
-                { value: "any", label: "any" },
-              ]}
-            />
-            of these rules
+            {tx("Include titles that match {mode} of these rules", {
+              mode: (
+                <Segmented
+                  ariaLabel={t("Match mode")}
+                  size="sm"
+                  value={spec.match}
+                  onChange={(m) => update({ match: m })}
+                  options={[
+                    { value: "all", label: t("all") },
+                    { value: "any", label: t("any") },
+                  ]}
+                />
+              ),
+            })}
           </div>
         ) : null}
         {spec.rules.length === 0 ? (
           <EmptyHint
-            text="No rules: every title from the sources is included."
+            text={t("No rules: every title from the sources is included.")}
             action={
               <Button
                 type="button"
@@ -205,7 +213,7 @@ export function BuildPanel({
                 size="sm"
                 onClick={() => setRules("rules", [...spec.rules, newRule("genre")])}
               >
-                <Plus size={14} /> Add a genre rule
+                <Plus size={14} /> {t("Add a genre rule")}
               </Button>
             }
           />
@@ -240,21 +248,21 @@ export function BuildPanel({
       <section aria-labelledby="exclude-h">
         <SectionHeading
           id="exclude-h"
-          title="Exclude"
-          description="Drop titles matching any of these, whatever the rules say."
+          title={t("Exclude")}
+          description={t("Drop titles matching any of these, whatever the rules say.")}
           actions={
             <ActionMenu
               items={fieldMenu((f) => setRules("exclude", [...spec.exclude, newRule(f)]))}
               variant="outline"
               size="sm"
-              label="Add exclusion"
+              label={t("Add exclusion")}
             >
-              <FilterX size={14} /> Add exclusion
+              <FilterX size={14} /> {t("Add exclusion")}
             </ActionMenu>
           }
         />
         {spec.exclude.length === 0 ? (
-          <EmptyHint text="Nothing excluded." />
+          <EmptyHint text={t("Nothing excluded.")} />
         ) : (
           <div className="space-y-2">
             {spec.exclude.map((r, i) => (
@@ -284,41 +292,47 @@ export function BuildPanel({
       </section>
 
       <section aria-labelledby="sort-h" className="space-y-4">
-        <SectionHeading id="sort-h" title="Order and size" />
+        <SectionHeading id="sort-h" title={t("Order and size")} />
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Sort by" className="min-w-52 flex-1">
+          <Field label={t("Sort by")} className="min-w-52 flex-1">
             <SearchSelect
               value={spec.sort}
               onChange={(v) => v && update({ sort: v as CollectionSpec["sort"] })}
               options={SORTS.map((s) => ({ value: s.value, label: s.label, hint: s.hint }))}
-              ariaLabel="Sort by"
+              ariaLabel={t("Sort by")}
               searchable={false}
+              placeholder={t("Select…")}
+              selectLabel={t("Select")}
+              closeLabel={t("Close")}
             />
           </Field>
           {spec.sort !== "random" && spec.sort !== "source" && spec.sort !== "personal" ? (
             <Segmented
-              ariaLabel="Sort direction"
+              ariaLabel={t("Sort direction")}
               value={spec.sortDesc ? "desc" : "asc"}
               onChange={(d) => update({ sortDesc: d === "desc" })}
               options={[
                 {
                   value: "desc",
-                  label: spec.sort === "title" ? "Z–A" : "Highest",
+                  label: spec.sort === "title" ? t("Z–A") : t("Highest"),
                   icon: <ArrowDownWideNarrow size={14} />,
                 },
                 {
                   value: "asc",
-                  label: spec.sort === "title" ? "A–Z" : "Lowest",
+                  label: spec.sort === "title" ? t("A–Z") : t("Lowest"),
                   icon: <ArrowUpNarrowWide size={14} />,
                 },
               ]}
             />
           ) : null}
         </div>
-        <Field label="Limit" hint="The most titles the collection holds. 0 keeps every match.">
+        <Field
+          label={t("Limit")}
+          hint={t("The most titles the collection holds. 0 keeps every match.")}
+        >
           <div className="flex flex-wrap items-center gap-3">
             <NumberInput
-              aria-label="Limit"
+              aria-label={t("Limit")}
               value={spec.limit}
               min={0}
               step={5}
@@ -326,7 +340,7 @@ export function BuildPanel({
               onChange={(n) => update({ limit: Math.max(0, Math.round(n)) }, "limit")}
             />
             <ChipGroup
-              ariaLabel="Limit presets"
+              ariaLabel={t("Limit presets")}
               size="sm"
               value={[spec.limit]}
               onChange={(v) => {
@@ -335,7 +349,7 @@ export function BuildPanel({
               }}
               options={limitPresets.map((n) => ({
                 value: n,
-                label: n === 0 ? "No limit" : String(n),
+                label: n === 0 ? t("No limit") : String(n),
               }))}
             />
           </div>

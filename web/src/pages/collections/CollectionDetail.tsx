@@ -12,18 +12,32 @@ import { Artwork } from "../../components/Artwork";
 import { ErrorPanel, PosterSkeletons } from "../../components/feedback";
 import { PosterGrid } from "../../components/Poster";
 import { api } from "../../lib/api";
-import type { CollectionSpec, CollectionTemplate } from "../../lib/contract";
+import type { CollectionSort, CollectionSpec, CollectionTemplate } from "../../lib/contract";
+import { localized, t, tn } from "../../i18n";
 import { relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import {
   REFRESH_OPTIONS,
-  SORTS,
   describeRule,
   describeSource,
   describeTargets,
   previewableSpec,
 } from "../../lib/rules";
 import { ArtworkPreview, describeSchedule } from "./SettingsPanels";
+
+/** Each sort as it reads mid-sentence ("Sorted by release date"). */
+const SORT_PHRASE = localized<Record<CollectionSort, string>>(() => ({
+  popularity: t("popularity"),
+  rating: t("rating"),
+  released: t("release date"),
+  latestEpisode: t("latest aired episode"),
+  latestSeasonPremiere: t("latest season premiere"),
+  added: t("date added"),
+  title: t("title"),
+  personal: t("personal fit"),
+  random: t("shuffle"),
+  source: t("source order"),
+}));
 
 /** Read-only preview of a saved collection or a template, without opening an editor. */
 export function CollectionDetail({
@@ -44,6 +58,15 @@ export function CollectionDetail({
   const targets = describeTargets(spec);
   const total = preview.data?.total;
   const refresh = REFRESH_OPTIONS.find((r) => r.value === spec.refresh)?.label ?? spec.refresh;
+  const sort = SORT_PHRASE[spec.sort] ?? spec.sort;
+  const sorted = spec.sortDesc
+    ? t("Sorted by {sort} (descending)", { sort })
+    : t("Sorted by {sort} (ascending)", { sort });
+  const rotation = !spec.rotate
+    ? ""
+    : spec.rotate.every === "weekly"
+      ? tn(spec.rotate.size, "Rotates {count} title weekly", "Rotates {count} titles weekly")
+      : tn(spec.rotate.size, "Rotates {count} title daily", "Rotates {count} titles daily");
   return (
     <div className="min-w-0">
       <section
@@ -72,7 +95,7 @@ export function CollectionDetail({
                   300,
                   [spec.updatedAt, spec.lastBuiltAt].filter(Boolean).join("-"),
                 )}
-                alt={`${spec.name} collection poster`}
+                alt={t("{name} collection poster", { name: spec.name })}
                 title={spec.name}
                 className="aspect-[2/3] w-full rounded-md shadow-md ring-1 ring-border"
               />
@@ -84,14 +107,14 @@ export function CollectionDetail({
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-muted">
                 {template
-                  ? `${template.category} template`
+                  ? t("{category} template", { category: template.category })
                   : spec.builtIn
-                    ? "Managed by Ether"
-                    : "Collection preview"}
+                    ? t("Managed by Ether")
+                    : t("Collection preview")}
               </span>
               {!template ? (
                 <Badge variant={spec.enabled ? "success" : "secondary"}>
-                  {spec.enabled ? "Published" : "Draft"}
+                  {spec.enabled ? t("Published") : t("Draft")}
                 </Badge>
               ) : null}
             </div>
@@ -103,26 +126,26 @@ export function CollectionDetail({
             </h2>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-fg-muted">
               {spec.description ||
-                "A curated selection from your catalogue, ready to discover in Plex."}
+                t("A curated selection from your catalogue, ready to discover in Plex.")}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-subtle">
               <span>
                 {spec.mediaType === "show"
-                  ? "TV shows"
+                  ? t("TV shows")
                   : spec.mediaType === "mixed"
-                    ? "Movies & TV shows"
-                    : "Movies"}
+                    ? t("Movies & TV shows")
+                    : t("Movies")}
               </span>
               <span aria-hidden>·</span>
               <span>
                 {spec.rules.length
-                  ? `${spec.rules.length} ${spec.rules.length === 1 ? "rule" : "rules"}`
-                  : "Whole source"}
+                  ? tn(spec.rules.length, "{count} rule", "{count} rules")
+                  : t("Whole source")}
               </span>
               {spec.limit > 0 ? (
                 <>
                   <span aria-hidden>·</span>
-                  <span>Up to {spec.limit.toLocaleString()} titles</span>
+                  <span>{tn(spec.limit, "Up to {count} title", "Up to {count} titles")}</span>
                 </>
               ) : null}
             </div>
@@ -132,31 +155,39 @@ export function CollectionDetail({
         <dl className="grid grid-cols-3 border-t border-border bg-surface/60 px-5 py-4 sm:px-6 xl:px-8">
           <Readout
             icon={<Layers size={13} />}
-            label="Appears in"
-            value={targets.length ? targets.join(" · ") : "Not placed yet"}
+            label={t("Appears in")}
+            value={targets.length ? targets.join(" · ") : t("Not placed yet")}
             detail={
               template
-                ? "Customise before publishing"
+                ? t("Customise before publishing")
                 : spec.enabled
-                  ? "Available in Plex"
-                  : "Publish to make it visible"
+                  ? t("Available in Plex")
+                  : t("Publish to make it visible")
             }
           />
           <Readout
             icon={<Users size={13} />}
-            label="Audience"
+            label={t("Audience")}
             value={
               spec.targets.users === "all"
-                ? "Everyone"
-                : `${spec.targets.users.length} selected viewers`
+                ? t("Everyone")
+                : tn(
+                    spec.targets.users.length,
+                    "{count} selected viewer",
+                    "{count} selected viewers",
+                  )
             }
-            detail={spec.targets.schedule ? describeSchedule(spec) : "No viewing schedule"}
+            detail={spec.targets.schedule ? describeSchedule(spec) : t("No viewing schedule")}
           />
           <Readout
             icon={<CalendarClock size={13} />}
-            label="Refresh"
+            label={t("Refresh")}
             value={refresh}
-            detail={spec.lastBuiltAt ? `Built ${relativeTime(spec.lastBuiltAt)}` : "Not built yet"}
+            detail={
+              spec.lastBuiltAt
+                ? t("Built {when}", { when: relativeTime(spec.lastBuiltAt) })
+                : t("Not built yet")
+            }
           />
         </dl>
       </section>
@@ -165,14 +196,12 @@ export function CollectionDetail({
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-baseline gap-2">
               <h3 id="collection-titles" className="text-sm font-semibold text-fg">
-                {template ? "A taste of this template" : "In this collection"}
+                {template ? t("A taste of this template") : t("In this collection")}
               </h3>
               <span aria-live="polite" className="text-xs tabular-nums text-fg-muted">
-                {total === undefined
-                  ? ""
-                  : `${total.toLocaleString()} ${total === 1 ? "title" : "titles"}`}
+                {total === undefined ? "" : tn(total, "{count} title", "{count} titles")}
               </span>
-              {preview.loading ? <Spinner size={12} label="Loading title preview" /> : null}
+              {preview.loading ? <Spinner size={12} label={t("Loading title preview")} /> : null}
             </div>
             <Button
               variant="ghost"
@@ -181,7 +210,7 @@ export function CollectionDetail({
               disabled={preview.loading}
               onClick={() => void preview.reload()}
             >
-              <RefreshCw size={12} /> Refresh preview
+              <RefreshCw size={12} /> {t("Refresh preview")}
             </Button>
           </div>
           {preview.data?.warnings?.map((w) => (
@@ -198,19 +227,22 @@ export function CollectionDetail({
               <PosterGrid items={items} />
               <p className="mt-4 text-[11px] text-fg-subtle">
                 {items.length < (total ?? 0)
-                  ? `Showing the first ${items.length} matching titles. `
-                  : ""}
-                Preview of current catalogue matches.
+                  ? tn(
+                      items.length,
+                      "Showing the first {count} matching title. Preview of current catalogue matches.",
+                      "Showing the first {count} matching titles. Preview of current catalogue matches.",
+                    )
+                  : t("Preview of current catalogue matches.")}
               </p>
             </>
           ) : (
             <EmptyState
               icon={<SearchX />}
-              title="No titles match yet"
+              title={t("No titles match yet")}
               description={
                 template
-                  ? "Try customising this template to match more of your catalogue."
-                  : "Edit the collection to broaden its sources or rules."
+                  ? t("Try customising this template to match more of your catalogue.")
+                  : t("Edit the collection to broaden its sources or rules.")
               }
               className="py-10"
             />
@@ -218,12 +250,12 @@ export function CollectionDetail({
         </section>
         <details className="group rounded-lg border border-border bg-surface">
           <summary className="flex cursor-pointer items-center gap-2 p-3 text-xs font-medium text-fg marker:content-none">
-            <Filter size={13} className="text-fg-muted" /> How titles are selected{" "}
-            <span className="ml-auto text-fg-subtle group-open:hidden">View rules ↓</span>
+            <Filter size={13} className="text-fg-muted" /> {t("How titles are selected")}{" "}
+            <span className="ml-auto text-fg-subtle group-open:hidden">{t("View rules ↓")}</span>
           </summary>
           <div className="space-y-4 border-t border-border p-4 text-xs text-fg-muted">
             <div>
-              <h4 className="mb-1.5 font-medium text-fg">Sources</h4>
+              <h4 className="mb-1.5 font-medium text-fg">{t("Sources")}</h4>
               <ul className="space-y-1">
                 {spec.sources.map((s, i) => (
                   <li key={i}>{describeSource(s)}</li>
@@ -232,7 +264,7 @@ export function CollectionDetail({
             </div>
             <div>
               <h4 className="mb-1.5 font-medium text-fg">
-                {spec.match === "any" ? "Match any rule" : "Match every rule"}
+                {spec.match === "any" ? t("Match any rule") : t("Match every rule")}
               </h4>
               {spec.rules.length ? (
                 <ul className="space-y-1">
@@ -241,12 +273,12 @@ export function CollectionDetail({
                   ))}
                 </ul>
               ) : (
-                <p>No additional rules.</p>
+                <p>{t("No additional rules.")}</p>
               )}
             </div>
             {spec.exclude.length ? (
               <div>
-                <h4 className="mb-1.5 font-medium text-fg">Exclude</h4>
+                <h4 className="mb-1.5 font-medium text-fg">{t("Exclude")}</h4>
                 <ul className="space-y-1">
                   {spec.exclude.map((r, i) => (
                     <li key={i}>{describeRule(r)}</li>
@@ -255,9 +287,8 @@ export function CollectionDetail({
               </div>
             ) : null}
             <p>
-              Sorted by {SORTS.find((s) => s.value === spec.sort)?.label.toLowerCase() ?? spec.sort}
-              {spec.sortDesc ? " (descending)" : " (ascending)"}
-              {spec.rotate ? ` · Rotates ${spec.rotate.size} titles ${spec.rotate.every}` : ""}.
+              {sorted}
+              {rotation ? ` · ${rotation}` : ""}.
             </p>
           </div>
         </details>

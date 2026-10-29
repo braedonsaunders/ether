@@ -3,6 +3,7 @@ package transcode
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,9 +38,21 @@ func TestEncoderLifecycleHelper(t *testing.T) {
 		os.WriteFile(os.Getenv("ETHER_TEST_ENCODER_PID"), []byte(strconv.Itoa(p.(*execProcess).PID())), 0600)
 		os.Exit(0)
 	case "child":
+		// One appended line per beat, so a kill can never erase beats that
+		// already landed (os.WriteFile truncates first: a kill between its
+		// truncate and write left an empty file). Each beat holds the file
+		// open before writing, so the guardian's kill often lands mid-write
+		// and the death check exercises exactly that boundary.
+		path := os.Getenv("ETHER_TEST_ENCODER_HEARTBEAT")
 		for i := 0; i < 300; i++ {
-			os.WriteFile(os.Getenv("ETHER_TEST_ENCODER_HEARTBEAT"), []byte(strconv.Itoa(i)), 0600)
-			time.Sleep(20 * time.Millisecond)
+			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+			if err != nil {
+				os.Exit(12)
+			}
+			time.Sleep(18 * time.Millisecond)
+			fmt.Fprintf(f, "%d\n", i)
+			f.Close()
+			time.Sleep(2 * time.Millisecond)
 		}
 		os.Exit(0)
 	case "output":
@@ -97,11 +110,24 @@ func TestEncoderDiesAfterParentExit(t *testing.T) {
 			p.Release()
 		}
 	}()
+	read := func() []byte {
+		b, err := os.ReadFile(heartbeat)
+		if err != nil {
+			t.Fatalf("read heartbeat: %v", err)
+		}
+		return b
+	}
 	time.Sleep(150 * time.Millisecond)
-	first, _ := os.ReadFile(heartbeat)
+	first := read()
 	time.Sleep(150 * time.Millisecond)
-	second, _ := os.ReadFile(heartbeat)
-	if len(first) == 0 || !bytes.Equal(first, second) {
-		t.Fatalf("encoder survived parent exit: %q -> %q", first, second)
+	second := read()
+	// The parent only exits once it has seen a beat, and beats are append-only,
+	// so an empty file means the protocol lost a completed beat.
+	if len(first) == 0 {
+		t.Fatal("heartbeat file is empty although the parent saw the encoder start")
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatalf("encoder survived parent exit: heartbeat grew from %d to %d beats",
+			bytes.Count(first, []byte("\n")), bytes.Count(second, []byte("\n")))
 	}
 }

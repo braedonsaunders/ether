@@ -12,11 +12,13 @@ import { useId, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Field } from "../../components/fields";
+import { t, tn, tx } from "../../i18n";
 import { errorMessage } from "../../lib/api";
-import { formatDateTime, plural, relativeTime } from "../../lib/format";
+import { formatDateTime, relativeTime } from "../../lib/format";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
 import { releaseConsole, type BlockEntry } from "../../lib/releases";
 import { searchLink } from "./Pinned";
+import { pagedTableLabels } from "../../i18n/appkit-labels";
 
 /** Releases Ether will never pick: failed health checks and failovers, plus owner blocks. */
 export function BlocklistTab() {
@@ -38,12 +40,12 @@ export function BlocklistTab() {
     setBusy(e.releaseId);
     try {
       await releaseConsole.unblock(e.releaseId);
-      toast.success("Release unblocked", {
-        description: "It is health-checked afresh the next time it is a candidate.",
+      toast.success(t("Release unblocked"), {
+        description: t("It is health-checked afresh the next time it is a candidate."),
       });
       await state.reload();
     } catch (err) {
-      toast.error("Couldn't unblock", { description: errorMessage(err) });
+      toast.error(t("Couldn't unblock"), { description: errorMessage(err) });
     } finally {
       setBusy(null);
     }
@@ -52,37 +54,39 @@ export function BlocklistTab() {
   return (
     <>
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3" role="group" aria-label="Filters">
-          <Field label="Search" htmlFor={`${id}-q`} className="w-72">
+        <div className="flex flex-wrap items-end gap-3" role="group" aria-label={t("Filters")}>
+          <Field label={t("Search")} htmlFor={`${id}-q`} className="w-72">
             <Input
               id={`${id}-q`}
               value={query}
               onChange={(e) => setQuery(e.currentTarget.value)}
-              placeholder="Title or release name…"
+              placeholder={t("Title or release name…")}
             />
           </Field>
-          <Field label="Source" htmlFor={`${id}-source`} className="w-48">
+          <Field label={t("Source")} htmlFor={`${id}-source`} className="w-48">
             <Select
               id={`${id}-source`}
-              aria-label="Source"
+              aria-label={t("Source")}
               value={source}
               onChange={(e) => setSource(e.target.value)}
             >
-              <option value="">All sources</option>
-              <option value="auto">Automatic</option>
-              <option value="owner">Blocked by you</option>
+              <option value="">{t("All sources")}</option>
+              <option value="auto">{t("Automatic")}</option>
+              <option value="owner">{t("Blocked by you")}</option>
             </Select>
           </Field>
         </div>
         <Button variant="outline" size="sm" onClick={() => void state.reload()}>
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={14} /> {t("Refresh")}
         </Button>
       </div>
       {key ? (
         <p className="text-sm text-fg-muted">
-          Blocked releases for <span className="font-medium text-fg">{titleName || key}</span>.{" "}
+          {tx("Blocked releases for {title}.", {
+            title: <span className="font-medium text-fg">{titleName || key}</span>,
+          })}{" "}
           <button type="button" className="text-primary underline" onClick={() => setParams({})}>
-            Show every title
+            {t("Show every title")}
           </button>
         </p>
       ) : null}
@@ -94,26 +98,33 @@ export function BlocklistTab() {
         <>
           {state.data.total > rows.length ? (
             <p className="text-xs text-fg-muted">
-              Showing the newest {rows.length} of {plural(state.data.total, "blocked release")};
-              narrow the search to find older ones.
+              {tn(
+                state.data.total,
+                "Showing the newest {shown} of {count} blocked release; narrow the search to find older ones.",
+                "Showing the newest {shown} of {count} blocked releases; narrow the search to find older ones.",
+                { shown: rows.length },
+              )}
             </p>
           ) : null}
           <PagedTable<BlockEntry>
             rows={rows}
             rowKey={(e) => e.releaseId}
             pageSize={25}
+            labels={pagedTableLabels()}
             defaultSort={{ key: "at", dir: "desc" }}
             empty={
               <EmptyState
                 icon={<Ban />}
-                title={q || source || key ? "Nothing matches" : "Nothing is blocked"}
-                description="Releases that fail health checks or break during playback land here, as do releases you block from Search."
+                title={q || source || key ? t("Nothing matches") : t("Nothing is blocked")}
+                description={t(
+                  "Releases that fail health checks or break during playback land here, as do releases you block from Search.",
+                )}
               />
             }
             columns={[
               {
                 key: "title",
-                header: "Title",
+                header: t("Title"),
                 sortValue: (e) => e.titleName ?? "",
                 cell: (e) =>
                   e.titleName && e.titleKey !== "0" ? (
@@ -124,12 +135,12 @@ export function BlocklistTab() {
                       {e.titleName}
                     </Link>
                   ) : (
-                    <span className="text-fg-muted">Unknown title</span>
+                    <span className="text-fg-muted">{t("Unknown title")}</span>
                   ),
               },
               {
                 key: "release",
-                header: "Release",
+                header: t("Release"),
                 sortValue: (e) => e.name ?? e.releaseId,
                 cell: (e) => (
                   <span className="block">
@@ -142,23 +153,23 @@ export function BlocklistTab() {
               },
               {
                 key: "reason",
-                header: "Reason",
+                header: t("Reason"),
                 cell: (e) => <span className="text-sm text-fg-muted">{e.reason || "—"}</span>,
               },
               {
                 key: "source",
-                header: "Source",
+                header: t("Source"),
                 sortValue: (e) => e.source,
                 cell: (e) =>
                   e.manual ? (
-                    <Badge variant="info">You</Badge>
+                    <Badge variant="info">{t("You")}</Badge>
                   ) : (
-                    <Badge variant="secondary">Automatic</Badge>
+                    <Badge variant="secondary">{t("Automatic")}</Badge>
                   ),
               },
               {
                 key: "at",
-                header: "Blocked",
+                header: t("Blocked"),
                 sortValue: (e) => e.updatedAt,
                 cell: (e) => (
                   <span className="text-fg-muted" title={formatDateTime(e.updatedAt)}>
@@ -168,17 +179,17 @@ export function BlocklistTab() {
               },
               {
                 key: "actions",
-                header: <span className="sr-only">Actions</span>,
+                header: <span className="sr-only">{t("Actions")}</span>,
                 align: "right",
                 cell: (e) => (
                   <Button
                     variant="ghost"
                     size="sm"
                     disabled={busy === e.releaseId}
-                    aria-label={`Unblock ${e.name || e.releaseId}`}
+                    aria-label={t("Unblock {release}", { release: e.name || e.releaseId })}
                     onClick={() => void unblock(e)}
                   >
-                    <Undo2 size={14} /> Unblock
+                    <Undo2 size={14} /> {t("Unblock")}
                   </Button>
                 ),
               },

@@ -3,7 +3,7 @@ import { Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, errorMessage, isAbort } from "../../lib/api";
 import type { HomeLayout, LayoutImpactResult } from "../../lib/contract";
-import { plural } from "../../lib/format";
+import { t, tn, tx } from "../../i18n";
 import { useDebouncedValue } from "../../lib/hooks";
 import type { ViewContext } from "./ContextBar";
 
@@ -59,22 +59,26 @@ export function ImpactBar({
     <div
       className="rounded-xl border border-warning/40 bg-warning-subtle px-3 py-2.5"
       role="status"
-      aria-label="Impact across viewers"
+      aria-label={t("Impact across viewers")}
     >
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Users size={15} className="text-warning" />
         {error ? (
-          <span className="text-fg-muted">Couldn't work out the impact: {error}</span>
+          <span className="text-fg-muted">
+            {t("Couldn't work out the impact: {error}", { error })}
+          </span>
         ) : !s ? (
-          <span className="text-fg-muted">Working out who this affects…</span>
+          <span className="text-fg-muted">{t("Working out who this affects…")}</span>
         ) : (
           <span className="text-fg">
-            Affects <strong>{plural(s.viewers, "viewer")}</strong>
-            {` · ${s.withOverrides} ${s.withOverrides === 1 ? "has" : "have"} overrides`}
-            {` · ${plural(s.changed, "Home")} ${s.changed === 1 ? "changes" : "change"} in this context`}
+            {tx("Affects {viewers}", {
+              viewers: <strong>{tn(s.viewers, "{count} viewer", "{count} viewers")}</strong>,
+            })}
+            {` · ${tn(s.withOverrides, "{count} has overrides", "{count} have overrides")}`}
+            {` · ${tn(s.changed, "{count} Home changes in this context", "{count} Homes change in this context")}`}
           </span>
         )}
-        {loading ? <Spinner size={12} label="Updating impact" /> : null}
+        {loading ? <Spinner size={12} label={t("Updating impact")} /> : null}
         {s ? (
           <Button
             variant="ghost"
@@ -83,7 +87,7 @@ export function ImpactBar({
             aria-expanded={open}
             onClick={() => setOpen((o) => !o)}
           >
-            {open ? "Hide details" : "Details"}
+            {open ? t("Hide details") : t("Details")}
           </Button>
         ) : null}
       </div>
@@ -93,16 +97,18 @@ export function ImpactBar({
             <li key={v.viewerId} className="flex flex-wrap gap-x-2">
               <span className="font-medium text-fg">{v.title}</span>
               {v.overrides ? (
-                <span className="text-info">{plural(v.overrides, "override")}</span>
+                <span className="text-info">
+                  {tn(v.overrides, "{count} override", "{count} overrides")}
+                </span>
               ) : null}
               {!v.changed ? (
-                <span className="text-fg-muted">no change</span>
+                <span className="text-fg-muted">{t("no change")}</span>
               ) : (
                 <span className="text-fg-muted">
                   {[
                     v.added.length ? `+ ${v.added.join(", ")}` : "",
                     v.removed.length ? `− ${v.removed.join(", ")}` : "",
-                    v.moved ? `${plural(v.moved, "row")} moved` : "",
+                    v.moved ? tn(v.moved, "{count} row moved", "{count} rows moved") : "",
                   ]
                     .filter(Boolean)
                     .join(" · ")}

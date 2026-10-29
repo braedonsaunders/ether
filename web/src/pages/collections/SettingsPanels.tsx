@@ -25,6 +25,8 @@ import { Artwork } from "../../components/Artwork";
 import { ChipGroup, Field, NumberInput, Segmented } from "../../components/fields";
 import { TitleSearch, useViewers, viewerName } from "../../components/pickers";
 import type { ArtworkMode, CollectionSpec, DeviceClass, TitleCard } from "../../lib/contract";
+import { localized, t } from "../../i18n";
+import { searchSelectLabels } from "../../i18n/appkit-labels";
 import { WEEKDAYS, formatDateTime, formatHour, relativeTime } from "../../lib/format";
 import { REFRESH_OPTIONS } from "../../lib/rules";
 import type { SpecUpdate } from "./BuildPanel";
@@ -46,9 +48,12 @@ export function SchedulePanel({
   const rotate = spec.rotate ?? null;
   return (
     <div className="space-y-7">
-      <Field label="Refresh" hint={REFRESH_OPTIONS.find((r) => r.value === spec.refresh)?.hint}>
+      <Field
+        label={t("Refresh")}
+        hint={REFRESH_OPTIONS.find((r) => r.value === spec.refresh)?.hint}
+      >
         <Segmented
-          ariaLabel="Refresh"
+          ariaLabel={t("Refresh")}
           value={spec.refresh}
           onChange={(v) => update({ refresh: v })}
           options={REFRESH_OPTIONS.map((r) => ({ value: r.value, label: r.label }))}
@@ -57,8 +62,8 @@ export function SchedulePanel({
 
       <div className="space-y-3">
         <ToggleRow
-          title="Rotate members"
-          description="Show a fresh subset each period so the row never goes stale."
+          title={t("Rotate members")}
+          description={t("Show a fresh subset each period so the row never goes stale.")}
           checked={Boolean(rotate)}
           onChange={(on) =>
             update({ rotate: on ? { size: Math.min(20, spec.limit || 20), every: "daily" } : null })
@@ -66,9 +71,9 @@ export function SchedulePanel({
         />
         {rotate ? (
           <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border-subtle bg-bg-subtle p-3">
-            <Field label="Titles shown">
+            <Field label={t("Titles shown")}>
               <NumberInput
-                aria-label="Titles shown per rotation"
+                aria-label={t("Titles shown per rotation")}
                 value={rotate.size}
                 min={1}
                 className="w-24"
@@ -77,14 +82,14 @@ export function SchedulePanel({
                 }
               />
             </Field>
-            <Field label="Rotate">
+            <Field label={t("Rotate")}>
               <Segmented
-                ariaLabel="Rotation period"
+                ariaLabel={t("Rotation period")}
                 value={rotate.every}
                 onChange={(v) => update({ rotate: { ...rotate, every: v } })}
                 options={[
-                  { value: "daily", label: "Daily" },
-                  { value: "weekly", label: "Weekly" },
+                  { value: "daily", label: t("Daily") },
+                  { value: "weekly", label: t("Weekly") },
                 ]}
               />
             </Field>
@@ -93,17 +98,17 @@ export function SchedulePanel({
       </div>
 
       <div className="rounded-lg border border-border bg-surface p-4">
-        <p className="text-sm font-medium text-fg">Build status</p>
+        <p className="text-sm font-medium text-fg">{t("Build status")}</p>
         {spec.id ? (
           <>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-              <dt className="text-fg-muted">Titles</dt>
+              <dt className="text-fg-muted">{t("Titles")}</dt>
               <dd className="tabular-nums text-fg">{spec.itemCount ?? "—"}</dd>
-              <dt className="text-fg-muted">Last built</dt>
+              <dt className="text-fg-muted">{t("Last built")}</dt>
               <dd className="text-fg" title={formatDateTime(spec.lastBuiltAt)}>
                 {relativeTime(spec.lastBuiltAt)}
               </dd>
-              <dt className="text-fg-muted">Saved</dt>
+              <dt className="text-fg-muted">{t("Saved")}</dt>
               <dd className="text-fg" title={formatDateTime(spec.updatedAt)}>
                 {relativeTime(spec.updatedAt)}
               </dd>
@@ -118,13 +123,13 @@ export function SchedulePanel({
                 disabled={rebuilding}
               >
                 <RefreshCw size={14} className={rebuilding ? "animate-spin" : ""} />{" "}
-                {rebuilding ? "Rebuilding…" : "Rebuild now"}
+                {rebuilding ? t("Rebuilding…") : t("Rebuild now")}
               </Button>
             ) : null}
           </>
         ) : (
           <p className="mt-1 text-sm text-fg-muted">
-            Save the collection to build it for the first time.
+            {t("Save the collection to build it for the first time.")}
           </p>
         )}
       </div>
@@ -165,38 +170,40 @@ function ToggleRow({
 
 // ---- Artwork ------------------------------------------------------------------------
 
-const MODES: { value: ArtworkMode; label: string; hint: string; icon: ReactNode }[] = [
-  {
-    value: "auto",
-    label: "Automatic",
-    hint: "Ether picks the best style for the titles inside.",
-    icon: <Wand2 size={16} />,
-  },
-  {
-    value: "collage",
-    label: "Poster collage",
-    hint: "Four or six member posters, with the collection name.",
-    icon: <Grid2x2 size={16} />,
-  },
-  {
-    value: "backdrop",
-    label: "Backdrop",
-    hint: "The lead title's backdrop with the name set over it.",
-    icon: <Clapperboard size={16} />,
-  },
-  {
-    value: "tmdb",
-    label: "TMDB collection",
-    hint: "Official franchise artwork when the source is a TMDB collection.",
-    icon: <ImageIcon size={16} />,
-  },
-  {
-    value: "custom",
-    label: "Custom image",
-    hint: "Any image URL you choose.",
-    icon: <Link2 size={16} />,
-  },
-];
+const MODES = localized<{ value: ArtworkMode; label: string; hint: string; icon: ReactNode }[]>(
+  () => [
+    {
+      value: "auto",
+      label: t("Automatic"),
+      hint: t("Ether picks the best style for the titles inside."),
+      icon: <Wand2 size={16} />,
+    },
+    {
+      value: "collage",
+      label: t("Poster collage"),
+      hint: t("Four or six member posters, with the collection name."),
+      icon: <Grid2x2 size={16} />,
+    },
+    {
+      value: "backdrop",
+      label: t("Backdrop"),
+      hint: t("The lead title's backdrop with the name set over it."),
+      icon: <Clapperboard size={16} />,
+    },
+    {
+      value: "tmdb",
+      label: t("TMDB collection"),
+      hint: t("Official franchise artwork when the source is a TMDB collection."),
+      icon: <ImageIcon size={16} />,
+    },
+    {
+      value: "custom",
+      label: t("Custom image"),
+      hint: t("Any image URL you choose."),
+      icon: <Link2 size={16} />,
+    },
+  ],
+);
 
 const ACCENTS = [
   "rose",
@@ -220,6 +227,17 @@ const ACCENT_BG: Record<(typeof ACCENTS)[number], string> = {
   indigo: "bg-accent-indigo",
   violet: "bg-accent-violet",
 };
+const ACCENT_LABEL = localized<Record<(typeof ACCENTS)[number], string>>(() => ({
+  rose: t("rose"),
+  amber: t("amber"),
+  lime: t("lime"),
+  emerald: t("emerald"),
+  teal: t("teal"),
+  cyan: t("cyan"),
+  sky: t("sky"),
+  indigo: t("indigo"),
+  violet: t("violet"),
+}));
 
 /** The accent palette is the categorical token set, resolved to hex for the server's renderer. */
 function accentHex(name: string): string {
@@ -249,13 +267,14 @@ export function ArtworkPanel({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-semibold text-fg">Collection poster</h3>
+        <h3 className="text-sm font-semibold text-fg">{t("Collection poster")}</h3>
         <p className="mt-1 text-xs leading-relaxed text-fg-muted">
-          Saved artwork is served to Plex apps as the collection’s native poster. Collages follow
-          the collection’s title order.
+          {t(
+            "Saved artwork is served to Plex apps as the collection’s native poster. Collages follow the collection’s title order.",
+          )}
         </p>
       </div>
-      <div role="radiogroup" aria-label="Artwork style" className="grid grid-cols-2 gap-2">
+      <div role="radiogroup" aria-label={t("Artwork style")} className="grid grid-cols-2 gap-2">
         {MODES.map((m) => {
           const on = spec.artwork.mode === m.value;
           return (
@@ -294,45 +313,49 @@ export function ArtworkPanel({
       </div>
       {spec.artwork.mode === "collage" || spec.artwork.mode === "auto" ? (
         <p className="text-xs leading-relaxed text-fg-muted">
-          Uses up to six available member posters. To choose the films and their order, use
-          hand-picked titles in Build and sort by Source order. Artwork falls back to a single image
-          when fewer than four posters are available.
+          {t(
+            "Uses up to six available member posters. To choose the films and their order, use hand-picked titles in Build and sort by Source order. Artwork falls back to a single image when fewer than four posters are available.",
+          )}
         </p>
       ) : null}
       {spec.artwork.mode === "tmdb" ? (
         <p className="text-xs leading-relaxed text-fg-muted">
-          The official franchise poster is fetched when you save. Collections without a TMDB
-          franchise source use automatic artwork.
+          {t(
+            "The official franchise poster is fetched when you save. Collections without a TMDB franchise source use automatic artwork.",
+          )}
         </p>
       ) : null}
-      <section aria-label="Choose a title poster" className="space-y-3 border-t border-border pt-4">
+      <section
+        aria-label={t("Choose a title poster")}
+        className="space-y-3 border-t border-border pt-4"
+      >
         <div>
-          <h3 className="text-sm font-semibold text-fg">Use a title’s poster</h3>
+          <h3 className="text-sm font-semibold text-fg">{t("Use a title’s poster")}</h3>
           <p className="mt-1 text-xs text-fg-muted">
-            Choose an existing poster without changing the collection’s members.
+            {t("Choose an existing poster without changing the collection’s members.")}
           </p>
         </div>
         <TitleSearch
-          placeholder="Find a film or show for its poster…"
-          onPick={(t) => {
-            const source = artworkSource(t.poster);
+          placeholder={t("Find a film or show for its poster…")}
+          onPick={(title) => {
+            const source = artworkSource(title.poster);
             if (source) update({ artwork: { ...spec.artwork, mode: "custom", url: source } });
-            else toast.error("This title has no usable poster");
+            else toast.error(t("This title has no usable poster"));
           }}
         />
-        {preview.some((t) => artworkSource(t.poster)) ? (
+        {preview.some((title) => artworkSource(title.poster)) ? (
           <div className="grid grid-cols-4 gap-2">
             {preview
-              .filter((t) => artworkSource(t.poster))
+              .filter((title) => artworkSource(title.poster))
               .slice(0, 8)
-              .map((t) => {
-                const source = artworkSource(t.poster)!;
+              .map((title) => {
+                const source = artworkSource(title.poster)!;
                 const on = spec.artwork.mode === "custom" && spec.artwork.url === source;
                 return (
                   <button
-                    key={t.key}
+                    key={title.key}
                     type="button"
-                    aria-label={`Use ${t.title} poster`}
+                    aria-label={t("Use {title} poster", { title: title.title })}
                     aria-pressed={on}
                     onClick={() =>
                       update({ artwork: { ...spec.artwork, mode: "custom", url: source } })
@@ -343,12 +366,14 @@ export function ArtworkPanel({
                     )}
                   >
                     <Artwork
-                      src={t.poster}
+                      src={title.poster}
                       alt=""
-                      title={t.title}
+                      title={title.title}
                       className="aspect-[2/3] w-full rounded"
                     />
-                    <span className="mt-1 block truncate text-[10px] text-fg-muted">{t.title}</span>
+                    <span className="mt-1 block truncate text-[10px] text-fg-muted">
+                      {title.title}
+                    </span>
                   </button>
                 );
               })}
@@ -358,8 +383,8 @@ export function ArtworkPanel({
 
       {spec.artwork.mode === "custom" ? (
         <Field
-          label="Image URL or TMDB path"
-          hint="A 2:3 poster works best. You can paste an image URL or pick a title above."
+          label={t("Image URL or TMDB path")}
+          hint={t("A 2:3 poster works best. You can paste an image URL or pick a title above.")}
         >
           <Input
             type="text"
@@ -368,17 +393,20 @@ export function ArtworkPanel({
             onChange={(e) =>
               update({ artwork: { ...spec.artwork, url: e.currentTarget.value } }, "artwork-url")
             }
-            aria-label="Custom image URL"
+            aria-label={t("Custom image URL")}
           />
         </Field>
       ) : null}
 
       {spec.artwork.mode !== "custom" && spec.artwork.mode !== "tmdb" ? (
-        <Field label="Accent" hint="Tints generated artwork. Automatic matches the lead poster.">
+        <Field
+          label={t("Accent")}
+          hint={t("Tints generated artwork. Automatic matches the lead poster.")}
+        >
           <div
             className="flex flex-wrap items-center gap-2"
             role="radiogroup"
-            aria-label="Accent colour"
+            aria-label={t("Accent colour")}
           >
             <button
               type="button"
@@ -393,7 +421,7 @@ export function ArtworkPanel({
               )}
             >
               <Sparkles size={12} className="mr-1 inline" />
-              Automatic
+              {t("Automatic")}
             </button>
             {swatches.map((s) => (
               <button
@@ -401,8 +429,8 @@ export function ArtworkPanel({
                 type="button"
                 role="radio"
                 aria-checked={accent.toLowerCase() === s.hex}
-                aria-label={s.name}
-                title={s.name}
+                aria-label={ACCENT_LABEL[s.name]}
+                title={ACCENT_LABEL[s.name]}
                 onClick={() => update({ artwork: { ...spec.artwork, accent: s.hex } })}
                 className={cn(
                   "size-8 rounded-full ring-offset-2 ring-offset-bg transition",
@@ -423,9 +451,9 @@ export function ArtworkPanel({
                     )
                   }
                   className="size-8 cursor-pointer rounded-full border border-border bg-transparent p-0"
-                  aria-label="Custom accent colour"
+                  aria-label={t("Custom accent colour")}
                 />
-                Custom
+                {t("Custom")}
               </label>
             ) : null}
           </div>
@@ -455,14 +483,14 @@ export function ArtworkPreview({
         : "backdrop"
       : spec.artwork.mode;
   const accentStyle = spec.artwork.accent ? { backgroundColor: spec.artwork.accent } : undefined;
-  const name = spec.name.trim() || "Untitled collection";
+  const name = spec.name.trim() || t("Untitled collection");
   return (
     <div
       className={cn(
         "relative aspect-[2/3] w-full overflow-hidden rounded-md bg-bg-subtle shadow-md ring-1 ring-border",
         className,
       )}
-      aria-label="Artwork preview"
+      aria-label={t("Artwork preview")}
       role="img"
     >
       {mode === "collage" ? (
@@ -488,13 +516,15 @@ export function ArtworkPreview({
       ) : mode === "tmdb" ? (
         <div className="grid size-full place-items-center p-2 text-center text-fg-subtle">
           <ImageIcon size={size === "sm" ? 16 : 28} aria-hidden />
-          <span className="sr-only">Official TMDB collection artwork appears after saving</span>
+          <span className="sr-only">
+            {t("Official TMDB collection artwork appears after saving")}
+          </span>
         </div>
       ) : (
         <Artwork
           src={artworkPreviewURL(spec.artwork.url)}
           alt=""
-          title="Add an image URL"
+          title={t("Add an image URL")}
           className="size-full"
           eager
         />
@@ -524,7 +554,7 @@ export function ArtworkPreview({
           </p>
           {items.length && size !== "sm" ? (
             <p className="text-on-scrim mt-0.5 text-[10px] opacity-75">
-              {spec.mediaType === "show" ? "Series" : "Collection"}
+              {spec.mediaType === "show" ? t("Series") : t("Collection")}
             </p>
           ) : null}
         </div>
@@ -535,19 +565,19 @@ export function ArtworkPreview({
 
 // ---- Audience ------------------------------------------------------------------------
 
-const DEVICES: { value: DeviceClass; label: string }[] = [
-  { value: "tv", label: "TV" },
-  { value: "mobile", label: "Phone & tablet" },
-  { value: "web", label: "Web" },
-  { value: "desktop", label: "Desktop app" },
-];
+const DEVICES = localized<{ value: DeviceClass; label: string }[]>(() => [
+  { value: "tv", label: t("TV") },
+  { value: "mobile", label: t("Phone & tablet") },
+  { value: "web", label: t("Web") },
+  { value: "desktop", label: t("Desktop app") },
+]);
 
 export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: SpecUpdate }) {
   const { viewers } = useViewers();
-  const t = spec.targets;
-  const schedule = t.schedule ?? {};
+  const tg = spec.targets;
+  const schedule = tg.schedule ?? {};
   const setTargets = (patch: Partial<CollectionSpec["targets"]>) =>
-    update({ targets: { ...t, ...patch } });
+    update({ targets: { ...tg, ...patch } });
   const setSchedule = (patch: NonNullable<CollectionSpec["targets"]["schedule"]>) => {
     const next = { ...schedule, ...patch };
     const empty =
@@ -558,30 +588,31 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
     setTargets({ schedule: empty ? null : next });
   };
   const hourOptions = [
-    { value: "", label: "Any time" },
+    { value: "", label: t("Any time") },
     ...Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: formatHour(h) })),
   ];
-  const nowhere = !t.collectionsTab && !t.homeRow && !t.sectionRow;
+  const nowhere = !tg.collectionsTab && !tg.homeRow && !tg.sectionRow;
   return (
     <div className="space-y-7">
       <section className="space-y-2" aria-labelledby="where-h">
         <h3 id="where-h" className="text-sm font-semibold text-fg">
-          Where it appears
+          {t("Where it appears")}
         </h3>
         <p className="text-sm text-fg-muted">
-          A browseable collection and a discovery row are independent. Choose either, or publish in
-          both places.
+          {t(
+            "A browseable collection and a discovery row are independent. Choose either, or publish in both places.",
+          )}
         </p>
         <div className="grid grid-cols-3 gap-2 py-2">
           {[
-            { name: "Collection only", library: true, rows: false },
-            { name: "Discovery rows", library: false, rows: true },
-            { name: "Both", library: true, rows: true },
+            { key: "library", name: t("Collection only"), library: true, rows: false },
+            { key: "rows", name: t("Discovery rows"), library: false, rows: true },
+            { key: "both", name: t("Both"), library: true, rows: true },
           ].map((p) => (
             <Button
-              key={p.name}
+              key={p.key}
               variant={
-                t.collectionsTab === p.library && t.homeRow === p.rows && t.sectionRow === p.rows
+                tg.collectionsTab === p.library && tg.homeRow === p.rows && tg.sectionRow === p.rows
                   ? "secondary"
                   : "outline"
               }
@@ -595,27 +626,27 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
           ))}
         </div>
         <ToggleRow
-          title="Collections tab"
-          description="Listed with the other collections in the matching Plex libraries."
-          checked={t.collectionsTab}
+          title={t("Collections tab")}
+          description={t("Listed with the other collections in the matching Plex libraries.")}
+          checked={tg.collectionsTab}
           onChange={(v) => setTargets({ collectionsTab: v })}
         />
         <ToggleRow
-          title="Home row"
-          description="Offered to the personalization engine as a row on Plex Home."
-          checked={t.homeRow}
+          title={t("Home row")}
+          description={t("Offered to the personalization engine as a row on Plex Home.")}
+          checked={tg.homeRow}
           onChange={(v) => setTargets({ homeRow: v })}
         />
         <ToggleRow
-          title="Library row"
-          description="Shown as a row at the top of the Movies or TV library."
-          checked={t.sectionRow}
+          title={t("Library row")}
+          description={t("Shown as a row at the top of the Movies or TV library.")}
+          checked={tg.sectionRow}
           onChange={(v) => setTargets({ sectionRow: v })}
         />
         {nowhere ? (
           <Alert variant="warning">
             <AlertDescription>
-              Pick at least one place, or viewers won't see this collection.
+              {t("Pick at least one place, or viewers won't see this collection.")}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -623,49 +654,54 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
 
       <section className="space-y-2" aria-labelledby="who-h">
         <h3 id="who-h" className="text-sm font-semibold text-fg">
-          Who sees it
+          {t("Who sees it")}
         </h3>
         <Segmented
-          ariaLabel="Audience"
-          value={t.users === "all" ? "all" : "some"}
+          ariaLabel={t("Audience")}
+          value={tg.users === "all" ? "all" : "some"}
           onChange={(v) => setTargets({ users: v === "all" ? "all" : [] })}
           options={[
-            { value: "all", label: "Everyone" },
-            { value: "some", label: "Specific viewers" },
+            { value: "all", label: t("Everyone") },
+            { value: "some", label: t("Specific viewers") },
           ]}
         />
-        {t.users !== "all" ? (
+        {tg.users !== "all" ? (
           <MultiSelect
-            value={t.users.map(String)}
+            value={tg.users.map(String)}
             onChange={(v) => setTargets({ users: v.map(Number) })}
-            ariaLabel="Viewers"
-            placeholder={viewers ? "Choose viewers…" : "Loading viewers…"}
+            ariaLabel={t("Viewers")}
+            placeholder={viewers ? t("Choose viewers…") : t("Loading viewers…")}
+            searchPlaceholder={t("Search…")}
+            noMatchesLabel={t("No matches")}
+            clearLabel={t("Clear")}
+            selectAllLabel={t("Select all")}
             options={(viewers ?? []).map((v) => ({
               value: String(v.id),
               label: viewerName(v),
-              description: v.isOwner ? "Owner" : v.username,
+              description: v.isOwner ? t("Owner") : v.username,
             }))}
           />
         ) : null}
-        {t.users !== "all" && t.users.length === 0 ? (
-          <p className="text-xs text-warning">No viewers chosen yet.</p>
+        {tg.users !== "all" && tg.users.length === 0 ? (
+          <p className="text-xs text-warning">{t("No viewers chosen yet.")}</p>
         ) : null}
       </section>
 
       <section className="space-y-3" aria-labelledby="when-h">
         <div>
           <h3 id="when-h" className="text-sm font-semibold text-fg">
-            When
+            {t("When")}
           </h3>
           <p className="text-xs text-fg-muted">
-            Limit Home and library rows to certain days, hours or devices. The Collections tab
-            always lists it.
+            {t(
+              "Limit Home and library rows to certain days, hours or devices. The Collections tab always lists it.",
+            )}
           </p>
         </div>
-        <Field label="Days">
+        <Field label={t("Days")}>
           <div className="space-y-2">
             <ChipGroup
-              ariaLabel="Days"
+              ariaLabel={t("Days")}
               size="sm"
               value={schedule.days ?? []}
               onChange={(days) => setSchedule({ days: days.length ? [...days].sort() : undefined })}
@@ -679,7 +715,7 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
                 className="h-7 px-2 text-xs"
                 onClick={() => setSchedule({ days: [1, 2, 3, 4] })}
               >
-                Weeknights
+                {t("Weeknights")}
               </Button>
               <Button
                 type="button"
@@ -688,7 +724,7 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
                 className="h-7 px-2 text-xs"
                 onClick={() => setSchedule({ days: [0, 6] })}
               >
-                Weekends
+                {t("Weekends")}
               </Button>
               <Button
                 type="button"
@@ -697,32 +733,34 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
                 className="h-7 px-2 text-xs"
                 onClick={() => setSchedule({ days: undefined })}
               >
-                Every day
+                {t("Every day")}
               </Button>
             </div>
           </div>
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="From">
+          <Field label={t("From")}>
             <SearchSelect
               value={schedule.fromHour === undefined ? "" : String(schedule.fromHour)}
               onChange={(v) => setSchedule({ fromHour: v === "" ? undefined : Number(v) })}
               options={hourOptions}
-              ariaLabel="From hour"
+              ariaLabel={t("From hour")}
+              {...searchSelectLabels()}
             />
           </Field>
-          <Field label="Until">
+          <Field label={t("Until")}>
             <SearchSelect
               value={schedule.toHour === undefined ? "" : String(schedule.toHour)}
               onChange={(v) => setSchedule({ toHour: v === "" ? undefined : Number(v) })}
               options={hourOptions}
-              ariaLabel="Until hour"
+              ariaLabel={t("Until hour")}
+              {...searchSelectLabels()}
             />
           </Field>
         </div>
-        <Field label="Devices">
+        <Field label={t("Devices")}>
           <ChipGroup
-            ariaLabel="Devices"
+            ariaLabel={t("Devices")}
             size="sm"
             value={schedule.devices ?? []}
             onChange={(devices) => setSchedule({ devices: devices.length ? devices : undefined })}
@@ -739,18 +777,21 @@ export function AudiencePanel({ spec, update }: { spec: CollectionSpec; update: 
 
 export function describeSchedule(spec: CollectionSpec): string {
   const s = spec.targets.schedule;
-  if (!s) return "Any day, any time, every device";
+  if (!s) return t("Any day, any time, every device");
   const parts: string[] = [];
-  parts.push(s.days?.length ? s.days.map((d) => WEEKDAYS[d]).join(", ") : "Any day");
+  parts.push(s.days?.length ? s.days.map((d) => WEEKDAYS[d]).join(", ") : t("Any day"));
   if (s.fromHour !== undefined || s.toHour !== undefined)
     parts.push(
-      `${s.fromHour !== undefined ? formatHour(s.fromHour) : "midnight"}–${s.toHour !== undefined ? formatHour(s.toHour) : "midnight"}`,
+      t("{from}–{until}", {
+        from: s.fromHour !== undefined ? formatHour(s.fromHour) : t("midnight"),
+        until: s.toHour !== undefined ? formatHour(s.toHour) : t("midnight"),
+      }),
     );
-  else parts.push("any time");
+  else parts.push(t("any time"));
   parts.push(
     s.devices?.length
       ? s.devices.map((d) => DEVICES.find((x) => x.value === d)?.label ?? d).join(", ")
-      : "every device",
+      : t("every device"),
   );
   return parts.join(" · ");
 }

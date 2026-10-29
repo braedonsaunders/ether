@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Star, Tv } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Segmented } from "../../components/fields";
 import { Artwork } from "../../components/Artwork";
+import { getLocale, t, tn } from "../../i18n";
+import { unit } from "../../lib/format";
 import { ChannelLogo } from "./ChannelLogo";
 import { MINUTE, clock, hueOf, onNow, progress, type Channel, type Programme } from "./model";
 
@@ -47,7 +49,7 @@ export function GuideGrid({
   const width = minutes * ppm;
   const scroller = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ top: 0, height: 800, left: 0 });
-  const x = (t: number) => ((t - start) / MINUTE) * ppm;
+  const x = (ms: number) => ((ms - start) / MINUTE) * ppm;
   const nowX = x(now);
   const nowVisible = now >= start && now <= until.getTime();
 
@@ -85,11 +87,12 @@ export function GuideGrid({
   const ticks = useMemo(() => {
     const out: number[] = [];
     const step = 30 * MINUTE;
-    for (let t = Math.ceil(start / step) * step; t <= until.getTime(); t += step) out.push(t);
+    for (let tick = Math.ceil(start / step) * step; tick <= until.getTime(); tick += step)
+      out.push(tick);
     return out;
   }, [start, until]);
 
-  const dayLabel = new Date(Math.max(start, now)).toLocaleDateString([], {
+  const dayLabel = new Date(Math.max(start, now)).toLocaleDateString(getLocale(), {
     weekday: "long",
     month: "short",
     day: "numeric",
@@ -99,14 +102,16 @@ export function GuideGrid({
     <div className="flex h-full min-h-[28rem] flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2 sm:px-4">
         <div className="mr-auto flex items-baseline gap-2">
-          <h2 className="text-sm font-semibold text-fg">Guide</h2>
+          <h2 className="text-sm font-semibold text-fg">{t("Guide")}</h2>
           <span className="text-xs text-fg-muted">
-            {dayLabel} · {channels.length} channels
+            {tn(channels.length, "{day} · {count} channel", "{day} · {count} channels", {
+              day: dayLabel,
+            })}
           </span>
-          {loading ? <span className="text-xs text-fg-subtle">Updating…</span> : null}
+          {loading ? <span className="text-xs text-fg-subtle">{t("Updating…")}</span> : null}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" aria-label="Earlier" onClick={() => onShift(-3)}>
+          <Button variant="ghost" size="sm" aria-label={t("Earlier")} onClick={() => onShift(-3)}>
             <ChevronLeft size={15} />
           </Button>
           <Button
@@ -121,21 +126,21 @@ export function GuideGrid({
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-danger/60" />
               <span className="relative inline-flex size-2 rounded-full bg-danger" />
             </span>
-            Now
+            {t("Now")}
           </Button>
-          <Button variant="ghost" size="sm" aria-label="Later" onClick={() => onShift(3)}>
+          <Button variant="ghost" size="sm" aria-label={t("Later")} onClick={() => onShift(3)}>
             <ChevronRight size={15} />
           </Button>
         </div>
         <Segmented
-          ariaLabel="Zoom"
+          ariaLabel={t("Zoom")}
           size="sm"
           value={zoom}
           onChange={setZoom}
           options={[
-            { value: "tight", label: "6h" },
-            { value: "normal", label: "4h" },
-            { value: "wide", label: "3h" },
+            { value: "tight", label: unit(6, "hour") },
+            { value: "normal", label: unit(4, "hour") },
+            { value: "wide", label: unit(3, "hour") },
           ]}
         />
       </div>
@@ -143,7 +148,7 @@ export function GuideGrid({
       <div
         ref={scroller}
         role="grid"
-        aria-label="Programme guide"
+        aria-label={t("Programme guide")}
         aria-rowcount={channels.length}
         onScroll={(e) =>
           setView({
@@ -167,16 +172,16 @@ export function GuideGrid({
               className="sticky left-0 z-40 flex shrink-0 items-center border-r border-border bg-surface px-3 text-[11px] font-semibold uppercase tracking-wider text-fg-subtle"
               style={{ width: CH_COL }}
             >
-              Channel
+              {t("Channel")}
             </div>
             <div className="relative" style={{ width }}>
-              {ticks.map((t) => {
-                const hour = new Date(t).getMinutes() === 0;
+              {ticks.map((tick) => {
+                const hour = new Date(tick).getMinutes() === 0;
                 return (
                   <div
-                    key={t}
+                    key={tick}
                     className="absolute inset-y-0 flex items-center border-l border-border/70 pl-2"
-                    style={{ left: x(t) }}
+                    style={{ left: x(tick) }}
                   >
                     <span
                       className={cn(
@@ -184,7 +189,7 @@ export function GuideGrid({
                         hour ? "font-semibold text-fg" : "text-fg-subtle",
                       )}
                     >
-                      {clock(new Date(t))}
+                      {clock(new Date(tick))}
                     </span>
                   </div>
                 );
@@ -194,7 +199,7 @@ export function GuideGrid({
                   className="absolute bottom-0 z-10 -translate-x-1/2 rounded-t-md bg-danger px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white"
                   style={{ left: nowX }}
                 >
-                  Live · {clock(new Date(now))}
+                  {t("Live · {time}", { time: clock(new Date(now)) })}
                 </div>
               ) : null}
             </div>
@@ -206,11 +211,11 @@ export function GuideGrid({
             style={{ left: CH_COL, top: HEADER, width }}
             aria-hidden
           >
-            {ticks.map((t) => (
+            {ticks.map((tick) => (
               <div
-                key={t}
+                key={tick}
                 className="absolute inset-y-0 border-l border-border/40"
-                style={{ left: x(t) }}
+                style={{ left: x(tick) }}
               />
             ))}
           </div>
@@ -240,7 +245,7 @@ export function GuideGrid({
                     on ? "bg-primary-subtle" : "bg-surface",
                   )}
                   style={{ width: CH_COL }}
-                  aria-label={`Channel ${c.number} ${c.name}`}
+                  aria-label={t("Channel {number} {name}", { number: c.number, name: c.name })}
                 >
                   <span className="w-7 shrink-0 text-right font-mono text-[11px] tabular-nums text-fg-subtle">
                     {c.number}
@@ -255,8 +260,13 @@ export function GuideGrid({
                     </span>
                     <span className="block truncate text-[11px] text-fg-subtle">
                       {live
-                        ? `${Math.max(1, Math.round((Date.parse(live.end) - now) / MINUTE))}m left`
-                        : c.group || (c.kind === "virtual" ? "Virtual" : "Live")}
+                        ? t("{time} left", {
+                            time: unit(
+                              Math.max(1, Math.round((Date.parse(live.end) - now) / MINUTE)),
+                              "minute",
+                            ),
+                          })
+                        : c.group || (c.kind === "virtual" ? t("Virtual") : t("Live"))}
                     </span>
                   </span>
                 </button>
@@ -266,8 +276,9 @@ export function GuideGrid({
                       className="absolute inset-1 flex items-center rounded-md border border-dashed border-border px-3 text-xs text-fg-subtle"
                       style={{ paddingLeft: Math.max(12, view.left + 12) }}
                     >
-                      No guide data —{" "}
-                      {c.kind === "iptv" ? "map a guide channel in Guide data" : "no programming"}
+                      {c.kind === "iptv"
+                        ? t("No guide data — map a guide channel in Guide data")
+                        : t("No guide data — no programming")}
                     </div>
                   ) : null}
                   {ps.map((p) => {
@@ -287,7 +298,12 @@ export function GuideGrid({
                         type="button"
                         role="gridcell"
                         onClick={() => onSelect(c.id)}
-                        aria-label={`${c.name}: ${p.item.title}, ${clock(p.start)} to ${clock(p.end)}`}
+                        aria-label={t("{channel}: {title}, {start} to {end}", {
+                          channel: c.name,
+                          title: p.item.title,
+                          start: clock(p.start),
+                          end: clock(p.end),
+                        })}
                         title={`${p.item.title}\n${clock(p.start)} – ${clock(p.end)}${p.item.summary ? `\n\n${p.item.summary}` : ""}`}
                         className={cn(
                           "group absolute inset-y-1 overflow-hidden rounded-md border px-2 py-1 text-left transition-all hover:z-10 hover:shadow-md focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
@@ -330,7 +346,7 @@ export function GuideGrid({
                                 airing ? "text-fg" : "text-fg",
                               )}
                             >
-                              {p.item.title || "Untitled"}
+                              {p.item.title || t("Untitled")}
                             </span>
                             {w > 70 ? (
                               <span className="block truncate text-[11px] tabular-nums text-fg-muted">
@@ -360,10 +376,11 @@ export function GuideGrid({
           <div className="absolute inset-0 top-9 grid place-items-center p-8 text-center">
             <div className="max-w-sm space-y-2">
               <Tv className="mx-auto text-fg-subtle" size={28} />
-              <p className="text-sm font-medium text-fg">No channels match</p>
+              <p className="text-sm font-medium text-fg">{t("No channels match")}</p>
               <p className="text-xs text-fg-muted">
-                Clear the search or filter on the left, create a virtual channel, or add an IPTV
-                source.
+                {t(
+                  "Clear the search or filter on the left, create a virtual channel, or add an IPTV source.",
+                )}
               </p>
             </div>
           </div>
@@ -400,7 +417,7 @@ export function OnNowStrip({
   if (!picks.length) return null;
   return (
     <section
-      aria-label="On now"
+      aria-label={t("On now")}
       className="shrink-0 border-b border-border bg-surface px-3 pb-3 pt-2.5 sm:px-4"
     >
       <div className="mb-2 flex items-center gap-2">
@@ -408,7 +425,9 @@ export function OnNowStrip({
           <span className="absolute inline-flex size-full animate-ping rounded-full bg-danger/60" />
           <span className="relative inline-flex size-2 rounded-full bg-danger" />
         </span>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">On now</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
+          {t("On now")}
+        </h2>
       </div>
       <div className="app-scroll -mx-1 flex gap-2.5 overflow-x-auto px-1 pb-1">
         {picks.map(({ c, p }) => {
@@ -418,7 +437,7 @@ export function OnNowStrip({
               key={c.id}
               type="button"
               onClick={() => onSelect(c.id)}
-              aria-label={`${c.name} on now: ${p.item.title}`}
+              aria-label={t("{channel} on now: {title}", { channel: c.name, title: p.item.title })}
               className="group relative flex h-[5.5rem] w-64 shrink-0 overflow-hidden rounded-xl border border-border text-left shadow-xs transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               style={{
                 background: `linear-gradient(120deg, hsl(${hue} 60% 22%), hsl(${(hue + 50) % 360} 55% 12%))`,
@@ -451,7 +470,7 @@ export function OnNowStrip({
                     {p.item.title}
                   </span>
                   <span className="block text-[11px] tabular-nums text-white/70">
-                    until {clock(p.end)}
+                    {t("until {time}", { time: clock(p.end) })}
                   </span>
                 </span>
               </span>

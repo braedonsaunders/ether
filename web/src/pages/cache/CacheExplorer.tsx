@@ -11,7 +11,8 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { ChevronLeft, ChevronRight, Film, Pin, Search } from "lucide-react";
 import { useState } from "react";
-import { formatBytes } from "../../lib/format";
+import { getLocale, t, tn } from "../../i18n";
+import { formatBytes, formatPercent } from "../../lib/format";
 import type { CacheSnapshot } from "./Cache";
 
 export function CacheExplorer({
@@ -37,15 +38,15 @@ export function CacheExplorer({
     current = Math.min(page, pages - 1);
   return (
     <section
-      aria-label="Cache explorer"
+      aria-label={t("Cache explorer")}
       className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface"
     >
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border p-4">
         <div className="relative min-w-48 flex-1">
           <Search size={14} className="pointer-events-none absolute left-3 top-3 text-fg-subtle" />
           <Input
-            aria-label="Search cached releases"
-            placeholder="Search titles or release IDs…"
+            aria-label={t("Search cached releases")}
+            placeholder={t("Search titles or release IDs…")}
             className="pl-9"
             value={search}
             onChange={(e) => {
@@ -55,7 +56,7 @@ export function CacheExplorer({
           />
         </div>
         <select
-          aria-label="Filter cached releases"
+          aria-label={t("Filter cached releases")}
           value={filter}
           onChange={(e) => {
             setFilter(e.target.value);
@@ -63,22 +64,24 @@ export function CacheExplorer({
           }}
           className="h-10 rounded-md border border-border bg-surface px-3 text-sm"
         >
-          <option value="all">All releases</option>
-          <option value="protected">Protected</option>
-          <option value="replayed">Repeat watches</option>
+          <option value="all">{t("All releases")}</option>
+          <option value="protected">{t("Protected")}</option>
+          <option value="replayed">{t("Repeat watches")}</option>
         </select>
-        <span className="text-xs text-fg-muted">{rows.length} releases</span>
+        <span className="text-xs text-fg-muted">
+          {tn(rows.length, "{count} release", "{count} releases")}
+        </span>
       </div>
       <div className="app-scroll min-h-0 flex-1 overflow-auto">
         <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead>Title / release</TableHead>
-              <TableHead>Retained</TableHead>
-              <TableHead className="hidden md:table-cell">Plays</TableHead>
-              <TableHead className="hidden lg:table-cell">Last used</TableHead>
+              <TableHead>{t("Title / release")}</TableHead>
+              <TableHead>{t("Retained")}</TableHead>
+              <TableHead className="hidden md:table-cell">{t("Plays")}</TableHead>
+              <TableHead className="hidden lg:table-cell">{t("Last used")}</TableHead>
               <TableHead className="w-40">
-                <span className="sr-only">Owner pin</span>
+                <span className="sr-only">{t("Owner pin")}</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -101,7 +104,7 @@ export function CacheExplorer({
                         <div className="mt-1 flex flex-wrap gap-1">
                           {r.Pins.map((p) => (
                             <Badge key={p} variant="secondary">
-                              {p === "owner" ? "Kept by you" : p}
+                              {p === "owner" ? t("Kept by you") : p}
                             </Badge>
                           ))}
                         </div>
@@ -120,7 +123,11 @@ export function CacheExplorer({
                         />
                       </div>
                       <p className="mt-1 text-[10px] text-fg-subtle">
-                        {Math.min(100, Math.round((r.Bytes / r.Size) * 100))}% retained
+                        {t("{percent} retained", {
+                          percent: formatPercent(
+                            Math.min(100, Math.round((r.Bytes / r.Size) * 100)) / 100,
+                          ),
+                        })}
                       </p>
                     </>
                   )}
@@ -130,7 +137,7 @@ export function CacheExplorer({
                 </TableCell>
                 <TableCell className="hidden text-xs text-fg-muted lg:table-cell">
                   {r.LastUsed && !r.LastUsed.startsWith("0001")
-                    ? new Date(r.LastUsed).toLocaleDateString(undefined, {
+                    ? new Date(r.LastUsed).toLocaleDateString(getLocale(), {
                         month: "short",
                         day: "numeric",
                       })
@@ -140,7 +147,11 @@ export function CacheExplorer({
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label={`${r.Pins?.includes("owner") ? "Unpin" : "Pin"} ${r.Title || r.ReleaseID}`}
+                    aria-label={
+                      r.Pins?.includes("owner")
+                        ? t("Unpin {title}", { title: r.Title || r.ReleaseID })
+                        : t("Pin {title}", { title: r.Title || r.ReleaseID })
+                    }
                     disabled={busy}
                     onClick={() => onPin(r.ReleaseID, !r.Pins?.includes("owner"))}
                   >
@@ -155,7 +166,7 @@ export function CacheExplorer({
                     disabled={busy}
                     onClick={() => onClearBlock(r.ReleaseID, r.Title || r.ReleaseID)}
                   >
-                    Clear &amp; block
+                    {t("Clear & block")}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -167,15 +178,15 @@ export function CacheExplorer({
             <Film size={24} className="mx-auto mb-3 text-fg-subtle" />
             <p className="text-sm font-medium">
               {!snapshot
-                ? "Loading cache…"
+                ? t("Loading cache…")
                 : search || filter !== "all"
-                  ? "No matching releases"
-                  : "No retained media yet"}
+                  ? t("No matching releases")
+                  : t("No retained media yet")}
             </p>
             <p className="mt-2 text-xs text-fg-muted">
               {search || filter !== "all"
-                ? "Try a different search or filter."
-                : "Cached movies and episodes appear here as viewers watch."}
+                ? t("Try a different search or filter.")
+                : t("Cached movies and episodes appear here as viewers watch.")}
             </p>
           </div>
         )}
@@ -183,15 +194,19 @@ export function CacheExplorer({
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5">
         <p className="text-[11px] text-fg-muted">
           {rows.length
-            ? `${current * 20 + 1}–${Math.min((current + 1) * 20, rows.length)} of ${rows.length}`
-            : "0 releases"}{" "}
-          · Pins protect data from eviction
+            ? t("{start}–{end} of {total}", {
+                start: current * 20 + 1,
+                end: Math.min((current + 1) * 20, rows.length),
+                total: rows.length,
+              })
+            : tn(0, "{count} release", "{count} releases")}{" "}
+          · {t("Pins protect data from eviction")}
         </p>
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
-            aria-label="Previous cache page"
+            aria-label={t("Previous cache page")}
             disabled={current === 0}
             onClick={() => setPage(current - 1)}
           >
@@ -203,7 +218,7 @@ export function CacheExplorer({
           <Button
             variant="ghost"
             size="sm"
-            aria-label="Next cache page"
+            aria-label={t("Next cache page")}
             disabled={current + 1 >= pages}
             onClick={() => setPage(current + 1)}
           >

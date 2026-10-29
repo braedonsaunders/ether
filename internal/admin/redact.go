@@ -30,6 +30,7 @@ func RedactConfig(cfg config.Config) config.Config {
 	out.Plex.Token = redact(out.Plex.Token)
 	out.Catalog.TMDBKey = redact(out.Catalog.TMDBKey)
 	out.Trakt.ClientSecret = redact(out.Trakt.ClientSecret)
+	out.Simkl.ClientSecret = redact(out.Simkl.ClientSecret)
 	out.OpenSubtitles = redactOpenSubtitles(out.OpenSubtitles)
 	out.LLM = redactLLM(out.LLM)
 	out.Database = out.Database.Redacted()
@@ -206,6 +207,7 @@ func UnredactConfig(next, prev config.Config) (config.Config, []FieldError) {
 	out.Plex.Token = errs.restore("plex.token", next.Plex.Token, prev.Plex.Token, true)
 	out.Catalog.TMDBKey = errs.restore("catalog.tmdbKey", next.Catalog.TMDBKey, prev.Catalog.TMDBKey, true)
 	out.Trakt = errs.unredactTrakt(next.Trakt, prev.Trakt)
+	out.Simkl.ClientSecret = errs.restore("simkl.clientSecret", next.Simkl.ClientSecret, prev.Simkl.ClientSecret, strings.TrimSpace(next.Simkl.ClientID) == strings.TrimSpace(prev.Simkl.ClientID))
 	out.OpenSubtitles = errs.unredactOpenSubtitles(next.OpenSubtitles, prev.OpenSubtitles)
 	out.LLM = errs.unredactLLM(next.LLM, prev.LLM)
 	if next.Usenet.Providers != nil {

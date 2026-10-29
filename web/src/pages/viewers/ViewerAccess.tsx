@@ -12,6 +12,7 @@ import {
   type UserLimits,
 } from "../../components/UserLimits";
 import { viewerName } from "../../components/pickers";
+import { t } from "../../i18n";
 import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
@@ -54,7 +55,7 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
       const preset = await apiFetch<SafetyPolicy>(`/safety/policies/presets/kids?age=${age}`);
       rules.setDraft(normalizePolicy(preset));
     } catch (e) {
-      toast.error("Couldn't load the preset", { description: errorMessage(e) });
+      toast.error(t("Couldn't load the preset"), { description: errorMessage(e) });
     } finally {
       setPresetBusy(false);
     }
@@ -76,8 +77,8 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
         });
         policy.setData(rules.draft);
       }
-      toast.success("Preferences saved", {
-        description: `${name}'s Ether preferences are up to date.`,
+      toast.success(t("Preferences saved"), {
+        description: t("{name}'s Ether preferences are up to date.", { name }),
       });
     } catch (e) {
       setError(e);
@@ -95,14 +96,14 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
       ) : !users.data ? (
         <LoadingRows rows={2} />
       ) : !user || !l ? (
-        <SettingsSection title="Streams and ratings">
+        <SettingsSection title={t("Streams and ratings")}>
           <p className="py-3 text-sm text-fg-muted">
-            This viewer has no user record on the server yet, so there are no limits to set.
+            {t("This viewer has no user record on the server yet, so there are no limits to set.")}
           </p>
         </SettingsSection>
       ) : (
         <>
-          <SettingsSection title="Streams and ratings">
+          <SettingsSection title={t("Streams and ratings")}>
             <UserLimitRows
               value={l}
               onChange={(next) => patchLimits(next)}
@@ -110,22 +111,24 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
               defaultStreamLimit={config.data?.server.defaultStreamLimit}
               streamLimitHint={
                 <Link to="/server" className="font-medium text-primary hover:underline">
-                  Change the server default
+                  {t("Change the server default")}
                 </Link>
               }
             />
           </SettingsSection>
           <SettingsSection
-            title="Account languages"
-            description="Preferred languages reported to Plex apps for this account. Track selection rules live on the Audio & subtitles tab."
+            title={t("Account languages")}
+            description={t(
+              "Preferred languages reported to Plex apps for this account. Track selection rules live on the Audio & subtitles tab.",
+            )}
           >
             <SettingsRow
-              title="Subtitle languages"
-              description="Language codes in preference order, e.g. en, fr."
+              title={t("Subtitle languages")}
+              description={t("Language codes in preference order, e.g. en, fr.")}
               control={
                 <div className="w-56">
                   <ListText
-                    ariaLabel="Account subtitle languages"
+                    ariaLabel={t("Account subtitle languages")}
                     placeholder="en, fr"
                     value={l.subtitleLanguages}
                     onChange={(v) => patchLimits({ subtitleLanguages: v })}
@@ -134,12 +137,12 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
               }
             />
             <SettingsRow
-              title="Audio languages"
-              description="Preferred audio tracks in order."
+              title={t("Audio languages")}
+              description={t("Preferred audio tracks in order.")}
               control={
                 <div className="w-56">
                   <ListText
-                    ariaLabel="Account audio languages"
+                    ariaLabel={t("Account audio languages")}
                     placeholder="en"
                     value={l.audioLanguages}
                     onChange={(v) => patchLimits({ audioLanguages: v })}
@@ -158,12 +161,16 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
       ) : (
         <>
           <SettingsSection
-            title="Parental controls"
-            description="Adult titles are always excluded. Unrated titles are blocked when a rating limit applies. Where this and the rating cap above differ, the stricter one wins."
+            title={t("Parental controls")}
+            description={t(
+              "Adult titles are always excluded. Unrated titles are blocked when a rating limit applies. Where this and the rating cap above differ, the stricter one wins.",
+            )}
           >
             <SettingsRow
-              title="Start from a preset"
-              description="Replaces the parental controls, playback restrictions and allowed times below."
+              title={t("Start from a preset")}
+              description={t(
+                "Replaces the parental controls, playback restrictions and allowed times below.",
+              )}
               control={
                 <div className="flex flex-wrap gap-2">
                   {KID_PRESETS.map((preset) => (
@@ -181,11 +188,11 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
               }
             />
             <SettingsRow
-              title="Maximum content rating"
+              title={t("Maximum content rating")}
               control={
                 <div className="w-44">
                   <Select
-                    aria-label="Maximum content rating"
+                    aria-label={t("Maximum content rating")}
                     value={p.maxContentRating}
                     onChange={(e) => patchPolicy({ maxContentRating: e.target.value })}
                   >
@@ -199,12 +206,12 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
               }
             />
             <SettingsRow
-              title="Blocked genres"
-              description="Comma-separated, e.g. Horror, Thriller."
+              title={t("Blocked genres")}
+              description={t("Comma-separated, e.g. Horror, Thriller.")}
               control={
                 <div className="w-64">
                   <ListText
-                    ariaLabel="Blocked genres"
+                    ariaLabel={t("Blocked genres")}
                     value={p.blockedGenres}
                     onChange={(v) => patchPolicy({ blockedGenres: v })}
                   />
@@ -212,12 +219,12 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
               }
             />
             <SettingsRow
-              title="Blocked keywords"
-              description="Comma-separated TMDB keywords."
+              title={t("Blocked keywords")}
+              description={t("Comma-separated TMDB keywords.")}
               control={
                 <div className="w-64">
                   <ListText
-                    ariaLabel="Blocked keywords"
+                    ariaLabel={t("Blocked keywords")}
                     value={p.blockedKeywords}
                     onChange={(v) => patchPolicy({ blockedKeywords: v })}
                   />
@@ -226,24 +233,24 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
             />
           </SettingsSection>
 
-          <SettingsSection title="Playback restrictions">
+          <SettingsSection title={t("Playback restrictions")}>
             <SettingsRow
-              title="Local network only"
-              description="Block playback from outside your home network."
+              title={t("Local network only")}
+              description={t("Block playback from outside your home network.")}
               control={
                 <Switch
-                  aria-label="Local network only"
+                  aria-label={t("Local network only")}
                   checked={p.remoteDisabled}
                   onChange={(e) => patchPolicy({ remoteDisabled: e.target.checked })}
                 />
               }
             />
             <SettingsRow
-              title="Maximum bitrate"
-              description="In kbps. 0 uses the server default."
+              title={t("Maximum bitrate")}
+              description={t("In kbps. 0 uses the server default.")}
               control={
                 <NumberInput
-                  aria-label="Maximum bitrate"
+                  aria-label={t("Maximum bitrate")}
                   className="w-28"
                   min={0}
                   value={p.maxBitrateKbps}
@@ -252,11 +259,13 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
               }
             />
             <SettingsRow
-              title="Concurrent streams"
-              description="0 adds no extra limit. Where this and the stream limit above differ, the lower one wins."
+              title={t("Concurrent streams")}
+              description={t(
+                "0 adds no extra limit. Where this and the stream limit above differ, the lower one wins.",
+              )}
               control={
                 <NumberInput
-                  aria-label="Concurrent streams"
+                  aria-label={t("Concurrent streams")}
                   className="w-24"
                   min={0}
                   value={p.streamLimit}
@@ -267,23 +276,25 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
           </SettingsSection>
 
           <SettingsSection
-            title="Allowed times"
-            description="Hours when this viewer can start playback. Leave every hour clear to allow any time."
+            title={t("Allowed times")}
+            description={t(
+              "Hours when this viewer can start playback. Leave every hour clear to allow any time.",
+            )}
           >
             <SettingsRow
-              title="Timezone"
+              title={t("Timezone")}
               control={
                 <Input
-                  aria-label="Playback timezone"
+                  aria-label={t("Playback timezone")}
                   className="w-56"
                   value={p.timezone}
                   onChange={(e) => patchPolicy({ timezone: e.target.value })}
                 />
               }
             />
-            <SettingsRow stacked title="Allowed hours">
+            <SettingsRow stacked title={t("Allowed hours")}>
               <ChipGroup
-                ariaLabel="Allowed hours"
+                ariaLabel={t("Allowed hours")}
                 size="sm"
                 options={HOURS}
                 value={p.allowedHours}

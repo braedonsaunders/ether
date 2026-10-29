@@ -1,3 +1,4 @@
+import { localized, t } from "../../i18n";
 import { Button } from "@braedonsaunders/appkit-ui";
 import { Download } from "lucide-react";
 import { useState } from "react";
@@ -11,13 +12,16 @@ import { UsenetProviders } from "./Usenet";
 import { Availability } from "./Availability";
 import { SourceUsage } from "./Usage";
 
-const TABS = [
-  { key: "usenet", label: "Usenet providers" },
-  { key: "indexers", label: "Indexers" },
-  { key: "debrid", label: "Debrid" },
-  { key: "availability", label: "Availability" },
-  { key: "usage", label: "Usage & costs" },
-] as const;
+const TABS = localized(
+  () =>
+    [
+      { key: "usenet", label: t("Usenet providers") },
+      { key: "indexers", label: t("Indexers") },
+      { key: "debrid", label: t("Debrid") },
+      { key: "availability", label: t("Availability") },
+      { key: "usage", label: t("Usage & costs") },
+    ] as const,
+);
 
 /** Where releases come from: Usenet providers, indexers, debrid accounts, and what they cost. */
 export default function Sources() {
@@ -26,8 +30,8 @@ export default function Sources() {
   const [version, setVersion] = useState(0);
   return (
     <DomainPage
-      title="Sources"
-      description="The Usenet providers, indexers and debrid accounts Ether streams from."
+      title={t("Sources")}
+      description={t("The Usenet providers, indexers and debrid accounts Ether streams from.")}
       base="/sources"
       tabs={TABS}
       active={tab}
@@ -35,7 +39,7 @@ export default function Sources() {
       actions={
         tab === "indexers" ? (
           <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
-            <Download size={14} /> Import from Prowlarr
+            <Download size={14} /> {t("Import from Prowlarr")}
           </Button>
         ) : null
       }
@@ -48,8 +52,10 @@ export default function Sources() {
       <Drawer
         open={importing}
         onClose={() => setImporting(false)}
-        title="Import from Prowlarr"
-        description="Optional: add the indexers a Prowlarr instance already manages, searched through Prowlarr's Newznab and Torznab endpoints."
+        title={t("Import from Prowlarr")}
+        description={t(
+          "Optional: add the indexers a Prowlarr instance already manages, searched through Prowlarr's Newznab and Torznab endpoints.",
+        )}
         size="lg"
       >
         <ProwlarrImport onImported={() => setVersion((v) => v + 1)} />

@@ -2,6 +2,8 @@ import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsau
 import { ChevronRight, KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EtherLogo } from "../components/brand";
+import { t, tx } from "../i18n";
+import { LanguagePicker } from "../i18n/react";
 import { api, ApiError, errorMessage, getToken, setToken } from "../lib/api";
 import type { Bootstrap } from "../lib/types";
 
@@ -68,14 +70,16 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
           return;
         }
       }
-      if (!cancelled.current) setError(new Error("Sign-in timed out. Try again."));
+      if (!cancelled.current) setError(new Error(t("Sign-in timed out. Try again.")));
     } catch (err) {
       if (cancelled.current) return;
       popup?.close();
       setError(
         err instanceof ApiError && err.code === "not_owner"
           ? new Error(
-              "That Plex account doesn't own this server. Sign in with the account that set Ether up.",
+              t(
+                "That Plex account doesn't own this server. Sign in with the account that set Ether up.",
+              ),
             )
           : err,
       );
@@ -90,12 +94,17 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
   };
 
   return (
-    <main className="grid min-h-screen place-items-center bg-bg-subtle p-4">
+    <main className="relative grid min-h-screen place-items-center bg-bg-subtle p-4">
+      <div className="absolute right-4 top-4">
+        <LanguagePicker side="bottom" className="h-8 px-2 text-xs" />
+      </div>
       <Card className="reveal w-full max-w-sm p-7 shadow-lg">
         <div className="mb-6 flex flex-col items-center text-center">
           <EtherLogo className="w-48" />
           <h1 className="sr-only">{boot.serverName || "Ether"}</h1>
-          <p className="mt-4 text-sm text-fg-muted">Sign in to the owner account.</p>
+          <p className="mt-4 text-sm text-fg-muted">
+            Sign in to the owner account.
+          </p>
         </div>
         {error ? (
           <Alert variant="destructive" className="mb-4" role="alert">
@@ -109,20 +118,22 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
           onClick={() => void signIn()}
           disabled={busy}
         >
-          {busy ? "Waiting for Plex…" : "Sign in with Plex"}
+          {busy ? t("Waiting for Plex…") : t("Sign in with Plex")}
         </Button>
         {pending ? (
           <p className="mt-3 text-center text-xs text-fg-muted">
-            Finish signing in in the Plex window. No window?{" "}
-            <a
-              className="font-medium text-primary underline-offset-4 hover:underline"
-              href={pending.authUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open the Plex sign-in page
-            </a>
-            .
+            {tx("Finish signing in in the Plex window. No window? {link}.", {
+              link: (
+                <a
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                  href={pending.authUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t("Open the Plex sign-in page")}
+                </a>
+              ),
+            })}
           </p>
         ) : null}
         <form onSubmit={(e) => void localSignIn(e)} className="mt-5 space-y-3">
@@ -185,7 +196,7 @@ function TokenFallback({ onReady }: { onReady: () => void }) {
       setToken("");
       setError(
         err instanceof ApiError && err.status === 401
-          ? new Error("That token was not accepted as the owner token.")
+          ? new Error(t("That token was not accepted as the owner token."))
           : err,
       );
     } finally {
@@ -196,7 +207,7 @@ function TokenFallback({ onReady }: { onReady: () => void }) {
     <details className="group mt-5 rounded-lg border border-border-subtle px-3 py-2">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-fg-muted hover:text-fg">
         <ChevronRight size={14} className="transition-transform group-open:rotate-90" aria-hidden />
-        Use a Plex token instead
+        {t("Use a Plex token instead")}
       </summary>
       <form onSubmit={submit} className="mt-3 space-y-3">
         {error ? (
@@ -206,7 +217,7 @@ function TokenFallback({ onReady }: { onReady: () => void }) {
         ) : null}
         <div className="space-y-1.5">
           <Label htmlFor="owner-token" className="text-xs">
-            Owner token (X-Plex-Token)
+            {t("Owner token (X-Plex-Token)")}
           </Label>
           <Input
             id="owner-token"
@@ -223,7 +234,7 @@ function TokenFallback({ onReady }: { onReady: () => void }) {
           className="w-full"
           disabled={checking || !value.trim()}
         >
-          <KeyRound size={14} /> {checking ? "Checking…" : "Unlock"}
+          <KeyRound size={14} /> {checking ? t("Checking…") : t("Unlock")}
         </Button>
       </form>
     </details>

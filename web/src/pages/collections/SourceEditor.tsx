@@ -6,6 +6,8 @@ import { Segmented } from "../../components/fields";
 import { LookupPicker, TitleSearch } from "../../components/pickers";
 import { titleSubtitle } from "../../components/Poster";
 import { DragHandle, SortableList, arrayMove } from "../../components/Sortable";
+import { t, tx } from "../../i18n";
+import { searchSelectLabels } from "../../i18n/appkit-labels";
 import type { Source, TitleCard } from "../../lib/contract";
 import {
   STEVENLU_LISTS,
@@ -32,7 +34,8 @@ export function SourceEditor({
   removable: boolean;
 }) {
   const meta = sourceMeta(source.kind);
-  const label = `Source ${index + 1}`;
+  const n = index + 1;
+  const label = t("Source {n}", { n });
   return (
     <div className="rounded-lg border border-border bg-surface p-3" role="group" aria-label={label}>
       <div className="flex items-start justify-between gap-2">
@@ -51,7 +54,7 @@ export function SourceEditor({
             size="icon"
             className="size-8 shrink-0 text-fg-muted hover:text-danger"
             onClick={onRemove}
-            aria-label={`Remove ${label.toLowerCase()}`}
+            aria-label={t("Remove source {n}", { n })}
           >
             <Trash2 size={15} />
           </Button>
@@ -83,7 +86,7 @@ function SourceBody({
       return (
         <div className="flex flex-wrap items-center gap-2">
           <Segmented
-            ariaLabel={`${label} media`}
+            ariaLabel={t("{label} media", { label })}
             size="sm"
             value={source.mediaType}
             onChange={(m) =>
@@ -96,8 +99,8 @@ function SourceBody({
               })
             }
             options={[
-              { value: "movie", label: "Movies" },
-              { value: "show", label: "TV" },
+              { value: "movie", label: t("Movies") },
+              { value: "show", label: t("TV") },
             ]}
           />
           <div className="min-w-48 flex-1">
@@ -105,8 +108,9 @@ function SourceBody({
               value={source.list}
               onChange={(v) => v && onChange({ ...source, list: v as typeof source.list })}
               options={lists.map((l) => ({ value: l.value, label: l.label }))}
-              ariaLabel={`${label} chart`}
+              ariaLabel={t("{label} chart", { label })}
               searchable={false}
+              {...searchSelectLabels()}
             />
           </div>
         </div>
@@ -128,20 +132,20 @@ function SourceBody({
             multiple={false}
             region={source.kind === "watchProvider" ? source.region || region : region}
             value={picked}
-            ariaLabel={`${label} search`}
+            ariaLabel={t("{label} search", { label })}
             onChange={(p) =>
               onChange({ ...source, id: p[0]?.id ?? 0, label: p[0]?.name } as Source)
             }
           />
           {source.kind === "watchProvider" ? (
             <label className="flex items-center gap-2 text-xs text-fg-muted">
-              Region
+              {t("Region")}
               <Input
                 value={source.region ?? ""}
                 placeholder={region}
                 maxLength={2}
                 className="h-8 w-16 uppercase"
-                aria-label={`${label} region`}
+                aria-label={t("{label} region", { label })}
                 onChange={(e) =>
                   onChange({ ...source, region: e.currentTarget.value.toUpperCase() })
                 }
@@ -168,12 +172,14 @@ function SourceBody({
             type="url"
             value={source.url}
             placeholder={placeholder}
-            aria-label={`${label} URL`}
+            aria-label={t("{label} URL", { label })}
             aria-invalid={bad || undefined}
             onChange={(e) => onChange({ ...source, url: e.currentTarget.value })}
           />
           {bad ? (
-            <p className="text-xs text-danger">Enter a full https:// link to a public list.</p>
+            <p className="text-xs text-danger">
+              {t("Enter a full https:// link to a public list.")}
+            </p>
           ) : null}
         </div>
       );
@@ -184,8 +190,9 @@ function SourceBody({
           value={source.list}
           onChange={(v) => v && onChange({ ...source, list: v as typeof source.list })}
           options={STEVENLU_LISTS}
-          ariaLabel={`${label} list`}
+          ariaLabel={t("{label} list", { label })}
           searchable={false}
+          {...searchSelectLabels()}
         />
       );
     case "tmdbDiscover":
@@ -222,7 +229,7 @@ function DiscoverParams({
               {key}={value}
               <button
                 type="button"
-                aria-label={`Remove ${key}`}
+                aria-label={t("Remove {key}", { key })}
                 onClick={() => {
                   const n = { ...params };
                   delete n[key];
@@ -237,8 +244,10 @@ function DiscoverParams({
         </div>
       ) : (
         <p className="text-xs text-fg-muted">
-          Add TMDB discover parameters, e.g. <code>with_genres=27</code> or{" "}
-          <code>vote_average.gte=7</code>.
+          {tx("Add TMDB discover parameters, e.g. {first} or {second}.", {
+            first: <code>with_genres=27</code>,
+            second: <code>vote_average.gte=7</code>,
+          })}
         </p>
       )}
       <form
@@ -255,15 +264,15 @@ function DiscoverParams({
         <Input
           value={k}
           onChange={(e) => setK(e.currentTarget.value)}
-          placeholder="parameter"
-          aria-label={`${label} parameter name`}
+          placeholder={t("parameter")}
+          aria-label={t("{label} parameter name", { label })}
           className="font-mono text-xs"
         />
         <Input
           value={v}
           onChange={(e) => setV(e.currentTarget.value)}
-          placeholder="value"
-          aria-label={`${label} parameter value`}
+          placeholder={t("value")}
+          aria-label={t("{label} parameter value", { label })}
           className="font-mono text-xs"
         />
         <Button
@@ -271,7 +280,7 @@ function DiscoverParams({
           variant="outline"
           size="icon"
           className="shrink-0"
-          aria-label="Add parameter"
+          aria-label={t("Add parameter")}
           disabled={!k.trim() || !v.trim()}
         >
           <Plus size={15} />
@@ -293,13 +302,13 @@ function HandPicked({ keys, onChange }: { keys: string[]; onChange: (k: string[]
     <div className="space-y-3">
       <TitleSearch
         excludeKeys={new Set(keys)}
-        onPick={(t) => {
-          setKnown((k) => ({ ...k, [t.key]: t }));
-          onChange([...keys, t.key]);
+        onPick={(title) => {
+          setKnown((k) => ({ ...k, [title.key]: title }));
+          onChange([...keys, title.key]);
         }}
       />
       {keys.length === 0 ? (
-        <p className="text-xs text-fg-muted">No titles yet. Search above to add some.</p>
+        <p className="text-xs text-fg-muted">{t("No titles yet. Search above to add some.")}</p>
       ) : (
         <SortableList
           items={keys}
@@ -323,8 +332,9 @@ function HandPicked({ keys, onChange }: { keys: string[]; onChange: (k: string[]
       )}
       {keys.length > 1 ? (
         <p className="text-[11px] text-fg-subtle">
-          Drag the handle or use the arrows to reorder. Sort by “Source order” to keep this order in
-          Plex.
+          {t(
+            "Drag the handle or use the arrows to reorder. Sort by “Source order” to keep this order in Plex.",
+          )}
         </p>
       ) : null}
     </div>
@@ -353,17 +363,17 @@ function PickedRow({
   last: boolean;
 }) {
   const loaded = useTitle(hint ? undefined : keyId);
-  const t = hint ?? loaded;
-  const name = t?.title ?? `Title ${keyId}`;
+  const card = hint ?? loaded;
+  const name = card?.title ?? t("Title {id}", { id: keyId });
   return (
     <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-subtle p-1.5">
-      <DragHandle handle={handle} label={`Reorder ${name}`} />
+      <DragHandle handle={handle} label={t("Reorder {name}", { name })} />
       <span className="w-5 text-right text-xs tabular-nums text-fg-subtle">{index + 1}</span>
-      <Artwork src={t?.poster} alt="" title="" className="h-12 w-8 shrink-0 rounded" />
+      <Artwork src={card?.poster} alt="" title="" className="h-12 w-8 shrink-0 rounded" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm text-fg">{name}</span>
-        {t ? (
-          <span className="block truncate text-xs text-fg-muted">{titleSubtitle(t)}</span>
+        {card ? (
+          <span className="block truncate text-xs text-fg-muted">{titleSubtitle(card)}</span>
         ) : null}
       </span>
       <Button
@@ -373,7 +383,7 @@ function PickedRow({
         className="size-7"
         onClick={onUp}
         disabled={first}
-        aria-label={`Move ${name} up`}
+        aria-label={t("Move {name} up", { name })}
       >
         <ArrowUp size={14} />
       </Button>
@@ -384,7 +394,7 @@ function PickedRow({
         className="size-7"
         onClick={onDown}
         disabled={last}
-        aria-label={`Move ${name} down`}
+        aria-label={t("Move {name} down", { name })}
       >
         <ArrowDown size={14} />
       </Button>
@@ -394,7 +404,7 @@ function PickedRow({
         size="icon"
         className="size-7 hover:text-danger"
         onClick={onRemove}
-        aria-label={`Remove ${name}`}
+        aria-label={t("Remove {name}", { name })}
       >
         <X size={14} />
       </Button>

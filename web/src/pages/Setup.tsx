@@ -25,19 +25,20 @@ import {
   useLLMProviders,
   withProvider,
 } from "../components/llm";
+import { localized, t, tx } from "../i18n";
 import { api, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
 import { DEBRID_KINDS } from "./sources/Debrid";
 import { addonUrlHasDebridKey, isStremio, normalizeAddonUrl } from "./sources/Indexers";
 
-const STEPS = [
-  { title: "Plex", heading: "Sign in to plex.tv and claim this server" },
-  { title: "Sources", heading: "Where Ether streams from" },
-  { title: "Indexers", heading: "Indexers and addons" },
-  { title: "Cache", heading: "Cache folder and disk budget" },
-  { title: "Catalogue", heading: "Catalogue and extras" },
-];
+const STEPS = localized(() => [
+  { title: "Plex", heading: t("Sign in to plex.tv and claim this server") },
+  { title: t("Sources"), heading: t("Where Ether streams from") },
+  { title: t("Indexers"), heading: t("Indexers and addons") },
+  { title: t("Cache"), heading: t("Cache folder and disk budget") },
+  { title: t("Catalogue"), heading: t("Catalogue and extras") },
+]);
 const GIB = 1024 ** 3;
 
 function blankProvider(): UsenetProvider {
@@ -61,18 +62,18 @@ function blankDebrid(): DebridProvider {
 
 /** How an indexer row is searched; maps onto Indexer.kind and protocol. */
 type IndexerType = "newznab" | "torznab" | "stremio";
-const INDEXER_TYPES: { value: IndexerType; label: string }[] = [
-  { value: "stremio", label: "Stremio addon (torrents)" },
-  { value: "torznab", label: "Torznab (torrents)" },
-  { value: "newznab", label: "Newznab (Usenet)" },
-];
+const INDEXER_TYPES: { value: IndexerType; label: string }[] = localized(() => [
+  { value: "stremio", label: t("Stremio addon (torrents)") },
+  { value: "torznab", label: t("Torznab (torrents)") },
+  { value: "newznab", label: t("Newznab (Usenet)") },
+]);
 function indexerType(ix: Indexer): IndexerType {
   if (isStremio(ix)) return "stremio";
   return ix.protocol === "torrent" ? "torznab" : "newznab";
 }
-function withIndexerType(ix: Indexer, t: IndexerType): Indexer {
-  if (t === "stremio") return { ...ix, kind: "stremio", protocol: "torrent", apiKey: "" };
-  return { ...ix, kind: "", protocol: t === "torznab" ? "torrent" : "usenet" };
+function withIndexerType(ix: Indexer, type: IndexerType): Indexer {
+  if (type === "stremio") return { ...ix, kind: "stremio", protocol: "torrent", apiKey: "" };
+  return { ...ix, kind: "", protocol: type === "torznab" ? "torrent" : "usenet" };
 }
 
 function blankIndexer(type: IndexerType = "newznab"): Indexer {
@@ -276,10 +277,10 @@ export default function Setup() {
       try {
         await api.claim();
         if (!current()) return;
-        setClaimMsg("Server claimed to your Plex account.");
+        setClaimMsg(t("Server claimed to your Plex account."));
       } catch (e) {
         if (!current()) return;
-        setClaimMsg(`Signed in, but claiming failed: ${(e as Error).message}`);
+        setClaimMsg(t("Signed in, but claiming failed: {error}", { error: (e as Error).message }));
       }
       // PIN approval and claiming update the server, not the wizard's draft.
       // Refresh only Plex so the next full-config save retains those credentials.
@@ -319,7 +320,7 @@ export default function Setup() {
           pollRef.current = null;
           setPin(null);
           setPinDone(true);
-          setClaimMsg("Signed in. Claiming this server…");
+          setClaimMsg(t("Signed in. Claiming this server…"));
           await claimServer();
         } catch {
           /* keep polling */
@@ -354,7 +355,7 @@ export default function Setup() {
         ...m,
         [key]: r.ok
           ? { status: "ok", durationMs: r.durationMs }
-          : { status: "fail", message: r.error ?? "failed" },
+          : { status: "fail", message: r.error ?? t("failed") },
       }));
     } catch (e) {
       setMap((m) => ({ ...m, [key]: { status: "fail", message: (e as Error).message } }));
@@ -399,7 +400,7 @@ export default function Setup() {
   if (!cfg)
     return (
       <div className="grid flex-1 place-items-center">
-        <Spinner size={22} label="Loading configuration" />
+        <Spinner size={22} label={t("Loading configuration")} />
       </div>
     );
 
@@ -407,18 +408,24 @@ export default function Setup() {
     return (
       <div className="mx-auto w-full max-w-2xl space-y-4 p-6">
         <EtherMark size={40} />
-        <h1 className="text-xl font-semibold">Restart Ether to use your cache folder</h1>
-        <p>Setup is saved. Restart Ether, or restart its Docker container, before playing media.</p>
-        <p className="text-sm text-fg-muted">
-          Your selected media cache folder is <code>{cfg.cache.dir}</code>. The running server keeps
-          using its previous folder until it restarts. Existing cached media stays in its original
-          folder; it is not moved automatically.
+        <h1 className="text-xl font-semibold">{t("Restart Ether to use your cache folder")}</h1>
+        <p>
+          {t(
+            "Setup is saved. Restart Ether, or restart its Docker container, before playing media.",
+          )}
         </p>
         <p className="text-sm text-fg-muted">
-          Posters and other artwork remain in the configuration folder's cache. They are separate
-          from the media cache.
+          {tx(
+            "Your selected media cache folder is {folder}. The running server keeps using its previous folder until it restarts. Existing cached media stays in its original folder; it is not moved automatically.",
+            { folder: <code>{cfg.cache.dir}</code> },
+          )}
         </p>
-        <Button onClick={() => navigate("/cache")}>Open cache settings</Button>
+        <p className="text-sm text-fg-muted">
+          {t(
+            "Posters and other artwork remain in the configuration folder's cache. They are separate from the media cache.",
+          )}
+        </p>
+        <Button onClick={() => navigate("/cache")}>{t("Open cache settings")}</Button>
       </div>
     );
 
@@ -530,15 +537,15 @@ export default function Setup() {
           <div className="flex items-center gap-3">
             <EtherMark size={32} />
             <div>
-              <h1 className="text-lg font-semibold text-fg">Set up Ether</h1>
+              <h1 className="text-lg font-semibold text-fg">{t("Set up Ether")}</h1>
               <p className="text-sm text-fg-muted">
                 Complete the steps below to set up your household.
               </p>
             </div>
           </div>
-          <ol className="mt-4 flex gap-1.5" aria-label="Setup progress">
+          <ol className="mt-4 flex gap-1.5" aria-label={t("Setup progress")}>
             {STEPS.map((s, i) => (
-              <li key={s.title} className="flex-1">
+              <li key={i} className="flex-1">
                 <button
                   type="button"
                   disabled={i > step}
@@ -572,7 +579,7 @@ export default function Setup() {
       footer={
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="ghost" disabled={step === 0 || saving} onClick={() => setStep(step - 1)}>
-            Back
+            {t("Back")}
           </Button>
           {/* Plex cannot be skipped: after setup only its owner can sign in. */}
           {step !== 0 && step !== 3 ? (
@@ -581,17 +588,21 @@ export default function Setup() {
                 checked={Boolean(skipped[step])}
                 onChange={(e) => setSkipped({ ...skipped, [step]: e.currentTarget.checked })}
               />
-              Skip test for this step (advanced)
+              {t("Skip test for this step (advanced)")}
             </label>
           ) : null}
           <span className="flex-1" />
           {!advanceOk && step !== 3 ? (
             <span className="hidden text-xs text-fg-muted sm:inline">
-              Complete and test this step to continue.
+              {t("Complete and test this step to continue.")}
             </span>
           ) : null}
           <Button disabled={!advanceOk || saving} onClick={() => void next()}>
-            {saving ? "Saving…" : step === STEPS.length - 1 ? "Finish setup" : "Save and continue"}
+            {saving
+              ? t("Saving…")
+              : step === STEPS.length - 1
+                ? t("Finish setup")
+                : t("Save and continue")}
           </Button>
         </div>
       }
@@ -599,10 +610,13 @@ export default function Setup() {
       {step === 0 ? (
         <Alert>
           <AlertDescription>
-            Adding a node to an existing cluster?{" "}
-            <Button variant="link" onClick={() => navigate("/cluster")}>
-              Join a cluster instead
-            </Button>
+            {tx("Adding a node to an existing cluster? {join}", {
+              join: (
+                <Button variant="link" onClick={() => navigate("/cluster")}>
+                  {t("Join a cluster instead")}
+                </Button>
+              ),
+            })}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -654,21 +668,26 @@ export default function Setup() {
       {step === 0 && frontends.plex ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
-            Ether registers with your Plex account like a fresh Plex Media Server, so the official
-            Plex apps can find it.
+            {t(
+              "Ether registers with your Plex account like a fresh Plex Media Server, so the official Plex apps can find it.",
+            )}
           </p>
           {plexSigned ? (
             <Alert variant="success">
               <AlertDescription>
-                Signed in{cfg.plex.ownerUsername ? ` as ${cfg.plex.ownerUsername}` : ""}. {claimMsg}
+                {cfg.plex.ownerUsername
+                  ? t("Signed in as {user}.", { user: cfg.plex.ownerUsername })
+                  : t("Signed in.")}{" "}
+                {claimMsg}
               </AlertDescription>
             </Alert>
           ) : null}
           {pin ? (
             <div className="space-y-3 rounded-xl border border-border bg-surface p-4">
               <p className="text-sm text-fg">
-                A plex.tv window opened. Sign in there and allow Ether; this page continues on its
-                own.
+                {t(
+                  "A plex.tv window opened. Sign in there and allow Ether; this page continues on its own.",
+                )}
               </p>
               <div className="flex flex-wrap items-center gap-3 text-sm text-fg-muted">
                 <Button
@@ -676,23 +695,24 @@ export default function Setup() {
                   size="sm"
                   onClick={() => window.open(pin.authUrl, "_blank", "noopener,noreferrer")}
                 >
-                  Open plex.tv sign-in <ExternalLink size={13} />
+                  {t("Open plex.tv sign-in")} <ExternalLink size={13} />
                 </Button>
                 <span className="inline-flex items-center gap-2">
-                  Waiting for approval <Spinner size={13} label="Waiting" />
+                  {t("Waiting for approval")} <Spinner size={13} label={t("Waiting")} />
                 </span>
               </div>
               {/* Short PINs can also be typed at plex.tv/link; strong ones cannot. */}
               {pin.code.length <= 8 ? (
                 <p className="text-sm text-fg-muted">
-                  Or enter <span className="font-mono font-semibold text-fg">{pin.code}</span> at
-                  plex.tv/link.
+                  {tx("Or enter {code} at plex.tv/link.", {
+                    code: <span className="font-mono font-semibold text-fg">{pin.code}</span>,
+                  })}
                 </p>
               ) : null}
             </div>
           ) : !plexSigned ? (
             <Button disabled={saving} onClick={() => void startPin()}>
-              Sign in to plex.tv
+              {t("Sign in to plex.tv")}
             </Button>
           ) : null}
           {claimMsg && !cfg.plex.claimed ? (
@@ -700,7 +720,7 @@ export default function Setup() {
           ) : null}
           {plexSigned && !cfg.plex.claimed ? (
             <Button variant="outline" disabled={saving} onClick={() => void claimServer()}>
-              Claim server
+              {t("Claim server")}
             </Button>
           ) : null}
         </div>
@@ -709,18 +729,20 @@ export default function Setup() {
       {step === 1 ? (
         <div className="space-y-6">
           <p className="text-sm text-fg-muted">
-            Add a debrid account, a Usenet provider, or both, and test each one. Ether streams from
-            your own accounts; it ships none.
+            {t(
+              "Add a debrid account, a Usenet provider, or both, and test each one. Ether streams from your own accounts; it ships none.",
+            )}
           </p>
           {debridSupported ? (
             <section className="space-y-4" aria-labelledby="setup-debrid">
               <div>
                 <h3 id="setup-debrid" className="text-sm font-semibold text-fg">
-                  Debrid accounts
+                  {t("Debrid accounts")}
                 </h3>
                 <p className="text-sm text-fg-muted">
-                  Torrents your service already holds stream over HTTPS. Use your account&apos;s API
-                  token.
+                  {t(
+                    "Torrents your service already holds stream over HTTPS. Use your account's API token.",
+                  )}
                 </p>
               </div>
               {debrid.map((d, i) => (
@@ -732,17 +754,22 @@ export default function Setup() {
                     {DEBRID_KINDS.find((k) => k.value === d.kind)?.label ?? d.kind}
                   </legend>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Service">
+                    <Field label={t("Service")}>
                       <SearchSelect
-                        aria-label="Debrid service"
+                        aria-label={t("Debrid service")}
+                        placeholder={t("Select…")}
+                        searchPlaceholder={t("Search…")}
+                        noMatchesLabel={t("No matches")}
+                        selectLabel={t("Select")}
+                        closeLabel={t("Close")}
                         value={d.kind}
                         options={DEBRID_KINDS}
                         onChange={(v) => patchDebrid(i, { kind: v as DebridProvider["kind"] })}
                       />
                     </Field>
-                    <Field label="API token">
+                    <Field label={t("API token")}>
                       <SecretInput
-                        ariaLabel="API token"
+                        ariaLabel={t("API token")}
                         value={d.apiKey}
                         onChange={(v) => patchDebrid(i, { apiKey: v })}
                       />
@@ -754,7 +781,7 @@ export default function Setup() {
                         checked={d.enabled}
                         onChange={(e) => patchDebrid(i, { enabled: e.currentTarget.checked })}
                       />{" "}
-                      Enabled
+                      {t("Enabled")}
                     </label>
                     <span className="flex items-center gap-2">
                       <TestButton
@@ -766,71 +793,73 @@ export default function Setup() {
                         size="sm"
                         onClick={() => setDebrid(debrid.filter((_, j) => j !== i))}
                       >
-                        <Trash2 size={14} /> Remove
+                        <Trash2 size={14} /> {t("Remove")}
                       </Button>
                     </span>
                   </div>
                 </fieldset>
               ))}
               <Button variant="outline" onClick={() => setDebrid([...debrid, blankDebrid()])}>
-                <Plus size={15} /> Add debrid account
+                <Plus size={15} /> {t("Add debrid account")}
               </Button>
             </section>
           ) : null}
           <section className="space-y-4" aria-labelledby="setup-usenet">
             <div>
               <h3 id="setup-usenet" className="text-sm font-semibold text-fg">
-                Usenet providers
+                {t("Usenet providers")}
               </h3>
-              <p className="text-sm text-fg-muted">Block accounts can be marked as backfill.</p>
+              <p className="text-sm text-fg-muted">
+                {t("Block accounts can be marked as backfill.")}
+              </p>
             </div>
             {providers.map((p, i) => (
               <fieldset key={p.id || i} className="rounded-xl border border-border bg-surface p-4">
                 <legend className="px-1 text-sm font-medium text-fg">
-                  {p.name || `Provider ${i + 1}`}
+                  {p.name || t("Provider {number}", { number: i + 1 })}
                 </legend>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Name">
+                  <Field label={t("Name")}>
                     <Input
                       value={p.name}
                       onChange={(e) => patchProvider(i, { name: e.currentTarget.value })}
                     />
                   </Field>
-                  <Field label="Host">
+                  <Field label={t("Host")}>
                     <Input
                       value={p.host}
                       placeholder="news.example.com"
                       onChange={(e) => patchProvider(i, { host: e.currentTarget.value })}
                     />
                   </Field>
-                  <Field label="Port">
+                  <Field label={t("Port")}>
                     <NumberInput
-                      aria-label="Port"
+                      aria-label={t("Port")}
                       value={p.port}
                       min={1}
                       max={65535}
                       onChange={(n) => patchProvider(i, { port: n })}
                     />
                   </Field>
-                  <Field label="Connections">
+                  <Field label={t("Connections")}>
                     <NumberInput
-                      aria-label="Connections"
+                      aria-label={t("Connections")}
                       value={p.connections}
                       min={0}
                       max={500}
                       onChange={(n) => patchProvider(i, { connections: n })}
                     />
                   </Field>
-                  <Field label="Username">
+                  <Field label={t("Username")}>
                     <Input
                       value={p.username}
                       autoComplete="username"
                       onChange={(e) => patchProvider(i, { username: e.currentTarget.value })}
                     />
                   </Field>
-                  <Field label="Password">
+                  <Field label={t("Password")}>
                     <SecretInput
-                      ariaLabel="Password"
+                      ariaLabel={t("Password")}
                       value={p.password}
                       onChange={(v) => patchProvider(i, { password: v })}
                     />
@@ -849,14 +878,14 @@ export default function Setup() {
                       checked={p.backfill}
                       onChange={(e) => patchProvider(i, { backfill: e.currentTarget.checked })}
                     />{" "}
-                    Backfill only
+                    {t("Backfill only")}
                   </label>
                   <label className="flex items-center gap-2">
                     <Switch
                       checked={p.enabled}
                       onChange={(e) => patchProvider(i, { enabled: e.currentTarget.checked })}
                     />{" "}
-                    Enabled
+                    {t("Enabled")}
                   </label>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -869,13 +898,13 @@ export default function Setup() {
                     size="sm"
                     onClick={() => setProviders(providers.filter((_, j) => j !== i))}
                   >
-                    <Trash2 size={14} /> Remove
+                    <Trash2 size={14} /> {t("Remove")}
                   </Button>
                 </div>
               </fieldset>
             ))}
             <Button variant="outline" onClick={() => setProviders([...providers, blankProvider()])}>
-              <Plus size={15} /> Add provider
+              <Plus size={15} /> {t("Add provider")}
             </Button>
           </section>
         </div>
@@ -885,10 +914,12 @@ export default function Setup() {
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
             {hasDebrid
-              ? "Add at least one torrent source for your debrid account: a Stremio stream addon's install link, or a Torznab URL from Prowlarr, Jackett or Zilean."
-              : "Add at least one indexer."}{" "}
-            {hasUsenet && hasDebrid ? "Add a Newznab indexer for Usenet too. " : ""}
-            Ether handles service limits automatically.
+              ? t(
+                  "Add at least one torrent source for your debrid account: a Stremio stream addon's install link, or a Torznab URL from Prowlarr, Jackett or Zilean.",
+                )
+              : t("Add at least one indexer.")}{" "}
+            {hasUsenet && hasDebrid ? `${t("Add a Newznab indexer for Usenet too.")} ` : ""}
+            {t("Ether handles service limits automatically.")}
           </p>
           {indexers.map((ix, i) => {
             const type = indexerType(ix);
@@ -896,12 +927,17 @@ export default function Setup() {
             return (
               <fieldset key={ix.id || i} className="rounded-xl border border-border bg-surface p-4">
                 <legend className="px-1 text-sm font-medium text-fg">
-                  {ix.name || `Indexer ${i + 1}`}
+                  {ix.name || t("Indexer {number}", { number: i + 1 })}
                 </legend>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Type">
+                  <Field label={t("Type")}>
                     <SearchSelect
-                      aria-label="Indexer type"
+                      aria-label={t("Indexer type")}
+                      placeholder={t("Select…")}
+                      searchPlaceholder={t("Search…")}
+                      noMatchesLabel={t("No matches")}
+                      selectLabel={t("Select")}
+                      closeLabel={t("Close")}
                       value={type}
                       options={INDEXER_TYPES}
                       onChange={(v) => {
@@ -913,7 +949,7 @@ export default function Setup() {
                       }}
                     />
                   </Field>
-                  <Field label="Name">
+                  <Field label={t("Name")}>
                     <Input
                       value={ix.name}
                       onChange={(e) => patchIndexer(i, { name: e.currentTarget.value })}
@@ -921,8 +957,10 @@ export default function Setup() {
                   </Field>
                   {addon ? (
                     <Field
-                      label="Addon link"
-                      hint="The addon's install link (https:// or stremio://). It must expose torrent results, not only direct or proxied playback links. Ether checks your debrid accounts itself, so the link needs no debrid key."
+                      label={t("Addon link")}
+                      hint={t(
+                        "The addon's install link (https:// or stremio://). It must expose torrent results, not only direct or proxied playback links. Ether checks your debrid accounts itself, so the link needs no debrid key.",
+                      )}
                     >
                       <Input
                         value={ix.url}
@@ -932,16 +970,16 @@ export default function Setup() {
                     </Field>
                   ) : (
                     <>
-                      <Field label="Base URL" hint="/api is added automatically.">
+                      <Field label={t("Base URL")} hint={t("/api is added automatically.")}>
                         <Input
                           value={ix.url}
                           placeholder="https://indexer.example.com"
                           onChange={(e) => patchIndexer(i, { url: e.currentTarget.value })}
                         />
                       </Field>
-                      <Field label="API key">
+                      <Field label={t("API key")}>
                         <SecretInput
-                          ariaLabel="API key"
+                          ariaLabel={t("API key")}
                           value={ix.apiKey}
                           onChange={(v) => patchIndexer(i, { apiKey: v })}
                         />
@@ -952,8 +990,9 @@ export default function Setup() {
                 {addon && addonUrlHasDebridKey(ix.url) ? (
                   <Alert variant="warning" role="status" className="mt-3">
                     <AlertDescription>
-                      This link includes a debrid API key. Ether checks your debrid accounts itself,
-                      so the addon doesn&apos;t need it; a key only adds cached hints.
+                      {t(
+                        "This link includes a debrid API key. Ether checks your debrid accounts itself, so the addon doesn't need it; a key only adds cached hints.",
+                      )}
                     </AlertDescription>
                   </Alert>
                 ) : null}
@@ -963,7 +1002,7 @@ export default function Setup() {
                       checked={ix.enabled}
                       onChange={(e) => patchIndexer(i, { enabled: e.currentTarget.checked })}
                     />{" "}
-                    Enabled
+                    {t("Enabled")}
                   </label>
                   <span className="flex items-center gap-2">
                     <TestButton
@@ -977,7 +1016,7 @@ export default function Setup() {
                       size="sm"
                       onClick={() => setIndexers(indexers.filter((_, j) => j !== i))}
                     >
-                      <Trash2 size={14} /> Remove
+                      <Trash2 size={14} /> {t("Remove")}
                     </Button>
                   </span>
                 </div>
@@ -988,7 +1027,7 @@ export default function Setup() {
             variant="outline"
             onClick={() => setIndexers([...indexers, blankIndexer(newIndexerType)])}
           >
-            <Plus size={15} /> Add indexer
+            <Plus size={15} /> {t("Add indexer")}
           </Button>
         </div>
       ) : null}
@@ -996,8 +1035,10 @@ export default function Setup() {
       {step === 3 ? (
         <div className="space-y-5 rounded-xl border border-border bg-surface p-4">
           <Field
-            label="Cache folder"
-            hint="Changing this folder requires restarting Ether after setup. Posters and artwork stay in the configuration folder's cache."
+            label={t("Cache folder")}
+            hint={t(
+              "Changing this folder requires restarting Ether after setup. Posters and artwork stay in the configuration folder's cache.",
+            )}
           >
             <div className="flex gap-2">
               <Input
@@ -1007,18 +1048,21 @@ export default function Setup() {
                 }
               />
               <Button variant="outline" onClick={() => refreshDisk(cfg.cache.dir)}>
-                Check space
+                {t("Check space")}
               </Button>
             </div>
           </Field>
           {disk ? (
             <p className="text-sm text-fg-muted">
-              {formatBytes(disk.freeBytes)} free of {formatBytes(disk.totalBytes)} on this disk.
+              {t("{free} free of {total} on this disk.", {
+                free: formatBytes(disk.freeBytes),
+                total: formatBytes(disk.totalBytes),
+              })}
             </p>
           ) : null}
           <Field
-            label={`Disk budget: ${formatBytes(cfg.cache.budgetBytes)}`}
-            hint="Older segments are evicted when the cache reaches this size."
+            label={t("Disk budget: {size}", { size: formatBytes(cfg.cache.budgetBytes) })}
+            hint={t("Older segments are evicted when the cache reaches this size.")}
           >
             <div className="flex items-center gap-3">
               <Slider
@@ -1026,7 +1070,7 @@ export default function Setup() {
                 max={maxBudget}
                 step={GIB}
                 value={Math.min(cfg.cache.budgetBytes, maxBudget)}
-                aria-label="Disk budget"
+                aria-label={t("Disk budget")}
                 className="flex-1"
                 onChange={(e) =>
                   setCfg({
@@ -1036,7 +1080,7 @@ export default function Setup() {
                 }
               />
               <NumberInput
-                aria-label="Disk budget in GiB"
+                aria-label={t("Disk budget in GiB")}
                 className="w-24"
                 value={Math.round(cfg.cache.budgetBytes / GIB)}
                 min={1}
@@ -1061,7 +1105,7 @@ export default function Setup() {
                   })
                 }
               />{" "}
-              Prefetch the next episode
+              {t("Prefetch the next episode")}
             </label>
             <label className="flex items-center gap-2">
               <Switch
@@ -1073,7 +1117,7 @@ export default function Setup() {
                   })
                 }
               />{" "}
-              Keep in-progress titles warm
+              {t("Keep in-progress titles warm")}
             </label>
           </div>
         </div>
@@ -1087,25 +1131,30 @@ export default function Setup() {
           >
             <div>
               <h3 id="setup-tmdb" className="text-sm font-semibold text-fg">
-                Movie and TV catalogue
+                {t("Movie and TV catalogue")}
               </h3>
               <p className="text-sm text-fg-muted">
-                Ether builds your Plex library from TMDB, so a TMDB API key is required. It is free:{" "}
-                <a
-                  href="https://www.themoviedb.org/settings/api"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                >
-                  get one at themoviedb.org <ExternalLink size={13} />
-                </a>
-                , then paste it here and test it.
+                {tx(
+                  "Ether builds your Plex library from TMDB, so a TMDB API key is required. It is free: {link}, then paste it here and test it.",
+                  {
+                    link: (
+                      <a
+                        href="https://www.themoviedb.org/settings/api"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                      >
+                        {t("get one at themoviedb.org")} <ExternalLink size={13} />
+                      </a>
+                    ),
+                  },
+                )}
               </p>
             </div>
-            <Field label="TMDB API key" hint="Your v3 API key or v4 read access token.">
+            <Field label={t("TMDB API key")} hint={t("Your v3 API key or v4 read access token.")}>
               <div className="space-y-2">
                 <SecretInput
-                  ariaLabel="TMDB API key"
+                  ariaLabel={t("TMDB API key")}
                   value={cfg.catalog.tmdbKey}
                   onChange={(v) => setCfg({ ...cfg, catalog: { ...cfg.catalog, tmdbKey: v } })}
                 />
@@ -1119,10 +1168,10 @@ export default function Setup() {
             </Field>
           </section>
           <p className="text-sm text-fg-muted">
-            Optional. You can add these later under Integrations.
+            {t("Optional. You can add these later under Integrations.")}
           </p>
           <div className="grid gap-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2">
-            <Field label="Trakt client ID">
+            <Field label={t("Trakt client ID")}>
               <Input
                 value={cfg.trakt.clientId}
                 onChange={(e) =>
@@ -1137,9 +1186,9 @@ export default function Setup() {
                 }
               />
             </Field>
-            <Field label="OpenSubtitles API key">
+            <Field label={t("OpenSubtitles API key")}>
               <SecretInput
-                ariaLabel="OpenSubtitles API key"
+                ariaLabel={t("OpenSubtitles API key")}
                 value={cfg.openSubtitles.apiKey}
                 onChange={(v) =>
                   setCfg({
@@ -1169,13 +1218,12 @@ export default function Setup() {
                   })
                 }
               />{" "}
-              Allow CAM / telesync releases
+              {t("Allow CAM / telesync releases")}
             </label>
           </div>
           <Alert variant="info">
             <AlertDescription>
-              Finishing setup locks this admin page to your owner account. You can reopen setup
-              later from Connectivity.
+              Finishing setup locks this admin page to your owner account. You can reopen setup later from Connectivity.
             </AlertDescription>
           </Alert>
         </div>
@@ -1200,18 +1248,25 @@ function LanguageModelFields({
   const provider = llm.provider ? findProvider(providers, llm.provider) : undefined;
   return (
     <>
-      <Field label="Language model provider" hint="Powers “Describe it” and themed Home rows.">
+      <Field
+        label={t("Language model provider")}
+        hint={t("Powers “Describe it” and themed Home rows.")}
+      >
         <SearchSelect
           value={llm.provider}
           onChange={(id) => onChange({ ...withProvider(llm, undefined, id), enabled: false })}
           options={providerOptions(providers)}
-          ariaLabel="Language model provider"
-          placeholder={providers ? "None" : "Loading…"}
+          ariaLabel={t("Language model provider")}
+          placeholder={providers ? t("None") : t("Loading…")}
+          searchPlaceholder={t("Search…")}
+          noMatchesLabel={t("No matches")}
+          selectLabel={t("Select")}
+          closeLabel={t("Close")}
           searchable
         />
       </Field>
       {provider?.local ? (
-        <Field label="Language model endpoint" htmlFor="setup-llm-url">
+        <Field label={t("Language model endpoint")} htmlFor="setup-llm-url">
           <Input
             id="setup-llm-url"
             value={llm.baseUrl}
@@ -1222,9 +1277,9 @@ function LanguageModelFields({
         </Field>
       ) : null}
       {provider ? (
-        <Field label="Language model API key">
+        <Field label={t("Language model API key")}>
           <SecretInput
-            ariaLabel="Language model API key"
+            ariaLabel={t("Language model API key")}
             value={llm.apiKey}
             placeholder={provider.keyHint}
             onChange={(apiKey) => onChange({ ...llm, apiKey })}
@@ -1232,7 +1287,7 @@ function LanguageModelFields({
         </Field>
       ) : null}
       {provider ? (
-        <Field label="Language model" hint={provider.modelHint}>
+        <Field label={t("Language model")} hint={provider.modelHint}>
           <div className="space-y-2">
             <ModelPicker
               cfg={llm}

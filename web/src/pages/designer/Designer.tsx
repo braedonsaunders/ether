@@ -3,6 +3,7 @@ import { RefreshCw, Save, Undo2, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ErrorPanel } from "../../components/feedback";
 import { useViewers, viewerName } from "../../components/pickers";
+import { t } from "../../i18n";
 import { api, errorMessage } from "../../lib/api";
 import type { HomeLayout } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
@@ -56,10 +57,10 @@ export default function Designer() {
   const viewerById = useMemo(() => new Map((viewers ?? []).map((v) => [v.id, v])), [viewers]);
   const layerName =
     layer === "global"
-      ? "everyone's Home"
+      ? t("everyone's Home")
       : viewerById.get(layer)
         ? viewerName(viewerById.get(layer)!)
-        : `Viewer ${layer}`;
+        : t("Viewer {id}", { id: layer });
 
   const save = async () => {
     setSaving(true);
@@ -68,11 +69,11 @@ export default function Designer() {
       doc.setData(next);
       setDraft(prune(next.layout));
       setNonce((n) => n + 1);
-      toast.success("Home layout saved", {
-        description: "Plex Homes follow it on their next load.",
+      toast.success(t("Home layout saved"), {
+        description: t("Plex Homes follow it on their next load."),
       });
     } catch (e) {
-      toast.error("Couldn't save the layout", { description: errorMessage(e) });
+      toast.error(t("Couldn't save the layout"), { description: errorMessage(e) });
     } finally {
       setSaving(false);
     }
@@ -82,17 +83,17 @@ export default function Designer() {
     try {
       if (viewerId !== null) await api.refreshViewer(viewerId);
       setNonce((n) => n + 1);
-      toast.success(viewerId !== null ? "Rows rebuilt" : "Preview refreshed");
+      toast.success(viewerId !== null ? t("Rows rebuilt") : t("Preview refreshed"));
     } catch (e) {
-      toast.error("Couldn't rebuild rows", { description: errorMessage(e) });
+      toast.error(t("Couldn't rebuild rows"), { description: errorMessage(e) });
     }
   };
 
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
-      {dirty ? <Badge variant="warning">Unsaved changes</Badge> : null}
+      {dirty ? <Badge variant="warning">{t("Unsaved changes")}</Badge> : null}
       <Button variant="ghost" size="sm" onClick={() => void refreshRows()}>
-        <RefreshCw size={14} /> {viewerId !== null ? "Rebuild rows" : "Refresh"}
+        <RefreshCw size={14} /> {viewerId !== null ? t("Rebuild rows") : t("Refresh")}
       </Button>
       <Button
         variant="outline"
@@ -100,10 +101,10 @@ export default function Designer() {
         onClick={() => setDraft(prune(saved))}
         disabled={!dirty || saving}
       >
-        <Undo2 size={14} /> Discard
+        <Undo2 size={14} /> {t("Discard")}
       </Button>
       <Button size="sm" onClick={() => void save()} disabled={!dirty || saving}>
-        <Save size={14} /> {saving ? "Saving…" : "Save layout"}
+        <Save size={14} /> {saving ? t("Saving…") : t("Save layout")}
       </Button>
     </div>
   );
@@ -131,25 +132,29 @@ export default function Designer() {
     </div>
   ) : !viewers || !doc.data ? (
     <div className="grid flex-1 place-items-center">
-      <Spinner size={22} label="Loading the Home layout" />
+      <Spinner size={22} label={t("Loading the Home layout")} />
     </div>
   ) : viewers.length === 0 ? (
     <div className="p-6">
       <EmptyState
         icon={<Users />}
-        title="No viewers yet"
-        description="Share this server from plex.tv; each person appears here once they sign in."
+        title={t("No viewers yet")}
+        description={t(
+          "Share this server from plex.tv; each person appears here once they sign in.",
+        )}
       />
     </div>
   ) : null;
 
   return (
     <Workspace
-      title="Home"
-      subtitle="Shape the native Plex Home: every viewer's personalized For You, with per-viewer overrides on top."
+      title={t("Home")}
+      subtitle={t(
+        "Shape the native Plex Home: every viewer's personalized For You, with per-viewer overrides on top.",
+      )}
       actions={actions}
-      asideLabel="Designer controls"
-      mainLabel="Home preview"
+      asideLabel={t("Designer controls")}
+      mainLabel={t("Home preview")}
       mainClassName="p-3 sm:p-6"
       aside={
         viewers ? (
@@ -157,7 +162,7 @@ export default function Designer() {
             <PanelHead>
               <div
                 className="flex min-w-0 flex-wrap items-center gap-1"
-                aria-label="Editing and context"
+                aria-label={t("Editing and context")}
               >
                 <LayerSwitcher
                   layer={layer}
@@ -168,16 +173,16 @@ export default function Designer() {
                 <ContextBar ctx={ctx} onChange={setCtx} className="shrink-0" />
               </div>
               <SubtabNav
-                ariaLabel="Designer tools"
+                ariaLabel={t("Designer tools")}
                 active={tools}
                 onSelect={setTools}
                 tabs={[
-                  { key: "layout", label: "Layout" },
-                  { key: "rows", label: "Rows" },
-                  { key: "tuning", label: "Tuning" },
+                  { key: "layout", label: t("Layout") },
+                  { key: "rows", label: t("Rows") },
+                  { key: "tuning", label: t("Tuning") },
                   {
                     key: "overrides",
-                    label: "Overrides",
+                    label: t("Overrides"),
                     count: overrideTotal || undefined,
                   },
                 ]}

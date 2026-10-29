@@ -147,7 +147,7 @@ describe("Cache management", () => {
     });
     expect(calls(fake, "GET", "/cache/").length).toBeGreaterThan(before);
     expect(await screen.findByText("New arrival", {}, WAIT)).toBeInTheDocument();
-    expect(screen.getByText("1 releases")).toBeInTheDocument();
+    expect(screen.getByText("1 release")).toBeInTheDocument();
     expect(screen.getByLabelText("Search cached releases")).toHaveValue("arrival");
   });
   it("backs off polling after a cache load fails", async () => {

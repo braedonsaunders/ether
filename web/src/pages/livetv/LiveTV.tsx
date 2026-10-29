@@ -25,6 +25,7 @@ import { ErrorPanel } from "../../components/feedback";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { PanelHead, Workspace } from "../../components/workspace";
 import { api, errorMessage } from "../../lib/api";
+import { localized, t, tn } from "../../i18n";
 import { formatNumber } from "../../lib/format";
 import { useInterval } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
@@ -54,15 +55,15 @@ import {
 } from "./model";
 
 type Filter = "live" | "favorites" | "virtual" | "iptv" | "missing" | "off" | "all";
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: "live", label: "On air" },
-  { value: "favorites", label: "Favourites" },
-  { value: "virtual", label: "Virtual" },
+const FILTERS = localized<{ value: Filter; label: string }[]>(() => [
+  { value: "live", label: t("On air") },
+  { value: "favorites", label: t("Favourites") },
+  { value: "virtual", label: t("Virtual") },
   { value: "iptv", label: "IPTV" },
-  { value: "missing", label: "Needs a guide" },
-  { value: "off", label: "Off air" },
-  { value: "all", label: "Everything" },
-];
+  { value: "missing", label: t("Needs a guide") },
+  { value: "off", label: t("Off air") },
+  { value: "all", label: t("Everything") },
+]);
 
 const HOUR = 60 * MINUTE;
 function windowStart(shiftHours: number): Date {
@@ -139,7 +140,7 @@ export default function LiveTV() {
         setProgrammes((await tv.guide(from, until, signal)) ?? []);
       } catch (e) {
         if (!signal?.aborted)
-          toast.error("Couldn't load the guide", { description: errorMessage(e) });
+          toast.error(t("Couldn't load the guide"), { description: errorMessage(e) });
       } finally {
         if (!signal?.aborted) setGuideLoading(false);
       }
@@ -251,9 +252,11 @@ export default function LiveTV() {
     async (next: Selection, opts?: { force?: boolean }) => {
       if (dirty && !opts?.force) {
         const ok = await confirmDialog({
-          title: "Discard unsaved changes?",
-          message: `Your changes to ${draft?.channel.name || "this channel"} haven't been saved.`,
-          confirmLabel: "Discard",
+          title: t("Discard unsaved changes?"),
+          message: draft?.channel.name
+            ? t("Your changes to {name} haven't been saved.", { name: draft.channel.name })
+            : t("Your changes to this channel haven't been saved."),
+          confirmLabel: t("Discard"),
           tone: "danger",
         });
         if (!ok) return;
@@ -273,10 +276,10 @@ export default function LiveTV() {
   );
 
   const startNew = async (templateKey: string) => {
-    const t = TEMPLATES.find((x) => x.key === templateKey) ?? TEMPLATES[0]!;
+    const template = TEMPLATES.find((x) => x.key === templateKey) ?? TEMPLATES[0]!;
     const base = emptyChannel();
     base.number = nextNumber(channels ?? []);
-    const d = studioDraft(t.apply(base));
+    const d = studioDraft(template.apply(base));
     setDraft(d);
     setBaseline("");
   };
@@ -287,18 +290,18 @@ export default function LiveTV() {
     try {
       body = compose(draft);
     } catch (e) {
-      toast.error("Can't save yet", { description: errorMessage(e) });
+      toast.error(t("Can't save yet"), { description: errorMessage(e) });
       return;
     }
     if (!body.name.trim()) {
-      toast.error("Can't save yet", { description: "Give the channel a name." });
+      toast.error(t("Can't save yet"), { description: t("Give the channel a name.") });
       return;
     }
     setSaving(true);
     try {
       const saved = await tv.saveChannel(body);
-      toast.success(body.id ? "Channel saved" : "Channel created", {
-        description: "Plex picks it up on the next guide refresh.",
+      toast.success(body.id ? t("Channel saved") : t("Channel created"), {
+        description: t("Plex picks it up on the next guide refresh."),
       });
       await loadCore();
       void loadGuide();
@@ -310,7 +313,7 @@ export default function LiveTV() {
         setBaseline(JSON.stringify(d));
       }
     } catch (e) {
-      toast.error("Couldn't save the channel", { description: errorMessage(e) });
+      toast.error(t("Couldn't save the channel"), { description: errorMessage(e) });
     } finally {
       setSaving(false);
     }
@@ -324,26 +327,26 @@ export default function LiveTV() {
       void loadGuide();
       void loadCoverage();
     } catch (e) {
-      toast.error("Couldn't update the channel", { description: errorMessage(e) });
+      toast.error(t("Couldn't update the channel"), { description: errorMessage(e) });
     }
   };
 
   const deleteChannel = async () => {
     if (!draft?.channel.id) return;
     const ok = await confirmDialog({
-      title: `Delete ${draft.channel.name}?`,
-      message: "It disappears from every viewer's guide.",
-      confirmLabel: "Delete channel",
+      title: t("Delete {name}?", { name: draft.channel.name }),
+      message: t("It disappears from every viewer's guide."),
+      confirmLabel: t("Delete channel"),
       tone: "danger",
     });
     if (!ok) return;
     try {
       await tv.deleteChannel(draft.channel.id);
-      toast.success("Channel deleted");
+      toast.success(t("Channel deleted"));
       await go({ kind: "guide" }, { force: true });
       await reloadAll();
     } catch (e) {
-      toast.error("Couldn't delete the channel", { description: errorMessage(e) });
+      toast.error(t("Couldn't delete the channel"), { description: errorMessage(e) });
     }
   };
 
@@ -352,7 +355,7 @@ export default function LiveTV() {
   const editing = (selection.kind === "channel" || selection.kind === "new") && draft;
   const actions = editing ? (
     <>
-      {dirty ? <Badge variant="warning">Unsaved changes</Badge> : null}
+      {dirty ? <Badge variant="warning">{t("Unsaved changes")}</Badge> : null}
       <Button
         variant="outline"
         size="sm"
@@ -362,7 +365,7 @@ export default function LiveTV() {
           else setDraft(JSON.parse(baseline) as StudioDraft);
         }}
       >
-        <Undo2 size={14} /> {selection.kind === "new" ? "Cancel" : "Discard"}
+        <Undo2 size={14} /> {selection.kind === "new" ? t("Cancel") : t("Discard")}
       </Button>
       <Button
         size="sm"
@@ -370,7 +373,7 @@ export default function LiveTV() {
         onClick={() => void saveDraft()}
       >
         <Save size={14} />{" "}
-        {saving ? "Saving…" : selection.kind === "new" ? "Create channel" : "Save channel"}
+        {saving ? t("Saving…") : selection.kind === "new" ? t("Create channel") : t("Save channel")}
       </Button>
     </>
   ) : (
@@ -408,32 +411,32 @@ export default function LiveTV() {
               type="search"
               value={q}
               onChange={(e) => setQ(e.currentTarget.value)}
-              placeholder="Find a channel or group…"
-              aria-label="Search channels"
+              placeholder={t("Find a channel or group…")}
+              aria-label={t("Search channels")}
               className="h-8 pl-7 text-sm"
             />
           </div>
           <ToolbarPicker
-            ariaLabel="Show"
+            ariaLabel={t("Show")}
             value={filter}
             onChange={setFilter}
             options={FILTERS.map((f) => ({
               ...f,
               hint:
                 f.value === "missing" && missingCount !== null
-                  ? `${missingCount} channels`
+                  ? tn(missingCount, "{count} channel", "{count} channels")
                   : undefined,
             }))}
             menuClassName="w-48"
           />
         </div>
         <SubtabNav
-          ariaLabel="Lineup"
+          ariaLabel={t("Lineup")}
           active={leftTab}
           onSelect={setLeftTab}
           tabs={[
-            { key: "channels", label: "Channels", count: filtered.length },
-            { key: "sources", label: "Sources", count: sources.length || undefined },
+            { key: "channels", label: t("Channels"), count: filtered.length },
+            { key: "sources", label: t("Sources"), count: sources.length || undefined },
           ]}
         />
       </PanelHead>
@@ -455,15 +458,15 @@ export default function LiveTV() {
                 <LayoutGrid size={16} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block">Guide</span>
+                <span className="block">{t("Guide")}</span>
                 <span className="block text-xs font-normal text-fg-muted">
-                  The whole lineup, live
+                  {t("The whole lineup, live")}
                 </span>
               </span>
             </button>
           </div>
           {channels === null ? (
-            <p className="px-4 py-8 text-center text-xs text-fg-muted">Loading channels…</p>
+            <p className="px-4 py-8 text-center text-xs text-fg-muted">{t("Loading channels…")}</p>
           ) : (
             <ChannelList
               channels={filtered}
@@ -475,23 +478,26 @@ export default function LiveTV() {
               onToggleFavorite={(c) =>
                 void quickSave(
                   { ...c, favorite: !c.favorite },
-                  c.favorite ? `${c.name} unfavourited` : `${c.name} favourited`,
+                  c.favorite
+                    ? t("{name} unfavourited", { name: c.name })
+                    : t("{name} favourited", { name: c.name }),
                 )
               }
               now={now}
               emptyHint={
                 channels.length ? (
-                  <p className="text-xs text-fg-muted">No channels match.</p>
+                  <p className="text-xs text-fg-muted">{t("No channels match.")}</p>
                 ) : (
                   <div className="space-y-3">
-                    <p className="text-sm font-medium text-fg">No channels yet</p>
+                    <p className="text-sm font-medium text-fg">{t("No channels yet")}</p>
                     <p className="text-xs text-fg-muted">
-                      Build a virtual channel from your catalogue, or bring in IPTV from an M3U
-                      playlist.
+                      {t(
+                        "Build a virtual channel from your catalogue, or bring in IPTV from an M3U playlist.",
+                      )}
                     </p>
                     <div className="flex justify-center gap-2">
                       <Button size="sm" onClick={() => void go({ kind: "new" })}>
-                        <Sparkles size={13} /> New channel
+                        <Sparkles size={13} /> {t("New channel")}
                       </Button>
                     </div>
                   </div>
@@ -561,7 +567,10 @@ export default function LiveTV() {
         now={now}
         onDelete={() => void deleteChannel()}
         onMapGuide={async (c) => {
-          await quickSave(c, `${c.name} now takes listings from ${c.guideId}`);
+          await quickSave(
+            c,
+            t("{name} now takes listings from {guide}", { name: c.name, guide: c.guideId ?? "" }),
+          );
           await loadCore();
         }}
       />
@@ -569,7 +578,7 @@ export default function LiveTV() {
   } else if (selection.kind === "channel") {
     main = (
       <p className="p-8 text-center text-sm text-fg-muted">
-        {channels === null ? "Loading…" : "That channel no longer exists."}
+        {channels === null ? t("Loading…") : t("That channel no longer exists.")}
       </p>
     );
   } else if (selection.kind === "source") {
@@ -577,7 +586,9 @@ export default function LiveTV() {
       selection.id === "new" ? null : (sources.find((s) => s.id === selection.id) ?? null);
     main =
       selection.id !== "new" && !src ? (
-        <p className="p-8 text-center text-sm text-fg-muted">That source no longer exists.</p>
+        <p className="p-8 text-center text-sm text-fg-muted">
+          {t("That source no longer exists.")}
+        </p>
       ) : (
         <SourceEditor
           source={src}
@@ -599,7 +610,9 @@ export default function LiveTV() {
         channels={sorted}
         sources={sources}
         coverage={coverage}
-        onSaveChannel={(c) => quickSave(c, `${c.name} mapped to ${c.guideId}`)}
+        onSaveChannel={(c) =>
+          quickSave(c, t("{name} mapped to {guide}", { name: c.name, guide: c.guideId ?? "" }))
+        }
         onAddGuideSource={() => {
           setNewKind("guide");
           void go({ kind: "source", id: "new" });
@@ -613,15 +626,26 @@ export default function LiveTV() {
   const live = sorted.filter((c) => c.enabled).length;
   return (
     <Workspace
-      title="Live TV"
+      title={t("Live TV")}
       subtitle={
         channels
-          ? `${formatNumber(live)} channels on air${missingCount ? ` · ${formatNumber(missingCount)} need a guide` : ""} · Plex Pass required in Plex`
-          : "Virtual channels from your catalogue and your own IPTV, with a real guide."
+          ? missingCount
+            ? tn(
+                live,
+                "{count} channel on air · {missing} need a guide · Plex Pass required in Plex",
+                "{count} channels on air · {missing} need a guide · Plex Pass required in Plex",
+                { missing: formatNumber(missingCount) },
+              )
+            : tn(
+                live,
+                "{count} channel on air · Plex Pass required in Plex",
+                "{count} channels on air · Plex Pass required in Plex",
+              )
+          : t("Virtual channels from your catalogue and your own IPTV, with a real guide.")
       }
       actions={actions}
-      asideLabel="Lineup"
-      mainLabel="Live TV workspace"
+      asideLabel={t("Lineup")}
+      mainLabel={t("Live TV workspace")}
       mainClassName={mainClassName}
       aside={aside}
       main={main}
@@ -669,25 +693,28 @@ function AddMenu({
           aria-haspopup="menu"
           aria-expanded={open}
         >
-          <Plus size={14} /> Add
+          <Plus size={14} /> {t("Add")}
         </Button>
       }
     >
-      <div role="menu" aria-label="Add to Live TV">
+      <div role="menu" aria-label={t("Add to Live TV")}>
         {item(
           <Sparkles size={16} />,
-          "Virtual channel",
-          "Programme your own from the catalogue",
+          t("Virtual channel"),
+          t("Programme your own from the catalogue"),
           onChannel,
         )}
         {item(
           <ListVideo size={16} />,
-          "IPTV source",
-          "An M3U playlist, optionally with a guide",
+          t("IPTV source"),
+          t("An M3U playlist, optionally with a guide"),
           () => onSource("playlist"),
         )}
-        {item(<CalendarRange size={16} />, "Guide source", "XMLTV listings for any channel", () =>
-          onSource("guide"),
+        {item(
+          <CalendarRange size={16} />,
+          t("Guide source"),
+          t("XMLTV listings for any channel"),
+          () => onSource("guide"),
         )}
       </div>
     </Popover>
@@ -698,35 +725,40 @@ function TemplateGallery({ onPick }: { onPick: (key: string) => void }) {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-8">
       <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">New channel</p>
-        <h2 className="text-2xl font-semibold tracking-tight text-fg">What should it play?</h2>
+        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+          {t("New channel")}
+        </p>
+        <h2 className="text-2xl font-semibold tracking-tight text-fg">
+          {t("What should it play?")}
+        </h2>
         <p className="text-sm text-fg-muted">
-          Start from a template or a blank slate. Everything stays editable, and the schedule
-          previews live as you build it.
+          {t(
+            "Start from a template or a blank slate. Everything stays editable, and the schedule previews live as you build it.",
+          )}
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {TEMPLATES.map((t) => (
+        {TEMPLATES.map((template) => (
           <button
-            key={t.key}
+            key={template.key}
             type="button"
-            onClick={() => onPick(t.key)}
-            aria-label={`${t.name} template`}
+            onClick={() => onPick(template.key)}
+            aria-label={t("{name} template", { name: template.name })}
             className="group relative overflow-hidden rounded-2xl border border-border p-4 text-left shadow-xs transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             style={{
-              background: `linear-gradient(140deg, hsl(${t.hue} 70% 50% / 0.18), transparent 60%), rgb(var(--ch-surface))`,
+              background: `linear-gradient(140deg, hsl(${template.hue} 70% 50% / 0.18), transparent 60%), rgb(var(--ch-surface))`,
             }}
           >
             <span
               className="mb-6 grid size-10 place-items-center rounded-xl text-white shadow-md"
               style={{
-                background: `linear-gradient(135deg, hsl(${t.hue} 70% 55%), hsl(${(t.hue + 40) % 360} 70% 40%))`,
+                background: `linear-gradient(135deg, hsl(${template.hue} 70% 55%), hsl(${(template.hue + 40) % 360} 70% 40%))`,
               }}
             >
-              {t.key === "blank" ? <Plus size={18} /> : <Tv size={18} />}
+              {template.key === "blank" ? <Plus size={18} /> : <Tv size={18} />}
             </span>
-            <span className="block text-base font-semibold text-fg">{t.name}</span>
-            <span className="block text-xs text-fg-muted">{t.tagline}</span>
+            <span className="block text-base font-semibold text-fg">{template.name}</span>
+            <span className="block text-xs text-fg-muted">{template.tagline}</span>
           </button>
         ))}
       </div>

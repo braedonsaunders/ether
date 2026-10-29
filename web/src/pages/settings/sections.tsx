@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { LevelBadge } from "../../components/status";
 import { SettingsRow } from "../../components/SettingsRow";
+import { localized, t, tn } from "../../i18n";
 import { api } from "../../lib/api";
 import { isPlainObject, relativeTime } from "../../lib/format";
 import { plexDirectHealth, remoteHealth } from "../../lib/health";
@@ -39,32 +40,34 @@ export function PlexStatus({
       ? remote.publishedUris.filter((uri): uri is string => typeof uri === "string")
       : [];
   return (
-    <SettingsSection title="Status">
+    <SettingsSection title={t("Status")}>
       <SettingsRow
-        title="Plex account"
+        title={t("Plex account")}
         description={
           cfg.plex.claimed && cfg.plex.token
-            ? `Claimed by ${cfg.plex.ownerUsername || "your account"}.`
-            : "Not signed in to plex.tv. Run the setup wizard to sign in and claim this server."
+            ? cfg.plex.ownerUsername
+              ? t("Claimed by {owner}.", { owner: cfg.plex.ownerUsername })
+              : t("Claimed by your account.")
+            : t("Not signed in to plex.tv. Run the setup wizard to sign in and claim this server.")
         }
         control={
           <Button variant="outline" size="sm" onClick={onReopen}>
-            Reopen setup wizard
+            {t("Reopen setup wizard")}
           </Button>
         }
       />
       <SettingsRow
-        title="Remote access"
+        title={t("Remote access")}
         description={r.details.join(" · ") || r.summary}
         control={<LevelBadge level={r.level} label={r.summary} />}
       />
       <SettingsRow
-        title="plex.direct certificate"
+        title={t("plex.direct certificate")}
         description={c.details.join(" · ") || c.summary}
         control={<LevelBadge level={c.level} label={c.summary} />}
       />
       {conns.length ? (
-        <SettingsRow stacked title="Published addresses">
+        <SettingsRow stacked title={t("Published addresses")}>
           <ul className="space-y-1 text-xs">
             {conns.map((uri, i) => (
               <li key={i} className="flex items-center gap-2">
@@ -80,15 +83,15 @@ export function PlexStatus({
 
 // ---- Updates -----------------------------------------------------------------------------
 
-const UPDATE_STATE: Record<UpdateStatus["state"], string> = {
-  idle: "Idle",
-  downloading: "Downloading",
-  staged: "Downloaded",
-  "waiting-for-window": "Waiting for maintenance window",
-  "waiting-for-idle": "Waiting until nobody is watching",
-  applying: "Installing — Ether will restart",
-  "rolled-back": "Rolled back",
-};
+const UPDATE_STATE: Record<UpdateStatus["state"], string> = localized(() => ({
+  idle: t("Idle"),
+  downloading: t("Downloading"),
+  staged: t("Downloaded"),
+  "waiting-for-window": t("Waiting for maintenance window"),
+  "waiting-for-idle": t("Waiting until nobody is watching"),
+  applying: t("Installing — Ether will restart"),
+  "rolled-back": t("Rolled back"),
+}));
 
 export function UpdatesStatus() {
   const status = useAsync(() => api.updateStatus(), []);
@@ -96,8 +99,8 @@ export function UpdatesStatus() {
   const s = status.data;
   useEffect(() => {
     if (!s || !(s.requested || s.state === "downloading" || s.state === "applying")) return;
-    const t = setInterval(() => void status.reload(), 5000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => void status.reload(), 5000);
+    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s?.requested, s?.state]);
   if (status.error) return <ErrorPanel error={status.error} onRetry={() => void status.reload()} />;
@@ -108,39 +111,50 @@ export function UpdatesStatus() {
     try {
       await api.updateNow(force);
       toast.success(
-        force ? "Installing update now" : "Update will install once nobody is watching",
+        force ? t("Installing update now") : t("Update will install once nobody is watching"),
       );
       await status.reload();
     } catch (e) {
-      toast.error("Couldn't start the update", { description: (e as Error).message });
+      toast.error(t("Couldn't start the update"), { description: (e as Error).message });
     } finally {
       setBusy(false);
     }
   };
   const canApply = s.capability === "self-apply" && s.state !== "applying";
-  let availableText = "Ether is up to date";
-  if (s.available) availableText = `Version ${s.available.version} — ${UPDATE_STATE[s.state]}`;
+  let availableText = t("Ether is up to date");
+  if (s.available)
+    availableText = t("Version {version} — {state}", {
+      version: s.available.version,
+      state: UPDATE_STATE[s.state],
+    });
   else if (s.state === "rolled-back" && s.failedVersion)
-    availableText = `Version ${s.failedVersion} was rolled back and will be skipped`;
-  else if (!s.enabled) availableText = s.disabledReason || "Updates are disabled in this build";
+    availableText = t("Version {version} was rolled back and will be skipped", {
+      version: s.failedVersion,
+    });
+  else if (!s.enabled) availableText = s.disabledReason || t("Updates are disabled in this build");
 
   return (
-    <SettingsSection title="Status">
+    <SettingsSection title={t("Status")}>
       <SettingsRow
-        title="Installed"
+        title={t("Installed")}
         description={
-          s.confirming ? `Version ${s.current} — confirming the update` : `Version ${s.current}`
+          s.confirming
+            ? t("Version {version} — confirming the update", { version: s.current })
+            : t("Version {version}", { version: s.current })
         }
         control={
           s.state === "rolled-back" ? (
-            <LevelBadge level="warn" label="Rolled back" />
+            <LevelBadge level="warn" label={t("Rolled back")} />
           ) : (
-            <LevelBadge level={s.lastError ? "warn" : "ok"} label={s.lastError ? "Issue" : "OK"} />
+            <LevelBadge
+              level={s.lastError ? "warn" : "ok"}
+              label={s.lastError ? t("Issue") : t("OK")}
+            />
           )
         }
       />
       <SettingsRow
-        title="Available"
+        title={t("Available")}
         description={
           <>
             {availableText}
@@ -153,12 +167,14 @@ export function UpdatesStatus() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Release notes
+                  {t("Release notes")}
                 </a>
               </>
             ) : null}
             {s.capability === "notify-only" && s.capabilityReason ? (
-              <span className="block">Install manually: {s.capabilityReason}.</span>
+              <span className="block">
+                {t("Install manually: {reason}.", { reason: s.capabilityReason })}
+              </span>
             ) : null}
           </>
         }
@@ -171,7 +187,7 @@ export function UpdatesStatus() {
                 disabled={busy}
                 onClick={() => void updateNow(true)}
               >
-                Install now anyway
+                {t("Install now anyway")}
               </Button>
             ) : (
               <Button
@@ -179,28 +195,30 @@ export function UpdatesStatus() {
                 disabled={busy || s.requested}
                 onClick={() => void updateNow(false)}
               >
-                Update now
+                {t("Update now")}
               </Button>
             )
           ) : null
         }
       />
       <SettingsRow
-        title="Maintenance window"
-        description={`${s.window.start}–${s.window.end} local time${
-          s.window.open ? " (open now)" : ""
-        } · ${s.activeSessions} active stream${s.activeSessions === 1 ? "" : "s"}`}
+        title={t("Maintenance window")}
+        description={`${
+          s.window.open
+            ? t("{start}–{end} local time (open now)", { start: s.window.start, end: s.window.end })
+            : t("{start}–{end} local time", { start: s.window.start, end: s.window.end })
+        } · ${tn(s.activeSessions, "{count} active stream", "{count} active streams")}`}
       />
       <SettingsRow
-        title="Last check"
+        title={t("Last check")}
         description={
           s.lastError
             ? s.lastError
             : s.lastCheck
               ? relativeTime(s.lastCheck)
               : s.enabled
-                ? "Not checked yet"
-                : "Never"
+                ? t("Not checked yet")
+                : t("Never")
         }
       />
     </SettingsSection>

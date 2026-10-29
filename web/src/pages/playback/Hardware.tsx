@@ -2,6 +2,7 @@ import { Badge } from "@braedonsaunders/appkit-ui";
 import { Cpu } from "lucide-react";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
+import { t, tn } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
 
@@ -38,8 +39,10 @@ export function HardwareStatus() {
 
   return (
     <Section
-      title="Transcoding hardware"
-      description="What this machine can use to convert video for devices that can't play it directly."
+      title={t("Transcoding hardware")}
+      description={t(
+        "What this machine can use to convert video for devices that can't play it directly.",
+      )}
     >
       {hw.error && !data ? (
         <ErrorPanel error={hw.error} onRetry={() => void hw.reload()} />
@@ -57,15 +60,21 @@ export function HardwareStatus() {
             </span>
             <div className="min-w-0">
               <p className="text-sm font-medium text-fg">
-                {none ? "Software only" : `Hardware acceleration: ${accel!.name}`}
+                {none
+                  ? t("Software only")
+                  : t("Hardware acceleration: {name}", { name: accel!.name })}
               </p>
               <p className="text-xs text-fg-muted">
-                {accel?.device ? `Device ${accel.device}` : none ? "Transcoding uses the CPU." : ""}
+                {accel?.device
+                  ? t("Device {device}", { device: accel.device })
+                  : none
+                    ? t("Transcoding uses the CPU.")
+                    : ""}
                 {typeof ffmpeg === "string" && ffmpeg ? ` · FFmpeg ${ffmpeg}` : ""}
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-1.5" aria-label="Hardware encoders">
+          <div className="flex flex-wrap gap-1.5" aria-label={t("Hardware encoders")}>
             {encoders.length ? (
               encoders.map((e) => (
                 <Badge key={e} variant="secondary" className="font-mono">
@@ -73,13 +82,13 @@ export function HardwareStatus() {
                 </Badge>
               ))
             ) : (
-              <span className="text-xs text-fg-muted">No hardware encoders detected</span>
+              <span className="text-xs text-fg-muted">{t("No hardware encoders detected")}</span>
             )}
           </div>
           {ffmpeg && typeof ffmpeg !== "string" ? (
             <details>
               <summary className="cursor-pointer text-xs font-medium text-fg-muted">
-                FFmpeg details
+                {t("FFmpeg details")}
               </summary>
               <pre className="mt-2 overflow-x-auto whitespace-pre-wrap rounded-md bg-bg-subtle p-3 text-xs">
                 {JSON.stringify(ffmpeg, null, 2)}
@@ -87,30 +96,32 @@ export function HardwareStatus() {
             </details>
           ) : null}
           <p className="text-xs text-fg-subtle">
-            Live CPU and GPU load, disk checks and tone-mapping benchmarks aren't collected.
+            {t("Live CPU and GPU load, disk checks and tone-mapping benchmarks aren't collected.")}
           </p>
           {data.enhancement ? (
             <div
               className="rounded-md border border-border p-3"
-              aria-label="Server enhancement status"
+              aria-label={t("Server enhancement status")}
             >
               <p className="text-sm font-medium text-fg">
-                RTX Video:{" "}
-                {data.enhancement.active > 0
-                  ? `${data.enhancement.active} active`
-                  : data.enhancement.available
-                    ? "Detected · idle"
-                    : data.enhancement.setupState === "off"
-                      ? "Off"
-                      : data.enhancement.setupState === "installing"
-                        ? "Installing runtime"
-                        : data.enhancement.setupState === "checking"
-                          ? "Checking support"
-                          : "Unavailable"}
+                {t("RTX Video: {status}", {
+                  status:
+                    data.enhancement.active > 0
+                      ? tn(data.enhancement.active, "{count} active", "{count} active")
+                      : data.enhancement.available
+                        ? t("Detected · idle")
+                        : data.enhancement.setupState === "off"
+                          ? t("Off")
+                          : data.enhancement.setupState === "installing"
+                            ? t("Installing runtime")
+                            : data.enhancement.setupState === "checking"
+                              ? t("Checking support")
+                              : t("Unavailable"),
+                })}
               </p>
               <p className="mt-1 text-xs text-fg-muted">
                 {data.enhancement.reason ||
-                  "Detected support is verified when an eligible stream starts."}
+                  t("Detected support is verified when an eligible stream starts.")}
                 {data.enhancement.version ? ` · ${data.enhancement.version}` : ""}
               </p>
             </div>

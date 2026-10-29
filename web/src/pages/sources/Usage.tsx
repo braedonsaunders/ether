@@ -1,3 +1,4 @@
+import { getLocale, t, tn } from "../../i18n";
 import { Badge, Input, toast } from "@braedonsaunders/appkit-ui";
 import { useMemo, useState, type ReactNode } from "react";
 import { Meter } from "../../components/charts";
@@ -6,7 +7,7 @@ import { NumberInput } from "../../components/fields";
 import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { apiFetch } from "../../lib/api";
-import { formatNumber } from "../../lib/format";
+import { fixed, formatNumber, formatPercent } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 
 type Provider = {
@@ -70,7 +71,7 @@ type Prices = Record<string, Price>;
 
 const GB = 1073741824;
 const priceKey = (kind: Kind, id: string) => `${kind}:${id}`;
-const pct = (n: number, d: number) => (d ? `${((n / d) * 100).toFixed(0)}%` : "—");
+const pct = (n: number, d: number) => (d ? formatPercent(n / d, 0) : "—");
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -97,7 +98,7 @@ function PriceEditor({
     <div className="w-full shrink-0 space-y-1 sm:w-auto">
       <div className="flex items-center gap-1.5">
         <NumberInput
-          aria-label={`Monthly price for ${label}`}
+          aria-label={t("Monthly price for {name}", { name: label })}
           className="w-24"
           min={0}
           step={0.01}
@@ -105,24 +106,42 @@ function PriceEditor({
           onChange={(monthly) => onChange({ ...value, monthly })}
         />
         <Input
-          aria-label={`Currency for ${label}`}
+          aria-label={t("Currency for {name}", { name: label })}
           className="w-16 uppercase"
           maxLength={3}
           value={value.currency}
           onChange={(e) => onChange({ ...value, currency: e.target.value.toUpperCase() })}
         />
-        <span className="text-xs text-fg-muted">/ month</span>
+        <span className="text-xs text-fg-muted">{t("/ month")}</span>
       </div>
       {detail ? <p className="text-xs text-fg-muted sm:text-right">{detail}</p> : null}
     </div>
   );
 }
 
-function Remaining({ used, remaining, noun }: { used: number; remaining: number; noun: string }) {
+function Remaining({
+  used,
+  remaining,
+  kind,
+}: {
+  used: number;
+  remaining: number;
+  kind: "hits" | "grabs";
+}) {
   if (remaining < 0)
     return (
       <p className="text-xs text-fg-muted">
-        {formatNumber(used, 0)} {noun} today · automatic limits
+        {kind === "hits"
+          ? tn(
+              used,
+              "{count} API hit today · automatic limits",
+              "{count} API hits today · automatic limits",
+            )
+          : tn(
+              used,
+              "{count} grab today · automatic limits",
+              "{count} grabs today · automatic limits",
+            )}
       </p>
     );
   const limit = used + remaining;
@@ -130,8 +149,11 @@ function Remaining({ used, remaining, noun }: { used: number; remaining: number;
     <Meter
       value={limit ? used / limit : 0}
       tone={limit && used / limit > 0.9 ? "warning" : "primary"}
-      label={`${noun[0]!.toUpperCase()}${noun.slice(1)} today`}
-      valueLabel={`${formatNumber(used, 0)} of ${formatNumber(limit, 0)}`}
+      label={kind === "hits" ? t("API hits today") : t("Grabs today")}
+      valueLabel={t("{used} of {limit}", {
+        used: formatNumber(used, 0),
+        limit: formatNumber(limit, 0),
+      })}
     />
   );
 }
@@ -183,7 +205,7 @@ export function SourceUsage() {
           body: JSON.stringify({ kind, id: rest.join(":"), ...v }),
         });
       }
-      toast.success(changed.length === 1 ? "Plan price saved" : "Plan prices saved");
+      toast.success(changed.length === 1 ? t("Plan price saved") : t("Plan prices saved"));
       await infra.reload();
     } catch (e) {
       setError(e);
@@ -212,35 +234,44 @@ export function SourceUsage() {
   return (
     <>
       <Section
-        title="Monthly costs"
-        description="Enter a monthly equivalent for annual or block plans. Estimates use usage observed this UTC month; currencies are kept separate."
+        title={t("Monthly costs")}
+        description={t(
+          "Enter a monthly equivalent for annual or block plans. Estimates use usage observed this UTC month; currencies are kept separate.",
+        )}
       >
         {totals.size ? (
           <dl className="grid gap-4 text-sm sm:grid-cols-3">
             {[...totals].map(([currency, total]) => (
-              <Stat key={currency} label={`${currency} per month`}>
-                <span className="text-xl font-semibold">{total.toFixed(2)}</span>
+              <Stat key={currency} label={t("{currency} per month", { currency })}>
+                <span className="text-xl font-semibold">{fixed(total, 2)}</span>
                 <span className="block text-xs text-fg-muted">
                   {data.monthPlays
-                    ? `${(total / data.monthPlays).toFixed(2)} per play · ${formatNumber(data.monthPlays, 0)} plays this month`
-                    : "No recorded plays this month"}
+                    ? tn(
+                        data.monthPlays,
+                        "{amount} per play · {count} play this month",
+                        "{amount} per play · {count} plays this month",
+                        { amount: fixed(total / data.monthPlays, 2) },
+                      )
+                    : t("No recorded plays this month")}
                 </span>
               </Stat>
             ))}
           </dl>
         ) : (
           <p className="text-sm text-fg-muted">
-            Add your provider and indexer plan prices below to estimate what streaming costs.
+            {t("Add your provider and indexer plan prices below to estimate what streaming costs.")}
           </p>
         )}
       </Section>
 
       <Section
-        title="Usenet providers"
+        title={t("Usenet providers")}
         description={
           data.snapshots.providers
-            ? `This month's traffic. Sampled ${new Date(data.snapshots.providers.at * 1000).toLocaleString()}.`
-            : "No provider sample yet."
+            ? t("This month's traffic. Sampled {time}.", {
+                time: new Date(data.snapshots.providers.at * 1000).toLocaleString(getLocale()),
+              })
+            : t("No provider sample yet.")
         }
         bodyClassName="divide-y divide-border"
       >
@@ -251,7 +282,10 @@ export function SourceUsage() {
           const cost = price("provider", id);
           const perGB =
             usage && usage.bytes > 0 && cost.monthly > 0
-              ? `${(cost.monthly / (usage.bytes / GB)).toFixed(2)} ${cost.currency}/GB observed`
+              ? t("{amount} {currency}/GB observed", {
+                  amount: fixed(cost.monthly / (usage.bytes / GB), 2),
+                  currency: cost.currency,
+                })
               : undefined;
           return (
             <div key={id} className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
@@ -259,28 +293,38 @@ export function SourceUsage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-medium text-fg">{label}</p>
                   <Badge variant={p.state === "ok" ? "success" : "warning"}>
-                    {p.state === "ok" ? "Healthy" : p.state || "Unknown"}
+                    {p.state === "ok" ? t("Healthy") : p.state || t("Unknown")}
                   </Badge>
-                  {p.backfill ? <Badge variant="secondary">Backfill</Badge> : null}
+                  {p.backfill ? <Badge variant="secondary">{t("Backfill")}</Badge> : null}
                 </div>
                 {usage ? (
                   <>
                     <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
-                      <Stat label="This month">{(usage.bytes / GB).toFixed(2)} GB</Stat>
-                      <Stat label="Articles">{formatNumber(usage.articles, 0)}</Stat>
-                      <Stat label="Body availability">
+                      <Stat label={t("This month")}>{fixed(usage.bytes / GB, 2)} GB</Stat>
+                      <Stat label={t("Articles")}>{formatNumber(usage.articles, 0)}</Stat>
+                      <Stat label={t("Body availability")}>
                         {pct(usage.articles, usage.articles + usage.bodyMisses)}
                       </Stat>
-                      <Stat label="Latency">{(p.avgLatency / 1000000).toFixed(0)} ms</Stat>
+                      <Stat label={t("Latency")}>{fixed(p.avgLatency / 1000000, 0)} ms</Stat>
                     </dl>
                     <p className="text-xs text-fg-muted">
-                      {usage.misses} misses · {usage.errors} errors · {usage.bodyTakedowns}{" "}
-                      takedowns (451) · {usage.backfillSaves} backfill saves
+                      {[
+                        tn(usage.misses, "{count} miss", "{count} misses"),
+                        tn(usage.errors, "{count} error", "{count} errors"),
+                        tn(
+                          usage.bodyTakedowns,
+                          "{count} takedown (451)",
+                          "{count} takedowns (451)",
+                        ),
+                        tn(usage.backfillSaves, "{count} backfill save", "{count} backfill saves"),
+                      ].join(" · ")}
                     </p>
                   </>
                 ) : (
                   <p className="text-xs text-fg-muted">
-                    Latency {(p.avgLatency / 1000000).toFixed(0)} ms · no usage recorded this month
+                    {t("Latency {ms} ms · no usage recorded this month", {
+                      ms: fixed(p.avgLatency / 1000000, 0),
+                    })}
                   </p>
                 )}
               </div>
@@ -297,7 +341,7 @@ export function SourceUsage() {
           <div key={id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
             <div>
               <p className="font-medium text-fg">{id}</p>
-              <p className="text-xs text-fg-muted">Saved plan · no current sample</p>
+              <p className="text-xs text-fg-muted">{t("Saved plan · no current sample")}</p>
             </div>
             <PriceEditor
               label={id}
@@ -307,13 +351,15 @@ export function SourceUsage() {
           </div>
         ))}
         {!providers.length && !orphanProviders.length ? (
-          <p className="px-5 py-4 text-sm text-fg-muted">No enabled providers.</p>
+          <p className="px-5 py-4 text-sm text-fg-muted">{t("No enabled providers.")}</p>
         ) : null}
       </Section>
 
       <Section
-        title="Indexers"
-        description="Observed usage today and search results this month. Service limits are handled automatically."
+        title={t("Indexers")}
+        description={t(
+          "Observed usage today and search results this month. Service limits are handled automatically.",
+        )}
         bodyClassName="divide-y divide-border"
       >
         {indexers.map((ix) => {
@@ -327,29 +373,33 @@ export function SourceUsage() {
                 <p className="font-medium text-fg">{ix.indexer}</p>
                 {ix.retryAt && ix.retryAt > Date.now() / 1000 ? (
                   <p className="text-xs text-fg-muted">
-                    Service limit reached · retries automatically after{" "}
-                    {new Date(ix.retryAt * 1000).toLocaleTimeString()}
+                    {t("Service limit reached · retries automatically after {time}", {
+                      time: new Date(ix.retryAt * 1000).toLocaleTimeString(getLocale()),
+                    })}
                   </p>
                 ) : null}
                 <div className="grid max-w-xl gap-3 sm:grid-cols-2">
-                  <Remaining used={ix.hitsUsed} remaining={ix.hitsRemaining} noun="API hits" />
-                  <Remaining used={ix.grabsUsed} remaining={ix.grabsRemaining} noun="grabs" />
+                  <Remaining used={ix.hitsUsed} remaining={ix.hitsRemaining} kind="hits" />
+                  <Remaining used={ix.grabsUsed} remaining={ix.grabsRemaining} kind="grabs" />
                 </div>
                 {v ? (
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
-                    <Stat label="Searches this month">{formatNumber(v.searches, 0)}</Stat>
-                    <Stat label="Search success">{pct(v.successes, v.searches)}</Stat>
-                    <Stat label="Grab success">
-                      {pct(v.grabSuccess, v.grabs)} of {formatNumber(v.grabs, 0)}
+                    <Stat label={t("Searches this month")}>{formatNumber(v.searches, 0)}</Stat>
+                    <Stat label={t("Search success")}>{pct(v.successes, v.searches)}</Stat>
+                    <Stat label={t("Grab success")}>
+                      {t("{percent} of {total}", {
+                        percent: pct(v.grabSuccess, v.grabs),
+                        total: formatNumber(v.grabs, 0),
+                      })}
                     </Stat>
-                    <Stat label="Average release age">
+                    <Stat label={t("Average release age")}>
                       {v.ageSamples
-                        ? `${(v.ageSeconds / v.ageSamples / 86400).toFixed(1)} days`
+                        ? t("{days} days", { days: fixed(v.ageSeconds / v.ageSamples / 86400, 1) })
                         : "—"}
                     </Stat>
                   </dl>
                 ) : (
-                  <p className="text-xs text-fg-muted">No searches recorded this month.</p>
+                  <p className="text-xs text-fg-muted">{t("No searches recorded this month.")}</p>
                 )}
               </div>
               <PriceEditor
@@ -364,7 +414,7 @@ export function SourceUsage() {
           <div key={id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
             <div>
               <p className="font-medium text-fg">{id}</p>
-              <p className="text-xs text-fg-muted">Saved plan · no current sample</p>
+              <p className="text-xs text-fg-muted">{t("Saved plan · no current sample")}</p>
             </div>
             <PriceEditor
               label={id}
@@ -374,7 +424,7 @@ export function SourceUsage() {
           </div>
         ))}
         {!indexers.length && !orphanIndexers.length ? (
-          <p className="px-5 py-4 text-sm text-fg-muted">No configured indexers.</p>
+          <p className="px-5 py-4 text-sm text-fg-muted">{t("No configured indexers.")}</p>
         ) : null}
       </Section>
 
@@ -384,7 +434,7 @@ export function SourceUsage() {
         dirty={dirty}
         saving={saving}
         error={error}
-        saveLabel="Save prices"
+        saveLabel={t("Save prices")}
         onSave={save}
         onDiscard={() => {
           reset();

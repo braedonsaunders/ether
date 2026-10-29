@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import type { EtherUser } from "../../lib/types";
 
 /** One aggregate bucket from /stats/summary (a day, an hour, a device, a title, a viewer). */
@@ -39,8 +40,10 @@ export interface ViewingFilter {
   year: string;
 }
 
-export const viewerLabel = (viewer: EtherUser) =>
-  `${viewer.title || viewer.username}${viewer.isOwner ? " (owner)" : ""}`;
+export const viewerLabel = (viewer: EtherUser) => {
+  const name = viewer.title || viewer.username;
+  return viewer.isOwner ? t("{name} (owner)", { name }) : name;
+};
 
 export function viewingQuery(f: ViewingFilter): string {
   return `?days=${f.days}&user=${encodeURIComponent(f.user)}${f.year ? `&year=${f.year}` : ""}`;

@@ -1,18 +1,20 @@
 import { Button, cn } from "@braedonsaunders/appkit-ui";
 import { ChevronLeft, ChevronRight, Star } from "lucide-react";
 import { useRef, type ReactNode } from "react";
+import { t } from "../i18n";
 import type { TitleCard } from "../lib/contract";
+import { fixed } from "../lib/format";
 import { Artwork } from "./Artwork";
 
-export function titleSubtitle(t: TitleCard): string {
-  if (t.type === "episode") {
+export function titleSubtitle(card: TitleCard): string {
+  if (card.type === "episode") {
     const se =
-      t.season != null && t.episode != null
-        ? `S${String(t.season).padStart(2, "0")}E${String(t.episode).padStart(2, "0")}`
+      card.season != null && card.episode != null
+        ? `S${String(card.season).padStart(2, "0")}E${String(card.episode).padStart(2, "0")}`
         : "";
-    return [t.showTitle, se].filter(Boolean).join(" · ");
+    return [card.showTitle, se].filter(Boolean).join(" · ");
   }
-  return [t.year, t.type === "show" ? "TV" : null].filter(Boolean).join(" · ");
+  return [card.year, card.type === "show" ? t("TV") : null].filter(Boolean).join(" · ");
 }
 
 /** A 2:3 poster with title and year, Plex-style. `reason` appears on hover/focus. */
@@ -49,7 +51,7 @@ export function PosterCard({
         {badge ? <div className="absolute left-1.5 top-1.5">{badge}</div> : null}
         {typeof item.rating === "number" && item.rating > 0 ? (
           <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded bg-overlay/70 px-1 py-0.5 text-[10px] font-semibold tabular-nums text-on-scrim">
-            <Star size={9} aria-hidden /> {item.rating.toFixed(1)}
+            <Star size={9} aria-hidden /> {fixed(item.rating, 1)}
           </span>
         ) : null}
         {reason ? (
@@ -123,7 +125,7 @@ export function Shelf({
     el.scrollBy({ left: dir * Math.max(200, el.clientWidth * 0.8), behavior: "smooth" });
   };
   if (items.length === 0)
-    return <div className="py-4 text-sm text-fg-muted">{empty ?? "No titles"}</div>;
+    return <div className="py-4 text-sm text-fg-muted">{empty ?? t("No titles")}</div>;
   return (
     <div className="group/shelf relative">
       <div
@@ -144,7 +146,7 @@ export function Shelf({
             type="button"
             variant="outline"
             size="icon"
-            aria-label="Scroll left"
+            aria-label={t("Scroll left")}
             onClick={() => scroll(-1)}
             className="absolute -left-3 top-[35%] hidden size-8 rounded-full opacity-0 shadow-md transition group-hover/shelf:opacity-100 focus-visible:opacity-100 sm:inline-flex"
           >
@@ -154,7 +156,7 @@ export function Shelf({
             type="button"
             variant="outline"
             size="icon"
-            aria-label="Scroll right"
+            aria-label={t("Scroll right")}
             onClick={() => scroll(1)}
             className="absolute -right-3 top-[35%] hidden size-8 rounded-full opacity-0 shadow-md transition group-hover/shelf:opacity-100 focus-visible:opacity-100 sm:inline-flex"
           >

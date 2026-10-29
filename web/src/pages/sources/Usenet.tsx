@@ -1,3 +1,4 @@
+import { t, tn } from "../../i18n";
 import {
   Badge,
   Button,
@@ -48,11 +49,15 @@ function blankProvider(priority: number): UsenetProvider {
 }
 
 function providerName(p: UsenetProvider, i: number) {
-  return p.name || p.host || `Provider ${i + 1}`;
+  return p.name || p.host || t("Provider {number}", { number: i + 1 });
 }
 
 function role(p: UsenetProvider, i: number) {
-  return i === 0 ? "Tried first" : p.backfill ? "Backfill" : `Priority ${i + 1}`;
+  return i === 0
+    ? t("Tried first")
+    : p.backfill
+      ? t("Backfill")
+      : t("Priority {number}", { number: i + 1 });
 }
 
 /**
@@ -61,16 +66,29 @@ function role(p: UsenetProvider, i: number) {
  * node's share.
  */
 export function connectionText(stat: Record<string, unknown> | undefined, configured: number) {
-  if (!stat) return [`${configured} connections`];
+  if (!stat) return [tn(configured, "{count} connection", "{count} connections")];
   const total = Number(stat.configuredConnections ?? configured);
   const share = Number(stat.nodeShare ?? 0);
   const active = Number(stat.activeConnections ?? 0);
   if (share > 0)
     return [
-      `${active} of ${share} connections busy`,
-      `this node: ${share} of ${total} connections`,
+      tn(share, "{active} of {count} connection busy", "{active} of {count} connections busy", {
+        active,
+      }),
+      tn(
+        total,
+        "this node: {share} of {count} connection",
+        "this node: {share} of {count} connections",
+        {
+          share,
+        },
+      ),
     ];
-  return [`${active} of ${total} connections busy`];
+  return [
+    tn(total, "{active} of {count} connection busy", "{active} of {count} connections busy", {
+      active,
+    }),
+  ];
 }
 
 /** Usenet providers in priority order; each provider is edited in a drawer. */
@@ -109,7 +127,7 @@ export function UsenetProviders() {
     setError(null);
     try {
       await api.putSection("usenet", { ...cfg.usenet, repair: repairDraft });
-      toast.success("Repair settings saved");
+      toast.success(t("Repair settings saved"));
       setRepairDraft(null);
       await config.reload();
     } catch (e) {
@@ -139,7 +157,7 @@ export function UsenetProviders() {
     setErrors({});
     setError(null);
     try {
-      await commit(list, index < providers.length ? "Provider saved" : "Provider added");
+      await commit(list, index < providers.length ? t("Provider saved") : t("Provider added"));
       setEditing(null);
     } catch (e) {
       setError(e);
@@ -153,9 +171,11 @@ export function UsenetProviders() {
     if (!editing) return;
     const { index, draft } = editing;
     const ok = await confirmDialog({
-      title: "Remove provider?",
-      message: `${providerName(draft, index)} will no longer be used for streaming.`,
-      confirmLabel: "Remove",
+      title: t("Remove provider?"),
+      message: t("{provider} will no longer be used for streaming.", {
+        provider: providerName(draft, index),
+      }),
+      confirmLabel: t("Remove"),
       tone: "danger",
     });
     if (!ok) return;
@@ -164,7 +184,7 @@ export function UsenetProviders() {
     try {
       await commit(
         providers.filter((_, j) => j !== index),
-        "Provider removed",
+        t("Provider removed"),
       );
       setEditing(null);
     } catch (e) {
@@ -176,9 +196,9 @@ export function UsenetProviders() {
 
   async function move(i: number, d: -1 | 1) {
     try {
-      await commit(swap(providers, i, i + d), "Provider order saved");
+      await commit(swap(providers, i, i + d), t("Provider order saved"));
     } catch (e) {
-      toastError("Couldn't reorder providers", e);
+      toastError(t("Couldn't reorder providers"), e);
     }
   }
 
@@ -194,11 +214,13 @@ export function UsenetProviders() {
   return (
     <>
       <Section
-        title="Providers"
-        description="Tried in order. Backfill providers are only used for articles missing everywhere else."
+        title={t("Providers")}
+        description={t(
+          "Tried in order. Backfill providers are only used for articles missing everywhere else.",
+        )}
         actions={
           <Button size="sm" onClick={() => open(providers.length, blankProvider(providers.length))}>
-            <Plus size={14} /> Add provider
+            <Plus size={14} /> {t("Add provider")}
           </Button>
         }
         bodyClassName=""
@@ -206,8 +228,8 @@ export function UsenetProviders() {
         {providers.length === 0 ? (
           <EmptyState
             icon={<Network />}
-            title="No providers"
-            description="Add your Usenet provider. Block accounts can be added as backfill."
+            title={t("No providers")}
+            description={t("Add your Usenet provider. Block accounts can be added as backfill.")}
           />
         ) : (
           <ul className="divide-y divide-border">
@@ -220,18 +242,22 @@ export function UsenetProviders() {
                   title={label}
                   description={[
                     role(p, i),
-                    p.host ? `${p.host}:${p.port}` : "No host",
+                    p.host ? `${p.host}:${p.port}` : t("No host"),
                     ...connectionText(stat, p.connections),
-                    stat?.bytes ? `${formatBytes(stat.bytes)} fetched` : "",
+                    stat?.bytes ? t("{size} fetched", { size: formatBytes(stat.bytes) }) : "",
                   ]
                     .filter(Boolean)
                     .join(" · ")}
                   meta={
                     <>
-                      {!p.enabled ? <Badge variant="secondary">Off</Badge> : null}
+                      {!p.enabled ? <Badge variant="secondary">{t("Off")}</Badge> : null}
                       {stat ? (
                         <Badge variant={stat.state === "ok" ? "success" : "warning"}>
-                          {stat.state === "ok" ? "Connected" : String(stat.state ?? "Unknown")}
+                          {stat.state === "ok"
+                            ? t("Connected")
+                            : stat.state != null
+                              ? String(stat.state)
+                              : t("Unknown")}
                         </Badge>
                       ) : null}
                     </>
@@ -244,7 +270,7 @@ export function UsenetProviders() {
                       onMove={(d) => void move(i, d)}
                     />
                   }
-                  editLabel={`Edit ${label}`}
+                  editLabel={t("Edit {name}", { name: label })}
                   onEdit={() => open(i, p)}
                 />
               );
@@ -254,12 +280,16 @@ export function UsenetProviders() {
       </Section>
 
       <Section
-        title="Repair Ahead"
-        description="Restore missing source data during readahead when it can finish within your limits."
+        title={t("Repair Ahead")}
+        description={t(
+          "Restore missing source data during readahead when it can finish within your limits.",
+        )}
       >
         <SettingsRow
-          title={cfg?.usenet.repair?.enabled ? "Repair enabled" : "Repair disabled"}
-          description="Repair uses additional download bandwidth. Playback can still switch sources when repair cannot finish in time."
+          title={cfg?.usenet.repair?.enabled ? t("Repair enabled") : t("Repair disabled")}
+          description={t(
+            "Repair uses additional download bandwidth. Playback can still switch sources when repair cannot finish in time.",
+          )}
           control={
             <Button
               variant="outline"
@@ -277,7 +307,7 @@ export function UsenetProviders() {
                 );
               }}
             >
-              Configure repair
+              {t("Configure repair")}
             </Button>
           }
         />
@@ -287,26 +317,28 @@ export function UsenetProviders() {
         onClose={() => {
           if (!saving) setRepairDraft(null);
         }}
-        title="Repair Ahead"
+        title={t("Repair Ahead")}
         onSave={() => void saveRepair()}
         saving={saving}
-        saveLabel="Save repair settings"
+        saveLabel={t("Save repair settings")}
         error={error}
       >
         {repairDraft ? (
-          <SettingsSection title="Recovery">
+          <SettingsSection title={t("Recovery")}>
             <BoolRow
-              label="Enable repair"
+              label={t("Enable repair")}
               value={repairDraft.enabled}
               onChange={(enabled) => setRepairDraft({ ...repairDraft, enabled })}
             />
             <NumRow
-              label="Extra download budget"
+              label={t("Extra download budget")}
               value={Math.round((repairDraft.maxDownloadBytes || 512 * 1024 * 1024) / 1024 / 1024)}
               min={32}
               max={4096}
               unit="MiB"
-              help="Additional transfer budget per repair attempt; requests already in flight can finish."
+              help={t(
+                "Additional transfer budget per repair attempt; requests already in flight can finish.",
+              )}
               onChange={(n) =>
                 setRepairDraft({
                   ...repairDraft,
@@ -315,9 +347,11 @@ export function UsenetProviders() {
               }
             />
             <BoolRow
-              label="Remember downloaded data"
+              label={t("Remember downloaded data")}
               value={repairDraft.summaryRows > 0}
-              help="After damage is detected, retain repair information when its expected benefit justifies the memory and CPU cost."
+              help={t(
+                "After damage is detected, retain repair information when its expected benefit justifies the memory and CPU cost.",
+              )}
               onChange={(enabled) =>
                 setRepairDraft({
                   ...repairDraft,
@@ -333,13 +367,13 @@ export function UsenetProviders() {
       <RecordDrawer
         open={editing !== null}
         onClose={close}
-        title={isNew ? "New provider" : name}
+        title={isNew ? t("New provider") : name}
         description={editing && !isNew ? role(editing.draft, editing.index) : undefined}
         onSave={() => void save()}
         saving={saving}
-        saveLabel="Save provider"
+        saveLabel={t("Save provider")}
         onRemove={isNew ? undefined : () => void remove()}
-        removeLabel="Remove provider"
+        removeLabel={t("Remove provider")}
         error={error}
         tools={
           draft ? (
@@ -352,17 +386,17 @@ export function UsenetProviders() {
         }
       >
         {draft ? (
-          <SettingsSection title="Connection">
-            <TextRow label="Name" value={draft.name} onChange={(v) => set({ name: v })} />
+          <SettingsSection title={t("Connection")}>
+            <TextRow label={t("Name")} value={draft.name} onChange={(v) => set({ name: v })} />
             <TextRow
-              label="Host"
+              label={t("Host")}
               value={draft.host}
               placeholder="news.example.com"
               error={errors.host}
               onChange={(v) => set({ host: v })}
             />
             <NumRow
-              label="Port"
+              label={t("Port")}
               value={draft.port}
               min={1}
               max={65535}
@@ -370,7 +404,7 @@ export function UsenetProviders() {
               onChange={(n) => set({ port: n })}
             />
             <BoolRow
-              label="SSL / TLS"
+              label={t("SSL / TLS")}
               value={draft.tls}
               onChange={(v) =>
                 set({
@@ -380,34 +414,40 @@ export function UsenetProviders() {
               }
             />
             <TextRow
-              label="Username"
+              label={t("Username")}
               value={draft.username}
               error={errors.username}
               onChange={(v) => set({ username: v })}
             />
-            <SettingsRow stacked title="Password">
+            <SettingsRow stacked title={t("Password")}>
               <SecretInput
-                ariaLabel="Password"
+                ariaLabel={t("Password")}
                 value={draft.password}
                 onChange={(v) => set({ password: v })}
               />
             </SettingsRow>
             <NumRow
-              label="Connections"
+              label={t("Connections")}
               value={draft.connections}
               min={0}
               max={500}
               error={errors.connections}
-              help="Your plan's connection limit."
+              help={t("Your plan's connection limit.")}
               onChange={(n) => set({ connections: n })}
             />
             <BoolRow
-              label="Backfill only"
+              label={t("Backfill only")}
               value={draft.backfill}
-              help="Use for block accounts: only consulted when an article is missing elsewhere."
+              help={t(
+                "Use for block accounts: only consulted when an article is missing elsewhere.",
+              )}
               onChange={(v) => set({ backfill: v })}
             />
-            <BoolRow label="Enabled" value={draft.enabled} onChange={(v) => set({ enabled: v })} />
+            <BoolRow
+              label={t("Enabled")}
+              value={draft.enabled}
+              onChange={(v) => set({ enabled: v })}
+            />
           </SettingsSection>
         ) : null}
       </RecordDrawer>

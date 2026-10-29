@@ -14,7 +14,8 @@ import type {
   Viewer,
 } from "../../lib/contract";
 import { api } from "../../lib/api";
-import { WEEKDAYS, plural } from "../../lib/format";
+import { localized, t, tn } from "../../i18n";
+import { WEEKDAYS, formatNumber } from "../../lib/format";
 import {
   FRONT_END_ROWS,
   STATUS_HINT,
@@ -29,6 +30,7 @@ import {
   type LayerKey,
 } from "../../lib/layout";
 import { PolicyEditor } from "./PolicyEditor";
+import { useLocale } from "../../i18n/react";
 
 interface PoolEntry {
   row: string;
@@ -38,15 +40,15 @@ interface PoolEntry {
   kind?: string;
 }
 
-const GROUPS: { key: RowGroup | "custom"; label: string; hint: string }[] = [
-  { key: "picks", label: "Picks for you", hint: "Personal, high-confidence rows" },
-  { key: "explore", label: "Explore", hint: "Lenses into the catalogue" },
-  { key: "shows", label: "Series", hint: "Built around shows and seasons" },
-  { key: "household", label: "Household", hint: "What the server is watching" },
-  { key: "collections", label: "Collections", hint: "Your Collection Studio rows" },
-  { key: "plex", label: "Plex", hint: "Rows Plex itself provides" },
-  { key: "custom", label: "Custom patterns", hint: "Hub ids, kinds or globs" },
-];
+const GROUPS = localized<{ key: RowGroup | "custom"; label: string; hint: string }[]>(() => [
+  { key: "picks", label: t("Picks for you"), hint: t("Personal, high-confidence rows") },
+  { key: "explore", label: t("Explore"), hint: t("Lenses into the catalogue") },
+  { key: "shows", label: t("Series"), hint: t("Built around shows and seasons") },
+  { key: "household", label: t("Household"), hint: t("What the server is watching") },
+  { key: "collections", label: t("Collections"), hint: t("Your Collection Studio rows") },
+  { key: "plex", label: "Plex", hint: t("Rows Plex itself provides") },
+  { key: "custom", label: t("Custom patterns"), hint: t("Hub ids, kinds or globs") },
+]);
 
 /**
  * The row catalogue: every row the engine, Plex or the owner's collections
@@ -85,6 +87,7 @@ export function RowPool({
       live = false;
     };
   }, []);
+  const { locale } = useLocale();
   const entries = useMemo<PoolEntry[]>(() => {
     const out: PoolEntry[] = available
       .filter((a) => !FRONT_END_ROWS.has(a.kind) && rowFits(a, section))
@@ -102,13 +105,13 @@ export function RowPool({
           out.push({
             row: p.row,
             title: p.row,
-            description: "Custom row pattern (hub id, kind or glob).",
+            description: t("Custom row pattern (hub id, kind or glob)."),
             group: "custom",
           });
       }
     }
     return out;
-  }, [available, draft, layer, section]);
+  }, [available, draft, layer, section, locale]);
   const needle = q.trim().toLowerCase();
   const shown = needle
     ? entries.filter(
@@ -116,15 +119,19 @@ export function RowPool({
       )
     : entries;
   return (
-    <section className="space-y-2" aria-label="Row catalogue">
+    <section className="space-y-2" aria-label={t("Row catalogue")}>
       <div>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-          Row catalogue
+          {t("Row catalogue")}
         </h2>
         <p className="mt-0.5 text-xs text-fg-muted">
           {layer === "global"
-            ? "Always: on the page whenever it has titles. Eligible: personalization decides. Off: never."
-            : "Changes here override Everyone for this viewer only; reset to follow Everyone again."}
+            ? t(
+                "Always: on the page whenever it has titles. Eligible: personalization decides. Off: never.",
+              )
+            : t(
+                "Changes here override Everyone for this viewer only; reset to follow Everyone again.",
+              )}
         </p>
       </div>
       <div className="relative">
@@ -135,8 +142,8 @@ export function RowPool({
         <Input
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
-          placeholder="Filter rows…"
-          aria-label="Filter rows"
+          placeholder={t("Filter rows…")}
+          aria-label={t("Filter rows")}
           className="h-8 pl-8"
         />
       </div>
@@ -171,7 +178,7 @@ export function RowPool({
         );
       })}
       {shown.length === 0 ? (
-        <p className="px-1 py-3 text-center text-xs text-fg-muted">No rows match.</p>
+        <p className="px-1 py-3 text-center text-xs text-fg-muted">{t("No rows match.")}</p>
       ) : null}
       <Button
         variant="ghost"
@@ -179,7 +186,7 @@ export function RowPool({
         className="h-8 text-xs text-fg-muted"
         onClick={() => setPatternOpen(true)}
       >
-        <Plus size={14} /> Add custom pattern
+        <Plus size={14} /> {t("Add custom pattern")}
       </Button>
       <Drawer
         open={patternOpen}
@@ -187,8 +194,8 @@ export function RowPool({
           setPatternOpen(false);
           setCustom("");
         }}
-        title="Custom row pattern"
-        description="Advanced: target row IDs, kinds or glob patterns."
+        title={t("Custom row pattern")}
+        description={t("Advanced: target row IDs, kinds or glob patterns.")}
         size="md"
       >
         <form
@@ -207,8 +214,8 @@ export function RowPool({
           <Input
             value={custom}
             onChange={(e) => setCustom(e.currentTarget.value)}
-            placeholder="Pattern, e.g. because.*"
-            aria-label="Custom row pattern"
+            placeholder={t("Pattern, e.g. because.*")}
+            aria-label={t("Custom row pattern")}
             className="h-8 flex-1 font-mono text-xs"
           />
           <Button
@@ -218,7 +225,7 @@ export function RowPool({
             className="h-8"
             disabled={!custom.trim()}
           >
-            <Plus size={14} /> Add
+            <Plus size={14} /> {t("Add")}
           </Button>
         </form>
       </Drawer>
@@ -240,7 +247,12 @@ function Engagement({ insight }: { insight?: RowInsight }) {
   return (
     <span
       className="inline-flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums text-fg-muted"
-      title={`${insight.plays7d} plays from ${insight.impressions7d} times shown in the last 7 days`}
+      title={tn(
+        insight.plays7d,
+        "{count} play from {shown} times shown in the last 7 days",
+        "{count} plays from {shown} times shown in the last 7 days",
+        { shown: formatNumber(insight.impressions7d) },
+      )}
     >
       <span className="relative h-1 w-10 overflow-hidden rounded-full bg-border">
         <span
@@ -248,7 +260,7 @@ function Engagement({ insight }: { insight?: RowInsight }) {
           style={{ width: `${Math.min(100, insight.playRate * 400)}%` }}
         />
       </span>
-      {pct}% played
+      {t("{pct}% played", { pct: formatNumber(pct, 1) })}
     </span>
   );
 }
@@ -301,7 +313,7 @@ function PoolItem({
   return (
     <li
       ref={ref}
-      aria-label={`Row ${entry.title}`}
+      aria-label={t("Row {title}", { title: entry.title })}
       className={cn(
         "rounded-lg border bg-surface p-2.5",
         source === "override" ? "border-info/40" : "border-border",
@@ -315,11 +327,11 @@ function PoolItem({
               {entry.title}
             </span>
             {source === "override" ? (
-              <Badge variant="info">Override</Badge>
+              <Badge variant="info">{t("Override")}</Badge>
             ) : source === "global" && layer !== "global" ? (
-              <Badge variant="secondary">From Everyone</Badge>
+              <Badge variant="secondary">{t("From Everyone")}</Badge>
             ) : source === "default" ? (
-              <span className="text-[11px] text-fg-subtle">Default</span>
+              <span className="text-[11px] text-fg-subtle">{t("Default")}</span>
             ) : null}
           </div>
           <p className="mt-0.5 line-clamp-2 text-xs text-fg-muted">{entry.description}</p>
@@ -338,7 +350,7 @@ function PoolItem({
           size="icon"
           className="size-7 shrink-0"
           aria-expanded={open}
-          aria-label={`Constraints for ${entry.title}`}
+          aria-label={t("Constraints for {title}", { title: entry.title })}
           onClick={onToggle}
         >
           {open ? <ChevronDown size={15} /> : <SlidersHorizontal size={14} />}
@@ -350,9 +362,13 @@ function PoolItem({
       </div>
       {layer === "global" && own ? (
         <p className="mt-1.5 text-[11px] text-fg-muted">
-          Affects {plural(viewers.length - overriding.length, "viewer")}
+          {tn(
+            viewers.length - overriding.length,
+            "Affects {count} viewer",
+            "Affects {count} viewers",
+          )}
           {overriding.length
-            ? ` · ${plural(overriding.length, "viewer")} ${overriding.length === 1 ? "overrides" : "override"} it`
+            ? ` · ${tn(overriding.length, "{count} viewer overrides it", "{count} viewers override it")}`
             : ""}
         </p>
       ) : null}
@@ -360,13 +376,15 @@ function PoolItem({
         open={open}
         onClose={onToggle}
         title={entry.title}
-        description="Adjust this row in the current Home draft. Save the Home layout to apply it."
+        description={t(
+          "Adjust this row in the current Home draft. Save the Home layout to apply it.",
+        )}
         size="lg"
       >
         {" "}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Segmented
-            ariaLabel={`Status of ${entry.title}`}
+            ariaLabel={t("Status of {title}", { title: entry.title })}
             size="sm"
             value={effective.status}
             onChange={(s) =>
@@ -383,9 +401,13 @@ function PoolItem({
               size="sm"
               className="h-7 px-2 text-xs"
               onClick={reset}
-              aria-label={`${layer === "global" ? "Back to default" : "Reset to Everyone"}: ${entry.title}`}
+              aria-label={
+                layer === "global"
+                  ? t("Back to default: {title}", { title: entry.title })
+                  : t("Reset to Everyone: {title}", { title: entry.title })
+              }
             >
-              <RotateCcw size={12} /> {layer === "global" ? "Default" : "Reset to Everyone"}
+              <RotateCcw size={12} /> {layer === "global" ? t("Default") : t("Reset to Everyone")}
             </Button>
           ) : null}
         </div>

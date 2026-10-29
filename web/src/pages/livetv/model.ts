@@ -1,4 +1,6 @@
+import { getLocale, localized, t } from "../../i18n";
 import { apiFetch } from "../../lib/api";
+import { unit } from "../../lib/format";
 
 export type Item = {
   key: number;
@@ -213,74 +215,74 @@ export type Template = {
 };
 
 /** Starting points for a virtual channel; each is an ordinary editable draft. */
-export const TEMPLATES: Template[] = [
+export const TEMPLATES: Template[] = localized<Template[]>(() => [
   {
     key: "blank",
-    name: "Blank channel",
-    tagline: "Hand-pick every title",
+    name: t("Blank channel"),
+    tagline: t("Hand-pick every title"),
     hue: 220,
     apply: (c) => c,
   },
   {
     key: "80s-action",
-    name: "80s Action 24/7",
-    tagline: "Action movies, 1980–1989, shuffled",
+    name: t("80s Action 24/7"),
+    tagline: t("Action movies, 1980–1989, shuffled"),
     hue: 12,
     apply: (c) => ({
       ...c,
-      name: "80s Action 24/7",
+      name: t("80s Action 24/7"),
       filter: { type: "movie", genres: ["Action"], yearFrom: 1980, yearTo: 1989 },
       shuffle: true,
     }),
   },
   {
     key: "family",
-    name: "Family Animation",
-    tagline: "Animated movies rated PG and under",
+    name: t("Family Animation"),
+    tagline: t("Animated movies rated PG and under"),
     hue: 160,
     apply: (c) => ({
       ...c,
-      name: "Family Animation",
+      name: t("Family Animation"),
       filter: { type: "movie", genres: ["Animation"], maxContentRating: "PG" },
       rating: "PG",
     }),
   },
   {
     key: "scifi",
-    name: "Sci-Fi Channel",
-    tagline: "Science fiction around the clock",
+    name: t("Sci-Fi Channel"),
+    tagline: t("Science fiction around the clock"),
     hue: 265,
     apply: (c) => ({
       ...c,
-      name: "Sci-Fi Channel",
+      name: t("Sci-Fi Channel"),
       filter: { type: "movie", genres: ["Science Fiction"] },
       shuffle: true,
     }),
   },
   {
     key: "horror",
-    name: "Midnight Horror",
-    tagline: "Horror movies, shuffled",
+    name: t("Midnight Horror"),
+    tagline: t("Horror movies, shuffled"),
     hue: 350,
     apply: (c) => ({
       ...c,
-      name: "Midnight Horror",
+      name: t("Midnight Horror"),
       filter: { type: "movie", genres: ["Horror"] },
       shuffle: true,
     }),
   },
   {
     key: "sitcoms",
-    name: "Sitcom Marathon",
-    tagline: "Comedy series, every episode in order",
+    name: t("Sitcom Marathon"),
+    tagline: t("Comedy series, every episode in order"),
     hue: 45,
     apply: (c) => ({
       ...c,
-      name: "Sitcom Marathon",
+      name: t("Sitcom Marathon"),
       filter: { type: "show", genres: ["Comedy"] },
     }),
   },
-];
+]);
 
 // ---- time ------------------------------------------------------------------------
 
@@ -294,14 +296,14 @@ export const minutesOfDay = (value: string) => {
   return h * 60 + m;
 };
 export const clock = (d: Date | string) =>
-  new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  new Date(d).toLocaleTimeString(getLocale(), { hour: "numeric", minute: "2-digit" });
 export const dayClock = (d: Date | string) =>
-  new Date(d).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+  new Date(d).toLocaleString(getLocale(), { weekday: "short", hour: "numeric", minute: "2-digit" });
 export function duration(ms: number): string {
   const m = Math.max(0, Math.round(ms / MINUTE));
   const h = Math.floor(m / 60);
   const r = m % 60;
-  return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
+  return h ? (r ? `${unit(h, "hour")} ${unit(r, "minute")}` : unit(h, "hour")) : unit(r, "minute");
 }
 /** UTC block minutes rendered in the owner's local time. */
 export function localBlockTime(utcMinutes: number): string {

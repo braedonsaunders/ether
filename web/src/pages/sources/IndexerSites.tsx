@@ -12,13 +12,15 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { Download, Plus, RefreshCw, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { t, tn } from "../../i18n";
+import { searchSelectLabels } from "../../i18n/appkit-labels";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, LoadingRows, MutationError } from "../../components/feedback";
 import { ChipGroup, SecretInput } from "../../components/fields";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
 import { api, ApiError, newId } from "../../lib/api";
-import { formatDate, plural } from "../../lib/format";
+import { formatDate, formatNumber } from "../../lib/format";
 import type {
   CatalogEntry,
   EtherConfig,
@@ -88,11 +90,11 @@ export function siteProtocolLabel(protocol?: string) {
 
 /** "Torrent site" or "Usenet site": a site indexer's type, as shown on its badge. */
 export function siteKindLabel(protocol?: string) {
-  return siteProtocolLabel(protocol) === "Usenet" ? "Usenet site" : "Torrent site";
+  return protocol === "usenet" || protocol === "" ? t("Usenet site") : t("Torrent site");
 }
 
 function definitionOrigin(def: SiteDefinition) {
-  return def.source === "source" ? "From your definitions source" : "Uploaded";
+  return def.source === "source" ? t("From your definitions source") : t("Uploaded");
 }
 
 function plainText(html: string) {
@@ -125,7 +127,7 @@ function DefinitionWarnings({ def }: { def: SiteDefinition }) {
 export function SiteDefinitionRow({ def }: { def: SiteDefinition }) {
   return (
     <SettingsRow
-      title="Definition"
+      title={t("Definition")}
       description={
         <>
           <span className="block">
@@ -133,8 +135,10 @@ export function SiteDefinitionRow({ def }: { def: SiteDefinition }) {
           </span>
           <span className="block">
             {def.source === "source"
-              ? `From your definitions source, updated ${formatDate(def.updatedAt)}`
-              : `Uploaded ${formatDate(def.updatedAt)}`}
+              ? t("From your definitions source, updated {date}", {
+                  date: formatDate(def.updatedAt),
+                })
+              : t("Uploaded {date}", { date: formatDate(def.updatedAt) })}
           </span>
           <DefinitionWarnings def={def} />
         </>
@@ -173,7 +177,10 @@ export function SiteSettingsFields({
   const fields = def.settings.filter((s) => !isInfoSetting(s) || s.label || s.default);
   if (!fields.length) return null;
   return (
-    <SettingsSection title="Site settings" description={`Settings ${def.name} needs.`}>
+    <SettingsSection
+      title={t("Site settings")}
+      description={t("Settings {site} needs.", { site: def.name })}
+    >
       {fields.map((s) => {
         const label = s.label || s.name;
         const value = settings[s.name] ?? settingDefault(s);
@@ -220,6 +227,7 @@ export function SiteSettingsFields({
                       options={(s.options ?? []).map((o) => ({ value: o.value, label: o.label }))}
                       ariaLabel={label}
                       searchable={(s.options ?? []).length > 7}
+                      {...searchSelectLabels()}
                     />
                   </div>
                 }
@@ -313,11 +321,11 @@ export function SitePicker({
     setInstalling(id);
     try {
       const def = await api.sites.install(id);
-      toast.success(`${def.name} installed`);
+      toast.success(t("{name} installed", { name: def.name }));
       onInstalled();
       onPick(def);
     } catch (e) {
-      toastError(`Couldn't install ${id}`, e);
+      toastError(t("Couldn't install {name}", { name: id }), e);
     } finally {
       setInstalling(null);
     }
@@ -327,24 +335,25 @@ export function SitePicker({
     <div className="space-y-4">
       <div className="flex gap-2">
         <Input
-          aria-label="Search sites"
-          placeholder="Search sites"
+          aria-label={t("Search sites")}
+          placeholder={t("Search sites")}
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
         />
         <Button variant="outline" onClick={onUpload} className="shrink-0">
-          <Upload size={14} /> Upload definition
+          <Upload size={14} /> {t("Upload definition")}
         </Button>
       </div>
-      <section aria-label="Installed sites" className="space-y-2">
-        <h3 className="text-sm font-semibold text-fg">Installed</h3>
+      <section aria-label={t("Installed sites")} className="space-y-2">
+        <h3 className="text-sm font-semibold text-fg">{t("Installed")}</h3>
         {definitions.length === 0 ? (
           <p className="text-sm text-fg-muted">
-            No site definitions installed yet. Upload one, or install one from your definitions
-            source below.
+            {t(
+              "No site definitions installed yet. Upload one, or install one from your definitions source below.",
+            )}
           </p>
         ) : installed.length === 0 ? (
-          <p className="text-sm text-fg-muted">No installed site matches.</p>
+          <p className="text-sm text-fg-muted">{t("No installed site matches.")}</p>
         ) : (
           <ul className="divide-y divide-border rounded-xl border border-border">
             {installed.map((d) => (
@@ -355,24 +364,24 @@ export function SitePicker({
                     <p className="truncate text-xs text-fg-muted">{d.description}</p>
                   ) : null}
                 </div>
-                {inUse.has(d.id) ? <Badge variant="success">Added</Badge> : null}
+                {inUse.has(d.id) ? <Badge variant="success">{t("Added")}</Badge> : null}
                 <DefinitionBadges def={d} />
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => onPick(d)}
-                  aria-label={`Use ${d.name}`}
+                  aria-label={t("Use {name}", { name: d.name })}
                 >
-                  Use
+                  {t("Use")}
                 </Button>
               </li>
             ))}
           </ul>
         )}
       </section>
-      <section aria-label="From your definitions source" className="space-y-2">
+      <section aria-label={t("From your definitions source")} className="space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-fg">From your definitions source</h3>
+          <h3 className="text-sm font-semibold text-fg">{t("From your definitions source")}</h3>
           {catalogState !== "none" ? (
             <Button
               size="sm"
@@ -380,14 +389,15 @@ export function SitePicker({
               onClick={() => void loadCatalog(true)}
               disabled={catalogState === "loading"}
             >
-              <RefreshCw size={13} /> Refresh
+              <RefreshCw size={13} /> {t("Refresh")}
             </Button>
           ) : null}
         </div>
         {catalogState === "none" ? (
           <p className="text-sm text-fg-muted">
-            No definitions source is set. Add one under Site definitions, below your indexers, to
-            browse it here.
+            {t(
+              "No definitions source is set. Add one under Site definitions, below your indexers, to browse it here.",
+            )}
           </p>
         ) : catalogState === "error" ? (
           <MutationError error={catalogError} />
@@ -395,7 +405,9 @@ export function SitePicker({
           <LoadingRows rows={2} />
         ) : offered.length === 0 ? (
           <p className="text-sm text-fg-muted">
-            {q ? "Nothing in the source matches." : "Everything the source offers is installed."}
+            {q
+              ? t("Nothing in the source matches.")
+              : t("Everything the source offers is installed.")}
           </p>
         ) : (
           <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-xl border border-border">
@@ -407,9 +419,9 @@ export function SitePicker({
                   variant="outline"
                   disabled={installing !== null}
                   onClick={() => void install(e.id)}
-                  aria-label={`Install ${e.id}`}
+                  aria-label={t("Install {name}", { name: e.id })}
                 >
-                  <Download size={13} /> {installing === e.id ? "Installing…" : "Install"}
+                  <Download size={13} /> {installing === e.id ? t("Installing…") : t("Install")}
                 </Button>
               </li>
             ))}
@@ -438,7 +450,7 @@ export function UploadDrawer({
     setError(null);
     try {
       const def = await api.sites.upload(yaml);
-      toast.success(`${def.name} installed`, {
+      toast.success(t("{name} installed", { name: def.name }), {
         description: def.warnings?.length ? def.warnings.join(" · ") : undefined,
       });
       setYaml("");
@@ -453,27 +465,29 @@ export function UploadDrawer({
     <Drawer
       open={open}
       onClose={() => !busy && onClose()}
-      title="Upload definition"
-      description="A site definition in the Cardigann YAML format, for a site you have the right to use."
+      title={t("Upload definition")}
+      description={t(
+        "A site definition in the Cardigann YAML format, for a site you have the right to use.",
+      )}
       size="lg"
       footer={
         <div className="flex w-full justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" onClick={() => void install()} disabled={busy || !yaml.trim()}>
-            <Upload size={14} /> {busy ? "Installing…" : "Install definition"}
+            <Upload size={14} /> {busy ? t("Installing…") : t("Install definition")}
           </Button>
         </div>
       }
     >
       <div className="space-y-4">
         {error ? <MutationError error={error} /> : null}
-        <SettingsRow stacked title="Definition file">
+        <SettingsRow stacked title={t("Definition file")}>
           <input
             type="file"
             accept=".yml,.yaml,text/yaml"
-            aria-label="Definition file"
+            aria-label={t("Definition file")}
             className="text-sm text-fg-muted"
             onChange={(e) => {
               const file = e.currentTarget.files?.[0];
@@ -481,9 +495,9 @@ export function UploadDrawer({
             }}
           />
         </SettingsRow>
-        <SettingsRow stacked title="Or paste it">
+        <SettingsRow stacked title={t("Or paste it")}>
           <Textarea
-            aria-label="Definition YAML"
+            aria-label={t("Definition YAML")}
             rows={14}
             className="font-mono text-xs"
             spellCheck={false}
@@ -545,7 +559,7 @@ export function SiteDefinitions({
     setErrors({});
     try {
       await api.putSection("indexerSites", draft);
-      toast.success("Settings saved", { description: "Site definitions" });
+      toast.success(t("Settings saved"), { description: t("Site definitions") });
       await onConfigSaved();
     } catch (e) {
       setError(e);
@@ -560,18 +574,18 @@ export function SiteDefinitions({
     try {
       const rep = await api.sites.update();
       const parts = [
-        `${rep.updated.length} updated`,
-        `${rep.unchanged} unchanged`,
-        rep.failed.length ? `${rep.failed.length} failed` : "",
+        t("{count} updated", { count: formatNumber(rep.updated.length) }),
+        t("{count} unchanged", { count: formatNumber(rep.unchanged) }),
+        rep.failed.length ? t("{count} failed", { count: formatNumber(rep.failed.length) }) : "",
       ].filter(Boolean);
       if (rep.failed.length)
-        toast.error("Some definitions could not be updated", {
+        toast.error(t("Some definitions could not be updated"), {
           description: rep.failed.map((f) => `${f.id}: ${f.error}`).join(" · "),
         });
-      else toast.success("Definitions updated", { description: parts.join(" · ") });
+      else toast.success(t("Definitions updated"), { description: parts.join(" · ") });
       onDefinitionsChanged();
     } catch (e) {
-      toastError("Couldn't update definitions", e);
+      toastError(t("Couldn't update definitions"), e);
     } finally {
       setUpdating(false);
     }
@@ -579,18 +593,18 @@ export function SiteDefinitions({
 
   async function remove(def: SiteDefinition) {
     const ok = await confirmDialog({
-      title: "Remove definition?",
-      message: `${def.name} will no longer be available for new indexers.`,
-      confirmLabel: "Remove",
+      title: t("Remove definition?"),
+      message: t("{name} will no longer be available for new indexers.", { name: def.name }),
+      confirmLabel: t("Remove"),
       tone: "danger",
     });
     if (!ok) return;
     try {
       await api.sites.remove(def.id);
-      toast.success(`${def.name} removed`);
+      toast.success(t("{name} removed", { name: def.name }));
       onDefinitionsChanged();
     } catch (e) {
-      toastError(`Couldn't remove ${def.name}`, e);
+      toastError(t("Couldn't remove {name}", { name: def.name }), e);
     }
   }
 
@@ -599,55 +613,67 @@ export function SiteDefinitions({
   const fromSource = installed.some((d) => d.source === "source");
   const used = installed.filter((d) => inUse.has(d.id)).length;
   const unused = installed.filter((d) => !inUse.has(d.id));
-  const count = `${plural(installed.length, "definition")} installed`;
   const summary =
     definitions === null
-      ? "Checking installed definitions…"
+      ? t("Checking installed definitions…")
       : installed.length === 0
-        ? "None installed yet. Upload one, or set a definitions source and pick a site when you add an indexer."
+        ? t(
+            "None installed yet. Upload one, or set a definitions source and pick a site when you add an indexer.",
+          )
         : used === 0
-          ? `${count}.`
+          ? tn(installed.length, "{count} definition installed.", "{count} definitions installed.")
           : used === installed.length
-            ? `${count}, all used by your indexers above.`
-            : `${count}, ${used} used by your indexers above.`;
+            ? tn(
+                installed.length,
+                "{count} definition installed, all used by your indexers above.",
+                "{count} definitions installed, all used by your indexers above.",
+              )
+            : tn(
+                installed.length,
+                "{count} definition installed, {used} used by your indexers above.",
+                "{count} definitions installed, {used} used by your indexers above.",
+                { used },
+              );
   return (
     <>
       <SettingsSection
-        title="Site definitions"
-        description="Ether searches the sites you add as indexers using Cardigann-format definitions you install. It ships none: install only definitions for sites you have the right to use."
+        title={t("Site definitions")}
+        description={t(
+          "Ether searches the sites you add as indexers using Cardigann-format definitions you install. It ships none: install only definitions for sites you have the right to use.",
+        )}
       >
         <SettingsRow
-          title="Installed"
+          title={t("Installed")}
           description={summary}
           control={
             <span className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={onUpload}>
-                <Upload size={14} /> Upload definition
+                <Upload size={14} /> {t("Upload definition")}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => void update()}
                 disabled={updating || !fromSource}
-                title={fromSource ? undefined : "No installed definition came from a source"}
+                title={fromSource ? undefined : t("No installed definition came from a source")}
               >
-                <RefreshCw size={14} /> {updating ? "Updating…" : "Update definitions"}
+                <RefreshCw size={14} /> {updating ? t("Updating…") : t("Update definitions")}
               </Button>
             </span>
           }
         />
         {definitionsError ? (
-          <SettingsRow stacked title="Couldn't load definitions">
+          <SettingsRow stacked title={t("Couldn't load definitions")}>
             <ErrorPanel error={definitionsError} onRetry={onDefinitionsChanged} />
           </SettingsRow>
         ) : unused.length ? (
           <SettingsRow
             stacked
-            title="Not added as an indexer"
-            description="Installed, but not searched until you add them."
+            title={t("Not added as an indexer")}
+            description={t("Installed, but not searched until you add them.")}
           >
             <ul
-              aria-label="Unused definitions"
+              aria-label={t("Unused definitions")}
               className="divide-y divide-border rounded-xl border border-border"
             >
               {unused.map((d) => (
@@ -655,7 +681,7 @@ export function SiteDefinitions({
                   <div className="min-w-0 flex-1 basis-48">
                     <p className="truncate text-sm font-medium text-fg">{d.name}</p>
                     <p className="text-xs text-fg-muted">
-                      {[d.id, definitionOrigin(d), d.login ? "Needs an account" : ""]
+                      {[d.id, definitionOrigin(d), d.login ? t("Needs an account") : ""]
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
@@ -669,18 +695,18 @@ export function SiteDefinitions({
                       size="sm"
                       variant="outline"
                       onClick={() => onAdd(d)}
-                      aria-label={`Add ${d.name} as an indexer`}
+                      aria-label={t("Add {name} as an indexer", { name: d.name })}
                     >
-                      <Plus size={13} /> Add as indexer
+                      <Plus size={13} /> {t("Add as indexer")}
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       className="text-danger"
                       onClick={() => void remove(d)}
-                      aria-label={`Remove ${d.name}`}
+                      aria-label={t("Remove {name}", { name: d.name })}
                     >
-                      Remove
+                      {t("Remove")}
                     </Button>
                   </span>
                 </li>
@@ -689,12 +715,14 @@ export function SiteDefinitions({
           </SettingsRow>
         ) : null}
         <TextRow
-          label="Definitions source"
+          label={t("Definitions source")}
           type="url"
           value={draft.definitionsUrl ?? ""}
           placeholder="https://…/definitions/"
           error={errors.definitionsUrl}
-          help="Optional. A folder of Cardigann-format definitions you trust: a GitHub folder or raw folder URL, a GitHub contents API URL, or a plain list of definition URLs. Ether lists it when you add a site and updates installed definitions from it."
+          help={t(
+            "Optional. A folder of Cardigann-format definitions you trust: a GitHub folder or raw folder URL, a GitHub contents API URL, or a plain list of definition URLs. Ether lists it when you add a site and updates installed definitions from it.",
+          )}
           onChange={(v) => setDraft({ ...draft, definitionsUrl: v })}
         />
         <TextRow
@@ -703,7 +731,9 @@ export function SiteDefinitions({
           value={draft.flareSolverrUrl ?? ""}
           placeholder="http://localhost:8191"
           error={errors.flareSolverrUrl}
-          help="Optional. Passes Cloudflare browser challenges for sites that use them. Without it, those sites report that they need FlareSolverr."
+          help={t(
+            "Optional. Passes Cloudflare browser challenges for sites that use them. Without it, those sites report that they need FlareSolverr.",
+          )}
           onChange={(v) => setDraft({ ...draft, flareSolverrUrl: v })}
         />
       </SettingsSection>
@@ -727,8 +757,10 @@ export function MissingDefinition({ id }: { id?: string }) {
   return (
     <Alert variant="warning" role="status">
       <AlertDescription>
-        The definition “{id || "unknown"}” is not installed, so this site cannot be searched. Upload
-        it again under Site definitions, or remove this indexer.
+        {t(
+          "The definition “{id}” is not installed, so this site cannot be searched. Upload it again under Site definitions, or remove this indexer.",
+          { id: id || t("unknown") },
+        )}
       </AlertDescription>
     </Alert>
   );

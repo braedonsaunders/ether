@@ -23,13 +23,15 @@ import { DragHandle, SortableList } from "../../components/Sortable";
 import { viewerName } from "../../components/pickers";
 import { api, isAbort } from "../../lib/api";
 import type { HomeLayout, HomeRow, RowPolicy, Viewer, ViewerHome } from "../../lib/contract";
-import { WEEKDAYS, WEEKDAYS_LONG, formatHour, plural } from "../../lib/format";
+import { t, tn, tx } from "../../i18n";
+import { WEEKDAYS, WEEKDAYS_LONG, fixed as fixedDigits, formatHour } from "../../lib/format";
 import { useDebouncedValue } from "../../lib/hooks";
 import {
   CONTINUE,
+  DAYPARTS,
   SECTIONS,
   atFor,
-  policyChips,
+  policyChipItems,
   policyIn,
   removePolicy,
   setPolicy,
@@ -120,12 +122,13 @@ export function HomeCanvas({
   }, [key, readOnly]);
 
   const viewer = viewers.find((v) => v.id === viewerId);
-  const who = viewer ? viewerName(viewer) : "the typical viewer";
+  const who = viewer ? viewerName(viewer) : t("the typical viewer");
   const visible = (home?.rows ?? []).filter((r) => !r.hidden);
   const hidden = (home?.rows ?? []).filter((r) => r.hidden);
   const arranged = visible.filter((r) => r.slot);
   const fixed = visible.filter((r) => !r.slot);
   const stale = key !== request || loading;
+  const editingLayer = <strong className="font-medium text-fg">{layerName}</strong>;
 
   // The policy key an action edits: the row's own policy when it lives in
   // this layer, otherwise its kind.
@@ -165,20 +168,31 @@ export function HomeCanvas({
           )}
           <div className="min-w-0">
             <p className="text-xs text-fg-muted">
-              Plex {SECTIONS.find((s) => s.value === ctx.section)?.label} as
+              {t("Plex {section} as", {
+                section: SECTIONS.find((s) => s.value === ctx.section)?.label ?? "",
+              })}
             </p>
             {layer === "global" && !readOnly ? (
               <div className="w-56">
                 <SearchSelect
                   value={viewerId === null ? "" : String(viewerId)}
                   onChange={(v) => onSpotCheck(v ? Number(v) : null)}
-                  ariaLabel="Preview as"
+                  ariaLabel={t("Preview as")}
+                  placeholder={t("Select…")}
+                  searchPlaceholder={t("Search…")}
+                  noMatchesLabel={t("No matches")}
+                  selectLabel={t("Select")}
+                  closeLabel={t("Close")}
                   options={[
-                    { value: "", label: "Typical viewer", hint: "The Home a new viewer gets" },
+                    {
+                      value: "",
+                      label: t("Typical viewer"),
+                      hint: t("The Home a new viewer gets"),
+                    },
                     ...viewers.map((v) => ({
                       value: String(v.id),
                       label: viewerName(v),
-                      hint: "Spot-check, with their overrides",
+                      hint: t("Spot-check, with their overrides"),
                     })),
                   ]}
                 />
@@ -190,27 +204,37 @@ export function HomeCanvas({
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
           <Badge variant="secondary">
-            {WEEKDAYS_LONG[ctx.day]} {formatHour(ctx.hour)}
+            {t("{day} {time}", { day: WEEKDAYS_LONG[ctx.day] ?? "", time: formatHour(ctx.hour) })}
           </Badge>
           {home ? (
             <Badge variant="secondary" className="capitalize">
-              {home.context.daypart}
-              {home.context.weekend ? " · weekend" : ""}
+              {home.context.weekend
+                ? t("{daypart} · weekend", { daypart: daypartLabel(home.context.daypart) })
+                : daypartLabel(home.context.daypart)}
             </Badge>
           ) : null}
           <Badge variant="secondary" className="uppercase">
-            {ctx.device}
+            {deviceLabel(ctx.device)}
           </Badge>
-          {dirty ? <Badge variant="warning">Previewing unsaved changes</Badge> : null}
-          {stale ? <Spinner size={13} label="Refreshing preview" /> : null}
+          {dirty ? <Badge variant="warning">{t("Previewing unsaved changes")}</Badge> : null}
+          {stale ? <Spinner size={13} label={t("Refreshing preview")} /> : null}
         </div>
       </div>
       {readOnly ? null : (
         <p className="text-xs text-fg-muted">
-          Editing <strong className="font-medium text-fg">{layerName}</strong>.
-          {layer === "global"
-            ? ` Drag a row to anchor it to that slot for everyone; ${viewer ? `${viewerName(viewer)}'s overrides still apply here` : "the typical viewer has no overrides"}.`
-            : " Drag a row to anchor it to that slot for this viewer only."}
+          {layer !== "global"
+            ? tx("Editing {layer}. Drag a row to anchor it to that slot for this viewer only.", {
+                layer: editingLayer,
+              })
+            : viewer
+              ? tx(
+                  "Editing {layer}. Drag a row to anchor it to that slot for everyone; {viewer}'s overrides still apply here.",
+                  { layer: editingLayer, viewer: viewerName(viewer) },
+                )
+              : tx(
+                  "Editing {layer}. Drag a row to anchor it to that slot for everyone; the typical viewer has no overrides.",
+                  { layer: editingLayer },
+                )}
         </p>
       )}
 
@@ -221,7 +245,7 @@ export function HomeCanvas({
       {error ? (
         <ErrorPanel error={error} />
       ) : !home ? (
-        <div className="space-y-6" role="status" aria-label="Loading Home">
+        <div className="space-y-6" role="status" aria-label={t("Loading Home")}>
           {Array.from({ length: 3 }, (_, i) => (
             <div key={i}>
               <Skeleton className="mb-3 h-5 w-48" />
@@ -236,14 +260,23 @@ export function HomeCanvas({
       ) : (
         <div
           className={cn("space-y-1 transition-opacity", stale && "opacity-70")}
-          aria-label={`Plex Home for ${who}`}
+          aria-label={t("Plex Home for {who}", { who })}
           aria-busy={stale}
         >
           <p className="text-xs text-fg-muted">
-            {arranged.length} rows on the page{hidden.length ? ` · ${hidden.length} not shown` : ""}
-            {home.homeDeduped
-              ? ` · ${plural(home.homeDeduped, "title")} held back because Home shows ${home.homeDeduped === 1 ? "it" : "them"}`
-              : ""}
+            {[
+              tn(arranged.length, "{count} row on the page", "{count} rows on the page"),
+              hidden.length ? tn(hidden.length, "{count} not shown", "{count} not shown") : "",
+              home.homeDeduped
+                ? tn(
+                    home.homeDeduped,
+                    "{count} title held back because Home shows it",
+                    "{count} titles held back because Home shows them",
+                  )
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
           {fixed.map((r) => (
             <RowCard key={r.hubId} row={r} who={who} />
@@ -251,8 +284,10 @@ export function HomeCanvas({
           {arranged.length === 0 ? (
             <EmptyState
               icon={<HomeIcon />}
-              title="No rows in this context"
-              description="Nothing would show on this Home right now. Turn a row on or loosen a schedule."
+              title={t("No rows in this context")}
+              description={t(
+                "Nothing would show on this Home right now. Turn a row on or loosen a schedule.",
+              )}
             />
           ) : readOnly ? (
             <div className="space-y-1">
@@ -275,7 +310,12 @@ export function HomeCanvas({
                   who={who}
                   actions={actions}
                   layer={layer}
-                  handle={<DragHandle handle={handle} label={`Anchor ${r.title} by dragging`} />}
+                  handle={
+                    <DragHandle
+                      handle={handle}
+                      label={t("Anchor {title} by dragging", { title: r.title })}
+                    />
+                  }
                 />
               )}
             />
@@ -304,13 +344,34 @@ export function provenance(
   who: string,
 ): { label: string; variant: "success" | "info" | "default" | "secondary" | "destructive" } {
   if (r.source === "plex" && !r.slot && !r.hidden) return { label: "Plex", variant: "secondary" };
-  if (r.layer === "override") return { label: `Override for ${who}`, variant: "info" };
+  if (r.layer === "override") return { label: t("Override for {who}", { who }), variant: "info" };
   if (r.layer === "global") {
-    if (r.anchorSlot) return { label: "Anchored for everyone", variant: "success" };
-    if (r.hidden) return { label: "Everyone", variant: "secondary" };
-    return { label: "Everyone · always", variant: "success" };
+    if (r.anchorSlot) return { label: t("Anchored for everyone"), variant: "success" };
+    if (r.hidden) return { label: t("Everyone"), variant: "secondary" };
+    return { label: t("Everyone · always"), variant: "success" };
   }
-  return { label: "Personalized", variant: "default" };
+  return { label: t("Personalized"), variant: "default" };
+}
+
+/** The server's daypart token in the active language. */
+function daypartLabel(daypart: string): string {
+  return DAYPARTS.find((d) => d.value === daypart)?.label ?? daypart;
+}
+
+/** The preview device token, shown as a compact badge. */
+function deviceLabel(device: string): string {
+  switch (device) {
+    case "tv":
+      return t("tv");
+    case "mobile":
+      return t("mobile");
+    case "web":
+      return t("web");
+    case "desktop":
+      return t("desktop");
+    default:
+      return device;
+  }
 }
 
 function RowCard({
@@ -327,15 +388,22 @@ function RowCard({
   handle?: React.ReactNode;
 }) {
   const prov = provenance(r, who);
+  // The slot is already shown as the row's number, so leave its chip out.
   const chips = r.policy
-    ? policyChips(r.policy, WEEKDAYS).filter((c) => !c.startsWith("Slot "))
+    ? policyChipItems(r.policy, WEEKDAYS)
+        .filter((c) => c.kind !== "slot")
+        .map((c) => c.text)
     : [];
   const plexCW = r.kind === CONTINUE;
   const empty = r.items.length === 0;
   return (
     <section
       className="group/row rounded-xl px-2 py-3 transition-colors hover:bg-surface/60 focus-within:bg-surface/60"
-      aria-label={r.slot ? `Slot ${r.slot}: ${r.title}` : `Plex row: ${r.title}`}
+      aria-label={
+        r.slot
+          ? t("Slot {slot}: {title}", { slot: r.slot, title: r.title })
+          : t("Plex row: {title}", { title: r.title })
+      }
     >
       <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         {handle}
@@ -360,26 +428,26 @@ function RowCard({
         ))}
         <span
           className="text-xs tabular-nums text-fg-subtle"
-          title="Predicted engagement used for ordering"
+          title={t("Predicted engagement used for ordering")}
         >
-          score {r.score.toFixed(2)}
+          {t("score {score}", { score: fixedDigits(r.score, 2) })}
         </span>
         {actions ? (
           <div
             className="ml-auto flex flex-wrap gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/row:opacity-100 sm:group-focus-within/row:opacity-100"
             role="group"
-            aria-label={`Layout for ${r.title}`}
+            aria-label={t("Layout for {title}", { title: r.title })}
           >
             {r.slot && r.anchorSlot !== r.slot ? (
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 gap-1 px-2 text-xs"
-                aria-label={`Anchor ${r.title} to slot ${r.slot}`}
+                aria-label={t("Anchor {title} to slot {slot}", { title: r.title, slot: r.slot })}
                 onClick={() => actions.anchor(r, r.slot!)}
               >
                 <Anchor size={13} />
-                <span className="hidden md:inline">Anchor here</span>
+                <span className="hidden md:inline">{t("Anchor here")}</span>
               </Button>
             ) : null}
             {
@@ -387,33 +455,33 @@ function RowCard({
                 variant="ghost"
                 size="sm"
                 className="h-7 gap-1 px-2 text-xs"
-                aria-label={`Turn off ${r.title}`}
+                aria-label={t("Turn off {title}", { title: r.title })}
                 onClick={() => actions.off(r)}
               >
                 <EyeOff size={13} />
-                <span className="hidden md:inline">Off</span>
+                <span className="hidden md:inline">{t("Off")}</span>
               </Button>
             }
             <Button
               variant="ghost"
               size="sm"
               className="h-7 gap-1 px-2 text-xs"
-              aria-label={`Edit constraints for ${r.title}`}
+              aria-label={t("Edit constraints for {title}", { title: r.title })}
               onClick={() => actions.edit(r)}
             >
               <SlidersHorizontal size={13} />
-              <span className="hidden md:inline">Edit</span>
+              <span className="hidden md:inline">{t("Edit")}</span>
             </Button>
             {layer !== "global" && actions.canReset(r) ? (
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 gap-1 px-2 text-xs"
-                aria-label={`Reset ${r.title} to Everyone`}
+                aria-label={t("Reset {title} to Everyone", { title: r.title })}
                 onClick={() => actions.reset(r)}
               >
                 <RotateCcw size={13} />
-                <span className="hidden md:inline">Reset to Everyone</span>
+                <span className="hidden md:inline">{t("Reset to Everyone")}</span>
               </Button>
             ) : null}
           </div>
@@ -421,21 +489,21 @@ function RowCard({
       </div>
       {r.placement ? (
         <p className="mb-0.5 max-w-3xl text-xs text-fg">
-          <span className="font-medium">Why here: </span>
+          <span className="font-medium">{t("Why here:")} </span>
           {r.placement}
         </p>
       ) : null}
       <p className="mb-2 max-w-3xl text-xs text-fg-muted">{r.reason}</p>
       {plexCW && empty ? (
         <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-fg-muted">
-          Nothing in progress for {who}; Plex hides an empty Continue Watching.
+          {t("Nothing in progress for {who}; Plex hides an empty Continue Watching.", { who })}
         </p>
       ) : (
         <Shelf
           items={r.items}
           reasons={r.itemReasons}
           ariaLabel={r.title}
-          empty="This row has no titles right now."
+          empty={t("This row has no titles right now.")}
         />
       )}
     </section>
@@ -448,7 +516,7 @@ function HiddenRows({ rows, who, actions }: { rows: HomeRow[]; who: string; acti
     <div
       className="mt-4 rounded-xl border border-dashed border-border p-3"
       role="region"
-      aria-label="Not on this page"
+      aria-label={t("Not on this page")}
     >
       <button
         type="button"
@@ -457,9 +525,9 @@ function HiddenRows({ rows, who, actions }: { rows: HomeRow[]; who: string; acti
         onClick={() => setOpen((o) => !o)}
       >
         <span className="text-sm font-medium text-fg">
-          Not on this page <span className="text-fg-muted">({rows.length})</span>
+          {t("Not on this page")} <span className="text-fg-muted">({rows.length})</span>
         </span>
-        <span className="text-xs text-fg-muted">{open ? "Hide" : "Show"}</span>
+        <span className="text-xs text-fg-muted">{open ? t("Hide") : t("Show")}</span>
       </button>
       {open ? (
         <ul className="mt-2 divide-y divide-border-subtle">
@@ -470,7 +538,7 @@ function HiddenRows({ rows, who, actions }: { rows: HomeRow[]; who: string; acti
               <li
                 key={r.hubId}
                 className="flex flex-wrap items-start gap-2 py-2"
-                aria-label={`Not shown: ${r.title}`}
+                aria-label={t("Not shown: {title}", { title: r.title })}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -486,30 +554,30 @@ function HiddenRows({ rows, who, actions }: { rows: HomeRow[]; who: string; acti
                         variant="outline"
                         size="sm"
                         className="h-7 px-2 text-xs"
-                        aria-label={`Make ${r.title} eligible`}
+                        aria-label={t("Make {title} eligible", { title: r.title })}
                         onClick={() => actions.eligible(r)}
                       >
-                        Eligible
+                        {t("Eligible")}
                       </Button>
                     ) : null}
                     <Button
                       variant="outline"
                       size="sm"
                       className="h-7 px-2 text-xs"
-                      aria-label={`Always show ${r.title}`}
+                      aria-label={t("Always show {title}", { title: r.title })}
                       onClick={() => actions.always(r)}
                     >
-                      Always
+                      {t("Always")}
                     </Button>
                     {actions.canReset(r) ? (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 px-2 text-xs"
-                        aria-label={`Reset ${r.title} to Everyone`}
+                        aria-label={t("Reset {title} to Everyone", { title: r.title })}
                         onClick={() => actions.reset(r)}
                       >
-                        <RotateCcw size={12} /> Reset
+                        <RotateCcw size={12} /> {t("Reset")}
                       </Button>
                     ) : null}
                   </div>

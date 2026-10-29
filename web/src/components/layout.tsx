@@ -1,6 +1,7 @@
 import { PageContainer, PageHeader, SubtabNav, cn } from "@braedonsaunders/appkit-ui";
 import type { ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { t } from "../i18n";
 
 export interface PageTab {
   key: string;
@@ -14,7 +15,7 @@ export interface PageTab {
  */
 export function useRouteTab<K extends string>(tabs: readonly { key: K }[], fallback?: K): K {
   const { tab } = useParams();
-  const match = tabs.find((t) => t.key === tab);
+  const match = tabs.find((x) => x.key === tab);
   return (match?.key ?? fallback ?? tabs[0]!.key) as K;
 }
 
@@ -53,10 +54,10 @@ export function DomainPage({
       {tabs && tabs.length > 1 ? (
         <div className="border-b border-border">
           <SubtabNav
-            ariaLabel={`${title} sections`}
+            ariaLabel={t("{page} sections", { page: title })}
             active={active ?? tabs[0]!.key}
             onSelect={(key) => navigate(`${base}/${key}`)}
-            tabs={tabs.map((t) => ({ key: t.key, label: t.label, count: t.count }))}
+            tabs={tabs.map((x) => ({ key: x.key, label: x.label, count: x.count }))}
           />
         </div>
       ) : null}

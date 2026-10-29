@@ -6,21 +6,40 @@ import {
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
+import { localized, t, tn, msg, searchTerms } from "../i18n";
 import { destinations } from "../lib/sitemap";
 import { loadViewers, viewerName } from "./pickers";
 
-const ACTIONS = [
-  { title: "Add an indexer", href: "/sources/indexers", keywords: "newznab prowlarr" },
-  { title: "Add a Usenet provider", href: "/sources/usenet", keywords: "nntp" },
+const ACTIONS = localized(() => [
   {
-    title: "Add a debrid provider",
-    href: "/sources/debrid",
-    keywords: "real-debrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent",
+    title: t("Add an indexer"),
+    href: "/sources/indexers",
+    keywords: searchTerms(msg("newznab prowlarr")),
   },
-  { title: "New collection", href: "/collections/new", keywords: "create" },
-  { title: "New notification channel", href: "/notifications/channels", keywords: "alert" },
-  { title: "Back up now", href: "/maintenance/backups", keywords: "backup snapshot" },
-];
+  {
+    title: t("Add a Usenet provider"),
+    href: "/sources/usenet",
+    keywords: searchTerms(msg("nntp")),
+  },
+  {
+    title: t("Add a debrid provider"),
+    href: "/sources/debrid",
+    keywords: searchTerms(
+      msg("real-debrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent"),
+    ),
+  },
+  { title: t("New collection"), href: "/collections/new", keywords: searchTerms(msg("create")) },
+  {
+    title: t("New notification channel"),
+    href: "/notifications/channels",
+    keywords: searchTerms(msg("alert")),
+  },
+  {
+    title: t("Back up now"),
+    href: "/maintenance/backups",
+    keywords: searchTerms(msg("backup snapshot")),
+  },
+]);
 
 function matches(q: string, ...fields: (string | undefined)[]): boolean {
   const hay = fields.filter(Boolean).join(" ").toLowerCase();
@@ -44,17 +63,17 @@ export function CommandSearch() {
           id: d.href,
           type: "page",
           title: d.title,
-          subtitle: d.page === "Page" ? undefined : d.page,
+          subtitle: d.isPage ? undefined : d.page,
           href: d.href,
         }));
-      if (places.length) groups.push({ id: "places", label: "Go to", hits: places });
+      if (places.length) groups.push({ id: "places", label: t("Go to"), hits: places });
       const actions = ACTIONS.filter((a) => matches(q, a.title, a.keywords)).map((a) => ({
         id: a.title,
         type: "action",
         title: a.title,
         href: a.href,
       }));
-      if (actions.length) groups.push({ id: "actions", label: "Actions", hits: actions });
+      if (actions.length) groups.push({ id: "actions", label: t("Actions"), hits: actions });
       const [viewers, collections] = await Promise.all([
         loadViewers().catch(() => []),
         api.collections().catch(() => []),
@@ -67,10 +86,10 @@ export function CommandSearch() {
           id: String(v.id),
           type: "viewer",
           title: viewerName(v),
-          subtitle: v.isOwner ? "Owner" : "Viewer",
+          subtitle: v.isOwner ? t("Owner") : t("Viewer"),
           href: `/viewers/${v.id}`,
         }));
-      if (people.length) groups.push({ id: "viewers", label: "Viewers", hits: people });
+      if (people.length) groups.push({ id: "viewers", label: t("Viewers"), hits: people });
       const cols = (Array.isArray(collections) ? collections : [])
         .filter((c) => c.id && matches(q, c.name))
         .slice(0, 5)
@@ -78,10 +97,10 @@ export function CommandSearch() {
           id: c.id!,
           type: "collection",
           title: c.name,
-          subtitle: "Collection",
+          subtitle: t("Collection"),
           href: `/collections/${encodeURIComponent(c.id!)}`,
         }));
-      if (cols.length) groups.push({ id: "collections", label: "Collections", hits: cols });
+      if (cols.length) groups.push({ id: "collections", label: t("Collections"), hits: cols });
       return { groups, total: groups.reduce((n, g) => n + g.hits.length, 0) };
     },
     [],
@@ -93,15 +112,15 @@ export function CommandSearch() {
       minimumQueryLength={1}
       onNavigate={(hit) => navigate(hit.href)}
       labels={{
-        placeholder: "Search or jump to…",
-        ariaLabel: "Search Ether",
-        clear: "Clear search",
-        searching: "Searching…",
-        noMatches: (query) => `Nothing matches “${query}”`,
-        navigate: "navigate",
-        open: "open",
-        close: "close",
-        resultCount: (count) => `${count} result${count === 1 ? "" : "s"}`,
+        placeholder: t("Search or jump to…"),
+        ariaLabel: t("Search Ether"),
+        clear: t("Clear search"),
+        searching: t("Searching…"),
+        noMatches: (query) => t("Nothing matches “{query}”", { query }),
+        navigate: t("navigate"),
+        open: t("open"),
+        close: t("close"),
+        resultCount: (count) => tn(count, "{count} result", "{count} results"),
       }}
     />
   );

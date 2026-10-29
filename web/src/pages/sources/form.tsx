@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { Button, Input, Switch, toast } from "@braedonsaunders/appkit-ui";
 import { ArrowDown, ArrowUp, Pencil, Trash2 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
@@ -177,7 +178,7 @@ export function OrderButtons({
         className="size-8"
         onClick={() => onMove(-1)}
         disabled={disabled || i === 0}
-        aria-label={`Move ${label} up`}
+        aria-label={t("Move {name} up", { name: label })}
       >
         <ArrowUp size={14} />
       </Button>
@@ -187,7 +188,7 @@ export function OrderButtons({
         className="size-8"
         onClick={() => onMove(1)}
         disabled={disabled || i === n - 1}
-        aria-label={`Move ${label} down`}
+        aria-label={t("Move {name} down", { name: label })}
       >
         <ArrowDown size={14} />
       </Button>
@@ -222,7 +223,7 @@ export function RecordItem({
       <div className="flex items-center gap-1">
         {order}
         <Button variant="outline" size="sm" onClick={onEdit} aria-label={editLabel}>
-          <Pencil size={13} /> Edit
+          <Pencil size={13} /> {t("Edit")}
         </Button>
       </div>
     </li>
@@ -234,24 +235,24 @@ export function useTests() {
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const runTest = useCallback(
     (key: string, fn: () => Promise<{ ok: boolean; error?: string; durationMs: number }>) => {
-      setTests((t) => ({ ...t, [key]: { status: "running" } }));
+      setTests((s) => ({ ...s, [key]: { status: "running" } }));
       fn().then(
         (r) =>
-          setTests((t) => ({
-            ...t,
+          setTests((s) => ({
+            ...s,
             [key]: r.ok
               ? { status: "ok", durationMs: r.durationMs }
-              : { status: "fail", message: r.error ?? "failed" },
+              : { status: "fail", message: r.error ?? t("failed") },
           })),
         (e) =>
-          setTests((t) => ({ ...t, [key]: { status: "fail", message: (e as Error).message } })),
+          setTests((s) => ({ ...s, [key]: { status: "fail", message: (e as Error).message } })),
       );
     },
     [],
   );
   const reset = useCallback((key: string) => {
-    setTests((t) => {
-      const next = { ...t };
+    setTests((s) => {
+      const next = { ...s };
       delete next[key];
       return next;
     });
@@ -266,7 +267,7 @@ export function HealthStrip({ ids }: { ids: HealthItem["id"][] }) {
   const items = health.filter((h) => ids.includes(h.id));
   if (!items.length) return null;
   return (
-    <ul aria-label="Status" className="grid gap-3 sm:grid-cols-2">
+    <ul aria-label={t("Status")} className="grid gap-3 sm:grid-cols-2">
       {items.map((h) => (
         <li key={h.id}>
           <Link
@@ -302,7 +303,7 @@ export function RecordDrawer({
   saveLabel,
   saveDisabled,
   onRemove,
-  removeLabel = "Remove",
+  removeLabel = t("Remove"),
   removeDisabled,
   tools,
   error,
@@ -349,10 +350,10 @@ export function RecordDrawer({
           ) : null}
           <span className="flex-1" />
           <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" onClick={onSave} disabled={saving || saveDisabled}>
-            {saving ? "Saving…" : saveLabel}
+            {saving ? t("Saving…") : saveLabel}
           </Button>
         </div>
       }

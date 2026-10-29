@@ -6,6 +6,7 @@ import { ConfigSection } from "../../components/ConfigSection";
 import { ErrorPanel } from "../../components/feedback";
 import { DomainPage, useRouteTab } from "../../components/layout";
 import { RemoteDiagnostics } from "../../components/RemoteDiagnostics";
+import { localized, t } from "../../i18n";
 import { api } from "../../lib/api";
 import { humanizeKey, isPlainObject } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
@@ -66,11 +67,14 @@ function useRevealErrors(base: string, tabOf: (key: string) => string | undefine
 const serverTab = () => "server";
 
 /** General sections other than the server itself, each on its own tab. */
-const GENERAL_SECTIONS = [
-  { key: "downloads", label: "Downloads", groups: S.DOWNLOADS },
-  { key: "personalize", label: "Personalization", groups: S.PERSONALIZE },
-  { key: "extras", label: "Trailers & extras", groups: S.EXTRAS },
-] as const;
+const GENERAL_SECTIONS = localized(
+  () =>
+    [
+      { key: "downloads", label: t("Downloads"), groups: S.DOWNLOADS },
+      { key: "personalize", label: t("Personalization"), groups: S.PERSONALIZE },
+      { key: "extras", label: t("Trailers & extras"), groups: S.EXTRAS },
+    ] as const,
+);
 
 /**
  * Server name, port, limits and logging, then downloads, personalization and
@@ -87,7 +91,7 @@ export function GeneralPage() {
     [cfg],
   );
   const tabs = [
-    { key: "server", label: "Server" },
+    { key: "server", label: t("Server") },
     ...GENERAL_SECTIONS.map((x) => ({ key: x.key, label: x.label })),
     ...extras.map((k) => ({ key: k, label: humanizeKey(k) })),
   ];
@@ -95,8 +99,8 @@ export function GeneralPage() {
   const toServer = useRevealErrors("/server", serverTab);
   return (
     <DomainPage
-      title="General"
-      description="Server name, port and limits, downloads, personalization and trailers."
+      title={t("General")}
+      description={t("Server name, port and limits, downloads, personalization and trailers.")}
       base="/server"
       tabs={tabs}
       active={tab}
@@ -107,7 +111,7 @@ export function GeneralPage() {
         groups={clustered ? S.clusterServerGroups() : S.SERVER}
         // Node weight only matters in a cluster.
         omit={clustered ? undefined : ["clusterWeight"]}
-        label="General"
+        label={t("General")}
         hidden={tab !== "server"}
         onFieldErrors={toServer}
         onSaved={() => void reloadBoot()}
@@ -165,18 +169,22 @@ function GeneralSection({
   );
 }
 
-const PLEX_TABS = [
-  { key: "status", label: "Status" },
-  { key: "remote", label: "Remote access", group: "Remote access" },
-  { key: "secure", label: "Secure connections", group: "Secure connections" },
-  { key: "account", label: "Account", group: "Account" },
-  { key: "compatibility", label: "Compatibility", group: "Compatibility" },
-] as const;
+/** Every tab but Status shows the S.PLEX group whose `id` matches its key. */
+const PLEX_TABS = localized(
+  () =>
+    [
+      { key: "status", label: t("Status") },
+      { key: "remote", label: t("Remote access") },
+      { key: "secure", label: t("Secure connections") },
+      { key: "account", label: t("Account") },
+      { key: "compatibility", label: t("Compatibility") },
+    ] as const,
+);
 
 /** Which Plex tab a field lives on; options this UI doesn't know sit under Account. */
 function plexTabOf(key: string) {
-  const group = S.PLEX.find((g) => g.fields.some((f) => f.key === key))?.title;
-  return PLEX_TABS.find((t) => "group" in t && t.group === group)?.key ?? "account";
+  const group = S.PLEX.find((g) => g.fields.some((f) => f.key === key))?.id;
+  return PLEX_TABS.find((tab) => tab.key !== "status" && tab.key === group)?.key ?? "account";
 }
 
 export function RemoteAccessPage() {
@@ -190,14 +198,13 @@ export function RemoteAccessPage() {
       await reloadBoot();
       navigate("/setup");
     } catch (e) {
-      toast.error("Couldn't reopen setup", { description: (e as Error).message });
+      toast.error(t("Couldn't reopen setup"), { description: (e as Error).message });
     }
   };
-  const current = PLEX_TABS.find((t) => t.key === tab)!;
   return (
     <DomainPage
-      title="Connectivity"
-      description="Your Plex account, remote access and secure connections."
+      title={t("Connectivity")}
+      description={t("Your Plex account, remote access and secure connections.")}
       base="/remote-access"
       tabs={PLEX_TABS}
       active={tab}
@@ -206,8 +213,8 @@ export function RemoteAccessPage() {
         configKey="plex"
         endpoint="plex"
         groups={S.PLEX}
-        label="Connectivity"
-        show={(g) => "group" in current && g.title === current.group}
+        label={t("Connectivity")}
+        show={(g) => tab !== "status" && g.id === tab}
         showAdvanced={tab === "account"}
         onFieldErrors={reveal}
         before={(_, c) =>
@@ -221,19 +228,24 @@ export function RemoteAccessPage() {
   );
 }
 
-const SERVICE_TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "trakt", label: "Trakt" },
-  { key: "llm", label: "Language model" },
-  { key: "opensubtitles", label: "OpenSubtitles" },
-] as const;
+const SERVICE_TABS = localized(
+  () =>
+    [
+      { key: "overview", label: t("Overview") },
+      { key: "trakt", label: "Trakt" },
+      { key: "llm", label: t("Language model") },
+      { key: "opensubtitles", label: "OpenSubtitles" },
+    ] as const,
+);
 
 export function ServicesPage() {
   const tab = useRouteTab(SERVICE_TABS);
   return (
     <DomainPage
-      title="Integrations"
-      description="Every integration Ether uses and how it's doing. Trakt, a language model and OpenSubtitles are set up here."
+      title={t("Integrations")}
+      description={t(
+        "Every integration Ether uses and how it's doing. Trakt, a language model and OpenSubtitles are set up here.",
+      )}
       base="/services"
       tabs={SERVICE_TABS}
       active={tab}
@@ -243,24 +255,30 @@ export function ServicesPage() {
   );
 }
 
-const BACKUP_TABS = [
-  { key: "backups", label: "Backups" },
-  { key: "import", label: "Import & export" },
-] as const;
+const BACKUP_TABS = localized(
+  () =>
+    [
+      { key: "backups", label: t("Backups") },
+      { key: "import", label: t("Import & export") },
+    ] as const,
+);
 
-const MAINTENANCE_TABS = [
-  { key: "backups", label: "Backups & import" },
-  { key: "updates", label: "Updates" },
-  { key: "troubleshooting", label: "Troubleshooting" },
-  { key: "logs", label: "Logs" },
-] as const;
+const MAINTENANCE_TABS = localized(
+  () =>
+    [
+      { key: "backups", label: t("Backups & import") },
+      { key: "updates", label: t("Updates") },
+      { key: "troubleshooting", label: t("Troubleshooting") },
+      { key: "logs", label: t("Logs") },
+    ] as const,
+);
 
 export function MaintenancePage() {
   const tab = useRouteTab(MAINTENANCE_TABS);
   return (
     <DomainPage
-      title="Maintenance"
-      description="Back up and import your data, manage updates and troubleshoot your server."
+      title={t("Maintenance")}
+      description={t("Back up and import your data, manage updates and troubleshoot your server.")}
       base="/maintenance"
       tabs={MAINTENANCE_TABS}
       active={tab}
@@ -271,7 +289,7 @@ export function MaintenancePage() {
           configKey="updates"
           endpoint="updates"
           groups={S.UPDATES}
-          label="Updates"
+          label={t("Updates")}
           before={() => <UpdatesStatus />}
         />
       ) : null}
@@ -280,7 +298,7 @@ export function MaintenancePage() {
           configKey="spike"
           endpoint="spike"
           groups={S.SPIKE}
-          label="Troubleshooting"
+          label={t("Troubleshooting")}
         />
       ) : null}
       {tab === "logs" ? <Logs /> : null}
@@ -295,7 +313,7 @@ function BackupsSettings() {
   return (
     <>
       <SubtabNav
-        ariaLabel="Backups & import sections"
+        ariaLabel={t("Backups & import sections")}
         tabs={[...BACKUP_TABS]}
         active={tab}
         onSelect={(key) => navigate(`/maintenance/backups/${key}`)}
@@ -308,8 +326,8 @@ function BackupsSettings() {
 export function ClusterPage() {
   return (
     <DomainPage
-      title="Cluster"
-      description="Ether servers sharing one database and appearing in Plex as one server."
+      title={t("Cluster")}
+      description={t("Ether servers sharing one database and appearing in Plex as one server.")}
       base="/cluster"
     >
       <ClusterOverview />

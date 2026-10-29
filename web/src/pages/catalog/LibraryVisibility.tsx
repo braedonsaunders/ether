@@ -4,7 +4,9 @@ import { useState } from "react";
 import { Segmented } from "../../components/fields";
 import { ErrorPanel } from "../../components/feedback";
 import { Artwork } from "../../components/Artwork";
+import { t, tn } from "../../i18n";
 import { api, apiFetch, errorMessage } from "../../lib/api";
+import { formatNumber } from "../../lib/format";
 import type { Rule, RuleField } from "../../lib/contract";
 import { isRuleComplete } from "../../lib/rules";
 import { useAsync, useDebouncedValue } from "../../lib/hooks";
@@ -73,7 +75,7 @@ export function LibraryVisibility() {
     try {
       await api.putSection("catalog", { exclusions: groups });
       setSaved(JSON.stringify(groups));
-      toast.success("Library visibility updated");
+      toast.success(t("Library visibility updated"));
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -87,27 +89,27 @@ export function LibraryVisibility() {
       <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:p-7">
         <div className="space-y-5">
           <div>
-            <p className="catalog-eyebrow">LIBRARY VISIBILITY</p>
+            <p className="catalog-eyebrow">{t("LIBRARY VISIBILITY")}</p>
             <h2 className="text-2xl font-semibold tracking-tight">
-              Your catalogue. Your boundaries.
+              {t("Your catalogue. Your boundaries.")}
             </h2>
             <p className="mt-2 text-sm text-fg-muted">
-              Hide matching movies and shows from Plex browsing, search, recommendations and
-              collections. Combine conditions inside a group; a title matching any group is hidden.
-              Metadata and watch history are kept.
+              {t(
+                "Hide matching movies and shows from Plex browsing, search, recommendations and collections. Combine conditions inside a group; a title matching any group is hidden. Metadata and watch history are kept.",
+              )}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Badge variant="secondary">Local metadata · no provider searches</Badge>
-              <Badge variant="secondary">Applies to all viewers</Badge>
+              <Badge variant="secondary">{t("Local metadata · no provider searches")}</Badge>
+              <Badge variant="secondary">{t("Applies to all viewers")}</Badge>
             </div>
           </div>
           {stored.error ? <ErrorPanel error={stored.error} onRetry={stored.reload} /> : null}
           {!stored.loading && groups.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-8 text-center">
               <ShieldCheck className="mx-auto mb-3 text-accent" size={28} />
-              <h3 className="font-medium">No custom exclusions</h3>
+              <h3 className="font-medium">{t("No custom exclusions")}</h3>
               <p className="mt-2 text-sm text-fg-muted">
-                All eligible titles are visible. Add a group to narrow your library.
+                {t("All eligible titles are visible. Add a group to narrow your library.")}
               </p>
             </div>
           ) : null}
@@ -115,22 +117,22 @@ export function LibraryVisibility() {
             <section
               key={i}
               className="rounded-xl border border-border bg-surface p-5 space-y-4"
-              aria-label={`Exclusion group ${i + 1}`}
+              aria-label={t("Exclusion group {n}", { n: i + 1 })}
             >
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-accent/10 p-2 text-accent">
                   <Filter size={17} />
                 </div>
                 <Input
-                  aria-label={`Group ${i + 1} name`}
+                  aria-label={t("Group {n} name", { n: i + 1 })}
                   value={g.name}
                   onChange={(e) => update(i, { name: e.target.value })}
-                  placeholder="Name this exclusion"
+                  placeholder={t("Name this exclusion")}
                 />
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label={`Delete group ${i + 1}`}
+                  aria-label={t("Delete group {n}", { n: i + 1 })}
                   onClick={() => setGroups((gs) => gs.filter((_, n) => n !== i))}
                 >
                   <Trash2 size={16} />
@@ -138,22 +140,22 @@ export function LibraryVisibility() {
               </div>
               <div className="flex flex-wrap gap-4">
                 <Segmented
-                  ariaLabel={`Group ${i + 1} media`}
+                  ariaLabel={t("Group {n} media", { n: i + 1 })}
                   value={g.mediaType}
                   onChange={(v) => update(i, { mediaType: v })}
                   options={[
-                    { value: "mixed", label: "Movies + TV" },
-                    { value: "movie", label: "Movies" },
-                    { value: "show", label: "TV shows" },
+                    { value: "mixed", label: t("Movies + TV") },
+                    { value: "movie", label: t("Movies") },
+                    { value: "show", label: t("TV shows") },
                   ]}
                 />
                 <Segmented
-                  ariaLabel={`Group ${i + 1} match`}
+                  ariaLabel={t("Group {n} match", { n: i + 1 })}
                   value={g.match}
                   onChange={(v) => update(i, { match: v })}
                   options={[
-                    { value: "all", label: "Match all" },
-                    { value: "any", label: "Match any" },
+                    { value: "all", label: t("Match all") },
+                    { value: "any", label: t("Match any") },
                   ]}
                 />
               </div>
@@ -177,7 +179,7 @@ export function LibraryVisibility() {
                 onClick={() => update(i, { rules: [...g.rules, condition()] })}
               >
                 <Plus size={14} />
-                Add condition
+                {t("Add condition")}
               </Button>
             </section>
           ))}
@@ -189,7 +191,7 @@ export function LibraryVisibility() {
                 setGroups((gs) => [
                   ...gs,
                   {
-                    name: `Exclusion ${gs.length + 1}`,
+                    name: t("Exclusion {n}", { n: gs.length + 1 }),
                     mediaType: "mixed",
                     match: "all",
                     rules: [condition()],
@@ -198,7 +200,7 @@ export function LibraryVisibility() {
               }
             >
               <Plus size={16} />
-              Add exclusion group
+              {t("Add exclusion group")}
             </Button>
             <div className="flex gap-2">
               <Button
@@ -206,7 +208,7 @@ export function LibraryVisibility() {
                 disabled={!dirty || saving}
                 onClick={() => setGroups(JSON.parse(saved) as Exclusion[])}
               >
-                Discard
+                {t("Discard")}
               </Button>
               <Button
                 disabled={
@@ -218,80 +220,87 @@ export function LibraryVisibility() {
                 }
                 onClick={() => void save()}
               >
-                {saving ? "Saving…" : "Save visibility"}
+                {saving ? t("Saving…") : t("Save visibility")}
               </Button>
             </div>
           </div>
         </div>
         <aside
           className="space-y-4 lg:sticky lg:top-0 lg:self-start"
-          aria-label="Visibility preview"
+          aria-label={t("Visibility preview")}
         >
           <div className="rounded-xl border border-border bg-surface p-5">
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Eye size={17} />
-              Live preview
+              {t("Live preview")}
             </div>
-            <p className="mt-2 text-xs text-fg-muted">Unsaved rules · local catalogue only</p>
+            <p className="mt-2 text-xs text-fg-muted">
+              {t("Unsaved rules · local catalogue only")}
+            </p>
             {preview.error ? <ErrorPanel error={preview.error} onRetry={preview.reload} /> : null}
             {!complete ? (
-              <p className="mt-4 text-sm text-fg-muted">Finish each condition to preview.</p>
+              <p className="mt-4 text-sm text-fg-muted">{t("Finish each condition to preview.")}</p>
             ) : (
               <>
                 <div className="mt-5 text-4xl font-semibold tracking-tight">
-                  {preview.loading ? "…" : (preview.data?.hidden ?? 0).toLocaleString()}
+                  {preview.loading ? "…" : formatNumber(preview.data?.hidden ?? 0)}
                 </div>
-                <p className="mt-1 text-sm text-fg-muted">titles would be hidden</p>
+                <p className="mt-1 text-sm text-fg-muted">
+                  {tn(preview.data?.hidden ?? 0, "title would be hidden", "titles would be hidden")}
+                </p>
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-lg bg-surface-alt p-3">
-                    {(preview.data?.movies ?? 0).toLocaleString()} movies
+                    {tn(preview.data?.movies ?? 0, "{count} movie", "{count} movies")}
                   </div>
                   <div className="rounded-lg bg-surface-alt p-3">
-                    {(preview.data?.shows ?? 0).toLocaleString()} shows
+                    {tn(preview.data?.shows ?? 0, "{count} show", "{count} shows")}
                   </div>
                 </div>
                 <p className="mt-4 text-xs text-fg-muted">
-                  {Math.max(
-                    0,
-                    (preview.data?.total ?? 0) - (preview.data?.hidden ?? 0),
-                  ).toLocaleString()}{" "}
-                  catalogue titles remain before release, availability and viewer restrictions.
+                  {tn(
+                    Math.max(0, (preview.data?.total ?? 0) - (preview.data?.hidden ?? 0)),
+                    "{count} catalogue title remains before release, availability and viewer restrictions.",
+                    "{count} catalogue titles remain before release, availability and viewer restrictions.",
+                  )}
                 </p>
               </>
             )}
           </div>
           <div className="rounded-xl border border-border p-5 text-sm text-fg-muted">
-            <h3 className="mb-2 font-medium text-fg">Country is not language</h3>
+            <h3 className="mb-2 font-medium text-fg">{t("Country is not language")}</h3>
             <p>
-              Country matches TMDB origin or production countries, including co-productions.
-              Language is a separate condition. Unknown metadata never matches an exclusion.
+              {t(
+                "Country matches TMDB origin or production countries, including co-productions. Language is a separate condition. Unknown metadata never matches an exclusion.",
+              )}
             </p>
             <p className="mt-3">
-              {(preview.data?.unknownCountry ?? 0).toLocaleString()} titles currently have no
-              country metadata. Normal metadata refreshes fill gaps; saving rules starts no bulk
-              lookups.
+              {tn(
+                preview.data?.unknownCountry ?? 0,
+                "{count} title currently has no country metadata. Normal metadata refreshes fill gaps; saving rules starts no bulk lookups.",
+                "{count} titles currently have no country metadata. Normal metadata refreshes fill gaps; saving rules starts no bulk lookups.",
+              )}
             </p>
           </div>
           {items.length ? (
             <div className="rounded-xl border border-border p-4">
-              <h3 className="mb-3 text-sm font-medium">Example matches</h3>
+              <h3 className="mb-3 text-sm font-medium">{t("Example matches")}</h3>
               <div className="grid grid-cols-3 gap-3">
-                {items.slice(0, 12).map((t) => (
-                  <div key={t.key}>
+                {items.slice(0, 12).map((item) => (
+                  <div key={item.key}>
                     <Artwork
                       src={
-                        t.poster ??
-                        (t.posterPath
-                          ? `https://image.tmdb.org/t/p/w185${t.posterPath}`
+                        item.poster ??
+                        (item.posterPath
+                          ? `https://image.tmdb.org/t/p/w185${item.posterPath}`
                           : undefined)
                       }
-                      alt={t.title}
+                      alt={item.title}
                       className="aspect-[2/3] rounded-md"
                     />
-                    <p className="mt-1 truncate text-xs" title={t.title}>
-                      {t.title}
+                    <p className="mt-1 truncate text-xs" title={item.title}>
+                      {item.title}
                     </p>
-                    <p className="text-xs text-fg-muted">{t.year || ""}</p>
+                    <p className="text-xs text-fg-muted">{item.year || ""}</p>
                   </div>
                 ))}
               </div>

@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Artwork } from "../../../components/Artwork";
 import { ErrorPanel } from "../../../components/feedback";
 import { Section } from "../../../components/layout";
+import { getLocale, t, tx } from "../../../i18n";
 import { apiFetch, errorMessage } from "../../../lib/api";
 import { useAsync } from "../../../lib/hooks";
 import type { DiscoverySettings } from "./WatchlistDefaults";
@@ -18,7 +19,7 @@ type Item = {
 
 const known = (value?: string) => Boolean(value && !value.startsWith("0001"));
 const day = (value?: string) =>
-  known(value) ? new Date(value!).toLocaleDateString() : "Date not announced";
+  known(value) ? new Date(value!).toLocaleDateString(getLocale()) : t("Date not announced");
 
 /** One viewer's watched-for titles: sync, check and remove (viewer profile › Watchlist). */
 export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
@@ -59,51 +60,57 @@ export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
   const list = items.data ?? [];
   return (
     <Section
-      title="Watchlist"
-      description="Titles Ether is watching for on this viewer's behalf. Each one appears on their Plex Home once it can be streamed."
+      title={t("Watchlist")}
+      description={t(
+        "Titles Ether is watching for on this viewer's behalf. Each one appears on their Plex Home once it can be streamed.",
+      )}
       actions={
         <>
           <Button
             variant="outline"
             size="sm"
             disabled={busy !== null || !enabled}
-            onClick={() => void refreshWith("sync", "Watchlist synced")}
+            onClick={() => void refreshWith("sync", t("Watchlist synced"))}
           >
-            <RefreshCw size={14} /> Sync viewer
+            <RefreshCw size={14} /> {t("Sync viewer")}
           </Button>
           <Button
             variant="outline"
             size="sm"
             disabled={busy !== null || !enabled}
-            onClick={() => void refreshWith("check", "Availability checked")}
+            onClick={() => void refreshWith("check", t("Availability checked"))}
           >
-            <BellRing size={14} /> Check availability
+            <BellRing size={14} /> {t("Check availability")}
           </Button>
         </>
       }
     >
       {settings.data && !enabled ? (
         <p className="text-sm text-fg-muted">
-          Watchlist monitoring is off.{" "}
-          <Link to="/viewers/defaults" className="font-medium text-fg underline">
-            Turn it on in Defaults
-          </Link>{" "}
-          to sync and check this viewer's watchlist.
+          {tx("Watchlist monitoring is off. {link} to sync and check this viewer's watchlist.", {
+            link: (
+              <Link to="/viewers/defaults" className="font-medium text-fg underline">
+                {t("Turn it on in Defaults")}
+              </Link>
+            ),
+          })}
         </p>
       ) : null}
       {items.error ? (
         <ErrorPanel error={items.error} onRetry={() => void items.reload()} />
       ) : !items.data ? (
         <div className="py-6 text-center">
-          <Spinner size={18} label="Loading watchlist" />
+          <Spinner size={18} label={t("Loading watchlist")} />
         </div>
       ) : list.length === 0 ? (
         <EmptyState
-          title="Nothing on the watchlist"
-          description="Titles appear here after a sync of this viewer's Plex or Trakt watchlist."
+          title={t("Nothing on the watchlist")}
+          description={t(
+            "Titles appear here after a sync of this viewer's Plex or Trakt watchlist.",
+          )}
         />
       ) : (
-        <ul className="divide-y divide-border" aria-label="Watched-for titles">
+        <ul className="divide-y divide-border" aria-label={t("Watched-for titles")}>
           {list.map((item) => {
             const available = known(item.availableAt);
             return (
@@ -122,20 +129,20 @@ export function ViewerWatchlist({ viewerId }: { viewerId: number }) {
                   <p className="truncate text-sm font-medium text-fg">{item.title.title}</p>
                   <p className="truncate text-xs text-fg-muted">
                     {available
-                      ? `Available since ${day(item.availableAt)}`
-                      : `Waiting for a stream · ${day(item.title.released)}`}
+                      ? t("Available since {date}", { date: day(item.availableAt) })
+                      : t("Waiting for a stream · {date}", { date: day(item.title.released) })}
                     {item.sources.length ? ` · ${item.sources.join(", ")}` : ""}
                   </p>
                 </div>
-                {available ? <Badge variant="success">Available</Badge> : null}
+                {available ? <Badge variant="success">{t("Available")}</Badge> : null}
                 <Button
                   variant="ghost"
                   size="sm"
-                  aria-label={`Remove ${item.title.title}`}
+                  aria-label={t("Remove {title}", { title: item.title.title })}
                   disabled={busy !== null}
                   onClick={() => void remove(item)}
                 >
-                  <Trash2 size={14} /> Remove
+                  <Trash2 size={14} /> {t("Remove")}
                 </Button>
               </li>
             );

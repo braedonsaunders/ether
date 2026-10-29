@@ -1,14 +1,15 @@
 import { Badge, cn } from "@braedonsaunders/appkit-ui";
 import { AlertTriangle, CheckCircle2, CircleSlash, HelpCircle, XCircle } from "lucide-react";
+import { localized, t } from "../i18n";
 import type { HealthLevel } from "../lib/health";
 
-export const LEVEL_LABEL: Record<HealthLevel, string> = {
-  ok: "Healthy",
-  warn: "Needs attention",
-  error: "Problem",
-  off: "Off",
-  unknown: "Unknown",
-};
+export const LEVEL_LABEL: Record<HealthLevel, string> = localized(() => ({
+  ok: t("Healthy"),
+  warn: t("Needs attention"),
+  error: t("Problem"),
+  off: t("Off"),
+  unknown: t("Unknown"),
+}));
 
 const DOT: Record<HealthLevel, string> = {
   ok: "bg-success",

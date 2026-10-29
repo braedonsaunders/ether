@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Field, SecretInput, Segmented } from "../../components/fields";
+import { localized, t } from "../../i18n";
 import { errorMessage } from "../../lib/api";
 import { formatNumber, relativeTime } from "../../lib/format";
 import {
@@ -82,7 +83,8 @@ export function SourceEditor({
     const limit = key === "playlist" ? 16 * 1024 * 1024 : 64 * 1024 * 1024;
     try {
       const text = await readUpload(file);
-      if (text.length > limit) throw new Error("The selected file exceeds the import size limit.");
+      if (text.length > limit)
+        throw new Error(t("The selected file exceeds the import size limit."));
       setDraft((s) => ({
         ...s,
         [key]: text,
@@ -112,8 +114,8 @@ export function SourceEditor({
         kind === "guide" || xtream ? { ...draft, playlist: "", playlistUrl: "" } : { ...draft };
       body.auth = cleanAuth(draft.auth, kind);
       const saved = await tv.saveSource(body);
-      toast.success(source ? "Source re-imported" : "Source imported", {
-        description: "Channel numbers, mappings and access rules are kept.",
+      toast.success(source ? t("Source re-imported") : t("Source imported"), {
+        description: t("Channel numbers, mappings and access rules are kept."),
       });
       await onSaved(saved);
     } catch (e) {
@@ -129,7 +131,9 @@ export function SourceEditor({
     setError("");
     try {
       const s = await tv.refreshSource(source.id);
-      toast.success("Source refreshed", { description: "Fresh listings are in the guide." });
+      toast.success(t("Source refreshed"), {
+        description: t("Fresh listings are in the guide."),
+      });
       await onSaved(s);
     } catch (e) {
       setError(errorMessage(e));
@@ -141,19 +145,19 @@ export function SourceEditor({
   const remove = async () => {
     if (!source) return;
     const ok = await confirmDialog({
-      title: `Delete ${source.name}?`,
+      title: t("Delete {name}?", { name: source.name }),
       message:
         kind === "playlist"
-          ? "Its channels and their listings are removed from Live TV."
-          : "Channels mapped to this guide lose their listings.",
-      confirmLabel: "Delete source",
+          ? t("Its channels and their listings are removed from Live TV.")
+          : t("Channels mapped to this guide lose their listings."),
+      confirmLabel: t("Delete source"),
       tone: "danger",
     });
     if (!ok) return;
     setBusy("delete");
     try {
       await tv.deleteSource(source.id);
-      toast.success("Source deleted");
+      toast.success(t("Source deleted"));
       await onDeleted();
     } catch (e) {
       setError(errorMessage(e));
@@ -178,12 +182,12 @@ export function SourceEditor({
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-xl font-semibold tracking-tight text-fg">
-            {source ? source.name : kind === "guide" ? "New guide source" : "New IPTV source"}
+            {source ? source.name : kind === "guide" ? t("New guide source") : t("New IPTV source")}
           </h2>
           <p className="text-sm text-fg-muted">
             {kind === "guide"
-              ? "An XMLTV guide on its own. Map any channel to it for listings."
-              : "An M3U playlist of live streams, with an optional XMLTV guide."}
+              ? t("An XMLTV guide on its own. Map any channel to it for listings.")
+              : t("An M3U playlist of live streams, with an optional XMLTV guide.")}
           </p>
         </div>
         {source ? (
@@ -193,10 +197,10 @@ export function SourceEditor({
               size="sm"
               disabled={Boolean(busy) || !urlBacked}
               onClick={() => void refresh()}
-              title={urlBacked ? undefined : "Uploaded files can't be refreshed; upload again"}
+              title={urlBacked ? undefined : t("Uploaded files can't be refreshed; upload again")}
             >
-              <RefreshCw size={13} className={busy === "refresh" ? "animate-spin" : ""} /> Refresh
-              now
+              <RefreshCw size={13} className={busy === "refresh" ? "animate-spin" : ""} />{" "}
+              {t("Refresh now")}
             </Button>
           </div>
         ) : null}
@@ -206,19 +210,38 @@ export function SourceEditor({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             kind === "guide"
-              ? [
-                  "Coverage",
-                  source.guideFrom
+              ? {
+                  key: "coverage",
+                  label: t("Coverage"),
+                  value: source.guideFrom
                     ? `${duration(Date.parse(source.guideUntil ?? source.guideFrom) - Date.parse(source.guideFrom))}`
                     : "—",
-                ]
-              : ["Channels", formatNumber(source.channelCount ?? 0)],
-            ["Guide channels", formatNumber(source.guideChannelCount ?? 0)],
-            ["Listings", formatNumber(source.programmeCount ?? 0)],
-            ["Guide runs to", source.guideUntil ? dayClock(source.guideUntil) : "—"],
-          ].map(([k, v]) => (
-            <div key={k} className="rounded-xl border border-border bg-surface px-3 py-2.5">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">{k}</p>
+                }
+              : {
+                  key: "channels",
+                  label: t("Channels"),
+                  value: formatNumber(source.channelCount ?? 0),
+                },
+            {
+              key: "guideChannels",
+              label: t("Guide channels"),
+              value: formatNumber(source.guideChannelCount ?? 0),
+            },
+            {
+              key: "listings",
+              label: t("Listings"),
+              value: formatNumber(source.programmeCount ?? 0),
+            },
+            {
+              key: "until",
+              label: t("Guide runs to"),
+              value: source.guideUntil ? dayClock(source.guideUntil) : "—",
+            },
+          ].map(({ key, label, value: v }) => (
+            <div key={key} className="rounded-xl border border-border bg-surface px-3 py-2.5">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-fg-subtle">
+                {label}
+              </p>
               <p className="mt-0.5 truncate text-lg font-semibold tabular-nums text-fg">{v}</p>
             </div>
           ))}
@@ -229,9 +252,9 @@ export function SourceEditor({
         <div className="flex items-start gap-2 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm">
           <AlertTriangle size={15} className="mt-0.5 shrink-0 text-danger" />
           <div>
-            <p className="font-medium text-fg">The last automatic refresh failed</p>
+            <p className="font-medium text-fg">{t("The last automatic refresh failed")}</p>
             <p className="text-fg-muted">
-              {source.lastError}. The previous listings are still in use.
+              {t("{error}. The previous listings are still in use.", { error: source.lastError })}
             </p>
           </div>
         </div>
@@ -240,27 +263,33 @@ export function SourceEditor({
       <section className="space-y-4 rounded-2xl border border-border bg-surface p-5">
         {!source ? (
           <Segmented
-            ariaLabel="Source type"
+            ariaLabel={t("Source type")}
             value={kind}
             onChange={setKind}
             options={[
-              { value: "playlist", label: "M3U playlist", icon: <ListVideo size={13} /> },
-              { value: "guide", label: "Guide only (XMLTV)", icon: <CalendarRange size={13} /> },
+              { value: "playlist", label: t("M3U playlist"), icon: <ListVideo size={13} /> },
+              {
+                value: "guide",
+                label: t("Guide only (XMLTV)"),
+                icon: <CalendarRange size={13} />,
+              },
             ]}
           />
         ) : null}
-        <Field label="Source name" htmlFor="src-name">
+        <Field label={t("Source name")} htmlFor="src-name">
           <Input
             id="src-name"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
-            placeholder={kind === "guide" ? "e.g. Regional listings" : "e.g. My IPTV provider"}
+            placeholder={
+              kind === "guide" ? t("e.g. Regional listings") : t("e.g. My IPTV provider")
+            }
           />
         </Field>
         {kind === "playlist" ? (
-          <Field label="Connect with">
+          <Field label={t("Connect with")}>
             <Segmented
-              ariaLabel="Connect with"
+              ariaLabel={t("Connect with")}
               size="sm"
               value={xtream ? "xtream" : "url"}
               onChange={(v) =>
@@ -273,8 +302,8 @@ export function SourceEditor({
                 }))
               }
               options={[
-                { value: "url", label: "Playlist URL or file", icon: <Link2 size={13} /> },
-                { value: "xtream", label: "Xtream Codes login", icon: <KeyRound size={13} /> },
+                { value: "url", label: t("Playlist URL or file"), icon: <Link2 size={13} /> },
+                { value: "xtream", label: t("Xtream Codes login"), icon: <KeyRound size={13} /> },
               ]}
             />
           </Field>
@@ -282,9 +311,11 @@ export function SourceEditor({
         {xtream ? (
           <div className="space-y-4 rounded-xl border border-border bg-bg-subtle/60 p-4">
             <Field
-              label="Server"
+              label={t("Server")}
               htmlFor="xt-server"
-              hint="The panel address your provider gave you, e.g. http://provider.example:8080"
+              hint={t("The panel address your provider gave you, e.g. {example}", {
+                example: "http://provider.example:8080",
+              })}
             >
               <Input
                 id="xt-server"
@@ -294,7 +325,7 @@ export function SourceEditor({
               />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Username" htmlFor="xt-user">
+              <Field label={t("Username")} htmlFor="xt-user">
                 <Input
                   id="xt-user"
                   value={auth.username ?? ""}
@@ -302,7 +333,7 @@ export function SourceEditor({
                   onChange={(e) => setAuth({ username: e.currentTarget.value })}
                 />
               </Field>
-              <Field label="Password" htmlFor="xt-pass">
+              <Field label={t("Password")} htmlFor="xt-pass">
                 <SecretInput
                   id="xt-pass"
                   value={auth.password ?? ""}
@@ -311,11 +342,11 @@ export function SourceEditor({
               </Field>
             </div>
             <Field
-              label="Stream format"
-              hint="TS works with almost every panel; pick HLS if yours prefers it."
+              label={t("Stream format")}
+              hint={t("TS works with almost every panel; pick HLS if yours prefers it.")}
             >
               <Segmented
-                ariaLabel="Stream format"
+                ariaLabel={t("Stream format")}
                 size="sm"
                 value={auth.output ?? "ts"}
                 onChange={(v) => setAuth({ output: v })}
@@ -330,7 +361,7 @@ export function SourceEditor({
         {kind === "playlist" && !xtream ? (
           <UrlOrFile
             id="src-m3u"
-            label="M3U playlist"
+            label={t("M3U playlist")}
             url={draft.playlistUrl}
             fileReady={Boolean(draft.playlist)}
             accept=".m3u,.m3u8,text/plain"
@@ -343,21 +374,21 @@ export function SourceEditor({
           id="src-xmltv"
           label={
             xtream
-              ? "XMLTV guide override (optional)"
+              ? t("XMLTV guide override (optional)")
               : kind === "playlist"
-                ? "XMLTV guide (optional)"
-                : "XMLTV guide"
+                ? t("XMLTV guide (optional)")
+                : t("XMLTV guide")
           }
           url={draft.guideUrl}
           fileReady={Boolean(draft.guide)}
           accept=".xml,.gz,application/xml,text/xml,application/gzip"
           placeholder={
-            xtream ? "Leave blank to use the panel's guide" : "https://…/guide.xml or .xml.gz"
+            xtream ? t("Leave blank to use the panel's guide") : t("https://…/guide.xml or .xml.gz")
           }
           hint={
             xtream
-              ? "Ether uses the panel's own XMLTV export unless you set one here."
-              : "Gzipped guides (.xml.gz) are fine."
+              ? t("Ether uses the panel's own XMLTV export unless you set one here.")
+              : t("Gzipped guides (.xml.gz) are fine.")
           }
           onUrl={(v) => setDraft({ ...draft, guideUrl: v, guide: "" })}
           onFile={(f) => void upload(f, "guide")}
@@ -365,23 +396,27 @@ export function SourceEditor({
         {!xtream ? <SignIn auth={auth} onChange={setAuth} /> : null}
         <ClientIdentity auth={auth} onChange={setAuth} />
         <Field
-          label="Keep it fresh"
+          label={t("Keep it fresh")}
           hint={
             !urlBacked
-              ? "Uploaded files stay as they are until you upload again."
+              ? t("Uploaded files stay as they are until you upload again.")
               : auto
-                ? `Refreshes on its own before the listings run out${source?.nextRefresh ? ` · next ${relativeTime(source.nextRefresh)}` : ""}.`
-                : "Only refreshes when you press Refresh now."
+                ? source?.nextRefresh
+                  ? t("Refreshes on its own before the listings run out · next {when}.", {
+                      when: relativeTime(source.nextRefresh),
+                    })
+                  : t("Refreshes on its own before the listings run out.")
+                : t("Only refreshes when you press Refresh now.")
           }
         >
           <Segmented
-            ariaLabel="Refresh"
+            ariaLabel={t("Refresh")}
             size="sm"
             value={auto ? "auto" : "manual"}
             onChange={(v) => setDraft({ ...draft, refreshHours: v === "auto" ? 0 : -1 })}
             options={[
-              { value: "auto", label: "Automatic" },
-              { value: "manual", label: "Manual" },
+              { value: "auto", label: t("Automatic") },
+              { value: "manual", label: t("Manual") },
             ]}
           />
         </Field>
@@ -392,14 +427,20 @@ export function SourceEditor({
         ) : null}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button disabled={!canSave || Boolean(busy)} onClick={() => void save()}>
-            {busy === "save" ? "Importing…" : source ? "Save and re-import" : "Import source"}
+            {busy === "save"
+              ? t("Importing…")
+              : source
+                ? t("Save and re-import")
+                : t("Import source")}
           </Button>
           {source ? (
             <span className="text-xs text-fg-muted">
-              Last imported {relativeTime(source.updatedAt)}
               {source.guideFrom && source.guideUntil
-                ? ` · ${duration(Date.parse(source.guideUntil) - Date.parse(source.guideFrom))} of listings`
-                : ""}
+                ? t("Last imported {when} · {span} of listings", {
+                    when: relativeTime(source.updatedAt),
+                    span: duration(Date.parse(source.guideUntil) - Date.parse(source.guideFrom)),
+                  })
+                : t("Last imported {when}", { when: relativeTime(source.updatedAt) })}
             </span>
           ) : null}
           {source ? (
@@ -409,7 +450,7 @@ export function SourceEditor({
               disabled={Boolean(busy)}
               onClick={() => void remove()}
             >
-              <Trash2 size={14} /> Delete source
+              <Trash2 size={14} /> {t("Delete source")}
             </Button>
           ) : null}
         </div>
@@ -441,28 +482,30 @@ function cleanAuth(a: SourceAuth | undefined, kind: SourceKind): SourceAuth | un
   return out;
 }
 
-const SIGN_IN: { value: Exclude<AuthType, "xtream">; label: string }[] = [
-  { value: "", label: "None" },
-  { value: "basic", label: "Username & password" },
-  { value: "bearer", label: "Token" },
-  { value: "headers", label: "Custom headers" },
-];
+const SIGN_IN = localized<{ value: Exclude<AuthType, "xtream">; label: string }[]>(() => [
+  { value: "", label: t("None") },
+  { value: "basic", label: t("Username & password") },
+  { value: "bearer", label: t("Token") },
+  { value: "headers", label: t("Custom headers") },
+]);
 
 /** How Ether signs in to a provider that protects its playlist, guide and streams. */
 function SignIn({ auth, onChange }: { auth: SourceAuth; onChange: (p: SourceAuth) => void }) {
   const type = auth.type === "xtream" ? "" : (auth.type ?? "");
   return (
     <Field
-      label="Sign-in"
+      label={t("Sign-in")}
       hint={
         type
-          ? "Used for the playlist, the guide and this source's streams. Never sent to other providers."
-          : "Choose a sign-in if the provider protects its URLs."
+          ? t(
+              "Used for the playlist, the guide and this source's streams. Never sent to other providers.",
+            )
+          : t("Choose a sign-in if the provider protects its URLs.")
       }
     >
       <div className="space-y-3">
         <Segmented
-          ariaLabel="Sign-in"
+          ariaLabel={t("Sign-in")}
           size="sm"
           value={type}
           onChange={(v) => onChange({ type: v })}
@@ -471,15 +514,15 @@ function SignIn({ auth, onChange }: { auth: SourceAuth; onChange: (p: SourceAuth
         {type === "basic" ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <Input
-              aria-label="Username"
-              placeholder="Username"
+              aria-label={t("Username")}
+              placeholder={t("Username")}
               autoComplete="off"
               value={auth.username ?? ""}
               onChange={(e) => onChange({ username: e.currentTarget.value })}
             />
             <SecretInput
-              ariaLabel="Password"
-              placeholder="Password"
+              ariaLabel={t("Password")}
+              placeholder={t("Password")}
               value={auth.password ?? ""}
               onChange={(v) => onChange({ password: v })}
             />
@@ -487,8 +530,8 @@ function SignIn({ auth, onChange }: { auth: SourceAuth; onChange: (p: SourceAuth
         ) : null}
         {type === "bearer" ? (
           <SecretInput
-            ariaLabel="Token"
-            placeholder="Bearer token"
+            ariaLabel={t("Token")}
+            placeholder={t("Bearer token")}
             value={auth.token ?? ""}
             onChange={(v) => onChange({ token: v })}
           />
@@ -523,7 +566,7 @@ function HeaderRows({
       {list.map(([k, v], i) => (
         <div key={i} className="flex items-start gap-2">
           <Input
-            aria-label={`Header ${i + 1} name`}
+            aria-label={t("Header {number} name", { number: i + 1 })}
             placeholder="X-Api-Key"
             value={k}
             className="w-44 shrink-0 font-mono text-xs"
@@ -533,8 +576,8 @@ function HeaderRows({
           />
           <div className="min-w-0 flex-1">
             <SecretInput
-              ariaLabel={`Header ${i + 1} value`}
-              placeholder="Value"
+              ariaLabel={t("Header {number} value", { number: i + 1 })}
+              placeholder={t("Value")}
               value={v}
               onChange={(val) => commit(list.map((r, n) => (n === i ? [r[0], val] : r)))}
             />
@@ -543,7 +586,7 @@ function HeaderRows({
             variant="ghost"
             size="sm"
             className="size-9 shrink-0 p-0 text-fg-subtle hover:text-danger"
-            aria-label={`Remove header ${i + 1}`}
+            aria-label={t("Remove header {number}", { number: i + 1 })}
             onClick={() => commit(list.filter((_, n) => n !== i))}
           >
             <X size={14} />
@@ -551,7 +594,7 @@ function HeaderRows({
         </div>
       ))}
       <Button variant="ghost" size="sm" onClick={() => commit([...list, ["", ""]])}>
-        <Plus size={13} /> Add header
+        <Plus size={13} /> {t("Add header")}
       </Button>
     </div>
   );
@@ -569,21 +612,21 @@ function ClientIdentity({
   return (
     <details open={set} className="rounded-xl border border-border bg-bg-subtle/40 px-4 py-3">
       <summary className="cursor-pointer text-sm font-medium text-fg">
-        Player identity{" "}
+        {t("Player identity")}{" "}
         <span className="font-normal text-fg-muted">
-          {set ? "· custom" : "· for providers that only answer known players"}
+          {set ? `· ${t("custom")}` : `· ${t("for providers that only answer known players")}`}
         </span>
       </summary>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <Field label="User agent" htmlFor="src-ua">
+        <Field label={t("User agent")} htmlFor="src-ua">
           <Input
             id="src-ua"
-            placeholder="e.g. VLC/3.0.20 LibVLC/3.0.20"
+            placeholder={t("e.g. {example}", { example: "VLC/3.0.20 LibVLC/3.0.20" })}
             value={auth.userAgent ?? ""}
             onChange={(e) => onChange({ userAgent: e.currentTarget.value })}
           />
         </Field>
-        <Field label="Referer" htmlFor="src-referer">
+        <Field label={t("Referer")} htmlFor="src-referer">
           <Input
             id="src-referer"
             placeholder="https://…"
@@ -624,24 +667,24 @@ function UrlOrFile({
           id={id}
           value={url}
           onChange={(e) => onUrl(e.currentTarget.value)}
-          placeholder={fileReady ? "Using the uploaded file" : placeholder}
+          placeholder={fileReady ? t("Using the uploaded file") : placeholder}
           className="min-w-0 flex-1"
         />
         <label className="relative inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-surface-hover">
           <FileUp size={14} />
-          Upload
+          {t("Upload")}
           <input
             type="file"
             accept={accept}
             className="sr-only"
-            aria-label={`Upload ${label}`}
+            aria-label={t("Upload {name}", { name: label })}
             onChange={(e) => onFile(e.target.files?.[0])}
           />
         </label>
       </div>
       {fileReady ? (
         <Badge variant="success" className="mt-1.5">
-          File ready to import
+          {t("File ready to import")}
         </Badge>
       ) : null}
     </Field>

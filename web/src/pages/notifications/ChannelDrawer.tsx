@@ -1,3 +1,4 @@
+import { localized, t } from "../../i18n";
 import { Button, Input, Select, Switch } from "@braedonsaunders/appkit-ui";
 import { useEffect, useId, useState } from "react";
 import { Drawer } from "../../components/Drawer";
@@ -12,12 +13,15 @@ import {
   type Channel,
 } from "./types";
 
-const SMTP_FIELDS = [
-  { key: "username", label: "Username" },
-  { key: "password", label: "Password" },
-  { key: "from", label: "From address" },
-  { key: "to", label: "To addresses" },
-] as const;
+const SMTP_FIELDS = localized(
+  () =>
+    [
+      { key: "username", label: t("Username") },
+      { key: "password", label: t("Password") },
+      { key: "from", label: t("From address") },
+      { key: "to", label: t("To addresses") },
+    ] as const,
+);
 
 /** Create or edit one notification channel. */
 export function ChannelDrawer({
@@ -51,16 +55,18 @@ export function ChannelDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      title={isNew ? "New notification channel" : "Edit notification channel"}
-      description="Saved endpoints and credentials show as [configured]; leave them as they are to keep them."
+      title={isNew ? t("New notification channel") : t("Edit notification channel")}
+      description={t(
+        "Saved endpoints and credentials show as [configured]; leave them as they are to keep them.",
+      )}
       size="lg"
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={() => onSave(channel)} disabled={saving}>
-            {saving ? "Saving…" : "Save channel"}
+            {saving ? t("Saving…") : t("Save channel")}
           </Button>
         </div>
       }
@@ -68,7 +74,7 @@ export function ChannelDrawer({
       <div className="space-y-6">
         {error ? <MutationError error={error} /> : null}
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Name" htmlFor={`${id}-name`}>
+          <Field label={t("Name")} htmlFor={`${id}-name`}>
             <Input
               id={`${id}-name`}
               value={channel.name}
@@ -76,10 +82,10 @@ export function ChannelDrawer({
               onChange={(e) => patch({ name: e.target.value })}
             />
           </Field>
-          <Field label="Transport" htmlFor={`${id}-kind`}>
+          <Field label={t("Transport")} htmlFor={`${id}-kind`}>
             <Select
               id={`${id}-kind`}
-              aria-label="Transport"
+              aria-label={t("Transport")}
               value={channel.kind}
               disabled={channel.kind === "webpush" || !isNew}
               onChange={(e) =>
@@ -91,7 +97,9 @@ export function ChannelDrawer({
                 })
               }
             >
-              {channel.kind === "webpush" ? <option value="webpush">Browser push</option> : null}
+              {channel.kind === "webpush" ? (
+                <option value="webpush">{t("Browser push")}</option>
+              ) : null}
               {TRANSPORTS.map((v) => (
                 <option key={v} value={v}>
                   {transportLabel(v)}
@@ -102,8 +110,8 @@ export function ChannelDrawer({
           <p className="text-sm text-fg-muted sm:col-span-2">{TRANSPORT_HELP[channel.kind]}</p>
           {channel.kind !== "telegram" && channel.kind !== "webpush" ? (
             <Field
-              label={channel.kind === "smtp" ? "SMTP host:port" : "Endpoint URL"}
-              hint={channel.kind === "smtp" ? "The server must support TLS." : undefined}
+              label={channel.kind === "smtp" ? t("SMTP host:port") : t("Endpoint URL")}
+              hint={channel.kind === "smtp" ? t("The server must support TLS.") : undefined}
               htmlFor={`${id}-endpoint`}
               className="sm:col-span-2"
             >
@@ -116,11 +124,11 @@ export function ChannelDrawer({
           ) : null}
           {channel.kind !== "smtp" && channel.kind !== "webpush" ? (
             <Field
-              label={channel.kind === "telegram" ? "Bot token" : "Access token"}
+              label={channel.kind === "telegram" ? t("Bot token") : t("Access token")}
               hint={
                 channel.kind === "telegram"
                   ? undefined
-                  : "Optional. A bearer token, or the app key for Gotify."
+                  : t("Optional. A bearer token, or the app key for Gotify.")
               }
               htmlFor={`${id}-token`}
             >
@@ -132,7 +140,7 @@ export function ChannelDrawer({
             </Field>
           ) : null}
           {channel.kind === "telegram" ? (
-            <Field label="Chat ID" htmlFor={`${id}-target`}>
+            <Field label={t("Chat ID")} htmlFor={`${id}-target`}>
               <Input
                 id={`${id}-target`}
                 value={channel.target}
@@ -141,15 +149,15 @@ export function ChannelDrawer({
             </Field>
           ) : null}
           {channel.kind === "smtp" ? (
-            <Field label="Connection security" htmlFor={`${id}-security`}>
+            <Field label={t("Connection security")} htmlFor={`${id}-security`}>
               <Select
                 id={`${id}-security`}
-                aria-label="Connection security"
+                aria-label={t("Connection security")}
                 value={channel.smtpMode || (channel.endpoint.endsWith(":465") ? "tls" : "starttls")}
                 onChange={(e) => patch({ smtpMode: e.target.value })}
               >
-                <option value="starttls">STARTTLS (usually 587)</option>
-                <option value="tls">Implicit TLS (usually 465)</option>
+                <option value="starttls">{t("STARTTLS (usually 587)")}</option>
+                <option value="tls">{t("Implicit TLS (usually 465)")}</option>
               </Select>
             </Field>
           ) : null}
@@ -172,7 +180,7 @@ export function ChannelDrawer({
                 </Field>
               ))
             : null}
-          <Field label="Most deliveries per minute" htmlFor={`${id}-rate`}>
+          <Field label={t("Most deliveries per minute")} htmlFor={`${id}-rate`}>
             <NumberInput
               id={`${id}-rate`}
               min={1}
@@ -182,8 +190,8 @@ export function ChannelDrawer({
             />
           </Field>
           <Field
-            label="Digest delay (minutes)"
-            hint="Collect alerts and send them together. 0 sends each one right away."
+            label={t("Digest delay (minutes)")}
+            hint={t("Collect alerts and send them together. 0 sends each one right away.")}
             htmlFor={`${id}-digest`}
           >
             <NumberInput
@@ -198,9 +206,9 @@ export function ChannelDrawer({
 
         <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
           <span>
-            <span className="block text-sm font-medium text-fg">Enabled</span>
+            <span className="block text-sm font-medium text-fg">{t("Enabled")}</span>
             <span className="block text-xs text-fg-muted">
-              Turn off to stop sending without deleting the channel.
+              {t("Turn off to stop sending without deleting the channel.")}
             </span>
           </span>
           <Switch
@@ -210,10 +218,11 @@ export function ChannelDrawer({
         </label>
 
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-fg">Send these events</legend>
+          <legend className="text-sm font-medium text-fg">{t("Send these events")}</legend>
           <p className="text-xs text-fg-muted">
-            Choose exactly what reaches this destination. Server lifecycle alerts bypass digest
-            delays. Weekly reports are delivered by email.
+            {t(
+              "Choose exactly what reaches this destination. Server lifecycle alerts bypass digest delays. Weekly reports are delivered by email.",
+            )}
           </p>
           <div className="flex flex-wrap gap-2 py-2">
             <Button
@@ -221,7 +230,7 @@ export function ChannelDrawer({
               variant="outline"
               onClick={() => patch({ events: CRITICAL_EVENTS.filter((k) => events.includes(k)) })}
             >
-              Critical alerts
+              {t("Critical alerts")}
             </Button>
             <Button
               size="sm"
@@ -238,10 +247,10 @@ export function ChannelDrawer({
                 })
               }
             >
-              All automatic events
+              {t("All automatic events")}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => patch({ events: [] })}>
-              Clear
+              {t("Clear")}
             </Button>
           </div>
           <div className="grid gap-x-6 gap-y-2 pt-1 sm:grid-cols-2">
@@ -254,10 +263,10 @@ export function ChannelDrawer({
                     <span className="block text-xs text-fg-muted">
                       {catalog?.find((e) => e.kind === k)?.description ??
                         (["cert.renewed", "update.available", "user.joined"].includes(k)
-                          ? "Owner API integration only; not produced automatically."
+                          ? t("Owner API integration only; not produced automatically.")
                           : "")}
                       {k === "newsletter.weekly" && channel.kind !== "smtp"
-                        ? " Email channels only."
+                        ? " " + t("Email channels only.")
                         : ""}
                     </span>
                   </span>

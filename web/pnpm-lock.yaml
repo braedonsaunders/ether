@@ -11,6 +11,9 @@ importers:
       '@braedonsaunders/appkit-dashboard':
         specifier: ^4.0.0
         version: 4.0.0(@braedonsaunders/appkit-ui@0.4.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(tailwindcss@4.3.3))(lucide-react@1.59.0(@types/react@19.3.0)(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@braedonsaunders/appkit-i18n':
+        specifier: ^0.2.0
+        version: 0.2.0
       '@braedonsaunders/appkit-tokens':
         specifier: ^0.2.0
         version: 0.2.0(tailwindcss@4.3.3)
@@ -210,6 +213,10 @@ packages:
         optional: true
       react-grid-layout:
         optional: true
+
+  '@braedonsaunders/appkit-i18n@0.2.0':
+    resolution: {integrity: sha512-PFfWf3OR1odznePkjgnwYXCfePqhhuI9aoBuZv2WZ3fmmESAbLcUV1uW620cjMESXC7MzQ6rmrj1KZ6t0Yf81A==}
+    engines: {node: '>=22'}
 
   '@braedonsaunders/appkit-tokens@0.2.0':
     resolution: {integrity: sha512-soqY/S9bHaGb7pUuHGf90Zs4FX6dDGJs4ZKpekwnhPZvsGj8ZVro7pofkr6Df/ZVnCbapLriszKCUXsabGP9kQ==}
@@ -1563,6 +1570,8 @@ snapshots:
       lucide-react: 1.59.0(@types/react@19.3.0)(react@19.3.1)
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
+
+  '@braedonsaunders/appkit-i18n@0.2.0': {}
 
   '@braedonsaunders/appkit-tokens@0.2.0(tailwindcss@4.3.3)':
     dependencies:

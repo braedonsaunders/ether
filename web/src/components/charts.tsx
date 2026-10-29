@@ -1,6 +1,7 @@
 import { cn, useElementSize } from "@braedonsaunders/appkit-ui";
 import { useId, useMemo, useState } from "react";
-import { formatHour } from "../lib/format";
+import { t } from "../i18n";
+import { fixed, formatHour, formatPercent } from "../lib/format";
 
 /**
  * Small token-driven charts. Each is single-series (identity is named by the
@@ -73,10 +74,10 @@ export function TimeBars({
         aria-label={ariaLabel}
         onMouseLeave={() => setHover(null)}
       >
-        {ticks.map((t) => {
-          const y = padT + plotH - (t / max) * plotH;
+        {ticks.map((tick) => {
+          const y = padT + plotH - (tick / max) * plotH;
           return (
-            <g key={t}>
+            <g key={tick}>
               <line
                 x1={padL}
                 x2={width}
@@ -92,7 +93,7 @@ export function TimeBars({
                 textAnchor="end"
                 className="fill-fg-subtle text-[10px] tabular-nums"
               >
-                {valueFormat(t)}
+                {valueFormat(tick)}
               </text>
             </g>
           );
@@ -221,7 +222,7 @@ export function DivergingBars({
               </span>
               <span className="text-right text-xs tabular-nums text-fg-muted">
                 {w > 0 ? "+" : ""}
-                {w.toFixed(2)}
+                {fixed(w, 2)}
               </span>
             </Row>
           </li>
@@ -259,7 +260,7 @@ export function Columns({
             <div className="relative flex w-full flex-1 items-end">
               {hover === d.key ? (
                 <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] tabular-nums text-fg-muted">
-                  {d.value.toFixed(2)}
+                  {fixed(d.value, 2)}
                 </span>
               ) : null}
               <div
@@ -287,7 +288,7 @@ export function HourStrip({ peaks, ariaLabel }: { peaks: number[]; ariaLabel: st
   return (
     <div
       role="img"
-      aria-label={`${ariaLabel}: ${peaks.length ? peaks.map(formatHour).join(", ") : "no clear peak"}`}
+      aria-label={`${ariaLabel}: ${peaks.length ? peaks.map(formatHour).join(", ") : t("no clear peak")}`}
     >
       <div className="grid grid-cols-24 gap-0.5">
         {Array.from({ length: 24 }, (_, h) => (
@@ -302,11 +303,11 @@ export function HourStrip({ peaks, ariaLabel }: { peaks: number[]; ariaLabel: st
         ))}
       </div>
       <div className="mt-1 flex justify-between text-[10px] text-fg-subtle">
-        <span>12 AM</span>
-        <span>6 AM</span>
-        <span>12 PM</span>
-        <span>6 PM</span>
-        <span>12 AM</span>
+        <span>{formatHour(0)}</span>
+        <span>{formatHour(6)}</span>
+        <span>{formatHour(12)}</span>
+        <span>{formatHour(18)}</span>
+        <span>{formatHour(24)}</span>
       </div>
     </div>
   );
@@ -337,7 +338,7 @@ export function Meter({
             {label}
           </span>
           <span className={cn("tabular-nums", onScrim ? "text-on-scrim" : "text-fg")}>
-            {valueLabel ?? `${Math.round(v * 100)}%`}
+            {valueLabel ?? formatPercent(v)}
           </span>
         </div>
       ) : null}

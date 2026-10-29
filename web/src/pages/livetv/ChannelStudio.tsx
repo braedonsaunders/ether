@@ -32,7 +32,8 @@ import { Field, Segmented } from "../../components/fields";
 import { errorMessage, isAbort } from "../../lib/api";
 import type { CollectionSpec } from "../../lib/contract";
 import type { EtherUser } from "../../lib/types";
-import { plural, relativeTime } from "../../lib/format";
+import { localized, t, tn, tx } from "../../i18n";
+import { relativeTime } from "../../lib/format";
 import { useDebouncedValue } from "../../lib/hooks";
 import { ChannelLogo } from "./ChannelLogo";
 import { MapGuideButton } from "./GuideData";
@@ -60,6 +61,7 @@ import {
   type SourceStatus,
   type StreamSource,
 } from "./model";
+import { useLocale } from "../../i18n/react";
 
 export type Mode = "movies" | "collection" | "genre";
 export type StudioDraft = { channel: Channel; mode: Mode; genre: string };
@@ -78,15 +80,15 @@ export function compose(d: StudioDraft): Channel {
   const c = d.channel;
   if (c.kind === "virtual") {
     if (d.mode === "collection" && !c.collection)
-      throw new Error("Choose a collection for this channel.");
+      throw new Error(t("Choose a collection for this channel."));
     if (
       d.mode === "genre" &&
       !d.genre.trim() &&
       !Object.keys(c.filter || {}).some((key) => key !== "genres" && key !== "type")
     )
-      throw new Error("Enter at least one genre for this channel.");
+      throw new Error(t("Enter at least one genre for this channel."));
     if (d.mode === "movies" && !c.items.length)
-      throw new Error("Add at least one movie to this channel.");
+      throw new Error(t("Add at least one movie to this channel."));
     let end = 0;
     for (const block of [...(c.blocks ?? [])].sort((a, b) => a.start - b.start)) {
       if (
@@ -97,9 +99,9 @@ export function compose(d: StudioDraft): Channel {
         block.end <= block.start ||
         block.end > 1440
       )
-        throw new Error("Time blocks must have valid start and end times without overlapping.");
+        throw new Error(t("Time blocks must have valid start and end times without overlapping."));
       if (!block.items.length)
-        throw new Error("Add at least one movie to each time block, or remove the empty block.");
+        throw new Error(t("Add at least one movie to each time block, or remove the empty block."));
       end = block.end;
     }
     return {
@@ -167,6 +169,7 @@ export function ChannelStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [c.id, isNew]);
 
+  const { locale } = useLocale();
   // Virtual channels preview their draft schedule live; saved IPTV channels
   // show the guide the server already has.
   const composed = useMemo(() => {
@@ -175,7 +178,7 @@ export function ChannelStudio({
     } catch (e) {
       return { channel: null, error: errorMessage(e) };
     }
-  }, [draft]);
+  }, [draft, locale]);
   const previewKey = useDebouncedValue(
     virtual && composed.channel ? JSON.stringify(composed.channel) : "",
     500,
@@ -209,16 +212,16 @@ export function ChannelStudio({
 
   const tabs = virtual
     ? [
-        { key: "programming", label: "Programming" },
-        { key: "schedule", label: "Schedule", count: c.blocks?.length || undefined },
-        { key: "viewers", label: "Viewers" },
-        { key: "details", label: "Details" },
+        { key: "programming", label: t("Programming") },
+        { key: "schedule", label: t("Schedule"), count: c.blocks?.length || undefined },
+        { key: "viewers", label: t("Viewers") },
+        { key: "details", label: t("Details") },
       ]
     : [
-        { key: "stream", label: "Stream" },
-        { key: "guide", label: "Guide" },
-        { key: "viewers", label: "Viewers" },
-        { key: "details", label: "Details" },
+        { key: "stream", label: t("Stream") },
+        { key: "guide", label: t("Guide") },
+        { key: "viewers", label: t("Viewers") },
+        { key: "details", label: t("Details") },
       ];
 
   return (
@@ -242,7 +245,7 @@ export function ChannelStudio({
         ) : null}
         <div className="relative flex flex-wrap items-start gap-4 p-4 sm:p-6">
           <ChannelLogo
-            name={c.name || "New channel"}
+            name={c.name || t("New channel")}
             logo={c.logo}
             seed={c.id || c.name}
             size={72}
@@ -255,28 +258,28 @@ export function ChannelStudio({
               </span>
               <Badge variant="secondary" className="gap-1">
                 {virtual ? <Sparkles size={11} /> : <Radio size={11} />}
-                {virtual ? "Virtual" : source?.name || "IPTV"}
+                {virtual ? t("Virtual") : source?.name || "IPTV"}
               </Badge>
               {c.group ? <Badge variant="secondary">{c.group}</Badge> : null}
-              {!c.enabled ? <Badge variant="warning">Off air</Badge> : null}
-              {isNew ? <Badge variant="info">Not saved yet</Badge> : null}
+              {!c.enabled ? <Badge variant="warning">{t("Off air")}</Badge> : null}
+              {isNew ? <Badge variant="info">{t("Not saved yet")}</Badge> : null}
             </div>
             <input
               value={c.name}
               onChange={(e) => set({ name: e.currentTarget.value })}
-              placeholder="Name this channel"
-              aria-label="Name"
+              placeholder={t("Name this channel")}
+              aria-label={t("Name")}
               className="w-full min-w-0 bg-transparent text-2xl font-semibold tracking-tight text-fg placeholder:text-fg-subtle focus:outline-none"
             />
             {live ? (
               <div className="max-w-xl space-y-1.5">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="inline-flex items-center gap-1 rounded bg-danger px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                    <span className="size-1.5 animate-pulse rounded-full bg-white" /> On now
+                    <span className="size-1.5 animate-pulse rounded-full bg-white" /> {t("On now")}
                   </span>
                   <span className="min-w-0 truncate font-medium text-fg">{live.item.title}</span>
                   <span className="shrink-0 text-xs tabular-nums text-fg-muted">
-                    {duration(Date.parse(live.end) - now)} left
+                    {t("{time} left", { time: duration(Date.parse(live.end) - now) })}
                   </span>
                 </div>
                 <div className="h-1 overflow-hidden rounded-full bg-fg/10">
@@ -287,18 +290,20 @@ export function ChannelStudio({
                 </div>
                 {next ? (
                   <p className="truncate text-xs text-fg-muted">
-                    Up next at {clock(next.start)} ·{" "}
-                    <span className="text-fg">{next.item.title}</span>
+                    {tx("Up next at {time} · {title}", {
+                      time: clock(next.start),
+                      title: <span className="text-fg">{next.item.title}</span>,
+                    })}
                   </p>
                 ) : null}
               </div>
             ) : (
               <p className="text-sm text-fg-muted">
                 {virtual
-                  ? composed.error || previewError || "Building the schedule…"
+                  ? composed.error || previewError || t("Building the schedule…")
                   : coverage && coverage.programmes === 0
-                    ? "No listings for this channel yet. Map a guide channel on the Guide tab."
-                    : "Live stream"}
+                    ? t("No listings for this channel yet. Map a guide channel on the Guide tab.")
+                    : t("Live stream")}
               </p>
             )}
           </div>
@@ -308,7 +313,7 @@ export function ChannelStudio({
                 type="button"
                 onClick={() => setWatching((w) => !w)}
                 aria-pressed={watching}
-                title={dirty ? "Plays the saved channel" : undefined}
+                title={dirty ? t("Plays the saved channel") : undefined}
                 className={cn(
                   "group inline-flex h-9 items-center gap-2 rounded-full pl-1 pr-3.5 text-sm font-semibold shadow-sm transition-all",
                   watching
@@ -328,14 +333,14 @@ export function ChannelStudio({
                     <Play size={13} className="ml-0.5 fill-current" />
                   )}
                 </span>
-                {watching ? "Stop" : "Watch"}
+                {watching ? t("Stop") : t("Watch")}
               </button>
             ) : null}
             <button
               type="button"
               onClick={() => set({ favorite: !c.favorite })}
               aria-pressed={c.favorite}
-              aria-label="Favourite"
+              aria-label={t("Favourite")}
               className={cn(
                 "grid size-9 place-items-center rounded-full border transition-colors",
                 c.favorite
@@ -346,9 +351,9 @@ export function ChannelStudio({
               <Star size={16} className={cn(c.favorite && "fill-warning")} />
             </button>
             <label className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-3 pr-1.5 text-sm font-medium">
-              On air
+              {t("On air")}
               <Switch
-                aria-label="Enabled"
+                aria-label={t("Enabled")}
                 checked={c.enabled}
                 onChange={(e) => set({ enabled: e.currentTarget.checked })}
               />
@@ -361,13 +366,13 @@ export function ChannelStudio({
             from={windowFrom}
             until={windowUntil}
             now={now}
-            label={`${c.name || "Channel"} schedule`}
+            label={c.name ? t("{name} schedule", { name: c.name }) : t("Channel schedule")}
           />
         </div>
       </section>
 
       <div className="sticky top-0 z-20 border-b border-border bg-bg/95 px-4 backdrop-blur sm:px-6">
-        <SubtabNav ariaLabel="Channel settings" active={tab} onSelect={setTab} tabs={tabs} />
+        <SubtabNav ariaLabel={t("Channel settings")} active={tab} onSelect={setTab} tabs={tabs} />
       </div>
 
       <div className="space-y-5 p-4 sm:p-6">
@@ -378,7 +383,7 @@ export function ChannelStudio({
         {tab === "stream" && !virtual ? (
           <section className="max-w-2xl space-y-4">
             <StreamSources channel={c} sources={sources} onChange={set} />
-            <Field label="Group" htmlFor="ch-group">
+            <Field label={t("Group")} htmlFor="ch-group">
               <Input
                 id="ch-group"
                 value={c.group || ""}
@@ -389,15 +394,16 @@ export function ChannelStudio({
               <Switch
                 checked={c.transcode || false}
                 onChange={(e) => set({ transcode: e.currentTarget.checked })}
-                aria-label="Transcode IPTV codecs for client compatibility"
+                aria-label={t("Transcode IPTV codecs for client compatibility")}
               />
               <span>
                 <span className="block text-sm font-medium text-fg">
-                  Transcode for compatibility
+                  {t("Transcode for compatibility")}
                 </span>
                 <span className="block text-xs text-fg-muted">
-                  Convert unusual codecs so every Plex app can play this channel. Costs CPU while
-                  someone watches.
+                  {t(
+                    "Convert unusual codecs so every Plex app can play this channel. Costs CPU while someone watches.",
+                  )}
                 </span>
               </span>
             </label>
@@ -424,7 +430,7 @@ export function ChannelStudio({
         {tab === "details" ? (
           <section className="max-w-2xl space-y-4">
             <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Number" htmlFor="ch-number">
+              <Field label={t("Number")} htmlFor="ch-number">
                 <Input
                   id="ch-number"
                   value={c.number}
@@ -432,7 +438,11 @@ export function ChannelStudio({
                   className="font-mono tabular-nums"
                 />
               </Field>
-              <Field label="Content rating fallback" htmlFor="ch-rating" className="sm:col-span-2">
+              <Field
+                label={t("Content rating fallback")}
+                htmlFor="ch-rating"
+                className="sm:col-span-2"
+              >
                 <Input
                   id="ch-rating"
                   value={c.rating || ""}
@@ -442,9 +452,9 @@ export function ChannelStudio({
               </Field>
             </div>
             <Field
-              label="Logo URL"
+              label={t("Logo URL")}
               htmlFor="ch-logo"
-              hint="Leave blank and Ether draws one from the name."
+              hint={t("Leave blank and Ether draws one from the name.")}
             >
               <div className="flex items-center gap-3">
                 <ChannelLogo name={c.name} logo={c.logo} seed={c.id || c.name} size={36} />
@@ -459,13 +469,13 @@ export function ChannelStudio({
             {virtual ? (
               <details className="rounded-xl border border-border bg-surface p-4">
                 <summary className="cursor-pointer text-sm font-medium text-fg">
-                  Advanced schedule settings
+                  {t("Advanced schedule settings")}
                 </summary>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field
-                    label="Schedule anchor (UTC)"
+                    label={t("Schedule anchor (UTC)")}
                     htmlFor="ch-epoch"
-                    hint="Start time of the repeating running order."
+                    hint={t("Start time of the repeating running order.")}
                   >
                     <Input
                       id="ch-epoch"
@@ -474,7 +484,7 @@ export function ChannelStudio({
                       onChange={(e) => set({ epoch: `${e.currentTarget.value}:00Z` })}
                     />
                   </Field>
-                  <Field label="Shuffle seed" htmlFor="ch-seed">
+                  <Field label={t("Shuffle seed")} htmlFor="ch-seed">
                     <Input
                       id="ch-seed"
                       type="number"
@@ -488,15 +498,17 @@ export function ChannelStudio({
             {!isNew ? (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/5 p-4">
                 <div>
-                  <p className="text-sm font-medium text-fg">Delete channel</p>
+                  <p className="text-sm font-medium text-fg">{t("Delete channel")}</p>
                   <p className="text-xs text-fg-muted">
                     {virtual
-                      ? "Removes it from every viewer's guide."
-                      : "It comes back on the next source refresh unless you turn it off instead."}
+                      ? t("Removes it from every viewer's guide.")
+                      : t(
+                          "It comes back on the next source refresh unless you turn it off instead.",
+                        )}
                   </p>
                 </div>
                 <Button variant="outline" className="text-danger" onClick={onDelete}>
-                  <Trash2 size={14} /> Delete channel
+                  <Trash2 size={14} /> {t("Delete channel")}
                 </Button>
               </div>
             ) : null}
@@ -531,18 +543,18 @@ function StreamSources({
   const loginOptions = [
     {
       value: "",
-      label: "Default",
-      hint: "Imported entry uses its source's login; added backups use none",
+      label: t("Default"),
+      hint: t("Imported entry uses its source's login; added backups use none"),
     },
     ...logins.map((x) => ({
       value: x.id,
       label: x.name,
-      hint: x.id === c.sourceId ? "This channel's source" : "Use this source's login",
+      hint: x.id === c.sourceId ? t("This channel's source") : t("Use this source's login"),
     })),
   ];
   const list: StreamSource[] = c.streamSources?.length
     ? [...c.streamSources].sort((a, b) => a.priority - b.priority)
-    : [{ id: "primary", name: "Primary", url: c.streamUrl || "", enabled: true, priority: 0 }];
+    : [{ id: "primary", name: t("Primary"), url: c.streamUrl || "", enabled: true, priority: 0 }];
   const [status, setStatus] = useState<Map<string, SourceStatus>>(new Map());
   useEffect(() => {
     if (!c.id) return;
@@ -553,10 +565,10 @@ function StreamSources({
         .then((list) => setStatus(new Map(list.map((x) => [x.id, x]))))
         .catch(() => undefined);
     void load();
-    const t = setInterval(load, 30_000);
+    const timer = setInterval(load, 30_000);
     return () => {
       ctl.abort();
-      clearInterval(t);
+      clearInterval(timer);
     };
   }, [c.id]);
   const commit = (next: StreamSource[]) => {
@@ -571,22 +583,24 @@ function StreamSources({
   };
   const update = (i: number, patch: Partial<StreamSource>) =>
     commit(list.map((x, n) => (n === i ? { ...x, ...patch } : x)));
-  const labels = new Map<string, string>();
+  // Each source's role by position: 0 is the primary, -1 is off, n is backup n.
+  const ranks = new Map<string, number>();
   let rank = 0;
   for (const x of list) {
     const live = x.enabled && x.url.trim() !== "";
-    labels.set(x.id, !live ? "Off" : rank === 0 ? "Primary" : `Backup ${rank}`);
+    ranks.set(x.id, live ? rank : -1);
     if (live) rank++;
   }
-  if (list.length === 1) labels.set(list[0]!.id, "Primary");
+  if (list.length === 1) ranks.set(list[0]!.id, 0);
   return (
-    <section className="space-y-3" aria-label="Stream sources">
+    <section className="space-y-3" aria-label={t("Stream sources")}>
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-fg">Stream sources</h3>
+          <h3 className="text-sm font-semibold text-fg">{t("Stream sources")}</h3>
           <p className="text-xs text-fg-muted">
-            The first working source plays; if it drops, Ether moves down the list. Only you see
-            these URLs.
+            {t(
+              "The first working source plays; if it drops, Ether moves down the list. Only you see these URLs.",
+            )}
           </p>
         </div>
         <Button
@@ -597,7 +611,7 @@ function StreamSources({
               ...list,
               {
                 id: newSourceId(),
-                name: `Backup ${list.length}`,
+                name: t("Backup {number}", { number: list.length }),
                 url: "",
                 enabled: true,
                 priority: list.length,
@@ -605,7 +619,7 @@ function StreamSources({
             ])
           }
         >
-          <Plus size={13} /> Add backup
+          <Plus size={13} /> {t("Add backup")}
         </Button>
       </div>
       <SortableList
@@ -614,28 +628,34 @@ function StreamSources({
         onReorder={(next) => commit(next)}
         className="space-y-2"
         renderItem={(x, handle, i) => {
-          const label = labels.get(x.id) ?? "Off";
+          const role = ranks.get(x.id) ?? -1;
+          const label =
+            role < 0
+              ? t("Off")
+              : role === 0
+                ? t("Primary")
+                : t("Backup {number}", { number: role });
           return (
             <div
               className={cn(
                 "flex items-center gap-2 rounded-xl border bg-surface p-2",
-                label === "Primary" ? "border-primary/40" : "border-border",
+                role === 0 ? "border-primary/40" : "border-border",
                 !x.enabled && "opacity-60",
               )}
             >
               {list.length > 1 ? (
                 <DragHandle
                   handle={handle}
-                  label={`Reorder ${x.name || "source"}`}
+                  label={x.name ? t("Reorder {name}", { name: x.name }) : t("Reorder source")}
                   className="size-7"
                 />
               ) : null}
               <span
                 className={cn(
                   "w-[4.75rem] shrink-0 whitespace-nowrap rounded-md px-1.5 py-0.5 text-center text-[10.5px] font-semibold uppercase tracking-wider",
-                  label === "Primary"
+                  role === 0
                     ? "bg-primary-subtle text-primary"
-                    : label === "Off"
+                    : role < 0
                       ? "bg-bg-subtle text-fg-subtle"
                       : "bg-info/15 text-info",
                 )}
@@ -646,14 +666,14 @@ function StreamSources({
                 <Input
                   value={x.name}
                   onChange={(e) => update(i, { name: e.currentTarget.value })}
-                  aria-label={`Source ${i + 1} name`}
+                  aria-label={t("Source {number} name", { number: i + 1 })}
                   className="h-8 w-32 shrink-0 text-sm"
                 />
               ) : null}
               <SourceHealth status={status.get(x.id)} />
               {logins.length ? (
                 <ToolbarPicker
-                  ariaLabel={`Login for source ${i + 1}`}
+                  ariaLabel={t("Login for source {number}", { number: i + 1 })}
                   value={x.authSourceId ?? ""}
                   onChange={(v) => update(i, { authSourceId: v || undefined })}
                   options={loginOptions.map((o) => ({ ...o, icon: <KeyRound size={13} /> }))}
@@ -664,7 +684,9 @@ function StreamSources({
               <Input
                 value={x.url}
                 onChange={(e) => update(i, { url: e.currentTarget.value })}
-                aria-label={list.length > 1 ? `Source ${i + 1} URL` : "Stream URL"}
+                aria-label={
+                  list.length > 1 ? t("Source {number} URL", { number: i + 1 }) : t("Stream URL")
+                }
                 placeholder="https://…/stream.m3u8"
                 className="h-8 min-w-0 flex-1 font-mono text-xs"
               />
@@ -673,13 +695,13 @@ function StreamSources({
                   <Switch
                     checked={x.enabled}
                     onChange={(e) => update(i, { enabled: e.currentTarget.checked })}
-                    aria-label={`Use source ${i + 1}`}
+                    aria-label={t("Use source {number}", { number: i + 1 })}
                   />
                   <Button
                     variant="ghost"
                     size="sm"
                     className="size-7 p-0 text-fg-subtle hover:text-danger"
-                    aria-label={`Remove source ${i + 1}`}
+                    aria-label={t("Remove source {number}", { number: i + 1 })}
                     onClick={() => commit(list.filter((_, n) => n !== i))}
                   >
                     <X size={14} />
@@ -694,16 +716,16 @@ function StreamSources({
   );
 }
 
-const HEALTH: Record<string, { label: string; className: string }> = {
-  available: { label: "Healthy", className: "bg-success/15 text-success" },
-  cooling_down: { label: "Cooling down", className: "bg-warning/15 text-warning" },
-  retry_ready: { label: "Will retry", className: "bg-info/15 text-info" },
-  disabled: { label: "Off", className: "bg-bg-subtle text-fg-subtle" },
-  unchecked: { label: "Untested", className: "bg-bg-subtle text-fg-subtle" },
-};
+const HEALTH = localized<Record<string, { label: string; className: string }>>(() => ({
+  available: { label: t("Healthy"), className: "bg-success/15 text-success" },
+  cooling_down: { label: t("Cooling down"), className: "bg-warning/15 text-warning" },
+  retry_ready: { label: t("Will retry"), className: "bg-info/15 text-info" },
+  disabled: { label: t("Off"), className: "bg-bg-subtle text-fg-subtle" },
+  unchecked: { label: t("Untested"), className: "bg-bg-subtle text-fg-subtle" },
+}));
 
 /** Go's zero time ("0001-01-01T00:00:00Z") means "never". */
-const when = (t?: string) => (t && Date.parse(t) > 0 ? t : undefined);
+const when = (iso?: string) => (iso && Date.parse(iso) > 0 ? iso : undefined);
 
 /** Live health of one stream source, from the server's tune history. */
 function SourceHealth({ status }: { status?: SourceStatus }) {
@@ -715,9 +737,11 @@ function SourceHealth({ status }: { status?: SourceStatus }) {
     className: "bg-bg-subtle text-fg-subtle",
   };
   const detail = [
-    status.failures ? `${plural(status.failures, "failure")}` : "",
-    played ? `played ${relativeTime(played)}` : "",
-    retry && status.state === "cooling_down" ? `retry ${relativeTime(retry)}` : "",
+    status.failures ? tn(status.failures, "{count} failure", "{count} failures") : "",
+    played ? t("played {when}", { when: relativeTime(played) }) : "",
+    retry && status.state === "cooling_down"
+      ? t("retry {when}", { when: relativeTime(retry) })
+      : "",
     status.lastError ?? "",
   ]
     .filter(Boolean)
@@ -749,20 +773,20 @@ function Programming({
   const modes: { value: Mode; label: string; hint: string; icon: React.ReactNode }[] = [
     {
       value: "movies",
-      label: "Hand-picked",
-      hint: "Choose the movies and their order",
+      label: t("Hand-picked"),
+      hint: t("Choose the movies and their order"),
       icon: <Film size={18} />,
     },
     {
       value: "collection",
-      label: "Collection",
-      hint: "Play a collection; shows expand into episodes",
+      label: t("Collection"),
+      hint: t("Play a collection; shows expand into episodes"),
       icon: <Layers size={18} />,
     },
     {
       value: "genre",
-      label: "Genres",
-      hint: "Everything in the catalogue that fits",
+      label: t("Genres"),
+      hint: t("Everything in the catalogue that fits"),
       icon: <Tags size={18} />,
     },
   ];
@@ -770,7 +794,11 @@ function Programming({
   const collectionValue = c.collection ? String(c.collection) : "";
   return (
     <div className="space-y-5">
-      <div role="radiogroup" aria-label="Programming source" className="grid gap-2 sm:grid-cols-3">
+      <div
+        role="radiogroup"
+        aria-label={t("Programming source")}
+        className="grid gap-2 sm:grid-cols-3"
+      >
         {modes.map((m) => {
           const on = draft.mode === m.value;
           return (
@@ -803,7 +831,7 @@ function Programming({
 
       {draft.mode === "movies" ? (
         <ProgrammePicker
-          label="Base programming"
+          label={t("Base programming")}
           items={c.items}
           onChange={(items) => set({ items })}
         />
@@ -811,21 +839,32 @@ function Programming({
 
       {draft.mode === "collection" ? (
         <Field
-          label="Collection"
-          hint="Manage collections in Collection Studio. Shows expand into episodes."
+          label={t("Collection")}
+          hint={t("Manage collections in Collection Studio. Shows expand into episodes.")}
         >
           <SearchSelect
-            ariaLabel="Collection"
+            ariaLabel={t("Collection")}
             value={collectionValue}
             onChange={(v) => set({ collection: v ? Number(v) : undefined })}
-            placeholder="Choose a collection"
+            placeholder={t("Choose a collection")}
+            searchPlaceholder={t("Search…")}
+            noneLabel={t("None")}
+            noMatchesLabel={t("No matches")}
+            searchingLabel={t("Searching…")}
+            selectLabel={t("Select")}
+            closeLabel={t("Close")}
             options={[
               ...known.map((x) => ({
                 value: String(x.ratingKey),
-                label: `${x.name}${x.itemCount !== undefined ? ` · ${x.itemCount} titles` : ""}`,
+                label:
+                  x.itemCount !== undefined
+                    ? tn(x.itemCount, "{name} · {count} title", "{name} · {count} titles", {
+                        name: x.name,
+                      })
+                    : x.name,
               })),
               ...(collectionValue && !known.some((x) => x.ratingKey === collectionValue)
-                ? [{ value: collectionValue, label: "Previously selected collection" }]
+                ? [{ value: collectionValue, label: t("Previously selected collection") }]
                 : []),
             ]}
           />
@@ -834,27 +873,27 @@ function Programming({
 
       {draft.mode === "genre" ? (
         <div className="grid gap-4 sm:grid-cols-[auto_1fr]">
-          <Field label="Catalogue">
+          <Field label={t("Catalogue")}>
             <Segmented
-              ariaLabel="Catalogue type"
+              ariaLabel={t("Catalogue type")}
               value={c.filter?.type === "show" ? "show" : "movie"}
               onChange={(v) => set({ filter: { ...c.filter, type: v } })}
               options={[
-                { value: "movie", label: "Movies", icon: <Clapperboard size={13} /> },
-                { value: "show", label: "TV shows" },
+                { value: "movie", label: t("Movies"), icon: <Clapperboard size={13} /> },
+                { value: "show", label: t("TV shows") },
               ]}
             />
           </Field>
           <Field
-            label="Genres"
+            label={t("Genres")}
             htmlFor="ch-genres"
-            hint="Separate with commas. Template year and rating limits are kept."
+            hint={t("Separate with commas. Template year and rating limits are kept.")}
           >
             <Input
               id="ch-genres"
               value={draft.genre}
               onChange={(e) => onChange({ ...draft, genre: e.currentTarget.value })}
-              placeholder="Action, Adventure"
+              placeholder={t("Action, Adventure")}
             />
           </Field>
           <FilterChips filter={c.filter} />
@@ -863,20 +902,21 @@ function Programming({
 
       {draft.mode !== "movies" ? (
         <p className="rounded-lg bg-bg-subtle px-3 py-2 text-xs text-fg-muted">
-          Saving takes a snapshot of the catalogue for a stable schedule. Save again later to pick
-          up new titles.
+          {t(
+            "Saving takes a snapshot of the catalogue for a stable schedule. Save again later to pick up new titles.",
+          )}
         </p>
       ) : null}
       <label className="flex items-center gap-3 text-sm">
         <Switch
           checked={c.shuffle}
           onChange={(e) => set({ shuffle: e.currentTarget.checked })}
-          aria-label="Shuffle"
+          aria-label={t("Shuffle")}
         />
         <span>
-          <span className="font-medium text-fg">Shuffle</span>
+          <span className="font-medium text-fg">{t("Shuffle")}</span>
           <span className="ml-2 text-xs text-fg-muted">
-            A stable shuffle; the guide never jumps.
+            {t("A stable shuffle; the guide never jumps.")}
           </span>
         </span>
       </label>
@@ -889,7 +929,8 @@ function FilterChips({ filter }: { filter?: Record<string, unknown> }) {
   const chips: string[] = [];
   if (filter.yearFrom || filter.yearTo)
     chips.push(`${filter.yearFrom ?? "…"}–${filter.yearTo ?? "…"}`);
-  if (filter.maxContentRating) chips.push(`Up to ${String(filter.maxContentRating)}`);
+  if (filter.maxContentRating)
+    chips.push(t("Up to {rating}", { rating: String(filter.maxContentRating) }));
   if (!chips.length) return null;
   return (
     <div className="flex flex-wrap gap-1.5 sm:col-span-2">
@@ -920,11 +961,16 @@ function Schedule({
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-fg">Daily time blocks</h3>
+          <h3 className="text-sm font-semibold text-fg">{t("Daily time blocks")}</h3>
           <p className="text-xs text-fg-muted">
-            Pin programming to times of day (in UTC
-            {offset ? `; your time is UTC${offset > 0 ? "+" : ""}${offset / 60}` : ""}). The base
-            programming fills the rest of the day.
+            {offset
+              ? t(
+                  "Pin programming to times of day (in UTC; your time is UTC{offset}). The base programming fills the rest of the day.",
+                  { offset: `${offset > 0 ? "+" : ""}${offset / 60}` },
+                )
+              : t(
+                  "Pin programming to times of day (in UTC). The base programming fills the rest of the day.",
+                )}
           </p>
         </div>
         <Button
@@ -933,7 +979,7 @@ function Schedule({
           disabled={blocks.some((b) => b.end === 1440)}
           onClick={() => add()}
         >
-          <Plus size={13} /> Add time block
+          <Plus size={13} /> {t("Add time block")}
         </Button>
       </div>
 
@@ -944,7 +990,7 @@ function Schedule({
             <button
               key={h}
               type="button"
-              aria-label={`Add a block at ${timeOfDay(h * 60)} UTC`}
+              aria-label={t("Add a block at {time} UTC", { time: timeOfDay(h * 60) })}
               onClick={() => {
                 const s = h * 60;
                 if (!blocks.some((b) => s < b.end && s + 60 > b.start)) add(s);
@@ -965,8 +1011,10 @@ function Schedule({
                   background: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${(hue + 30) % 360} 65% 40%))`,
                 }}
               >
-                <span className="block truncate">Block {i + 1}</span>
-                <span className="block truncate opacity-80">{plural(b.items.length, "title")}</span>
+                <span className="block truncate">{t("Block {number}", { number: i + 1 })}</span>
+                <span className="block truncate opacity-80">
+                  {tn(b.items.length, "{count} title", "{count} titles")}
+                </span>
               </div>
             );
           })}
@@ -982,7 +1030,7 @@ function Schedule({
 
       {blocks.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-fg-muted">
-          No time blocks: the base programming plays all day. Click an hour above to add one.
+          {t("No time blocks: the base programming plays all day. Click an hour above to add one.")}
         </p>
       ) : null}
       {blocks.map((block, index) => {
@@ -997,9 +1045,9 @@ function Schedule({
                 aria-hidden
               />
               <Field
-                label="Start (UTC)"
+                label={t("Start (UTC)")}
                 htmlFor={`blk-${index}-start`}
-                hint={localBlockTime(block.start) + " your time"}
+                hint={t("{time} your time", { time: localBlockTime(block.start) })}
               >
                 <Input
                   id={`blk-${index}-start`}
@@ -1009,14 +1057,18 @@ function Schedule({
                 />
               </Field>
               <Field
-                label="End (UTC)"
+                label={t("End (UTC)")}
                 htmlFor={`blk-${index}-end`}
-                hint={block.end === 1440 ? "Midnight" : localBlockTime(block.end) + " your time"}
+                hint={
+                  block.end === 1440
+                    ? t("Midnight")
+                    : t("{time} your time", { time: localBlockTime(block.end) })
+                }
               >
                 <div className="flex items-center gap-2">
                   <Input
                     id={`blk-${index}-end`}
-                    aria-label={`Time block ${index + 1} end time`}
+                    aria-label={t("Time block {number} end time", { number: index + 1 })}
                     type="time"
                     disabled={block.end === 1440}
                     value={block.end === 1440 ? "00:00" : timeOfDay(block.end)}
@@ -1026,14 +1078,14 @@ function Schedule({
                     <input
                       type="checkbox"
                       checked={block.end === 1440}
-                      aria-label={`Time block ${index + 1} runs to midnight`}
+                      aria-label={t("Time block {number} runs to midnight", { number: index + 1 })}
                       onChange={(e) =>
                         update({
                           end: e.currentTarget.checked ? 1440 : Math.min(1439, block.start + 60),
                         })
                       }
                     />
-                    To midnight
+                    {t("To midnight")}
                   </label>
                 </div>
               </Field>
@@ -1041,22 +1093,22 @@ function Schedule({
                 <Switch
                   checked={block.shuffle}
                   onChange={(e) => update({ shuffle: e.currentTarget.checked })}
-                  aria-label={`Shuffle block ${index + 1}`}
+                  aria-label={t("Shuffle block {number}", { number: index + 1 })}
                 />
-                Shuffle
+                {t("Shuffle")}
               </label>
               <Button
                 variant="ghost"
                 size="sm"
                 className="mb-1 ml-auto text-fg-subtle hover:text-danger"
-                aria-label={`Remove block ${index + 1}`}
+                aria-label={t("Remove block {number}", { number: index + 1 })}
                 onClick={() => setBlocks(blocks.filter((_, n) => n !== index))}
               >
-                <X size={14} /> Remove
+                <X size={14} /> {t("Remove")}
               </Button>
             </div>
             <ProgrammePicker
-              label={`Time block ${index + 1} programming`}
+              label={t("Time block {number} programming", { number: index + 1 })}
               items={block.items}
               onChange={(items) => update({ items })}
             />
@@ -1092,26 +1144,33 @@ function GuideTab({
       <section className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-surface p-4">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-            Listings from
+            {t("Listings from")}
           </p>
           {c.guideId ? (
             <p className="mt-1 truncate text-sm text-fg">
               <span className="font-mono">{c.guideId}</span>
-              <span className="text-fg-muted"> in {src?.name ?? "an unknown source"}</span>
+              <span className="text-fg-muted">
+                {" "}
+                {t("in {source}", { source: src?.name ?? t("an unknown source") })}
+              </span>
             </p>
           ) : (
-            <p className="mt-1 text-sm text-fg-muted">Not mapped to a guide channel.</p>
+            <p className="mt-1 text-sm text-fg-muted">{t("Not mapped to a guide channel.")}</p>
           )}
           <p className={cn("mt-1 text-xs", ok ? "text-success" : "text-warning")}>
             {ok
-              ? `${plural(coverage?.programmes ?? guide.length, "listing")} in the next day`
-              : "No listings in the next day"}
+              ? tn(
+                  coverage?.programmes ?? guide.length,
+                  "{count} listing in the next day",
+                  "{count} listings in the next day",
+                )
+              : t("No listings in the next day")}
           </p>
         </div>
         {isNew ? null : (
           <MapGuideButton
             channel={c}
-            label={c.guideId ? "Change guide channel" : "Map guide channel"}
+            label={c.guideId ? t("Change guide channel") : t("Map guide channel")}
             variant="default"
             onMapped={onMap}
           />
@@ -1129,7 +1188,7 @@ function GuideTab({
                     live ? "font-semibold text-danger" : "text-fg-muted",
                   )}
                 >
-                  {live ? "Now" : clock(p.start)}
+                  {live ? t("Now") : clock(p.start)}
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-fg">{p.item.title}</span>
@@ -1164,16 +1223,19 @@ function ViewerAccess({
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-fg">
-            {everyone ? "Everyone with Live TV access" : `Only ${plural(allowed.length, "viewer")}`}
+            {everyone
+              ? t("Everyone with Live TV access")
+              : tn(allowed.length, "Only {count} viewer", "Only {count} viewers")}
           </p>
           <p className="text-xs text-fg-muted">
-            Pick viewers to restrict this channel. Their parental limits still apply; per-viewer
-            Live TV settings live on each viewer's profile.
+            {t(
+              "Pick viewers to restrict this channel. Their parental limits still apply; per-viewer Live TV settings live on each viewer's profile.",
+            )}
           </p>
         </div>
         {!everyone ? (
           <Button variant="ghost" size="sm" onClick={() => onChange([])}>
-            Allow everyone
+            {t("Allow everyone")}
           </Button>
         ) : null}
       </div>

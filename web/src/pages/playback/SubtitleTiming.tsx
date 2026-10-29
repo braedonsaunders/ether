@@ -5,6 +5,8 @@ import { Drawer } from "../../components/Drawer";
 import { Field, NumberInput } from "../../components/fields";
 import { ErrorPanel, LoadingRows, MutationError } from "../../components/feedback";
 import { Section } from "../../components/layout";
+import { t, tx } from "../../i18n";
+import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { apiFetch } from "../../lib/api";
 import { formatDateTime, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
@@ -31,13 +33,13 @@ const episodeCode = (s: CachedSubtitle) =>
     : "";
 
 const displayTitle = (s: CachedSubtitle) => {
-  if (!s.title && !s.showTitle) return "Unknown title";
+  if (!s.title && !s.showTitle) return t("Unknown title");
   if (s.showTitle) return [s.showTitle, episodeCode(s), s.title].filter(Boolean).join(" · ");
   return s.title;
 };
 
 const subtitleName = (s: CachedSubtitle) =>
-  `${displayTitle(s)} · ${s.language || "Unknown language"}`;
+  `${displayTitle(s)} · ${s.language || t("Unknown language")}`;
 
 /**
  * Fix subtitles that drift: pick a downloaded sidecar and create a corrected
@@ -54,8 +56,8 @@ export function SubtitleTiming() {
 
   return (
     <Section
-      title="Subtitle timing"
-      description="Create a corrected copy of a downloaded subtitle. Original files are kept."
+      title={t("Subtitle timing")}
+      description={t("Create a corrected copy of a downloaded subtitle. Original files are kept.")}
     >
       {cached.error ? (
         <ErrorPanel error={cached.error} onRetry={() => void cached.reload()} />
@@ -68,19 +70,19 @@ export function SubtitleTiming() {
           searchable={cached.data.length > 8}
           pageSize={10}
           onRowClick={setOpen}
-          labels={{ searchPlaceholder: "Search subtitles…" }}
+          labels={pagedTableLabels({ searchPlaceholder: t("Search subtitles…") })}
           empty={
             <EmptyState
               icon={<Captions />}
-              title="No downloaded subtitles"
-              description="Subtitles appear here after playback finds a matching sidecar."
+              title={t("No downloaded subtitles")}
+              description={t("Subtitles appear here after playback finds a matching sidecar.")}
               className="py-6"
             />
           }
           columns={[
             {
               key: "title",
-              header: "Title",
+              header: t("Title"),
               search: (s) => `${displayTitle(s)} ${s.showTitle ?? ""} ${s.release} ${s.language}`,
               sortValue: (s) => displayTitle(s).toLowerCase(),
               cell: (s) => (
@@ -96,13 +98,13 @@ export function SubtitleTiming() {
             },
             {
               key: "language",
-              header: "Language",
+              header: t("Language"),
               sortValue: (s) => s.language,
-              cell: (s) => <span className="text-fg-muted">{s.language || "Unknown"}</span>,
+              cell: (s) => <span className="text-fg-muted">{s.language || t("Unknown")}</span>,
             },
             {
               key: "fetchedAt",
-              header: "Downloaded",
+              header: t("Downloaded"),
               sortValue: (s) => s.fetchedAt ?? "",
               cell: (s) => (
                 <span className="text-fg-muted" title={formatDateTime(s.fetchedAt)}>
@@ -118,13 +120,13 @@ export function SubtitleTiming() {
                 <Button
                   variant="outline"
                   size="sm"
-                  aria-label={`Adjust timing for ${subtitleName(s)}`}
+                  aria-label={t("Adjust timing for {name}", { name: subtitleName(s) })}
                   onClick={(e) => {
                     e.stopPropagation();
                     setOpen(s);
                   }}
                 >
-                  Adjust timing
+                  {t("Adjust timing")}
                 </Button>
               ),
             },
@@ -169,7 +171,7 @@ function TimingDrawer({ subtitle, onClose }: { subtitle: CachedSubtitle; onClose
     <Drawer
       open
       onClose={onClose}
-      title="Adjust subtitle timing"
+      title={t("Adjust subtitle timing")}
       description={subtitleName(subtitle)}
       size="lg"
       footer={
@@ -177,25 +179,28 @@ function TimingDrawer({ subtitle, onClose }: { subtitle: CachedSubtitle; onClose
           disabled={busy || !Number.isFinite(offset) || !Number.isFinite(rate) || rate <= 0}
           onClick={() => void create()}
         >
-          {busy ? "Creating…" : "Create corrected copy"}
+          {busy ? t("Creating…") : t("Create corrected copy")}
         </Button>
       }
     >
       <div className="space-y-5">
         <MutationError error={error} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Offset (milliseconds)" hint="Positive values show subtitles later.">
+          <Field
+            label={t("Offset (milliseconds)")}
+            hint={t("Positive values show subtitles later.")}
+          >
             <NumberInput
-              aria-label="Offset (milliseconds)"
+              aria-label={t("Offset (milliseconds)")}
               min={-3600000}
               max={3600000}
               value={offset}
               onChange={setOffset}
             />
           </Field>
-          <Field label="Timing multiplier" hint="1 keeps the original speed.">
+          <Field label={t("Timing multiplier")} hint={t("1 keeps the original speed.")}>
             <NumberInput
-              aria-label="Timing multiplier"
+              aria-label={t("Timing multiplier")}
               min={0.5}
               max={2}
               step={0.001}
@@ -205,20 +210,22 @@ function TimingDrawer({ subtitle, onClose }: { subtitle: CachedSubtitle; onClose
           </Field>
         </div>
         <Field
-          label="Reference subtitles (optional)"
-          hint="Paste embedded subtitle text to estimate a constant offset from matching dialogue."
+          label={t("Reference subtitles (optional)")}
+          hint={t(
+            "Paste embedded subtitle text to estimate a constant offset from matching dialogue.",
+          )}
         >
           <Textarea
-            aria-label="Reference subtitles"
+            aria-label={t("Reference subtitles")}
             rows={5}
             value={reference}
             onChange={(e) => setReference(e.target.value)}
           />
         </Field>
         <label className="flex items-center justify-between gap-3 text-sm text-fg">
-          Replace this subtitle for all viewers
+          {t("Replace this subtitle for all viewers")}
           <Switch
-            aria-label="Replace this subtitle for all viewers"
+            aria-label={t("Replace this subtitle for all viewers")}
             checked={apply}
             onChange={(e) => setApply(e.target.checked)}
           />
@@ -228,7 +235,7 @@ function TimingDrawer({ subtitle, onClose }: { subtitle: CachedSubtitle; onClose
             role="status"
             className="break-all rounded-lg border border-border bg-bg-subtle p-3 text-sm"
           >
-            Corrected copy: <code>{synced}</code>
+            {tx("Corrected copy: {url}", { url: <code>{synced}</code> })}
           </p>
         ) : null}
       </div>

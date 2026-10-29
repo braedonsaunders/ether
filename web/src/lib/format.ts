@@ -1,16 +1,27 @@
+import { getLocale, localized, t } from "../i18n";
+
 export function formatBytes(n: unknown): string {
   const v = typeof n === "number" ? n : Number(n);
   if (!Number.isFinite(v) || v < 0) return "—";
   if (v === 0) return "0 B";
   const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
   const i = Math.min(units.length - 1, Math.floor(Math.log(v) / Math.log(1024)));
-  return `${(v / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  return `${fixed(v / 1024 ** i, i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+/** `n.toFixed(digits)` with the active language's decimal separator. */
+export function fixed(n: number, digits: number): string {
+  return new Intl.NumberFormat(getLocale(), {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  }).format(n);
 }
 
 export function formatRate(bytesPerSecond: number): string {
   if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "—";
   const mbit = (bytesPerSecond * 8) / 1e6;
-  return mbit >= 10 ? `${mbit.toFixed(0)} Mbit/s` : `${mbit.toFixed(1)} Mbit/s`;
+  return `${fixed(mbit, mbit >= 10 ? 0 : 1)} Mbit/s`;
 }
 
 export function humanizeKey(key: string): string {
@@ -21,12 +32,16 @@ export function humanizeKey(key: string): string {
 }
 
 export function formatNumber(n: number, maxFractionDigits = 2): string {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: maxFractionDigits }).format(n);
+  return new Intl.NumberFormat(getLocale(), { maximumFractionDigits: maxFractionDigits }).format(n);
 }
 
 export function formatPercent(fraction: number, digits = 0): string {
   if (!Number.isFinite(fraction)) return "—";
-  return `${(fraction * 100).toFixed(digits)}%`;
+  return new Intl.NumberFormat(getLocale(), {
+    style: "percent",
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(fraction);
 }
 
 export function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -41,15 +56,10 @@ export function parseTime(s: unknown): Date | null {
   return d;
 }
 
-const RTF =
-  typeof Intl.RelativeTimeFormat === "function"
-    ? new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
-    : null;
-
 /** "3 minutes ago", "in 2 days"; "never" for missing times. */
 export function relativeTime(s: unknown, now: Date = new Date()): string {
   const d = s instanceof Date ? s : parseTime(s);
-  if (!d) return "never";
+  if (!d) return t("never");
   const diff = (d.getTime() - now.getTime()) / 1000;
   const abs = Math.abs(diff);
   const units: [Intl.RelativeTimeFormatUnit, number][] = [
@@ -63,22 +73,22 @@ export function relativeTime(s: unknown, now: Date = new Date()): string {
   for (const [unit, secs] of units) {
     if (abs >= secs) {
       const v = Math.round(diff / secs);
-      return RTF ? RTF.format(v, unit) : `${v} ${unit}s`;
+      return new Intl.RelativeTimeFormat(getLocale(), { numeric: "auto" }).format(v, unit);
     }
   }
-  return "just now";
+  return t("just now");
 }
 
 export function formatDateTime(s: unknown): string {
   const d = s instanceof Date ? s : parseTime(s);
   if (!d) return "—";
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return d.toLocaleString(getLocale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function formatDate(s: unknown): string {
   const d = s instanceof Date ? s : parseTime(s);
   if (!d) return "—";
-  return d.toLocaleDateString(undefined, { dateStyle: "medium" });
+  return d.toLocaleDateString(getLocale(), { dateStyle: "medium" });
 }
 
 /** Go time.Duration values arrive as nanoseconds. */
@@ -86,36 +96,44 @@ export function formatNanos(ns: unknown): string {
   const v = typeof ns === "number" ? ns : Number(ns);
   if (!Number.isFinite(v) || v <= 0) return "—";
   const ms = v / 1e6;
-  if (ms < 1000) return `${ms.toFixed(0)} ms`;
+  if (ms < 1000) return `${fixed(ms, 0)} ms`;
   const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(1)} s`;
+  if (s < 60) return `${fixed(s, 1)} s`;
   const m = Math.floor(s / 60);
-  return `${m}m ${Math.round(s % 60)}s`;
+  return `${unit(m, "minute")} ${unit(Math.round(s % 60), "second")}`;
+}
+
+/** "5m", "2h": a number with a compact, localised time unit. */
+export function unit(n: number, u: "hour" | "minute" | "second"): string {
+  return new Intl.NumberFormat(getLocale(), {
+    style: "unit",
+    unit: u,
+    unitDisplay: "narrow",
+  }).format(n);
 }
 
 export function formatMinutes(min: number): string {
   if (!Number.isFinite(min) || min <= 0) return "—";
   const h = Math.floor(min / 60);
   const m = Math.round(min % 60);
-  return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+  return h ? (m ? `${unit(h, "hour")} ${unit(m, "minute")}` : unit(h, "hour")) : unit(m, "minute");
 }
 
-export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
-export const WEEKDAYS_LONG = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-] as const;
+/** Weekday names, Sunday first, in the active language. */
+function weekdays(width: "short" | "long"): string[] {
+  const fmt = new Intl.DateTimeFormat(getLocale(), { weekday: width, timeZone: "UTC" });
+  // 4 January 1970 was a Sunday.
+  return Array.from({ length: 7 }, (_, i) => fmt.format(Date.UTC(1970, 0, 4 + i)));
+}
+
+export const WEEKDAYS = localized(() => weekdays("short"));
+export const WEEKDAYS_LONG = localized(() => weekdays("long"));
 
 export function formatHour(h: number): string {
   const hh = ((h % 24) + 24) % 24;
-  if (hh === 0) return "12 AM";
-  if (hh === 12) return "12 PM";
-  return hh < 12 ? `${hh} AM` : `${hh - 12} PM`;
+  return new Intl.DateTimeFormat(getLocale(), { hour: "numeric", timeZone: "UTC" }).format(
+    Date.UTC(1970, 0, 1, hh),
+  );
 }
 
 export function initials(name: string): string {
@@ -124,8 +142,4 @@ export function initials(name: string): string {
   return (
     (parts[0]?.[0] ?? "") + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "")
   ).toUpperCase();
-}
-
-export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${formatNumber(n, 0)} ${n === 1 ? one : many}`;
 }

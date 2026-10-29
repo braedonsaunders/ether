@@ -35,8 +35,9 @@ import { ErrorPanel, PosterSkeletons } from "../../components/feedback";
 import { Segmented } from "../../components/fields";
 import { PosterGrid } from "../../components/Poster";
 import { api, ApiError, errorMessage, isAbort } from "../../lib/api";
+import { t, tn } from "../../i18n";
 import type { CollectionPreview, CollectionSpec } from "../../lib/contract";
-import { relativeTime } from "../../lib/format";
+import { formatNumber, relativeTime } from "../../lib/format";
 import {
   clearDraft,
   draftKey,
@@ -47,7 +48,6 @@ import {
 } from "../../lib/history";
 import { useAsync, useDebouncedValue, useMediaQuery } from "../../lib/hooks";
 import {
-  REFRESH_OPTIONS,
   blankSpec,
   describeTargets,
   normalizeSpec,
@@ -69,8 +69,24 @@ type Tab = "build" | "schedule" | "artwork" | "audience";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function isTextTarget(t: EventTarget | null): boolean {
-  const el = t as HTMLElement | null;
+/** "Refresh daily": one phrase per cadence so it reads naturally once translated. */
+function refreshBadge(refresh: CollectionSpec["refresh"]): string {
+  switch (refresh) {
+    case "live":
+      return t("Refresh live");
+    case "hourly":
+      return t("Refresh hourly");
+    case "daily":
+      return t("Refresh daily");
+    case "weekly":
+      return t("Refresh weekly");
+    default:
+      return t("Refresh");
+  }
+}
+
+function isTextTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
   if (!el) return false;
   return (
     el.isContentEditable ||
@@ -103,9 +119,9 @@ export default function CollectionEditor() {
     if (incoming)
       return normalizeSpec({ ...incoming, id: undefined, enabled: incoming.enabled ?? false });
     if (templateId) {
-      const t = (await api.templates()).find((x) => x.id === templateId);
-      if (!t) throw new ApiError(404, "not_found", "That template no longer exists.");
-      return normalizeSpec({ ...t.spec, id: undefined, enabled: false, templateId: t.id });
+      const tpl = (await api.templates()).find((x) => x.id === templateId);
+      if (!tpl) throw new ApiError(404, "not_found", t("That template no longer exists."));
+      return normalizeSpec({ ...tpl.spec, id: undefined, enabled: false, templateId: tpl.id });
     }
     return blankSpec();
   }, [id, templateId]);
@@ -171,6 +187,7 @@ export default function CollectionEditor() {
   );
 
   // ---- Live preview ---------------------------------------------------------
+  // i18n: memo holds no copy (the server preview request key)
   const previewKey = useMemo(() => JSON.stringify(previewableSpec(spec)), [spec]);
   const debouncedPreview = useDebouncedValue(previewKey, 450);
   const [preview, setPreview] = useState<CollectionPreview | null>(null);
@@ -214,7 +231,7 @@ export default function CollectionEditor() {
       const found = specProblems(next);
       setProblems(found);
       if (found.length) {
-        toast.error("Not saved yet", { description: found[0] });
+        toast.error(t("Not saved yet"), { description: found[0] });
         return;
       }
       setSaving(true);
@@ -227,17 +244,19 @@ export default function CollectionEditor() {
         setBaseline(saved);
         history.reset(saved);
         toast.success(
-          publish === true ? "Published" : publish === false ? "Unpublished" : "Saved",
+          publish === true ? t("Published") : publish === false ? t("Unpublished") : t("Saved"),
           {
             description: saved.enabled
-              ? `${saved.name} is live in Plex.`
-              : `${saved.name} is saved as a draft. Publish it when you're ready.`,
+              ? t("{name} is live in Plex.", { name: saved.name })
+              : t("{name} is saved as a draft. Publish it when you're ready.", {
+                  name: saved.name,
+                }),
           },
         );
         if (!id && saved.id)
           navigate(`/collections/${encodeURIComponent(saved.id)}`, { replace: true });
       } catch (e) {
-        toast.error("Couldn't save", { description: errorMessage(e) });
+        toast.error(t("Couldn't save"), { description: errorMessage(e) });
       } finally {
         setSaving(false);
       }
@@ -252,9 +271,11 @@ export default function CollectionEditor() {
       const r = await api.rebuildCollection(id);
       setBaseline((b) => (b ? { ...b, itemCount: r.itemCount, lastBuiltAt: r.lastBuiltAt } : b));
       history.reset({ ...spec, itemCount: r.itemCount, lastBuiltAt: r.lastBuiltAt });
-      toast.success("Rebuilt", { description: `${r.itemCount} titles.` });
+      toast.success(t("Rebuilt"), {
+        description: tn(r.itemCount, "{count} title.", "{count} titles."),
+      });
     } catch (e) {
-      toast.error("Rebuild failed", { description: errorMessage(e) });
+      toast.error(t("Rebuild failed"), { description: errorMessage(e) });
     } finally {
       setRebuilding(false);
     }
@@ -263,19 +284,21 @@ export default function CollectionEditor() {
   const remove = async () => {
     if (!id) return;
     const ok = await confirmDialog({
-      title: "Delete collection?",
-      message: `“${spec.name}” disappears from Plex for everyone. This can't be undone.`,
-      confirmLabel: "Delete",
+      title: t("Delete collection?"),
+      message: t("“{name}” disappears from Plex for everyone. This can't be undone.", {
+        name: spec.name,
+      }),
+      confirmLabel: t("Delete"),
       tone: "danger",
     });
     if (!ok) return;
     try {
       await api.deleteCollection(id);
       clearDraft(dKey);
-      toast.success("Collection deleted");
+      toast.success(t("Collection deleted"));
       navigate("/collections");
     } catch (e) {
-      toast.error("Couldn't delete", { description: errorMessage(e) });
+      toast.error(t("Couldn't delete"), { description: errorMessage(e) });
     }
   };
 
@@ -286,7 +309,7 @@ export default function CollectionEditor() {
           ...spec,
           id: undefined,
           builtIn: undefined,
-          name: `${spec.name} (copy)`,
+          name: t("{name} (copy)", { name: spec.name }),
           enabled: false,
         },
       },
@@ -333,7 +356,7 @@ export default function CollectionEditor() {
   if (!ready)
     return (
       <div className="grid flex-1 place-items-center">
-        <Spinner size={22} label="Loading collection" />
+        <Spinner size={22} label={t("Loading collection")} />
       </div>
     );
 
@@ -342,27 +365,27 @@ export default function CollectionEditor() {
   const targets = describeTargets(spec);
 
   return (
-    <section aria-label="Collection Studio" className="flex min-h-0 flex-1 flex-col">
+    <section aria-label={t("Collection Studio")} className="flex min-h-0 flex-1 flex-col">
       <header className="shrink-0 border-b border-border bg-surface px-3 py-3 sm:px-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="flex flex-wrap gap-1.5">
             {readOnly ? (
-              <Badge variant="secondary">Built-in</Badge>
+              <Badge variant="secondary">{t("Built-in")}</Badge>
             ) : spec.enabled ? (
               <Badge variant="success">
-                <Globe2 size={11} /> Published
+                <Globe2 size={11} /> {t("Published")}
               </Badge>
             ) : (
-              <Badge variant="secondary">Draft</Badge>
+              <Badge variant="secondary">{t("Draft")}</Badge>
             )}
-            {isNew ? <Badge variant="info">New</Badge> : null}
-            {dirty ? <Badge variant="warning">Unsaved changes</Badge> : null}
+            {isNew ? <Badge variant="info">{t("New")}</Badge> : null}
+            {dirty ? <Badge variant="warning">{t("Unsaved changes")}</Badge> : null}
           </span>
           <span className="ml-auto text-xs text-fg-subtle" aria-live="polite">
             {savedLocallyAt && dirty ? (
               <>
                 <History size={11} className="mr-1 inline" />
-                Draft kept on this device · {relativeTime(savedLocallyAt)}
+                {t("Draft kept on this device · {when}", { when: relativeTime(savedLocallyAt) })}
               </>
             ) : null}
           </span>
@@ -371,8 +394,8 @@ export default function CollectionEditor() {
           <Input
             value={spec.name}
             onChange={(e) => update({ name: e.currentTarget.value }, "name")}
-            placeholder="Name your collection"
-            aria-label="Collection name"
+            placeholder={t("Name your collection")}
+            aria-label={t("Collection name")}
             disabled={readOnly}
             className="h-11 min-w-0 flex-1 basis-full border-transparent sm:min-w-64 sm:basis-0 bg-transparent px-1 text-xl font-semibold shadow-none hover:border-border focus-visible:border-primary sm:text-xl"
           />
@@ -383,8 +406,8 @@ export default function CollectionEditor() {
               className="size-9"
               onClick={history.undo}
               disabled={!history.canUndo}
-              aria-label="Undo"
-              title="Undo (⌘Z)"
+              aria-label={t("Undo")}
+              title={t("Undo (⌘Z)")}
             >
               <Undo2 size={16} />
             </Button>
@@ -394,40 +417,40 @@ export default function CollectionEditor() {
               className="size-9"
               onClick={history.redo}
               disabled={!history.canRedo}
-              aria-label="Redo"
-              title="Redo (⇧⌘Z)"
+              aria-label={t("Redo")}
+              title={t("Redo (⇧⌘Z)")}
             >
               <Redo2 size={16} />
             </Button>
             {!readOnly ? (
               <Button variant="ghost" size="sm" onClick={() => setDescribeOpen(true)}>
-                <Sparkles size={15} /> Describe it
+                <Sparkles size={15} /> {t("Describe it")}
               </Button>
             ) : null}
             <ActionMenu
-              label="Collection actions"
+              label={t("Collection actions")}
               variant="outline"
               size="icon"
               className="size-9"
               items={[
-                { key: "dup", label: "Duplicate", icon: Copy, onSelect: duplicate },
+                { key: "dup", label: t("Duplicate"), icon: Copy, onSelect: duplicate },
                 {
                   key: "rebuild",
-                  label: "Rebuild now",
+                  label: t("Rebuild now"),
                   icon: RefreshCw,
                   onSelect: () => void rebuild(),
                   disabled: isNew || dirty || readOnly,
                 },
                 {
                   key: "unpublish",
-                  label: "Unpublish",
+                  label: t("Unpublish"),
                   icon: EyeOff,
                   onSelect: () => void save(false),
                   disabled: isNew || !baseline?.enabled,
                 },
                 {
                   key: "discard",
-                  label: "Discard unsaved changes",
+                  label: t("Discard unsaved changes"),
                   icon: Undo2,
                   onSelect: discardLocal,
                   disabled: !dirty,
@@ -435,7 +458,7 @@ export default function CollectionEditor() {
                 { key: "sep", separator: true },
                 {
                   key: "delete",
-                  label: "Delete",
+                  label: t("Delete"),
                   icon: Trash2,
                   onSelect: () => void remove(),
                   danger: true,
@@ -451,11 +474,11 @@ export default function CollectionEditor() {
                 onClick={() => void save()}
                 disabled={saving || (!dirty && !isNew)}
               >
-                <Save size={15} /> {saving ? "Saving…" : "Save"}
+                <Save size={15} /> {saving ? t("Saving…") : t("Save")}
               </Button>
               {!spec.enabled || dirty || isNew ? (
                 <Button size="sm" className="h-9" onClick={() => void save(true)} disabled={saving}>
-                  <Globe2 size={15} /> {spec.enabled && !isNew ? "Save & publish" : "Publish"}
+                  <Globe2 size={15} /> {spec.enabled && !isNew ? t("Save & publish") : t("Publish")}
                 </Button>
               ) : null}
             </>
@@ -468,24 +491,29 @@ export default function CollectionEditor() {
           {readOnly ? (
             <Alert variant="info">
               <AlertDescription>
-                Ether manages this collection’s name and rules. Customise its artwork and audience
-                here, or duplicate it to change the title selection.
+                {t(
+                  "Ether manages this collection’s name and rules. Customise its artwork and audience here, or duplicate it to change the title selection.",
+                )}
               </AlertDescription>
             </Alert>
           ) : null}
           {restored ? (
             <Alert variant="info">
               <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-                <span>Restored unsaved changes from {relativeTime(restored.savedAt)}.</span>
+                <span>
+                  {t("Restored unsaved changes from {when}.", {
+                    when: relativeTime(restored.savedAt),
+                  })}
+                </span>
                 <Button variant="ghost" size="sm" onClick={discardLocal}>
-                  Discard them
+                  {t("Discard them")}
                 </Button>
               </AlertDescription>
             </Alert>
           ) : null}
           {problems.length ? (
             <Alert variant="warning">
-              <AlertTitle>Before you save</AlertTitle>
+              <AlertTitle>{t("Before you save")}</AlertTitle>
               <AlertDescription>
                 <ul className="list-disc pl-5">
                   {problems.map((p) => (
@@ -501,15 +529,15 @@ export default function CollectionEditor() {
       {!wide ? (
         <div className="shrink-0 border-b border-border bg-surface px-3 py-2">
           <Segmented
-            ariaLabel="Show"
+            ariaLabel={t("Show")}
             value={pane}
             onChange={setPane}
             className="w-full [&>button]:flex-1"
             options={[
-              { value: "edit", label: "Edit", icon: <PencilRuler size={14} /> },
+              { value: "edit", label: t("Edit"), icon: <PencilRuler size={14} /> },
               {
                 value: "preview",
-                label: preview ? `Preview · ${preview.total}` : "Preview",
+                label: preview ? t("Preview · {count}", { count: preview.total }) : t("Preview"),
                 icon: <Eye size={14} />,
               },
             ]}
@@ -524,18 +552,18 @@ export default function CollectionEditor() {
               "app-scroll min-h-0 overflow-y-auto bg-surface",
               wide ? "w-1/3 shrink-0 border-r border-border" : "w-full",
             )}
-            aria-label="Collection editor"
+            aria-label={t("Collection editor")}
           >
             <div className="sticky top-0 z-10 border-b border-border bg-surface px-3 sm:px-5">
               <SubtabNav
-                ariaLabel="Editor sections"
+                ariaLabel={t("Editor sections")}
                 active={tab}
                 onSelect={(k) => setTab(k as Tab)}
                 tabs={[
-                  { key: "build", label: "Build" },
-                  { key: "schedule", label: "Schedule" },
-                  { key: "artwork", label: "Artwork" },
-                  { key: "audience", label: "Audience" },
+                  { key: "build", label: t("Build") },
+                  { key: "schedule", label: t("Schedule") },
+                  { key: "artwork", label: t("Artwork") },
+                  { key: "audience", label: t("Audience") },
                 ]}
               />
             </div>
@@ -563,7 +591,7 @@ export default function CollectionEditor() {
         {showPreview ? (
           <section
             className="app-scroll min-h-0 min-w-0 flex-1 overflow-y-auto bg-bg-subtle"
-            aria-label="Live preview"
+            aria-label={t("Live preview")}
           >
             <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
               <div className="flex flex-wrap items-start gap-4 rounded-xl border border-border bg-surface p-4">
@@ -574,7 +602,7 @@ export default function CollectionEditor() {
                       300,
                       [spec.updatedAt, spec.lastBuiltAt].filter(Boolean).join("-"),
                     )}
-                    alt={`${spec.name} collection poster`}
+                    alt={t("{name} collection poster", { name: spec.name })}
                     title={spec.name}
                     className="aspect-[2/3] w-20 shrink-0 rounded-md sm:w-24"
                   />
@@ -588,39 +616,38 @@ export default function CollectionEditor() {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
-                    How it appears in Plex
+                    {t("How it appears in Plex")}
                   </p>
                   <p className="mt-1 truncate text-lg font-semibold text-fg">
-                    {spec.name.trim() || "Untitled collection"}
+                    {spec.name.trim() || t("Untitled collection")}
                   </p>
                   {spec.description ? (
                     <p className="line-clamp-2 text-sm text-fg-muted">{spec.description}</p>
                   ) : null}
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {targets.length ? (
-                      targets.map((t) => (
-                        <Badge key={t} variant="default">
-                          {t}
+                      targets.map((target) => (
+                        <Badge key={target} variant="default">
+                          {target}
                         </Badge>
                       ))
                     ) : (
-                      <Badge variant="warning">Not shown anywhere</Badge>
+                      <Badge variant="warning">{t("Not shown anywhere")}</Badge>
                     )}
                     <Badge variant="secondary">
                       {spec.targets.users === "all"
-                        ? "Everyone"
-                        : `${spec.targets.users.length} viewer${spec.targets.users.length === 1 ? "" : "s"}`}
+                        ? t("Everyone")
+                        : tn(spec.targets.users.length, "{count} viewer", "{count} viewers")}
                     </Badge>
                     {spec.targets.schedule ? (
                       <Badge variant="secondary">{describeSchedule(spec)}</Badge>
                     ) : null}
-                    <Badge variant="secondary">
-                      Refresh{" "}
-                      {REFRESH_OPTIONS.find((r) => r.value === spec.refresh)?.label.toLowerCase()}
-                    </Badge>
+                    <Badge variant="secondary">{refreshBadge(spec.refresh)}</Badge>
                     {spec.rotate ? (
                       <Badge variant="info">
-                        Rotates {spec.rotate.size} {spec.rotate.every}
+                        {spec.rotate.every === "weekly"
+                          ? t("Rotates {size} weekly", { size: spec.rotate.size })
+                          : t("Rotates {size} daily", { size: spec.rotate.size })}
                       </Badge>
                     ) : null}
                   </div>
@@ -629,20 +656,20 @@ export default function CollectionEditor() {
 
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-fg">
-                  Preview
+                  {t("Preview")}
                   <span className="font-normal text-fg-muted" aria-live="polite">
-                    {preview
-                      ? `${preview.total.toLocaleString()} ${preview.total === 1 ? "title" : "titles"}`
-                      : ""}
+                    {preview ? tn(preview.total, "{count} title", "{count} titles") : ""}
                   </span>
-                  {previewLoading ? <Spinner size={14} label="Updating preview" /> : null}
+                  {previewLoading ? <Spinner size={14} label={t("Updating preview")} /> : null}
                 </h2>
                 {preview ? (
                   <span className="text-xs text-fg-subtle">
                     {preview.items.length < preview.total
-                      ? `Showing the first ${preview.items.length} · `
-                      : ""}
-                    {preview.tookMs} ms
+                      ? t("Showing the first {count} · {ms} ms", {
+                          count: formatNumber(preview.items.length),
+                          ms: preview.tookMs,
+                        })
+                      : `${preview.tookMs} ms`}
                   </span>
                 ) : null}
               </div>
@@ -658,8 +685,8 @@ export default function CollectionEditor() {
               ) : preview.items.length === 0 ? (
                 <EmptyState
                   icon={<SearchX />}
-                  title="No titles match"
-                  description="Loosen a rule, switch “all” to “any”, or add another source."
+                  title={t("No titles match")}
+                  description={t("Loosen a rule, switch “all” to “any”, or add another source.")}
                 />
               ) : (
                 <div className={cn("transition-opacity", previewLoading && "opacity-60")}>
@@ -674,7 +701,7 @@ export default function CollectionEditor() {
       <DescribeDialog
         open={describeOpen}
         onClose={() => setDescribeOpen(false)}
-        applyLabel="Replace rules"
+        applyLabel={t("Replace rules")}
         onApply={(g) =>
           update({
             sources: g.sources,
@@ -689,7 +716,7 @@ export default function CollectionEditor() {
           })
         }
         secondary={{
-          label: "Open as new collection",
+          label: t("Open as new collection"),
           onApply: (g) => navigate(newCollectionHref(), { state: { spec: g } }),
         }}
       />

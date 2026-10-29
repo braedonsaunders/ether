@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { DomainPage, useRouteTab } from "../../components/layout";
+import { localized, t } from "../../i18n";
 import { api, apiFetch } from "../../lib/api";
 import { normalizeSessions } from "../../lib/health";
 import { useAsync, useInterval } from "../../lib/hooks";
@@ -8,11 +9,14 @@ import { NowPlaying } from "./NowPlaying";
 import { ViewingStats } from "./Stats";
 import { viewingQuery, type Play, type Summary, type ViewingFilter } from "./types";
 
-const TABS = [
-  { key: "now", label: "Now playing" },
-  { key: "history", label: "History" },
-  { key: "stats", label: "Stats" },
-] as const;
+const TABS = localized(
+  () =>
+    [
+      { key: "now", label: t("Now playing") },
+      { key: "history", label: t("History") },
+      { key: "stats", label: t("Stats") },
+    ] as const,
+);
 
 /**
  * Activity is the screen owners keep on their phone, so it offers the
@@ -62,10 +66,10 @@ export default function Activity() {
   const live = sessions.data?.length;
   return (
     <DomainPage
-      title="Activity"
-      description="What's playing right now and what your viewers have watched."
+      title={t("Activity")}
+      description={t("What's playing right now and what your viewers have watched.")}
       base="/activity"
-      tabs={TABS.map((t) => (t.key === "now" && live ? { ...t, count: live } : t))}
+      tabs={TABS.map((tab) => (tab.key === "now" && live ? { ...tab, count: live } : tab))}
       active={tab}
     >
       {tab === "now" ? (

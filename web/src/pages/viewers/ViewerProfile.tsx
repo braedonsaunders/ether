@@ -16,11 +16,12 @@ import { Meter } from "../../components/charts";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { titleSubtitle } from "../../components/Poster";
 import { viewerName } from "../../components/pickers";
+import { t, tn } from "../../i18n";
 import SignInMethods from "../me/SignInMethods";
 import { getToken } from "../../lib/api";
 import { api, errorMessage } from "../../lib/api";
 import type { Viewer, ViewerDetail } from "../../lib/contract";
-import { formatDateTime, formatNumber, relativeTime } from "../../lib/format";
+import { formatDateTime, formatNumber, formatPercent, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import { EMPTY_LAYOUT } from "../../lib/layout";
 import { ContextBar, type ViewContext } from "../designer/ContextBar";
@@ -49,15 +50,15 @@ export default function ViewerProfile() {
   const [refreshing, setRefreshing] = useState(false);
 
   const v = viewer.data;
-  const setTab = (t: string) => navigate(`/viewers/${id}/${t}`);
+  const setTab = (next: string) => navigate(`/viewers/${id}/${next}`);
 
   const refresh = async () => {
     setRefreshing(true);
     try {
       await api.refreshViewer(id);
-      toast.success("Rows rebuilt", { description: "Their Plex Home is up to date." });
+      toast.success(t("Rows rebuilt"), { description: t("Their Plex Home is up to date.") });
     } catch (e) {
-      toast.error("Couldn't rebuild rows", { description: errorMessage(e) });
+      toast.error(t("Couldn't rebuild rows"), { description: errorMessage(e) });
     } finally {
       setRefreshing(false);
     }
@@ -73,7 +74,7 @@ export default function ViewerProfile() {
   if (!v)
     return (
       <div className="grid flex-1 place-items-center">
-        <Spinner size={22} label="Loading viewer" />
+        <Spinner size={22} label={t("Loading viewer")} />
       </div>
     );
   const name = viewerName(v);
@@ -90,8 +91,13 @@ export default function ViewerProfile() {
                 {name} <ViewerStatus viewer={v} />
               </h1>
               <p className="text-sm text-fg-muted">
-                {v.username} · active {relativeTime(v.lastActive)} · {formatNumber(v.plays30d, 0)}{" "}
-                plays and {formatNumber(v.hoursWatched30d, 1)} hours in 30 days
+                {v.username} · {t("active {time}", { time: relativeTime(v.lastActive) })} ·{" "}
+                {tn(
+                  v.plays30d,
+                  "{count} play and {hours} hours in 30 days",
+                  "{count} plays and {hours} hours in 30 days",
+                  { hours: formatNumber(v.hoursWatched30d, 1) },
+                )}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -101,10 +107,11 @@ export default function ViewerProfile() {
                 onClick={() => void refresh()}
                 disabled={refreshing}
               >
-                <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Rebuild rows
+                <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />{" "}
+                {t("Rebuild rows")}
               </Button>
               <Button variant="outline" size="sm" onClick={() => navigate("/home")}>
-                <LayoutTemplate size={14} /> Home
+                <LayoutTemplate size={14} /> {t("Home")}
               </Button>
             </div>
           </div>
@@ -115,16 +122,16 @@ export default function ViewerProfile() {
       }
       subtabs={
         <SubtabNav
-          ariaLabel="Viewer sections"
+          ariaLabel={t("Viewer sections")}
           active={tab}
           onSelect={setTab}
           tabs={[
-            { key: "taste", label: "Taste" },
-            { key: "activity", label: "Activity", count: v.recent?.length },
-            { key: "home", label: "Their Home" },
-            { key: "access", label: "Limits & preferences" },
-            { key: "playback", label: "Audio & subtitles" },
-            { key: "watchlist", label: "Watchlist" },
+            { key: "taste", label: t("Taste") },
+            { key: "activity", label: t("Activity"), count: v.recent?.length },
+            { key: "home", label: t("Their Home") },
+            { key: "access", label: t("Limits & preferences") },
+            { key: "playback", label: t("Audio & subtitles") },
+            { key: "watchlist", label: t("Watchlist") },
             { key: "sign-in", label: "Sign-in methods & devices" },
           ]}
         />
@@ -136,7 +143,7 @@ export default function ViewerProfile() {
         ) : !taste.data ? (
           <LoadingRows rows={4} />
         ) : (
-          <TasteView userId={id} taste={taste.data} onChange={(t) => taste.setData(t)} />
+          <TasteView userId={id} taste={taste.data} onChange={(next) => taste.setData(next)} />
         )
       ) : tab === "activity" ? (
         <Activity viewer={v} />
@@ -170,7 +177,7 @@ function BackLink() {
       to="/viewers"
       className="inline-flex items-center gap-1 text-sm text-fg-muted hover:text-fg"
     >
-      <ArrowLeft size={14} /> Viewers
+      <ArrowLeft size={14} /> {t("Viewers")}
     </Link>
   );
 }
@@ -181,8 +188,8 @@ function Activity({ viewer }: { viewer: ViewerDetail }) {
     return (
       <EmptyState
         icon={<History />}
-        title="Nothing watched recently"
-        description="Plays, finishes and abandons appear here as they happen."
+        title={t("Nothing watched recently")}
+        description={t("Plays, finishes and abandons appear here as they happen.")}
       />
     );
   return (
@@ -202,8 +209,8 @@ function Activity({ viewer }: { viewer: ViewerDetail }) {
               <div className="mt-1.5 max-w-xs">
                 <Meter
                   value={r.progress}
-                  valueLabel={`${Math.round(r.progress * 100)}%`}
-                  label="Stopped at"
+                  valueLabel={formatPercent(r.progress)}
+                  label={t("Stopped at")}
                 />
               </div>
             ) : null}
@@ -211,10 +218,10 @@ function Activity({ viewer }: { viewer: ViewerDetail }) {
           <div className="shrink-0 text-right">
             {r.completed ? (
               <Badge variant="success">
-                <CheckCircle2 size={11} /> Finished
+                <CheckCircle2 size={11} /> {t("Finished")}
               </Badge>
             ) : (
-              <Badge variant="warning">In progress</Badge>
+              <Badge variant="warning">{t("In progress")}</Badge>
             )}
             <p className="mt-1 text-xs text-fg-subtle" title={formatDateTime(r.at)}>
               {relativeTime(r.at)}
@@ -241,7 +248,7 @@ function TheirHome({ viewer }: { viewer: Viewer }) {
           <ContextBar ctx={ctx} onChange={setCtx} />
         </div>
         <Link to="/home" className="text-sm font-medium text-primary hover:underline">
-          Shape it in Home →
+          {t("Shape it in Home →")}
         </Link>
       </div>
       <div className="rounded-xl bg-bg p-2 sm:p-4">

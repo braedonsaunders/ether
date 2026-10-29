@@ -3,13 +3,14 @@ import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Images, ListVideo, Star } from "lucide-react";
 import { Workspace } from "../../components/workspace";
+import { localized, t } from "../../i18n";
 import "./metadata.css";
 
-const sections = [
-  { key: "artwork", label: "Artwork", icon: Images },
-  { key: "ratings", label: "Ratings", icon: Star },
-  { key: "episodes", label: "Episode order", icon: ListVideo },
-];
+const sections = localized(() => [
+  { key: "artwork", label: t("Artwork"), icon: Images },
+  { key: "ratings", label: t("Ratings"), icon: Star },
+  { key: "episodes", label: t("Episode order"), icon: ListVideo },
+]);
 
 export function MetadataWorkspace({
   aside,
@@ -25,8 +26,8 @@ export function MetadataWorkspace({
   const location = useLocation();
   return (
     <Workspace
-      title="Metadata"
-      subtitle="Artwork, rating sources and episode presentation."
+      title={t("Metadata")}
+      subtitle={t("Artwork, rating sources and episode presentation.")}
       actions={
         <>
           {actions}
@@ -35,21 +36,19 @@ export function MetadataWorkspace({
             variant="ghost"
             className="lg:hidden"
             onClick={() =>
-              document
-                .querySelector('[aria-label="Metadata preview"]')
-                ?.scrollIntoView({ block: "start" })
+              document.querySelector(".metadata-canvas")?.scrollIntoView({ block: "start" })
             }
           >
-            Preview ↓
+            {t("Preview ↓")}
           </Button>
         </>
       }
-      asideLabel="Metadata controls"
-      mainLabel="Metadata preview"
+      asideLabel={t("Metadata controls")}
+      mainLabel={t("Metadata preview")}
       mainClassName={`metadata-canvas ${fitPreview ? "metadata-canvas-fit" : ""}`}
       aside={
         <>
-          <nav className="metadata-nav" aria-label="Metadata sections">
+          <nav className="metadata-nav" aria-label={t("Metadata sections")}>
             {sections.map(({ key, label, icon: Icon }) => (
               <NavLink
                 key={key}

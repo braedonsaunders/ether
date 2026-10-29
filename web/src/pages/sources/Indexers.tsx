@@ -11,6 +11,7 @@ import { Globe, Link2, Plus, Puzzle, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../../app-context";
+import { localized, t, tn } from "../../i18n";
 import { ActionMenu } from "../../components/ActionMenu";
 import { Meter } from "../../components/charts";
 import { Drawer } from "../../components/Drawer";
@@ -82,8 +83,8 @@ export function isStremio(ix: { kind?: string }) {
 
 /** An addon install link as saved: trimmed, with stremio:// read as https://. */
 export function normalizeAddonUrl(url: string): string {
-  const t = url.trim();
-  return /^stremio:\/\//i.test(t) ? `https://${t.slice("stremio://".length)}` : t;
+  const trimmed = url.trim();
+  return /^stremio:\/\//i.test(trimmed) ? `https://${trimmed.slice("stremio://".length)}` : trimmed;
 }
 
 /** The addon's host, shown instead of a URL whose path may hold settings. */
@@ -132,10 +133,10 @@ export function addonUrlHasDebridKey(url: string): boolean {
   });
 }
 
-const PROTOCOLS: { value: IndexerProtocol; label: string }[] = [
-  { value: "usenet", label: "Usenet (Newznab)" },
-  { value: "torrent", label: "Torrent (Torznab)" },
-];
+const PROTOCOLS: { value: IndexerProtocol; label: string }[] = localized(() => [
+  { value: "usenet", label: t("Usenet (Newznab)") },
+  { value: "torrent", label: t("Torrent (Torznab)") },
+]);
 
 export function isTorrent(ix: { protocol?: string }) {
   return ix.protocol === "torrent";
@@ -156,7 +157,11 @@ function hostOf(url: string): string {
 }
 
 function indexerName(ix: Indexer, i: number) {
-  return ix.name || (isStremio(ix) && ix.url ? addonHost(ix.url) : ix.url) || `Indexer ${i + 1}`;
+  return (
+    ix.name ||
+    (isStremio(ix) && ix.url ? addonHost(ix.url) : ix.url) ||
+    t("Indexer {number}", { number: i + 1 })
+  );
 }
 
 /** A site's test: result count and a few sample titles, or the error. */
@@ -167,13 +172,22 @@ function SiteTestResults({ result }: { result: SiteTestResult }) {
     <Alert variant="success" role="status">
       <AlertDescription>
         <p>
-          Signed in and searched: {result.results} {result.results === 1 ? "result" : "results"}
-          {titles.length ? ", for example:" : "."}
+          {titles.length
+            ? tn(
+                result.results,
+                "Signed in and searched: {count} result, for example:",
+                "Signed in and searched: {count} results, for example:",
+              )
+            : tn(
+                result.results,
+                "Signed in and searched: {count} result.",
+                "Signed in and searched: {count} results.",
+              )}
         </p>
         {titles.length ? (
           <ul className="mt-1 list-disc pl-5 text-xs">
-            {titles.map((t) => (
-              <li key={t}>{t}</li>
+            {titles.map((title) => (
+              <li key={title}>{title}</li>
             ))}
           </ul>
         ) : null}
@@ -268,7 +282,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
     setErrors({});
     setError(null);
     try {
-      await commit(list, index < indexers.length ? "Indexer saved" : "Indexer added");
+      await commit(list, index < indexers.length ? t("Indexer saved") : t("Indexer added"));
       setEditing(null);
     } catch (e) {
       setError(e);
@@ -282,9 +296,9 @@ export function IndexerList({ version = 0 }: { version?: number }) {
     if (!editing) return;
     const { index, draft } = editing;
     const ok = await confirmDialog({
-      title: "Remove indexer?",
-      message: `${indexerName(draft, index)} will no longer be searched.`,
-      confirmLabel: "Remove",
+      title: t("Remove indexer?"),
+      message: t("{indexer} will no longer be searched.", { indexer: indexerName(draft, index) }),
+      confirmLabel: t("Remove"),
       tone: "danger",
     });
     if (!ok) return;
@@ -293,7 +307,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
     try {
       await commit(
         indexers.filter((_, j) => j !== index),
-        "Indexer removed",
+        t("Indexer removed"),
       );
       setEditing(null);
     } catch (e) {
@@ -305,9 +319,9 @@ export function IndexerList({ version = 0 }: { version?: number }) {
 
   async function move(i: number, d: -1 | 1) {
     try {
-      await commit(swap(indexers, i, i + d), "Indexer order saved");
+      await commit(swap(indexers, i, i + d), t("Indexer order saved"));
     } catch (e) {
-      toastError("Couldn't reorder indexers", e);
+      toastError(t("Couldn't reorder indexers"), e);
     }
   }
 
@@ -318,7 +332,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
       setSiteTest({
         state: r.ok
           ? { status: "ok", durationMs: r.durationMs }
-          : { status: "fail", message: r.error ?? "failed" },
+          : { status: "fail", message: r.error ?? t("failed") },
         result: r,
       });
       void statuses.reload();
@@ -346,25 +360,25 @@ export function IndexerList({ version = 0 }: { version?: number }) {
       {needsDebrid ? (
         <Alert variant="info" role="status">
           <AlertDescription>
-            Torrent indexers need a debrid account to stream from.{" "}
+            {t("Torrent indexers need a debrid account to stream from.")}{" "}
             <Link to="/sources/debrid" className="font-medium underline underline-offset-2">
-              Add a debrid provider
+              {t("Add a debrid provider")}
             </Link>
           </AlertDescription>
         </Alert>
       ) : null}
       <Section
-        title="Indexers"
-        description="Searched in order. Ether handles service limits automatically."
+        title={t("Indexers")}
+        description={t("Searched in order. Ether handles service limits automatically.")}
         actions={
           <ActionMenu
-            label="Add indexer"
+            label={t("Add indexer")}
             variant="default"
             size="sm"
             items={[
               {
                 key: "site",
-                label: "Site…",
+                label: t("Site…"),
                 icon: Globe,
                 onSelect: () => {
                   setEditing(null);
@@ -373,19 +387,19 @@ export function IndexerList({ version = 0 }: { version?: number }) {
               },
               {
                 key: "newznab",
-                label: "Newznab or Torznab URL…",
+                label: t("Newznab or Torznab URL…"),
                 icon: Link2,
                 onSelect: () => open(indexers.length, blankIndexer(indexers.length)),
               },
               {
                 key: "stremio",
-                label: "Stremio addon URL…",
+                label: t("Stremio addon URL…"),
                 icon: Puzzle,
                 onSelect: () => open(indexers.length, blankStremioIndexer(indexers.length)),
               },
             ]}
           >
-            <Plus size={14} /> Add indexer
+            <Plus size={14} /> {t("Add indexer")}
           </ActionMenu>
         }
         bodyClassName=""
@@ -393,8 +407,10 @@ export function IndexerList({ version = 0 }: { version?: number }) {
         {indexers.length === 0 ? (
           <EmptyState
             icon={<Search />}
-            title="No indexers"
-            description="Add a site, a Newznab or Torznab indexer, or a Stremio addon so Ether can find releases."
+            title={t("No indexers")}
+            description={t(
+              "Add a site, a Newznab or Torznab indexer, or a Stremio addon so Ether can find releases.",
+            )}
           />
         ) : (
           <ul className="divide-y divide-border">
@@ -411,18 +427,48 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                   key={ix.id}
                   title={label}
                   description={[
-                    i === 0 ? "Searched first" : `Priority ${i + 1}`,
+                    i === 0 ? t("Searched first") : t("Priority {number}", { number: i + 1 }),
                     site && ix.url ? hostOf(ix.url) : "",
-                    site && def && def.name !== label ? `${def.name} definition` : "",
+                    site && def && def.name !== label
+                      ? t("{name} definition", { name: def.name })
+                      : "",
                     ix.dailyLimit > 0
                       ? s
-                        ? `${hits} of ${ix.dailyLimit} ${countsSearches ? "searches" : "API requests"} used today`
-                        : `${ix.dailyLimit} ${countsSearches ? "searches" : "API requests"} a day`
+                        ? countsSearches
+                          ? tn(
+                              ix.dailyLimit,
+                              "{used} of {count} search used today",
+                              "{used} of {count} searches used today",
+                              { used: hits },
+                            )
+                          : tn(
+                              ix.dailyLimit,
+                              "{used} of {count} API request used today",
+                              "{used} of {count} API requests used today",
+                              { used: hits },
+                            )
+                        : countsSearches
+                          ? tn(ix.dailyLimit, "{count} search a day", "{count} searches a day")
+                          : tn(
+                              ix.dailyLimit,
+                              "{count} API request a day",
+                              "{count} API requests a day",
+                            )
                       : site
                         ? ""
-                        : "Automatic limits",
+                        : t("Automatic limits"),
                     ix.dailyGrabs > 0
-                      ? `${ix.dailyGrabs} ${isTorrent(ix) ? "torrent" : "NZB"} downloads a day`
+                      ? isTorrent(ix)
+                        ? tn(
+                            ix.dailyGrabs,
+                            "{count} torrent download a day",
+                            "{count} torrent downloads a day",
+                          )
+                        : tn(
+                            ix.dailyGrabs,
+                            "{count} NZB download a day",
+                            "{count} NZB downloads a day",
+                          )
                       : "",
                   ]
                     .filter(Boolean)
@@ -433,29 +479,31 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                         <>
                           <Badge variant="outline">{siteKindLabel(ix.protocol)}</Badge>
                           {definitions && !def ? (
-                            <Badge variant="destructive">Definition missing</Badge>
+                            <Badge variant="destructive">{t("Definition missing")}</Badge>
                           ) : null}
                           {tested ? (
                             <Badge
                               variant={tested.ok ? "success" : "destructive"}
                               title={tested.message}
                             >
-                              {tested.ok ? "Test passed" : "Test failed"}
+                              {tested.ok ? t("Test passed") : t("Test failed")}
                             </Badge>
                           ) : null}
                         </>
                       ) : isStremio(ix) ? (
-                        <Badge variant="outline">Stremio addon</Badge>
+                        <Badge variant="outline">{t("Stremio addon")}</Badge>
                       ) : (
                         <Badge variant="outline">{protocolLabel(ix)}</Badge>
                       )}
-                      {!ix.enabled ? <Badge variant="secondary">Off</Badge> : null}
+                      {!ix.enabled ? <Badge variant="secondary">{t("Off")}</Badge> : null}
                       {s && Number(s.retryAt ?? 0) > Date.now() / 1000 ? (
-                        <Badge variant="warning">Waiting for service · retries automatically</Badge>
+                        <Badge variant="warning">
+                          {t("Waiting for service · retries automatically")}
+                        </Badge>
                       ) : s &&
                         ((ix.dailyLimit > 0 && hits >= ix.dailyLimit) ||
                           (ix.dailyGrabs > 0 && Number(s.grabsUsed ?? 0) >= ix.dailyGrabs)) ? (
-                        <Badge variant="warning">Personal cap reached</Badge>
+                        <Badge variant="warning">{t("Personal cap reached")}</Badge>
                       ) : null}
                     </>
                   }
@@ -467,7 +515,7 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                       onMove={(d) => void move(i, d)}
                     />
                   }
-                  editLabel={`Edit ${label}`}
+                  editLabel={t("Edit {name}", { name: label })}
                   onEdit={() => open(i, ix)}
                 />
               );
@@ -501,8 +549,8 @@ export function IndexerList({ version = 0 }: { version?: number }) {
       <Drawer
         open={picking}
         onClose={() => setPicking(false)}
-        title="Add a site"
-        description="Pick the site's definition. Its settings come next."
+        title={t("Add a site")}
+        description={t("Pick the site's definition. Its settings come next.")}
         size="lg"
       >
         {sites.error ? (
@@ -529,10 +577,10 @@ export function IndexerList({ version = 0 }: { version?: number }) {
         title={
           isNew
             ? builtin
-              ? (draftDef?.name ?? "New site")
+              ? (draftDef?.name ?? t("New site"))
               : stremio
-                ? "New Stremio addon"
-                : "New indexer"
+                ? t("New Stremio addon")
+                : t("New indexer")
             : draft && editing
               ? indexerName(draft, editing.index)
               : ""
@@ -542,17 +590,17 @@ export function IndexerList({ version = 0 }: { version?: number }) {
             ? builtin
               ? siteKindLabel(draft.protocol)
               : stremio
-                ? "Stremio addon · Torrent"
+                ? t("Stremio addon · Torrent")
                 : isTorrent(draft)
-                  ? "Torznab indexer"
-                  : "Newznab indexer"
+                  ? t("Torznab indexer")
+                  : t("Newznab indexer")
             : undefined
         }
         onSave={() => void save()}
         saving={saving}
-        saveLabel="Save indexer"
+        saveLabel={t("Save indexer")}
         onRemove={isNew ? undefined : () => void remove()}
-        removeLabel="Remove indexer"
+        removeLabel={t("Remove indexer")}
         error={error}
         tools={
           draft ? (
@@ -585,8 +633,15 @@ export function IndexerList({ version = 0 }: { version?: number }) {
             {stat && draft.dailyLimit > 0 ? (
               <Meter
                 value={used / draft.dailyLimit}
-                label={`${used} API requests used today`}
-                valueLabel={`${Number(stat.hitsRemaining ?? 0)} left of ${draft.dailyLimit}`}
+                label={tn(
+                  used,
+                  "{count} API request used today",
+                  "{count} API requests used today",
+                )}
+                valueLabel={t("{left} left of {limit}", {
+                  left: Number(stat.hitsRemaining ?? 0),
+                  limit: draft.dailyLimit,
+                })}
                 tone={
                   used >= draft.dailyLimit
                     ? "danger"
@@ -601,16 +656,16 @@ export function IndexerList({ version = 0 }: { version?: number }) {
             ) : null}
             {builtin && siteTest.result ? <SiteTestResults result={siteTest.result} /> : null}
             {builtin ? (
-              <SettingsSection title="Site">
-                <TextRow label="Name" value={draft.name} onChange={(v) => set({ name: v })} />
+              <SettingsSection title={t("Site")}>
+                <TextRow label={t("Name")} value={draft.name} onChange={(v) => set({ name: v })} />
                 <TextRow
-                  label="Site address"
+                  label={t("Site address")}
                   type="url"
                   value={draft.url}
                   placeholder={draftDef?.links[0]}
                   help={
                     draftDef && draftDef.links.length > 1
-                      ? `Also: ${draftDef.links.slice(1).join(", ")}`
+                      ? t("Also: {links}", { links: draftDef.links.slice(1).join(", ") })
                       : undefined
                   }
                   error={errors.url}
@@ -618,59 +673,61 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                 />
                 {draftDef ? <SiteDefinitionRow def={draftDef} /> : null}
                 <SettingsRow
-                  title="Protocol"
+                  title={t("Protocol")}
                   description={
                     isTorrent(draft)
-                      ? "Torrent releases stream through your debrid account."
-                      : "Usenet releases stream from your Usenet providers."
+                      ? t("Torrent releases stream through your debrid account.")
+                      : t("Usenet releases stream from your Usenet providers.")
                   }
                   control={<Badge variant="outline">{siteProtocolLabel(draft.protocol)}</Badge>}
                 />
                 <BoolRow
-                  label="Enabled"
+                  label={t("Enabled")}
                   value={draft.enabled}
                   onChange={(v) => set({ enabled: v })}
                 />
               </SettingsSection>
             ) : stremio ? (
-              <SettingsSection title="Addon">
-                <TextRow label="Name" value={draft.name} onChange={(v) => set({ name: v })} />
+              <SettingsSection title={t("Addon")}>
+                <TextRow label={t("Name")} value={draft.name} onChange={(v) => set({ name: v })} />
                 <TextRow
-                  label="Addon URL"
+                  label={t("Addon URL")}
                   type="url"
                   value={draft.url}
                   placeholder="https://addon.example/manifest.json"
-                  help="Paste the addon's install link. Choose an addon that exposes torrent results; direct or proxied playback links alone are not supported. Ether streams through your configured debrid accounts."
+                  help={t(
+                    "Paste the addon's install link. Choose an addon that exposes torrent results; direct or proxied playback links alone are not supported. Ether streams through your configured debrid accounts.",
+                  )}
                   error={errors.url}
                   onChange={(v) => set({ url: v })}
                 />
                 {addonUrlHasDebridKey(draft.url) ? (
                   <Alert variant="warning" role="status">
                     <AlertDescription>
-                      This link includes a debrid API key. Ether checks your debrid accounts itself,
-                      so the addon doesn't need it: a key only adds cached hints, and it is then
-                      also stored in this link on this server.
+                      {t(
+                        "This link includes a debrid API key. Ether checks your debrid accounts itself, so the addon doesn't need it: a key only adds cached hints, and it is then also stored in this link on this server.",
+                      )}
                     </AlertDescription>
                   </Alert>
                 ) : null}
                 <BoolRow
-                  label="Enabled"
+                  label={t("Enabled")}
                   value={draft.enabled}
                   onChange={(v) => set({ enabled: v })}
                 />
               </SettingsSection>
             ) : (
-              <SettingsSection title="Connection">
+              <SettingsSection title={t("Connection")}>
                 <SettingsRow
-                  title="Protocol"
+                  title={t("Protocol")}
                   description={
                     isTorrent(draft)
-                      ? "Torrent releases stream through your debrid account."
-                      : "Usenet releases stream from your Usenet providers."
+                      ? t("Torrent releases stream through your debrid account.")
+                      : t("Usenet releases stream from your Usenet providers.")
                   }
                   control={
                     <Segmented
-                      ariaLabel="Protocol"
+                      ariaLabel={t("Protocol")}
                       size="sm"
                       options={PROTOCOLS}
                       value={isTorrent(draft) ? "torrent" : "usenet"}
@@ -678,25 +735,25 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                     />
                   }
                 />
-                <TextRow label="Name" value={draft.name} onChange={(v) => set({ name: v })} />
+                <TextRow label={t("Name")} value={draft.name} onChange={(v) => set({ name: v })} />
                 <TextRow
-                  label="URL"
+                  label={t("URL")}
                   type="url"
                   value={draft.url}
                   placeholder="https://indexer.example.com"
-                  help="/api is added automatically."
+                  help={t("/api is added automatically.")}
                   error={errors.url}
                   onChange={(v) => set({ url: v })}
                 />
-                <SettingsRow stacked title="API key">
+                <SettingsRow stacked title={t("API key")}>
                   <SecretInput
-                    ariaLabel="API key"
+                    ariaLabel={t("API key")}
                     value={draft.apiKey}
                     onChange={(v) => set({ apiKey: v })}
                   />
                 </SettingsRow>
                 <BoolRow
-                  label="Enabled"
+                  label={t("Enabled")}
                   value={draft.enabled}
                   onChange={(v) => set({ enabled: v })}
                 />
@@ -707,36 +764,46 @@ export function IndexerList({ version = 0 }: { version?: number }) {
             ) : null}
             <details className="space-y-3">
               <summary className="cursor-pointer text-sm font-medium">
-                Advanced: personal caps
+                {t("Advanced: personal caps")}
               </summary>
               <SettingsSection
-                title="Optional daily caps"
+                title={t("Optional daily caps")}
                 description={
                   builtin
-                    ? "Sites report no limits to Ether. Add a cap if the site restricts how often you search or download."
+                    ? t(
+                        "Sites report no limits to Ether. Add a cap if the site restricts how often you search or download.",
+                      )
                     : stremio
-                      ? "Ether follows the addon's rate limit responses automatically. Add a cap if you want fewer searches."
-                      : "Ether follows service limit responses automatically. Add a lower personal cap only if you want one."
+                      ? t(
+                          "Ether follows the addon's rate limit responses automatically. Add a cap if you want fewer searches.",
+                        )
+                      : t(
+                          "Ether follows service limit responses automatically. Add a lower personal cap only if you want one.",
+                        )
                 }
               >
                 <NumRow
-                  label={builtin || stremio ? "Searches per day" : "API requests per day"}
+                  label={builtin || stremio ? t("Searches per day") : t("API requests per day")}
                   value={draft.dailyLimit}
                   min={0}
                   help={
                     builtin || stremio
-                      ? "0 = no cap."
-                      : "0 = automatic. Includes searches and capability checks."
+                      ? t("0 = no cap.")
+                      : t("0 = automatic. Includes searches and capability checks.")
                   }
                   error={errors.dailyLimit}
                   onChange={(n) => set({ dailyLimit: n })}
                 />
                 {stremio ? null : (
                   <NumRow
-                    label={`${isTorrent(draft) ? "Torrent" : "NZB"} downloads per day`}
+                    label={
+                      isTorrent(draft) ? t("Torrent downloads per day") : t("NZB downloads per day")
+                    }
                     value={draft.dailyGrabs}
                     min={0}
-                    help={builtin ? "0 = no cap." : "0 = automatic. Counts files, not movie data."}
+                    help={
+                      builtin ? t("0 = no cap.") : t("0 = automatic. Counts files, not movie data.")
+                    }
                     error={errors.dailyGrabs}
                     onChange={(n) => set({ dailyGrabs: n })}
                   />
@@ -744,15 +811,18 @@ export function IndexerList({ version = 0 }: { version?: number }) {
               </SettingsSection>
             </details>
             {builtin || stremio ? null : (
-              <SettingsSection title="Categories">
+              <SettingsSection title={t("Categories")}>
                 <SettingsRow
                   stacked
-                  title="Movie categories"
-                  description={`${protocolLabel(draft)} category ids. Empty uses the standard movie categories.`}
+                  title={t("Movie categories")}
+                  description={t(
+                    "{protocol} category ids. Empty uses the standard movie categories.",
+                    { protocol: protocolLabel(draft) },
+                  )}
                 >
                   <ListInput
                     numeric
-                    ariaLabel="Movie categories"
+                    ariaLabel={t("Movie categories")}
                     value={draft.movieCategories}
                     onChange={(v) => set({ movieCategories: v.length ? (v as number[]) : null })}
                     placeholder="2000, 2040"
@@ -760,12 +830,12 @@ export function IndexerList({ version = 0 }: { version?: number }) {
                 </SettingsRow>
                 <SettingsRow
                   stacked
-                  title="TV categories"
-                  description="Empty uses the standard TV categories."
+                  title={t("TV categories")}
+                  description={t("Empty uses the standard TV categories.")}
                 >
                   <ListInput
                     numeric
-                    ariaLabel="TV categories"
+                    ariaLabel={t("TV categories")}
                     value={draft.tvCategories}
                     onChange={(v) => set({ tvCategories: v.length ? (v as number[]) : null })}
                     placeholder="5000, 5040"

@@ -14,29 +14,31 @@ import { CheckCircle2, Pin as PinIcon, RefreshCw, Repeat, Route, XCircle } from 
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Drawer } from "../../components/Drawer";
+import { t, tn, tx } from "../../i18n";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import {
   formatBytes,
   formatDateTime,
   formatNanos,
   isPlainObject,
-  plural,
   relativeTime,
 } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import { releaseConsole, type HistoryRecord } from "../../lib/releases";
 import type { CandidateTrace, ResolverTrace } from "../../lib/types";
+import { pagedTableLabels } from "../../i18n/appkit-labels";
+import { useLocale } from "../../i18n/react";
 
-function normalizeTrace(t: Record<string, unknown>, i: number): ResolverTrace {
+function normalizeTrace(raw: Record<string, unknown>, i: number): ResolverTrace {
   return {
-    titleKey: String(t.titleKey ?? t.key ?? i),
-    titleName: String(t.titleName ?? t.title ?? t.name ?? `Trace ${i + 1}`),
-    profile: String(t.profile ?? ""),
-    at: String(t.at ?? ""),
-    candidates: (Array.isArray(t.candidates)
-      ? t.candidates
-      : Array.isArray(t.releases)
-        ? t.releases
+    titleKey: String(raw.titleKey ?? raw.key ?? i),
+    titleName: String(raw.titleName ?? raw.title ?? raw.name ?? t("Trace {n}", { n: i + 1 })),
+    profile: String(raw.profile ?? ""),
+    at: String(raw.at ?? ""),
+    candidates: (Array.isArray(raw.candidates)
+      ? raw.candidates
+      : Array.isArray(raw.releases)
+        ? raw.releases
         : []
     )
       .filter(isPlainObject)
@@ -64,27 +66,28 @@ function normalizeTrace(t: Record<string, unknown>, i: number): ResolverTrace {
           typeof c.compatibilityReason === "string" ? c.compatibilityReason : undefined,
         route: typeof c.route === "string" ? c.route : undefined,
       })),
-    winner: typeof t.winner === "string" ? t.winner : undefined,
-    err: typeof t.err === "string" ? t.err : typeof t.error === "string" ? t.error : undefined,
-    searchDuration: Number(t.searchDuration ?? 0),
-    failover: Boolean(t.failover),
-    pinned: typeof t.pinned === "string" ? t.pinned : undefined,
-    pinStatus: typeof t.pinStatus === "string" ? t.pinStatus : undefined,
-    omitted: Number(t.omitted ?? 0) || undefined,
-    routing: typeof t.routing === "string" ? t.routing : undefined,
-    discovery: Array.isArray(t.discovery)
-      ? t.discovery.filter(isPlainObject).map((d) => ({
+    winner: typeof raw.winner === "string" ? raw.winner : undefined,
+    err:
+      typeof raw.err === "string" ? raw.err : typeof raw.error === "string" ? raw.error : undefined,
+    searchDuration: Number(raw.searchDuration ?? 0),
+    failover: Boolean(raw.failover),
+    pinned: typeof raw.pinned === "string" ? raw.pinned : undefined,
+    pinStatus: typeof raw.pinStatus === "string" ? raw.pinStatus : undefined,
+    omitted: Number(raw.omitted ?? 0) || undefined,
+    routing: typeof raw.routing === "string" ? raw.routing : undefined,
+    discovery: Array.isArray(raw.discovery)
+      ? raw.discovery.filter(isPlainObject).map((d) => ({
           path: String(d.path ?? "unknown"),
           count: Number(d.count ?? 0),
           rescue: Boolean(d.rescue),
         }))
       : undefined,
-    limits: isPlainObject(t.limits)
+    limits: isPlainObject(raw.limits)
       ? {
-          profileMinHeight: Number(t.limits.profileMinHeight ?? 0),
-          profileMaxHeight: Number(t.limits.profileMaxHeight ?? 0),
-          clientMaxHeight: Number(t.limits.clientMaxHeight ?? 0),
-          clientMaxBitrateKbps: Number(t.limits.clientMaxBitrateKbps ?? 0),
+          profileMinHeight: Number(raw.limits.profileMinHeight ?? 0),
+          profileMaxHeight: Number(raw.limits.profileMaxHeight ?? 0),
+          clientMaxHeight: Number(raw.limits.clientMaxHeight ?? 0),
+          clientMaxBitrateKbps: Number(raw.limits.clientMaxBitrateKbps ?? 0),
         }
       : undefined,
   };
@@ -104,16 +107,16 @@ function outcome(h: { error?: string; err?: string; releaseId?: string; winner?:
   if (h.error || h.err)
     return (
       <Badge variant="destructive">
-        <XCircle size={11} /> Failed
+        <XCircle size={11} /> {t("Failed")}
       </Badge>
     );
   if (h.releaseId || h.winner)
     return (
       <Badge variant="success">
-        <CheckCircle2 size={11} /> Picked
+        <CheckCircle2 size={11} /> {t("Picked")}
       </Badge>
     );
-  return <Badge variant="secondary">No pick</Badge>;
+  return <Badge variant="secondary">{t("No pick")}</Badge>;
 }
 
 function flags(h: { failover?: boolean; pinned?: boolean }) {
@@ -121,12 +124,12 @@ function flags(h: { failover?: boolean; pinned?: boolean }) {
     <>
       {h.failover ? (
         <Badge variant="warning">
-          <Repeat size={11} /> Failover
+          <Repeat size={11} /> {t("Failover")}
         </Badge>
       ) : null}
       {h.pinned ? (
         <Badge variant="info">
-          <PinIcon size={11} /> Pinned
+          <PinIcon size={11} /> {t("Pinned")}
         </Badge>
       ) : null}
     </>
@@ -144,12 +147,13 @@ export function HistoryTab() {
     () => (open ? releaseConsole.historyEntry(open.id) : Promise.resolve(null)),
     [open?.id],
   );
+  const { locale } = useLocale();
   const trace = useMemo(
     () =>
       detail.data && detail.data.id === open?.id && isPlainObject(detail.data.trace)
         ? normalizeTrace(detail.data.trace as unknown as Record<string, unknown>, 0)
         : null,
-    [detail.data, open?.id],
+    [detail.data, open?.id, locale],
   );
   const rows = state.data?.items ?? [];
 
@@ -159,21 +163,25 @@ export function HistoryTab() {
         <p className="max-w-2xl text-sm text-fg-muted">
           {key ? (
             <>
-              Decisions for <span className="font-medium text-fg">{titleName || key}</span>.{" "}
+              {tx("Decisions for {title}.", {
+                title: <span className="font-medium text-fg">{titleName || key}</span>,
+              })}{" "}
               <button
                 type="button"
                 className="text-primary underline"
                 onClick={() => setParams({})}
               >
-                Show every title
+                {t("Show every title")}
               </button>
             </>
           ) : (
-            "Why each release was picked or rejected: profile match, size, custom formats, pins, health checks and failovers."
+            t(
+              "Why each release was picked or rejected: profile match, size, custom formats, pins, health checks and failovers.",
+            )
           )}
         </p>
         <Button variant="outline" size="sm" onClick={() => void state.reload()}>
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={14} /> {t("Refresh")}
         </Button>
       </div>
       {state.error ? (
@@ -184,7 +192,12 @@ export function HistoryTab() {
         <>
           {state.data.total > rows.length ? (
             <p className="text-xs text-fg-muted">
-              Showing the newest {rows.length} of {plural(state.data.total, "decision")}.
+              {tn(
+                state.data.total,
+                "Showing the newest {shown} of {count} decision.",
+                "Showing the newest {shown} of {count} decisions.",
+                { shown: rows.length },
+              )}
             </p>
           ) : null}
           <PagedTable<HistoryRecord>
@@ -193,21 +206,21 @@ export function HistoryTab() {
             searchable
             pageSize={25}
             onRowClick={setOpen}
-            labels={{
-              searchLabel: "Search release history",
-              searchPlaceholder: "Filter by title, profile or release…",
-            }}
+            labels={pagedTableLabels({
+              searchLabel: t("Search release history"),
+              searchPlaceholder: t("Filter by title, profile or release…"),
+            })}
             empty={
               <EmptyState
                 icon={<Route />}
-                title="No decisions yet"
-                description="Play a title in Plex; the decision appears here."
+                title={t("No decisions yet")}
+                description={t("Play a title in Plex; the decision appears here.")}
               />
             }
             columns={[
               {
                 key: "title",
-                header: "Title",
+                header: t("Title"),
                 search: (h) => `${h.titleName} ${h.profile ?? ""} ${h.releaseName ?? ""}`,
                 sortValue: (h) => h.titleName,
                 cell: (h) => (
@@ -225,7 +238,7 @@ export function HistoryTab() {
               },
               {
                 key: "outcome",
-                header: "Outcome",
+                header: t("Outcome"),
                 cell: (h) => (
                   <span className="flex flex-wrap gap-1">
                     {outcome(h)}
@@ -235,20 +248,20 @@ export function HistoryTab() {
               },
               {
                 key: "profile",
-                header: "Profile",
+                header: t("Profile"),
                 sortValue: (h) => h.profile ?? "",
                 cell: (h) => (h.profile ? <Badge variant="secondary">{h.profile}</Badge> : "—"),
               },
               {
                 key: "candidates",
-                header: "Releases",
+                header: t("Releases"),
                 align: "right",
                 sortValue: (h) => h.candidates,
                 cell: (h) => <span className="tabular-nums">{h.candidates}</span>,
               },
               {
                 key: "at",
-                header: "When",
+                header: t("When"),
                 sortValue: (h) => h.at,
                 cell: (h) => (
                   <span className="text-fg-muted" title={formatDateTime(h.at)}>
@@ -268,7 +281,15 @@ export function HistoryTab() {
         title={open?.titleName}
         description={
           open
-            ? `${open.profile ? `Profile ${open.profile} · ` : ""}${formatDateTime(open.at)}${trace ? ` · search took ${formatNanos(trace.searchDuration)}` : ""}`
+            ? [
+                open.profile ? t("Profile {profile}", { profile: open.profile }) : "",
+                formatDateTime(open.at),
+                trace
+                  ? t("search took {duration}", { duration: formatNanos(trace.searchDuration) })
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : undefined
         }
       >
@@ -280,7 +301,10 @@ export function HistoryTab() {
           ) : trace ? (
             <TraceDetail trace={trace} titleKey={open.titleKey} />
           ) : (
-            <EmptyState title="No details stored" description="This decision has no trace." />
+            <EmptyState
+              title={t("No details stored")}
+              description={t("This decision has no trace.")}
+            />
           )
         ) : null}
       </Drawer>
@@ -292,32 +316,32 @@ function verdict(c: CandidateTrace, trace: ResolverTrace) {
   if (c.releaseId && c.releaseId === trace.winner)
     return (
       <Badge variant="success">
-        <CheckCircle2 size={11} /> Picked
+        <CheckCircle2 size={11} /> {t("Picked")}
       </Badge>
     );
-  if (c.rejected) return <Badge variant="destructive">Rejected</Badge>;
-  return <Badge variant="secondary">Fallback</Badge>;
+  if (c.rejected) return <Badge variant="destructive">{t("Rejected")}</Badge>;
+  return <Badge variant="secondary">{t("Fallback")}</Badge>;
 }
 
 function profileResolution(min: number, max: number) {
   if (min && max) return `${min}p–${max}p`;
-  if (min) return `At least ${min}p`;
-  if (max) return `Up to ${max}p`;
-  return "Any resolution";
+  if (min) return t("At least {height}p", { height: min });
+  if (max) return t("Up to {height}p", { height: max });
+  return t("Any resolution");
 }
 
 function discoveryLabel(path: string) {
   switch (path) {
     case "feed":
-      return "Feed results";
+      return t("Feed results");
     case "cache":
-      return "Cached search";
+      return t("Cached search");
     case "live-complete":
-      return "Live search completed";
+      return t("Live search completed");
     case "live-early":
-      return "Live search ended early";
+      return t("Live search ended early");
     default:
-      return "Unknown discovery";
+      return t("Unknown discovery");
   }
 }
 
@@ -337,31 +361,47 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
         {trace.err ? <span className="text-sm text-danger">{trace.err}</span> : null}
       </div>
       {trace.routing ? (
-        <p className="text-sm text-fg-muted">Source routing: {trace.routing}</p>
+        <p className="text-sm text-fg-muted">
+          {t("Source routing: {routing}", { routing: trace.routing })}
+        </p>
       ) : null}
       <div className="text-sm text-fg-muted">
         <p>
-          Discovery:{" "}
+          {t("Discovery:")}{" "}
           {trace.discovery?.length
             ? trace.discovery
-                .map(
-                  (d) =>
-                    `${d.rescue ? "Rescue: " : ""}${discoveryLabel(d.path)} (${d.count} ${d.count === 1 ? "release" : "releases"})`,
-                )
+                .map((d) => {
+                  const releases = tn(d.count, "{count} release", "{count} releases");
+                  const label = discoveryLabel(d.path);
+                  return d.rescue
+                    ? t("Rescue: {source} ({releases})", { source: label, releases })
+                    : t("{source} ({releases})", { source: label, releases });
+                })
                 .join(" · ")
-            : "unknown"}
+            : t("unknown")}
         </p>
         <p>
-          Effective playback limits:{" "}
+          {t("Effective playback limits:")}{" "}
           {trace.limits
-            ? `Profile: ${profileResolution(trace.limits.profileMinHeight, trace.limits.profileMaxHeight)} · Height: ${trace.limits.clientMaxHeight ? `${trace.limits.clientMaxHeight}p` : "unlimited"} · Bitrate: ${trace.limits.clientMaxBitrateKbps ? `${trace.limits.clientMaxBitrateKbps} kbps` : "unlimited"}`
-            : "unknown"}
+            ? t("Profile: {profile} · Height: {height} · Bitrate: {bitrate}", {
+                profile: profileResolution(
+                  trace.limits.profileMinHeight,
+                  trace.limits.profileMaxHeight,
+                ),
+                height: trace.limits.clientMaxHeight
+                  ? `${trace.limits.clientMaxHeight}p`
+                  : t("unlimited"),
+                bitrate: trace.limits.clientMaxBitrateKbps
+                  ? t("{rate} kbps", { rate: trace.limits.clientMaxBitrateKbps })
+                  : t("unlimited"),
+              })
+            : t("unknown")}
         </p>
       </div>
       {trace.pinStatus && trace.pinStatus !== "used" ? (
         <p className="text-sm text-fg-muted">
           <PinIcon size={13} className="mr-1 inline" aria-hidden />
-          Owner pin: {trace.pinStatus}
+          {t("Owner pin: {status}", { status: trace.pinStatus })}
         </p>
       ) : null}
       {titleKey ? (
@@ -370,23 +410,23 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
             className="text-primary underline"
             to={`/releases/search?key=${encodeURIComponent(titleKey)}&title=${encodeURIComponent(trace.titleName)}`}
           >
-            Search releases for this title
+            {t("Search releases for this title")}
           </Link>
         </p>
       ) : null}
       {cands.length === 0 ? (
         <EmptyState
-          title="No releases found"
-          description="The indexers returned nothing usable for this title."
+          title={t("No releases found")}
+          description={t("The indexers returned nothing usable for this title.")}
         />
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Release</TableHead>
-              <TableHead className="text-right">Score</TableHead>
-              <TableHead>Health</TableHead>
-              <TableHead>Verdict</TableHead>
+              <TableHead>{t("Release")}</TableHead>
+              <TableHead className="text-right">{t("Score")}</TableHead>
+              <TableHead>{t("Health")}</TableHead>
+              <TableHead>{t("Verdict")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -397,11 +437,13 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
                   <span className="text-xs text-fg-muted">
                     {c.indexer}
                     {c.size ? ` · ${formatBytes(c.size)}` : ""}
-                    {c.fetchDuration ? ` · fetched in ${formatNanos(c.fetchDuration)}` : ""}
+                    {c.fetchDuration
+                      ? ` · ${t("fetched in {duration}", { duration: formatNanos(c.fetchDuration) })}`
+                      : ""}
                   </span>
                   {c.pinned || c.customFormats?.length ? (
                     <span className="mt-1 flex flex-wrap gap-1">
-                      {c.pinned ? <Badge variant="info">Pinned</Badge> : null}
+                      {c.pinned ? <Badge variant="info">{t("Pinned")}</Badge> : null}
                       {(c.customFormats ?? []).map((f) => (
                         <Badge key={f.id} variant="outline">
                           {f.name} {f.score > 0 ? `+${f.score}` : f.score}
@@ -416,12 +458,12 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
                 <TableCell>
                   {c.healthChecked ? (
                     c.healthy ? (
-                      <Badge variant="success">Healthy</Badge>
+                      <Badge variant="success">{t("Healthy")}</Badge>
                     ) : (
-                      <Badge variant="destructive">Failed</Badge>
+                      <Badge variant="destructive">{t("Failed")}</Badge>
                     )
                   ) : (
-                    <span className="text-xs text-fg-subtle">Not checked</span>
+                    <span className="text-xs text-fg-subtle">{t("Not checked")}</span>
                   )}
                   {c.healthDuration ? (
                     <span className="block text-[11px] text-fg-subtle">
@@ -450,7 +492,11 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
       )}
       {trace.omitted ? (
         <p className="text-xs text-fg-muted">
-          {plural(trace.omitted, "more rejected release")} not stored.
+          {tn(
+            trace.omitted,
+            "{count} more rejected release not stored.",
+            "{count} more rejected releases not stored.",
+          )}
         </p>
       ) : null}
     </div>

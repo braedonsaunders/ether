@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ErrorPanel } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { TitleSearch } from "../../components/pickers";
+import { t } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 
 type Coverage = {
@@ -36,23 +37,25 @@ export function MarkerCoverage() {
 
   const stats = coverage
     ? [
-        { label: "Cached episodes", value: coverage.cachedEpisodes },
-        { label: "Intros", value: coverage.introEpisodes },
-        { label: "Credits", value: coverage.creditsEpisodes },
-        { label: "Recaps", value: coverage.recapEpisodes },
+        { key: "cached", label: t("Cached episodes"), value: coverage.cachedEpisodes },
+        { key: "intros", label: t("Intros"), value: coverage.introEpisodes },
+        { key: "credits", label: t("Credits"), value: coverage.creditsEpisodes },
+        { key: "recaps", label: t("Recaps"), value: coverage.recapEpisodes },
       ]
     : [];
 
   return (
     <Section
-      title="Intro & credits coverage"
-      description="Counts include episodes seen in the local marker cache. Skip buttons depend on the Plex app."
+      title={t("Intro & credits coverage")}
+      description={t(
+        "Counts include episodes seen in the local marker cache. Skip buttons depend on the Plex app.",
+      )}
     >
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-64 flex-1">
           <TitleSearch
             type="show"
-            placeholder="Find a show…"
+            placeholder={t("Find a show…")}
             onPick={(title) => {
               setShow(String(Number(title.key) % 1000000000000000));
               setShowName(title.title);
@@ -65,15 +68,15 @@ export function MarkerCoverage() {
           disabled={!/^\d+$/.test(show) || loading}
           onClick={() => void check()}
         >
-          {loading ? "Checking…" : "Check coverage"}
+          {loading ? t("Checking…") : t("Check coverage")}
         </Button>
       </div>
       {showName ? <p className="text-sm font-medium text-fg">{showName}</p> : null}
       <ErrorPanel error={error} />
       {coverage ? (
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Marker coverage">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label={t("Marker coverage")}>
           {stats.map((s) => (
-            <div key={s.label} className="rounded-lg border border-border bg-bg-subtle px-3 py-2">
+            <div key={s.key} className="rounded-lg border border-border bg-bg-subtle px-3 py-2">
               <dt className="text-xs text-fg-muted">{s.label}</dt>
               <dd className="text-lg font-semibold tabular-nums text-fg">{s.value}</dd>
             </div>

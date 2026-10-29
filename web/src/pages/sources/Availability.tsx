@@ -1,3 +1,4 @@
+import { getLocale, localized, t, tn } from "../../i18n";
 import { Badge, Button, SettingsSection, Spinner, toast } from "@braedonsaunders/appkit-ui";
 import { Activity, Radio, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
@@ -5,6 +6,7 @@ import { ErrorPanel, MutationError } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import type { AvailabilityConfig } from "../../lib/types";
 import { api, apiFetch } from "../../lib/api";
+import { formatNumber } from "../../lib/format";
 import { useAsync, useInterval } from "../../lib/hooks";
 import { BoolRow, NumRow, RecordDrawer } from "./form";
 
@@ -39,15 +41,16 @@ interface Status {
   recent: Observation[];
   day: string;
 }
-const stamp = (n: number) => (n ? new Date(n * 1000).toLocaleString() : "Not yet synced");
-const labels: Record<string, string> = {
-  observed: "Discovered",
-  verified: "Health checked",
-  stale: "Needs refresh",
-  policy: "Outside quality policy",
-  unknown: "Unknown",
-  unavailable: "Source unavailable",
-};
+const stamp = (n: number) =>
+  n ? new Date(n * 1000).toLocaleString(getLocale()) : t("Not yet synced");
+const labels: Record<string, string> = localized(() => ({
+  observed: t("Discovered"),
+  verified: t("Health checked"),
+  stale: t("Needs refresh"),
+  policy: t("Outside quality policy"),
+  unknown: t("Unknown"),
+  unavailable: t("Source unavailable"),
+}));
 
 export function Availability() {
   const status = useAsync((signal) => apiFetch<Status>("/availability/", { signal }), []);
@@ -73,7 +76,7 @@ export function Availability() {
   if (!s || !cfg)
     return (
       <div className="py-12 text-center">
-        <Spinner label="Loading availability" />
+        <Spinner label={t("Loading availability")} />
       </div>
     );
   const change = <K extends keyof AvailabilityConfig>(key: K, value: AvailabilityConfig[K]) =>
@@ -87,7 +90,7 @@ export function Availability() {
       await config.reload();
       await status.reload();
       setDraft(null);
-      toast.success("Availability settings saved");
+      toast.success(t("Availability settings saved"));
     } catch (e) {
       setSaveError(e);
     } finally {
@@ -99,8 +102,8 @@ export function Availability() {
     setError(null);
     try {
       await apiFetch("/availability/sync", { method: "POST" });
-      toast.success("Feed sync scheduled", {
-        description: "The scheduler will pick it up within a minute, within your allowance.",
+      toast.success(t("Feed sync scheduled"), {
+        description: t("The scheduler will pick it up within a minute, within your allowance."),
       });
       await status.reload();
     } catch (e) {
@@ -109,30 +112,37 @@ export function Availability() {
       setSyncing(false);
     }
   };
+  const activeFeeds = s.feeds.filter((f) => f.supported && f.selected).length;
+  const dailyRequests = Math.ceil(1440 / Math.max(5, cfg.pollMinutes)) * activeFeeds;
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-2xl">
           <div className="mb-2 flex items-center gap-2">
             <Radio size={19} className="text-accent" />
-            <h2 className="text-lg font-semibold">Availability intelligence</h2>
+            <h2 className="text-lg font-semibold">{t("Availability intelligence")}</h2>
             <Badge>
               {s.mode === "off"
-                ? "Off"
+                ? t("Off")
                 : s.mode === "checking"
                   ? cfg.monitor
-                    ? "Monitoring & checking"
-                    : "Checking"
-                  : "Monitoring"}
+                    ? t("Monitoring & checking")
+                    : t("Checking")
+                  : t("Monitoring")}
             </Badge>
           </div>
           <p className="text-sm text-fg-muted">{s.message}</p>
           <p className="mt-2 text-xs text-fg-muted">
             {cfg.disableMovieEvidenceGate
-              ? "Movie evidence requirement is off."
-              : `Movies need evidence for ${cfg.movieEvidenceDays || 60} days after release.`}{" "}
-            Episodes need evidence for 24 hours. Eligible observed releases unlock immediately,
-            without a mandatory delay; evidence does not guarantee quality or playback.
+              ? t("Movie evidence requirement is off.")
+              : tn(
+                  cfg.movieEvidenceDays || 60,
+                  "Movies need evidence for {count} day after release.",
+                  "Movies need evidence for {count} days after release.",
+                )}{" "}
+            {t(
+              "Episodes need evidence for 24 hours. Eligible observed releases unlock immediately, without a mandatory delay; evidence does not guarantee quality or playback.",
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -143,7 +153,7 @@ export function Availability() {
             onClick={() => void sync()}
           >
             <RefreshCw size={14} />
-            {syncing ? "Scheduling…" : "Sync feeds"}
+            {syncing ? t("Scheduling…") : t("Sync feeds")}
           </Button>
           <Button
             variant="outline"
@@ -154,29 +164,28 @@ export function Availability() {
             }}
           >
             <Settings2 size={14} />
-            Settings
+            {t("Settings")}
           </Button>
         </div>
       </div>
       {error ? <MutationError error={error} /> : null}
       <p className="text-xs text-fg-muted">
-        At this interval, {s.feeds.filter((f) => f.supported && f.selected).length} feeds need
-        approximately{" "}
-        {Math.ceil(1440 / Math.max(5, cfg.pollMinutes)) *
-          s.feeds.filter((f) => f.supported && f.selected).length}{" "}
-        requests per day for fresh arrivals. Catch-up uses only the remaining allowance and saves
-        its progress across restarts.
-        {cfg.feedRequests <
-        Math.ceil(1440 / Math.max(5, cfg.pollMinutes)) *
-          s.feeds.filter((f) => f.supported && f.selected).length
-          ? " The current allowance cannot sustain this polling interval for every feed."
-          : " Allow additional requests for busy feeds and downtime."}
+        {tn(
+          activeFeeds,
+          "At this interval, {count} feed needs approximately {requests} requests per day for fresh arrivals.",
+          "At this interval, {count} feeds need approximately {requests} requests per day for fresh arrivals.",
+          { requests: formatNumber(dailyRequests) },
+        )}{" "}
+        {t("Catch-up uses only the remaining allowance and saves its progress across restarts.")}{" "}
+        {cfg.feedRequests < dailyRequests
+          ? t("The current allowance cannot sustain this polling interval for every feed.")
+          : t("Allow additional requests for busy feeds and downtime.")}
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         {[
-          [Radio, "Feed requests", s.usage.feedRequests ?? 0, cfg.feedRequests],
-          [Activity, "Check API requests", s.usage.checkRequests ?? 0, cfg.checkRequests],
-          [ShieldCheck, "Source checks", s.usage.checks ?? 0, cfg.checks],
+          [Radio, t("Feed requests"), s.usage.feedRequests ?? 0, cfg.feedRequests],
+          [Activity, t("Check API requests"), s.usage.checkRequests ?? 0, cfg.checkRequests],
+          [ShieldCheck, t("Source checks"), s.usage.checks ?? 0, cfg.checks],
         ].map(([Icon, title, used, cap]) => {
           const Glyph = Icon as typeof Radio;
           return (
@@ -189,10 +198,10 @@ export function Availability() {
                 {String(title)}
               </div>
               <p className="mt-3 text-2xl font-semibold tabular-nums">
-                {Number(used).toLocaleString()}
+                {formatNumber(Number(used))}
                 <span className="text-sm font-normal text-fg-muted">
                   {" "}
-                  / {Number(cap).toLocaleString()}
+                  / {formatNumber(Number(cap))}
                 </span>
               </p>
               <progress
@@ -202,15 +211,19 @@ export function Availability() {
                 className="mt-3 h-1 w-full accent-current"
               />
               <p className="mt-2 text-xs text-fg-muted">
-                {Number(cap) === 0 ? "Disabled" : `Daily allowance · ${s.day} UTC`}
+                {Number(cap) === 0
+                  ? t("Disabled")
+                  : t("Daily allowance · {day} UTC", { day: s.day })}
               </p>
             </div>
           );
         })}
       </div>
       <Section
-        title="Release feeds"
-        description="One request discovers many releases. Ether matches them against local catalogue metadata without searching every title."
+        title={t("Release feeds")}
+        description={t(
+          "One request discovers many releases. Ether matches them against local catalogue metadata without searching every title.",
+        )}
       >
         {s.feeds.length ? (
           <ul className="divide-y divide-border">
@@ -222,34 +235,37 @@ export function Availability() {
                     <span className="font-normal text-fg-muted">· {f.protocol || "Usenet"}</span>
                   </p>
                   <p className="mt-1 text-xs text-fg-muted">
-                    {f.reason || f.message || "Ready to monitor"}
+                    {f.reason || f.message || t("Ready to monitor")}
                   </p>
                   <p className="mt-1 text-xs text-fg-muted">{stamp(f.lastSync)}</p>
                 </div>
                 <Badge>
                   {!f.supported
-                    ? "Search only"
+                    ? t("Search only")
                     : !f.selected
-                      ? "Excluded"
+                      ? t("Excluded")
                       : f.gap
-                        ? "Coverage gap"
+                        ? t("Coverage gap")
                         : f.lastSync
-                          ? "Synced"
-                          : "Waiting"}
+                          ? t("Synced")
+                          : t("Waiting")}
                 </Badge>
               </li>
             ))}
           </ul>
         ) : (
           <p className="py-4 text-sm text-fg-muted">
-            Add a Newznab or Torznab indexer to discover recent releases. A debrid account alone
-            does not provide a global release feed.
+            {t(
+              "Add a Newznab or Torznab indexer to discover recent releases. A debrid account alone does not provide a global release feed.",
+            )}
           </p>
         )}
       </Section>
       <Section
-        title="Recent source evidence"
-        description="Health checks apply to a specific source and the owner's quality policy. They expire after six hours; they cannot guarantee every byte or every device."
+        title={t("Recent source evidence")}
+        description={t(
+          "Health checks apply to a specific source and the owner's quality policy. They expire after six hours; they cannot guarantee every byte or every device.",
+        )}
       >
         {s.recent.length ? (
           <ul className="divide-y divide-border">
@@ -259,7 +275,7 @@ export function Availability() {
                   <p className="text-sm font-medium">{r.title}</p>
                   <p className="mt-1 break-all text-xs text-fg-muted">{r.release}</p>
                   <p className="mt-1 text-xs text-fg-muted">
-                    {r.reason || "Waiting for a selective check"} ·{" "}
+                    {r.reason || t("Waiting for a selective check")} ·{" "}
                     {stamp(r.verifiedAt || r.firstSeen)}
                   </p>
                 </div>
@@ -270,24 +286,31 @@ export function Availability() {
         ) : (
           <div className="py-8 text-center">
             <ShieldCheck className="mx-auto mb-3 text-fg-muted" size={28} />
-            <p className="text-sm font-medium">Evidence will appear here</p>
+            <p className="text-sm font-medium">{t("Evidence will appear here")}</p>
             <p className="mx-auto mt-2 max-w-lg text-sm text-fg-muted">
-              Enable release monitoring to follow new arrivals. Successful playback health checks
-              also contribute, without extra indexer searches.
+              {t(
+                "Enable release monitoring to follow new arrivals. Successful playback health checks also contribute, without extra indexer searches.",
+              )}
             </p>
           </div>
         )}
       </Section>
       <p className="text-xs text-fg-muted">
-        Today: {s.usage.grabs ?? 0} / {cfg.grabs} Descriptor grabs ·{" "}
-        {Math.ceil((s.usage.bytes ?? 0) / 1048576)} / {Math.ceil(cfg.checkBytes / 1048576)} MiB
-        reserved for source validation. Reservations are conservative; actual transfers can be
-        smaller.
+        {t(
+          "Today: {grabs} / {grabCap} Descriptor grabs · {used} / {cap} MiB reserved for source validation.",
+          {
+            grabs: formatNumber(s.usage.grabs ?? 0),
+            grabCap: formatNumber(cfg.grabs),
+            used: formatNumber(Math.ceil((s.usage.bytes ?? 0) / 1048576)),
+            cap: formatNumber(Math.ceil(cfg.checkBytes / 1048576)),
+          },
+        )}{" "}
+        {t("Reservations are conservative; actual transfers can be smaller.")}
       </p>
       <RecordDrawer
         open={draft !== null}
-        title="Availability settings"
-        description="Configure movie visibility, polling and optional health checks."
+        title={t("Availability settings")}
+        description={t("Configure movie visibility, polling and optional health checks.")}
         onClose={() => {
           if (!saving) setDraft(null);
         }}
@@ -299,71 +322,83 @@ export function Availability() {
             draft.movieEvidenceDays! < 1 ||
             draft.movieEvidenceDays! > 366)
         }
-        saveLabel="Save settings"
+        saveLabel={t("Save settings")}
         error={saveError}
       >
         {draft ? (
           <>
             <SettingsSection
-              title="Movie visibility"
-              description="An eligible observed release unlocks a movie immediately; this is not a mandatory delay or a guarantee of quality or playback. Episodes retain their 24-hour policy."
+              title={t("Movie visibility")}
+              description={t(
+                "An eligible observed release unlocks a movie immediately; this is not a mandatory delay or a guarantee of quality or playback. Episodes retain their 24-hour policy.",
+              )}
             >
               <BoolRow
-                label="Require movie release evidence"
+                label={t("Require movie release evidence")}
                 value={!draft.disableMovieEvidenceGate}
                 onChange={(v) => change("disableMovieEvidenceGate", !v)}
               />
               <NumRow
-                label="Movie evidence window"
+                label={t("Movie evidence window")}
                 value={draft.movieEvidenceDays ?? 60}
                 onChange={(v) => change("movieEvidenceDays", v)}
                 min={1}
                 max={366}
-                unit="days"
+                unit={t("days")}
                 error={
                   draft.movieEvidenceDays! < 1 || draft.movieEvidenceDays! > 366
-                    ? "Enter 1 to 366 days"
+                    ? t("Enter 1 to 366 days")
                     : undefined
                 }
               />
             </SettingsSection>
-            <SettingsSection title="Discovery & presentation">
+            <SettingsSection title={t("Discovery & presentation")}>
               <BoolRow
-                label="Monitor release feeds"
+                label={t("Monitor release feeds")}
                 value={draft.monitor}
                 onChange={(v) => change("monitor", v)}
-                help="Use your configured indexers automatically. No separate RSS URL. Requests count toward API budgets; catch-up is bounded."
+                help={t(
+                  "Use your configured indexers automatically. No separate RSS URL. Requests count toward API budgets; catch-up is bounded.",
+                )}
               />
               <BoolRow
-                label="Check discovered sources"
+                label={t("Check discovered sources")}
                 value={draft.verify}
                 onChange={(v) => change("verify", v)}
-                help="Spend a small allowance validating promising sources. Checks pause while playback is active."
+                help={t(
+                  "Spend a small allowance validating promising sources. Checks pause while playback is active.",
+                )}
               />
               <BoolRow
-                label="Use debrid for checks"
+                label={t("Use debrid for checks")}
                 value={draft.debrid}
                 onChange={(v) => change("debrid", v)}
-                help="Use supported cache checks and existing account files. Provider capabilities vary; unknown is never treated as absent."
+                help={t(
+                  "Use supported cache checks and existing account files. Provider capabilities vary; unknown is never treated as absent.",
+                )}
               />
               <BoolRow
-                label="Prefer checked recommendations"
+                label={t("Prefer checked recommendations")}
                 value={draft.preferVerified}
                 onChange={(v) => change("preferVerified", v)}
-                help="Move fresh checked movies forward in discovery shelves. Visibility follows the evidence settings above."
+                help={t(
+                  "Move fresh checked movies forward in discovery shelves. Visibility follows the evidence settings above.",
+                )}
               />
               <BoolRow
-                label="Show newly available shelves"
+                label={t("Show newly available shelves")}
                 value={draft.newlyAvailable}
                 onChange={(v) => change("newlyAvailable", v)}
               />
             </SettingsSection>
             <SettingsSection
-              title="Participating feeds"
-              description="All supported enabled indexers are included by default. Search remains enabled for excluded feeds."
+              title={t("Participating feeds")}
+              description={t(
+                "All supported enabled indexers are included by default. Search remains enabled for excluded feeds.",
+              )}
             >
               <BoolRow
-                label="Use all supported feeds"
+                label={t("Use all supported feeds")}
                 value={!draft.indexerIds?.length}
                 onChange={(v) => change("indexerIds", v ? [] : ["__none__"])}
               />
@@ -389,40 +424,42 @@ export function Availability() {
                 : null}
             </SettingsSection>
             <SettingsSection
-              title="Daily allowances"
-              description="Shared across the server, reset at midnight UTC. A zero allowance disables that work. Normal playback retains its existing provider budgets."
+              title={t("Daily allowances")}
+              description={t(
+                "Shared across the server, reset at midnight UTC. A zero allowance disables that work. Normal playback retains its existing provider budgets.",
+              )}
             >
               <NumRow
-                label="Feed API requests"
+                label={t("Feed API requests")}
                 value={draft.feedRequests}
                 onChange={(v) => change("feedRequests", v)}
                 min={0}
                 max={100000}
               />
               <NumRow
-                label="Check API requests"
+                label={t("Check API requests")}
                 value={draft.checkRequests}
                 onChange={(v) => change("checkRequests", v)}
                 min={0}
                 max={100000}
-                help="Indexer and debrid API calls used by source validation."
+                help={t("Indexer and debrid API calls used by source validation.")}
               />
               <NumRow
-                label="Source checks"
+                label={t("Source checks")}
                 value={draft.checks}
                 onChange={(v) => change("checks", v)}
                 min={0}
                 max={100000}
               />
               <NumRow
-                label="Descriptor grabs"
+                label={t("Descriptor grabs")}
                 value={draft.grabs}
                 onChange={(v) => change("grabs", v)}
                 min={0}
                 max={100000}
               />
               <NumRow
-                label="Validation data"
+                label={t("Validation data")}
                 value={draft.checkBytes / 1048576}
                 onChange={(v) => change("checkBytes", v * 1048576)}
                 min={0}
@@ -430,29 +467,33 @@ export function Availability() {
                 unit="MiB"
               />
               <NumRow
-                label="Reserve for playback"
+                label={t("Reserve for playback")}
                 value={draft.reservePercent}
                 onChange={(v) => change("reservePercent", v)}
                 min={0}
                 max={99}
                 unit="%"
-                help="Background requests stop before using this share of each indexer's configured daily cap. Set those caps on the Indexers tab."
+                help={t(
+                  "Background requests stop before using this share of each indexer's configured daily cap. Set those caps on the Indexers tab.",
+                )}
               />
               <NumRow
-                label="Poll interval"
+                label={t("Poll interval")}
                 value={draft.pollMinutes}
                 onChange={(v) => change("pollMinutes", v)}
                 min={5}
                 max={1440}
-                unit="minutes"
+                unit={t("minutes")}
               />
               <NumRow
-                label="Maximum pages per sync"
+                label={t("Maximum pages per sync")}
                 value={draft.maxPages}
                 onChange={(v) => change("maxPages", v)}
                 min={1}
                 max={20}
-                help="A page contains up to 100 releases. Unfinished catch-up resumes on later polls, within the daily allowance; fresh arrivals are checked first."
+                help={t(
+                  "A page contains up to 100 releases. Unfinished catch-up resumes on later polls, within the daily allowance; fresh arrivals are checked first.",
+                )}
               />
             </SettingsSection>
           </>

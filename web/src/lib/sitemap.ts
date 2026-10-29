@@ -3,12 +3,16 @@
  * so a section only ever has one home.
  */
 
+import { localized, t, msg, searchTerms } from "../i18n";
+
 export interface Destination {
   href: string;
   title: string;
   /** Page the destination belongs to, shown as the search subtitle. */
   page: string;
   keywords?: string;
+  /** A whole page rather than a section within one. */
+  isPage?: boolean;
 }
 
 export interface PageDef {
@@ -19,210 +23,373 @@ export interface PageDef {
   keywords?: string;
 }
 
-export const PAGES: PageDef[] = [
+export const PAGES = localized<PageDef[]>(() => [
   {
     href: "/cache",
-    title: "Cache",
+    title: t("Cache"),
     sections: [
-      { key: "overview", title: "Overview", keywords: "storage readiness policy" },
-      { key: "explorer", title: "Explorer", keywords: "retained media releases pins" },
-      { key: "preloading", title: "Preloading", keywords: "household selection popular movies tv" },
+      {
+        key: "overview",
+        title: t("Overview"),
+        keywords: searchTerms(msg("storage readiness policy")),
+      },
+      {
+        key: "explorer",
+        title: t("Explorer"),
+        keywords: searchTerms(msg("retained media releases pins")),
+      },
+      {
+        key: "preloading",
+        title: t("Preloading"),
+        keywords: searchTerms(msg("household selection popular movies tv")),
+      },
     ],
-    keywords: "disk budget storage retention prefetch warming next episode",
+    keywords: searchTerms(msg("disk budget storage retention prefetch warming next episode")),
   },
   {
     href: "/",
-    title: "Overview",
+    title: t("Overview"),
     sections: [],
-    keywords: "home dashboard health attention status",
+    keywords: searchTerms(msg("home dashboard health attention status")),
   },
   {
     href: "/activity",
-    title: "Activity",
+    title: t("Activity"),
     sections: [
-      { key: "now", title: "Now playing", keywords: "streams sessions stop live" },
-      { key: "history", title: "History", keywords: "plays watched" },
-      { key: "stats", title: "Stats", keywords: "statistics devices hours viewers titles" },
+      {
+        key: "now",
+        title: t("Now playing"),
+        keywords: searchTerms(msg("streams sessions stop live")),
+      },
+      { key: "history", title: t("History"), keywords: searchTerms(msg("plays watched")) },
+      {
+        key: "stats",
+        title: t("Stats"),
+        keywords: searchTerms(msg("statistics devices hours viewers titles")),
+      },
     ],
   },
   {
     href: "/viewers",
-    title: "Viewers",
+    title: t("Viewers"),
     sections: [
-      { key: "people", title: "People", keywords: "users friends accounts" },
+      { key: "people", title: t("People"), keywords: searchTerms(msg("users friends accounts")) },
       {
         key: "defaults",
-        title: "Defaults",
-        keywords: "audio subtitles language watchlist alerts policy",
+        title: t("Defaults"),
+        keywords: searchTerms(msg("audio subtitles language watchlist alerts policy")),
       },
     ],
   },
   {
     href: "/home",
-    title: "Home",
+    title: t("Home"),
     sections: [],
-    keywords: "designer rows layout overrides plex home",
+    keywords: searchTerms(msg("designer rows layout overrides plex home")),
   },
-  { href: "/collections", title: "Collections", sections: [], keywords: "studio templates rows" },
+  {
+    href: "/collections",
+    title: t("Collections"),
+    sections: [],
+    keywords: searchTerms(msg("studio templates rows")),
+  },
   {
     href: "/livetv",
-    title: "Live TV",
+    title: t("Live TV"),
     sections: [
-      { key: "channels", title: "Channels", keywords: "virtual channel" },
-      { key: "sources", title: "IPTV sources", keywords: "m3u xmltv playlist" },
-      { key: "guide", title: "Guide", keywords: "epg schedule" },
+      { key: "channels", title: t("Channels"), keywords: searchTerms(msg("virtual channel")) },
+      {
+        key: "sources",
+        title: t("IPTV sources"),
+        keywords: searchTerms(msg("m3u xmltv playlist")),
+      },
+      { key: "guide", title: t("Guide"), keywords: searchTerms(msg("epg schedule")) },
     ],
   },
   {
     href: "/catalog",
-    title: "Catalog",
+    title: t("Catalog"),
     sections: [
-      { key: "settings", title: "Catalog settings", keywords: "tmdb language region popularity" },
+      {
+        key: "settings",
+        title: t("Catalog settings"),
+        keywords: searchTerms(msg("tmdb language region popularity")),
+      },
     ],
-    keywords: "catalogue movies shows browse search library",
+    keywords: searchTerms(msg("catalogue movies shows browse search library")),
   },
   {
     href: "/metadata",
-    title: "Metadata",
+    title: t("Metadata"),
     sections: [
-      { key: "ratings", title: "Ratings", keywords: "omdb mdblist imdb rotten badges" },
-      { key: "artwork", title: "Artwork", keywords: "posters overlays backdrop" },
-      { key: "episodes", title: "Episode order", keywords: "dvd absolute aired ordering" },
+      {
+        key: "ratings",
+        title: t("Ratings"),
+        keywords: searchTerms(msg("omdb mdblist imdb rotten badges")),
+      },
+      {
+        key: "artwork",
+        title: t("Artwork"),
+        keywords: searchTerms(msg("posters overlays backdrop")),
+      },
+      {
+        key: "episodes",
+        title: t("Episode order"),
+        keywords: searchTerms(msg("dvd absolute aired ordering")),
+      },
     ],
   },
   {
     href: "/sources",
-    title: "Sources",
+    title: t("Sources"),
     sections: [
-      { key: "usenet", title: "Usenet providers", keywords: "nntp backfill connections" },
+      {
+        key: "usenet",
+        title: t("Usenet providers"),
+        keywords: searchTerms(msg("nntp backfill connections")),
+      },
       {
         key: "indexers",
-        title: "Indexers",
-        keywords:
-          "newznab torznab torrent built-in sites definitions cardigann flaresolverr prowlarr stremio addon budget api",
+        title: t("Indexers"),
+        keywords: searchTerms(
+          msg(
+            "newznab torznab torrent built-in sites definitions cardigann flaresolverr prowlarr stremio addon budget api",
+          ),
+        ),
       },
       {
         key: "debrid",
-        title: "Debrid",
-        keywords:
-          "real-debrid realdebrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent cached",
+        title: t("Debrid"),
+        keywords: searchTerms(
+          msg(
+            "real-debrid realdebrid torbox alldebrid premiumize debrid-link debridlink offcloud torrent cached",
+          ),
+        ),
       },
       {
         key: "availability",
-        title: "Availability",
-        keywords: "release feeds rss source evidence checks budget",
+        title: t("Availability"),
+        keywords: searchTerms(msg("release feeds rss source evidence checks budget")),
       },
-      { key: "usage", title: "Usage & costs", keywords: "quota price plan cost" },
+      {
+        key: "usage",
+        title: t("Usage & costs"),
+        keywords: searchTerms(msg("quota price plan cost")),
+      },
     ],
   },
   {
     href: "/releases",
-    title: "Releases",
+    title: t("Releases"),
     sections: [
-      { key: "quality", title: "Quality profiles", keywords: "resolution 4k 1080p remote" },
-      { key: "rules", title: "Client rules", keywords: "device profile" },
-      { key: "selection", title: "Selection rules", keywords: "cam health blocked terms groups" },
-      { key: "scoring", title: "Custom scoring", keywords: "trash custom formats" },
-      { key: "startup", title: "Playback start", keywords: "startup race warm" },
+      {
+        key: "quality",
+        title: t("Quality profiles"),
+        keywords: searchTerms(msg("resolution 4k 1080p remote")),
+      },
+      { key: "rules", title: t("Client rules"), keywords: searchTerms(msg("device profile")) },
+      {
+        key: "selection",
+        title: t("Selection rules"),
+        keywords: searchTerms(msg("cam health blocked terms groups")),
+      },
+      {
+        key: "scoring",
+        title: t("Custom scoring"),
+        keywords: searchTerms(msg("trash custom formats")),
+      },
+      {
+        key: "startup",
+        title: t("Playback start"),
+        keywords: searchTerms(msg("startup race warm")),
+      },
       {
         key: "pinned",
-        title: "Pinned",
-        keywords: "pin release override search interactive manual pick find",
+        title: t("Pinned"),
+        keywords: searchTerms(msg("pin release override search interactive manual pick find")),
       },
-      { key: "blocklist", title: "Blocklist", keywords: "blocked bad release unblock" },
-      { key: "history", title: "History", keywords: "traces resolver why release debug decisions" },
+      {
+        key: "blocklist",
+        title: t("Blocklist"),
+        keywords: searchTerms(msg("blocked bad release unblock")),
+      },
+      {
+        key: "history",
+        title: t("History"),
+        keywords: searchTerms(msg("traces resolver why release debug decisions")),
+      },
     ],
   },
   {
     href: "/playback",
-    title: "Playback",
+    title: t("Playback"),
     sections: [
-      { key: "transcoding", title: "Transcoding", keywords: "ffmpeg hardware gpu bitrate" },
-      { key: "devices", title: "Device capabilities", keywords: "compatibility codecs" },
-      { key: "markers", title: "Markers", keywords: "intro credits skip chapters" },
-      { key: "subtitles", title: "Subtitles", keywords: "timing sync opensubtitles" },
+      {
+        key: "transcoding",
+        title: t("Transcoding"),
+        keywords: searchTerms(msg("ffmpeg hardware gpu bitrate")),
+      },
+      {
+        key: "devices",
+        title: t("Device capabilities"),
+        keywords: searchTerms(msg("compatibility codecs")),
+      },
+      {
+        key: "markers",
+        title: t("Markers"),
+        keywords: searchTerms(msg("intro credits skip chapters")),
+      },
+      {
+        key: "subtitles",
+        title: t("Subtitles"),
+        keywords: searchTerms(msg("timing sync opensubtitles")),
+      },
     ],
   },
   {
     href: "/notifications",
-    title: "Notifications",
+    title: t("Notifications"),
     sections: [
-      { key: "channels", title: "Channels", keywords: "email discord webhook push alerts" },
-      { key: "report", title: "Weekly report", keywords: "newsletter digest" },
-      { key: "deliveries", title: "Delivery history" },
+      {
+        key: "channels",
+        title: t("Channels"),
+        keywords: searchTerms(msg("email discord webhook push alerts")),
+      },
+      { key: "report", title: t("Weekly report"), keywords: searchTerms(msg("newsletter digest")) },
+      { key: "deliveries", title: t("Delivery history") },
     ],
   },
   {
     href: "/server",
-    title: "General",
+    title: t("General"),
     sections: [
-      { key: "server", title: "Server", keywords: "name port listen log level stream limit" },
-      { key: "downloads", title: "Downloads", keywords: "offline sync friends remux" },
+      {
+        key: "server",
+        title: t("Server"),
+        keywords: searchTerms(msg("name port listen log level stream limit")),
+      },
+      {
+        key: "downloads",
+        title: t("Downloads"),
+        keywords: searchTerms(msg("offline sync friends remux")),
+      },
       {
         key: "personalize",
-        title: "Personalization",
-        keywords: "post-play up next match finish time clock",
+        title: t("Personalization"),
+        keywords: searchTerms(msg("post-play up next match finish time clock")),
       },
-      { key: "extras", title: "Trailers & extras", keywords: "cinema trailers yt-dlp resolver" },
+      {
+        key: "extras",
+        title: t("Trailers & extras"),
+        keywords: searchTerms(msg("cinema trailers yt-dlp resolver")),
+      },
     ],
-    keywords: "settings",
+    keywords: searchTerms(msg("settings")),
   },
   {
     href: "/remote-access",
-    title: "Connectivity",
+    title: t("Connectivity"),
     sections: [
-      { key: "status", title: "Plex status", keywords: "claim connection checks reachability" },
-      { key: "remote", title: "Remote access", keywords: "upnp port forward public" },
-      { key: "secure", title: "Secure connections", keywords: "certificate plex.direct tls" },
-      { key: "account", title: "Plex account", keywords: "owner token claimed" },
-      { key: "compatibility", title: "Compatibility", keywords: "pms version" },
+      {
+        key: "status",
+        title: t("Plex status"),
+        keywords: searchTerms(msg("claim connection checks reachability")),
+      },
+      {
+        key: "remote",
+        title: t("Remote access"),
+        keywords: searchTerms(msg("upnp port forward public")),
+      },
+      {
+        key: "secure",
+        title: t("Secure connections"),
+        keywords: searchTerms(msg("certificate plex.direct tls")),
+      },
+      {
+        key: "account",
+        title: t("Plex account"),
+        keywords: searchTerms(msg("owner token claimed")),
+      },
+      {
+        key: "compatibility",
+        title: t("Compatibility"),
+        keywords: searchTerms(msg("pms version")),
+      },
     ],
-    keywords: "settings plex",
+    keywords: searchTerms(msg("settings plex")),
   },
   {
     href: "/services",
-    title: "Integrations",
+    title: t("Integrations"),
     sections: [
-      { key: "overview", title: "Integrations", keywords: "status tmdb debrid prowlarr ratings" },
-      { key: "trakt", title: "Trakt", keywords: "sync history" },
-      { key: "llm", title: "Language model", keywords: "llm ollama openai recaps search" },
-      { key: "opensubtitles", title: "OpenSubtitles", keywords: "subtitles" },
+      {
+        key: "overview",
+        title: t("Integrations"),
+        keywords: searchTerms(msg("status tmdb debrid prowlarr ratings")),
+      },
+      { key: "trakt", title: "Trakt", keywords: searchTerms(msg("sync history")) },
+      {
+        key: "llm",
+        title: t("Language model"),
+        keywords: searchTerms(msg("llm ollama openai recaps search")),
+      },
+      { key: "opensubtitles", title: "OpenSubtitles", keywords: searchTerms(msg("subtitles")) },
     ],
-    keywords: "settings integrations",
+    keywords: searchTerms(msg("settings integrations")),
   },
   {
     href: "/cluster",
-    title: "Cluster",
+    title: t("Cluster"),
     sections: [],
-    keywords: "high availability ha nodes failover postgres postgresql join token weight leader",
+    keywords: searchTerms(
+      msg("high availability ha nodes failover postgres postgresql join token weight leader"),
+    ),
   },
-  { href: "/maintenance", title: "Maintenance", sections: [], keywords: "server maintenance" },
+  {
+    href: "/maintenance",
+    title: t("Maintenance"),
+    sections: [],
+    keywords: searchTerms(msg("server maintenance")),
+  },
   {
     href: "/maintenance/backups",
-    title: "Backups & import",
+    title: t("Backups & import"),
     sections: [
-      { key: "backups", title: "Backups", keywords: "snapshot restore schedule" },
-      { key: "import", title: "Import & export", keywords: "migrate plex csv letterboxd trakt" },
+      {
+        key: "backups",
+        title: t("Backups"),
+        keywords: searchTerms(msg("snapshot restore schedule")),
+      },
+      {
+        key: "import",
+        title: t("Import & export"),
+        keywords: searchTerms(msg("migrate plex csv letterboxd trakt")),
+      },
     ],
   },
   {
     href: "/maintenance/updates",
-    title: "Updates",
+    title: t("Updates"),
     sections: [],
-    keywords: "version channel beta maintenance window update now install",
+    keywords: searchTerms(msg("version channel beta maintenance window update now install")),
   },
   {
     href: "/maintenance/troubleshooting",
-    title: "Troubleshooting",
+    title: t("Troubleshooting"),
     sections: [],
-    keywords: "local file test playback",
+    keywords: searchTerms(msg("local file test playback")),
   },
-  { href: "/maintenance/logs", title: "Logs", sections: [], keywords: "errors debug" },
-];
+  {
+    href: "/maintenance/logs",
+    title: t("Logs"),
+    sections: [],
+    keywords: searchTerms(msg("errors debug")),
+  },
+]);
 
 export function destinations(): Destination[] {
   return PAGES.flatMap((p) => [
-    { href: p.href, title: p.title, page: "Page", keywords: p.keywords },
+    { href: p.href, title: p.title, page: t("Page"), keywords: p.keywords, isPage: true },
     ...p.sections.map((s) => ({
       href: `${p.href}/${s.key}`,
       title: s.title,

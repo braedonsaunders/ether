@@ -13,6 +13,7 @@ import { ChipGroup, ListInput, NumberInput } from "../../components/fields";
 import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
+import { localized, t, tn } from "../../i18n";
 import { qualityGateLabel } from "../../lib/releases";
 import type { QualityProfile } from "../../lib/types";
 import { QUALITY_AUDIO, QUALITY_CODECS, QUALITY_SOURCES } from "../settings/schema";
@@ -24,12 +25,13 @@ import {
   recordErrors,
   type Errors,
 } from "../sources/form";
+import { searchSelectLabels } from "../../i18n/appkit-labels";
 import { TrashImport } from "./TrashImport";
 import { useQuality, type Quality } from "./useQuality";
 
 function blankProfile(n: number): QualityProfile {
   return {
-    name: `Profile ${n}`,
+    name: t("Profile {n}", { n }),
     maxHeight: 1080,
     minHeight: 720,
     allowHdr: false,
@@ -44,13 +46,13 @@ function blankProfile(n: number): QualityProfile {
   };
 }
 
-const HEIGHTS = [
-  { value: "0", label: "Any" },
+const HEIGHTS = localized(() => [
+  { value: "0", label: t("Any") },
   { value: "480", label: "480p" },
   { value: "720", label: "720p" },
   { value: "1080", label: "1080p" },
-  { value: "2160", label: "4K (2160p)" },
-];
+  { value: "2160", label: t("4K (2160p)") },
+]);
 
 const heightLabel = (h: number) => HEIGHTS.find((x) => x.value === String(h))?.label ?? `${h}p`;
 
@@ -58,11 +60,13 @@ export function profileSummary(p: QualityProfile) {
   const range =
     p.minHeight === p.maxHeight
       ? heightLabel(p.maxHeight)
-      : `${heightLabel(p.minHeight)} to ${heightLabel(p.maxHeight)}`;
+      : t("{min} to {max}", { min: heightLabel(p.minHeight), max: heightLabel(p.maxHeight) });
   return [
     range,
-    p.allowDolbyVision ? "HDR and Dolby Vision" : p.allowHdr ? "HDR allowed" : "SDR only",
-    p.preferredSources?.length ? `prefers ${p.preferredSources.join(", ")}` : "",
+    p.allowDolbyVision ? t("HDR and Dolby Vision") : p.allowHdr ? t("HDR allowed") : t("SDR only"),
+    p.preferredSources?.length
+      ? t("prefers {sources}", { sources: p.preferredSources.join(", ") })
+      : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -96,7 +100,7 @@ function PreferenceList({
         }))}
       />
       <p className="text-xs text-fg-muted">
-        {v.length ? `Preference: ${v.join(" › ")}` : "No preference"}
+        {v.length ? t("Preference: {order}", { order: v.join(" › ") }) : t("No preference")}
       </p>
     </div>
   );
@@ -115,14 +119,14 @@ function ImportedRules({
   if (!gates.length && !scored && draft.minCustomFormatScore == null) return null;
   return (
     <SettingsSection
-      title="Imported rules"
-      description="Carried over from a Radarr or Sonarr profile."
+      title={t("Imported rules")}
+      description={t("Carried over from a Radarr or Sonarr profile.")}
     >
       {gates.length ? (
         <SettingsRow
           stacked
-          title="Allowed qualities"
-          description="Other source and resolution pairs are never played with this profile."
+          title={t("Allowed qualities")}
+          description={t("Other source and resolution pairs are never played with this profile.")}
         >
           <span className="flex flex-wrap items-center gap-1.5">
             {gates.map((q) => (
@@ -131,21 +135,25 @@ function ImportedRules({
               </Badge>
             ))}
             <Button variant="ghost" size="sm" onClick={() => patch({ allowedQualities: null })}>
-              Allow all
+              {t("Allow all")}
             </Button>
           </span>
         </SettingsRow>
       ) : null}
       <SettingsRow
-        title="Minimum format score"
+        title={t("Minimum format score")}
         description={
           scored
-            ? `Releases whose custom formats score lower aren't played. This profile sets its own scores for ${scored} ${scored === 1 ? "format" : "formats"}.`
-            : "Releases whose custom formats score lower aren't played."
+            ? tn(
+                scored,
+                "Releases whose custom formats score lower aren't played. This profile sets its own scores for {count} format.",
+                "Releases whose custom formats score lower aren't played. This profile sets its own scores for {count} formats.",
+              )
+            : t("Releases whose custom formats score lower aren't played.")
         }
         control={
           <NumberInput
-            aria-label="Minimum format score"
+            aria-label={t("Minimum format score")}
             value={draft.minCustomFormatScore ?? 0}
             className="w-24"
             onChange={(n) => patch({ minCustomFormatScore: n })}
@@ -189,7 +197,7 @@ function QualityDefaults({ quality, commit }: { quality: Quality; commit: Commit
     setError(null);
     setErrors({});
     try {
-      await commit({ ...quality, ...draft }, "Default quality saved");
+      await commit({ ...quality, ...draft }, t("Default quality saved"));
     } catch (e) {
       setError(e);
       setErrors(recordErrors(e, "quality."));
@@ -201,46 +209,48 @@ function QualityDefaults({ quality, commit }: { quality: Quality; commit: Commit
   return (
     <>
       <SettingsSection
-        title="Defaults"
-        description="The profile a Plex app gets when no client rule matches it."
+        title={t("Defaults")}
+        description={t("The profile a Plex app gets when no client rule matches it.")}
       >
         <SettingsRow
-          title="On your network"
+          title={t("On your network")}
           description={
             errors.default ? (
               <span className="text-danger">{errors.default}</span>
             ) : (
-              "Apps on the same network as this server."
+              t("Apps on the same network as this server.")
             )
           }
           control={
             <div className="w-48">
               <SearchSelect
+                {...searchSelectLabels()}
                 value={draft.default}
                 onChange={(v) => setDraft({ ...draft, default: v })}
                 options={names}
-                ariaLabel="Default profile"
+                ariaLabel={t("Default profile")}
                 searchable={false}
               />
             </div>
           }
         />
         <SettingsRow
-          title="Remote"
+          title={t("Remote")}
           description={
             errors.remote ? (
               <span className="text-danger">{errors.remote}</span>
             ) : (
-              "Apps streaming from outside your network."
+              t("Apps streaming from outside your network.")
             )
           }
           control={
             <div className="w-48">
               <SearchSelect
+                {...searchSelectLabels()}
                 value={draft.remote}
                 onChange={(v) => setDraft({ ...draft, remote: v })}
                 options={names}
-                ariaLabel="Remote profile"
+                ariaLabel={t("Remote profile")}
                 searchable={false}
               />
             </div>
@@ -308,7 +318,7 @@ function ProfileList({
     setError(null);
     setErrors({});
     try {
-      await commit(next, index < profiles.length ? "Profile saved" : "Profile added");
+      await commit(next, index < profiles.length ? t("Profile saved") : t("Profile added"));
       setEditing(null);
     } catch (e) {
       setError(e);
@@ -330,17 +340,24 @@ function ProfileList({
     // Rules and defaults may not name a missing profile: removing one also
     // removes its client rules and moves the defaults to another profile.
     const consequences = [
+      name ? t("{name} will be removed.", { name }) : t("This profile will be removed."),
       usedBy
-        ? `${usedBy === 1 ? "The client rule" : `${usedBy} client rules`} using it will be removed.`
+        ? tn(
+            usedBy,
+            "The client rule using it will be removed.",
+            "{count} client rules using it will be removed.",
+          )
         : "",
-      moves && fallback ? `Clients that used it as a default will use ${fallback}.` : "",
+      moves && fallback
+        ? t("Clients that used it as a default will use {profile}.", { profile: fallback })
+        : "",
     ]
       .filter(Boolean)
       .join(" ");
     const ok = await confirmDialog({
-      title: "Remove profile?",
-      message: `${name || "This profile"} will be removed.${consequences ? ` ${consequences}` : ""}`,
-      confirmLabel: "Remove",
+      title: t("Remove profile?"),
+      message: consequences,
+      confirmLabel: t("Remove"),
       tone: "danger",
     });
     if (!ok) return;
@@ -355,7 +372,7 @@ function ProfileList({
           default: quality.default === name ? fallback : quality.default,
           remote: quality.remote === name ? fallback : quality.remote,
         },
-        "Profile removed",
+        t("Profile removed"),
       );
       setEditing(null);
     } catch (e) {
@@ -373,18 +390,18 @@ function ProfileList({
   return (
     <>
       <Section
-        title="Profiles"
-        description="Resolution, HDR, source and language preferences used to rank releases."
+        title={t("Profiles")}
+        description={t("Resolution, HDR, source and language preferences used to rank releases.")}
         actions={
           <>
             <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
-              <Download size={14} /> Import from TRaSH Guides
+              <Download size={14} /> {t("Import from TRaSH Guides")}
             </Button>
             <Button
               size="sm"
               onClick={() => open(profiles.length, blankProfile(profiles.length + 1))}
             >
-              <Plus size={14} /> Add profile
+              <Plus size={14} /> {t("Add profile")}
             </Button>
           </>
         }
@@ -393,8 +410,8 @@ function ProfileList({
         {profiles.length === 0 ? (
           <EmptyState
             icon={<SlidersHorizontal />}
-            title="No profiles"
-            description="Add a profile so Ether knows which releases to prefer."
+            title={t("No profiles")}
+            description={t("Add a profile so Ether knows which releases to prefer.")}
           />
         ) : (
           <ul className="divide-y divide-border">
@@ -403,22 +420,24 @@ function ProfileList({
               return (
                 <RecordItem
                   key={`${p.name}-${i}`}
-                  title={p.name || `Profile ${i + 1}`}
+                  title={p.name || t("Profile {n}", { n: i + 1 })}
                   description={profileSummary(p)}
                   meta={
                     <>
                       {quality.default === p.name ? (
-                        <Badge variant="info">On your network</Badge>
+                        <Badge variant="info">{t("On your network")}</Badge>
                       ) : null}
-                      {quality.remote === p.name ? <Badge variant="info">Remote</Badge> : null}
+                      {quality.remote === p.name ? (
+                        <Badge variant="info">{t("Remote")}</Badge>
+                      ) : null}
                       {usedBy ? (
                         <Badge variant="secondary">
-                          {usedBy === 1 ? "1 rule" : `${usedBy} rules`}
+                          {tn(usedBy, "{count} rule", "{count} rules")}
                         </Badge>
                       ) : null}
                     </>
                   }
-                  editLabel={`Edit ${p.name || `profile ${i + 1}`}`}
+                  editLabel={t("Edit {name}", { name: p.name || t("profile {n}", { n: i + 1 }) })}
                   onEdit={() => open(i, p)}
                 />
               );
@@ -432,52 +451,54 @@ function ProfileList({
       <RecordDrawer
         open={editing !== null}
         onClose={() => !saving && setEditing(null)}
-        title={isNew ? "New profile" : draft?.name || "Profile"}
-        description="How releases are ranked for apps using this profile."
+        title={isNew ? t("New profile") : draft?.name || t("Profile")}
+        description={t("How releases are ranked for apps using this profile.")}
         onSave={() => void save()}
         saving={saving}
-        saveLabel="Save profile"
+        saveLabel={t("Save profile")}
         onRemove={isNew ? undefined : () => void remove()}
-        removeLabel="Remove profile"
+        removeLabel={t("Remove profile")}
         removeDisabled={profiles.length <= 1}
         error={error}
       >
         {draft ? (
           <>
-            <SettingsSection title="Picture">
+            <SettingsSection title={t("Picture")}>
               <TextRow
-                label="Name"
+                label={t("Name")}
                 value={draft.name}
                 error={errors.name}
                 onChange={(v) => patch({ name: v })}
               />
               <SettingsRow
-                title="Resolution"
+                title={t("Resolution")}
                 description={
                   errors.minHeight || errors.maxHeight ? (
                     <span className="text-danger">{errors.minHeight || errors.maxHeight}</span>
                   ) : (
-                    "Lowest and highest acceptable."
+                    t("Lowest and highest acceptable.")
                   )
                 }
                 control={
                   <span className="flex items-center gap-2">
                     <span className="w-32">
                       <SearchSelect
+                        {...searchSelectLabels()}
                         value={String(draft.minHeight)}
                         onChange={(v) => patch({ minHeight: Number(v) })}
                         options={HEIGHTS}
-                        ariaLabel="Minimum resolution"
+                        ariaLabel={t("Minimum resolution")}
                         searchable={false}
                       />
                     </span>
-                    <span className="text-sm text-fg-muted">to</span>
+                    <span className="text-sm text-fg-muted">{t("to")}</span>
                     <span className="w-32">
                       <SearchSelect
+                        {...searchSelectLabels()}
                         value={String(draft.maxHeight)}
                         onChange={(v) => patch({ maxHeight: Number(v) })}
                         options={HEIGHTS}
-                        ariaLabel="Maximum resolution"
+                        ariaLabel={t("Maximum resolution")}
                         searchable={false}
                       />
                     </span>
@@ -485,42 +506,45 @@ function ProfileList({
                 }
               />
               <BoolRow
-                label="Allow HDR"
+                label={t("Allow HDR")}
                 value={draft.allowHdr}
-                help="Only used when the app supports it."
+                help={t("Only used when the app supports it.")}
                 onChange={(v) => patch({ allowHdr: v })}
               />
               <BoolRow
-                label="Allow Dolby Vision"
+                label={t("Allow Dolby Vision")}
                 value={draft.allowDolbyVision}
                 onChange={(v) => patch({ allowDolbyVision: v })}
               />
               <BoolRow
-                label="Allow CAM releases"
+                label={t("Allow CAM releases")}
                 value={draft.allowCam}
                 onChange={(v) => patch({ allowCam: v })}
               />
             </SettingsSection>
-            <SettingsSection title="Preferences" description="Pick in order of preference.">
-              <SettingsRow stacked title="Sources">
+            <SettingsSection
+              title={t("Preferences")}
+              description={t("Pick in order of preference.")}
+            >
+              <SettingsRow stacked title={t("Sources")}>
                 <PreferenceList
-                  label="Sources"
+                  label={t("Sources")}
                   all={QUALITY_SOURCES}
                   value={draft.preferredSources}
                   onChange={(v) => patch({ preferredSources: v })}
                 />
               </SettingsRow>
-              <SettingsRow stacked title="Video codecs">
+              <SettingsRow stacked title={t("Video codecs")}>
                 <PreferenceList
-                  label="Video codecs"
+                  label={t("Video codecs")}
                   all={QUALITY_CODECS}
                   value={draft.preferredCodecs}
                   onChange={(v) => patch({ preferredCodecs: v })}
                 />
               </SettingsRow>
-              <SettingsRow stacked title="Audio">
+              <SettingsRow stacked title={t("Audio")}>
                 <PreferenceList
-                  label="Audio"
+                  label={t("Audio")}
                   all={QUALITY_AUDIO}
                   value={draft.preferredAudio}
                   onChange={(v) => patch({ preferredAudio: v })}
@@ -528,41 +552,43 @@ function ProfileList({
               </SettingsRow>
               <SettingsRow
                 stacked
-                title="Languages"
-                description="ISO codes in preference order. Empty accepts any."
+                title={t("Languages")}
+                description={t("ISO codes in preference order. Empty accepts any.")}
               >
                 <ListInput
-                  ariaLabel="Languages"
+                  ariaLabel={t("Languages")}
                   value={draft.preferredLanguages}
                   onChange={(v) => patch({ preferredLanguages: v.length ? v.map(String) : null })}
                   placeholder="en, fr"
                 />
               </SettingsRow>
             </SettingsSection>
-            <SettingsSection title="Size">
+            <SettingsSection title={t("Size")}>
               <SettingsRow
-                title="Size per minute"
+                title={t("Size per minute")}
                 description={
                   errors.minSizeMbPerMin || errors.maxSizeMbPerMin ? (
                     <span className="text-danger">
                       {errors.minSizeMbPerMin || errors.maxSizeMbPerMin}
                     </span>
                   ) : (
-                    "MB per minute of runtime. Filters out fakes and bloated files. 0 means no limit."
+                    t(
+                      "MB per minute of runtime. Filters out fakes and bloated files. 0 means no limit.",
+                    )
                   )
                 }
                 control={
                   <span className="flex items-center gap-2">
                     <NumberInput
-                      aria-label="Minimum MB per minute"
+                      aria-label={t("Minimum MB per minute")}
                       value={draft.minSizeMbPerMin}
                       min={0}
                       className="w-20"
                       onChange={(n) => patch({ minSizeMbPerMin: n })}
                     />
-                    <span className="text-sm text-fg-muted">to</span>
+                    <span className="text-sm text-fg-muted">{t("to")}</span>
                     <NumberInput
-                      aria-label="Maximum MB per minute"
+                      aria-label={t("Maximum MB per minute")}
                       value={draft.maxSizeMbPerMin}
                       min={0}
                       className="w-20"

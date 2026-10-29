@@ -6,11 +6,12 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { MoreHorizontal } from "lucide-react";
 import type { ReactNode, MouseEvent } from "react";
+import { t } from "../i18n";
 
 /** A button that opens an AppKit context menu below itself (kebab by default). */
 export function ActionMenu({
   items,
-  label = "More actions",
+  label = t("More actions"),
   children,
   variant = "ghost",
   size = "icon",

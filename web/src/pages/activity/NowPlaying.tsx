@@ -6,15 +6,16 @@ import { Meter } from "../../components/charts";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { apiFetch, errorMessage } from "../../lib/api";
-import { formatRate, plural, relativeTime } from "../../lib/format";
+import { t, tn } from "../../i18n";
+import { formatRate, relativeTime } from "../../lib/format";
 import type { NowPlaying as Stream } from "../../lib/health";
 import type { AsyncState } from "../../lib/hooks";
 import { useTitle } from "../../lib/titles";
 
 function decisionLabel(decision: string): string {
-  if (decision === "transcode") return "Transcoding";
-  if (decision === "copy") return "Direct stream";
-  return decision ? "Direct play" : "Starting";
+  if (decision === "transcode") return t("Transcoding");
+  if (decision === "copy") return t("Direct stream");
+  return decision ? t("Direct play") : t("Starting");
 }
 
 function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onStop: () => void }) {
@@ -39,19 +40,23 @@ function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onSt
           <Badge variant={s.decision === "transcode" ? "warning" : "success"}>
             {decisionLabel(s.decision)}
           </Badge>
-          {s.remote ? <Badge variant="info">Remote</Badge> : null}
-          {s.failovers ? <Badge variant="warning">{plural(s.failovers, "failover")}</Badge> : null}
+          {s.remote ? <Badge variant="info">{t("Remote")}</Badge> : null}
+          {s.failovers ? (
+            <Badge variant="warning">
+              {tn(s.failovers, "{count} failover", "{count} failovers")}
+            </Badge>
+          ) : null}
           <Badge variant="secondary">{formatRate(s.speedBps)}</Badge>
         </div>
         <div className="max-w-sm">
           {s.progress !== null ? (
             <Meter
               value={s.progress}
-              label={`Started ${relativeTime(s.startedAt)}`}
-              valueLabel={`${Math.round(s.progress * 100)}% watched`}
+              label={t("Started {when}", { when: relativeTime(s.startedAt) })}
+              valueLabel={t("{percent}% watched", { percent: Math.round(s.progress * 100) })}
             />
           ) : (
-            <p className="text-xs text-fg-muted">Waiting for playback position</p>
+            <p className="text-xs text-fg-muted">{t("Waiting for playback position")}</p>
           )}
         </div>
         {s.release ? (
@@ -61,7 +66,7 @@ function StreamRow({ s, stopping, onStop }: { s: Stream; stopping: boolean; onSt
         ) : null}
       </div>
       <Button variant="outline" size="sm" disabled={stopping} onClick={onStop}>
-        <Square size={14} /> Stop stream
+        <Square size={14} /> {t("Stop stream")}
       </Button>
     </li>
   );
@@ -79,7 +84,7 @@ export function NowPlaying({ state }: { state: AsyncState<Stream[]> }) {
         method: "POST",
         body: "{}",
       });
-      toast.success("Stream stopped");
+      toast.success(t("Stream stopped"));
       await state.reload();
     } catch (e) {
       toast.error(errorMessage(e));
@@ -92,10 +97,16 @@ export function NowPlaying({ state }: { state: AsyncState<Stream[]> }) {
     return <ErrorPanel error={state.error} onRetry={() => void state.reload()} />;
   return (
     <Section
-      title="Now playing"
-      description="Streams update every few seconds. Stopping a stream ends it on the viewer's device."
+      title={t("Now playing")}
+      description={t(
+        "Streams update every few seconds. Stopping a stream ends it on the viewer's device.",
+      )}
       actions={
-        state.data ? <Badge variant="secondary">{plural(streams.length, "stream")}</Badge> : null
+        state.data ? (
+          <Badge variant="secondary">
+            {tn(streams.length, "{count} stream", "{count} streams")}
+          </Badge>
+        ) : null
       }
     >
       {!state.data ? (
@@ -114,8 +125,8 @@ export function NowPlaying({ state }: { state: AsyncState<Stream[]> }) {
       ) : (
         <EmptyState
           icon={<Radio />}
-          title="Nothing is playing"
-          description="Streams appear here as soon as a viewer presses play."
+          title={t("Nothing is playing")}
+          description={t("Streams appear here as soon as a viewer presses play.")}
         />
       )}
     </Section>

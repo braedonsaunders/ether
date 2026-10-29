@@ -1,6 +1,7 @@
 import { SettingsSection, Spinner, toast } from "@braedonsaunders/appkit-ui";
 import { useCallback, useState, type ReactNode } from "react";
 import { useApp } from "../app-context";
+import { t } from "../i18n";
 import { api, ApiError } from "../lib/api";
 import { useAsync } from "../lib/hooks";
 import type { EtherConfig } from "../lib/types";
@@ -79,7 +80,7 @@ export function ConfigSection({
         const live = await api.getConfig();
         await api.putConfig({ ...live, [configKey]: draft } as EtherConfig);
       }
-      toast.success("Settings saved", { description: label });
+      toast.success(t("Settings saved"), { description: label });
       await config.reload();
       void refreshDashboard();
       onSaved?.(draft);
@@ -117,7 +118,7 @@ export function ConfigSection({
   if (!cfg || !draft)
     return (
       <div className="py-10 text-center">
-        <Spinner size={20} label="Loading settings" />
+        <Spinner size={20} label={t("Loading settings")} />
       </div>
     );
 
@@ -149,7 +150,10 @@ export function ConfigSection({
         ),
       )}
       {extra.length && showAdvanced ? (
-        <SettingsSection title="Advanced" description="Additional options this server supports.">
+        <SettingsSection
+          title={t("Advanced")}
+          description={t("Additional options this server supports.")}
+        >
           <GenericFields
             value={draft}
             keys={extra}

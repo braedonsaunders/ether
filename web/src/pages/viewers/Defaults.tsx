@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
+import { t } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import { WatchlistDefaults } from "./sections/WatchlistDefaults";
@@ -32,8 +33,8 @@ export function ViewerDefaults() {
     try {
       await apiFetch("/stream-preferences/0", { method: "PUT", body: JSON.stringify(draft) });
       rules.setData(draft);
-      toast.success("Defaults saved", {
-        description: "Viewers without their own audio and subtitle choices use these.",
+      toast.success(t("Defaults saved"), {
+        description: t("Viewers without their own audio and subtitle choices use these."),
       });
     } catch (e) {
       setError(e);
@@ -51,8 +52,9 @@ export function ViewerDefaults() {
       ) : (
         <>
           <p className="text-sm text-fg-muted">
-            Audio and subtitle choices for every viewer. Give one person their own on the Audio
-            &amp; subtitles tab of their profile.
+            {t(
+              "Audio and subtitle choices for every viewer. Give one person their own on the Audio & subtitles tab of their profile.",
+            )}
           </p>
           <StreamRulesFields value={draft} onChange={setDraft} disabled={saving} />
         </>
@@ -60,22 +62,24 @@ export function ViewerDefaults() {
 
       <WatchlistDefaults />
 
-      <SettingsSection title="Elsewhere">
+      <SettingsSection title={t("Elsewhere")}>
         <SettingsRow
-          title="Stream limit"
-          description="The server-wide limit on simultaneous streams. Set a different one per viewer on their Access tab."
+          title={t("Stream limit")}
+          description={t(
+            "The server-wide limit on simultaneous streams. Set a different one per viewer on their Access tab.",
+          )}
           control={
             <Button variant="outline" size="sm" onClick={() => navigate("/server")}>
-              Settings › General <ArrowRight size={14} />
+              {t("Settings › General")} <ArrowRight size={14} />
             </Button>
           }
         />
         <SettingsRow
-          title="Skip intros and credits"
-          description="Marker sources and coverage."
+          title={t("Skip intros and credits")}
+          description={t("Marker sources and coverage.")}
           control={
             <Button variant="outline" size="sm" onClick={() => navigate("/playback/markers")}>
-              Playback › Markers <ArrowRight size={14} />
+              {t("Playback › Markers")} <ArrowRight size={14} />
             </Button>
           }
         />

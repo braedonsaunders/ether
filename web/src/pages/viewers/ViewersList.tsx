@@ -5,26 +5,28 @@ import { useNavigate } from "react-router-dom";
 import { ErrorPanel } from "../../components/feedback";
 import { DomainPage, type PageTab } from "../../components/layout";
 import { loadViewers, viewerName } from "../../components/pickers";
+import { localized, t, tn } from "../../i18n";
 import { api } from "../../lib/api";
 import type { Viewer } from "../../lib/contract";
 import { formatDateTime, formatNumber, parseTime, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
+import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { CreateViewer } from "./ManageViewers";
 import { ViewerDefaults } from "./Defaults";
 import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
 type Tab = "people" | "defaults";
 
-const TABS: readonly (PageTab & { key: Tab })[] = [
-  { key: "people", label: "People" },
-  { key: "defaults", label: "Defaults" },
-];
+const TABS: readonly (PageTab & { key: Tab })[] = localized(() => [
+  { key: "people" as const, label: t("People") },
+  { key: "defaults" as const, label: t("Defaults") },
+]);
 
 export default function ViewersList({ tab = "people" }: { tab?: Tab } = {}) {
   return (
     <DomainPage
-      title="Viewers"
+      title={t("Viewers")}
       description="Manage household viewers and imported history."
       base="/viewers"
       tabs={TABS}
@@ -39,10 +41,10 @@ export default function ViewersList({ tab = "people" }: { tab?: Tab } = {}) {
 function limitsSummary(u: EtherUser | undefined): string {
   if (!u) return "—";
   const parts: string[] = [];
-  if (u.streamLimit > 0)
-    parts.push(`${u.streamLimit} ${u.streamLimit === 1 ? "stream" : "streams"}`);
-  if (u.maxContentRating && !u.isOwner) parts.push(`Up to ${u.maxContentRating}`);
-  return parts.length ? parts.join(" · ") : "Server defaults";
+  if (u.streamLimit > 0) parts.push(tn(u.streamLimit, "{count} stream", "{count} streams"));
+  if (u.maxContentRating && !u.isOwner)
+    parts.push(t("Up to {rating}", { rating: u.maxContentRating }));
+  return parts.length ? parts.join(" · ") : t("Server defaults");
 }
 
 function People() {
@@ -66,7 +68,7 @@ function People() {
   if (state.error) return <ErrorPanel error={state.error} onRetry={() => void state.reload()} />;
   if (!state.data)
     return (
-      <div className="space-y-2" role="status" aria-label="Loading viewers">
+      <div className="space-y-2" role="status" aria-label={t("Loading viewers")}>
         {Array.from({ length: 4 }, (_, i) => (
           <Skeleton key={i} className="h-14 w-full rounded-lg" />
         ))}
@@ -83,18 +85,24 @@ function People() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PlexAccessNote />
         <Select
-          aria-label="Viewer status"
+          aria-label={t("Viewer status")}
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           className="w-60"
         >
-          <option value="all">All viewers ({viewers.length})</option>
-          <option value="active">With access ({viewers.filter(hasAccess).length})</option>
+          <option value="all">{t("All viewers ({count})", { count: viewers.length })}</option>
+          <option value="active">
+            {t("With access ({count})", { count: viewers.filter(hasAccess).length })}
+          </option>
           <option value="imported">
-            Imported history ({viewers.filter((v) => viewerStatus(v) === "imported").length})
+            {t("Imported history ({count})", {
+              count: viewers.filter((v) => viewerStatus(v) === "imported").length,
+            })}
           </option>
           <option value="inactive">
-            No current access ({viewers.filter((v) => !hasAccess(v)).length})
+            {t("No current access ({count})", {
+              count: viewers.filter((v) => !hasAccess(v)).length,
+            })}
           </option>
         </Select>
       </div>
@@ -108,19 +116,19 @@ function People() {
         empty={
           <EmptyState
             icon={<Users />}
-            title={viewers.length ? "No viewers match this filter" : "No viewers yet"}
+            title={viewers.length ? t("No viewers match this filter") : t("No viewers yet")}
             description={
               viewers.length
-                ? "Choose another status or search to see more people."
-                : "Share this server from Plex.tv, or import viewing history."
+                ? t("Choose another status or search to see more people.")
+                : t("Share this server from Plex.tv, or import viewing history.")
             }
           />
         }
-        labels={{ searchPlaceholder: "Search viewers…" }}
+        labels={pagedTableLabels({ searchPlaceholder: t("Search viewers…") })}
         columns={[
           {
             key: "name",
-            header: "Viewer",
+            header: t("Viewer"),
             search: (v) => `${v.title} ${v.username}`,
             sortValue: (v) => viewerName(v).toLowerCase(),
             cell: (v) => (
@@ -137,7 +145,7 @@ function People() {
           },
           {
             key: "active",
-            header: "Last active",
+            header: t("Last active"),
             sortValue: (v) => parseTime(v.lastActive) ?? null,
             cell: (v) => (
               <span title={formatDateTime(v.lastActive)} className="text-fg-muted">
@@ -147,21 +155,21 @@ function People() {
           },
           {
             key: "plays",
-            header: "Plays · 30d",
+            header: t("Plays · 30d"),
             align: "right",
             sortValue: (v) => v.plays30d,
             cell: (v) => <span className="tabular-nums">{formatNumber(v.plays30d, 0)}</span>,
           },
           {
             key: "hours",
-            header: "Hours · 30d",
+            header: t("Hours · 30d"),
             align: "right",
             sortValue: (v) => v.hoursWatched30d,
             cell: (v) => <span className="tabular-nums">{formatNumber(v.hoursWatched30d, 1)}</span>,
           },
           {
             key: "limits",
-            header: "Limits",
+            header: t("Limits"),
             cell: (v) => (
               <span className="text-fg-muted">
                 {users.data ? limitsSummary(byId.get(v.id)) : ""}

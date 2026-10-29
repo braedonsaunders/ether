@@ -1,3 +1,4 @@
+import { t, tn, tx } from "../../i18n";
 import {
   Alert,
   AlertDescription,
@@ -19,7 +20,7 @@ import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
 import { api, ApiError, newId } from "../../lib/api";
-import { formatBytes, plural, relativeTime } from "../../lib/format";
+import { fixed, formatBytes, formatNumber, relativeTime } from "../../lib/format";
 import { useAsync, useInterval } from "../../lib/hooks";
 import type {
   DebridConfig,
@@ -83,51 +84,65 @@ function blankProvider(priority: number): DebridProvider {
 }
 
 function providerName(p: DebridProvider, i: number) {
-  return p.name || debridKindLabel(p.kind) || `Provider ${i + 1}`;
+  return p.name || debridKindLabel(p.kind) || t("Provider {number}", { number: i + 1 });
 }
 
 function role(i: number) {
-  return i === 0 ? "Tried first" : `Priority ${i + 1}`;
+  return i === 0 ? t("Tried first") : t("Priority {number}", { number: i + 1 });
 }
 
 /** Counters and last activity for one provider's row. */
 function activity(s: DebridProviderStatus): string[] {
   const out: string[] = [];
   const requests = Number(s.requests ?? 0);
-  if (requests > 0) out.push(plural(requests, "request"));
+  if (requests > 0) out.push(tn(requests, "{count} request", "{count} requests"));
   if (s.cached || s.notCached)
-    out.push(`${Number(s.cached ?? 0)} cached · ${Number(s.notCached ?? 0)} not cached`);
-  if (s.blocked) out.push(`${Number(s.blocked)} blocked by provider`);
-  if (s.failures) out.push(plural(Number(s.failures), "failure"));
-  if (s.reused) out.push(`${Number(s.reused)} reused`);
-  if (s.linksRefreshed) out.push(`${plural(Number(s.linksRefreshed), "link")} refreshed`);
+    out.push(
+      t("{cached} cached · {notCached} not cached", {
+        cached: formatNumber(Number(s.cached ?? 0)),
+        notCached: formatNumber(Number(s.notCached ?? 0)),
+      }),
+    );
+  if (s.blocked)
+    out.push(t("{count} blocked by provider", { count: formatNumber(Number(s.blocked)) }));
+  if (s.failures) out.push(tn(Number(s.failures), "{count} failure", "{count} failures"));
+  if (s.reused) out.push(t("{count} reused", { count: formatNumber(Number(s.reused)) }));
+  if (s.linksRefreshed)
+    out.push(tn(Number(s.linksRefreshed), "{count} link refreshed", "{count} links refreshed"));
   // In a cluster the account's concurrent API calls are divided among nodes.
   const slots = Number(s.slots ?? 0);
   const account = Number(s.accountSlots ?? 0);
   if (account > 0 && slots !== account)
-    out.push(`this node: ${slots} of ${account} API connections`);
-  if (s.lastSuccess) out.push(`last worked ${relativeTime(s.lastSuccess)}`);
+    out.push(
+      tn(
+        account,
+        "this node: {slots} of {count} API connection",
+        "this node: {slots} of {count} API connections",
+        { slots },
+      ),
+    );
+  if (s.lastSuccess) out.push(t("last worked {time}", { time: relativeTime(s.lastSuccess) }));
   return out;
 }
 
 function ms(n: number): string {
   // Half a second and up reads better in seconds ("0.8 s").
-  return n >= 500 ? `${(n / 1000).toFixed(1)} s` : `${Math.round(n)} ms`;
+  return n >= 500 ? `${fixed(n / 1000, 1)} s` : `${fixed(n, 0)} ms`;
 }
 
 /** Megabytes per second, decimal (as speed tests report it). */
 function mbps(bytesPerSecond: number): string {
   const v = bytesPerSecond / 1e6;
-  return `${v >= 10 ? v.toFixed(0) : v.toFixed(1)} MB/s`;
+  return `${fixed(v, v >= 10 ? 0 : 1)} MB/s`;
 }
 
 /** Averaged timings for one provider, or null before it has been used. */
 export function latencySummary(l: DebridLatency | undefined): string | null {
   if (!l || !Number(l.samples ?? 0)) return null;
   const out: string[] = [];
-  if (l.resolveMs) out.push(`API ${ms(l.resolveMs)}`);
-  if (l.linkMs) out.push(`link ${ms(l.linkMs)}`);
-  if (l.ttfbMs) out.push(`first byte ${ms(l.ttfbMs)}`);
+  if (l.resolveMs) out.push(t("API {time}", { time: ms(l.resolveMs) }));
+  if (l.linkMs) out.push(t("link {time}", { time: ms(l.linkMs) }));
+  if (l.ttfbMs) out.push(t("first byte {time}", { time: ms(l.ttfbMs) }));
   if (l.throughputBps) out.push(mbps(l.throughputBps));
   return out.length ? out.join(" · ") : null;
 }
@@ -138,34 +153,50 @@ export function engineSummary(e: DebridEngineStatus | undefined): string | null 
   const n = (v: number | undefined) => Number(v ?? 0);
   const hits = n(e.memoryHits) + n(e.diskHits);
   const out = [
-    plural(n(e.openFiles), "open file"),
-    `${plural(hits, "cache hit")} (${n(e.memoryHits)} memory, ${n(e.diskHits)} disk) vs ${n(e.blocksFetched)} fetched` +
-      (n(e.bytesFetched) ? ` (${formatBytes(n(e.bytesFetched))})` : ""),
+    tn(n(e.openFiles), "{count} open file", "{count} open files"),
+    tn(
+      hits,
+      "{count} cache hit ({memory} memory, {disk} disk) vs {fetched} fetched",
+      "{count} cache hits ({memory} memory, {disk} disk) vs {fetched} fetched",
+      {
+        memory: formatNumber(n(e.memoryHits)),
+        disk: formatNumber(n(e.diskHits)),
+        fetched: formatNumber(n(e.blocksFetched)),
+      },
+    ) + (n(e.bytesFetched) ? ` (${formatBytes(n(e.bytesFetched))})` : ""),
   ];
-  if (n(e.hedges)) out.push(`${plural(n(e.hedges), "hedged request")}, ${n(e.hedgeWins)} won`);
-  if (n(e.linkRefreshes)) out.push(`${plural(n(e.linkRefreshes), "link")} refreshed`);
-  if (n(e.errors)) out.push(plural(n(e.errors), "error"));
+  if (n(e.hedges))
+    out.push(
+      tn(n(e.hedges), "{count} hedged request, {won} won", "{count} hedged requests, {won} won", {
+        won: formatNumber(n(e.hedgeWins)),
+      }),
+    );
+  if (n(e.linkRefreshes))
+    out.push(tn(n(e.linkRefreshes), "{count} link refreshed", "{count} links refreshed"));
+  if (n(e.errors)) out.push(tn(n(e.errors), "{count} error", "{count} errors"));
   return out.join(" · ");
 }
 
 function StateBadge({ p, s }: { p: DebridProvider; s?: DebridProviderStatus }) {
-  if (!p.enabled) return <Badge variant="secondary">Off</Badge>;
+  if (!p.enabled) return <Badge variant="secondary">{t("Off")}</Badge>;
   if (!s) return null;
   switch (s.state) {
     case "ok":
-      return <Badge variant="success">Ready</Badge>;
+      return <Badge variant="success">{t("Ready")}</Badge>;
     case "backoff":
       return (
         <Badge variant="warning">
-          {s.backoffUntil ? `Paused · retries ${relativeTime(s.backoffUntil)}` : "Paused"}
+          {s.backoffUntil
+            ? t("Paused · retries {time}", { time: relativeTime(s.backoffUntil) })
+            : t("Paused")}
         </Badge>
       );
     case "auth_failed":
-      return <Badge variant="destructive">Key rejected</Badge>;
+      return <Badge variant="destructive">{t("Key rejected")}</Badge>;
     case "disabled":
-      return <Badge variant="secondary">Inactive</Badge>;
+      return <Badge variant="secondary">{t("Inactive")}</Badge>;
     default:
-      return <Badge variant="secondary">{String(s.state || "Unknown")}</Badge>;
+      return <Badge variant="secondary">{s.state ? String(s.state) : t("Unknown")}</Badge>;
   }
 }
 
@@ -235,7 +266,7 @@ export function DebridSources() {
     setErrors({});
     setError(null);
     try {
-      await commit(list, index < providers.length ? "Provider saved" : "Provider added");
+      await commit(list, index < providers.length ? t("Provider saved") : t("Provider added"));
       setEditing(null);
     } catch (e) {
       setError(e);
@@ -249,9 +280,12 @@ export function DebridSources() {
     if (!editing) return;
     const { index, draft } = editing;
     const ok = await confirmDialog({
-      title: "Remove provider?",
-      message: `${providerName(draft, index)} will no longer be used for streaming. Its API key is deleted from Ether.`,
-      confirmLabel: "Remove",
+      title: t("Remove provider?"),
+      message: t(
+        "{provider} will no longer be used for streaming. Its API key is deleted from Ether.",
+        { provider: providerName(draft, index) },
+      ),
+      confirmLabel: t("Remove"),
       tone: "danger",
     });
     if (!ok) return;
@@ -260,7 +294,7 @@ export function DebridSources() {
     try {
       await commit(
         providers.filter((_, j) => j !== index),
-        "Provider removed",
+        t("Provider removed"),
       );
       setEditing(null);
     } catch (e) {
@@ -272,9 +306,9 @@ export function DebridSources() {
 
   async function move(i: number, d: -1 | 1) {
     try {
-      await commit(swap(providers, i, i + d), "Provider order saved");
+      await commit(swap(providers, i, i + d), t("Provider order saved"));
     } catch (e) {
-      toastError("Couldn't reorder providers", e);
+      toastError(t("Couldn't reorder providers"), e);
     }
   }
 
@@ -286,28 +320,34 @@ export function DebridSources() {
     setEditing((e) => (e ? { ...e, draft: { ...e.draft, ...patch } } : e));
   const isNew = editing ? editing.index >= providers.length : false;
   const name = draft && editing ? providerName(draft, editing.index) : "";
+  const indexersLink = (
+    <Link to="/sources/indexers" className="font-medium underline underline-offset-2">
+      {t("Indexers")}
+    </Link>
+  );
 
   return (
     <>
       <Alert variant="info">
         <AlertDescription>
-          Ether ships no debrid providers: bring your own Real-Debrid, TorBox, AllDebrid,
-          Premiumize, Debrid-Link or Offcloud account and its API key. Debrid streams torrent
-          releases, so it also needs at least one torrent source (a Torznab indexer, torrent site or
-          Stremio addon) under{" "}
-          <Link to="/sources/indexers" className="font-medium underline underline-offset-2">
-            Indexers
-          </Link>
-          {torrentIndexers === 0 ? "; none is set up yet." : "."}
+          {torrentIndexers === 0
+            ? tx(
+                "Ether ships no debrid providers: bring your own Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or Offcloud account and its API key. Debrid streams torrent releases, so it also needs at least one torrent source (a Torznab indexer, torrent site or Stremio addon) under {indexers}; none is set up yet.",
+                { indexers: indexersLink },
+              )
+            : tx(
+                "Ether ships no debrid providers: bring your own Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or Offcloud account and its API key. Debrid streams torrent releases, so it also needs at least one torrent source (a Torznab indexer, torrent site or Stremio addon) under {indexers}.",
+                { indexers: indexersLink },
+              )}
         </AlertDescription>
       </Alert>
 
       <Section
-        title="Debrid providers"
-        description="Tried in order. A torrent is used only when a provider can stream it."
+        title={t("Debrid providers")}
+        description={t("Tried in order. A torrent is used only when a provider can stream it.")}
         actions={
           <Button size="sm" onClick={() => open(providers.length, blankProvider(providers.length))}>
-            <Plus size={14} /> Add provider
+            <Plus size={14} /> {t("Add provider")}
           </Button>
         }
         bodyClassName=""
@@ -315,8 +355,8 @@ export function DebridSources() {
         {providers.length === 0 ? (
           <EmptyState
             icon={<Cloud />}
-            title="No debrid providers"
-            description="Add your debrid account to stream torrent releases."
+            title={t("No debrid providers")}
+            description={t("Add your debrid account to stream torrent releases.")}
           />
         ) : (
           <ul className="divide-y divide-border">
@@ -354,7 +394,7 @@ export function DebridSources() {
                       onMove={(d) => void move(i, d)}
                     />
                   }
-                  editLabel={`Edit ${label}`}
+                  editLabel={t("Edit {name}", { name: label })}
                   onEdit={() => open(i, p)}
                 />
               );
@@ -363,10 +403,10 @@ export function DebridSources() {
         )}
         {engine ? (
           <p
-            aria-label="Streaming engine"
+            aria-label={t("Streaming engine")}
             className="border-t border-border px-5 py-3 text-xs text-fg-muted tabular-nums"
           >
-            <span className="font-medium text-fg">Streaming engine</span> · {engine}
+            <span className="font-medium text-fg">{t("Streaming engine")}</span> · {engine}
           </p>
         ) : null}
       </Section>
@@ -376,13 +416,13 @@ export function DebridSources() {
       <RecordDrawer
         open={editing !== null}
         onClose={close}
-        title={isNew ? "New debrid provider" : name}
-        description={editing && !isNew ? role(editing.index) : "Debrid account"}
+        title={isNew ? t("New debrid provider") : name}
+        description={editing && !isNew ? role(editing.index) : t("Debrid account")}
         onSave={() => void save()}
         saving={saving}
-        saveLabel="Save provider"
+        saveLabel={t("Save provider")}
         onRemove={isNew ? undefined : () => void remove()}
-        removeLabel="Remove provider"
+        removeLabel={t("Remove provider")}
         error={error}
         tools={
           draft ? (
@@ -395,16 +435,16 @@ export function DebridSources() {
         }
       >
         {draft ? (
-          <SettingsSection title="Account">
+          <SettingsSection title={t("Account")}>
             <TextRow
-              label="Name"
+              label={t("Name")}
               value={draft.name}
               placeholder={debridKindLabel(draft.kind)}
               error={errors.name}
               onChange={(v) => set({ name: v })}
             />
             <SettingsRow
-              title="Service"
+              title={t("Service")}
               description={
                 errors.kind ? (
                   <span className="block text-xs text-danger" role="alert">
@@ -418,18 +458,21 @@ export function DebridSources() {
                     value={draft.kind}
                     onChange={(v) => set({ kind: v as DebridKind })}
                     options={DEBRID_KINDS}
-                    ariaLabel="Service"
+                    ariaLabel={t("Service")}
                     searchable={false}
+                    placeholder={t("Select…")}
+                    selectLabel={t("Select")}
+                    closeLabel={t("Close")}
                   />
                 </div>
               }
             />
             <SettingsRow
               stacked
-              title="API key"
+              title={t("API key")}
               description={
                 <>
-                  From your debrid account&apos;s settings.
+                  {t("From your debrid account's settings.")}
                   {errors.apiKey ? (
                     <span className="block text-xs text-danger" role="alert">
                       {errors.apiKey}
@@ -439,13 +482,17 @@ export function DebridSources() {
               }
             >
               <SecretInput
-                ariaLabel="API key"
+                ariaLabel={t("API key")}
                 value={draft.apiKey}
                 invalid={Boolean(errors.apiKey)}
                 onChange={(v) => set({ apiKey: v })}
               />
             </SettingsRow>
-            <BoolRow label="Enabled" value={draft.enabled} onChange={(v) => set({ enabled: v })} />
+            <BoolRow
+              label={t("Enabled")}
+              value={draft.enabled}
+              onChange={(v) => set({ enabled: v })}
+            />
           </SettingsSection>
         ) : null}
       </RecordDrawer>
@@ -486,7 +533,7 @@ function DebridSettings({
       // Providers come from the last saved config so unsaved settings never
       // resurrect a removed provider (their keys stay redacted and are kept).
       await api.putSection("debrid", { ...debrid, ...draft });
-      toast.success("Settings saved", { description: "Debrid" });
+      toast.success(t("Settings saved"), { description: t("Debrid") });
       await onSaved();
     } catch (e) {
       setError(e);

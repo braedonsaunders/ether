@@ -12,6 +12,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/recommend"
+	"github.com/braedonsaunders/ether/internal/simkl"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/subtitles"
 	"github.com/braedonsaunders/ether/internal/trakt"
@@ -32,6 +33,18 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 	})
 	a.trakt = trakt.New(trakt.Options{Config: cfg.Trakt, DB: a.db, Sealer: a.cfg, Catalog: a.catalog, NodeID: a.clusterNodeID(), Logger: log.With("component", "trakt")})
 	a.trakt.SubscribeTo(a.state)
+	a.simklDevice = &simkl.DeviceManager{AuthConfig: a.simklAuth, Tokens: simkl.TokenStore{DB: a.db, Sealer: a.cfg}}
+	unsubSimkl := a.state.Subscribe(func(ev state.Event) {
+		if !a.cfg.Get().Simkl.Enabled {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := simkl.Enqueue(ctx, a.db, ev); err != nil {
+			a.log.Warn("simkl: enqueue failed", "err", err)
+		}
+	})
+	a.closers = append(a.closers, unsubSimkl)
 	a.closers = append(a.closers, a.trakt.Close)
 	a.llm = llm.New(llm.ServiceOptions{
 		Client:  llm.NewClient(llm.ClientOptions{Config: cfg.LLM, Logger: log.With("component", "llm")}),

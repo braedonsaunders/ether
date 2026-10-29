@@ -385,6 +385,9 @@ func ValidateConfig(cfg config.Config) []FieldError {
 			}
 		}
 	}
+	if cfg.Simkl.Enabled && strings.TrimSpace(cfg.Simkl.ClientID) == "" {
+		v.add("simkl.clientId", "is required when Simkl is enabled")
+	}
 	if cfg.Trakt.Enabled && strings.TrimSpace(cfg.Trakt.ClientID) == "" {
 		v.add("trakt.clientId", "is required when Trakt is enabled")
 	}

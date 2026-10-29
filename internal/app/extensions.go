@@ -1,7 +1,10 @@
 package app
 
 import (
+	"context"
 	"net/http"
+
+	"github.com/braedonsaunders/ether/internal/simkl"
 
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/cardigann"
@@ -14,6 +17,18 @@ import (
 // and CSRF boundaries as the existing admin API.
 func (a *App) extensionHandlers() map[string]http.Handler {
 	m := map[string]http.Handler{"safety/policies": a.safety.Handler()}
+	m["simkl"] = simkl.Handler(simkl.HandlerDeps{Device: a.simklDevice, Service: a.simklService, Enabled: func() bool { c := a.cfg.Get().Simkl; return c.Enabled && c.ClientID != "" }, Viewer: func(ctx context.Context, id int64) bool {
+		users, err := a.users.Users(ctx)
+		if err != nil {
+			return false
+		}
+		for _, u := range users {
+			if u.ID == id {
+				return true
+			}
+		}
+		return false
+	}})
 	m["cache"] = a.cacheHandler()
 	m["availability"] = a.availability.Handler()
 	m["stats"] = a.stats.Handler()

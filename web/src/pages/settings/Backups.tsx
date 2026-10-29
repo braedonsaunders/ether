@@ -17,9 +17,11 @@ import { NumberInput } from "../../components/fields";
 import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
+import { getLocale, localized, t, tn, tx } from "../../i18n";
 import { api, apiBlob, apiFetch, API_BASE, errorMessage, getToken } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
 import type { EtherUser } from "../../lib/types";
+import { pagedTableLabels, searchSelectLabels } from "../../i18n/appkit-labels";
 
 type Plan = {
   id: string;
@@ -49,10 +51,10 @@ type Backups = {
 
 /** Where a clustered snapshot lives, for the Location column. */
 function snapshotLocation(s: Snapshot): string {
-  if (s.shared) return "Shared folder";
+  if (s.shared) return t("Shared folder");
   const node = s.node || s.nodeId || "";
   if (!node) return "";
-  return s.remote ? node : `${node} (this node)`;
+  return s.remote ? node : t("{node} (this node)", { node });
 }
 
 const base = "/adoption";
@@ -74,7 +76,7 @@ async function download(path: string, name: string) {
 
 async function failure(res: Response): Promise<Error> {
   const data = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-  return new Error(data.error?.message ?? `Request failed (${res.status})`);
+  return new Error(data.error?.message ?? t("Request failed ({status})", { status: res.status }));
 }
 
 async function upload(
@@ -121,7 +123,7 @@ function readHead(file: File, n: number): Promise<string> {
     const reader = new FileReader();
     reader.onload = () =>
       resolve(String.fromCharCode(...new Uint8Array(reader.result as ArrayBuffer)));
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read the file"));
+    reader.onerror = () => reject(reader.error ?? new Error(t("Could not read the file")));
     reader.readAsArrayBuffer(file.slice(0, n));
   });
 }
@@ -141,14 +143,15 @@ function base64Utf8(s: string): string {
 async function restoreBackup(file: File, password: string): Promise<string | null> {
   const headers: Record<string, string> = {};
   if ((await readHead(file, ENCRYPTED_MAGIC.length)) === ENCRYPTED_MAGIC) {
-    if (!password) throw new Error("Enter the backup password first.");
+    if (!password) throw new Error(t("Enter the backup password first."));
     headers["X-Ether-Backup-Password"] = base64Utf8(password);
   } else {
     const ok = await confirmDialog({
-      title: "Restore an unencrypted backup?",
-      message:
+      title: t("Restore an unencrypted backup?"),
+      message: t(
         "This bundle is from an older version and is not password protected. Restore it only if it came straight from your own server.",
-      confirmLabel: "Restore",
+      ),
+      confirmLabel: t("Restore"),
     });
     if (!ok) return null;
     headers["X-Ether-Backup-Legacy"] = "plaintext";
@@ -268,7 +271,7 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
         retain: draft.retain,
         ...(clustered ? { sharedDir: (draft.sharedDir ?? "").trim() } : {}),
       });
-      toast.success("Settings saved", { description: "Automatic backups" });
+      toast.success(t("Settings saved"), { description: t("Automatic backups") });
       await load();
     } catch (e) {
       setSaveError(e);
@@ -285,19 +288,19 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
         ) : (
           <>
             <SettingsSection
-              title="Automatic backups"
-              description="Snapshots hold your settings and a consistent copy of the database."
+              title={t("Automatic backups")}
+              description={t("Snapshots hold your settings and a consistent copy of the database.")}
             >
               {draft ? (
                 <>
                   <SettingsRow
-                    title={<label htmlFor="backup-interval">Back up every</label>}
-                    description="0 turns automatic backups off."
+                    title={<label htmlFor="backup-interval">{t("Back up every")}</label>}
+                    description={t("0 turns automatic backups off.")}
                     control={
                       <span className="flex items-center gap-2">
                         <NumberInput
                           id="backup-interval"
-                          aria-label="Back up every"
+                          aria-label={t("Back up every")}
                           className="w-24"
                           min={0}
                           max={8760}
@@ -305,17 +308,19 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                           value={draft.intervalHours}
                           onChange={(n) => setDraft({ ...draft, intervalHours: n })}
                         />
-                        <span className="text-sm text-fg-muted">hours</span>
+                        <span className="text-sm text-fg-muted">{t("hours")}</span>
                       </span>
                     }
                   />
                   <SettingsRow
-                    title={<label htmlFor="backup-retain">Snapshots to keep</label>}
-                    description="The oldest snapshot is removed when a new one would exceed this."
+                    title={<label htmlFor="backup-retain">{t("Snapshots to keep")}</label>}
+                    description={t(
+                      "The oldest snapshot is removed when a new one would exceed this.",
+                    )}
                     control={
                       <NumberInput
                         id="backup-retain"
-                        aria-label="Snapshots to keep"
+                        aria-label={t("Snapshots to keep")}
                         className="w-24"
                         min={1}
                         max={365}
@@ -328,8 +333,10 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                   {clustered ? (
                     <SettingsRow
                       stacked
-                      title={<label htmlFor="backup-shared-dir">Shared backup folder</label>}
-                      description="A folder every node reaches at the same path, such as a network share. Leave empty to keep each backup on the node that made it."
+                      title={<label htmlFor="backup-shared-dir">{t("Shared backup folder")}</label>}
+                      description={t(
+                        "A folder every node reaches at the same path, such as a network share. Leave empty to keep each backup on the node that made it.",
+                      )}
                     >
                       <Input
                         id="backup-shared-dir"
@@ -348,15 +355,17 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
             </SettingsSection>
 
             <Section
-              title="Snapshots"
-              description="Snapshots hold your settings, database and the key that unlocks saved credentials. Ones kept on this server are readable only by Ether's account; downloads are encrypted with the password below."
+              title={t("Snapshots")}
+              description={t(
+                "Snapshots hold your settings, database and the key that unlocks saved credentials. Ones kept on this server are readable only by Ether's account; downloads are encrypted with the password below.",
+              )}
               actions={
                 <Button
                   size="sm"
                   disabled={busy}
                   onClick={() => void run(() => post("/backups/").then(load))}
                 >
-                  <Plus size={14} /> {busy ? "Working…" : "Create snapshot"}
+                  <Plus size={14} /> {busy ? t("Working…") : t("Create snapshot")}
                 </Button>
               }
             >
@@ -367,8 +376,11 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
               ) : null}
               <SettingsRow
                 stacked
-                title={<label htmlFor="backup-password">Backup password</label>}
-                description={`Downloads are encrypted with it and restoring one asks for it again. At least ${MIN_BACKUP_PASSWORD} characters; Ether does not keep it.`}
+                title={<label htmlFor="backup-password">{t("Backup password")}</label>}
+                description={t(
+                  "Downloads are encrypted with it and restoring one asks for it again. At least {min} characters; Ether does not keep it.",
+                  { min: MIN_BACKUP_PASSWORD },
+                )}
               >
                 <Input
                   id="backup-password"
@@ -384,20 +396,20 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                   rows={data.snapshots ?? []}
                   rowKey={(s) => s.name}
                   pageSize={10}
-                  empty="No snapshots yet. Create your first backup."
+                  empty={t("No snapshots yet. Create your first backup.")}
                   defaultSort={{ key: "created", dir: "desc" }}
-                  labels={{ searchLabel: "Search backups" }}
+                  labels={pagedTableLabels({ searchLabel: t("Search backups") })}
                   columns={[
                     {
                       key: "created",
-                      header: "Created",
+                      header: t("Created"),
                       search: (s) => s.name,
                       sortValue: (s) => s.created,
-                      cell: (s) => new Date(s.created).toLocaleString(),
+                      cell: (s) => new Date(s.created).toLocaleString(getLocale()),
                     },
                     {
                       key: "size",
-                      header: "Size",
+                      header: t("Size"),
                       align: "right",
                       sortValue: (s) => s.size,
                       cell: (s) => <span className="tabular-nums">{formatBytes(s.size)}</span>,
@@ -406,7 +418,7 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                       ? [
                           {
                             key: "location",
-                            header: "Location",
+                            header: t("Location"),
                             search: snapshotLocation,
                             sortValue: snapshotLocation,
                             cell: (s: Snapshot) => (
@@ -426,15 +438,21 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                           disabled={busy || s.remote || !passwordOK}
                           title={
                             s.remote
-                              ? `Stored on ${s.node || "another node"}: download it from that node's admin page`
+                              ? s.node
+                                ? t("Stored on {node}: download it from that node's admin page", {
+                                    node: s.node,
+                                  })
+                                : t(
+                                    "Stored on another node: download it from that node's admin page",
+                                  )
                               : !passwordOK
-                                ? "Enter a backup password to download"
+                                ? t("Enter a backup password to download")
                                 : undefined
                           }
-                          aria-label={`Download ${s.name}`}
+                          aria-label={t("Download {name}", { name: s.name })}
                           onClick={() => void run(() => exportBackup(s.name, password))}
                         >
-                          <Download size={14} /> Download
+                          <Download size={14} /> {t("Download")}
                         </Button>
                       ),
                     },
@@ -446,11 +464,13 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
             </Section>
 
             <Section
-              title="Restore a backup"
-              description="Ether decrypts the download with the backup password, checks its checksums and database, then prepares it in a separate data folder. Nothing changes until you stop Ether and start it from that folder."
+              title={t("Restore a backup")}
+              description={t(
+                "Ether decrypts the download with the backup password, checks its checksums and database, then prepares it in a separate data folder. Nothing changes until you stop Ether and start it from that folder.",
+              )}
             >
               <FilePick
-                label="Choose backup bundle"
+                label={t("Choose backup bundle")}
                 accept=".etherbackup,.tar.gz,.gz"
                 disabled={busy}
                 onFile={(file) =>
@@ -458,15 +478,19 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                     const path = await restoreBackup(file, password);
                     if (path === null) return;
                     setRestored(path);
-                    toast.success("Restore validated and staged");
+                    toast.success(t("Restore validated and staged"));
                   })
                 }
               />
               {restored ? (
                 <Alert variant="success" role="status">
                   <AlertDescription>
-                    Ready to restore. Stop Ether and start it with the data folder{" "}
-                    <code className="break-all">{restored}</code>.
+                    {tx(
+                      "Ready to restore. Stop Ether and start it with the data folder {folder}.",
+                      {
+                        folder: <code className="break-all">{restored}</code>,
+                      },
+                    )}
                   </AlertDescription>
                 </Alert>
               ) : null}
@@ -509,8 +533,9 @@ function ViewerPick({
   return (
     <div className="w-full sm:w-64">
       <SearchSelect
+        {...searchSelectLabels()}
         ariaLabel={label}
-        placeholder={users ? "Choose a viewer" : "Loading viewers…"}
+        placeholder={users ? t("Choose a viewer") : t("Loading viewers…")}
         value={value}
         onChange={onChange}
         options={(users ?? []).map((u) => ({ value: String(u.id), label: u.title || u.username }))}
@@ -534,11 +559,15 @@ function ImportReview({
   return (
     <Section
       id={id}
-      title={plan.imported ? "Imported" : "Review import"}
-      description={`${plan.items.length} watch records · ${plan.lists.length} playlists and collections`}
+      title={plan.imported ? t("Imported") : t("Review import")}
+      description={`${tn(plan.items.length, "{count} watch record", "{count} watch records")} · ${tn(
+        plan.lists.length,
+        "{count} playlist or collection",
+        "{count} playlists and collections",
+      )}`}
       footer={
         <Button size="sm" disabled={busy || plan.imported} onClick={onImport}>
-          {plan.imported ? "Import complete" : "Import reviewed records"}
+          {plan.imported ? t("Import complete") : t("Import reviewed records")}
         </Button>
       }
     >
@@ -553,13 +582,16 @@ function ImportReview({
         <ul className="max-h-64 space-y-0.5 overflow-auto text-sm">
           {plan.items.slice(0, 100).map((it, i) => (
             <li key={i}>
-              {it.title} · {it.views} watches · rating {it.rating || "—"}
-              {it.offsetMs > 0 ? ` · resume at ${Math.floor(it.offsetMs / 60000)} min` : ""}
+              {it.title} · {tn(it.views, "{count} watch", "{count} watches")} ·{" "}
+              {t("rating {rating}", { rating: it.rating || "—" })}
+              {it.offsetMs > 0
+                ? ` · ${t("resume at {minutes} min", { minutes: Math.floor(it.offsetMs / 60000) })}`
+                : ""}
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-fg-muted">Nothing matched.</p>
+        <p className="text-sm text-fg-muted">{t("Nothing matched.")}</p>
       )}
     </Section>
   );
@@ -580,7 +612,7 @@ function useImportPlan(reviewId: string) {
       onImport={() =>
         void run(async () => {
           setPlan(await post<Plan>("/migration/import", { id: plan.id }));
-          toast.success("Import complete");
+          toast.success(t("Import complete"));
         })
       }
     />
@@ -609,8 +641,10 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
   return (
     <>
       <SettingsSection
-        title="Import from Plex"
-        description="Bring one viewer's watch history, ratings and playlists across from another Plex server. That server is only read, and you review everything before it's imported."
+        title={t("Import from Plex")}
+        description={t(
+          "Bring one viewer's watch history, ratings and playlists across from another Plex server. That server is only read, and you review everything before it's imported.",
+        )}
         footer={
           <Button
             size="sm"
@@ -633,23 +667,28 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
               })
             }
           >
-            {busy ? "Working…" : "Preview import"}
+            {busy ? t("Working…") : t("Preview import")}
           </Button>
         }
       >
         <SettingsRow
-          title="Ether viewer"
-          description="Who the history belongs to here. To add friends, share your library with them in Plex first."
+          title={t("Ether viewer")}
+          description={t(
+            "Who the history belongs to here. To add friends, share your library with them in Plex first.",
+          )}
           control={
             <ViewerPick
-              label="Ether viewer"
+              label={t("Ether viewer")}
               users={users}
               value={viewer}
               onChange={edit(setViewer)}
             />
           }
         />
-        <SettingsRow stacked title={<label htmlFor="plex-import-url">Plex server URL</label>}>
+        <SettingsRow
+          stacked
+          title={<label htmlFor="plex-import-url">{t("Plex server URL")}</label>}
+        >
           <Input
             id="plex-import-url"
             type="url"
@@ -660,8 +699,10 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
         </SettingsRow>
         <SettingsRow
           stacked
-          title={<label htmlFor="plex-import-token">Source viewer’s Plex token</label>}
-          description="That viewer's access token on the source server. It's used for the preview and not stored."
+          title={<label htmlFor="plex-import-token">{t("Source viewer’s Plex token")}</label>}
+          description={t(
+            "That viewer's access token on the source server. It's used for the preview and not stored.",
+          )}
         >
           <Input
             id="plex-import-token"
@@ -681,11 +722,11 @@ const CSV_SERVICES = [
   { value: "letterboxd", label: "Letterboxd" },
   { value: "trakt", label: "Trakt" },
 ];
-const CSV_KINDS = [
-  { value: "history", label: "History" },
-  { value: "ratings", label: "Ratings" },
-  { value: "watchlist", label: "Watchlist" },
-];
+const CSV_KINDS = localized(() => [
+  { value: "history", label: t("History") },
+  { value: "ratings", label: t("Ratings") },
+  { value: "watchlist", label: t("Watchlist") },
+]);
 
 function CsvTools({ users }: { users: EtherUser[] | null }) {
   const [viewer, setViewer] = useViewerChoice(users);
@@ -700,8 +741,10 @@ function CsvTools({ users }: { users: EtherUser[] | null }) {
   return (
     <>
       <SettingsSection
-        title="Trakt and Letterboxd files"
-        description="Export or import a diary, ratings or watchlist as CSV. Letterboxd matches need the same title and year."
+        title={t("Trakt and Letterboxd files")}
+        description={t(
+          "Export or import a diary, ratings or watchlist as CSV. Letterboxd matches need the same title and year.",
+        )}
         footer={
           <>
             <Button
@@ -714,10 +757,10 @@ function CsvTools({ users }: { users: EtherUser[] | null }) {
                 )
               }
             >
-              <Download size={14} /> Export CSV
+              <Download size={14} /> {t("Export CSV")}
             </Button>
             <FilePick
-              label="Preview a CSV import"
+              label={t("Preview a CSV import")}
               accept=".csv,text/csv"
               disabled={busy || !viewer}
               onFile={(file) =>
@@ -732,10 +775,10 @@ function CsvTools({ users }: { users: EtherUser[] | null }) {
         }
       >
         <SettingsRow
-          title="Viewer"
+          title={t("Viewer")}
           control={
             <ViewerPick
-              label="CSV viewer"
+              label={t("CSV viewer")}
               users={users}
               value={viewer}
               onChange={edit(setViewer)}
@@ -743,11 +786,12 @@ function CsvTools({ users }: { users: EtherUser[] | null }) {
           }
         />
         <SettingsRow
-          title="Service"
+          title={t("Service")}
           control={
             <div className="w-48">
               <SearchSelect
-                ariaLabel="CSV service"
+                {...searchSelectLabels()}
+                ariaLabel={t("CSV service")}
                 value={format}
                 onChange={edit(setFormat)}
                 options={CSV_SERVICES}
@@ -756,11 +800,12 @@ function CsvTools({ users }: { users: EtherUser[] | null }) {
           }
         />
         <SettingsRow
-          title="Contents"
+          title={t("Contents")}
           control={
             <div className="w-48">
               <SearchSelect
-                ariaLabel="CSV contents"
+                {...searchSelectLabels()}
+                ariaLabel={t("CSV contents")}
                 value={kind}
                 onChange={edit(setKind)}
                 options={CSV_KINDS}

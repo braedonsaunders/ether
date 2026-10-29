@@ -1,4 +1,5 @@
 import { Artwork } from "../../components/Artwork";
+import { t } from "../../i18n";
 import type { TitleCard } from "../../lib/contract";
 import { previewURL, type Overlays } from "./model";
 
@@ -29,8 +30,8 @@ export function PosterCanvas({
           lang,
           nonce,
         )}
-        alt={`${item.title} ${label}`}
-        title="Artwork unavailable. Try another title."
+        alt={t("{title} {label}", { title: item.title, label })}
+        title={t("Artwork unavailable. Try another title.")}
         eager
         className="metadata-poster-image rounded-md"
         imgClassName="object-contain"
@@ -48,13 +49,13 @@ export function PosterCanvas({
       >
         {mode === "compare" ? (
           <>
-            {poster(title, "Original", true)}
-            {poster(title, settings.enabled ? "Your design" : "Overlays off")}
+            {poster(title, t("Original"), true)}
+            {poster(title, settings.enabled ? t("Your design") : t("Overlays off"))}
           </>
         ) : mode === "library" ? (
           library.map((item) => poster(item, item.title))
         ) : (
-          poster(title, settings.enabled ? "Your design" : "Original artwork")
+          poster(title, settings.enabled ? t("Your design") : t("Original artwork"))
         )}
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { t } from "../../i18n";
 import { Button, toast } from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
 import { BellRing } from "lucide-react";
@@ -28,7 +29,9 @@ export function BrowserPush({
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted")
-        throw new Error("Allow notifications in this site’s browser settings, then connect again.");
+        throw new Error(
+          t("Allow notifications in this site’s browser settings, then connect again."),
+        );
       const { publicKey } = await apiFetch<{ publicKey: string }>("/notifications/push/key");
       await navigator.serviceWorker.register("/ether/service-worker.js", { scope: "/ether/" });
       const registration = await navigator.serviceWorker.ready;
@@ -54,16 +57,22 @@ export function BrowserPush({
         ...(previous ?? blankChannel()),
         id,
         kind: "webpush",
-        name: previous?.name || "Browser · " + (navigator.platform || "this device"),
+        name:
+          previous?.name ||
+          (navigator.platform
+            ? t("Browser · {platform}", { platform: navigator.platform })
+            : t("Browser · this device")),
         enabled: true,
         subscription: subscription.toJSON(),
       };
       await apiFetch(`/notifications/${id}`, { method: "PUT", body: JSON.stringify(channel) });
       saved = true;
       setMessage(
-        "This device is connected. Edit its Browser push channel to choose events, or send a test to verify delivery.",
+        t(
+          "This device is connected. Edit its Browser push channel to choose events, or send a test to verify delivery.",
+        ),
       );
-      toast.success("Device connected");
+      toast.success(t("Device connected"));
       await onChanged();
     } catch (e) {
       if (created && !saved) await created.unsubscribe().catch(() => false);
@@ -74,8 +83,8 @@ export function BrowserPush({
   };
   return (
     <Section
-      title="Browser push"
-      description="Receive alerts on this device even when the dashboard is closed."
+      title={t("Browser push")}
+      description={t("Receive alerts on this device even when the dashboard is closed.")}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex max-w-2xl gap-3 text-sm text-fg-muted">
@@ -83,10 +92,16 @@ export function BrowserPush({
           <div className="space-y-2">
             <p>
               {!supported
-                ? "Browser push needs HTTPS (or localhost), a supported browser and notification permission. On iPhone or iPad, install Ether on your Home Screen and open it there."
+                ? t(
+                    "Browser push needs HTTPS (or localhost), a supported browser and notification permission. On iPhone or iPad, install Ether on your Home Screen and open it there.",
+                  )
                 : blocked
-                  ? "Notifications are blocked for this site. Allow them in your browser’s site settings, then reconnect."
-                  : "Connect each phone, tablet or computer separately. Your browser’s push service delivers the alerts; operating-system permissions and Focus settings control how they appear."}
+                  ? t(
+                      "Notifications are blocked for this site. Allow them in your browser’s site settings, then reconnect.",
+                    )
+                  : t(
+                      "Connect each phone, tablet or computer separately. Your browser’s push service delivers the alerts; operating-system permissions and Focus settings control how they appear.",
+                    )}
             </p>
             {message ? (
               <p role="status" className="text-fg">
@@ -96,7 +111,7 @@ export function BrowserPush({
           </div>
         </div>
         <Button disabled={!supported || blocked || busy} onClick={() => void connect()}>
-          {busy ? "Connecting…" : "Connect this device"}
+          {busy ? t("Connecting…") : t("Connect this device")}
         </Button>
       </div>
     </Section>

@@ -9,6 +9,7 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { ListInput, NumberInput, SecretInput } from "../../components/fields";
+import { t } from "../../i18n";
 import { humanizeKey, isPlainObject } from "../../lib/format";
 import { REDACTED } from "../../lib/types";
 
@@ -58,6 +59,8 @@ export type FieldDef =
   | { key: string; label: string; help?: ReactNode; kind: "hidden" };
 
 export interface FieldGroup {
+  /** Stable identity for code that picks groups; titles are translated copy. */
+  id?: string;
   title?: string;
   description?: string;
   fields: FieldDef[];
@@ -168,7 +171,7 @@ export function SchemaField({
             <span className="flex items-center gap-2">
               <NumberInput
                 id={id}
-                aria-label={`${def.label} in ${def.unit}`}
+                aria-label={t("{label} in {unit}", { label: def.label, unit: def.unit })}
                 className="w-28"
                 value={Math.round((Number(value ?? 0) / unit) * 10) / 10}
                 min={0}
@@ -194,6 +197,11 @@ export function SchemaField({
                 options={def.options}
                 ariaLabel={def.label}
                 searchable={def.options.length > 7}
+                placeholder={t("Select…")}
+                searchPlaceholder={t("Search…")}
+                noMatchesLabel={t("No matches")}
+                selectLabel={t("Select")}
+                closeLabel={t("Close")}
               />
             </div>
           }
@@ -254,7 +262,9 @@ export function SchemaField({
           aria-label={def.label}
           aria-invalid={error ? true : undefined}
           value={String(value ?? "")}
-          placeholder={def.placeholder ?? (def.kind === "duration" ? "e.g. 24h or 30m" : undefined)}
+          placeholder={
+            def.placeholder ?? (def.kind === "duration" ? t("e.g. 24h or 30m") : undefined)
+          }
           onChange={(e) => onChange(e.currentTarget.value)}
           className={def.wide ? undefined : "sm:w-72"}
           spellCheck={false}
@@ -305,12 +315,12 @@ export function SchemaGroups({
     <>
       {groups.length + (extra.length ? 1 : 0) > 1 && (
         <SubtabNav
-          ariaLabel="Settings categories"
+          ariaLabel={t("Settings categories")}
           active={active}
           onSelect={setActive}
           tabs={[
-            ...groups.map((g, i) => ({ key: String(i), label: g.title || "General" })),
-            ...(extra.length ? [{ key: "advanced", label: "Advanced" }] : []),
+            ...groups.map((g, i) => ({ key: String(i), label: g.title || t("General") })),
+            ...(extra.length ? [{ key: "advanced", label: t("Advanced") }] : []),
           ]}
         />
       )}
@@ -318,7 +328,7 @@ export function SchemaGroups({
         .filter((_, i) => String(i) === active)
         .map((g) => (
           <SettingsSection
-            key={g.title ?? "general"}
+            key={g.id ?? g.title ?? "general"}
             title={g.title}
             description={g.description}
             footer={footer}
@@ -338,8 +348,8 @@ export function SchemaGroups({
         ))}
       {extra.length && (active === "advanced" || groups.length === 0) ? (
         <SettingsSection
-          title="Advanced"
-          description="Additional options this server supports."
+          title={t("Advanced")}
+          description={t("Additional options this server supports.")}
           footer={footer}
         >
           <GenericFields
@@ -429,7 +439,7 @@ function JsonRow({
     <SettingsRow
       stacked
       title={label}
-      description={error ? <span className="text-danger">{error}</span> : "Edited as JSON."}
+      description={error ? <span className="text-danger">{error}</span> : t("Edited as JSON.")}
     >
       <Textarea
         key={text}

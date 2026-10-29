@@ -1,3 +1,5 @@
+import { localized, t } from "../../i18n";
+
 export type Overlays = {
   enabled: boolean;
   status: boolean;
@@ -25,10 +27,16 @@ export const normalizeOverlays = (s: Partial<Overlays>): Overlays => ({
   accent: s.accent || "#d4a574",
   size: s.size || "medium",
 });
-export const PRESETS: { name: string; description: string; settings: Partial<Overlays> }[] = [
+export const PRESETS: {
+  key: string;
+  name: string;
+  description: string;
+  settings: Partial<Overlays>;
+}[] = localized(() => [
   {
-    name: "Cinema",
-    description: "Glass · scores & details",
+    key: "cinema",
+    name: t("Cinema"),
+    description: t("Glass · scores & details"),
     settings: {
       enabled: true,
       style: "glass",
@@ -42,8 +50,9 @@ export const PRESETS: { name: string; description: string; settings: Partial<Ove
     },
   },
   {
-    name: "Spotlight",
-    description: "Accent · all available facts",
+    key: "spotlight",
+    name: t("Spotlight"),
+    description: t("Accent · all available facts"),
     settings: {
       enabled: true,
       style: "solid",
@@ -57,8 +66,9 @@ export const PRESETS: { name: string; description: string; settings: Partial<Ove
     },
   },
   {
-    name: "Essential",
-    description: "Minimal · ratings only",
+    key: "essential",
+    name: t("Essential"),
+    description: t("Minimal · ratings only"),
     settings: {
       enabled: true,
       style: "minimal",
@@ -71,7 +81,7 @@ export const PRESETS: { name: string; description: string; settings: Partial<Ove
       status: false,
     },
   },
-];
+]);
 export function previewURL(
   settings: Overlays,
   key: string,

@@ -863,3 +863,20 @@ func TestSharedCacheSectionEditsEffectivePolicy(t *testing.T) {
 		t.Fatal("leaving shared storage changed the pool budget")
 	}
 }
+
+func TestSimklSecretRedactionBinding(t *testing.T) {
+	prev := config.Config{Simkl: config.Simkl{ClientID: "app-one", ClientSecret: "simkl-secret"}}
+	redacted := admin.RedactConfig(prev)
+	if redacted.Simkl.ClientSecret != admin.RedactedSecret {
+		t.Fatal("Simkl secret was not redacted")
+	}
+	restored, errs := admin.UnredactConfig(redacted, prev)
+	if len(errs) != 0 || restored.Simkl.ClientSecret != "simkl-secret" {
+		t.Fatalf("restore failed: %+v", errs)
+	}
+	redacted.Simkl.ClientID = "other-app"
+	restored, errs = admin.UnredactConfig(redacted, prev)
+	if len(errs) == 0 || restored.Simkl.ClientSecret != "" {
+		t.Fatal("secret followed changed client ID")
+	}
+}

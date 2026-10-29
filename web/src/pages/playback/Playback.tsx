@@ -1,26 +1,30 @@
 import { Link } from "react-router-dom";
 import { ConfigSection } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
+import { localized, t, tx } from "../../i18n";
 import * as S from "../settings/schema";
 import { DeviceCapabilities } from "./Devices";
 import { HardwareStatus } from "./Hardware";
 import { MarkerCoverage } from "./Markers";
 import { SubtitleTiming } from "./SubtitleTiming";
 
-const TABS = [
-  { key: "transcoding", label: "Transcoding" },
-  { key: "devices", label: "Device capabilities" },
-  { key: "markers", label: "Markers" },
-  { key: "subtitles", label: "Subtitles" },
-] as const;
+const TABS = localized(
+  () =>
+    [
+      { key: "transcoding", label: t("Transcoding") },
+      { key: "devices", label: t("Device capabilities") },
+      { key: "markers", label: t("Markers") },
+      { key: "subtitles", label: t("Subtitles") },
+    ] as const,
+);
 
 /** How a chosen release reaches the screen: transcoding, caching, markers, subtitles. */
 export default function Playback() {
   const tab = useRouteTab(TABS);
   return (
     <DomainPage
-      title="Playback"
-      description="How Ether adapts each stream to the app playing it."
+      title={t("Playback")}
+      description={t("How Ether adapts each stream to the app playing it.")}
       base="/playback"
       tabs={TABS}
       active={tab}
@@ -30,7 +34,7 @@ export default function Playback() {
           configKey="transcode"
           endpoint="transcode"
           groups={S.TRANSCODE}
-          label="Transcoding"
+          label={t("Transcoding")}
           before={() => <HardwareStatus />}
         />
       ) : null}
@@ -40,18 +44,23 @@ export default function Playback() {
           configKey="markers"
           endpoint="markers"
           groups={S.MARKERS}
-          label="Markers"
+          label={t("Markers")}
           after={() => <MarkerCoverage />}
         />
       ) : null}
       {tab === "subtitles" ? (
         <>
           <p className="max-w-3xl text-sm text-fg-muted">
-            Missing subtitles are fetched from OpenSubtitles. The account is set up in{" "}
-            <Link to="/services" className="text-primary underline">
-              Integrations
-            </Link>
-            .
+            {tx(
+              "Missing subtitles are fetched from OpenSubtitles. The account is set up in {link}.",
+              {
+                link: (
+                  <Link to="/services" className="text-primary underline">
+                    {t("Integrations")}
+                  </Link>
+                ),
+              },
+            )}
           </p>
           <SubtitleTiming />
         </>

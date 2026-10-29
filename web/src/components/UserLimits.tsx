@@ -1,11 +1,12 @@
 import { SettingsRow } from "./SettingsRow";
 import { SearchSelect } from "@braedonsaunders/appkit-ui";
 import type { ReactNode } from "react";
+import { localized, t } from "../i18n";
 import type { EtherUser } from "../lib/types";
 import { NumberInput } from "./fields";
 
-export const CONTENT_RATINGS = [
-  { value: "", label: "Unrestricted" },
+export const CONTENT_RATINGS = localized(() => [
+  { value: "", label: t("Unrestricted") },
   { value: "G", label: "G" },
   { value: "PG", label: "PG" },
   { value: "PG-13", label: "PG-13" },
@@ -17,7 +18,7 @@ export const CONTENT_RATINGS = [
   { value: "TV-PG", label: "TV-PG" },
   { value: "TV-14", label: "TV-14" },
   { value: "TV-MA", label: "TV-MA" },
-];
+]);
 
 /** The user-record fields a viewer's limits edit. */
 export type UserLimits = Pick<
@@ -52,17 +53,20 @@ export function UserLimitRows({
   return (
     <>
       <SettingsRow
-        title="Stream limit"
+        title={t("Stream limit")}
         description={
           <>
-            Simultaneous streams. 0 uses the server default
-            {defaultStreamLimit !== undefined ? ` (${defaultStreamLimit})` : ""}.
+            {defaultStreamLimit !== undefined
+              ? t("Simultaneous streams. 0 uses the server default ({limit}).", {
+                  limit: defaultStreamLimit,
+                })
+              : t("Simultaneous streams. 0 uses the server default.")}
             {streamLimitHint ? <> {streamLimitHint}</> : null}
           </>
         }
         control={
           <NumberInput
-            aria-label="Stream limit"
+            aria-label={t("Stream limit")}
             className="w-24"
             value={value.streamLimit}
             min={0}
@@ -71,11 +75,11 @@ export function UserLimitRows({
         }
       />
       <SettingsRow
-        title="Content rating cap"
+        title={t("Content rating cap")}
         description={
           isOwner
-            ? "The owner is never limited by content rating."
-            : "Titles above this rating are hidden from this viewer."
+            ? t("The owner is never limited by content rating.")
+            : t("Titles above this rating are hidden from this viewer.")
         }
         control={
           <div className="w-44">
@@ -83,8 +87,11 @@ export function UserLimitRows({
               value={value.maxContentRating}
               onChange={(v) => onChange({ ...value, maxContentRating: v })}
               options={CONTENT_RATINGS}
-              ariaLabel="Content rating cap"
+              ariaLabel={t("Content rating cap")}
               searchable={false}
+              placeholder={t("Select…")}
+              selectLabel={t("Select")}
+              closeLabel={t("Close")}
             />
           </div>
         }

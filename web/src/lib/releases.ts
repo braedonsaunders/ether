@@ -1,3 +1,4 @@
+import { localized, t } from "../i18n";
 import { apiFetch } from "./api";
 import type { QualityProfile, ResolverTrace } from "./types";
 
@@ -302,7 +303,7 @@ const SOURCES: Record<string, string> = {
 
 /** "4K Remux · HEVC · TrueHD Atmos" from parsed release info. */
 export function qualityLabel(info: ReleaseInfo | undefined): string {
-  if (!info) return "Unknown";
+  if (!info) return t("Unknown");
   const parts = [resolutionLabel(info)];
   if (info.source && SOURCES[info.source]) parts[0] += ` ${SOURCES[info.source]}`;
   if (info.videoCodec) parts.push(info.videoCodec.toUpperCase());
@@ -324,14 +325,14 @@ export function rangeLabel(info: ReleaseInfo | undefined): string {
 /** Whole days since a release was posted, or null when unknown. */
 export function ageDays(pubDate: string | undefined, now: Date = new Date()): number | null {
   if (!pubDate) return null;
-  const t = new Date(pubDate).getTime();
-  if (!Number.isFinite(t) || new Date(pubDate).getUTCFullYear() < 1971) return null;
-  return Math.max(0, Math.floor((now.getTime() - t) / 86400000));
+  const ms = new Date(pubDate).getTime();
+  if (!Number.isFinite(ms) || new Date(pubDate).getUTCFullYear() < 1971) return null;
+  return Math.max(0, Math.floor((now.getTime() - ms) / 86400000));
 }
 
-export const PIN_STATUS_LABEL: Record<Exclude<PinStatus, "">, string> = {
-  healthy: "Playing",
-  unhealthy: "Failing",
-  rejected: "Not playable here",
-  unavailable: "Check failed",
-};
+export const PIN_STATUS_LABEL = localized<Record<Exclude<PinStatus, "">, string>>(() => ({
+  healthy: t("Playing"),
+  unhealthy: t("Failing"),
+  rejected: t("Not playable here"),
+  unavailable: t("Check failed"),
+}));

@@ -4,18 +4,19 @@ import { useState } from "react";
 import { TimeBars } from "../../components/charts";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Segmented } from "../../components/fields";
-import { formatBytes, formatNumber } from "../../lib/format";
+import { localized, t } from "../../i18n";
+import { fixed, formatBytes, formatNumber } from "../../lib/format";
 import type { Bucket, Summary } from "./types";
 
 type Breakdown = "daily" | "hourly" | "platforms" | "titles" | "users";
 
-const BREAKDOWNS: { value: Breakdown; label: string; title: string }[] = [
-  { value: "daily", label: "By day", title: "Plays by day" },
-  { value: "hourly", label: "By hour", title: "Hour of day (UTC)" },
-  { value: "platforms", label: "Devices", title: "Devices" },
-  { value: "titles", label: "Titles", title: "Popular titles" },
-  { value: "users", label: "Viewers", title: "Viewers" },
-];
+const BREAKDOWNS = localized<{ value: Breakdown; label: string; title: string }[]>(() => [
+  { value: "daily", label: t("By day"), title: t("Plays by day") },
+  { value: "hourly", label: t("By hour"), title: t("Hour of day (UTC)") },
+  { value: "platforms", label: t("Devices"), title: t("Devices") },
+  { value: "titles", label: t("Titles"), title: t("Popular titles") },
+  { value: "users", label: t("Viewers"), title: t("Viewers") },
+]);
 
 /** Ranked horizontal bars for categorical breakdowns (devices, titles, viewers). */
 function RankedBars({ items }: { items: Bucket[] }) {
@@ -25,7 +26,7 @@ function RankedBars({ items }: { items: Bucket[] }) {
       {items.slice(0, 31).map((b, i) => (
         <li key={`${b.label}-${i}`} className="space-y-1">
           <div className="flex justify-between gap-4 text-xs">
-            <span className="truncate text-fg">{b.label || "Unknown"}</span>
+            <span className="truncate text-fg">{b.label || t("Unknown")}</span>
             <span className="tabular-nums text-fg-muted">{b.plays}</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-bg-subtle ring-1 ring-inset ring-border-subtle">
@@ -60,24 +61,24 @@ export function ViewingStats({
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <DashboardMetricCard
-          label="Plays"
+          label={t("Plays")}
           value={formatNumber(summary.plays, 0)}
           icon={<PlayCircle size={18} />}
         />
         <DashboardMetricCard
-          label="Hours watched"
-          value={(summary.watchedMs / 3600000).toFixed(1)}
+          label={t("Hours watched")}
+          value={fixed(summary.watchedMs / 3600000, 1)}
           icon={<Clock size={18} />}
           tone="info"
         />
         <DashboardMetricCard
-          label="Completed"
+          label={t("Completed")}
           value={formatNumber(summary.completed, 0)}
           icon={<CheckCircle2 size={18} />}
           tone="success"
         />
         <DashboardMetricCard
-          label="Transferred"
+          label={t("Transferred")}
           value={formatBytes(summary.bytes)}
           icon={<HardDriveDownload size={18} />}
           tone="warning"
@@ -87,7 +88,7 @@ export function ViewingStats({
         title={view.title}
         actions={
           <Segmented
-            ariaLabel="Viewing breakdown"
+            ariaLabel={t("Viewing breakdown")}
             size="sm"
             value={breakdown}
             onChange={setBreakdown}
@@ -97,16 +98,16 @@ export function ViewingStats({
       >
         {!items.length ? (
           <p className="py-6 text-center text-sm text-fg-muted">
-            No recorded plays in this period.
+            {t("No recorded plays in this period.")}
           </p>
         ) : timeline ? (
           <TimeBars
             ariaLabel={view.title}
             data={items.map((b, i) => ({
               key: `${b.label}-${i}`,
-              label: b.label || "Unknown",
+              label: b.label || t("Unknown"),
               value: b.plays,
-              detail: `${(b.watchedMs / 3600000).toFixed(1)} h`,
+              detail: t("{hours} h", { hours: fixed(b.watchedMs / 3600000, 1) }),
             }))}
           />
         ) : (
@@ -114,8 +115,9 @@ export function ViewingStats({
         )}
       </DashboardPanel>
       <p className="text-xs text-fg-muted">
-        Calendar totals use UTC. Watched time leaves out gaps longer than 60 seconds and
-        simultaneous sessions that can't be matched to a device.
+        {t(
+          "Calendar totals use UTC. Watched time leaves out gaps longer than 60 seconds and simultaneous sessions that can't be matched to a device.",
+        )}
       </p>
     </>
   );

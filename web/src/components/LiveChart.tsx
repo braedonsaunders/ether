@@ -1,5 +1,6 @@
 import { cn, useElementSize } from "@braedonsaunders/appkit-ui";
 import { useId, useState, type PointerEvent } from "react";
+import { t } from "../i18n";
 
 export interface LiveSeries {
   key: string;
@@ -21,11 +22,13 @@ function niceMax(v: number): number {
 function ago(iso: string | undefined, now: number): string {
   if (!iso) return "";
   const s = Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
-  if (s < 5) return "now";
-  if (s < 60) return `${s} s ago`;
+  if (s < 5) return t("now");
+  if (s < 60) return t("{seconds} s ago", { seconds: s });
   const m = Math.floor(s / 60);
   const r = s % 60;
-  return r ? `${m} min ${r} s ago` : `${m} min ago`;
+  return r
+    ? t("{minutes} min {seconds} s ago", { minutes: m, seconds: r })
+    : t("{minutes} min ago", { minutes: m });
 }
 
 /**

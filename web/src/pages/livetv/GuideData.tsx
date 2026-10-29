@@ -11,7 +11,8 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Segmented } from "../../components/fields";
 import { errorMessage, isAbort } from "../../lib/api";
-import { formatNumber, plural } from "../../lib/format";
+import { t, tn, tx } from "../../i18n";
+import { formatNumber } from "../../lib/format";
 import { useDebouncedValue } from "../../lib/hooks";
 import { ChannelLogo } from "./ChannelLogo";
 import {
@@ -63,17 +64,17 @@ export function GuideChannelSearch({
           className="pl-8"
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
-          placeholder="Search guide channels by name or id…"
-          aria-label="Search guide channels"
+          placeholder={t("Search guide channels by name or id…")}
+          aria-label={t("Search guide channels")}
         />
       </div>
       {error ? <p className="text-xs text-danger">{error}</p> : null}
       {items && items.length === 0 ? (
         <p className="px-1 py-3 text-center text-xs text-fg-muted">
-          No guide channels match. Add an XMLTV guide source to bring in more listings.
+          {t("No guide channels match. Add an XMLTV guide source to bring in more listings.")}
         </p>
       ) : null}
-      <ul className="max-h-72 space-y-0.5 overflow-y-auto" aria-label="Guide channels">
+      <ul className="max-h-72 space-y-0.5 overflow-y-auto" aria-label={t("Guide channels")}>
         {(items ?? []).map((g) => (
           <li key={`${g.sourceId}/${g.guideId}`}>
             <button
@@ -89,8 +90,12 @@ export function GuideChannelSearch({
                 </span>
               </span>
               <span className="shrink-0 text-right text-[11px] text-fg-subtle">
-                {g.programmes ? plural(g.programmes, "listing") : "No listings"}
-                {g.until ? <span className="block">to {dayClock(g.until)}</span> : null}
+                {g.programmes
+                  ? tn(g.programmes, "{count} listing", "{count} listings")
+                  : t("No listings")}
+                {g.until ? (
+                  <span className="block">{t("to {time}", { time: dayClock(g.until) })}</span>
+                ) : null}
               </span>
             </button>
           </li>
@@ -104,7 +109,7 @@ export function GuideChannelSearch({
 export function MapGuideButton({
   channel,
   onMapped,
-  label = "Map guide",
+  label = t("Map guide"),
   variant = "outline",
 }: {
   channel: Channel;
@@ -123,7 +128,7 @@ export function MapGuideButton({
         <Button
           size="sm"
           variant={variant}
-          aria-label={`Map guide for ${channel.name}`}
+          aria-label={t("Map guide for {channel}", { channel: channel.name })}
           onClick={() => setOpen((o) => !o)}
         >
           <Link2 size={13} /> {label}
@@ -131,8 +136,9 @@ export function MapGuideButton({
       }
     >
       <p className="mb-2 text-xs text-fg-muted">
-        Listings for <strong className="text-fg">{channel.name}</strong> come from the guide channel
-        you pick.
+        {tx("Listings for {channel} come from the guide channel you pick.", {
+          channel: <strong className="text-fg">{channel.name}</strong>,
+        })}
       </p>
       <GuideChannelSearch
         autoFocus
@@ -189,9 +195,11 @@ export function GuideCoverage({
       setProposals(changes);
       setAccepted(new Set(changes.map((c) => c.channelId)));
       if (!changes.length)
-        toast.info("No new matches found", { description: "Try adding another guide source." });
+        toast.info(t("No new matches found"), {
+          description: t("Try adding another guide source."),
+        });
     } catch (e) {
-      toast.error("Couldn't match guide channels", { description: errorMessage(e) });
+      toast.error(t("Couldn't match guide channels"), { description: errorMessage(e) });
     } finally {
       setBusy(false);
     }
@@ -200,11 +208,13 @@ export function GuideCoverage({
     setBusy(true);
     try {
       const r = await tv.match({ channelIds: [...accepted] });
-      toast.success(`${plural(r.matched, "channel")} matched to a guide`);
+      toast.success(
+        tn(r.matched, "{count} channel matched to a guide", "{count} channels matched to a guide"),
+      );
       setProposals(null);
       await onReload();
     } catch (e) {
-      toast.error("Couldn't apply matches", { description: errorMessage(e) });
+      toast.error(t("Couldn't apply matches"), { description: errorMessage(e) });
     } finally {
       setBusy(false);
     }
@@ -220,28 +230,31 @@ export function GuideCoverage({
         <div className="relative flex flex-wrap items-center gap-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-              Guide data
+              {t("Guide data")}
             </p>
             <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums text-fg">
               {coverage === null ? "—" : `${Math.round(pct * 100)}%`}
               <span className="ml-2 text-sm font-normal text-fg-muted">
-                of live IPTV channels have listings
+                {t("of live IPTV channels have listings")}
               </span>
             </p>
             <p className="mt-1 text-sm text-fg-muted">
               {coverage === null
-                ? "Checking which channels have listings…"
+                ? t("Checking which channels have listings…")
                 : missing.length
-                  ? `${formatNumber(missing.length)} of ${formatNumber(live.length)} need a guide. Virtual channels build their own.`
-                  : `Every live channel has listings. Virtual channels build their own.`}
+                  ? t("{missing} of {total} need a guide. Virtual channels build their own.", {
+                      missing: formatNumber(missing.length),
+                      total: formatNumber(live.length),
+                    })
+                  : t("Every live channel has listings. Virtual channels build their own.")}
             </p>
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
             <Button variant="outline" onClick={onAddGuideSource}>
-              <CalendarPlus size={14} /> Add guide source
+              <CalendarPlus size={14} /> {t("Add guide source")}
             </Button>
             <Button onClick={() => void propose()} disabled={busy || coverage === null}>
-              <Wand2 size={14} /> Auto-match
+              <Wand2 size={14} /> {t("Auto-match")}
             </Button>
           </div>
         </div>
@@ -258,23 +271,23 @@ export function GuideCoverage({
 
       {proposals && proposals.length ? (
         <section
-          aria-label="Suggested matches"
+          aria-label={t("Suggested matches")}
           className="space-y-3 rounded-2xl border border-primary/30 bg-primary-subtle/40 p-4"
         >
           <div className="flex flex-wrap items-center gap-2">
             <Wand2 size={15} className="text-primary" />
             <h2 className="text-sm font-semibold text-fg">
-              {plural(proposals.length, "suggested match", "suggested matches")}
+              {tn(proposals.length, "{count} suggested match", "{count} suggested matches")}
             </h2>
             <span className="text-xs text-fg-muted">
-              Matched by guide id, then by channel name.
+              {t("Matched by guide id, then by channel name.")}
             </span>
             <div className="ml-auto flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => setProposals(null)}>
-                Dismiss
+                {t("Dismiss")}
               </Button>
               <Button size="sm" disabled={busy || accepted.size === 0} onClick={() => void apply()}>
-                <CheckCircle2 size={13} /> Apply {accepted.size}
+                <CheckCircle2 size={13} /> {t("Apply {count}", { count: accepted.size })}
               </Button>
             </div>
           </div>
@@ -296,7 +309,9 @@ export function GuideCoverage({
                           return n;
                         })
                       }
-                      aria-label={`Accept match for ${c?.name ?? p.channelId}`}
+                      aria-label={t("Accept match for {channel}", {
+                        channel: c?.name ?? p.channelId,
+                      })}
                     />
                     <span className="min-w-0 flex-1 truncate text-fg">
                       {c?.name ?? p.channelName ?? p.channelId}
@@ -306,7 +321,7 @@ export function GuideCoverage({
                       {p.guideName}{" "}
                       <span className="text-fg-subtle">
                         · {p.guideSourceName || sourceName(p.guideSourceId)}
-                        {p.method === "name" ? " · by name" : ""}
+                        {p.method === "name" ? ` · ${t("by name")}` : ""}
                       </span>
                     </span>
                   </label>
@@ -317,11 +332,11 @@ export function GuideCoverage({
         </section>
       ) : null}
 
-      <section aria-label="Channel guide mapping" className="space-y-3">
+      <section aria-label={t("Channel guide mapping")} className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-sm font-semibold text-fg">Channel mapping</h2>
+          <h2 className="text-sm font-semibold text-fg">{t("Channel mapping")}</h2>
           <Segmented
-            ariaLabel="Show channels"
+            ariaLabel={t("Show channels")}
             size="sm"
             value={show}
             onChange={(v) => {
@@ -329,8 +344,8 @@ export function GuideCoverage({
               setLimit(80);
             }}
             options={[
-              { value: "missing", label: `Missing (${missing.length})` },
-              { value: "all", label: `All IPTV (${iptv.length})` },
+              { value: "missing", label: t("Missing ({count})", { count: missing.length }) },
+              { value: "all", label: t("All IPTV ({count})", { count: iptv.length }) },
             ]}
           />
         </div>
@@ -338,12 +353,12 @@ export function GuideCoverage({
           <div className="rounded-xl border border-dashed border-border p-8 text-center">
             <CheckCircle2 className="mx-auto text-success" size={26} />
             <p className="mt-2 text-sm font-medium text-fg">
-              {iptv.length ? "Nothing missing" : "No IPTV channels yet"}
+              {iptv.length ? t("Nothing missing") : t("No IPTV channels yet")}
             </p>
             <p className="text-xs text-fg-muted">
               {iptv.length
-                ? "Every live channel is getting listings."
-                : "Add an M3U source to bring in IPTV channels."}
+                ? t("Every live channel is getting listings.")
+                : t("Add an M3U source to bring in IPTV channels.")}
             </p>
           </div>
         ) : (
@@ -367,7 +382,7 @@ export function GuideCoverage({
                       </span>
                       <span className="block truncate text-[11px] text-fg-muted">
                         {sourceName(c.sourceId)}
-                        {!c.enabled ? " · disabled" : ""}
+                        {!c.enabled ? ` · ${t("disabled")}` : ""}
                       </span>
                     </span>
                   </button>
@@ -385,21 +400,21 @@ export function GuideCoverage({
                         </span>
                       </>
                     ) : (
-                      <span className="text-xs text-fg-subtle">Not mapped</span>
+                      <span className="text-xs text-fg-subtle">{t("Not mapped")}</span>
                     )}
                   </span>
                   <span className="w-28 shrink-0 text-right text-[11px] text-fg-muted">
                     {ok ? (
                       <Badge variant="success">
-                        {cov?.until ? `to ${dayClock(cov.until)}` : "Listed"}
+                        {cov?.until ? t("to {time}", { time: dayClock(cov.until) }) : t("Listed")}
                       </Badge>
                     ) : (
-                      <Badge variant="warning">No listings</Badge>
+                      <Badge variant="warning">{t("No listings")}</Badge>
                     )}
                   </span>
                   <MapGuideButton
                     channel={c}
-                    label={c.guideId ? "Change" : "Map"}
+                    label={c.guideId ? t("Change") : t("Map")}
                     variant={ok ? "ghost" : "outline"}
                     onMapped={onSaveChannel}
                   />
@@ -414,7 +429,9 @@ export function GuideCoverage({
                   className="w-full"
                   onClick={() => setLimit((l) => l + 200)}
                 >
-                  Show {formatNumber(Math.min(200, rows.length - limit))} more
+                  {t("Show {count} more", {
+                    count: formatNumber(Math.min(200, rows.length - limit)),
+                  })}
                 </Button>
               </li>
             ) : null}

@@ -12,6 +12,7 @@ import type {
   StevenLuList,
   TmdbListName,
 } from "./contract";
+import { localized, t, tn } from "../i18n";
 
 /**
  * Rule value encoding (the contract leaves `value` typed by field):
@@ -28,7 +29,8 @@ export type ValueKind = "facet" | "lookup" | "number" | "date" | "bool";
 export interface FieldMeta {
   field: RuleField;
   label: string;
-  group: "Content" | "People & companies" | "Numbers" | "Dates" | "Viewer";
+  /** Display heading for the field's group in pickers. */
+  group: string;
   kind: ValueKind;
   ops: RuleOp[];
   defaultOp: RuleOp;
@@ -39,139 +41,141 @@ export interface FieldMeta {
   max?: number;
   step?: number;
   hint: string;
+  /** Description of a `false` boolean rule, e.g. "Not watched by the viewer". */
+  negated?: string;
 }
 
 const SET_OPS: RuleOp[] = ["in", "notIn"];
 const NUM_OPS: RuleOp[] = ["gte", "lte", "between", "is"];
 const DATE_OPS: RuleOp[] = ["within", "gte", "lte", "between"];
 
-export const FIELDS: FieldMeta[] = [
+export const FIELDS = localized<FieldMeta[]>(() => [
   {
     field: "genre",
-    label: "Genre",
-    group: "Content",
+    label: t("Genre"),
+    group: t("Content"),
     kind: "facet",
     facet: "genre",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "TMDB genres",
+    hint: t("TMDB genres"),
   },
   {
     field: "keyword",
-    label: "Keyword",
-    group: "Content",
+    label: t("Keyword"),
+    group: t("Content"),
     kind: "lookup",
     lookup: "keyword",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Themes like “time travel” or “heist”",
+    hint: t("Themes like “time travel” or “heist”"),
   },
   {
     field: "decade",
-    label: "Decade",
-    group: "Content",
+    label: t("Decade"),
+    group: t("Content"),
     kind: "facet",
     facet: "decade",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Release decade",
+    hint: t("Release decade"),
   },
   {
     field: "contentRating",
-    label: "Content rating",
-    group: "Content",
+    label: t("Content rating"),
+    group: t("Content"),
     kind: "facet",
     facet: "contentRating",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Certification such as PG-13 or TV-MA",
+    hint: t("Certification such as PG-13 or TV-MA"),
   },
   {
     field: "country",
-    label: "Country",
-    group: "Content",
+    label: t("Country"),
+    group: t("Content"),
     kind: "facet",
     facet: "country",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Production country",
+    hint: t("Production country"),
   },
   {
     field: "language",
-    label: "Original language",
-    group: "Content",
+    label: t("Original language"),
+    group: t("Content"),
     kind: "facet",
     facet: "language",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Original spoken language",
+    hint: t("Original spoken language"),
   },
   {
     field: "collection",
-    label: "TMDB collection",
-    group: "Content",
+    label: t("TMDB collection"),
+    group: t("Content"),
     kind: "lookup",
     lookup: "collection",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Franchise collections such as “Alien”",
+    hint: t("Franchise collections such as “Alien”"),
   },
   {
     field: "watchProvider",
-    label: "Streaming on",
-    group: "Content",
+    label: t("Streaming on"),
+    group: t("Content"),
     kind: "lookup",
     lookup: "watchProvider",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Where the title streams in your region",
+    hint: t("Where the title streams in your region"),
   },
   {
     field: "person",
-    label: "Person",
-    group: "People & companies",
+    label: t("Person"),
+    group: t("People & companies"),
     kind: "lookup",
     lookup: "person",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Cast or crew",
+    hint: t("Cast or crew"),
   },
   {
     field: "studio",
-    label: "Studio",
-    group: "People & companies",
+    label: t("Studio"),
+    group: t("People & companies"),
     kind: "lookup",
     lookup: "company",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Production company",
+    hint: t("Production company"),
   },
   {
     field: "network",
-    label: "Network",
-    group: "People & companies",
+    label: t("Network"),
+    group: t("People & companies"),
     kind: "lookup",
     lookup: "network",
     ops: SET_OPS,
     defaultOp: "in",
-    hint: "Original TV network",
+    hint: t("Original TV network"),
   },
   {
     field: "year",
-    label: "Year",
-    group: "Numbers",
+    label: t("Year"),
+    group: t("Numbers"),
     kind: "number",
     ops: NUM_OPS,
     defaultOp: "gte",
     min: 1890,
     max: 2100,
     step: 1,
-    hint: "Release year",
+    hint: t("Release year"),
   },
   {
     field: "rating",
-    label: "Rating",
-    group: "Numbers",
+    label: t("Rating"),
+    group: t("Numbers"),
     kind: "number",
     ops: NUM_OPS,
     defaultOp: "gte",
@@ -179,115 +183,119 @@ export const FIELDS: FieldMeta[] = [
     max: 10,
     step: 0.1,
     unit: "/ 10",
-    hint: "TMDB vote average",
+    hint: t("TMDB vote average"),
   },
   {
     field: "votes",
-    label: "Votes",
-    group: "Numbers",
+    label: t("Votes"),
+    group: t("Numbers"),
     kind: "number",
     ops: NUM_OPS,
     defaultOp: "gte",
     min: 0,
     step: 50,
-    hint: "Number of TMDB votes",
+    hint: t("Number of TMDB votes"),
   },
   {
     field: "popularity",
-    label: "Popularity",
-    group: "Numbers",
+    label: t("Popularity"),
+    group: t("Numbers"),
     kind: "number",
     ops: NUM_OPS,
     defaultOp: "gte",
     min: 0,
     step: 1,
-    hint: "TMDB popularity score",
+    hint: t("TMDB popularity score"),
   },
   {
     field: "runtime",
-    label: "Runtime",
-    group: "Numbers",
+    label: t("Runtime"),
+    group: t("Numbers"),
     kind: "number",
     ops: NUM_OPS,
     defaultOp: "lte",
     min: 0,
     max: 600,
     step: 5,
-    unit: "min",
-    hint: "Minutes (episode length for shows)",
+    unit: t("min"),
+    hint: t("Minutes (episode length for shows)"),
   },
   {
     field: "released",
-    label: "Released",
-    group: "Dates",
+    label: t("Released"),
+    group: t("Dates"),
     kind: "date",
     ops: DATE_OPS,
     defaultOp: "within",
-    hint: "First release or air date",
+    hint: t("First release or air date"),
   },
   {
     field: "addedAt",
-    label: "Added to Ether",
-    group: "Dates",
+    label: t("Added to Ether"),
+    group: t("Dates"),
     kind: "date",
     ops: DATE_OPS,
     defaultOp: "within",
-    hint: "When the title entered your catalogue",
+    hint: t("When the title entered your catalogue"),
   },
   {
     field: "watched",
-    label: "Watched by the viewer",
-    group: "Viewer",
+    label: t("Watched by the viewer"),
+    group: t("Viewer"),
     kind: "bool",
     ops: ["is"],
     defaultOp: "is",
-    hint: "Evaluated per viewer",
+    hint: t("Evaluated per viewer"),
+    negated: t("Not watched by the viewer"),
   },
   {
     field: "inProgress",
-    label: "In progress for the viewer",
-    group: "Viewer",
+    label: t("In progress for the viewer"),
+    group: t("Viewer"),
     kind: "bool",
     ops: ["is"],
     defaultOp: "is",
-    hint: "Started but not finished",
+    hint: t("Started but not finished"),
+    negated: t("Not in progress for the viewer"),
   },
-];
+]);
 
-export const FIELD_BY_NAME = Object.fromEntries(FIELDS.map((f) => [f.field, f])) as Record<
-  RuleField,
-  FieldMeta
->;
+export const FIELD_BY_NAME: Record<RuleField, FieldMeta> = localized(
+  () => Object.fromEntries(FIELDS.map((f) => [f.field, f])) as Record<RuleField, FieldMeta>,
+);
 
 export function fieldMeta(field: string): FieldMeta | undefined {
   return (FIELD_BY_NAME as Record<string, FieldMeta | undefined>)[field];
 }
 
-export const OP_LABELS: Record<RuleOp, string> = {
-  is: "is",
-  isNot: "is not",
-  in: "is any of",
-  notIn: "is none of",
-  gte: "is at least",
-  lte: "is at most",
-  between: "is between",
-  within: "in the last",
-};
+export const OP_LABELS = localized<Record<RuleOp, string>>(() => ({
+  is: t("is"),
+  isNot: t("is not"),
+  in: t("is any of"),
+  notIn: t("is none of"),
+  gte: t("is at least"),
+  lte: t("is at most"),
+  between: t("is between"),
+  within: t("in the last"),
+}));
 
 export function opLabel(op: RuleOp, kind?: ValueKind): string {
   if (kind === "date") {
-    if (op === "gte") return "on or after";
-    if (op === "lte") return "on or before";
+    if (op === "gte") return t("on or after");
+    if (op === "lte") return t("on or before");
   }
   return OP_LABELS[op];
 }
 
-export const WITHIN_UNITS = [
-  { value: "d", label: "days" },
-  { value: "w", label: "weeks" },
-  { value: "m", label: "months" },
-  { value: "y", label: "years" },
-] as const;
+export const WITHIN_UNITS = localized(
+  () =>
+    [
+      { value: "d", label: t("days") },
+      { value: "w", label: t("weeks") },
+      { value: "m", label: t("months") },
+      { value: "y", label: t("years") },
+    ] as const,
+);
 
 export function parseWithin(v: unknown): { n: number; unit: string } {
   const m = typeof v === "string" ? /^(\d+)\s*([dwmy])$/.exec(v.trim()) : null;
@@ -296,8 +304,10 @@ export function parseWithin(v: unknown): { n: number; unit: string } {
 
 export function formatWithin(v: unknown): string {
   const { n, unit } = parseWithin(v);
-  const label = WITHIN_UNITS.find((u) => u.value === unit)?.label ?? "days";
-  return `${n} ${n === 1 ? label.slice(0, -1) : label}`;
+  if (unit === "w") return tn(n, "{count} week", "{count} weeks");
+  if (unit === "m") return tn(n, "{count} month", "{count} months");
+  if (unit === "y") return tn(n, "{count} year", "{count} years");
+  return tn(n, "{count} day", "{count} days");
 }
 
 function today(): string {
@@ -386,7 +396,9 @@ function listText(rule: Rule, values: unknown[]): string {
   const labels = rule.label ? rule.label.split(", ").filter(Boolean) : [];
   const shown = labels.length === values.length ? labels : values.map(String);
   if (shown.length <= 3) return shown.join(", ");
-  return `${shown.slice(0, 2).join(", ")} and ${shown.length - 2} more`;
+  return tn(shown.length - 2, "{names} and {count} more", "{names} and {count} more", {
+    names: shown.slice(0, 2).join(", "),
+  });
 }
 
 /** One-line human description, e.g. "Genre is any of Horror, Thriller". */
@@ -395,14 +407,50 @@ export function describeRule(rule: Rule): string {
   const label = meta?.label ?? rule.field;
   const v = rule.value;
   if (meta?.kind === "bool")
-    return `${v === false ? "Not " + label.charAt(0).toLowerCase() + label.slice(1) : label}`;
-  const op = opLabel(rule.op, meta?.kind);
-  if (rule.op === "within") return `${label} in the last ${formatWithin(v)}`;
+    return v === false
+      ? (meta.negated ??
+          t("Not {field}", { field: label.charAt(0).toLowerCase() + label.slice(1) }))
+      : label;
+  // Ratings read "7 / 10" in the editor but bare in the summary.
+  const unit = meta?.unit && meta.field !== "rating" ? ` ${meta.unit}` : "";
+  if (rule.op === "within")
+    return t("{field} in the last {window}", { field: label, window: formatWithin(v) });
   if (rule.op === "between" && Array.isArray(v))
-    return `${label} between ${String(v[0])} and ${String(v[1])}${meta?.unit && meta.unit !== "/ 10" ? ` ${meta.unit}` : ""}`;
-  if (Array.isArray(v)) return `${label} ${op} ${listText(rule, v) || "…"}`;
+    return t("{field} between {min} and {max}", {
+      field: label,
+      min: String(v[0]),
+      max: `${String(v[1])}${unit}`,
+    });
+  if (Array.isArray(v)) return opPhrase(rule.op, meta?.kind, label, listText(rule, v) || "…");
   const text = rule.label || (v === "" || v === undefined || v === null ? "…" : String(v));
-  return `${label} ${op} ${text}${meta?.unit && meta.unit !== "/ 10" && typeof v === "number" ? ` ${meta.unit}` : ""}`;
+  return opPhrase(rule.op, meta?.kind, label, `${text}${typeof v === "number" ? unit : ""}`);
+}
+
+/** "{field} {operator} {value}" as one translatable phrase per operator. */
+function opPhrase(op: RuleOp, kind: ValueKind | undefined, field: string, value: string): string {
+  const values = { field, value };
+  switch (op) {
+    case "is":
+      return t("{field} is {value}", values);
+    case "isNot":
+      return t("{field} is not {value}", values);
+    case "in":
+      return t("{field} is any of {value}", values);
+    case "notIn":
+      return t("{field} is none of {value}", values);
+    case "gte":
+      return kind === "date"
+        ? t("{field} on or after {value}", values)
+        : t("{field} is at least {value}", values);
+    case "lte":
+      return kind === "date"
+        ? t("{field} on or before {value}", values)
+        : t("{field} is at most {value}", values);
+    case "between":
+      return t("{field} is between {value}", values);
+    case "within":
+      return t("{field} in the last {value}", values);
+  }
 }
 
 // ---- Sources -------------------------------------------------------------------
@@ -414,87 +462,97 @@ export interface SourceMeta {
   lookup?: LookupKind;
 }
 
-export const SOURCE_KINDS: SourceMeta[] = [
-  { kind: "catalog", label: "Whole catalogue", description: "Everything browsable in Ether" },
+export const SOURCE_KINDS = localized<SourceMeta[]>(() => [
+  { kind: "catalog", label: t("Whole catalogue"), description: t("Everything browsable in Ether") },
   {
     kind: "tmdbList",
-    label: "TMDB chart",
-    description: "Trending, popular, top rated, now playing…",
+    label: t("TMDB chart"),
+    description: t("Trending, popular, top rated, now playing…"),
   },
   {
     kind: "titles",
-    label: "Hand-picked titles",
-    description: "Choose titles one by one, in your order",
+    label: t("Hand-picked titles"),
+    description: t("Choose titles one by one, in your order"),
   },
   {
     kind: "tmdbPerson",
-    label: "Person's filmography",
-    description: "Everything an actor or director made",
+    label: t("Person's filmography"),
+    description: t("Everything an actor or director made"),
     lookup: "person",
   },
   {
     kind: "tmdbCollection",
-    label: "TMDB collection",
-    description: "A franchise such as “The Lord of the Rings”",
+    label: t("TMDB collection"),
+    description: t("A franchise such as “The Lord of the Rings”"),
     lookup: "collection",
   },
   {
     kind: "tmdbKeyword",
-    label: "Keyword",
-    description: "Titles tagged with a TMDB keyword",
+    label: t("Keyword"),
+    description: t("Titles tagged with a TMDB keyword"),
     lookup: "keyword",
   },
   {
     kind: "tmdbCompany",
-    label: "Studio",
-    description: "Titles from a production company",
+    label: t("Studio"),
+    description: t("Titles from a production company"),
     lookup: "company",
   },
   {
     kind: "tmdbNetwork",
-    label: "TV network",
-    description: "Shows from a network such as HBO",
+    label: t("TV network"),
+    description: t("Shows from a network such as HBO"),
     lookup: "network",
   },
   {
     kind: "watchProvider",
-    label: "Streaming service",
-    description: "What's on a service in your region",
+    label: t("Streaming service"),
+    description: t("What's on a service in your region"),
     lookup: "watchProvider",
   },
   {
     kind: "tmdbDiscover",
-    label: "TMDB discover query",
-    description: "Raw TMDB discover parameters",
+    label: t("TMDB discover query"),
+    description: t("Raw TMDB discover parameters"),
   },
-  { kind: "traktList", label: "Trakt list", description: "A public Trakt list URL" },
-  { kind: "letterboxdList", label: "Letterboxd list", description: "A public Letterboxd list URL" },
-  { kind: "mdblist", label: "MDBList", description: "A public MDBList URL" },
-  { kind: "anilistList", label: "AniList list", description: "A public AniList anime list URL" },
+  { kind: "traktList", label: t("Trakt list"), description: t("A public Trakt list URL") },
+  {
+    kind: "letterboxdList",
+    label: t("Letterboxd list"),
+    description: t("A public Letterboxd list URL"),
+  },
+  { kind: "mdblist", label: t("MDBList"), description: t("A public MDBList URL") },
+  {
+    kind: "anilistList",
+    label: t("AniList list"),
+    description: t("A public AniList anime list URL"),
+  },
   {
     kind: "stevenlu",
-    label: "StevenLu popular movies",
-    description: "Movies people are talking about",
+    label: t("StevenLu popular movies"),
+    description: t("Movies people are talking about"),
   },
-];
+]);
 
 export function sourceMeta(kind: string): SourceMeta | undefined {
   return SOURCE_KINDS.find((s) => s.kind === kind);
 }
 
-export const TMDB_LISTS: { value: TmdbListName; label: string; media: ("movie" | "show")[] }[] = [
-  { value: "trending_day", label: "Trending today", media: ["movie", "show"] },
-  { value: "trending_week", label: "Trending this week", media: ["movie", "show"] },
-  { value: "popular", label: "Popular", media: ["movie", "show"] },
-  { value: "top_rated", label: "Top rated", media: ["movie", "show"] },
-  { value: "now_playing", label: "Now in cinemas", media: ["movie"] },
-  { value: "upcoming", label: "Upcoming", media: ["movie"] },
-  { value: "airing_today", label: "Airing today", media: ["show"] },
-  { value: "on_the_air", label: "On the air", media: ["show"] },
-];
+export const TMDB_LISTS = localized<
+  { value: TmdbListName; label: string; media: ("movie" | "show")[] }[]
+>(() => [
+  { value: "trending_day", label: t("Trending today"), media: ["movie", "show"] },
+  { value: "trending_week", label: t("Trending this week"), media: ["movie", "show"] },
+  { value: "popular", label: t("Popular"), media: ["movie", "show"] },
+  { value: "top_rated", label: t("Top rated"), media: ["movie", "show"] },
+  { value: "now_playing", label: t("Now in cinemas"), media: ["movie"] },
+  { value: "upcoming", label: t("Upcoming"), media: ["movie"] },
+  { value: "airing_today", label: t("Airing today"), media: ["show"] },
+  { value: "on_the_air", label: t("On the air"), media: ["show"] },
+]);
 
-export const STEVENLU_LISTS: { value: StevenLuList; label: string }[] = [
-  { value: "movies", label: "All popular movies" },
+export const STEVENLU_LISTS = localized<{ value: StevenLuList; label: string }[]>(() => [
+  { value: "movies", label: t("All popular movies") },
   { value: "movies-imdb-min7", label: "IMDb 7+" },
   { value: "movies-imdb-min8", label: "IMDb 8+" },
   { value: "movies-metacritic-min50", label: "Metacritic 50+" },
@@ -503,7 +561,7 @@ export const STEVENLU_LISTS: { value: StevenLuList; label: string }[] = [
   { value: "movies-metacritic-min80", label: "Metacritic 80+" },
   { value: "movies-rottentomatoes-min70", label: "Rotten Tomatoes 70+" },
   { value: "movies-rottentomatoes-min80", label: "Rotten Tomatoes 80+" },
-];
+]);
 
 export function newSource(
   kind: SourceKind,
@@ -564,61 +622,85 @@ export function isSourceComplete(s: Source): boolean {
 export function describeSource(s: Source): string {
   switch (s.kind) {
     case "catalog":
-      return "Whole catalogue";
-    case "tmdbList":
-      return `${TMDB_LISTS.find((l) => l.value === s.list)?.label ?? s.list} (${s.mediaType === "show" ? "TV" : "movies"})`;
+      return t("Whole catalogue");
+    case "tmdbList": {
+      const list = TMDB_LISTS.find((l) => l.value === s.list)?.label ?? s.list;
+      return s.mediaType === "show" ? t("{list} (TV)", { list }) : t("{list} (movies)", { list });
+    }
     case "titles":
-      return `${s.keys.length} hand-picked ${s.keys.length === 1 ? "title" : "titles"}`;
+      return tn(s.keys.length, "{count} hand-picked title", "{count} hand-picked titles");
     case "tmdbDiscover":
-      return `Discover: ${
-        Object.entries(s.params)
-          .map(([k, v]) => `${k}=${v}`)
-          .join("&") || "no parameters"
-      }`;
+      return t("Discover: {params}", {
+        params:
+          Object.entries(s.params)
+            .map(([k, v]) => `${k}=${v}`)
+            .join("&") || t("no parameters"),
+      });
     case "traktList":
     case "letterboxdList":
     case "mdblist":
     case "anilistList":
-      return `${sourceMeta(s.kind)?.label}: ${s.url || "no URL"}`;
+      return t("{source}: {detail}", {
+        source: String(sourceMeta(s.kind)?.label),
+        detail: s.url || t("no URL"),
+      });
     case "stevenlu":
-      return `StevenLu: ${STEVENLU_LISTS.find((l) => l.value === s.list)?.label ?? s.list}`;
-    case "watchProvider":
-      return `${s.label || "Streaming service"}${s.region ? ` (${s.region})` : " (default region)"}`;
+      return t("StevenLu: {list}", {
+        list: STEVENLU_LISTS.find((l) => l.value === s.list)?.label ?? s.list,
+      });
+    case "watchProvider": {
+      const service = s.label || t("Streaming service");
+      return s.region
+        ? t("{service} ({region})", { service, region: s.region })
+        : t("{service} (default region)", { service });
+    }
     default:
-      return `${sourceMeta(s.kind)?.label}: ${s.label || (s.id ? `#${s.id}` : "not chosen")}`;
+      return t("{source}: {detail}", {
+        source: String(sourceMeta(s.kind)?.label),
+        detail: s.label || (s.id ? `#${s.id}` : t("not chosen")),
+      });
   }
 }
 
 // ---- Sort, schedule ---------------------------------------------------------------
 
-export const SORTS: { value: CollectionSort; label: string; hint: string }[] = [
-  { value: "popularity", label: "Popularity", hint: "Most popular on TMDB right now" },
-  { value: "rating", label: "Rating", hint: "TMDB vote average" },
-  { value: "released", label: "Release date", hint: "Newest or oldest first" },
+export const SORTS = localized<{ value: CollectionSort; label: string; hint: string }[]>(() => [
+  { value: "popularity", label: t("Popularity"), hint: t("Most popular on TMDB right now") },
+  { value: "rating", label: t("Rating"), hint: t("TMDB vote average") },
+  { value: "released", label: t("Release date"), hint: t("Newest or oldest first") },
   {
     value: "latestEpisode",
-    label: "Latest aired episode",
-    hint: "Latest regular episode from available metadata; unknown dates last",
+    label: t("Latest aired episode"),
+    hint: t("Latest regular episode from available metadata; unknown dates last"),
   },
   {
     value: "latestSeasonPremiere",
-    label: "Latest season premiere",
-    hint: "Premiere of the latest aired regular season; unknown dates last",
+    label: t("Latest season premiere"),
+    hint: t("Premiere of the latest aired regular season; unknown dates last"),
   },
-  { value: "added", label: "Date added", hint: "When titles entered Ether" },
-  { value: "title", label: "Title", hint: "Alphabetical" },
-  { value: "personal", label: "Personal fit", hint: "Ordered for each viewer by their taste" },
-  { value: "random", label: "Shuffle", hint: "A fresh order on every refresh" },
-  { value: "source", label: "Source order", hint: "Keep the order of the list or your picks" },
-];
+  { value: "added", label: t("Date added"), hint: t("When titles entered Ether") },
+  { value: "title", label: t("Title"), hint: t("Alphabetical") },
+  {
+    value: "personal",
+    label: t("Personal fit"),
+    hint: t("Ordered for each viewer by their taste"),
+  },
+  { value: "random", label: t("Shuffle"), hint: t("A fresh order on every refresh") },
+  {
+    value: "source",
+    label: t("Source order"),
+    hint: t("Keep the order of the list or your picks"),
+  },
+]);
 
-export const REFRESH_OPTIONS: { value: CollectionSpec["refresh"]; label: string; hint: string }[] =
-  [
-    { value: "live", label: "Live", hint: "Evaluated whenever Plex asks" },
-    { value: "hourly", label: "Hourly", hint: "Rebuilt every hour" },
-    { value: "daily", label: "Daily", hint: "Rebuilt overnight" },
-    { value: "weekly", label: "Weekly", hint: "Rebuilt once a week" },
-  ];
+export const REFRESH_OPTIONS = localized<
+  { value: CollectionSpec["refresh"]; label: string; hint: string }[]
+>(() => [
+  { value: "live", label: t("Live"), hint: t("Evaluated whenever Plex asks") },
+  { value: "hourly", label: t("Hourly"), hint: t("Rebuilt every hour") },
+  { value: "daily", label: t("Daily"), hint: t("Rebuilt overnight") },
+  { value: "weekly", label: t("Weekly"), hint: t("Rebuilt once a week") },
+]);
 
 export function blankSpec(mediaType: CollectionSpec["mediaType"] = "movie"): CollectionSpec {
   return {
@@ -677,41 +759,49 @@ export function specProblems(spec: CollectionSpec): string[] {
   if (spec.releaseMode === "upcoming" || spec.releaseMode === "mixed") {
     if (!spec.targets.collectionsTab || spec.targets.homeRow || spec.targets.sectionRow)
       out.push(
-        "Upcoming collections require the Collections tab and cannot use Home or library rows.",
+        t("Upcoming collections require the Collections tab and cannot use Home or library rows."),
       );
     if (spec.localOnly || spec.sources.length !== 1 || spec.sources[0]?.kind !== "catalog")
-      out.push("Upcoming titles require the whole catalogue source and remote TMDB discovery.");
+      out.push(t("Upcoming titles require the whole catalogue source and remote TMDB discovery."));
     if (
       !Number.isInteger(spec.lookaheadDays) ||
       (spec.lookaheadDays ?? 0) < 1 ||
       (spec.lookaheadDays ?? 0) > 366
     )
-      out.push("Look ahead must be between 1 and 366 days.");
+      out.push(t("Look ahead must be between 1 and 366 days."));
   }
-  if (!spec.name.trim()) out.push("Give the collection a name.");
-  if (spec.sources.length === 0) out.push("Add at least one source.");
+  if (!spec.name.trim()) out.push(t("Give the collection a name."));
+  if (spec.sources.length === 0) out.push(t("Add at least one source."));
   const badSources = spec.sources.filter((s) => !isSourceComplete(s));
   if (badSources.length)
     out.push(
-      `Finish or remove ${badSources.length === 1 ? "the incomplete source" : `${badSources.length} incomplete sources`}.`,
+      tn(
+        badSources.length,
+        "Finish or remove the incomplete source.",
+        "Finish or remove {count} incomplete sources.",
+      ),
     );
   const badRules = [...spec.rules, ...spec.exclude].filter((r) => !isRuleComplete(r));
   if (badRules.length)
     out.push(
-      `Finish or remove ${badRules.length === 1 ? "the incomplete rule" : `${badRules.length} incomplete rules`}.`,
+      tn(
+        badRules.length,
+        "Finish or remove the incomplete rule.",
+        "Finish or remove {count} incomplete rules.",
+      ),
     );
   if (spec.artwork.mode === "custom" && !spec.artwork.url?.trim())
-    out.push("Add an image URL for custom artwork.");
+    out.push(t("Add an image URL for custom artwork."));
   if (spec.rotate && (spec.rotate.size < 1 || !Number.isFinite(spec.rotate.size)))
-    out.push("Rotation needs a subset size of at least 1.");
+    out.push(t("Rotation needs a subset size of at least 1."));
   return out;
 }
 
 /** Where the collection appears, in words. */
 export function describeTargets(spec: CollectionSpec): string[] {
   const out: string[] = [];
-  if (spec.targets.collectionsTab) out.push("Collections tab");
-  if (spec.targets.homeRow) out.push("Home row");
-  if (spec.targets.sectionRow) out.push("Library row");
+  if (spec.targets.collectionsTab) out.push(t("Collections tab"));
+  if (spec.targets.homeRow) out.push(t("Home row"));
+  if (spec.targets.sectionRow) out.push(t("Library row"));
   return out;
 }

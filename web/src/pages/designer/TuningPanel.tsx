@@ -10,6 +10,7 @@ import type {
   TuningDial,
   Viewer,
 } from "../../lib/contract";
+import { getLocale, localized, t } from "../../i18n";
 import { formatNumber, relativeTime } from "../../lib/format";
 import {
   DIAL_DEFAULT,
@@ -22,43 +23,59 @@ import {
   type LayerKey,
 } from "../../lib/layout";
 
-const DIALS: {
-  dial: TuningDial;
-  name: string;
-  icon: React.ReactNode;
-  low: string;
-  high: string;
-  words: [string, string, string, string, string];
-  hint: string;
-}[] = [
+const DIALS = localized<
+  {
+    dial: TuningDial;
+    name: string;
+    icon: React.ReactNode;
+    low: string;
+    high: string;
+    words: [string, string, string, string, string];
+    hint: string;
+  }[]
+>(() => [
   {
     dial: "discovery",
-    name: "Discovery",
+    name: t("Discovery"),
     icon: <Compass size={16} />,
-    low: "Proven favourites",
-    high: "New territory",
-    words: ["Safe bets", "Mostly familiar", "Balanced", "Adventurous", "Explorer"],
-    hint: "How far rows reach beyond what the viewer already loves.",
+    low: t("Proven favourites"),
+    high: t("New territory"),
+    words: [t("Safe bets"), t("Mostly familiar"), t("Balanced"), t("Adventurous"), t("Explorer")],
+    hint: t("How far rows reach beyond what the viewer already loves."),
   },
   {
     dial: "freshness",
-    name: "Freshness",
+    name: t("Freshness"),
     icon: <Sparkles size={16} />,
-    low: "Timeless",
-    high: "New & trending",
-    words: ["Evergreen", "Classic-leaning", "Balanced", "Of the moment", "Hot off the press"],
-    hint: "Whether picks lean on all-time greats or what's new and buzzing.",
+    low: t("Timeless"),
+    high: t("New & trending"),
+    words: [
+      t("Evergreen"),
+      t("Classic-leaning"),
+      t("Balanced"),
+      t("Of the moment"),
+      t("Hot off the press"),
+    ],
+    hint: t("Whether picks lean on all-time greats or what's new and buzzing."),
   },
   {
     dial: "variety",
-    name: "Variety",
+    name: t("Variety"),
     icon: <Layers3 size={16} />,
-    low: "Focused",
-    high: "Varied",
-    words: ["Laser-focused", "Focused", "Balanced", "Varied", "Something for every mood"],
-    hint: "How tightly rows stick to the strongest tastes versus spreading across genres, eras and moods.",
+    low: t("Focused"),
+    high: t("Varied"),
+    words: [
+      t("Laser-focused"),
+      t("Focused"),
+      t("Balanced"),
+      t("Varied"),
+      t("Something for every mood"),
+    ],
+    hint: t(
+      "How tightly rows stick to the strongest tastes versus spreading across genres, eras and moods.",
+    ),
   },
-];
+]);
 
 const word = (words: string[], v: number) =>
   words[Math.min(words.length - 1, Math.floor(v * words.length))] ?? "";
@@ -83,24 +100,27 @@ export function TuningPanel({
   const page = SECTIONS.find((s) => s.value === section)?.label ?? section;
   const who =
     layer === "global"
-      ? "everyone"
+      ? t("everyone")
       : (viewers.find((v) => v.id === layer)?.title ??
         viewers.find((v) => v.id === layer)?.username ??
-        "this viewer");
+        t("this viewer"));
   const dedupe = effectiveDedupe(draft, layer, section);
   const otherSections = SECTIONS.filter((s) => s.value !== section);
   return (
     <div className="space-y-5">
-      <section aria-label={`How ${page} picks`} className="space-y-3">
+      <section aria-label={t("How {page} picks", { page })} className="space-y-3">
         <div className="flex items-end justify-between gap-2">
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-              How {page} picks
+              {t("How {page} picks", { page })}
             </h2>
             <p className="mt-0.5 text-xs text-fg-muted">
               {layer === "global"
-                ? `Dials for ${page} for everyone. Viewers can be tuned individually.`
-                : `Dials for ${who}'s ${page}; unset dials follow Everyone.`}
+                ? t("Dials for {page} for everyone. Viewers can be tuned individually.", { page })
+                : t("Dials for {viewer}'s {page}; unset dials follow Everyone.", {
+                    viewer: who,
+                    page,
+                  })}
             </p>
           </div>
           {DIALS.some((d) => tuningIn(draft, layer, section, d.dial) !== undefined) ? (
@@ -114,7 +134,7 @@ export function TuningPanel({
                 onChange(next);
               }}
             >
-              <RotateCcw size={12} /> Reset dials
+              <RotateCcw size={12} /> {t("Reset dials")}
             </Button>
           ) : null}
         </div>
@@ -129,7 +149,7 @@ export function TuningPanel({
         ))}
         {otherSections.length ? (
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
-            <Copy size={12} /> Copy these dials to
+            <Copy size={12} /> {t("Copy these dials to")}
             {otherSections.map((s) => (
               <button
                 key={s.value}
@@ -157,29 +177,31 @@ export function TuningPanel({
 
       {section !== "home" ? (
         <section
-          aria-label="Home dedup"
+          aria-label={t("Home dedup")}
           className={cn(
             "flex items-start gap-3 rounded-xl border bg-surface p-3",
             dedupe.from === "override" ? "border-info/40" : "border-border",
           )}
         >
           <Switch
-            aria-label="Don't repeat what Home shows"
+            aria-label={t("Don't repeat what Home shows")}
             checked={dedupe.on}
             onChange={(e) => onChange(setDedupe(draft, layer, section, e.currentTarget.checked))}
           />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-fg">Don't repeat what Home shows</p>
+            <p className="text-sm font-medium text-fg">{t("Don't repeat what Home shows")}</p>
             <p className="text-xs text-fg-muted">
-              Titles the viewer's Home leads with stay off {page}, so switching tabs always shows
-              something new.
+              {t(
+                "Titles the viewer's Home leads with stay off {page}, so switching tabs always shows something new.",
+                { page },
+              )}
             </p>
           </div>
           {dedupe.from !== "default" ? (
             <button
               type="button"
-              aria-label="Reset Home dedup"
-              title="Reset"
+              aria-label={t("Reset Home dedup")}
+              title={t("Reset")}
               onClick={() => onChange(setDedupe(draft, layer, section, undefined))}
               className="text-fg-subtle hover:text-fg"
             >
@@ -225,17 +247,17 @@ function Dial({
           </p>
         </div>
         {value.from === "default" ? (
-          <span className="text-[11px] text-fg-subtle">Default</span>
+          <span className="text-[11px] text-fg-subtle">{t("Default")}</span>
         ) : value.from === "global" && layer !== "global" ? (
-          <Badge variant="secondary">From Everyone</Badge>
+          <Badge variant="secondary">{t("From Everyone")}</Badge>
         ) : value.from === "override" ? (
-          <Badge variant="info">Override</Badge>
+          <Badge variant="info">{t("Override")}</Badge>
         ) : null}
         {own ? (
           <button
             type="button"
-            aria-label={`Reset ${spec.name}`}
-            title="Reset"
+            aria-label={t("Reset {name}", { name: spec.name })}
+            title={t("Reset")}
             onClick={() => onChange(undefined)}
             className="text-fg-subtle hover:text-fg"
           >
@@ -290,7 +312,7 @@ function LearningCard() {
   const maxW = Math.max(0.0001, ...features.map((f) => Math.abs(f.weight)));
   return (
     <section
-      aria-label="How it learns"
+      aria-label={t("How it learns")}
       className="relative overflow-hidden rounded-xl border border-border bg-surface p-3"
     >
       <div
@@ -302,39 +324,53 @@ function LearningCard() {
           <Brain size={16} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-fg">How it learns</p>
+          <p className="text-sm font-semibold text-fg">{t("How it learns")}</p>
           <p className="text-xs text-fg-muted">
             {r === null
-              ? "Checking the model…"
+              ? t("Checking the model…")
               : r.active
-                ? `Ranking from what viewers actually play${r.trainedAt ? ` · trained ${relativeTime(r.trainedAt)}` : ""}`
-                : "Watching what viewers play; it switches on once it beats the hand-tuned ranking."}
+                ? r.trainedAt
+                  ? t("Ranking from what viewers actually play · trained {when}", {
+                      when: relativeTime(r.trainedAt),
+                    })
+                  : t("Ranking from what viewers actually play")
+                : t(
+                    "Watching what viewers play; it switches on once it beats the hand-tuned ranking.",
+                  )}
           </p>
         </div>
         {r && r !== null ? (
           <Badge variant={r.active ? "success" : "secondary"}>
-            {r.active ? "Active" : "Learning"}
+            {r.active ? t("Active") : t("Learning")}
           </Badge>
         ) : null}
       </div>
       {r ? (
         <div className="relative mt-3 space-y-3">
           <div className="grid grid-cols-3 gap-2 text-center">
-            <Stat label="Seen" value={formatNumber(r.examples)} />
-            <Stat label="Played" value={formatNumber(r.positives)} />
+            <Stat label={t("Seen")} value={formatNumber(r.examples)} />
+            <Stat label={t("Played")} value={formatNumber(r.positives)} />
             <Stat
-              label="vs hand-tuned"
-              value={lift === null ? "—" : `${lift >= 0 ? "+" : ""}${Math.round(lift * 100)}%`}
+              label={t("vs hand-tuned")}
+              value={
+                lift === null
+                  ? "—"
+                  : new Intl.NumberFormat(getLocale(), {
+                      style: "percent",
+                      signDisplay: "always",
+                      maximumFractionDigits: 0,
+                    }).format(Math.round(lift * 100) / 100 + 0)
+              }
               tone={lift === null ? undefined : lift >= 0 ? "good" : "bad"}
             />
           </div>
           {features.length ? (
             <div className="space-y-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-fg-subtle">
-                What drives plays
+                {t("What drives plays")}
               </p>
               <DivergingBars
-                ariaLabel="What drives plays"
+                ariaLabel={t("What drives plays")}
                 data={features.slice(0, 6).map((f) => ({
                   key: f.name,
                   label: f.label || f.name,

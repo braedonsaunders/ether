@@ -1,3 +1,4 @@
+import { getLocale, t } from "../../i18n";
 import {
   Alert,
   AlertDescription,
@@ -26,10 +27,21 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 function scheduleSummary(s: NewsletterSettings): string {
   const next =
-    s.enabled && s.nextDue ? `Next report ${new Date(s.nextDue * 1000).toUTCString()}. ` : "";
+    s.enabled && s.nextDue
+      ? t("Next report {time} UTC.", {
+          time: new Date(s.nextDue * 1000).toLocaleString(getLocale(), {
+            timeZone: "UTC",
+            dateStyle: "full",
+            timeStyle: "short",
+          }),
+        }) + " "
+      : "";
   const last = s.lastAttempt
-    ? `Last sent ${new Date(s.lastAttempt * 1000).toLocaleString()} · ${s.lastStatus}.`
-    : "No weekly reports sent yet.";
+    ? t("Last sent {time} · {status}.", {
+        time: new Date(s.lastAttempt * 1000).toLocaleString(getLocale()),
+        status: s.lastStatus,
+      })
+    : t("No weekly reports sent yet.");
   return next + last;
 }
 
@@ -44,7 +56,7 @@ function Preview({ userId }: { userId: number }) {
       const res = await fetch(`${API_BASE}/stats/newsletter?user=${userId}`, {
         headers: { "X-Plex-Token": getToken() },
       });
-      if (!res.ok) throw new Error("The weekly report isn't available right now.");
+      if (!res.ok) throw new Error(t("The weekly report isn't available right now."));
       setHtml(await res.text());
     } catch (e) {
       toast.error(errorMessage(e));
@@ -64,18 +76,18 @@ function Preview({ userId }: { userId: number }) {
 
   return (
     <Section
-      title="Preview"
-      description="The last seven days as the report would look today."
+      title={t("Preview")}
+      description={t("The last seven days as the report would look today.")}
       actions={
         <>
           {html ? (
             <Button variant="ghost" size="sm" onClick={download}>
-              <Download size={14} /> Download HTML
+              <Download size={14} /> {t("Download HTML")}
             </Button>
           ) : null}
           <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
             {html ? <RefreshCw size={14} /> : <Eye size={14} />}{" "}
-            {html ? "Refresh preview" : "Preview weekly report"}
+            {html ? t("Refresh preview") : t("Preview weekly report")}
           </Button>
         </>
       }
@@ -83,14 +95,16 @@ function Preview({ userId }: { userId: number }) {
     >
       {html ? (
         <iframe
-          title="Weekly newsletter preview"
+          title={t("Weekly newsletter preview")}
           className="h-[32rem] w-full rounded-lg border border-border bg-white"
           sandbox=""
           srcDoc={html}
         />
       ) : (
         <p className="text-sm text-fg-muted">
-          {loading ? "Building the preview…" : "Preview the report for the viewer chosen above."}
+          {loading
+            ? t("Building the preview…")
+            : t("Preview the report for the viewer chosen above.")}
         </p>
       )}
     </Section>
@@ -118,7 +132,7 @@ export function WeeklyReport({ notifications }: { notifications: NotificationsDa
         method: "PUT",
         body: JSON.stringify(draft),
       });
-      toast.success("Weekly schedule saved");
+      toast.success(t("Weekly schedule saved"));
       await settings.reload();
     } catch (e) {
       setError(e);
@@ -138,39 +152,40 @@ export function WeeklyReport({ notifications }: { notifications: NotificationsDa
     <>
       {draft.enabled && notifications && !hasEmailChannel ? (
         <Alert variant="warning">
-          <AlertTitle>No email channel for the weekly report</AlertTitle>
+          <AlertTitle>{t("No email channel for the weekly report")}</AlertTitle>
           <AlertDescription>
-            Reports are sent through an Email (SMTP) channel with the Weekly newsletter event turned
-            on.{" "}
+            {t(
+              "Reports are sent through an Email (SMTP) channel with the Weekly newsletter event turned on.",
+            )}{" "}
             <Link to="/notifications/channels" className="font-medium underline">
-              Set up a channel
+              {t("Set up a channel")}
             </Link>
           </AlertDescription>
         </Alert>
       ) : null}
       <SettingsSection
-        title="Weekly email"
-        description="A summary of what everyone watched over the last seven days."
+        title={t("Weekly email")}
+        description={t("A summary of what everyone watched over the last seven days.")}
         footer={<p className="text-xs text-fg-muted">{scheduleSummary(settings.data!)}</p>}
       >
         <SettingsRow
-          title="Email the weekly report"
-          description="Queued reports appear in Delivery history."
+          title={t("Email the weekly report")}
+          description={t("Queued reports appear in Delivery history.")}
           control={
             <Switch
-              aria-label="Email the weekly report"
+              aria-label={t("Email the weekly report")}
               checked={draft.enabled}
               onChange={(e) => edit({ enabled: e.target.checked })}
             />
           }
         />
         <SettingsRow
-          title="Day"
-          description="In UTC."
+          title={t("Day")}
+          description={t("In UTC.")}
           control={
             <div className="w-44">
               <Select
-                aria-label="Day"
+                aria-label={t("Day")}
                 value={String(draft.weekday)}
                 onChange={(e) => edit({ weekday: Number(e.target.value) })}
               >
@@ -184,12 +199,12 @@ export function WeeklyReport({ notifications }: { notifications: NotificationsDa
           }
         />
         <SettingsRow
-          title="Time"
-          description="In UTC."
+          title={t("Time")}
+          description={t("In UTC.")}
           control={
             <div className="w-44">
               <Select
-                aria-label="Time"
+                aria-label={t("Time")}
                 value={String(draft.hour)}
                 onChange={(e) => edit({ hour: Number(e.target.value) })}
               >
@@ -203,16 +218,16 @@ export function WeeklyReport({ notifications }: { notifications: NotificationsDa
           }
         />
         <SettingsRow
-          title="Report viewer"
-          description="Whose viewing the report covers."
+          title={t("Report viewer")}
+          description={t("Whose viewing the report covers.")}
           control={
             <div className="w-56">
               <Select
-                aria-label="Report viewer"
+                aria-label={t("Report viewer")}
                 value={String(draft.userId)}
                 onChange={(e) => edit({ userId: Number(e.target.value) })}
               >
-                <option value="0">Everyone</option>
+                <option value="0">{t("Everyone")}</option>
                 {people.map((v) => (
                   <option key={v.id} value={String(v.id)}>
                     {viewerLabel(v)}
@@ -220,7 +235,7 @@ export function WeeklyReport({ notifications }: { notifications: NotificationsDa
                 ))}
                 {draft.userId > 0 && viewers.data && !people.some((v) => v.id === draft.userId) ? (
                   <option value={String(draft.userId)}>
-                    Previously selected viewer (unavailable)
+                    {t("Previously selected viewer (unavailable)")}
                   </option>
                 ) : null}
               </Select>

@@ -1,6 +1,7 @@
 import { Input, Popover, cn } from "@braedonsaunders/appkit-ui";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { t } from "../i18n";
 
 export interface ToolbarOption<T extends string> {
   value: T;
@@ -27,11 +28,12 @@ export function ToolbarPicker<T extends string>({
   ariaLabel,
   trigger,
   iconOnly,
-  searchPlaceholder = "Search…",
+  searchPlaceholder = t("Search…"),
   searchable,
   className,
   menuClassName,
   footer,
+  side,
 }: {
   value: T;
   options: ToolbarOption<T>[];
@@ -46,6 +48,8 @@ export function ToolbarPicker<T extends string>({
   className?: string;
   menuClassName?: string;
   footer?: ReactNode;
+  /** Open the menu above the trigger, e.g. in a sidebar footer. */
+  side?: "top" | "bottom";
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -73,6 +77,7 @@ export function ToolbarPicker<T extends string>({
         if (!o) setQ("");
       }}
       align="start"
+      side={side}
       className={cn("w-72 p-1", menuClassName)}
       trigger={
         <button
@@ -123,7 +128,7 @@ export function ToolbarPicker<T extends string>({
           </div>
         ) : null}
         {shown.length === 0 ? (
-          <p className="px-3 py-4 text-center text-xs text-fg-muted">No matches</p>
+          <p className="px-3 py-4 text-center text-xs text-fg-muted">{t("No matches")}</p>
         ) : null}
         {shown.map((o, i) => {
           const on = o.value === value;

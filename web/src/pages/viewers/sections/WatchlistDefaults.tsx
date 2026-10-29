@@ -4,6 +4,7 @@ import { ErrorPanel } from "../../../components/feedback";
 import { NumberInput } from "../../../components/fields";
 import { SaveBar, useDraft } from "../../../components/SaveBar";
 import { SettingsRow } from "../../../components/SettingsRow";
+import { localized, t } from "../../../i18n";
 import { apiFetch } from "../../../lib/api";
 import { useAsync } from "../../../lib/hooks";
 
@@ -52,28 +53,35 @@ export function useDiscoverySettings() {
   return { doc, draft, setDraft, dirty, saving, error, save, discard };
 }
 
-const SOURCES = [
-  {
-    key: "plex",
-    label: "Plex watchlists",
-    hint: "You and your Plex Home members. A friend's server access doesn't include their Plex watchlist.",
-  },
-  {
-    key: "trakt",
-    label: "Trakt watchlists",
-    hint: "Anyone who has connected Trakt, including friends.",
-  },
-  {
-    key: "notify",
-    label: "Tell me too",
-    hint: "Also send availability alerts to your notification channels.",
-  },
-  {
-    key: "prewarm",
-    label: "Warm up new arrivals",
-    hint: "Fetch the opening minutes as soon as a title becomes available, so it starts quickly.",
-  },
-] as const;
+const SOURCES = localized(
+  () =>
+    [
+      {
+        key: "plex",
+        label: t("Plex watchlists"),
+        hint: t(
+          "You and your Plex Home members. A friend's server access doesn't include their Plex watchlist.",
+        ),
+      },
+      {
+        key: "trakt",
+        label: t("Trakt watchlists"),
+        hint: t("Anyone who has connected Trakt, including friends."),
+      },
+      {
+        key: "notify",
+        label: t("Tell me too"),
+        hint: t("Also send availability alerts to your notification channels."),
+      },
+      {
+        key: "prewarm",
+        label: t("Warm up new arrivals"),
+        hint: t(
+          "Fetch the opening minutes as soon as a title becomes available, so it starts quickly.",
+        ),
+      },
+    ] as const,
+);
 
 /** Server-wide watchlist alerts, edited in place (Viewers › Defaults). */
 export function WatchlistDefaults() {
@@ -82,23 +90,25 @@ export function WatchlistDefaults() {
   if (!s.draft)
     return (
       <div className="py-10 text-center">
-        <Spinner size={20} label="Loading watchlist settings" />
+        <Spinner size={20} label={t("Loading watchlist settings")} />
       </div>
     );
   const draft = s.draft;
   return (
     <>
       <SettingsSection
-        title="Watchlist alerts"
-        description="When a title on a viewer's watchlist can be streamed, it appears on their Plex Home. A release date alone isn't enough: Ether waits for a healthy release."
+        title={t("Watchlist alerts")}
+        description={t(
+          "When a title on a viewer's watchlist can be streamed, it appears on their Plex Home. A release date alone isn't enough: Ether waits for a healthy release.",
+        )}
       >
         <SettingsRow
-          title={<label htmlFor="watchlist-enabled">Watchlist monitoring</label>}
-          description="Check viewers' watchlists for titles that have become available."
+          title={<label htmlFor="watchlist-enabled">{t("Watchlist monitoring")}</label>}
+          description={t("Check viewers' watchlists for titles that have become available.")}
           control={
             <Switch
               id="watchlist-enabled"
-              aria-label="Watchlist monitoring"
+              aria-label={t("Watchlist monitoring")}
               checked={draft.enabled}
               onChange={(e) => s.setDraft({ ...draft, enabled: e.currentTarget.checked })}
             />
@@ -121,13 +131,13 @@ export function WatchlistDefaults() {
           />
         ))}
         <SettingsRow
-          title={<label htmlFor="watchlist-hours">Check every</label>}
-          description="Minimum time between checks of the same watchlist."
+          title={<label htmlFor="watchlist-hours">{t("Check every")}</label>}
+          description={t("Minimum time between checks of the same watchlist.")}
           control={
             <span className="flex items-center gap-2">
               <NumberInput
                 id="watchlist-hours"
-                aria-label="Check every"
+                aria-label={t("Check every")}
                 className="w-24"
                 min={1}
                 max={168}
@@ -135,7 +145,7 @@ export function WatchlistDefaults() {
                 value={draft.checkHours}
                 onChange={(n) => s.setDraft({ ...draft, checkHours: n })}
               />
-              <span className="text-sm text-fg-muted">hours</span>
+              <span className="text-sm text-fg-muted">{t("hours")}</span>
             </span>
           }
         />
@@ -144,7 +154,7 @@ export function WatchlistDefaults() {
         dirty={s.dirty}
         saving={s.saving}
         error={s.error}
-        onSave={() => s.save("Watchlist settings saved")}
+        onSave={() => s.save(t("Watchlist settings saved"))}
         onDiscard={s.discard}
       />
     </>

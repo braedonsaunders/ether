@@ -1,4 +1,5 @@
 import { cn } from "@braedonsaunders/appkit-ui";
+import { t } from "../../i18n";
 import { MINUTE, clock, hueOf, type Programme } from "./model";
 
 /**
@@ -21,10 +22,10 @@ export function Timeline({
   className?: string;
 }) {
   const span = until - from;
-  const pct = (t: number) => ((Math.min(until, Math.max(from, t)) - from) / span) * 100;
+  const pct = (ms: number) => ((Math.min(until, Math.max(from, ms)) - from) / span) * 100;
   const hours: number[] = [];
   const step = span > 12 * 60 * MINUTE ? 3 * 60 * MINUTE : 60 * MINUTE;
-  for (let t = Math.ceil(from / step) * step; t < until; t += step) hours.push(t);
+  for (let ms = Math.ceil(from / step) * step; ms < until; ms += step) hours.push(ms);
   return (
     <div className={cn("space-y-1.5", className)} role="img" aria-label={label}>
       <div className="relative h-14 overflow-hidden rounded-xl border border-border bg-bg-subtle">
@@ -71,14 +72,14 @@ export function Timeline({
         ) : null}
         {programmes.length === 0 ? (
           <p className="absolute inset-0 grid place-items-center text-xs text-fg-subtle">
-            Nothing scheduled in this window
+            {t("Nothing scheduled in this window")}
           </p>
         ) : null}
       </div>
       <div className="relative h-4 text-[10.5px] tabular-nums text-fg-subtle" aria-hidden>
-        {hours.map((t) => (
-          <span key={t} className="absolute -translate-x-1/2" style={{ left: `${pct(t)}%` }}>
-            {clock(new Date(t))}
+        {hours.map((ms) => (
+          <span key={ms} className="absolute -translate-x-1/2" style={{ left: `${pct(ms)}%` }}>
+            {clock(new Date(ms))}
           </span>
         ))}
       </div>

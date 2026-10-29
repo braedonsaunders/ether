@@ -42,6 +42,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/safety"
 	"github.com/braedonsaunders/ether/internal/segcache"
 	"github.com/braedonsaunders/ether/internal/service"
+	"github.com/braedonsaunders/ether/internal/simkl"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/stats"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -120,6 +121,7 @@ type App struct {
 	images      *artwork.Images
 	state       *state.State
 	trakt       *trakt.Client
+	simklDevice *simkl.DeviceManager
 	llm         *llm.Service
 	recommend   *recommend.Recommender
 	personalize *personalize.Engine
@@ -409,6 +411,11 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.cluster.RunAsLeader(ctx, "release availability", a.availability.Run) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "collection refresh", a.collections.Run) })
 	background.start(func() { a.trakt.Start(ctx) })
+	background.start(func() {
+		a.cluster.RunAsLeader(ctx, "simkl delivery", func(ctx context.Context) {
+			simkl.RunDelivery(ctx, a.simklService, func() bool { return a.cfg.Get().Simkl.Enabled }, a.log.With("component", "simkl"))
+		})
+	})
 	background.start(func() { a.load.Run(ctx) })
 	background.start(func() { a.cache.Run(ctx) })
 	background.start(func() { a.cachefill.Run(ctx) })

@@ -4,7 +4,9 @@ import { ArrowUpRight, Film, Star } from "lucide-react";
 import { Artwork } from "../../components/Artwork";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel } from "../../components/feedback";
+import { t } from "../../i18n";
 import { api } from "../../lib/api";
+import { fixed } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 
 export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClose: () => void }) {
@@ -14,7 +16,7 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
     <Drawer
       open
       onClose={onClose}
-      title={title?.title ?? "Title details"}
+      title={title?.title ?? t("Title details")}
       size="lg"
       bodyClassName="overflow-y-auto p-0"
     >
@@ -22,7 +24,7 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
         <ErrorPanel className="m-5" error={state.error} onRetry={() => void state.reload()} />
       ) : !title ? (
         <div className="grid min-h-64 place-items-center">
-          <Spinner label="Loading title details" />
+          <Spinner label={t("Loading title details")} />
         </div>
       ) : (
         <>
@@ -38,18 +40,22 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
             <div className="catalog-detail-heading">
               <Artwork
                 src={title.poster}
-                alt={`${title.title} poster`}
+                alt={t("{title} poster", { title: title.title })}
                 className="aspect-[2/3] w-28 shrink-0 rounded-lg shadow-xl"
                 eager
               />
               <div>
-                <p className="catalog-eyebrow">{title.type === "show" ? "TELEVISION" : "MOVIE"}</p>
+                <p className="catalog-eyebrow">
+                  {title.type === "show" ? t("TELEVISION") : t("MOVIE")}
+                </p>
                 <h2>{title.title}</h2>
                 <p>
                   {[
                     title.year,
                     title.contentRating,
-                    title.runtimeMinutes ? `${title.runtimeMinutes} min` : null,
+                    title.runtimeMinutes
+                      ? t("{minutes} min", { minutes: title.runtimeMinutes })
+                      : null,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -57,7 +63,7 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
                 {title.rating ? (
                   <span className="mt-3 inline-flex items-center gap-1.5 text-sm">
                     <Star size={14} />
-                    {title.rating.toFixed(1)} / 10 · TMDB
+                    {t("{rating} / 10 · TMDB", { rating: fixed(title.rating, 1) })}
                   </span>
                 ) : null}
               </div>
@@ -72,32 +78,32 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
               ))}
             </div>
             <section>
-              <h3>Overview</h3>
-              <p>{title.summary || "No overview is available for this title yet."}</p>
+              <h3>{t("Overview")}</h3>
+              <p>{title.summary || t("No overview is available for this title yet.")}</p>
             </section>
             <dl className="catalog-detail-facts">
               <div>
-                <dt>Catalog ID</dt>
+                <dt>{t("Catalog ID")}</dt>
                 <dd className="font-mono">{title.key}</dd>
               </div>
               <div>
-                <dt>Media type</dt>
-                <dd>{title.type === "show" ? "TV show" : "Movie"}</dd>
+                <dt>{t("Media type")}</dt>
+                <dd>{title.type === "show" ? t("TV show") : t("Movie")}</dd>
               </div>
               <div>
-                <dt>Directed by</dt>
-                <dd>{title.directors?.map((p) => p.name).join(", ") || "Not provided"}</dd>
+                <dt>{t("Directed by")}</dt>
+                <dd>{title.directors?.map((p) => p.name).join(", ") || t("Not provided")}</dd>
               </div>
               {title.collection ? (
                 <div>
-                  <dt>Collection</dt>
+                  <dt>{t("Collection")}</dt>
                   <dd>{title.collection.name}</dd>
                 </div>
               ) : null}
             </dl>
             {title.cast?.length ? (
               <section>
-                <h3>Cast</h3>
+                <h3>{t("Cast")}</h3>
                 <div className="catalog-cast">
                   {title.cast.map((person) => (
                     <div key={`${person.id}-${person.role}`}>
@@ -116,7 +122,7 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
             ) : null}
             {title.keywords?.length ? (
               <section>
-                <h3>Keywords</h3>
+                <h3>{t("Keywords")}</h3>
                 <div className="flex flex-wrap gap-1.5">
                   {title.keywords.map((k) => (
                     <Badge key={typeof k === "string" ? k : k.id} variant="outline">
@@ -129,11 +135,12 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
             <div className="catalog-detail-footer">
               <Film size={18} />
               <p>
-                Artwork and ratings shown here come from TMDB. Configure how they appear in Plex
-                under Metadata.
+                {t(
+                  "Artwork and ratings shown here come from TMDB. Configure how they appear in Plex under Metadata.",
+                )}
               </p>
-              <Link to="/metadata" onClick={onClose} aria-label="Open Metadata">
-                Metadata
+              <Link to="/metadata" onClick={onClose} aria-label={t("Open Metadata")}>
+                {t("Metadata")}
                 <ArrowUpRight size={14} />
               </Link>
             </div>

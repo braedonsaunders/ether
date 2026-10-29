@@ -2,6 +2,7 @@ import { Popover, cn } from "@braedonsaunders/appkit-ui";
 import { ChevronDown, Globe, Laptop, Smartphone, Tv } from "lucide-react";
 import { useState } from "react";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
+import { localized, t } from "../../i18n";
 import type { Device, LayoutSection } from "../../lib/contract";
 import { WEEKDAYS, WEEKDAYS_LONG, formatHour } from "../../lib/format";
 import { SECTIONS } from "../../lib/layout";
@@ -14,12 +15,12 @@ export interface ViewContext {
   section: LayoutSection;
 }
 
-export const DEVICE_OPTIONS = [
-  { value: "tv" as const, label: "TV", icon: <Tv size={14} /> },
-  { value: "mobile" as const, label: "Phone", icon: <Smartphone size={14} /> },
-  { value: "web" as const, label: "Web", icon: <Globe size={14} /> },
-  { value: "desktop" as const, label: "Desktop", icon: <Laptop size={14} /> },
-];
+export const DEVICE_OPTIONS = localized(() => [
+  { value: "tv" as const, label: t("TV"), icon: <Tv size={14} /> },
+  { value: "mobile" as const, label: t("Phone"), icon: <Smartphone size={14} /> },
+  { value: "web" as const, label: t("Web"), icon: <Globe size={14} /> },
+  { value: "desktop" as const, label: t("Desktop"), icon: <Laptop size={14} /> },
+]);
 
 /**
  * Page, device and time as three compact pickers on one line, so the
@@ -38,17 +39,17 @@ export function ContextBar({
     <div
       className={cn("flex min-w-0 items-center gap-1", className)}
       role="group"
-      aria-label="Preview context"
+      aria-label={t("Preview context")}
     >
       <ToolbarPicker
-        ariaLabel="Page"
+        ariaLabel={t("Page")}
         value={ctx.section}
         onChange={(s) => onChange({ ...ctx, section: s })}
         options={SECTIONS.map((s) => ({ value: s.value, label: s.label }))}
         menuClassName="w-40"
       />
       <ToolbarPicker
-        ariaLabel="Device"
+        ariaLabel={t("Device")}
         iconOnly
         value={ctx.device}
         onChange={(d) => onChange({ ...ctx, device: d })}
@@ -62,7 +63,7 @@ export function ContextBar({
 
 function WhenPicker({ ctx, onChange }: { ctx: ViewContext; onChange: (c: ViewContext) => void }) {
   const [open, setOpen] = useState(false);
-  const label = `${WEEKDAYS[ctx.day]} ${formatHour(ctx.hour)}`;
+  const label = t("{day} {time}", { day: WEEKDAYS[ctx.day] ?? "", time: formatHour(ctx.hour) });
   return (
     <Popover
       open={open}
@@ -72,7 +73,10 @@ function WhenPicker({ ctx, onChange }: { ctx: ViewContext; onChange: (c: ViewCon
       trigger={
         <button
           type="button"
-          aria-label={`Preview time: ${WEEKDAYS_LONG[ctx.day]} ${formatHour(ctx.hour)}`}
+          aria-label={t("Preview time: {day} {time}", {
+            day: WEEKDAYS_LONG[ctx.day] ?? "",
+            time: formatHour(ctx.hour),
+          })}
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
           className={cn(
@@ -88,7 +92,7 @@ function WhenPicker({ ctx, onChange }: { ctx: ViewContext; onChange: (c: ViewCon
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wider text-fg-subtle">
-            Preview at
+            {t("Preview at")}
           </p>
           <button
             type="button"
@@ -99,10 +103,10 @@ function WhenPicker({ ctx, onChange }: { ctx: ViewContext; onChange: (c: ViewCon
               setOpen(false);
             }}
           >
-            Now
+            {t("Now")}
           </button>
         </div>
-        <div role="radiogroup" aria-label="Day" className="grid grid-cols-7 gap-1">
+        <div role="radiogroup" aria-label={t("Day")} className="grid grid-cols-7 gap-1">
           {WEEKDAYS.map((d, i) => (
             <button
               key={d}
@@ -122,7 +126,7 @@ function WhenPicker({ ctx, onChange }: { ctx: ViewContext; onChange: (c: ViewCon
             </button>
           ))}
         </div>
-        <div role="radiogroup" aria-label="Time" className="grid grid-cols-6 gap-1">
+        <div role="radiogroup" aria-label={t("Time")} className="grid grid-cols-6 gap-1">
           {Array.from({ length: 24 }, (_, h) => (
             <button
               key={h}

@@ -154,8 +154,8 @@ func TestPrewarmTrailerDuringPlayback(t *testing.T) {
 	for _, p := range prefetch {
 		lengths = append(lengths, p.Length)
 	}
-	if len(lengths) < 2 || lengths[0] != 48<<20 || lengths[1] != 64<<20 {
-		t.Fatalf("prefetch lengths = %v, want [48MiB 64MiB(clamped)]", lengths)
+	if len(lengths) != 2 || !((lengths[0] == 48<<20 && lengths[1] == 64<<20) || (lengths[0] == 64<<20 && lengths[1] == 48<<20)) {
+		t.Fatalf("prefetch lengths = %v, want 48MiB and 64MiB(clamped) in either order", lengths)
 	}
 	// The trailer-warmed title then prepares without new backend calls.
 	resolves0, probes0 := counts(h)

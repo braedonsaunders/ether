@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ErrorPanel } from "../../../components/feedback";
 import { SaveBar, useDraft } from "../../../components/SaveBar";
 import { SettingsRow } from "../../../components/SettingsRow";
+import { t, tn, tx } from "../../../i18n";
 import { apiFetch } from "../../../lib/api";
 import { useAsync } from "../../../lib/hooks";
 
@@ -41,7 +42,7 @@ export function ViewerLiveTVAccess({ viewerId }: { viewerId: number }) {
   if (!draft)
     return (
       <div className="py-6 text-center">
-        <Spinner size={18} label="Loading Live TV access" />
+        <Spinner size={18} label={t("Loading Live TV access")} />
       </div>
     );
 
@@ -55,7 +56,7 @@ export function ViewerLiveTVAccess({ viewerId }: { viewerId: number }) {
         body: JSON.stringify(draft),
       });
       policy.setData(draft);
-      toast.success("Live TV access saved");
+      toast.success(t("Live TV access saved"));
     } catch (e) {
       setError(e);
     } finally {
@@ -66,55 +67,67 @@ export function ViewerLiveTVAccess({ viewerId }: { viewerId: number }) {
   return (
     <>
       <SettingsSection
-        title="Live TV"
-        description="This viewer's existing rating and library limits also apply to the guide and every channel."
+        title={t("Live TV")}
+        description={t(
+          "This viewer's existing rating and library limits also apply to the guide and every channel.",
+        )}
       >
         <SettingsRow
-          title={<label htmlFor={`livetv-off-${viewerId}`}>Disable Live TV for this viewer</label>}
-          description="Hides Live TV and the guide in their Plex apps."
+          title={
+            <label htmlFor={`livetv-off-${viewerId}`}>{t("Disable Live TV for this viewer")}</label>
+          }
+          description={t("Hides Live TV and the guide in their Plex apps.")}
           control={
             <Switch
               id={`livetv-off-${viewerId}`}
-              aria-label="Disable Live TV for this viewer"
+              aria-label={t("Disable Live TV for this viewer")}
               checked={draft.disabled}
               onChange={(e) => setDraft({ ...draft, disabled: e.currentTarget.checked })}
             />
           }
         />
         <SettingsRow
-          title={<label htmlFor={`livetv-rating-${viewerId}`}>Live TV maximum rating</label>}
-          description="An extra limit for Live TV only, such as TV-PG. Leave blank to use their usual limit."
+          title={<label htmlFor={`livetv-rating-${viewerId}`}>{t("Live TV maximum rating")}</label>}
+          description={t(
+            "An extra limit for Live TV only, such as TV-PG. Leave blank to use their usual limit.",
+          )}
           control={
             <Input
               id={`livetv-rating-${viewerId}`}
               className="sm:w-40"
               value={draft.maxRating || ""}
               disabled={draft.disabled}
-              placeholder="No extra limit"
+              placeholder={t("No extra limit")}
               onChange={(e) => setDraft({ ...draft, maxRating: e.currentTarget.value })}
             />
           }
         />
       </SettingsSection>
       <SettingsSection
-        title="Allowed channels"
+        title={t("Allowed channels")}
         description={
           allowed.length
-            ? `Only the ${allowed.length === 1 ? "channel" : `${allowed.length} channels`} selected below.`
-            : "All channels. Select channels to allow only those."
+            ? tn(
+                allowed.length,
+                "Only the channel selected below.",
+                "Only the {count} channels selected below.",
+              )
+            : t("All channels. Select channels to allow only those.")
         }
       >
         {channels.error ? (
           <ErrorPanel error={channels.error} onRetry={() => void channels.reload()} />
         ) : !channels.data ? (
-          <Spinner size={16} label="Loading channels" />
+          <Spinner size={16} label={t("Loading channels")} />
         ) : sorted.length === 0 ? (
           <p className="py-2 text-sm text-fg-muted">
-            No channels yet.{" "}
-            <Link to="/livetv/channels" className="font-medium text-fg underline">
-              Create one in Live TV
-            </Link>
-            .
+            {tx("No channels yet. {link}.", {
+              link: (
+                <Link to="/livetv/channels" className="font-medium text-fg underline">
+                  {t("Create one in Live TV")}
+                </Link>
+              ),
+            })}
           </p>
         ) : (
           <div className="space-y-3 py-2">
@@ -123,7 +136,7 @@ export function ViewerLiveTVAccess({ viewerId }: { viewerId: number }) {
                 <div key={c.id} className="flex items-center gap-2 text-sm">
                   <Switch
                     id={`livetv-${viewerId}-channel-${c.id}`}
-                    aria-label={`Allow ${c.name}`}
+                    aria-label={t("Allow {name}", { name: c.name })}
                     checked={allowed.includes(c.id)}
                     disabled={draft.disabled}
                     onChange={(e) =>
@@ -151,7 +164,7 @@ export function ViewerLiveTVAccess({ viewerId }: { viewerId: number }) {
                 disabled={draft.disabled}
                 onClick={() => setDraft({ ...draft, channels: [] })}
               >
-                Allow all channels
+                {t("Allow all channels")}
               </Button>
             ) : null}
           </div>

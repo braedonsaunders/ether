@@ -41,6 +41,42 @@ function pushSupport(permission = "granted") {
   return { requestPermission, subscription, subscribe };
 }
 describe("Notification setup", () => {
+  it("opens, saves and edits a channel on an HTTP LAN page without randomUUID", async () => {
+    // randomUUID is secure-context-only; getRandomValues is available on HTTP.
+    vi.stubGlobal("isSecureContext", false);
+    vi.stubGlobal("crypto", { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });
+    const fetcher = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    const onChanged = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<Channels data={empty} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    const drawer = await screen.findByRole("dialog", { name: "New notification channel" });
+    fireEvent.change(within(drawer).getByLabelText("Name"), { target: { value: "Server alerts" } });
+    fireEvent.change(within(drawer).getByLabelText("Endpoint URL"), {
+      target: { value: "https://notify.example.test/hook" },
+    });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save channel" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    const [url, request] = fetcher.mock.calls[0]!;
+    const saved = JSON.parse(request.body);
+    expect(saved.id).toEqual(expect.any(String));
+    expect(saved.id.length).toBeGreaterThan(0);
+    expect(url).toContain(`/notifications/${saved.id}`);
+    expect(request.method).toBe("PUT");
+    expect(saved).toMatchObject({
+      name: "Server alerts",
+      endpoint: "https://notify.example.test/hook",
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    rerender(<Channels data={{ ...empty, channels: [saved] }} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("dialog", { name: "Edit notification channel" });
+    expect(within(editor).getByLabelText("Name")).toHaveValue("Server alerts");
+    fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("saves all email fields, recipient lists and explicit TLS mode", () => {
     const onSave = vi.fn();
     render(

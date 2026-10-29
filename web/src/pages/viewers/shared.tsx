@@ -1,6 +1,7 @@
 import { Input, Select, SettingsSection, Switch } from "@braedonsaunders/appkit-ui";
 import { useEffect, useState } from "react";
 import { SettingsRow } from "../../components/SettingsRow";
+import { localized, t } from "../../i18n";
 
 /** Split a comma-separated list, optionally lower-casing (language codes). */
 export function parseList(text: string, lower = false): string[] {
@@ -42,7 +43,7 @@ export function ListText({
       aria-label={ariaLabel}
       value={text}
       disabled={disabled}
-      placeholder={placeholder ?? "Comma-separated"}
+      placeholder={placeholder ?? t("Comma-separated")}
       onChange={(e) => {
         setText(e.target.value);
         onChange(parseList(e.target.value, lower));
@@ -97,17 +98,17 @@ export function sameRules(a: StreamRules, b: StreamRules): boolean {
   return keys.every((k) => JSON.stringify(a[k]) === JSON.stringify(b[k]));
 }
 
-const SUBTITLE_MODES = [
-  { value: "off", label: "Off" },
-  { value: "forced-only", label: "Forced tracks only" },
-  { value: "foreign-only", label: "When the audio is in another language" },
-  { value: "always", label: "Always" },
-];
-const SUBTITLE_STYLES = [
-  { value: "normal", label: "Normal" },
-  { value: "sdh", label: "SDH / hearing impaired" },
-  { value: "forced", label: "Forced" },
-];
+const SUBTITLE_MODES = localized(() => [
+  { value: "off", label: t("Off") },
+  { value: "forced-only", label: t("Forced tracks only") },
+  { value: "foreign-only", label: t("When the audio is in another language") },
+  { value: "always", label: t("Always") },
+]);
+const SUBTITLE_STYLES = localized(() => [
+  { value: "normal", label: t("Normal") },
+  { value: "sdh", label: t("SDH / hearing impaired") },
+  { value: "forced", label: t("Forced") },
+]);
 
 /** The audio and subtitle choices, shared by the defaults and a viewer's override. */
 export function StreamRulesFields({
@@ -124,16 +125,16 @@ export function StreamRulesFields({
   return (
     <>
       <SettingsSection
-        title="Languages"
-        description="Plex track changes are remembered for later episodes of the same show."
+        title={t("Languages")}
+        description={t("Plex track changes are remembered for later episodes of the same show.")}
       >
         <SettingsRow
-          title="Audio languages"
-          description="Language codes in preference order, e.g. en, ja."
+          title={t("Audio languages")}
+          description={t("Language codes in preference order, e.g. en, ja.")}
           control={
             <div className="w-56">
               <ListText
-                ariaLabel="Audio languages"
+                ariaLabel={t("Audio languages")}
                 lower
                 placeholder="en, ja, fr"
                 value={value.audioLanguages}
@@ -144,11 +145,11 @@ export function StreamRulesFields({
           }
         />
         <SettingsRow
-          title="Prefer the original language"
-          description="Play a title's original language before dubs."
+          title={t("Prefer the original language")}
+          description={t("Play a title's original language before dubs.")}
           control={
             <Switch
-              aria-label="Prefer the original language"
+              aria-label={t("Prefer the original language")}
               checked={value.preferOriginal}
               disabled={disabled}
               onChange={(e) => set("preferOriginal", e.target.checked)}
@@ -156,12 +157,12 @@ export function StreamRulesFields({
           }
         />
         <SettingsRow
-          title="Subtitle languages"
-          description="Language codes in preference order, e.g. en, fr."
+          title={t("Subtitle languages")}
+          description={t("Language codes in preference order, e.g. en, fr.")}
           control={
             <div className="w-56">
               <ListText
-                ariaLabel="Subtitle languages"
+                ariaLabel={t("Subtitle languages")}
                 lower
                 placeholder="en, fr"
                 value={value.subtitleLanguages}
@@ -172,11 +173,11 @@ export function StreamRulesFields({
           }
         />
         <SettingsRow
-          title="Show subtitles"
+          title={t("Show subtitles")}
           control={
             <div className="w-64">
               <Select
-                aria-label="Show subtitles"
+                aria-label={t("Show subtitles")}
                 value={value.subtitleMode}
                 disabled={disabled}
                 onChange={(e) => set("subtitleMode", e.target.value)}
@@ -191,11 +192,11 @@ export function StreamRulesFields({
           }
         />
         <SettingsRow
-          title="Subtitle style"
+          title={t("Subtitle style")}
           control={
             <div className="w-64">
               <Select
-                aria-label="Subtitle style"
+                aria-label={t("Subtitle style")}
                 value={value.subtitleStyle}
                 disabled={disabled}
                 onChange={(e) => set("subtitleStyle", e.target.value)}
@@ -211,14 +212,16 @@ export function StreamRulesFields({
         />
       </SettingsSection>
       <SettingsSection
-        title="Audio processing"
-        description="Needs server audio transcoding. Dialogue boost applies to sources with six or more channels."
+        title={t("Audio processing")}
+        description={t(
+          "Needs server audio transcoding. Dialogue boost applies to sources with six or more channels.",
+        )}
       >
         {(
           [
-            ["loudness", "Normalize loudness"],
-            ["nightMode", "Night mode compression"],
-            ["dialogueBoost", "Boost centre-channel dialogue"],
+            ["loudness", t("Normalize loudness")],
+            ["nightMode", t("Night mode compression")],
+            ["dialogueBoost", t("Boost centre-channel dialogue")],
           ] as const
         ).map(([key, label]) => (
           <SettingsRow
@@ -277,8 +280,11 @@ export function normalizePolicy(p: Partial<SafetyPolicy> | null | undefined): Sa
   };
 }
 
-export const KID_PRESETS = [
-  { value: "preschool", label: "Young children" },
-  { value: "family", label: "Family" },
-  { value: "teens", label: "Teens" },
-] as const;
+export const KID_PRESETS = localized(
+  () =>
+    [
+      { value: "preschool", label: t("Young children") },
+      { value: "family", label: t("Family") },
+      { value: "teens", label: t("Teens") },
+    ] as const,
+);

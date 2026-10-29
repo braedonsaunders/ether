@@ -2,6 +2,8 @@ import { Button, Input, SearchSelect, Slider, cn } from "@braedonsaunders/appkit
 import { AlertCircle, Trash2 } from "lucide-react";
 import { Segmented, NumberInput } from "../../components/fields";
 import { FacetPicker, FacetSelect, LookupPicker, type Picked } from "../../components/pickers";
+import { localized, t } from "../../i18n";
+import { searchSelectLabels } from "../../i18n/appkit-labels";
 import type { Rule, RuleField, RuleOp } from "../../lib/contract";
 import {
   FIELDS,
@@ -16,12 +18,14 @@ import {
   type FieldMeta,
 } from "../../lib/rules";
 
-const FIELD_OPTIONS = FIELDS.map((f) => ({
-  value: f.field,
-  label: f.label,
-  hint: f.hint,
-  group: f.group,
-}));
+const FIELD_OPTIONS = localized(() =>
+  FIELDS.map((f) => ({
+    value: f.field,
+    label: f.label,
+    hint: f.hint,
+    group: f.group,
+  })),
+);
 
 /** One condition: field, operator and a value editor that fits the field. */
 export function RuleRow({
@@ -45,7 +49,8 @@ export function RuleRow({
 }) {
   const meta = fieldMeta(rule.field);
   const complete = isRuleComplete(rule);
-  const label = `${kind === "exclude" ? "Exclusion" : "Rule"} ${index + 1}`;
+  const n = index + 1;
+  const label = kind === "exclude" ? t("Exclusion {n}", { n }) : t("Rule {n}", { n });
   return (
     <div
       className={cn(
@@ -65,8 +70,9 @@ export function RuleRow({
                 ? FIELD_OPTIONS.filter((f) => allowedFields.includes(f.value))
                 : FIELD_OPTIONS
             }
-            ariaLabel={`${label} field`}
+            ariaLabel={t("{label} field", { label })}
             searchable
+            {...searchSelectLabels()}
           />
         </div>
         {meta ? (
@@ -75,8 +81,9 @@ export function RuleRow({
               value={rule.op}
               onChange={(v) => v && onChange(withOp(rule, v as RuleOp))}
               options={meta.ops.map((op) => ({ value: op, label: opLabel(op, meta.kind) }))}
-              ariaLabel={`${label} condition`}
+              ariaLabel={t("{label} condition", { label })}
               searchable={false}
+              {...searchSelectLabels()}
             />
           </div>
         ) : null}
@@ -86,7 +93,9 @@ export function RuleRow({
           size="icon"
           className="ml-auto size-9 text-fg-muted hover:text-danger"
           onClick={onRemove}
-          aria-label={`Remove ${label.toLowerCase()}`}
+          aria-label={
+            kind === "exclude" ? t("Remove exclusion {n}", { n }) : t("Remove rule {n}", { n })
+          }
         >
           <Trash2 size={15} />
         </Button>
@@ -114,7 +123,7 @@ export function RuleRow({
         {complete ? null : <AlertCircle size={12} aria-hidden />}
         {complete
           ? describeRule(rule)
-          : "Pick a value to apply this rule. It's left out of the preview until then."}
+          : t("Pick a value to apply this rule. It's left out of the preview until then.")}
       </p>
     </div>
   );
@@ -162,7 +171,7 @@ function ValueEditor({
           facet={meta.facet!}
           value={(Array.isArray(rule.value) ? rule.value : []).map(String)}
           onChange={(v) => onChange({ ...rule, value: v })}
-          ariaLabel={`${label} values`}
+          ariaLabel={t("{label} values", { label })}
         />
       ) : (
         <FacetSelect
@@ -170,7 +179,7 @@ function ValueEditor({
           facet={meta.facet!}
           value={String(rule.value ?? "")}
           onChange={(v) => onChange({ ...rule, value: v })}
-          ariaLabel={`${label} value`}
+          ariaLabel={t("{label} value", { label })}
         />
       );
     case "lookup":
@@ -180,7 +189,7 @@ function ValueEditor({
           region={region}
           multiple={multi}
           value={toPicked(rule)}
-          ariaLabel={`${label} search`}
+          ariaLabel={t("{label} search", { label })}
           onChange={(picked) =>
             onChange({
               ...rule,
@@ -193,13 +202,13 @@ function ValueEditor({
     case "bool":
       return (
         <Segmented
-          ariaLabel={`${label} value`}
+          ariaLabel={t("{label} value", { label })}
           size="sm"
           value={rule.value === false ? "no" : "yes"}
           onChange={(v) => onChange({ ...rule, value: v === "yes" })}
           options={[
-            { value: "yes", label: "Yes" },
-            { value: "no", label: "No" },
+            { value: "yes", label: t("Yes") },
+            { value: "no", label: t("No") },
           ]}
         />
       );
@@ -209,16 +218,16 @@ function ValueEditor({
         return (
           <div className="flex items-center gap-2">
             <NumberInput
-              aria-label={`${label} minimum`}
+              aria-label={t("{label} minimum", { label })}
               value={Number(lo)}
               min={meta.min}
               max={meta.max}
               step={meta.step}
               onChange={(n) => onChange({ ...rule, value: [n, Number(hi)] })}
             />
-            <span className="text-sm text-fg-muted">and</span>
+            <span className="text-sm text-fg-muted">{t("and")}</span>
             <NumberInput
-              aria-label={`${label} maximum`}
+              aria-label={t("{label} maximum", { label })}
               value={Number(hi)}
               min={meta.min}
               max={meta.max}
@@ -232,7 +241,7 @@ function ValueEditor({
       return (
         <div className="flex items-center gap-2">
           <NumberInput
-            aria-label={`${label} value`}
+            aria-label={t("{label} value", { label })}
             value={Number(rule.value)}
             min={meta.min}
             max={meta.max}
@@ -247,7 +256,7 @@ function ValueEditor({
               max={10}
               step={0.1}
               value={Number(rule.value)}
-              aria-label={`${label} slider`}
+              aria-label={t("{label} slider", { label })}
               onChange={(e) => onChange({ ...rule, value: e.currentTarget.valueAsNumber })}
               className="ml-2 flex-1"
             />
@@ -261,7 +270,7 @@ function ValueEditor({
         return (
           <div className="flex items-center gap-2">
             <NumberInput
-              aria-label={`${label} amount`}
+              aria-label={t("{label} amount", { label })}
               value={w.n}
               min={1}
               step={1}
@@ -275,8 +284,9 @@ function ValueEditor({
                 value={w.unit}
                 onChange={(u) => u && onChange({ ...rule, value: `${w.n}${u}` })}
                 options={WITHIN_UNITS.map((u) => ({ value: u.value, label: u.label }))}
-                ariaLabel={`${label} unit`}
+                ariaLabel={t("{label} unit", { label })}
                 searchable={false}
+                {...searchSelectLabels()}
               />
             </div>
           </div>
@@ -288,15 +298,15 @@ function ValueEditor({
           <div className="flex flex-wrap items-center gap-2">
             <Input
               type="date"
-              aria-label={`${label} from`}
+              aria-label={t("{label} from", { label })}
               value={a}
               onChange={(e) => onChange({ ...rule, value: [e.currentTarget.value, b] })}
               className="w-44"
             />
-            <span className="text-sm text-fg-muted">and</span>
+            <span className="text-sm text-fg-muted">{t("and")}</span>
             <Input
               type="date"
-              aria-label={`${label} to`}
+              aria-label={t("{label} to", { label })}
               value={b}
               onChange={(e) => onChange({ ...rule, value: [a, e.currentTarget.value] })}
               className="w-44"
@@ -307,7 +317,7 @@ function ValueEditor({
       return (
         <Input
           type="date"
-          aria-label={`${label} date`}
+          aria-label={t("{label} date", { label })}
           value={String(rule.value ?? "")}
           onChange={(e) => onChange({ ...rule, value: e.currentTarget.value })}
           className="w-44"
@@ -332,7 +342,7 @@ function RawValue({
     <Input
       key={text}
       defaultValue={text}
-      aria-label={`${label} raw value`}
+      aria-label={t("{label} raw value", { label })}
       className="font-mono text-xs"
       onBlur={(e) => {
         try {

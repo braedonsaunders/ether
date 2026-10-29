@@ -2,6 +2,7 @@ import { Input, SearchSelect, SettingsSection, Switch } from "@braedonsaunders/a
 import type { ReactNode } from "react";
 import { ErrorPanel } from "../../components/feedback";
 import { SecretInput } from "../../components/fields";
+import { t } from "../../i18n";
 import {
   findProvider,
   ModelPicker,
@@ -46,23 +47,25 @@ export function LanguageModelSettings({
   const set = (patch: Partial<LLMConfig>) => onChange({ ...value, ...patch });
   return (
     <SettingsSection
-      title="Language model"
-      description="Powers “Describe it” in Collection Studio, themed Home rows, natural-language search and recaps."
+      title={t("Language model")}
+      description={t(
+        "Powers “Describe it” in Collection Studio, themed Home rows, natural-language search and recaps.",
+      )}
       footer={footer}
     >
       <SettingsRow
-        title={<label htmlFor="llm-enabled">Enabled</label>}
+        title={<label htmlFor="llm-enabled">{t("Enabled")}</label>}
         control={
           <Switch
             id="llm-enabled"
-            aria-label="Enabled"
+            aria-label={t("Enabled")}
             checked={value.enabled}
             onChange={(e) => set({ enabled: e.currentTarget.checked })}
           />
         }
       />
       <SettingsRow
-        title="Provider"
+        title={t("Provider")}
         description={<FieldError error={errors["llm.provider"]} />}
         control={
           <div className="sm:w-72">
@@ -70,9 +73,13 @@ export function LanguageModelSettings({
               value={value.provider}
               onChange={(id) => onChange(withProvider(value, saved, id))}
               options={providerOptions(providers)}
-              ariaLabel="Provider"
-              placeholder={providers ? "Choose a provider" : "Loading…"}
+              ariaLabel={t("Provider")}
+              placeholder={providers ? t("Choose a provider") : t("Loading…")}
               searchable
+              searchPlaceholder={t("Search…")}
+              noMatchesLabel={t("No matches")}
+              selectLabel={t("Select")}
+              closeLabel={t("Close")}
             />
           </div>
         }
@@ -82,19 +89,19 @@ export function LanguageModelSettings({
           {provider.local ? (
             <SettingsRow
               stacked
-              title={<label htmlFor="llm-base-url">Endpoint URL</label>}
+              title={<label htmlFor="llm-base-url">{t("Endpoint URL")}</label>}
               description={
                 <>
                   {provider.requiresBaseUrl
                     ? provider.modelHint
-                    : `Leave empty to use ${provider.baseUrl}.`}
+                    : t("Leave empty to use {url}.", { url: provider.baseUrl })}
                   <FieldError error={errors["llm.baseUrl"]} />
                 </>
               }
             >
               <Input
                 id="llm-base-url"
-                aria-label="Endpoint URL"
+                aria-label={t("Endpoint URL")}
                 aria-invalid={errors["llm.baseUrl"] ? true : undefined}
                 value={value.baseUrl}
                 placeholder={provider.baseUrl || "https://example.com/v1"}
@@ -105,17 +112,17 @@ export function LanguageModelSettings({
           ) : null}
           <SettingsRow
             stacked
-            title={<label htmlFor="llm-api-key">API key</label>}
+            title={<label htmlFor="llm-api-key">{t("API key")}</label>}
             description={
               <>
-                {provider.needsKey ? null : "Not needed for most local servers."}
+                {provider.needsKey ? null : t("Not needed for most local servers.")}
                 <FieldError error={errors["llm.apiKey"]} />
               </>
             }
           >
             <SecretInput
               id="llm-api-key"
-              ariaLabel="API key"
+              ariaLabel={t("API key")}
               value={value.apiKey}
               onChange={(apiKey) => set({ apiKey })}
               placeholder={provider.keyHint}
@@ -124,7 +131,7 @@ export function LanguageModelSettings({
           </SettingsRow>
           <SettingsRow
             stacked
-            title={<label htmlFor="llm-model">Model</label>}
+            title={<label htmlFor="llm-model">{t("Model")}</label>}
             description={
               <>
                 {provider.requiresBaseUrl ? null : provider.modelHint}

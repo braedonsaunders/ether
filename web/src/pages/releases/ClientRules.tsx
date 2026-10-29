@@ -13,6 +13,7 @@ import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { useViewers, viewerName } from "../../components/pickers";
 import { SettingsRow } from "../../components/SettingsRow";
+import { t } from "../../i18n";
 import type { Viewer } from "../../lib/contract";
 import type { QualityRule } from "../../lib/types";
 import {
@@ -24,6 +25,7 @@ import {
   toastError,
   type Errors,
 } from "../sources/form";
+import { searchSelectLabels } from "../../i18n/appkit-labels";
 import { useQuality } from "./useQuality";
 
 const DEVICES = [
@@ -43,11 +45,11 @@ const CUSTOM = "__custom__";
 function ruleViewer(r: QualityRule, viewers: Viewer[] | null) {
   if (!r.userId) return "";
   const v = viewers?.find((x) => x.id === r.userId);
-  return v ? viewerName(v) : "Unavailable viewer";
+  return v ? viewerName(v) : t("Unavailable viewer");
 }
 
 function ruleSummary(r: QualityRule, viewers: Viewer[] | null) {
-  return [r.product || "Any device", r.platform, ruleViewer(r, viewers)]
+  return [r.product || t("Any device"), r.platform, ruleViewer(r, viewers)]
     .filter(Boolean)
     .join(" · ");
 }
@@ -83,7 +85,10 @@ export function ClientRulesTab() {
     setError(null);
     setErrors({});
     try {
-      await commit({ ...quality, rules: list }, index < rules.length ? "Rule saved" : "Rule added");
+      await commit(
+        { ...quality, rules: list },
+        index < rules.length ? t("Rule saved") : t("Rule added"),
+      );
       setEditing(null);
     } catch (e) {
       setError(e);
@@ -97,16 +102,16 @@ export function ClientRulesTab() {
     if (!editing || !quality) return;
     const { index } = editing;
     const ok = await confirmDialog({
-      title: "Remove rule?",
-      message: "Apps it matched will use the next matching rule, or the defaults.",
-      confirmLabel: "Remove",
+      title: t("Remove rule?"),
+      message: t("Apps it matched will use the next matching rule, or the defaults."),
+      confirmLabel: t("Remove"),
       tone: "danger",
     });
     if (!ok) return;
     setSaving(true);
     setError(null);
     try {
-      await commit({ ...quality, rules: rules.filter((_, j) => j !== index) }, "Rule removed");
+      await commit({ ...quality, rules: rules.filter((_, j) => j !== index) }, t("Rule removed"));
       setEditing(null);
     } catch (e) {
       setError(e);
@@ -118,9 +123,9 @@ export function ClientRulesTab() {
   async function move(i: number, d: -1 | 1) {
     if (!quality) return;
     try {
-      await commit({ ...quality, rules: swap(rules, i, i + d) }, "Rule order saved");
+      await commit({ ...quality, rules: swap(rules, i, i + d) }, t("Rule order saved"));
     } catch (e) {
-      toastError("Couldn't reorder rules", e);
+      toastError(t("Couldn't reorder rules"), e);
     }
   }
 
@@ -134,8 +139,10 @@ export function ClientRulesTab() {
   return (
     <>
       <Section
-        title="Client rules"
-        description="Checked from the top. The first rule that matches an app picks its quality profile; apps no rule matches use the defaults."
+        title={t("Client rules")}
+        description={t(
+          "Checked from the top. The first rule that matches an app picks its quality profile; apps no rule matches use the defaults.",
+        )}
         actions={
           <Button
             size="sm"
@@ -144,7 +151,7 @@ export function ClientRulesTab() {
             }
             disabled={!profiles.length}
           >
-            <Plus size={14} /> Add rule
+            <Plus size={14} /> {t("Add rule")}
           </Button>
         }
         bodyClassName=""
@@ -152,8 +159,8 @@ export function ClientRulesTab() {
         {rules.length === 0 ? (
           <EmptyState
             icon={<ListFilter />}
-            title="No rules"
-            description="Every app uses the default quality profiles."
+            title={t("No rules")}
+            description={t("Every app uses the default quality profiles.")}
           />
         ) : (
           <ul className="divide-y divide-border">
@@ -161,16 +168,16 @@ export function ClientRulesTab() {
               <RecordItem
                 key={i}
                 title={`${i + 1}. ${ruleSummary(r, viewers)}`}
-                description={`Uses ${r.profile || "no profile"}`}
+                description={t("Uses {profile}", { profile: r.profile || t("no profile") })}
                 order={
                   <OrderButtons
-                    label={`rule ${i + 1}`}
+                    label={t("rule {n}", { n: i + 1 })}
                     i={i}
                     n={rules.length}
                     onMove={(d) => void move(i, d)}
                   />
                 }
-                editLabel={`Edit rule ${i + 1}`}
+                editLabel={t("Edit rule {n}", { n: i + 1 })}
                 onEdit={() => open(i, r)}
               />
             ))}
@@ -178,104 +185,108 @@ export function ClientRulesTab() {
         )}
       </Section>
       <p className="text-sm text-fg-muted">
-        Rules choose among your quality profiles. What each app can actually play is still checked
-        before playback.{" "}
+        {t(
+          "Rules choose among your quality profiles. What each app can actually play is still checked before playback.",
+        )}{" "}
         <Link className="text-primary underline" to="/playback/devices">
-          View device capabilities
+          {t("View device capabilities")}
         </Link>
       </p>
 
       <RecordDrawer
         open={editing !== null}
         onClose={() => !saving && setEditing(null)}
-        title={isNew ? "New rule" : `Rule ${(editing?.index ?? 0) + 1}`}
-        description="Match an app by device, platform or viewer."
+        title={isNew ? t("New rule") : t("Rule {n}", { n: (editing?.index ?? 0) + 1 })}
+        description={t("Match an app by device, platform or viewer.")}
         onSave={() => void save()}
         saving={saving}
-        saveLabel="Save rule"
+        saveLabel={t("Save rule")}
         onRemove={isNew ? undefined : () => void remove()}
-        removeLabel="Remove rule"
+        removeLabel={t("Remove rule")}
         error={error}
       >
         {draft ? (
-          <SettingsSection title="Match">
+          <SettingsSection title={t("Match")}>
             <SettingsRow
-              title="Device"
-              description="The Plex app's product name."
+              title={t("Device")}
+              description={t("The Plex app's product name.")}
               control={
                 <div className="w-56">
                   <SearchSelect
+                    {...searchSelectLabels()}
                     value={custom ? CUSTOM : (draft.product ?? "")}
                     onChange={(v) =>
                       set({ product: v === CUSTOM ? "Custom device" : v || undefined })
                     }
                     options={[
-                      { value: "", label: "Any device" },
+                      { value: "", label: t("Any device") },
                       ...DEVICES.map((v) => ({ value: v, label: v })),
-                      { value: CUSTOM, label: "Custom product name…" },
+                      { value: CUSTOM, label: t("Custom product name…") },
                     ]}
-                    ariaLabel="Device"
+                    ariaLabel={t("Device")}
                   />
                 </div>
               }
             />
             {custom ? (
               <SettingsRow
-                title="Product name contains"
+                title={t("Product name contains")}
                 control={
                   <Input
                     value={draft.product ?? ""}
                     onChange={(e) => set({ product: e.currentTarget.value })}
-                    aria-label="Custom product"
+                    aria-label={t("Custom product")}
                     className="sm:w-56"
                   />
                 }
               />
             ) : null}
             <SettingsRow
-              title="Platform"
-              description="e.g. tvOS, Android. Empty matches any."
+              title={t("Platform")}
+              description={t("e.g. tvOS, Android. Empty matches any.")}
               control={
                 <Input
                   value={draft.platform ?? ""}
-                  placeholder="Any"
+                  placeholder={t("Any")}
                   onChange={(e) => set({ platform: e.currentTarget.value || undefined })}
-                  aria-label="Platform"
+                  aria-label={t("Platform")}
                   className="sm:w-56"
                 />
               }
             />
             <SettingsRow
-              title="Viewer"
+              title={t("Viewer")}
               control={
                 <div className="w-56">
                   <SearchSelect
+                    {...searchSelectLabels()}
                     value={String(draft.userId ?? 0)}
                     onChange={(v) => set({ userId: Number(v) || undefined })}
                     options={[
-                      { value: "0", label: "Everyone" },
+                      { value: "0", label: t("Everyone") },
                       ...(viewers ?? []).map((v) => ({
                         value: String(v.id),
                         label: viewerName(v),
                       })),
                     ]}
-                    ariaLabel="Viewer"
+                    ariaLabel={t("Viewer")}
                   />
                 </div>
               }
             />
             <SettingsRow
-              title="Quality profile"
+              title={t("Quality profile")}
               description={
                 errors.profile ? <span className="text-danger">{errors.profile}</span> : undefined
               }
               control={
                 <div className="w-56">
                   <SearchSelect
+                    {...searchSelectLabels()}
                     value={draft.profile}
                     onChange={(v) => set({ profile: v })}
                     options={names}
-                    ariaLabel="Profile"
+                    ariaLabel={t("Profile")}
                     searchable={false}
                   />
                 </div>

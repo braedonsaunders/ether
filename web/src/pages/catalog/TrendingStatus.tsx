@@ -1,5 +1,6 @@
 import { Badge } from "@braedonsaunders/appkit-ui";
 import { TrendingUp } from "lucide-react";
+import { t, tn } from "../../i18n";
 import { apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
 import { relativeTime } from "../../lib/format";
@@ -17,35 +18,40 @@ export function TrendingStatus() {
   return (
     <section
       className="rounded-xl border border-border bg-surface p-5"
-      aria-label="Global trending status"
+      aria-label={t("Global trending status")}
     >
       <h3 className="flex items-center gap-2 text-sm font-semibold">
         <TrendingUp size={18} />
-        Global trending
+        {t("Global trending")}
       </h3>
       <p className="mt-2 text-xs text-fg-muted">
-        TMDB daily + weekly charts · refreshed hourly · shared by all viewers
+        {t("TMDB daily + weekly charts · refreshed hourly · shared by all viewers")}
       </p>
-      {data.error ? <p className="mt-3 text-sm text-danger">Chart status unavailable</p> : null}
+      {data.error ? (
+        <p className="mt-3 text-sm text-danger">{t("Chart status unavailable")}</p>
+      ) : null}
       <div className="mt-4 divide-y divide-border">
         {(data.data?.value.trending ?? []).map((c) => (
           <div className="py-3" key={c.mediaType + c.window}>
             <div className="flex items-center justify-between gap-2 text-sm">
               <span>
-                {c.mediaType === "movie" ? "Movies" : "TV shows"} ·{" "}
-                {c.window === "day" ? "Today" : "This week"}
+                {c.mediaType === "movie" ? t("Movies") : t("TV shows")} ·{" "}
+                {c.window === "day" ? t("Today") : t("This week")}
               </span>
               <Badge variant="secondary">{c.state}</Badge>
             </div>
             <p className="mt-1 text-xs text-fg-muted">
-              {c.titles} titles · updated {relativeTime(c.fetchedAt)}
+              {tn(c.titles, "{count} title · updated {when}", "{count} titles · updated {when}", {
+                when: relativeTime(c.fetchedAt),
+              })}
             </p>
           </div>
         ))}
       </div>
       <p className="mt-3 text-xs text-fg-muted">
-        The last successful chart survives restarts and temporary outages. Eligibility and your
-        visibility rules still apply.
+        {t(
+          "The last successful chart survives restarts and temporary outages. Eligibility and your visibility rules still apply.",
+        )}
       </p>
     </section>
   );

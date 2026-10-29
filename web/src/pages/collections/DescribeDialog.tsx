@@ -11,16 +11,17 @@ import { Sparkles, Wand2 } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Segmented } from "../../components/fields";
+import { localized, t, tx } from "../../i18n";
 import { api, ApiError, errorMessage } from "../../lib/api";
 import type { CollectionSpec } from "../../lib/contract";
 import { describeRule, describeSource, normalizeSpec } from "../../lib/rules";
 
-const EXAMPLES = [
-  "Cosy British mysteries under two hours",
-  "Mind-bending sci-fi from the 90s",
-  "Acclaimed animated films the whole family will like",
-  "Slow-burn horror with great reviews",
-];
+const EXAMPLES = localized(() => [
+  t("Cosy British mysteries under two hours"),
+  t("Mind-bending sci-fi from the 90s"),
+  t("Acclaimed animated films the whole family will like"),
+  t("Slow-burn horror with great reviews"),
+]);
 
 /**
  * "Describe it": plain English in, an editable collection draft out. The
@@ -30,7 +31,7 @@ export function DescribeDialog({
   open,
   onClose,
   onApply,
-  applyLabel = "Open as draft",
+  applyLabel = t("Open as draft"),
   secondary,
 }: {
   open: boolean;
@@ -75,14 +76,16 @@ export function DescribeDialog({
       size="lg"
       title={
         <span className="flex items-center gap-2">
-          <Sparkles size={18} className="text-primary" /> Describe a collection
+          <Sparkles size={18} className="text-primary" /> {t("Describe a collection")}
         </span>
       }
-      description="Say what you want in plain English. Ether drafts the sources and rules; you review them before anything is saved."
+      description={t(
+        "Say what you want in plain English. Ether drafts the sources and rules; you review them before anything is saved.",
+      )}
       footer={
         <div className="flex w-full flex-wrap justify-end gap-2">
           <Button variant="ghost" onClick={close}>
-            Cancel
+            {t("Cancel")}
           </Button>
           {result && secondary ? (
             <Button
@@ -106,7 +109,7 @@ export function DescribeDialog({
             </Button>
           ) : (
             <Button onClick={() => void generate()} disabled={busy || prompt.trim().length < 3}>
-              <Wand2 size={15} /> {busy ? "Drafting…" : "Draft it"}
+              <Wand2 size={15} /> {busy ? t("Drafting…") : t("Draft it")}
             </Button>
           )}
         </div>
@@ -117,8 +120,8 @@ export function DescribeDialog({
           rows={3}
           value={prompt}
           autoFocus
-          aria-label="Describe the collection"
-          placeholder="e.g. Feel-good 80s adventure films for a Saturday night"
+          aria-label={t("Describe the collection")}
+          placeholder={t("e.g. Feel-good 80s adventure films for a Saturday night")}
           onChange={(e) => setPrompt(e.currentTarget.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && prompt.trim().length >= 3)
@@ -127,14 +130,14 @@ export function DescribeDialog({
         />
         <div className="flex flex-wrap items-center gap-3">
           <Segmented
-            ariaLabel="Media type"
+            ariaLabel={t("Media type")}
             size="sm"
             value={media}
             onChange={setMedia}
             options={[
-              { value: "movie", label: "Movies" },
-              { value: "show", label: "TV" },
-              { value: "mixed", label: "Both" },
+              { value: "movie", label: t("Movies") },
+              { value: "show", label: t("TV") },
+              { value: "mixed", label: t("Both") },
             ]}
           />
           <div className="flex flex-wrap gap-1.5">
@@ -152,13 +155,18 @@ export function DescribeDialog({
         </div>
         {llmOff ? (
           <Alert variant="info">
-            <AlertTitle>Describe it needs a language model</AlertTitle>
+            <AlertTitle>{t("Describe it needs a language model")}</AlertTitle>
             <AlertDescription>
-              Connect an OpenAI-compatible endpoint (a local Ollama works) in{" "}
-              <Link to="/services" className="font-medium underline" onClick={close}>
-                Integrations
-              </Link>
-              , then try again. You can still build collections by hand or from a template.
+              {tx(
+                "Connect an OpenAI-compatible endpoint (a local Ollama works) in {integrations}, then try again. You can still build collections by hand or from a template.",
+                {
+                  integrations: (
+                    <Link to="/services" className="font-medium underline" onClick={close}>
+                      {t("Integrations")}
+                    </Link>
+                  ),
+                },
+              )}
             </AlertDescription>
           </Alert>
         ) : error ? (
@@ -173,7 +181,7 @@ export function DescribeDialog({
           >
             <div>
               <p className="text-base font-semibold text-fg">
-                {result.spec.name || "Untitled collection"}
+                {result.spec.name || t("Untitled collection")}
               </p>
               {result.explanation ? (
                 <p className="mt-1 text-sm text-fg-muted">{result.explanation}</p>
@@ -192,12 +200,12 @@ export function DescribeDialog({
               ))}
               {result.spec.exclude.map((r, i) => (
                 <Badge key={`x${i}`} variant="destructive">
-                  Not: {describeRule(r)}
+                  {t("Not: {rule}", { rule: describeRule(r) })}
                 </Badge>
               ))}
             </div>
             <p className="text-xs text-fg-subtle">
-              Nothing is saved yet. You can change every rule in the editor.
+              {t("Nothing is saved yet. You can change every rule in the editor.")}
             </p>
           </div>
         ) : null}

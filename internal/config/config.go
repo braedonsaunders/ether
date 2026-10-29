@@ -38,6 +38,7 @@ type Config struct {
 	Quality       Quality       `json:"quality"`
 	Transcode     Transcode     `json:"transcode"`
 	Trakt         Trakt         `json:"trakt"`
+	Simkl         Simkl         `json:"simkl"`
 	OpenSubtitles OpenSubtitles `json:"openSubtitles"`
 	LLM           LLM           `json:"llm"`
 	Updates       Updates       `json:"updates"`
@@ -350,6 +351,12 @@ type Downloads struct {
 	Expiry Duration `json:"expiry"`
 	// MaxHeight caps the download profile's resolution (default 1080).
 	MaxHeight int `json:"maxHeight"`
+}
+
+type Simkl struct {
+	Enabled      bool   `json:"enabled"`
+	ClientID     string `json:"clientId"`
+	ClientSecret string `json:"clientSecret"`
 }
 
 type Trakt struct {

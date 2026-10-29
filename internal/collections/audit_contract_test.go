@@ -2,6 +2,7 @@ package collections_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -63,6 +64,18 @@ func TestCancelledPreviewReturnsCancellation(t *testing.T) {
 
 func TestOfflineSortDirectionsAndTies(t *testing.T) {
 	e := newEnv(t)
+	// The "added" cases below are tie-breaks: all three rows must share one
+	// added_at, whatever second the fixture happened to be seeded in.
+	var distinct int
+	if err := e.db.(*sql.DB).QueryRowContext(e.ctx,
+		`SELECT COUNT(DISTINCT added_at) FROM catalog_titles WHERE key IN (?,?,?)`,
+		int64(core.MovieKey(101)), int64(core.MovieKey(102)), int64(core.MovieKey(103)),
+	).Scan(&distinct); err != nil {
+		t.Fatal(err)
+	}
+	if distinct != 1 {
+		t.Fatalf("fixture rows have %d distinct added_at values, want 1", distinct)
+	}
 	sp := spec("Sort audit", "movie", []core.CollectionSource{{Kind: "titles", Keys: []string{core.MovieKey(101).String(), core.MovieKey(102).String(), core.MovieKey(103).String()}}})
 	tests := []struct {
 		mode string
