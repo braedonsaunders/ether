@@ -3,6 +3,31 @@
 Open <http://localhost:32400/ether/> on the server to manage Ether. Use your
 normal Plex apps to browse and watch.
 
+## Jellyfin and Emby apps
+
+Jellyfin and Emby support is in development. No app has been certified yet;
+the matrix will be filled in only after testing the listed features on the
+specified app version. A dash means not yet verified.
+
+| Client | Version | Browse | Play | Resume | Watched | Skip intro | Subtitles | Live TV | Quick Connect |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Jellyfin for Android TV | Pending | — | — | — | — | — | — | — | — |
+| Swiftfin | Pending | — | — | — | — | — | — | — | — |
+| Findroid | Pending | — | — | — | — | — | — | — | — |
+| Emby apps | Pending | — | — | — | — | — | — | — | — |
+
+Jellyfin for Android phones and Jellyfin Desktop are unsupported: they wrap
+Jellyfin Web, which Ether does not ship. Ether's `/web` page gives connection
+instructions; it is not a browser media player.
+
+Emby's own app restrictions still apply. Its [Premiere feature matrix](https://support.emby.media/support/articles/Premiere-Feature-Matrix.html)
+lists full playback in the iOS and Android mobile apps as requiring an App
+Unlock or Premiere; Windows, Linux, macOS and game-console apps require
+Premiere for full playback. It lists free full playback for Roku, Apple TV and
+LG/Samsung TVs, and up to five TV devices for Android TV or Fire TV; Live TV
+requires Premiere. Availability and device limits can change, so consult Emby's
+matrix. Ether does not provide or emulate an Emby Premiere entitlement.
+
 ## Set up
 
 The setup wizard signs you in to Plex, then asks where Ether streams from: a
