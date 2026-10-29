@@ -513,6 +513,17 @@ func rowsFromHubs(hubs []core.Hub) []core.HomeRow {
 // FinalizeHome arranges the complete Plex row list after all producers ran.
 // Unknown/custom hubs with no catalogue items are deliberately preserved.
 func (e *Engine) FinalizeHome(ctx context.Context, user *core.User, hc core.HubContext, section string, hubs []core.Hub) ([]core.Hub, error) {
+	rows := rowsFromHubs(hubs)
+	rows = e.finalizeHomeRows(ctx, user, hc, section, rows)
+	out := make([]core.Hub, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Hub)
+	}
+	return out, nil
+}
+
+// finalizeHomeRows is shared by both wire-shaped and neutral adapters.
+func (e *Engine) finalizeHomeRows(ctx context.Context, user *core.User, hc core.HubContext, section string, rows []core.HomeRow) []core.HomeRow {
 	if user == nil {
 		user = &core.User{}
 	}
@@ -524,7 +535,6 @@ func (e *Engine) FinalizeHome(ctx context.Context, user *core.User, hc core.HubC
 	if section != "" && section != "home" {
 		def = e.opts.MaxSectionRows
 	}
-	rows := rowsFromHubs(hubs)
 	for i := range rows {
 		e.hubMu.RLock()
 		kind := e.hubKinds[rows[i].HubID]
@@ -549,14 +559,39 @@ func (e *Engine) FinalizeHome(ctx context.Context, user *core.User, hc core.HubC
 		kept = append(kept, r)
 	}
 	rows = kept
-	out := []core.Hub{}
-	for _, r := range arrangeLayout(rows, e.layoutForContext(ctx), user.ID, hc, section, def) {
-		if !r.Hidden {
-			out = append(out, r.Hub)
+	out := []core.HomeRow{}
+	for _, row := range arrangeLayout(rows, e.layoutForContext(ctx), user.ID, hc, section, def) {
+		if !row.Hidden {
+			out = append(out, row)
+		}
+	}
+	return out
+}
+
+func (e *Engine) FinalizeNeutralHome(ctx context.Context, user *core.User, situation core.HomeSituation, section string, candidates []core.NeutralHomeRow) ([]core.NeutralHomeRow, error) {
+	hc := core.HubContext{Device: situation.Device, Daypart: situation.Daypart, Weekend: situation.Weekend, Now: situation.Now, SectionID: situation.LibraryID, Product: situation.Product, Platform: situation.Platform, SessionID: situation.SessionID, ClientID: situation.ClientID}
+	rows := make([]core.HomeRow, 0, len(candidates))
+	byID := make(map[string]core.NeutralHomeRow, len(candidates))
+	for _, candidate := range candidates {
+		kind := candidate.Kind
+		if kind == "" {
+			kind = hubKind(candidate.ID)
+		}
+		h := core.Hub{ID: candidate.ID, Title: candidate.Title, Type: candidate.Type, Items: candidate.Items, ItemCount: candidate.ItemCount}
+		rows = append(rows, core.HomeRow{HubID: candidate.ID, Title: candidate.Title, Kind: kind, Source: core.RowSourcePlex, Items: candidate.Items, Hub: h})
+		byID[candidate.ID] = candidate
+	}
+	arranged := e.finalizeHomeRows(ctx, user, hc, section, rows)
+	out := make([]core.NeutralHomeRow, 0, len(arranged))
+	for _, row := range arranged {
+		if candidate, ok := byID[row.HubID]; ok {
+			out = append(out, candidate)
 		}
 	}
 	return out, nil
 }
+
+var _ core.NeutralHomeLayoutSource = (*Engine)(nil)
 
 func (e *Engine) HomeCandidatesFor(ctx context.Context, u *core.User, hc core.HubContext, limit int) ([]core.Hub, error) {
 	return toHubs(e.home(ctx, u, hc, "", limit, false).Rows), nil

@@ -312,3 +312,34 @@ func TestDesignerHasOnePersistentLayout(t *testing.T) {
 		t.Fatal("canonical layout lost advanced viewer constraints", loaded, err)
 	}
 }
+
+func TestNeutralHomeLayoutMatchesLegacy(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	user := &core.User{ID: 1}
+	hc := hubContext(testNow, core.DeviceTV)
+	hubs := []core.Hub{
+		{ID: "home.continue", Title: "Continue", ItemCount: 1},
+		{ID: "movie.trending", Title: "Trending", ItemCount: 4},
+		{ID: "live.onnow", Title: "On Now", ItemCount: 2},
+	}
+	old, err := h.e.FinalizeHome(ctx, user, hc, "home", hubs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := make([]core.NeutralHomeRow, len(hubs))
+	for i, hub := range hubs {
+		candidates[i] = core.NeutralHomeRow{ID: hub.ID, Title: hub.Title, Type: hub.Type, Items: hub.Items, ItemCount: hub.ItemCount}
+	}
+	got, err := h.e.FinalizeNeutralHome(ctx, user, core.HomeSituation{Device: hc.Device, Daypart: hc.Daypart, Weekend: hc.Weekend, Now: hc.Now, LibraryID: hc.SectionID, Product: hc.Product, Platform: hc.Platform, SessionID: hc.SessionID, ClientID: hc.ClientID}, "home", candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, len(got))
+	for i, row := range got {
+		ids[i] = row.ID
+	}
+	if !reflect.DeepEqual(hubIDsOf(old), ids) {
+		t.Fatalf("legacy %v != neutral %v", hubIDsOf(old), ids)
+	}
+}
