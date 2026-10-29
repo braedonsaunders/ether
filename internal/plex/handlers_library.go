@@ -732,61 +732,7 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 
 // inProgressTitles loads the user's in-progress items and next episodes.
 func (s *Server) inProgressTitles(ctx context.Context, pr *Request, t core.MediaType, limit int) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
-	if s.d.State == nil || pr.User == nil {
-		return nil, nil
-	}
-	sts, err := s.d.State.InProgress(ctx, pr.User.ID, limit*2+10)
-	if err != nil {
-		s.log.Warn("load in-progress", "err", err)
-		return nil, nil
-	}
-	keys := make([]core.RatingKey, 0, len(sts))
-	state := make(map[core.RatingKey]core.WatchStatus, len(sts))
-	for _, st := range sts {
-		keys = append(keys, st.Key)
-		state[st.Key] = st
-	}
-	titles := s.getTitles(ctx, keys)
-	// Resume unfinished media and advance recently completed series. A
-	// completed episode has no offset, so InProgress alone loses the show.
-	if t != core.TypeMovie {
-		titles = s.appendNextContinue(ctx, pr, titles, state, limit)
-	}
-	sort.SliceStable(titles, func(i, j int) bool {
-		a, b := state[titles[i].Key].LastViewedAt, state[titles[j].Key].LastViewedAt
-		if !a.Equal(b) {
-			return a.After(b)
-		}
-		return titles[i].Key < titles[j].Key
-	})
-	seenShows := map[int64]bool{}
-	out := titles[:0:0]
-	for _, ti := range titles {
-		if t != "" {
-			want := t
-			if t == core.TypeShow {
-				want = core.TypeEpisode
-			}
-			if ti.Type != want {
-				continue
-			}
-		}
-		sec, ok := s.sectionFor(ti.Type)
-		if ok && !s.canSeeSection(pr.User, sec.ID) {
-			continue
-		}
-		if ti.Type == core.TypeEpisode {
-			if seenShows[ti.Key.TMDB()] {
-				continue
-			}
-			seenShows[ti.Key.TMDB()] = true
-		}
-		out = append(out, ti)
-		if limit > 0 && len(out) >= limit {
-			break
-		}
-	}
-	return out, state
+	return s.continueExperience(pr).InProgress(ctx, pr.User, t, limit)
 }
 
 // getTitles fetches titles concurrently, preserving order and skipping

@@ -1,0 +1,183 @@
+package experience
+
+import (
+	"context"
+	"sort"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+)
+
+// Continue coordinates resume and next-episode selection using viewer-scoped dependencies.
+type Continue struct {
+	State        core.State
+	EpisodeOrder interface {
+		Grouped(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
+	}
+	Now                func() time.Time
+	Grandchildren      func(context.Context, core.RatingKey) ([]core.Title, error)
+	NextEpisode        func(context.Context, core.RatingKey) (*core.Title, error)
+	Visible            func(context.Context, *core.User, *core.Title) bool
+	SameDayUnavailable func(context.Context, *core.Title) bool
+	GetTitles          func(context.Context, []core.RatingKey) []core.Title
+	SectionAllowed     func(*core.User, core.MediaType) bool
+	OnError            func(error)
+}
+
+func (c Continue) appendNext(ctx context.Context, viewer *core.User, titles []core.Title, state map[core.RatingKey]core.WatchStatus, limit int) []core.Title {
+	history, err := c.State.History(ctx, viewer.ID, c.Now().Add(-90*24*time.Hour), 200)
+	if err != nil {
+		return titles
+	}
+	seen := map[int64]bool{}
+	for _, t := range titles {
+		if t.Type == core.TypeEpisode {
+			seen[t.Key.TMDB()] = true
+		}
+	}
+	var recent []core.HistoryEntry
+	var keys, shows []core.RatingKey
+	for _, h := range history {
+		if !h.Completed || h.Key.Kind() != core.KindEpisode || seen[h.Key.TMDB()] {
+			continue
+		}
+		seen[h.Key.TMDB()] = true
+		recent = append(recent, h)
+		keys = append(keys, h.Key)
+		shows = append(shows, core.ShowKey(h.Key.TMDB()))
+		if len(recent) >= min(max(limit, 1), 50) {
+			break
+		}
+	}
+	statuses, err := c.State.GetMany(ctx, viewer.ID, keys)
+	if err != nil {
+		return titles
+	}
+	grouped := map[core.RatingKey]bool{}
+	if c.EpisodeOrder != nil {
+		grouped, err = c.EpisodeOrder.Grouped(ctx, viewer, shows)
+		if err != nil {
+			return titles
+		}
+	}
+	for _, h := range recent {
+		if ctx.Err() != nil {
+			break
+		}
+		if statuses[h.Key].ViewCount == 0 {
+			continue
+		} // subsequently marked unwatched
+		current := h.Key
+		var ordered []core.Title
+		if grouped[core.ShowKey(current.TMDB())] {
+			eps, e := c.Grandchildren(ctx, core.ShowKey(current.TMDB()))
+			if e != nil {
+				continue
+			}
+			for i := range eps {
+				if eps[i].Key == current {
+					ordered = eps[i+1:]
+					break
+				}
+			}
+		}
+		for n := 0; n < 32; n++ {
+			var next *core.Title
+			if grouped[core.ShowKey(current.TMDB())] {
+				if n >= len(ordered) {
+					break
+				}
+				next = &ordered[n]
+			} else {
+				next, err = c.NextEpisode(ctx, current)
+				if err != nil || next == nil || next.Key == current {
+					break
+				}
+			}
+			current = next.Key
+			if next.Season == 0 {
+				continue
+			}
+			if !next.Released.IsZero() && next.Released.After(c.Now()) {
+				break
+			}
+			if !c.Visible(ctx, viewer, next) || c.SameDayUnavailable(ctx, next) {
+				break
+			}
+			st, e := c.State.Get(ctx, viewer.ID, next.Key)
+			if e != nil {
+				break
+			}
+			if st.ViewCount > 0 && st.ViewOffset <= 0 {
+				continue
+			}
+			st.Key = next.Key
+			if st.LastViewedAt.Before(h.ViewedAt) {
+				st.LastViewedAt = h.ViewedAt
+			}
+			state[next.Key] = st
+			titles = append(titles, *next)
+			break
+		}
+	}
+	return titles
+}
+
+func (c Continue) InProgress(ctx context.Context, viewer *core.User, t core.MediaType, limit int) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
+	if c.State == nil || viewer == nil {
+		return nil, nil
+	}
+	sts, err := c.State.InProgress(ctx, viewer.ID, limit*2+10)
+	if err != nil {
+		if c.OnError != nil {
+			c.OnError(err)
+		}
+		return nil, nil
+	}
+	keys := make([]core.RatingKey, 0, len(sts))
+	state := make(map[core.RatingKey]core.WatchStatus, len(sts))
+	for _, st := range sts {
+		keys = append(keys, st.Key)
+		state[st.Key] = st
+	}
+	titles := c.GetTitles(ctx, keys)
+	// Resume unfinished media and advance recently completed series. A
+	// completed episode has no offset, so InProgress alone loses the show.
+	if t != core.TypeMovie {
+		titles = c.appendNext(ctx, viewer, titles, state, limit)
+	}
+	sort.SliceStable(titles, func(i, j int) bool {
+		a, b := state[titles[i].Key].LastViewedAt, state[titles[j].Key].LastViewedAt
+		if !a.Equal(b) {
+			return a.After(b)
+		}
+		return titles[i].Key < titles[j].Key
+	})
+	seenShows := map[int64]bool{}
+	out := titles[:0:0]
+	for _, ti := range titles {
+		if t != "" {
+			want := t
+			if t == core.TypeShow {
+				want = core.TypeEpisode
+			}
+			if ti.Type != want {
+				continue
+			}
+		}
+		if !c.SectionAllowed(viewer, ti.Type) {
+			continue
+		}
+		if ti.Type == core.TypeEpisode {
+			if seenShows[ti.Key.TMDB()] {
+				continue
+			}
+			seenShows[ti.Key.TMDB()] = true
+		}
+		out = append(out, ti)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, state
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -783,28 +784,16 @@ func (s *Server) searchTypes(u *core.User, sectionID int) []core.MediaType {
 }
 
 func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
-	types := s.searchTypes(pr.User, sectionID)
-	if strings.TrimSpace(query) == "" || len(types) == 0 {
-		return nil, nil
+	search := experience.Search{
+		Visibility: s.visibility(),
+		Natural: func(ctx context.Context, _ *core.User, query string, limit int) ([]core.Title, bool) {
+			return s.discoverySearch(ctx, pr, query, limit)
+		},
+		Catalog: func(ctx context.Context, query string, types []core.MediaType, limit int) ([]core.Title, error) {
+			return s.d.Catalog.Search(ctx, query, types, limit)
+		},
 	}
-	if items, ok := s.discoverySearch(ctx, pr, query, limit); ok {
-		allowed := map[core.MediaType]bool{}
-		for _, typ := range types {
-			allowed[typ] = true
-		}
-		filtered := items[:0:0]
-		for _, item := range items {
-			if allowed[item.Type] {
-				filtered = append(filtered, item)
-			}
-		}
-		return filtered, nil
-	}
-	res, err := s.d.Catalog.Search(ctx, query, types, limit)
-	if err != nil {
-		return nil, err
-	}
-	return s.filterAllowed(pr.User, res), nil
+	return search.Find(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), limit)
 }
 
 func (s *Server) vibeSearch(ctx context.Context, pr *Request, query string) (*core.Collection, []core.Title, bool, error) {
