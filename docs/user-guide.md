@@ -1,7 +1,8 @@
 # Using Ether
 
 Open <http://localhost:32400/ether/> on the server to manage Ether. Use your
-normal Plex apps to browse and watch. If Ether uses another port, such as
+chosen media apps to browse and watch, subject to the support notes below.
+If Ether uses another port, such as
 32450 alongside an existing Plex server, use that port instead.
 
 Start here: [libraries and the catalogue](#libraries-catalogue-and-home),
@@ -62,7 +63,9 @@ means HDR10+ has not been positively identified; the media remains playable.
 
 ## Set up
 
-The setup wizard signs you in to Plex, then asks where Ether streams from: a
+The setup wizard starts with app selection and owner-account setup. If you
+select Plex, sign in with Plex and claim the server; otherwise, create a local
+Ether owner account. Then choose where Ether streams from: a
 debrid account (Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or
 Offcloud), a Usenet provider, or both, each tested before you continue. Next add at least one
 indexer: a Stremio stream addon's install link or a Torznab URL for debrid,

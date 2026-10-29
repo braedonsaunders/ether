@@ -11,13 +11,16 @@ open it. The Windows installer is unsigned and may trigger SmartScreen.
 The automatic-update manifest is signed separately with Ether's release key.
 
 If you already have an Ether executable, run it and open
-<http://localhost:32400/ether/>. The setup wizard walks you through Plex sign-in,
+<http://localhost:32400/ether/>. The setup wizard walks you through app selection,
+owner-account setup,
 provider and indexer configuration, and cache settings. A standalone executable
 needs access to FFmpeg and FFprobe for media processing.
 
-After any install, open the web UI and finish the setup wizard (sign in
-to plex.tv, add your Usenet providers and Newznab indexers, pick a cache
-folder). Ether ships no content, providers or indexers; see
+After any install, open the web UI and finish the setup wizard. Choose your
+app integrations, sign in with Plex if selected or create a local Ether owner
+account, add your sources and indexers, and pick a cache folder. Review the
+[client support notes](user-guide.md#jellyfin-and-emby-apps) for integration limits.
+Ether ships no content, providers or indexers; see
 [LEGAL.md](../LEGAL.md).
 
 ## Windows

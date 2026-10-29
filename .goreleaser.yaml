@@ -96,8 +96,8 @@ nfpms:
     homepage: https://github.com/braedonsaunders/ether
     maintainer: Ether contributors
     description: |
-      Ether media server — presents to Plex apps as a Plex Media Server,
-      backed by a TMDB catalogue and on-demand Usenet streaming.
+      Ether media server — a TMDB catalogue with on-demand streaming
+      from your Usenet providers and debrid accounts.
       Ships no content and no providers; owners supply every account.
     license: GPL-3.0
     formats: [deb, rpm]
@@ -143,7 +143,7 @@ dockers:
     build_flag_templates:
       - --platform=linux/amd64
       - --label=org.opencontainers.image.title=Ether
-      - --label=org.opencontainers.image.description=Ether media server (Plex-compatible front end, TMDB catalogue, Usenet streaming)
+      - --label=org.opencontainers.image.description=Ether media server (TMDB catalogue, on-demand Usenet and debrid streaming)
       - --label=org.opencontainers.image.source=https://github.com/braedonsaunders/ether
       - --label=org.opencontainers.image.version={{ .Version }}
       - --label=org.opencontainers.image.licenses=GPL-3.0

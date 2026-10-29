@@ -2,10 +2,10 @@
   <img src=".github/assets/ether-logo.svg" alt="Ether" width="360" />
 </p>
 
-<h2 align="center">The whole TMDB catalogue, inside the Plex app your family already uses.<br />Your on-demand server alongside Plex Media Server.</h2>
+<h2 align="center">Your media. Beyond the static library.<br />Your on-demand media server.</h2>
 
 <p align="center">
-  Press <b>Play</b> on a title in any official Plex app. Ether resolves the best release across <b>your Usenet providers</b> and <b>your debrid accounts</b>, health-checks it, and streams the exact byte ranges the player asks for.
+  Ether brings a TMDB-backed catalogue and your configured sources together. When you press <b>Play</b> in a supported app, it resolves the best release across <b>your Usenet providers</b> and <b>your debrid accounts</b>, health-checks it, and streams the exact byte ranges the player asks for.
 </p>
 
 <p align="center">
@@ -33,11 +33,11 @@
 
 ## Why Ether exists
 
-A typical automated Plex setup is built from several excellent projects—Sonarr, Radarr, Prowlarr, SABnzbd, Overseerr, Kometa, Tautulli and more—each of them very good at its job. Wiring them together still means download clients, path mappings, webhooks and, for debrid users, FUSE/WebDAV mounts that Plex Media Server has to scan. A new title still has to download, unpack and be scanned before anyone can press Play.
+A typical automated media setup is built from several excellent projects—Sonarr, Radarr, Prowlarr, SABnzbd, Overseerr, Kometa, Tautulli and more—each of them very good at its job. Wiring them together still means download clients, path mappings, webhooks and, for debrid users, FUSE/WebDAV mounts that Plex Media Server has to scan. A new title still has to download, unpack and be scanned before anyone can press Play.
 
-Ether takes a different approach to the on-demand case. Instead of presenting files for Plex Media Server to scan, **Ether speaks the PMS protocol itself.** It talks directly to official Plex clients (Apple TV, iOS, Android TV, Shield, Fire TV, Roku, Smart TVs, Web) and backs the library with the live TMDB catalogue and an on-demand byte-range streaming engine.
+Ether takes a different approach to the on-demand case. **Ether is a media server backed by the live TMDB catalogue and an on-demand byte-range streaming engine.** Its app integrations connect that library to media clients. Plex is one integration: Ether speaks the PMS protocol directly. Other integrations are in development; consult the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) before choosing an app. An available integration is not a claim that every client or feature is certified.
 
-When you open Plex, **the catalogue is already there.** When you press **Play**, Ether resolves, health-checks, and streams the bytes on the fly. When you scrub to `01:14:22`, Ether seeks to the matching keyframe offset inside a remote Usenet RAR5 set or debrid HTTPS stream and serves just those bytes.
+**The catalogue is available without waiting for a local library scan.** When you press **Play**, Ether resolves, health-checks, and streams the bytes on the fly. When you scrub to `01:14:22`, Ether seeks to the matching keyframe offset inside a remote Usenet RAR5 set or debrid HTTPS stream and serves just those bytes.
 
 | What your family experiences | What you stop maintaining |
 | :--- | :--- |
@@ -50,7 +50,7 @@ When you open Plex, **the catalogue is already there.** When you press **Play**,
 
 ## Alongside your local library
 
-Keep Plex Media Server and the tools that curate the files you own. Ether adds a second server in the same Plex apps for titles outside that collection. Its availability depends on your configured sources; an on-demand catalogue is not a durable local library.
+Keep the media server and tools that curate the files you own. Ether adds an on-demand catalogue alongside that collection. With the Plex integration, Ether appears as a separate server in your Plex apps. Its availability depends on your configured sources; an on-demand catalogue is not a durable local library.
 
 The table maps familiar workflows to Ether’s on-demand features. It does not claim feature parity with these mature projects. Clustering, virtual Live TV, hardware enhancement and poster customization are optional integrations; ordinary playback needs none of them.
 
@@ -224,7 +224,7 @@ services:
 
 Open **`http://localhost:32400/ether/`** and finish the 4-step wizard:
 
-1. **Sign in with Plex** and claim the server. It appears in every Plex app on your account immediately.
+1. **Choose your app integrations** and set up the owner account. If you select Plex, sign in with Plex and claim the server; otherwise, create a local Ether owner account. Check the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) for integration limits.
 2. **Add a source:** a Usenet provider + Newznab indexer, *or* a debrid account (**Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud**) + torrent indexer, Cardigann site or Stremio addon, *or* both.
 3. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start).
 4. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api)** and optional integrations (Trakt, OpenSubtitles, local Ollama/LM Studio).

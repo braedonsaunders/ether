@@ -581,7 +581,7 @@ export default function Setup() {
           <Button variant="ghost" disabled={step === 0 || saving} onClick={() => setStep(step - 1)}>
             {t("Back")}
           </Button>
-          {/* Plex cannot be skipped: after setup only its owner can sign in. */}
+          {/* After setup, only the owner account can sign in. */}
           {step !== 0 && step !== 3 ? (
             <label className="flex items-center gap-2 text-xs text-fg-muted">
               <Checkbox
@@ -1135,7 +1135,7 @@ export default function Setup() {
               </h3>
               <p className="text-sm text-fg-muted">
                 {tx(
-                  "Ether builds your Plex library from TMDB, so a TMDB API key is required. It is free: {link}, then paste it here and test it.",
+                  "Ether builds your library from TMDB, so a TMDB API key is required. It is free: {link}, then paste it here and test it.",
                   {
                     link: (
                       <a

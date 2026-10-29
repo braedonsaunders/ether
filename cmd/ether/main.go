@@ -1,5 +1,5 @@
-// Command ether runs the Ether server: a Plex Media Server-compatible front
-// end over a TMDB catalogue, streaming from Usenet on demand.
+// Command ether runs the Ether media server: a TMDB catalogue with
+// on-demand streaming from owner-configured Usenet and debrid sources.
 //
 //	ether                         run (in the foreground, or under the OS service manager)
 //	ether --spike movie.mp4 ...   run the spike: serve local files as a library
