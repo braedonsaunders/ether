@@ -444,6 +444,13 @@ func run(c config) ([]result, error) {
 	return out, nil
 }
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "workload" {
+		if err := workload(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "acceptance" {
 		if err := acceptance(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)

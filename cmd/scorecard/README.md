@@ -187,3 +187,24 @@ work accounting, cleanup and timing gaps disqualify a recovery winner. This
 is an assertion evaluator, not a workload driver; inputs and manifest hashes
 must be independently collected and verified. It cannot authenticate their
 provenance or establish overall efficiency/robustness acceptance by itself.
+
+### Isolated mixed workload (experimental)
+
+`scorecard workload -config /private/path/workload.json` reads an operator-prepared
+JSON configuration and emits redacted JSON evidence. Only use it after the
+coordinator reserves isolated staging resources; a `reservation_id` is a label,
+not proof of a reservation. The configuration supplies loopback `reference` and
+`ether` targets with distinct matched cgroup limits, a pinned `ffmpeg` path and
+`ffmpeg_sha256`, `manifest_sha256`, `cache_state`, `concurrency`, `repetitions`,
+`timeout_ms`, named `flows`, and a scheduled `trace` of client/flow/`at_ms`.
+Target variables and captured JSON values may contain credentials: protect the
+configuration and never put credentials in client or flow names. Steps declare
+kind, HTTP method, path or captured URL variable, expected status and response
+byte limit; cleanup steps are attempted after errors and reported on failure.
+Media steps require the same declared delivered-byte SHA-256 on both targets and
+expected decoded duration. FFmpeg decodes the downloaded bytes before a stream
+minute can be counted. This currently supports identical bounded media responses,
+not distinct HLS encodes, independently verified source selection, injected
+provider faults, or full video-quality assessment. The manifest hash and cache
+state are declarations and require independent verification. A passing workload
+alone does not establish comparative superiority.
