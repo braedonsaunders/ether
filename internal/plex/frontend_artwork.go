@@ -6,26 +6,37 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	kitimages "github.com/braedonsaunders/ether/internal/frontend/kit/images"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
 // FrontendArtwork adapts the existing Plex artwork selection and rendering
 // paths for other surfaces. Its list remains non-authoritative until all
 // supported artwork sources have been enumerated.
-type FrontendArtwork struct{ Server *Server }
+type FrontendArtwork struct {
+	Server *Server
+	// Variants must be cache-only; it may schedule a bounded background fill.
+	Variants func(*core.Title, string) (*tmdb.Images, bool)
+}
 
 type frontendArtworkEntry struct {
 	image                         frontend.Image
 	element, personKind, personID string
 	discoveryKind                 string
 	discovery                     bool
+	remotePath                    string
 }
 
 func artworkReference(req frontend.ArtworkRequest, kind, source string) string {
@@ -106,6 +117,21 @@ func (a FrontendArtwork) entries(ctx context.Context, req frontend.ArtworkReques
 		add(item.kind, item.element+"\x00"+path+"\x00"+collectionVersion, frontendArtworkEntry{element: item.element})
 	}
 	if title != nil {
+		if a.Variants != nil {
+			variants, ready := a.Variants(title, req.Device.Language)
+			if ready && variants != nil {
+				for _, group := range []struct {
+					kind  string
+					files []tmdb.ImageFile
+				}{{frontend.ImagePoster, variants.Posters}, {frontend.ImageBackdrop, variants.Backdrops}, {frontend.ImageLogo, variants.Logos}, {frontend.ImageStill, variants.Still}} {
+					for _, file := range group.files {
+						if artwork.ValidPath(file.FilePath) {
+							add(group.kind, "variant\x00"+file.FilePath, frontendArtworkEntry{remotePath: file.FilePath})
+						}
+					}
+				}
+			}
+		}
 		for _, group := range []struct {
 			kind   string
 			people []core.Person
@@ -160,7 +186,7 @@ func (w *artworkResponse) Write(p []byte) (int, error) {
 }
 
 func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, img frontend.Image, transform frontend.ArtworkTransform) ([]byte, string, error) {
-	if transform.Width < 0 || transform.Width > 4000 || transform.Height != 0 || transform.Format != "" || transform.Blur {
+	if transform.Width < 0 || transform.Width > 4000 || transform.Height < 0 || transform.Height > 4000 || (transform.Format != "" && transform.Format != "jpeg" && transform.Format != "png") {
 		return nil, "", core.ErrNotAvailable
 	}
 	entries, err := a.entries(ctx, req)
@@ -178,6 +204,8 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		}
 		w := &artworkResponse{header: make(http.Header)}
 		switch {
+		case entry.remotePath != "":
+			a.Server.serveRemoteImage(w, r, a.Server.d.ImageURL(entry.remotePath, tmdbSize(transform.Width)))
 		case entry.discovery:
 			a.Server.serveDiscoveryPoster(w, r, req.Item, entry.discoveryKind, req.Device.Language)
 		case entry.personKind != "":
@@ -191,9 +219,60 @@ func (a FrontendArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, 
 		if w.body.Len() == 0 {
 			return nil, "", core.ErrNotFound
 		}
-		return w.body.Bytes(), w.header.Get("Content-Type"), nil
+		return transformArtwork(w.body.Bytes(), w.header.Get("Content-Type"), transform)
 	}
 	return nil, "", core.ErrUnauthorized
+}
+
+func transformArtwork(data []byte, contentType string, transform frontend.ArtworkTransform) ([]byte, string, error) {
+	// Width alone is handled by the existing image sources, including TMDB's
+	// width buckets and the poster provider's resize path.
+	if transform.Height == 0 && transform.Format == "" && !transform.Blur {
+		return data, contentType, nil
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > 4000 || cfg.Height > 4000 || int64(cfg.Width)*int64(cfg.Height) > 16_000_000 {
+		return nil, "", core.ErrNotAvailable
+	}
+	src, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, "", err
+	}
+	width, height := transform.Width, transform.Height
+	if width == 0 && height > 0 {
+		width = max(1, cfg.Width*height/cfg.Height)
+	}
+	if height == 0 && width > 0 {
+		height = max(1, cfg.Height*width/cfg.Width)
+	}
+	if width > 4000 || height > 4000 {
+		return nil, "", core.ErrNotAvailable
+	}
+	if width > 0 && height > 0 && (width != cfg.Width || height != cfg.Height) {
+		src, err = kitimages.Resize(src, width, height)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	if transform.Blur {
+		src, err = kitimages.Blur(src)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	var out bytes.Buffer
+	switch transform.Format {
+	case "png":
+		err = png.Encode(&out, src)
+		contentType = "image/png"
+	default:
+		err = jpeg.Encode(&out, src, &jpeg.Options{Quality: 90})
+		contentType = "image/jpeg"
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return out.Bytes(), contentType, nil
 }
 
 var _ frontend.Artwork = FrontendArtwork{}

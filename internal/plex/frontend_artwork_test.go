@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image"
 	"strings"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
 func TestFrontendArtworkUsesPlexSelectionAndRechecksVisibility(t *testing.T) {
@@ -57,5 +59,53 @@ func TestFrontendArtworkUsesPlexSelectionAndRechecksVisibility(t *testing.T) {
 	f.catalog.mu.Unlock()
 	if _, _, err := source.Read(context.Background(), req, poster, frontend.ArtworkTransform{}); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("stale reference: %v", err)
+	}
+}
+
+func TestFrontendArtworkVariantsAreScopedAndValidated(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	source := FrontendArtwork{Server: f.srv, Variants: func(*core.Title, string) (*tmdb.Images, bool) {
+		return &tmdb.Images{Posters: []tmdb.ImageFile{{FilePath: "/alternative.jpg"}, {FilePath: "https://example.com/image.jpg"}}}, true
+	}}
+	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: fightClub.Key}
+	entries, err := source.entries(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range entries {
+		if entry.remotePath == "" {
+			continue
+		}
+		count++
+		if entry.remotePath != "/alternative.jpg" || strings.Contains(entry.image.Path, "alternative") {
+			t.Fatal("invalid variant reference")
+		}
+		if data, ct, err := source.Read(context.Background(), req, entry.image, frontend.ArtworkTransform{Width: 300}); err != nil || len(data) == 0 || ct != "image/jpeg" {
+			t.Fatalf("variant: %s %v", ct, err)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("valid variant count %d", count)
+	}
+}
+
+func TestFrontendArtworkTransform(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	source := FrontendArtwork{Server: f.srv}
+	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: fightClub.Key}
+	images, _, err := source.List(context.Background(), req)
+	if err != nil || len(images) == 0 {
+		t.Fatal(err)
+	}
+	data, ct, err := source.Read(context.Background(), req, images[0], frontend.ArtworkTransform{Width: 30, Height: 20, Format: "png", Blur: true})
+	if err != nil || ct != "image/png" {
+		t.Fatalf("transform: %q %v", ct, err)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width != 30 || cfg.Height != 20 {
+		t.Fatalf("dimensions: %+v %v", cfg, err)
 	}
 }
