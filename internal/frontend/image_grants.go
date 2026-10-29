@@ -12,6 +12,7 @@ type ImageGrantRequest struct {
 	Credential string
 	Device     core.Device
 	Item       core.RatingKey
+	Channel    string
 	Image      Image
 }
 

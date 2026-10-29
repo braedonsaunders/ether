@@ -12,6 +12,9 @@ type ArtworkRequest struct {
 	Viewer *core.Viewer
 	Device core.Device
 	Item   core.RatingKey
+	// Channel is a stable LiveTV channel ID. Exactly one of Item and Channel
+	// identifies the subject.
+	Channel string
 }
 
 // ArtworkTransform describes the requested output. Zero dimensions preserve

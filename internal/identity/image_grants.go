@@ -20,6 +20,7 @@ import (
 
 func init() {
 	store.Register("frontend_image_grants", 1, `CREATE TABLE frontend_image_grants (hash TEXT PRIMARY KEY, source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE, viewer_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, surface TEXT NOT NULL, item INTEGER NOT NULL, device TEXT NOT NULL, image_kind TEXT NOT NULL, image_path TEXT NOT NULL, image_tag TEXT NOT NULL, expires INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0); CREATE INDEX frontend_image_grants_source ON frontend_image_grants(source_hash);`)
+	store.Register("frontend_image_grants", 2, `ALTER TABLE frontend_image_grants ADD COLUMN channel TEXT NOT NULL DEFAULT '';`)
 }
 
 type ImageSource interface {
@@ -74,7 +75,25 @@ func validImageSecret(secret string) (string, bool) {
 	h := sha256.Sum256([]byte(secret))
 	return hex.EncodeToString(h[:]), true
 }
-func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, image frontend.Image) error {
+func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, channel string, image frontend.Image) error {
+	if channel != "" {
+		if s.artwork == nil {
+			return core.ErrNotAvailable
+		}
+		images, complete, err := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Device: device, Channel: channel})
+		if err != nil {
+			return err
+		}
+		if !complete {
+			return core.ErrNotAvailable
+		}
+		for _, candidate := range images {
+			if candidate == image {
+				return nil
+			}
+		}
+		return core.ErrUnauthorized
+	}
 	experience := s.experience()
 	if experience == nil {
 		return core.ErrNotAvailable
@@ -102,10 +121,10 @@ func (s *ImageGrantService) Issue(ctx context.Context, req frontend.ImageGrantRe
 	if !ok {
 		return "", core.ErrUnauthorized
 	}
-	if req.Item == 0 || req.Image.Path == "" || req.Image.Kind == "" || len(req.Image.Path) > 1024 || len(req.Image.Kind) > 128 || len(req.Image.Tag) > 256 {
+	if (req.Item == 0) == (req.Channel == "") || len(req.Channel) > 512 || req.Image.Path == "" || req.Image.Kind == "" || len(req.Image.Path) > 1024 || len(req.Image.Kind) > 128 || len(req.Image.Tag) > 256 {
 		return "", core.ErrUnauthorized
 	}
-	if err := s.authorized(ctx, viewer, req.Device, req.Item, req.Image); err != nil {
+	if err := s.authorized(ctx, viewer, req.Device, req.Item, req.Channel, req.Image); err != nil {
 		return "", err
 	}
 	device, err := json.Marshal(req.Device)
@@ -119,7 +138,7 @@ func (s *ImageGrantService) Issue(ctx context.Context, req frontend.ImageGrantRe
 	secret := base64.RawURLEncoding.EncodeToString(random[:])
 	hash, _ := validImageSecret(secret)
 	now := s.now().UnixMilli()
-	result, err := s.db.ExecContext(ctx, `INSERT INTO frontend_image_grants(hash,source_hash,viewer_id,surface,item,device,image_kind,image_path,image_tag,expires) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1)`, hash, source, viewer.ID, string(s.surface), int64(req.Item), string(device), req.Image.Kind, req.Image.Path, req.Image.Tag, now+s.ttl.Milliseconds(), source, viewer.ID, string(s.surface), now)
+	result, err := s.db.ExecContext(ctx, `INSERT INTO frontend_image_grants(hash,source_hash,viewer_id,surface,item,device,image_kind,image_path,image_tag,expires,channel) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1)`, hash, source, viewer.ID, string(s.surface), int64(req.Item), string(device), req.Image.Kind, req.Image.Path, req.Image.Tag, now+s.ttl.Milliseconds(), req.Channel, source, viewer.ID, string(s.surface), now)
 	if err != nil {
 		return "", err
 	}
@@ -171,9 +190,9 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	}
 	now := s.now().UnixMilli()
 	var viewerID, item int64
-	var deviceJSON string
+	var deviceJSON, channel string
 	var img frontend.Image
-	err := s.db.QueryRowContext(r.Context(), `SELECT i.viewer_id,i.item,i.device,i.image_kind,i.image_path,i.image_tag FROM frontend_image_grants i JOIN identity_grants g ON g.hash=i.source_hash AND g.viewer_id=i.viewer_id AND g.surface=i.surface JOIN auth_users u ON u.id=i.viewer_id WHERE i.hash=? AND i.surface=? AND i.revoked=0 AND i.expires>? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, string(s.surface), now, now).Scan(&viewerID, &item, &deviceJSON, &img.Kind, &img.Path, &img.Tag)
+	err := s.db.QueryRowContext(r.Context(), `SELECT i.viewer_id,i.item,i.device,i.image_kind,i.image_path,i.image_tag,i.channel FROM frontend_image_grants i JOIN identity_grants g ON g.hash=i.source_hash AND g.viewer_id=i.viewer_id AND g.surface=i.surface JOIN auth_users u ON u.id=i.viewer_id WHERE i.hash=? AND i.surface=? AND i.revoked=0 AND i.expires>? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, string(s.surface), now, now).Scan(&viewerID, &item, &deviceJSON, &img.Kind, &img.Path, &img.Tag, &channel)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -188,7 +207,7 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 		http.NotFound(w, r)
 		return
 	}
-	if err = s.authorized(r.Context(), viewer, device, core.RatingKey(item), img); err != nil {
+	if err = s.authorized(r.Context(), viewer, device, core.RatingKey(item), channel, img); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -214,7 +233,7 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 			http.Error(w, "invalid image blur", http.StatusBadRequest)
 			return
 		}
-		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: core.RatingKey(item)}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur == "1"})
+		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: core.RatingKey(item), Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur == "1"})
 	} else {
 		data, contentType, err = s.images.Get(r.Context(), img.Path, width)
 	}
