@@ -281,10 +281,32 @@ type ExternalRequest struct {
 	Season, Episode *int
 }
 
+// CollectionQuery requests viewer-scoped collection pagination.
+type CollectionQuery struct {
+	Types         []core.MediaType
+	Offset, Limit int
+}
+type CollectionPage struct {
+	Items []core.Collection
+	Total int
+}
+type PageQuery struct{ Offset, Limit int }
+type NotInterestedEntry struct {
+	Key     core.RatingKey
+	AddedAt time.Time
+}
+type NotInterestedPage struct {
+	Items []NotInterestedEntry
+	Total int
+}
+
 // Experience applies viewer policy before returning any data. Browse operations
 // must not resolve or open a release. Policy is applied before pagination and limits.
 type Experience interface {
 	Views(context.Context, *core.Viewer) ([]View, error)
+	Collections(context.Context, *core.Viewer, core.Device, CollectionQuery) (CollectionPage, error)
+	NotInterested(context.Context, *core.Viewer, core.Device, PageQuery) (NotInterestedPage, error)
+	NotInterestedItem(context.Context, *core.Viewer, core.Device, core.RatingKey) (NotInterestedEntry, error)
 	// ResolveExternal resolves an IMDb ID without opening a release, and returns
 	// a key only after enforcing current viewer and inherited-show policy.
 	ResolveExternal(context.Context, *core.Viewer, core.Device, ExternalRequest) (core.RatingKey, error)

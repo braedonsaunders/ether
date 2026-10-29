@@ -13,6 +13,9 @@ import (
 
 // Experience implements frontend.Experience with optional function hooks.
 type Experience struct {
+	CollectionsFunc          func(context.Context, *core.Viewer, core.Device, frontend.CollectionQuery) (frontend.CollectionPage, error)
+	NotInterestedFunc        func(context.Context, *core.Viewer, core.Device, frontend.PageQuery) (frontend.NotInterestedPage, error)
+	NotInterestedItemFunc    func(context.Context, *core.Viewer, core.Device, core.RatingKey) (frontend.NotInterestedEntry, error)
 	ResolveExternalFunc      func(context.Context, *core.Viewer, core.Device, frontend.ExternalRequest) (core.RatingKey, error)
 	ResolveEventSubjectFunc  func(context.Context, *core.Viewer, core.Device, frontend.FavoriteRef) (frontend.ResolvedEventSubject, error)
 	SetNotInterestedFunc     func(context.Context, *core.Viewer, core.RatingKey, bool) error
@@ -47,6 +50,24 @@ func (f Experience) ResolveExternal(c context.Context, v *core.Viewer, d core.De
 		return f.ResolveExternalFunc(c, v, d, r)
 	}
 	return 0, core.ErrNotFound
+}
+func (f Experience) Collections(c context.Context, v *core.Viewer, d core.Device, q frontend.CollectionQuery) (frontend.CollectionPage, error) {
+	if f.CollectionsFunc != nil {
+		return f.CollectionsFunc(c, v, d, q)
+	}
+	return frontend.CollectionPage{}, nil
+}
+func (f Experience) NotInterested(c context.Context, v *core.Viewer, d core.Device, q frontend.PageQuery) (frontend.NotInterestedPage, error) {
+	if f.NotInterestedFunc != nil {
+		return f.NotInterestedFunc(c, v, d, q)
+	}
+	return frontend.NotInterestedPage{}, nil
+}
+func (f Experience) NotInterestedItem(c context.Context, v *core.Viewer, d core.Device, k core.RatingKey) (frontend.NotInterestedEntry, error) {
+	if f.NotInterestedItemFunc != nil {
+		return f.NotInterestedItemFunc(c, v, d, k)
+	}
+	return frontend.NotInterestedEntry{}, core.ErrNotFound
 }
 func (f Experience) Views(c context.Context, v *core.Viewer) ([]frontend.View, error) {
 	if f.ViewsFunc != nil {
