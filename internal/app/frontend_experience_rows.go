@@ -136,13 +136,84 @@ func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequ
 		}
 		return a.personalize.SectionCandidatesFor(ctx, req.Viewer, kind, hc, req.Limit)
 	case frontend.PlacementDetail:
-		if a.recommend == nil || req.Item == 0 {
+		if a.catalog == nil || req.Item == 0 {
 			return nil, core.ErrNotFound
 		}
-		return a.recommend.Related(ctx, req.Viewer, req.Item, req.Limit)
+		title, err := a.catalog.Get(ctx, req.Item)
+		if err != nil || title == nil || !visibility.Visible(ctx, req.Viewer, title) {
+			return nil, core.ErrNotFound
+		}
+		var postPlay func(context.Context, int) []core.PostPlayPick
+		if a.cfg.Get().Personalize.PostPlay {
+			postPlay = func(ctx context.Context, limit int) []core.PostPlayPick {
+				picks, err := a.personalize.PostPlay(ctx, req.Viewer, req.Item, hc, limit)
+				if err != nil {
+					a.log.Debug("postplay picks", "key", req.Item, "err", err)
+				}
+				return picks
+			}
+		}
+		return experienceDetailRows(ctx, req.Viewer, req.Item, req.Limit, visibility, a.catalog.NextEpisode, postPlay,
+			func(ctx context.Context, limit int) ([]core.Hub, error) {
+				return a.personalize.Related(ctx, req.Viewer, req.Item, limit)
+			})
 	default:
 		return nil, core.ErrNotFound
 	}
+}
+
+// experienceDetailRows assembles the same ordered sources used by post-play,
+// filtering each candidate before deduplication and row limits.
+func experienceDetailRows(ctx context.Context, viewer *core.User, key core.RatingKey, limit int, visibility experience.Visibility,
+	next func(context.Context, core.RatingKey) (*core.Title, error), postPlay func(context.Context, int) []core.PostPlayPick,
+	related func(context.Context, int) ([]core.Hub, error)) ([]core.Hub, error) {
+	if limit <= 0 {
+		limit = 12
+	}
+	seen := map[core.RatingKey]bool{key: true}
+	var hubs []core.Hub
+	if next != nil {
+		row := experience.NextUp(ctx, viewer, key, next, visibility)
+		if len(row.Items) > 0 && !seen[row.Items[0].Key] {
+			seen[row.Items[0].Key] = true
+			hubs = append(hubs, core.Hub{ID: "tv.upnext", Title: "Up Next", Type: core.TypeEpisode, Items: row.Items})
+		}
+	}
+	if postPlay != nil {
+		row := experience.LoadPostPlay(ctx, viewer, visibility, limit, seen, postPlay)
+		if len(row.Items) > 0 {
+			prefix := "movie"
+			if key.Kind() == core.KindShow || key.Kind() == core.KindSeason || key.Kind() == core.KindEpisode {
+				prefix = "tv"
+			}
+			hubs = append(hubs, core.Hub{ID: prefix + ".postplay", Title: "Recommended For You", Style: "shelf", Items: row.Items})
+		}
+	}
+	if related == nil {
+		return hubs, nil
+	}
+	var candidates []core.Hub
+	rows, err := experience.LoadRelated(ctx, viewer, visibility, limit, seen, func(ctx context.Context, fetch int) ([]experience.RelatedCandidate, error) {
+		var err error
+		candidates, err = related(ctx, fetch)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]experience.RelatedCandidate, len(candidates))
+		for i, h := range candidates {
+			out[i] = experience.RelatedCandidate{Index: i, Items: h.Items}
+		}
+		return out, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		hub := candidates[row.Index]
+		hub.Items = row.Items
+		hubs = append(hubs, hub)
+	}
+	return hubs, nil
 }
 
 // experienceContinue supplies the shared continue/next-up service with real app dependencies.
