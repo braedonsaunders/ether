@@ -28,12 +28,15 @@ type ProwlarrDiscovery struct {
 	Warnings               []string         `json:"warnings,omitempty"`
 	// PresentIDs are the scoped IDs of every enabled indexer the source
 	// reported, including ones filtered out below (unknown protocol).
-	// For reporting/dedup only: a discovery that returns HTTP 200 with
-	// valid JSON is TREATED as an authoritative list — the Prowlarr API
-	// offers no proof of completeness (no total/count to check against),
-	// so sync trusts it, like Prowlarr's own FullSync does. PresentIDs
-	// therefore do not prove the discovery was complete, and they do NOT
-	// protect unknown-protocol copies from reconciliation (see below).
+	// A discovery that returns HTTP 200 with valid JSON is TREATED as
+	// an authoritative list — the Prowlarr API offers no proof of
+	// completeness (no total/count to check against), so sync trusts
+	// it, like Prowlarr's own FullSync does. PresentIDs therefore do
+	// not prove the discovery was complete. Conservative reconciliation
+	// (B2): when SkippedUnknownProtocol > 0 the list is observably not
+	// fully usable, so the reconciler removes nothing in this scope —
+	// present-but-unimportable copies in PresentIDs are kept too. Only
+	// with SkippedUnknownProtocol == 0 may stale copies be removed.
 	PresentIDs []string `json:"presentIds,omitempty"`
 }
 
@@ -242,12 +245,10 @@ func DiscoverProwlarrReport(ctx context.Context, cfg config.Prowlarr, opts Optio
 		seen[item.ID] = true
 		id := "prowlarr-" + scope + "-" + strconv.Itoa(item.ID)
 		// Present at the source (enabled), even if unimportable below.
-		// Sync decision: on a discovery treated as authoritative (HTTP 200
-		// + valid JSON; the API offers no completeness proof) an
-		// unknown-protocol indexer is non-importable, so reconciliation
-		// removes its local copy (the warning below explains why);
-		// PresentIDs only records what was reported, it does not protect
-		// that copy.
+		// PresentIDs records what was reported; combined with
+		// SkippedUnknownProtocol > 0 it makes reconciliation keep every
+		// existing copy in this scope (including this unimportable one)
+		// instead of removing anything on a not-fully-usable list.
 		present = append(present, id)
 		if protocol != "usenet" && protocol != "1" && !torrent {
 			// Counted and reported, not silently dropped: the owner should

@@ -22,14 +22,21 @@ import (
 // only after a discovery treated as authoritative, removes previously
 // imported indexers from the SAME Prowlarr instance/base (IDs with prefix,
 // e.g. "prowlarr-<scope>-") that are absent from discovered — i.e. removed
-// or disabled at the source, or still present but no longer importable
-// (unknown protocol: sync removes its local copy; discovery's warning
-// explains the skip). "Treated as authoritative" means HTTP 200 with a
+// or disabled at the source. "Treated as authoritative" means HTTP 200 with a
 // valid JSON body: the Prowlarr API offers no proof of completeness (no
 // total/count to check against), so the sync trusts that list, like
 // Prowlarr's own FullSync does — it is not a proven-complete discovery.
 // Safety rules, mirroring Prowlarr upstream where removal is an explicit
 // sync action, never an aggressive side effect:
+//   - conservative skip guard (B2): if the discovery reported
+//     skippedUnknownProtocol > 0, its list is observably not fully
+//     usable, so NOTHING in this scope is removed on this import —
+//     stale same-scope copies survive and presentIDs copies (present at
+//     the source but filtered for an unknown protocol) are protected
+//     too. keptSkipped counts the existing indexers that would have
+//     been removed, so the handler can warn explicitly. Upserts of the
+//     importable discovered indexers still apply. With
+//     skippedUnknownProtocol == 0, removal proceeds as below;
 //   - a discovery with neither discovered nor presentIDs, or an empty
 //     prefix, never removes anything (a failed/empty response is not
 //     proof that the source is empty; the handler also aborts before
@@ -42,11 +49,13 @@ import (
 //     scope. Indexers outside that namespace (ordinary manual entries,
 //     other origins) and prowlarr-* IDs from other Prowlarr
 //     instances/bases are kept, except pre-normalisation orphans proven
-//     to be this same instance (below);
-//   - presentIDs (ProwlarrDiscovery.PresentIDs) does NOT protect an ID:
-//     it only records what the treated-as-authoritative discovery
-//     reported and supplies numeric suffixes for the legacy check.
-//     Unknown-protocol copies are therefore removed.
+//     to be this same instance (below). Every removal is returned in
+//     removedIDs (IDs only, never URL/key) so the handler can log a
+//     Warn per removal of an ID this discovery did not generate;
+//   - presentIDs (ProwlarrDiscovery.PresentIDs) records what the
+//     treated-as-authoritative discovery reported and supplies numeric
+//     suffixes for the legacy check. On its own it does not select
+//     removals; removal protection comes from the skip guard above.
 //
 // Legacy migration: an indexer minted before base-URL normalisation has
 // an old-scope ID, so the exact-prefix rule above would keep it forever
@@ -58,13 +67,16 @@ import (
 // in staleLegacy so the handler can warn; a provably different endpoint
 // is another instance and is kept silently.
 //
-// It returns the merged list, how many indexers were removed and how
-// many unproven legacy indexers were kept. The result never aliases
-// existing: the caller's slice is left untouched.
-func reconcileProwlarrIndexers(existing, discovered []config.Indexer, prefix string, presentIDs []string) ([]config.Indexer, int, int) {
-	removed, staleLegacy := 0, 0
+// It returns the merged list, how many indexers were removed, how
+// many unproven legacy indexers were kept, how many existing indexers
+// were kept solely because of the skip guard, and the removed IDs.
+// The result never aliases existing: the caller's slice is left untouched.
+func reconcileProwlarrIndexers(existing, discovered []config.Indexer, prefix string, presentIDs []string, skippedUnknownProtocol int) ([]config.Indexer, int, int, int, []string) {
+	removed, staleLegacy, keptSkipped := 0, 0, 0
+	var removedIDs []string
 	out := slices.Clone(existing)
 	if prefix != "" && (len(discovered) > 0 || len(presentIDs) > 0) {
+		protect := skippedUnknownProtocol > 0
 		found := make(map[string]bool, len(discovered))
 		for _, x := range discovered {
 			found[x.ID] = true
@@ -82,21 +94,27 @@ func reconcileProwlarrIndexers(existing, discovered []config.Indexer, prefix str
 		}
 		kept := make([]config.Indexer, 0, len(existing))
 		for _, x := range existing {
+			remove := false
 			switch {
 			case strings.HasPrefix(x.ID, prefix):
-				if !found[x.ID] {
-					removed++
-					continue
-				}
+				remove = !found[x.ID]
 			case strings.HasPrefix(x.ID, "prowlarr-"):
 				suffix, ok := prowlarrNumericSuffix(x.ID)
 				if ok && suffixes[suffix] {
 					if matches, determinable := newznab.ProwlarrStoredIndexerMatchesPrefix(x, prefix); matches {
-						removed++
-						continue
-					} else if !determinable {
+						remove = true
+					} else if !determinable && !protect {
 						staleLegacy++
 					}
+				}
+			}
+			if remove {
+				if protect {
+					keptSkipped++
+				} else {
+					removed++
+					removedIDs = append(removedIDs, x.ID)
+					continue
 				}
 			}
 			kept = append(kept, x)
@@ -115,7 +133,7 @@ func reconcileProwlarrIndexers(existing, discovered []config.Indexer, prefix str
 			out = append(out, x)
 		}
 	}
-	return out, removed, staleLegacy
+	return out, removed, staleLegacy, keptSkipped, removedIDs
 }
 
 // prowlarrNumericSuffix returns the numeric suffix after the last "-"
@@ -169,22 +187,37 @@ func (a *App) playbackPolicyHandler() http.Handler {
 			return
 		}
 		indexers := report.Indexers
-		removed, staleLegacy := 0, 0
+		removed, staleLegacy, keptSkipped := 0, 0, 0
+		var removedIDs []string
 		if in.Import {
 			// Reaching here means discovery returned HTTP 200 with a valid
 			// body and is treated as authoritative (the API offers no proof
 			// of completeness; sync trusts it, like Prowlarr's FullSync);
-			// only then may stale same-scope imports be removed.
+			// only then may stale same-scope imports be removed — and only
+			// when the discovery skipped nothing for an unknown protocol
+			// (see the conservative skip guard in reconcileProwlarrIndexers).
 			err = a.cfg.Update(func(c *config.Config) error {
-				c.Indexers, removed, staleLegacy = reconcileProwlarrIndexers(c.Indexers, indexers, newznab.ProwlarrIDPrefix(in.Config), report.PresentIDs)
+				c.Indexers, removed, staleLegacy, keptSkipped, removedIDs = reconcileProwlarrIndexers(c.Indexers, indexers, newznab.ProwlarrIDPrefix(in.Config), report.PresentIDs, report.SkippedUnknownProtocol)
 				return nil
 			})
 			if err != nil {
 				http.Error(w, "could not save indexers", 500)
 				return
 			}
+			// A removed ID was not generated by this discovery; the
+			// prowlarr-* namespace is sync-managed, so a forged ID is
+			// indistinguishable from an imported one. Log the ID only
+			// (never URL/key) so such removals are auditable.
+			if a.log != nil {
+				for _, id := range removedIDs {
+					a.log.Warn("prowlarr reconcile removed indexer not reported by this discovery", "id", id)
+				}
+			}
 		}
 		warnings := slices.Clone(report.Warnings)
+		if keptSkipped > 0 {
+			warnings = append(warnings, fmt.Sprintf("kept %d existing indexers because discovery skipped unsupported protocols", keptSkipped))
+		}
 		if staleLegacy > 0 {
 			warnings = append(warnings, fmt.Sprintf("stale prowlarr indexer from previous import spelling: %d kept because its stored endpoint could not be proven to be this instance; remove it manually if it duplicates an imported indexer", staleLegacy))
 		}

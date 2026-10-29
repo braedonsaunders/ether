@@ -84,8 +84,8 @@ func TestProwlarrDiscoveryReportsSkippedUnknownProtocol(t *testing.T) {
 	// PresentIDs covers every enabled indexer (incl. the filtered id 5,
 	// once), but not the disabled id 6: it records what this discovery
 	// (treated as authoritative; the API offers no completeness proof)
-	// reported, for reconciliation/reporting (it does not protect
-	// unknown-protocol copies from sync removal).
+	// reported, for reconciliation/reporting. With skipped > 0 the
+	// reconciler protects these copies (it removes nothing in scope).
 	prefix := ProwlarrIDPrefix(config.Prowlarr{URL: srv.URL})
 	if prefix == "" {
 		t.Fatal("empty prefix for test server URL")

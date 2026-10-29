@@ -41,12 +41,16 @@ func TestProwlarrReconcileRemovesStaleSameScopeOnly(t *testing.T) {
 		{ID: prefix + "1", Name: "new name"},
 		{ID: prefix + "9", Name: "new at source"},
 	}
-	got, removed, stale := reconcileProwlarrIndexers(existing, discovered, prefix, []string{prefix + "1", prefix + "9"})
-	if stale != 0 {
-		t.Fatalf("stale=%d want 0", stale)
+	// skippedUnknownProtocol == 0: removal proceeds as before.
+	got, removed, stale, keptSkipped, removedIDs := reconcileProwlarrIndexers(existing, discovered, prefix, []string{prefix + "1", prefix + "9"}, 0)
+	if stale != 0 || keptSkipped != 0 {
+		t.Fatalf("stale=%d keptSkipped=%d want 0/0", stale, keptSkipped)
 	}
 	if removed != 2 {
 		t.Fatalf("removed=%d want 2, got %v", removed, prowlarrIDs(got))
+	}
+	if want := []string{prefix + "2", prefix + "3"}; !slices.Equal(removedIDs, want) {
+		t.Fatalf("removedIDs=%v want %v (IDs this discovery did not generate)", removedIDs, want)
 	}
 	want := []string{prefix + "1", "manual-1", "prowlarr-other9-2", "cardigann-x", prefix + "9"}
 	if !slices.Equal(prowlarrIDs(got), want) {
@@ -77,7 +81,7 @@ func TestProwlarrReconcileFailedOrEmptyDiscoveryRemovesNothing(t *testing.T) {
 		{"empty prefix", []config.Indexer{{ID: prefix + "1"}}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, removed, _ := reconcileProwlarrIndexers(slices.Clone(existing), tc.discovered, tc.prefix, nil)
+			got, removed, _, _, _ := reconcileProwlarrIndexers(slices.Clone(existing), tc.discovered, tc.prefix, nil, 0)
 			if removed != 0 {
 				t.Fatalf("removed=%d want 0 (%v)", removed, prowlarrIDs(got))
 			}
@@ -90,12 +94,14 @@ func TestProwlarrReconcileFailedOrEmptyDiscoveryRemovesNothing(t *testing.T) {
 	}
 }
 
-// Sync decision: an indexer still present at the source but filtered out
-// of the importable list (unknown protocol) is non-importable, so its local
-// copy IS removed on a discovery treated as authoritative — PresentIDs does not protect
-// it; the discovery warning/skipped count explains the removal. A truly
-// absent one is also removed. The caller's slice is never mutated/aliased.
-func TestProwlarrReconcileRemovesPresentUnknownProtocolAndDoesNotAlias(t *testing.T) {
+// Conservative sync decision (B2): when the discovery skipped an
+// unknown-protocol indexer (skippedUnknownProtocol > 0), its list is
+// observably not fully usable, so NOTHING in this scope is removed:
+// the present-but-unknown copy (in presentIDs) is protected and even a
+// truly absent same-scope stale copy survives. keptSkipped counts both
+// would-be removals so the handler can warn. The caller's slice is
+// never mutated/aliased.
+func TestProwlarrReconcileSkippedUnknownProtocolRemovesNothingAndDoesNotAlias(t *testing.T) {
 	const prefix = "prowlarr-abc123-"
 	existing := []config.Indexer{
 		{ID: prefix + "1", Name: "old name"},
@@ -105,13 +111,19 @@ func TestProwlarrReconcileRemovesPresentUnknownProtocolAndDoesNotAlias(t *testin
 	}
 	discovered := []config.Indexer{{ID: prefix + "1", Name: "new name"}}
 	present := []string{prefix + "1", prefix + "5"}
-	got, removed, stale := reconcileProwlarrIndexers(existing, discovered, prefix, present)
-	if removed != 2 || stale != 0 {
-		t.Fatalf("removed=%d stale=%d want 2/0 (%v)", removed, stale, prowlarrIDs(got))
+	got, removed, stale, keptSkipped, removedIDs := reconcileProwlarrIndexers(existing, discovered, prefix, present, 1)
+	if removed != 0 || stale != 0 || len(removedIDs) != 0 {
+		t.Fatalf("removed=%d stale=%d removedIDs=%v want 0/0/none (%v)", removed, stale, removedIDs, prowlarrIDs(got))
 	}
-	want := []string{prefix + "1", "manual-1"}
+	if keptSkipped != 2 {
+		t.Fatalf("keptSkipped=%d want 2 (unknown-protocol copy + stale same-scope)", keptSkipped)
+	}
+	want := []string{prefix + "1", prefix + "5", prefix + "2", "manual-1"}
 	if !slices.Equal(prowlarrIDs(got), want) {
 		t.Fatalf("ids=%v want %v", prowlarrIDs(got), want)
+	}
+	if got[0].Name != "new name" {
+		t.Fatalf("upsert did not refresh under skip guard: %+v", got[0])
 	}
 	if existing[0].Name != "old name" {
 		t.Fatalf("caller slice mutated via alias: %+v", existing[0])
@@ -119,7 +131,7 @@ func TestProwlarrReconcileRemovesPresentUnknownProtocolAndDoesNotAlias(t *testin
 	// Also without the removal branch (empty prefix): an upsert must not
 	// write through into the caller's backing array.
 	caller := []config.Indexer{{ID: prefix + "1", Name: "old name"}}
-	if _, _, _ = reconcileProwlarrIndexers(caller, discovered, "", present); caller[0].Name != "old name" {
+	if _, _, _, _, _ = reconcileProwlarrIndexers(caller, discovered, "", present, 1); caller[0].Name != "old name" {
 		t.Fatalf("caller slice mutated via alias (no-removal path): %+v", caller[0])
 	}
 }
@@ -141,8 +153,8 @@ func TestProwlarrReconcileRemovesPreNormalisationOrphanSameEndpoint(t *testing.T
 		{ID: "manual-1", Name: "manual"},
 	}
 	discovered := []config.Indexer{{ID: prefix + "4", Name: "new", URL: "http://example.com/base/4"}}
-	got, removed, stale := reconcileProwlarrIndexers(existing, discovered, prefix, []string{prefix + "4"})
-	if removed != 1 {
+	got, removed, stale, _, removedIDs := reconcileProwlarrIndexers(existing, discovered, prefix, []string{prefix + "4"}, 0)
+	if removed != 1 || !slices.Equal(removedIDs, []string{"prowlarr-oldscope00-4"}) {
 		t.Fatalf("removed=%d want 1 (only proven orphan) ids=%v", removed, prowlarrIDs(got))
 	}
 	if stale != 1 {
@@ -163,9 +175,11 @@ func TestProwlarrReconcileRemovesPreNormalisationOrphanSameEndpoint(t *testing.T
 	}
 }
 
-// Composite guard (C2/B): discovered empty but presentIDs non-empty is
-// still treated as authoritative (not proven complete) — present-but-unknown
-// and gone copies are removed. (Empty+empty removes nothing: covered above.)
+// Composite guard (C2/B): with skippedUnknownProtocol == 0, discovered
+// empty but presentIDs non-empty is still treated as authoritative (not
+// proven complete) — present-but-unknown and gone copies are removed.
+// (Empty+empty removes nothing: covered above. With skipped > 0 nothing
+// is removed instead: covered by the skip-guard test above.)
 func TestProwlarrReconcileEmptyDiscoveredNonEmptyPresentRemoves(t *testing.T) {
 	const prefix = "prowlarr-abc123-"
 	existing := []config.Indexer{
@@ -173,7 +187,7 @@ func TestProwlarrReconcileEmptyDiscoveredNonEmptyPresentRemoves(t *testing.T) {
 		{ID: prefix + "2", Name: "gone at source"},
 		{ID: "manual-1", Name: "manual"},
 	}
-	got, removed, stale := reconcileProwlarrIndexers(existing, nil, prefix, []string{prefix + "5"})
+	got, removed, stale, _, _ := reconcileProwlarrIndexers(existing, nil, prefix, []string{prefix + "5"}, 0)
 	if removed != 2 || stale != 0 {
 		t.Fatalf("removed=%d stale=%d want 2/0 (%v)", removed, stale, prowlarrIDs(got))
 	}
@@ -381,5 +395,62 @@ func TestProwlarrHandlerPreviewDoesNotPersist(t *testing.T) {
 	wantPrefix := newznab.ProwlarrIDPrefix(config.Prowlarr{URL: srv.URL})
 	if len(after) != 2 || after[0] != "manual-1" || after[1] != wantPrefix+"4" {
 		t.Fatalf("import did not persist discovered indexer: %v (prefix %q)", after, wantPrefix)
+	}
+}
+
+// B2 handler path: a discovery that skipped an unknown-protocol indexer
+// removes NOTHING in that scope on import — a stale same-scope copy and
+// the unknown-protocol copy both survive — upserts still apply, and the
+// JSON response carries the explicit "kept N existing indexers because
+// discovery skipped unsupported protocols" warning for the UI.
+func TestProwlarrHandlerImportWithUnknownProtocolRemovesNothingAndWarnsKept(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `[{"id":4,"name":"News","enable":true,"protocol":"usenet"},{"id":5,"name":"Odd","enable":true,"protocol":"rss"}]`)
+	}))
+	defer srv.Close()
+	a := prowlarrHandlerApp(t, srv.URL)
+	prefix := newznab.ProwlarrIDPrefix(config.Prowlarr{URL: srv.URL})
+	if prefix == "" {
+		t.Fatal("empty prefix for test server URL")
+	}
+	if err := a.cfg.Update(func(c *config.Config) error {
+		c.Indexers = append(c.Indexers,
+			config.Indexer{ID: prefix + "5", Name: "present but unknown protocol"},
+			config.Indexer{ID: prefix + "2", Name: "stale same-scope"},
+		)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec := postProwlarr(t, a, srv.URL, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%q", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Removed                int      `json:"removed"`
+		SkippedUnknownProtocol int      `json:"skippedUnknownProtocol"`
+		Warnings               []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Removed != 0 || out.SkippedUnknownProtocol != 1 {
+		t.Fatalf("report %+v want removed=0 skipped=1", out)
+	}
+	const wantWarning = "kept 2 existing indexers because discovery skipped unsupported protocols"
+	found := false
+	for _, w := range out.Warnings {
+		if strings.Contains(w, wantWarning) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("warnings %v lack %q", out.Warnings, wantWarning)
+	}
+	ids := indexerIDsOf(a)
+	for _, id := range []string{"manual-1", prefix + "5", prefix + "2", prefix + "4"} {
+		if !slices.Contains(ids, id) {
+			t.Fatalf("%s missing after guarded import: %v", id, ids)
+		}
 	}
 }
