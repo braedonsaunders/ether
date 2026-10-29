@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestRun(t *testing.T) {
@@ -32,5 +33,19 @@ func TestFailuresAreInconclusive(t *testing.T) {
 	}
 	if percentile([]float64{1, 2, 3, 4}, 95) != 4 {
 		t.Fatal("wrong percentile")
+	}
+}
+
+func TestMeasuresFirstByteSeparatelyFromBody(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		time.Sleep(25 * time.Millisecond)
+		_, _ = w.Write([]byte("payload"))
+	}))
+	defer s.Close()
+	m := measure(s.Client(), target{URL: s.URL}, 3, 1)
+	if m.Errors != 0 || m.TTFBP50 <= 0 || m.P50-m.TTFBP50 < 15 {
+		t.Fatalf("expected distinct first-byte and body timing: %+v", m)
 	}
 }

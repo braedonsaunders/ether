@@ -95,3 +95,10 @@ to the recorded names. In this mode each target `url` is a base URL and each
 supply the authenticated token. Missing variables, binary, fixture-only and
 non-GET probes are rejected. Response content and state still need separate
 alignment checks before timings can be interpreted as fair comparisons.
+
+Each measurement also reports first-response-byte p50/p95 (from Go's HTTP trace)
+and a winner for each percentile. Set the same positive `read_limit` on both
+targets to stop after at most that many body bytes; `completion_scope` records
+this explicitly. Use an explicit Range header when testing a bounded stream.
+First byte is an HTTP response measurement, not decoded first frame; a first HLS
+segment requires a separately configured segment request after negotiation.

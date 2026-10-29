@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,6 +21,7 @@ type target struct {
 	URL       string            `json:"url"`
 	Headers   map[string]string `json:"headers"`
 	Variables map[string]string `json:"variables,omitempty"`
+	ReadLimit int64             `json:"read_limit,omitempty"`
 }
 type scenario struct {
 	Name        string `json:"name"`
@@ -36,22 +39,28 @@ type config struct {
 type measurement struct {
 	P50     float64 `json:"p50_ms"`
 	P95     float64 `json:"p95_ms"`
+	TTFBP50 float64 `json:"ttfb_p50_ms"`
+	TTFBP95 float64 `json:"ttfb_p95_ms"`
 	Errors  int     `json:"errors"`
 	Samples int     `json:"samples"`
 }
 type result struct {
-	Name        string      `json:"name"`
-	Concurrency int         `json:"concurrency"`
-	Reference   measurement `json:"reference"`
-	Ether       measurement `json:"ether"`
-	Winner      string      `json:"winner"`
-	P50Winner   string      `json:"p50_winner"`
-	P95Winner   string      `json:"p95_winner"`
+	Name            string      `json:"name"`
+	Concurrency     int         `json:"concurrency"`
+	Reference       measurement `json:"reference"`
+	Ether           measurement `json:"ether"`
+	Winner          string      `json:"winner"`
+	P50Winner       string      `json:"p50_winner"`
+	P95Winner       string      `json:"p95_winner"`
+	TTFBP50Winner   string      `json:"ttfb_p50_winner"`
+	TTFBP95Winner   string      `json:"ttfb_p95_winner"`
+	CompletionScope string      `json:"completion_scope"`
 }
 
 func measure(client *http.Client, t target, samples, concurrency int) measurement {
 	var mu sync.Mutex
 	var durations []float64
+	var firstBytes []float64
 	errs := 0
 	jobs := make(chan struct{})
 	var wg sync.WaitGroup
@@ -66,10 +75,17 @@ func measure(client *http.Client, t target, samples, concurrency int) measuremen
 						req.Header.Set(k, v)
 					}
 					start := time.Now()
+					var firstByte atomic.Int64
+					trace := &httptrace.ClientTrace{GotFirstResponseByte: func() { firstByte.CompareAndSwap(0, time.Since(start).Nanoseconds()+1) }}
+					req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 					var resp *http.Response
 					resp, err = client.Do(req)
 					if err == nil {
-						_, err = io.Copy(io.Discard, resp.Body)
+						var body io.Reader = resp.Body
+						if t.ReadLimit > 0 {
+							body = io.LimitReader(body, t.ReadLimit)
+						}
+						_, err = io.Copy(io.Discard, body)
 						resp.Body.Close()
 						if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 							err = errors.New("non-success status")
@@ -77,10 +93,11 @@ func measure(client *http.Client, t target, samples, concurrency int) measuremen
 					}
 					elapsed := float64(time.Since(start)) / float64(time.Millisecond)
 					mu.Lock()
-					if err != nil {
+					if err != nil || firstByte.Load() == 0 {
 						errs++
 					} else {
 						durations = append(durations, elapsed)
+						firstBytes = append(firstBytes, float64(firstByte.Load()-1)/float64(time.Millisecond))
 					}
 					mu.Unlock()
 				} else {
@@ -97,10 +114,13 @@ func measure(client *http.Client, t target, samples, concurrency int) measuremen
 	close(jobs)
 	wg.Wait()
 	sort.Float64s(durations)
+	sort.Float64s(firstBytes)
 	m := measurement{Errors: errs, Samples: samples}
 	if len(durations) > 0 {
 		m.P50 = percentile(durations, 50)
 		m.P95 = percentile(durations, 95)
+		m.TTFBP50 = percentile(firstBytes, 50)
+		m.TTFBP95 = percentile(firstBytes, 95)
 	}
 	return m
 }
@@ -150,13 +170,20 @@ func run(c config) ([]result, error) {
 		if s.Name == "" || s.Reference.URL == "" || s.Ether.URL == "" {
 			return nil, errors.New("scenario requires name and both URLs")
 		}
+		if s.Reference.ReadLimit < 0 || s.Reference.ReadLimit != s.Ether.ReadLimit {
+			return nil, errors.New("both targets require the same non-negative read limit")
+		}
+		scope := "full_response"
+		if s.Reference.ReadLimit > 0 {
+			scope = fmt.Sprintf("up_to_%d_bytes", s.Reference.ReadLimit)
+		}
 		for _, n := range c.Concurrency {
 			if n < 1 {
 				return nil, errors.New("concurrency must be positive")
 			}
 			a := measure(client, s.Reference, c.Samples, n)
 			b := measure(client, s.Ether, c.Samples, n)
-			out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, a.Errors, b.Errors), P95Winner: metricWinner(a.P95, b.P95, a.Errors, b.Errors)})
+			out = append(out, result{Name: s.Name, Concurrency: n, Reference: a, Ether: b, Winner: winner(a, b), P50Winner: metricWinner(a.P50, b.P50, a.Errors, b.Errors), P95Winner: metricWinner(a.P95, b.P95, a.Errors, b.Errors), TTFBP50Winner: metricWinner(a.TTFBP50, b.TTFBP50, a.Errors, b.Errors), TTFBP95Winner: metricWinner(a.TTFBP95, b.TTFBP95, a.Errors, b.Errors), CompletionScope: scope})
 		}
 	}
 	return out, nil
