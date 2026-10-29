@@ -261,44 +261,26 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 			s.log.Warn("home hubs", "err", err)
 		}
 	}
-	// The front end owns Continue Watching (PMS's shape, with watch state).
-	// A recommender ranks it by returning a "home.continue" hub where it
-	// belongs; without one it goes first.
-	cw := q.Get("excludeContinueWatching") != "1"
-	placeCW := func() {
-		if !cw {
-			return
-		}
-		cw = false
+	candidates := make([]experience.HomeCandidate, len(hubs))
+	for i, hub := range hubs {
+		purpose := homePurpose(hub)
+		candidates[i] = experience.HomeCandidate{Index: i, Purpose: purpose, Promoted: hub.Promoted, InLibraries: s.hubInSections(hub, sections)}
+	}
+	// Rendering remains in Plex: its generated identifier governs dedupe and
+	// its exact metadata is kept for the response and impression accounting.
+	var rendered model.Hub
+	experience.AssembleHome(candidates, q.Get("excludeContinueWatching") != "1", promotedOnly, "home.continue", func() {
 		spec := s.continueHub(ctx, pr, cwHome, Section{}, count)
 		mh := s.renderHub(ctx, pr, spec, hubCtx{})
 		mc.Hub = append(mc.Hub, mh)
 		served[mh.HubIdentifier] = spec.Hub
-	}
-	if !containsHub(hubs, "home.continue") {
-		placeCW()
-	}
-	seen := map[string]bool{"home.continue": true}
-	for _, h := range hubs {
-		if h.ID == "home.continue" {
-			placeCW()
-			continue
-		}
-		if promotedOnly && !h.Promoted {
-			continue
-		}
-		if !s.hubInSections(h, sections) {
-			continue
-		}
-		// Drop a recommender row that repeats a hub we built.
-		rendered := s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{})
-		if seen[rendered.HubIdentifier] {
-			continue
-		}
-		seen[rendered.HubIdentifier] = true
+	}, func(candidate experience.HomeCandidate) string {
+		rendered = s.renderHub(ctx, pr, hubSpec{Hub: hubs[candidate.Index]}, hubCtx{})
+		return rendered.HubIdentifier
+	}, func(candidate experience.HomeCandidate) {
 		mc.Hub = append(mc.Hub, rendered)
-		served[rendered.HubIdentifier] = h
-	}
+		served[rendered.HubIdentifier] = hubs[candidate.Index]
+	})
 	if len(sections) == 0 {
 		if h, ok := s.playlistsHub(ctx, pr, count); ok {
 			mc.Hub = append(mc.Hub, h)
@@ -320,13 +302,26 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	s.recordImpressions(pr, hc, mc.Hub, served)
 }
 
-func containsHub(hubs []core.Hub, id string) bool {
-	for _, h := range hubs {
-		if h.ID == id {
-			return true
-		}
+// homePurpose translates producer identifiers at the Plex boundary; no wire
+// context or hub identifier is included in the neutral candidate.
+func homePurpose(h core.Hub) core.RowPurpose {
+	id := strings.ToLower(h.ID)
+	switch {
+	case id == "home.continue":
+		return "continue"
+	case strings.Contains(id, "upnext") || strings.Contains(id, "ondeck"):
+		return "nextUp"
+	case strings.Contains(id, "watchlist"):
+		return "watchlist"
+	case h.Key != 0 || strings.Contains(id, "collection"):
+		return "collection"
+	case strings.Contains(id, "recentlyreleased") || strings.Contains(id, "recently.released"):
+		return "recentlyReleased"
+	case strings.Contains(id, "livetv"):
+		return "live"
+	default:
+		return "recommendation"
 	}
-	return false
 }
 
 // hubContext is the personalization context of a hubs request: the
