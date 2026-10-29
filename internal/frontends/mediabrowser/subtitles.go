@@ -1,7 +1,6 @@
 package mediabrowser
 
 import (
-	"context"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -10,18 +9,14 @@ import (
 	"strings"
 )
 
-type subtitleBroker interface {
-	SubtitleURL(context.Context, frontend.SessionAccess, string, int, string) (string, error)
-}
-
 func (i *instance) subtitle(w http.ResponseWriter, r *http.Request) {
 	viewer, _, err := i.viewer(r)
 	if err != nil || viewer == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
-	service, ok := i.host.Sessions.(subtitleBroker)
-	if !ok || service == nil {
+	service := i.host.Sessions
+	if service == nil {
 		http.Error(w, "Unavailable", 503)
 		return
 	}

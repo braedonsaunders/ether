@@ -119,7 +119,7 @@ func TestStreamAliasChecksSessionItemAndOmitsCredential(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	calls := 0
 	sessions := frontendtest.Sessions{SessionsFunc: func(context.Context, frontend.SessionAccess) ([]frontend.Session, error) {
-		return []frontend.Session{{ID: "session", Item: 5, Protocol: "jellyfin"}}, nil
+		return []frontend.Session{{ID: "session", Item: 5, Protocol: "jellyfin", Device: frontend.Device{ID: "tv"}}}, nil
 	}, StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, id string, req frontend.StreamRequest) (string, error) {
 		calls++
 		if id != "session" || req.Format != frontend.StreamHLS {
@@ -135,6 +135,7 @@ func TestStreamAliasChecksSessionItemAndOmitsCredential(t *testing.T) {
 	call := func(key frontend.RatingKey) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", "/jellyfin/Videos/"+ids.RatingKeyGUID(key)+"/master.m3u8?PlaySessionId=session&api_key=secret", nil)
+		r.Header.Set("X-Emby-Device-Id", "tv")
 		inst.Handler().ServeHTTP(w, r)
 		return w
 	}

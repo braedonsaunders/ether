@@ -37,6 +37,20 @@ func userDataDTO(id string, st frontend.WatchStatus) map[string]any {
 func itemDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	kind := map[frontend.MediaType]string{"movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode"}[t.Type]
 	m := map[string]any{"Id": ids.RatingKeyGUID(t.Key), "Name": t.Title, "Type": kind, "LocationType": "FileSystem", "IsFolder": t.Type == "show" || t.Type == "season", "Overview": t.Summary, "ProductionYear": t.Year, "RunTimeTicks": t.Runtime.Nanoseconds() / 100, "UserData": userDataDTO(ids.RatingKeyGUID(t.Key), state)}
+	providers := map[string]string{}
+	if t.IDs.TMDB > 0 {
+		providers["Tmdb"] = strconv.FormatInt(t.IDs.TMDB, 10)
+	}
+	if t.IDs.IMDB != "" {
+		providers["Imdb"] = t.IDs.IMDB
+	}
+	if t.IDs.TVDB > 0 {
+		providers["Tvdb"] = strconv.FormatInt(t.IDs.TVDB, 10)
+	}
+	m["ProviderIds"] = providers
+	if t.Type == "movie" || t.Type == "episode" {
+		m["MediaType"] = "Video"
+	}
 	if t.ShowKey != 0 {
 		m["SeriesId"] = ids.RatingKeyGUID(t.ShowKey)
 		m["SeriesName"] = t.ShowTitle

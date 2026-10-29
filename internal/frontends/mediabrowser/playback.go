@@ -151,7 +151,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
 			url = prefix + url
 		}
-		if subtitleService, ok := i.host.Sessions.(subtitleBroker); ok {
+		if subtitleService := i.host.Sessions; subtitleService != nil {
 			streams := mediaStreams(plan.Media.Streams)
 			for n, stream := range plan.Media.Streams {
 				if stream.Type != "subtitle" {
@@ -295,28 +295,39 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	vals := route.Query(r.URL.Query(), "PlaySessionId")
-	if len(vals) != 1 || vals[0] == "" {
-		http.Error(w, "Missing session", 400)
+	if len(vals) > 1 {
+		http.Error(w, "Bad Request", 400)
 		return
 	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol}
+	if access.Device.ID == "" {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
 	sessions, err := i.host.Sessions.Sessions(r.Context(), access)
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	found := false
-	for _, s := range sessions {
-		if s.ID == vals[0] && s.Item == key && s.Protocol == i.protocol {
-			found = true
-			break
+	sessionID := ""
+	for _, session := range sessions {
+		if session.Item != key || session.Protocol != i.protocol || session.Device.ID != access.Device.ID {
+			continue
 		}
+		if len(vals) == 1 && vals[0] != "" && session.ID != vals[0] {
+			continue
+		}
+		if sessionID != "" {
+			http.Error(w, "Ambiguous session", 409)
+			return
+		}
+		sessionID = session.ID
 	}
-	if !found {
+	if sessionID == "" {
 		http.NotFound(w, r)
 		return
 	}
-	url, err := i.host.Sessions.StartStream(r.Context(), access, vals[0], frontend.StreamRequest{Format: format})
+	url, err := i.host.Sessions.StartStream(r.Context(), access, sessionID, frontend.StreamRequest{Format: format})
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
