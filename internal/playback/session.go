@@ -195,6 +195,7 @@ type session struct {
 	downFailovers  int
 	requiresRemux  bool
 	prefer         string // release ID the viewer picked (PrepareVariant); read-only after creation
+	exact          bool   // exact selection must never switch releases
 	lastActive     time.Time
 	stopAt         time.Time // set by a "stopped" timeline; expiry after a grace
 	decision       core.DecisionKind

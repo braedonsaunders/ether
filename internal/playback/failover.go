@@ -76,6 +76,9 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 				return nil, err
 			}
 		}
+		if s.exact && res.Release.ID != s.prefer {
+			return nil, core.ErrNotAvailable
+		}
 		g, err := m.openGeneration(ctx, s, res, fallback, cached)
 		if err == nil {
 			s.mu.Lock()
@@ -87,6 +90,9 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			return nil, ctx.Err()
 		}
 		lastErr = err
+		if s.exact {
+			return nil, fmt.Errorf("%w: selected release could not be opened", core.ErrNotAvailable)
+		}
 		allUncached = allUncached && errors.Is(err, core.ErrNotCached)
 		m.log.Warn("release failed to open", "release", res.Release.Name, "err", err)
 		tried = append(tried, res.Release.ID)
@@ -580,6 +586,9 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 				m.Stop(s.id)
 			}
 		}()
+	}
+	if s.exact {
+		return nil, fmt.Errorf("%w: selected release cannot be replaced", core.ErrNotAvailable)
 	}
 	if failovers >= m.opts.MaxFailovers {
 		return nil, fmt.Errorf("%w: session %s gave up after %d failovers", core.ErrNotAvailable, s.id, failovers)

@@ -37,3 +37,9 @@ type VariantResolver interface {
 type VariantPlayback interface {
 	PrepareVariant(ctx context.Context, user *User, key RatingKey, caps ClientCaps, releaseID string) (*PlaySession, error)
 }
+
+// ExactVariantPlayback never substitutes a different release, including
+// during later failover. The requested release may instead become unavailable.
+type ExactVariantPlayback interface {
+	PrepareExactVariant(ctx context.Context, user *User, key RatingKey, caps ClientCaps, releaseID string) (*PlaySession, error)
+}

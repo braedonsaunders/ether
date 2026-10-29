@@ -253,6 +253,7 @@ var (
 type flightKey struct {
 	id     identity
 	prefer string
+	exact  bool
 }
 
 type warmBudgetKey struct {
@@ -595,12 +596,12 @@ func userLabel(u *core.User) string {
 // stream limits, or returns the existing session for the same user, client
 // and title. Concurrent calls for the same session share one resolution.
 func (m *Manager) Prepare(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps) (*core.PlaySession, error) {
-	return m.prepareEntry(ctx, user, key, caps, "")
+	return m.prepareEntry(ctx, user, key, caps, "", false)
 }
 
 // prepareEntry is Prepare plus an optional picked release (prefer != "").
 // An existing session on a different release is replaced, never reused.
-func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, prefer string) (*core.PlaySession, error) {
+func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, prefer string, exact bool) (*core.PlaySession, error) {
 	if user == nil {
 		return nil, core.ErrUnauthorized
 	}
@@ -618,7 +619,7 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 		}
 		m.lastCaps[user.ID] = caps
 		if s := m.byIdent[id]; s != nil {
-			if prefer == "" || s.current().releaseID() == prefer {
+			if s.exact == exact && (prefer == "" || s.current().releaseID() == prefer) {
 				m.mu.Unlock()
 				s.touch(m.now())
 				return s.snapshot(m.now()), nil
@@ -631,7 +632,7 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 		}
 		break
 	}
-	fk := flightKey{id: id, prefer: prefer}
+	fk := flightKey{id: id, prefer: prefer, exact: exact}
 	f := m.flights[fk]
 	if f == nil {
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.opts.PrepareTimeout)
@@ -662,7 +663,7 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 func (m *Manager) runFlight(ctx context.Context, f *flight, fk flightKey, user *core.User, caps core.ClientCaps) {
 	defer close(f.done)
 	defer f.cancel()
-	s, err := m.prepare(ctx, fk.id, user, caps, fk.prefer)
+	s, err := m.prepare(ctx, fk.id, user, caps, fk.prefer, fk.exact)
 	m.mu.Lock()
 	delete(m.flights, fk)
 	if err != nil && m.byIdent[fk.id] == nil {
@@ -675,7 +676,7 @@ func (m *Manager) runFlight(ctx context.Context, f *flight, fk flightKey, user *
 	}
 }
 
-func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, caps core.ClientCaps, prefer string) (*session, error) {
+func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, caps core.ClientCaps, prefer string, exact bool) (*session, error) {
 	log := m.log.With("user", userLabel(user), "client", caps.ClientID, "key", id.key)
 	if err := m.reserve(ctx, user, id); err != nil {
 		log.Info("stream limit", "err", err)
@@ -704,6 +705,7 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 	profile := m.deps.SelectProfile(caps, user)
 	s := newSession(randomID(16), id, user, caps, title, profile.Name, m.now())
 	s.prefer = prefer
+	s.exact = exact
 	s.resetSpeed(m.now(), m.opts.SpeedGrace)
 	m.mu.Lock()
 	s.playbackGroup = m.channelGroups[id]
@@ -734,6 +736,12 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 		m.mu.Unlock()
 		m.dropGeneration(g)
 		m.unpinLive(g.releaseID())
+		// Concurrent flights with different exactness must never let an exact
+		// caller inherit a fallback-enabled session, even for the same release.
+		current := existing.current()
+		if existing.exact != exact || (exact && (current == nil || current.releaseID() != prefer)) {
+			return nil, core.ErrNotAvailable
+		}
 		return existing, nil
 	}
 	var replaced []string
