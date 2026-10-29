@@ -17,6 +17,12 @@ func CachedSpec(manifest, protocol, cacheDir string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return CachedSpecManifest(b, protocol, cacheDir)
+}
+
+// CachedSpecManifest reads a pinned spec using caller-supplied manifest bytes.
+func CachedSpecManifest(b []byte, protocol, cacheDir string) ([]byte, error) {
+	var err error
 	var data struct {
 		Specs []struct {
 			Protocol string `json:"protocol"`

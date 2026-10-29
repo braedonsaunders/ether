@@ -70,13 +70,31 @@ func pathMatches(pattern, path string) bool {
 
 // Validate checks status and JSON schema. HLS routes are deliberately excluded.
 func (d *Document) Validate(method, requestPath string, status int, contentType string, body []byte) error {
+	schema, err := d.responseSchema(method, requestPath, status, contentType, body)
+	if err != nil || schema == nil {
+		return err
+	}
+	var value any
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err = dec.Decode(&value); err != nil {
+		return fmt.Errorf("response JSON: %w", err)
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return fmt.Errorf("trailing data after JSON value")
+	}
+	return d.validate(schema, value, "$", 0)
+}
+
+// responseSchema selects the concrete operation and response schema.
+func (d *Document) responseSchema(method, requestPath string, status int, contentType string, body []byte) (any, error) {
 	u, err := url.Parse(requestPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	path := u.Path
 	if strings.HasSuffix(path, ".m3u8") || strings.HasSuffix(path, ".ts") || strings.HasSuffix(path, ".m4s") {
-		return nil
+		return nil, nil
 	}
 	paths := obj(d.root["paths"])
 	var selected map[string]any
@@ -120,11 +138,11 @@ func (d *Document) Validate(method, requestPath string, status int, contentType 
 		}
 	}
 	if ambiguous {
-		return fmt.Errorf("ambiguous path %s", path)
+		return nil, fmt.Errorf("ambiguous path %s", path)
 	}
 	operation := obj(selected[strings.ToLower(method)])
 	if operation == nil {
-		return fmt.Errorf("no specification for %s %s", method, path)
+		return nil, fmt.Errorf("no specification for %s %s", method, path)
 	}
 	responses := obj(operation["responses"])
 	v := responses[strconv.Itoa(status)]
@@ -135,11 +153,11 @@ func (d *Document) Validate(method, requestPath string, status int, contentType 
 		v = responses["default"]
 	}
 	if v == nil {
-		return fmt.Errorf("status %d not documented", status)
+		return nil, fmt.Errorf("status %d not documented", status)
 	}
 	response, err := d.resolve(v)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	schema := response["schema"]
 	if content := obj(response["content"]); content != nil {
@@ -150,28 +168,19 @@ func (d *Document) Validate(method, requestPath string, status int, contentType 
 		}
 		if entry == nil {
 			if len(body) == 0 {
-				return nil
+				return nil, nil
 			}
-			return fmt.Errorf("content type %q not documented", media)
+			return nil, fmt.Errorf("content type %q not documented", media)
 		}
 		schema = entry["schema"]
 	}
 	if schema == nil {
 		if len(body) != 0 {
-			return fmt.Errorf("response has body but no schema")
+			return nil, fmt.Errorf("response has body but no schema")
 		}
-		return nil
+		return nil, nil
 	}
-	var value any
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	if err = dec.Decode(&value); err != nil {
-		return fmt.Errorf("response JSON: %w", err)
-	}
-	if err := dec.Decode(new(any)); err != io.EOF {
-		return fmt.Errorf("trailing data after JSON value")
-	}
-	return d.validate(schema, value, "$", 0)
+	return schema, nil
 }
 func (d *Document) validate(schema any, v any, path string, depth int) error {
 	if depth > 128 {

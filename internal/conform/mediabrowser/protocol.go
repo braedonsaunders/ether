@@ -19,8 +19,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/braedonsaunders/ether/internal/conform"
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
+	"github.com/braedonsaunders/ether/internal/conform/specs"
 )
 
 type Profile struct {
@@ -45,6 +48,8 @@ type Probe struct {
 type Protocol struct {
 	Dialect  string
 	profiles map[string]Profile
+	specOnce sync.Once
+	spec     *openapi.Document
 }
 
 // Load reads profiles from a directory supplied by the caller.
@@ -445,6 +450,24 @@ func (p *Protocol) Compare(a, b conform.Response) conform.Report {
 // informational. Ether uses that validator for correct If-Range resumption.
 func (p *Protocol) CompareRequest(req conform.Request, reference, target conform.Response) conform.Report {
 	report := p.Compare(reference, target)
+	if reference.Status == target.Status && len(target.Body) > 0 {
+		p.specOnce.Do(func() {
+			data, err := openapi.CachedSpecManifest(specs.Manifest, p.Dialect, "")
+			if err == nil {
+				p.spec, _ = openapi.Parse(data)
+			}
+		})
+		if p.spec != nil {
+			for n := range report.Differences {
+				d := &report.Differences[n]
+				if d.Kind == conform.KindExtra && strings.HasPrefix(d.Path, "$") && p.spec.ValidExtra(req.Method, req.Path, target.Status, target.Headers.Get("Content-Type"), target.Body, d.Path) {
+					d.Kind = conform.KindValue
+					d.Reference = "absent in reference; schema permits richer data"
+					d.Blocking = false
+				}
+			}
+		}
+	}
 	path, _, _ := strings.Cut(req.Path, "?")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 4 && (strings.EqualFold(parts[0], "jellyfin") || strings.EqualFold(parts[0], "emby")) {

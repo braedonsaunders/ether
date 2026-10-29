@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/braedonsaunders/ether/internal/conform"
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
+	"github.com/braedonsaunders/ether/internal/conform/specs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -230,5 +232,52 @@ func TestPlaybackObservationUpdatesAndClearsSession(t *testing.T) {
 	p.Observe(req, conform.Response{Status: 503}, vars)
 	if vars["play_session_id"] != "" {
 		t.Fatal(vars)
+	}
+}
+
+func TestCompareRequestClassifiesOnlySchemaValidExtras(t *testing.T) {
+	doc, err := openapi.Parse([]byte(`{"openapi":"3.0.0","paths":{"/Items":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object","properties":{"Items":{"type":"array","items":{"type":"object","properties":{"Overview":{"type":"string"}}}}}}}}}}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Protocol{Dialect: "emby", spec: doc}
+	p.specOnce.Do(func() {})
+	response := func(body string) conform.Response {
+		return conform.Response{Status: 200, Headers: http.Header{"Content-Type": []string{"application/json"}}, Body: []byte(body)}
+	}
+	ref := response(`{"Items":[{}]}`)
+	for _, tc := range []struct {
+		body     string
+		blocking int
+	}{
+		{`{"Items":[{"Overview":"one"}]}`, 0},
+		{`{"Items":[{"Overview":"one"},{"Overview":7}]}`, 1},
+		{`{"Items":[{"Unknown":"x"}]}`, 1},
+	} {
+		report := p.CompareRequest(conform.Request{Method: "GET", Path: "/Items"}, ref, response(tc.body))
+		if report.Blocking() != tc.blocking {
+			t.Errorf("%s: %#v", tc.body, report)
+		}
+	}
+}
+
+func TestPinnedEmbySchemaRecognizesRouteExtras(t *testing.T) {
+	data, err := openapi.CachedSpecManifest(specs.Manifest, "emby", "")
+	if err != nil {
+		t.Skipf("pinned spec cache unavailable: %v", err)
+	}
+	doc, err := openapi.Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct{ method, path, body, field string }{
+		{"GET", "/Users/123/Items/456", `{"Overview":"text"}`, "$/Overview"},
+		{"GET", "/Users/123/Items", `{"Items":[{"Genres":["Drama"]}]}`, "$/Items[]/Genres[]"},
+		{"POST", "/Items/456/PlaybackInfo", `{"MediaSources":[{"TranscodingSubProtocol":"hls"}]}`, "$/MediaSources[]/TranscodingSubProtocol"},
+	}
+	for _, tc := range tests {
+		if !doc.ValidExtra(tc.method, tc.path, 200, "application/json", []byte(tc.body), tc.field) {
+			t.Errorf("schema did not recognize %s %s: %s", tc.method, tc.path, tc.field)
+		}
 	}
 }
