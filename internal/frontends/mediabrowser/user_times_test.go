@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 )
@@ -47,6 +49,19 @@ func TestUserTimesUseIssuedAndRequestCredentials(t *testing.T) {
 			var auth struct{ User map[string]any }
 			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &auth) != nil || auth.User["LastLoginDate"] != wireTime(login) || auth.User["LastActivityDate"] != wireTime(activity) {
 				t.Fatal(w.Code, w.Body.String())
+			}
+			spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", string(protocol), "")
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if err == nil {
+				doc, err := openapi.Parse(spec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := doc.Validate("POST", "/Users/AuthenticateByName", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+					t.Fatal(err)
+				}
 			}
 			request = httptest.NewRequest("GET", "/Users/Me", nil)
 			request.Header.Set("X-Emby-Token", "issued-grant")
