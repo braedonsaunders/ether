@@ -262,7 +262,7 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 	case "language":
 		q = `SELECT t.language,COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.language<>'' GROUP BY t.language ORDER BY COUNT(*) DESC,t.language ASC LIMIT 200`
 	case "genre":
-		q = `SELECT g.genre, COUNT(*) FROM catalog_genres g JOIN catalog_titles t ON t.key=g.key WHERE ` + base + ` GROUP BY g.genre ORDER BY COUNT(*) DESC, g.genre ASC`
+		q = `SELECT g.genre, COUNT(*) FROM catalog_genres g JOIN catalog_titles t ON t.key=g.key WHERE ` + base + ` GROUP BY g.genre ORDER BY COUNT(*) DESC, g.genre ASC LIMIT 200`
 	case "studio":
 		q = `SELECT s.studio, COUNT(*) FROM catalog_studios s JOIN catalog_titles t ON t.key=s.key WHERE ` + base + ` GROUP BY s.studio ORDER BY COUNT(*) DESC, s.studio ASC LIMIT 200`
 	case "country":
