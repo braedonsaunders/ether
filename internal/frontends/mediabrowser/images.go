@@ -2,10 +2,60 @@ package mediabrowser
 
 import (
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 	"net/http"
 	"strings"
 )
+
+// gridImages issues bounded, policy-checked grants without loading item
+// details or resolving playback versions. An unavailable batch is omitted.
+func (i *instance) gridImages(r *http.Request, keys []frontend.RatingKey) map[frontend.RatingKey]map[string]any {
+	out := make(map[frontend.RatingKey]map[string]any)
+	batch, ok := i.host.ImageGrants.(frontend.ImageGrantBatch)
+	if !ok {
+		return out
+	}
+	token := authhdr.MediaBrowserToken(r)
+	for start := 0; start < len(keys); start += 50 {
+		end := min(start+50, len(keys))
+		rows, err := batch.IssueBatch(r.Context(), frontend.ImageBatchRequest{Credential: token, Device: device(r), Items: keys[start:end], Kinds: []string{frontend.ImagePoster, frontend.ImageStill, frontend.ImageBackdrop}})
+		if err != nil {
+			continue
+		}
+		for _, row := range rows {
+			if !row.Authoritative {
+				continue
+			}
+			tags := map[string]string{}
+			backdrops := []string{}
+			for _, img := range row.Images {
+				if img.Secret == "" {
+					continue
+				}
+				switch img.Image.Kind {
+				case frontend.ImagePoster:
+					tags["Primary"] = img.Secret
+				case frontend.ImageStill:
+					if tags["Primary"] == "" {
+						tags["Primary"] = img.Secret
+					}
+				case frontend.ImageBackdrop:
+					backdrops = append(backdrops, img.Secret)
+				}
+			}
+			result := map[string]any{}
+			if len(tags) > 0 {
+				result["ImageTags"] = tags
+			}
+			if len(backdrops) > 0 {
+				result["BackdropImageTags"] = backdrops
+			}
+			out[row.Item] = result
+		}
+	}
+	return out
+}
 
 func (i *instance) imageTags(r *http.Request, detail frontend.ItemDetail, token string) (map[string]any, []string) {
 	tags := map[string]any{}

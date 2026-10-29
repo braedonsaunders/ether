@@ -14,6 +14,37 @@ import (
 
 type imageGrantsFake struct{ issued int }
 
+type imageBatchFake struct {
+	imageGrantsFake
+	batches int
+}
+
+func (f *imageBatchFake) IssueBatch(_ context.Context, request frontend.ImageBatchRequest) ([]frontend.ImageBatchItem, error) {
+	if request.Credential != "grant" || len(request.Items) > 50 {
+		return nil, errors.New("bad batch")
+	}
+	f.batches++
+	if f.batches == 1 {
+		return []frontend.ImageBatchItem{{Item: request.Items[0], Authoritative: true, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "scoped-poster"}, {Image: frontend.Image{Kind: frontend.ImageBackdrop}, Secret: "scoped-backdrop"}}}, {Item: request.Items[1], Authoritative: false, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "untrusted"}}}}, nil
+	}
+	return nil, nil
+}
+
+func TestGridArtworkUsesBoundedAuthorizedBatches(t *testing.T) {
+	grants := &imageBatchFake{}
+	i := &instance{host: frontend.Host{ImageGrants: grants}}
+	keys := make([]frontend.RatingKey, 51)
+	for n := range keys {
+		keys[n] = frontend.RatingKey(n + 1)
+	}
+	r := httptest.NewRequest("GET", "/Items", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	images := i.gridImages(r, keys)
+	if grants.batches != 2 || len(images) != 1 || images[keys[0]]["ImageTags"].(map[string]string)["Primary"] != "scoped-poster" || images[keys[0]]["BackdropImageTags"].([]string)[0] != "scoped-backdrop" {
+		t.Fatal(grants.batches, images)
+	}
+}
+
 func (f *imageGrantsFake) Issue(_ context.Context, r frontend.ImageGrantRequest) (string, error) {
 	if r.Credential != "grant" || r.Item != 5 {
 		return "", errors.New("denied")

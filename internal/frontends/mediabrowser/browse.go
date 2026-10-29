@@ -216,8 +216,13 @@ func (i *instance) browseRoutes() error {
 				return
 			}
 			items := make([]any, 0, len(page))
+			images := i.gridImages(r, keys)
 			for _, title := range page {
-				items = append(items, i.itemDTO(title, state[title.Key]))
+				item := i.itemDTO(title, state[title.Key])
+				for key, value := range images[title.Key] {
+					item[key] = value
+				}
+				items = append(items, item)
 			}
 			if reporter, ok := i.host.Experience.(frontend.RowInteractionReporter); ok && len(page) > 0 {
 				start, end := paging.Bounds(len(titles), offset, limit)
@@ -351,8 +356,13 @@ func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.View
 		return
 	}
 	items := make([]any, 0, len(page.Items))
+	images := i.gridImages(r, keys)
 	for _, title := range page.Items {
-		items = append(items, i.itemDTO(title, state[title.Key]))
+		item := i.itemDTO(title, state[title.Key])
+		for key, value := range images[title.Key] {
+			item[key] = value
+		}
+		items = append(items, item)
 	}
 	jsonReply(w, i.queryResult(items, page.Total, offset))
 }
