@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -272,6 +273,12 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 					return
 				}
 			}
+			if r.URL.Path == "/__scorecard/events" && r.Method == http.MethodGet {
+				events := scorecardEvents(a.logs.Entries(200, "", ""))
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(events)
+				return
+			}
 			if r.URL.Path == "/__scorecard/broker" && r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(a.frontends.broker.ScorecardSessions(r.Context()))
@@ -336,4 +343,30 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		})
 	}
 	return handlers, a.Close, nil
+}
+
+type scorecardEvent struct {
+	Time     time.Time `json:"time"`
+	Message  string    `json:"message"`
+	Category string    `json:"category"`
+}
+
+func scorecardEvents(entries []admin.LogEntry) []scorecardEvent {
+	allowed := map[string]bool{"prepare failed": true, "release failed to open": true, "probe failed; using estimated media info": true, "ffmpeg failed": true, "start ffmpeg": true, "segment unavailable after restarts": true}
+	out := []scorecardEvent{}
+	for _, entry := range entries {
+		if !allowed[entry.Message] {
+			continue
+		}
+		category := "other"
+		v := strings.ToLower(entry.Attrs["err"])
+		for _, known := range []string{"not available yet", "stream limit reached", "transcode capacity exhausted", "context deadline exceeded", "context canceled", "media source temporarily unavailable"} {
+			if strings.Contains(v, known) {
+				category = known
+				break
+			}
+		}
+		out = append(out, scorecardEvent{Time: entry.Time, Message: entry.Message, Category: category})
+	}
+	return out
 }

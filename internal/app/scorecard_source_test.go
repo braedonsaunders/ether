@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
@@ -273,5 +274,17 @@ func TestScorecardVariantsUsePreparedProbe(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("probe calls = %d, want 1", calls)
+	}
+}
+
+func TestScorecardEventsDoNotExposeLogAttributes(t *testing.T) {
+	entries := []admin.LogEntry{{Message: "prepare failed", Attrs: map[string]string{"err": "not available yet: secret /private/path", "token": "secret-token"}}, {Message: "secret message", Attrs: map[string]string{"err": "secret"}}}
+	events := scorecardEvents(entries)
+	data, e := json.Marshal(events)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(events) != 1 || events[0].Category != "not available yet" || strings.Contains(string(data), "secret") || strings.Contains(string(data), "/private") {
+		t.Fatalf("unexpected sanitized events: %s", data)
 	}
 }

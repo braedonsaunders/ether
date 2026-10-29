@@ -75,3 +75,7 @@ an absent active transcoder decision as unknown for an encoding claim; the plan
 alone does not prove what ran. `client_id` and `item_id` in the session listing
 allow independent correlation. For a Jellyfin DeviceId `X`, the broker client
 ID is `8:jellyfinX`.
+`GET /__scorecard/events` returns only allowlisted playback/transcoder failure
+messages and fixed error categories from the in-memory log ring. It omits raw
+attributes, credentials, media paths and arbitrary error text. Events are
+process-wide; isolate a request in time before using them as evidence.
