@@ -24,10 +24,11 @@ type Library struct {
 
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
 type ServiceDeps struct {
-	Active     func(context.Context, int64) (*core.User, error)
-	Libraries  []Library
-	Visibility Visibility
-	Get        func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	ByExternalID func(context.Context, string, string) (*core.Title, error)
+	Active       func(context.Context, int64) (*core.User, error)
+	Libraries    []Library
+	Visibility   Visibility
+	Get          func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
 	// CachedVirtualSeason resolves a viewer's already-computed episode layout.

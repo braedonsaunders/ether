@@ -13,6 +13,7 @@ import (
 
 // Experience implements frontend.Experience with optional function hooks.
 type Experience struct {
+	ResolveExternalFunc      func(context.Context, *core.Viewer, core.Device, frontend.ExternalRequest) (core.RatingKey, error)
 	ResolveEventSubjectFunc  func(context.Context, *core.Viewer, core.Device, frontend.FavoriteRef) (frontend.ResolvedEventSubject, error)
 	SetNotInterestedFunc     func(context.Context, *core.Viewer, core.RatingKey, bool) error
 	NamedFacetIDsFunc        func(context.Context, *core.Viewer, core.Device, core.RatingKey, string, []string) (map[string]string, error)
@@ -41,6 +42,12 @@ type Experience struct {
 	UserDataFunc             func(context.Context, *core.Viewer, []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error)
 }
 
+func (f Experience) ResolveExternal(c context.Context, v *core.Viewer, d core.Device, r frontend.ExternalRequest) (core.RatingKey, error) {
+	if f.ResolveExternalFunc != nil {
+		return f.ResolveExternalFunc(c, v, d, r)
+	}
+	return 0, core.ErrNotFound
+}
 func (f Experience) Views(c context.Context, v *core.Viewer) ([]frontend.View, error) {
 	if f.ViewsFunc != nil {
 		return f.ViewsFunc(c, v)

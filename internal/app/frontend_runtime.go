@@ -113,6 +113,11 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			cancel()
 			return nil, err
 		}
+		if scoped, ok := experience.(*surfaceExperience); ok {
+			scoped.playability = func(ctx context.Context, req frontend.ItemRequest) *bool {
+				return detailCanPlay(ctx, req, protocol, surfaceCapabilities{app: a, surface: protocol}, r.broker)
+			}
+		}
 		experiences[protocol] = experience
 	}
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
@@ -129,6 +134,11 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			experience, err = a.newSurfaceExperience(id, artwork)
 			if err != nil {
 				a.log.Error("frontend experience unavailable", "surface", id, "err", err)
+			}
+			if scoped, ok := experience.(*surfaceExperience); ok {
+				scoped.playability = func(ctx context.Context, req frontend.ItemRequest) *bool {
+					return detailCanPlay(ctx, req, id, surfaceCapabilities{app: a, surface: id}, r.broker)
+				}
 			}
 		}
 		tickets, _ := identity.NewTicketService(a.db, id, grants, nil)

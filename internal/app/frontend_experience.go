@@ -230,7 +230,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
-	deps := experience.ServiceDeps{Active: a.users.ActiveUser, Libraries: libs, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
+	deps := experience.ServiceDeps{ByExternalID: a.catalog.ByExternalID, Active: a.users.ActiveUser, Libraries: libs, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
 		if a.episodeorder != nil {
 			return a.episodeorder.Get(ctx, u, k)
 		}
@@ -360,10 +360,11 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 
 type surfaceExperience struct {
 	*experience.Service
-	receipts *experience.Receipts
-	protocol core.Protocol
-	artwork  frontend.Artwork
-	active   func(context.Context, int64) (*core.User, error)
+	receipts    *experience.Receipts
+	protocol    core.Protocol
+	artwork     frontend.Artwork
+	active      func(context.Context, int64) (*core.User, error)
+	playability func(context.Context, frontend.ItemRequest) *bool
 }
 
 func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {
@@ -379,6 +380,14 @@ func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer
 
 func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
 	detail, err := s.Service.Item(ctx, req)
+	if err == nil && detail.Title.Key != 0 && s.playability != nil {
+		if detail.Title.Type == core.TypeShow || detail.Title.Type == core.TypeSeason {
+			playable := false
+			detail.CanPlay = &playable
+		} else {
+			detail.CanPlay = s.playability(ctx, req)
+		}
+	}
 	if err != nil || s.artwork == nil {
 		return detail, err
 	}

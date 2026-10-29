@@ -249,8 +249,12 @@ type ItemDetail struct {
 	Playlist   *core.Playlist
 	Title      core.Title
 	UserData   core.WatchStatus
-	Tracks     []core.StreamInfo
-	Images     []Image
+	// CanPlay reflects current playback authorization when known. Nil means the
+	// verified peer or policy result is unavailable. It does not guarantee a
+	// source, codec, stream slot or transcode capacity will be available.
+	CanPlay *bool
+	Tracks  []core.StreamInfo
+	Images  []Image
 	// ImagesAuthoritative reports whether Images describes the currently selected
 	// authorized artwork. Background discovery may add alternatives later.
 	ImagesAuthoritative bool
@@ -268,10 +272,22 @@ type ResolvedEventSubject struct {
 	UserData      *core.WatchStatus
 }
 
+// ExternalRequest identifies an IMDb title with an optional canonical episode.
+// Season and Episode must either both be set or both omitted.
+type ExternalRequest struct {
+	Source          string
+	ID              string
+	Type            core.MediaType
+	Season, Episode *int
+}
+
 // Experience applies viewer policy before returning any data. Browse operations
 // must not resolve or open a release. Policy is applied before pagination and limits.
 type Experience interface {
 	Views(context.Context, *core.Viewer) ([]View, error)
+	// ResolveExternal resolves an IMDb ID without opening a release, and returns
+	// a key only after enforcing current viewer and inherited-show policy.
+	ResolveExternal(context.Context, *core.Viewer, core.Device, ExternalRequest) (core.RatingKey, error)
 	Rows(context.Context, RowRequest) ([]Row, error)
 	Item(context.Context, ItemRequest) (ItemDetail, error)
 	Children(context.Context, *core.Viewer, core.Device, core.RatingKey, ItemQuery) (core.Page, error)
