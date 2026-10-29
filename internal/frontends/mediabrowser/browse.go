@@ -3,11 +3,13 @@ package mediabrowser
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/paging"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
+	kitsort "github.com/braedonsaunders/ether/internal/frontend/kit/sort"
 )
 
 func queryInt(r *http.Request, name string, def int) int {
@@ -151,11 +153,91 @@ func (i *instance) browseRoutes() error {
 	endpoints := []struct {
 		path    string
 		handler http.HandlerFunc
-	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/Users/{userId}/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/UserItems/Resume", rowHandler(frontend.RowContinue, false)}, {"/Users/{userId}/Items/Resume", rowHandler(frontend.RowContinue, false)}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
+	}{{"/UserViews", views}, {"/Users/{userId}/Views", views}, {"/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/Users/{userId}/Items/Latest", rowHandler(frontend.RowRecentlyReleased, true)}, {"/UserItems/Resume", rowHandler(frontend.RowContinue, false)}, {"/Users/{userId}/Items/Resume", rowHandler(frontend.RowContinue, false)}, {"/Shows/NextUp", rowHandler(frontend.RowNextUp, false)}, {"/Search/Hints", i.search}, {"/Shows/{id}/Seasons", i.children}, {"/Items/{id}", detail}, {"/Users/{userId}/Items/{id}", detail}}
 	for _, e := range endpoints {
 		if err := add("GET", e.path, e.handler); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func itemQuery(r *http.Request) frontend.ItemQuery {
+	q := frontend.ItemQuery{Offset: queryInt(r, "StartIndex", 0), Limit: queryInt(r, "Limit", 50)}
+	if values := route.Query(r.URL.Query(), "SortBy"); len(values) == 1 {
+		q.Sort, _ = kitsort.Order(strings.Split(values[0], ",")[0])
+	}
+	if values := route.Query(r.URL.Query(), "SortOrder"); len(values) == 1 {
+		q.Desc = strings.EqualFold(values[0], "Descending")
+	}
+	return q
+}
+func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, page frontend.Page, offset int) {
+	keys := make([]frontend.RatingKey, 0, len(page.Items))
+	for _, title := range page.Items {
+		keys = append(keys, title.Key)
+	}
+	state, err := i.host.Experience.UserData(r.Context(), v, keys)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	items := make([]any, 0, len(page.Items))
+	for _, title := range page.Items {
+		items = append(items, itemDTO(title, state[title.Key]))
+	}
+	jsonReply(w, map[string]any{"Items": items, "TotalRecordCount": page.Total, "StartIndex": offset})
+}
+func (i *instance) children(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := itemQuery(r)
+	page, err := i.host.Experience.Children(r.Context(), v, device(r), key, q)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	i.page(w, r, v, page, q.Offset)
+}
+
+func (i *instance) search(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	terms := route.Query(r.URL.Query(), "searchTerm")
+	if len(terms) != 1 {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	q := itemQuery(r)
+	result, err := i.host.Experience.Search(r.Context(), v, device(r), terms[0], q)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	hints := make([]any, 0, len(result.Page.Items))
+	for _, t := range result.Page.Items {
+		id := ids.RatingKeyGUID(t.Key)
+		kind := map[frontend.MediaType]string{"movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode"}[t.Type]
+		hints = append(hints, map[string]any{"Id": id, "ItemId": id, "Name": t.Title, "Type": kind, "ProductionYear": t.Year, "IsFolder": t.Type == "show" || t.Type == "season"})
+	}
+	jsonReply(w, map[string]any{"SearchHints": hints, "TotalRecordCount": result.Page.Total})
 }
