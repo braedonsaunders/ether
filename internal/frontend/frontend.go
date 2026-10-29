@@ -116,6 +116,7 @@ type QuickConnectDetails struct {
 	Code, Secret string
 	Device       core.Device
 	CreatedAt    time.Time
+	ExpiresAt    time.Time
 }
 
 type clientIPKey struct{}

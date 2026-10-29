@@ -89,7 +89,7 @@ func TestSurfaceIdentityLoginQuickConnectAndRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	details, err := jf.QuickConnectDetails(ctx, secret)
-	if err != nil || details.Approved || details.Code != code || details.Secret != secret || details.Device.DeviceName != "Family tablet" || details.Device.Client != "Jellyfin" || details.CreatedAt.IsZero() {
+	if err != nil || details.Approved || details.Code != code || details.Secret != secret || details.Device.DeviceName != "Family tablet" || details.Device.Client != "Jellyfin" || details.CreatedAt.IsZero() || !details.ExpiresAt.Equal(details.CreatedAt.Add(time.Minute)) {
 		t.Fatal(details, err)
 	}
 	if _, err := emby.QuickConnectDetails(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {

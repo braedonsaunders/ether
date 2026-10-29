@@ -32,6 +32,10 @@ func TestQuickConnect(t *testing.T) {
 	if len(code) != 6 {
 		t.Fatal(code)
 	}
+	details, err := q.DetailsSurface(ctx, "jellyfin", secret)
+	if err != nil || !details.ExpiresAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("expiry: %+v %v", details, err)
+	}
 	if _, err = q.Poll(ctx, secret); !errors.Is(err, identity.ErrQuickConnectPending) {
 		t.Fatalf("pending: %v", err)
 	}

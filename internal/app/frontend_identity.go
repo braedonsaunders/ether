@@ -150,7 +150,7 @@ func (s surfaceIdentity) QuickConnectDetails(ctx context.Context, secret string)
 	if err != nil {
 		return frontend.QuickConnectDetails{}, err
 	}
-	return frontend.QuickConnectDetails{Approved: details.Approved, Code: details.Code, Secret: secret, Device: details.Device, CreatedAt: details.CreatedAt}, nil
+	return frontend.QuickConnectDetails{Approved: details.Approved, Code: details.Code, Secret: secret, Device: details.Device, CreatedAt: details.CreatedAt, ExpiresAt: details.ExpiresAt}, nil
 }
 func (s surfaceIdentity) QuickConnectApprove(ctx context.Context, viewer *core.Viewer, code string) error {
 	if s.surface == "plex" || viewer == nil || viewer.ID <= 0 {

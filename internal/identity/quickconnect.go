@@ -147,6 +147,7 @@ type QuickConnectDetails struct {
 	Code      string
 	Device    core.Device
 	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // DetailsSurface reads metadata without consuming a valid surface-bound secret.
@@ -173,6 +174,7 @@ func (q *QuickConnect) DetailsSurface(ctx context.Context, surface, secret strin
 		created = expires - q.ttl.Milliseconds()
 	}
 	details.CreatedAt = time.UnixMilli(created)
+	details.ExpiresAt = time.UnixMilli(expires)
 	details.Approved = viewer.Valid
 	return details, nil
 }
