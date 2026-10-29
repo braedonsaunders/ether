@@ -56,6 +56,7 @@ func TestLabPlaybackDecisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	device := "decision-" + hex.EncodeToString(nonce[:])
+	t.Logf("test device=%s", device)
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) > 0 && (req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme) {
 			return fmt.Errorf("redirect escaped server")
@@ -67,11 +68,19 @@ func TestLabPlaybackDecisions(t *testing.T) {
 	if err = reference.login(settings["JELLYFIN_ADULT_USER"], settings["JELLYFIN_ADULT_PASSWORD"]); err != nil {
 		t.Fatal("reference sign-in failed", err)
 	}
-	defer reference.logout()
+	defer func() {
+		if err := reference.logout(); err != nil {
+			t.Errorf("reference sign-out failed: %v", err)
+		}
+	}()
 	if err = target.login("fixture-viewer", "fixture-password"); err != nil {
 		t.Fatal("fixture sign-in failed", err)
 	}
-	defer target.logout()
+	defer func() {
+		if err := target.logout(); err != nil {
+			t.Errorf("target sign-out failed: %v", err)
+		}
+	}()
 	refItems, err := reference.items()
 	if err != nil {
 		t.Fatal("reference item listing failed", err)
@@ -130,7 +139,11 @@ func TestLabPlaybackDecisions(t *testing.T) {
 				}
 				t.Log("reference PlaybackInfo HTTP 200")
 				if refResult.Session != "" {
-					defer reference.stop(refResult.Session, m.referenceItem)
+					defer func() {
+						if err := reference.stop(refResult.Session, m.referenceItem); err != nil {
+							t.Errorf("reference playback stop failed: %v", err)
+						}
+					}()
 				}
 				targetResult, err := target.playback(targetID, m.variant, profile.DeviceProfile)
 				if err != nil {
@@ -139,7 +152,11 @@ func TestLabPlaybackDecisions(t *testing.T) {
 				if targetResult.Session == "" {
 					t.Fatal("target omitted playback session")
 				}
-				defer target.stop(targetResult.Session, targetID)
+				defer func() {
+					if err := target.stop(targetResult.Session, targetID); err != nil {
+						t.Errorf("target playback stop failed: %v", err)
+					}
+				}()
 				refSource, refOK := exactDecisionSource(refResult.Sources, m.referenceSource)
 				targetSource, targetOK := exactDecisionSource(targetResult.Sources, m.variant)
 				if !refOK || !targetOK {
@@ -334,11 +351,11 @@ func (s *decisionLabServer) login(user, password string) error {
 	s.user = result.User.ID
 	return nil
 }
-func (s *decisionLabServer) logout() {
-	_ = s.request("POST", "/Sessions/Logout", map[string]any{}, nil)
+func (s *decisionLabServer) logout() error {
+	return s.request("POST", "/Sessions/Logout", map[string]any{}, nil)
 }
-func (s *decisionLabServer) stop(session, item string) {
-	_ = s.request("POST", "/Sessions/Playing/Stopped", map[string]any{"PlaySessionId": session, "ItemId": item}, nil)
+func (s *decisionLabServer) stop(session, item string) error {
+	return s.request("POST", "/Sessions/Playing/Stopped", map[string]any{"PlaySessionId": session, "ItemId": item}, nil)
 }
 func (s *decisionLabServer) items() ([]decisionItem, error) {
 	var result struct {
