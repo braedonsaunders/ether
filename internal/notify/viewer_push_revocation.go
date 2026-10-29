@@ -9,6 +9,7 @@ import (
 // The subscribers run in the transition transaction, including changes made
 // by another cluster node. A later reactivation cannot restore old endpoints.
 func init() {
+	store.RegisterAfter("viewer_push", "auth", "identity_grants", "viewer_alerts")
 	store.Register("viewer_push", 2, `
 CREATE TRIGGER viewer_push_on_deactivation AFTER INSERT ON identity_viewer_deactivations BEGIN
  DELETE FROM viewer_push_subscriptions WHERE viewer_id=NEW.viewer_id;
