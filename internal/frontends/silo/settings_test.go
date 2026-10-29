@@ -3,6 +3,7 @@ package silo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,12 +15,50 @@ import (
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
 type settingsTracks struct {
 	tracks          frontend.TrackPreferences
 	bitrate, height int
 	quality         string
+}
+
+func TestSettingScopesRequireAuthorizedLibraryAndSeries(t *testing.T) {
+	v := &frontend.Viewer{ID: 7}
+	series := frontend.RatingKey(2000000000000001)
+	other := frontend.RatingKey(2000000000000002)
+	i := &instance{host: frontend.Host{Experience: frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "3", Name: "Shows"}}, nil
+		},
+		ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+			if req.Viewer != v || req.Key != series {
+				return frontend.ItemDetail{}, errors.New("hidden")
+			}
+			return frontend.ItemDetail{}, nil
+		},
+	}}}
+	request := func(query string) *http.Request {
+		r := httptest.NewRequest("GET", "/api/v2/settings/values/effective?"+query, nil)
+		r.Header.Set("X-Silo-Device-Id", "tv")
+		return r
+	}
+	if id, ok := i.settingScope(request("library_id=3"), v, "profile_library"); !ok || id != "3" {
+		t.Fatal("authorized library rejected")
+	}
+	if _, ok := i.settingScope(request("library_id=4"), v, "profile_library"); ok {
+		t.Fatal("unauthorized library accepted")
+	}
+	if id, ok := i.settingScope(request("series_id="+ids.RatingKeyGUID(series)), v, "profile_series"); !ok || id != ids.RatingKeyGUID(series) {
+		t.Fatal("authorized series rejected")
+	}
+	if _, ok := i.settingScope(request("series_id="+ids.RatingKeyGUID(other)), v, "profile_series"); ok {
+		t.Fatal("unauthorized series accepted")
+	}
+	if _, ok := i.settingScope(request("profile_id=8&library_id=3"), v, "profile_library"); ok {
+		t.Fatal("cross-profile scope accepted")
+	}
 }
 
 type versionedTestPreferences struct {
