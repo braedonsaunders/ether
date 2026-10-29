@@ -6,9 +6,11 @@
 # Scene 2.0 from Internet Archive (CC BY-NC-ND 3.0); do not transcode those TV files.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-python3 - "$here/lab.env" <<'PY'
+LAB_PORT_BASE="${LAB_PORT_BASE:-18096}"
+python3 - "$here/lab.env" "$LAB_PORT_BASE" <<'PY'
 import json,sys,urllib.error,urllib.parse,urllib.request
 E=dict(line.rstrip('\n').split('=',1) for line in open(sys.argv[1]) if '=' in line)
+port_base=int(sys.argv[2])
 def call(base,path,method='GET',body=None,headers=None):
  h={'Accept':'application/json','Content-Type':'application/json'};h.update(headers or {})
  req=urllib.request.Request(base+path,data=None if body is None else json.dumps(body).encode(),headers=h,method=method)
@@ -51,8 +53,8 @@ def ensure_mb(base,users,owner,owner_pw,adult,adult_pw,child,child_pw,client,emb
  return h,adult_auth,items
 # The owner and accounts are created through each server's startup/admin APIs. JF 12.x
 # auth tokens must be carried in MediaBrowser Authorization; X-Emby-Token returns 401.
-jbase='http://127.0.0.1:18096'; jh,juid,jitems=ensure_mb(jbase,[],E['JELLYFIN_OWNER_USER'],E['JELLYFIN_OWNER_PASSWORD'],E['JELLYFIN_ADULT_USER'],E['JELLYFIN_ADULT_PASSWORD'],E['JELLYFIN_CHILD_USER'],E['JELLYFIN_CHILD_PASSWORD'],'Jellyfin Prism Seed')
-ebase='http://127.0.0.1:18097/emby'; eh,euid,eitems=ensure_mb(ebase,[],E['EMBY_OWNER_USER'],E['EMBY_OWNER_PASSWORD'],E['EMBY_ADULT_USER'],E['EMBY_ADULT_PASSWORD'],E['EMBY_CHILD_USER'],E['EMBY_CHILD_PASSWORD'],'Emby Prism Seed',True)
+jbase=f'http://127.0.0.1:{port_base}'; jh,juid,jitems=ensure_mb(jbase,[],E['JELLYFIN_OWNER_USER'],E['JELLYFIN_OWNER_PASSWORD'],E['JELLYFIN_ADULT_USER'],E['JELLYFIN_ADULT_PASSWORD'],E['JELLYFIN_CHILD_USER'],E['JELLYFIN_CHILD_PASSWORD'],'Jellyfin Prism Seed')
+ebase=f'http://127.0.0.1:{port_base+1}/emby'; eh,euid,eitems=ensure_mb(ebase,[],E['EMBY_OWNER_USER'],E['EMBY_OWNER_PASSWORD'],E['EMBY_ADULT_USER'],E['EMBY_ADULT_PASSWORD'],E['EMBY_CHILD_USER'],E['EMBY_CHILD_PASSWORD'],'Emby Prism Seed',True)
 def mb_state(base,headers,uid,items):
  rows=items.get('Items',[])
  chosen=[(next((x for x in rows if 'Big Buck Bunny' in x['Name']),None),'favorite'),(next((x for x in rows if 'The Scene S01E01' in x.get('Path','')),None),'played'),(next((x for x in rows if 'The Scene S01E02' in x.get('Path','')),None),'progress')]
@@ -65,7 +67,7 @@ def mb_state(base,headers,uid,items):
  print('adult state updated for',sum(bool(i) for i,_ in chosen),'items')
 mb_state(jbase,jh,juid,jitems); mb_state(ebase,eh,euid,eitems)
 # Silo build-1810 uses native /api/v2 (not Jellyfin compatibility routes).
-sbase='http://127.0.0.1:18098'
+sbase=f'http://127.0.0.1:{port_base+2}'
 try:
  _,s=call(sbase,'/api/v2/auth/login','POST',{'username':E['SILO_OWNER_USER'],'password':E['SILO_OWNER_PASSWORD']})
 except RuntimeError:
@@ -91,10 +93,10 @@ if not child.get('is_child') or child.get('max_content_rating')!='PG' or child.g
 adult_headers=silo_viewer(E['SILO_ADULT_USER'],E['SILO_ADULT_PASSWORD'])
 call(sbase,'/api/v2/favorites/movie-tmdb-10378','PUT',headers=adult_headers)
 call(sbase,'/api/v2/watched/episode-tvdb-78927-1-1','POST',headers=adult_headers)
-_,userlibs=call(sbase,'/api/v2/user/libraries',headers=adult_headers);tvlib=next(x for x in userlibs.get('items',[]) if x.get('type')=='series')
-_,sections=call(sbase,f"/api/v2/library/{tvlib['id']}/sections",headers=adult_headers)
-episode=next(x for section in sections.get('sections',[]) for x in section.get('items',[]) if x.get('content_id')=='episode-tvdb-78927-1-2')
-_,versions=call(sbase,f"/api/v2/catalog/items/{episode['content_id']}/versions",headers=adult_headers);version=next((x for x in versions.get('items',[]) if x.get('codec_video')=='h264'),versions['items'][0])
+# The H.264 episode can require an unavailable audio adaptation on some image
+# builds. Keep the watched episode above for Next Up, and use the known-playable
+# Big Buck Bunny H.264 version for the adult resume marker.
+_,versions=call(sbase,'/api/v2/catalog/items/movie-tmdb-10378/versions',headers=adult_headers);version=next((x for x in versions.get('items',[]) if x.get('codec_video')=='h264'),versions['items'][0])
 _,cap=call(sbase,'/api/v2/playback/capabilities',headers=adult_headers)
 import uuid
 body={'installation_id':cap['installation_id'],'protocol_version':3,'client_features':['playback_plan_v3'],'file_id':str(version['file_id']),'profile_id':adult_headers['X-Profile-Id'],'playback_attempt_id':str(uuid.uuid4()),'quality_preference':'auto','subtitle_fidelity_preference':'compatible','client_capabilities':{'video_evidence':'exact','audio_evidence':'exact','codecs_video':['h264'],'codecs_video_hardware':['h264'],'codecs_audio':['mp3','aac'],'containers':['mp4'],'hdr':False,'max_resolution':'1080p','video_decode':[{'codec':'h264','profiles':['high'],'levels':[41],'bit_depths':[8],'max_width':1920,'max_height':1080,'max_frame_rate':60,'max_bitrate_kbps':20000,'hardware':True}]},'client_playback_context':{'protocol_version':3,'form_factor':'phone','app_version':'1.0.0','app_build':'seed','device':{},'output':{},'deliveries':{'original_http':{'enabled':True,'supported_on_device':True,'containers':['mp4'],'video_codecs':['h264'],'audio_decode_codecs':['mp3','aac'],'audio_passthrough_codecs':[],'subtitles':{'embedded_text':True,'sidecar_text':True,'ass_styling':False,'embedded_bitmap':False,'sidecar_bitmap':False,'font_attachments':False},'features':[],'auth_header_refresh':True,'validated_claims':[],'transformations':[]}}}}
