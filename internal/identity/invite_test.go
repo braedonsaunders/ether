@@ -13,7 +13,8 @@ import (
 func TestInviteSingleUse(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
-	_, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`)
+	var viewerID int64
+	err := db.QueryRow(`INSERT INTO auth_users(plex_id,created_at,updated_at) VALUES(123,0,0) RETURNING id`).Scan(&viewerID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +23,7 @@ func TestInviteSingleUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	secret, err := i.Create(ctx, 1)
+	secret, err := i.Create(ctx, viewerID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +38,7 @@ func TestInviteSingleUse(t *testing.T) {
 	if _, err = i.Redeem(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("reused invite: %v", err)
 	}
-	secret, err = i.Create(ctx, 1)
+	secret, err = i.Create(ctx, viewerID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,22 +46,23 @@ func TestInviteSingleUse(t *testing.T) {
 	if _, err = i.Redeem(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("expired invite: %v", err)
 	}
-	_, err = db.Exec(`INSERT INTO auth_users(id,plex_id,is_owner,created_at,updated_at) VALUES(2,124,1,0,0)`)
+	var ownerID int64
+	err = db.QueryRow(`INSERT INTO auth_users(plex_id,is_owner,created_at,updated_at) VALUES(124,1,0,0) RETURNING id`).Scan(&ownerID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = i.Create(ctx, 2); !errors.Is(err, core.ErrUnauthorized) {
+	if _, err = i.Create(ctx, ownerID); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("owner invite: %v", err)
 	}
-	secret, err = i.Create(ctx, 1)
+	secret, err = i.Create(ctx, viewerID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`UPDATE auth_users SET is_owner=0 WHERE id=2`)
+	_, err = db.Exec(`UPDATE auth_users SET is_owner=0 WHERE id=?`, ownerID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`UPDATE auth_users SET is_owner=1 WHERE id=1`)
+	_, err = db.Exec(`UPDATE auth_users SET is_owner=1 WHERE id=?`, viewerID)
 	if err != nil {
 		t.Fatal(err)
 	}

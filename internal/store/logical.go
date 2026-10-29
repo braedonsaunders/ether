@@ -509,10 +509,19 @@ func decodeValue(raw json.RawMessage, kind string) (any, error) {
 	}
 }
 
-// resetIdentities moves every identity sequence past the restored ids.
+// resetIdentities moves identity sequences past restored IDs without ever
+// rewinding a sequence whose higher values have already been issued.
 func resetIdentities(ctx context.Context, tx *sql.Tx) error {
+	return advanceIdentities(ctx, tx, nil)
+}
+
+// advanceIdentities handles every identity column, or only the named tables
+// when selected is non-nil. Table locks serialize ordinary inserts with the
+// MAX/MIN check; sequences themselves are only moved forward. This matters
+// because setval is not rolled back with the surrounding transaction.
+func advanceIdentities(ctx context.Context, tx *sql.Tx, selected map[string]bool) error {
 	rows, err := tx.QueryContext(ctx, `SELECT table_name, column_name FROM information_schema.columns
-		WHERE table_schema=current_schema() AND is_identity='YES' ORDER BY table_name`)
+		WHERE table_schema=current_schema() AND is_identity='YES' ORDER BY table_name, column_name`)
 	if err != nil {
 		return err
 	}
@@ -524,16 +533,49 @@ func resetIdentities(ctx context.Context, tx *sql.Tx) error {
 			rows.Close()
 			return err
 		}
-		cols = append(cols, c)
+		if selected == nil || selected[c.table] {
+			cols = append(cols, c)
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return err
 	}
 	for _, c := range cols {
-		q := `SELECT setval(pg_get_serial_sequence(?, ?), COALESCE(MAX(` + quoteIdent(c.column) + `), 0) + 1, false) FROM ` + quoteIdent(c.table)
-		if _, err := tx.ExecContext(ctx, q, quoteIdent(c.table), c.column); err != nil {
-			return fmt.Errorf("reset identity %s.%s: %w", c.table, c.column, err)
+		if _, err := tx.ExecContext(ctx, `LOCK TABLE `+quoteIdent(c.table)+` IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+			return fmt.Errorf("lock identity table %s: %w", c.table, err)
+		}
+		var schema, sequence string
+		var increment int64
+		err := tx.QueryRowContext(ctx, `SELECT n.nspname,c.relname,s.seqincrement FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_sequence s ON s.seqrelid=c.oid WHERE c.oid=CAST(pg_get_serial_sequence(?, ?) AS regclass)`, quoteIdent(c.table), c.column).Scan(&schema, &sequence, &increment)
+		if err != nil {
+			return fmt.Errorf("find identity %s.%s: %w", c.table, c.column, err)
+		}
+		if increment == 0 {
+			return fmt.Errorf("invalid identity increment %s.%s", c.table, c.column)
+		}
+		sequenceName := quoteIdent(schema) + "." + quoteIdent(sequence)
+		var last int64
+		var called bool
+		if err := tx.QueryRowContext(ctx, `SELECT last_value,is_called FROM `+sequenceName).Scan(&last, &called); err != nil {
+			return fmt.Errorf("read identity %s.%s: %w", c.table, c.column, err)
+		}
+		aggregate := "MAX"
+		if increment < 0 {
+			aggregate = "MIN"
+		}
+		var extreme sql.NullInt64
+		if err := tx.QueryRowContext(ctx, `SELECT `+aggregate+`(`+quoteIdent(c.column)+`) FROM `+quoteIdent(c.table)).Scan(&extreme); err != nil {
+			return fmt.Errorf("read identity values %s.%s: %w", c.table, c.column, err)
+		}
+		if !extreme.Valid {
+			continue
+		}
+		needsAdvance := increment > 0 && (extreme.Int64 > last || extreme.Int64 == last && !called) || increment < 0 && (extreme.Int64 < last || extreme.Int64 == last && !called)
+		if needsAdvance {
+			if _, err := tx.ExecContext(ctx, `SELECT setval(CAST(? AS regclass), ?, true)`, sequenceName, extreme.Int64); err != nil {
+				return fmt.Errorf("advance identity %s.%s: %w", c.table, c.column, err)
+			}
 		}
 	}
 	return nil

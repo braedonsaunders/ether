@@ -217,10 +217,14 @@ func migratePostgres(ctx context.Context, db *sql.DB, gate MigrationGate) error 
 			}
 		}
 	}
+	seeded := map[string]bool{}
 	for _, m := range registered() {
 		key := m.component + "/" + strconv.Itoa(m.version)
 		if applied[key] {
 			continue
+		}
+		for _, match := range reSeedInsert.FindAllStringSubmatch(m.sqlFor(Postgres), -1) {
+			seeded[match[1]] = true
 		}
 		// No arguments: pgx sends this over the simple query protocol, which
 		// accepts several ;-separated statements in one round trip.
@@ -231,6 +235,11 @@ func migratePostgres(ctx context.Context, db *sql.DB, gate MigrationGate) error 
 			return err
 		}
 		applied[key] = true
+	}
+	if len(seeded) > 0 {
+		if err := advanceIdentities(ctx, tx, seeded); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
