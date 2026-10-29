@@ -391,13 +391,73 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 							if stream.FrameRate > 0 {
 								track["frame_rate"] = strconv.FormatFloat(stream.FrameRate, 'f', 3, 64)
 							}
+							if stream.DisplayAspectRatio != "" {
+								track["aspect_ratio"] = stream.DisplayAspectRatio
+							}
+							if stream.PixelFormat != "" {
+								track["pixel_format"] = stream.PixelFormat
+							}
+							if stream.ColorPrimaries != "" {
+								track["color_primaries"] = stream.ColorPrimaries
+							}
+							if stream.ColorSpace != "" {
+								track["color_space"] = stream.ColorSpace
+							}
+							if stream.ColorTransfer != "" {
+								track["color_transfer"] = stream.ColorTransfer
+							}
+							if stream.ReferenceFrames != nil {
+								track["reference_frames"] = *stream.ReferenceFrames
+							}
+							if stream.ProbedLevel != nil {
+								track["level"] = *stream.ProbedLevel
+							}
+							if stream.ProbedDolbyVisionProfile != nil {
+								track["dv_profile"] = *stream.ProbedDolbyVisionProfile
+							}
+							if stream.ProbedDolbyVisionLevel != nil {
+								track["dv_level"] = *stream.ProbedDolbyVisionLevel
+							}
+							if stream.DolbyVisionBLPresent != nil {
+								track["dv_bl_present"] = *stream.DolbyVisionBLPresent
+							}
+							if stream.DolbyVisionELPresent != nil {
+								track["dv_el_present"] = *stream.DolbyVisionELPresent
+							}
+							if stream.DolbyVisionRPUPresent != nil {
+								track["dv_rpu_present"] = *stream.DolbyVisionRPUPresent
+							}
+							if stream.DolbyVisionBLCompatibilityIDPresent != nil && *stream.DolbyVisionBLCompatibilityIDPresent {
+								track["dv_bl_compat_id"] = stream.DolbyVisionCompatibilityID
+							}
+							switch stream.ColorTransfer {
+							case "bt709", "smpte170m", "bt470bg":
+								track["video_range_type"] = "SDR"
+							case "smpte2084":
+								if !stream.DolbyVision && (stream.HDR10Plus == nil || !*stream.HDR10Plus) {
+									track["video_range_type"] = "HDR10"
+								}
+							case "arib-std-b67":
+								track["video_range_type"] = "HLG"
+							}
 							// These booleans are mandatory in Silo's track DTO. Only
 							// publish a track when their presence is established by
 							// the probe; missing metadata is not proof of absence.
-							if stream.DolbyVisionVersion != "" && stream.DolbyVisionCompatibilityID > 0 && stream.Interlaced {
-								track["dv_config_present"] = true
-								track["dv_bl_compat_id_present"] = true
-								track["interlaced"] = true
+							config, compat, interlaced := stream.DolbyVisionConfigurationPresent, stream.DolbyVisionBLCompatibilityIDPresent, stream.ProbedInterlaced
+							positive := true
+							if config == nil && stream.DolbyVisionVersion != "" {
+								config = &positive
+							}
+							if compat == nil && stream.DolbyVisionCompatibilityID > 0 {
+								compat = &positive
+							}
+							if interlaced == nil && stream.Interlaced {
+								interlaced = &positive
+							}
+							if config != nil && compat != nil && interlaced != nil {
+								track["dv_config_present"] = *config
+								track["dv_bl_compat_id_present"] = *compat
+								track["interlaced"] = *interlaced
 								videoTracks = append(videoTracks, track)
 							}
 						}

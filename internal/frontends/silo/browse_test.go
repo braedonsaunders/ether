@@ -190,6 +190,7 @@ func TestBrowseAndMutationsUseViewer(t *testing.T) {
 func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	v := &frontend.Viewer{ID: 1}
 	hdr10Plus := true
+	knownPresent, progressive := true, false
 	key := frontend.RatingKey(1000000000000001)
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}
 	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
@@ -199,7 +200,7 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 		if !r.Intent.Estimate {
 			t.Fatal("resolved detail")
 		}
-		return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Container: "mp4", Duration: time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Width: 1920, Height: 1080, FrameRate: 24, Interlaced: true, ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus, DolbyVisionVersion: "1.0", DolbyVisionCompatibilityID: 1}, {Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true}}}}, nil
+		return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Container: "mp4", Duration: time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Width: 1920, Height: 1080, FrameRate: 24, ProbedInterlaced: &progressive, PixelFormat: "yuv420p", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus, DolbyVisionConfigurationPresent: &knownPresent, DolbyVisionBLCompatibilityIDPresent: &knownPresent, DolbyVisionCompatibilityID: 1}, {Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true}}}}, nil
 	}}
 	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: sess, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
@@ -217,13 +218,19 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"audio_tracks"`) || !strings.Contains(w.Body.String(), `"language":"en"`) {
 		t.Fatalf("missing real audio tracks: %s", w.Body.String())
 	}
-	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"site_key":"clip"`} {
+	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"interlaced":false`, `"pixel_format":"yuv420p"`, `"site_key":"clip"`} {
 		if !strings.Contains(w.Body.String(), fact) {
 			t.Errorf("missing known detail %s: %s", fact, w.Body.String())
 		}
 	}
 	if strings.Contains(w.Body.String(), `"total_duration"`) {
 		t.Errorf("estimate advertised as exact part duration: %s", w.Body.String())
+	}
+	knownPresent = false
+	negative := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(negative, r)
+	if negative.Code != 200 || !strings.Contains(negative.Body.String(), `"dv_config_present":false`) || !strings.Contains(negative.Body.String(), `"dv_bl_compat_id_present":false`) {
+		t.Fatalf("known negative probe facts: %d %s", negative.Code, negative.Body.String())
 	}
 	watchPath := "/api/v2/watch/" + ids.RatingKeyGUID(key)
 	req := httptest.NewRequest("GET", watchPath, nil)
