@@ -1,7 +1,12 @@
 # Using Ether
 
 Open <http://localhost:32400/ether/> on the server to manage Ether. Use your
-normal Plex apps to browse and watch.
+normal Plex apps to browse and watch. If Ether uses another port, such as
+32450 alongside an existing Plex server, use that port instead.
+
+Start here: [libraries and the catalogue](#libraries-catalogue-and-home),
+[put your watchlist on Home](#put-your-watchlist-on-home), or
+[choose Home rows](#choose-home-rows).
 
 ## Jellyfin and Emby apps
 
@@ -65,20 +70,32 @@ offers a `.torrent` link costs one indexer download to read its hash.
 
 ### Stremio addons as sources
 
-Under **Sources › Indexers**, **Add indexer › Stremio addon URL…** takes any
-Stremio stream addon's install link (`https://…/manifest.json` or
-`stremio://…`). Ether asks the addon for a title by its IMDb id, for movies
-and for each episode, and streams its torrent results through your debrid
-accounts exactly like Torznab results: the same quality rules, cache checks,
-season-pack handling and failover. **Test** checks that the addon serves
-movie and series streams. Some public addon instances serve only the Stremio
-app and refuse servers; Ether identifies itself honestly, so use an instance
-that allows servers or host the addon yourself.
+Under **Sources › Indexers**, choose **Add indexer › Stremio addon URL…**
+and supply the configured install link (`https://…/manifest.json` or
+`stremio://…`). Choosing a torrent protocol on a Torznab indexer does not
+make it a Stremio addon.
 
-The link needs no debrid key: Ether checks your debrid accounts itself. A link
-configured with a key still works, and the addon's cached markers become hints
-for which torrents to try first; the key is then also stored in that link on
-this server.
+Ether requests movies by IMDb ID and episodes by IMDb ID, season and episode.
+A title without an IMDb ID cannot be searched through this adapter; season-zero specials are also unsupported. **Test**
+checks the addon's manifest and advertised movie/series stream support; a
+successful test does not prove that a particular title returns usable releases.
+
+A supported result needs a release name and an identifiable torrent hash.
+Ether accepts explicit hashes, magnets and supported hash-bearing resolver
+URLs. An opaque playback/CDN URL, external-player link, YouTube ID or NZB URL
+alone is not a torrent result Ether can use. An addon can therefore play
+successfully in Stremio while returning no usable results to Ether.
+
+Use the configured install URL supplied by the addon. Addon settings and
+credentials encoded in its URL path are retained; query-string configuration
+is not. Ether's general indexer API-key field does not configure a Stremio
+addon. Some addons require their own login or key, separate from the debrid
+account configured under **Sources › Debrid**. Keep configured links private.
+
+Ether checks torrent availability through your enabled debrid accounts. An
+addon's cached labels are hints, not proof that your account can stream a file.
+Some public instances also refuse server clients; use an instance that permits
+them or a self-hosted instance.
 
 Self-hosted DMM hashlist indexers that speak Torznab, such as Zilean
 (`http://HOST:8182/torznab`) or StremThru (`https://HOST/v0/torznab`), can be
@@ -176,6 +193,25 @@ in Ether's **Viewers** page after signing in. Open a viewer to see their taste,
 activity and Home, or set content and playback limits. Each viewer keeps their
 own history and recommendations.
 
+## Libraries, catalogue and Home
+
+Ether appears as its own server in Plex, with Movies and TV Shows libraries.
+These libraries contain the titles exposed by Ether's catalogue and visibility
+rules; they are not folders of downloaded media. A catalogue entry does not
+guarantee that your configured sources have a playable release.
+
+Your existing Plex Media Server keeps its own libraries and files. Ether does
+not merge or replace them. Plex Home can show rows from multiple pinned
+libraries, so check the server name beneath a row and pin the Ether libraries
+you want to browse in your Plex app.
+
+Use **Catalog › Library visibility** to control what Ether exposes, and
+**Catalog › Catalog settings** to configure the catalogue. **Collections**
+groups titles within those libraries. **Home** arranges recommendation rows;
+changing a Home row does not delete a library or remove a title from the
+catalogue. Plex's own Watchlist and other Plex-provided navigation remain
+client features.
+
 ## Organise your Home
 
 Movies, TV and Home put populated **Continue Watching** first, followed by
@@ -186,7 +222,7 @@ rows; themed and type-specific rows follow. Movies and TV pages keep their own
 types. New viewers get today's Top 10 until there is enough viewing history.
 
 These are the defaults for every install. Explicit saved layouts take precedence.
-Use **Home Designer** to choose the server's default rows and ordering. Select a
+Use **Home** in Ether's sidebar to choose the server's default rows and ordering. Select a
 viewer to preview their Home and make personal exceptions. **Collections** lets
 you build and edit themed lists. Recommendations improve as viewers watch and
 rate titles.
@@ -200,12 +236,70 @@ respective types.
 Movies appear from their theatrical release date. Shows, seasons and episodes
 appear from their air dates. Items with no known release date stay hidden.
 
+### Choose Home rows
+
+1. Open **Home** in Ether. Choose **Everyone** for the default layout, or the
+   same viewer you use in Plex for personal overrides.
+2. Select the page and preview device you want to configure. Device and time
+   conditions can make phone and TV previews differ.
+3. In **Rows**, find the row and choose **Always**, **Eligible** or **Off**.
+   **Always** includes an available row when it has eligible titles;
+   **Eligible** lets personalization choose it; **Off** hides it. Always
+   does not create missing titles or override viewer access restrictions.
+4. To keep a row in a specific position, expand its controls and set
+   **Anchor to slot**. Use **Layout** for the overall page arrangement.
+5. Select **Save layout**, then reload Home in your Plex app. Compare it with
+   Ether's preview for the same viewer, page and device.
+
+A personalized row can change as its eligible titles, viewing history or
+scheduled conditions change. If it repeatedly disappears and returns without
+those changes, record the row name, Ether version, Plex app/device and whether
+the preview does the same. A screenshot of a gap alone cannot identify the
+cause.
+
+### Put your watchlist on Home
+
+1. Add wanted titles to your Plex Watchlist.
+2. In Ether, open **Viewers › Defaults › Watchlist alerts**, enable
+   **Watchlist monitoring** and **Plex watchlists**, then save.
+3. Open **Viewers › your viewer › Watchlist**. **Sync viewer** imports the
+   list; **Check availability** checks for playable releases. These actions
+   are separate: importing a title does not prove it can stream.
+4. Return to **Home** and inspect the same viewer's preview. The watchlist
+   rows are **Waiting for a stream** and **Now available**. Check that your
+   saved row policies do not hide them, and reload Plex Home.
+
+Plex watchlist access covers the owner and supported Plex Home members.
+Sharing a server with a friend does not grant access to that friend's Plex
+Watchlist. Trakt watchlist monitoring is a separate option and requires that
+viewer's linked account.
+
+For a hand-picked list independent of watchlist monitoring, create a
+**Collection**, add titles and enable its **Home row**. It becomes a candidate
+row; use Home's **Rows** controls if you want to keep it visible whenever its
+eligible contents are available. The collection's **Collections tab** setting
+is separate from its Home row.
+
 ## Edit settings
 
 Pages use subtabs to group related settings. Use an **Edit** or **Create** action
-to open a drawer, make changes and save. Audio and subtitle preferences are under
-**Audio & subtitles**; quality profiles and client rules are under **Playback &
-releases**.
+to open a drawer, make changes and save. Start with the settings relevant to
+what you want to change:
+
+| Task | Where to look |
+| --- | --- |
+| Connect providers and indexers | **Sources** |
+| Inspect a failed source search | **Releases › History**, then open the attempt |
+| Inspect observed playback | **Activity › History** |
+| Change one viewer's track preferences | **Viewers › viewer › Audio & subtitles** |
+| Change defaults for viewers | **Viewers › Defaults** |
+| Arrange rows in Plex | **Home** |
+| Change artwork providers | **Metadata › Artwork** |
+
+A playback attempt can fail before Activity history begins. Releases history
+records source-selection results, including failures; open its details for
+candidate rejection reasons and effective playback limits. Neither a
+catalogue poster nor an indexer's “cached” label guarantees a playable source.
 
 ## Versions, trailers, downloads and previews
 

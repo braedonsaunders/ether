@@ -360,6 +360,11 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			if r.d.pinned && min > 1 && (r.c.source != core.RowSourceEngine || a.minRow <= 0) {
 				min = 1
 			}
+			// A client's card window can be smaller than the candidate's
+			// editorial minimum. A full window is still a useful shelf.
+			if cap := a.rowCap(r.c); min > cap {
+				min = cap
+			}
 			if n := len(picked[r]); n == 0 || n < min {
 				short[r] = true
 				if head == nil || head[r] {

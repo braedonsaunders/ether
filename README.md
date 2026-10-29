@@ -229,6 +229,8 @@ Open **`http://localhost:32400/ether/`** and finish the 4-step wizard:
 3. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start).
 4. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api)** and optional integrations (Trakt, OpenSubtitles, local Ollama/LM Studio).
 
+**After setup:** [Understand Plex libraries](docs/user-guide.md#libraries-catalogue-and-home) · [Put your watchlist on Home](docs/user-guide.md#put-your-watchlist-on-home) · [Choose your Home rows](docs/user-guide.md#choose-home-rows) · [Check Stremio addon compatibility](docs/user-guide.md#stremio-addons-as-sources)
+
 **Full documentation:** [**Installation & Clustering Guide**](docs/install.md) · [**Owner & User Guide**](docs/user-guide.md) · [**NAS & Homelab Templates**](packaging/community/README.md)
 
 ---
