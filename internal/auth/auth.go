@@ -79,6 +79,51 @@ UPDATE auth_users SET is_owner=0 WHERE is_owner=1 AND id <> (
 	SELECT id FROM auth_users WHERE is_owner=1 ORDER BY updated_at DESC, id DESC LIMIT 1);
 CREATE UNIQUE INDEX auth_users_one_owner ON auth_users(is_owner) WHERE is_owner=1;
 `)
+	// SQLite enforces foreign keys during migration transactions. Preserve and
+	// recreate the two dependent tables before rebuilding their parent.
+	store.Register("auth", 4, `
+CREATE TEMP TABLE auth_tokens_saved AS SELECT * FROM auth_tokens;
+CREATE TEMP TABLE auth_delegations_saved AS SELECT * FROM auth_delegations;
+DROP TABLE auth_tokens;
+DROP TABLE auth_delegations;
+CREATE TABLE auth_users_new (
+	id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+	plex_id            INTEGER UNIQUE,
+	uuid               TEXT    NOT NULL DEFAULT '',
+	username           TEXT    NOT NULL DEFAULT '',
+	title              TEXT    NOT NULL DEFAULT '',
+	email              TEXT    NOT NULL DEFAULT '',
+	thumb              TEXT    NOT NULL DEFAULT '',
+	is_owner           INTEGER NOT NULL DEFAULT 0,
+	is_home            INTEGER NOT NULL DEFAULT 0,
+	restricted         INTEGER NOT NULL DEFAULT 0,
+	active             INTEGER NOT NULL DEFAULT 1,
+	origin             TEXT    NOT NULL DEFAULT 'friend',
+	plex_sections      TEXT    NOT NULL DEFAULT '[]',
+	stream_limit       INTEGER NOT NULL DEFAULT 0,
+	max_content_rating TEXT    NOT NULL DEFAULT '',
+	subtitle_languages TEXT    NOT NULL DEFAULT '[]',
+	audio_languages    TEXT    NOT NULL DEFAULT '[]',
+	allowed_sections   TEXT    NOT NULL DEFAULT '[]',
+	created_at         INTEGER NOT NULL,
+	updated_at         INTEGER NOT NULL,
+	last_seen_at       INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO auth_users_new SELECT * FROM auth_users;
+DROP TABLE auth_users;
+ALTER TABLE auth_users_new RENAME TO auth_users;
+CREATE UNIQUE INDEX auth_users_one_owner ON auth_users(is_owner) WHERE is_owner=1;
+CREATE TABLE auth_tokens (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, source TEXT NOT NULL, created_at INTEGER NOT NULL);
+INSERT INTO auth_tokens SELECT * FROM auth_tokens_saved;
+DROP TABLE auth_tokens_saved;
+CREATE INDEX auth_tokens_user ON auth_tokens(user_id);
+CREATE TABLE auth_delegations (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
+INSERT INTO auth_delegations SELECT * FROM auth_delegations_saved;
+DROP TABLE auth_delegations_saved;
+CREATE INDEX auth_delegations_user ON auth_delegations(user_id);
+`)
+	store.RegisterDialect("auth", 4, store.Postgres, `ALTER TABLE auth_users ALTER COLUMN plex_id DROP NOT NULL;`)
+
 }
 
 // User origins.
@@ -230,7 +275,7 @@ func HashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-const userCols = `id, plex_id, uuid, username, title, email, thumb, is_owner, is_home, restricted, active, origin,
+const userCols = `id, COALESCE(plex_id, 0), uuid, username, title, email, thumb, is_owner, is_home, restricted, active, origin,
 	plex_sections, stream_limit, max_content_rating, subtitle_languages, audio_languages, allowed_sections, last_seen_at`
 
 func scanRow(sc interface{ Scan(...any) error }) (*row, error) {
@@ -323,7 +368,9 @@ func (s *Service) reload(ctx context.Context) error {
 			return err
 		}
 		users[r.ID] = r
-		byPlex[r.PlexID] = r.ID
+		if r.PlexID != 0 {
+			byPlex[r.PlexID] = r.ID
+		}
 		if r.IsOwner {
 			owner = r.PlexID
 		}
@@ -379,7 +426,7 @@ func (r *row) effective() core.User {
 // Authenticate implements core.Auth.
 func (s *Service) Authenticate(ctx context.Context, token string) (*core.User, error) {
 	token = strings.TrimSpace(token)
-	if token == "" {
+	if token == "" || core.IsGrantCredential(token) {
 		return nil, core.ErrUnauthorized
 	}
 	if strings.HasPrefix(token, delegationPrefix) {
@@ -832,7 +879,7 @@ RETURNING id`,
 		}
 	}
 	// Friends no longer in the list lost access.
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM auth_users WHERE is_owner=0 AND active=1`)
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM auth_users WHERE is_owner=0 AND active=1 AND plex_id IS NOT NULL`)
 	if err != nil {
 		return err
 	}
@@ -959,10 +1006,13 @@ func (s *Service) User(ctx context.Context, id int64) (*core.User, error) {
 func (s *Service) Owner(ctx context.Context) (*core.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.ownerPlexID == 0 {
-		return nil, core.ErrNotFound
+	var r *row
+	for _, candidate := range s.users {
+		if candidate.IsOwner {
+			r = candidate
+			break
+		}
 	}
-	r := s.users[s.byPlex[s.ownerPlexID]]
 	if r == nil {
 		return nil, core.ErrNotFound
 	}

@@ -32,6 +32,7 @@ Installers and the Docker image bundle `ffmpeg` and `ffprobe` from the
 | `github.com/jackc/pgx/v5` (+ `github.com/jackc/pgpassfile`, `github.com/jackc/pgservicefile`, `github.com/jackc/puddle/v2`) | Pure-Go PostgreSQL driver (database/sql adapter) for clustered mode, `internal/store` | MIT (© Jack Christensen) |
 | `github.com/kardianos/service` | OS service (systemd/launchd/Windows SCM), `internal/service` | Zlib-style (“as-is”, © Daniel Theophanes) |
 | `github.com/ulikunitz/xz` | 7z header LZMA decoding, `internal/archive` | BSD-3-Clause |
+| `golang.org/x/crypto` (`argon2`) | Local password hashing, `internal/identity` | BSD-3-Clause |
 | `golang.org/x/text` | Legacy subtitle code pages, `internal/subtitles`; language names, `internal/collections` | BSD-3-Clause |
 | `golang.org/x/image` | Collection poster rendering (scaling, WebP decoding, OpenType text), `internal/artwork` | BSD-3-Clause |
 | Go fonts (`golang.org/x/image/font/gofont`: Go Bold, Go Medium), embedded | Title text on generated collection posters, `internal/artwork` | BSD-3-Clause-style (© 2016 Bigelow & Holmes Inc., distributed by the Go Authors; see `golang.org/x/image/font/gofont/ttfs/README`) |
