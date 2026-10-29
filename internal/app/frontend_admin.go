@@ -180,9 +180,8 @@ func (f *frontendControl) Reconcile(ctx context.Context, c config.Config) {
 		current := listenerSettings{Port: c.FrontendPorts[string(d.ID)], Discovery: settings["discovery"]}
 		_, mounted := f.registry.Instance(d.ID)
 		if desired && mounted && !reflect.DeepEqual(f.applied[d.ID], current) {
-			if f.listeners.stop(ctx, d.ID) == nil {
-				mounted = false
-			}
+			_ = f.listeners.stop(ctx, d.ID)
+			_, mounted = f.registry.Instance(d.ID)
 		}
 		if desired && !mounted {
 			if f.listeners.start(ctx, d.ID) == nil {

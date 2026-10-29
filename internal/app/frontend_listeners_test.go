@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"syscall"
 	"testing"
+	"time"
 )
 
 type listenerFrontend struct {
@@ -190,5 +191,62 @@ func TestSharedFrontendPaths(t *testing.T) {
 	}
 	if err := m.close(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type longFrontend struct{ entered chan struct{} }
+
+func (f longFrontend) Describe() frontend.Descriptor { return frontend.Descriptor{ID: "long"} }
+func (f longFrontend) Mount(context.Context, frontend.Host) (frontend.Instance, error) {
+	return longInstance(f), nil
+}
+
+type longInstance longFrontend
+
+func (i longInstance) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(i.entered); <-r.Context().Done() })
+}
+func (i longInstance) Listeners() []frontend.ListenerSpec {
+	return []frontend.ListenerSpec{{Address: "127.0.0.1:0"}}
+}
+func (i longInstance) Discovery() []frontend.Announcer        { return nil }
+func (i longInstance) Status(context.Context) frontend.Status { return frontend.Status{} }
+func (i longInstance) Close(context.Context) error            { return nil }
+func TestFrontendStopForcesLongRequestsClosed(t *testing.T) {
+	ctx := context.Background()
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	entered := make(chan struct{})
+	if err := reg.Register(longFrontend{entered}); err != nil {
+		t.Fatal(err)
+	}
+	m := newFrontendListeners(reg)
+	if err := m.start(ctx, "long"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		resp, err := http.Get("http://" + m.status(ctx, "long").Addresses[0])
+		if err == nil {
+			resp.Body.Close()
+		}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("request did not start")
+	}
+	deadline, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if err := m.stop(deadline, "long"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("request survived forced close")
+	}
+	if _, ok := reg.Instance("long"); ok {
+		t.Fatal("frontend still mounted")
 	}
 }

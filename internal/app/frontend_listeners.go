@@ -202,8 +202,12 @@ func (m *frontendListeners) stop(ctx context.Context, id frontend.Protocol) erro
 		return nil
 	}
 	var errs []error
+	// A protocol may have long-lived streams. A toggle must not wait forever
+	// for them, even when the caller supplied a context with no deadline.
+	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	for _, srv := range run.servers {
-		if err := srv.Shutdown(ctx); err != nil {
+		if err := srv.Shutdown(shutdownCtx); err != nil {
 			errs = append(errs, err)
 			_ = srv.Close()
 		}
