@@ -63,7 +63,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	dev := device(r)
-	capability, err := i.host.Capabilities.Build(r.Context(), frontend.CapabilityRequest{Viewer: v, Device: caps.DeviceInfo{Protocol: "jellyfin", ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, Profile: body.DeviceProfile, UserAgent: r.UserAgent()})
+	capability, err := i.host.Capabilities.Build(r.Context(), frontend.CapabilityRequest{Viewer: v, Device: caps.DeviceInfo{Protocol: i.protocol, ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, Profile: body.DeviceProfile, UserAgent: r.UserAgent()})
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
@@ -81,7 +81,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	intent := frontend.PlayIntent{Estimate: !playback, Options: opts, Position: time.Duration(body.StartTimeTicks) * 100 * time.Nanosecond}
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: "jellyfin", Item: key, Caps: capability.Client, Intent: intent})
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Caps: capability.Client, Intent: intent})
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)
 		return
@@ -93,7 +93,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	source := map[string]any{"Id": ids.RatingKeyGUID(key), "Container": plan.Media.Container, "RunTimeTicks": plan.Media.Duration.Nanoseconds() / 100, "Size": plan.Media.Size, "Bitrate": plan.Media.BitrateKbps * 1000, "SupportsDirectPlay": plan.Decision.Kind == "directplay", "SupportsDirectStream": plan.Decision.Kind == "copy", "SupportsTranscoding": plan.Decision.Kind == "transcode", "MediaStreams": mediaStreams(plan.Media.Streams)}
 	playID := ""
 	if playback {
-		session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "jellyfin", PlanID: plan.ID, Viewer: v, Device: dev})
+		session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: i.protocol, PlanID: plan.ID, Viewer: v, Device: dev})
 		if err != nil {
 			http.Error(w, "Playback unavailable", 503)
 			return
@@ -102,9 +102,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		if plan.Decision.Kind != "directplay" {
 			format = frontend.StreamHLS
 		}
-		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: "jellyfin"}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
+		url, err := i.host.Sessions.StartStream(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID, frontend.StreamRequest{Format: format, Position: intent.Position})
 		if err != nil {
-			_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: "jellyfin"}, session.ID)
+			_ = i.host.Sessions.Stop(r.Context(), frontend.SessionAccess{Viewer: v, Device: dev, Protocol: i.protocol}, session.ID)
 			http.Error(w, "Playback unavailable", 503)
 			return
 		}
@@ -186,7 +186,7 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 		http.Error(w, "Bad Request", 400)
 		return
 	}
-	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: "jellyfin"}
+	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: i.protocol}
 	state := "playing"
 	if body.IsPaused {
 		state = "paused"
@@ -239,7 +239,7 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing session", 400)
 		return
 	}
-	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: "jellyfin"}
+	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol}
 	sessions, err := i.host.Sessions.Sessions(r.Context(), access)
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
@@ -247,7 +247,7 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	found := false
 	for _, s := range sessions {
-		if s.ID == vals[0] && s.Item == key && s.Protocol == "jellyfin" {
+		if s.ID == vals[0] && s.Item == key && s.Protocol == i.protocol {
 			found = true
 			break
 		}

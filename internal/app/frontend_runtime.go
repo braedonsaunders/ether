@@ -101,6 +101,11 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		cancel()
 		return nil, err
 	}
+	if err := r.registry.Register(mediabrowser.Emby{MachineID: cfg.Server.MachineIdentifier}); err != nil {
+		r.events.Close()
+		cancel()
+		return nil, err
+	}
 	if cfg.Frontends == nil || cfg.Frontends["plex"].Enabled {
 		if err := r.control.listeners.start(ctx, "plex"); err != nil {
 			r.stateUnsub()

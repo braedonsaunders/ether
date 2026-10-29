@@ -18,11 +18,28 @@ func (Jellyfin) Describe() frontend.Descriptor {
 	return frontend.Descriptor{ID: "jellyfin", Name: "Jellyfin", Version: "12.4.0", DefaultPort: 8096}
 }
 func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Instance, error) {
-	if f.MachineID == "" || host.Identity == nil {
-		return nil, fmt.Errorf("jellyfin requires server identity and authentication")
+	return mount(ctx, host, f.MachineID, "jellyfin")
+}
+
+// Emby shares the MediaBrowser engine but has a separate identity and surface.
+type Emby struct{ MachineID string }
+
+func (Emby) Describe() frontend.Descriptor {
+	return frontend.Descriptor{ID: "emby", Name: "Emby", Version: "4.10.2.0", DefaultPort: 8097}
+}
+func (f Emby) Mount(ctx context.Context, host frontend.Host) (frontend.Instance, error) {
+	return mount(ctx, host, f.MachineID, "emby")
+}
+func mount(ctx context.Context, host frontend.Host, machineID string, protocol frontend.Protocol) (frontend.Instance, error) {
+	if machineID == "" || host.Identity == nil {
+		return nil, fmt.Errorf("%s requires server identity and authentication", protocol)
 	}
-	sum := sha256.Sum256([]byte("ether:jellyfin:" + f.MachineID))
+	sum := sha256.Sum256([]byte("ether:" + string(protocol) + ":" + machineID))
 	info := PublicInfo{ID: hex.EncodeToString(sum[:16]), ServerName: "Ether", Version: "12.4.0", ProductName: "Jellyfin Server"}
+	if protocol == "emby" {
+		info.Version = "4.10.2.0"
+		info.ProductName = "Emby Server"
+	}
 	r := &route.Router{}
 	if err := publicRoutes(r, func() PublicInfo {
 		cfg := frontend.Settings{}
@@ -38,7 +55,7 @@ func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 	}); err != nil {
 		return nil, err
 	}
-	inst := &instance{host: host, info: info, router: r}
+	inst := &instance{host: host, info: info, router: r, protocol: protocol}
 	if err := inst.playbackRoutes(); err != nil {
 		return nil, err
 	}
@@ -55,12 +72,13 @@ func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 }
 
 type instance struct {
-	host   frontend.Host
-	info   PublicInfo
-	router *route.Router
+	protocol frontend.Protocol
+	host     frontend.Host
+	info     PublicInfo
+	router   *route.Router
 }
 
-func (i *instance) Handler() http.Handler { return StripPrefix("/jellyfin", i.router) }
+func (i *instance) Handler() http.Handler { return StripPrefix("/"+string(i.protocol), i.router) }
 func (i *instance) listenerPort() int {
 	settings := frontend.Settings{}
 	if i.host.Config != nil {
@@ -69,12 +87,18 @@ func (i *instance) listenerPort() int {
 	if n, ok := settings["port"].(float64); ok && n > 0 && n <= 65535 {
 		return int(n)
 	}
+	if i.protocol == "emby" {
+		return 8097
+	}
 	return 8096
 }
 func (i *instance) Listeners() []frontend.ListenerSpec {
-	return []frontend.ListenerSpec{{Address: fmt.Sprintf(":%d", i.listenerPort())}, {Shared: true, PathPrefix: "/jellyfin"}}
+	return []frontend.ListenerSpec{{Address: fmt.Sprintf(":%d", i.listenerPort())}, {Shared: true, PathPrefix: "/" + string(i.protocol)}}
 }
 func (i *instance) Discovery() []frontend.Announcer {
+	if i.protocol != "jellyfin" {
+		return nil
+	}
 	settings := frontend.Settings{}
 	if i.host.Config != nil {
 		settings = i.host.Config()
