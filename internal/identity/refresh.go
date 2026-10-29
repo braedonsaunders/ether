@@ -15,6 +15,7 @@ import (
 )
 
 func init() {
+	store.RegisterAfter("identity_refresh", "auth")
 	store.Register("identity_refresh", 1, `CREATE TABLE identity_refresh_families (id TEXT PRIMARY KEY, viewer_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, surface TEXT NOT NULL, device_id TEXT NOT NULL, current_hash TEXT NOT NULL, access_hash TEXT NOT NULL, absolute_expiry INTEGER NOT NULL, idle_expiry INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0); CREATE TABLE identity_refresh_tokens (hash TEXT PRIMARY KEY, family_id TEXT NOT NULL REFERENCES identity_refresh_families(id) ON DELETE CASCADE, access_hash TEXT NOT NULL); CREATE INDEX identity_refresh_viewer ON identity_refresh_families(viewer_id);`)
 }
 

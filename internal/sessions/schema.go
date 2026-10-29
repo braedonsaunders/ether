@@ -4,6 +4,7 @@ package sessions
 import "github.com/braedonsaunders/ether/internal/store"
 
 func init() {
+	store.RegisterAfter("sessions", "plex")
 	// Keep the historical Plex migration unchanged, including play queues.
 
 	store.Register("plex", 2, `

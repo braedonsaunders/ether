@@ -40,9 +40,25 @@ type migration struct {
 }
 
 var (
-	regMu      sync.Mutex
-	migrations []migration
+	regMu        sync.Mutex
+	migrations   []migration
+	dependencies = map[string]map[string]bool{}
 )
+
+// RegisterAfter declares component-level migration dependencies. Every
+// migration of a dependency is applied before any migration of component.
+// Unrelated components retain their alphabetical order. A missing dependency
+// or dependency cycle is a programming error and fails migration startup.
+func RegisterAfter(component string, dependsOn ...string) {
+	regMu.Lock()
+	defer regMu.Unlock()
+	if dependencies[component] == nil {
+		dependencies[component] = map[string]bool{}
+	}
+	for _, dependency := range dependsOn {
+		dependencies[component][dependency] = true
+	}
+}
 
 // Register adds a migration written in SQLite's dialect. Versions are per
 // component and start at 1. Call from init(); a migration must never change
@@ -279,10 +295,17 @@ func protectDBFiles(path string) error {
 	return nil
 }
 
-// registered returns the migrations sorted by component then version.
+// registered returns components in stable dependency order, versions ascending.
 func registered() []migration {
 	regMu.Lock()
 	ms := append([]migration(nil), migrations...)
+	deps := make(map[string][]string, len(dependencies))
+	for component, requirements := range dependencies {
+		for requirement := range requirements {
+			deps[component] = append(deps[component], requirement)
+		}
+		sort.Strings(deps[component])
+	}
 	regMu.Unlock()
 	sort.Slice(ms, func(i, j int) bool {
 		if ms[i].component != ms[j].component {
@@ -290,7 +313,38 @@ func registered() []migration {
 		}
 		return ms[i].version < ms[j].version
 	})
-	return ms
+	groups := make(map[string][]migration)
+	var components []string
+	for _, m := range ms {
+		if _, ok := groups[m.component]; !ok {
+			components = append(components, m.component)
+		}
+		groups[m.component] = append(groups[m.component], m)
+	}
+	state := make(map[string]uint8, len(groups))
+	ordered := make([]migration, 0, len(ms))
+	var visit func(string)
+	visit = func(component string) {
+		if state[component] == 2 {
+			return
+		}
+		if state[component] == 1 {
+			panic("store: cyclic migration dependency involving " + component)
+		}
+		if _, ok := groups[component]; !ok {
+			panic("store: missing migration dependency " + component)
+		}
+		state[component] = 1
+		for _, requirement := range deps[component] {
+			visit(requirement)
+		}
+		state[component] = 2
+		ordered = append(ordered, groups[component]...)
+	}
+	for _, component := range components {
+		visit(component)
+	}
+	return ordered
 }
 
 const createMigrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (

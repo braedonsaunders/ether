@@ -18,6 +18,7 @@ func NewPreferences(db *sql.DB, surface frontend.Protocol) *Preferences {
 }
 
 func init() {
+	store.RegisterAfter("frontend_preferences", "auth")
 	store.Register("frontend_preferences", 1, `CREATE TABLE frontend_preferences (viewer_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, surface TEXT NOT NULL, client TEXT NOT NULL, pref_key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(viewer_id,surface,client,pref_key));`)
 }
 

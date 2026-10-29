@@ -18,6 +18,7 @@ import (
 )
 
 func init() {
+	store.RegisterAfter("identity_grants", "auth")
 	store.Register("identity_grants", 1, `
 CREATE TABLE identity_grants (
  hash TEXT PRIMARY KEY,

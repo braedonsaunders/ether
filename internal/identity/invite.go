@@ -13,6 +13,7 @@ import (
 )
 
 func init() {
+	store.RegisterAfter("identity_invites", "auth")
 	store.Register("identity_invites", 1, `CREATE TABLE identity_invites (hash TEXT PRIMARY KEY, viewer_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0);`)
 }
 
