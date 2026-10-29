@@ -1,0 +1,115 @@
+package silo
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/coder/websocket"
+)
+
+type controlTestTickets struct {
+	mu      sync.Mutex
+	purpose string
+	used    bool
+	viewer  *frontend.Viewer
+}
+
+func (t *controlTestTickets) Issue(_ context.Context, credential string, d frontend.Device, purpose string) (string, error) {
+	if credential != "grant" || d.ID != "tv" {
+		return "", errors.New("unauthorized")
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.purpose = purpose
+	return "secret", nil
+}
+func (t *controlTestTickets) Consume(_ context.Context, token, purpose string) (frontend.Ticket, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if token != "secret" || t.used || purpose != t.purpose {
+		return frontend.Ticket{}, errors.New("invalid")
+	}
+	t.used = true
+	return frontend.Ticket{Viewer: t.viewer, Device: frontend.Device{ID: "tv"}}, nil
+}
+func (*controlTestTickets) Active(context.Context, frontend.Ticket) (bool, error) { return true, nil }
+
+func TestPlaybackControlIsSessionBoundAndRelaysCommands(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	id := "8c2d329e-71d2-4ea1-9b57-95187baeb0aa"
+	tickets := &controlTestTickets{viewer: viewer}
+	events := make(chan frontend.Event, 2)
+	sessions := frontendtest.Sessions{SessionsFunc: func(_ context.Context, access frontend.SessionAccess) ([]frontend.Session, error) {
+		if access.Viewer != viewer || access.Device.ID != "tv" {
+			return nil, errors.New("unauthorized")
+		}
+		return []frontend.Session{{ID: id, ViewerID: viewer.ID, Protocol: "silo", Device: frontend.Device{ID: "tv"}}}, nil
+	}}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
+		if token != "grant" {
+			return nil, errors.New("invalid")
+		}
+		return viewer, nil
+	}}, Sessions: sessions, Tickets: tickets, Events: eventSource{events}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(inst.Handler())
+	defer server.Close()
+	issue := func(session string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/api/v2/playback/sessions/"+session+"/control/ws-ticket", strings.NewReader(`{"installation_id":"`+inst.(*instance).installationID()+`"}`))
+		r.Header.Set("Authorization", "Bearer grant")
+		r.Header.Set("X-Silo-Device-Id", "tv")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if w := issue("other"); w.Code != http.StatusNotFound {
+		t.Fatalf("other session ticket: %d", w.Code)
+	}
+	if w := issue(id); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"protocol":"silo.playback-control.v2"`) {
+		t.Fatalf("ticket: %d %s", w.Code, w.Body.String())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	connect := func(session string) (*websocket.Conn, *http.Response, error) {
+		return websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/v2/playback/sessions/"+session+"/control/ws", &websocket.DialOptions{Subprotocols: []string{controlProtocol, "silo.ticket.secret"}})
+	}
+	if c, response, err := connect("other"); err == nil {
+		c.Close(websocket.StatusNormalClosure, "")
+		t.Fatal("ticket accepted for another session")
+	} else if response == nil || response.StatusCode != http.StatusForbidden {
+		t.Fatalf("wrong session response: %v %v", response, err)
+	}
+	conn, response, err := connect(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+	if response.Header.Get("Sec-WebSocket-Protocol") != controlProtocol {
+		t.Fatal("wrong selected protocol")
+	}
+	if err = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"hello","session_id":"`+id+`","client":{"name":"Apple","version":"1"},"capabilities":{"commands":["seek"]}}`)); err != nil {
+		t.Fatal(err)
+	}
+	events <- frontend.Event{Type: "SessionCommand", ViewerID: viewer.ID, SessionID: id, TargetProtocol: "silo", TargetDeviceID: "tv", Command: &frontend.Command{Kind: frontend.CommandSeek, Position: time.Minute}}
+	_, data, err := conn.Read(ctx)
+	if err != nil || !strings.Contains(string(data), `"name":"seek"`) || !strings.Contains(string(data), `"position_seconds":60`) || !strings.Contains(string(data), `"session_id":"`+id+`"`) {
+		t.Fatalf("command: %s %v", data, err)
+	}
+	if c, response, err := connect(id); err == nil {
+		c.Close(websocket.StatusNormalClosure, "")
+		t.Fatal("ticket replay accepted")
+	} else if response == nil || response.StatusCode != http.StatusForbidden {
+		t.Fatalf("replay response: %v %v", response, err)
+	}
+}

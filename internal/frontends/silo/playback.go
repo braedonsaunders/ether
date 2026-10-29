@@ -449,13 +449,24 @@ func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	reply(w, http.StatusOK, map[string]any{"available": false, "protocol": "", "revision": "ether-playback-control-v1", "state": "unsupported", "allowed": false})
+	available := i.host.Sessions != nil && i.host.Events != nil && i.host.Tickets != nil
+	state, protocol := "not_configured", ""
+	if available {
+		state, protocol = "available", controlProtocol
+	}
+	reply(w, http.StatusOK, map[string]any{"available": available, "protocol": protocol, "revision": "ether-playback-control-v1", "state": state, "allowed": available})
 }
 
 type sharedPrefix struct{}
 
 func (i *instance) playbackRoutes() error {
 	if err := i.router.Handle("GET", "/api/v2/playback/sessions/control/capabilities", http.HandlerFunc(i.playbackControlCapabilities)); err != nil {
+		return err
+	}
+	if err := i.router.Handle("POST", "/api/v2/playback/sessions/{session}/control/ws-ticket", http.HandlerFunc(i.controlTicket)); err != nil {
+		return err
+	}
+	if err := i.router.Handle("GET", "/api/v2/playback/sessions/{session}/control/ws", http.HandlerFunc(i.controlSocket)); err != nil {
 		return err
 	}
 	if err := i.router.Handle("GET", "/api/v2/playback/capabilities", http.HandlerFunc(i.playbackCapabilities)); err != nil {
