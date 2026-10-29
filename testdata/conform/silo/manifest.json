@@ -3,8 +3,8 @@
     "silo-android: Silo item discovery is not yet configured"
   ],
   "fixtureCounts": {
-    "silo-android": 11,
-    "silo-apple": 11
+    "silo-android": 15,
+    "silo-apple": 15
   },
   "fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.",
   "requestErrors": null,
@@ -13,7 +13,5 @@
   "referenceVersion": "build-1810-omnibus",
   "profileDirectory": "internal/conform/profiles/silo",
   "binaryFixturePolicy": "Range responses store status, selected headers, byte length, and SHA-256; media bytes are never stored.",
-  "labLimitations": [
-    "The reference Silo image lacks ffmpeg; transcode playback plans report adaptation_unavailable."
-  ]
+  "hlsCoverage": "Playable direct and HLS transcode plans, playlist, and three segment ranges."
 }

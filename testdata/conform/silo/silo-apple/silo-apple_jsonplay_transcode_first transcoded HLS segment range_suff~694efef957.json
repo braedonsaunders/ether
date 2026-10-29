@@ -1,0 +1,26 @@
+{
+  "status": 206,
+  "headers": {
+    "Accept-Ranges": [
+      "bytes"
+    ],
+    "Cache-Control": [
+      "no-store, max-age=0"
+    ],
+    "Content-Length": [
+      "65536"
+    ],
+    "Content-Range": [
+      "bytes 91256-156791/156792"
+    ],
+    "Content-Type": [
+      "video/mp2t"
+    ]
+  },
+  "body": "",
+  "kind": "binary-range",
+  "rangeKind": "suffix",
+  "bodyLength": 65536,
+  "sha256": "ac8e065b0a6f80d428d195a42f1347cf0713a6e00ee54c6e00336754e76272a9",
+  "requestRange": "bytes=-65536"
+}

@@ -114,11 +114,7 @@ func TestRecordedSiloCorpus(t *testing.T) {
 					t.Error(err)
 					continue
 				}
-				expected := "playable"
-				if strings.HasPrefix(req.Name, "play_transcode_") {
-					expected = "adaptation_unavailable"
-				}
-				if body.Outcome != expected {
+				if body.Outcome != "playable" {
 					t.Errorf("%s: outcome %q", name, body.Outcome)
 				}
 			}
