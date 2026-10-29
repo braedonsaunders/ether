@@ -1,0 +1,12 @@
+.git
+**/node_modules
+**/lab.env
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/prod.env
+.scratch
+dist/ffmpeg

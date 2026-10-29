@@ -137,6 +137,13 @@ func run(c config) ([]result, error) {
 	return out, nil
 }
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "serve" {
+		if err := serve(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	file := flag.String("config", os.Getenv("SCORECARD_CONFIG"), "private JSON configuration file")
 	flag.Parse()
 	if *file == "" {

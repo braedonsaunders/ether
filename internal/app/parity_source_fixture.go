@@ -1,4 +1,4 @@
-//go:build plexparity
+//go:build plexparity && !scorecard
 
 package app
 
@@ -63,9 +63,9 @@ type parityMedia struct {
 	id   string
 }
 
-func (p *parityMedia) Size() int64                       { return p.size }
-func (p *parityMedia) Name() string                      { return "fixture.mp4" }
-func (p *parityMedia) ReleaseID() string                 { return p.id }
-func parityIndexer(core.Indexer) core.Indexer            { return paritySource{} }
-func parityHealth(core.HealthChecker) core.HealthChecker { return paritySource{} }
-func parityEngine(_ core.Engine, dir string) core.Engine { return paritySource{dir: dir} }
+func (p *parityMedia) Size() int64                               { return p.size }
+func (p *parityMedia) Name() string                              { return "fixture.mp4" }
+func (p *parityMedia) ReleaseID() string                         { return p.id }
+func parityIndexer(core.Indexer, string) core.Indexer            { return paritySource{} }
+func parityHealth(core.HealthChecker, string) core.HealthChecker { return paritySource{} }
+func parityEngine(_ core.Engine, dir string) core.Engine         { return paritySource{dir: dir} }

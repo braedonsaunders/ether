@@ -51,7 +51,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 			if a.resolver == nil {
 				return nil, core.ErrNotAvailable
 			}
-			return a.resolver.Variants(ctx, core.ResolveRequest{Title: t, User: v, Client: caps}, 4)
+			return scorecardVariants(ctx, a, v, t, caps)
 		},
 		SelectScopedTracks: func(ctx context.Context, viewer *core.Viewer, device core.Device, title *core.Title, info core.MediaInfo, opts core.DecideOptions, audioSet, subtitleSet bool) (core.DecideOptions, error) {
 			if a.trackprefs == nil {

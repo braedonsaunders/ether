@@ -1,0 +1,277 @@
+//go:build scorecard && !plexparity
+
+package app
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+)
+
+func TestScorecardFilesAndSource(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "movie.mkv")
+	content := []byte("identical media bytes")
+	if e := os.WriteFile(path, content, 0600); e != nil {
+		t.Fatal(e)
+	}
+	hash := sha256.Sum256(content)
+	entries := []ScorecardFile{{TMDB: 123, Path: path, SHA256: hex.EncodeToString(hash[:]), Info: core.ReleaseInfo{VideoCodec: "hevc", Container: "mkv"}}}
+	if e := VerifyScorecardFiles(entries); e != nil {
+		t.Fatal(e)
+	}
+	data, _ := json.Marshal(entries)
+	if e := os.WriteFile(filepath.Join(dir, "scorecard-files.json"), data, 0600); e != nil {
+		t.Fatal(e)
+	}
+	s := scorecardSource{dir}
+	releases, e := s.Search(context.Background(), core.SearchRequest{Type: core.TypeMovie, IDs: core.IDs{TMDB: 123}, Title: "Example"})
+	if e != nil || len(releases) != 1 {
+		t.Fatalf("%v %v", releases, e)
+	}
+	payload, e := s.FetchNZB(context.Background(), releases[0])
+	if e != nil {
+		t.Fatal(e)
+	}
+	media, e := s.Open(context.Background(), releases[0].ID, payload)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer media.Close()
+	buf := make([]byte, len(content))
+	if _, e = media.ReadAt(buf, 0); e != nil || string(buf) != string(content) {
+		t.Fatalf("%q %v", buf, e)
+	}
+	entries[0].SHA256 = hex.EncodeToString(make([]byte, 32))
+	if VerifyScorecardFiles(entries) == nil {
+		t.Fatal("changed digest accepted")
+	}
+}
+
+func TestDistinctVersions(t *testing.T) {
+	dir := t.TempDir()
+	files := []ScorecardFile{}
+	for _, body := range []string{"first", "second"} {
+		path := filepath.Join(dir, body+".mp4")
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256([]byte(body))
+		files = append(files, ScorecardFile{TMDB: 123, Path: path, SHA256: hex.EncodeToString(digest[:])})
+	}
+	if err := VerifyScorecardFiles(files); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(files)
+	if err := os.WriteFile(filepath.Join(dir, "scorecard-files.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (scorecardSource{dir}).Search(context.Background(), core.SearchRequest{Type: core.TypeMovie, IDs: core.IDs{TMDB: 123}})
+	if err != nil || len(got) != 2 || got[0].ID == got[1].ID {
+		t.Fatalf("versions: %+v, %v", got, err)
+	}
+}
+
+func TestScorecardServeRejectsMismatchAndServesViewer(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "movie.mp4")
+	bytes := []byte("fixture")
+	if e := os.WriteFile(path, bytes, 0600); e != nil {
+		t.Fatal(e)
+	}
+	digest := sha256.Sum256(bytes)
+	files := []ScorecardFile{{TMDB: 123, Path: path, SHA256: hex.EncodeToString(digest[:])}}
+	data, _ := json.Marshal(files)
+	if e := os.WriteFile(filepath.Join(dir, "scorecard-files.json"), data, 0600); e != nil {
+		t.Fatal(e)
+	}
+	tmdb := httptest.NewServer(http.NotFoundHandler())
+	defer tmdb.Close()
+	t.Setenv("ETHER_PARITY_TMDB_URL", tmdb.URL)
+	t.Setenv("ETHER_PARITY_PLEXTV_URL", tmdb.URL)
+	handlers, closeApp, e := startScorecard(context.Background(), dir, "fixture-viewer", "fixture-password", nil, func(context.Context, core.MediaSource) (*core.MediaInfo, error) {
+		return &core.MediaInfo{Container: "mp4"}, nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer closeApp()
+	for _, name := range []string{"jellyfin", "emby"} {
+		rr := httptest.NewRecorder()
+		handlers[name].ServeHTTP(rr, httptest.NewRequest("GET", "/System/Info/Public", nil))
+		if rr.Code != 200 {
+			t.Fatalf("%s HTTP %d", name, rr.Code)
+		}
+	}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture-viewer","Pw":"fixture-password"}`))
+	req.Header.Set("Authorization", `MediaBrowser Client="test", DeviceId="test"`)
+	req.Header.Set("Content-Type", "application/json")
+	handlers["jellyfin"].ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("fixture viewer login: %d %s", rr.Code, rr.Body.String())
+	}
+	var login struct {
+		AccessToken string
+		User        struct {
+			Policy struct{ IsAdministrator bool }
+		}
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &login); err != nil || login.AccessToken == "" || login.User.Policy.IsAdministrator {
+		t.Fatalf("invalid fixture login or owner permissions: %v", err)
+	}
+	if _, _, e = StartScorecard(context.Background(), dir, "fixture-viewer", "fixture-password", nil); e == nil {
+		t.Fatal("existing data directory accepted")
+	}
+}
+
+func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
+	dir := t.TempDir()
+	path, e := filepath.Abs("../transcode/testdata/nativeprobe/h264_aac_movtext_faststart.mp4")
+	if e != nil {
+		t.Fatal(e)
+	}
+	data, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	data = append(data, make([]byte, 6<<20)...)
+	path = filepath.Join(dir, "fixture.mp4")
+	if e = os.WriteFile(path, data, 0600); e != nil {
+		t.Fatal(e)
+	}
+	sum := sha256.Sum256(data)
+	file := ScorecardFile{TMDB: 123, Path: path, SHA256: hex.EncodeToString(sum[:]), Info: core.ReleaseInfo{Height: 1080, Source: core.SourceWEBDL, VideoCodec: "h264", AudioCodec: "aac", Container: "mp4"}}
+	secondPath := filepath.Join(dir, "second.mp4")
+	secondData := append(append([]byte(nil), data...), 1)
+	if e = os.WriteFile(secondPath, secondData, 0600); e != nil {
+		t.Fatal(e)
+	}
+	secondSum := sha256.Sum256(secondData)
+	second := file
+	second.Path = secondPath
+	second.SHA256 = hex.EncodeToString(secondSum[:])
+	payload, _ := json.Marshal([]ScorecardFile{file, second})
+	if e = os.WriteFile(filepath.Join(dir, "scorecard-files.json"), payload, 0600); e != nil {
+		t.Fatal(e)
+	}
+	tmdb := httptest.NewServer(http.NotFoundHandler())
+	defer tmdb.Close()
+	t.Setenv("ETHER_PARITY_TMDB_URL", tmdb.URL)
+	t.Setenv("ETHER_PARITY_PLEXTV_URL", tmdb.URL)
+	items := []ScorecardItem{{Name: "Example", Type: "Movie", Path: path, ProviderIds: map[string]string{"Tmdb": "123"}, ProductionYear: 2020, RunTimeTicks: 600000000}}
+	handlers, cleanup, e := StartScorecard(context.Background(), dir, "fixture-viewer", "fixture-password", items)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer cleanup()
+	h := handlers["jellyfin"]
+	req := httptest.NewRequest("POST", "/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture-viewer","Pw":"fixture-password"}`))
+	req.Header.Set("Authorization", `MediaBrowser Client="test", DeviceId="test"`)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("login %d", rr.Code)
+	}
+	var login struct{ AccessToken string }
+	if e = json.Unmarshal(rr.Body.Bytes(), &login); e != nil || login.AccessToken == "" {
+		t.Fatal(e)
+	}
+	sourceID := scorecardReleaseID(second)
+	url := "/Items/" + ids.RatingKeyGUID(core.MovieKey(123)) + "/PlaybackInfo"
+	body, _ := json.Marshal(map[string]any{"IsPlayback": true, "MediaSourceId": sourceID})
+	req = httptest.NewRequest("POST", url, strings.NewReader(string(body)))
+	req.Header.Set("Authorization", `MediaBrowser Client="test", DeviceId="test", Token="`+login.AccessToken+`"`)
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("playback HTTP %d: %s", rr.Code, rr.Body.String())
+	}
+	var plan struct{ PlaySessionId string }
+	if err := json.Unmarshal(rr.Body.Bytes(), &plan); err != nil || plan.PlaySessionId == "" {
+		t.Fatalf("missing broker session: %v", err)
+	}
+	req = httptest.NewRequest("GET", "/__scorecard/sessions", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	var sessions []struct {
+		ID             string `json:"id"`
+		ReleaseID      string `json:"release_id"`
+		SourceID       string `json:"source_id"`
+		ExpectedSHA256 string `json:"expected_sha256"`
+		ClientID       string `json:"client_id"`
+		ItemID         string `json:"item_id"`
+	}
+	if e = json.Unmarshal(rr.Body.Bytes(), &sessions); e != nil || len(sessions) != 1 {
+		t.Fatalf("sessions %s: %v", rr.Body.String(), e)
+	}
+	if sessions[0].ReleaseID != sourceID || sessions[0].SourceID != sourceID || sessions[0].ClientID != "8:jellyfintest" || sessions[0].ItemID != ids.RatingKeyGUID(core.MovieKey(123)) {
+		t.Fatalf("selected wrong source: %+v", sessions[0])
+	}
+	req = httptest.NewRequest("GET", "/__scorecard/broker", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	var broker []struct {
+		ID         string `json:"id"`
+		PlaybackID string `json:"playback_id"`
+		ClientID   string `json:"client_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &broker); err != nil || len(broker) != 1 || broker[0].ID != plan.PlaySessionId || broker[0].PlaybackID != sessions[0].ID || broker[0].ClientID != sessions[0].ClientID {
+		t.Fatalf("broker linkage: %s %v", rr.Body.String(), err)
+	}
+	req = httptest.NewRequest("GET", "/__scorecard/verify?id="+sessions[0].ID, nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	var check struct{ Match bool }
+	if e = json.Unmarshal(rr.Body.Bytes(), &check); e != nil || !check.Match {
+		t.Fatalf("verification %s: %v", rr.Body.String(), e)
+	}
+}
+
+func TestScorecardVariantsUsePreparedProbe(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "fixture.mp4")
+	if err := os.WriteFile(p, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte("fixture"))
+	entries := []ScorecardFile{{TMDB: 456, Path: p, SHA256: hex.EncodeToString(hash[:])}}
+	calls := 0
+	probe := func(_ context.Context, _ core.MediaSource) (*core.MediaInfo, error) {
+		calls++
+		return &core.MediaInfo{Container: "mp4", Size: 7}, nil
+	}
+	if err := prepareScorecardFiles(context.Background(), entries, probe); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(entries)
+	if err := os.WriteFile(filepath.Join(dir, "scorecard-files.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{opts: Options{DataDir: dir}}
+	title := &core.Title{Type: core.TypeMovie, IDs: core.IDs{TMDB: 456}, Title: "Fixture"}
+	for i := 0; i < 3; i++ {
+		v, err := scorecardVariants(context.Background(), a, nil, title, core.ClientCaps{})
+		if err != nil || len(v) != 1 || v[0].Info.Size != 7 {
+			t.Fatalf("lookup: %+v %v", v, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("probe calls = %d, want 1", calls)
+	}
+}

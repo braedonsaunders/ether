@@ -79,7 +79,7 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 		SelectProfile: func(caps core.ClientCaps, u *core.User) core.QualityProfile {
 			return resolver.SelectProfile(a.cfg.Get().Quality, caps, u)
 		},
-		FetchNZB: a.sources.FetchNZB,
+		FetchNZB: parityIndexer(a.sources, dataDir).FetchNZB,
 		Aligner: func() core.TimelineAligner {
 			if a.subtitles == nil {
 				return nil

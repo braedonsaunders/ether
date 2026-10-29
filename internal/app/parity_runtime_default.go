@@ -1,4 +1,4 @@
-//go:build !plexparity
+//go:build !plexparity && !scorecard
 
 package app
 
