@@ -259,7 +259,7 @@ func record(p pmsconform.Protocol, variables map[string]string, base, token, out
 						continue
 					}
 					fixtureMu.Lock()
-					n, e := pmsconform.SaveFixtureTrimmed(filepath.Join(out, profile), filename, p.Redact(resp))
+					n, e := pmsconform.SaveFixtureTrimmed(filepath.Join(out, profile), filename, scrubSecrets(p.Redact(resp), variables, token))
 					fixtureMu.Unlock()
 					mu.Lock()
 					if e != nil {
@@ -351,7 +351,7 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 						results <- result{[]pmsconform.Difference{d}}
 						continue
 					}
-					r := p.Compare(a, p.Redact(b)).WithRequest(profile, formatName(j.json), j.req.Path)
+					r := p.Compare(a, scrubSecrets(p.Redact(b), variables, token)).WithRequest(profile, formatName(j.json), j.req.Path)
 					results <- result{r.Differences}
 				}
 			}()
@@ -496,4 +496,12 @@ func readVariables(path string) (map[string]string, error) {
 		return nil, fmt.Errorf("variables: %w", err)
 	}
 	return v, nil
+}
+
+func scrubSecrets(r pmsconform.Response, variables map[string]string, token string) pmsconform.Response {
+	secrets := []string{token}
+	for _, key := range []string{"username", "password", "access_token", "server_id", "device_id"} {
+		secrets = append(secrets, variables[key])
+	}
+	return pmsconform.RedactSecrets(r, secrets...)
 }
