@@ -38,3 +38,17 @@ func TestSwagger2(t *testing.T) {
 		t.Fatal("bad item accepted")
 	}
 }
+
+func TestLiteralPathPrecedence(t *testing.T) {
+	spec := []byte(`{"openapi":"3.0.3","paths":{"/Users/Public":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"array"}}}}}}},"/Users/{userId}":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object"}}}}}}}}}`)
+	d, err := Parse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Validate("GET", "/Users/Public", 200, "application/json", []byte(`[]`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Validate("GET", "/Users/123", 200, "application/json", []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+}

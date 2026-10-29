@@ -79,18 +79,50 @@ func (d *Document) Validate(method, requestPath string, status int, contentType 
 		return nil
 	}
 	paths := obj(d.root["paths"])
-	var operation map[string]any
-	for route, p := range paths {
-		if pathMatches(route, path) {
-			op := obj(obj(p)[strings.ToLower(method)])
-			if op != nil {
-				if operation != nil {
-					return fmt.Errorf("ambiguous path %s", path)
-				}
-				operation = op
+	var selected map[string]any
+	var best []bool
+	bestCount := -1
+	ambiguous := false
+	for pattern, entry := range paths {
+		if !pathMatches(pattern, path) {
+			continue
+		}
+		parts := strings.Split(strings.Trim(pattern, "/"), "/")
+		literals := make([]bool, len(parts))
+		count := 0
+		for i, part := range parts {
+			literals[i] = !(strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}"))
+			if literals[i] {
+				count++
 			}
 		}
+		comparison := 0
+		if count > bestCount {
+			comparison = 1
+		} else if count < bestCount {
+			comparison = -1
+		} else {
+			for i := range literals {
+				if literals[i] != best[i] {
+					if literals[i] {
+						comparison = 1
+					} else {
+						comparison = -1
+					}
+					break
+				}
+			}
+		}
+		if comparison > 0 {
+			selected, best, bestCount, ambiguous = obj(entry), literals, count, false
+		} else if comparison == 0 {
+			ambiguous = true
+		}
 	}
+	if ambiguous {
+		return fmt.Errorf("ambiguous path %s", path)
+	}
+	operation := obj(selected[strings.ToLower(method)])
 	if operation == nil {
 		return fmt.Errorf("no specification for %s %s", method, path)
 	}
