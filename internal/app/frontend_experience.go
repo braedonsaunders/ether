@@ -356,6 +356,17 @@ type surfaceExperience struct {
 	active   func(context.Context, int64) (*core.User, error)
 }
 
+func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {
+	active, err := s.Service.AuthorizeArtwork(ctx, viewer, device, key)
+	if err != nil {
+		return nil, false, err
+	}
+	if s.artwork == nil {
+		return nil, false, core.ErrNotAvailable
+	}
+	return s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: active, Device: device, Item: key})
+}
+
 func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
 	detail, err := s.Service.Item(ctx, req)
 	if err != nil || s.artwork == nil {

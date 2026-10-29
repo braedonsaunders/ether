@@ -100,14 +100,23 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 	if experience == nil {
 		return core.ErrNotAvailable
 	}
-	detail, err := experience.Item(ctx, frontend.ItemRequest{Viewer: viewer, Device: device, Key: item})
+	var images []frontend.Image
+	var complete bool
+	var err error
+	if scoped, ok := experience.(frontend.ItemArtwork); ok {
+		images, complete, err = scoped.ItemArtwork(ctx, viewer, device, item)
+	} else {
+		var detail frontend.ItemDetail
+		detail, err = experience.Item(ctx, frontend.ItemRequest{Viewer: viewer, Device: device, Key: item})
+		images, complete = detail.Images, detail.ImagesAuthoritative
+	}
 	if err != nil {
 		return err
 	}
-	if !detail.ImagesAuthoritative {
+	if !complete {
 		return core.ErrNotAvailable
 	}
-	for _, candidate := range detail.Images {
+	for _, candidate := range images {
 		if candidate == image {
 			return nil
 		}
