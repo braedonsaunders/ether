@@ -52,7 +52,7 @@ func TestJellyfinPublicSpec(t *testing.T) {
 	if err := PublicRoutes(r, PublicInfo{ID: "00000000000000000000000000000001", ServerName: "Ether", Version: "12.4.0", ProductName: "Jellyfin Server"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/System/Info/Public", "/Users/Public", "/System/Ping"} {
+	for _, path := range []string{"/System/Info/Public", "/Users/Public", "/System/Ping", "/Branding/Configuration"} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if err := doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {

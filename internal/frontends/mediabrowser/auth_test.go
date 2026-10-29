@@ -71,3 +71,71 @@ func TestAuthentication(t *testing.T) {
 		t.Fatal("grant not revoked")
 	}
 }
+
+func TestQuickConnectStatusDoesNotRedeem(t *testing.T) {
+	approved := false
+	redeemed := 0
+	ident := frontendtest.Identity{
+		ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
+			if token == "grant" {
+				return &frontend.Viewer{ID: 1, Username: "viewer"}, nil
+			}
+			return nil, errors.New("bad grant")
+		},
+		InitiateFunc: func(context.Context, frontend.Device) (string, string, error) { return "123456", "secret", nil },
+		StatusFunc: func(_ context.Context, secret string) (bool, error) {
+			if secret != "secret" {
+				return false, errors.New("invalid")
+			}
+			return approved, nil
+		},
+		ApproveFunc: func(_ context.Context, v *frontend.Viewer, code string) error {
+			if v.ID != 1 || code != "123456" {
+				return errors.New("invalid")
+			}
+			approved = true
+			return nil
+		},
+		PollFunc: func(_ context.Context, secret string) (string, error) {
+			if secret != "secret" || !approved || redeemed != 0 {
+				return "", errors.New("invalid")
+			}
+			redeemed++
+			return "grant", nil
+		},
+	}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body, token string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("X-Emby-Token", token)
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if w := call("POST", "/QuickConnect/Initiate", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"Code":"123456"`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w := call("GET", "/QuickConnect/Connect?secret=secret", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"Authenticated":false`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w := call("POST", "/QuickConnect/Authorize?code=123456", "", "grant"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	for j := 0; j < 2; j++ {
+		if w := call("GET", "/QuickConnect/Connect?secret=secret", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"Authenticated":true`) {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if redeemed != 0 {
+		t.Fatal("status consumed grant")
+	}
+	if w := call("POST", "/Users/AuthenticateWithQuickConnect", `{"Secret":"secret"}`, ""); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if redeemed != 1 {
+		t.Fatal(redeemed)
+	}
+}

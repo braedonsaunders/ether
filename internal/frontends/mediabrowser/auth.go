@@ -40,6 +40,24 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 		return nil, "", errors.New("missing credential")
 	}
 	v, err := i.host.Identity.Resolve(r.Context(), token)
+	if err == nil && v != nil {
+		scoped := r.PathValue("userId")
+		if scoped == "" {
+			values := route.Query(r.URL.Query(), "userId")
+			if len(values) > 1 {
+				return nil, "", errors.New("ambiguous user")
+			}
+			if len(values) == 1 {
+				scoped = values[0]
+			}
+		}
+		if scoped != "" {
+			id, e := ids.ParseGUID(ids.User, scoped)
+			if e != nil || id != v.ID {
+				return nil, "", errors.New("viewer mismatch")
+			}
+		}
+	}
 	if err == nil && v != nil && i.host.ClientSeen != nil {
 		i.host.ClientSeen(device(r).ID)
 	}
@@ -127,6 +145,19 @@ func (i *instance) routes() error {
 				return
 			}
 			jsonReply(w, map[string]any{"Code": code, "Secret": secret, "Authenticated": false})
+		}},
+		{"GET", "/QuickConnect/Connect", func(w http.ResponseWriter, r *http.Request) {
+			secret := route.Query(r.URL.Query(), "secret")
+			if len(secret) != 1 || secret[0] == "" {
+				http.Error(w, "Bad Request", 400)
+				return
+			}
+			approved, err := i.host.Identity.QuickConnectStatus(i.identityContext(r), secret[0])
+			if err != nil {
+				identityError(w, err)
+				return
+			}
+			jsonReply(w, map[string]any{"Authenticated": approved, "Secret": secret[0]})
 		}},
 		{"POST", "/QuickConnect/Authorize", func(w http.ResponseWriter, r *http.Request) {
 			v, _, err := i.viewer(r)

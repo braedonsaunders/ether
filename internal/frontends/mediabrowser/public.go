@@ -3,6 +3,7 @@ package mediabrowser
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -35,6 +36,10 @@ func PublicRoutes(r *route.Router, info PublicInfo) error {
 				StartupWizardCompleted bool   `json:"StartupWizardCompleted"`
 			}{info.ID, info.ServerName, info.LocalAddress, info.Version, info.ProductName, "", true})
 		}},
+		{"GET", "/Branding/Configuration", func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, map[string]any{}) }},
+		{"POST", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, "Jellyfin Server") }},
+		{"GET", "/web", webPage},
+		{"GET", "/web/{path...}", webPage},
 		{"GET", "/Users/Public", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_, _ = w.Write([]byte("[]"))
@@ -69,4 +74,28 @@ func StripPrefix(prefix string, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func webPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	w.Header().Set("Vary", "Accept-Language")
+	type copy struct{ heading, instruction string }
+	translations := map[string]copy{
+		"en": {"Connect to Ether", "Open a native Jellyfin app, add this server's address, and sign in with your Ether viewer account or Quick Connect."},
+		"fr": {"Se connecter à Ether", "Ouvrez une application Jellyfin native, ajoutez l’adresse de ce serveur et connectez-vous avec votre compte Ether ou Quick Connect."},
+		"es": {"Conectar a Ether", "Abra una aplicación nativa de Jellyfin, agregue la dirección de este servidor e inicie sesión con su cuenta de Ether o Quick Connect."},
+		"de": {"Mit Ether verbinden", "Öffnen Sie eine native Jellyfin-App, fügen Sie die Serveradresse hinzu und melden Sie sich mit Ihrem Ether-Konto oder Quick Connect an."},
+	}
+	lang := "en"
+	for _, part := range strings.Split(r.Header.Get("Accept-Language"), ",") {
+		tag := strings.ToLower(strings.TrimSpace(strings.SplitN(part, ";", 2)[0]))
+		tag = strings.SplitN(tag, "-", 2)[0]
+		if _, ok := translations[tag]; ok {
+			lang = tag
+			break
+		}
+	}
+	c := translations[lang]
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ether</title><main><h1>%s</h1><p>%s</p></main></html>`, lang, c.heading, c.instruction)
 }
