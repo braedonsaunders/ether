@@ -26,16 +26,18 @@ func TestDiscovery(t *testing.T) {
 	}
 	defer c.Close()
 	_ = c.SetDeadline(time.Now().Add(2 * time.Second))
-	if _, err = c.Write([]byte("Who is JellyfinServer?")); err != nil {
-		t.Fatal(err)
-	}
-	buf := make([]byte, 2048)
-	n, err := c.Read(buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result map[string]string
-	if err = json.Unmarshal(buf[:n], &result); err != nil || result["Id"] != "server-id" || result["Name"] != "Ether" || !strings.HasSuffix(result["Address"], ":8096") {
-		t.Fatal(result, err)
+	for _, probe := range []string{"Who is JellyfinServer?", "who is JellyfinServer?"} {
+		if _, err = c.Write([]byte(probe)); err != nil {
+			t.Fatal(err)
+		}
+		buf := make([]byte, 2048)
+		n, err := c.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result map[string]string
+		if err = json.Unmarshal(buf[:n], &result); err != nil || result["Id"] != "server-id" || result["Name"] != "Ether" || !strings.HasSuffix(result["Address"], ":8096") {
+			t.Fatal(result, err)
+		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -35,7 +36,7 @@ func (d *discovery) Start(ctx context.Context) error {
 			if e != nil {
 				return
 			}
-			if string(buf[:n]) != "Who is JellyfinServer?" {
+			if !strings.EqualFold(string(buf[:n]), "Who is JellyfinServer?") {
 				continue
 			}
 			source, e := net.DialUDP("udp4", nil, peer)
