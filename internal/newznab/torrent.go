@@ -359,14 +359,18 @@ func (c *Client) resolveTorrent(ctx context.Context, r core.Release) (core.Relea
 		}
 		rawURL = base.ResolveReference(ref).String()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	// The download URL comes from the feed (untrusted): fetch it through
+	// the safefetch guard, like FetchNZB. Only the owner-configured
+	// indexer origin may be private; redirects away from it (other than
+	// magnet, handled below) are revalidated at dial time.
+	req, err := http.NewRequestWithContext(c.trustedCtx(ctx, rawURL), http.MethodGet, rawURL, nil)
 	if err != nil {
 		return r, redactURLError(err)
 	}
 	req.Header.Set("User-Agent", "Ether/1.0")
 	// Torznab download links commonly redirect to a magnet URI, which
 	// net/http cannot follow: stop there and read the Location header.
-	hc := *c.http
+	hc := *c.guarded
 	inner := hc.CheckRedirect
 	hc.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		if next.URL.Scheme == "magnet" {

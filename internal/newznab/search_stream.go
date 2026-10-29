@@ -50,12 +50,14 @@ func (c *Client) SearchWith(ctx context.Context, req core.SearchRequest, arrived
 }
 
 func (c *Client) getSearchStream(ctx context.Context, rawURL string, emit func([]core.Release)) ([]core.Release, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	// Same SSRF guard as Client.get: the streamed search goes to the
+	// owner-configured indexer, but redirects away from it must be public.
+	req, err := http.NewRequestWithContext(c.trustedCtx(ctx, rawURL), http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, redactURLError(err)
 	}
 	req.Header.Set("User-Agent", "Ether/1.0")
-	resp, err := c.http.Do(req)
+	resp, err := c.guarded.Do(req)
 	if err != nil {
 		return nil, redactURLError(err)
 	}

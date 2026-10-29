@@ -25,6 +25,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
 const (
@@ -75,9 +76,12 @@ type Backend interface {
 
 // Client is one configured Newznab indexer. It implements core.Indexer.
 type Client struct {
-	cfg      config.Indexer
-	db       *sql.DB
-	http     *http.Client
+	cfg  config.Indexer
+	db   *sql.DB
+	http *http.Client
+	// guarded fetches through safefetch: destinations are validated at
+	// dial time (see trustedCtx for the owner-origin exception).
+	guarded  *http.Client
 	log      *slog.Logger
 	cacheTTL time.Duration
 	nzbDir   string
@@ -152,6 +156,7 @@ func New(cfg config.Indexer, db *sql.DB, opts Options) *Client {
 	if c.http == nil {
 		c.http = &http.Client{Timeout: defaultHTTPTimeout}
 	}
+	c.guarded = (&safefetch.Guard{}).Client(c.http)
 	c.log = opts.Logger
 	if c.log == nil {
 		c.log = slog.Default()
@@ -247,15 +252,31 @@ func (c *Client) apiURL(params url.Values) (string, error) {
 	return base + "?" + q.Encode(), nil
 }
 
+// trustedCtx marks the destination origin Ether may reach even on a
+// private address: the indexer base URL the owner configured (a LAN
+// indexer is legitimate). Everything else a fetch touches — an absolute
+// NZB URL from a feed, a redirect away from the indexer — must resolve
+// to a public address, enforced at dial time by safefetch so DNS
+// rebinding between check and connect cannot sneak past. When the owner
+// configured no usable base URL (direct internal calls in tests), the
+// fetch URL's own origin takes its place.
+func (c *Client) trustedCtx(ctx context.Context, rawURL string) context.Context {
+	trusted := c.Config().URL
+	if u, err := url.Parse(trusted); err != nil || u.Host == "" {
+		trusted = rawURL
+	}
+	return safefetch.WithTrustedOrigin(ctx, trusted)
+}
+
 // get performs a GET and returns the body, mapping HTTP failures to
 // typed API errors. Responses are size-limited.
 func (c *Client) get(ctx context.Context, rawURL string, limit int64) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(c.trustedCtx(ctx, rawURL), http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, redactURLError(err)
 	}
 	req.Header.Set("User-Agent", "Ether/1.0")
-	resp, err := c.http.Do(req)
+	resp, err := c.guarded.Do(req)
 	if err != nil {
 		// url.Error embeds the request URL, which carries the indexer API
 		// key; callers log and surface this error.
@@ -1018,6 +1039,11 @@ func (c *Client) FetchNZB(ctx context.Context, r core.Release) ([]byte, error) {
 	if err := c.reserve(ctx, "grab"); err != nil {
 		return nil, err
 	}
+	// r.NZBURL comes from the indexer's feed, so it is untrusted data:
+	// c.get dials it through the safefetch guard. Only a URL that stays
+	// on the owner-configured indexer origin (relative links resolve
+	// there) may reach a private address; absolute feed URLs to any
+	// other host, and redirects away from the indexer, must be public.
 	rawURL := r.NZBURL
 	if rawURL == "" {
 		if r.GUID == "" {

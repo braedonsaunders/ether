@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/newznab"
+	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
 // definitionRecheck is how long a node trusts its parsed copy of a
@@ -51,6 +52,11 @@ type Service struct {
 	sessions *sessionStore
 	tests    *testStore
 	hc       *http.Client
+	// sourceHC is hc guarded by safefetch, used only for definitions
+	// source fetches (see fetchSource). Site/runner requests keep using
+	// hc: their destinations come from owner-installed definitions and
+	// owner-configured site links, not from a remote listing.
+	sourceHC *http.Client
 	log      *slog.Logger
 	now      func() time.Time
 	lock     LoginLock
@@ -96,6 +102,7 @@ func New(o Options) *Service {
 		sessions: &sessionStore{db: o.DB, sealer: o.Sealer, now: o.Now},
 		tests:    &testStore{db: o.DB},
 		hc:       o.HTTPClient,
+		sourceHC: (&safefetch.Guard{}).Client(o.HTTPClient),
 		log:      o.Logger,
 		now:      o.Now,
 		lock:     o.LoginLock,

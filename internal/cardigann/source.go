@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
 // catalogTTL is how long a fetched definitions-source listing is reused.
@@ -79,15 +81,39 @@ func listingURL(source string) (string, error) {
 	return u.String(), nil
 }
 
-// fetchSource downloads one source document.
-func (s *Service) fetchSource(ctx context.Context, rawURL string, limit int64) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+// sourceTrustedURL returns the listing URL of the owner-configured
+// definitions source ("" when none is usable). Its origin is the one
+// destination a source fetch may reach on a private address.
+func (s *Service) sourceTrustedURL() string {
+	listing, err := listingURL(strings.TrimSpace(s.siteSettings().DefinitionsURL))
+	if err != nil {
+		return ""
+	}
+	return listing
+}
+
+// fetchSource downloads one source document through the safefetch
+// guard. The trust boundary: the source URL itself is configured by the
+// owner, so its own origin (trusted, usually the listing URL) may be a
+// LAN host; everything the remote listing hands back is untrusted data
+// — absolute download_url entries, and relative ones too, since a
+// network-path reference ("//host/...") or a redirect can still leave
+// the source origin. The guard therefore validates every destination at
+// dial time: only the trusted origin may resolve privately, every other
+// host (and every redirect hop away from the origin) must be public.
+// A relative download_url that stays on the source origin inherits only
+// that already owner-chosen destination, never a new one.
+func (s *Service) fetchSource(ctx context.Context, rawURL string, limit int64, trusted string) ([]byte, error) {
+	if trusted == "" {
+		trusted = s.sourceTrustedURL()
+	}
+	req, err := http.NewRequestWithContext(safefetch.WithTrustedOrigin(ctx, trusted), http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "Ether")
 	req.Header.Set("Accept", "application/json, text/plain, application/x-yaml, */*")
-	resp, err := s.hc.Do(req)
+	resp, err := s.sourceHC.Do(req)
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
@@ -206,7 +232,7 @@ func (s *Service) sourceEntries(ctx context.Context, refresh bool) ([]CatalogEnt
 	if err != nil {
 		return nil, err
 	}
-	data, err := s.fetchSource(ctx, listing, 8<<20)
+	data, err := s.fetchSource(ctx, listing, 8<<20, listing)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +261,7 @@ func (s *Service) InstallFromSource(ctx context.Context, id string) (Summary, er
 	if entry == nil {
 		return Summary{}, fmt.Errorf("the definitions source does not offer %q", id)
 	}
-	data, err := s.fetchSource(ctx, entry.URL, maxDefinitionBytes)
+	data, err := s.fetchSource(ctx, entry.URL, maxDefinitionBytes, "")
 	if err != nil {
 		return Summary{}, err
 	}
@@ -283,7 +309,7 @@ func (s *Service) Update(ctx context.Context) (UpdateReport, error) {
 				continue
 			}
 		}
-		data, err := s.fetchSource(ctx, link, maxDefinitionBytes)
+		data, err := s.fetchSource(ctx, link, maxDefinitionBytes, "")
 		if err != nil {
 			rep.Failed = append(rep.Failed, UpdateFailed{ID: d.ID, Error: err.Error()})
 			continue
