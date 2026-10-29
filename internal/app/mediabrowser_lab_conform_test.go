@@ -279,6 +279,11 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 type labFixtureOptions struct {
 	Duration  time.Duration
 	FrameRate int
+	// AudioTitle seeds a real title in the generated stream for protocols
+	// that exercise track metadata. Empty preserves the shared default.
+	AudioTitle string
+	// ConfigureTitle may add reference-derived metadata to the isolated seed.
+	ConfigureTitle func(*core.Title)
 }
 
 // newAlignedLabFixture supplies an isolated real app with fake playback and artwork for opt-in lab tests.
@@ -339,7 +344,15 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	if e != nil {
 		t.Fatal("ffmpeg is required for the opt-in lab harness")
 	}
-	makeMedia := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=320x180:rate=%d", frameRate), "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", strconv.FormatFloat(duration.Seconds(), 'f', 3, 64), "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", filepath.Join(dir, "parity.mp4"))
+	mediaArgs := []string{"-v", "error", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=320x180:rate=%d", frameRate), "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", strconv.FormatFloat(duration.Seconds(), 'f', 3, 64), "-c:v", "libx264", "-threads", "1", "-pix_fmt", "yuv420p", "-c:a", "aac"}
+	if len(options) == 1 && options[0].AudioTitle != "" {
+		if len(options[0].AudioTitle) > 256 || strings.ContainsRune(options[0].AudioTitle, '\x00') {
+			t.Fatal("invalid fixture audio title")
+		}
+		mediaArgs = append(mediaArgs, "-metadata:s:a:0", "title="+options[0].AudioTitle)
+	}
+	mediaArgs = append(mediaArgs, "-movflags", "+faststart", filepath.Join(dir, "parity.mp4"))
+	makeMedia := exec.Command(ffmpeg, mediaArgs...)
 	if output, e := makeMedia.CombinedOutput(); e != nil {
 		t.Fatalf("generate fixture media: %v: %s", e, output)
 	}
@@ -454,6 +467,9 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 			title.Episode = x.IndexNumber
 		default:
 			continue
+		}
+		if len(options) == 1 && options[0].ConfigureTitle != nil {
+			options[0].ConfigureTitle(&title)
 		}
 		if e = a.catalog.UpsertTitle(ctx, title, true); e != nil {
 			t.Fatal(e)

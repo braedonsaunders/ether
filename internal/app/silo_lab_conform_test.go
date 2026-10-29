@@ -53,8 +53,6 @@ func TestSiloLabConformance(t *testing.T) {
 	jellyfinURL, siloURL := address("LAB_JELLYFIN_URL"), address("LAB_SILO_URL")
 	jf := labReference(t, settings, "JELLYFIN", jellyfinURL)
 	defer jf.logout(t)
-	app, viewer, cleanup := newAlignedLabFixture(t, jf, labFixtureOptions{Duration: 634 * time.Second, FrameRate: 1})
-	defer cleanup()
 	client := &http.Client{Timeout: 30 * time.Second}
 	profilesByBase := map[string]string{}
 	call := func(base, method, path, token, device string, body any) map[string]any {
@@ -150,6 +148,51 @@ func TestSiloLabConformance(t *testing.T) {
 	refFile := fmt.Sprint(refItems[0].(map[string]any)["file_id"])
 	refCaps := call(siloURL, "GET", "/api/v2/playback/capabilities", refToken, refDevice, nil)
 	refInstall, _ := refCaps["installation_id"].(string)
+	refDetail := call(siloURL, "GET", "/api/v2/catalog/items/"+refItem, refToken, refDevice, nil)
+	seedTitle := func(title *core.Title) {
+		if title.Key != core.MovieKey(10378) {
+			return
+		}
+		if raw, ok := refDetail["rating_sources"].([]any); ok {
+			for _, value := range raw {
+				row, _ := value.(map[string]any)
+				if row["source"] == "tmdb" {
+					if votes, ok := row["votes"].(float64); ok && votes >= 0 {
+						title.VoteCount = int(votes)
+					}
+				}
+			}
+		}
+		if logo, _ := refDetail["logo_url"].(string); logo != "" {
+			title.LogoPath = "/fixture.jpg"
+		}
+		if raw, ok := refDetail["keywords"].([]any); ok {
+			title.Keywords = nil
+			for _, value := range raw {
+				if keyword, ok := value.(string); ok {
+					title.Keywords = append(title.Keywords, keyword)
+				}
+			}
+		}
+		if raw, ok := refDetail["crew"].([]any); ok {
+			title.Crew, title.Directors, title.Writers = nil, nil, nil
+			for _, value := range raw {
+				row, _ := value.(map[string]any)
+				name, _ := row["name"].(string)
+				role, _ := row["job"].(string)
+				tmdb, _ := strconv.ParseInt(fmt.Sprint(row["tmdb_id"]), 10, 64)
+				person := core.Person{Name: name, Role: role, TMDB: tmdb}
+				if photo, _ := row["photo_url"].(string); photo != "" {
+					person.ThumbPath = "/fixture.jpg"
+				}
+				if name != "" {
+					title.Crew = append(title.Crew, person)
+				}
+			}
+		}
+	}
+	app, viewer, cleanup := newAlignedLabFixture(t, jf, labFixtureOptions{Duration: 634 * time.Second, FrameRate: 1, AudioTitle: "Fixture audio", ConfigureTitle: seedTitle})
+	defer cleanup()
 	inst, err := app.frontends.registry.Mount(context.Background(), core.Protocol("silo"))
 	if err != nil {
 		t.Fatal(err)
