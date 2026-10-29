@@ -321,28 +321,31 @@ func registered() []migration {
 		}
 		groups[m.component] = append(groups[m.component], m)
 	}
-	state := make(map[string]uint8, len(groups))
+	done := make(map[string]bool, len(groups))
 	ordered := make([]migration, 0, len(ms))
-	var visit func(string)
-	visit = func(component string) {
-		if state[component] == 2 {
-			return
+	for len(done) < len(components) {
+		chosen := ""
+		for _, component := range components {
+			if done[component] {
+				continue
+			}
+			ready := true
+			for _, requirement := range deps[component] {
+				if _, present := groups[requirement]; present && !done[requirement] {
+					ready = false
+					break
+				}
+			}
+			if ready {
+				chosen = component
+				break
+			}
 		}
-		if state[component] == 1 {
-			panic("store: cyclic migration dependency involving " + component)
+		if chosen == "" {
+			panic("store: cyclic migration dependency")
 		}
-		if _, ok := groups[component]; !ok {
-			return
-		}
-		state[component] = 1
-		for _, requirement := range deps[component] {
-			visit(requirement)
-		}
-		state[component] = 2
-		ordered = append(ordered, groups[component]...)
-	}
-	for _, component := range components {
-		visit(component)
+		done[chosen] = true
+		ordered = append(ordered, groups[chosen]...)
 	}
 	return ordered
 }

@@ -20,11 +20,11 @@ func TestMigrationDependenciesOrderAndValidate(t *testing.T) {
 	var order []string
 	for _, m := range registered() {
 		order = append(order, m.component)
-		if m.component == "alpha" && (len(order) == 2 && m.version != 1 || len(order) == 3 && m.version != 2) {
+		if m.component == "alpha" && (len(order) == 3 && m.version != 1 || len(order) == 4 && m.version != 2) {
 			t.Fatal("component versions are not ordered")
 		}
 	}
-	if !reflect.DeepEqual(order, []string{"zeta", "alpha", "alpha", "middle"}) {
+	if !reflect.DeepEqual(order, []string{"middle", "zeta", "alpha", "alpha"}) {
 		t.Fatalf("order %v", order)
 	}
 	RegisterAfter("zeta", "alpha")
