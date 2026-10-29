@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,5 +58,13 @@ func TestFixturesFromCapture(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("%08d.json", 1)), b, 0600)
 	if err := FixturesFromCapture(dir, "jellyfin", "infuse", profiles, fixtures); err == nil {
 		t.Fatal("ambiguous origin accepted")
+	}
+}
+
+func TestRedactObjectKeysPreservesNumbers(t *testing.T) {
+	body := []byte(`{"ImageBlurHashes":{"0123456789abcdef0123456789abcdef":"hash"},"ticks":638996512345678901}`)
+	got := redactObjectKeys(body, map[string]string{})
+	if bytes.Contains(got, []byte("0123456789abcdef0123456789abcdef")) || !bytes.Contains(got, []byte("638996512345678901")) || !bytes.Contains(got, []byte("${capture_key_1}")) {
+		t.Fatalf("unexpected body: %s", got)
 	}
 }

@@ -430,6 +430,11 @@ func (r *Recorder) sanitize(body []byte, secrets []string, path string) []byte {
 			switch x := v.(type) {
 			case map[string]any:
 				for k, val := range x {
+					if opaqueID.MatchString(k) {
+						delete(x, k)
+						x["${"+r.slot(k)+"}"] = walk(val)
+						continue
+					}
 					n := strings.ToLower(k)
 					if _, ok := val.(string); ok && n == "id" && (strings.Contains(strings.ToLower(path), "system/info")) {
 						x[k] = "[REDACTED]"

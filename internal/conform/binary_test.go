@@ -32,3 +32,14 @@ func TestReferenceDefectDoesNotRelaxTarget(t *testing.T) {
 		t.Fatal("reference defect was allowed on target")
 	}
 }
+
+func TestCapturedOpenEndedRange(t *testing.T) {
+	r := Response{Status: 206, RangeKind: "captured", RequestRange: "bytes=942-", BodyLength: 58, Headers: http.Header{"Content-Range": []string{"bytes 942-999/1000"}}}
+	if err := ValidateBinary(r); err != nil {
+		t.Fatal(err)
+	}
+	r.RequestRange = "bytes=941-"
+	if err := ValidateBinary(r); err == nil {
+		t.Fatal("accepted incorrect range start")
+	}
+}

@@ -107,8 +107,14 @@ func checkRequestedRange(value string, start, end, total int64) error {
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid captured Range")
 	}
-	last, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil || last < 0 {
+	last := total - 1
+	if parts[1] != "" {
+		var err error
+		last, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil || last < 0 {
+			return fmt.Errorf("invalid captured Range")
+		}
+	} else if parts[0] == "" {
 		return fmt.Errorf("invalid captured Range")
 	}
 	if parts[0] == "" {

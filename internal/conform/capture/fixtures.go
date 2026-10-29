@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,7 @@ func FixturesFromCapture(dir, protocol, client, profileRoot, fixtureRoot string)
 	p := capturedProfile{Protocol: protocol, Client: client, Source: "captured", Headers: map[string]string{}, Flows: map[string][]profileRequest{"captured": {}}}
 	var responses []conform.Response
 	seen := map[string]bool{}
+	keys := map[string]string{}
 	for i, file := range files {
 		b, e := os.ReadFile(file)
 		if e != nil {
@@ -87,6 +89,7 @@ func FixturesFromCapture(dir, protocol, client, profileRoot, fixtureRoot string)
 		seen[string(key)] = true
 		req.Name = fmt.Sprintf("captured-%06d", entry.Sequence)
 		p.Flows["captured"] = append(p.Flows["captured"], req)
+		entry.Response.Body = redactObjectKeys(entry.Response.Body, keys)
 		responses = append(responses, entry.Response)
 	}
 	if len(responses) == 0 {
@@ -145,4 +148,47 @@ func FixturesFromCapture(dir, protocol, client, profileRoot, fixtureRoot string)
 		return err
 	}
 	return os.WriteFile(manifestPath, append(b, '\n'), 0644)
+}
+
+// Older captures may contain opaque image tags as JSON object keys.
+func redactObjectKeys(body []byte, keys map[string]string) []byte {
+	var value any
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if dec.Decode(&value) != nil {
+		return body
+	}
+	var walk func(any) any
+	walk = func(v any) any {
+		switch x := v.(type) {
+		case map[string]any:
+			out := make(map[string]any, len(x))
+			ordered := make([]string, 0, len(x))
+			for key := range x {
+				ordered = append(ordered, key)
+			}
+			sort.Strings(ordered)
+			for _, key := range ordered {
+				name := key
+				if opaqueID.MatchString(key) {
+					if keys[key] == "" {
+						keys[key] = fmt.Sprintf("${capture_key_%d}", len(keys)+1)
+					}
+					name = keys[key]
+				}
+				out[name] = walk(x[key])
+			}
+			return out
+		case []any:
+			for i := range x {
+				x[i] = walk(x[i])
+			}
+		}
+		return v
+	}
+	b, err := json.Marshal(walk(value))
+	if err != nil {
+		return body
+	}
+	return b
 }
