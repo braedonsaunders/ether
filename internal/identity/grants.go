@@ -136,7 +136,7 @@ func (g *Grants) issue(ctx context.Context, viewerID int64, identityID *int64, s
 	if ownerOnly {
 		ownerFlag = 1
 	}
-	result, err := exec.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (?=0 OR is_owner=1))`, hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), viewerID, ownerFlag)
+	result, err := exec.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,identity_id,surface,device_id,client,product,version,created,last_used,expires) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (?=0 OR is_owner=1) AND (origin<>'dlna_guest' OR ?='dlna'))`, hash, viewerID, identityID, surface, device.ID, device.Client, device.Product, device.Version, now, now, now+g.ttl.Milliseconds(), viewerID, ownerFlag, surface)
 	if err != nil {
 		return "", err
 	}
@@ -168,7 +168,7 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	var stored string
 	var id int64
 	var owner int
-	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id,u.is_owner FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, surface, now).Scan(&stored, &id, &owner)
+	err := g.db.QueryRowContext(ctx, `SELECT g.hash,g.viewer_id,u.is_owner FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, hash, surface, now).Scan(&stored, &id, &owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, core.ErrUnauthorized
 	}
@@ -226,7 +226,7 @@ func (g *Grants) ValidateGrantReference(ctx context.Context, surface, reference 
 		return core.ErrUnauthorized
 	}
 	var id int64
-	err = g.db.QueryRowContext(ctx, `SELECT g.viewer_id FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.revoked=0 AND g.expires>? AND u.active=1`, reference, surface, viewerID, g.now().UnixMilli()).Scan(&id)
+	err = g.db.QueryRowContext(ctx, `SELECT g.viewer_id FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, reference, surface, viewerID, g.now().UnixMilli()).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.ErrUnauthorized
 	}

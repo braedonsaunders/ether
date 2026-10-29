@@ -102,7 +102,7 @@ func (s *Service) LinkPlex(ctx context.Context, viewerID int64, token string) er
 	if locked != 1 {
 		return core.ErrUnauthorized
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE auth_users SET plex_id=?, origin=CASE WHEN is_owner=1 THEN 'owner' ELSE 'validated' END, updated_at=? WHERE id=? AND active=1 AND plex_id IS NULL AND NOT EXISTS (SELECT 1 FROM auth_users WHERE plex_id=?)`, account.ID, s.o.Now().Unix(), viewerID, account.ID)
+	result, err := tx.ExecContext(ctx, `UPDATE auth_users SET plex_id=?, origin=CASE WHEN is_owner=1 THEN 'owner' ELSE 'validated' END, updated_at=? WHERE id=? AND active=1 AND origin<>'dlna_guest' AND plex_id IS NULL AND NOT EXISTS (SELECT 1 FROM auth_users WHERE plex_id=?)`, account.ID, s.o.Now().Unix(), viewerID, account.ID)
 	if err != nil {
 		return err
 	}

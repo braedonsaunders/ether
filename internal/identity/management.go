@@ -74,12 +74,12 @@ func (l *Local) LinkPlex(ctx context.Context, viewerID, plexID int64, display st
 		return core.ErrUnauthorized
 	}
 	subject := strconv.FormatInt(plexID, 10)
-	_, err := l.db.ExecContext(ctx, `INSERT INTO identity_links(viewer_id,provider,subject,display,verified_at) VALUES(?,'plex',?,?,?) ON CONFLICT(provider,subject) DO NOTHING`, viewerID, subject, display, time.Now().Unix())
+	_, err := l.db.ExecContext(ctx, `INSERT INTO identity_links(viewer_id,provider,subject,display,verified_at) SELECT ?,'plex',?,?,? WHERE EXISTS(SELECT 1 FROM auth_users WHERE id=? AND origin<>'dlna_guest') ON CONFLICT(provider,subject) DO NOTHING`, viewerID, subject, display, time.Now().Unix(), viewerID)
 	if err != nil {
 		return err
 	}
 	var existing int64
-	if err = l.db.QueryRowContext(ctx, `SELECT viewer_id FROM identity_links WHERE provider='plex' AND subject=?`, subject).Scan(&existing); err != nil {
+	if err = l.db.QueryRowContext(ctx, `SELECT l.viewer_id FROM identity_links l JOIN auth_users u ON u.id=l.viewer_id WHERE l.provider='plex' AND l.subject=? AND u.origin<>'dlna_guest'`, subject).Scan(&existing); err != nil {
 		return err
 	}
 	if existing != viewerID {

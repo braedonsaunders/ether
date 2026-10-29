@@ -77,9 +77,12 @@ func (l *Local) Create(ctx context.Context, viewerID int64, username, password s
 	if err != nil {
 		return err
 	}
-	_, err = l.db.ExecContext(ctx, `INSERT INTO identity_links (viewer_id,provider,subject,display,verified_at,password_hash) VALUES (?, 'local', ?, ?, ?, ?)`, viewerID, username, username, time.Now().Unix(), hash)
+	result, err := l.db.ExecContext(ctx, `INSERT INTO identity_links (viewer_id,provider,subject,display,verified_at,password_hash) SELECT ?, 'local', ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM auth_users WHERE id=? AND origin<>'dlna_guest')`, viewerID, username, username, time.Now().Unix(), hash, viewerID)
 	if err != nil {
 		return fmt.Errorf("identity: create local identity: %w", err)
+	}
+	if n, err := result.RowsAffected(); err != nil || n != 1 {
+		return core.ErrUnauthorized
 	}
 	return nil
 }
@@ -93,7 +96,7 @@ func (l *Local) SetPassword(ctx context.Context, viewerID int64, username, passw
 	if err != nil {
 		return err
 	}
-	result, err := l.db.ExecContext(ctx, `UPDATE identity_links SET password_hash=? WHERE viewer_id=? AND provider='local' AND subject=?`, hash, viewerID, username)
+	result, err := l.db.ExecContext(ctx, `UPDATE identity_links SET password_hash=? WHERE viewer_id=? AND provider='local' AND subject=? AND EXISTS(SELECT 1 FROM auth_users WHERE id=? AND origin<>'dlna_guest')`, hash, viewerID, username, viewerID)
 	if err != nil {
 		return err
 	}

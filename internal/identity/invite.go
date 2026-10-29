@@ -40,7 +40,7 @@ func (i *Invite) Create(ctx context.Context, viewerID int64) (string, error) {
 	}
 	secret := base64.RawURLEncoding.EncodeToString(raw[:])
 	hash, _ := secretHash(secret)
-	res, err := i.db.ExecContext(ctx, `INSERT INTO identity_invites(hash,viewer_id,expires) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM auth_users WHERE id=? AND active=1 AND is_owner=0)`, hash, viewerID, i.now().Add(i.ttl).UnixMilli(), viewerID)
+	res, err := i.db.ExecContext(ctx, `INSERT INTO identity_invites(hash,viewer_id,expires) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM auth_users WHERE id=? AND active=1 AND is_owner=0 AND origin<>'dlna_guest')`, hash, viewerID, i.now().Add(i.ttl).UnixMilli(), viewerID)
 	if err != nil {
 		return "", err
 	}
@@ -62,7 +62,7 @@ func (i *Invite) Redeem(ctx context.Context, secret string) (string, error) {
 	defer tx.Rollback()
 	now := i.now().UnixMilli()
 	var viewer int64
-	err = tx.QueryRowContext(ctx, `UPDATE identity_invites SET used=1 WHERE hash=? AND used=0 AND expires>? AND EXISTS(SELECT 1 FROM auth_users WHERE id=identity_invites.viewer_id AND active=1 AND is_owner=0) RETURNING viewer_id`, hash, now).Scan(&viewer)
+	err = tx.QueryRowContext(ctx, `UPDATE identity_invites SET used=1 WHERE hash=? AND used=0 AND expires>? AND EXISTS(SELECT 1 FROM auth_users WHERE id=identity_invites.viewer_id AND active=1 AND is_owner=0 AND origin<>'dlna_guest') RETURNING viewer_id`, hash, now).Scan(&viewer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", core.ErrUnauthorized
 	}
