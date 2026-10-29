@@ -190,6 +190,7 @@ type Identity struct {
 	SignInFunc        func(context.Context, string, string, core.Device) (string, error)
 	InitiateFunc      func(context.Context, core.Device) (string, string, error)
 	StatusFunc        func(context.Context, string) (bool, error)
+	DetailsFunc       func(context.Context, string) (frontend.QuickConnectDetails, error)
 	PollFunc          func(context.Context, string) (string, error)
 	ApproveFunc       func(context.Context, *core.Viewer, string) error
 	RevokeFunc        func(context.Context, string) error
@@ -225,6 +226,12 @@ func (f Identity) QuickConnectStatus(ctx context.Context, secret string) (bool, 
 		return f.StatusFunc(ctx, secret)
 	}
 	return false, frontend.ErrIdentityUnavailable
+}
+func (f Identity) QuickConnectDetails(ctx context.Context, secret string) (frontend.QuickConnectDetails, error) {
+	if f.DetailsFunc != nil {
+		return f.DetailsFunc(ctx, secret)
+	}
+	return frontend.QuickConnectDetails{}, frontend.ErrIdentityUnavailable
 }
 func (f Identity) QuickConnectApprove(ctx context.Context, viewer *core.Viewer, code string) error {
 	if f.ApproveFunc != nil {

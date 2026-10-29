@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -91,10 +92,19 @@ type SurfaceIdentity interface {
 	SignIn(context.Context, string, string, core.Device) (string, error)
 	QuickConnectInitiate(context.Context, core.Device) (code, secret string, err error)
 	QuickConnectStatus(context.Context, string) (approved bool, err error)
+	QuickConnectDetails(context.Context, string) (QuickConnectDetails, error)
 	QuickConnectPoll(context.Context, string) (string, error)
 	QuickConnectApprove(context.Context, *core.Viewer, string) error
 	Revoke(context.Context, string) error
 	SetupComplete() bool
+}
+
+// QuickConnectDetails is returned only to the holder of the polling secret.
+type QuickConnectDetails struct {
+	Approved     bool
+	Code, Secret string
+	Device       core.Device
+	CreatedAt    time.Time
 }
 
 type clientIPKey struct{}
@@ -148,6 +158,9 @@ func (boundIdentity) QuickConnectInitiate(context.Context, core.Device) (string,
 }
 func (boundIdentity) QuickConnectStatus(context.Context, string) (bool, error) {
 	return false, ErrIdentityUnavailable
+}
+func (boundIdentity) QuickConnectDetails(context.Context, string) (QuickConnectDetails, error) {
+	return QuickConnectDetails{}, ErrIdentityUnavailable
 }
 func (boundIdentity) QuickConnectPoll(context.Context, string) (string, error) {
 	return "", ErrIdentityUnavailable
