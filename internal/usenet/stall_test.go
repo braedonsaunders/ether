@@ -62,7 +62,14 @@ func TestIdleDeadlineRenewsWithProgress(t *testing.T) {
 		}
 	}()
 	data, err := io.ReadAll(c)
-	<-done
+	// A read timeout can leave the peer blocked in Write. Close this end
+	// before joining the writer, rather than deferring the close past the join.
+	a.Close()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("progress writer did not stop after closing the reader")
+	}
 	// net.Pipe reports io.ErrClosedPipe when its peer closes, unlike a TCP
 	// socket's EOF. That is a normal end after all six progress bytes; the
 	// regression this test guards against is an idle timeout before them.
