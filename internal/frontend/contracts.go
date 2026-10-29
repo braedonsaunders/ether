@@ -67,6 +67,16 @@ type RowEntry struct {
 // RowLiveChannel contains viewer-visible channel metadata, never source URLs.
 type RowLiveChannel struct {
 	ID, Number, Name, Logo string
+	GuideReference         string
+	Current, Next          *RowProgramme
+}
+
+// RowProgramme describes one guide entry without an upstream stream URL.
+type RowProgramme struct {
+	ID, Title, EpisodeTitle string
+	Start, End              time.Time
+	Season, Episode         int
+	Item                    core.RatingKey
 }
 
 // RowDirectory identifies a browsable destination in the experience.
