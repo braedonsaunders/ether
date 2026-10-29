@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
 
@@ -86,7 +87,7 @@ func (i *instance) Listeners() []frontend.ListenerSpec {
 }
 func (*instance) Discovery() []frontend.Announcer { return nil }
 func (*instance) Status(context.Context) frontend.Status {
-	return frontend.Status{Conformance: "unverified"}
+	return frontend.Status{TargetVersion: "2", Conformance: conformance.Status("silo", "2")}
 }
 func (*instance) Close(context.Context) error { return nil }
 func (i *instance) Routes() []route.Route     { return i.router.Routes() }

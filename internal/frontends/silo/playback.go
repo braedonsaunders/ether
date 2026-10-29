@@ -18,11 +18,11 @@ type fileReference struct {
 	Version string `json:"version,omitempty"`
 }
 
-// A PQ stream can contain HDR10+ metadata that the current probe cannot yet
-// distinguish from absence. Non-PQ video cannot carry HDR10+.
+// A PQ stream can contain HDR10+ metadata; absent probe evidence is unknown.
+// Non-PQ video cannot carry HDR10+.
 func siloSourceHasKnownHDR10Plus(media frontend.MediaInfo) bool {
 	for _, stream := range media.Streams {
-		if stream.Type == "video" && stream.ColorTransfer == "smpte2084" {
+		if stream.Type == "video" && stream.ColorTransfer == "smpte2084" && stream.HDR10Plus == nil {
 			return false
 		}
 	}
@@ -205,14 +205,18 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	media = "/api/v2/stream/" + strings.TrimPrefix(media, "/sessions/media/")
 	source := map[string]any{"media_file_id": b.FileID, "duration_seconds": plan.Media.Duration.Seconds(), "container": plan.Media.Container, "bitrate_kbps": plan.Media.BitrateKbps, "hdr10_plus": false, "dv_enhancement_layer": "unknown"}
 	recipe := map[string]any{"video_codec": plan.Decision.VideoCodec, "audio_codec": plan.Decision.AudioCodec, "bitrate_kbps": plan.Decision.BitrateKbps}
-	hdr10, hlg, dv := false, false, false
+	hdr10, hdr10Plus, hlg, dv := false, false, false, false
 	for _, s := range plan.Media.Streams {
 		if s.Type == "video" {
+			if s.HDR10Plus != nil {
+				source["hdr10_plus"] = *s.HDR10Plus
+			}
 			if s.DolbyVisionELPresent != nil && !*s.DolbyVisionELPresent {
 				source["dv_enhancement_layer"] = "none"
 			}
 			if plan.Decision.VideoCopy && !plan.Decision.ToneMap {
 				hdr10 = s.ColorTransfer == "smpte2084"
+				hdr10Plus = s.HDR10Plus != nil && *s.HDR10Plus
 				hlg = s.ColorTransfer == "arib-std-b67"
 				dv = s.DolbyVision && !plan.Decision.StripDolbyVision
 			}
@@ -336,7 +340,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	if plan.Decision.Reason != "" {
 		audioClaim["reason"] = plan.Decision.Reason
 	}
-	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": false, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
+	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
 	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "session_id": session.ID, "playback_plan": output})
 }
 

@@ -132,11 +132,13 @@ func TestPlaybackCapacityProblem(t *testing.T) {
 }
 
 func TestUnknownHDR10PlusOnlySuppressesPQ(t *testing.T) {
+	positive, negative := true, false
 	for _, tc := range []struct {
 		transfer string
+		probe    *bool
 		want     bool
-	}{{"bt709", true}, {"arib-std-b67", true}, {"", true}, {"smpte2084", false}} {
-		media := frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: tc.transfer}}}
+	}{{"bt709", nil, true}, {"arib-std-b67", nil, true}, {"", nil, true}, {"smpte2084", nil, false}, {"smpte2084", &positive, true}, {"smpte2084", &negative, true}} {
+		media := frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: tc.transfer, HDR10Plus: tc.probe}}}
 		if got := siloSourceHasKnownHDR10Plus(media); got != tc.want {
 			t.Errorf("transfer %q: got %v", tc.transfer, got)
 		}
