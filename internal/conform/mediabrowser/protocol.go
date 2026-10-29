@@ -572,3 +572,46 @@ func boundedRange(value string) bool {
 	start, err := strconv.ParseInt(parts[0], 10, 64)
 	return err == nil && start >= 0 && end >= start && end-start < 65536
 }
+
+// Observe carries the most recent successful playback negotiation into the
+// subsequent stream and timeline probes for this profile. Failed negotiations
+// clear old IDs so a stale session is never mistaken for the new one.
+func (*Protocol) Observe(request conform.Request, response conform.Response, vars map[string]string) {
+	path := strings.SplitN(request.Path, "?", 2)[0]
+	if !strings.EqualFold(request.Method, http.MethodPost) || !strings.HasSuffix(strings.ToLower(path), "/playbackinfo") {
+		return
+	}
+	delete(vars, "play_session_id")
+	delete(vars, "media_source_id")
+	if response.Status < 200 || response.Status >= 300 {
+		return
+	}
+	var result struct {
+		PlaySessionID string `json:"PlaySessionId"`
+		MediaSources  []struct {
+			ID string `json:"Id"`
+		} `json:"MediaSources"`
+	}
+	if json.Unmarshal(response.Body, &result) != nil {
+		return
+	}
+	if safeObservedID(result.PlaySessionID) {
+		vars["play_session_id"] = result.PlaySessionID
+	}
+	if len(result.MediaSources) > 0 && safeObservedID(result.MediaSources[0].ID) {
+		vars["media_source_id"] = result.MediaSources[0].ID
+	}
+}
+func safeObservedID(s string) bool {
+	if len(s) == 0 || len(s) > 256 {
+		return false
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+var _ conform.ResponseObserver = (*Protocol)(nil)

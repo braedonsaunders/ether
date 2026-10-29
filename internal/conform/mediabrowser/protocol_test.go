@@ -194,3 +194,22 @@ func TestEmbyUnconfiguredReferenceAddresses(t *testing.T) {
 		t.Fatal("accepted missing target addresses", report)
 	}
 }
+
+func TestPlaybackObservationUpdatesAndClearsSession(t *testing.T) {
+	p := &Protocol{Dialect: "jellyfin"}
+	vars := map[string]string{"play_session_id": "old", "media_source_id": "old"}
+	req := conform.Request{Method: "POST", Path: "/Items/${item_id}/PlaybackInfo"}
+	p.Observe(req, conform.Response{Status: 200, Body: []byte(`{"PlaySessionId":"session-1","MediaSources":[{"Id":"source_1"}]}`)}, vars)
+	if vars["play_session_id"] != "session-1" || vars["media_source_id"] != "source_1" {
+		t.Fatal(vars)
+	}
+	p.Observe(req, conform.Response{Status: 200, Body: []byte(`{"PlaySessionId":"../bad","MediaSources":[{"Id":"source?bad"}]}`)}, vars)
+	if vars["play_session_id"] != "" || vars["media_source_id"] != "" {
+		t.Fatal(vars)
+	}
+	vars["play_session_id"] = "old"
+	p.Observe(req, conform.Response{Status: 503}, vars)
+	if vars["play_session_id"] != "" {
+		t.Fatal(vars)
+	}
+}
