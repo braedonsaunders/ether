@@ -42,7 +42,7 @@ func TestSurfaceLibraryActivityUsesCatalogAndWatchState(t *testing.T) {
 	if err != nil || len(latest) == 0 || latest[0].Title.Key != title.Key || latest[0].AddedAt == nil {
 		t.Fatalf("cold library latest %+v: %v", latest, err)
 	}
-	resume, err := activity.Resume(ctx, viewer, core.Device{ID: "tv"}, "", []core.MediaType{core.TypeMovie}, 0, 20)
+	resume, err := activity.Resume(ctx, viewer, core.Device{ID: "tv"}, "", []core.MediaType{core.TypeMovie}, 0, 20, true)
 	if err != nil || len(resume.Items) == 0 || resume.Items[0].Key != title.Key {
 		t.Fatalf("watch state resume %+v: %v", resume, err)
 	}

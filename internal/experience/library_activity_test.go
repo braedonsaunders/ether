@@ -52,23 +52,27 @@ func TestLibraryActivityDoesNotDependOnHomeAndFiltersBeforeLimit(t *testing.T) {
 	if err != nil || len(latest) != 1 || latest[0].Title.Key != movie2.Key || latest[0].AddedAt == nil || latest[0].AddedAt.Unix() != 20 || browseCalls != 1 {
 		t.Fatalf("latest %+v %v", latest, err)
 	}
-	resume, err := s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 0, 1)
+	resume, err := s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 0, 1, false)
 	if err != nil || len(resume.Items) != 1 || resume.Items[0].Key != movie2.Key || !resume.More || resume.TotalExact {
 		t.Fatalf("resume %+v %v", resume, err)
 	}
-	resume, err = s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 1, 1)
+	resume, err = s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 0, 1, true)
+	if err != nil || !resume.TotalExact || resume.Total != 2 || !resume.More {
+		t.Fatalf("exact resume count %+v %v", resume, err)
+	}
+	resume, err = s.Resume(ctx, v, core.Device{}, "1", []core.MediaType{core.TypeMovie}, 1, 1, false)
 	if err != nil || len(resume.Items) != 1 || resume.Items[0].Key != movie3.Key || resume.More || !resume.TotalExact || resume.Total != 2 {
 		t.Fatalf("resume next page %+v %v", resume, err)
 	}
 	if _, err = s.LatestAdded(ctx, v, core.Device{}, "2", 1); !errors.Is(err, core.ErrNotFound) {
 		t.Fatalf("restricted view: %v", err)
 	}
-	if _, err = s.Resume(ctx, v, core.Device{}, "2", nil, 0, 1); !errors.Is(err, core.ErrNotFound) {
+	if _, err = s.Resume(ctx, v, core.Device{}, "2", nil, 0, 1, false); !errors.Is(err, core.ErrNotFound) {
 		t.Fatalf("restricted resume view: %v", err)
 	}
 	// The same child remains hidden by inherited show policy when the section is allowed.
 	v.AllowedSections = []int{1, 2}
-	resume, err = s.Resume(ctx, v, core.Device{}, "2", []core.MediaType{core.TypeEpisode}, 0, 5)
+	resume, err = s.Resume(ctx, v, core.Device{}, "2", []core.MediaType{core.TypeEpisode}, 0, 5, false)
 	if err != nil || len(resume.Items) != 0 || !resume.TotalExact {
 		t.Fatalf("restricted parent leaked episode: %+v %v", resume, err)
 	}

@@ -26,5 +26,7 @@ type ActivityPage struct {
 // stored catalogue addition time. Episode grouping is a separate capability.
 type LibraryActivity interface {
 	LatestAdded(context.Context, *Viewer, Device, string, int) ([]LatestItem, error)
-	Resume(context.Context, *Viewer, Device, string, []MediaType, int, int) (ActivityPage, error)
+	// requireExact requests a complete filtered count; an implementation must
+	// return an error if it cannot determine one within its resource bounds.
+	Resume(context.Context, *Viewer, Device, string, []MediaType, int, int, bool) (ActivityPage, error)
 }

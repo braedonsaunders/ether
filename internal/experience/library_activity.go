@@ -122,7 +122,7 @@ func (s *Service) LatestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 }
 
 // Resume reads only in-progress state, without next-up or Home Designer data.
-func (s *Service) Resume(ctx context.Context, viewer *core.Viewer, _ core.Device, viewID string, types []core.MediaType, offset, limit int) (frontend.ActivityPage, error) {
+func (s *Service) Resume(ctx context.Context, viewer *core.Viewer, _ core.Device, viewID string, types []core.MediaType, offset, limit int, requireExact bool) (frontend.ActivityPage, error) {
 	var page frontend.ActivityPage
 	v, err := s.viewer(ctx, viewer)
 	if err != nil {
@@ -184,7 +184,7 @@ func (s *Service) Resume(ctx context.Context, viewer *core.Viewer, _ core.Device
 				}
 			}
 			items = append(items, *title)
-			if len(items) == target {
+			if !requireExact && len(items) == target {
 				page.Items, page.Total, page.More = items[offset:offset+limit], len(items), true
 				return page, nil
 			}
@@ -194,6 +194,7 @@ func (s *Service) Resume(ctx context.Context, viewer *core.Viewer, _ core.Device
 			page.Total, page.TotalExact = len(items), true
 			start := min(offset, len(items))
 			page.Items = items[start:min(start+limit, len(items))]
+			page.More = start+len(page.Items) < len(items)
 			return page, nil
 		}
 		if fetch > activityScanLimit {
