@@ -3,10 +3,13 @@ package playback
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/state"
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
 func TestGuardedSourceStopsBeforeLateObservation(t *testing.T) {
@@ -49,6 +52,57 @@ func TestGuardedSourceStopsBeforeLateObservation(t *testing.T) {
 		return nil
 	}); !errors.Is(err, core.ErrNotFound) {
 		t.Fatalf("retired session: %v", err)
+	}
+}
+
+func TestGuardedSourceCanceledDatabaseCommitLetsStopFinish(t *testing.T) {
+	db, err := store.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	s := state.New(db, state.Options{})
+	epoch, err := s.BeginSourceSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if os.Getenv(store.TestPostgresEnv) != "" {
+		if _, err := tx.ExecContext(context.Background(), `LOCK TABLE state_source_sequence IN ACCESS EXCLUSIVE MODE`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+	ps := h.prepare(owner, movieKey, "history-db-stop")
+	started, done := make(chan struct{}), make(chan error, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	go func() {
+		done <- h.m.WithCurrentSource(ctx, ps.ID, func(ctx context.Context, source core.PlaybackSourceObservation) error {
+			close(started)
+			return s.RecordLastSource(ctx, owner.ID, movieKey, epoch, source)
+		})
+	}()
+	<-started
+	stopped := make(chan struct{})
+	go func() { h.m.Stop(ps.ID); close(stopped) }()
+	if err := <-done; !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("blocked history did not cancel: %v", err)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("stop remained blocked after cancellation")
+	}
+	if err = tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.LastSource(context.Background(), owner.ID, movieKey); err != nil || got != nil {
+		t.Fatalf("canceled commit published: %+v %v", got, err)
 	}
 }
 
