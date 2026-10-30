@@ -392,7 +392,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	if e = local.Create(ctx, viewer.ID, "fixture-viewer", "fixture-password"); e != nil {
 		t.Fatal(e)
 	}
-	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People", nil)
+	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People,Status,EndDate", nil)
 	request.Header.Set("X-Emby-Token", jellyfinRef.token)
 	request.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+jellyfinRef.device+`", Version="1", Token="`+jellyfinRef.token+`"`)
 	resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(request)
@@ -401,14 +401,14 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}
 	var listing struct {
 		Items []struct {
-			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating string
-			ProviderIds                                                           map[string]string
-			IndexNumber, ParentIndexNumber, ProductionYear                        int
-			RunTimeTicks                                                          int64
-			CommunityRating                                                       float64
-			Genres, ProductionLocations, Taglines                                 []string
-			Studios                                                               []struct{ Name string }
-			People                                                                []struct{ Name, Role, Type string }
+			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating, Status, EndDate string
+			ProviderIds                                                                            map[string]string
+			IndexNumber, ParentIndexNumber, ProductionYear                                         int
+			RunTimeTicks                                                                           int64
+			CommunityRating                                                                        float64
+			Genres, ProductionLocations, Taglines                                                  []string
+			Studios                                                                                []struct{ Name string }
+			People                                                                                 []struct{ Name, Role, Type string }
 		}
 	}
 	e = json.NewDecoder(resp.Body).Decode(&listing)
@@ -421,7 +421,10 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		tvdb, _ := strconv.ParseInt(x.ProviderIds["Tvdb"], 10, 64)
 		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
 		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
-		title.Genres, title.Countries = x.Genres, x.ProductionLocations
+		title.Genres, title.Countries, title.Status = x.Genres, x.ProductionLocations, x.Status
+		if parsed, err := time.Parse(time.RFC3339Nano, x.EndDate); err == nil {
+			title.LastAirDate = parsed
+		}
 		if len(x.Taglines) > 0 {
 			title.Tagline = x.Taglines[0]
 		}

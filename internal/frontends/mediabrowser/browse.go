@@ -289,6 +289,11 @@ func (i *instance) browseRoutes() error {
 		if people := i.peopleDTO(r, v, token, d); len(people) > 0 {
 			dto["People"] = people
 		}
+		if i.protocol == "jellyfin" {
+			if urls := jellyfinExternalURLs(d.Title); len(urls) > 0 {
+				dto["ExternalUrls"] = urls
+			}
+		}
 		if len(d.Tracks) > 0 && !d.TracksEstimated {
 			streams := i.mediaStreams(d.Tracks)
 			dto["MediaStreams"] = streams
@@ -355,6 +360,7 @@ func (i *instance) browseRoutes() error {
 			i.jellyfinDetailShell(dto)
 			if d.Title.Type == "show" {
 				i.attachUnplayedCount(r, v, dto, d.Title)
+				i.attachCumulativeRuntime(r, v, dto, d.Title)
 			}
 		}
 		if i.protocol == "emby" {

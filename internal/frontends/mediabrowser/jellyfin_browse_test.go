@@ -378,9 +378,14 @@ func TestJellyfinDetailShellAndKnownVersionFacts(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &item); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"Chapters", "ExternalUrls", "LockData", "LockedFields", "People", "RemoteTrailers", "Taglines", "Tags", "LocalTrailerCount", "SpecialFeatureCount", "Etag", "Width", "Height", "Container"} {
+	for _, key := range []string{"Chapters", "ExternalUrls", "LockData", "LockedFields", "People", "RemoteTrailers", "Taglines", "Tags", "LocalTrailerCount", "SpecialFeatureCount", "Etag", "Container"} {
 		if _, ok := item[key]; !ok {
 			t.Fatalf("missing %s", key)
+		}
+	}
+	for _, key := range []string{"Width", "Height"} {
+		if _, ok := item[key]; ok {
+			t.Fatalf("%s belongs to the playback slice", key)
 		}
 	}
 	for _, key := range []string{"FileName", "Bitrate", "Size", "DateModified"} {
@@ -388,8 +393,8 @@ func TestJellyfinDetailShellAndKnownVersionFacts(t *testing.T) {
 			t.Fatalf("%s is not on BaseItemDto", key)
 		}
 	}
-	if item["Container"] != "mkv" || item["Width"] != float64(1920) || item["SeriesStudio"] != "A24" {
-		t.Fatal(item["Container"], item["Width"], item["SeriesStudio"])
+	if item["Container"] != "mkv" || item["SeriesStudio"] != "A24" {
+		t.Fatal(item["Container"], item["SeriesStudio"])
 	}
 	if item["DisplayPreferencesId"] != item["Id"] {
 		t.Fatal(item["DisplayPreferencesId"], item["Id"])
@@ -421,6 +426,42 @@ func TestJellyfinDetailShellAndKnownVersionFacts(t *testing.T) {
 	if _, ok := guess["Chapters"]; !ok {
 		t.Fatal("detail shell dropped chapters key")
 	}
+}
+
+func TestJellyfinNamedPeopleProviderLinksAndRuntime(t *testing.T) {
+	show := core.ShowKey(42)
+	episode := frontend.Title{Key: core.EpisodeKey(42, 1, 1), Type: "episode", Runtime: 30 * time.Minute}
+	inst := mountJellyfin(t, frontendtest.Experience{
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{
+				Key: show, Type: "show", Title: "Show", IDs: core.IDs{TMDB: 42, IMDB: "tt0000001"},
+				Cast: []core.Person{{Name: "Actor", Role: "Lead"}},
+			}}, nil
+		},
+		ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (core.Page, error) {
+			return core.Page{Items: []frontend.Title{episode}, Total: 1}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var item map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	people, _ := item["People"].([]any)
+	if len(people) != 1 || people[0].(map[string]any)["Name"] != "Actor" || people[0].(map[string]any)["Id"] != nil {
+		t.Fatal(item["People"])
+	}
+	urls, _ := item["ExternalUrls"].([]any)
+	if len(urls) != 2 || item["CumulativeRunTimeTicks"] != float64(30*time.Minute/100) {
+		t.Fatal(item["ExternalUrls"], item["CumulativeRunTimeTicks"])
+	}
+	requireJellyfinSpec(t, http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), w)
 }
 
 func TestJellyfinVirtualFolders(t *testing.T) {

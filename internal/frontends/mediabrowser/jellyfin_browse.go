@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -288,6 +289,47 @@ func (i *instance) attachUnplayedCount(r *http.Request, viewer *frontend.Viewer,
 	data["UnplayedItemCount"] = unplayed
 }
 
+// attachCumulativeRuntime sums the runtimes of a complete episode list.
+// A truncated page or an episode without a runtime leaves the field absent.
+func (i *instance) attachCumulativeRuntime(r *http.Request, viewer *frontend.Viewer, item map[string]any, title frontend.Title) {
+	if i == nil || i.protocol != "jellyfin" || r == nil || viewer == nil || i.host.Experience == nil || title.Type != "show" {
+		return
+	}
+	page, err := i.host.Experience.Children(r.Context(), viewer, device(r), title.Key, frontend.ItemQuery{Recursive: true})
+	if err != nil || page.Total > len(page.Items) || len(page.Items) == 0 {
+		return
+	}
+	var ticks int64
+	for _, child := range page.Items {
+		if child.Type != "episode" || child.Runtime <= 0 {
+			return
+		}
+		ticks += child.Runtime.Nanoseconds() / 100
+	}
+	item["CumulativeRunTimeTicks"] = ticks
+}
+
+// jellyfinExternalURLs links the provider ids the title already carries.
+func jellyfinExternalURLs(t frontend.Title) []any {
+	urls := []any{}
+	if id := t.IDs.IMDB; len(id) > 2 && strings.HasPrefix(id, "tt") && strings.Trim(id[2:], "0123456789") == "" {
+		urls = append(urls, map[string]string{"Name": "IMDb", "Url": "https://www.imdb.com/title/" + id + "/"})
+	}
+	if t.IDs.TMDB > 0 {
+		kind := ""
+		switch t.Type {
+		case "movie":
+			kind = "movie"
+		case "show":
+			kind = "tv"
+		}
+		if kind != "" {
+			urls = append(urls, map[string]string{"Name": "The Movie Database", "Url": "https://www.themoviedb.org/" + kind + "/" + strconv.FormatInt(t.IDs.TMDB, 10)})
+		}
+	}
+	return urls
+}
+
 func (i *instance) genreItems(r *http.Request, viewer *frontend.Viewer, title frontend.Title) []any {
 	out := []any{}
 	if r == nil || viewer == nil || i.host.Experience == nil || title.Key == 0 || len(title.Genres) == 0 {
@@ -545,14 +587,6 @@ func (i *instance) jellyfinKnownVersionFacts(dto map[string]any, versions []fron
 	}
 	if version.Media.Container != "" {
 		dto["Container"] = version.Media.Container
-	}
-	if video := version.Media.Video(); video != nil {
-		if video.Width > 0 {
-			dto["Width"] = video.Width
-		}
-		if video.Height > 0 {
-			dto["Height"] = video.Height
-		}
 	}
 }
 
