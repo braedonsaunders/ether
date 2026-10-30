@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -536,6 +537,10 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if errors.Is(err, frontend.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -623,6 +628,10 @@ func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 	q := itemQuery(r)
 	version, err := i.navigationWithVersion(r, v, &q, true)
 	if err != nil {
+		if errors.Is(err, frontend.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "Invalid navigation anchor", http.StatusBadRequest)
 		return
 	}
@@ -638,6 +647,10 @@ func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := i.host.Experience.Children(r.Context(), v, device(r), key, q)
 	if err != nil {
+		if errors.Is(err, frontend.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, "Unavailable", 503)
 		return
 	}

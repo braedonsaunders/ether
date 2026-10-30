@@ -2,6 +2,7 @@ package mediabrowser
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,6 +31,33 @@ func TestNavigationQueryUsesPolicyFilteredAnchors(t *testing.T) {
 		err := navigationQuery(httptest.NewRequest("GET", "/Items?"+tc.query, nil), &q, tc.allowStart)
 		if (err != nil) != tc.fail || q.AdjacentTo != tc.adjacent || q.StartAt != tc.start {
 			t.Fatalf("%s: q=%+v err=%v", tc.query, q, err)
+		}
+	}
+}
+
+func TestNavigationReturnsNotFoundForInaccessibleAnchor(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	missing := fmt.Errorf("anchor: %w", frontend.ErrNotFound)
+	exp := frontendtest.Experience{
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{}, missing
+		},
+		ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{}, missing
+		},
+	}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/Items?AdjacentTo=" + ids.RatingKeyGUID(5), "/Shows/" + ids.RatingKeyGUID(7) + "/Episodes?StartItemId=" + ids.RatingKeyGUID(5)} {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("X-Emby-Token", "grant")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != http.StatusNotFound {
+			t.Fatal(path, w.Code, w.Body.String())
 		}
 	}
 }

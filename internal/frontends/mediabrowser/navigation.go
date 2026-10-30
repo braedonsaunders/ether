@@ -51,7 +51,7 @@ func (i *instance) navigationWithVersion(r *http.Request, viewer *frontend.Viewe
 	}
 	target, scopeErr := i.host.VersionHandles.Resolve(i.identityContext(r), scope, start[0])
 	if scopeErr != nil || target.Item == 0 {
-		return "", err
+		return "", frontend.ErrNotFound
 	}
 	q.StartAt = target.Item
 	return start[0], nil
