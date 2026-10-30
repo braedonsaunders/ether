@@ -99,7 +99,7 @@ func TestLabPlaybackDecisions(t *testing.T) {
 	if targetID == "" {
 		t.Fatal("fixture BBB is missing")
 	}
-	type matched struct{ referenceItem, referenceSource, variant, hash string }
+	type matched struct{ referenceItem, referenceSource, release, hash string }
 	var matches []matched
 	for _, item := range refItems {
 		if item.ProviderIDs["Tmdb"] != "10378" {
@@ -116,6 +116,13 @@ func TestLabPlaybackDecisions(t *testing.T) {
 	if len(matches) == 0 {
 		t.Fatal("no reference source matches the scorecard manifest")
 	}
+	// Only a handle obtained from this authenticated viewer's detail response
+	// is eligible. The loopback fixture diagnostic binds it to a release/hash;
+	// neither a release ID nor a diagnostic alone grants access.
+	offered, err := target.offeredVersions(targetID)
+	if err != nil {
+		t.Fatal("could not bind authenticated version offers", err)
+	}
 	for _, profileName := range []string{"jellycon-default", "streamyfin-android-exoplayer"} {
 		p, err := os.ReadFile(filepath.Join("..", "profiles", "jellyfin", "deviceprofiles", profileName+".json"))
 		if err != nil {
@@ -131,8 +138,12 @@ func TestLabPlaybackDecisions(t *testing.T) {
 		}
 		for _, m := range matches {
 			t.Run(profileName+"/"+m.hash[:12], func(t *testing.T) {
+				handle, ok := offered[m.release]
+				if !ok || handle.hash != m.hash {
+					t.Fatal("matching source not offered to authenticated viewer")
+				}
 				t.Logf("request reference POST /Items/%s/PlaybackInfo?IsPlayback=true MediaSourceId=%s profile=%s authorization=[redacted]", m.referenceItem, m.referenceSource, profileName)
-				t.Logf("request target POST /Items/%s/PlaybackInfo?IsPlayback=true MediaSourceId=%s profile=%s authorization=[redacted]", targetID, m.variant, profileName)
+				t.Logf("request target POST /Items/%s/PlaybackInfo?IsPlayback=true MediaSourceId=%s profile=%s authorization=[redacted]", targetID, handle.id, profileName)
 				refResult, err := reference.playback(m.referenceItem, m.referenceSource, profile.DeviceProfile)
 				if err != nil {
 					t.Fatal("reference PlaybackInfo failed", err)
@@ -145,7 +156,7 @@ func TestLabPlaybackDecisions(t *testing.T) {
 						}
 					}()
 				}
-				targetResult, err := target.playback(targetID, m.variant, profile.DeviceProfile)
+				targetResult, err := target.playback(targetID, handle.id, profile.DeviceProfile)
 				if err != nil {
 					t.Fatal("target PlaybackInfo failed", err)
 				}
@@ -158,7 +169,7 @@ func TestLabPlaybackDecisions(t *testing.T) {
 					}
 				}()
 				refSource, refOK := exactDecisionSource(refResult.Sources, m.referenceSource)
-				targetSource, targetOK := exactDecisionSource(targetResult.Sources, m.variant)
+				targetSource, targetOK := exactDecisionSource(targetResult.Sources, handle.id)
 				if !refOK || !targetOK {
 					t.Fatal("PlaybackInfo did not select the requested source")
 				}
@@ -184,10 +195,10 @@ func TestLabPlaybackDecisions(t *testing.T) {
 				if err != nil {
 					t.Fatal("source verification failed", err)
 				}
-				if verified.ReleaseID != m.variant || verified.SourceID != m.variant || verified.Expected != m.hash || verified.Actual != m.hash || !verified.Match {
+				if verified.ReleaseID != m.release || verified.SourceID != m.release || verified.Expected != m.hash || verified.Actual != m.hash || !verified.Match {
 					t.Fatal("selected source identity or hash differs")
 				}
-				t.Logf("verified client=%s source_commit=%s reference_item=%s variant=%s source_sha256=%s", profile.Client, profile.Commit, m.referenceItem, m.variant, m.hash)
+				t.Logf("verified client=%s source_commit=%s reference_item=%s handle=%s source_sha256=%s", profile.Client, profile.Commit, m.referenceItem, handle.id, m.hash)
 				if refDelivery == "direct" {
 					if err := reference.readDirect(profileName, m.referenceItem, refSource, refResult.Session); err != nil {
 						t.Fatal("reference client direct request failed", err)
@@ -197,7 +208,7 @@ func TestLabPlaybackDecisions(t *testing.T) {
 				t.Logf("requested delivery: reference=%s target=%s", refDelivery, targetDelivery)
 				if targetDelivery == "direct" {
 					if profileName == "jellycon-default" {
-						t.Logf("request target GET /Videos/%s/stream?static=true&PlaySessionId=[redacted]&MediaSourceId=%s authorization=[redacted]", m.variant, m.variant)
+						t.Logf("request target GET /Videos/%s/stream?static=true&PlaySessionId=[redacted]&MediaSourceId=%s authorization=[redacted]", handle.id, handle.id)
 					}
 					if err := target.readDirect(profileName, targetID, targetSource, targetResult.Session); err != nil {
 						t.Fatal("target client direct request failed", err)
@@ -267,6 +278,9 @@ type decisionLabServer struct {
 }
 
 func decisionLabSettings(path string) (map[string]string, error) {
+	if path == "env" {
+		return map[string]string{"JELLYFIN_ADULT_USER": os.Getenv("JELLYFIN_ADULT_USER"), "JELLYFIN_ADULT_PASSWORD": os.Getenv("JELLYFIN_ADULT_PASSWORD")}, nil
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -364,6 +378,41 @@ func (s *decisionLabServer) items() ([]decisionItem, error) {
 	}
 	err := s.request("GET", "/Items?Recursive=true&IncludeItemTypes=Movie&Fields=ProviderIds,MediaSources,Path&Limit=1000", nil, &result)
 	return result.Items, err
+}
+
+type decisionOffer struct{ id, hash string }
+
+func (s *decisionLabServer) offeredVersions(itemID string) (map[string]decisionOffer, error) {
+	var item decisionItem
+	if err := s.request("GET", "/Items/"+url.PathEscape(itemID), nil, &item); err != nil {
+		return nil, err
+	}
+	if item.ID != itemID || len(item.MediaSources) > 50 {
+		return nil, fmt.Errorf("invalid authorized item detail")
+	}
+	result := make(map[string]decisionOffer, len(item.MediaSources))
+	for _, source := range item.MediaSources {
+		if source.ID == "" {
+			return nil, fmt.Errorf("missing offered handle")
+		}
+		var info struct {
+			Handle  string `json:"handle"`
+			Item    string `json:"item_id"`
+			Release string `json:"release_id"`
+			Hash    string `json:"expected_sha256"`
+		}
+		if err := s.request("GET", "/__scorecard/offer?handle="+url.QueryEscape(source.ID), nil, &info); err != nil {
+			return nil, err
+		}
+		if info.Handle != source.ID || info.Item != itemID || info.Release == "" || len(info.Hash) != 64 {
+			return nil, fmt.Errorf("invalid offer binding")
+		}
+		if _, exists := result[info.Release]; exists {
+			return nil, fmt.Errorf("ambiguous offered release")
+		}
+		result[info.Release] = decisionOffer{id: source.ID, hash: strings.ToLower(info.Hash)}
+	}
+	return result, nil
 }
 func (s *decisionLabServer) playback(item, source string, profile json.RawMessage) (decisionReply, error) {
 	var result decisionReply
