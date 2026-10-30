@@ -44,12 +44,15 @@ func (s *hlsLazyStub) IssueHLS(_ context.Context, credential string, req fronten
 func TestResolvedDetailLazyHLSOffers(t *testing.T) {
 	for _, protocol := range []string{"jellyfin", "emby"} {
 		for _, tc := range []struct {
-			name                                                                  string
+			name, container, wireContainer                                        string
 			direct, remux, encode, hls, estimated, missingRevision, missingIssuer bool
 			issueErr                                                              error
 		}{
 			{name: "eligible", direct: true, remux: true, encode: true, hls: true},
 			{name: "hls-only", encode: true, hls: true},
+			{name: "fmp4", remux: true, hls: true, container: "fmp4", wireContainer: "mp4"},
+			{name: "unknown-output", hls: true, container: "unknown"},
+			{name: "ineligible-fmp4", encode: true, container: "fmp4"},
 			{name: "direct-only", direct: true},
 			{name: "dash-only", direct: true, encode: true},
 			{name: "no-eligible-hls", remux: true, encode: true},
@@ -61,10 +64,13 @@ func TestResolvedDetailLazyHLSOffers(t *testing.T) {
 			t.Run(protocol+"/"+tc.name, func(t *testing.T) {
 				viewer := &frontend.Viewer{ID: 1}
 				planner := &hlsDetailPlanner{detailPlannerStub: &detailPlannerStub{embeddedSessions: frontendtest.Sessions{}}, plan: frontend.PlayPlan{
-					DetailSource: "82b0c3fc-7616-46da-8528-fc26ec5cb4ab", ETag: "source-revision", HLS: tc.hls,
+					DetailSource: "82b0c3fc-7616-46da-8528-fc26ec5cb4ab", ETag: "source-revision", HLS: tc.hls, HLSContainer: "mpegts",
 					DirectPlay: tc.direct, DirectStream: tc.remux, Transcoding: tc.encode, Estimated: tc.estimated,
 					Media: frontend.MediaInfo{Container: "mp4", Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}}},
 				}}
+				if tc.container != "" {
+					planner.plan.HLSContainer = tc.container
+				}
 				if tc.missingRevision {
 					planner.plan.ETag = ""
 				}
@@ -101,7 +107,7 @@ func TestResolvedDetailLazyHLSOffers(t *testing.T) {
 					t.Fatal(w.Code, w.Body.String())
 				}
 				source := dto.MediaSources[0]
-				offered := tc.hls && tc.issueErr == nil && !tc.estimated && !tc.missingRevision && !tc.missingIssuer
+				offered := tc.hls && tc.issueErr == nil && !tc.estimated && !tc.missingRevision && !tc.missingIssuer && tc.container != "unknown"
 				_, hasURL := source["TranscodingUrl"]
 				if hasURL != offered || source["SupportsDirectStream"] != (offered && tc.remux) || source["SupportsTranscoding"] != (offered && tc.encode) {
 					t.Fatal(source)
@@ -110,7 +116,12 @@ func TestResolvedDetailLazyHLSOffers(t *testing.T) {
 					t.Fatal("credential leak", w.Body.String())
 				}
 				if offered {
-					if source["TranscodingUrl"] != "https://ether.example/"+protocol+lazy.hlsPath || source["TranscodingSubProtocol"] != "hls" || source["TranscodingContainer"] != "ts" {
+					if source["TranscodingUrl"] != "https://ether.example/"+protocol+lazy.hlsPath || source["TranscodingSubProtocol"] != "hls" || source["TranscodingContainer"] != func() string {
+						if tc.wireContainer != "" {
+							return tc.wireContainer
+						}
+						return "ts"
+					}() {
 						t.Fatal(source)
 					}
 					req := lazy.hlsSeen
@@ -135,6 +146,60 @@ func TestLazyHLSSourceURLRejectsUnscopedPaths(t *testing.T) {
 		i := &instance{host: frontend.Host{LazyStreams: stub, SurfaceURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example", nil }}}
 		if got := i.lazyHLSSourceURL(httptest.NewRequest("GET", "/", nil), "secret", frontend.PlanRequest{}); got != "" {
 			t.Fatalf("accepted %q", got)
+		}
+	}
+}
+
+func TestPlaybackInfoAuthoritativeHLSContainer(t *testing.T) {
+	for _, protocol := range []string{"jellyfin", "emby"} {
+		for _, tc := range []struct {
+			name, container, want string
+			eligible              bool
+		}{
+			{"mpegts", "mpegts", "ts", true}, {"fmp4", "fmp4", "mp4", true},
+			{"unknown", "", "", true}, {"ineligible", "fmp4", "", false},
+		} {
+			t.Run(protocol+"/"+tc.name, func(t *testing.T) {
+				sessions := frontendtest.Sessions{
+					PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+						return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mkv"}, Decision: frontend.Decision{Kind: "transcode"}, Transcoding: true, HLS: tc.eligible, HLSContainer: tc.container}, nil
+					},
+					OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+						return frontend.Session{ID: "session"}, nil
+					},
+					StartStreamFunc: func(_ context.Context, _ frontend.SessionAccess, _ string, r frontend.StreamRequest) (string, error) {
+						if r.Format != frontend.StreamHLS {
+							t.Fatal(r)
+						}
+						return "/sessions/media/session/grant/master.m3u8", nil
+					},
+				}
+				host := frontend.Host{Sessions: sessions, Capabilities: frontendtest.Capabilities{}, Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 1}, nil }}}
+				var front frontend.Frontend = Jellyfin{MachineID: "test"}
+				if protocol == "emby" {
+					front = Emby{MachineID: "test"}
+				}
+				inst, err := front.Mount(context.Background(), host)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true}`))
+				r.Header.Set("Authorization", `MediaBrowser Token="secret", DeviceId="device"`)
+				w := httptest.NewRecorder()
+				inst.Handler().ServeHTTP(w, r)
+				var dto struct{ MediaSources []map[string]any }
+				if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &dto) != nil || len(dto.MediaSources) != 1 {
+					t.Fatal(w.Code, w.Body.String())
+				}
+				got, present := dto.MediaSources[0]["TranscodingContainer"]
+				if tc.want == "" {
+					if present {
+						t.Fatal("invented container", got)
+					}
+				} else if got != tc.want {
+					t.Fatal(got, tc.want)
+				}
+			})
 		}
 	}
 }

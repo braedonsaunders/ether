@@ -313,7 +313,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		} else {
 			source["TranscodingUrl"] = url
 			source["TranscodingSubProtocol"] = "hls"
-			source["TranscodingContainer"] = "ts"
+			if container := hlsContainerDTO(plan); container != "" {
+				source["TranscodingContainer"] = container
+			}
 		}
 	}
 	i.mediaSourceDialect(source)

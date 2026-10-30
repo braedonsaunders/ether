@@ -45,3 +45,19 @@ func (b *Broker) planAlternatives(source *core.PlaySession, req frontend.PlanReq
 	}
 	return
 }
+
+// hlsPlanOutput uses the very same output decision as StartStream. Only
+// containers preserved by the transcoder are authoritative here; an unknown
+// value may be normalized later and must not become a guessed DTO claim.
+func (b *Broker) hlsPlanOutput(source *core.PlaySession, req frontend.PlanRequest, decision core.Decision) (bool, string) {
+	output, eligible := b.hlsOutputDecision(source, req.Caps, req.Intent.Options, req.Intent.AllowTranscoding, decision)
+	if !eligible || source == nil || !knownHLSVideo(source.Info) {
+		return false, ""
+	}
+	switch output.Container {
+	case "mpegts", "fmp4", "mkv":
+		return true, output.Container
+	default:
+		return true, ""
+	}
+}

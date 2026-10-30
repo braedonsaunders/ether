@@ -94,3 +94,21 @@ func (i *instance) absoluteMediaURL(r *http.Request, path string) string {
 	}
 	return strings.TrimRight(base, "/") + path
 }
+
+// The wire container names differ from the broker's HLS segment names.
+// Never substitute the source container or infer an output from a URL.
+func hlsContainerDTO(plan frontend.PlayPlan) string {
+	if !plan.HLS {
+		return ""
+	}
+	switch plan.HLSContainer {
+	case "mpegts":
+		return "ts"
+	case "fmp4":
+		return "mp4"
+	case "mkv":
+		return "mkv"
+	default:
+		return ""
+	}
+}

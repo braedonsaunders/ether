@@ -468,6 +468,10 @@ type PlayPlan struct {
 	// HLS reports whether this resolved source can be delivered as HLS under
 	// the declared client profile. Encoder capacity is checked at stream start.
 	HLS bool
+	// HLSContainer is the authoritative segment container from the resolved HLS
+	// output decision (mpegts, fmp4, or mkv). Empty means unknown or ineligible;
+	// it is not the source container or an encoder-capacity reservation.
+	HLSContainer string
 	// ETag identifies the resolved immutable source when available; it is
 	// empty when the backend cannot prove a stable source identity.
 	ETag string

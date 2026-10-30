@@ -114,3 +114,34 @@ func TestHLSEligibilityUsesDeclaredDeliveryAndPermissions(t *testing.T) {
 		t.Fatal("forbidden transcoding advertised HLS")
 	}
 }
+
+func TestHLSPlanContainerUsesStartDecision(t *testing.T) {
+	source := &core.PlaySession{Info: core.MediaInfo{Container: "mp4", Streams: []core.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Index: 1, Codec: "aac"}}}}
+	for _, tc := range []struct {
+		name, kind, container, delivery, want string
+		eligible                              bool
+	}{
+		{"direct-to-ts", "directplay", "mp4", "hls", "mpegts", true},
+		{"ts-remux", "copy", "mpegts", "hls", "mpegts", true},
+		{"fmp4-remux", "copy", "fmp4", "hls", "fmp4", true},
+		{"dash-only", "copy", "fmp4", "dash", "", false},
+		{"unknown", "copy", "unrecognized", "", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decision := core.Decision{Kind: core.DecisionKind(tc.kind), Container: tc.container, VideoCopy: true, AudioCopy: true, VideoCodec: "h264", AudioCodec: "aac", AudioStream: 1}
+			b := &Broker{deps: BrokerDeps{Transcoder: decisionTranscoder{decision: decision}}}
+			req := frontend.PlanRequest{Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}}
+			if tc.delivery != "" {
+				req.Caps.Profiles = &core.ClientCapabilityProfiles{Transcoding: []core.ClientTranscodeProfile{{MediaType: "video", Delivery: tc.delivery, Containers: []string{tc.want, tc.container}, VideoCodecs: []string{"h264"}, AudioCodecs: []string{"aac"}}}}
+			}
+			eligible, container := b.hlsPlanOutput(source, req, decision)
+			if eligible != tc.eligible || container != tc.want {
+				t.Fatalf("got %v %q", eligible, container)
+			}
+			output, allowed := b.hlsOutputDecision(source, req.Caps, req.Intent.Options, nil, decision)
+			if container != "" && (!allowed || output.Container != container) {
+				t.Fatal("planning/start divergence", output)
+			}
+		})
+	}
+}

@@ -55,10 +55,10 @@ func (i *instance) applyResolvedDetail(r *http.Request, viewer *frontend.Viewer,
 			source["SupportsDirectPlay"] = false
 		}
 	}
-	if plan.HLS {
+	if container := hlsContainerDTO(plan); container != "" {
 		if path := i.lazyHLSSourceURL(r, credential, request); path != "" {
 			source["TranscodingUrl"] = path
-			source["TranscodingSubProtocol"], source["TranscodingContainer"] = "hls", "ts"
+			source["TranscodingSubProtocol"], source["TranscodingContainer"] = "hls", container
 			source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectStream, plan.Transcoding
 		}
 	}
