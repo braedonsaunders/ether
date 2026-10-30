@@ -19,7 +19,7 @@ func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device cor
 		return nil, ErrReceipt
 	}
 	snapshots := make([]string, len(subjects))
-	total := 0
+	encoded := make(map[*core.NeutralImpression]string)
 	for i, subject := range subjects {
 		if subject.Kind == "" || subject.ID == "" {
 			return nil, ErrReceipt
@@ -28,15 +28,16 @@ func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device cor
 			if !snapshotMatches(subject, imp) || len(imp.Items) > 1000 || len(imp.Entries) > 1000 || len(imp.Placement) > 128 || len(imp.ViewID) > 512 || len(imp.RowID) > 512 || len(imp.Kind) > 512 || len(imp.Title) > 2048 {
 				return nil, ErrReceipt
 			}
-			b, err := json.Marshal(imp)
-			if err != nil || len(b) > 32768 {
-				return nil, ErrReceipt
+			value, ok := encoded[imp]
+			if !ok {
+				b, err := json.Marshal(imp)
+				if err != nil || len(b) > 32768 {
+					return nil, ErrReceipt
+				}
+				value = string(b)
+				encoded[imp] = value
 			}
-			total += len(b)
-			if total > 16*1024*1024 {
-				return nil, ErrReceipt
-			}
-			snapshots[i] = string(b)
+			snapshots[i] = value
 		}
 	}
 	active, err := s.opts.Active(ctx, viewer.ID)
