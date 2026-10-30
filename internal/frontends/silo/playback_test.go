@@ -165,10 +165,14 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	var streamed frontend.StreamRequest
 	var timeline frontend.Timeline
 	var stopped string
+	var openErr error
 	session := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 		planned = r
 		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Duration: time.Hour, Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus}}}, Decision: frontend.Decision{Kind: "transcode", VideoCopy: true}}, nil
 	}, OpenFunc: func(_ context.Context, r frontend.OpenRequest) (frontend.Session, error) {
+		if openErr != nil {
+			return frontend.Session{}, openErr
+		}
 		if r.PlanID != "plan" {
 			t.Fatal("wrong plan")
 		}
@@ -289,7 +293,11 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if w.Code != 400 {
 		t.Fatalf("partial final sample: %d %s", w.Code, w.Body.String())
 	}
-
+	openErr = &frontend.TranscodeCapacityError{RetryAfter: 1500 * time.Millisecond}
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"another"}`)
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "2" || !strings.Contains(w.Body.String(), "transcode_capacity") {
+		t.Fatalf("open capacity: %d %v %s", w.Code, w.Header(), w.Body.String())
+	}
 }
 
 func TestPlaybackCapacityProblem(t *testing.T) {

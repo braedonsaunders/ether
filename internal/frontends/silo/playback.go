@@ -179,7 +179,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	pos := time.Duration(b.Position * float64(time.Second))
 	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: target.Version, Caps: cap.Client, Intent: frontend.PlayIntent{Options: options, AllowTranscoding: &hls, AudioSet: b.Audio != nil, SubtitleSet: b.Subtitle != nil, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
-		http.Error(w, "Playback unavailable", 503)
+		playbackError(w, err)
 		return
 	}
 	if !siloSourceHasKnownHDR10Plus(plan.Media) {
@@ -188,7 +188,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
 	if err != nil {
-		http.Error(w, "Playback unavailable", 503)
+		playbackError(w, err)
 		return
 	}
 	access := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "silo"}
