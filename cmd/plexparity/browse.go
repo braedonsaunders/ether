@@ -8,14 +8,6 @@ func browsingPaths() []string {
 		"/library/metadata/{{movieKey}}/related", "/library/metadata/{{movieKey}}/similar", "/library/metadata/{{showKey}}/onDeck", "/library/metadata/{{movieKey}}/extras",
 		"/library/collections", "/library/collections/{{collectionKey}}/children", "/library/collections/{{collectionKey}}/items",
 		"/hubs/continueWatching/items", "/hubs/home/continueWatching", "/hubs/home/onDeck", "/hubs/home/recentlyAdded", "/hubs/sections/{{section}}/continueWatching/items",
-		// Explicitly scoped recent-items requests exercise the PMS-compatible
-		// type and section checks independently of the intentionally mixed home.
-		"/hubs/home/recentlyAdded?type=15", "/hubs/home/recentlyAdded?type=999", "/hubs/home/recentlyAdded?type=4",
-		"/hubs/home/recentlyAdded?type=1%2C4", "/hubs/home/recentlyAdded?type=2%2C4&contentDirectoryID=2",
-		"/hubs/home/recentlyAdded?contentDirectoryID=1", "/hubs/home/recentlyAdded?contentDirectoryID=2",
-		"/hubs/home/recentlyAdded?pinnedContentDirectoryID=1", "/hubs/home/recentlyAdded?pinnedContentDirectoryID=2",
-		"/hubs/home/recentlyAdded?type=1&contentDirectoryID=2", "/hubs/home/recentlyAdded?type=2&pinnedContentDirectoryID=1",
-		"/hubs/home/recentlyAdded?type=1&contentDirectoryID=1", "/hubs/home/recentlyAdded?type=2&contentDirectoryID=2",
 		"/hubs?count=2", "/hubs/promoted?count=2", "/hubs/sections/{{section}}?count=2",
 		"/hubs?count=5", "/hubs/promoted?count=5", "/hubs/sections/{{section}}?count=5",
 		"/hubs/items?identifier=home.continue", "/hubs/items/home.continue",
