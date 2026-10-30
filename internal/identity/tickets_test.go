@@ -134,3 +134,50 @@ func TestTicketConsumesLegacyHash(t *testing.T) {
 		t.Fatalf("legacy ticket consume failed: %v", err)
 	}
 }
+
+func TestTicketServiceUsesSharedHeaderAndClock(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 123000000)
+	clock := func() time.Time { return now }
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "tv"}
+	credential, err := grants.Issue(ctx, 1, nil, "silo", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := identity.NewTicketService(db, "silo", grants, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := service.Issue(ctx, credential, device, "events-ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte(token))
+	hash := hex.EncodeToString(sum[:])
+	var a, b int64
+	if err = db.QueryRow(`SELECT expires FROM frontend_tickets WHERE hash=?`, hash).Scan(&a); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRow(`SELECT expires FROM capability_headers WHERE namespace='ticket' AND digest=?`, hash).Scan(&b); err != nil {
+		t.Fatal(err)
+	}
+	if a != now.Add(30*time.Second).UnixMilli() || a != b {
+		t.Fatalf("legacy=%d header=%d now=%d", a, b, now.UnixMilli())
+	}
+	ticket, err := service.Consume(ctx, token, "events-ws")
+	if err != nil || ticket.Viewer == nil || ticket.Device.ID != "tv" {
+		t.Fatalf("consume: %v", err)
+	}
+	var n int
+	if err = db.QueryRow(`SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, hash).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("header count=%d err=%v", n, err)
+	}
+}

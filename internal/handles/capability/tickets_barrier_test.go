@@ -1,4 +1,4 @@
-package capability
+package capability_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
+	. "github.com/braedonsaunders/ether/internal/handles/capability"
 	_ "github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -44,13 +45,13 @@ func TestTicketConsumeRechecksAfterReissue(t *testing.T) {
 	consumer, _ := NewTickets(db)
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(resume) }) }
-	consumer.beforeConsumeLock = func() {
+	SetBeforeConsumeLock(consumer, func() {
 		close(seen)
 		select {
 		case <-resume:
 		case <-ctx.Done():
 		}
-	}
+	})
 	type answer struct {
 		ticket Ticket
 		err    error
@@ -119,13 +120,13 @@ func TestMirroredRevokeBeforeDelete(t *testing.T) {
 	var once sync.Once
 	release := func() { once.Do(func() { close(resume) }) }
 	consumer, _ := NewTickets(db)
-	consumer.beforeConsumeLock = func() {
+	SetBeforeConsumeLock(consumer, func() {
 		close(seen)
 		select {
 		case <-resume:
 		case <-ctx.Done():
 		}
-	}
+	})
 	done := make(chan error, 1)
 	go func() {
 		defer close(finished)

@@ -29,7 +29,8 @@ const ticketCleanupMax = 128
 const ticketTTL = 30 * time.Second
 
 type Tickets struct {
-	db *sql.DB
+	db    *sql.DB
+	clock func() time.Time
 	// Only set by package-local tests before concurrent use.
 	beforeConsumeLock func()
 }
@@ -52,6 +53,21 @@ func NewTickets(db *sql.DB) (*Tickets, error) {
 		return nil, errors.New("capability: database required")
 	}
 	return &Tickets{db: db}, nil
+}
+
+// NewTicketsWithClock preserves a service-owned trusted clock contract. The
+// clock is injected by the host, never by a front-end request.
+func NewTicketsWithClock(db *sql.DB, clock func() time.Time) (*Tickets, error) {
+	if db == nil || clock == nil {
+		return nil, errors.New("capability: database and clock required")
+	}
+	return &Tickets{db: db, clock: clock}, nil
+}
+func (s *Tickets) now(ctx context.Context, tx *sql.Tx) (int64, error) {
+	if s.clock != nil {
+		return s.clock().UnixMilli(), nil
+	}
+	return dbTime(ctx, s.db, tx)
 }
 func digestValid(s string) bool {
 	if len(s) != 64 {
@@ -93,7 +109,7 @@ func (s *Tickets) IssueBatch(ctx context.Context, scope TicketScope, entries []T
 }
 
 // IssueMirrored atomically creates the shared header and legacy-authoritative
-// ticket. It is not wired into the production ticket service yet.
+// ticket under the legacy-authoritative transition.
 func (s *Tickets) IssueMirrored(ctx context.Context, scope TicketScope, entries []TicketEntry) (int64, error) {
 	return s.issueBatch(ctx, scope, entries, true)
 }
@@ -117,7 +133,7 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 	if err = s.lock(ctx, tx, scope.ViewerID); err != nil {
 		return 0, err
 	}
-	now, err := dbTime(ctx, s.db, tx)
+	now, err := s.now(ctx, tx)
 	if err != nil {
 		return 0, err
 	}
@@ -260,7 +276,7 @@ func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) 
 	if json.Unmarshal([]byte(out.DeviceJSON), &device) != nil || device.ID != deviceID {
 		return Ticket{}, core.ErrUnauthorized
 	}
-	now, err := dbTime(ctx, s.db, tx)
+	now, err := s.now(ctx, tx)
 	if err != nil {
 		return Ticket{}, err
 	}
@@ -280,7 +296,7 @@ func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) 
 
 // ConsumeMirrored treats frontend_tickets as the sole consume authority. It
 // does not consult an absent-header fallback. Shared metadata, when present, is
-// removed in the same transaction. Not wired into the production service.
+// removed in the same transaction.
 func (s *Tickets) ConsumeMirrored(ctx context.Context, surface, purpose, digest string) (Ticket, error) {
 	var out Ticket
 	if surface == "" || purpose == "" || !digestValid(digest) {
@@ -311,7 +327,7 @@ func (s *Tickets) ConsumeMirrored(ctx context.Context, surface, purpose, digest 
 	if err = s.lock(ctx, tx, initialViewer); err != nil {
 		return Ticket{}, err
 	}
-	now, err := dbTime(ctx, s.db, tx)
+	now, err := s.now(ctx, tx)
 	if err != nil {
 		return Ticket{}, err
 	}
