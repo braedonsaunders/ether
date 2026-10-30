@@ -1032,9 +1032,10 @@ func (b *Broker) Close(ctx context.Context) {
 	if b.historyCancel != nil {
 		b.historyCancel()
 	}
+	var transferCancels []context.CancelFunc
 	for _, transfers := range b.lazyTransfers {
 		for _, cancel := range transfers {
-			cancel()
+			transferCancels = append(transferCancels, cancel)
 		}
 	}
 	b.lazyTransfers = nil
@@ -1051,6 +1052,9 @@ func (b *Broker) Close(ctx context.Context) {
 		planIDs = append(planIDs, id)
 	}
 	b.mu.Unlock()
+	for _, cancel := range transferCancels {
+		cancel()
+	}
 	// Shutdown must still release sessions when its caller has already been
 	// canceled; bound the cleanup so an unresponsive gate cannot block forever.
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.shutdownTimeout)
