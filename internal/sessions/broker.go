@@ -85,6 +85,7 @@ type brokerSession struct {
 	live             bool
 	sequence         uint64
 	historyEpoch     int64
+	historySequence  int64
 	versionHandle    string
 	exactRelease     string
 	sourcePinned     bool
@@ -129,6 +130,8 @@ type Broker struct {
 	planSweepEvery      time.Duration
 	detailPlans         map[string]*detailFlight
 	cluster             *brokerCluster
+	historyQueue        chan sourceHistorySample
+	historyCancel       context.CancelFunc
 }
 
 func NewBroker(d BrokerDeps) (*Broker, error) {
@@ -159,6 +162,12 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if d.SourceHistory != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		b.historyCancel = cancel
+		b.historyQueue = make(chan sourceHistorySample, 256)
+		go b.runSourceHistory(ctx)
 	}
 	return b, nil
 }
@@ -1011,6 +1020,9 @@ func (b *Broker) Close(ctx context.Context) {
 	}
 	firstClose := !b.closed
 	b.closed = true
+	if b.historyCancel != nil {
+		b.historyCancel()
+	}
 	lazyCancel, lazyDone := b.lazyCleanupCancel, b.lazyCleanupDone
 	var ids, planIDs []string
 	seen := make(map[string]bool)

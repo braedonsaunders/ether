@@ -2,29 +2,59 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// SourceHistoryWriter persists a source snapshot for an accepted session
-// sample. Epochs are shared and order sessions across cluster nodes.
+// SourceHistoryWriter stores facts from accepted samples, ordered first by
+// session epoch and then by the sample number assigned before persistence.
 type SourceHistoryWriter interface {
 	BeginSourceSession(context.Context) (int64, error)
-	RecordLastSource(context.Context, int64, core.RatingKey, int64, core.PlaybackSourceObservation) error
+	RecordLastSource(context.Context, int64, core.RatingKey, int64, int64, core.PlaybackSourceObservation) error
 }
 
+type sourceHistorySample struct {
+	viewer, epoch, sequence int64
+	item                    core.RatingKey
+	source                  core.PlaybackSourceObservation
+}
+
+// recordSourceHistory runs under the session owner gate. Source capture and
+// order assignment precede queueing; no playback lock covers storage I/O.
 func (b *Broker) recordSourceHistory(ctx context.Context, s *brokerSession) {
-	guard, ok := b.deps.Playback.(core.GuardedPlaybackSource)
-	if !ok || b.deps.SourceHistory == nil || s.historyEpoch <= 0 {
+	snapshotter, ok := b.deps.Playback.(core.PlaybackSourceSnapshot)
+	if !ok || b.historyQueue == nil || s.historyEpoch <= 0 {
 		return
 	}
-	bounded, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
-	defer cancel()
-	err := guard.WithCurrentSource(bounded, s.playID, func(ctx context.Context, source core.PlaybackSourceObservation) error {
-		return b.deps.SourceHistory.RecordLastSource(ctx, s.public.ViewerID, s.public.Item, s.historyEpoch, source)
-	})
-	if err != nil && b.deps.OnEventError != nil {
-		b.deps.OnEventError(err)
+	source, err := snapshotter.CurrentSource(ctx, s.playID)
+	if err != nil {
+		return
+	}
+	s.historySequence++
+	sample := sourceHistorySample{viewer: s.public.ViewerID, item: s.public.Item, epoch: s.historyEpoch, sequence: s.historySequence, source: source}
+	select {
+	case b.historyQueue <- sample:
+	default:
+		if b.deps.OnEventError != nil {
+			b.deps.OnEventError(errors.New("sessions: source history queue full"))
+		}
+	}
+}
+
+func (b *Broker) runSourceHistory(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case sample := <-b.historyQueue:
+			writeCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+			err := b.deps.SourceHistory.RecordLastSource(writeCtx, sample.viewer, sample.item, sample.epoch, sample.sequence, sample.source)
+			cancel()
+			if err != nil && b.deps.OnEventError != nil {
+				b.deps.OnEventError(err)
+			}
+		}
 	}
 }

@@ -764,15 +764,9 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 	// Pin before publishing g: a Stop right after the swap unpins s.cur,
 	// and must find this pin rather than leave one taken later behind.
 	m.pinLive(g.releaseID())
-	if err := lock(ctx, s.sourceCommit); err != nil {
-		m.dropGeneration(g)
-		m.unpinLive(g.releaseID())
-		return nil, err
-	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		unlock(s.sourceCommit)
 		m.dropGeneration(g)
 		m.unpinLive(g.releaseID())
 		return nil, fmt.Errorf("playback: session %s ended: %w", s.id, core.ErrNotFound)
@@ -797,7 +791,6 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 		s.alternates = withoutTried(alternates, append(slices.Clone(s.tried), g.releaseID()))
 	}
 	s.mu.Unlock()
-	unlock(s.sourceCommit)
 
 	m.mu.Lock()
 	delete(m.tokens, s.id+"/"+cur.token)

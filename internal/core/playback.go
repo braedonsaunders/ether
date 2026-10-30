@@ -199,8 +199,8 @@ type PlaybackSourceHistory struct {
 	HDR                                 *bool
 }
 
-// GuardedPlaybackSource keeps a source generation current until fn completes.
-// Callers must bound ctx and must not call Stop or Failover from fn.
-type GuardedPlaybackSource interface {
-	WithCurrentSource(context.Context, string, func(context.Context, PlaybackSourceObservation) error) error
+// PlaybackSourceSnapshot captures immutable facts at the time an accepted
+// playback sample is observed. It does not hold a generation across I/O.
+type PlaybackSourceSnapshot interface {
+	CurrentSource(context.Context, string) (PlaybackSourceObservation, error)
 }

@@ -17,7 +17,7 @@ func TestLastPlayedSourceRequiresCurrentItemPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = a.state.RecordLastSource(ctx, viewer.ID, key, epoch, core.PlaybackSourceObservation{Revision: "source", VideoCodec: "h264"}); err != nil {
+	if err = a.state.RecordLastSource(ctx, viewer.ID, key, epoch, 1, core.PlaybackSourceObservation{Revision: "source", VideoCodec: "h264"}); err != nil {
 		t.Fatal(err)
 	}
 	allowed := true

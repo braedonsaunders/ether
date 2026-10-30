@@ -16,7 +16,7 @@ func init() {
 	store.Register("state", 4, `
 CREATE TABLE state_source_sequence (id INTEGER PRIMARY KEY AUTOINCREMENT);
 CREATE TABLE state_last_source (
- user_id INTEGER NOT NULL, rating_key INTEGER NOT NULL, session_order INTEGER NOT NULL, sequence INTEGER NOT NULL, watch_version INTEGER NOT NULL,
+ user_id INTEGER NOT NULL, rating_key INTEGER NOT NULL, session_order INTEGER NOT NULL, sequence INTEGER NOT NULL,
  revision TEXT NOT NULL, release_digest TEXT NOT NULL, video_codec TEXT NOT NULL,
  height INTEGER NOT NULL, hdr INTEGER, PRIMARY KEY(user_id,rating_key)
 );`)
@@ -44,14 +44,15 @@ func (s *State) BeginSourceSession(ctx context.Context) (int64, error) {
 }
 
 // RecordLastSource stores only source-bound facts. Session epoch precedes the
-// shared sample sequence, so old sessions and delayed transactions cannot
-// overwrite newer playback. Unknown revision clears prior facts in this epoch.
-func (s *State) RecordLastSource(ctx context.Context, userID int64, key core.RatingKey, epoch int64, source core.PlaybackSourceObservation) error {
-	return s.recordLastSource(ctx, userID, key, epoch, source, nil)
+// sample order, so old sessions and delayed transactions cannot overwrite newer
+// accepted samples. It describes the last durable sample, which can lag if a
+// later asynchronous write fails. Unknown revision clears prior facts.
+func (s *State) RecordLastSource(ctx context.Context, userID int64, key core.RatingKey, epoch, sequence int64, source core.PlaybackSourceObservation) error {
+	return s.recordLastSource(ctx, userID, key, epoch, sequence, source, nil)
 }
 
-func (s *State) recordLastSource(ctx context.Context, userID int64, key core.RatingKey, epoch int64, source core.PlaybackSourceObservation, afterSequence func() error) error {
-	if userID <= 0 || key <= 0 || epoch <= 0 {
+func (s *State) recordLastSource(ctx context.Context, userID int64, key core.RatingKey, epoch, sequence int64, source core.PlaybackSourceObservation, beforeWrite func() error) error {
+	if userID <= 0 || key <= 0 || epoch <= 0 || sequence <= 0 {
 		return core.ErrUnauthorized
 	}
 	if source.Revision == "" {
@@ -65,19 +66,10 @@ func (s *State) recordLastSource(ctx context.Context, userID int64, key core.Rat
 		return err
 	}
 	defer tx.Rollback()
-	var seq int64
-	if err = tx.QueryRowContext(ctx, `INSERT INTO state_source_sequence DEFAULT VALUES RETURNING id`).Scan(&seq); err != nil {
-		return err
-	}
-	if afterSequence != nil {
-		if err = afterSequence(); err != nil {
+	if beforeWrite != nil {
+		if err = beforeWrite(); err != nil {
 			return err
 		}
-	}
-	watchVersion := int64(-1)
-	err = tx.QueryRowContext(ctx, `SELECT version FROM state_watch WHERE user_id=? AND rating_key=?`, userID, int64(key)).Scan(&watchVersion)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
 	}
 	var hdr any
 	if source.HDR != nil {
@@ -92,12 +84,9 @@ func (s *State) recordLastSource(ctx context.Context, userID int64, key core.Rat
 		sum := sha256.Sum256([]byte(source.ReleaseID))
 		digest = hex.EncodeToString(sum[:])
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO state_last_source(user_id,rating_key,session_order,sequence,watch_version,revision,release_digest,video_codec,height,hdr) VALUES(?,?,?,?,?,?,?,?,?,?)
-ON CONFLICT(user_id,rating_key) DO UPDATE SET session_order=excluded.session_order,sequence=excluded.sequence,watch_version=excluded.watch_version,revision=excluded.revision,release_digest=excluded.release_digest,video_codec=excluded.video_codec,height=excluded.height,hdr=excluded.hdr WHERE state_last_source.session_order<excluded.session_order OR (state_last_source.session_order=excluded.session_order AND state_last_source.sequence<excluded.sequence)`, userID, int64(key), epoch, seq, watchVersion, source.Revision, digest, source.VideoCodec, source.Height, hdr)
+	_, err = tx.ExecContext(ctx, `INSERT INTO state_last_source(user_id,rating_key,session_order,sequence,revision,release_digest,video_codec,height,hdr) VALUES(?,?,?,?,?,?,?,?,?)
+ON CONFLICT(user_id,rating_key) DO UPDATE SET session_order=excluded.session_order,sequence=excluded.sequence,revision=excluded.revision,release_digest=excluded.release_digest,video_codec=excluded.video_codec,height=excluded.height,hdr=excluded.hdr WHERE state_last_source.session_order<excluded.session_order OR (state_last_source.session_order=excluded.session_order AND state_last_source.sequence<excluded.sequence)`, userID, int64(key), epoch, sequence, source.Revision, digest, source.VideoCodec, source.Height, hdr)
 	if err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM state_source_sequence WHERE id=?`, seq); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -107,15 +96,14 @@ ON CONFLICT(user_id,rating_key) DO UPDATE SET session_order=excluded.session_ord
 func (s *State) LastSource(ctx context.Context, userID int64, key core.RatingKey) (*core.PlaybackSourceHistory, error) {
 	var source core.PlaybackSourceHistory
 	var hdr sql.NullInt64
-	var storedVersion, currentVersion int64
-	err := s.db.QueryRowContext(ctx, `SELECT revision,release_digest,video_codec,height,hdr,watch_version,COALESCE((SELECT version FROM state_watch WHERE user_id=? AND rating_key=?),-1) FROM state_last_source WHERE user_id=? AND rating_key=?`, userID, int64(key), userID, int64(key)).Scan(&source.Revision, &source.ReleaseDigest, &source.VideoCodec, &source.Height, &hdr, &storedVersion, &currentVersion)
+	err := s.db.QueryRowContext(ctx, `SELECT revision,release_digest,video_codec,height,hdr FROM state_last_source WHERE user_id=? AND rating_key=?`, userID, int64(key)).Scan(&source.Revision, &source.ReleaseDigest, &source.VideoCodec, &source.Height, &hdr)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if source.Revision == "" || storedVersion != currentVersion {
+	if source.Revision == "" {
 		return nil, nil
 	}
 	if hdr.Valid {

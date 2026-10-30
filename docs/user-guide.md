@@ -59,6 +59,9 @@ For media with an unknown transfer function, Silo's required HDR10+ boolean
 means HDR10+ has not been positively identified; the media remains playable.
 Watch details omit marker ranges until they can be bound to the selected file;
 this is an outstanding Silo schema and skip-intro compatibility gap.
+Last-played codec, resolution and HDR describe the last recorded playback
+sample and can briefly lag if storing a newer sample fails. The last-played
+file identifier is omitted until it can be matched to an authorized version.
 Native certification also requires verifying that Ether's stream request
 headers reach direct playback and HLS playlists and segments, including after a
 seek; this has not yet been verified on the physical devices.

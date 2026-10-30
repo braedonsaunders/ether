@@ -22,7 +22,7 @@ func TestLastSourcePersistsScopedFactsAndClearsUnknown(t *testing.T) {
 	}
 	hdr := true
 	source := core.PlaybackSourceObservation{Revision: "src-123", ReleaseID: "private-release", VideoCodec: "hevc", Height: 2160, HDR: &hdr}
-	if err := s.RecordLastSource(context.Background(), 1, key, epoch, source); err != nil {
+	if err := s.RecordLastSource(context.Background(), 1, key, epoch, 1, source); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.LastSource(context.Background(), 1, key)
@@ -33,7 +33,7 @@ func TestLastSourcePersistsScopedFactsAndClearsUnknown(t *testing.T) {
 	if other, err := s.LastSource(context.Background(), 2, key); err != nil || other != nil {
 		t.Fatalf("cross viewer: %+v %v", other, err)
 	}
-	if err := s.RecordLastSource(context.Background(), 1, key, epoch, core.PlaybackSourceObservation{}); err != nil {
+	if err := s.RecordLastSource(context.Background(), 1, key, epoch, 2, core.PlaybackSourceObservation{}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.LastSource(context.Background(), 1, key); err != nil || got != nil {
@@ -53,13 +53,13 @@ func TestLastSourceCanceledWhileDatabaseBusyDoesNotCommit(t *testing.T) {
 	}
 	defer tx.Rollback()
 	if os.Getenv(store.TestPostgresEnv) != "" {
-		if _, err := tx.ExecContext(context.Background(), `LOCK TABLE state_source_sequence IN ACCESS EXCLUSIVE MODE`); err != nil {
+		if _, err := tx.ExecContext(context.Background(), `LOCK TABLE state_last_source IN ACCESS EXCLUSIVE MODE`); err != nil {
 			t.Fatal(err)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	err = s.RecordLastSource(ctx, 1, core.MovieKey(1), epoch, core.PlaybackSourceObservation{Revision: "src-123", VideoCodec: "h264"})
+	err = s.RecordLastSource(ctx, 1, core.MovieKey(1), epoch, 1, core.PlaybackSourceObservation{Revision: "src-123", VideoCodec: "h264"})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("blocked transaction did not cancel: %v", err)
 	}
@@ -84,14 +84,14 @@ func TestLastSourceDelayedEarlierTransactionCannotOverwriteNewer(t *testing.T) {
 	}
 	allocated, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 	go func() {
-		done <- s.recordLastSource(context.Background(), 1, key, epoch, core.PlaybackSourceObservation{Revision: "older", VideoCodec: "h264"}, func() error {
+		done <- s.recordLastSource(context.Background(), 1, key, epoch, 1, core.PlaybackSourceObservation{Revision: "older", VideoCodec: "h264"}, func() error {
 			close(allocated)
 			<-release
 			return nil
 		})
 	}()
 	<-allocated
-	if err := s.RecordLastSource(context.Background(), 1, key, epoch, core.PlaybackSourceObservation{Revision: "newer", VideoCodec: "hevc"}); err != nil {
+	if err := s.RecordLastSource(context.Background(), 1, key, epoch, 2, core.PlaybackSourceObservation{Revision: "newer", VideoCodec: "hevc"}); err != nil {
 		close(release)
 		<-done
 		t.Fatal(err)
@@ -117,10 +117,10 @@ func TestLastSourceLateOldSessionCannotReplaceNewSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.RecordLastSource(context.Background(), 1, key, newer, core.PlaybackSourceObservation{Revision: "newer", VideoCodec: "hevc"}); err != nil {
+	if err = s.RecordLastSource(context.Background(), 1, key, newer, 1, core.PlaybackSourceObservation{Revision: "newer", VideoCodec: "hevc"}); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.RecordLastSource(context.Background(), 1, key, old, core.PlaybackSourceObservation{Revision: "older", VideoCodec: "h264"}); err != nil {
+	if err = s.RecordLastSource(context.Background(), 1, key, old, 1, core.PlaybackSourceObservation{Revision: "older", VideoCodec: "h264"}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.LastSource(context.Background(), 1, key)
@@ -129,7 +129,7 @@ func TestLastSourceLateOldSessionCannotReplaceNewSession(t *testing.T) {
 	}
 }
 
-func TestLastSourceBecomesUnknownWhenWatchStateAdvances(t *testing.T) {
+func TestLastSourceRemainsLastDurableSampleWhenWatchStateAdvances(t *testing.T) {
 	s, _ := newTestState(t)
 	key := core.MovieKey(1)
 	epoch, err := s.BeginSourceSession(context.Background())
@@ -137,16 +137,16 @@ func TestLastSourceBecomesUnknownWhenWatchStateAdvances(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := core.PlaybackSourceObservation{Revision: "source", VideoCodec: "h264"}
-	if err = s.RecordLastSource(context.Background(), 1, key, epoch, source); err != nil {
+	if err = s.RecordLastSource(context.Background(), 1, key, epoch, 1, source); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.Progress(context.Background(), 1, key, time.Minute, 10*time.Minute, "playing"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.LastSource(context.Background(), 1, key); err != nil || got != nil {
-		t.Fatalf("stale source exposed after progress: %+v %v", got, err)
+	if got, err := s.LastSource(context.Background(), 1, key); err != nil || got == nil || got.Revision != "source" {
+		t.Fatalf("last durable source missing after progress: %+v %v", got, err)
 	}
-	if err = s.RecordLastSource(context.Background(), 1, key, epoch, source); err != nil {
+	if err = s.RecordLastSource(context.Background(), 1, key, epoch, 2, source); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.LastSource(context.Background(), 1, key); err != nil || got == nil {

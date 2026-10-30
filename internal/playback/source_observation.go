@@ -6,32 +6,23 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
-	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// WithCurrentSource serializes a short durable observation with generation
-// swaps and Stop. It never holds session.mu across the callback or source
-// preparation. The callback must honor its bounded context.
-func (m *Manager) WithCurrentSource(ctx context.Context, id string, fn func(context.Context, core.PlaybackSourceObservation) error) error {
-	if fn == nil {
-		return core.ErrNotAvailable
+// CurrentSource snapshots one generation without holding a lock across I/O.
+func (m *Manager) CurrentSource(ctx context.Context, id string) (core.PlaybackSourceObservation, error) {
+	if err := ctx.Err(); err != nil {
+		return core.PlaybackSourceObservation{}, err
 	}
 	s := m.lookup(id)
 	if s == nil {
-		return core.ErrNotFound
+		return core.PlaybackSourceObservation{}, core.ErrNotFound
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	if err := lock(ctx, s.sourceCommit); err != nil {
-		return err
-	}
-	defer unlock(s.sourceCommit)
 	s.mu.Lock()
 	if s.closed || s.cur == nil || s.cur.src == nil {
 		s.mu.Unlock()
-		return core.ErrNotFound
+		return core.PlaybackSourceObservation{}, core.ErrNotFound
 	}
 	g := s.cur
 	info := g.infoSnapshot()
@@ -65,5 +56,5 @@ func (m *Manager) WithCurrentSource(ctx context.Context, id string, fn func(cont
 			}
 		}
 	}
-	return fn(ctx, observation)
+	return observation, nil
 }
