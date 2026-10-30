@@ -7,9 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,6 +259,8 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 	}
 	defer cleanup()
 	h := handlers["jellyfin"]
+	server := httptest.NewServer(h)
+	defer server.Close()
 	req := httptest.NewRequest("POST", "/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture-viewer","Pw":"fixture-password"}`))
 	req.Header.Set("Authorization", `MediaBrowser Client="test", DeviceId="test"`)
 	req.Header.Set("Content-Type", "application/json")
@@ -272,22 +276,72 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 	sourceID := scorecardReleaseID(second)
 	itemID := ids.RatingKeyGUID(core.MovieKey(123))
 	requestAuth := `MediaBrowser Client="test", DeviceId="test", Token="` + login.AccessToken + `"`
-	req = httptest.NewRequest("GET", "/Items/"+itemID, nil)
+	defer func() {
+		r := httptest.NewRequest("GET", "/__scorecard/broker", nil)
+		r.RemoteAddr = "127.0.0.1:1"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		var active []struct {
+			ID string `json:"id"`
+		}
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &active) != nil {
+			t.Error("could not enumerate sessions for cleanup")
+			return
+		}
+		for _, entry := range active {
+			body, _ := json.Marshal(map[string]string{"PlaySessionId": entry.ID, "ItemId": itemID})
+			r = httptest.NewRequest("POST", "/Sessions/Playing/Stopped", strings.NewReader(string(body)))
+			r.Header.Set("Authorization", requestAuth)
+			r.Header.Set("Content-Type", "application/json")
+			w = httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusNoContent {
+				t.Errorf("stop failed: HTTP %d", w.Code)
+			}
+		}
+		r = httptest.NewRequest("POST", "/Sessions/Logout", strings.NewReader("{}"))
+		r.Header.Set("Authorization", requestAuth)
+		r.Header.Set("Content-Type", "application/json")
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusNoContent {
+			t.Errorf("logout failed: HTTP %d", w.Code)
+		}
+		r = httptest.NewRequest("GET", "/__scorecard/broker", nil)
+		r.RemoteAddr = "127.0.0.1:1"
+		w = httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		active = nil
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &active) != nil || len(active) != 0 {
+			t.Error("broker not empty after cleanup")
+		}
+	}()
+	req, e = http.NewRequest("GET", server.URL+"/Items/"+itemID, nil)
+	if e != nil {
+		t.Fatal(e)
+	}
 	req.Header.Set("Authorization", requestAuth)
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	if rr.Code != 200 {
-		t.Fatalf("item detail HTTP %d", rr.Code)
+	resp, e := server.Client().Do(req)
+	if e != nil {
+		t.Fatal(e)
+	}
+	detailBody, e := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if e != nil || resp.StatusCode != 200 {
+		t.Fatalf("item detail HTTP %d: %v", resp.StatusCode, e)
 	}
 	var detail struct {
 		MediaSources []struct {
-			ID string `json:"Id"`
+			ID   string `json:"Id"`
+			Path string `json:"Path"`
+			ETag string `json:"ETag"`
 		} `json:"MediaSources"`
 	}
-	if e = json.Unmarshal(rr.Body.Bytes(), &detail); e != nil || len(detail.MediaSources) != 2 {
+	if e = json.Unmarshal(detailBody, &detail); e != nil || len(detail.MediaSources) != 3 {
 		t.Fatalf("item detail offers %d sources: %v", len(detail.MediaSources), e)
 	}
 	handle, otherHandle := "", ""
+	var detailSourceID, detailPath, detailRevision, detailSHA string
 	for _, offered := range detail.MediaSources {
 		if offered.ID == "" || offered.ID == sourceID {
 			t.Fatal("version is not opaque")
@@ -301,6 +355,18 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 			ItemID         string `json:"item_id"`
 			ReleaseID      string `json:"release_id"`
 			ExpectedSHA256 string `json:"expected_sha256"`
+		}
+		if rr.Code == http.StatusNotFound {
+			req = httptest.NewRequest("GET", "/__scorecard/detail-offer?handle="+offered.ID, nil)
+			req.RemoteAddr = "127.0.0.1:1"
+			rr = httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			var bound scorecardDetailOfferRow
+			if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &bound) != nil || bound.Handle != offered.ID || bound.ItemID != itemID || bound.Revision != offered.ETag || bound.ExpectedSHA256 == "" || offered.Path == "" || detailSourceID != "" {
+				t.Fatalf("invalid bound detail offer: HTTP %d id=%v item=%v revision=%v digest=%v path=%v duplicate=%v", rr.Code, bound.Handle == offered.ID, bound.ItemID == itemID, bound.Revision == offered.ETag, bound.ExpectedSHA256 != "", offered.Path != "", detailSourceID != "")
+			}
+			detailSourceID, detailPath, detailRevision, detailSHA = bound.ReleaseID, offered.Path, bound.Revision, bound.ExpectedSHA256
+			continue
 		}
 		if rr.Code != 200 || json.Unmarshal(rr.Body.Bytes(), &mapped) != nil {
 			t.Fatalf("offer mapping HTTP %d", rr.Code)
@@ -317,6 +383,9 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 	if handle == "" {
 		t.Fatal("matching version not offered")
 	}
+	if detailSourceID == "" || detailRevision == "" {
+		t.Fatal("missing bound detail offer")
+	}
 	for _, tc := range []struct {
 		handler http.Handler
 		remote  string
@@ -329,9 +398,9 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 			t.Fatalf("offer escaped scope: HTTP %d", rr.Code)
 		}
 	}
-	url := "/Items/" + itemID + "/PlaybackInfo"
+	playbackURL := "/Items/" + itemID + "/PlaybackInfo"
 	body, _ := json.Marshal(map[string]any{"IsPlayback": true, "MediaSourceId": handle})
-	req = httptest.NewRequest("POST", url, strings.NewReader(string(body)))
+	req = httptest.NewRequest("POST", playbackURL, strings.NewReader(string(body)))
 	req.Header.Set("Authorization", `MediaBrowser Client="test", DeviceId="test", Token="`+login.AccessToken+`"`)
 	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
@@ -355,11 +424,8 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 		ClientID       string `json:"client_id"`
 		ItemID         string `json:"item_id"`
 	}
-	if e = json.Unmarshal(rr.Body.Bytes(), &sessions); e != nil || len(sessions) != 1 {
-		t.Fatalf("sessions %s: %v", rr.Body.String(), e)
-	}
-	if sessions[0].ReleaseID != sourceID || sessions[0].SourceID != sourceID || sessions[0].ClientID != "8:jellyfintest" || sessions[0].ItemID != ids.RatingKeyGUID(core.MovieKey(123)) {
-		t.Fatalf("selected wrong source: %+v", sessions[0])
+	if e = json.Unmarshal(rr.Body.Bytes(), &sessions); e != nil {
+		t.Fatalf("invalid sessions: %v", e)
 	}
 	req = httptest.NewRequest("GET", "/__scorecard/broker", nil)
 	req.RemoteAddr = "127.0.0.1:1"
@@ -370,10 +436,25 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 		PlaybackID string `json:"playback_id"`
 		ClientID   string `json:"client_id"`
 	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &broker); err != nil || len(broker) != 1 || broker[0].ID != plan.PlaySessionId || broker[0].PlaybackID != sessions[0].ID || broker[0].ClientID != sessions[0].ClientID {
-		t.Fatalf("broker linkage: %s %v", rr.Body.String(), err)
+	if err := json.Unmarshal(rr.Body.Bytes(), &broker); err != nil {
+		t.Fatalf("invalid broker sessions: %v", err)
 	}
-	req = httptest.NewRequest("GET", "/__scorecard/verify?id="+sessions[0].ID, nil)
+	selectedID := ""
+	for _, row := range broker {
+		if row.ID == plan.PlaySessionId && row.ClientID == "8:jellyfintest" {
+			selectedID = row.PlaybackID
+		}
+	}
+	matched := false
+	for _, row := range sessions {
+		if row.ID == selectedID && row.ReleaseID == sourceID && row.SourceID == sourceID && row.ClientID == "8:jellyfintest" && row.ItemID == itemID {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Fatal("broker did not bind requested version to selected source")
+	}
+	req = httptest.NewRequest("GET", "/__scorecard/verify?id="+selectedID, nil)
 	req.RemoteAddr = "127.0.0.1:1"
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -397,6 +478,71 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 		t.Fatalf("different handle matched session: HTTP %d", rr.Code)
 	}
 
+	// The source-bound default must be an authenticated offer. Following its
+	// lazy grant opens the same source, independently verified by actual bytes.
+	parsed, err := url.Parse(detailPath)
+	if err != nil || parsed.Host == "" || !strings.HasPrefix(parsed.Path, "/sessions/lazy/") {
+		t.Fatal("invalid detail path")
+	}
+	if parsed.Scheme+"://"+parsed.Host != server.URL {
+		t.Fatal("detail path uses an unexpected origin")
+	}
+	req, err = http.NewRequest("GET", detailPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Range", "bytes=0-127")
+	resp, err = server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readBytes, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusPartialContent || len(readBytes) != 128 {
+		t.Fatalf("bound source direct read: HTTP %d, %d bytes, %v", resp.StatusCode, len(readBytes), err)
+	}
+	req = httptest.NewRequest("GET", "/__scorecard/sessions", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	sessions = nil
+	if json.Unmarshal(rr.Body.Bytes(), &sessions) != nil {
+		t.Fatal("invalid sessions")
+	}
+	req = httptest.NewRequest("GET", "/__scorecard/broker", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	broker = nil
+	if json.Unmarshal(rr.Body.Bytes(), &broker) != nil {
+		t.Fatal("invalid broker sessions after lazy read")
+	}
+	lazyPlaybackIDs := map[string]bool{}
+	for _, row := range broker {
+		if row.ID != plan.PlaySessionId && row.ClientID == "8:jellyfintest" {
+			lazyPlaybackIDs[row.PlaybackID] = true
+		}
+	}
+	verified := false
+	for _, session := range sessions {
+		if !lazyPlaybackIDs[session.ID] || session.ReleaseID != detailSourceID || session.SourceID != detailSourceID || session.ClientID != "8:jellyfintest" || session.ItemID != itemID {
+			continue
+		}
+		req = httptest.NewRequest("GET", "/__scorecard/verify?id="+session.ID, nil)
+		req.RemoteAddr = "127.0.0.1:1"
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		var actual struct {
+			Match  bool   `json:"match"`
+			Actual string `json:"actual_sha256"`
+		}
+		if rr.Code == http.StatusOK && json.Unmarshal(rr.Body.Bytes(), &actual) == nil && actual.Match && actual.Actual == session.ExpectedSHA256 && actual.Actual == detailSHA {
+			verified = true
+		}
+	}
+	if !verified {
+		t.Fatal("detail source opened without verified matching bytes")
+	}
 }
 
 func TestScorecardVariantsUsePreparedProbe(t *testing.T) {
