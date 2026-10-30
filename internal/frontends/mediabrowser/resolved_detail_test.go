@@ -18,8 +18,9 @@ type embeddedSessions interface{ frontend.Sessions }
 
 type detailPlannerStub struct {
 	embeddedSessions
-	calls   int
-	failure bool
+	calls      int
+	failure    bool
+	noRevision bool
 }
 
 func (s *detailPlannerStub) DetailPlan(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
@@ -30,7 +31,11 @@ func (s *detailPlannerStub) DetailPlan(_ context.Context, req frontend.PlanReque
 	if s.failure {
 		return frontend.PlayPlan{}, context.DeadlineExceeded
 	}
-	return frontend.PlayPlan{DetailSource: "82b0c3fc-7616-46da-8528-fc26ec5cb4ab", ETag: "source-revision", Media: frontend.MediaInfo{Container: "mp4", Duration: 18 * time.Minute, Size: 113973614, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Codec: "aac"}}}, DirectPlay: true, DirectStream: true, Transcoding: true}, nil
+	tag := "source-revision"
+	if s.noRevision {
+		tag = ""
+	}
+	return frontend.PlayPlan{DetailSource: "82b0c3fc-7616-46da-8528-fc26ec5cb4ab", ETag: tag, Media: frontend.MediaInfo{Container: "mp4", Duration: 18 * time.Minute, Size: 113973614, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Codec: "aac"}}}, DirectPlay: true, DirectStream: true, Transcoding: true}, nil
 }
 
 func (s *detailPlannerStub) ResolveDetailSource(_ context.Context, scope frontend.VersionScope, handle string) (frontend.DetailSourceTarget, error) {
@@ -84,6 +89,12 @@ func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
 		if w.Code != 200 || planner.calls != calls {
 			t.Fatal("listing resolved a source", tc.name, w.Code, planner.calls)
 		}
+		planner.noRevision = true
+		w = call("/Items/" + ids.RatingKeyGUID(5))
+		if w.Code != 200 || strings.Contains(w.Body.String(), `"Container":"mp4"`) || strings.Contains(w.Body.String(), "/sessions/lazy/scoped/file") {
+			t.Fatal("unbound revision advertised as source", tc.name, w.Code, w.Body.String())
+		}
+		planner.noRevision = false
 		planner.failure = true
 		w = call("/Items/" + ids.RatingKeyGUID(5))
 		if w.Code != 200 || strings.Contains(w.Body.String(), `"Container":"mp4"`) || !strings.Contains(w.Body.String(), `"SupportsDirectPlay":false`) {
