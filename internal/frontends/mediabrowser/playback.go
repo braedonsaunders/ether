@@ -103,10 +103,8 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	scope := frontend.VersionScope{Viewer: v, Device: dev, Protocol: i.protocol, Caps: capability.Client}
 	versionFromItem := ""
 	if itemIDError != nil {
-		if i.host.VersionHandles != nil {
-			if target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, wireID); e == nil && target.Item != 0 {
-				key, versionFromItem = target.Item, wireID
-			}
+		if target, _, _, e := i.resolveSource(r, scope, wireID); e == nil && target != 0 {
+			key, versionFromItem = target, wireID
 		}
 		if versionFromItem == "" {
 			if i.host.LiveTV == nil {
@@ -195,19 +193,24 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			version = sourceID
 		}
 	}
+	detailSource, expectedETag := "", ""
 	if version != "" {
-		if channel != "" || i.host.VersionHandles == nil {
+		if channel != "" {
 			http.NotFound(w, r)
 			return
 		}
-		target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, version)
-		if e != nil || target.Item != key || (versionFromItem != "" && !sameVersionHandle(version, versionFromItem)) {
+		target, kind, tag, e := i.resolveSource(r, scope, version)
+		if e != nil || target != key || (versionFromItem != "" && !sameVersionHandle(version, versionFromItem)) {
 			http.NotFound(w, r)
 			return
 		}
-		intent.ExactVersion = true
+		if kind == "detail" {
+			detailSource, expectedETag, version = version, tag, ""
+		} else {
+			intent.ExactVersion = true
+		}
 	}
-	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, Caps: capability.Client, Intent: intent}
+	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: intent}
 	plan, err := i.host.Sessions.Plan(r.Context(), planRequest)
 	if err != nil {
 		http.Error(w, "Playback unavailable", 503)
@@ -226,6 +229,8 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		sourceID = wireID
 	} else if version != "" {
 		sourceID = version
+	} else if detailSource != "" {
+		sourceID = detailSource
 	}
 	media := plan.Media
 	media.Estimated = media.Estimated || plan.Estimated
@@ -534,15 +539,21 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
 	channel := ""
 	version := ""
+	detailSource, expectedETag := "", ""
 	var versionScope frontend.VersionScope
 	if err != nil {
 		versionScope, err = i.versionScope(r, viewer)
 		if err == nil {
-			if target, e := i.host.VersionHandles.Resolve(i.identityContext(r), versionScope, r.PathValue("id")); e == nil && target.Item != 0 {
-				key, version = target.Item, r.PathValue("id")
+			if target, kind, tag, e := i.resolveSource(r, versionScope, r.PathValue("id")); e == nil && target != 0 {
+				key = target
+				if kind == "detail" {
+					detailSource, expectedETag = r.PathValue("id"), tag
+				} else {
+					version = r.PathValue("id")
+				}
 			}
 		}
-		if version == "" {
+		if version == "" && detailSource == "" {
 			if i.host.LiveTV == nil {
 				http.NotFound(w, r)
 				return
@@ -577,22 +588,26 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(sourceIDs) == 1 && sourceIDs[0] != "" && !strings.EqualFold(sourceIDs[0], r.PathValue("id")) {
 		if sourceKey, e := ids.ParseRatingKeyGUID(sourceIDs[0]); e != nil || sourceKey != key || channel != "" {
-			if channel != "" || (version != "" && !sameVersionHandle(version, sourceIDs[0])) {
+			if channel != "" || (version != "" && !sameVersionHandle(version, sourceIDs[0])) || (detailSource != "" && !sameVersionHandle(detailSource, sourceIDs[0])) {
 				http.NotFound(w, r)
 				return
 			}
-			if version == "" {
+			if version == "" && detailSource == "" {
 				versionScope, err = i.versionScope(r, viewer)
 				if err != nil {
 					http.NotFound(w, r)
 					return
 				}
-				target, e := i.host.VersionHandles.Resolve(i.identityContext(r), versionScope, sourceIDs[0])
-				if e != nil || target.Item != key {
+				target, kind, tag, e := i.resolveSource(r, versionScope, sourceIDs[0])
+				if e != nil || target != key {
 					http.NotFound(w, r)
 					return
 				}
-				version = sourceIDs[0]
+				if kind == "detail" {
+					detailSource, expectedETag = sourceIDs[0], tag
+				} else {
+					version = sourceIDs[0]
+				}
 			}
 		}
 	}
@@ -608,8 +623,12 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		request := frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: i.protocol, Item: key, Version: version, Caps: capability.Client, Intent: frontend.PlayIntent{ExactVersion: version != "", Options: frontend.DecideOptions{DirectPlay: true}}}
+		request := frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: i.protocol, Item: key, Version: version, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: frontend.PlayIntent{ExactVersion: version != "", Options: frontend.DecideOptions{DirectPlay: true}}}
 		lazy.ServeAuthenticated(w, r, credential, request)
+		return
+	}
+	if detailSource != "" {
+		http.NotFound(w, r)
 		return
 	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol}

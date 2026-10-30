@@ -22,15 +22,25 @@ func (i *instance) applyResolvedDetail(r *http.Request, viewer *frontend.Viewer,
 		return
 	}
 	request := frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: i.protocol, Item: key, Version: version, Caps: capability.Client, Intent: frontend.PlayIntent{ExactVersion: version != "", Options: frontend.DecideOptions{DirectPlay: true, DirectStream: true}}}
+	if version != "" {
+		scope := frontend.VersionScope{Viewer: viewer, Device: dev, Protocol: i.protocol, Caps: capability.Client}
+		item, kind, tag, err := i.resolveSource(r, scope, version)
+		if err != nil || item != key {
+			return
+		}
+		if kind == "detail" {
+			request.Version, request.Intent.ExactVersion, request.DetailSource, request.ExpectedSourceETag = "", false, version, tag
+		}
+	}
 	plan, err := planner.DetailPlan(i.identityContext(r), request)
-	if err != nil || plan.Estimated || plan.Media.Estimated || plan.Media.Container == "" {
+	if err != nil || plan.Estimated || plan.Media.Estimated || plan.Media.Container == "" || plan.DetailSource == "" || plan.ETag == "" {
 		return
 	}
-	id := ids.RatingKeyGUID(key)
-	if version != "" {
-		id = version
-	}
+	id := plan.DetailSource
+	request.DetailSource, request.ExpectedSourceETag = plan.DetailSource, plan.ETag
+	request.Version, request.Intent.ExactVersion = "", false
 	source := i.mediaSourceDTO(id, plan.Media)
+	source["Protocol"], source["IsRemote"] = "File", false
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
 	// Detail offers have no session-scoped transcode URL. Advertise only the
 	// direct operation for which this response can provide a grant.

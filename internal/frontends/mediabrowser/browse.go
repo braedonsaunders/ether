@@ -269,12 +269,12 @@ func (i *instance) browseRoutes() error {
 				http.NotFound(w, r)
 				return
 			}
-			target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, wireID)
-			if e != nil || target.Item == 0 {
+			target, _, _, e := i.resolveSource(r, scope, wireID)
+			if e != nil || target == 0 {
 				http.NotFound(w, r)
 				return
 			}
-			key, versionID = target.Item, wireID
+			key, versionID = target, wireID
 		}
 		if i.host.Experience == nil {
 			http.Error(w, "Unavailable", 503)

@@ -55,3 +55,40 @@ func TestStaticAliasWithoutSessionUsesAuthenticatedLazyBroker(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticAliasBindsDetailSourceRevision(t *testing.T) {
+	const handle = "82b0c3fc-7616-46da-8528-fc26ec5cb4ab"
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	for _, tc := range []struct {
+		name  string
+		front frontend.Frontend
+	}{{"jellyfin", Jellyfin{MachineID: "test"}}, {"emby", Emby{MachineID: "test"}}} {
+		lazy := &authenticatedLazyStub{}
+		planner := &detailPlannerStub{embeddedSessions: frontendtest.Sessions{}}
+		inst, err := tc.front.Mount(context.Background(), frontend.Host{Identity: identity, Sessions: planner, Capabilities: frontendtest.Capabilities{}, LazyStreams: lazy})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, device := range []string{"device", "other"} {
+			r := httptest.NewRequest("GET", "/Videos/"+ids.RatingKeyGUID(5)+"/stream?static=true&MediaSourceId="+handle, nil)
+			r.Header.Set("Authorization", `MediaBrowser Token="account-secret", DeviceId="`+device+`"`)
+			r.Header.Set("Range", "bytes=0-5")
+			w := httptest.NewRecorder()
+			inst.Handler().ServeHTTP(w, r)
+			if device == "other" {
+				if w.Code != http.StatusNotFound || len(lazy.plans) != 1 {
+					t.Fatal(tc.name, w.Code)
+				}
+				continue
+			}
+			if w.Code != http.StatusPartialContent || len(lazy.plans) != 1 {
+				t.Fatal(tc.name, w.Code, w.Body.String())
+			}
+			plan := lazy.plans[0]
+			if plan.DetailSource != handle || plan.ExpectedSourceETag != "source-revision" || plan.Item != 5 || plan.Version != "" || plan.Intent.ExactVersion {
+				t.Fatal(tc.name, plan)
+			}
+		}
+	}
+}

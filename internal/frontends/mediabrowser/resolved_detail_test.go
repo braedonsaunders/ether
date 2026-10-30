@@ -13,7 +13,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
-type embeddedSessions interface { frontend.Sessions }
+type embeddedSessions interface{ frontend.Sessions }
 
 type detailPlannerStub struct {
 	embeddedSessions
@@ -29,7 +29,14 @@ func (s *detailPlannerStub) DetailPlan(_ context.Context, req frontend.PlanReque
 	if s.failure {
 		return frontend.PlayPlan{}, context.DeadlineExceeded
 	}
-	return frontend.PlayPlan{Media: frontend.MediaInfo{Container: "mp4", Size: 113973614, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Codec: "aac"}}}, DirectPlay: true, DirectStream: true, Transcoding: true}, nil
+	return frontend.PlayPlan{DetailSource: "82b0c3fc-7616-46da-8528-fc26ec5cb4ab", ETag: "source-revision", Media: frontend.MediaInfo{Container: "mp4", Size: 113973614, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Codec: "aac"}}}, DirectPlay: true, DirectStream: true, Transcoding: true}, nil
+}
+
+func (s *detailPlannerStub) ResolveDetailSource(_ context.Context, scope frontend.VersionScope, handle string) (frontend.DetailSourceTarget, error) {
+	if scope.Viewer == nil || scope.Viewer.ID != 1 || scope.Device.ID != "device" || handle != "82b0c3fc-7616-46da-8528-fc26ec5cb4ab" {
+		return frontend.DetailSourceTarget{}, frontend.ErrNotFound
+	}
+	return frontend.DetailSourceTarget{Item: 5, ETag: "source-revision"}, nil
 }
 
 func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
@@ -61,7 +68,7 @@ func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
 				t.Fatal(tc.name, want, w.Code, w.Body.String())
 			}
 		}
-		if strings.Contains(w.Body.String(), "account-secret") || lazy.seen.Item != 5 || lazy.seen.Version != "" {
+		if strings.Contains(w.Body.String(), "account-secret") || lazy.seen.Item != 5 || lazy.seen.Version != "" || lazy.seen.DetailSource != "82b0c3fc-7616-46da-8528-fc26ec5cb4ab" || lazy.seen.ExpectedSourceETag != "source-revision" {
 			t.Fatal("unsafe scope", lazy.seen, w.Body.String())
 		}
 		calls := planner.calls
