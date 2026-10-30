@@ -19,11 +19,17 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 	if now == nil {
 		now = time.Now
 	}
+	imageURL := a.tmdb.ImageURLFunc()
+	paletteDB := a.db
+	if a.spikeLibrary != nil {
+		imageURL = func(path, size string) string { return "https://image.tmdb.org/t/p/" + size + path }
+		paletteDB = nil
+	}
 	images := artworkservice.NewRemoteCache(128<<20, &http.Client{Timeout: 20 * time.Second})
 	var workers sync.WaitGroup
 	queue := artworkservice.NewQueue(ctx, &workers, 2, 512)
-	palettes := artworkservice.NewPaletteCache(a.db, queue.Submit, now, a.log, func(ctx context.Context, path string) (artworkservice.Palette, error) {
-		return artworkservice.ComputePalette(ctx, images, a.tmdb.ImageURLFunc(), path, now())
+	palettes := artworkservice.NewPaletteCache(paletteDB, queue.Submit, now, a.log, func(ctx context.Context, path string) (artworkservice.Palette, error) {
+		return artworkservice.ComputePalette(ctx, images, imageURL, path, now())
 	})
 	visibility := experienceVisibility(a.safety, a.catalog.StoredTitle, func(ctx context.Context, titles []core.Title) []core.Title {
 		if a.availability == nil {
@@ -36,7 +42,7 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 		}
 		return a.playback.Sessions()
 	}, []experience.Library{{ID: 1, Type: core.TypeMovie}, {ID: 2, Type: core.TypeShow}})
-	source := &artworkservice.Source{Catalog: a.catalog, Collections: a.discoveryPersonal.ReviewCollections(a.collections), Playlists: a.playlists, Visibility: visibility, Discovery: a.discoveryFeatures, Images: images, ImageURL: a.tmdb.ImageURLFunc(), Palettes: palettes, Now: now, Raster: artwork.NewSVGRasterizer()}
+	source := &artworkservice.Source{Catalog: a.catalog, Collections: a.discoveryPersonal.ReviewCollections(a.collections), Playlists: a.playlists, Visibility: visibility, Discovery: a.discoveryFeatures, Images: images, ImageURL: imageURL, Palettes: palettes, Now: now, Raster: artwork.NewSVGRasterizer()}
 	if a.livetv != nil {
 		source.LiveTV = a.livetv
 	}
@@ -45,7 +51,6 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 		source.Collections = a.spikeLibrary.Collections()
 		source.Playlists = a.spikeLibrary.Playlists()
 		source.Visibility = experienceVisibility(a.safety, nil, nil, a.spikeLibrary.Playback().Sessions, serverLibraries(a.cfg.Get()))
-		source.ImageURL = func(path, size string) string { return "https://image.tmdb.org/t/p/" + size + path }
 	}
 	if a.episodeorder != nil {
 		source.VirtualSeason = a.episodeorder.CachedVirtualSeason

@@ -119,7 +119,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 	if node := a.clusterNode(); node != nil && deps.DB != nil {
 		deps.Cluster = node
 	}
-	if a.artwork != nil && !cfg.Spike.Enabled {
+	if a.artwork != nil {
 		deps.ArtworkImages = a.artwork.Images
 		deps.ArtworkPalettes = a.artwork.Palettes
 	}
