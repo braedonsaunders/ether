@@ -90,3 +90,42 @@ func TestHeadersRejectInvalidAndOversized(t *testing.T) {
 		t.Fatalf("batch: %v", err)
 	}
 }
+
+func TestHeadersPruneIsBoundedAndNamespaceScoped(t *testing.T) {
+	db, _, _ := fixture(t)
+	ctx := context.Background()
+	scope := capability.HeaderScope{Namespace: "experience.receipt", ViewerID: 1, Surface: "silo", DeviceID: "tv"}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := capability.Header{HeaderScope: scope, Digest: entry(21).Digest, ExpiresMillis: 10}
+	b := capability.Header{HeaderScope: scope, Digest: entry(22).Digest, ExpiresMillis: 10}
+	live := capability.Header{HeaderScope: scope, Digest: entry(23).Digest, ExpiresMillis: 11}
+	foreign := a
+	foreign.Namespace = "image.grant"
+	if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{a, b, live, foreign}); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := capability.PruneHeadersInTx(ctx, tx, scope.Namespace, 10, 1)
+	if err != nil || n != 1 {
+		t.Fatalf("prune=%d err=%v", n, err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, scope.Namespace).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("remaining=%d err=%v", count, err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, foreign.Namespace).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("foreign=%d err=%v", count, err)
+	}
+}
