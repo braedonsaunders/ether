@@ -35,7 +35,9 @@ func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
 			if err = a.state.Progress(ctx, viewer.ID, title.Key, 10*time.Minute, 90*time.Minute, "paused"); err != nil {
 				t.Fatal(err)
 			}
+			availability := a.availability
 			a.availability = nil
+			t.Cleanup(func() { a.availability = availability })
 			exp, err := a.newSurfaceExperience("jellyfin", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -87,10 +89,8 @@ func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s fault returned rows: %+v", mode, rows)
 			}
-			for _, row := range rows {
-				if row.Handle != "" {
-					t.Fatal("returned handle after fault")
-				}
+			if rows != nil {
+				t.Fatalf("fault returned non-nil rows: %+v", rows)
 			}
 			expected := 1
 			if mode == "cleanup" {
@@ -105,6 +105,21 @@ func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
 			}
 			if receipts != expected || headers != expected {
 				t.Fatalf("rollback receipts=%d headers=%d expected=%d", receipts, headers, expected)
+			}
+			for _, seed := range []struct{ hash, device string }{{other, "other"}, {digest, "tv"}} {
+				if seed.device == "tv" && mode != "cleanup" {
+					continue
+				}
+				var receiptCount, headerCount int
+				if err = a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE hash=? AND viewer_id=? AND device_id=? AND protocol=?`, seed.hash, viewer.ID, seed.device, "jellyfin").Scan(&receiptCount); err != nil {
+					t.Fatal(err)
+				}
+				if err = a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND digest=? AND viewer_id=? AND surface=? AND device_id=?`, "experience.receipt", seed.hash, viewer.ID, "jellyfin", seed.device).Scan(&headerCount); err != nil {
+					t.Fatal(err)
+				}
+				if receiptCount != 1 || headerCount != 1 {
+					t.Fatalf("seed %s receipt=%d header=%d", seed.device, receiptCount, headerCount)
+				}
 			}
 		})
 	}
