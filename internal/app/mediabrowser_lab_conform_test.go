@@ -73,12 +73,16 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			t.Fatalf("%s must be an HTTP(S) lab URL without credentials", key)
 		}
 	}
+	// Leave time for normal cleanup inside the reviewed 22m package/1500s outer caps.
+	// A forced termination still leaves credential cleanup UNKNOWN.
+	workload, cancelWorkload := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancelWorkload()
 	jellyfinRef := labReference(t, settings, "JELLYFIN", settings["LAB_JELLYFIN_URL"])
 	defer jellyfinRef.logout(t)
 	embyRef := labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
 	defer embyRef.logout(t)
 	conformBinary := filepath.Join(t.TempDir(), "conformdiff")
-	build := exec.Command("go", "build", "-o", conformBinary, "./cmd/conformdiff")
+	build := exec.CommandContext(workload, "go", "build", "-o", conformBinary, "./cmd/conformdiff")
 	build.Dir = "../.."
 	if err := build.Run(); err != nil {
 		t.Fatal("build lab comparison tool failed")
@@ -104,6 +108,10 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			for _, mode := range []string{"compare", "live"} {
 				report := conform.Report{}
 				for _, clientName := range strings.Split(spec.client, ",") {
+					if workload.Err() != nil {
+						t.Error("lab workload deadline reached; aborting remaining profiles for cleanup")
+						return
+					}
 					passed := t.Run(mode+"/"+clientName, func(t *testing.T) {
 						target := newLabProfileTarget(t, jellyfinRef, spec.proto, clientName)
 						defer target.close()
@@ -118,7 +126,8 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 						if mode == "live" {
 							args = append(args, "-reference-server", labProxy)
 						}
-						cmd := exec.Command(conformBinary, args...)
+						cmd := exec.CommandContext(workload, conformBinary, args...)
+						cmd.WaitDelay = 5 * time.Second
 						cmd.Dir = "../.."
 						cmd.Env = append(os.Environ(), "CONFORM_TARGET_TOKEN="+target.values["access_token"], "CONFORM_REFERENCE_TOKEN="+spec.reference.token)
 						out, err := labCommandVariables(cmd, target.values, referenceValues)
@@ -467,23 +476,11 @@ type labReferenceData struct {
 
 func (ref labReferenceData) logout(t *testing.T) {
 	t.Helper()
-	req, err := http.NewRequest("POST", ref.base+"/Sessions/Logout", nil)
-	if err != nil {
-		t.Error("could not construct lab sign-out")
-		return
+	receipt := ref.logoutPrimaryProof()
+	t.Logf("lab_primary_cleanup device=%s session=%s authenticated_before=%d logout_status=%d protected_after=%d anonymous_service_health=%d verified=%t", ref.device, ref.session, receipt.Before, receipt.Logout, receipt.After, receipt.ServiceHealth, receipt.Verified)
+	if !receipt.Verified {
+		t.Error("primary credential cleanup proof failed")
 	}
-	req.Header.Set("X-Emby-Token", ref.token)
-	req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+ref.device+`", Version="1", Token="`+ref.token+`"`)
-	response, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		t.Error("lab sign-out failed")
-		return
-	}
-	response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		t.Errorf("lab sign-out returned HTTP %d", response.StatusCode)
-	}
-	t.Logf("lab_logout device=%s session=%s status=%d", ref.device, ref.session, response.StatusCode)
 }
 
 // labCredentialCleanup never contains a token or response body. A separate,
@@ -1498,7 +1495,15 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 	var seq atomic.Uint32
 	target.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr = fmt.Sprintf("198.51.100.%d:1234", seq.Add(1)%200+1)
-		inst.Handler().ServeHTTP(w, r)
+		observed := &labPlaybackStatusWriter{ResponseWriter: w}
+		inst.Handler().ServeHTTP(observed, r)
+		if strings.Contains(r.URL.Path, "/PlaybackInfo") || strings.HasPrefix(r.URL.Path, "/Videos/") || strings.HasPrefix(r.URL.Path, "/Sessions/Playing") {
+			status := observed.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			t.Logf("lab_profile_playback protocol=%s client=%s method=%s path=%s status=%d bytes=%d", dialect, profile, r.Method, r.URL.Path, status, observed.bytes)
+		}
 	}))
 	p, err := mbconform.Load(dialect, filepath.Join("..", "conform", "profiles", dialect))
 	if err != nil {
