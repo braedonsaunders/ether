@@ -231,7 +231,9 @@ type Sessions struct {
 	OpenFunc               func(context.Context, frontend.OpenRequest) (frontend.Session, error)
 	StartStreamFunc        func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error)
 	SubtitleURLFunc        func(context.Context, frontend.SessionAccess, string, int, string) (string, error)
+	MarkersFunc            func(context.Context, frontend.SessionAccess, string) (frontend.SessionMarkers, error)
 	ServeMediaFunc         func(http.ResponseWriter, *http.Request)
+	ReportSampleFunc       func(context.Context, frontend.SessionAccess, string, frontend.ProgressSample) (frontend.ReportOutcome, error)
 	ReportFunc             func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error
 	StopFunc               func(context.Context, frontend.SessionAccess, string) error
 	CommandFunc            func(context.Context, *core.Viewer, string, frontend.Command) error
@@ -266,6 +268,12 @@ func (f Sessions) SubtitleURL(c context.Context, a frontend.SessionAccess, id st
 		return f.SubtitleURLFunc(c, a, id, index, format)
 	}
 	return "", core.ErrNotAvailable
+}
+func (f Sessions) Markers(c context.Context, a frontend.SessionAccess, id string) (frontend.SessionMarkers, error) {
+	if f.MarkersFunc != nil {
+		return f.MarkersFunc(c, a, id)
+	}
+	return frontend.SessionMarkers{}, nil
 }
 func (f Sessions) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	if f.ServeMediaFunc != nil {
@@ -575,4 +583,22 @@ func (f TrackPreferences) SetSubtitle(ctx context.Context, v *core.Viewer, langu
 		return f.SetFunc(ctx, v, languages, mode)
 	}
 	return frontend.ErrPreferencesNotFound
+}
+
+func (f Sessions) ReportSample(ctx context.Context, a frontend.SessionAccess, id string, sample frontend.ProgressSample) (frontend.ReportOutcome, error) {
+	if f.ReportSampleFunc != nil {
+		return f.ReportSampleFunc(ctx, a, id, sample)
+	}
+	status := "playing"
+	if sample.Paused {
+		status = "paused"
+	}
+	if sample.Stop {
+		status = "stopped"
+	}
+	err := f.Report(ctx, a, id, frontend.Timeline{PlaybackID: id, ClientSessionID: sample.InstallationID, Position: time.Duration(sample.PositionSeconds * float64(time.Second)), Sequence: sample.Sequence, State: status})
+	if err == nil && sample.Stop {
+		err = f.Stop(ctx, a, id)
+	}
+	return frontend.ReportApplied, err
 }

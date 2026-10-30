@@ -64,6 +64,9 @@ func (b *Broker) openLive(ctx context.Context, req frontend.OpenRequest, p broke
 	}
 	grant := rand.Text()
 	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/live/index.m3u8", Protocol: req.Protocol, ViewerID: viewer.ID, Device: p.request.Device, Channel: p.request.Channel, StartedAt: b.deps.Now()}
+	if req.Protocol == "silo" {
+		session.ClientSessionID = p.request.Intent.ClientSessionID
+	}
 	if err := b.enrichCapabilities(ctx, &session); err != nil {
 		_ = b.deps.Live.Stop(ctx, viewer, liveID)
 		return frontend.Session{}, err

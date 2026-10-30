@@ -85,6 +85,12 @@ func (s surface) SubtitleURL(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	return s.broker.SubtitleURL(ctx, a, id, index, format)
 }
+func (s surface) Markers(ctx context.Context, a frontend.SessionAccess, id string) (frontend.SessionMarkers, error) {
+	if a.Protocol != s.protocol {
+		return frontend.SessionMarkers{}, core.ErrUnauthorized
+	}
+	return s.broker.Markers(ctx, a, id)
+}
 func (s surface) ServeMedia(w http.ResponseWriter, r *http.Request) {
 	if scoped, ok := s.broker.(interface {
 		ServeMediaFor(frontend.Protocol, http.ResponseWriter, *http.Request)
@@ -147,4 +153,15 @@ func (s surface) TranscodeFor(ctx context.Context, id string) (core.HLSSession, 
 func (s surface) Events(ctx context.Context, scope frontend.EventScope) (<-chan frontend.Event, error) {
 	scope.Protocol = s.protocol
 	return s.broker.Events(ctx, scope)
+}
+
+func (s surface) ReportSample(ctx context.Context, a frontend.SessionAccess, id string, sample frontend.ProgressSample) (frontend.ReportOutcome, error) {
+	if a.Protocol != s.protocol {
+		return "", core.ErrUnauthorized
+	}
+	reporter, ok := s.broker.(frontend.SampleReporter)
+	if !ok {
+		return "", core.ErrNotAvailable
+	}
+	return reporter.ReportSample(ctx, a, id, sample)
 }

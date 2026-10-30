@@ -52,9 +52,11 @@ type BrokerDeps struct {
 	// OnProfileDiagnostic is an optional fixture hook. Values are closed enums
 	// only; the callback receives no media, identity or client-supplied data.
 	OnProfileDiagnostic func(ProfileDiagnostic)
-	OpenSubtitle        func(string, string) (io.ReadCloser, string, error)
-	ExtractSubtitle     func(context.Context, string, int, string, io.Writer) error
-	Now                 func() time.Time
+	// SourceMarkers returns a complete marker set for the exact source revision.
+	SourceMarkers   func(context.Context, *core.Viewer, core.RatingKey, string, core.MediaInfo) ([]frontend.Marker, bool, error)
+	OpenSubtitle    func(string, string) (io.ReadCloser, string, error)
+	ExtractSubtitle func(context.Context, string, int, string, io.Writer) error
+	Now             func() time.Time
 }
 
 type brokerPlan struct {
@@ -103,6 +105,7 @@ type retiredSession struct {
 // Plex's legacy timeline tracker is not yet included in Sessions; owner
 // Activity continues to use the shared playback manager until that move lands.
 type Broker struct {
+	sampleLimit         int
 	deps                BrokerDeps
 	startSlots          chan struct{}
 	shutdownTimeout     time.Duration
@@ -158,7 +161,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if limit > 4096 {
 		return nil, errors.New("sessions: max pending starts exceeds 4096")
 	}
-	b := &Broker{deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
+	b := &Broker{sampleLimit: 100000, deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -271,6 +274,9 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		return frontend.PlayPlan{}, err
 	}
 	if req.Protocol == "" || req.Device.ID == "" || (req.Item == 0) == (req.Channel == "") {
+		return frontend.PlayPlan{}, core.ErrUnauthorized
+	}
+	if req.Protocol == "silo" && req.Intent.ClientSessionID != "" && !canonicalUUID(req.Intent.ClientSessionID) {
 		return frontend.PlayPlan{}, core.ErrUnauthorized
 	}
 	// Plex-specific version and stream identifiers remain on the existing Plex
@@ -651,6 +657,9 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		playbackID = id
 	}
 	session := frontend.Session{ID: id, MediaPath: "/sessions/media/" + id + "/" + grant + "/file", Protocol: req.Protocol, ViewerID: v.ID, Device: p.request.Device, Item: p.request.Item, StartedAt: b.deps.Now()}
+	if req.Protocol == "silo" {
+		session.ClientSessionID = p.request.Intent.ClientSessionID
+	}
 	if err := b.enrichCapabilities(ctx, &session); err != nil {
 		return frontend.Session{}, err
 	}
@@ -839,7 +848,11 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 			return nil
 		}
 	}
-	accepted, rollbackSequence, err := b.acceptSequence(ctx, s, t.Sequence)
+	report, sequenced := ctx.Value(sampleReportKey{}).(*sampleReport)
+	accepted, rollbackSequence := true, func() {}
+	if !sequenced {
+		accepted, rollbackSequence, err = b.acceptSequence(ctx, s, t.Sequence)
+	}
 	if err != nil {
 		return err
 	}
@@ -880,9 +893,20 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		b.owners.BindFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID, s.playID, false, b.deps.Now())
 	}
 	ctx = state.WithOrigin(ctx, state.Origin{Surface: s.public.Protocol, SessionID: s.public.ID, ClientID: s.public.Device.ID})
-	if err := RecordProgress(ctx, b.deps.Progress, s.public.ViewerID, s.public.Item, t.Position, t.Duration, t.State); err != nil {
+	if sequenced {
+		err = b.deps.Progress.(receiptProgress).ProgressWithReceipt(ctx, s.public.ViewerID, s.public.Item, t.Position, t.Duration, t.State, b.sampleReceipt(ctx, s, report))
+	} else {
+		err = RecordProgress(ctx, b.deps.Progress, s.public.ViewerID, s.public.Item, t.Position, t.Duration, t.State)
+	}
+	if err != nil {
 		rollbackSequence()
+		if sequenced && errors.Is(err, errSampleNotApplied) && report.outcome == frontend.ReportReplayed && report.sample.Stop {
+			return b.stopLocked(ctx, s)
+		}
 		return err
+	}
+	if sequenced {
+		report.outcome = frontend.ReportApplied
 	}
 	if s.format != "" {
 		b.recordSourceHistory(ctx, s)
@@ -987,6 +1011,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 		}
 		b.cluster.announceRetired(ctx, s)
 	}
+	b.cleanupSampleReceipt(ctx, s)
 	b.bindings.Remove(s.public.ID)
 	if s.live {
 		err := b.deps.Live.Stop(ctx, &core.Viewer{ID: s.public.ViewerID}, s.playID)

@@ -474,6 +474,11 @@ func (s *State) updateTx(ctx context.Context, userID int64, keys []core.RatingKe
 		return nil, err
 	}
 	defer tx.Rollback()
+	if receipt, ok := ctx.Value(progressReceiptKey{}).(func(*sql.Tx) error); ok {
+		if err := receipt(tx); err != nil {
+			return nil, err
+		}
+	}
 	var events []Event
 	for _, key := range keys {
 		cur, err := loadTx(ctx, tx, userID, key)
