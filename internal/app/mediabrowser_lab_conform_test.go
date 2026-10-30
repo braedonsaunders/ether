@@ -1515,6 +1515,15 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 	// Fetch expands the real profile headers, keeping preflight on this client's
 	// DeviceId, product, version and capability scope (never Findroid defaults).
 	headers := corpus[0].Headers
+	// Infuse's captured corpus has unresolved identity templates (a separate
+	// alignment task). Give only the fixture preflight a concrete current-client
+	// identity; leave the corpus and its mismatches untouched.
+	if profile == "infuse-jellyfin" {
+		headers = map[string]http.Header{profile + "-json": {
+			"Authorization": {`MediaBrowser Client="Infuse-Direct", Device="Conformance fixture", DeviceId="${device_id}", Version="8.5.9"`},
+			"Content-Type":  {"application/json"},
+		}}
+	}
 	loginReq := conform.Request{Method: "POST", Path: "/Users/AuthenticateByName", Headers: headers, Body: []byte(`{"Username":"fixture-viewer","Pw":"fixture-password"}`)}
 	client := &http.Client{Timeout: 15 * time.Second}
 	response, err := p.Fetch(context.Background(), client, target.server.URL, "", loginReq, profile, target.values, true)
