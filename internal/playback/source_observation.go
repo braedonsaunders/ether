@@ -2,11 +2,6 @@ package playback
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"strings"
-
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -26,7 +21,7 @@ func (m *Manager) CurrentSource(ctx context.Context, id string) (core.PlaybackSo
 	}
 	g := s.cur
 	info := g.infoSnapshot()
-	sourceID, name, size := g.src.ReleaseID(), g.src.Name(), g.src.Size()
+	source := g.src
 	releaseID := ""
 	if g.res != nil {
 		releaseID = g.res.Release.ID
@@ -34,14 +29,14 @@ func (m *Manager) CurrentSource(ctx context.Context, id string) (core.PlaybackSo
 	key := s.ident.key
 	s.mu.Unlock()
 	observation := core.PlaybackSourceObservation{}
-	if sourceID != "" && !strings.HasPrefix(sourceID, "local:") && name != "" && size > 0 {
-		data, _ := json.Marshal(struct {
-			Key      core.RatingKey
-			ID, Name string
-			Size     int64
-		}{key, sourceID, name, size})
-		sum := sha256.Sum256(data)
-		observation.Revision = "src-" + hex.EncodeToString(sum[:16])
+	// Local SourceRevision stats the filesystem. Do not do that under the
+	// broker owner gate: a stalled mount could otherwise hold up Stop. Local
+	// history stays unknown until a separately reviewed source-lease seam exists.
+	if _, local := source.(core.LocalFileSource); local {
+		return observation, nil
+	}
+	if revision := core.SourceRevision(&core.PlaySession{Key: key, Source: source}); revision != "" {
+		observation.Revision = revision
 		observation.ReleaseID = releaseID
 		if !info.Estimated {
 			if video := info.Video(); video != nil {
