@@ -26,14 +26,16 @@ Downloads: not supported.
 | JellyCon | Pending | — | — | — | — | — | — | — | — |
 | Jellyfin for Roku | Pending | — | — | — | — | — | — | — | — |
 | Emby Web (externally hosted) | Pending | — | — | — | — | — | — | — | — |
-| Emby for Apple TV | 2.0.9 (pending) | — | — | — | — | — | — | — | — |
+| Emby for TV (Apple TV, 2.x web-shell) | 2.0.9 (unsupported) | — | — | — | — | — | — | — | — |
 
 Jellyfin for Android phones and Jellyfin Desktop are unsupported: they wrap
 Jellyfin Web, which Ether does not ship. Ether's `/web` page gives connection
 instructions; it is not a browser media player.
 Ether does not bundle Emby Web; the externally hosted client has not yet been
-certified against Ether. Emby for Apple TV 2.0.9 is installed for testing, but
-its capture and feature checks are still pending.
+certified against Ether. Emby for TV 2.0.9 on Apple TV is unsupported: it
+requests server-hosted Emby Web assets, which Ether does not ship, and reports
+that the server needs updating. For Apple TV, try Infuse or Swiftfin with
+Ether; their feature support remains subject to the test matrix above.
 
 Emby's own app restrictions still apply. Its [Premiere feature matrix](https://support.emby.media/support/articles/Premiere-Feature-Matrix.html)
 lists full playback in the iOS and Android mobile apps as requiring an App

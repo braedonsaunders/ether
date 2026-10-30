@@ -62,7 +62,13 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.Handle
 		{"GET", "/Branding/Configuration", func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, map[string]any{}) }},
 		{"POST", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, getInfo().ProductName) }},
 		{"GET", "/web", webPage},
-		{"GET", "/web/{path...}", webPage},
+		{"GET", "/web/{path...}", func(w http.ResponseWriter, r *http.Request) {
+			if getInfo().ProductName == "Emby Server" && r.PathValue("path") != "" {
+				http.NotFound(w, r)
+				return
+			}
+			webPage(w, r)
+		}},
 		{"GET", "/Users/Public", picker},
 		{"GET", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -2,6 +2,7 @@ package mediabrowser
 
 import (
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -83,5 +84,25 @@ func TestPublicRecordedCorpus(t *testing.T) {
 		if report.Blocking() != 0 {
 			t.Errorf("%s: %+v", path, report.Differences)
 		}
+	}
+}
+
+func TestEmbyUnservedWebAssetsReturnNotFound(t *testing.T) {
+	r := &route.Router{}
+	if err := PublicRoutes(r, PublicInfo{ProductName: "Emby Server", Version: "4.10.2.0"}); err != nil {
+		t.Fatal(err)
+	}
+	h := StripPrefix("/emby", r)
+	for _, path := range []string{"/emby/web/manifest.json", "/emby/web/index.html", "/emby/web/strings/en-US.json", "/web/other.js"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", path, w.Code)
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/emby/web", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Connect to Ether") {
+		t.Fatalf("connection page: %d %q", w.Code, w.Body.String())
 	}
 }
