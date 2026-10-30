@@ -5,6 +5,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
+const PlaylistExpandLimit = 500
+
 // PlaylistSelection expands containers through viewer-bound metadata sources.
 // URI parsing and playlist presentation belong to the requesting adapter.
 type PlaylistSelection struct {
@@ -43,7 +45,7 @@ func (s PlaylistSelection) Expand(ctx context.Context, viewer *core.User, key co
 		if s.Collections == nil {
 			return nil, core.ErrNotFound
 		}
-		page, err := s.Collections.Items(ctx, viewer, key, 0, 500)
+		page, err := s.Collections.Items(ctx, viewer, key, 0, PlaylistExpandLimit)
 		if err != nil {
 			return nil, err
 		}

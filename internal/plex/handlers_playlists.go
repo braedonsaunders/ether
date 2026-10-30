@@ -17,7 +17,7 @@ import (
 )
 
 // maxExpand caps how many items a URI may expand to (a whole section).
-const maxExpand = 500
+const maxExpand = experience.PlaylistExpandLimit
 
 var (
 	reMetadataPath   = regexp.MustCompile(`^/library/metadata/([\d,]+)(?:/(children|allLeaves|grandchildren))?/?$`)
