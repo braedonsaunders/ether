@@ -254,7 +254,14 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					report.Differences = append(report.Differences, partial.Differences...)
 					report.ReferenceDefects = append(report.ReferenceDefects, partial.ReferenceDefects...)
 					for _, session := range (ownerPlayback{Playback: a.playback, app: a}).Sessions() {
-						_ = a.stopOwnerSession(session.ID)
+						if err := a.stopOwnerSession(session.ID); err != nil {
+							validEvidence = false
+							t.Errorf("%s %s target playback cleanup failed", spec.proto, clientName)
+						}
+					}
+					if len((ownerPlayback{Playback: a.playback, app: a}).Sessions()) != 0 {
+						validEvidence = false
+						t.Errorf("%s %s target playback cleanup left active sessions", spec.proto, clientName)
 					}
 				}
 				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
