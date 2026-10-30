@@ -141,22 +141,3 @@ func (s *Receipts) issueBatchGuarded(ctx context.Context, viewer *core.User, dev
 	}
 	return tokens, nil
 }
-
-// guardRowViewSnapshot is only the database portion of row-view freshness.
-// It does not validate current viewer policy or entry visibility and therefore
-// must not be used alone to authorize or publish a response.
-func guardRowViewSnapshot(ctx context.Context, tx *sql.Tx, db *sql.DB, id string, viewerID int64, deviceID string, protocol core.Protocol, nowMillis int64) error {
-	if tx == nil || db == nil || id == "" || viewerID <= 0 || deviceID == "" || protocol == "" {
-		return ErrRowViewStale
-	}
-	query := `SELECT snapshot,expires FROM experience_row_views WHERE snapshot=? AND viewer_id=? AND device_id=? AND protocol=?`
-	if store.DialectOf(db) == store.Postgres {
-		query += ` FOR UPDATE`
-	}
-	var got string
-	var expiry int64
-	if err := tx.QueryRowContext(ctx, query, id, viewerID, deviceID, string(protocol)).Scan(&got, &expiry); err != nil || got != id || expiry <= nowMillis {
-		return ErrRowViewStale
-	}
-	return nil
-}
