@@ -88,7 +88,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		MediaLookup: func(ctx context.Context, v *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
 			return cachedSessionTitle(ctx, v, key, a.catalog.CachedGet, visibility)
 		},
-		Playback: a.playback, Transcoder: tc, Progress: a.state,
+		Playback: a.playback, Transcoder: tc, Progress: a.state, SourceHistory: a.state,
 		ActiveViewer: func(ctx context.Context, id int64) (*core.Viewer, error) {
 			v, err := a.users.ActiveUser(ctx, id)
 			if err != nil || v == nil {

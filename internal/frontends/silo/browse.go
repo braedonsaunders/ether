@@ -314,6 +314,11 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		if d.UserData.Duration > 0 {
 			rollup["duration_seconds"] = d.UserData.Duration.Seconds()
 		}
+		if i.host.LastPlayedSource != nil {
+			if source, err := i.host.LastPlayedSource.LastPlayedSource(r.Context(), v, device(r), key); err == nil && source != nil {
+				addLastPlayedFacts(rollup, source)
+			}
+		}
 		out["user_data"] = rollup
 	}
 	i.artwork(r, v, credential, key, out)
@@ -578,6 +583,20 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, 200, out)
+}
+
+// addLastPlayedFacts only exposes facts measured on the opened source. Missing
+// probe values stay absent instead of being inferred from a selected version.
+func addLastPlayedFacts(out map[string]any, source *frontend.PlaybackSourceHistory) {
+	if source.VideoCodec != "" {
+		out["last_codec_video"] = source.VideoCodec
+	}
+	if source.Height > 0 {
+		out["last_resolution"] = strconv.Itoa(source.Height) + "p"
+	}
+	if source.HDR != nil {
+		out["last_hdr"] = *source.HDR
+	}
 }
 func (i *instance) homeCapabilities(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.viewer(r)

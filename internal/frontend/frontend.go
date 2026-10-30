@@ -219,6 +219,7 @@ type Host struct {
 	LiveTV             LiveTV
 	VirtualPaths       VirtualPaths
 	Sessions           Sessions
+	LastPlayedSource   LastPlayedSourceReader
 	VersionHandles     VersionHandles
 	LazyStreams        LazyStreams
 	LANStreams         LANLazyStreams

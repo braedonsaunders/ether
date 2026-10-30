@@ -41,6 +41,7 @@ type BrokerDeps struct {
 	Playback           core.Playback
 	Transcoder         core.Transcoder
 	Progress           ProgressWriter
+	SourceHistory      SourceHistoryWriter
 	ActiveViewer       func(context.Context, int64) (*core.Viewer, error)
 	CanPlay            func(*core.Viewer, bool, time.Time) bool
 	BitrateLimit       func(*core.Viewer) int
@@ -83,6 +84,7 @@ type brokerSession struct {
 	segmentDuration  time.Duration
 	live             bool
 	sequence         uint64
+	historyEpoch     int64
 	versionHandle    string
 	exactRelease     string
 	sourcePinned     bool
@@ -610,6 +612,14 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		return frontend.Session{}, err
 	}
 	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding, versionHandle: p.versionHandle, exactRelease: p.exactRelease, sourcePinned: p.pinned, sourceETag: p.etag}
+	if b.deps.SourceHistory != nil && session.Protocol != "plex" {
+		historyCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+		s.historyEpoch, err = b.deps.SourceHistory.BeginSourceSession(historyCtx)
+		cancel()
+		if err != nil && b.deps.OnEventError != nil {
+			b.deps.OnEventError(err)
+		}
+	}
 	if b.cluster != nil && session.Protocol != "plex" {
 		if err := b.cluster.store.put(ctx, session, ps.ID, *v, b.deps.Now()); err != nil {
 			return frontend.Session{}, err
@@ -831,6 +841,9 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 		rollbackSequence()
 		return err
 	}
+	if s.format != "" {
+		b.recordSourceHistory(ctx, s)
+	}
 	if toucher, ok := b.deps.Playback.(interface{ Touch(string) }); ok && (t.State == "playing" || t.State == "paused") {
 		toucher.Touch(s.playID)
 	}
@@ -888,9 +901,15 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 		return err
 	}
 	defer unlock()
-	s, _, err = b.accessSession(ctx, a, id, false)
+	s, viewer, err := b.accessSession(ctx, a, id, false)
 	if err != nil {
 		return err
+	}
+	if viewer.ID != s.public.ViewerID {
+		viewer, err = b.deps.ActiveViewer(ctx, s.public.ViewerID)
+	}
+	if err == nil && viewer != nil && !s.live && s.format != "" && b.currentMediaPolicy(ctx, viewer, s) {
+		b.recordSourceHistory(ctx, s)
 	}
 	return b.stopLocked(ctx, s)
 }

@@ -18,5 +18,6 @@ type StreamInfo = core.StreamInfo
 type MediaInfo = core.MediaInfo
 type DecideOptions = core.DecideOptions
 type ClientCaps = core.ClientCaps
+type PlaybackSourceHistory = core.PlaybackSourceHistory
 type Decision = core.Decision
 type HLSSession = core.HLSSession
