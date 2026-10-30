@@ -892,3 +892,7 @@ Add that address to a compatible IPTV client. Keep it private: it grants access
 to the channels allowed for that viewer. For the matching XMLTV guide address,
 replace `playlist.m3u` at the end of the address with `guide.xml`. Revoke the
 connection under **Devices** when it is no longer needed.
+
+Revoking a connection blocks its new playback requests immediately. An existing
+download or playback response is checked again while it is transferring, so it
+may continue briefly before stopping; that interruption is not instantaneous.
