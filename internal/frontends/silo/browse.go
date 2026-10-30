@@ -175,6 +175,11 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		items := make([]any, 0, len(titles))
 		for _, t := range titles {
 			item := titleDTO(t, states[t.Key])
+			if row.Purpose == frontend.RowNextUp {
+				item["item_source"] = "next_up"
+			} else if row.Purpose == frontend.RowContinue && states[t.Key].ViewOffset > 0 {
+				item["item_source"] = "in_progress"
+			}
 			i.artwork(r, v, credential, t.Key, item)
 			items = append(items, item)
 		}

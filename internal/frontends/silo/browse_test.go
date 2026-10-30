@@ -15,6 +15,31 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
+func TestHomeNextUpReportsActualSource(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 5}
+	next := frontend.Title{Key: 1000000000000001, Type: "episode", Title: "Next episode"}
+	exp := frontendtest.Experience{
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			return []frontend.Row{{ID: "next", Purpose: frontend.RowNextUp, Items: []frontend.Title{next}}}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, Experience: exp}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/home/sections", nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"item_source":"next_up"`) {
+		t.Fatalf("next-up source: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestTitleDTOReportsKnownMetadata(t *testing.T) {
 	released := time.Date(2020, 2, 3, 0, 0, 0, 0, time.UTC)
 	item := titleDTO(frontend.Title{Key: 1000000000000001, Type: "movie", Title: "Example", Language: "fr", ContentRating: "PG", Released: released}, frontend.WatchStatus{IsNotInterested: true})
