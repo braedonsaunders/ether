@@ -53,6 +53,10 @@ func BindHeadersInTx(ctx context.Context, tx *sql.Tx, headers []Header) error {
 			return ErrInvalidHeader
 		}
 	}
+	return insertHeadersInTx(ctx, tx, headers)
+}
+
+func insertHeadersInTx(ctx context.Context, tx *sql.Tx, headers []Header) error {
 	// 40 rows × 7 fields = at most 280 parameters. Explicit casts keep
 	// PostgreSQL's UNION inputs typed; SQLite accepts the same statement.
 	var query strings.Builder
