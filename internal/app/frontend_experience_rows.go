@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -254,4 +255,53 @@ func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequ
 		composer.Live = a.livetv
 	}
 	return composer.Rows(ctx, req)
+}
+
+// experienceHomeFallback fills a cold neutral Home with policy-filtered library
+// shelves. It does not run for Plex and never resolves playback sources.
+// Ordering is the title release date (latest aired episode for a show), which
+// is the owner rule for "date added". A shelf uses the request page, defaulting
+// to the same 50-item page as other Home rows, capped at 100 — a full library
+// shelf, not a six-item recommendation stub.
+func (a *App) experienceHomeFallback(ctx context.Context, req frontend.RowRequest, libraries []experience.Library, visibility experience.Visibility) ([]frontend.Row, error) {
+	if req.Viewer == nil || a.catalog == nil || a.notInterested == nil {
+		return nil, core.ErrNotAvailable
+	}
+	excluded, _, err := a.notInterested.Snapshot(ctx, req.Viewer)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]core.RatingKey, 0, len(excluded))
+	for _, entry := range excluded {
+		keys = append(keys, entry.Key)
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	limit = min(limit, 100)
+	browse := func(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
+		q.Filter.ExcludeKeys = keys
+		return a.catalog.Browse(ctx, q)
+	}
+	var rows []frontend.Row
+	for _, library := range libraries {
+		if !experience.SectionAllowed(req.Viewer, library.ID) {
+			continue
+		}
+		items, more, err := experience.RecentlyAdded(ctx, req.Viewer, library.Type, limit, visibility, browse)
+		if err != nil {
+			return nil, err
+		}
+		if len(items) == 0 {
+			continue
+		}
+		row := frontend.Row{ID: "library.recent." + strconv.Itoa(library.ID), Kind: "recentlyAdded", Purpose: frontend.RowRecentlyAdded, Title: "Recently Added " + library.Name, More: more}
+		for i := range items {
+			item := items[i]
+			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &item})
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
 }

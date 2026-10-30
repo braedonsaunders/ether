@@ -183,7 +183,7 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 			i.artwork(r, v, credential, t.Key, item)
 			items = append(items, item)
 		}
-		kind := map[frontend.RowPurpose]string{frontend.RowContinue: "continue_watching", frontend.RowNextUp: "returning_shows", frontend.RowRecentlyReleased: "recently_added", frontend.RowRecommendation: "recommended_for_you", frontend.RowWatchlist: "watchlist", frontend.RowCollection: "collection", frontend.RowLive: "live"}[row.Purpose]
+		kind := map[frontend.RowPurpose]string{frontend.RowContinue: "continue_watching", frontend.RowNextUp: "returning_shows", frontend.RowRecentlyReleased: "recently_added", frontend.RowRecentlyAdded: "recently_added", frontend.RowRecommendation: "recommended_for_you", frontend.RowWatchlist: "watchlist", frontend.RowCollection: "collection", frontend.RowLive: "live"}[row.Purpose]
 		if kind == "" {
 			kind = "custom"
 		}

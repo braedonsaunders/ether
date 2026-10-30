@@ -24,6 +24,9 @@ type RowServiceDeps struct {
 	Layout     func(context.Context, frontend.RowRequest, []frontend.Row) ([]frontend.Row, error)
 	Receipts   *Receipts
 	Situation  func(context.Context, frontend.RowRequest) (core.HomeSituation, error)
+	// HomeFallback supplies bounded library rows when a neutral Home has no
+	// discovery shelves left after policy filtering. Plex does not use it.
+	HomeFallback func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
 	// RankedSource disables retries when the source ranks policy-filtered candidates once.
 	RankedSource bool
 }
@@ -105,6 +108,10 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 			break
 		}
 		fetch = min(fetch*2, 1000)
+	}
+	out, err = s.appendHomeFallback(ctx, req, protocol, out, limit)
+	if err != nil {
+		return nil, err
 	}
 	if s.d.Layout != nil {
 		candidates := make([]LayoutCandidate, len(out))
@@ -190,6 +197,49 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 		}
 		for i := range handles {
 			*handles[i] = tokens[i]
+		}
+	}
+	return out, nil
+}
+
+// appendHomeFallback adds policy-checked library shelves when Home is only
+// Continue Watching and Next Up. Plex Home is assembled by its own adapter
+// and stays byte-identical, so this never runs for that protocol.
+func (s *RowsService) appendHomeFallback(ctx context.Context, req frontend.RowRequest, protocol core.Protocol, out []frontend.Row, limit int) ([]frontend.Row, error) {
+	if req.Placement != frontend.PlacementHome || protocol == "plex" || s.d.HomeFallback == nil {
+		return out, nil
+	}
+	for _, row := range out {
+		if row.Purpose != frontend.RowContinue && row.Purpose != frontend.RowNextUp {
+			return out, nil
+		}
+	}
+	fallback, err := s.d.HomeFallback(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range fallback {
+		if !s.d.AllowRow(ctx, req.Viewer, row) {
+			continue
+		}
+		entries := make([]frontend.RowEntry, 0, min(len(row.Entries), limit))
+		seen := map[string]bool{}
+		for _, entry := range row.Entries {
+			id := string(entry.Kind) + ":" + entryIdentity(entry)
+			if entryIdentity(entry) == "" || seen[id] || !s.permitted(ctx, req.Viewer, entry) {
+				continue
+			}
+			seen[id] = true
+			entry.Handle = ""
+			if len(entries) == limit {
+				row.More = true
+				break
+			}
+			entries = append(entries, entry)
+		}
+		row.Items, row.Handle, row.ImpressionID, row.Entries = nil, "", "", entries
+		if len(entries) > 0 {
+			out = append(out, row)
 		}
 	}
 	return out, nil

@@ -166,6 +166,31 @@ func TestRelatedArtworkUsesAuthorizedOwnerGrants(t *testing.T) {
 	}
 }
 
+func TestRecentlyAddedHomeRowKeepsLibrarySectionType(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 5}
+	key := frontend.RatingKey(1000000000000001)
+	exp := frontendtest.Experience{
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			return []frontend.Row{{ID: "library.recent.1", Purpose: frontend.RowRecentlyAdded, Title: "Recently Added Movies", Items: []frontend.Title{{Key: key, Type: "movie", Title: "Visible"}}}}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, Experience: exp}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/home/sections", nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"section_type":"recently_added"`) || !strings.Contains(w.Body.String(), `"title":"Visible"`) {
+		t.Fatalf("recent row: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestEmptyHomeUsesAuthorizedBrowseFallback(t *testing.T) {
 	v := &frontend.Viewer{ID: 5}
 	visible, excluded := frontend.RatingKey(1000000000000001), frontend.RatingKey(1000000000000002)
