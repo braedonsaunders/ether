@@ -19,9 +19,6 @@ import (
 type DiscoveryFeatures = discovery.Features
 
 func (s *Server) discoveryHubs(ctx context.Context, pr *Request, limit int) []hubSpec {
-	if !s.viewerRestricted(pr.User) {
-		return s.legacyDiscoveryHubs(ctx, pr, limit)
-	}
 	d := s.d.Discovery
 	if d == nil || pr.User == nil {
 		return nil
@@ -29,7 +26,8 @@ func (s *Server) discoveryHubs(ctx context.Context, pr *Request, limit int) []hu
 	var out []hubSpec
 	add := func(purpose core.RowPurpose, load func(context.Context, *core.User, int) ([]core.Hub, error)) {
 		var hubs []core.Hub
-		rows := experience.LoadDiscovery(ctx, pr.User, s.visibility(), limit, func(ctx context.Context, fetch int) []experience.DiscoveryCandidate {
+		selector := experience.DiscoverySelection{Visibility: s.visibility(), Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) }}
+		rows := selector.Load(ctx, pr.User, limit, func(ctx context.Context, fetch int) []experience.DiscoveryCandidate {
 			hubs, _ = load(ctx, pr.User, fetch)
 			candidates := make([]experience.DiscoveryCandidate, len(hubs))
 			for i, hub := range hubs {

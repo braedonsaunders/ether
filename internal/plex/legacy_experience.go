@@ -100,28 +100,3 @@ func (s *Server) legacyRelatedAfterPostPlay(ctx context.Context, pr *Request, mc
 // when the title has no tagline of its own it takes the Tagline slot
 // instead — the line living-room apps put directly under the title —
 // rather than appearing twice. Original text is kept intact.
-
-func (s *Server) legacyDiscoveryHubs(ctx context.Context, pr *Request, limit int) []hubSpec {
-	d := s.d.Discovery
-	if d == nil || pr.User == nil {
-		return nil
-	}
-	var out []hubSpec
-	add := func(hubs []core.Hub) {
-		for _, h := range hubs {
-			h.Items = s.visibleTitles(pr.User, h.Items)
-			if len(h.Items) > 0 {
-				out = append(out, hubSpec{Hub: h})
-			}
-		}
-	}
-	if d.Watchlist != nil {
-		h, _ := d.Watchlist.Hubs(ctx, pr.User, limit)
-		add(h)
-	}
-	if d.Personal != nil {
-		h, _ := d.Personal.Hubs(ctx, pr.User, limit)
-		add(h)
-	}
-	return out
-}

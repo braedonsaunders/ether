@@ -34,6 +34,38 @@ func FilterDiscovery(ctx context.Context, viewer *core.User, visibility Visibili
 // LoadDiscovery expands full candidate pages when visibility filtering leaves
 // a row short. Sources with fewer results than requested signal exhaustion.
 func LoadDiscovery(ctx context.Context, viewer *core.User, visibility Visibility, limit int, load func(context.Context, int) []DiscoveryCandidate) []DiscoveryCandidate {
+	return loadDiscovery(ctx, viewer, visibility, limit, load, false)
+}
+
+// DiscoverySelection chooses visible candidates before frontend rendering.
+// Unrestricted is a trusted host policy capability; nil fails closed.
+type DiscoverySelection struct {
+	Visibility   Visibility
+	Unrestricted func(*core.User) bool
+}
+
+func (s DiscoverySelection) Load(ctx context.Context, viewer *core.User, limit int, load func(context.Context, int) []DiscoveryCandidate) []DiscoveryCandidate {
+	return loadDiscovery(ctx, viewer, s.Visibility, limit, load, s.Unrestricted != nil && s.Unrestricted(viewer))
+}
+
+func loadDiscovery(ctx context.Context, viewer *core.User, visibility Visibility, limit int, load func(context.Context, int) []DiscoveryCandidate, unrestricted bool) []DiscoveryCandidate {
+	if unrestricted {
+		rows := load(ctx, limit)
+		out := make([]DiscoveryCandidate, 0, len(rows))
+		for _, row := range rows {
+			items := make([]core.Title, 0, len(row.Items))
+			for i := range row.Items {
+				if visibility.TitleAllowed(viewer, &row.Items[i]) {
+					items = append(items, row.Items[i])
+				}
+			}
+			if len(items) > 0 {
+				row.Items = items
+				out = append(out, row)
+			}
+		}
+		return out
+	}
 	fetch := limit
 	if fetch <= 0 {
 		return FilterDiscovery(ctx, viewer, visibility, load(ctx, fetch))
