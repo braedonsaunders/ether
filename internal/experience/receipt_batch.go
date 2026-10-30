@@ -69,7 +69,7 @@ func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device cor
 		return nil, err
 	}
 	var count int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE viewer_id=? AND device_id=?`, viewer.ID, device.ID).Scan(&count); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires>?`, viewer.ID, device.ID, now).Scan(&count); err != nil {
 		return nil, err
 	}
 	if count+len(subjects) > s.opts.MaxPerDevice {

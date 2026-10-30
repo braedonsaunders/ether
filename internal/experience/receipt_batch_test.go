@@ -183,3 +183,55 @@ func TestRowViewPostCommitStaleReceiptsExpire(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiptBoundedSweepIgnoresExpiredBacklogForQuota(t *testing.T) {
+	db := store.OpenTest(t)
+	now := time.Unix(1700000000, 0)
+	opts := relayOptions(db, &now, 1, true, nil)
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	scope := capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: 7, Surface: "jellyfin", DeviceID: "tv"}
+	for i := 0; i < 129; i++ {
+		digest := fmt.Sprintf("%064x", i+1)
+		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, digest, 7, "tv", "jellyfin", now.Unix()-1, "title", "old", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := capability.Header{HeaderScope: scope, Digest: digest, ExpiresMillis: now.Add(-time.Second).UnixMilli()}
+		if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{h}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	viewer := &core.User{ID: 7}
+	device := core.Device{ID: "tv"}
+	if _, err = s.Issue(ctx, viewer, device, "jellyfin", ReceiptSubject{Kind: "title", ID: "new"}); err != nil {
+		t.Fatalf("expired backlog blocked live quota: %v", err)
+	}
+	var expired, live, headers int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires<=?`, now.Unix()).Scan(&expired); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires>?`, now.Unix()).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, ReceiptCapabilityNamespace).Scan(&headers); err != nil {
+		t.Fatal(err)
+	}
+	if expired != 1 || live != 1 || headers != 2 {
+		t.Fatalf("expired=%d live=%d headers=%d", expired, live, headers)
+	}
+	if _, err = s.Issue(ctx, viewer, device, "jellyfin", ReceiptSubject{Kind: "title", ID: "another"}); err == nil {
+		t.Fatal("live quota bypassed")
+	}
+}

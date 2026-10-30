@@ -71,11 +71,16 @@ func (s *Receipts) dropHeaders(ctx context.Context, tx *sql.Tx, scope capability
 // Header drops name only those digests, so an orphan or foreign header cannot
 // change the quota and a drop failure rolls the delete back.
 func (s *Receipts) sweepExpired(ctx context.Context, tx *sql.Tx, viewer int64, device string, now int64) error {
+	// Recheck outer scope and expiry after any wait on an old writer's row.
+	// At most 128 expired authority rows and their mirrors are touched per issue.
+	const cleanupMax = 128
+	query := `DELETE FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=? AND hash IN (SELECT hash FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=? ORDER BY expires,hash LIMIT ?)`
+	args := []any{viewer, device, now, viewer, device, now, cleanupMax}
 	if !s.opts.MirrorHeaders {
-		_, err := tx.ExecContext(ctx, `DELETE FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=?`, viewer, device, now)
+		_, err := tx.ExecContext(ctx, query, args...)
 		return err
 	}
-	rows, err := tx.QueryContext(ctx, `DELETE FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=? RETURNING hash, protocol`, viewer, device, now)
+	rows, err := tx.QueryContext(ctx, query+` RETURNING hash, protocol`, args...)
 	if err != nil {
 		return err
 	}
