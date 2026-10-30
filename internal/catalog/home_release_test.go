@@ -220,9 +220,23 @@ func TestCachedGetManyDoesNotFetchOrAdmitFallback(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,fallback_admitted,attempted_at) VALUES(?,1,0,0,0)`, int64(movie.Key)); err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.CachedGetMany(ctx, []core.RatingKey{movie.Key, core.MovieKey(999)})
-	if err != nil || len(got) != 0 {
-		t.Fatalf("pending fallback: %v %v", got, err)
+	before := movie
+	before.Key, before.IDs.TMDB, before.Released = core.MovieKey(45), 45, now.Add(-89*24*time.Hour)
+	known := movie
+	known.Key, known.IDs.TMDB = core.MovieKey(46), 46
+	unknown := movie
+	unknown.Key, unknown.IDs.TMDB = core.MovieKey(47), 47
+	for _, title := range []core.Title{before, known, unknown} {
+		if err := c.UpsertTitle(ctx, title, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,fallback_admitted,attempted_at) VALUES(?,1,0,0,0),(?,1,?,0,0)`, int64(before.Key), int64(known.Key), now.Add(-24*time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.CachedGetMany(ctx, []core.RatingKey{movie.Key, before.Key, known.Key, unknown.Key, core.MovieKey(999)})
+	if err != nil || len(got) != 2 || got[movie.Key].Key != movie.Key || got[known.Key].Key != known.Key {
+		t.Fatalf("eligibility: %v %v", got, err)
 	}
 	var admitted int
 	if err := db.QueryRowContext(ctx, `SELECT fallback_admitted FROM catalog_home_release WHERE key=?`, int64(movie.Key)).Scan(&admitted); err != nil || admitted != 0 {

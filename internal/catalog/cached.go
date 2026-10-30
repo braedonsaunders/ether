@@ -298,11 +298,6 @@ func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map
 			return nil, err
 		}
 		for i := range items {
-			// A newly eligible fallback must first be admitted by the normal
-			// background path. This read never writes that admission.
-			if c.config().GateMoviesByHomeRelease && items[i].Type == core.TypeMovie && items[i].HomeReleaseChecked && items[i].HomeReleased.IsZero() && !items[i].HomeReleaseFallbackAdmitted {
-				continue
-			}
 			if !items[i].Adult && items[i].IsReleased(c.now()) && (!c.config().GateMoviesByHomeRelease || homeReleaseVisible(&items[i], c.now())) && (items[i].Type != core.TypeSeason || listableSeason(&items[i], c.now())) {
 				out[items[i].Key] = items[i]
 			}
