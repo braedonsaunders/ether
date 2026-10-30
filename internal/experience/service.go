@@ -206,6 +206,8 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		}
 	}
 	var permitted []core.Title
+	totalMatched := 0
+	bounded := !q.Recursive && q.AdjacentTo == 0 && q.StartAt == 0 && q.Limit > 0
 	expand := q.Recursive && library.Type == core.TypeShow
 	if expand && s.d.Grandchildren == nil {
 		return core.Page{}, errors.New("experience: recursive library unavailable")
@@ -226,6 +228,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		if err != nil {
 			return core.Page{}, err
 		}
+		var candidatesPage []core.Title
 		for i := range page.Items {
 			parent := &page.Items[i]
 			if !s.visible(ctx, v, parent) {
@@ -244,13 +247,49 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 				if !s.visible(ctx, v, title) {
 					continue
 				}
-				ok, e := s.matchesUserQuery(ctx, v, *title, q)
+				if expand {
+					ok, e := s.matchesUserQuery(ctx, v, *title, q)
+					if e != nil {
+						return core.Page{}, e
+					}
+					if ok {
+						permitted = append(permitted, *title)
+					}
+				} else {
+					candidatesPage = append(candidatesPage, *title)
+				}
+			}
+		}
+		for start := 0; start < len(candidatesPage); start += 400 {
+			chunk := candidatesPage[start:min(start+400, len(candidatesPage))]
+			var watched map[core.RatingKey]core.WatchStatus
+			if q.Watched != nil {
+				keys := make([]core.RatingKey, len(chunk))
+				for i := range chunk {
+					keys[i] = chunk[i].Key
+				}
+				watched, err = s.d.State.GetMany(ctx, v.ID, keys)
+				if err != nil {
+					return core.Page{}, err
+				}
+			}
+			query := q
+			query.Watched = nil
+			for _, title := range chunk {
+				if q.Watched != nil && (watched[title.Key].ViewCount > 0) != *q.Watched {
+					continue
+				}
+				ok, e := s.matchesUserQuery(ctx, v, title, query)
 				if e != nil {
 					return core.Page{}, e
 				}
-				if ok {
-					permitted = append(permitted, *title)
+				if !ok {
+					continue
 				}
+				if !bounded || (totalMatched >= max(q.Offset, 0) && len(permitted) < q.Limit) {
+					permitted = append(permitted, title)
+				}
+				totalMatched++
 			}
 		}
 		offset += len(page.Items)
@@ -263,6 +302,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		if err = ctx.Err(); err != nil {
 			return core.Page{}, err
 		}
+	}
+	if bounded {
+		return core.Page{Items: permitted, Total: totalMatched}, nil
 	}
 	if expand {
 		if err := sortTitles(permitted, q); err != nil {
