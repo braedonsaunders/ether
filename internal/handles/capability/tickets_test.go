@@ -51,9 +51,9 @@ func entry(i int) capability.TicketEntry {
 	return capability.TicketEntry{Digest: fmt.Sprintf("%064x", i), Purpose: "events-ws"}
 }
 func TestTicketBatchScopeRevocationAndReplay(t *testing.T) {
+	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db, tickets, scope := fixture(t)
 	expiry, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1), entry(2)})
 	if err != nil || expiry <= 0 {
 		t.Fatalf("issue expiry=%d err=%v", expiry, err)
@@ -82,9 +82,9 @@ func TestTicketBatchScopeRevocationAndReplay(t *testing.T) {
 	}
 }
 func TestTicketBatchRollbackAndConcurrentConsume(t *testing.T) {
+	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db, tickets, scope := fixture(t)
 	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1), entry(1)}); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("duplicate: %v", err)
 	}
@@ -124,9 +124,9 @@ func TestTicketBatchRollbackAndConcurrentConsume(t *testing.T) {
 }
 
 func TestTicketBatchBoundsAndExpiry(t *testing.T) {
+	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db, tickets, scope := fixture(t)
 	tooMany := make([]capability.TicketEntry, 41)
 	for i := range tooMany {
 		tooMany[i] = entry(i + 1)
@@ -153,9 +153,9 @@ func TestTicketBatchBoundsAndExpiry(t *testing.T) {
 }
 
 func TestTicketRejectsForeignDeviceJSON(t *testing.T) {
+	_, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, tickets, scope := fixture(t)
 	for _, bad := range []string{`{`, `{"ID":"other"}`, `null`} {
 		scope.DeviceJSON = bad
 		if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1)}); !errors.Is(err, core.ErrUnauthorized) {
@@ -167,9 +167,9 @@ func TestTicketRejectsForeignDeviceJSON(t *testing.T) {
 // Deleting the source cascades only the typed child. The header stays charged
 // until bounded expiry cleanup; a live header must not be evicted.
 func TestTicketDeletedGrantOrphanQuotaRecovery(t *testing.T) {
+	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db, tickets, scope := fixture(t)
 	other := strings.Repeat("b", 64)
 	if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,1,'silo','tv','','','',0,0,9999999999999)`, other); err != nil {
 		t.Fatal(err)
@@ -213,9 +213,9 @@ func TestTicketDeletedGrantOrphanQuotaRecovery(t *testing.T) {
 
 // One expired orphan can free a saturated scope without evicting live rows.
 func TestTicketOrphanCapacityRecoveryAtSaturation(t *testing.T) {
+	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	db, tickets, scope := fixture(t)
 	other := strings.Repeat("b", 64)
 	if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,1,'silo','tv','','','',0,0,9999999999999)`, other); err != nil {
 		t.Fatal(err)
@@ -264,9 +264,9 @@ func TestTicketOrphanCapacityRecoveryAtSaturation(t *testing.T) {
 
 // Both dialects must preserve numeric scope and expiry through compound SELECT.
 func TestTicketMultiBatchPreservesTypedScope(t *testing.T) {
+	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	db, tickets, scope := fixture(t)
 	expiry, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1), entry(2)})
 	if err != nil {
 		t.Fatal(err)

@@ -19,9 +19,9 @@ func TestTicketConsumeRechecksAfterReissue(t *testing.T) {
 	if os.Getenv(store.TestPostgresEnv) == "" {
 		t.Skip("requires PostgreSQL transaction interleaving")
 	}
+	db := store.OpenTest(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	db := store.OpenTest(t)
 	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
 		t.Fatal(err)
 	}
