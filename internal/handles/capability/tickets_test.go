@@ -210,3 +210,54 @@ func TestTicketDeletedGrantOrphanQuotaRecovery(t *testing.T) {
 		t.Fatalf("live header count=%d err=%v", headers, err)
 	}
 }
+
+// One expired orphan can free a saturated scope without evicting live rows.
+func TestTicketOrphanCapacityRecoveryAtSaturation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	db, tickets, scope := fixture(t)
+	other := strings.Repeat("b", 64)
+	if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,1,'silo','tv','','','',0,0,9999999999999)`, other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1)}); err != nil {
+		t.Fatal(err)
+	}
+	scope.SourceHash = other
+	for start := 2; start <= 128; start += 40 {
+		end := min(start+40, 129)
+		batch := make([]capability.TicketEntry, 0, end-start)
+		for i := start; i < end; i++ {
+			batch = append(batch, entry(i))
+		}
+		if _, err := tickets.IssueBatch(ctx, scope, batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM identity_grants WHERE hash=?`, strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	var capacity *capability.CapacityError
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(129)}); !errors.As(err, &capacity) || capacity.Scope != "viewer" {
+		t.Fatalf("orphan should remain charged: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE capability_headers SET expires=0 WHERE namespace='ticket' AND digest=?`, entry(1).Digest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(129)}); err != nil {
+		t.Fatalf("expired orphan capacity not recovered: %v", err)
+	}
+	var total, live, orphan int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket'`).Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, entry(2).Digest).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, entry(1).Digest).Scan(&orphan); err != nil {
+		t.Fatal(err)
+	}
+	if total != 128 || live != 1 || orphan != 0 {
+		t.Fatalf("capacity state total=%d live=%d orphan=%d", total, live, orphan)
+	}
+}
