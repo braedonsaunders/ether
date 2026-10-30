@@ -449,3 +449,43 @@ func TestImageGrantShardMaintenanceIsolation(t *testing.T) {
 	}
 	_ = service
 }
+
+func TestImageGrantShardMaintenanceBatchBound(t *testing.T) {
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	_, credential := imageAdapterService(t, db, "jellyfin", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	now := time.Now()
+	source := sha256.Sum256([]byte(credential))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	for i := 0; i < capability.HeaderBatchMax+1; i++ {
+		digest := fmt.Sprintf("%064x", i+1)
+		expiry := now.Add(-time.Minute).UnixMilli()
+		_, err = tx.ExecContext(ctx, `INSERT INTO frontend_image_grants(hash,source_hash,viewer_id,surface,item,device,image_kind,image_path,image_tag,expires,channel,image_subject) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, digest, hex.EncodeToString(source[:]), 1, "jellyfin", 1, `{"ID":"tv"}`, "poster", "opaque", "v1", expiry, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		header := capability.Header{HeaderScope: capability.HeaderScope{Namespace: imageCapabilityNamespace, ViewerID: 1, Surface: "jellyfin", DeviceID: "tv"}, Digest: digest, ExpiresMillis: expiry}
+		if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{header}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	n, err := PruneImageGrantShard(ctx, db, now, 1)
+	if err != nil || n != 2*int64(capability.HeaderBatchMax) {
+		t.Fatalf("first=%d err=%v", n, err)
+	}
+	n, err = PruneImageGrantShard(ctx, db, now, 1)
+	if err != nil || n != 2 {
+		t.Fatalf("second=%d err=%v", n, err)
+	}
+}
