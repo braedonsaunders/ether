@@ -125,6 +125,13 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	if mb, ok := p.(*mediabrowser.Protocol); ok && *protocol == "jellyfin" && (cmd == "compare" || cmd == "live") {
+		for _, profile := range profiles(p, *client) {
+			if err := mb.LoadCapturedBindings(*fixtures, profile); err != nil {
+				return err
+			}
+		}
+	}
 	var report pmsconform.Report
 	switch cmd {
 	case "defects":

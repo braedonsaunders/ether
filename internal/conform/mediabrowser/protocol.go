@@ -27,6 +27,7 @@ import (
 )
 
 type Profile struct {
+	Source        string             `json:"source"`
 	Protocol      string             `json:"protocol"`
 	Client        string             `json:"client"`
 	Headers       map[string]string  `json:"headers"`
@@ -46,10 +47,13 @@ type Probe struct {
 	ExpectedStatus int               `json:"expected_status,omitempty"`
 }
 type Protocol struct {
-	Dialect  string
-	profiles map[string]Profile
-	specOnce sync.Once
-	spec     *openapi.Document
+	captures    map[string]*capturedMetadata
+	captureMu   sync.Mutex
+	captureRuns map[[32]byte]capturedRun
+	Dialect     string
+	profiles    map[string]Profile
+	specOnce    sync.Once
+	spec        *openapi.Document
 }
 
 // Load reads profiles from a directory supplied by the caller.
@@ -171,6 +175,9 @@ func (p *Protocol) Corpus(profile string) []conform.Request {
 }
 func (p *Protocol) Formats() []bool { return []bool{true} }
 func (p *Protocol) Discover(ctx context.Context, c *http.Client, base, token, profile string, align *conform.DiscoveredIDs) conform.DiscoveredIDs {
+	if p.Dialect == "jellyfin" && p.profiles[profile].Source == "captured" {
+		return p.discoverCaptured(ctx, c, base, token, profile)
+	}
 	// Provider identities are obtained from an item listing; absence is surfaced
 	// as a warning rather than silently matching unrelated items.
 	out := conform.DiscoveredIDs{Values: map[string]string{}}
@@ -241,6 +248,13 @@ func (p *Protocol) Discover(ctx context.Context, c *http.Client, base, token, pr
 func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string, r conform.Request, profile string, vars map[string]string, jsonMode bool) (conform.Response, error) {
 	if r.FixtureOnly {
 		return conform.Response{}, fmt.Errorf("fixture-only request cannot be replayed")
+	}
+	if p.Dialect == "jellyfin" && p.profiles[profile].Source == "captured" && strings.HasPrefix(r.Name, "captured_") {
+		var err error
+		r, vars, err = p.bindCaptured(base, token, profile, r, vars)
+		if err != nil {
+			return conform.Response{}, err
+		}
 	}
 	if p.Dialect == "silo" && (r.Path == "/api/v2/playback/start" || (r.Method == http.MethodDelete && strings.HasPrefix(r.Path, "/api/v2/playback/"))) {
 		if vars == nil {

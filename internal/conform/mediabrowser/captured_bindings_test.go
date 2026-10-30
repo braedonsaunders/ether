@@ -1,0 +1,217 @@
+package mediabrowser
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/braedonsaunders/ether/internal/conform"
+)
+
+// These are synthetic offline peers, not playback evidence or replacement goldens.
+func captureTestProtocol(t *testing.T) *Protocol {
+	t.Helper()
+	p, err := Load("jellyfin", filepath.Join("..", "profiles", "jellyfin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.LoadCapturedBindings(filepath.Join("..", "..", "..", "testdata", "conform", "jellyfin"), "infuse-jellyfin"); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+func captureTestServer(t *testing.T, items []capturedItem, calls *int) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/Users/Me":
+			if r.Header.Get("X-Emby-Token") != "owned-token" {
+				w.WriteHeader(401)
+				return
+			}
+			_, _ = w.Write([]byte(`{"Id":"owned-user"}`))
+		case "/Items":
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": items})
+		default:
+			*calls++
+			if !strings.Contains(r.Header.Get("Authorization"), `Version="8.5.9"`) || !strings.Contains(r.Header.Get("Authorization"), `DeviceId="run-device"`) || !strings.Contains(r.Header.Get("Authorization"), `Token="owned-token"`) {
+				t.Error("lost request identity")
+			}
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+}
+func captureRequest(p *Protocol, sequence string) conform.Request {
+	for _, r := range p.Corpus("infuse-jellyfin") {
+		if r.Name == "captured_captured-"+sequence {
+			return r
+		}
+	}
+	panic("missing archived request")
+}
+func TestCapturedBindingsArchiveProvenance(t *testing.T) {
+	p := captureTestProtocol(t)
+	m := p.captures["infuse-jellyfin"]
+	if m.user != "${id_1}" || m.version != "8.5.9" || m.client != "Infuse-Direct" || m.device != "Apple TV" {
+		t.Fatal("archived login provenance changed")
+	}
+	for _, key := range []string{"${id_27}", "${id_49}", "${id_57}"} {
+		if !m.ambiguous[key] {
+			t.Fatalf("edition ambiguity lost: %s", key)
+		}
+	}
+	for _, key := range []string{"${id_2}", "${id_3}", "${id_8}"} {
+		if _, ok := m.items[key]; ok {
+			t.Fatalf("new metadata needs review: %s", key)
+		}
+	}
+	calls := 0
+	s := captureTestServer(t, nil, &calls)
+	defer s.Close()
+	p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+	vars := map[string]string{"user_id": "owned-user", "device_id": "run-device"}
+	req := captureRequest(p, "000002")
+	before, _ := json.Marshal(req)
+	got, err := p.Fetch(context.Background(), s.Client(), s.URL, "owned-token", req, "infuse-jellyfin", vars, true)
+	if err != nil || got.Status != 200 || calls != 1 {
+		t.Fatalf("owned user fetch: %v status=%d calls=%d", err, got.Status, calls)
+	}
+	after, _ := json.Marshal(req)
+	if string(before) != string(after) || len(vars) != 2 {
+		t.Fatal("binding mutated recorded request or caller variables")
+	}
+}
+func TestCapturedBindingsRejectUnprovenScope(t *testing.T) {
+	for _, tc := range []struct{ name, key, value, token, sequence string }{
+		{"other user", "user_id", "other-user", "owned-token", "000002"},
+		{"other credential", "access_token", "other-token", "owned-token", "000002"},
+		{"other token alias", "token", "other-token", "owned-token", "000002"},
+		{"unobserved credential", "", "", "other-token", "000002"},
+		{"missing device", "device_id", "", "owned-token", "000002"},
+		{"injected device", "device_id", "bad\"device", "owned-token", "000002"},
+		{"conflicting user alias", "id_1", "other-user", "owned-token", "000002"},
+		{"invented library", "id_2", "invented-library", "owned-token", "000005"},
+		{"ambiguous edition", "id_49", "invented-item", "owned-token", "000039"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := captureTestProtocol(t)
+			calls := 0
+			s := captureTestServer(t, nil, &calls)
+			defer s.Close()
+			p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+			vars := map[string]string{"user_id": "owned-user", "device_id": "run-device"}
+			if tc.key != "" {
+				vars[tc.key] = tc.value
+			}
+			_, err := p.Fetch(context.Background(), s.Client(), s.URL, tc.token, captureRequest(p, tc.sequence), "infuse-jellyfin", vars, true)
+			if err == nil || calls != 0 {
+				t.Fatalf("unsafe dispatch: err=%v calls=%d", err, calls)
+			}
+		})
+	}
+}
+func TestCapturedBindingsTypedProviderAndAmbiguity(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		items []capturedItem
+		want  bool
+	}{
+		{"unique", []capturedItem{{ID: "owned-movie", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745"}}}, true},
+		{"wrong type", []capturedItem{{ID: "wrong-series", Type: "Series", ProviderIDs: map[string]string{"Tmdb": "45745"}}}, false},
+		{"conflicting provider", []capturedItem{{ID: "wrong-movie", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745", "Imdb": "tt-wrong"}}}, false},
+		{"two editions", []capturedItem{{ID: "one", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745"}}, {ID: "two", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745"}}}, false},
+		{"missing", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := captureTestProtocol(t)
+			calls := 0
+			s := captureTestServer(t, tc.items, &calls)
+			defer s.Close()
+			p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+			req := captureRequest(p, "000126")
+			_, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", req, map[string]string{"device_id": "run-device"})
+			if (err == nil) != tc.want {
+				t.Fatalf("binding=%v want success=%v", err, tc.want)
+			}
+			if _, _, err = p.bindCaptured(s.URL+"/other", "owned-token", "infuse-jellyfin", req, map[string]string{"device_id": "run-device"}); err == nil {
+				t.Fatal("cross-server mapping accepted")
+			}
+		})
+	}
+}
+func TestCapturedBindingsMissingMetadataAndFailedRediscovery(t *testing.T) {
+	p := captureTestProtocol(t)
+	calls := 0
+	s := captureTestServer(t, nil, &calls)
+	defer s.Close()
+	p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+	req := captureRequest(p, "000002")
+	vars := map[string]string{"device_id": "run-device"}
+	// Re-discovery after metadata loss must revoke the old run binding.
+	delete(p.captures, "infuse-jellyfin")
+	p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", req, vars); err == nil {
+		t.Fatal("missing metadata accepted")
+	}
+}
+
+func TestCapturedBindingsFiniteArchiveClassification(t *testing.T) {
+	p := captureTestProtocol(t)
+	calls := 0
+	// Same single movie provider identity as the isolated app seed. No server
+	// playback and no inference that three captured editions are interchangeable.
+	s := captureTestServer(t, []capturedItem{{ID: "seed-movie", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "10378", "Imdb": "tt1254207"}}}, &calls)
+	defer s.Close()
+	ids := p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+	if !strings.Contains(strings.Join(ids.Warnings, "\n"), "id_49: ambiguous captured") {
+		t.Fatal("missing explicit ambiguity diagnostic")
+	}
+	total, resolved := 0, 0
+	for _, r := range p.Corpus("infuse-jellyfin") {
+		if r.FixtureOnly {
+			continue
+		}
+		total++
+		_, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", r, map[string]string{"user_id": "owned-user", "device_id": "run-device"})
+		if err == nil {
+			resolved++
+		}
+	}
+	if total != 47 || resolved != 11 {
+		t.Fatalf("binding-only classification: total=%d resolved=%d unresolved=%d", total, resolved, total-resolved)
+	}
+	if calls != 0 {
+		t.Fatal("classification dispatched a corpus request")
+	}
+	t.Log("immutable archive: 47 replayable templates; 11 identity-only bindings; 36 explicitly unresolved against isolated one-movie seed; no playback evidence")
+}
+
+func TestCapturedBindingsVersionProvenanceCannotBecomeToken(t *testing.T) {
+	for _, mutation := range []string{"missing version", "different client", "different user agent"} {
+		t.Run(mutation, func(t *testing.T) {
+			p := captureTestProtocol(t)
+			calls := 0
+			s := captureTestServer(t, nil, &calls)
+			defer s.Close()
+			p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+			req := captureRequest(p, "000001")
+			switch mutation {
+			case "missing version":
+				p.captures["infuse-jellyfin"].version = ""
+			case "different client":
+				p.captures["infuse-jellyfin"].client = "Other"
+			case "different user agent":
+				req.Headers["infuse-jellyfin-json"].Set("User-Agent", "Other/1")
+			}
+			_, err := p.Fetch(context.Background(), s.Client(), s.URL, "owned-token", req, "infuse-jellyfin", map[string]string{"device_id": "run-device"}, true)
+			if err == nil || calls != 0 {
+				t.Fatalf("unsafe version substitution: %v", err)
+			}
+		})
+	}
+}
