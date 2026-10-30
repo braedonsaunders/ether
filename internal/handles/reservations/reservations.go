@@ -78,54 +78,68 @@ func valid(r Reservation) bool {
 }
 
 // Reserve obtains time from the DB on the transaction, never from the client.
+// Its returned expiry must also be the maximum expiry of the typed domain row.
 // Fresh random handles only; stable retry and active session leases are not
 // supported. TTL cleanup removes bookkeeping, not domain data or live sessions.
-func (t *Tx) Reserve(ctx context.Context, r Reservation) error {
+func (t *Tx) Reserve(ctx context.Context, r Reservation) (int64, error) {
 	if !valid(r) {
-		return errors.New("handles: invalid reservation")
+		return 0, errors.New("handles: invalid reservation")
 	}
 	p := t.owner.policy
 	shard := r.ViewerID % p.Shards
 	if err := t.lock(ctx, r.ViewerID); err != nil {
-		return err
+		return 0, err
 	}
-	query := `SELECT CAST(strftime('%s','now') AS INTEGER)*1000`
+	// Both dialects round upward to the next whole millisecond.
+	query := `SELECT CAST((julianday('now') - 2440587.5)*86400000 + 0.999 AS INTEGER)`
 	if store.DialectOf(t.owner.db) == store.Postgres {
-		query = `SELECT CAST(EXTRACT(EPOCH FROM clock_timestamp())*1000 AS BIGINT)`
+		query = `SELECT CAST(CEIL(EXTRACT(EPOCH FROM clock_timestamp())*1000) AS BIGINT)`
 	}
 	var now int64
 	if err := t.tx.QueryRowContext(ctx, query).Scan(&now); err != nil {
-		return err
+		return 0, err
 	}
 	if _, err := t.tx.ExecContext(ctx, `DELETE FROM handle_reservations WHERE namespace=? AND shard=? AND expires<=?`, p.Namespace, shard, now); err != nil {
-		return err
+		return 0, err
 	}
 	var count int
 	if err := t.tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM handle_reservations WHERE namespace=? AND shard=? AND viewer_id=? AND surface=?`, p.Namespace, shard, r.ViewerID, r.Surface).Scan(&count); err != nil {
-		return err
+		return 0, err
 	}
 	if count >= p.PerViewerSurface {
-		return &CapacityError{Namespace: p.Namespace, Scope: "viewer"}
+		return 0, &CapacityError{Namespace: p.Namespace, Scope: "viewer"}
 	}
 	if err := t.tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM handle_reservations WHERE namespace=? AND shard=?`, p.Namespace, shard).Scan(&count); err != nil {
-		return err
+		return 0, err
 	}
 	if count >= p.PerShard {
-		return &CapacityError{Namespace: p.Namespace, Scope: "shard"}
+		return 0, &CapacityError{Namespace: p.Namespace, Scope: "shard"}
 	}
-	_, err := t.tx.ExecContext(ctx, `INSERT INTO handle_reservations(namespace,digest,shard,viewer_id,surface,expires) VALUES(?,?,?,?,?,?)`, p.Namespace, r.Digest, shard, r.ViewerID, r.Surface, now+p.TTL.Milliseconds())
-	return err
+	expiry := now + p.TTL.Milliseconds()
+	_, err := t.tx.ExecContext(ctx, `INSERT INTO handle_reservations(namespace,digest,shard,viewer_id,surface,expires) VALUES(?,?,?,?,?,?)`, p.Namespace, r.Digest, shard, r.ViewerID, r.Surface, expiry)
+	if err != nil {
+		return 0, err
+	}
+	return expiry, nil
 }
 
 // Release must accompany a separately authorized domain deletion in this very
-// transaction. Scope mismatches fail closed; absence supports legacy records.
-func (t *Tx) Release(ctx context.Context, r Reservation) error {
+// transaction. False means missing OR foreign: it does not authorize domain
+// deletion. The adapter must use its own scope-checked conditional deletion.
+func (t *Tx) Release(ctx context.Context, r Reservation) (bool, error) {
 	if !valid(r) {
-		return errors.New("handles: invalid reservation")
+		return false, errors.New("handles: invalid reservation")
 	}
 	if err := t.lock(ctx, r.ViewerID); err != nil {
-		return err
+		return false, err
 	}
-	_, err := t.tx.ExecContext(ctx, `DELETE FROM handle_reservations WHERE namespace=? AND digest=? AND viewer_id=? AND surface=?`, t.owner.policy.Namespace, r.Digest, r.ViewerID, r.Surface)
-	return err
+	result, err := t.tx.ExecContext(ctx, `DELETE FROM handle_reservations WHERE namespace=? AND digest=? AND viewer_id=? AND surface=?`, t.owner.policy.Namespace, r.Digest, r.ViewerID, r.Surface)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
 }

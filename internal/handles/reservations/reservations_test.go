@@ -42,7 +42,7 @@ func TestReservationsBoundsRollbackAndExpiry(t *testing.T) {
 			return err
 		}
 		defer tx.Rollback()
-		if err = tx.Reserve(ctx, Reservation{Digest: fmt.Sprintf("%064x", id), ViewerID: viewer, Surface: surface}); err != nil {
+		if _, err = tx.Reserve(ctx, Reservation{Digest: fmt.Sprintf("%064x", id), ViewerID: viewer, Surface: surface}); err != nil {
 			return err
 		}
 		if commit {
@@ -97,7 +97,7 @@ func TestReservationsConcurrentAdmission(t *testing.T) {
 				return
 			}
 			defer tx.Rollback()
-			err = tx.Reserve(ctx, Reservation{Digest: fmt.Sprintf("%064x", i), ViewerID: 1, Surface: "silo"})
+			_, err = tx.Reserve(ctx, Reservation{Digest: fmt.Sprintf("%064x", i), ViewerID: 1, Surface: "silo"})
 			if err == nil {
 				err = tx.Commit()
 			}
@@ -138,8 +138,13 @@ func TestReservationsReleaseScopeAndDomainRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = tx.Reserve(ctx, r); err != nil {
+	expiry, err := tx.Reserve(ctx, r)
+	if err != nil {
 		t.Fatal(err)
+	}
+	var storedExpiry int64
+	if err = tx.SQL().QueryRowContext(ctx, `SELECT expires FROM handle_reservations WHERE digest=?`, r.Digest).Scan(&storedExpiry); err != nil || expiry != storedExpiry {
+		t.Fatalf("expiry=%d stored=%d err=%v", expiry, storedExpiry, err)
 	}
 	if _, err = tx.SQL().ExecContext(ctx, `INSERT INTO reservation_test_domain(digest) VALUES(?)`, r.Digest); err != nil {
 		t.Fatal(err)
@@ -153,8 +158,13 @@ func TestReservationsReleaseScopeAndDomainRollback(t *testing.T) {
 	}
 	foreign := r
 	foreign.Surface = "emby"
-	if err = tx.Release(ctx, foreign); err != nil {
-		t.Fatal(err)
+	if removed, releaseErr := tx.Release(ctx, foreign); releaseErr != nil || removed {
+		t.Fatalf("foreign release removed=%t err=%v", removed, releaseErr)
+	}
+	missing := r
+	missing.Digest = fmt.Sprintf("%064x", 99)
+	if removed, releaseErr := tx.Release(ctx, missing); releaseErr != nil || removed {
+		t.Fatalf("missing release removed=%t err=%v", removed, releaseErr)
 	}
 	if err = tx.Commit(); err != nil {
 		t.Fatal(err)
@@ -169,7 +179,7 @@ func TestReservationsReleaseScopeAndDomainRollback(t *testing.T) {
 	}
 	next := r
 	next.Digest = fmt.Sprintf("%064x", 2)
-	if err = tx.Reserve(ctx, next); err != nil {
+	if _, err = tx.Reserve(ctx, next); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = tx.SQL().ExecContext(ctx, `INSERT INTO reservation_test_domain(digest) VALUES(?)`, r.Digest); err == nil {
