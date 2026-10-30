@@ -157,7 +157,9 @@ asynchronous cleanup tasks at128. Saturation refuses acquisition/detach first.
 
 `RetireSource(id, expected)` validates and detaches one exact manager-private
 lifetime in the same manager critical section used for reuse/publication. Cleanup
-runs after unlocking in a manager-owned, shutdown-tracked task. The existing
+runs after unlocking in a bounded manager-owned task. Shutdown drains these
+tasks for at most one second, reports unfinished cleanup, and retains their
+source outcomes/accounting; it starts no extra waiter goroutine. The existing
 synchronous Stop path retains its cleanup/event order. Duplicate or stale expected
 lifetimes cannot detach a replacement. Callers must hold no broker owner gate.
 

@@ -195,7 +195,6 @@ func (o *Options) defaults() {
 // Manager implements core.Playback.
 type Manager struct {
 	sourceAccounting sourceAccounting
-	sourceCleanupWG  sync.WaitGroup
 	events           eventBus
 	deps             Deps
 	opts             Options
@@ -413,7 +412,11 @@ func (m *Manager) Close() error {
 	m.cancel()
 	err := m.srv.Close()
 	m.wg.Wait()
-	m.sourceCleanupWG.Wait()
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), sourceCleanupShutdownWait)
+	if cleanupErr := m.drainSourceCleanup(cleanupCtx); cleanupErr != nil {
+		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", cleanupErr))
+	}
+	cleanupCancel()
 	if m.reg != nil {
 		m.reg.close()
 	}

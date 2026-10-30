@@ -4,18 +4,21 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
 const maxOwnedSourceOpens = 1024
 const maxSourceCleanup = 128
+const sourceCleanupShutdownWait = time.Second
 
 // sourceAccounting charges backend calls through Close, including uncertain
 // failures. It never evicts an acquired source to admit another call.
 type sourceAccounting struct {
 	mu             sync.Mutex
 	opens, cleanup int
+	cleanupDone    chan struct{}
 }
 
 // sourceLifetime belongs to the actual manager session/preparation flight.
@@ -136,11 +139,17 @@ func (m *Manager) RetireSource(id string, outcome core.SourceRetirement) error {
 		m.sourceAccounting.mu.Unlock()
 		return core.ErrNotAvailable
 	}
+	if m.sourceAccounting.cleanup == 0 {
+		m.sourceAccounting.cleanupDone = make(chan struct{})
+	}
 	m.sourceAccounting.cleanup++
 	m.sourceAccounting.mu.Unlock()
 	release := func() {
 		m.sourceAccounting.mu.Lock()
 		m.sourceAccounting.cleanup--
+		if m.sourceAccounting.cleanup == 0 {
+			close(m.sourceAccounting.cleanupDone)
+		}
 		m.sourceAccounting.mu.Unlock()
 	}
 	m.mu.Lock()
@@ -162,11 +171,27 @@ func (m *Manager) RetireSource(id string, outcome core.SourceRetirement) error {
 		release()
 		return core.ErrNotAvailable
 	}
-	m.sourceCleanupWG.Add(1)
 	g := m.detachSessionLocked(s)
 	m.mu.Unlock()
-	go func() { defer m.sourceCleanupWG.Done(); defer release(); m.finishSessionStop(s, g) }()
+	go func() { defer release(); m.finishSessionStop(s, g) }()
 	return nil
+}
+
+// drainSourceCleanup bounds shutdown without starting a goroutine that could
+// outlive its wait. Timeout never releases a source or its accounting charge.
+func (m *Manager) drainSourceCleanup(ctx context.Context) error {
+	m.sourceAccounting.mu.Lock()
+	pending, done := m.sourceAccounting.cleanup, m.sourceAccounting.cleanupDone
+	m.sourceAccounting.mu.Unlock()
+	if pending == 0 {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 var _ core.OwnedSourcePlayback = (*Manager)(nil)

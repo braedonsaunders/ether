@@ -318,3 +318,41 @@ func TestOwnedSourceRetirementAdmissionAndReplacement(t *testing.T) {
 	h.m.sourceAccounting.opens = 1
 	h.m.sourceAccounting.mu.Unlock()
 }
+
+func TestOwnedSourceRetirementShutdownRetainsBlockedClose(t *testing.T) {
+	h := newOwnedHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+	e := &ownedTestEngine{Engine: h.engine, closeEntered: make(chan struct{}), closeRelease: make(chan struct{})}
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(e.closeRelease) }) }
+	defer unblock()
+	h.m.deps.Engine = e
+	ps := h.prepare(owner, movieKey, "shutdown")
+	outcome, _ := h.m.SourceRetirement(ps.ID)
+	if err := h.m.RetireSource(ps.ID, outcome); err != nil {
+		t.Fatal(err)
+	}
+	waitRetirementTest(t, e.closeEntered, "stalled shutdown Close")
+	closed := make(chan error, 1)
+	go func() { closed <- h.m.Close() }()
+	select {
+	case err := <-closed:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Close did not report unfinished cleanup: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		unblock()
+		<-closed
+		t.Fatal("manager shutdown waited indefinitely for backend Close")
+	}
+	requireOwnedPending(t, outcome)
+	opens, cleanup := ownedCounts(h.m)
+	if opens != 1 || cleanup != 1 {
+		t.Fatalf("shutdown dropped accounting: opens=%d cleanup=%d", opens, cleanup)
+	}
+	unblock()
+	waitRetirementTest(t, outcome.Done(), "late shutdown source completion")
+	waitFor(t, func() bool { _, cleanup := ownedCounts(h.m); return cleanup == 0 })
+	if err := outcome.Err(); err != nil {
+		t.Fatal(err)
+	}
+}
