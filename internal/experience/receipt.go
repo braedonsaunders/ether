@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -60,10 +59,6 @@ type ReceiptOptions struct {
 	Now           func() time.Time
 	TTL           time.Duration
 	MaxPerDevice  int
-	// MirrorHeaders mirrors digests into capability headers inside the legacy
-	// transaction. Off leaves experience_receipts as the only store. Headers
-	// are bookkeeping: report, revocation, and quota never consult them.
-	MirrorHeaders bool
 	// Generation, when set, is stored on the authority row and rechecked on
 	// report. Nil stores 0 and does not recheck, which is the mixed-version
 	// behavior for callers that have no generation.
@@ -114,80 +109,11 @@ func snapshotMatches(subject ReceiptSubject, imp *core.NeutralImpression) bool {
 
 // Issue creates an opaque, surface-scoped receipt. A device identifier is required.
 func (s *Receipts) Issue(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subject ReceiptSubject) (string, error) {
-	if viewer == nil || viewer.ID <= 0 || device.ID == "" || protocol == "" || subject.Kind == "" || subject.ID == "" {
-		return "", ErrReceipt
-	}
-	var snapshot string
-	if subject.Impression != nil {
-		imp := subject.Impression
-		if !snapshotMatches(subject, imp) || len(imp.Items) > 1000 || len(imp.Entries) > 1000 || len(imp.Placement) > 128 || len(imp.ViewID) > 512 || len(imp.RowID) > 512 || len(imp.Kind) > 512 || len(imp.Title) > 2048 {
-			return "", ErrReceipt
-		}
-		b, err := json.Marshal(imp)
-		if err != nil || len(b) > 32768 {
-			return "", ErrReceipt
-		}
-		snapshot = string(b)
-	}
-	active, err := s.opts.Active(ctx, viewer.ID)
-	if err != nil || active == nil || active.ID != viewer.ID || !s.opts.Allowed(ctx, active, device, protocol, subject) {
-		return "", ErrReceipt
-	}
-	var generation int64
-	if s.opts.Generation != nil {
-		generation, err = s.opts.Generation(ctx, active, device, protocol)
-		if err != nil || generation < 0 {
-			return "", ErrReceipt
-		}
-	}
-	tx, err := s.opts.DB.BeginTx(ctx, nil)
+	tokens, err := s.IssueBatch(ctx, viewer, device, protocol, []ReceiptSubject{subject})
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
-	// This is the only lock on the issue path. Header bind and drop run after
-	// it, on this same transaction, and do not take a lock of their own.
-	if err = store.LockKey(ctx, store.DialectOf(s.opts.DB), tx, fmt.Sprintf("experience:receipts:%d:%s", viewer.ID, device.ID)); err != nil {
-		return "", err
-	}
-	now := s.opts.Now().Unix()
-	if err = s.sweepExpired(ctx, tx, viewer.ID, device.ID, now); err != nil {
-		return "", err
-	}
-	var count int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires>?`, viewer.ID, device.ID, now).Scan(&count); err != nil {
-		return "", err
-	}
-	if count >= s.opts.MaxPerDevice {
-		return "", errors.New("experience: receipt limit reached")
-	}
-	for i := 0; i < 3; i++ {
-		token, hash, err := s.codec.Issue()
-		if err != nil {
-			return "", err
-		}
-		expires := s.opts.Now().Add(s.opts.TTL).Unix()
-		res, e := tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression,generation) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, hash, viewer.ID, device.ID, string(protocol), expires, subject.Kind, subject.ID, string(subject.Purpose), subject.Rank, snapshot, generation)
-		if e != nil {
-			return "", e
-		}
-		n, e := res.RowsAffected()
-		if e != nil {
-			return "", e
-		}
-		if n == 0 {
-			continue
-		}
-		// A bind failure aborts the transaction. Do not retry inside it.
-		if err = s.mirrorIssued(ctx, tx, viewer.ID, device.ID, string(protocol), hash, expires); err != nil {
-			return "", err
-		}
-		if err = tx.Commit(); err != nil {
-			return "", err
-		}
-		return token, nil
-	}
-	return "", errors.New("experience: receipt collision")
+	return tokens[0], nil
 }
 
 // Report rechecks membership and authorization. Duplicate actions are ignored
@@ -242,10 +168,8 @@ func (s *Receipts) Report(ctx context.Context, interaction frontend.RowInteracti
 			return ErrReceipt
 		}
 	}
-	// Policy and membership callbacks may use this same database; do not hold
-	// a connection/transaction while invoking them. The legacy row is the only
-	// authority. Capability headers are not read here, so a header without a
-	// legacy row cannot authorize and a legacy row does not fall back to one.
+	// Policy callbacks may use this database; invoke them before opening the
+	// transaction. Both the typed receipt and live header must authorize a claim.
 	tx, err := s.opts.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -262,18 +186,17 @@ func (s *Receipts) Report(ctx context.Context, interaction frontend.RowInteracti
 	if err != nil {
 		return err
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO experience_receipt_actions(hash,action) VALUES(?,?) ON CONFLICT(hash,action) DO NOTHING`, hash, string(interaction.Kind))
-	if err != nil {
-		return err
+	claimed, err := capability.ClaimHeaderInTx(ctx, s.opts.DB, tx, capability.Header{HeaderScope: capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: uid, Surface: protocol, DeviceID: device}, Digest: hash}, string(interaction.Kind), s.opts.Now().UnixMilli())
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrReceipt
 	}
-	n, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	if n == 0 {
+	if !claimed {
 		return nil
 	}
 	return s.opts.Record(ctx, viewer, interaction.Device, interaction.Protocol, subject, interaction.Kind)
