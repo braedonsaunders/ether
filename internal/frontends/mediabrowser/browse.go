@@ -367,6 +367,9 @@ func (i *instance) browseRoutes() error {
 			return err
 		}
 	}
+	if err := add("GET", "/UserViews/GroupingOptions", i.groupingOptions); err != nil {
+		return err
+	}
 	return nil
 }
 

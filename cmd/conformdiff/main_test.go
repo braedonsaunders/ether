@@ -13,9 +13,30 @@ import (
 	"time"
 
 	pmsconform "github.com/braedonsaunders/ether/internal/conform"
+	conformmb "github.com/braedonsaunders/ether/internal/conform/mediabrowser"
 	conformplex "github.com/braedonsaunders/ether/internal/conform/plex"
 	"github.com/braedonsaunders/ether/internal/conform/silo"
 )
+
+func TestInfuseRecordedGrouping404IsBlocking(t *testing.T) {
+	p, err := conformmb.Load("jellyfin", "../../internal/conform/profiles/jellyfin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
+	defer server.Close()
+	vars := map[string]string{"id_1": "viewer", "device": "Apple TV", "device_id": "device", "access_token": "grant"}
+	report, err := compare(p, vars, "../../testdata/conform/jellyfin", server.URL, "grant", "infuse-jellyfin", "/UserViews/GroupingOptions", time.Second, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range report.Differences {
+		if d.Kind == pmsconform.KindStatus && d.Blocking && d.Reference == 200 && d.Target == 404 {
+			return
+		}
+	}
+	t.Fatalf("recorded grouping 200 versus target 404 not blocking: %+v", report.Differences)
+}
 
 func TestFilterReport(t *testing.T) {
 	r := pmsconform.Report{Differences: []pmsconform.Difference{

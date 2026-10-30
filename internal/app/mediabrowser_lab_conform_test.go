@@ -81,7 +81,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	for _, spec := range []struct {
 		proto, client string
 		reference     labReferenceData
-	}{{"jellyfin", "findroid,jellycon,jellyfin-androidtv,streamyfin,swiftfin", jellyfinRef}, {"emby", "emby-sdk", embyRef}} {
+	}{{"jellyfin", "findroid,jellycon,jellyfin-androidtv,streamyfin,swiftfin,infuse-jellyfin", jellyfinRef}, {"emby", "emby-sdk", embyRef}} {
 		t.Run(spec.proto, func(t *testing.T) {
 			inst, e := a.frontends.registry.Mount(ctx, core.Protocol(spec.proto))
 			if e != nil {
