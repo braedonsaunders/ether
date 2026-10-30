@@ -3,6 +3,7 @@ package transcode
 import (
 	"encoding/binary"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -193,6 +194,12 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 		return si, false, incomplete("multiple sample descriptions")
 	}
 	entry := entries[0]
+	// The sample-entry fourcc is the codec tag ffprobe reports. A title is
+	// only the udta name already copied above, not the handler name.
+	si.CodecTag = entry.typ
+	if scale > 0 {
+		si.TimeBase = "1/" + strconv.FormatUint(uint64(scale), 10)
+	}
 	frames, bytes, deltas := sampleStats(b, stbl)
 	// libavformat measures the stream over its edit list when it has one.
 	played := 0.0
@@ -215,8 +222,11 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 		}
 		switch {
 		case len(deltas) == 1 || (len(deltas) == 2 && deltas[1][0] == 1):
-			if deltas[0][1] > 0 {
-				si.FrameRate = math.Round(float64(scale)/float64(deltas[0][1])*1000) / 1000
+			if deltas[0][1] > 0 && scale > 0 {
+				rate := float64(scale) / float64(deltas[0][1])
+				si.AverageFrameRate = &rate
+				si.ReferenceFrameRate = &rate
+				si.FrameRate = math.Round(rate*1000) / 1000
 			}
 		case frames > 0 && dur > 0:
 			si.FrameRate = math.Round(float64(frames)*float64(scale)/float64(dur)*1000) / 1000

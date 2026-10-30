@@ -73,6 +73,48 @@ func TestProbeSourceMatchesRecordedFFprobe(t *testing.T) {
 	}
 }
 
+func TestMP4ProbePublishesContainerFacts(t *testing.T) {
+	check := func(name string, index int, tag, pix, timeBase string, nal int, rate float64, title string) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("testdata", "nativeprobe", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := ProbeSource(context.Background(), bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index >= len(got.Streams) {
+			t.Fatalf("%s stream %d missing", name, index)
+		}
+		s := got.Streams[index]
+		if s.CodecTag != tag || s.PixelFormat != pix || s.TimeBase != timeBase || s.Title != title {
+			t.Fatalf("%s stream %d tag=%q pix=%q time=%q title=%q", name, index, s.CodecTag, s.PixelFormat, s.TimeBase, s.Title)
+		}
+		if nal == 0 {
+			if s.NALLengthSize != nil {
+				t.Fatalf("%s stream %d nal %v", name, index, *s.NALLengthSize)
+			}
+		} else if s.NALLengthSize == nil || *s.NALLengthSize != nal {
+			t.Fatalf("%s stream %d nal %v", name, index, s.NALLengthSize)
+		}
+		if rate == 0 {
+			if s.AverageFrameRate != nil || s.ReferenceFrameRate != nil {
+				t.Fatalf("%s stream %d has a frame rate", name, index)
+			}
+		} else if s.AverageFrameRate == nil || s.ReferenceFrameRate == nil || *s.AverageFrameRate != rate || *s.ReferenceFrameRate != rate {
+			t.Fatalf("%s stream %d rates %v %v", name, index, s.AverageFrameRate, s.ReferenceFrameRate)
+		}
+		if s.ReferenceFrames != nil {
+			t.Fatalf("%s stream %d invented ref frames %d", name, index, *s.ReferenceFrames)
+		}
+	}
+	check("h264_aac_movtext_faststart.mp4", 0, "avc1", "yuv420p", "1/24000", 4, 24000.0/1001, "")
+	check("h264_aac_movtext_faststart.mp4", 1, "mp4a", "", "1/48000", 0, 0, "")
+	check("hevc_hdr10_eac3_ac3_moovtail.mp4", 0, "hvc1", "yuv420p10le", "1/12288", 0, 24, "")
+	check("hevc_hdr10_eac3_ac3_moovtail.mp4", 2, "ac-3", "", "1/48000", 0, 0, "")
+}
+
 // normalizeForNative removes the facts native probing deliberately leaves
 // to later enrichment: frame-header audio bitrates and the DTS/TrueHD/E-AC-3
 // profiles that need audio packets, plus ffprobe's "unknown" transfer.
