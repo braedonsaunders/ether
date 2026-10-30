@@ -247,9 +247,27 @@ func TestSourceHistoryRecordsOnlyAcceptedSamplesAndAuthorizedStop(t *testing.T) 
 	if err := b.Stop(ctx, access, session.ID); err != nil {
 		t.Fatal(err)
 	}
+	allowed = true
+	session = open()
+	if _, err := b.StartStream(ctx, access, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect}); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	stale := *b.sessions[session.ID]
+	b.mu.Unlock()
+	b.owners.BindFor("broker", stale.public.ViewerID, stale.clientID, stale.public.Item, "newer", "newer-play", true, time.Now())
+	if err := b.Stop(ctx, access, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	// The worker processes this barrier after any erroneous duplicate, revoked,
+	// or superseded-session sample.
+	b.historyQueue <- sourceHistorySample{source: core.PlaybackSourceObservation{ReleaseID: "barrier"}}
 	select {
 	case source := <-history.writes:
-		t.Fatalf("duplicate or revoked cleanup wrote history: %+v", source)
-	default:
+		if source.ReleaseID != "barrier" {
+			t.Fatalf("duplicate or unauthorized cleanup wrote history: %+v", source)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("history worker did not reach barrier")
 	}
 }

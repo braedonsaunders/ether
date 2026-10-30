@@ -917,7 +917,7 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 	if viewer.ID != s.public.ViewerID {
 		viewer, err = b.deps.ActiveViewer(ctx, s.public.ViewerID)
 	}
-	if err == nil && viewer != nil && !s.live && s.format != "" && b.currentMediaPolicy(ctx, viewer, s) {
+	if err == nil && viewer != nil && !s.live && s.format != "" && !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) && b.currentMediaPolicy(ctx, viewer, s) {
 		b.recordSourceHistory(ctx, s)
 	}
 	return b.stopLocked(ctx, s)
