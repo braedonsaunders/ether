@@ -50,6 +50,7 @@ type ListenerSpec struct {
 	Shared bool `json:"shared,omitempty"`
 }
 type Status struct {
+	Mounted          bool     `json:"mounted"`
 	Addresses        []string `json:"addresses"`
 	ConnectURLs      []string `json:"connectUrls,omitempty"`
 	LAN              string   `json:"lan"`

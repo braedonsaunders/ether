@@ -66,3 +66,46 @@ func TestFrontendAPI(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 }
+
+func TestFrontendHealth(t *testing.T) {
+	store := newStore(t, func(c *config.Config) { seededConfig(c); c.SetupComplete = true })
+	f := &healthFrontends{}
+	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store), Frontends: f})
+	for _, protocol := range []string{"plex", "jellyfin", "emby", "silo", "stremio", "webdav", "m3u", "dlna"} {
+		path := "/ether/api/frontends/" + protocol + "/health"
+		if w := serve(h, req("GET", path, "")); w.Code != 401 {
+			t.Fatal(w.Code)
+		}
+		for _, state := range []struct {
+			enabled, mounted bool
+			failure          string
+			want             int
+		}{{false, false, "", 503}, {true, false, "", 503}, {true, true, "", 200}, {true, true, "bind failed", 503}} {
+			f.enabled, f.mounted, f.failure = state.enabled, state.mounted, state.failure
+			r := req("GET", path, "")
+			r.Header.Set("X-Plex-Token", ownerToken)
+			if w := serve(h, r); w.Code != state.want {
+				t.Fatal(protocol, state, w.Code, w.Body.String())
+			}
+		}
+	}
+	r := req("GET", "/ether/api/frontends/missing/health", "")
+	r.Header.Set("X-Plex-Token", ownerToken)
+	if w := serve(h, r); w.Code != 404 {
+		t.Fatal(w.Code)
+	}
+}
+
+type healthFrontends struct {
+	frontendsFake
+	mounted bool
+	failure string
+}
+
+func (f *healthFrontends) List(context.Context) ([]admin.FrontendInfo, error) {
+	var out []admin.FrontendInfo
+	for _, id := range []frontend.Protocol{"plex", "jellyfin", "emby", "silo", "stremio", "webdav", "m3u", "dlna"} {
+		out = append(out, admin.FrontendInfo{Descriptor: frontend.Descriptor{ID: id}, Enabled: f.enabled, Status: frontend.Status{Mounted: f.mounted, Error: f.failure}})
+	}
+	return out, nil
+}

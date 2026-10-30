@@ -178,6 +178,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		}, LANViewer: lanViewer, Config: settings}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
+	r.control.listeners.log = a.log
 	r.control.listeners.discovery = newSharedDiscovery(r.ctx)
 	r.control.listeners.discoveryEndpoint = r.discoveryEndpoint
 	r.control.clientCount = a.frontendClients.count

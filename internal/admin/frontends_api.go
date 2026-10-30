@@ -97,3 +97,29 @@ func (h *Handler) frontendToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
+
+// frontendHealth reports readiness on this node, including disabled protocols.
+// It uses the owner API so probes do not expose listeners or failure details.
+func (h *Handler) frontendHealth(w http.ResponseWriter, r *http.Request) {
+	if !h.frontendAvailable(w) {
+		return
+	}
+	list, err := h.deps.Frontends.List(r.Context())
+	if err != nil {
+		writeError(w, 503, "unavailable", "Could not read front-end health")
+		return
+	}
+	for _, item := range list {
+		if string(item.Descriptor.ID) != r.PathValue("id") {
+			continue
+		}
+		healthy := item.Enabled && item.Status.Mounted && item.Status.Error == ""
+		status := http.StatusOK
+		if !healthy {
+			status = http.StatusServiceUnavailable
+		}
+		writeJSON(w, status, map[string]any{"protocol": item.Descriptor.ID, "healthy": healthy, "enabled": item.Enabled, "mounted": item.Status.Mounted})
+		return
+	}
+	writeError(w, 404, "not_found", "Front end not found")
+}

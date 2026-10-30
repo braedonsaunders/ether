@@ -47,3 +47,28 @@ func TestFrontendImports(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Cheap adapters prove that new surfaces fit the host boundary without growing
+// their own domain orchestration. Count all production lines, including comments.
+func TestCheapSurfaceSize(t *testing.T) {
+	for _, protocol := range []string{"stremio", "webdav", "m3u", "dlna"} {
+		files, err := filepath.Glob(filepath.Join("..", "frontends", protocol, "*.go"))
+		if err != nil || len(files) == 0 {
+			t.Fatalf("%s: missing adapter: %v", protocol, err)
+		}
+		lines := 0
+		for _, path := range files {
+			if strings.HasSuffix(path, "_test.go") {
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines += strings.Count(string(data), "\n")
+		}
+		if lines > 1500 {
+			t.Errorf("%s has %d production lines; keep the adapter within 1500", protocol, lines)
+		}
+	}
+}
