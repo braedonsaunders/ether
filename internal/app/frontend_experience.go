@@ -198,7 +198,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		return a.favorites.Has(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()})
 	}, IsFavoriteMany: func(ctx context.Context, u *core.User, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
 		return a.favorites.HasTitles(ctx, u, keys)
-	}, IsNotInterested: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
+	}, FavoriteMembership: a.favoriteMembership, IsNotInterested: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
 		return a.notInterested.Has(ctx, u, k)
 	}, SetNotInterestedSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
 		_, err := a.notInterested.Set(ctx, u, k, on)
@@ -208,7 +208,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			return false, core.ErrNotAvailable
 		}
 		return a.watchlist.Contains(ctx, u.ID, k)
-	}, SetWatchlistSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
+	}, WatchlistMembership: a.watchlistMembership, SetWatchlistSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
 		if a.watchlist == nil {
 			return core.ErrNotAvailable
 		}

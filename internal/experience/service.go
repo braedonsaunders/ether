@@ -60,9 +60,11 @@ type ServiceDeps struct {
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
 	IsFavoriteMany          func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
+	FavoriteMembership      func(context.Context, *core.User, core.RatingKey) (frontend.Membership, error)
 	IsNotInterested         func(context.Context, *core.User, core.RatingKey) (bool, error)
 	SetNotInterestedSource  func(context.Context, *core.User, core.RatingKey, bool) error
 	IsWatchlisted           func(context.Context, *core.User, core.RatingKey) (bool, error)
+	WatchlistMembership     func(context.Context, *core.User, core.RatingKey) (frontend.Membership, error)
 	SetWatchlistSource      func(context.Context, *core.User, core.RatingKey, bool) error
 	RemoveContinue          func(context.Context, *core.User, core.RatingKey) error
 	CanFavoriteEntity       func(context.Context, *core.User, frontend.FavoriteRef) bool
