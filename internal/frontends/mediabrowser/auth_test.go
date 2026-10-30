@@ -15,6 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
 func TestDeviceIDFromStreamQuery(t *testing.T) {
@@ -143,6 +144,67 @@ func TestAuthentication(t *testing.T) {
 	}
 	if revoked != "valid" {
 		t.Fatal("grant not revoked")
+	}
+}
+
+func TestJellyfinOwnedUserAndDTODefaults(t *testing.T) {
+	v := &frontend.Viewer{ID: 9, Username: "alice", SubtitleLanguages: []string{"eng"}}
+	ident := frontendtest.Identity{
+		ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
+			if token == "valid" {
+				return v, nil
+			}
+			return nil, errors.New("invalid")
+		},
+		SignInFunc: func(context.Context, string, string, frontend.Device) (string, error) { return "valid", nil },
+	}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := ids.GUID(ids.User, v.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := ids.GUID(ids.User, v.ID+1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Authorization", `MediaBrowser Token="valid", DeviceId="device"`)
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	own := call("GET", "/Users/"+id+"?userId="+id, "")
+	if own.Code != 200 || own.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatal(own.Code, own.Header().Get("Content-Type"), own.Body.String())
+	}
+	var user map[string]any
+	if json.Unmarshal(own.Body.Bytes(), &user) != nil || user["Id"] != id || user["Name"] != "alice" {
+		t.Fatal(own.Body.String())
+	}
+	if user["EnableAutoLogin"] != false || user["HasConfiguredEasyPassword"] != false {
+		t.Fatal(user)
+	}
+	configuration := user["Configuration"].(map[string]any)
+	if configuration["SubtitleLanguagePreference"] != "eng" || configuration["CastReceiverId"] != "" {
+		t.Fatal(configuration)
+	}
+	policy := user["Policy"].(map[string]any)
+	for _, key := range []string{"AccessSchedules", "BlockUnratedItems", "BlockedChannels", "BlockedMediaFolders"} {
+		list, ok := policy[key].([]any)
+		if !ok || len(list) != 0 {
+			t.Fatalf("%s: %#v", key, policy[key])
+		}
+	}
+	if denied := call("GET", "/Users/"+other, ""); denied.Code != 403 || strings.Contains(denied.Body.String(), "alice") {
+		t.Fatal(denied.Code, denied.Body.String())
+	}
+	signed := call("POST", "/Users/AuthenticateByName", `{"Username":"alice","Pw":"secret"}`)
+	if signed.Code != 200 || !strings.Contains(signed.Body.String(), `"EnableAutoLogin":false`) || !strings.Contains(signed.Body.String(), `"CastReceiverId":""`) {
+		t.Fatal(signed.Code, signed.Body.String())
 	}
 }
 
