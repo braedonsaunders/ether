@@ -11,6 +11,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 type memTrickplay struct {
@@ -152,5 +153,57 @@ func TestBrokerDoesNotCancelSharedTrickplay(t *testing.T) {
 	delete(b.sessions, "s")
 	if len(provider.canceled) != 0 || provider.closed {
 		t.Fatal("broker canceled or closed the shared provider", provider.canceled, provider.closed)
+	}
+}
+
+func TestBrokerTrickplayLeasesReleaseAndFenceLateEnsure(t *testing.T) {
+	ctx := context.Background()
+	raw := &memTrickplay{}
+	owner := trickplay.New(raw)
+	defer owner.Close()
+	provider := owner.Borrow()
+	play := &fakePlayback{sessions: map[string]*core.PlaySession{"play": {ID: "play", Resolution: &core.Resolution{Release: core.Release{ID: "rel-1"}}}}}
+	active := func(context.Context, int64) (*core.Viewer, error) { return &core.Viewer{ID: 7}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	b, err := NewBroker(BrokerDeps{Playback: play, Trickplay: provider, ActiveViewer: active, Events: events, Progress: &fakeProgress{}, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error) {
+		return &core.Title{}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	s := &brokerSession{public: frontend.Session{ID: "s", ViewerID: 7}, playID: "play"}
+	b.sessions["s"] = s
+	plex, err := provider.(core.TrickplayLeaser).AcquireTrickplay(ctx, core.TrickplaySource{ReleaseID: "rel-1", InputURL: "plex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.ensureTrickplay(ctx, s, time.Second)
+	// A source change must acquire the replacement before retiring the old hold.
+	play.mu.Lock()
+	play.sessions["play"] = &core.PlaySession{ID: "play", Resolution: &core.Resolution{Release: core.Release{ID: "rel-2"}}}
+	play.mu.Unlock()
+	b.ensureTrickplay(ctx, s, time.Second)
+	if len(raw.canceled) != 0 {
+		t.Fatal("swap canceled Plex")
+	}
+	if err := b.stopLocked(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	if len(raw.canceled) != 1 || raw.canceled[0] != "rel-2" {
+		t.Fatal("stop failed to release current lease", raw.canceled)
+	}
+	n := len(raw.ensured)
+	b.ensureTrickplay(ctx, s, time.Second)
+	if len(raw.ensured) != n {
+		t.Fatal("late Ensure resurrected stopped session")
+	}
+	plex.Release(true)
+	if len(raw.canceled) != 2 || raw.canceled[1] != "rel-1" {
+		t.Fatal("old release leaked", raw.canceled)
+	}
+	if raw.closed {
+		t.Fatal("broker closed owner")
 	}
 }

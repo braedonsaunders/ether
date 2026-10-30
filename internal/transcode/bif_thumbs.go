@@ -46,7 +46,7 @@ type Thumbnails struct {
 
 	mu      sync.Mutex
 	entries map[string]*thumbEntry
-	running map[string]context.CancelFunc
+	running map[string]*thumbJob
 	seq     uint64
 	closed  bool
 }
@@ -72,6 +72,12 @@ type ThumbOptions struct {
 	MaxBytes      int64         // total stored JPEG bytes, LRU-evicted (default 256MiB)
 	MaxReleases   int           // releases kept, LRU-evicted (default 32)
 	RetryBackoff  time.Duration // pause before retrying a failed release (default 2m)
+}
+
+type thumbJob struct {
+	cancel   context.CancelFunc
+	canceled bool
+	pending  *core.TrickplaySource
 }
 
 type thumbEntry struct {
@@ -134,7 +140,7 @@ func NewThumbnails(o ThumbOptions) *Thumbnails {
 		frameTimeout: o.FrameTimeout, batchFrames: o.BatchFrames, batchPause: o.BatchPause,
 		maxBytes: o.MaxBytes, maxReleases: o.MaxReleases, retryBackoff: o.RetryBackoff,
 		ctx: ctx, cancel: cancel, sem: make(chan struct{}, o.MaxConcurrent),
-		entries: map[string]*thumbEntry{}, running: map[string]context.CancelFunc{},
+		entries: map[string]*thumbEntry{}, running: map[string]*thumbJob{},
 	}
 }
 
@@ -188,13 +194,21 @@ func (t *Thumbnails) EnsureTrickplay(_ context.Context, src core.TrickplaySource
 	if src.AvailableUntil > 0 {
 		e.availableUntil = src.AvailableUntil
 	}
-	if t.running[src.ReleaseID] != nil || e.complete || time.Now().Before(e.retryAt) {
+	if job := t.running[src.ReleaseID]; job != nil {
+		if job.canceled {
+			next := src
+			job.pending = &next
+		}
+		t.mu.Unlock()
+		return
+	}
+	if e.complete || time.Now().Before(e.retryAt) {
 		t.mu.Unlock()
 		return
 	}
 	e.dead = false
 	jobCtx, cancel := context.WithCancel(t.ctx)
-	t.running[src.ReleaseID] = cancel
+	t.running[src.ReleaseID] = &thumbJob{cancel: cancel}
 	t.wg.Add(1)
 	t.mu.Unlock()
 	go t.generate(jobCtx, src)
@@ -204,11 +218,12 @@ func (t *Thumbnails) EnsureTrickplay(_ context.Context, src core.TrickplaySource
 // this after the last viewer session for that release ends.
 func (t *Thumbnails) CancelTrickplay(releaseID string) {
 	t.mu.Lock()
-	cancel := t.running[releaseID]
-	t.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if job := t.running[releaseID]; job != nil {
+		job.canceled = true
+		job.pending = nil
+		job.cancel()
 	}
+	t.mu.Unlock()
 }
 
 // TrickplayAvailable implements core.TrickplayProvider.
@@ -457,10 +472,18 @@ func (t *Thumbnails) generate(ctx context.Context, src core.TrickplaySource) {
 	defer t.wg.Done()
 	defer func() {
 		t.mu.Lock()
-		if cancel := t.running[src.ReleaseID]; cancel != nil {
-			cancel()
-		}
+		job := t.running[src.ReleaseID]
+		job.cancel()
 		delete(t.running, src.ReleaseID)
+		// Restart only after the canceled extraction has exited. Keep the waitgroup
+		// reservation across the handoff so Close cannot return before the restart.
+		if job.pending != nil && !t.closed {
+			next := *job.pending
+			jobCtx, cancel := context.WithCancel(t.ctx)
+			t.running[src.ReleaseID] = &thumbJob{cancel: cancel}
+			t.wg.Add(1)
+			go t.generate(jobCtx, next)
+		}
 		t.mu.Unlock()
 	}()
 	select {

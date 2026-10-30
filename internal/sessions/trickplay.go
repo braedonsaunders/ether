@@ -84,11 +84,14 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 	}
 	hold := current.trickplay
 	b.mu.Unlock()
-	err := hold.Update(ctx, b.deps.Trickplay, core.TrickplaySource{
+	err := hold.UpdateIf(ctx, b.deps.Trickplay, core.TrickplaySource{
 		ReleaseID:      ps.Resolution.Release.ID,
 		InputURL:       input,
 		Info:           ps.Info,
 		AvailableUntil: until,
+	}, func() bool {
+		latest, ok := b.deps.Playback.Session(s.playID)
+		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == ps.Resolution.Release.ID && sourceRevision(latest) == sourceRevision(ps)
 	})
 	if err != nil && b.deps.OnEventError != nil {
 		b.deps.OnEventError(err)

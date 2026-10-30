@@ -11,6 +11,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/transcode"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 type fakeTrickplay struct {
@@ -115,5 +116,77 @@ func TestPartIndexesAttributeOnlyWhenAvailable(t *testing.T) {
 	provider.available = true
 	if rec := f.get(t, path); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `indexes="sd"`) {
 		t.Fatalf("missing indexes attribute: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+type cancelingTrickplay struct {
+	fakeTrickplay
+	cancels int
+}
+
+func (p *cancelingTrickplay) CancelTrickplay(string) { p.cancels++ }
+func TestPlexOnlyTrickplayIdleCancelParity(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		t.Run(strconv.FormatBool(shared), func(t *testing.T) {
+			f := newFixture()
+			defer f.srv.Close()
+			raw := &cancelingTrickplay{}
+			var provider core.TrickplayProvider = raw
+			if shared {
+				owner := trickplay.New(raw)
+				defer owner.Close()
+				provider = owner.Borrow()
+			}
+			f.srv.d.Trickplay = provider
+			addIndexSession(f, fightClub.Key)
+			playing := f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&time=30000&duration=8340000&state=playing")
+			if raw.ensured != 1 {
+				t.Fatal("Ensure changed")
+			}
+			// A second active source preserves the historical idle decision, even if it
+			// has not sent a timeline and therefore has no thumbnail lease yet.
+			f.playback.mu.Lock()
+			f.playback.sessions["other"] = &core.PlaySession{ID: "other", Resolution: &core.Resolution{Release: core.Release{ID: "release-1"}}}
+			f.playback.mu.Unlock()
+			stopped := f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&time=30000&duration=8340000&state=stopped")
+			if raw.cancels != 0 {
+				t.Fatal("canceled before idle")
+			}
+			f.playback.Stop("other")
+			f.srv.cancelTrickplayIfIdle(&core.PlaySession{ID: "other", Resolution: &core.Resolution{Release: core.Release{ID: "release-1"}}})
+			if raw.cancels != 1 {
+				t.Fatalf("idle cancels=%d", raw.cancels)
+			}
+			if playing.Code != 200 || stopped.Code != 200 || !bytes.Equal(playing.Body.Bytes(), stopped.Body.Bytes()) {
+				t.Fatalf("timeline bytes changed: %q %q", playing.Body.Bytes(), stopped.Body.Bytes())
+			}
+		})
+	}
+}
+func TestPlexStopCannotCancelJellyfinOrPrewarmLease(t *testing.T) {
+	for _, name := range []string{"jellyfin", "prewarm"} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture()
+			defer f.srv.Close()
+			raw := &cancelingTrickplay{}
+			owner := trickplay.New(raw)
+			defer owner.Close()
+			p := owner.Borrow()
+			f.srv.d.Trickplay = p
+			addIndexSession(f, fightClub.Key)
+			f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&time=30000&state=playing")
+			other, err := p.(core.TrickplayLeaser).AcquireTrickplay(context.Background(), core.TrickplaySource{ReleaseID: "release-1", InputURL: "prewarm"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.get(t, "/:/timeline?ratingKey="+fightClub.Key.String()+"&state=stopped")
+			if raw.cancels != 0 {
+				t.Fatal("Plex stop canceled another holder")
+			}
+			other.Release(true)
+			if raw.cancels != 1 {
+				t.Fatal("last release failed")
+			}
+		})
 	}
 }

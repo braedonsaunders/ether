@@ -125,6 +125,9 @@ func (s *Server) cancelTrickplayIfIdle(ps *core.PlaySession) {
 	}
 	if hold != nil {
 		hold.Close(idle)
+		if _, leased := s.d.Trickplay.(core.TrickplayLeaser); leased {
+			return
+		}
 	}
 	if idle {
 		if canceler, ok := s.d.Trickplay.(core.TrickplayCanceler); ok {

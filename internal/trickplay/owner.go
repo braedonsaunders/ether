@@ -145,9 +145,14 @@ type Holder struct {
 }
 
 func (h *Holder) Update(ctx context.Context, p core.TrickplayProvider, src core.TrickplaySource) error {
+	return h.UpdateIf(ctx, p, src, nil)
+}
+
+// UpdateIf revalidates the live source after taking the holder barrier.
+func (h *Holder) UpdateIf(ctx context.Context, p core.TrickplayProvider, src core.TrickplaySource, valid func() bool) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.closed {
+	if h.closed || (valid != nil && !valid()) {
 		return nil
 	}
 	leaser, ok := p.(core.TrickplayLeaser)
