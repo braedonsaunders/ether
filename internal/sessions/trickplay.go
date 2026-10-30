@@ -10,6 +10,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 const (
@@ -56,7 +57,7 @@ func thumbnailCount(duration, interval time.Duration) int {
 }
 
 // ensureTrickplay asks the borrowed provider to continue generation for the
-// session's current release. The broker does not cancel that job.
+// session's current release while holding its shared job lease.
 func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until time.Duration) {
 	if b == nil || b.deps.Trickplay == nil || s == nil || s.live || s.playID == "" || b.deps.Playback == nil {
 		return
@@ -72,12 +73,26 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 	if input == "" {
 		return
 	}
-	b.deps.Trickplay.EnsureTrickplay(ctx, core.TrickplaySource{
+	b.mu.Lock()
+	current := b.sessions[s.public.ID]
+	if current == nil || b.closed || current.playID != s.playID {
+		b.mu.Unlock()
+		return
+	}
+	if current.trickplay == nil {
+		current.trickplay = &trickplay.Holder{}
+	}
+	hold := current.trickplay
+	b.mu.Unlock()
+	err := hold.Update(ctx, b.deps.Trickplay, core.TrickplaySource{
 		ReleaseID:      ps.Resolution.Release.ID,
 		InputURL:       input,
 		Info:           ps.Info,
 		AvailableUntil: until,
 	})
+	if err != nil && b.deps.OnEventError != nil {
+		b.deps.OnEventError(err)
+	}
 }
 
 func (b *Broker) trickplayBindingCurrent(s *brokerSession, ps *core.PlaySession) bool {
