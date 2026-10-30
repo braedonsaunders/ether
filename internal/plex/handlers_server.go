@@ -3,6 +3,7 @@ package plex
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -384,7 +385,14 @@ func (s *Server) handleOK(w http.ResponseWriter, r *http.Request) {
 func redactQuery(q string) string {
 	parts := strings.Split(q, "&")
 	for i, p := range parts {
-		if k, _, ok := strings.Cut(p, "="); ok && (strings.EqualFold(k, "X-Plex-Token") || strings.EqualFold(k, streamGrantParam)) {
+		k, _, ok := strings.Cut(p, "=")
+		if !ok {
+			continue
+		}
+		// Authentication URL-decodes parameter names. Apply the same decoding
+		// before classifying secrets, while preserving unrelated diagnostics.
+		name, err := url.QueryUnescape(k)
+		if err == nil && (strings.EqualFold(name, "X-Plex-Token") || strings.EqualFold(name, streamGrantParam)) {
 			parts[i] = k + "=REDACTED"
 		}
 	}
