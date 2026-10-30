@@ -25,6 +25,8 @@ func init() {
 	store.Register("frontend_image_grants", 3, `ALTER TABLE frontend_image_grants ADD COLUMN image_subject TEXT NOT NULL DEFAULT '';`)
 	store.Register("frontend_image_grants", 4, `CREATE INDEX frontend_image_grants_scope_expiry ON frontend_image_grants(viewer_id,surface,expires,hash);`)
 	store.Register("frontend_image_grants", 5, `CREATE INDEX frontend_image_grants_expiry ON frontend_image_grants(expires,hash);`)
+	// The expression and cleanup query use the established 64-shard layout.
+	store.Register("frontend_image_grants", 6, `CREATE INDEX frontend_image_grants_shard_expiry ON frontend_image_grants((viewer_id % 64),expires,hash);`)
 }
 
 type ImageSource interface {
