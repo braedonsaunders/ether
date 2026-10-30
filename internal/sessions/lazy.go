@@ -437,6 +437,13 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The scoped path remains internal; every client request must pass this
 	// handler so revoking the issuing grant revokes the capability as well.
 	streamCtx, cancelStream := context.WithCancel(ctx)
+	unregister, ok := s.broker.registerLazyTransfer(id, cancelStream)
+	if !ok {
+		cancelStream()
+		http.NotFound(w, r)
+		return
+	}
+	defer unregister()
 	done := make(chan struct{})
 	heartbeatOwned = false
 	go func() {
@@ -494,6 +501,32 @@ func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.
 }
 
 const maxLazyHeartbeats = 1024
+
+type lazyTransfer struct{ marker byte }
+
+func (b *Broker) registerLazyTransfer(id string, cancel context.CancelFunc) (func(), bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.sessions[id] == nil {
+		return nil, false
+	}
+	if b.lazyTransfers == nil {
+		b.lazyTransfers = make(map[string]map[*lazyTransfer]context.CancelFunc)
+	}
+	if b.lazyTransfers[id] == nil {
+		b.lazyTransfers[id] = make(map[*lazyTransfer]context.CancelFunc)
+	}
+	key := &lazyTransfer{}
+	b.lazyTransfers[id][key] = cancel
+	return func() {
+		b.mu.Lock()
+		delete(b.lazyTransfers[id], key)
+		if len(b.lazyTransfers[id]) == 0 {
+			delete(b.lazyTransfers, id)
+		}
+		b.mu.Unlock()
+	}, true
+}
 
 func (b *Broker) reserveLazyHeartbeat() bool {
 	b.mu.Lock()

@@ -116,6 +116,7 @@ type Broker struct {
 	lazyCleanupWait     time.Duration
 	lazyCleanupReserved int
 	lazyHeartbeatCount  int
+	lazyTransfers       map[string]map[*lazyTransfer]context.CancelFunc
 	lazyCleanupCancel   context.CancelFunc
 	lazyCleanupDone     chan struct{}
 	devices             map[deviceKey]frontend.SessionCapabilities
@@ -936,7 +937,12 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 			stopSource = b.releaseSessionSourceLocked(s.playID)
 		}
 	}
+	transfers := b.lazyTransfers[s.public.ID]
+	delete(b.lazyTransfers, s.public.ID)
 	b.mu.Unlock()
+	for _, cancel := range transfers {
+		cancel()
+	}
 	if !ok {
 		return nil
 	}
@@ -1026,6 +1032,12 @@ func (b *Broker) Close(ctx context.Context) {
 	if b.historyCancel != nil {
 		b.historyCancel()
 	}
+	for _, transfers := range b.lazyTransfers {
+		for _, cancel := range transfers {
+			cancel()
+		}
+	}
+	b.lazyTransfers = nil
 	lazyCancel, lazyDone := b.lazyCleanupCancel, b.lazyCleanupDone
 	var ids, planIDs []string
 	seen := make(map[string]bool)

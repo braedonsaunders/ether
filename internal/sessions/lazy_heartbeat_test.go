@@ -37,7 +37,7 @@ func (p *heartbeatLazyPlayback) ServeRange(w http.ResponseWriter, r *http.Reques
 }
 
 func TestLazyLongTransferHeartbeat(t *testing.T) {
-	for _, ending := range []string{"retry", "revoke", "database", "stuck"} {
+	for _, ending := range []string{"retry", "revoke", "database", "stuck", "stop"} {
 		t.Run(ending, func(t *testing.T) {
 			ctx := context.Background()
 			db := store.OpenTest(t)
@@ -177,6 +177,20 @@ func TestLazyLongTransferHeartbeat(t *testing.T) {
 				}
 				blockActive.Store(false)
 				close(activeRelease)
+				<-stopped
+			case "stop":
+				b.mu.Lock()
+				id := b.lazySessions[hash].id
+				b.mu.Unlock()
+				if err := b.Stop(ctx, frontend.SessionAccess{Viewer: req.Viewer, Device: req.Device, Protocol: req.Protocol}, id); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case <-pb.cancelled:
+				case <-time.After(5 * time.Second):
+					t.Fatal("stopping session did not cancel transfer")
+				}
+				<-finished
 				<-stopped
 			}
 		})

@@ -42,6 +42,13 @@ func (b *Broker) collectSupersededLocked(replacement *brokerSession) []*brokerSe
 
 func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession, newSource string) {
 	for _, old := range entries {
+		b.mu.Lock()
+		transfers := b.lazyTransfers[old.public.ID]
+		delete(b.lazyTransfers, old.public.ID)
+		b.mu.Unlock()
+		for _, cancel := range transfers {
+			cancel()
+		}
 		b.bindings.Remove(old.public.ID)
 		if b.cluster != nil {
 			if err := b.cluster.store.remove(ctx, old.public.ID); err != nil && b.deps.OnEventError != nil {
