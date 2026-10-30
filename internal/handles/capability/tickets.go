@@ -138,7 +138,7 @@ func (s *Tickets) IssueBatch(ctx context.Context, scope TicketScope, entries []T
 		if i > 0 {
 			header.WriteString(` UNION ALL `)
 		}
-		header.WriteString(`SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1)`)
+		header.WriteString(`SELECT CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT),CAST(? AS BIGINT),CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT) WHERE EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=CAST(? AS TEXT) AND g.surface=CAST(? AS TEXT) AND g.viewer_id=CAST(? AS BIGINT) AND g.device_id=CAST(? AS TEXT) AND g.revoked=0 AND g.expires>CAST(? AS BIGINT) AND u.active=1)`)
 		args = append(args, ticketNamespace, e.Digest, shard, scope.ViewerID, scope.Surface, scope.DeviceID, expiry, scope.SourceHash, scope.Surface, scope.ViewerID, scope.DeviceID, now)
 	}
 	res, err := tx.ExecContext(ctx, header.String(), args...)

@@ -261,3 +261,36 @@ func TestTicketOrphanCapacityRecoveryAtSaturation(t *testing.T) {
 		t.Fatalf("capacity state total=%d live=%d orphan=%d", total, live, orphan)
 	}
 }
+
+// Both dialects must preserve numeric scope and expiry through compound SELECT.
+func TestTicketMultiBatchPreservesTypedScope(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	db, tickets, scope := fixture(t)
+	expiry, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1), entry(2)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.QueryContext(ctx, `SELECT viewer_id,shard,expires FROM capability_headers WHERE namespace='ticket' ORDER BY digest`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var viewer, shard, gotExpiry int64
+		if err = rows.Scan(&viewer, &shard, &gotExpiry); err != nil {
+			t.Fatal(err)
+		}
+		if viewer != scope.ViewerID || shard != scope.ViewerID%64 || gotExpiry != expiry {
+			t.Fatalf("viewer=%d shard=%d expiry=%d want=%d", viewer, shard, gotExpiry, expiry)
+		}
+		count++
+	}
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("header count=%d", count)
+	}
+}
