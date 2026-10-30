@@ -82,3 +82,21 @@ func TestSurfaceSharedAddressPreservesPublishedPrefix(t *testing.T) {
 		t.Fatal("invalid portal path accepted")
 	}
 }
+
+func TestPortalLoopbackUsesVerifiedListener(t *testing.T) {
+	for _, tc := range []struct{ peer, host, want string }{
+		{"127.0.0.1", "127.0.0.1", "http://127.0.0.1:1234/ether/me"},
+		{"127.0.0.1", "0.0.0.0", "http://127.0.0.1:1234/ether/me"},
+		{"::1", "::1", "http://[::1]:1234/ether/me"},
+		{"127.0.0.1", "192.168.1.5", ""},
+		{"192.168.1.5", "127.0.0.1", ""},
+		{"198.51.100.2", "0.0.0.0", ""},
+		{"192.168.1.5", "0.0.0.0", ""},
+		{"2001:db8::5", "::", ""},
+	} {
+		got, err := portalLANAddress(netip.MustParseAddr(tc.peer), tc.host, "1234", nil)
+		if got != tc.want || (err == nil) != (tc.want != "") {
+			t.Fatalf("peer=%s bound=%s got=%q err=%v", tc.peer, tc.host, got, err)
+		}
+	}
+}

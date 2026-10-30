@@ -1,6 +1,7 @@
 package stremio
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -18,6 +19,19 @@ func (i *instance) image(w http.ResponseWriter, r *http.Request) {
 
 // imageBase obtains an owner-selected reachable address, not an untrusted Host header.
 func (i *instance) imageBase(r *http.Request) *url.URL {
+	if i.host.ClientIP != nil && i.host.SurfaceURL != nil {
+		if peer, ok := i.host.ClientIP(r); ok && peer.IsLoopback() {
+			base, err := i.host.SurfaceURL(r.Context(), r)
+			u, parseErr := url.Parse(base)
+			if err == nil && parseErr == nil && u.Scheme == "http" && u.User == nil && u.RawQuery == "" && u.Fragment == "" && strings.HasSuffix(u.Path, "/stremio") {
+				if ip := net.ParseIP(u.Hostname()); ip != nil && ip.IsLoopback() {
+					u.Path += "/image/"
+					u.RawPath = ""
+					return u
+				}
+			}
+		}
+	}
 	if i.host.SecurePortalURL == nil {
 		return nil
 	}
