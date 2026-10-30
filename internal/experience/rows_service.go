@@ -28,26 +28,9 @@ type RowServiceDeps struct {
 	RankedSource bool
 }
 
-// RowsService produces viewer-scoped rows for non-Plex surfaces.
-type PlexRowDeps struct {
-	Source     RowSource
-	Active     func(context.Context, *core.User) bool
-	AllowRow   func(context.Context, *core.User, frontend.Row) bool
-	AllowEntry func(context.Context, *core.User, frontend.RowEntry) bool
-	Layout     func(context.Context, frontend.RowRequest, []frontend.Row) ([]frontend.Row, error)
-}
-
+// RowsService produces viewer-scoped, policy-checked rows.
 type RowsService struct {
-	d    RowServiceDeps
-	plex *PlexRowDeps
-}
-
-// NewPlexRowsService requires authorization even for host-supplied projections.
-func NewPlexRowsService(d PlexRowDeps) (*RowsService, error) {
-	if d.Source == nil || d.Active == nil || d.AllowRow == nil || d.AllowEntry == nil || d.Layout == nil {
-		return nil, errors.New("experience: incomplete Plex row dependencies")
-	}
-	return &RowsService{plex: &d}, nil
+	d RowServiceDeps
 }
 
 func NewRowsService(d RowServiceDeps) (*RowsService, error) {
@@ -67,46 +50,10 @@ func (s *RowsService) Rows(ctx context.Context, req frontend.RowRequest, protoco
 // SnapshotRows builds and authorizes the same ranked rows without issuing
 // impressions; a paged row view issues receipts only for delivered entries.
 func (s *RowsService) SnapshotRows(ctx context.Context, req frontend.RowRequest, protocol core.Protocol) ([]frontend.Row, error) {
-	if s.plex != nil {
-		return nil, errors.New("experience: Plex row snapshots unavailable")
-	}
 	return s.rows(ctx, req, protocol, false)
 }
 
 func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protocol core.Protocol, issue bool) ([]frontend.Row, error) {
-	if s.plex != nil {
-		if protocol != core.Protocol("plex") || req.Viewer == nil || !s.plex.Active(ctx, req.Viewer) {
-			return nil, errors.New("experience: invalid Plex viewer")
-		}
-		check := func(rows []frontend.Row) error {
-			for _, row := range rows {
-				if !s.plex.AllowRow(ctx, req.Viewer, row) {
-					return errors.New("experience: unauthorized Plex row")
-				}
-				for _, entry := range row.Entries {
-					if entryIdentity(entry) == "" || !s.plex.AllowEntry(ctx, req.Viewer, entry) {
-						return errors.New("experience: unauthorized Plex entry")
-					}
-				}
-			}
-			return nil
-		}
-		rows, err := s.plex.Source.Rows(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		if err = check(rows); err != nil {
-			return nil, err
-		}
-		rows, err = s.plex.Layout(ctx, req, rows)
-		if err != nil {
-			return nil, err
-		}
-		if err = check(rows); err != nil {
-			return nil, err
-		}
-		return rows, nil
-	}
 	if req.Viewer == nil || req.Device.ID == "" || protocol == "" || !s.d.Active(ctx, req.Viewer) {
 		return nil, errors.New("experience: invalid row viewer")
 	}

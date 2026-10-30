@@ -196,7 +196,6 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			return rows, nil
 		}
 		candidates := make([]core.NeutralHomeRow, 0, len(rows))
-		byID := make(map[string]frontend.Row, len(rows))
 		for _, row := range rows {
 			n := core.NeutralHomeRow{ID: row.ID, Title: row.Title, Kind: row.Kind, Purpose: row.Purpose, ItemCount: len(row.Entries)}
 			for _, entry := range row.Entries {
@@ -208,15 +207,14 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 				}
 			}
 			candidates = append(candidates, n)
-			byID[row.ID] = row
 		}
-		ordered, err := a.personalize.FinalizeNeutralHome(ctx, req.Viewer, sit, section, candidates)
+		ordered, err := experience.ArrangeNeutralHome(ctx, a.personalize, req.Viewer, sit, section, candidates)
 		if err != nil {
 			return nil, err
 		}
 		out := make([]frontend.Row, 0, len(ordered))
-		for i, n := range ordered {
-			row := byID[n.ID]
+		for i, index := range ordered {
+			row := rows[index]
 			row.Rank = i
 			row.Layout.Order = i
 			row.Layout.Style = row.Style

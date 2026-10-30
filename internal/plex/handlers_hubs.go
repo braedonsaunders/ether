@@ -252,7 +252,6 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	hc := s.hubContext(pr, 0)
 	mc := hubContainer()
 	served := map[string]core.Hub{} // rendered rows by identifier, for impressions
-	projections := map[string]frontend.Row{}
 	var hubs []core.Hub
 	if s.d.Recommender != nil {
 		var err error
@@ -267,36 +266,31 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	}
 	// Rendering remains in Plex: its generated identifier governs dedupe and
 	// its exact metadata is kept for the response and impression accounting.
-	var projected homeProjection
+	var projected model.Hub
 	experience.AssembleHome(candidates, q.Get("excludeContinueWatching") != "1", promotedOnly, "home.continue", func() {
 		spec := s.continueHub(ctx, pr, cwHome, Section{}, count)
-		projection := s.projectHomeHub(ctx, pr, spec)
-		mc.Hub = append(mc.Hub, projection.Rendered)
-		projections[projection.Rendered.HubIdentifier] = projection.Row
-		served[projection.Rendered.HubIdentifier] = projection.Spec.Hub
+		projection := s.renderHub(ctx, pr, spec, hubCtx{})
+		mc.Hub = append(mc.Hub, projection)
+		served[projection.HubIdentifier] = spec.Hub
 	}, func(candidate experience.HomeCandidate) string {
-		projected = s.projectHomeHub(ctx, pr, hubSpec{Hub: hubs[candidate.Index]})
-		return projected.Rendered.HubIdentifier
+		projected = s.renderHub(ctx, pr, hubSpec{Hub: hubs[candidate.Index]}, hubCtx{})
+		return projected.HubIdentifier
 	}, func(candidate experience.HomeCandidate) {
-		mc.Hub = append(mc.Hub, projected.Rendered)
-		projections[projected.Rendered.HubIdentifier] = projected.Row
-		served[projected.Rendered.HubIdentifier] = projected.Spec.Hub
+		mc.Hub = append(mc.Hub, projected)
+		served[projected.HubIdentifier] = hubs[candidate.Index]
 	})
 	experience.CompleteHome(len(sections) == 0, func() {
-		if h, row, ok := s.playlistsHubProjection(ctx, pr, count); ok {
-			projections[h.HubIdentifier] = row
+		if h, _, ok := s.playlistsHubProjection(ctx, pr, count); ok {
 			mc.Hub = append(mc.Hub, h)
 		}
 	}, func() {
 		for _, hs := range s.discoveryHubs(ctx, pr, count) {
-			p := s.projectHomeHub(ctx, pr, hs)
-			projections[p.Rendered.HubIdentifier] = p.Row
-			mc.Hub = append(mc.Hub, p.Rendered)
+			p := s.renderHub(ctx, pr, hs, hubCtx{})
+			mc.Hub = append(mc.Hub, p)
 			served[hs.ID] = hs.Hub
 		}
 	}, func() {
-		if h, row := s.liveTVHubProjection(r); h != nil {
-			projections[h.HubIdentifier] = row
+		if h, _ := s.liveTVHubProjection(r); h != nil {
 			mc.Hub = append(mc.Hub, *h)
 		}
 	}, func() {
@@ -304,7 +298,7 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 			mc.Hub = filterHubs(mc.Hub, ids)
 		}
 	}, func() {
-		mc.Hub = s.arrangePlexHome(ctx, pr, hc, mc.Hub, projections)
+		mc.Hub = s.finalizeHomeRows(ctx, pr, hc, "home", mc.Hub)
 	})
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)

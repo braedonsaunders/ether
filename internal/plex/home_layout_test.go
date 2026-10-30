@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -9,10 +10,49 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
+type failingNeutralLayout struct{ core.Recommender }
+
+func (f failingNeutralLayout) FinalizeNeutralHome(context.Context, *core.User, core.HomeSituation, string, []core.NeutralHomeRow) ([]core.NeutralHomeRow, error) {
+	return nil, errors.New("layout unavailable")
+}
+
+func TestNeutralPlexHomeLayoutFailurePreservesRows(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	f.srv.d.Recommender = failingNeutralLayout{}
+	rows := []model.Hub{{HubIdentifier: "a", Metadata: []model.Metadata{{Title: "original"}}}}
+	got := f.srv.finalizeHomeRows(context.Background(), &Request{User: &ownerUser}, core.HubContext{}, "home", rows)
+	if !reflect.DeepEqual(got, rows) {
+		t.Fatalf("layout failure changed wire rows: %+v", got)
+	}
+}
+
 type renderedLayout struct {
 	core.Recommender
 	core.HomeLayoutSource
 	got []core.Hub
+}
+
+type neutralRenderedLayout struct {
+	*renderedLayout
+	got []core.NeutralHomeRow
+}
+
+func (r *neutralRenderedLayout) FinalizeNeutralHome(_ context.Context, _ *core.User, _ core.HomeSituation, _ string, rows []core.NeutralHomeRow) ([]core.NeutralHomeRow, error) {
+	r.got = rows
+	return []core.NeutralHomeRow{rows[1], rows[0]}, nil
+}
+
+func TestNeutralPlexHomeLayoutMatchesLegacySidecars(t *testing.T) {
+	legacy := &renderedLayout{}
+	neutral := &neutralRenderedLayout{renderedLayout: &renderedLayout{}}
+	rows := []model.Hub{{HubIdentifier: "a", Size: 1, Metadata: []model.Metadata{{Title: "A"}}}, {HubIdentifier: "b", Size: 2, Metadata: []model.Metadata{{Title: "B"}}}}
+	pr := &Request{User: &core.User{ID: 1}}
+	old := (&Server{d: Deps{Recommender: legacy}}).finalizeHomeRows(context.Background(), pr, core.HubContext{}, "home", rows)
+	got := (&Server{d: Deps{Recommender: neutral}}).finalizeHomeRows(context.Background(), pr, core.HubContext{}, "home", rows)
+	if !reflect.DeepEqual(got, old) || len(neutral.got) != 2 || neutral.got[1].ItemCount != 2 {
+		t.Fatalf("legacy=%+v neutral=%+v input=%+v", old, got, neutral.got)
+	}
 }
 
 func (r *renderedLayout) FinalizeHome(_ context.Context, _ *core.User, _ core.HubContext, _ string, rows []core.Hub) ([]core.Hub, error) {

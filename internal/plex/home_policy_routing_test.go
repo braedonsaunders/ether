@@ -2,9 +2,12 @@ package plex
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
 type policyRoutingRecommender struct {
@@ -111,5 +114,42 @@ func TestRestrictedLegacyRecommenderFailsClosed(t *testing.T) {
 	}
 	if len(r.home[0].Items) != 3 {
 		t.Fatal("fallback mutated source hub")
+	}
+}
+
+// Exercise the actual Plex Home handler, including candidate filtering before
+// rendering and deduplication of producer IDs, rather than only the predicate.
+func TestRestrictedPlexHomeRouteFiltersCandidatesAndDuplicateRows(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	blockedShow := breakingBad
+	blockedShow.Adult = true
+	f.catalog.titles[blockedShow.Key] = blockedShow
+	blockedTitle := alien
+	blockedTitle.Adult = true
+	f.catalog.titles[blockedTitle.Key] = blockedTitle
+	candidates := []core.Title{bbE1, blockedTitle, fightClub}
+	f.srv.d.Recommender = &fakeRecommender{home: []core.Hub{{ID: "home.policy", Title: "Visible", Promoted: true, Items: candidates}, {ID: "home.policy", Title: "Duplicate", Promoted: true, Items: candidates}}}
+	f.srv.d.Auth.(*fakeAuth).users["restricted-home"] = core.User{ID: 88, AllowedSections: []int{1, 2}}
+	rec := f.request(t, http.MethodGet, "/hubs?excludeContinueWatching=1", map[string]string{"Accept": "application/json", "X-Plex-Token": "restricted-home"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HTTP %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct{ MediaContainer model.MediaContainer }
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, row := range response.MediaContainer.Hub {
+		if row.HubIdentifier != "home.policy" {
+			continue
+		}
+		count++
+		if len(row.Metadata) != 1 || row.Metadata[0].RatingKey != fightClub.Key.String() {
+			t.Fatalf("restricted row leaked or lost candidates: %+v", row.Metadata)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("duplicate row count=%d response=%s", count, rec.Body.String())
 	}
 }

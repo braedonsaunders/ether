@@ -4,16 +4,43 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
+
+func TestAppHomeDesignerLayoutUsesRealEngineAndStableSidecars(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	_, err := a.personalize.SetHomeLayout(ctx, core.HomeLayout{Global: []core.LayoutPage{{Section: "home", Rows: []core.RowPolicy{{Row: "home.continue", Status: "always", Slot: 1}, {Row: "movie.trending", Status: "always"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := []core.NeutralHomeRow{{ID: "movie.trending", Title: "first", ItemCount: 1}, {ID: "home.continue", Title: "Continue", ItemCount: 1}, {ID: "movie.trending", Title: "last", ItemCount: 1}}
+	user := &core.User{ID: 1}
+	situation := core.HomeSituation{Now: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)}
+	indices, err := experience.ArrangeNeutralHome(ctx, a.personalize, user, situation, "home", rows)
+	if err != nil || !reflect.DeepEqual(indices, []int{1, 2, 2}) {
+		t.Fatalf("configured layout indices %v: %v", indices, err)
+	}
+	legacy, err := a.personalize.FinalizeHome(ctx, user, core.HubContext{Now: situation.Now}, "home", []core.Hub{{ID: "movie.trending", ItemCount: 1}, {ID: "home.continue", ItemCount: 1}, {ID: "movie.trending", ItemCount: 1}})
+	if err != nil || len(legacy) != len(indices) {
+		t.Fatalf("legacy layout %+v: %v", legacy, err)
+	}
+	for i, index := range indices {
+		if legacy[i].ID != rows[index].ID {
+			t.Fatalf("legacy=%+v indices=%v", legacy, indices)
+		}
+	}
+}
 
 type artworkProbe struct {
 	calls    int
@@ -229,5 +256,79 @@ func TestRuntimeSuppliesSurfaceExperienceAndRejectsUnknownViewer(t *testing.T) {
 	}
 	if err := host.Experience.SetPlayed(ctx, unknown, core.MovieKey(1)); err == nil {
 		t.Fatal("unknown viewer changed watch state")
+	}
+}
+
+func TestSurfaceHomeRowsEnforceRestrictedCandidatePolicy(t *testing.T) {
+	ctx := context.Background()
+	a := setupTestApp(t, true)
+	if err := a.users.SyncFriends(ctx, []plextv.Friend{{PlexID: 77221, Username: "home-viewer", AllLibs: true}}); err != nil {
+		t.Fatal(err)
+	}
+	users, err := a.users.Users(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var viewer *core.User
+	for i := range users {
+		if users[i].PlexID == 77221 {
+			viewer = &users[i]
+			break
+		}
+	}
+	if viewer == nil {
+		t.Fatal("viewer missing")
+	}
+	viewer.MaxContentRating = "PG"
+	if err = a.users.UpdateUser(ctx, *viewer); err != nil {
+		t.Fatal(err)
+	}
+	released := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	visible := core.Title{Key: core.MovieKey(77221), Type: core.TypeMovie, Title: "Visible", ContentRating: "PG", Released: released}
+	denied := core.Title{Key: core.MovieKey(77222), Type: core.TypeMovie, Title: "Denied", Adult: true, Released: released}
+	parent := core.Title{Key: core.ShowKey(77223), Type: core.TypeShow, Title: "Denied parent", Adult: true, Released: released}
+	child := core.Title{Key: core.EpisodeKey(77223, 1, 1), Type: core.TypeEpisode, ShowKey: parent.Key, Title: "Hidden child", ContentRating: "PG", Released: released}
+	for _, title := range []core.Title{visible, denied, parent, child} {
+		if err = a.catalog.UpsertTitle(ctx, title, title.Type == core.TypeMovie || title.Type == core.TypeShow); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = a.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1,detail_at=? WHERE key=?`, time.Now().Unix(), int64(title.Key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, title := range []core.Title{visible, denied, child} {
+		if err = a.state.Progress(ctx, viewer.ID, title.Key, 10*time.Minute, time.Hour, "paused"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldAvailability := a.availability
+	a.availability = nil
+	t.Cleanup(func() { a.availability = oldAvailability })
+	service, err := a.newSurfaceExperience("jellyfin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := service.Rows(ctx, frontend.RowRequest{Viewer: viewer, Device: core.Device{ID: "home-test"}, Placement: frontend.PlacementHome, Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, row := range rows {
+		for _, entry := range row.Entries {
+			if entry.Title == nil {
+				continue
+			}
+			switch entry.Title.Key {
+			case denied.Key, child.Key, parent.Key:
+				t.Fatalf("restricted title escaped Home: %+v", entry.Title)
+			case visible.Key:
+				if row.Purpose == frontend.RowContinue {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("authorized resume missing from Home: %+v", rows)
 	}
 }
