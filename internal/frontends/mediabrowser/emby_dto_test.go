@@ -1,11 +1,15 @@
 package mediabrowser
 
 import (
+	"context"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 )
 
 func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
@@ -59,5 +63,30 @@ func TestEmbyItemBaseDoesNotChangeJellyfin(t *testing.T) {
 	invalid := (&instance{protocol: "emby"}).itemDTO(frontend.Title{IDs: core.IDs{IMDB: "tt1/../../unsafe"}}, frontend.WatchStatus{})
 	if _, ok := invalid["ExternalUrls"]; ok {
 		t.Fatal("invalid provider ID produced a URL")
+	}
+}
+
+func TestEmbyItemPreferenceIDUsesViewerScopedStore(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	host := frontend.Host{Identity: identity, Preferences: frontendtest.Preferences{}}
+	inst, err := (Emby{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := inst.(*instance).itemDTO(frontend.Title{Key: 5, Type: "movie"}, frontend.WatchStatus{})
+	key, ok := item["DisplayPreferencesId"].(string)
+	if !ok || key == "" || key != item["Id"] {
+		t.Fatal(item)
+	}
+	r := httptest.NewRequest("GET", "/DisplayPreferences/"+key+"?client=Emby", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Id":"`+key+`"`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := (&instance{protocol: "emby"}).itemDTO(frontend.Title{Key: 5, Type: "movie"}, frontend.WatchStatus{})["DisplayPreferencesId"]; ok {
+		t.Fatal("advertised unavailable preferences")
 	}
 }

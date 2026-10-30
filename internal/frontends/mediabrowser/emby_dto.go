@@ -12,6 +12,10 @@ func (i *instance) embyItemDTO(m map[string]any, t frontend.Title, _ frontend.Wa
 	// Ether does not support editing or locking catalog metadata in Emby.
 	m["LockData"] = false
 	m["LockedFields"] = []string{}
+	if i.host.Preferences != nil && t.Key != 0 {
+		// Item IDs are stable, viewer-scoped preference keys on this surface.
+		m["DisplayPreferencesId"] = m["Id"]
+	}
 	if t.SortTitle != "" {
 		m["ForcedSortName"] = t.SortTitle
 	}
