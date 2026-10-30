@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -188,5 +189,45 @@ func TestPlexStopCannotCancelJellyfinOrPrewarmLease(t *testing.T) {
 				t.Fatal("last release failed")
 			}
 		})
+	}
+}
+
+func TestSharedTrickplayPlexExactWireParity(t *testing.T) {
+	type response struct {
+		status  int
+		headers http.Header
+		body    []byte
+	}
+	var legacy []response
+	for _, shared := range []bool{false, true} {
+		f := newFixture()
+		raw := &cancelingTrickplay{fakeTrickplay: fakeTrickplay{bif: []byte("identical-bif"), frame: []byte("identical-jpeg"), available: true}}
+		if shared {
+			owner := trickplay.New(raw)
+			defer owner.Close()
+			f.srv.d.Trickplay = owner.Borrow()
+		} else {
+			f.srv.d.Trickplay = raw
+		}
+		addIndexSession(f, fightClub.Key)
+		paths := []string{
+			"/:/timeline?ratingKey=" + fightClub.Key.String() + "&time=30000&state=playing",
+			"/library/parts/" + fightClub.Key.String() + "/indexes/sd",
+			"/library/parts/" + fightClub.Key.String() + "/indexes/sd/0",
+			"/:/timeline?ratingKey=" + fightClub.Key.String() + "&state=stopped",
+		}
+		for i, path := range paths {
+			rec := f.get(t, path)
+			got := response{rec.Code, rec.Header().Clone(), append([]byte(nil), rec.Body.Bytes()...)}
+			if !shared {
+				legacy = append(legacy, got)
+			} else if !reflect.DeepEqual(got, legacy[i]) {
+				t.Fatalf("wire changed for %s: legacy=%+v shared=%+v", path, legacy[i], got)
+			}
+		}
+		if raw.cancels != 1 {
+			t.Fatalf("idle cancellation changed: shared=%v calls=%d", shared, raw.cancels)
+		}
+		f.srv.Close()
 	}
 }

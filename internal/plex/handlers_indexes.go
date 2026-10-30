@@ -97,8 +97,11 @@ func (s *Server) ensureTrickplay(ctx context.Context, ps *core.PlaySession, offs
 		s.trickplayHolders[ps.ID] = hold
 	}
 	s.trickplayMu.Unlock()
-	if err := hold.Update(ctx, s.d.Trickplay, core.TrickplaySource{
+	if err := hold.UpdateIf(ctx, s.d.Trickplay, core.TrickplaySource{
 		ReleaseID: releaseID, InputURL: input, Info: ps.Info, AvailableUntil: offset,
+	}, func() bool {
+		latest, ok := s.d.Playback.Session(ps.ID)
+		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == releaseID && core.SourceRevision(latest) == core.SourceRevision(ps)
 	}); err != nil {
 		s.log.Warn("trickplay lease", "err", err)
 	}
@@ -134,7 +137,6 @@ func (s *Server) cancelTrickplayIfIdle(ps *core.PlaySession) {
 			canceler.CancelTrickplay(releaseID)
 		}
 	}
-
 }
 
 // handleIndexFrame serves a single generated JPEG frame. Offset is
