@@ -122,6 +122,7 @@ func TestCapturedBindingsTypedProviderAndAmbiguity(t *testing.T) {
 		want  bool
 	}{
 		{"unique", []capturedItem{{ID: "owned-movie", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745"}}}, true},
+		{"conflicting provider casing", []capturedItem{{ID: "case-conflict", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745", "tmdb": "other"}}}, false},
 		{"wrong type", []capturedItem{{ID: "wrong-series", Type: "Series", ProviderIDs: map[string]string{"Tmdb": "45745"}}}, false},
 		{"conflicting provider", []capturedItem{{ID: "wrong-movie", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745", "Imdb": "tt-wrong"}}}, false},
 		{"two editions", []capturedItem{{ID: "one", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745"}}, {ID: "two", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "45745"}}}, false},
@@ -232,5 +233,30 @@ func TestCapturedBindingsDiscardPartialDiscovery(t *testing.T) {
 	_, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000126"), map[string]string{"device_id": "run-device"})
 	if err == nil {
 		t.Fatal("partial discovery accepted")
+	}
+}
+
+func TestCapturedBindingsProviderCaseCollision(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		if got := canonicalProviders(map[string]string{"Tmdb": "45745", "tmdb": "other"}); got != nil {
+			t.Fatalf("conflicting case selected a value: %v", got)
+		}
+	}
+	if got := canonicalProviders(map[string]string{"Tmdb": "45745", "tmdb": "45745"}); got["tmdb"] != "45745" {
+		t.Fatal("identical aliases should agree")
+	}
+	// New synthetic provenance fixture; never modify the shipped archive.
+	p := &Protocol{Dialect: "jellyfin", profiles: map[string]Profile{"case-test": {Source: "captured", Flows: map[string][]Probe{"captured": {{Name: "one", Method: "GET", Path: "/Items"}}}}}}
+	dir := t.TempDir()
+	r := p.Corpus("case-test")[0]
+	err := conform.SaveFixture(filepath.Join(dir, "case-test"), p.FixtureName("case-test", r, true), conform.Response{Status: 200, Body: []byte(`{"Items":[{"Id":"${id_9}","Type":"Movie","ProviderIds":{"Tmdb":"45745","tmdb":"other"}}]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.LoadCapturedBindings(dir, "case-test"); err != nil {
+		t.Fatal(err)
+	}
+	if !p.captures["case-test"].ambiguous["${id_9}"] {
+		t.Fatal("archived provider conflict was not marked ambiguous")
 	}
 }

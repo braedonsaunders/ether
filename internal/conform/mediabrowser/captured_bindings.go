@@ -83,6 +83,9 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 				var item capturedItem
 				if json.Unmarshal(b, &item) == nil && capturedID.MatchString(item.ID) && item.Type != "" && len(item.ProviderIDs) > 0 {
 					item.ProviderIDs = canonicalProviders(item.ProviderIDs)
+					if item.ProviderIDs == nil {
+						m.ambiguous[item.ID] = true
+					}
 					if old, ok := m.items[item.ID]; ok {
 						a, _ := json.Marshal(old)
 						b, _ := json.Marshal(item)
@@ -122,7 +125,11 @@ func canonicalProviders(in map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range in {
 		if v != "" {
-			out[strings.ToLower(k)] = v
+			key := strings.ToLower(k)
+			if old, ok := out[key]; ok && old != v {
+				return nil
+			}
+			out[key] = v
 		}
 	}
 	return out
