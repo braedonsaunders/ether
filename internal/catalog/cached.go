@@ -314,8 +314,17 @@ func (c *Catalog) ResolveShowParents(ctx context.Context, keys []core.RatingKey)
 	if len(keys) == 0 {
 		return out, nil
 	}
+	fallback := func(part []core.RatingKey) {
+		for _, key := range part {
+			title, err := c.Get(ctx, key)
+			if err == nil && title != nil && title.Key == key {
+				out[key] = *title
+			}
+		}
+	}
 	if err := c.admitFallbacks(ctx); err != nil {
-		return nil, err
+		fallback(keys)
+		return out, nil
 	}
 	for start := 0; start < len(keys); start += 200 {
 		part := keys[start:min(start+200, len(keys))]
@@ -325,25 +334,29 @@ func (c *Catalog) ResolveShowParents(ctx context.Context, keys []core.RatingKey)
 		}
 		rows, err := c.db.QueryContext(ctx, `SELECT `+titleCols+`,detail_at FROM catalog_titles WHERE key IN (`+placeholders(len(part))+`)`, args...)
 		if err != nil {
-			return nil, err
+			fallback(part)
+			continue
 		}
 		stored := map[core.RatingKey]*storedTitle{}
 		for rows.Next() {
 			var detail int64
 			st, e := scanTitle(extraScan{rows, []any{&detail}})
 			if e != nil {
-				rows.Close()
-				return nil, e
+				err = e
+				break
 			}
 			if detail != 0 {
 				st.detailAt = time.Unix(detail, 0).UTC()
 			}
 			stored[st.t.Key] = st
 		}
-		err = rows.Err()
+		if err == nil {
+			err = rows.Err()
+		}
 		rows.Close()
 		if err != nil {
-			return nil, err
+			fallback(part)
+			continue
 		}
 		var warm []core.Title
 		for _, key := range part {
@@ -353,7 +366,8 @@ func (c *Catalog) ResolveShowParents(ctx context.Context, keys []core.RatingKey)
 			}
 		}
 		if err := c.hydrateSlice(ctx, warm); err != nil {
-			return nil, err
+			fallback(part)
+			continue
 		}
 		for i := range warm {
 			if c.visibleTitle(&warm[i]) {
