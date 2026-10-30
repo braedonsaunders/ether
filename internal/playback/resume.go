@@ -166,9 +166,9 @@ func (s *resumeStore) hold(avail *store.Availability, log *slog.Logger) {
 			if err := s.writeBundle(ctx, w.rec, w.lease, w.points, w.probe, w.nzb); err != nil {
 				return err
 			}
-			if err := s.releaseNZB(w.lease); err != nil {
-				return err
-			}
+			// The bundle committed. Cleanup retains its own exact owner and
+			// retry queue; its failure must not replay this committed writer.
+			s.releaseNZB(w.lease)
 			return nil
 		},
 	})
@@ -210,9 +210,7 @@ func (s *resumeStore) putWithProbe(ctx context.Context, rec resumeRecord, nzb []
 	}
 	err = s.writeBundle(ctx, rec, lease, points, probe, nzb)
 	if !errors.Is(err, errResumeCommitUnknown) {
-		if releaseErr := s.releaseNZB(lease); err == nil {
-			err = releaseErr
-		}
+		s.releaseNZB(lease)
 	}
 	return err
 }
@@ -358,9 +356,7 @@ func (s *resumeStore) save(ctx context.Context, rec resumeRecord, nzb []byte) er
 	}
 	err = s.writeBundle(ctx, rec, lease, nil, core.MediaInfo{}, nzb)
 	if !errors.Is(err, errResumeCommitUnknown) {
-		if releaseErr := s.releaseNZB(lease); err == nil {
-			err = releaseErr
-		}
+		s.releaseNZB(lease)
 	}
 	return err
 }
