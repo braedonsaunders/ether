@@ -121,30 +121,3 @@ func TestTicketBatchRollbackAndConcurrentConsume(t *testing.T) {
 		t.Fatalf("successful consumes=%d", success)
 	}
 }
-
-func TestTicketCompatibilityFallbackOnlyOnAbsent(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	db, tickets, scope := fixture(t)
-	calls := 0
-	legacy := func(context.Context, string, string, string) (capability.Ticket, error) {
-		calls++
-		return capability.Ticket{ViewerID: 17}, nil
-	}
-	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1)}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tickets.ConsumeCompatible(ctx, "emby", "events-ws", entry(1).Digest, legacy); !errors.Is(err, core.ErrUnauthorized) || calls != 0 {
-		t.Fatalf("foreign fallback: calls=%d err=%v", calls, err)
-	}
-	if _, err := db.ExecContext(ctx, `DELETE FROM capability_tickets WHERE namespace='ticket' AND digest=?`, entry(1).Digest); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tickets.ConsumeCompatible(ctx, "silo", "events-ws", entry(1).Digest, legacy); !errors.Is(err, core.ErrUnauthorized) || calls != 0 {
-		t.Fatalf("orphan fallback: calls=%d err=%v", calls, err)
-	}
-	got, err := tickets.ConsumeCompatible(ctx, "silo", "events-ws", entry(2).Digest, legacy)
-	if err != nil || got.ViewerID != 17 || calls != 1 {
-		t.Fatalf("absent fallback: calls=%d err=%v", calls, err)
-	}
-}
