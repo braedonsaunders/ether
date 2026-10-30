@@ -64,7 +64,7 @@ func (s *lazyStreams) Issue(ctx context.Context, credential string, req frontend
 }
 
 func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend.PlanRequest, stable bool) (string, error) {
-	if req.Protocol != s.protocol || req.Device.ID == "" || req.Viewer == nil || req.Intent.Plex != nil || req.Item == 0 || req.Channel != "" {
+	if req.Protocol != s.protocol || req.Device.ID == "" || req.Viewer == nil || req.Intent.Plex != nil || (req.Item == 0) == (req.Channel == "") || (stable && req.Channel != "") {
 		return "", core.ErrUnauthorized
 	}
 	ref, viewer, err := s.grants.GrantReference(ctx, string(s.protocol), credential)
@@ -155,6 +155,9 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 		}
 		s.broker.mu.Unlock()
 	}
+	if req.Channel != "" {
+		return "/sessions/lazy/" + token + "/live/index.m3u8", nil
+	}
 	return "/sessions/lazy/" + token + "/file", nil
 }
 
@@ -199,13 +202,13 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	token, ok := strings.CutPrefix(r.URL.Path, "/sessions/lazy/")
+	rest, ok := strings.CutPrefix(r.URL.Path, "/sessions/lazy/")
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	token, ok = strings.CutSuffix(token, "/file")
-	if !ok || token == "" || strings.Contains(token, "/") {
+	token, tail, ok := strings.Cut(rest, "/")
+	if !ok || token == "" || len(tail) > 1024 || !validLazyTail(tail) {
 		http.NotFound(w, r)
 		return
 	}
@@ -230,25 +233,45 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Viewer = viewer
 	req.Caps.Remote = req.Caps.Remote || s.remote(r)
-	// Recheck the current safety and title policy even when reusing a session.
-	// MediaLookup is the host's policy-checked, cache-only source. A missing
-	// cache entry fails closed rather than causing network metadata fetches on
-	// every range request.
-	if s.broker.deps.MediaLookup == nil {
+	if !s.broker.permitted(viewer, req.Caps) || (req.Item == 0) == (req.Channel == "") {
 		http.NotFound(w, r)
 		return
 	}
-	title, err := s.broker.deps.MediaLookup(ctx, viewer, req.Device, req.Item)
-	if err != nil || title == nil || title.Key != req.Item || !s.broker.permitted(viewer, req.Caps) || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
-		http.NotFound(w, r)
-		return
+	if req.Channel != "" {
+		if !strings.HasPrefix(tail, "live/") || s.broker.deps.Live == nil || s.broker.deps.Live.Allowed(ctx, viewer, req.Channel) != nil {
+			http.NotFound(w, r)
+			return
+		}
+	} else {
+		// Missing cache facts fail closed rather than causing network lookups on
+		// every range request.
+		if tail != "file" || s.broker.deps.MediaLookup == nil {
+			http.NotFound(w, r)
+			return
+		}
+		title, err := s.broker.deps.MediaLookup(ctx, viewer, req.Device, req.Item)
+		if err != nil || title == nil || title.Key != req.Item || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	if r.Method == http.MethodHead {
 		if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Accept-Ranges", "bytes")
+		if req.Channel != "" && tail != "live/index.m3u8" {
+			s.broker.mu.Lock()
+			id := s.broker.lazySessions[hash].id
+			s.broker.mu.Unlock()
+			access := frontend.SessionAccess{Viewer: viewer, Device: req.Device, Protocol: s.protocol}
+			if existing, _, err := s.broker.access(ctx, access, id); id == "" || err != nil || (req.Caps.Remote && !existing.caps.Remote) {
+				http.NotFound(w, r)
+				return
+			}
+		} else if req.Item != 0 {
+			w.Header().Set("Accept-Ranges", "bytes")
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 		return
@@ -283,6 +306,10 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			id = ""
 		}
 	}
+	if req.Channel != "" && tail != "live/index.m3u8" && id == "" {
+		http.NotFound(w, r)
+		return
+	}
 	opened := false
 	reserved := false
 	defer func() {
@@ -315,7 +342,11 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.broker.lazySessions[hash] = lazySession{id: id, expires: expires}
 		s.broker.mu.Unlock()
 	}
-	path, err := s.broker.StartStream(ctx, access, id, frontend.StreamRequest{Format: frontend.StreamDirect})
+	format := frontend.StreamDirect
+	if req.Channel != "" {
+		format = frontend.StreamHLS
+	}
+	path, err := s.broker.StartStream(ctx, access, id, frontend.StreamRequest{Format: format})
 	if err != nil {
 		if opened {
 			if s.discardOpened(ctx, access, id) {
@@ -349,11 +380,38 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clone := r.Clone(ctx)
 	u := *r.URL
 	u.Path = path
+	if req.Channel != "" {
+		u.Path = strings.TrimSuffix(path, "index.m3u8") + strings.TrimPrefix(tail, "live/")
+	}
 	u.RawPath = ""
 	clone.URL = &u
 	unlock()
 	unlock = func() {}
-	s.broker.ServeMediaFor(s.protocol, w, clone)
+	if req.Channel != "" {
+		depth := len(strings.Split(strings.TrimPrefix(tail, "live/"), "/")) - 1
+		base := "./"
+		if depth > 0 {
+			base = strings.Repeat("../", depth)
+		}
+		s.broker.serveMediaAt(s.protocol, nil, w, clone, base)
+	} else {
+		s.broker.ServeMediaFor(s.protocol, w, clone)
+	}
+}
+
+func validLazyTail(tail string) bool {
+	if tail == "file" {
+		return true
+	}
+	if !strings.HasPrefix(tail, "live/") {
+		return false
+	}
+	for _, part := range strings.Split(tail, "/") {
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "\\\x00\r\n") {
+			return false
+		}
+	}
+	return true
 }
 
 // discardOpened rolls back a session that this request just opened, even when

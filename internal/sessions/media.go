@@ -191,6 +191,12 @@ func (b *Broker) currentMediaPolicy(ctx context.Context, viewer *core.Viewer, s 
 }
 
 func (b *Broker) serveMedia(protocol frontend.Protocol, access *frontend.SessionAccess, w http.ResponseWriter, r *http.Request) {
+	b.serveMediaAt(protocol, access, w, r, "")
+}
+
+// serveMediaAt allows a broker-owned wrapper to keep live playlist resources
+// on its own authorized path. Empty base preserves the existing media URLs.
+func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.SessionAccess, w http.ResponseWriter, r *http.Request, liveBase string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.NotFound(w, r)
 		return
@@ -243,7 +249,10 @@ func (b *Broker) serveMedia(protocol frontend.Protocol, access *frontend.Session
 	}
 	tail := parts[2:]
 	if s.live && len(tail) >= 2 && tail[0] == "live" && b.deps.Live != nil {
-		b.deps.Live.Serve(w, r, viewer, s.playID, strings.Join(tail[1:], "/"), "/sessions/media/"+s.public.ID+"/"+s.grant+"/live/")
+		if liveBase == "" {
+			liveBase = "/sessions/media/" + s.public.ID + "/" + s.grant + "/live/"
+		}
+		b.deps.Live.Serve(w, r, viewer, s.playID, strings.Join(tail[1:], "/"), liveBase)
 		return
 	}
 	if len(tail) == 2 && tail[0] == "subtitles" {
