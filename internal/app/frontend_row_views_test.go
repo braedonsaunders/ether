@@ -468,3 +468,38 @@ func TestRowViewBatchAdmissionDatabaseFaultEquivalence(t *testing.T) {
 		})
 	}
 }
+
+func TestRowViewBatchedInheritedMovieUsesAdmission(t *testing.T) {
+	ctx := context.Background()
+	u := &core.User{ID: 7}
+	parent := core.Title{Key: core.MovieKey(10), Type: core.TypeMovie, HomeReleaseChecked: true}
+	child := core.Title{Key: core.EpisodeKey(2, 1, 1), Type: core.TypeEpisode, ShowKey: parent.Key}
+	batch := func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+		out := map[core.RatingKey]core.Title{}
+		for _, key := range keys {
+			if key == parent.Key {
+				out[key] = parent
+			}
+			if key == child.Key {
+				out[key] = child
+			}
+		}
+		return out, nil
+	}
+	attempts := 0
+	get := func(_ context.Context, _ *core.User, key core.RatingKey) (*core.Title, error) {
+		attempts++
+		if key != parent.Key {
+			t.Fatal("unexpected admission key")
+		}
+		return nil, errors.New("admission failed")
+	}
+	one := func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error) {
+		return frontend.RowEntry{}, core.ErrNotFound
+	}
+	live := func(context.Context, *core.User) ([]frontend.RowEntry, error) { return nil, core.ErrNotFound }
+	refs := []core.NeutralEntryRef{{Kind: string(frontend.RowEntryTitle), ID: child.Key.String()}}
+	if got, err := rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, live); err == nil || len(got) != 0 || attempts != 1 {
+		t.Fatalf("admission bypass: %+v attempts=%d err=%v", got, attempts, err)
+	}
+}
