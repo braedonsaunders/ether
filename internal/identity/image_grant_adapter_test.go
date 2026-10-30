@@ -352,3 +352,15 @@ func TestImageGrantBatchBindsPastHeaderStatementLimit(t *testing.T) {
 		t.Fatal("batched headers", headers, err)
 	}
 }
+
+// Default issue must not reject a viewer because stale headers belonging to
+// other viewers filled a shard before cross-scope maintenance is available.
+func TestImageGrantDefaultAdmissionDisabled(t *testing.T) {
+	a := defaultImageAdmission()
+	if a.perScope != 0 || a.perShard != 0 {
+		t.Fatalf("unvalidated admission enabled: %+v", a)
+	}
+	if a.legacyCleanup <= 0 || a.headerCleanup <= 0 {
+		t.Fatalf("cleanup disabled: %+v", a)
+	}
+}

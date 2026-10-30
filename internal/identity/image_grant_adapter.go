@@ -34,7 +34,8 @@ type imageAdmission struct {
 }
 
 func defaultImageAdmission() imageAdmission {
-	return imageAdmission{imagePerScope, imagePerShard, imageLegacyCleanup, imageHeaderCleanup}
+	// Admission is disabled until cross-scope recovery and workload sizing are validated.
+	return imageAdmission{legacyCleanup: imageLegacyCleanup, headerCleanup: imageHeaderCleanup}
 }
 
 // ImageCapacityError means this viewer's or shard's image-header admission is full.
@@ -88,7 +89,7 @@ func (s *ImageGrantService) insertMirrored(ctx context.Context, tx *sql.Tx, view
 		return err
 	}
 	expires := now + s.ttl.Milliseconds()
-	if deviceID != "" {
+	if deviceID != "" && s.admission.perScope > 0 && s.admission.perShard > 0 {
 		if err := s.admitImageHeaders(ctx, tx, viewerID, len(rows)); err != nil {
 			return err
 		}
