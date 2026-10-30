@@ -42,8 +42,8 @@ func (i *instance) applyResolvedDetail(r *http.Request, viewer *frontend.Viewer,
 	source := i.mediaSourceDTO(id, plan.Media)
 	source["Protocol"], source["IsRemote"] = "File", false
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
-	// Detail offers have no session-scoped transcode URL. Advertise only the
-	// direct operation for which this response can provide a grant.
+	// Each delivery claim requires its own scoped grant. HLS eligibility is
+	// advisory: capacity and current source/policy are rechecked on GET.
 	source["SupportsDirectStream"], source["SupportsTranscoding"] = false, false
 	if plan.ETag != "" {
 		source["ETag"] = plan.ETag
@@ -53,6 +53,13 @@ func (i *instance) applyResolvedDetail(r *http.Request, viewer *frontend.Viewer,
 			source["Path"] = path
 		} else {
 			source["SupportsDirectPlay"] = false
+		}
+	}
+	if plan.HLS {
+		if path := i.lazyHLSSourceURL(r, credential, request); path != "" {
+			source["TranscodingUrl"] = path
+			source["TranscodingSubProtocol"], source["TranscodingContainer"] = "hls", "ts"
+			source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectStream, plan.Transcoding
 		}
 	}
 	i.mediaSourceDialect(source)
