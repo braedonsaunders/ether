@@ -28,6 +28,7 @@ import (
 	"image/jpeg"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -113,6 +114,12 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			// Reusing the preflight token for a different client would violate
 			// the production grant/device binding.
 			clientTokens := map[string]string{}
+			defer func() {
+				for clientName, token := range clientTokens {
+					(labReferenceData{base: srv.URL, token: token, device: "conform-" + clientName}).logout(t)
+				}
+				(labReferenceData{base: srv.URL, token: login.AccessToken, device: "conform-device"}).logout(t)
+			}()
 			for _, clientName := range strings.Split(spec.client, ",") {
 				deviceID := "conform-" + clientName
 				clientReq, e := http.NewRequest("POST", srv.URL+"/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture-viewer","Pw":"fixture-password"}`))
@@ -254,6 +261,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					report.Differences = append(report.Differences, partial.Differences...)
 					report.ReferenceDefects = append(report.ReferenceDefects, partial.ReferenceDefects...)
 					for _, session := range (ownerPlayback{Playback: a.playback, app: a}).Sessions() {
+						t.Logf("lab_target_stop protocol=%s mode=%s client=%s session=%s", spec.proto, mode, clientName, session.ID)
 						if err := a.stopOwnerSession(session.ID); err != nil {
 							validEvidence = false
 							t.Errorf("%s %s target playback cleanup failed", spec.proto, clientName)
@@ -263,6 +271,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 						validEvidence = false
 						t.Errorf("%s %s target playback cleanup left active sessions", spec.proto, clientName)
 					}
+					t.Logf("lab_target_remaining protocol=%s mode=%s client=%s count=%d", spec.proto, mode, clientName, len((ownerPlayback{Playback: a.playback, app: a}).Sessions()))
 				}
 				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
 				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, clientTokens[firstClient], itemID, "conform-"+firstClient)
@@ -440,6 +449,11 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	if output, e := makeMedia.CombinedOutput(); e != nil {
 		t.Fatalf("generate fixture media: %v: %s", e, output)
 	}
+	mediaBytes, hashErr := os.ReadFile(filepath.Join(dir, "parity.mp4"))
+	if hashErr != nil {
+		t.Fatal("fixture hash unavailable")
+	}
+	t.Logf("lab_fixture sha256=%x bytes=%d", sha256.Sum256(mediaBytes), len(mediaBytes))
 	cfg, e := config.Open(dir)
 	if e != nil {
 		t.Fatal(e)
@@ -572,6 +586,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 
 type labReferenceData struct {
 	base, token, device string
+	session             string
 	vars                map[string]string
 }
 
@@ -593,11 +608,51 @@ func (ref labReferenceData) logout(t *testing.T) {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		t.Errorf("lab sign-out returned HTTP %d", response.StatusCode)
 	}
+	t.Logf("lab_logout device=%s session=%s status=%d", ref.device, ref.session, response.StatusCode)
 }
 
 // labProbeProxy retains newly issued probe tokens only in memory, so every
 // live sign-in can be revoked after the test without writing credentials to a
 // transcript or report. Other requests pass through unchanged.
+// labRequestIdentity accepts the auth forms emitted by conformdiff. Conflicting
+// token/device assertions are ambiguous; never guess a credential for cleanup.
+func labRequestIdentity(req *http.Request) (token, device string, err error) {
+	merge := func(dst *string, value string) bool {
+		if value == "" {
+			return true
+		}
+		if *dst != "" && *dst != value {
+			return false
+		}
+		*dst = value
+		return true
+	}
+	for _, value := range req.Header.Values("X-Emby-Token") {
+		if !merge(&token, value) {
+			return "", "", fmt.Errorf("ambiguous token")
+		}
+	}
+	for _, header := range []string{"Authorization", "X-Emby-Authorization"} {
+		for _, value := range req.Header.Values(header) {
+			scheme, params, ok := strings.Cut(value, " ")
+			if !ok || !strings.EqualFold(scheme, "MediaBrowser") {
+				return "", "", fmt.Errorf("unsupported auth form")
+			}
+			_, parsed, parseErr := mime.ParseMediaType("application/x;" + strings.ReplaceAll(params, ",", ";"))
+			if parseErr != nil || !merge(&token, parsed["token"]) || !merge(&device, parsed["deviceid"]) {
+				return "", "", fmt.Errorf("ambiguous auth parameters")
+			}
+		}
+	}
+	return token, device, nil
+}
+
+type labPlaybackReceipt struct {
+	Token, Device, Session, Item string
+	Body                         []byte
+}
+type labPlaybackContextKey struct{}
+
 func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 	t.Helper()
 	target, err := url.Parse(ref.base)
@@ -605,38 +660,132 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 		t.Fatal("invalid lab proxy target")
 	}
 	var mu sync.Mutex
-	issued := map[string]bool{}
+	issued := map[string]labReferenceData{}
+	pending := map[[3]string]labPlaybackReceipt{}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	direct := proxy.Director
 	proxy.Director = func(req *http.Request) { direct(req); req.Host = target.Host }
 	proxy.ModifyResponse = func(response *http.Response) error {
+		if receipt, ok := response.Request.Context().Value(labPlaybackContextKey{}).(labPlaybackReceipt); ok {
+			key := [3]string{receipt.Token, receipt.Session, receipt.Item}
+			mu.Lock()
+			if strings.HasSuffix(response.Request.URL.Path, "/Sessions/Playing/Stopped") {
+				t.Logf("lab_reference_profile_stop device=%s session=%s item=%s status=%d", receipt.Device, receipt.Session, receipt.Item, response.StatusCode)
+				if response.StatusCode >= 200 && response.StatusCode < 300 {
+					delete(pending, key)
+				}
+			}
+			mu.Unlock()
+		}
 		if response.StatusCode != http.StatusOK || response.Request.Method != http.MethodPost || !strings.HasSuffix(response.Request.URL.Path, "/Users/AuthenticateByName") {
 			return nil
 		}
-		body, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
 		response.Body.Close()
-		if err != nil {
-			return err
-		}
-		if len(body) > 1<<20 {
-			return fmt.Errorf("lab login response too large")
+		if readErr != nil || len(body) > 1<<20 {
+			return fmt.Errorf("lab login response unreadable or oversized")
 		}
 		response.Body = io.NopCloser(bytes.NewReader(body))
-		var login struct{ AccessToken string }
-		if json.Unmarshal(body, &login) == nil && login.AccessToken != "" {
-			mu.Lock()
-			issued[login.AccessToken] = true
-			mu.Unlock()
+		var login struct {
+			AccessToken string
+			SessionInfo struct{ Id, DeviceId string }
 		}
+		if json.Unmarshal(body, &login) != nil || login.AccessToken == "" {
+			return fmt.Errorf("lab login response invalid")
+		}
+		_, device, identityErr := labRequestIdentity(response.Request)
+		if identityErr != nil {
+			return fmt.Errorf("lab login identity ambiguous")
+		}
+		if login.SessionInfo.DeviceId != "" {
+			device = login.SessionInfo.DeviceId
+		}
+		if device == "" {
+			return fmt.Errorf("lab login device missing")
+		}
+		mu.Lock()
+		issued[login.AccessToken] = labReferenceData{base: ref.base, token: login.AccessToken, device: device, session: login.SessionInfo.Id}
+		mu.Unlock()
+		t.Logf("lab_owned_probe device=%s session=%s", device, login.SessionInfo.Id)
 		return nil
 	}
-	server := httptest.NewServer(proxy)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		playback := req.Method == http.MethodPost && (strings.HasSuffix(req.URL.Path, "/Sessions/Playing") || strings.HasSuffix(req.URL.Path, "/Sessions/Playing/Progress") || strings.HasSuffix(req.URL.Path, "/Sessions/Playing/Stopped"))
+		if !playback {
+			proxy.ServeHTTP(w, req)
+			return
+		}
+		token, device, identityErr := labRequestIdentity(req)
+		mu.Lock()
+		owner, owned := issued[token]
+		mu.Unlock()
+		if token != "" && token == ref.token {
+			owner = ref
+			owned = true
+		}
+		if identityErr != nil || token == "" || !owned {
+			http.Error(w, "unowned or ambiguous playback identity", http.StatusForbidden)
+			return
+		}
+		if device == "" {
+			device = owner.device
+		}
+		if device == "" || (device != owner.device && device != ref.vars["device_id"]) {
+			http.Error(w, "unowned playback device", http.StatusForbidden)
+			return
+		}
+		if req.Body == nil {
+			http.Error(w, "missing playback body", http.StatusBadRequest)
+			return
+		}
+		body, readErr := io.ReadAll(io.LimitReader(req.Body, (1<<20)+1))
+		req.Body.Close()
+		if readErr != nil || len(body) > 1<<20 {
+			http.Error(w, "unreadable or oversized playback body", http.StatusBadRequest)
+			return
+		}
+		var ids struct{ ItemId, PlaySessionId string }
+		if json.Unmarshal(body, &ids) != nil || ids.ItemId == "" || ids.PlaySessionId == "" {
+			http.Error(w, "missing playback identity", http.StatusBadRequest)
+			return
+		}
+		receipt := labPlaybackReceipt{Token: token, Device: device, Session: ids.PlaySessionId, Item: ids.ItemId, Body: body}
+		key := [3]string{token, ids.PlaySessionId, ids.ItemId}
+		mu.Lock()
+		if !strings.HasSuffix(req.URL.Path, "/Sessions/Playing/Stopped") {
+			pending[key] = receipt
+		}
+		mu.Unlock()
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		proxy.ServeHTTP(w, req.WithContext(context.WithValue(req.Context(), labPlaybackContextKey{}, receipt)))
+	})
+	server := httptest.NewServer(handler)
 	return server.URL, func() {
 		server.Close()
 		mu.Lock()
 		defer mu.Unlock()
-		for token := range issued {
-			(labReferenceData{base: ref.base, token: token, device: ref.vars["device_id"]}).logout(t)
+		for _, receipt := range pending {
+			req, err := http.NewRequest("POST", ref.base+"/Sessions/Playing/Stopped", bytes.NewReader(receipt.Body))
+			if err != nil {
+				t.Error("reference stop construction failed")
+				continue
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Emby-Token", receipt.Token)
+			req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+receipt.Device+`", Version="1"`)
+			response, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+			if err != nil {
+				t.Error("reference stop failed")
+				continue
+			}
+			response.Body.Close()
+			t.Logf("lab_reference_stop device=%s session=%s item=%s status=%d", receipt.Device, receipt.Session, receipt.Item, response.StatusCode)
+			if response.StatusCode < 200 || response.StatusCode >= 300 {
+				t.Error("reference stop not accepted")
+			}
+		}
+		for _, owner := range issued {
+			owner.logout(t)
 		}
 	}
 }
@@ -711,6 +860,7 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 	}
 	var login struct {
 		AccessToken, ServerId string
+		SessionInfo           struct{ Id string }
 		User                  struct{ Id string }
 	}
 	err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&login)
@@ -718,7 +868,8 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 	if err != nil || resp.StatusCode != 200 || login.AccessToken == "" || login.User.Id == "" {
 		t.Fatalf("lab authentication failed (HTTP %d)", resp.StatusCode)
 	}
-	ref := labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice}
+	ref := labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, session: login.SessionInfo.Id}
+	t.Logf("lab_owned_reference protocol=%s device=%s probe_device=%s session=%s", prefix, loginDevice, probeDevice, login.SessionInfo.Id)
 	completed := false
 	defer func() {
 		if !completed {
@@ -774,8 +925,19 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 	if viewID == "" {
 		t.Fatal("lab movie view is missing")
 	}
+	var baseline json.RawMessage
+	get("/Users/"+login.User.Id+"/Items/"+itemID, &baseline)
+	var itemState struct {
+		UserData     json.RawMessage
+		MediaSources []struct{ Id string }
+	}
+	if json.Unmarshal(baseline, &itemState) != nil {
+		t.Fatal("reference state snapshot invalid")
+	}
+	state, _ := json.Marshal(itemState)
+	t.Logf("lab_reference_baseline protocol=%s item=%s state_source_metadata_sha256=%x", prefix, itemID, sha256.Sum256(state))
 	completed = true
-	return labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, vars: map[string]string{
+	return labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, session: login.SessionInfo.Id, vars: map[string]string{
 		"username": username, "password": password, "user_id": login.User.Id, "access_token": login.AccessToken,
 		"item_id": itemID, "itemId": itemID, "parent_id": viewID, "media_source_id": itemID,
 		"play_session_id": "initial", "position_ticks": "0", "device_id": probeDevice, "server_id": login.ServerId,
@@ -800,7 +962,7 @@ func TestLabProbeProxyRevokesIssuedCredentials(t *testing.T) {
 		switch r.URL.Path {
 		case "/emby/Users/AuthenticateByName":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"AccessToken":"probe-only-token"}`)
+			_, _ = io.WriteString(w, `{"AccessToken":"probe-only-token","SessionInfo":{"DeviceId":"owned-device"}}`)
 		case "/emby/Sessions/Logout":
 			if r.Header.Get("X-Emby-Token") != "probe-only-token" {
 				t.Error("wrong sign-out credential")
@@ -926,4 +1088,132 @@ func labTraceMediaDetail(t *testing.T, a *App, viewer *core.User, protocol, stag
 		}
 	}
 	t.Logf("detail_trace protocol=%s stage=%s device_present=%t issue=%s reference_item=%s target_item=%s authorized_versions=%d version_hashes=%v wire_sources=%d source_hashes=%v wire_streams=%d fields=%v", protocol, stage, deviceID != "", issueOutcome, referenceItem, itemID, len(detail.Versions), versionHashes, len(sources), sourceHashes, len(streams), fields)
+}
+
+func TestLabProbeProxyStopsOnlyOwnedPendingPlayback(t *testing.T) {
+	var stopped, loggedOut atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Users/AuthenticateByName":
+			_, _ = io.WriteString(w, `{"AccessToken":"owned-probe-token","SessionInfo":{"Id":"owned-session","DeviceId":"owned-device"}}`)
+		case "/Sessions/Playing":
+			w.WriteHeader(http.StatusNoContent)
+		case "/Sessions/Playing/Stopped":
+			if r.Header.Get("X-Emby-Token") != "owned-probe-token" {
+				t.Error("unexpected cleanup credential")
+			}
+			var body struct{ ItemId, PlaySessionId string }
+			if json.NewDecoder(r.Body).Decode(&body) != nil || body.ItemId != "owned-item" || body.PlaySessionId != "owned-play" {
+				t.Error("cleanup lost exact playback IDs")
+			}
+			stopped.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		case "/Sessions/Logout":
+			if stopped.Load() != 1 {
+				t.Error("logout preceded playback stop")
+			}
+			loggedOut.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+	proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, vars: map[string]string{"device_id": "owned-device"}})
+	login, err := http.Post(proxy+"/Users/AuthenticateByName", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	login.Body.Close()
+	req, _ := http.NewRequest("POST", proxy+"/Sessions/Playing", strings.NewReader(`{"ItemId":"owned-item","PlaySessionId":"owned-play"}`))
+	req.Header.Set("X-Emby-Token", "owned-probe-token")
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	cleanup()
+	if stopped.Load() != 1 || loggedOut.Load() != 1 {
+		t.Fatal("owned cleanup incomplete")
+	}
+}
+
+func TestLabProbeProxyConcurrentPlaybackAndRejectedIdentity(t *testing.T) {
+	var mu sync.Mutex
+	stops := map[string]int{}
+	forwarded := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		forwarded++
+		if strings.HasSuffix(r.URL.Path, "/Stopped") {
+			var ids struct{ PlaySessionId string }
+			_ = json.NewDecoder(r.Body).Decode(&ids)
+			stops[ids.PlaySessionId]++
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer backend.Close()
+	proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, token: "owned", device: "owned-device"})
+	send := func(path, body, token, auth string) int {
+		req, _ := http.NewRequest("POST", proxy+path, strings.NewReader(body))
+		if token != "" {
+			req.Header.Set("X-Emby-Token", token)
+		}
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		return response.StatusCode
+	}
+	one := `{"ItemId":"item","PlaySessionId":"one"}`
+	two := `{"ItemId":"item","PlaySessionId":"two"}`
+	for _, body := range []string{one, two} {
+		if send("/Sessions/Playing", body, "owned", "") != 204 {
+			t.Fatal("owned play rejected")
+		}
+	}
+	if send("/Sessions/Playing/Stopped", one, "owned", "") != 204 {
+		t.Fatal("partial stop rejected")
+	}
+	mu.Lock()
+	before := forwarded
+	mu.Unlock()
+	for _, args := range [][3]string{
+		{one, "foreign", ""}, {one, "", ""}, {one, "owned", `MediaBrowser Token="foreign"`},
+		{one, "owned", `MediaBrowser DeviceId="foreign-device"`},
+		{"", "owned", ""}, {strings.Repeat("x", (1<<20)+1), "owned", ""},
+	} {
+		if code := send("/Sessions/Playing", args[0], args[1], args[2]); code != 403 && code != 400 {
+			t.Fatalf("unsafe input forwarded: %d", code)
+		}
+	}
+	mu.Lock()
+	after := forwarded
+	mu.Unlock()
+	if before != after {
+		t.Fatal("rejected request reached reference")
+	}
+	cleanup()
+	mu.Lock()
+	defer mu.Unlock()
+	if stops["one"] != 1 || stops["two"] != 1 || len(stops) != 2 {
+		t.Fatalf("partial stop lost or duplicated cleanup: %v", stops)
+	}
+}
+
+func TestLabRequestIdentityAuthForms(t *testing.T) {
+	for _, header := range []string{"Authorization", "X-Emby-Authorization"} {
+		req, _ := http.NewRequest("POST", "http://localhost", nil)
+		req.Header.Set(header, `MediaBrowser Client="conformdiff", DeviceId="owned-device", Version="1", Token="owned-token"`)
+		req.Header.Set("X-Emby-Token", "owned-token")
+		token, device, err := labRequestIdentity(req)
+		if err != nil || token != "owned-token" || device != "owned-device" {
+			t.Fatal("conformdiff auth form was not recognized")
+		}
+	}
 }
