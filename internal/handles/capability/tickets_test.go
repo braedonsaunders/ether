@@ -121,3 +121,32 @@ func TestTicketBatchRollbackAndConcurrentConsume(t *testing.T) {
 		t.Fatalf("successful consumes=%d", success)
 	}
 }
+
+func TestTicketBatchBoundsAndExpiry(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	db, tickets, scope := fixture(t)
+	tooMany := make([]capability.TicketEntry, 41)
+	for i := range tooMany {
+		tooMany[i] = entry(i + 1)
+	}
+	if _, err := tickets.IssueBatch(ctx, scope, tooMany); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("batch bound: %v", err)
+	}
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE capability_headers SET expires=0 WHERE namespace='ticket' AND digest=?`, entry(1).Digest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.Consume(ctx, "silo", "events-ws", entry(1).Digest); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("expired consume: %v", err)
+	}
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(2)}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE digest=?`, entry(1).Digest).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("expired cleanup n=%d err=%v", n, err)
+	}
+}
