@@ -57,3 +57,23 @@ review; this checkpoint has no parity claim. Preserve all previous failure logs.
 Full acceptance still requires Plex-disabled/local-owner artwork and state tests,
 shared revocation/cold-cache tests, and dependency checks for the entire neutral
 selection implementation once that implementation exists.
+
+## Frozen 4fc460e1 gate evidence
+
+The single authorized offline gate ran with helper SHA256
+`e4a5f08cbf6eefc506177e54917948a728e00d73b422579279fd04b4bf435cdf`,
+outer timeout 600s, package timeout 5m, network none. It **failed with exit 1**:
+
+- selected `internal/artwork/service` tests passed (0.037s);
+- selected `internal/app` tests passed (6.839s);
+- `internal/plex` failed to compile its lifecycle test: `surface` was declared
+  `string` but `state.Origin.Surface` requires `core.Protocol`.
+
+Preserved remote evidence on the allocated runner:
+`/data/prism-test/artwork-extract-4fc460e1.3oMX8Lqu/test.log` and `exit-code`.
+Local log and exit are in BB thread storage:
+`thr_jrz97zjn9h/artwork-extract-4fc460e1/runner.log` and `exit-code`.
+Runner cleanup and an independent SSH check both confirmed the exact owned
+container absent. No retry occurred. The subsequent type-only test correction
+is untested and requires a new allocation; it does not supersede the failed
+snapshot evidence or establish any Plex parity result.

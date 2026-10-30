@@ -22,7 +22,7 @@ func TestFrontendWatchSubscriptionFollowsMount(t *testing.T) {
 		t.Fatal("notification subscription failed")
 	}
 	defer f.srv.notifier.unsubscribe(sub)
-	change := func(surface string, want bool) {
+	change := func(surface core.Protocol, want bool) {
 		t.Helper()
 		if err := watch.Scrobble(state.WithOrigin(ctx, state.Origin{Surface: surface}), ownerUser.ID, core.MovieKey(5)); err != nil {
 			t.Fatal(err)
