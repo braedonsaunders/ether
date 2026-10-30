@@ -181,12 +181,14 @@ type PlaybackRevisionPin interface {
 	UnpinSourceRevision(id string)
 }
 
-// PlaybackSourceObservation describes one opened source generation. Empty
-// Revision means its identity cannot be established safely. Consumers must
-// omit facts from estimated media.
+// PlaybackSourceObservation contains scalar facts from one opened source
+// generation. Empty Revision means its identity cannot be established safely;
+// nil HDR and empty codec/zero height remain unknown.
 type PlaybackSourceObservation struct {
 	Revision, ReleaseID string
-	Info                MediaInfo
+	VideoCodec          string
+	Height              int
+	HDR                 *bool
 }
 
 // GuardedPlaybackSource keeps a source generation current until fn completes.

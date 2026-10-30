@@ -42,7 +42,7 @@ func (m *Manager) WithCurrentSource(ctx context.Context, id string, fn func(cont
 	}
 	key := s.ident.key
 	s.mu.Unlock()
-	observation := core.PlaybackSourceObservation{Info: info}
+	observation := core.PlaybackSourceObservation{}
 	if sourceID != "" && !strings.HasPrefix(sourceID, "local:") && name != "" && size > 0 {
 		data, _ := json.Marshal(struct {
 			Key      core.RatingKey
@@ -52,6 +52,18 @@ func (m *Manager) WithCurrentSource(ctx context.Context, id string, fn func(cont
 		sum := sha256.Sum256(data)
 		observation.Revision = "src-" + hex.EncodeToString(sum[:16])
 		observation.ReleaseID = releaseID
+		if !info.Estimated {
+			if video := info.Video(); video != nil {
+				observation.VideoCodec, observation.Height = video.Codec, video.Height
+				if video.DolbyVision || video.ColorTransfer == "smpte2084" || video.ColorTransfer == "arib-std-b67" {
+					value := true
+					observation.HDR = &value
+				} else if video.ColorTransfer == "bt709" {
+					value := false
+					observation.HDR = &value
+				}
+			}
+		}
 	}
 	return fn(ctx, observation)
 }
