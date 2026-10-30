@@ -79,8 +79,8 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	}
 	head := httptest.NewRecorder()
 	lazy.ServeHTTP(head, httptest.NewRequest(http.MethodHead, path, nil))
-	if head.Code == http.StatusOK || pb.prepares != 0 {
-		t.Fatal("HEAD opened playback")
+	if head.Code != http.StatusOK || pb.prepares != 0 {
+		t.Fatalf("HEAD status=%d, prepares=%d", head.Code, pb.prepares)
 	}
 	var wg sync.WaitGroup
 	statuses := make(chan int, 4)

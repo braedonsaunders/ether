@@ -90,7 +90,7 @@ func (s *lazyStreams) Issue(ctx context.Context, credential string, req frontend
 }
 
 func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.NotFound(w, r)
 		return
 	}
@@ -129,6 +129,19 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	title, err := s.broker.deps.Lookup(ctx, viewer, req.Device, req.Item)
 	if err != nil || title == nil || title.Key != req.Item || !s.broker.permitted(viewer, req.Caps) || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
 		http.NotFound(w, r)
+		return
+	}
+	if r.Method == http.MethodHead {
+		estimate := req
+		estimate.Version = ""
+		estimate.Intent.Estimate = true
+		if _, err := s.broker.Plan(ctx, estimate); err != nil || expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	unlock, err := s.broker.gates.Acquire(ctx, "lazy/"+hash)

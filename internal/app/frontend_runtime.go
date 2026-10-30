@@ -152,6 +152,14 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				return a.dlnaViewer(ctx, req, settings())
 			}
 		}
+		var lanStreams frontend.LANLazyStreams
+		if lanViewer != nil {
+			var err error
+			lanStreams, err = sessions.NewLANLazyStreams(a.db, r.broker, a.frontendClientIP, lanViewer, time.Hour)
+			if err != nil {
+				a.log.Error("LAN lazy streams unavailable", "err", err)
+			}
+		}
 		lazy, lazyErr := sessions.NewLazyStreams(a.db, r.broker, id, grants, time.Hour, func(req *http.Request) bool { ip, ok := a.frontendClientIP(req); return !ok || !identity.LAN(ip) })
 		versionHandles, handleErr := sessions.NewVersionHandles(a.db, r.broker, id)
 		if handleErr != nil {
@@ -168,7 +176,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				imageGrants, _ = identity.NewImageGrantService(a.db, id, grants, func() frontend.Experience { return experience }, a.images, 10*time.Minute, nil)
 			}
 		}
-		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, VersionHandles: versionHandles, VirtualPaths: surfaceVirtualPaths{experience: experience, enabled: func() bool { _, ok := r.registry.Instance("webdav"); return ok }, base: func(ctx context.Context, req *http.Request) (string, error) { return r.surfaceURL(ctx, "webdav", req) }}, ViewerCapabilities: a.viewerCapabilities(local, experience), ViewerPolicy: surfaceViewerPolicy{app: a}, ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), TrackPreferences: surfaceTrackPreferences{app: a}, LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: scorecardSessions(a, sessions.BindSurface(r.broker, id)), LazyStreams: lazy, Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll, times: times}, Events: sessions.BindEvents(r.events, id), Tickets: tickets, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
+		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, VersionHandles: versionHandles, VirtualPaths: surfaceVirtualPaths{experience: experience, enabled: func() bool { _, ok := r.registry.Instance("webdav"); return ok }, base: func(ctx context.Context, req *http.Request) (string, error) { return r.surfaceURL(ctx, "webdav", req) }}, ViewerCapabilities: a.viewerCapabilities(local, experience), ViewerPolicy: surfaceViewerPolicy{app: a}, ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), TrackPreferences: surfaceTrackPreferences{app: a}, LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: scorecardSessions(a, sessions.BindSurface(r.broker, id)), LazyStreams: lazy, LANStreams: lanStreams, Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll, times: times}, Events: sessions.BindEvents(r.events, id), Tickets: tickets, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
 			return scorecardSurfaceURL(ctx, r, id, req)
 		}, LANViewer: lanViewer, Config: settings}
 	})

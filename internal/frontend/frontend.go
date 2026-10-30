@@ -221,6 +221,7 @@ type Host struct {
 	Sessions           Sessions
 	VersionHandles     VersionHandles
 	LazyStreams        LazyStreams
+	LANStreams         LANLazyStreams
 	Identity           SurfaceIdentity
 	IDs                ids.Codecs
 	Events             Subscriber
