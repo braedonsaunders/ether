@@ -1,4 +1,4 @@
-package app
+package service
 
 import (
 	"bytes"
@@ -25,10 +25,11 @@ CREATE TABLE artwork_image_metadata_claims (image_key TEXT PRIMARY KEY, token TE
 	store.Register("artwork_metadata", 2, `ALTER TABLE artwork_image_metadata ADD COLUMN thumbhash TEXT NOT NULL DEFAULT '';`)
 }
 
-// artworkMetadataQueue serves only memory hits during requests. Missing
+// MetadataQueue serves only memory hits during requests. Missing
 // descriptors schedule bounded, coalesced database and source work.
-type artworkMetadataQueue struct {
+type MetadataQueue struct {
 	ctx     context.Context
+	workers sync.WaitGroup
 	db      *sql.DB
 	active  func(context.Context, int64) (*core.User, error)
 	read    func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error)
@@ -49,9 +50,10 @@ type artworkMetadataJob struct {
 	image   frontend.Image
 }
 
-func newArtworkMetadataQueue(ctx context.Context, db *sql.DB, active func(context.Context, int64) (*core.User, error), read func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error)) *artworkMetadataQueue {
-	q := &artworkMetadataQueue{ctx: ctx, db: db, active: active, read: read, jobs: make(chan artworkMetadataJob, 128), cache: map[string]artworkMetadata{}, pending: map[string]bool{}, retry: map[string]time.Time{}}
+func NewMetadataQueue(ctx context.Context, db *sql.DB, active func(context.Context, int64) (*core.User, error), read func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error)) *MetadataQueue {
+	q := &MetadataQueue{ctx: ctx, db: db, active: active, read: read, jobs: make(chan artworkMetadataJob, 128), cache: map[string]artworkMetadata{}, pending: map[string]bool{}, retry: map[string]time.Time{}}
 	for i := 0; i < 2; i++ {
+		q.workers.Add(1)
 		go q.run()
 	}
 	return q
@@ -77,7 +79,7 @@ func artworkMetadataKey(req frontend.ArtworkRequest, img frontend.Image) string 
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (q *artworkMetadataQueue) get(ctx context.Context, req frontend.ArtworkRequest, img frontend.Image) frontend.Image {
+func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, img frontend.Image) frontend.Image {
 	if q == nil || q.db == nil || q.active == nil || q.read == nil || req.Viewer == nil || q.ctx.Err() != nil {
 		return img
 	}
@@ -107,7 +109,8 @@ func (q *artworkMetadataQueue) get(ctx context.Context, req frontend.ArtworkRequ
 	return img
 }
 
-func (q *artworkMetadataQueue) run() {
+func (q *MetadataQueue) run() {
+	defer q.workers.Done()
 	for {
 		select {
 		case <-q.ctx.Done():
@@ -147,13 +150,13 @@ func (q *artworkMetadataQueue) run() {
 	}
 }
 
-func (q *artworkMetadataQueue) load(ctx context.Context, key string) (artworkMetadata, error) {
+func (q *MetadataQueue) load(ctx context.Context, key string) (artworkMetadata, error) {
 	var m artworkMetadata
 	err := q.db.QueryRowContext(ctx, `SELECT width,height,blurhash,thumbhash FROM artwork_image_metadata WHERE image_key=?`, key).Scan(&m.width, &m.height, &m.blurhash, &m.thumbhash)
 	return m, err
 }
 
-func (q *artworkMetadataQueue) compute(ctx context.Context, job artworkMetadataJob) error {
+func (q *MetadataQueue) compute(ctx context.Context, job artworkMetadataJob) error {
 	viewer, err := q.active(ctx, job.request.Viewer.ID)
 	if err != nil || viewer == nil || viewer.ID != job.request.Viewer.ID {
 		return core.ErrUnauthorized
@@ -219,3 +222,6 @@ func (q *artworkMetadataQueue) compute(ctx context.Context, job artworkMetadataJ
 	_, err = q.db.ExecContext(ctx, `INSERT INTO artwork_image_metadata(image_key,width,height,blurhash,thumbhash) VALUES(?,?,?,?,?) ON CONFLICT(image_key) DO UPDATE SET thumbhash=excluded.thumbhash WHERE artwork_image_metadata.thumbhash=''`, job.key, cfg.Width, cfg.Height, hash, base64.StdEncoding.EncodeToString(thumb))
 	return err
 }
+
+// Wait joins workers after the owning context is cancelled.
+func (q *MetadataQueue) Wait() { q.workers.Wait() }

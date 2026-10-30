@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"io"
 	"log/slog"
 	"net/http"
@@ -76,6 +77,8 @@ type SessionToucher interface {
 // Deps are the server's dependencies. Catalog, State, Auth and Playback are
 // required; the rest degrade gracefully when nil.
 type Deps struct {
+	ArtworkImages       *artworkservice.RemoteCache
+	ArtworkPalettes     *artworkservice.PaletteCache
 	SessionCoordination *sessions.Coordination
 	FavoriteShows       func(context.Context, *core.User) (map[core.RatingKey]bool, error)
 	FilterAvailable     func(context.Context, []core.Title) []core.Title
@@ -149,7 +152,7 @@ type Server struct {
 
 	sections []Section
 
-	images            *imageCache
+	images            *artworkservice.RemoteCache
 	streams           *streamRegistry
 	variantIDs        *variantIDRegistry
 	renderedVariants  *renderedVariants
@@ -167,7 +170,7 @@ type Server struct {
 
 	// Background enrichment (nil when disabled).
 	titles    *titleCache
-	ultra     *ultraBlurCache
+	ultra     *artworkservice.PaletteCache
 	titleJobs *bgQueue
 	blurJobs  *bgQueue
 
@@ -210,7 +213,7 @@ func NewServer(d Deps) *Server {
 	s := &Server{
 		d:                 d,
 		log:               d.Logger.With("component", "plex"),
-		images:            newImageCache(d.ImageCacheBytes, d.HTTPClient),
+		images:            artworkservice.NewRemoteCache(d.ImageCacheBytes, d.HTTPClient),
 		streams:           newStreamRegistry(),
 		variantIDs:        newVariantIDRegistry(d.DB),
 		renderedVariants:  newRenderedVariants(),
@@ -227,6 +230,9 @@ func NewServer(d Deps) *Server {
 		ctx:               ctx,
 		cancel:            cancel,
 	}
+	if d.ArtworkImages != nil {
+		s.images = d.ArtworkImages
+	}
 	s.sections = s.buildSections()
 	s.queues.now = d.Now
 	if d.Cluster != nil && d.DB != nil {
@@ -237,7 +243,12 @@ func NewServer(d Deps) *Server {
 		s.titleJobs = newBGQueue(ctx, &s.wg, titleFetchWorkers, titleFetchQueueLen)
 		s.blurJobs = newBGQueue(ctx, &s.wg, ultraBlurWorkers, ultraBlurQueueLen)
 		s.titles = newTitleCache(s.titleJobs, s.now, s.log, d.Catalog.Get)
-		s.ultra = newUltraBlurCache(d.DB, s.blurJobs, s.now, s.log, s.computeUltraBlur)
+		s.ultra = artworkservice.NewPaletteCache(d.DB, s.blurJobs.submit, s.now, s.log, func(ctx context.Context, path string) (artworkservice.Palette, error) {
+			return artworkservice.ComputePalette(ctx, s.images, s.d.ImageURL, path, s.now())
+		})
+	}
+	if d.ArtworkPalettes != nil {
+		s.ultra = d.ArtworkPalettes
 	}
 	s.router = s.routes()
 	s.wg.Add(1)

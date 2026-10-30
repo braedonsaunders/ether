@@ -119,7 +119,7 @@ func TestPlexWatchReachesJellyfinSocket(t *testing.T) {
 	defer events.Close()
 	watch := state.New(store.OpenTest(t), state.Options{})
 	defer watch.Close(context.Background())
-	unsub := subscribeSessionState(watch, events, func(int64, core.RatingKey) {}, nil)
+	unsub := subscribeSessionState(watch, events, nil)
 	defer unsub()
 	ident := frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*core.Viewer, error) {
 		if token != "grant" {

@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	artworkpkg "github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -41,6 +40,7 @@ type frontendRuntime struct {
 	events         *sessions.EventBus
 	broker         *sessions.Broker
 	stateUnsub     func()
+	artworkWait    func()
 	ctx            context.Context
 	cancel         context.CancelFunc
 	mu             sync.Mutex
@@ -82,42 +82,36 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: a.sessionEvents, discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
+	initialized := false
+	defer func() {
+		if !initialized {
+			r.close()
+		}
+	}()
+
 	r.broker, err = a.newSessionBroker(r.events)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
-	r.stateUnsub = subscribeSessionState(a.state, r.events, a.plexServer.WatchStateChanged, func(err error) { a.log.Warn("user data event publication failed", "err", err) })
+	r.stateUnsub = subscribeSessionState(a.state, r.events, func(err error) { a.log.Warn("user data event publication failed", "err", err) })
 	compact, err := compactids.New(a.db)
 	if err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	var artwork frontend.Artwork
 	var channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
 	if a.tmdb != nil {
-		variants := newArtworkVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
-		source := &plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get, Raster: artworkpkg.NewSVGRasterizer()}
-		if a.episodeorder != nil {
-			source.VirtualSeason = a.episodeorder.CachedVirtualSeason
-		}
-		if a.images != nil {
-			source.URLImages = a.images
-		}
-		metadata := newArtworkMetadataQueue(ctx, a.db, a.users.ActiveUser, source.Read)
-		source.Metadata = metadata.get
+		source, wait := a.newSharedArtwork(ctx)
+		a.artwork = source
+		r.artworkWait = wait
 		artwork = source
 		channelArtwork = source.ChannelImage
 	}
+
 	experiences := make(map[frontend.Protocol]frontend.Experience)
 	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby", "silo"} {
 		experience, err := a.newSurfaceExperience(protocol, artwork)
 		if err != nil {
-			r.stateUnsub()
-			r.broker.Close(context.Background())
-			cancel()
 			return nil, err
 		}
 		if scoped, ok := experience.(*surfaceExperience); ok {
@@ -194,61 +188,49 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return countFrontendStreams((ownerPlayback{Playback: a.playback, app: a}).Sessions()), true
 	}
 	r.control.sharedStatus = r.sharedStatus
-	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
+	if err := r.registry.Register(plex.Frontend{NewServer: func() (*plex.Server, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		current := a.cfg.Get()
+		// Domain construction fixes the spike library for this runtime. First mount
+		// uses current identity/settings without changing the underlying library.
+		current.Spike = cfg.Spike
+		handler, err := a.buildPlex(ctx, current)
+		if err != nil {
+			return nil, err
+		}
+		return handler.(*plex.Server), nil
+	}, WatchState: a.state, ExplicitWatchOnly: cfg.Spike.Enabled, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		return nil, err
 	}
 	if err := r.registry.Register(mediabrowser.Jellyfin{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(mediabrowser.Emby{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.events.Close()
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(silo.Frontend{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(stremio.Frontend{}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(webdav.Frontend{}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(dlna.Frontend{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(m3u.Frontend{}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if cfg.Frontends == nil || cfg.Frontends["plex"].Enabled {
 		if err := r.control.listeners.start(ctx, "plex"); err != nil {
-			r.stateUnsub()
-			r.broker.Close(context.Background())
-			cancel()
 			return nil, err
 		}
 	}
+	initialized = true
 	return r, nil
 }
 
@@ -427,16 +409,36 @@ func (r *frontendRuntime) stop() {
 func (r *frontendRuntime) close() {
 	r.lifecycleMu.Lock()
 	defer r.lifecycleMu.Unlock()
-	r.stop()
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return
+	}
 	r.closed = true
 	r.mu.Unlock()
-	r.cancel()
-	_ = r.control.listeners.close(context.Background())
+	r.stop()
+	if r.cancel != nil {
+		r.cancel()
+	}
+	if r.control != nil && r.control.listeners != nil {
+		_ = r.control.listeners.close(context.Background())
+	}
 	if r.stateUnsub != nil {
 		r.stateUnsub()
 	}
 	if r.broker != nil {
 		r.broker.Close(context.Background())
+	}
+	if r.artworkWait != nil {
+		r.artworkWait()
+	}
+	if r.app != nil {
+		r.app.plexBuildMu.Lock()
+		closePlex := r.app.plexClose
+		r.app.plexClose = nil
+		r.app.plexBuildMu.Unlock()
+		if closePlex != nil {
+			closePlex()
+		}
 	}
 }

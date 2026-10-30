@@ -3,7 +3,10 @@ package plex
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"strings"
 	"testing"
@@ -228,23 +231,26 @@ func TestFrontendArtworkVariantsAreScopedAndValidated(t *testing.T) {
 		return &tmdb.Images{Posters: []tmdb.ImageFile{{FilePath: "/alternative.jpg"}, {FilePath: "https://example.com/image.jpg"}}}, true
 	}}
 	req := frontend.ArtworkRequest{Viewer: &ownerUser, Item: fightClub.Key}
-	entries, complete, err := source.entries(context.Background(), req)
+	entries, complete, err := source.List(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !complete {
 		t.Fatal("fresh variants did not complete title artwork")
 	}
+	// Validate the legacy artwork-v1 identity independently of the implementation.
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%d\x00%d\x00%s\x00%s\x00%s\x00%s", req.Viewer.ID, req.Item, req.Device.Language, frontend.ImagePoster, "variant\x00/alternative.jpg", "artwork-v1")))
+	expected := base64.RawURLEncoding.EncodeToString(sum[:])
 	count := 0
 	for _, entry := range entries {
-		if entry.remotePath == "" {
+		if strings.Contains(entry.Path, "alternative") || strings.Contains(entry.Path, "example.com") {
+			t.Fatal("source leaked")
+		}
+		if entry.Path != expected {
 			continue
 		}
 		count++
-		if entry.remotePath != "/alternative.jpg" || strings.Contains(entry.image.Path, "alternative") {
-			t.Fatal("invalid variant reference")
-		}
-		if data, ct, err := source.Read(context.Background(), req, entry.image, frontend.ArtworkTransform{Width: 300}); err != nil || len(data) == 0 || ct != "image/jpeg" {
+		if data, ct, err := source.Read(context.Background(), req, entry, frontend.ArtworkTransform{Width: 300}); err != nil || len(data) == 0 || ct != "image/jpeg" {
 			t.Fatalf("variant: %s %v", ct, err)
 		}
 	}

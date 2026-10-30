@@ -31,19 +31,8 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	if a.livetv != nil {
 		live = sessionLive{service: a.livetv, cached: a.catalog.CachedGet}
 	}
-	visibility := experience.Visibility{Policy: a.safety, GetTitle: a.catalog.Get, SectionFor: func(t core.MediaType) (int, bool) {
-		want := core.TypeMovie
-		switch t {
-		case core.TypeShow, core.TypeSeason, core.TypeEpisode:
-			want = core.TypeShow
-		}
-		for _, section := range a.plexServer.LibrarySections() {
-			if section.Type == want {
-				return section.ID, true
-			}
-		}
-		return 0, false
-	}}
+	visibility := experienceVisibility(a.safety, a.catalog.Get, nil, nil, serverLibraries(a.cfg.Get()))
+
 	return sessions.NewBroker(sessions.BrokerDeps{
 		Coordination: a.sessionCoordination,
 		DB:           a.db, Cluster: a.clusterNode(), Live: live,
@@ -132,9 +121,8 @@ func cachedSessionTitle(ctx context.Context, viewer *core.Viewer, key core.Ratin
 	return title, nil
 }
 
-// subscribeSessionState publishes committed state invalidations once and keeps
-// Plex's own scrobble notifications on their existing path.
-func subscribeSessionState(watch *state.State, events *sessions.EventBus, plexRefresh func(int64, core.RatingKey), onError func(error)) func() {
+// subscribeSessionState publishes protocol-neutral committed state invalidations.
+func subscribeSessionState(watch *state.State, events *sessions.EventBus, onError func(error)) func() {
 	return watch.Subscribe(func(ev state.Event) {
 		if ev.Kind == state.EventProgress && ev.Completed {
 			return
@@ -148,9 +136,6 @@ func subscribeSessionState(watch *state.State, events *sessions.EventBus, plexRe
 			if err := events.Publish(ctx, frontend.Event{Type: "WatchStateChanged", ViewerID: ev.UserID, Item: ev.Key, OriginProtocol: ev.Origin.Surface, OriginSessionID: ev.Origin.SessionID, OriginClientID: ev.Origin.ClientID}); err != nil && onError != nil {
 				onError(err)
 			}
-		}
-		if ev.Origin.Surface != "plex" && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble) && plexRefresh != nil {
-			plexRefresh(ev.UserID, ev.Key)
 		}
 	})
 }

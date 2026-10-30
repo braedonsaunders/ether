@@ -1,4 +1,4 @@
-package app
+package service
 
 import (
 	"bytes"
@@ -32,7 +32,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
 	active := func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }
-	q := newArtworkMetadataQueue(ctx, db, active, func(_ context.Context, _ frontend.ArtworkRequest, _ frontend.Image, _ frontend.ArtworkTransform) ([]byte, string, error) {
+	q := NewMetadataQueue(ctx, db, active, func(_ context.Context, _ frontend.ArtworkRequest, _ frontend.Image, _ frontend.ArtworkTransform) ([]byte, string, error) {
 		calls.Add(1)
 		close(started)
 		<-release
@@ -40,7 +40,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 	})
 	req := frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}
 	ref := frontend.Image{Kind: "poster", Path: "opaque", Tag: "v1"}
-	got := q.get(ctx, req, ref)
+	got := q.Get(ctx, req, ref)
 	if got.Width != 0 || got.BlurHash != "" || got.ThumbHash != "" {
 		t.Fatalf("cold read fabricated metadata: %+v", got)
 	}
@@ -50,13 +50,13 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 		t.Fatal("worker did not start")
 	}
 	for i := 0; i < 5; i++ {
-		q.get(ctx, req, ref)
+		q.Get(ctx, req, ref)
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("duplicate jobs: %d", calls.Load())
 	}
 	// A second node observes the shared lease and must not fetch the same image.
-	q2 := newArtworkMetadataQueue(ctx, db, active, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	q2 := NewMetadataQueue(ctx, db, active, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
 		t.Error("cached metadata fetched again")
 		return nil, "", core.ErrNotAvailable
 	})
@@ -66,7 +66,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 	close(release)
 	deadline := time.After(2 * time.Second)
 	for {
-		got = q.get(ctx, req, ref)
+		got = q.Get(ctx, req, ref)
 		if got.BlurHash != "" {
 			break
 		}
@@ -82,7 +82,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 	// A new node loads the persisted metadata in its worker, without any
 	// request-path DB call or source fetch.
 	for {
-		again := q2.get(ctx, req, ref)
+		again := q2.Get(ctx, req, ref)
 		if again.BlurHash != "" {
 			if again != got {
 				t.Fatalf("persisted mismatch: %+v", again)
@@ -101,7 +101,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO artwork_image_metadata_claims(image_key,token,expires_at) VALUES(?,?,?) ON CONFLICT(image_key) DO UPDATE SET token=excluded.token,expires_at=excluded.expires_at`, key, "stale-worker", time.Now().Add(-time.Minute).Unix()); err != nil {
 		t.Fatal(err)
 	}
-	q3 := newArtworkMetadataQueue(ctx, db, active, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	q3 := NewMetadataQueue(ctx, db, active, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
 		return encoded.Bytes(), "image/png", nil
 	})
 	if err := q3.compute(ctx, artworkMetadataJob{key: key, request: req, image: stale}); err != nil {
@@ -131,7 +131,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 	if artworkMetadataKey(otherDevice, ref) != base {
 		t.Fatal("identical descriptor was not shared across devices")
 	}
-	if shared := q2.get(ctx, otherDevice, ref); shared != got {
+	if shared := q2.Get(ctx, otherDevice, ref); shared != got {
 		t.Fatalf("cross-device metadata was not reused: %+v", shared)
 	}
 }
@@ -140,7 +140,7 @@ func TestArtworkMetadataBoundsAndViewerRevalidation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	db := store.OpenTest(t)
-	q := newArtworkMetadataQueue(ctx, db, func(context.Context, int64) (*core.User, error) { return nil, core.ErrUnauthorized }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	q := NewMetadataQueue(ctx, db, func(context.Context, int64) (*core.User, error) { return nil, core.ErrUnauthorized }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
 		t.Fatal("inactive viewer fetched")
 		return nil, "", nil
 	})
@@ -173,12 +173,12 @@ func TestArtworkMetadataRequestDoesNotWaitForDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	q := newArtworkMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	q := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
 		return nil, "", core.ErrNotAvailable
 	})
 	done := make(chan frontend.Image, 1)
 	go func() {
-		done <- q.get(ctx, frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}, frontend.Image{Kind: "poster", Path: "opaque"})
+		done <- q.Get(ctx, frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}, frontend.Image{Kind: "poster", Path: "opaque"})
 	}()
 	select {
 	case got := <-done:
@@ -204,7 +204,7 @@ func TestArtworkMetadataPostClaimExistingRow(t *testing.T) {
 	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		t.Fatal(err)
 	}
-	q := newArtworkMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	q := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
 		t.Fatal("existing metadata fetched again")
 		return nil, "", nil
 	})
@@ -231,7 +231,7 @@ func TestArtworkMetadataUpgradesExistingBlurHash(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO artwork_image_metadata(image_key,width,height,blurhash) VALUES(?,?,?,?)`, key, 1, 1, "existing-blur"); err != nil {
 		t.Fatal(err)
 	}
-	q := newArtworkMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	q := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
 		return encoded.Bytes(), "image/png", nil
 	})
 	if err := q.compute(ctx, artworkMetadataJob{key: key, request: req, image: ref}); err != nil {
@@ -253,13 +253,13 @@ func TestArtworkMetadataKeepsExistingBlurHashWhenUpgradeFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	var calls atomic.Int32
-	q := newArtworkMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+	q := NewMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
 		calls.Add(1)
 		return nil, "", core.ErrNotAvailable
 	})
 	deadline := time.After(2 * time.Second)
 	for {
-		got := q.get(ctx, req, ref)
+		got := q.Get(ctx, req, ref)
 		if got.BlurHash == "existing-blur" {
 			if got.Width != 8 || got.Height != 6 || got.ThumbHash != "" || calls.Load() != 1 {
 				t.Fatalf("partial cached metadata: %+v, calls=%d", got, calls.Load())

@@ -6,114 +6,17 @@ import (
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/artwork"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/discovery"
 	"github.com/braedonsaunders/ether/internal/experience"
-	"github.com/braedonsaunders/ether/internal/llm"
-	"github.com/braedonsaunders/ether/internal/overlays"
-	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/plex/model"
-	"github.com/braedonsaunders/ether/internal/ratings"
-	"github.com/braedonsaunders/ether/internal/watchlist"
 	"github.com/go-chi/chi/v5"
 	"net/http"
 	"net/url"
 	"strconv"
-	"sync"
-	"time"
 )
 
-// DiscoveryFeatures is optional. Viewers use these features through ordinary
-// Plex metadata, Home, search and continue-watching endpoints.
-type DiscoveryFeatures struct {
-	Watchlist *watchlist.Service
-	Ratings   *ratings.Service
-	Overlays  *overlays.Service
-	Personal  *personalize.Discovery
-	LLM       *llm.Service
-	Localize  func(context.Context, *core.Title, string) (*core.Title, error)
-	once      sync.Once
-	mu        sync.Mutex
-	queue     chan discoveryJob
-	cache     map[string]discoveryEntry
-	pending   map[string]bool
-}
-type discoveryJob struct {
-	key   string
-	title core.Title
-	user  core.User
-	lang  string
-	recap bool
-	state core.State
-}
-type discoveryEntry struct {
-	title *core.Title
-	recap string
-	at    time.Time
-}
-
-func (d *DiscoveryFeatures) init() {
-	d.once.Do(func() {
-		d.queue = make(chan discoveryJob, 128)
-		d.cache = map[string]discoveryEntry{}
-		d.pending = map[string]bool{}
-	})
-}
-func (d *DiscoveryFeatures) cached(job discoveryJob) discoveryEntry {
-	d.init()
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	v := d.cache[job.key]
-	if time.Since(v.at) < 6*time.Hour {
-		return v
-	}
-	if !d.pending[job.key] {
-		select {
-		case d.queue <- job:
-			d.pending[job.key] = true
-		default:
-		}
-	}
-	return v
-}
-
-// Run is the sole metadata background worker, bounded and stopped with the app.
-func (d *DiscoveryFeatures) Run(ctx context.Context) {
-	if d == nil {
-		return
-	}
-	d.init()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case job := <-d.queue:
-			bounded, cancel := context.WithTimeout(ctx, 15*time.Second)
-			var v discoveryEntry
-			var e error
-			if job.recap {
-				v.recap, e = d.LLM.SeasonRecap(bounded, &job.user, job.title.Key, job.state)
-			} else {
-				v.title, e = d.Localize(bounded, &job.title, job.lang)
-			}
-			cancel()
-			d.mu.Lock()
-			delete(d.pending, job.key)
-			v.at = time.Now()
-			if e != nil {
-				v.title = nil
-				v.recap = ""
-				v.at = time.Now().Add(-6*time.Hour + 5*time.Minute)
-			}
-			if len(d.cache) >= 256 {
-				for k := range d.cache {
-					delete(d.cache, k)
-					break
-				}
-			}
-			d.cache[job.key] = v
-			d.mu.Unlock()
-		}
-	}
-}
+// DiscoveryFeatures is the shared discovery service adapted by Plex.
+type DiscoveryFeatures = discovery.Features
 
 func (s *Server) discoveryHubs(ctx context.Context, pr *Request, limit int) []hubSpec {
 	if !s.viewerRestricted(pr.User) {
@@ -189,54 +92,41 @@ func (s *Server) decorateDiscoveryMetadata(ctx context.Context, pr *Request, t *
 	if d == nil || t == nil || pr.User == nil || !s.titleAllowed(pr.User, t) {
 		return
 	}
-	localized := t
-	if d.Overlays != nil {
-		cfg, _ := d.Overlays.Settings(ctx)
-		if cfg.Enabled && cfg.Localize && d.Localize != nil && pr.Language != "" {
-			entry := d.cached(discoveryJob{key: fmt.Sprintf("lang:%s:%s:%d", t.Key.String(), pr.Language, t.UpdatedAt.Unix()), title: *t, lang: pr.Language})
-			if entry.title != nil {
-				localized = entry.title
-				m.Title = localized.Title
-				m.Summary = localized.Summary
-				m.Tagline = localized.Tagline
-			}
-
-		}
-		if (cfg.Enabled && localized.PosterPath != "") || (d.Overlays.CustomPostersEnabled() && (localized.Type == core.TypeMovie || localized.Type == core.TypeShow)) {
-			version := d.Overlays.Version(ctx, pr.User, localized, pr.Language)
-			m.Thumb = fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?lang=%s", t.Key.String(), version, url.QueryEscape(pr.Language))
-		}
-		if cfg.Enabled {
-			_, backdrop := d.Overlays.Paths(ctx, pr.User, localized, pr.Language)
-			if backdrop != "" && backdrop != t.BackdropPath {
-				m.Art = fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?kind=backdrop&lang=%s", t.Key.String(), d.Overlays.Version(ctx, pr.User, localized, pr.Language), url.QueryEscape(pr.Language))
-			}
-		}
-		if cfg.Enabled {
-			for i := range m.Image {
-				m.Image[i].Alt = m.Title
-				switch m.Image[i].Type {
-				case "coverPoster":
-					if t.Type != core.TypeEpisode && m.Thumb != "" {
-						m.Image[i].URL = m.Thumb
-					}
-				case "background":
-					if m.Art != "" {
-						m.Image[i].URL = m.Art
-					}
-				case "clearLogo":
-					if localized.LogoPath != "" {
-						m.Image[i].URL = fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?kind=logo&lang=%s", t.Key.String(), d.Overlays.Version(ctx, pr.User, localized, pr.Language), url.QueryEscape(pr.Language))
-					}
+	selected := d.SelectArtwork(ctx, pr.User, t, pr.Language)
+	localized := selected.Title
+	if localized != t {
+		m.Title = localized.Title
+		m.Summary = localized.Summary
+		m.Tagline = localized.Tagline
+	}
+	if selected.PosterVersion != "" {
+		m.Thumb = fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?lang=%s", t.Key.String(), selected.PosterVersion, url.QueryEscape(pr.Language))
+	}
+	if selected.BackdropVersion != "" {
+		m.Art = fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?kind=backdrop&lang=%s", t.Key.String(), selected.BackdropVersion, url.QueryEscape(pr.Language))
+	}
+	if selected.Enabled {
+		hasLogo := false
+		for i := range m.Image {
+			m.Image[i].Alt = m.Title
+			switch m.Image[i].Type {
+			case "coverPoster":
+				if t.Type != core.TypeEpisode && m.Thumb != "" {
+					m.Image[i].URL = m.Thumb
+				}
+			case "background":
+				if m.Art != "" {
+					m.Image[i].URL = m.Art
+				}
+			case "clearLogo":
+				hasLogo = true
+				if selected.LogoVersion != "" {
+					m.Image[i].URL = fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?kind=logo&lang=%s", t.Key.String(), selected.LogoVersion, url.QueryEscape(pr.Language))
 				}
 			}
-			hasLogo := false
-			for _, img := range m.Image {
-				hasLogo = hasLogo || img.Type == "clearLogo"
-			}
-			if !hasLogo && localized.LogoPath != "" {
-				m.Image = append(m.Image, model.Image{Alt: m.Title, Type: "clearLogo", URL: fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?kind=logo&lang=%s", t.Key.String(), d.Overlays.Version(ctx, pr.User, localized, pr.Language), url.QueryEscape(pr.Language))})
-			}
+		}
+		if !hasLogo && selected.LogoVersion != "" {
+			m.Image = append(m.Image, model.Image{Alt: m.Title, Type: "clearLogo", URL: fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?kind=logo&lang=%s", t.Key.String(), selected.LogoVersion, url.QueryEscape(pr.Language))})
 		}
 	}
 	if d.Ratings != nil && (t.Type == core.TypeMovie || t.Type == core.TypeShow) {
@@ -269,9 +159,9 @@ func (s *Server) decorateDiscoveryMetadata(ctx context.Context, pr *Request, t *
 	if d.LLM != nil && d.Watchlist != nil && (t.Type == core.TypeSeason || t.Type == core.TypeEpisode) {
 		cfg, _ := d.Watchlist.Settings(ctx)
 		if cfg.Recaps {
-			entry := d.cached(discoveryJob{key: fmt.Sprintf("recap:%d:%d:%d", pr.User.ID, t.Key, s.now().Unix()/3600), title: *t, user: *pr.User, recap: true, state: s.d.State})
-			if entry.recap != "" {
-				m.Summary = "Previously watched: " + entry.recap + "\n\n" + m.Summary
+			entry := d.CachedRecap(pr.User, t, s.d.State, s.now())
+			if entry != "" {
+				m.Summary = "Previously watched: " + entry + "\n\n" + m.Summary
 			}
 
 		}
@@ -305,16 +195,11 @@ func (s *Server) serveDiscoveryPoster(w http.ResponseWriter, r *http.Request, k 
 	if lang == "" {
 		lang = pr.Language
 	}
-	cfg, _ := d.Overlays.Settings(ctx)
-	if cfg.Enabled && cfg.Localize && d.Localize != nil {
-		bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
-		v, e := d.Localize(bounded, t, lang)
-		cancel()
-		if e == nil && v != nil {
-			t = v
-		}
+	t, version, e := d.PrepareArtwork(ctx, pr.User, t, lang)
+	if e != nil {
+		writeHTTPError(w, 404)
+		return
 	}
-	version := d.Overlays.Version(ctx, pr.User, t, lang)
 	etag := `"` + version + `"`
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("Vary", "X-Plex-Token, X-Plex-Language")
@@ -323,16 +208,7 @@ func (s *Server) serveDiscoveryPoster(w http.ResponseWriter, r *http.Request, k 
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	var data []byte
-	var ct string
-	switch kind {
-	case "backdrop":
-		data, ct, e = d.Overlays.Backdrop(ctx, pr.User, t, lang)
-	case "logo":
-		data, ct, e = d.Overlays.Logo(ctx, t)
-	default:
-		data, ct, e = d.Overlays.Poster(ctx, pr.User, t, lang)
-	}
+	data, ct, e := d.RenderArtwork(ctx, pr.User, t, kind, lang)
 	if e != nil {
 		writeHTTPError(w, 404)
 		return

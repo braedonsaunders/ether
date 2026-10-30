@@ -35,8 +35,8 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 		var recoverErr error
 		if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.HasBinding(id) {
 			recoverErr = a.frontends.broker.Recover(rctx, id, input, at)
-		} else if a.plexServer != nil {
-			recoverErr = a.plexServer.RecoverTranscode(rctx, id, input, at)
+		} else if server := a.currentPlexServer(); server != nil {
+			recoverErr = server.RecoverTranscode(rctx, id, input, at)
 		}
 		if recoverErr != nil {
 			log.Warn("encoder recovery exhausted", "session", id, "err", recoverErr)
@@ -94,8 +94,8 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 					return hs, true
 				}
 			}
-			if a.plexServer != nil {
-				if hs, ok := a.plexServer.TranscodeFor(id); ok {
+			if server := a.currentPlexServer(); server != nil {
+				if hs, ok := server.TranscodeFor(id); ok {
 					return hs, true
 				}
 			}

@@ -12,7 +12,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
-	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
@@ -79,7 +78,8 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	if _, err := a.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1,detail_at=? WHERE key=?`, time.Now().Unix(), int64(title.Key)); err != nil {
 		t.Fatal(err)
 	}
-	source := plex.FrontendArtwork{Server: a.plexServer, Variants: func(*core.Title, string) (*tmdb.Images, bool) { return &tmdb.Images{}, true }}
+	source := *a.artwork
+	source.Variants = func(*core.Title, string) (*tmdb.Images, bool) { return &tmdb.Images{}, true }
 	exp, err := a.newSurfaceExperience("jellyfin", source)
 	if err != nil {
 		t.Fatal(err)

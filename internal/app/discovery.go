@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/discovery"
 	"github.com/braedonsaunders/ether/internal/overlays"
 	"github.com/braedonsaunders/ether/internal/personalize"
-	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/ratings"
 	"github.com/braedonsaunders/ether/internal/watchlist"
 	"net/http"
@@ -43,7 +43,7 @@ func (a *App) buildDiscovery() {
 		}
 		return tags
 	}})
-	a.plexDiscovery = &plex.DiscoveryFeatures{Watchlist: a.watchlist, Ratings: a.ratings, Overlays: a.overlays, Personal: a.discoveryPersonal, LLM: a.llm, Localize: a.tmdb.Localized}
+	a.discoveryFeatures = &discovery.Features{Watchlist: a.watchlist, Ratings: a.ratings, Overlays: a.overlays, Personal: a.discoveryPersonal, LLM: a.llm, Localize: a.tmdb.Localized}
 }
 func (a *App) overlayFacts(ctx context.Context, u *core.User, t *core.Title, status, quality bool) overlays.Facts {
 	f := overlays.Facts{}

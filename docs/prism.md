@@ -46,10 +46,13 @@ without Plex. See [setup](user-guide.md#set-up) for the user-facing flow.
 The ownership above is the architectural direction, not a claim that every
 implementation has already been extracted. Legacy `internal/plex` and
 app-specific paths still contain behavior being moved behind shared contracts.
-For example, the current application wiring still obtains artwork through
-`plex.FrontendArtwork` and connects watch-state notifications to the legacy Plex
-server. Those internal dependencies are migration debt to remove while
-preserving Plex behavior; they do not make Plex the owner of the shared services.
+Artwork selection, rendering, palettes and queues now live in
+`internal/artwork/service`; discovery localization and overlay selection live in
+`internal/discovery`. Application composition constructs those services directly.
+The Plex adapter is constructed on mount and owns its watch-state subscription.
+This extraction still requires the recorded focused and Plex parity gates; see
+[artwork extraction evidence](prism-extraction/artwork.md). Other legacy
+dependencies remain migration debt to remove while preserving Plex behavior.
 
 The import boundary for implementations under `internal/frontends` is recorded
 in [`internal/frontend/depguard_test.go`](../internal/frontend/depguard_test.go).

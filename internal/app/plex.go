@@ -11,8 +11,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plextv"
-	"github.com/braedonsaunders/ether/internal/spike"
-	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -20,7 +18,15 @@ import (
 // library is the configured local files instead of the TMDB catalogue, but
 // auth, plex.tv registration and the transcoder are the real ones, so the
 // spike exercises the same path official apps will use.
-func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
+func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, error) {
+	a.plexBuildMu.Lock()
+	defer a.plexBuildMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if a.plexServer != nil {
+		return a.plexServer, nil
+	}
 	var tc core.Transcoder
 	if a.transcoder != nil {
 		tc = a.transcoder
@@ -50,11 +56,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 
 	var deps plex.Deps
 	if cfg.Spike.Enabled {
-		lib, err := spike.New(context.Background(), a.cfg.Get, spike.Options{Logger: a.log.With("component", "spike")})
-		if err != nil {
-			return nil, err
-		}
-		deps = lib.Deps()
+		deps = a.spikeLibrary.Deps()
 		deps.Auth = a.users
 		if tc != nil {
 			deps.Transcoder = tc
@@ -90,21 +92,16 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		Token:      func() string { return a.cfg.Get().Plex.Token },
 		Background: true,
 	})
-	a.closers = append(a.closers, deps.PlexGUID.Close)
+
 	deps.EpisodeOrder = a.episodeorder
-	deps.Discovery = a.plexDiscovery
+	deps.Discovery = a.discoveryFeatures
 	deps.LiveTV = a.livetv
 	deps.Subtitles = plexSubtitles{a}
 	deps.TrackPreferences = a.trackprefs
 	deps.SessionCoordination = a.sessionCoordination
 	deps.Markers = a.markers
-	if a.transcoder != nil && !cfg.Spike.Enabled {
-		if dl, err := a.transcoder.NewDownloadRemuxer(cfg.Downloads); err == nil {
-			deps.Downloads = dl
-		} else {
-			a.log.Warn("offline downloads unavailable", "err", err)
-		}
-	}
+	deps.Downloads = a.downloadRemuxer
+
 	deps.Extras = a.extras
 	if a.transcoder != nil {
 		deps.Trickplay = transcode.NewThumbnails(transcode.ThumbOptions{
@@ -125,6 +122,10 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 	if node := a.clusterNode(); node != nil && deps.DB != nil {
 		deps.Cluster = node
 	}
+	if a.artwork != nil {
+		deps.ArtworkImages = a.artwork.Images
+		deps.ArtworkPalettes = a.artwork.Palettes
+	}
 	srv := plex.NewServer(deps)
 	a.plexServer = srv
 	libraries := make([]plextv.LibrarySection, 0)
@@ -135,27 +136,8 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		})
 	}
 	a.registrar.SetLibrarySections(libraries)
-	a.closers = append(a.closers, func() { srv.Close() })
-	if !cfg.Spike.Enabled {
-		a.closers = append(a.closers, subscribeWatchRefresh(a.state, srv.WatchStateChanged))
-	}
+	a.plexClose = func() { srv.Close(); deps.PlexGUID.Close() }
 	return srv, nil
-}
-
-// State emits only after committing, including deferred cluster writes. Do not
-// refresh the library on every playing heartbeat: it churns recommendation rows
-// and duplicates the separate session-status notifications. Explicit scrobbles
-// already publish their own library notification in the Plex handler.
-func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKey)) func() {
-	return watch.Subscribe(func(ev state.Event) {
-		if ev.Imported {
-			return
-		}
-		if ev.Kind == state.EventCompleted ||
-			(ev.Kind == state.EventProgress && !ev.Completed && (ev.State == "paused" || ev.State == "stopped")) {
-			refresh(ev.UserID, ev.Key)
-		}
-	})
 }
 
 func plexPlatform() string {
@@ -172,4 +154,12 @@ func plexPlatform() string {
 // wirePlexPolicy supplies the same safety service to every Plex deployment.
 func (a *App) wirePlexPolicy(deps *plex.Deps) {
 	deps.AccessPolicy = a.safety
+}
+
+// currentPlexServer publishes lazy construction to playback callbacks. The
+// mutex is released before callers invoke the adapter or shared playback.
+func (a *App) currentPlexServer() *plex.Server {
+	a.plexBuildMu.Lock()
+	defer a.plexBuildMu.Unlock()
+	return a.plexServer
 }

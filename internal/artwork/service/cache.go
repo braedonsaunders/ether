@@ -1,4 +1,4 @@
-package app
+package service
 
 import (
 	"context"
@@ -9,11 +9,12 @@ import (
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
-// artworkVariantsQueue keeps item enrichment cache-only. Bounded workers
+// VariantsQueue keeps item enrichment cache-only. Bounded workers
 // fills missing TMDB responses and coalesces concurrent requests per item and
 // language. It stops when the frontend runtime's context is cancelled.
-type artworkVariantsQueue struct {
+type VariantsQueue struct {
 	ctx     context.Context
+	workers sync.WaitGroup
 	cached  func(*core.Title, string) (*tmdb.Images, bool)
 	fetch   func(context.Context, *core.Title, string) (*tmdb.Images, error)
 	jobs    chan artworkVariantJob
@@ -30,15 +31,16 @@ type artworkVariantJob struct {
 	title core.Title
 }
 
-func newArtworkVariantsQueue(ctx context.Context, cached func(*core.Title, string) (*tmdb.Images, bool), fetch func(context.Context, *core.Title, string) (*tmdb.Images, error)) *artworkVariantsQueue {
-	q := &artworkVariantsQueue{ctx: ctx, cached: cached, fetch: fetch, jobs: make(chan artworkVariantJob, 128), pending: make(map[artworkVariantKey]bool), retry: make(map[artworkVariantKey]time.Time)}
+func NewVariantsQueue(ctx context.Context, cached func(*core.Title, string) (*tmdb.Images, bool), fetch func(context.Context, *core.Title, string) (*tmdb.Images, error)) *VariantsQueue {
+	q := &VariantsQueue{ctx: ctx, cached: cached, fetch: fetch, jobs: make(chan artworkVariantJob, 128), pending: make(map[artworkVariantKey]bool), retry: make(map[artworkVariantKey]time.Time)}
 	for i := 0; i < 4; i++ {
+		q.workers.Add(1)
 		go q.run()
 	}
 	return q
 }
 
-func (q *artworkVariantsQueue) get(title *core.Title, language string) (*tmdb.Images, bool) {
+func (q *VariantsQueue) Get(title *core.Title, language string) (*tmdb.Images, bool) {
 	if title == nil || q.ctx.Err() != nil {
 		return nil, false
 	}
@@ -61,7 +63,8 @@ func (q *artworkVariantsQueue) get(title *core.Title, language string) (*tmdb.Im
 	return nil, false
 }
 
-func (q *artworkVariantsQueue) run() {
+func (q *VariantsQueue) run() {
+	defer q.workers.Done()
 	for {
 		select {
 		case <-q.ctx.Done():
@@ -92,3 +95,6 @@ func (q *artworkVariantsQueue) run() {
 		}
 	}
 }
+
+// Wait joins workers after the owning context is cancelled.
+func (q *VariantsQueue) Wait() { q.workers.Wait() }

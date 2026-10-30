@@ -14,7 +14,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/livetv"
-	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 )
 
@@ -119,7 +118,9 @@ func TestChannelArtworkGrantFollowsLiveTVPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := plex.FrontendArtwork{Server: a.plexServer, URLImages: testRemoteLogo{}, Raster: artwork.NewSVGRasterizer()}
+	source := *a.artwork
+	source.URLImages = testRemoteLogo{}
+	source.Raster = artwork.NewSVGRasterizer()
 	facade := surfaceLiveTV{app: a, channelArtwork: source.ChannelImage}
 	channels, err := facade.Channels(ctx, viewer)
 	if err != nil || len(channels) != 1 || len(channels[0].Images) != 1 {

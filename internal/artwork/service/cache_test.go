@@ -1,4 +1,4 @@
-package app
+package service
 
 import (
 	"context"
@@ -17,7 +17,7 @@ func TestArtworkVariantsQueueIsNonblockingAndCoalesces(t *testing.T) {
 	finish := make(chan struct{})
 	var calls atomic.Int32
 	var ready atomic.Bool
-	q := newArtworkVariantsQueue(ctx, func(*core.Title, string) (*tmdb.Images, bool) {
+	q := NewVariantsQueue(ctx, func(*core.Title, string) (*tmdb.Images, bool) {
 		if ready.Load() {
 			return &tmdb.Images{Posters: []tmdb.ImageFile{{FilePath: "/a.jpg"}}}, true
 		}
@@ -37,7 +37,7 @@ func TestArtworkVariantsQueueIsNonblockingAndCoalesces(t *testing.T) {
 		}
 	})
 	title := &core.Title{Key: core.MovieKey(42), Type: core.TypeMovie}
-	if _, ok := q.get(title, "en"); ok {
+	if _, ok := q.Get(title, "en"); ok {
 		t.Fatal("miss reported as complete")
 	}
 	select {
@@ -46,7 +46,7 @@ func TestArtworkVariantsQueueIsNonblockingAndCoalesces(t *testing.T) {
 		t.Fatal("fetch not started")
 	}
 	for i := 0; i < 10; i++ {
-		if _, ok := q.get(title, "en"); ok {
+		if _, ok := q.Get(title, "en"); ok {
 			t.Fatal("pending reported as complete")
 		}
 	}
@@ -58,7 +58,7 @@ func TestArtworkVariantsQueueIsNonblockingAndCoalesces(t *testing.T) {
 	for !ready.Load() && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if images, ok := q.get(title, "en"); !ok || len(images.Posters) != 1 {
+	if images, ok := q.Get(title, "en"); !ok || len(images.Posters) != 1 {
 		t.Fatal("filled entry unavailable")
 	}
 }
