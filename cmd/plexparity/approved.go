@@ -25,6 +25,41 @@ var approvedSearch []byte
 //go:embed approved_scopes.json
 var approvedScopes []byte
 
+// Owner-approved early resume changes, reviewed as exact response pairs.
+//
+//go:embed approved_resume.json
+var approvedResume []byte
+
+// Owner-approved release/air-date change, audited as exact response pairs.
+// The fixture uses a uniform release date; ordering coverage is separate.
+//
+//go:embed approved_date_added.json
+var approvedDateAdded []byte
+
+// Exact independently audited compositions of restricted-viewer or resume
+// changes with Date Added. Commit records both constituent approvals.
+//
+//go:embed approved_composite.json
+var approvedComposite []byte
+
+// Exact active-model fixture pairs independently audited against the existing
+// Date Added and restricted-viewer decisions; no resume pairs are included.
+//
+//go:embed approved_active_date.json
+var approvedActiveDate []byte
+
+// Exact active-model resume and Date Added pairs, independently attributed to
+// both approved changes using the controlled retained-model counterfactual.
+//
+//go:embed approved_active_resume.json
+var approvedActiveResume []byte
+
+// Exact subtitle-world active-model pairs, independently audited as the
+// existing owner-approved Date Added change.
+//
+//go:embed approved_active_subtitle_date.json
+var approvedActiveSubtitleDate []byte
+
 type responseSignature struct {
 	Status      int    `json:"status"`
 	ContentType string `json:"content_type"`
@@ -45,10 +80,11 @@ func signature(r protocol.Response) responseSignature {
 	return responseSignature{r.Status, r.Headers.Get("Content-Type"), hex.EncodeToString(sum[:])}
 }
 func approved(a, b capture) (string, error) {
+	before, after := signature(a.response), signature(b.response)
 	for _, registry := range []struct {
 		data       []byte
 		restricted bool
-	}{{approvedSearch, true}, {approvedScopes, false}} {
+	}{{approvedSearch, true}, {approvedScopes, false}, {approvedResume, false}, {approvedDateAdded, false}, {approvedComposite, false}, {approvedActiveDate, false}, {approvedActiveResume, false}, {approvedActiveSubtitleDate, false}} {
 		if registry.restricted && a.viewer != "teen" && a.viewer != "child" {
 			continue
 		}
@@ -57,7 +93,7 @@ func approved(a, b capture) (string, error) {
 			return "", fmt.Errorf("invalid approved differences: %w", err)
 		}
 		for _, entry := range entries {
-			if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == signature(a.response) && entry.Candidate == signature(b.response) {
+			if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == before && entry.Candidate == after {
 				if entry.Commit == "" && registry.restricted {
 					return "c82a7830", nil
 				}

@@ -15,12 +15,13 @@ Live DASH manifests use a fixed test-only clock in both staged binaries. This
 checks serialization under identical times; it does not test wall-clock
 progression. Production builds retain the normal live clock and its tests.
 
-The default corpus exercises the real personalization engine. The opt-in
-`ETHER_PARITY_TRAIN_RANKER=1` fixture uses deterministic synthetic viewer
-activity through the real APIs to train an active learned reranker under the
-unchanged production holdout gate. Its self-comparison passed; the cross-tree
-result remains unverified while its restricted-viewer differences are audited.
-This fixture is synthetic evidence, not real-user or device evidence.
+Full runs exercise both the ordinary fixture and a second fixture that uses
+deterministic synthetic viewer activity through the real APIs to train an
+active learned reranker under the unchanged production holdout gate. Its
+self-comparison passed; an integrated passing cross-tree replay remains
+outstanding after exact difference review. This is synthetic evidence, not
+real-user or device evidence. Focused diagnostic modes run only their named
+fixture and return incomplete coverage.
 
 Intentional difference `42ef28ac`: viewers who saved scoped language or
 quality overrides have those preferences applied to Plex playback selection.

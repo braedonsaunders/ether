@@ -31,4 +31,6 @@ printf 'FROM golang:1.27.3\nRUN apt-get update -qq && DEBIAN_FRONTEND=noninterac
 for tree in baseline candidate driver; do
  docker run --rm -v "$dir/$tree":/src -w /src -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build -e CGO_ENABLED=0 prism-go:1.27.3 go mod download
 done
-bash "$root/cmd/plexparity/staged-run.sh" "$dir"
+# Run both the ordinary world and the independently trained active-ranker
+# world. The actual comparisons remain inside the offline container.
+bash "$root/cmd/plexparity/staged-run.sh" "$dir" 0 0 0 0 0 0 0 0 0 0 0 1

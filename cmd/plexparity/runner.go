@@ -57,6 +57,12 @@ func copyFixture(src, dst string) error {
 // runPair fails on unapproved differences and reports incomplete coverage
 // separately so callers can distinguish a clean partial run from a regression.
 func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Writer) error {
+	if os.Getenv("ETHER_PARITY_CLUSTER_ONLY") == "1" {
+		if err := runClusterPair(ctx, baseline, candidate, seedDir, out); err != nil {
+			return err
+		}
+		return incompleteCoverage{[]string{"only two-node cluster session probes executed"}}
+	}
 	subtitleOnly := os.Getenv("ETHER_PARITY_SUBTITLES_ONLY") == "1"
 	if err := runPairMode(ctx, baseline, candidate, seedDir, out, subtitleOnly); err != nil {
 		return err
@@ -70,6 +76,8 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		{"ETHER_PARITY_SUBTITLES_ONLY", "only subtitle probes executed"},
 		{"ETHER_PARITY_IPTV_ONLY", "only IPTV probes executed"},
 		{"ETHER_PARITY_POLICY_COUNTERFACTUAL", "diagnostic counterfactual policy replay"},
+		{"ETHER_PARITY_EXPIRY_ONLY", "only transcoder expiry probe executed"},
+		{"ETHER_PARITY_INFUSE_ONLY", "only Infuse direct resume probe executed"},
 	} {
 		if os.Getenv(mode.env) == "1" {
 			return incompleteCoverage{[]string{mode.description}}
@@ -147,6 +155,19 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 	iptv.Start()
 	defer iptv.Close()
 	transcripts := make([]transcript, 0, 2)
+	seedFiles, err := seedManifest(seedDir)
+	if err != nil {
+		return fmt.Errorf("seed source manifest: %w", err)
+	}
+	hasDB := false
+	for _, file := range seedFiles {
+		if file.Path == "ether.db" {
+			hasDB = true
+		}
+	}
+	if !hasDB {
+		return fmt.Errorf("seed manifest missing ether.db (including ranker model)")
+	}
 	for i, bin := range []string{baseline, candidate} {
 		dest := filepath.Join(dir, "server")
 		if err := os.RemoveAll(dest); err != nil {
@@ -155,6 +176,28 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 		if err := copyFixture(seedDir, dest); err != nil {
 			return err
 		}
+		// Validate every copied file before config.Open/Update can change any
+		// bytes. Re-hash the source too, so a concurrent seed write fails closed.
+		sourceNow, err := seedManifest(seedDir)
+		if err != nil {
+			return fmt.Errorf("seed source recheck side %d: %w", i, err)
+		}
+		copied, err := seedManifest(dest)
+		if err != nil {
+			return fmt.Errorf("seed copy manifest side %d: %w", i, err)
+		}
+		if err := checkSeedCopy(seedFiles, sourceNow, copied); err != nil {
+			return fmt.Errorf("seed manifest side %d: %w", i, err)
+		}
+		receipt, err := json.Marshal(struct {
+			Side   int        `json:"side"`
+			Source []seedFile `json:"source"`
+			Copy   []seedFile `json:"copy"`
+		}{i, sourceNow, copied})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "SEED_COPY_VERIFIED %s\n", receipt)
 		c, err := config.Open(dest)
 		if err != nil {
 			return err
@@ -177,6 +220,11 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 		}); err != nil {
 			return err
 		}
+		applied := c.Get()
+		if applied.Plex.Token != "parity-owner" || applied.Plex.OwnerPlexID != 1 || applied.Server.BindAddress != addr || applied.Server.Port != port || applied.Cache.Dir != filepath.Join(dest, "cache") || applied.Transcode.TempDir != filepath.Join(dest, "transcode") || (subtitleMode && (!applied.OpenSubtitles.Enabled || applied.OpenSubtitles.APIKey != "parity-fixture" || !applied.Cache.DisableSpeculation)) {
+			return fmt.Errorf("seed configuration mutation mismatch on side %d", i)
+		}
+		fmt.Fprintf(out, "SEED_CONFIG_MUTATION_VERIFIED side=%d subtitle=%t (fixture fields; values withheld)\n", i, subtitleMode)
 		listener, err := net.Listen("tcp", net.JoinHostPort(addr, "32400"))
 		if err != nil {
 			return fmt.Errorf("parity port must be free: %w", err)
@@ -246,7 +294,11 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 			default:
 			}
 		}
-		captured, captureErr := captureCorpusMode(ctx, url, subtitleMode)
+		captureCtx := ctx
+		if os.Getenv("ETHER_PARITY_EXPIRY_ONLY") == "1" {
+			captureCtx = context.WithValue(ctx, serverPIDKey{}, cmd.Process.Pid)
+		}
+		captured, captureErr := captureCorpusMode(captureCtx, url, subtitleMode)
 		cancel()
 		<-done
 		log.Close()

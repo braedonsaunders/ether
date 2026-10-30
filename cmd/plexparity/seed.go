@@ -223,7 +223,7 @@ func seed(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	cols, err := collections.New(db, cat, nil)
+	cols, err := collections.New(db, cat, nil, collections.WithNow(now))
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func seed(ctx context.Context, dir string) error {
 	}
 
 	engine, err := personalize.New(personalize.Options{DB: db, Catalog: cat, State: st, Events: st, Users: users, Playlists: st.Playlists(), Now: now, Location: time.UTC, RefreshEvery: -1, RebuildDebounce: time.Hour, Dependencies: func(sc core.PersonalScorer) (core.Recommender, core.CollectionRows, error) {
-		c, err := collections.New(db, cat, nil, collections.WithState(st), collections.WithAuth(users), collections.WithScorer(sc))
+		c, err := collections.New(db, cat, nil, collections.WithNow(now), collections.WithState(st), collections.WithAuth(users), collections.WithScorer(sc))
 		if err != nil {
 			return nil, nil, err
 		}
