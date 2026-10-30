@@ -26,6 +26,7 @@ type identity struct {
 // generation is one opened source of a session. A failover creates a new
 // generation; the old one is retired and closed once in-flight reads end.
 type generation struct {
+	observation  core.PlaybackSourceObservation
 	reads        pendingSourceReads
 	standby      standbyState
 	recovery     recoveryState

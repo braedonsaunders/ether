@@ -5,7 +5,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// CurrentSource snapshots one generation without holding a lock across I/O.
+// CurrentSource copies the current generation's historical open observation.
+// It performs no filesystem or source callback I/O. Fresh pin/serve validation
+// remains separate; this is not proof that a local path is still unchanged.
 func (m *Manager) CurrentSource(ctx context.Context, id string) (core.PlaybackSourceObservation, error) {
 	if err := ctx.Err(); err != nil {
 		return core.PlaybackSourceObservation{}, err
@@ -15,41 +17,18 @@ func (m *Manager) CurrentSource(ctx context.Context, id string) (core.PlaybackSo
 		return core.PlaybackSourceObservation{}, core.ErrNotFound
 	}
 	s.mu.Lock()
-	if s.closed || s.cur == nil || s.cur.src == nil {
-		s.mu.Unlock()
+	defer s.mu.Unlock()
+	if s.closed || s.cur == nil {
 		return core.PlaybackSourceObservation{}, core.ErrNotFound
 	}
-	g := s.cur
-	info := g.infoSnapshot()
-	source := g.src
-	releaseID := ""
-	if g.res != nil {
-		releaseID = g.res.Release.ID
+	s.cur.mu.Lock()
+	out := s.cur.observation
+	s.cur.mu.Unlock()
+	if out.HDR != nil {
+		value := *out.HDR
+		out.HDR = &value
 	}
-	key := s.ident.key
-	s.mu.Unlock()
-	observation := core.PlaybackSourceObservation{}
-	if revision := historySourceRevision(key, source); revision != "" {
-		observation.Revision = revision
-		observation.ReleaseID = releaseID
-		if !info.Estimated {
-			if video := info.Video(); video != nil {
-				observation.VideoCodec, observation.Height = video.Codec, video.Height
-				observation.HDR = observedHDR(*video)
-			}
-		}
-	}
-	return observation, nil
-}
-
-func historySourceRevision(key core.RatingKey, source core.MediaSource) string {
-	// Local SourceRevision stats the filesystem. Do not do that under the
-	// broker owner gate: a stalled mount could otherwise hold up Stop. Local
-	// history stays unknown until a separately reviewed source-lease seam exists.
-	if _, local := source.(core.LocalFileSource); local {
-		return ""
-	}
-	return core.SourceRevision(&core.PlaySession{Key: key, Source: source})
+	return out, nil
 }
 
 // observedHDR keeps contradictory or incomplete probe evidence distinct from

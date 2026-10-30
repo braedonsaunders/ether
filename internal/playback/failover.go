@@ -213,6 +213,7 @@ func (m *Manager) openGeneration(ctx context.Context, s *session, res *core.Reso
 }
 
 func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Resolution, src core.MediaSource, finish func(error), fallback func(int64) core.MediaInfo, cached ...*probeCache) (*generation, error) {
+	openedRevision := core.SourceRevision(&core.PlaySession{Key: s.ident.key, Source: src})
 	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: src, finishSource: finish, res: res, indexReady: make(chan struct{})}
 	g.ctx, g.cancel = context.WithCancel(m.ctx)
 	m.mu.Lock()
@@ -291,9 +292,26 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 	}
 	mi.Keyframes = keyframesOf(points)
 	needIndex := len(points) == 0 && !mi.Estimated && mi.Duration > 0
+	// A historical open observation is never fresh authorization. Validation
+	// belongs to source opening/probing, outside manager/session locks; a path
+	// replacement or unsupported identity leaves all source facts unknown.
+	if openedRevision != core.SourceRevision(&core.PlaySession{Key: s.ident.key, Source: src}) {
+		openedRevision = ""
+	}
+	observation := core.PlaybackSourceObservation{}
+	if openedRevision != "" {
+		observation.Revision, observation.ReleaseID = openedRevision, res.Release.ID
+		if !mi.Estimated {
+			if video := mi.Video(); video != nil {
+				observation.VideoCodec, observation.Height = video.Codec, video.Height
+				observation.HDR = observedHDR(*video)
+			}
+		}
+	}
 	// The loopback server may already hold g; publish under its lock.
 	g.mu.Lock()
 	g.info = mi
+	g.observation = observation
 	g.tmap = TimeMap{Size: src.Size(), Duration: mi.Duration, Points: points}
 	g.mu.Unlock()
 	if needIndex {

@@ -225,3 +225,12 @@ These witnesses cannot constrain an old process that never implemented them;
 all old processes must be stopped and credentials fenced before activation.
 Broker exact-source transfer, external-owner claims, encoder retirement and
 moving broker cleanup outside owner gates remain required before full adoption.
+
+## Historical local observation follow-up
+
+CurrentSource now copies a generation-owned observation validated before and
+after actual source probe, outside manager/session locks. Unsupported identity
+or replacement during probe clears identity and scalar facts. Report/Stop reads
+perform no filesystem/source callback I/O; HDR pointers are defensive copies.
+This is historical open evidence, not fresh authorization or proof that a local
+path stayed immutable. Fresh PinSourceRevision and serve checks are unchanged.
