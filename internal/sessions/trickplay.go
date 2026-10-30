@@ -56,7 +56,7 @@ func thumbnailCount(duration, interval time.Duration) int {
 }
 
 // ensureTrickplay asks the borrowed provider to continue generation for the
-// session's current release. Stop cancels only through cancelTrickplayIfIdle.
+// session's current release. The broker does not cancel that job.
 func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until time.Duration) {
 	if b == nil || b.deps.Trickplay == nil || s == nil || s.live || s.playID == "" || b.deps.Playback == nil {
 		return
@@ -78,71 +78,6 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 		Info:           ps.Info,
 		AvailableUntil: until,
 	})
-}
-
-func (b *Broker) trickplayRelease(s *brokerSession) string {
-	if s == nil || s.live || b == nil || b.deps.Playback == nil || s.playID == "" {
-		if s != nil && !s.live {
-			return s.exactRelease
-		}
-		return ""
-	}
-	if ps, ok := b.deps.Playback.Session(s.playID); ok && ps != nil && ps.Resolution != nil && ps.Resolution.Release.ID != "" {
-		return ps.Resolution.Release.ID
-	}
-	return s.exactRelease
-}
-
-// cancelTrickplayIfIdle stops generation only when this release has no
-// remaining playback session. Playback.Sessions covers Plex and other local
-// players. Remaining broker sessions are checked too, because a session can
-// still name a release after its source stops. The borrowed provider does
-// not refcount an in-flight job across protocols, so a holder skips cancel.
-func (b *Broker) cancelTrickplayIfIdle(releaseID string) {
-	if b == nil || releaseID == "" || b.deps.Trickplay == nil {
-		return
-	}
-	canceler, ok := b.deps.Trickplay.(core.TrickplayCanceler)
-	if !ok {
-		return
-	}
-	if b.releaseStillHeld(releaseID) {
-		return
-	}
-	canceler.CancelTrickplay(releaseID)
-}
-
-func (b *Broker) releaseStillHeld(releaseID string) bool {
-	b.mu.Lock()
-	playIDs := make([]string, 0, len(b.sessions))
-	for _, s := range b.sessions {
-		if s == nil || s.live {
-			continue
-		}
-		if s.exactRelease == releaseID {
-			b.mu.Unlock()
-			return true
-		}
-		if s.playID != "" {
-			playIDs = append(playIDs, s.playID)
-		}
-	}
-	b.mu.Unlock()
-	if b.deps.Playback == nil {
-		return true
-	}
-	for _, id := range playIDs {
-		ps, ok := b.deps.Playback.Session(id)
-		if ok && ps != nil && ps.Resolution != nil && ps.Resolution.Release.ID == releaseID {
-			return true
-		}
-	}
-	for _, active := range b.deps.Playback.Sessions() {
-		if active != nil && active.Resolution != nil && active.Resolution.Release.ID == releaseID {
-			return true
-		}
-	}
-	return false
 }
 
 func (b *Broker) trickplayBindingCurrent(s *brokerSession, ps *core.PlaySession) bool {

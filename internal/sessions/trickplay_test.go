@@ -122,33 +122,35 @@ func TestBorrowedTrickplayRevalidatesBeforeTiles(t *testing.T) {
 	}
 }
 
-func TestTrickplayCancelWaitsForPlexAndLocalSessions(t *testing.T) {
-	provider := &memTrickplay{}
-	plex := &core.PlaySession{ID: "plex", Resolution: &core.Resolution{Release: core.Release{ID: "rel-1"}}}
-	local := &core.PlaySession{ID: "local", Resolution: &core.Resolution{Release: core.Release{ID: "rel-1"}}}
-	playback := &fakePlayback{sessions: map[string]*core.PlaySession{"plex": plex, "local": local}}
+func TestBrokerDoesNotCancelSharedTrickplay(t *testing.T) {
+	provider := &memTrickplay{frames: map[string][]byte{"rel-1": tinyJPEG(t)}}
 	item := core.RatingKey(5)
+	viewer := &core.Viewer{ID: 7}
+	now := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	play := &core.PlaySession{ID: "play", Resolution: &core.Resolution{Release: core.Release{ID: "rel-1"}}, Info: core.MediaInfo{Duration: 15 * time.Second}}
 	b := &Broker{
-		deps:     BrokerDeps{Trickplay: provider, Playback: playback},
-		sessions: map[string]*brokerSession{},
+		deps: BrokerDeps{
+			Trickplay: provider,
+			Playback:  &fakePlayback{sessions: map[string]*core.PlaySession{"play": play, "plex": {ID: "plex", Resolution: &core.Resolution{Release: core.Release{ID: "rel-1"}}}}},
+			ActiveViewer: func(context.Context, int64) (*core.Viewer, error) {
+				return viewer, nil
+			},
+			Lookup: func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error) {
+				return &core.Title{Key: item}, nil
+			},
+			Now: func() time.Time { return now },
+		},
+		sessions: map[string]*brokerSession{
+			"s": {public: frontend.Session{ID: "s", Protocol: "jellyfin", ViewerID: 7, Device: core.Device{ID: "dev"}, Item: item, StartedAt: now}, playID: "play", exactRelease: "rel-1"},
+		},
 	}
-	b.cancelTrickplayIfIdle("rel-1")
-	if len(provider.canceled) != 0 {
-		t.Fatal("canceled while Plex still holds the release")
+	access := frontend.SessionAccess{Viewer: viewer, Device: core.Device{ID: "dev"}, Protocol: "jellyfin"}
+	if _, ok := b.TrickplayOffer(context.Background(), access, item); !ok {
+		t.Fatal("offer")
 	}
-	delete(playback.sessions, "plex")
-	b.sessions["other"] = &brokerSession{public: frontend.Session{ID: "other", Item: item}, playID: "local", exactRelease: "rel-1"}
-	b.cancelTrickplayIfIdle("rel-1")
-	if len(provider.canceled) != 0 {
-		t.Fatal("canceled while another local session holds the release")
-	}
-	delete(b.sessions, "other")
-	delete(playback.sessions, "local")
-	b.cancelTrickplayIfIdle("rel-1")
-	if len(provider.canceled) != 1 || provider.canceled[0] != "rel-1" {
-		t.Fatal(provider.canceled)
-	}
-	if provider.closed {
-		t.Fatal("broker closed the shared provider")
+	b.ensureTrickplay(context.Background(), b.sessions["s"], time.Second)
+	delete(b.sessions, "s")
+	if len(provider.canceled) != 0 || provider.closed {
+		t.Fatal("broker canceled or closed the shared provider", provider.canceled, provider.closed)
 	}
 }

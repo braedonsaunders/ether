@@ -55,9 +55,9 @@ type BrokerDeps struct {
 	OpenSubtitle        func(string, string) (io.ReadCloser, string, error)
 	ExtractSubtitle     func(context.Context, string, int, string, io.Writer) error
 	// Trickplay is borrowed from the runtime owner (internal/app/trickplay_owner.go).
-	// It is the same provider Plex uses. The broker must not Close it. Cancel
-	// only after no Plex playback session and no other local session still
-	// names that release; the borrowed wrapper does not refcount shared jobs.
+	// It is the same provider Plex uses. The broker must not Close it and must
+	// not CancelTrickplay: a check of current sessions cannot fence an Ensure
+	// or a prewarm job that has no session yet. Plex keeps its own cancellation.
 	Trickplay core.TrickplayProvider
 	Now       func() time.Time
 }
@@ -963,7 +963,6 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 	return b.stopLocked(ctx, s)
 }
 func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
-	releaseID := b.trickplayRelease(s)
 	b.mu.Lock()
 	_, ok := b.sessions[s.public.ID]
 	stopSource := false
@@ -1007,7 +1006,6 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 		b.deps.Playback.Stop(s.playID)
 	}
 	b.publish(ctx, sessionEvent("SessionStopped", s.public, nil))
-	b.cancelTrickplayIfIdle(releaseID)
 	return nil
 }
 
