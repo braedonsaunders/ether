@@ -130,6 +130,13 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 		return 0, err
 	}
 	defer tx.Rollback()
+	// All upgraded legacy cleanup takes the global lock before its shard.
+	// Old binaries do not take it; their SQL still relies on row-level safety.
+	if mirror {
+		if err = store.LockKey(ctx, store.DialectOf(s.db), tx, "capability:legacy-ticket-cleanup"); err != nil {
+			return 0, err
+		}
+	}
 	if err = s.lock(ctx, tx, scope.ViewerID); err != nil {
 		return 0, err
 	}
@@ -141,12 +148,12 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 	if mirror {
 		// Legacy remains authoritative. Bound expired-only cleanup; never
 		// remove an unexpired ticket. This shares the issue transaction.
-		if _, err = tx.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE hash IN (SELECT hash FROM frontend_tickets WHERE expires<=? ORDER BY expires,hash LIMIT ?)`, now, ticketCleanupMax); err != nil {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE expires<=? AND hash IN (SELECT hash FROM frontend_tickets WHERE expires<=? ORDER BY expires,hash LIMIT ?)`, now, now, ticketCleanupMax); err != nil {
 			return 0, err
 		}
 	}
 	// Bounded cleanup of this namespace/shard only. Cascades remove typed rows.
-	if _, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, ticketNamespace, ticketNamespace, shard, now, ticketCleanupMax); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, ticketNamespace, now, ticketNamespace, shard, now, ticketCleanupMax); err != nil {
 		return 0, err
 	}
 	var count int
