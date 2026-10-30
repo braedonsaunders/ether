@@ -16,6 +16,24 @@ func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, medi
 	if itemID != "" {
 		source["ItemId"] = itemID
 	}
+	if !media.Estimated {
+		defaultIndex, defaults := 0, 0
+		for _, stream := range media.Streams {
+			if stream.Type != "audio" {
+				continue
+			}
+			isDefault := stream.Default
+			if stream.DefaultDisposition != nil {
+				isDefault = *stream.DefaultDisposition
+			}
+			if isDefault {
+				defaultIndex, defaults = stream.Index, defaults+1
+			}
+		}
+		if defaults == 1 {
+			source["DefaultAudioStreamIndex"] = defaultIndex
+		}
+	}
 	// Containers can hold audio alone; a video stream is required before
 	// describing the source as video.
 	if media.Estimated || media.Video() == nil {

@@ -44,3 +44,30 @@ func TestEmbyDirectURLNeverRequiresAccountCredential(t *testing.T) {
 		}
 	}
 }
+
+func TestEmbySourceDefaultAudioUsesAuthoritativeDisposition(t *testing.T) {
+	yes, no := true, false
+	for _, tc := range []struct {
+		name      string
+		estimated bool
+		streams   []core.StreamInfo
+		want      int
+		present   bool
+	}{
+		{"explicit default", false, []core.StreamInfo{{Type: "video", Index: 0}, {Type: "audio", Index: 1, DefaultDisposition: &yes}}, 1, true},
+		{"legacy default", false, []core.StreamInfo{{Type: "audio", Index: 0, Default: true}}, 0, true},
+		{"explicit false overrides", false, []core.StreamInfo{{Type: "audio", Index: 1, Default: true, DefaultDisposition: &no}}, 0, false},
+		{"multiple defaults", false, []core.StreamInfo{{Type: "audio", Index: 1, DefaultDisposition: &yes}, {Type: "audio", Index: 2, DefaultDisposition: &yes}}, 0, false},
+		{"unknown", false, []core.StreamInfo{{Type: "audio", Index: 1}}, 0, false},
+		{"estimated", true, []core.StreamInfo{{Type: "audio", Index: 1, DefaultDisposition: &yes}}, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := map[string]any{}
+			(&instance{}).embyMediaSourceDTO(source, "item", frontend.MediaInfo{Estimated: tc.estimated, Streams: tc.streams})
+			got, ok := source["DefaultAudioStreamIndex"]
+			if ok != tc.present || ok && got != tc.want {
+				t.Fatalf("got %#v, want %d present=%v", got, tc.want, tc.present)
+			}
+		})
+	}
+}
