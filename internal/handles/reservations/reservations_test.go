@@ -31,14 +31,18 @@ func TestReservationsBoundsRollbackAndExpiry(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	db := reservationDB(t)
-	p := ReservationPolicy{Namespace: "ticket", Shards: 2, PerShard: 2, PerViewerSurface: 1}
+	p := Policy{Namespace: "ticket", Shards: 2, PerShard: 2, PerViewerSurface: 1, TTL: time.Hour}
+	ledger, err := New(db, p)
+	if err != nil {
+		t.Fatal(err)
+	}
 	insert := func(id int, viewer int64, surface string, now, expires int64, commit bool) error {
-		tx, err := db.BeginTx(ctx, nil)
+		tx, err := ledger.Begin(ctx)
 		if err != nil {
 			return err
 		}
 		defer tx.Rollback()
-		if err = Reserve(ctx, db, tx, p, Reservation{Digest: fmt.Sprintf("%064x", id), ViewerID: viewer, Surface: surface, Now: now, Expires: expires}); err != nil {
+		if err = tx.Reserve(ctx, Reservation{Digest: fmt.Sprintf("%064x", id), ViewerID: viewer, Surface: surface}); err != nil {
 			return err
 		}
 		if commit {
@@ -65,6 +69,9 @@ func TestReservationsBoundsRollbackAndExpiry(t *testing.T) {
 	if err := insert(6, 2, "silo", 1, 10, true); err != nil {
 		t.Fatalf("different shard: %v", err)
 	}
+	if _, err := db.ExecContext(ctx, `UPDATE handle_reservations SET expires=0 WHERE namespace=? AND shard=?`, "ticket", 1); err != nil {
+		t.Fatal(err)
+	}
 	if err := insert(7, 1, "silo", 10, 20, true); err != nil {
 		t.Fatalf("expired admission: %v", err)
 	}
@@ -73,20 +80,24 @@ func TestReservationsConcurrentAdmission(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	db := reservationDB(t)
-	p := ReservationPolicy{Namespace: "ticket", Shards: 4, PerShard: 4, PerViewerSurface: 3}
+	p := Policy{Namespace: "ticket", Shards: 4, PerShard: 4, PerViewerSurface: 3, TTL: time.Hour}
+	ledger, err := New(db, p)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var wg sync.WaitGroup
 	results := make(chan error, 8)
 	for i := 1; i <= 8; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			tx, err := db.BeginTx(ctx, nil)
+			tx, err := ledger.Begin(ctx)
 			if err != nil {
 				results <- err
 				return
 			}
 			defer tx.Rollback()
-			err = Reserve(ctx, db, tx, p, Reservation{Digest: fmt.Sprintf("%064x", i), ViewerID: 1, Surface: "silo", Now: 1, Expires: 10})
+			err = tx.Reserve(ctx, Reservation{Digest: fmt.Sprintf("%064x", i), ViewerID: 1, Surface: "silo"})
 			if err == nil {
 				err = tx.Commit()
 			}
@@ -108,5 +119,64 @@ func TestReservationsConcurrentAdmission(t *testing.T) {
 	}
 	if success != 3 {
 		t.Fatalf("committed %d reservations, want 3", success)
+	}
+}
+
+func TestReservationsReleaseScopeAndDomainRollback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	db := reservationDB(t)
+	if _, err := db.ExecContext(ctx, `CREATE TABLE reservation_test_domain(digest TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := New(db, Policy{Namespace: "ticket", Shards: 2, PerShard: 4, PerViewerSurface: 4, TTL: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := Reservation{Digest: fmt.Sprintf("%064x", 1), ViewerID: 1, Surface: "silo"}
+	tx, err := ledger.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Reserve(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.SQL().ExecContext(ctx, `INSERT INTO reservation_test_domain(digest) VALUES(?)`, r.Digest); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = ledger.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := r
+	foreign.Surface = "emby"
+	if err = tx.Release(ctx, foreign); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM handle_reservations WHERE digest=?`, r.Digest).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("foreign release count=%d err=%v", n, err)
+	}
+	tx, err = ledger.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := r
+	next.Digest = fmt.Sprintf("%064x", 2)
+	if err = tx.Reserve(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.SQL().ExecContext(ctx, `INSERT INTO reservation_test_domain(digest) VALUES(?)`, r.Digest); err == nil {
+		t.Fatal("duplicate domain insert succeeded")
+	}
+	_ = tx.Rollback()
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM handle_reservations WHERE digest=?`, next.Digest).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("rollback reservation count=%d err=%v", n, err)
 	}
 }
