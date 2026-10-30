@@ -28,3 +28,10 @@ func (e *Engine) ParityWaitForGeneric(ctx context.Context) error {
 	}
 	return nil
 }
+
+// ParitySyncEvents waits until watch-state events already queued have been
+// handled. Disposable parity builds use it so a later play assertion observes
+// the subscriber. Production callers do not see this method.
+func (e *Engine) ParitySyncEvents(ctx context.Context) {
+	e.syncEvents(ctx)
+}

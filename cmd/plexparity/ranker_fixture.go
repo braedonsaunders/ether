@@ -67,6 +67,10 @@ func trainRankerFixture(ctx context.Context, dir string, db *sql.DB, engine *per
 			if err := st.Progress(ctx, viewer.ID, chosen.Key, 80*time.Minute, 90*time.Minute, "stopped"); err != nil {
 				return err
 			}
+			// Progress only queues the subscriber. Drain it before touching
+			// the database: one sqlite connection cannot record the play
+			// while this loop is polling. The row check below is unchanged.
+			drainParityPlays(ctx, engine)
 			deadline := time.NewTimer(10 * time.Second)
 			for {
 				var n int
@@ -146,6 +150,17 @@ func trainRankerFixture(ctx context.Context, dir string, db *sql.DB, engine *per
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "ranker-training.json"), append(b, '\n'), 0600)
+}
+
+// drainParityPlays waits for the parity build's event barrier. Ordinary test
+// builds do not compile that method and keep the timed poll.
+func drainParityPlays(ctx context.Context, engine *personalize.Engine) {
+	type syncer interface {
+		ParitySyncEvents(context.Context)
+	}
+	if s, ok := any(engine).(syncer); ok {
+		s.ParitySyncEvents(ctx)
+	}
 }
 
 // Reproduce only the production chronological split and label counts from
