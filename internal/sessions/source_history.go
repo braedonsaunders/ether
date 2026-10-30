@@ -10,6 +10,9 @@ import (
 
 // SourceHistoryWriter stores facts from accepted samples, ordered first by
 // session epoch and then by the sample number assigned before persistence.
+// Implementations must honor cancellation, including during transaction commit.
+// The production state writer uses context-aware SQLite/PostgreSQL operations.
+// Go cannot forcibly stop an implementation or driver that ignores context.
 type SourceHistoryWriter interface {
 	BeginSourceSession(context.Context) (int64, error)
 	RecordLastSource(context.Context, int64, core.RatingKey, int64, int64, core.PlaybackSourceObservation) error

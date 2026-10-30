@@ -122,6 +122,31 @@ type stalledSourceHistory struct {
 	once             sync.Once
 }
 
+type cancelableSourceHistory struct{ entered chan struct{} }
+
+func (h *cancelableSourceHistory) BeginSourceSession(context.Context) (int64, error) { return 1, nil }
+func (h *cancelableSourceHistory) RecordLastSource(ctx context.Context, _ int64, _ core.RatingKey, _, _ int64, _ core.PlaybackSourceObservation) error {
+	close(h.entered)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestSourceHistoryWorkerExitsOnCancellation(t *testing.T) {
+	h := &cancelableSourceHistory{entered: make(chan struct{})}
+	b := &Broker{deps: BrokerDeps{SourceHistory: h}, historyQueue: make(chan sourceHistorySample, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); b.runSourceHistory(ctx) }()
+	b.historyQueue <- sourceHistorySample{}
+	<-h.entered
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("history worker did not stop after cancellation")
+	}
+}
+
 func (h *stalledSourceHistory) BeginSourceSession(context.Context) (int64, error) { return 1, nil }
 func (h *stalledSourceHistory) RecordLastSource(context.Context, int64, core.RatingKey, int64, int64, core.PlaybackSourceObservation) error {
 	h.once.Do(func() { close(h.entered) })

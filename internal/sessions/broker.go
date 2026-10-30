@@ -132,6 +132,7 @@ type Broker struct {
 	cluster             *brokerCluster
 	historyQueue        chan sourceHistorySample
 	historyCancel       context.CancelFunc
+	historyDone         chan struct{}
 }
 
 func NewBroker(d BrokerDeps) (*Broker, error) {
@@ -167,7 +168,8 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 		ctx, cancel := context.WithCancel(context.Background())
 		b.historyCancel = cancel
 		b.historyQueue = make(chan sourceHistorySample, 256)
-		go b.runSourceHistory(ctx)
+		b.historyDone = make(chan struct{})
+		go func() { defer close(b.historyDone); b.runSourceHistory(ctx) }()
 	}
 	return b, nil
 }
@@ -1040,6 +1042,17 @@ func (b *Broker) Close(ctx context.Context) {
 	// canceled; bound the cleanup so an unresponsive gate cannot block forever.
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.shutdownTimeout)
 	defer cancel()
+	if b.historyDone != nil {
+		drainCtx, drainCancel := context.WithTimeout(cleanupCtx, 150*time.Millisecond)
+		select {
+		case <-b.historyDone:
+		case <-drainCtx.Done():
+			if b.deps.OnEventError != nil {
+				b.deps.OnEventError(errors.New("sessions: source history writer did not stop after cancellation"))
+			}
+		}
+		drainCancel()
+	}
 	if lazyCancel != nil {
 		lazyCancel()
 	}
