@@ -453,16 +453,19 @@ func (s *RowViewService) ResolveRowView(ctx context.Context, req frontend.RowVie
 			imp.Items = append(imp.Items, e.Title.Key)
 		}
 	}
-	page.ImpressionHandle, err = s.o.Receipts.Issue(ctx, u, req.Device, req.Protocol, ReceiptSubject{Kind: "row", ID: snap.Row.ID, Purpose: snap.Row.Purpose, Rank: snap.Row.Rank, Impression: imp})
+	subjects := make([]ReceiptSubject, 0, len(page.Entries)+1)
+	subjects = append(subjects, ReceiptSubject{Kind: "row", ID: snap.Row.ID, Purpose: snap.Row.Purpose, Rank: snap.Row.Rank, Impression: imp})
+	for i := range page.Entries {
+		e := &page.Entries[i]
+		subjects = append(subjects, ReceiptSubject{Kind: string(e.Kind), ID: fmt.Sprintf("%s/%s/%s", snap.Row.ID, e.Kind, entryIdentity(*e)), Purpose: snap.Row.Purpose, Rank: snap.Row.Rank, Impression: imp})
+	}
+	tokens, err := s.o.Receipts.IssueBatch(ctx, u, req.Device, req.Protocol, subjects)
 	if err != nil {
 		return frontend.RowViewPage{}, err
 	}
+	page.ImpressionHandle = tokens[0]
 	for i := range page.Entries {
-		e := &page.Entries[i]
-		e.Handle, err = s.o.Receipts.Issue(ctx, u, req.Device, req.Protocol, ReceiptSubject{Kind: string(e.Kind), ID: fmt.Sprintf("%s/%s/%s", snap.Row.ID, e.Kind, entryIdentity(*e)), Purpose: snap.Row.Purpose, Rank: snap.Row.Rank, Impression: imp})
-		if err != nil {
-			return frontend.RowViewPage{}, err
-		}
+		page.Entries[i].Handle = tokens[i+1]
 	}
 	if !current() {
 		return frontend.RowViewPage{}, ErrRowViewStale
