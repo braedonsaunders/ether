@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -42,6 +43,8 @@ type payloadStore struct {
 	gate                     chan struct{}
 	anchors                  map[string]*payloadAnchor
 	retired                  map[string]payloadOwner
+	releasedAfter            map[string]func()
+	releaseDone              chan struct{}
 	releaseRunning           bool
 	releaseStop              chan struct{}
 	db                       *sql.DB
@@ -53,12 +56,14 @@ type payloadStore struct {
 	cursor                   int
 	afterOwnerCommit         func() error
 	afterRemove              func() error
+	afterRetireCommit        func() error
 }
 type payloadOwnerState struct {
 	id       string
 	anchor   *payloadAnchor
 	mu       sync.Mutex
 	released bool
+	notified atomic.Bool
 }
 
 type payloadOwner struct {
@@ -430,6 +435,11 @@ func (p *payloadStore) release(ctx context.Context, o payloadOwner) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	if p.afterRetireCommit != nil {
+		if err := p.afterRetireCommit(); err != nil {
+			return err
+		}
+	}
 	if marker != "" {
 		if err := p.removeMarked(ctx, o.hash, o.incarnation, marker, p.file); err != nil {
 			return err
@@ -598,22 +608,50 @@ func (p *payloadStore) gc(ctx context.Context, hash string) error {
 // queueRelease is bounded by the same admitted-owner budget as reserve. It is
 // safe from an outbox merge callback: no filesystem/DB work occurs under mu.
 func (p *payloadStore) queueRelease(o payloadOwner) {
+	p.queueReleaseAfter(o, nil)
+}
+
+// Each callback belongs to one admitted source responsibility. Enqueue after
+// shutdown retains the exact owner/callback and witness for observable pending
+// retirement and crash recovery; it never reports settlement without a retry.
+func (p *payloadStore) queueReleaseAfter(o payloadOwner, after func()) bool {
+	// Invalid owners cannot be retried. The caller must retain its obligation;
+	// enqueue failure is never evidence of successful durable cleanup.
+	if o.state == nil {
+		return false
+	}
 	p.mu.Lock()
 	if p.retired == nil {
 		p.retired = make(map[string]payloadOwner)
 	}
 	p.retired[o.state.id] = o
+	if after != nil {
+		if p.releasedAfter == nil {
+			p.releasedAfter = make(map[string]func())
+		}
+		if p.releasedAfter[o.state.id] == nil {
+			p.releasedAfter[o.state.id] = after
+		}
+	}
 	if !p.releaseRunning && !p.closing {
 		p.releaseRunning = true
+		p.releaseDone = make(chan struct{})
 		go p.runReleases()
 	}
 	p.mu.Unlock()
+	return true
+}
+func (p *payloadStore) stopReleasesLocked() {
+	p.releaseRunning = false
+	close(p.releaseDone)
 }
 func (p *payloadStore) runReleases() {
-	defer func() { p.mu.Lock(); p.releaseRunning = false; p.mu.Unlock() }()
 	for {
 		p.mu.Lock()
 		if p.closing || len(p.retired) == 0 {
+			// Exit and enqueue inspect/update the same state under mu. There
+			// is no empty-queue/deferred-exit gap that can lose a new retry.
+			p.stopReleasesLocked()
 			p.mu.Unlock()
 			return
 		}
@@ -627,13 +665,23 @@ func (p *payloadStore) runReleases() {
 		if err := p.release(context.Background(), owner); err == nil {
 			p.mu.Lock()
 			delete(p.retired, id)
+			after := p.releasedAfter[id]
+			delete(p.releasedAfter, id)
 			p.mu.Unlock()
+			// release returned and actor ownership is committed away. Callback
+			// runs outside the owner state, store, payload gate and source locks.
+			if after != nil && owner.state.notified.CompareAndSwap(false, true) {
+				after()
+			}
 			continue
 		}
 		timer := time.NewTimer(time.Second)
 		select {
 		case <-p.releaseStop:
 			timer.Stop()
+			p.mu.Lock()
+			p.stopReleasesLocked()
+			p.mu.Unlock()
 			return
 		case <-timer.C:
 		}

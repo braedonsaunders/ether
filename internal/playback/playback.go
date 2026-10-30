@@ -429,8 +429,15 @@ func (m *Manager) Close() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		if herr := m.resume.close(ctx); herr != nil {
 			m.log.Warn("playback: resume records lost at shutdown", "err", herr)
+			err = errors.Join(err, herr)
 		}
 		cancel()
+	}
+	m.sourceAccounting.mu.Lock()
+	pending := m.sourceAccounting.owners
+	m.sourceAccounting.mu.Unlock()
+	if pending != 0 {
+		err = errors.Join(err, fmt.Errorf("playback: %d source responsibilities remain protected", pending))
 	}
 	return err
 }

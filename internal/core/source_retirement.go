@@ -4,7 +4,9 @@ import "context"
 
 // SourceRetirement reports backend responsibility for one exact manager source
 // lifetime, including provisional and prior generations. Done is terminal;
-// Err is nil only after Done and successful Close of every acquired source.
+// Err is nil only after Done, successful Close of every acquired source and
+// settlement of its durable payload cleanup. Pending cleanup keeps Done open;
+// a terminal backend Close error never becomes success.
 // This does not prove encoder retirement or a durable ownership transfer.
 type SourceRetirement interface {
 	Done() <-chan struct{}

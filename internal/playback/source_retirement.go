@@ -10,15 +10,16 @@ import (
 )
 
 const maxOwnedSourceOpens = 1024
+const maxOwnedSourceResponsibilities = 1024
 const maxSourceCleanup = 128
 const sourceCleanupShutdownWait = time.Second
 
 // sourceAccounting charges backend calls through Close, including uncertain
 // failures. It never evicts an acquired source to admit another call.
 type sourceAccounting struct {
-	mu             sync.Mutex
-	opens, cleanup int
-	cleanupDone    chan struct{}
+	mu                     sync.Mutex
+	opens, owners, cleanup int
+	cleanupDone            chan struct{}
 }
 
 // sourceLifetime belongs to the actual manager session/preparation flight.
@@ -58,44 +59,67 @@ func (s *sourceLifetime) seal() {
 	}
 }
 
-// reserveSourceOpen runs before every Engine.Open, never under manager/session
-// locks. A Close error retains its accounting charge for the manager lifetime.
-func (m *Manager) reserveSourceOpen(s *sourceLifetime) (func(error), error) {
+// sourceOpenTicket reserves physical and ownership capacity independently.
+// Proven backend completion refunds only the physical slot. Payload cleanup
+// must settle before the lifetime can report successful retirement. A terminal
+// failure completes with an error while retaining its responsibility charge.
+// Lock order is lifetime.mu -> accounting.mu. Payload callbacks enter this order
+// only after releasing all payload/state/gate locks; accounting never calls out.
+type sourceOpenTicket struct {
+	manager      *Manager
+	source       *sourceLifetime
+	physicalOnce sync.Once
+	settledOnce  sync.Once
+}
+
+// reserveSourceOpen runs before every backend call and reserves the eventual
+// retry/callback obligation too. No backend, DB or filesystem work holds locks.
+func (m *Manager) reserveSourceOpen(s *sourceLifetime) (*sourceOpenTicket, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sealed {
 		return nil, core.ErrNotAvailable
 	}
 	m.sourceAccounting.mu.Lock()
-	if m.sourceAccounting.opens >= maxOwnedSourceOpens {
-		m.sourceAccounting.mu.Unlock()
+	defer m.sourceAccounting.mu.Unlock()
+	if m.sourceAccounting.opens >= maxOwnedSourceOpens || m.sourceAccounting.owners >= maxOwnedSourceResponsibilities {
 		return nil, core.ErrNotAvailable
 	}
 	m.sourceAccounting.opens++
-	m.sourceAccounting.mu.Unlock()
+	m.sourceAccounting.owners++
 	s.pending++
-	var once sync.Once
-	return func(err error) {
-		once.Do(func() {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-			if err == nil {
-				m.sourceAccounting.mu.Lock()
-				m.sourceAccounting.opens--
-				m.sourceAccounting.mu.Unlock()
-			} else if s.err == nil {
-				s.err = err
-			}
-			s.pending--
-			if s.sealed && s.pending == 0 {
-				close(s.done)
-			}
-		})
-	}, nil
+	return &sourceOpenTicket{manager: m, source: s}, nil
+}
+func (t *sourceOpenTicket) physical(err error) {
+	t.physicalOnce.Do(func() {
+		if err == nil {
+			t.manager.sourceAccounting.mu.Lock()
+			t.manager.sourceAccounting.opens--
+			t.manager.sourceAccounting.mu.Unlock()
+		}
+	})
+}
+func (t *sourceOpenTicket) settle(err error) {
+	t.settledOnce.Do(func() {
+		s := t.source
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if err == nil {
+			t.manager.sourceAccounting.mu.Lock()
+			t.manager.sourceAccounting.owners--
+			t.manager.sourceAccounting.mu.Unlock()
+		} else if s.err == nil {
+			s.err = err
+		}
+		s.pending--
+		if s.sealed && s.pending == 0 {
+			close(s.done)
+		}
+	})
 }
 
 func (m *Manager) openSource(ctx context.Context, s *sourceLifetime, res *core.Resolution) (core.MediaSource, func(error), error) {
-	finish, err := m.reserveSourceOpen(s)
+	ticket, err := m.reserveSourceOpen(s)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -103,23 +127,35 @@ func (m *Manager) openSource(ctx context.Context, s *sourceLifetime, res *core.R
 	if m.resume != nil {
 		owner, err = m.resume.payload.reserve(ctx, s.user, s.surface, s.device, s.id, nzbHash(res.NZB), "source-open")
 		if err != nil {
+			ticket.physical(nil) // no Engine.Open was called
 			if errors.Is(err, errPayloadCommitUnknown) {
-				finish(err)
+				ticket.settle(err)
 			} else {
-				finish(nil)
+				ticket.settle(nil)
 			}
 			return nil, nil, err
 		}
-		backendFinished := finish
-		var once sync.Once
-		finish = func(closeErr error) {
-			once.Do(func() {
-				if closeErr == nil {
-					closeErr = m.resume.payload.release(context.Background(), owner)
+	}
+	var once sync.Once
+	finish := func(closeErr error) {
+		once.Do(func() {
+			ticket.physical(closeErr)
+			if closeErr != nil {
+				// Unknown backend completion protects both charges and payload.
+				// Never retry backend Close or retire its owner on that evidence.
+				ticket.settle(closeErr)
+				return
+			}
+			if m.resume != nil {
+				if err := m.resume.payload.release(context.Background(), owner); err != nil {
+					// The exact owner was admitted before Open; it has one bounded
+					// callback slot. Rejection/shutdown never settles this ticket.
+					m.resume.payload.queueReleaseAfter(owner, func() { ticket.settle(nil) })
+					return
 				}
-				backendFinished(closeErr)
-			})
-		}
+			}
+			ticket.settle(nil)
+		})
 	}
 	src, err := m.deps.Engine.Open(ctx, res.Release.ID, res.NZB)
 	if err != nil || src == nil {
