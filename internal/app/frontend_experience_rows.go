@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"time"
 
@@ -17,22 +16,7 @@ import (
 func experienceHubRows(hubs []core.Hub) []frontend.Row {
 	out := make([]frontend.Row, 0, len(hubs))
 	for _, h := range hubs {
-		purpose := frontend.RowRecommendation
-		id := strings.ToLower(h.ID)
-		switch {
-		case strings.Contains(id, "continue") || strings.Contains(id, "inprogress"):
-			purpose = frontend.RowContinue
-		case strings.Contains(id, "upnext") || strings.Contains(id, "ondeck"):
-			purpose = frontend.RowNextUp
-		case strings.Contains(id, "watchlist"):
-			purpose = frontend.RowWatchlist
-		case h.Key != 0 || strings.Contains(id, "collection"):
-			purpose = frontend.RowCollection
-		case strings.Contains(id, "recentlyreleased"):
-			purpose = frontend.RowRecentlyReleased
-		case strings.Contains(id, "livetv"):
-			purpose = frontend.RowLive
-		}
+		purpose := experienceHubPurpose(h)
 		row := frontend.Row{ID: h.ID, Title: h.Title, Purpose: purpose, Style: h.Style, Promoted: h.Promoted, More: h.More, Collection: h.Key}
 		for i := range h.Items {
 			item := h.Items[i]
@@ -43,18 +27,53 @@ func experienceHubRows(hubs []core.Hub) []frontend.Row {
 	return out
 }
 
+// experienceCandidateRows projects already-authorized neutral selection data;
+// source-specific Context is deliberately absent from the candidate contract.
+func experienceCandidateRows(candidates []experience.RankedCandidate) []frontend.Row {
+	out := make([]frontend.Row, 0, len(candidates))
+	for _, c := range candidates {
+		row := frontend.Row{ID: c.ID, Title: c.Title, Purpose: c.Purpose, Style: c.Style, Promoted: c.Promoted, More: c.More, Collection: c.Key}
+		for i := range c.Items {
+			item := c.Items[i]
+			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &item})
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+func experienceHubPurpose(h core.Hub) core.RowPurpose {
+	purpose := frontend.RowRecommendation
+	id := strings.ToLower(h.ID)
+	switch {
+	case strings.Contains(id, "continue") || strings.Contains(id, "inprogress"):
+		purpose = frontend.RowContinue
+	case strings.Contains(id, "upnext") || strings.Contains(id, "ondeck"):
+		purpose = frontend.RowNextUp
+	case strings.Contains(id, "watchlist"):
+		purpose = frontend.RowWatchlist
+	case h.Key != 0 || strings.Contains(id, "collection"):
+		purpose = frontend.RowCollection
+	case strings.Contains(id, "recentlyreleased"):
+		purpose = frontend.RowRecentlyReleased
+	case strings.Contains(id, "livetv"):
+		purpose = frontend.RowLive
+	}
+	return purpose
+}
+
 type experienceRowSource struct {
-	load       func(context.Context, frontend.RowRequest) ([]core.Hub, error)
+	load       func(context.Context, frontend.RowRequest) ([]experience.RankedCandidate, error)
 	additional func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
 	kind       func(string) string
 }
 
 func (s experienceRowSource) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-	hubs, err := s.load(ctx, req)
+	candidates, err := s.load(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	rows := experienceHubRows(hubs)
+	rows := experienceCandidateRows(candidates)
 	if s.additional != nil {
 		extra, err := s.additional(ctx, req)
 		if err != nil {
@@ -72,9 +91,51 @@ func (s experienceRowSource) Rows(ctx context.Context, req frontend.RowRequest) 
 	return rows, nil
 }
 
+// appCandidateRanker translates the neutral situation into the existing
+// personalization engine's request context without reassembling ranked rows.
+type appCandidateRanker struct{ app *App }
+
+func candidateHubContext(sit core.HomeSituation) core.HubContext {
+	return core.HubContext{Device: sit.Device, Daypart: sit.Daypart, Weekend: sit.Weekend, Now: sit.Now, SectionID: sit.LibraryID, Product: sit.Product, Platform: sit.Platform, SessionID: sit.SessionID, ClientID: sit.ClientID}
+}
+func rankedCandidates(hubs []core.Hub, err error) ([]experience.RankedCandidate, error) {
+	if err != nil {
+		return nil, err
+	}
+	if hubs == nil {
+		return nil, nil
+	}
+	out := make([]experience.RankedCandidate, len(hubs))
+	for i, h := range hubs {
+		out[i] = experience.RankedCandidate{ID: h.ID, Purpose: experienceHubPurpose(h), Title: h.Title, Type: h.Type, Style: h.Style, Promoted: h.Promoted, Items: h.Items, More: h.More, Key: h.Key, ItemCount: h.ItemCount}
+	}
+	return out, nil
+}
+func (r appCandidateRanker) Home(ctx context.Context, viewer *core.User, sit core.HomeSituation, limit int, allow func(context.Context, *core.User, *core.Title) bool) ([]experience.RankedCandidate, error) {
+	if allow != nil {
+		return rankedCandidates(r.app.personalize.HomeCandidatesWithPolicy(ctx, viewer, candidateHubContext(sit), limit, allow))
+	}
+	return rankedCandidates(r.app.personalize.HomeCandidatesFor(ctx, viewer, candidateHubContext(sit), limit))
+}
+func (r appCandidateRanker) Library(ctx context.Context, viewer *core.User, kind core.MediaType, sit core.HomeSituation, limit int, allow func(context.Context, *core.User, *core.Title) bool) ([]experience.RankedCandidate, error) {
+	if allow != nil {
+		return rankedCandidates(r.app.personalize.SectionCandidatesWithPolicy(ctx, viewer, kind, candidateHubContext(sit), limit, allow))
+	}
+	return rankedCandidates(r.app.personalize.SectionCandidatesFor(ctx, viewer, kind, candidateHubContext(sit), limit))
+}
+
+type appResumeCandidates struct {
+	app       *App
+	libraries []experience.Library
+}
+
+func (r appResumeCandidates) Continue(ctx context.Context, viewer *core.User, limit int) ([]core.Title, error) {
+	return r.app.experienceContinue(ctx, viewer, r.libraries, limit)
+}
+
 // productionExperienceRows obtains real ranked candidate hubs from the shared
 // personalization engine. Protocol adapters must not call the engine directly.
-func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequest, libraries []experience.Library, visibility experience.Visibility) ([]core.Hub, error) {
+func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequest, libraries []experience.Library, visibility experience.Visibility) ([]experience.RankedCandidate, error) {
 	if req.Viewer == nil || a.personalize == nil {
 		return nil, core.ErrNotFound
 	}
@@ -83,58 +144,11 @@ func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequ
 		return nil, core.ErrNotFound
 	}
 	hc := core.HubContext{Device: sit.Device, Daypart: sit.Daypart, Weekend: sit.Weekend, Now: sit.Now, SectionID: sit.LibraryID, Product: sit.Product, Platform: sit.Platform, SessionID: sit.SessionID, ClientID: sit.ClientID}
-	restricted := !req.Viewer.IsOwner && (req.Viewer.MaxContentRating != "" || len(req.Viewer.AllowedSections) > 0 || a.safety.Restricted(req.Viewer))
-	allow := func(ctx context.Context, u *core.User, t *core.Title) bool { return visibility.Visible(ctx, u, t) }
 	switch req.Placement {
-	case frontend.PlacementHome:
-		var hubs []core.Hub
-		var err error
-		if restricted {
-			hubs, err = a.personalize.HomeCandidatesWithPolicy(ctx, req.Viewer, hc, req.Limit, allow)
-		} else {
-			hubs, err = a.personalize.HomeCandidatesFor(ctx, req.Viewer, hc, req.Limit)
-		}
-		if err != nil {
-			return nil, err
-		}
-		resume, err := a.experienceContinue(ctx, req.Viewer, libraries, req.Limit)
-		if err != nil {
-			return nil, err
-		}
-		inserted := false
-		for i := range hubs {
-			if hubs[i].ID == "home.continue" {
-				hubs[i].Items = resume
-				inserted = true
-			}
-		}
-		if !inserted {
-			hubs = append([]core.Hub{{ID: "home.continue", Title: "Continue Watching", Style: "hero", Promoted: true, Items: resume}}, hubs...)
-		}
-		return hubs, nil
-	case frontend.PlacementLibrary:
-		id, err := strconv.Atoi(req.ViewID)
-		if err != nil {
-			return nil, core.ErrNotFound
-		}
-		var kind core.MediaType
-		for _, library := range libraries {
-			if library.ID == id {
-				kind = library.Type
-				break
-			}
-		}
-		if kind == "" {
-			return nil, core.ErrNotFound
-		}
-		if !experience.SectionAllowed(req.Viewer, id) {
-			return nil, core.ErrNotFound
-		}
-		hc.SectionID = id
-		if restricted {
-			return a.personalize.SectionCandidatesWithPolicy(ctx, req.Viewer, kind, hc, req.Limit, allow)
-		}
-		return a.personalize.SectionCandidatesFor(ctx, req.Viewer, kind, hc, req.Limit)
+	case frontend.PlacementHome, frontend.PlacementLibrary:
+		ranker := appCandidateRanker{app: a}
+		composer := experience.CandidateComposer{Ranker: ranker, Resume: appResumeCandidates{a, libraries}, Libraries: libraries, Visibility: visibility, Restricted: a.safety.Restricted}
+		return composer.Rows(ctx, req, sit)
 	case frontend.PlacementDetail:
 		if a.catalog == nil || req.Item == 0 {
 			return nil, core.ErrNotFound
@@ -153,10 +167,10 @@ func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequ
 				return picks
 			}
 		}
-		return experienceDetailRows(ctx, req.Viewer, req.Item, req.Limit, visibility, a.catalog.NextEpisode, postPlay,
+		return rankedCandidates(experienceDetailRows(ctx, req.Viewer, req.Item, req.Limit, visibility, a.catalog.NextEpisode, postPlay,
 			func(ctx context.Context, limit int) ([]core.Hub, error) {
 				return a.personalize.Related(ctx, req.Viewer, req.Item, limit)
-			})
+			}))
 	default:
 		return nil, core.ErrNotFound
 	}

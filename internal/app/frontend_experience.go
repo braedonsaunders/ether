@@ -42,7 +42,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		return a.playback.Sessions()
 	}
 	vis := experienceVisibility(a.safety, a.catalog.Get, filter, sessions, libs)
-	source := experienceRowSource{kind: a.personalize.SemanticRowKind, load: func(ctx context.Context, req frontend.RowRequest) ([]core.Hub, error) {
+	source := experienceRowSource{kind: a.personalize.SemanticRowKind, load: func(ctx context.Context, req frontend.RowRequest) ([]experience.RankedCandidate, error) {
 		return a.productionExperienceRows(ctx, req, libs, vis)
 	}, additional: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
 		return a.experienceAdditionalRows(ctx, req, a.playlists, vis)

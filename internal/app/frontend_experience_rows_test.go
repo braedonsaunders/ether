@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
@@ -17,8 +18,8 @@ func TestExperienceHubRowsKeepsSemanticData(t *testing.T) {
 
 func TestExperienceRowSourceAppendsAdditionalRows(t *testing.T) {
 	source := experienceRowSource{
-		load: func(context.Context, frontend.RowRequest) ([]core.Hub, error) {
-			return []core.Hub{{ID: "home.continue", Style: "hero"}}, nil
+		load: func(context.Context, frontend.RowRequest) ([]experience.RankedCandidate, error) {
+			return []experience.RankedCandidate{{ID: "home.continue", Style: "hero", Purpose: frontend.RowContinue}}, nil
 		},
 		additional: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
 			return []frontend.Row{{ID: "playlists", Purpose: core.RowPurpose("playlist")}}, nil
