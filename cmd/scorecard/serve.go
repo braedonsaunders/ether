@@ -32,6 +32,7 @@ func serve(args []string) error {
 	webdav := fs.String("webdav", "", "optional WebDAV loopback listen address")
 	stremio := fs.String("stremio", "", "optional Stremio loopback listen address")
 	dlna := fs.String("dlna", "", "optional DLNA loopback listen address")
+	m3u := fs.String("m3u", "", "optional M3U/XMLTV loopback listen address")
 	if e := fs.Parse(args); e != nil {
 		return e
 	}
@@ -91,7 +92,7 @@ func serve(args []string) error {
 	}
 	defer closeApp()
 	servers := []*http.Server{{Addr: *jf, Handler: handlers["jellyfin"], ReadHeaderTimeout: 10 * time.Second}, {Addr: *emby, Handler: handlers["emby"], ReadHeaderTimeout: 10 * time.Second}}
-	for _, surface := range []struct{ name, address string }{{"silo", *silo}, {"webdav", *webdav}, {"stremio", *stremio}, {"dlna", *dlna}} {
+	for _, surface := range []struct{ name, address string }{{"silo", *silo}, {"webdav", *webdav}, {"stremio", *stremio}, {"dlna", *dlna}, {"m3u", *m3u}} {
 		if surface.address == "" {
 			continue
 		}

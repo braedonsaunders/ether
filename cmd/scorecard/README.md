@@ -232,12 +232,11 @@ For disposable TV fixtures, optional `-silo 127.0.0.1:18098`,
 registered handlers, backed by the same fixture catalogue and broker. These
 extra listeners accept loopback IPs only; a separately managed recording proxy
 can provide controlled LAN access. The private fixture data directory contains
-`scorecard-app-credentials.json` (mode 0600), with distinct WebDAV and Stremio
+`scorecard-app-credentials.json` (mode 0600), with distinct WebDAV, Stremio and M3U
 viewer grants. It is a secret: do not commit, log, or include it in captures.
 Silo uses the seeded local viewer login. Stremio clients may require HTTPS and
 app-origin configuration not provided by this fixture. A mounted handler does
-not establish that end-to-end playback is certified. M3U/XMLTV and DLNA require
-the corresponding product frontends; Plex is deliberately not mounted.
+not establish that end-to-end playback is certified. Plex is deliberately not mounted.
 
 `python3 -B cmd/scorecard/sync-state.py` accepts private JSON on stdin with
 `reference_url`, `target_url`, `reference_user`, `reference_password`,
@@ -262,3 +261,7 @@ proxy must enforce LAN-only access and block `/__scorecard/` diagnostics; the
 upstream sees the proxy as loopback. HTTP proxying alone does not provide SSDP
 multicast discovery, so discovery and end-to-end DLNA playback require a separate
 isolated LAN test.
+
+`-m3u 127.0.0.1:18102` mounts the registered M3U/XMLTV surface using its
+separate viewer grant. Channel and guide coverage require explicitly seeded
+Live TV sources; an empty playlist only proves the handler and grant work.

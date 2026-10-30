@@ -170,7 +170,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		return fail(e)
 	}
 	credentials := make(map[string]map[string]string)
-	for _, surface := range []string{"webdav", "stremio"} {
+	for _, surface := range []string{"webdav", "stremio", "m3u"} {
 		secret, err := appGrants.Issue(ctx, viewerID, nil, surface, core.Device{ID: "scorecard-" + surface, Client: surface, Product: surface})
 		if err != nil {
 			return fail(err)
@@ -296,7 +296,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		}
 	}
 	handlers := map[string]http.Handler{}
-	for _, p := range []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio", "dlna"} {
+	for _, p := range []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio", "dlna", "m3u"} {
 		inst, err := a.frontends.registry.Mount(ctx, p)
 		if err != nil {
 			return fail(fmt.Errorf("mount %s: %w", p, err))

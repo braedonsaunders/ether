@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -107,7 +108,7 @@ func TestScorecardServeRejectsMismatchAndServesViewer(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer closeApp()
-	for _, name := range []string{"silo", "webdav", "stremio", "dlna"} {
+	for _, name := range []string{"silo", "webdav", "stremio", "dlna", "m3u"} {
 		if handlers[name] == nil {
 			t.Fatalf("missing %s handler", name)
 		}
@@ -162,6 +163,14 @@ func TestScorecardServeRejectsMismatchAndServesViewer(t *testing.T) {
 	handlers["dlna"].ServeHTTP(dlnaResp, dlnaReq)
 	if dlnaResp.Code != http.StatusForbidden {
 		t.Fatalf("dlna public peer: HTTP %d", dlnaResp.Code)
+	}
+	m3uReq := httptest.NewRequest("GET", "/m3u/"+credentials["m3u"]["password"]+"/playlist.m3u", nil)
+	m3uReq.RemoteAddr = "127.0.0.1:1234"
+	m3uReq = m3uReq.WithContext(context.WithValue(m3uReq.Context(), http.LocalAddrContextKey, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 18102}))
+	m3uResp := httptest.NewRecorder()
+	handlers["m3u"].ServeHTTP(m3uResp, m3uReq)
+	if m3uResp.Code != http.StatusOK || !strings.HasPrefix(m3uResp.Body.String(), "#EXTM3U") {
+		t.Fatalf("m3u playlist: HTTP %d", m3uResp.Code)
 	}
 	siloResp := httptest.NewRecorder()
 	handlers["silo"].ServeHTTP(siloResp, httptest.NewRequest("GET", "/api/v2/system/identity", nil))
