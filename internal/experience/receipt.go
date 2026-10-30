@@ -39,6 +39,10 @@ func init() {
 	store.Register("experience_receipts", 3, `ALTER TABLE experience_receipts ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;`)
 }
 
+func init() {
+	store.Register("experience_receipts", 4, `CREATE INDEX experience_receipts_scope_expiry ON experience_receipts(viewer_id,device_id,expires,hash);`)
+}
+
 // ReceiptSubject is server-owned neutral information, never supplied by a client report.
 type ReceiptSubject struct {
 	Kind, ID   string
@@ -66,6 +70,7 @@ type ReceiptOptions struct {
 	Generation func(context.Context, *core.User, core.Device, core.Protocol) (int64, error)
 	// Test seams. Nil uses capability.BindHeadersInTx and DropHeadersInTx.
 	bindHeaders func(context.Context, *sql.Tx, []capability.Header) error
+	beforeSweep func(*sql.Tx)
 	dropHeaders func(context.Context, *sql.Tx, capability.HeaderScope, []string) error
 }
 
@@ -150,7 +155,7 @@ func (s *Receipts) Issue(ctx context.Context, viewer *core.User, device core.Dev
 		return "", err
 	}
 	var count int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE viewer_id=? AND device_id=?`, viewer.ID, device.ID).Scan(&count); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires>?`, viewer.ID, device.ID, now).Scan(&count); err != nil {
 		return "", err
 	}
 	if count >= s.opts.MaxPerDevice {

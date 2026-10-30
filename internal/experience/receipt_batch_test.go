@@ -183,3 +183,140 @@ func TestRowViewPostCommitStaleReceiptsExpire(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiptBoundedSweepIgnoresExpiredBacklogForQuota(t *testing.T) {
+	db := store.OpenTest(t)
+	now := time.Unix(1700000000, 0)
+	opts := relayOptions(db, &now, 1, true, nil)
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	scope := capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: 7, Surface: "jellyfin", DeviceID: "tv"}
+	for i := 0; i < 129; i++ {
+		digest := fmt.Sprintf("%064x", i+1)
+		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, digest, 7, "tv", "jellyfin", now.Unix()-1, "title", "old", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := capability.Header{HeaderScope: scope, Digest: digest, ExpiresMillis: now.Add(-time.Second).UnixMilli()}
+		if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{h}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	viewer := &core.User{ID: 7}
+	device := core.Device{ID: "tv"}
+	if _, err = s.Issue(ctx, viewer, device, "jellyfin", ReceiptSubject{Kind: "title", ID: "new"}); err != nil {
+		t.Fatalf("expired backlog blocked live quota: %v", err)
+	}
+	var expired, live, headers int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires<=?`, now.Unix()).Scan(&expired); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires>?`, now.Unix()).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, ReceiptCapabilityNamespace).Scan(&headers); err != nil {
+		t.Fatal(err)
+	}
+	if expired != 1 || live != 1 || headers != 2 {
+		t.Fatalf("expired=%d live=%d headers=%d", expired, live, headers)
+	}
+	if _, err = s.Issue(ctx, viewer, device, "jellyfin", ReceiptSubject{Kind: "title", ID: "another"}); err == nil {
+		t.Fatal("live quota bypassed")
+	}
+}
+
+func TestReceiptBoundedSweepDropFailureRollsBack(t *testing.T) {
+	db := store.OpenTest(t)
+	now := time.Unix(1700000000, 0)
+	opts := relayOptions(db, &now, 10, true, nil)
+	failure := errors.New("drop failed")
+	opts.dropHeaders = func(context.Context, *sql.Tx, capability.HeaderScope, []string) error { return failure }
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, row := range []struct{ digest, device string }{{fmt.Sprintf("%064x", 1), "tv"}, {fmt.Sprintf("%064x", 2), "other"}} {
+		if _, err = db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, row.digest, 7, row.device, "jellyfin", now.Unix()-1, "title", "old", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		tx, e := db.BeginTx(ctx, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: 7, Surface: "jellyfin", DeviceID: row.device}, Digest: row.digest, ExpiresMillis: now.Add(-time.Second).UnixMilli()}
+		if e = capability.BindHeadersInTx(ctx, tx, []capability.Header{h}); e != nil {
+			_ = tx.Rollback()
+			t.Fatal(e)
+		}
+		if e = tx.Commit(); e != nil {
+			t.Fatal(e)
+		}
+	}
+	token, err := s.Issue(ctx, &core.User{ID: 7}, core.Device{ID: "tv"}, "jellyfin", ReceiptSubject{Kind: "title", ID: "new"})
+	if !errors.Is(err, failure) || token != "" {
+		t.Fatalf("token=%q err=%v", token, err)
+	}
+	for _, table := range []string{"experience_receipts", "capability_headers"} {
+		var n int
+		if err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&n); err != nil || n != 2 {
+			t.Fatalf("%s count=%d err=%v", table, n, err)
+		}
+	}
+	for _, device := range []string{"tv", "other"} {
+		var n int
+		if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE viewer_id=? AND device_id=?`, 7, device).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("device=%s count=%d err=%v", device, n, err)
+		}
+	}
+}
+
+func TestReceiptBoundedSweepBatchQuota(t *testing.T) {
+	db := store.OpenTest(t)
+	now := time.Unix(1700000000, 0)
+	opts := relayOptions(db, &now, 2, false, nil)
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	for i := 0; i < 129; i++ {
+		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, fmt.Sprintf("%064x", i+1), 7, "tv", "jellyfin", now.Unix()-1, "title", "old", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := s.IssueBatch(ctx, &core.User{ID: 7}, core.Device{ID: "tv"}, "jellyfin", []ReceiptSubject{{Kind: "title", ID: "a"}, {Kind: "title", ID: "b"}})
+	if err != nil || len(tokens) != 2 {
+		t.Fatalf("tokens=%d err=%v", len(tokens), err)
+	}
+	var expired, live int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires<=?`, now.Unix()).Scan(&expired); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires>?`, now.Unix()).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if expired != 1 || live != 2 {
+		t.Fatalf("expired=%d live=%d", expired, live)
+	}
+}
