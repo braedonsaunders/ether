@@ -33,6 +33,14 @@ const HeaderBatchMax = 40
 // coordinating admission. Changing it requires a migration and writer fence.
 const HeaderShardCount int64 = 64
 
+// RetirementOwnerClaim reserves a header while a typed domain owner still
+// protects an acquired resource. Domains create it atomically with header
+// issuance and their typed owner, and remove it atomically with that owner.
+// It must not be attached after an unprotected header becomes visible.
+// Expiry maintenance skips it; expiry alone
+// must never authorize retirement. Admission continues to charge the header.
+const RetirementOwnerClaim = "retirement-owner"
+
 var ErrInvalidHeader = errors.New("capability: invalid header or scope")
 
 func validHeaderScope(s HeaderScope) bool {
@@ -101,6 +109,10 @@ func DropHeadersInTx(ctx context.Context, tx *sql.Tx, scope HeaderScope, digests
 	return err
 }
 
+// Applied in candidate selection and deletion, so protected rows neither
+// consume a bounded batch nor race into deletion after selection.
+const unprotectedHeaderSQL = `NOT EXISTS (SELECT 1 FROM capability_claims c WHERE c.namespace=capability_headers.namespace AND c.digest=capability_headers.digest AND c.purpose=?)`
+
 // PruneHeadersInTx deletes at most limit expired headers in one namespace.
 // cutoffMillis must come from the same trusted clock used for domain expiry;
 // callers must account for any authority lifetime extending beyond the header.
@@ -112,7 +124,7 @@ func PruneHeadersInTx(ctx context.Context, tx *sql.Tx, namespace string, cutoffM
 	if tx == nil || namespace == "" || namespace == ticketNamespace || len(namespace) > 128 || strings.TrimSpace(namespace) != namespace || cutoffMillis <= 0 || limit <= 0 || limit > HeaderBatchMax {
 		return 0, ErrInvalidHeader
 	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, namespace, cutoffMillis, namespace, cutoffMillis, limit)
+	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND expires<=? AND `+unprotectedHeaderSQL+` AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND expires<=? AND `+unprotectedHeaderSQL+` ORDER BY expires,digest LIMIT ?)`, namespace, cutoffMillis, RetirementOwnerClaim, namespace, cutoffMillis, RetirementOwnerClaim, limit)
 	if err != nil {
 		return 0, err
 	}
@@ -127,7 +139,7 @@ func PruneScopedHeadersInTx(ctx context.Context, tx *sql.Tx, namespace string, v
 		return 0, ErrInvalidHeader
 	}
 	shard := viewerID % HeaderShardCount
-	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, namespace, shard, viewerID, surface, cutoffMillis, namespace, shard, viewerID, surface, cutoffMillis, limit)
+	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=? AND expires<=? AND `+unprotectedHeaderSQL+` AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=? AND expires<=? AND `+unprotectedHeaderSQL+` ORDER BY expires,digest LIMIT ?)`, namespace, shard, viewerID, surface, cutoffMillis, RetirementOwnerClaim, namespace, shard, viewerID, surface, cutoffMillis, RetirementOwnerClaim, limit)
 	if err != nil {
 		return 0, err
 	}
