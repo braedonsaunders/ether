@@ -533,3 +533,40 @@ func TestMirroredGrantExpiryDeniesWithoutConsume(t *testing.T) {
 		t.Fatalf("expired grant issue: %v", err)
 	}
 }
+
+// Exercise a genuine legacy Issue rather than only inserting an equivalent row.
+func TestMirroredConsumesActualLegacyIssue(t *testing.T) {
+	db, tickets, _ := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	grants, err := identity.NewGrants(db, activeFixture{}, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "legacy-device", Client: "legacy"}
+	credential, err := grants.Issue(ctx, 1, nil, "silo", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := identity.NewTicketService(db, "silo", grants, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := old.Issue(ctx, credential, device, "events-ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(token)
+	if err != nil || len(raw) != 32 || base64.RawURLEncoding.EncodeToString(raw) != token {
+		t.Fatal("legacy token format changed")
+	}
+	sum := sha256.Sum256([]byte(token))
+	digest := hex.EncodeToString(sum[:])
+	got, err := tickets.ConsumeMirrored(ctx, "silo", "events-ws", digest)
+	if err != nil || got.ViewerID != 1 {
+		t.Fatalf("new consume of actual legacy issue: %v", err)
+	}
+	if _, err = old.Consume(ctx, token, "events-ws"); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("legacy replay: %v", err)
+	}
+}
