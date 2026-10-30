@@ -3,6 +3,7 @@ package experience
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -77,9 +78,34 @@ func TestRecursiveBrowseBatchesOnlyVisibleEpisodes(t *testing.T) {
 	fallback := 0
 	svc.d.IsFavorite = func(context.Context, *core.User, core.RatingKey) (bool, error) { fallback++; return true, nil }
 	fallbackPage, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q)
-	if err != nil || fallbackPage.Total != page.Total || fallback != 400 {
+	if err != nil || fallbackPage.Total != page.Total || !reflect.DeepEqual(fallbackPage.Items, page.Items) || fallback != 400 {
 		t.Fatalf("fallback %+v calls=%d err=%v", fallbackPage, fallback, err)
 	}
+	// Missing watch and favorite map entries represent false, not an error.
+	unwatched, notFavorite := false, false
+	falseQuery := q
+	falseQuery.Watched, falseQuery.Favorite = &unwatched, &notFavorite
+	svc.d.IsFavoriteMany = func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error) {
+		return map[core.RatingKey]bool{}, nil
+	}
+	falsePage, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", falseQuery)
+	if err != nil || falsePage.Total != 402 || len(falsePage.Items) != 3 || falsePage.Items[0].Key != core.EpisodeKey(1, 1, 5) {
+		t.Fatalf("false predicates: %+v %v", falsePage, err)
+	}
+	// Nil predicates must not read state or favorites.
+	beforeBatches, beforeGets := st.batches, st.gets
+	st.err = errors.New("unexpected state access")
+	svc.d.IsFavoriteMany = func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error) {
+		t.Error("unexpected favorite access")
+		return nil, errors.New("unexpected")
+	}
+	plainQuery := q
+	plainQuery.Watched, plainQuery.Favorite = nil, nil
+	plain, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", plainQuery)
+	if err != nil || plain.Total != 802 || st.batches != beforeBatches || st.gets != beforeGets {
+		t.Fatalf("nil predicates: %+v %v", plain, err)
+	}
+	st.err = nil
 	failure := errors.New("state failed")
 	st.err = failure
 	if got, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q); !errors.Is(err, failure) || len(got.Items) != 0 {
