@@ -168,7 +168,7 @@ func (a *App) productionExperienceRows(ctx context.Context, req frontend.RowRequ
 			}
 		}
 		return experience.DetailRows(ctx, req.Viewer, req.Item, req.Limit, visibility, a.catalog.NextEpisode, postPlay,
-			func(ctx context.Context, limit int) ([]core.Hub, error) {
+			func(ctx context.Context, limit int) ([]experience.RankedCandidate, error) {
 				return rankedCandidates(a.personalize.Related(ctx, req.Viewer, req.Item, limit))
 			})
 	default:
