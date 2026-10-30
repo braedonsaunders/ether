@@ -1002,7 +1002,7 @@ func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.R
 	if rec == nil || m.releaseBlocked(ctx, rec.releaseID) || rec.profile != profile || !m.resumeSourceAllowed(rec.release) || !sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
 		return nil
 	}
-	nzb, err := m.resume.readNZB(rec.nzbHash)
+	nzb, err := m.resume.readResumeNZB(ctx, rec)
 	if err != nil {
 		m.log.Warn("stored nzb unreadable; resolving afresh", "release", rec.releaseID, "err", err)
 		return nil
@@ -1050,7 +1050,7 @@ func (m *Manager) ResumePoint(ctx context.Context, userID int64, key core.Rating
 	if m.releaseBlocked(ctx, rec.releaseID) {
 		return nil, nil
 	}
-	nzb, err := m.resume.readNZB(rec.nzbHash)
+	nzb, err := m.resume.readResumeNZB(ctx, rec)
 	if err != nil {
 		return nil, err
 	}

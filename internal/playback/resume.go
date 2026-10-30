@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -130,13 +129,7 @@ type resumeStore struct {
 	// database outage on a clustered node; nil writes synchronously.
 	held *store.Outbox[resumeKey, resumeWrite]
 
-	// nzbMu orders NZB file writes against gcNZB's count-then-remove;
-	// nzbRefs counts NZBs written (or found on disk) whose row may not be
-	// committed yet, which gcNZB must not remove: another record dropping
-	// the last committed reference to the same NZB would otherwise delete
-	// the file under a row about to point at it.
-	nzbMu   sync.Mutex
-	nzbRefs map[string]int
+	payload *payloadStore
 }
 
 type resumeKey struct {
@@ -147,7 +140,7 @@ type resumeKey struct {
 // resumeWrite is one resume record whose NZB is already on disk.
 type resumeWrite struct {
 	rec    resumeRecord
-	hash   string
+	lease  *nzbLease
 	points []core.KeyframePoint
 	// probe travels in the same write as the record, so the persisted
 	// probe can never land before (or outlive a queued replacement of)
@@ -165,24 +158,30 @@ func (s *resumeStore) hold(avail *store.Availability, log *slog.Logger) {
 	s.held = store.NewOutbox(store.OutboxOptions[resumeKey, resumeWrite]{
 		Name: "playback resume", Availability: avail, Logger: log, Cap: maxHeldResumes,
 		Timeout: 3 * time.Second,
+		Merge: func(old, new resumeWrite) resumeWrite {
+			s.payload.queueRelease(old.lease.owner)
+			return new
+		},
 		Apply: func(ctx context.Context, _ resumeKey, w resumeWrite) error {
-			if err := s.saveRow(ctx, w.rec, w.hash); err != nil {
+			if err := s.writeBundle(ctx, w.rec, w.lease, w.points, w.probe, w.nzb); err != nil {
 				return err
 			}
-			if err := s.saveIndex(ctx, w.rec.userID, w.rec.key, w.rec.release.ID, w.points); err != nil {
+			if err := s.releaseNZB(w.lease); err != nil {
 				return err
 			}
-			return s.saveProbe(ctx, w.rec.userID, w.rec.key, w.rec.release.ID, w.nzb, w.probe, w.rec.updatedAt)
+			return nil
 		},
 	})
 }
 
 // close writes held records (bounded by ctx).
 func (s *resumeStore) close(ctx context.Context) error {
-	if s.held == nil {
-		return nil
+	var err error
+	if s.held != nil {
+		err = s.held.Close(ctx)
 	}
-	return s.held.Close(ctx)
+	s.payload.close()
+	return errors.Join(err, s.payload.pendingError())
 }
 
 // put stores a record and its keyframe index: at once, or — on a clustered
@@ -198,28 +197,24 @@ func (s *resumeStore) putWithProbe(ctx context.Context, rec resumeRecord, nzb []
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
-	hash, err := s.acquireNZB(nzb)
+	lease, err := s.acquireNZB(ctx, rec, nzb)
 	if err != nil {
 		return fmt.Errorf("playback: store nzb: %w", err)
 	}
 	if s.held != nil {
-		queued, err := s.held.Write(ctx, resumeKey{rec.userID, rec.key}, resumeWrite{rec: rec, hash: hash, points: points, probe: probe, nzb: nzb})
-		if !queued {
-			s.releaseNZB(hash)
+		queued, err := s.held.Write(ctx, resumeKey{rec.userID, rec.key}, resumeWrite{rec: rec, lease: lease, points: points, probe: probe, nzb: nzb})
+		if !queued && !errors.Is(err, errResumeCommitUnknown) {
+			s.releaseNZB(lease)
 		}
-		// A queued record keeps its NZB referenced for the rest of the
-		// process (the startup sweep reclaims it if the row never lands).
 		return err
 	}
-	err = s.saveRow(ctx, rec, hash)
-	s.releaseNZB(hash)
-	if err != nil {
-		return err
+	err = s.writeBundle(ctx, rec, lease, points, probe, nzb)
+	if !errors.Is(err, errResumeCommitUnknown) {
+		if releaseErr := s.releaseNZB(lease); err == nil {
+			err = releaseErr
+		}
 	}
-	if err := s.saveIndex(ctx, rec.userID, rec.key, rec.release.ID, points); err != nil {
-		return err
-	}
-	return s.saveProbe(ctx, rec.userID, rec.key, rec.release.ID, nzb, probe, rec.updatedAt)
+	return err
 }
 
 func newResumeStore(db *sql.DB, dataDir string) (*resumeStore, error) {
@@ -227,8 +222,14 @@ func newResumeStore(db *sql.DB, dataDir string) (*resumeStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("playback: nzb dir: %w", err)
 	}
-	s := &resumeStore{db: db, dir: dir, nzbRefs: map[string]int{}}
-	s.sweep(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	payload, err := openPayloadStore(ctx, db, dir)
+	if err != nil {
+		return nil, err
+	}
+	s := &resumeStore{db: db, dir: dir, payload: payload}
+	s.sweep(ctx)
 	return s, nil
 }
 
@@ -256,13 +257,13 @@ func (s *resumeStore) sweep(ctx context.Context) {
 		}
 		switch {
 		case strings.HasPrefix(name, "nzb-") && strings.HasSuffix(name, ".tmp"):
-			_ = os.Remove(filepath.Join(s.dir, name))
-		case strings.HasSuffix(name, ".nzb"):
-			hash := strings.TrimSuffix(name, ".nzb")
-			var n int
-			if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_resume WHERE nzb_hash=?`, hash).Scan(&n); err == nil && n == 0 {
+			var owners int
+			if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_payload_owners WHERE domain=?`, s.payload.domain).Scan(&owners); err == nil && owners == 0 {
 				_ = os.Remove(filepath.Join(s.dir, name))
 			}
+		case strings.HasSuffix(name, ".nzb"):
+			hash := strings.TrimSuffix(name, ".nzb")
+			s.gcNZB(ctx, hash)
 		}
 	}
 }
@@ -274,24 +275,25 @@ func nzbHash(b []byte) string {
 
 func (s *resumeStore) nzbPath(hash string) string { return filepath.Join(s.dir, hash+".nzb") }
 
-// acquireNZB stores an NZB and holds it against gcNZB until releaseNZB.
-func (s *resumeStore) acquireNZB(nzb []byte) (string, error) {
-	s.nzbMu.Lock()
-	defer s.nzbMu.Unlock()
-	hash, err := s.writeNZB(nzb)
+// acquireNZB commits a durable writer owner before touching the payload.
+func (s *resumeStore) acquireNZB(ctx context.Context, rec resumeRecord, nzb []byte) (*nzbLease, error) {
+	hash := nzbHash(nzb)
+	owner, err := s.payload.reserve(ctx, rec.userID, "resume", "", fmt.Sprintf("%d/%d", rec.userID, rec.key), hash, "resume-write")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	s.nzbRefs[hash]++
-	return hash, nil
+	if _, err := s.writeNZB(nzb); err != nil {
+		s.payload.queueRelease(owner)
+		return nil, err
+	}
+	return &nzbLease{hash: hash, owner: owner}, nil
 }
-
-func (s *resumeStore) releaseNZB(hash string) {
-	s.nzbMu.Lock()
-	defer s.nzbMu.Unlock()
-	if s.nzbRefs[hash]--; s.nzbRefs[hash] <= 0 {
-		delete(s.nzbRefs, hash)
+func (s *resumeStore) releaseNZB(lease *nzbLease) error {
+	err := s.payload.release(context.Background(), lease.owner)
+	if err != nil {
+		s.payload.queueRelease(lease.owner)
 	}
+	return err
 }
 
 func (s *resumeStore) writeNZB(nzb []byte) (string, error) {
@@ -332,37 +334,55 @@ func (s *resumeStore) readNZB(hash string) ([]byte, error) {
 	return b, nil
 }
 
+// readResumeNZB retains the actual payload across the filesystem read. A
+// concurrent retention/invalidation delete cannot reclaim an admitted read.
+func (s *resumeStore) readResumeNZB(ctx context.Context, rec *resumeRecord) ([]byte, error) {
+	owner, err := s.payload.reserve(ctx, rec.userID, "resume", "", fmt.Sprintf("%d/%d", rec.userID, rec.key), rec.nzbHash, "resume-read")
+	if err != nil {
+		return nil, err
+	}
+	b, readErr := s.readNZB(rec.nzbHash)
+	if err := s.payload.release(context.Background(), owner); err != nil {
+		s.payload.queueRelease(owner)
+	}
+	return b, readErr
+}
+
 func (s *resumeStore) save(ctx context.Context, rec resumeRecord, nzb []byte) error {
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
-	hash, err := s.acquireNZB(nzb)
+	lease, err := s.acquireNZB(ctx, rec, nzb)
 	if err != nil {
-		return fmt.Errorf("playback: store nzb: %w", err)
+		return err
 	}
-	defer s.releaseNZB(hash)
-	return s.saveRow(ctx, rec, hash)
+	err = s.writeBundle(ctx, rec, lease, nil, core.MediaInfo{}, nzb)
+	if !errors.Is(err, errResumeCommitUnknown) {
+		if releaseErr := s.releaseNZB(lease); err == nil {
+			err = releaseErr
+		}
+	}
+	return err
 }
 
-// saveRow upserts the record for an NZB already on disk.
-func (s *resumeStore) saveRow(ctx context.Context, rec resumeRecord, hash string) error {
+func saveResumeRowTx(ctx context.Context, tx *sql.Tx, rec resumeRecord, hash string) (string, error) {
 	rel, err := json.Marshal(rec.release)
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM playback_index WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_index WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
+		return "", err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM playback_probe WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
-		return err
+	if _, err := tx.ExecContext(ctx, `DELETE FROM playback_probe WHERE user_id=? AND rating_key=? AND release_id<>?`, rec.userID, int64(rec.key), rec.release.ID); err != nil {
+		return "", err
 	}
 	var oldHash string
-	err = s.db.QueryRowContext(ctx, `SELECT nzb_hash FROM playback_resume WHERE user_id=? AND rating_key=?`,
+	err = tx.QueryRowContext(ctx, `SELECT nzb_hash FROM playback_resume WHERE user_id=? AND rating_key=?`,
 		rec.userID, int64(rec.key)).Scan(&oldHash)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+		return "", err
 	}
-	_, err = s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO playback_resume (user_id, rating_key, release_id, release_json, nzb_hash, profile, size, duration_ms, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, rating_key) DO UPDATE SET
@@ -371,12 +391,9 @@ ON CONFLICT (user_id, rating_key) DO UPDATE SET
 		rec.userID, int64(rec.key), rec.release.ID, string(rel), hash, rec.profile, rec.size,
 		rec.duration.Milliseconds(), rec.updatedAt.UnixMilli())
 	if err != nil {
-		return err
+		return "", err
 	}
-	if oldHash != "" && oldHash != hash {
-		s.gcNZB(ctx, oldHash)
-	}
-	return nil
+	return oldHash, nil
 }
 
 const resumeColumns = `user_id, rating_key, release_id, release_json, nzb_hash, profile, size, duration_ms, updated_at`
@@ -483,16 +500,9 @@ func (s *resumeStore) invalidateTitle(ctx context.Context, key core.RatingKey) e
 
 // gcNZB removes an NZB file no row references any more.
 func (s *resumeStore) gcNZB(ctx context.Context, hash string) {
-	s.nzbMu.Lock()
-	defer s.nzbMu.Unlock()
-	if s.nzbRefs[hash] > 0 {
-		return // a record being written is about to reference it
-	}
-	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM playback_resume WHERE nzb_hash=?`, hash).Scan(&n); err != nil || n > 0 {
+	if err := s.payload.gc(ctx, hash); err != nil {
 		return
 	}
-	_ = os.Remove(s.nzbPath(hash))
 }
 
 func (rec *resumeRecord) point(nzb []byte) *ResumePoint {
@@ -511,6 +521,9 @@ func (rec *resumeRecord) point(nzb []byte) *ResumePoint {
 }
 
 func (s *resumeStore) saveIndex(ctx context.Context, userID int64, key core.RatingKey, releaseID string, points []core.KeyframePoint) error {
+	return saveIndexWith(ctx, s.db, userID, key, releaseID, points)
+}
+func saveIndexWith(ctx context.Context, exec resumeExecer, userID int64, key core.RatingKey, releaseID string, points []core.KeyframePoint) error {
 	if len(points) == 0 || releaseID == "" {
 		return nil
 	}
@@ -521,7 +534,7 @@ func (s *resumeStore) saveIndex(ctx context.Context, userID int64, key core.Rati
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO playback_index(user_id,rating_key,release_id,points_json) VALUES(?,?,?,?)
+	_, err = exec.ExecContext(ctx, `INSERT INTO playback_index(user_id,rating_key,release_id,points_json) VALUES(?,?,?,?)
 ON CONFLICT(user_id,rating_key,release_id) DO UPDATE SET points_json=excluded.points_json`, userID, int64(key), releaseID, string(b))
 	return err
 }

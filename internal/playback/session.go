@@ -228,7 +228,7 @@ func newSession(id string, ident identity, user *core.User, caps core.ClientCaps
 	stopCtx, stopCancel := context.WithCancel(context.Background())
 	return &session{
 		id:         id,
-		sources:    newSourceLifetime(),
+		sources:    newSourceLifetime(user.ID, string(caps.Protocol), caps.ClientID),
 		stopCtx:    stopCtx,
 		stopCancel: stopCancel,
 		ident:      ident,

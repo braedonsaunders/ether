@@ -354,6 +354,10 @@ func New(deps Deps, cfg config.Config, opts Options) (*Manager, error) {
 
 	ln, err := net.Listen("tcp", opts.LoopbackAddr)
 	if err != nil {
+		if m.resume != nil {
+			m.resume.close(context.Background())
+		}
+		m.titleInval.Close()
 		return nil, fmt.Errorf("playback: loopback listen: %w", err)
 	}
 	m.ln = ln
@@ -660,7 +664,7 @@ func (m *Manager) prepareOwnedEntry(ctx context.Context, user *core.User, key co
 	f := m.flights[fk]
 	if f == nil {
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.opts.PrepareTimeout)
-		f = &flight{sources: newSourceLifetime(), done: make(chan struct{}), cancel: cancel}
+		f = &flight{sources: newSourceLifetime(user.ID, string(caps.Protocol), caps.ClientID), done: make(chan struct{}), cancel: cancel}
 		m.flights[fk] = f
 		u := *user
 		go m.runFlight(wctx, f, fk, &u, caps)

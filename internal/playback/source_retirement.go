@@ -24,14 +24,18 @@ type sourceAccounting struct {
 // sourceLifetime belongs to the actual manager session/preparation flight.
 // It holds aggregate outcomes rather than retaining every old generation.
 type sourceLifetime struct {
-	mu      sync.Mutex
-	done    chan struct{}
-	pending int
-	sealed  bool
-	err     error
+	user                int64
+	surface, device, id string
+	mu                  sync.Mutex
+	done                chan struct{}
+	pending             int
+	sealed              bool
+	err                 error
 }
 
-func newSourceLifetime() *sourceLifetime        { return &sourceLifetime{done: make(chan struct{})} }
+func newSourceLifetime(user int64, surface, device string) *sourceLifetime {
+	return &sourceLifetime{user: user, surface: surface, device: device, id: randomID(32), done: make(chan struct{})}
+}
 func (s *sourceLifetime) Done() <-chan struct{} { return s.done }
 func (s *sourceLifetime) Err() error {
 	s.mu.Lock()
@@ -94,6 +98,28 @@ func (m *Manager) openSource(ctx context.Context, s *sourceLifetime, res *core.R
 	finish, err := m.reserveSourceOpen(s)
 	if err != nil {
 		return nil, nil, err
+	}
+	var owner payloadOwner
+	if m.resume != nil {
+		owner, err = m.resume.payload.reserve(ctx, s.user, s.surface, s.device, s.id, nzbHash(res.NZB), "source-open")
+		if err != nil {
+			if errors.Is(err, errPayloadCommitUnknown) {
+				finish(err)
+			} else {
+				finish(nil)
+			}
+			return nil, nil, err
+		}
+		backendFinished := finish
+		var once sync.Once
+		finish = func(closeErr error) {
+			once.Do(func() {
+				if closeErr == nil {
+					closeErr = m.resume.payload.release(context.Background(), owner)
+				}
+				backendFinished(closeErr)
+			})
+		}
 	}
 	src, err := m.deps.Engine.Open(ctx, res.Release.ID, res.NZB)
 	if err != nil || src == nil {

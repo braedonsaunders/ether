@@ -162,6 +162,7 @@ func TestResumeStoreSweepsStaleTempsAndOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { rs.close(context.Background()) })
 	if err := rs.save(context.Background(), resumeRecord{userID: 1, key: movieKey, releaseID: "K", release: core.Release{ID: "K"}, updatedAt: time.Now()}, []byte("kept")); err != nil {
 		t.Fatal(err)
 	}
