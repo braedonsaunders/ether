@@ -17,6 +17,7 @@ import (
 
 func init() {
 	store.RegisterAfter("capability_headers", "auth", "identity_grants")
+	store.Register("capability_headers", 2, `CREATE INDEX capability_headers_maintenance ON capability_headers(namespace,expires,digest);`)
 	store.Register("capability_headers", 1, `CREATE TABLE capability_headers (namespace TEXT NOT NULL,digest TEXT NOT NULL,shard INTEGER NOT NULL,viewer_id BIGINT NOT NULL,surface TEXT NOT NULL,device_id TEXT NOT NULL,expires BIGINT NOT NULL,PRIMARY KEY(namespace,digest)); CREATE INDEX capability_headers_expiry ON capability_headers(namespace,shard,expires); CREATE INDEX capability_headers_scope ON capability_headers(namespace,shard,viewer_id,surface,expires); CREATE TABLE capability_tickets (namespace TEXT NOT NULL,digest TEXT NOT NULL,purpose TEXT NOT NULL,source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE,device TEXT NOT NULL,legacy_mirror INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(namespace,digest),FOREIGN KEY(namespace,digest) REFERENCES capability_headers(namespace,digest) ON DELETE CASCADE);`)
 }
 
@@ -26,6 +27,7 @@ const ticketPerShard = 256
 const ticketPerScope = 128
 const ticketBatchMax = 40
 const ticketCleanupMax = 128
+const ticketMaintenanceMax = 1024
 const ticketTTL = 30 * time.Second
 
 type Tickets struct {
@@ -131,13 +133,6 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 		return 0, err
 	}
 	defer tx.Rollback()
-	// All upgraded legacy cleanup takes the global lock before its shard.
-	// Old binaries do not take it; their SQL still relies on row-level safety.
-	if mirror {
-		if err = store.LockKey(ctx, store.DialectOf(s.db), tx, "capability:legacy-ticket-cleanup"); err != nil {
-			return 0, err
-		}
-	}
 	if err = s.lock(ctx, tx, scope.ViewerID); err != nil {
 		return 0, err
 	}
@@ -152,7 +147,7 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 		if s.beforeLegacyCleanup != nil {
 			s.beforeLegacyCleanup(tx)
 		}
-		if _, err = tx.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE expires<=? AND hash IN (SELECT hash FROM frontend_tickets WHERE expires<=? ORDER BY expires,hash LIMIT ?)`, now, now, ticketCleanupMax); err != nil {
+		if _, err = tx.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE viewer_id=? AND surface=? AND expires<=? AND hash IN (SELECT hash FROM frontend_tickets WHERE viewer_id=? AND surface=? AND expires<=? ORDER BY expires,hash LIMIT ?)`, scope.ViewerID, scope.Surface, now, scope.ViewerID, scope.Surface, now, ticketCleanupMax); err != nil {
 			return 0, err
 		}
 	}
@@ -363,4 +358,29 @@ func (s *Tickets) ConsumeMirrored(ctx context.Context, surface, purpose, digest 
 		return Ticket{}, err
 	}
 	return out, nil
+}
+
+// PruneExpired performs bounded maintenance independently of issuance. Only
+// expired rows are deleted; the outer predicate protects concurrent renewal.
+// Failure leaves the remaining work for the next pass. It does not bound
+// issuance by old nodes, which do not participate in shared quotas.
+func PruneExpired(ctx context.Context, db *sql.DB, now time.Time) (int64, error) {
+	if db == nil {
+		return 0, errors.New("capability: database required")
+	}
+	ms := now.UnixMilli()
+	res, err := db.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE expires<=? AND hash IN (SELECT hash FROM frontend_tickets WHERE expires<=? ORDER BY expires,hash LIMIT ?)`, ms, ms, ticketMaintenanceMax)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	res, err = db.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, ticketNamespace, ms, ticketNamespace, ms, ticketMaintenanceMax)
+	if err != nil {
+		return n, err
+	}
+	m, err := res.RowsAffected()
+	return n + m, err
 }

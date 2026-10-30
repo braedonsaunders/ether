@@ -25,6 +25,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/favorites"
+	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/markers"
@@ -555,6 +556,14 @@ func (a *App) housekeeping(ctx context.Context) {
 			_ = a.users.FlushSeen(context.Background())
 			return
 		case <-pins.C:
+			if a.cluster.IsLeader() {
+				pruneCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				_, err := capability.PruneExpired(pruneCtx, a.db, time.Now())
+				cancel()
+				if err != nil && ctx.Err() == nil {
+					a.log.Warn("ticket maintenance failed", "err", err)
+				}
+			}
 			if a.cluster.IsLeader() && time.Since(lastCompat) > 6*time.Hour {
 				lastCompat = time.Now()
 				a.refreshCompatibility(ctx)

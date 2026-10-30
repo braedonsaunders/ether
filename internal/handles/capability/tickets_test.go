@@ -613,3 +613,67 @@ func TestMirroredCleanupConcurrentOldConsumer(t *testing.T) {
 		}
 	}
 }
+
+// An abandoned legacy-only scope is reclaimed by bounded maintenance; a
+// subsequent pass makes progress and neither pass deletes a live ticket.
+func TestTicketMaintenanceBoundedLegacyAndLive(t *testing.T) {
+	db, _, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	now := time.Now()
+	for i := 0; i < 1026; i++ {
+		expiry := now.Add(-time.Minute).UnixMilli()
+		if i == 1025 {
+			expiry = now.Add(time.Hour).UnixMilli()
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, fmt.Sprintf("maintenance-%04d", i), scope.Surface, "events-ws", scope.ViewerID, scope.SourceHash, scope.DeviceJSON, expiry)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	n, err := capability.PruneExpired(ctx, db, now)
+	if err != nil || n != 1024 {
+		t.Fatalf("first pass n=%d err=%v", n, err)
+	}
+	n, err = capability.PruneExpired(ctx, db, now)
+	if err != nil || n != 1 {
+		t.Fatalf("second pass n=%d err=%v", n, err)
+	}
+	var live int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, "maintenance-1025").Scan(&live); err != nil || live != 1 {
+		t.Fatalf("live=%d err=%v", live, err)
+	}
+}
+
+func TestMirroredCleanupIsScopeLocal(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for _, surface := range []string{"silo", "emby"} {
+		_, err := db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, "expired-"+surface, surface, "events-ws", scope.ViewerID, scope.SourceHash, scope.DeviceJSON, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{entry(321)}); err != nil {
+		t.Fatal(err)
+	}
+	var silo, emby int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, "expired-silo").Scan(&silo); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, "expired-emby").Scan(&emby); err != nil {
+		t.Fatal(err)
+	}
+	if silo != 0 || emby != 1 {
+		t.Fatalf("silo=%d emby=%d", silo, emby)
+	}
+}

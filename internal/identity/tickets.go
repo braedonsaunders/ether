@@ -17,6 +17,7 @@ import (
 
 func init() {
 	store.RegisterAfter("frontend_tickets", "auth", "identity_grants")
+	store.Register("frontend_tickets", 2, `CREATE INDEX frontend_tickets_scope_expiry ON frontend_tickets(viewer_id,surface,expires,hash);`)
 	store.Register("frontend_tickets", 1, `CREATE TABLE frontend_tickets (hash TEXT PRIMARY KEY, surface TEXT NOT NULL, purpose TEXT NOT NULL, viewer_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE, device TEXT NOT NULL, expires INTEGER NOT NULL); CREATE INDEX frontend_tickets_expiry ON frontend_tickets(expires);`)
 }
 
