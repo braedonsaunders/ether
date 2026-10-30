@@ -35,6 +35,13 @@ func TestEmbyUserUnsupportedPolicyOnCapabilityPaths(t *testing.T) {
 			if tc.name == "success" && policy["EnableMediaPlayback"] != true {
 				t.Fatal("lost authoritative capability")
 			}
+			if policy["IntroSkipMode"] != nil {
+				t.Fatal("policy absorbed configuration")
+			}
+			cfg := i.userDTO(httptest.NewRequest("GET", "/", nil), &frontend.Viewer{ID: 1, Username: "Ada"})
+			if cfg["Prefix"] != "A" || cfg["Configuration"].(map[string]any)["IntroSkipMode"] != "None" || cfg["Policy"].(map[string]any)["LockedOutDate"] != 0 {
+				t.Fatal(cfg)
+			}
 		})
 	}
 }

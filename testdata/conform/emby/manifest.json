@@ -28,7 +28,7 @@
       "field": "$[]/LastLoginDate",
       "referenceEvidence": "emby-sdk/emby-sdk_jsonconnect_public users_GET__Users_Public.json records this field in the unauthenticated Emby 4.10.2 response.",
       "etherBehavior": "Omitted from the public picker to avoid disclosing viewer login history before authentication. Authenticated user responses expose observed, credential-authorized values when known.",
-      "comparison": "blocking pending reviewed policy-difference handling and client-dependence audit"
+      "comparison": "non-blocking after client audit; see notApplicable"
     },
     {
       "method": "GET",
@@ -36,7 +36,21 @@
       "field": "$[]/LastActivityDate",
       "referenceEvidence": "emby-sdk/emby-sdk_jsonconnect_public users_GET__Users_Public.json records this field in the unauthenticated Emby 4.10.2 response.",
       "etherBehavior": "Omitted from the public picker to avoid disclosing viewer activity before authentication. Authenticated user responses expose observed, credential-authorized values when known.",
-      "comparison": "blocking pending reviewed policy-difference handling and client-dependence audit"
+      "comparison": "non-blocking after client audit; see notApplicable"
+    }
+  ],
+  "notApplicable": [
+    {
+      "endpoint": "/Users/Public",
+      "path": "$[]/LastLoginDate",
+      "reason": "The public picker omits login timestamps until the viewer authenticates.",
+      "clientAudit": "Emby.SDK UserDto.LastLoginDate is not required. Emby Android TV, Emby for iOS, and Emby for Android select a public user by Id and Name; the timestamp is secondary text on the server-hosted web login, which Ether does not ship. Authenticated /Users/Me still returns an observed LastLoginDate."
+    },
+    {
+      "endpoint": "/Users/Public",
+      "path": "$[]/LastActivityDate",
+      "reason": "The public picker omits activity timestamps until the viewer authenticates.",
+      "clientAudit": "Emby.SDK UserDto.LastActivityDate is not required. The same native clients that use the public user list do not need it to sign in or browse. Authenticated user responses still return an observed LastActivityDate."
     }
   ]
 }

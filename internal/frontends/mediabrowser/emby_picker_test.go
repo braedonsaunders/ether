@@ -40,7 +40,10 @@ func TestPublicPickerUsesExplicitPasswordCapability(t *testing.T) {
 				if _, ok := users[2]["HasConfiguredPassword"]; ok {
 					t.Fatal(users[2])
 				}
-			} else if _, ok := users[0]["HasConfiguredPassword"]; ok {
+				if users[0]["Prefix"] != "K" || users[1]["Prefix"] != "N" || users[2]["Prefix"] != "U" {
+					t.Fatal(users)
+				}
+			} else if _, ok := users[0]["HasConfiguredPassword"]; ok || users[0]["Prefix"] != nil {
 				t.Fatal(users[0])
 			}
 			for _, user := range users {

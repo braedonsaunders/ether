@@ -1,6 +1,8 @@
 package mediabrowser
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
 	"strings"
 
@@ -38,11 +40,53 @@ func (i *instance) embyItemDTO(m map[string]any, t frontend.Title, _ frontend.Wa
 	if len(urls) > 0 {
 		m["ExternalUrls"] = urls
 	}
+	// List and detail responses both carry these collections. An empty value
+	// means this item has no such asset.
+	if _, ok := m["BackdropImageTags"]; !ok {
+		m["BackdropImageTags"] = []any{}
+	}
+	if _, ok := m["ImageTags"]; !ok {
+		m["ImageTags"] = map[string]any{}
+	}
+}
+
+func embyETag(id string) string {
+	sum := sha256.Sum256([]byte("emby:" + id))
+	return hex.EncodeToString(sum[:16])
 }
 
 // embyItemDetailDTO only describes the selected source when it is known.
 func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 	m["SupportsSync"] = false
+	trailers := 0
+	for _, extra := range d.Extras {
+		if strings.EqualFold(extra.Kind, "trailer") {
+			trailers++
+		}
+	}
+	m["LocalTrailerCount"] = trailers
+	for _, key := range []string{"RemoteTrailers", "People", "Studios", "TagItems", "Taglines", "GenreItems"} {
+		if _, ok := m[key]; !ok {
+			m[key] = []any{}
+		}
+	}
+	if id, ok := m["Id"].(string); ok && id != "" {
+		m["PresentationUniqueKey"] = id
+		m["Etag"] = embyETag(id)
+	}
+	if container, ok := m["Container"].(string); ok {
+		switch strings.ToLower(container) {
+		case "mp4", "m4v":
+			m["MimeType"] = "video/mp4"
+		case "mkv", "matroska":
+			m["MimeType"] = "video/x-matroska"
+		case "webm":
+			m["MimeType"] = "video/webm"
+		}
+	}
+	if len(d.Versions) == 1 && d.Versions[0].DateModified != nil && !d.Versions[0].DateModified.IsZero() {
+		m["DateModified"] = wireTime(*d.Versions[0].DateModified)
+	}
 	// The Host does not identify a selected version. Multiple alternatives do
 	// not establish which one supplies the top-level media properties.
 	if len(d.Versions) != 1 {
