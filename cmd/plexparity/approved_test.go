@@ -13,8 +13,8 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 	if err := json.Unmarshal(approvedSearch, &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 260 {
-		t.Fatalf("got %d signatures, want 260", len(entries))
+	if len(entries) != 340 {
+		t.Fatalf("got %d signatures, want 340", len(entries))
 	}
 	for _, e := range entries {
 		if e.Viewer != "teen" && e.Viewer != "child" {
