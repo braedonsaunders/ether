@@ -5,6 +5,7 @@ package app
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -251,6 +252,10 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					for _, diff := range partial.Differences {
 						if diff.Kind == conform.KindRequestError {
 							validEvidence = false
+						}
+						if mode == "live" && diff.Kind == conform.KindStatus && strings.HasSuffix(diff.Endpoint, "/Users/AuthenticateByName") && diff.Reference != float64(http.StatusOK) {
+							validEvidence = false
+							t.Errorf("%s %s reference login did not succeed; comparison invalid", spec.proto, clientName)
 						}
 						if mode == "live" && diff.Kind == conform.KindStatus && diff.Reference == float64(http.StatusUnauthorized) {
 							validEvidence = false
@@ -652,6 +657,7 @@ type labPlaybackReceipt struct {
 	Body                         []byte
 }
 type labPlaybackContextKey struct{}
+type labLoginContextKey struct{}
 
 func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 	t.Helper()
@@ -661,6 +667,8 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 	}
 	var mu sync.Mutex
 	issued := map[string]labReferenceData{}
+	// Quarantine is cleanup-only; malformed metadata never makes a token usable.
+	quarantine := map[string]labReferenceData{}
 	pending := map[[3]string]labPlaybackReceipt{}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	direct := proxy.Director
@@ -686,30 +694,65 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 			return fmt.Errorf("lab login response unreadable or oversized")
 		}
 		response.Body = io.NopCloser(bytes.NewReader(body))
-		var login struct {
-			AccessToken string
-			SessionInfo struct{ Id, DeviceId string }
+		decoded := body
+		switch strings.ToLower(response.Header.Get("Content-Encoding")) {
+		case "", "identity":
+		case "gzip":
+			reader, err := gzip.NewReader(bytes.NewReader(body))
+			if err != nil {
+				return fmt.Errorf("lab login gzip invalid")
+			}
+			decoded, err = io.ReadAll(io.LimitReader(reader, (1<<20)+1))
+			reader.Close()
+			if err != nil || len(decoded) > 1<<20 {
+				return fmt.Errorf("lab login gzip unreadable or oversized")
+			}
+		default:
+			return fmt.Errorf("lab login encoding unsupported")
 		}
-		if json.Unmarshal(body, &login) != nil || login.AccessToken == "" {
-			return fmt.Errorf("lab login response invalid")
+		// Provenance is established before forwarding this own-device login.
+		device, owned := response.Request.Context().Value(labLoginContextKey{}).(string)
+		if !owned || device == "" {
+			return fmt.Errorf("lab login request provenance missing")
 		}
-		_, device, identityErr := labRequestIdentity(response.Request)
-		if identityErr != nil {
-			return fmt.Errorf("lab login identity ambiguous")
+		var minted struct{ AccessToken string }
+		if json.Unmarshal(decoded, &minted) != nil || minted.AccessToken == "" {
+			return fmt.Errorf("lab login token unavailable")
 		}
-		if login.SessionInfo.DeviceId != "" {
-			device = login.SessionInfo.DeviceId
-		}
-		if device == "" {
-			return fmt.Errorf("lab login device missing")
-		}
+		owner := labReferenceData{base: ref.base, token: minted.AccessToken, device: device}
 		mu.Lock()
-		issued[login.AccessToken] = labReferenceData{base: ref.base, token: login.AccessToken, device: device, session: login.SessionInfo.Id}
+		quarantine[minted.AccessToken] = owner
 		mu.Unlock()
-		t.Logf("lab_owned_probe device=%s session=%s", device, login.SessionInfo.Id)
+		t.Logf("lab_quarantined_probe device=%s", device)
+		var metadata struct{ SessionInfo struct{ Id, DeviceId string } }
+		if json.Unmarshal(decoded, &metadata) != nil {
+			return fmt.Errorf("lab login metadata invalid; credential quarantined")
+		}
+		if metadata.SessionInfo.DeviceId != "" && metadata.SessionInfo.DeviceId != device {
+			return fmt.Errorf("lab login device mismatch; credential quarantined")
+		}
+		owner.session = metadata.SessionInfo.Id
+		mu.Lock()
+		quarantine[minted.AccessToken] = owner
+		issued[minted.AccessToken] = owner
+		mu.Unlock()
+		t.Logf("lab_owned_probe device=%s session=%s", device, owner.session)
 		return nil
 	}
+	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
+		// Error messages originate above or in transport: never print the raw error.
+		t.Logf("lab_proxy_failure method=%s auth_endpoint=%t", req.Method, strings.HasSuffix(req.URL.Path, "/Users/AuthenticateByName"))
+		http.Error(w, "lab proxy response failed", http.StatusBadGateway)
+	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/Users/AuthenticateByName") {
+			_, device, err := labRequestIdentity(req)
+			if err != nil || device == "" || (device != ref.device && device != ref.vars["device_id"]) {
+				http.Error(w, "unowned or ambiguous login device", http.StatusForbidden)
+				return
+			}
+			req = req.WithContext(context.WithValue(req.Context(), labLoginContextKey{}, device))
+		}
 		playback := req.Method == http.MethodPost && (strings.HasSuffix(req.URL.Path, "/Sessions/Playing") || strings.HasSuffix(req.URL.Path, "/Sessions/Playing/Progress") || strings.HasSuffix(req.URL.Path, "/Sessions/Playing/Stopped"))
 		if !playback {
 			proxy.ServeHTTP(w, req)
@@ -784,7 +827,7 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 				t.Error("reference stop not accepted")
 			}
 		}
-		for _, owner := range issued {
+		for _, owner := range quarantine {
 			owner.logout(t)
 		}
 	}
@@ -974,8 +1017,10 @@ func TestLabProbeProxyRevokesIssuedCredentials(t *testing.T) {
 		}
 	}))
 	defer backend.Close()
-	proxy, stop := labProbeProxy(t, labReferenceData{base: backend.URL + "/emby"})
-	resp, err := http.Post(proxy+"/Users/AuthenticateByName", "application/json", strings.NewReader(`{}`))
+	proxy, stop := labProbeProxy(t, labReferenceData{base: backend.URL + "/emby", vars: map[string]string{"device_id": "owned-device"}})
+	req, _ := http.NewRequest("POST", proxy+"/Users/AuthenticateByName", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", `MediaBrowser DeviceId="owned-device"`)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1120,7 +1165,9 @@ func TestLabProbeProxyStopsOnlyOwnedPendingPlayback(t *testing.T) {
 	}))
 	defer backend.Close()
 	proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, vars: map[string]string{"device_id": "owned-device"}})
-	login, err := http.Post(proxy+"/Users/AuthenticateByName", "application/json", strings.NewReader(`{}`))
+	loginReq, _ := http.NewRequest("POST", proxy+"/Users/AuthenticateByName", strings.NewReader(`{}`))
+	loginReq.Header.Set("Authorization", `MediaBrowser DeviceId="owned-device"`)
+	login, err := http.DefaultClient.Do(loginReq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1215,5 +1262,112 @@ func TestLabRequestIdentityAuthForms(t *testing.T) {
 		if err != nil || token != "owned-token" || device != "owned-device" {
 			t.Fatal("conformdiff auth form was not recognized")
 		}
+	}
+}
+
+func TestLabProbeProxyQuarantinesMintedCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name, authHeader, authValue, response string
+		compressed                            bool
+		status                                int
+	}{
+		{"findroid-gzip", "Authorization", `MediaBrowser Client="Findroid", Device="Android", DeviceId="owned-device", Version="0.15.0", Token="primary-token"`, `{"AccessToken":"minted-token","SessionInfo":{"Id":"minted-session","DeviceId":"owned-device"}}`, true, 200},
+		{"emby-gzip", "X-Emby-Authorization", `MediaBrowser Client="Emby.SDK v2 reference client", Device="Unknown", DeviceId="owned-device", Version="4.10"`, `{"AccessToken":"minted-token","SessionInfo":{"Id":"minted-session","DeviceId":"owned-device"}}`, true, 200},
+		{"malformed-metadata-after-mint", "Authorization", `MediaBrowser DeviceId="owned-device"`, `{"AccessToken":"minted-token","SessionInfo":{"Id":42}}`, false, 502},
+		{"wrong-device-after-mint", "Authorization", `MediaBrowser DeviceId="owned-device"`, `{"AccessToken":"minted-token","SessionInfo":{"Id":"minted-session","DeviceId":"foreign-device"}}`, false, 502},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var logouts, plays atomic.Int32
+			var wire bytes.Buffer
+			if tc.compressed {
+				g := gzip.NewWriter(&wire)
+				_, _ = g.Write([]byte(tc.response))
+				_ = g.Close()
+			} else {
+				wire.WriteString(tc.response)
+			}
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/Users/AuthenticateByName":
+					w.Header().Set("Content-Type", "application/json")
+					if tc.compressed {
+						w.Header().Set("Content-Encoding", "gzip")
+					}
+					_, _ = w.Write(wire.Bytes())
+				case "/Sessions/Playing":
+					plays.Add(1)
+					w.WriteHeader(204)
+				case "/Sessions/Logout":
+					token, device, err := labRequestIdentity(r)
+					if err != nil || token != "minted-token" || device != "owned-device" {
+						t.Error("quarantined cleanup lost verified request ownership")
+					}
+					logouts.Add(1)
+					w.WriteHeader(204)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer backend.Close()
+			proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, token: "primary-token", device: "primary-device", vars: map[string]string{"device_id": "owned-device"}})
+			req, _ := http.NewRequest("POST", proxy+"/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture","Pw":"fixture"}`))
+			req.Header.Set(tc.authHeader, tc.authValue)
+			if tc.authHeader == "X-Emby-Authorization" {
+				req.Header.Set("X-Emby-Token", "primary-token")
+			}
+			req.Header.Set("Accept-Encoding", "gzip")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil || resp.StatusCode != tc.status {
+				t.Fatalf("login status=%d expected=%d", resp.StatusCode, tc.status)
+			}
+			if tc.status == 200 && (!bytes.Equal(body, wire.Bytes()) || (tc.compressed && resp.Header.Get("Content-Encoding") != "gzip")) {
+				t.Error("response wire bytes or encoding changed")
+			}
+			if tc.status == 502 {
+				play, _ := http.NewRequest("POST", proxy+"/Sessions/Playing", strings.NewReader(`{"ItemId":"item","PlaySessionId":"play"}`))
+				play.Header.Set("X-Emby-Token", "minted-token")
+				rejected, err := http.DefaultClient.Do(play)
+				if err != nil {
+					t.Fatal(err)
+				}
+				rejected.Body.Close()
+				if rejected.StatusCode != 403 || plays.Load() != 0 {
+					t.Error("quarantined token became usable")
+				}
+			}
+			cleanup()
+			if logouts.Load() != 1 {
+				t.Fatal("credential minted before metadata failure was not revoked")
+			}
+		})
+	}
+}
+
+func TestLabProbeProxyRejectsForeignLoginBeforeMint(t *testing.T) {
+	var calls atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(200) }))
+	defer backend.Close()
+	proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, vars: map[string]string{"device_id": "owned-device"}})
+	for _, auth := range []string{`MediaBrowser DeviceId="foreign-device"`, `MediaBrowser DeviceId="owned-device", Token="conflict"`, ""} {
+		req, _ := http.NewRequest("POST", proxy+"/Users/AuthenticateByName", strings.NewReader(`{}`))
+		req.Header.Set("Authorization", auth)
+		req.Header.Set("X-Emby-Token", "primary")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 403 {
+			t.Fatal("ambiguous/foreign login reached upstream")
+		}
+	}
+	cleanup()
+	if calls.Load() != 0 {
+		t.Fatal("unowned login minted or revoked credentials")
 	}
 }
