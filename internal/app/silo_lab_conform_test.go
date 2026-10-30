@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -101,8 +102,8 @@ func TestSiloLabConformance(t *testing.T) {
 		res, e := client.Do(req)
 		if e == nil {
 			res.Body.Close()
-			if res.StatusCode < 200 || res.StatusCode >= 300 {
-				t.Errorf("lab sign-out returned %d", res.StatusCode)
+			if err := siloLabCleanupStatus("lab sign-out", res.StatusCode); err != nil {
+				t.Error(err)
 			}
 		} else {
 			t.Error("lab sign-out failed")
@@ -252,7 +253,8 @@ func TestSiloLabConformance(t *testing.T) {
 	// reservations, so close it before checking the raw local playback manager.
 	defer func() {
 		app.frontends.broker.Close(context.Background())
-		for _, session := range app.playback.Sessions() {
+		active, prepared := siloLabPartitionSessions(app.playback.Sessions())
+		for _, session := range append(active, prepared...) {
 			t.Errorf("target playback remained after broker close: id=%s prepared=%t", session.ID, session.PreparedOnly)
 		}
 	}()
@@ -316,22 +318,50 @@ func TestSiloLabConformance(t *testing.T) {
 				t.Errorf("%s %s has blocking differences", mode, profile)
 			}
 			owner := ownerPlayback{Playback: app.playback, app: app}
-			for _, session := range app.playback.Sessions() {
-				if session.PreparedOnly {
-					t.Logf("target prepared reservation retained for broker cleanup id=%s", session.ID)
-				}
+			_, prepared := siloLabPartitionSessions(app.playback.Sessions())
+			for _, session := range prepared {
+				t.Logf("target prepared reservation retained for broker cleanup id=%s", session.ID)
 			}
-			for _, session := range owner.Sessions() {
+			active := owner.Sessions()
+			for _, session := range active {
 				t.Logf("target session cleanup id=%s", session.ID)
-				if stopErr := app.stopOwnerSession(session.ID); stopErr != nil {
-					t.Errorf("target session cleanup failed: %v", stopErr)
-				}
+			}
+			if stopErr := siloLabStopActive(active, app.stopOwnerSession); stopErr != nil {
+				t.Errorf("target session cleanup failed: %v", stopErr)
 			}
 			if remaining := owner.Sessions(); len(remaining) != 0 {
 				t.Errorf("target session cleanup left %d sessions", len(remaining))
 			}
 		}
 	}
+}
+
+func siloLabCleanupStatus(operation string, status int) error {
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("%s returned %d; cleanup not verified", operation, status)
+	}
+	return nil
+}
+
+func siloLabPartitionSessions(sessions []*core.PlaySession) (active, prepared []*core.PlaySession) {
+	for _, session := range sessions {
+		if session.PreparedOnly {
+			prepared = append(prepared, session)
+		} else {
+			active = append(active, session)
+		}
+	}
+	return active, prepared
+}
+
+func siloLabStopActive(sessions []*core.PlaySession, stop func(string) error) error {
+	var result error
+	for _, session := range sessions {
+		if err := stop(session.ID); err != nil {
+			result = errors.Join(result, fmt.Errorf("session %s: %w", session.ID, err))
+		}
+	}
+	return result
 }
 
 func nonNilLabItems(value any) []any {
@@ -435,6 +465,16 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 	orig := proxy.Director
 	proxy.Director = func(r *http.Request) { orig(r); r.Host = target.Host }
 	proxy.ModifyResponse = func(r *http.Response) error {
+		if r.StatusCode >= 200 && r.StatusCode < 300 {
+			mu.Lock()
+			if r.Request.Method == "DELETE" && strings.HasPrefix(r.Request.URL.Path, "/api/v2/playback/") {
+				delete(sessions, strings.TrimPrefix(r.Request.URL.Path, "/api/v2/playback/"))
+			}
+			if r.Request.Method == "POST" && r.Request.URL.Path == "/api/v2/auth/logout" {
+				delete(issued, strings.TrimPrefix(r.Request.Header.Get("Authorization"), "Bearer "))
+			}
+			mu.Unlock()
+		}
 		login := r.StatusCode == 200 && r.Request.Method == "POST" && r.Request.URL.Path == "/api/v2/auth/login"
 		start := r.StatusCode == 201 && r.Request.Method == "POST" && r.Request.URL.Path == "/api/v2/playback/start"
 		if !login && !start {
@@ -490,8 +530,8 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 				continue
 			}
 			res.Body.Close()
-			if res.StatusCode != 404 && (res.StatusCode < 200 || res.StatusCode >= 300) {
-				t.Errorf("lab session cleanup returned %d", res.StatusCode)
+			if err := siloLabCleanupStatus("lab session cleanup", res.StatusCode); err != nil {
+				t.Error(err)
 			}
 		}
 		for token := range issued {
@@ -504,8 +544,8 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 				continue
 			}
 			res.Body.Close()
-			if res.StatusCode != 401 && (res.StatusCode < 200 || res.StatusCode >= 300) {
-				t.Errorf("lab probe sign-out returned %d", res.StatusCode)
+			if err := siloLabCleanupStatus("lab probe sign-out", res.StatusCode); err != nil {
+				t.Error(err)
 			}
 		}
 	}
