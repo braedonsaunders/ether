@@ -199,18 +199,18 @@ func (c *Catalog) hydrateSlice(ctx context.Context, items []core.Title) error {
 			return err
 		}
 		if err := func() error {
-			rows, err := c.db.QueryContext(ctx, `SELECT key,person_tmdb,name,role,kind,thumb FROM catalog_credits WHERE key IN (`+ph+`) ORDER BY kind,ord`, args...)
+			rows, err := c.db.QueryContext(ctx, `SELECT c.key,c.person_tmdb,c.name,c.role,c.kind,c.thumb,COALESCE(p.imdb,'') FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (`+ph+`) ORDER BY c.kind,c.ord`, args...)
 			if err != nil {
 				return err
 			}
 			defer rows.Close()
 			for rows.Next() {
 				var k, pid int64
-				var name, role, kind, thumb string
-				if err := rows.Scan(&k, &pid, &name, &role, &kind, &thumb); err != nil {
+				var name, role, kind, thumb, imdb string
+				if err := rows.Scan(&k, &pid, &name, &role, &kind, &thumb, &imdb); err != nil {
 					return err
 				}
-				p := core.Person{TMDB: pid, Name: name, Role: role, ThumbPath: thumb}
+				p := core.Person{TMDB: pid, IMDB: imdb, Name: name, Role: role, ThumbPath: thumb}
 				for _, i := range idx[core.RatingKey(k)] {
 					switch kind {
 					case "director":

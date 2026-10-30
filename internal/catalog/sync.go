@@ -496,12 +496,15 @@ func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
 	if err != nil || credits == nil {
 		return
 	}
-	var personName, personThumb string
+	var personName, personThumb, personIMDB string
 	_ = c.db.QueryRowContext(ctx, `SELECT name, thumb FROM catalog_credits WHERE person_tmdb=? AND name<>'' LIMIT 1`, personID).Scan(&personName, &personThumb)
 	if personName == "" {
 		if pd, ok := c.client.(personDetailsSource); ok {
 			if p, err := pd.PersonDetails(bctx, personID); err == nil && p != nil {
 				personName, personThumb = p.Name, p.ProfilePath
+				if p.ID == personID && validPersonIMDB(p.IMDBID) {
+					personIMDB = p.IMDBID
+				}
 			}
 		}
 	}
@@ -554,18 +557,24 @@ func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
 	if len(summaries) > 0 {
 		_ = c.upsertMany(ctx, summaries, upsertOpts{browsable: true})
 	}
-	if len(links) == 0 {
+	if len(links) == 0 && personIMDB == "" {
 		// Hydration succeeded but there was nothing to persist.
 		stampHydrated()
 	}
-	if len(links) > 0 {
+	if len(links) > 0 || personIMDB != "" {
 		tx, err := c.db.BeginTx(ctx, nil)
 		if err != nil {
 			c.log.Warn("catalog: begin person credits", "person", personID, "err", err)
 		} else {
 			defer tx.Rollback() // after Commit this returns ErrTxDone, ignorable
 			var insertErr error
+			if personIMDB != "" {
+				_, insertErr = tx.ExecContext(ctx, `INSERT INTO catalog_people(person_tmdb,imdb) VALUES(?,?) ON CONFLICT(person_tmdb) DO UPDATE SET imdb=excluded.imdb`, personID, personIMDB)
+			}
 			for _, l := range links {
+				if insertErr != nil {
+					break
+				}
 				if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_credits(key,person_tmdb,name,role,kind,ord,thumb) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
 					int64(l.key), personID, personName, l.role, l.kind, l.ord, personThumb); err != nil {
 					insertErr = err
@@ -582,4 +591,18 @@ func (c *Catalog) ensurePersonCredits(ctx context.Context, personID int64) {
 			}
 		}
 	}
+}
+
+func validPersonIMDB(id string) bool {
+	if len(id) < 9 || len(id) > 14 || !strings.HasPrefix(id, "nm") {
+		return false
+	}
+	nonzero := false
+	for _, c := range id[2:] {
+		if c < '0' || c > '9' {
+			return false
+		}
+		nonzero = nonzero || c != '0'
+	}
+	return nonzero
 }

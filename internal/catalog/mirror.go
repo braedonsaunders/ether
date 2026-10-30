@@ -101,15 +101,15 @@ func (m *Mirror) Snapshot(ctx context.Context) ([]MirrorItem, error) {
 			return nil, err
 		}
 	}
-	rows, err = m.db.QueryContext(ctx, `SELECT c.key,c.person_tmdb,c.kind FROM catalog_credits c JOIN catalog_titles t ON t.key=c.key WHERE `+mirrorBrowsableWhere)
+	rows, err = m.db.QueryContext(ctx, `SELECT c.key,c.person_tmdb,c.kind,COALESCE(p.imdb,'') FROM catalog_credits c JOIN catalog_titles t ON t.key=c.key LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE `+mirrorBrowsableWhere)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var key core.RatingKey
 		var pid int64
-		var kind string
-		if err := rows.Scan(&key, &pid, &kind); err != nil {
+		var kind, imdb string
+		if err := rows.Scan(&key, &pid, &kind, &imdb); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -118,7 +118,7 @@ func (m *Mirror) Snapshot(ctx context.Context) ([]MirrorItem, error) {
 			continue
 		}
 		t := &out[i].Title
-		p := core.Person{TMDB: pid}
+		p := core.Person{TMDB: pid, IMDB: imdb}
 		switch kind {
 		case "director":
 			t.Directors = append(t.Directors, p)
