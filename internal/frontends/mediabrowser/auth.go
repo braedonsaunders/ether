@@ -17,6 +17,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
 
+// errViewerScope means the request named a viewer other than the grant holder.
+var errViewerScope = errors.New("viewer mismatch")
+
 func jsonReply(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(v)
@@ -99,7 +102,7 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 		if scoped != "" {
 			id, e := ids.ParseGUID(ids.User, scoped)
 			if e != nil || id != v.ID {
-				return nil, "", errors.New("viewer mismatch")
+				return nil, "", errViewerScope
 			}
 		}
 	}
@@ -162,6 +165,21 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	}
 	if i.protocol == "emby" && !v.CreatedAt.IsZero() {
 		result["DateCreated"] = wireTime(v.CreatedAt)
+	}
+	if i.protocol == "jellyfin" {
+		// These keys are always present on Jellyfin 12.4 UserDto. Empty values
+		// are facts: Ether has no Chromecast receiver, easy password, auto-login,
+		// access schedule, or blocked channel/folder list.
+		if _, ok := configuration["SubtitleLanguagePreference"]; !ok {
+			configuration["SubtitleLanguagePreference"] = ""
+		}
+		configuration["CastReceiverId"] = ""
+		result["EnableAutoLogin"] = false
+		result["HasConfiguredEasyPassword"] = false
+		policy["AccessSchedules"] = []any{}
+		policy["BlockUnratedItems"] = []any{}
+		policy["BlockedChannels"] = []any{}
+		policy["BlockedMediaFolders"] = []any{}
 	}
 	if i.host.ViewerCapabilities == nil {
 		return result
@@ -408,6 +426,18 @@ func (i *instance) routes() error {
 		}},
 		{"GET", "/Users/Me", func(w http.ResponseWriter, r *http.Request) {
 			v, token, err := i.viewer(r)
+			if err != nil || v == nil {
+				http.Error(w, "Unauthorized", 401)
+				return
+			}
+			jsonReply(w, i.userDTOWithTimes(r, v, token))
+		}},
+		{"GET", "/Users/{userId}", func(w http.ResponseWriter, r *http.Request) {
+			v, token, err := i.viewer(r)
+			if errors.Is(err, errViewerScope) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
 			if err != nil || v == nil {
 				http.Error(w, "Unauthorized", 401)
 				return

@@ -48,6 +48,13 @@ func TestDisplayPreferences(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	var fresh map[string]any
+	if json.Unmarshal(w.Body.Bytes(), &fresh) != nil || fresh["SortBy"] != "SortName" || fresh["ShowBackdrop"] != true || fresh["PrimaryImageHeight"] != float64(250) || fresh["PrimaryImageWidth"] != float64(250) || fresh["RememberIndexing"] != false || fresh["RememberSorting"] != false || fresh["ShowSidebar"] != false {
+		t.Fatal(w.Body.String())
+	}
+	if _, ok := fresh["CustomPrefs"].(map[string]any)["chromecastVersion"]; ok {
+		t.Fatal(fresh["CustomPrefs"])
+	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
 	if e == nil {
 		doc, e := openapi.Parse(spec)
@@ -63,7 +70,7 @@ func TestDisplayPreferences(t *testing.T) {
 	if w = call("POST", `{"Id":"home","SortBy":"Name"}`); w.Code != 204 {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	if w = call("GET", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"SortBy":"Name"`) {
+	if w = call("GET", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"SortBy":"Name"`) || !strings.Contains(w.Body.String(), `"ShowBackdrop":true`) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }

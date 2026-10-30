@@ -11,6 +11,44 @@
     "swiftfin": 19
   },
   "fixturePolicy": "Response listings are trimmed to the first 50 entries per repeated container child.",
+  "notApplicable": [
+    {
+      "endpoint": "/DisplayPreferences/usersettings?client=emby&userId=${id_1}",
+      "path": "$/CustomPrefs/chromecastVersion",
+      "reason": "Ether has no saved Jellyfin-web Chromecast channel preference; the key is written by the web client, not a server default.",
+      "clientAudit": "Only the Infuse profile requests this document; CustomPrefs is an open map and Infuse keeps its own cast default when chromecastVersion is absent. Findroid, Swiftfin, Streamyfin, Jellyfin Android TV, and JellyCon do not call this route."
+    },
+    {
+      "endpoint": "/DisplayPreferences/usersettings?client=emby&userId=${id_1}",
+      "path": "$/CustomPrefs/dashboardTheme",
+      "reason": "Ether has no saved dashboard theme; the key is a Jellyfin-web setting, not a server default.",
+      "clientAudit": "Only the Infuse profile requests this document; Infuse does not read dashboardTheme. Findroid, Swiftfin, Streamyfin, Jellyfin Android TV, and JellyCon do not call this route."
+    },
+    {
+      "endpoint": "/DisplayPreferences/usersettings?client=emby&userId=${id_1}",
+      "path": "$/CustomPrefs/enableNextVideoInfoOverlay",
+      "reason": "Ether has no saved next-video overlay preference; the key is written by the web client, not a server default.",
+      "clientAudit": "Only the Infuse profile requests this document; Infuse uses its own overlay default when the key is absent. Findroid, Swiftfin, Streamyfin, Jellyfin Android TV, and JellyCon do not call this route."
+    },
+    {
+      "endpoint": "/DisplayPreferences/usersettings?client=emby&userId=${id_1}",
+      "path": "$/CustomPrefs/skipBackLength",
+      "reason": "Ether has no saved skip-back length; the key is a Jellyfin-web setting, not a server default.",
+      "clientAudit": "Only the Infuse profile requests this document; Infuse uses its own skip-back default when the key is absent. Findroid, Swiftfin, Streamyfin, Jellyfin Android TV, and JellyCon do not call this route."
+    },
+    {
+      "endpoint": "/DisplayPreferences/usersettings?client=emby&userId=${id_1}",
+      "path": "$/CustomPrefs/skipForwardLength",
+      "reason": "Ether has no saved skip-forward length; the key is a Jellyfin-web setting, not a server default.",
+      "clientAudit": "Only the Infuse profile requests this document; Infuse uses its own skip-forward default when the key is absent. Findroid, Swiftfin, Streamyfin, Jellyfin Android TV, and JellyCon do not call this route."
+    },
+    {
+      "endpoint": "/DisplayPreferences/usersettings?client=emby&userId=${id_1}",
+      "path": "$/CustomPrefs/tvhome",
+      "reason": "Ether has no saved TV-home layout; the key is a Jellyfin-web setting, not a server default.",
+      "clientAudit": "Only the Infuse profile requests this document; Infuse does not read tvhome. Findroid, Swiftfin, Streamyfin, Jellyfin Android TV, and JellyCon do not call this route."
+    }
+  ],
   "intentionalDifferences": [
     {
       "id": "direct-stream-extra-etag",
