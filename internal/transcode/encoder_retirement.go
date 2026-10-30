@@ -27,6 +27,7 @@ var encoderCleanup = struct {
 
 type encoderLifetime struct {
 	m        *Manager
+	id       string
 	mu       sync.Mutex
 	session  *Session
 	work     int
@@ -196,6 +197,9 @@ func (l *encoderLifetime) advance() {
 	if err == nil {
 		l.m.mu.Lock()
 		delete(l.m.encoders, l)
+		if l.m.encoderIDs[l.id] == l {
+			delete(l.m.encoderIDs, l.id)
+		}
 		l.m.mu.Unlock()
 		<-encoderCleanup.slots
 	}
@@ -303,4 +307,46 @@ func (s *Session) encoderRun(ctx context.Context, cmd Command) error {
 	defer work[0].finish()
 	s.encoder.markStarted()
 	return s.m.runner.Run(ctx, cmd)
+}
+
+// claimEncoderID linearizes same-ID replacement before any backend/directory
+// work. A prior admitted start must retire too, even if it never published.
+func (m *Manager) claimEncoderID(ctx context.Context, id string, life *encoderLifetime) error {
+	timer := time.NewTimer(m.encoderWait())
+	defer timer.Stop()
+	for {
+		life.mu.Lock()
+		m.mu.Lock()
+		if life.sealed || m.closed {
+			m.mu.Unlock()
+			life.mu.Unlock()
+			return errors.New("transcode: session closed")
+		}
+		if m.encoderIDs == nil {
+			m.encoderIDs = make(map[string]*encoderLifetime)
+		}
+		prior := m.encoderIDs[id]
+		if prior == nil {
+			life.id = id
+			m.encoderIDs[id] = life
+			m.mu.Unlock()
+			life.mu.Unlock()
+			return nil
+		}
+		m.mu.Unlock()
+		life.mu.Unlock()
+		prior.seal()
+		select {
+		case <-prior.done:
+			if err := prior.legacyResult(); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-life.cancel:
+			return errors.New("transcode: session closed")
+		case <-timer.C:
+			return core.ErrEncoderPending
+		}
+	}
 }

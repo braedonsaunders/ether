@@ -271,3 +271,11 @@ cannot authorize broker retirement, but it does not retain completed legacy
 process/finalizer capacity. Missing optional input proof must never exhaust
 ordinary successful start/close cycles. Source retirement proves neither encoder
 work nor input drain. Native/global probe processes remain outside this increment.
+
+Same-ID admission has its own exact-lifetime reservation before directory/start
+work. A concurrent replacement seals even an unpublished prior reservation and
+waits outside locks for confirmed legacy cleanup before claiming the ID. Timeout
+or terminal cleanup error refuses replacement. Publication checks that exact ID
+reservation together with the seal/manager state, so a late older start cannot
+publish over its successor. The controlled test holds the first external Start,
+lets the second seal it, then proves the process lifetimes never overlap.

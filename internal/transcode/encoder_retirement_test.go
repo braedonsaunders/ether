@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -381,6 +382,7 @@ func TestEncoderRetirementCleanupErrorIsTerminalAndRetainsCharge(t *testing.T) {
 		encoderCleanup.dirs.Delete(s.dir)
 		m.mu.Lock()
 		delete(m.encoders, s.encoder)
+		delete(m.encoderIDs, s.id)
 		m.mu.Unlock()
 		<-encoderCleanup.slots
 	})
@@ -405,5 +407,94 @@ func TestEncoderRetirementCleanupErrorIsTerminalAndRetainsCharge(t *testing.T) {
 	}
 	if _, err := m.StartHLS(context.Background(), transcodeRequest(t, "replacement")); !errors.Is(err, ErrTooManyTranscodes) {
 		t.Fatalf("cleanup error allowed overcommit: %v", err)
+	}
+}
+
+type countedEncoderProcess struct {
+	Process
+	active *atomic.Int32
+	once   sync.Once
+}
+
+func (p *countedEncoderProcess) Stop() {
+	p.Process.Stop()
+	p.once.Do(func() { p.active.Add(-1) })
+}
+
+func TestEncoderRetirementSerializesSameIDBeforeStart(t *testing.T) {
+	fr := newFakeRunner()
+	firstEntered := make(chan struct{})
+	release, unblock := encoderLatch()
+	var calls, active atomic.Int32
+	overlap := make(chan int32, 4)
+	runner := retirementRunner{Runner: fr, start: func(c Command) (Process, error) {
+		if calls.Add(1) == 1 {
+			close(firstEntered)
+			<-release
+		}
+		p, err := fr.Start(c)
+		if p == nil {
+			return nil, err
+		}
+		if n := active.Add(1); n > 1 {
+			overlap <- n
+		}
+		return &countedEncoderProcess{Process: p, active: &active}, err
+	}}
+	m := newTestManager(t, fr, config.Transcode{}, WithRunner(runner))
+	joinEncoderResources(t, m, unblock)
+	type result struct {
+		session core.HLSSession
+		outcome core.EncoderRetirement
+		err     error
+	}
+	first, second := make(chan result, 1), make(chan result, 1)
+	req := remuxRequest(t, "same", time.Hour)
+	start := func(out chan<- result) {
+		s, o, err := m.StartHLSOwned(context.Background(), req)
+		out <- result{s, o, err}
+	}
+	go start(first)
+	encoderSignal(t, firstEntered)
+	m.mu.Lock()
+	prior := m.encoderIDs["same"]
+	m.mu.Unlock()
+	if prior == nil {
+		t.Fatal("Start ran before exact ID reservation")
+	}
+	go start(second)
+	encoderSignal(t, prior.cancel) // second start reached and superseded the first
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("second Start overlapped pending first: %d calls", n)
+	}
+	unblock()
+	one, two := <-first, <-second
+	if one.session != nil || one.err == nil {
+		t.Fatalf("superseded start published: %+v", one)
+	}
+	encoderSignal(t, one.outcome.EncoderDone())
+	if two.session == nil || two.err != nil {
+		t.Fatalf("replacement failed: %+v", two)
+	}
+	if got, ok := m.Session("same"); !ok || got != two.session {
+		t.Fatal("late old publication replaced the winner")
+	}
+	if err := two.session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	encoderSignal(t, two.outcome.EncoderDone())
+	if n := active.Load(); n != 0 {
+		t.Fatalf("actual processes not joined: %d", n)
+	}
+	select {
+	case n := <-overlap:
+		t.Fatalf("overlapping exact processes: %d", n)
+	default:
+	}
+	m.mu.Lock()
+	left := len(m.encoderIDs)
+	m.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("completed ID reservations=%d", left)
 	}
 }

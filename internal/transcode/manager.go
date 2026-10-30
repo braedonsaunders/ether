@@ -171,6 +171,7 @@ type Manager struct {
 	audioMatchBusy atomic.Bool
 	rtx            rtxBackendState
 	encoders       map[*encoderLifetime]struct{}
+	encoderIDs     map[string]*encoderLifetime
 	encoderLimit   int
 	encoderTimeout time.Duration
 	encoderRemove  func(string) error
@@ -620,13 +621,8 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		id = randomHex(12)
 	}
 
-	m.mu.Lock()
-	old := m.sessions[id]
-	m.mu.Unlock()
-	if old != nil {
-		if err := old.Close(); err != nil {
-			return nil, err
-		}
+	if err := m.claimEncoderID(ctx, id, life); err != nil {
+		return nil, err
 	}
 	m.mu.Lock()
 	if m.closed {
@@ -720,18 +716,14 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 
 	life.mu.Lock()
 	m.mu.Lock()
-	if m.closed || ctx.Err() != nil || life.sealed {
+	if m.closed || ctx.Err() != nil || life.sealed || m.encoderIDs[id] != life {
 		m.mu.Unlock()
 		life.mu.Unlock()
 		return nil, errors.New("transcode: manager closed or start canceled")
 	}
-	prev := m.sessions[id]
 	m.sessions[id] = s
 	m.mu.Unlock()
 	life.mu.Unlock()
-	if prev != nil {
-		_ = prev.Close()
-	}
 	return s, nil
 }
 
