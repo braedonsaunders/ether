@@ -45,7 +45,7 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	if err := a.users.UpdateUser(ctx, *viewer); err != nil {
 		t.Fatal(err)
 	}
-	title := core.Title{Key: core.MovieKey(999), Type: core.TypeMovie, IDs: core.IDs{TMDB: 999}, Title: "Restricted artwork", PosterPath: "/test.jpg", ContentRating: "PG-13", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}
+	title := core.Title{Key: core.MovieKey(999), Type: core.TypeMovie, IDs: core.IDs{TMDB: 999}, Title: "Restricted artwork", PosterPath: "/test.jpg", ContentRating: "PG-13", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Cast: []core.Person{{TMDB: 456, Name: "Credit", ThumbPath: "/person.jpg"}}}
 	if err := a.catalog.UpsertTitle(ctx, title, true); err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,18 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	relatedProvider, ok := exp.(frontend.RelatedArtworkProvider)
+	if !ok {
+		t.Fatal("related artwork unavailable")
+	}
+	related, err := relatedProvider.RelatedArtwork(ctx, viewer, core.Device{ID: "tv"}, title.Key)
+	if err != nil || !related.PeopleAuthoritative || len(related.People) != 1 || related.People[0].Subject != "tmdb:456" {
+		t.Fatalf("authorized credit portrait: %+v %v", related, err)
+	}
+	portrait, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: title.Key, Image: related.People[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
 	batch, err := service.IssueBatch(ctx, frontend.ImageBatchRequest{Credential: credential, Device: core.Device{ID: "tv"}, Items: []core.RatingKey{title.Key}})
 	if err != nil || len(batch) != 1 || len(batch[0].Images) != 1 {
 		t.Fatalf("visible batch: %+v %v", batch, err)
@@ -89,6 +101,11 @@ func TestArtworkGrantStopsWhenViewerLosesTitleAccess(t *testing.T) {
 	service.Serve(w, httptest.NewRequest("GET", "/", nil), secret)
 	if w.Code != 404 {
 		t.Fatalf("hidden title artwork remained accessible: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	service.Serve(w, httptest.NewRequest("GET", "/", nil), portrait)
+	if w.Code != 404 {
+		t.Fatalf("credit portrait grant survived title revocation: %d", w.Code)
 	}
 	if _, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: title.Key, Image: detail.Images[0]}); err == nil {
 		t.Fatal("issued artwork for a hidden title")
@@ -131,6 +148,9 @@ func TestSurfaceExperienceArtworkFollowsItemAuthorization(t *testing.T) {
 	experience, err := a.newSurfaceExperience("jellyfin", probe)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, ok := experience.(frontend.RelatedArtworkProvider); !ok {
+		t.Fatal("surface experience lacks related artwork")
 	}
 	request := frontend.ItemRequest{Viewer: owner, Key: title.Key}
 	detail, err := experience.Item(ctx, request)

@@ -419,6 +419,19 @@ func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer
 	return s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: active, Device: device, Item: key})
 }
 
+func (s *surfaceExperience) RelatedArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) (frontend.RelatedArtwork, error) {
+	service, err := experience.NewRelatedArtworkService(experience.RelatedArtworkDeps{Authorize: s.Service.AuthorizeArtwork, List: func(ctx context.Context, active *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {
+		if s.artwork == nil {
+			return nil, false, core.ErrNotAvailable
+		}
+		return s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: active, Device: device, Item: key})
+	}})
+	if err != nil {
+		return frontend.RelatedArtwork{}, err
+	}
+	return service.RelatedArtwork(ctx, viewer, device, key)
+}
+
 func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
 	detail, err := s.Service.Item(ctx, req)
 	if err == nil && detail.Title.Key != 0 && s.playability != nil {
