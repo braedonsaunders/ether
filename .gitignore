@@ -22,6 +22,7 @@ node_modules/
 !/docs/install.md
 !/docs/user-guide.md
 !/packaging/community/README.md
+!/release-notes/*.md
 /scripts/lab/lab.env
 /scripts/lab/data/
 /scripts/lab/.conform/

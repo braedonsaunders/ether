@@ -3,9 +3,12 @@ package admin
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 // pinHandles maps random handles to plex.tv PIN ids. The browser that
@@ -79,8 +82,10 @@ func (h *Handler) handleSignInStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"handle": h.pins.add(id), "code": code, "authUrl": authURL})
 }
 
-// handleSignInPoll reports whether the PIN was approved. The token is
-// returned only if the account owns this server.
+// handleSignInPoll reports whether the PIN was approved. Only an owner
+// sign-in completes, and the browser receives a console session, never the
+// plex.tv account token. The handle stays valid until a session is issued,
+// so a transient failure can be retried with the same approved PIN.
 func (h *Handler) handleSignInPoll(w http.ResponseWriter, r *http.Request) {
 	handle := r.PathValue("handle")
 	pinID, ok := h.pins.get(handle)
@@ -97,19 +102,79 @@ func (h *Handler) handleSignInPoll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"done": false})
 		return
 	}
-	h.pins.remove(handle)
 	if !h.isOwner(r, token) {
+		h.pins.remove(handle)
 		writeError(w, http.StatusForbidden, "not_owner", "That Plex account doesn't own this server. Sign in as the owner.")
 		return
 	}
 	// This is a completed external owner sign-in, not ordinary token use.
-	// Preserve the existing Plex sign-in response if observation is unavailable.
+	// Record it before exchanging the plex.tv credential for a console session.
 	if h.deps.IdentityGrants != nil && h.deps.AuthenticatePlex != nil {
 		if viewer, e := h.deps.AuthenticatePlex(r.Context(), token); e == nil && viewer != nil {
 			_ = h.deps.IdentityGrants.ViewerTimes().RecordOwnerLogin(r.Context(), viewer.ID)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"done": true, "token": token})
+	if !h.writeSession(w, r, token) {
+		return
+	}
+	h.pins.remove(handle)
+}
+
+// handleSessionCreate exchanges an owner credential sent in the request
+// headers (a pasted Plex token) for a console session.
+func (h *Handler) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
+	if !csrfOK(r) {
+		writeError(w, http.StatusForbidden, "csrf", "mutating requests require the X-Ether-Request: 1 header and a JSON content type")
+		return
+	}
+	credential := tokenFromRequest(r)
+	if credential == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid owner X-Plex-Token is required")
+		return
+	}
+	h.writeSession(w, r, credential)
+}
+
+// handleSessionDelete signs the console out: the presented session stops
+// working on every node. It needs no other credential, and ending an
+// unknown or expired session succeeds.
+func (h *Handler) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
+	if !csrfOK(r) {
+		writeError(w, http.StatusForbidden, "csrf", "mutating requests require the X-Ether-Request: 1 header and a JSON content type")
+		return
+	}
+	if h.deps.Sessions == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		return
+	}
+	if token := tokenFromRequest(r); token != "" {
+		if err := h.deps.Sessions.RevokeOwnerSession(r.Context(), token); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "session", "Could not sign out: "+err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// writeSession issues a console session for credential and writes it. It
+// reports whether it succeeded.
+func (h *Handler) writeSession(w http.ResponseWriter, r *http.Request, credential string) bool {
+	if h.deps.Sessions == nil {
+		writeError(w, http.StatusServiceUnavailable, "session", "Console sessions are unavailable.")
+		return false
+	}
+	token, expires, err := h.deps.Sessions.IssueOwnerSession(r.Context(), credential)
+	switch {
+	case errors.Is(err, core.ErrUnauthorized):
+		w.Header().Set("WWW-Authenticate", `Bearer realm="ether-admin"`)
+		writeError(w, http.StatusUnauthorized, "unauthorized", "That token was not accepted as the owner token.")
+		return false
+	case err != nil:
+		writeError(w, http.StatusServiceUnavailable, "session", "Could not start a console session: "+err.Error())
+		return false
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"done": true, "token": token, "expiresAt": expires.Unix()})
+	return true
 }
 
 func (p *pinHandles) addLinked(pinID string, viewerID int64) string {

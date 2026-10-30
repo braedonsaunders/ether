@@ -55,11 +55,13 @@ type offer struct {
 
 func sidecarStream(index int, lang string, sel selection) core.StreamInfo {
 	title := sidecarTitle(lang, sel.Release)
-	if sel.SDH {
+	if sel.SDH && !tokens(title)["sdh"] {
 		// trackprefs detects SDH from the track title; without this marker
 		// an SDH sidecar could never match an sdh style/memory choice.
-		// The marker is delimited (" (SDH)") so it cannot be confused with
-		// an "SDH" token inside a release name.
+		// The marker is delimited (" (SDH)"), and is not appended when
+		// the release name already carries an SDH token (case-insensitive)
+		// — that token already does the job, a second marker would be
+		// a duplicate.
 		title += " (SDH)"
 	}
 	return core.StreamInfo{

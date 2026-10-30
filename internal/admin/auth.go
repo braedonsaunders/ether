@@ -90,9 +90,10 @@ func setupOpen(cfgSetupComplete bool, r *http.Request, trusted ...netip.Prefix) 
 // requireAuth implements the admin access policy:
 //
 //   - A valid owner token always passes, from anywhere.
-//   - Before setup is complete, requests from localhost/LAN pass without a
-//     token (there is no owner credential yet); remote requests do not.
-//   - After setup, a valid owner token is mandatory.
+//   - Before setup is closed, requests from localhost/LAN that address a
+//     local hostname pass without a token. Setup closes when it is complete
+//     or a local owner exists. Remote requests and public DNS names do not.
+//   - After setup is closed, a valid owner credential is mandatory.
 //   - Mutating requests additionally must pass the CSRF header check.
 func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -106,8 +107,8 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			next.ServeHTTP(w, withAccess(r, Access{Owner: true, SetupComplete: setupComplete}))
 			return
 		}
-		if !setupComplete {
-			if setupOpen(h.setupClosed(r), r, h.proxyPrefixes()...) {
+		if !h.setupClosed(r) {
+			if setupOpen(false, r, h.proxyPrefixes()...) {
 				next.ServeHTTP(w, withAccess(r, Access{}))
 				return
 			}
@@ -119,7 +120,7 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="ether-admin"`)
-		writeError(w, http.StatusUnauthorized, "unauthorized", "a valid owner X-Plex-Token is required")
+		writeError(w, http.StatusUnauthorized, "unauthorized", "sign in with an owner account")
 	}
 }
 
@@ -152,14 +153,23 @@ func RequestAccess(ctx context.Context) (a Access, ok bool) {
 func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	cfg := h.deps.Config.Get()
 	token := tokenFromRequest(r)
-	authed := h.isOwner(r, token) || setupOpen(h.setupClosed(r), r, h.proxyPrefixes()...)
+	authRequired := h.setupClosed(r)
+	authed := h.isOwner(r, token) || setupOpen(authRequired, r, h.proxyPrefixes()...)
+	signInMethods := []string{}
+	if h.deps.LocalIdentity != nil && h.deps.IdentityGrants != nil && h.deps.IdentityLimiter != nil {
+		signInMethods = append(signInMethods, "local")
+	}
+	if h.deps.SignIn != nil && cfg.Plex.Claimed {
+		signInMethods = append(signInMethods, "plex")
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
 		"version":         h.version,
 		"setupComplete":   cfg.SetupComplete,
 		"ownerConfigured": h.deps.OwnerConfigured != nil && h.deps.OwnerConfigured(r.Context()),
 		"authenticated":   authed,
-		"authRequired":    cfg.SetupComplete,
+		"authRequired":    authRequired,
+		"signInMethods":   signInMethods,
 		"serverName":      cfg.Server.FriendlyName,
 	})
 }

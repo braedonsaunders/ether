@@ -16,7 +16,7 @@ import (
 func TestDASHLadderRepUsesItsRungVBV(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true, VBVReservoir: true})
-	s := startDASHSession(t, m, dashRequest(t, "dvbv", 10*time.Minute))
+	s := startDASHSession(t, m, ladderEncodeDASHRequest(t, "dvbv", 10*time.Minute))
 	s.mu.Lock()
 	if len(s.rungs) < 2 {
 		s.mu.Unlock()
@@ -39,7 +39,7 @@ func TestDASHLadderRepUsesItsRungVBV(t *testing.T) {
 func TestDASHVideoOnlyLadderRepsAreServable(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true})
-	req := dashRequest(t, "dvonly", 10*time.Minute)
+	req := ladderEncodeDASHRequest(t, "dvonly", 10*time.Minute)
 	var streams []core.StreamInfo
 	for _, st := range req.Info.Streams {
 		if st.Type == "video" {
@@ -50,6 +50,7 @@ func TestDASHVideoOnlyLadderRepsAreServable(t *testing.T) {
 	req.Info.BitrateKbps = 40000
 	req.Info.Streams[0].Height, req.Info.Streams[0].Width = 2160, 3840
 	req.Decision.AudioStream = -1
+	req.Decision.MaxHeight, req.Decision.BitrateKbps = 2160, 40000
 	s := startDASHSession(t, m, req)
 	s.mu.Lock()
 	reps := append([]dashRep(nil), s.dash.reps...)

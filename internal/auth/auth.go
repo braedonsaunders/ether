@@ -444,6 +444,11 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*core.User, e
 	if strings.HasPrefix(token, delegationPrefix) {
 		return s.authenticateDelegation(ctx, token)
 	}
+	if IsOwnerSession(token) {
+		// Console sessions only open the admin API (OwnerSession), and must
+		// never be forwarded to plex.tv for validation.
+		return nil, core.ErrUnauthorized
+	}
 	h := HashToken(token)
 	now := s.o.Now()
 
@@ -502,16 +507,19 @@ func (s *Service) validate(ctx context.Context, token, h string) (*core.User, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !s.inflight.Has(h) && s.inflight.Len() >= s.o.MaxConcurrentValidations {
-		return s.stale(h, errors.New("auth: token validation capacity reached"))
-	}
 	// Detached, so one impatient client does not fail the others waiting
 	// on the same token.
-	return s.inflight.DoDetached(ctx, h, func(ctx context.Context) (*core.User, error) {
+	u, err := s.inflight.DoDetachedLimit(ctx, h, s.o.MaxConcurrentValidations, func(ctx context.Context) (*core.User, error) {
 		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		return s.validateOnce(ctx, token, h)
 	})
+	// Only the direct admission refusal takes this path; validation errors may
+	// wrap other causes and retain their existing stale-fallback semantics.
+	if err == flight.ErrCapacity {
+		return s.stale(h, errors.New("auth: token validation capacity reached"))
+	}
+	return u, err
 }
 
 func (s *Service) validateOnce(ctx context.Context, token, h string) (*core.User, error) {
@@ -838,6 +846,10 @@ WHERE auth_users.origin<>'dlna_guest'`,
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_tokens WHERE source=?`, sourceServer); err != nil {
+		return err
+	}
+	// A former owner's console sessions end with their ownership.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_sessions WHERE user_id NOT IN (SELECT id FROM auth_users WHERE is_owner=1)`); err != nil {
 		return err
 	}
 	if serverToken != "" {

@@ -16,7 +16,7 @@ import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
-import { API_BASE, api, apiFetch, errorMessage, getToken } from "../../lib/api";
+import { API_BASE, SESSION_HEADER, api, apiFetch, errorMessage, getToken } from "../../lib/api";
 import { WEEKDAYS_LONG } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
@@ -54,7 +54,7 @@ function Preview({ userId }: { userId: number }) {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/stats/newsletter?user=${userId}`, {
-        headers: { "X-Plex-Token": getToken() },
+        headers: { [SESSION_HEADER]: getToken() },
       });
       if (!res.ok) throw new Error(t("The weekly report isn't available right now."));
       setHtml(await res.text());

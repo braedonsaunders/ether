@@ -267,9 +267,12 @@ own history and recommendations.
 ## Libraries, catalogue and Home
 
 Ether appears as its own server in Plex, with Movies and TV Shows libraries.
-These libraries contain the titles exposed by Ether's catalogue and visibility
-rules; they are not folders of downloaded media. A catalogue entry does not
-guarantee that your configured sources have a playable release.
+Rename those libraries under **General › Server** (Movies library name and TV
+Shows library name); Plex's own library rename does not stick because Ether
+generates the libraries. These libraries contain the titles exposed by Ether's
+catalogue and visibility rules; they are not folders of downloaded media. A
+catalogue entry does not guarantee that your configured sources have a playable
+release.
 
 Your existing Plex Media Server keeps its own libraries and files. Ether does
 not merge or replace them. Plex Home can show rows from multiple pinned
@@ -340,6 +343,13 @@ cause.
    rows are **Waiting for a stream** and **Now available**. Check that your
    saved row policies do not hide them, and reload Plex Home.
 
+A watchlisted show becomes available through its first episode. After that,
+Ether keeps looking for each new regular episode as it airs (hourly for the
+first two days, then on the normal check interval). When a playable release
+turns up it sends one **Watchlist title available** alert for that episode and
+warms its opening, however many viewers follow the show. Specials and
+unaired episodes never trigger an alert.
+
 Plex watchlist access covers the owner and supported Plex Home members.
 Sharing a server with a friend does not grant access to that friend's Plex
 Watchlist. Trakt watchlist monitoring is a separate option and requires that
@@ -390,8 +400,10 @@ file under these names:
   `resolverCommand`, a yt-dlp-compatible tool you install.
 - `personalize`: post-play ranking, detail-page headers and session-based Home
   changes.
-- `transcode`: `fastStart`, `abrLadder`, `vbvReservoir` and `spikeGovernor`
-  control adaptive streaming.
+- `transcode`: `fastStart`, `abrLadder`, `abrLadderUnderCopy`, `vbvReservoir`
+  and `spikeGovernor` control adaptive streaming. `abrLadderUnderCopy`
+  (default on) keeps soft encode rungs under Direct Stream / video-copy when
+  `abrLadder` is on; set it false to advertise only the copy primary.
 - `usenet.minIdle`: warm provider connections kept ready for playback.
 
 Preview thumbnails appear while a title plays and fill in as playback
@@ -619,8 +631,15 @@ including its node weight.
 
 Use **Activity & notifications** for playback activity and alerts. **Logs** shows
 newest entries first. If playback fails, check provider and indexer connectivity,
-quality limits and the client's supported formats. Share redacted logs when
-reporting an issue.
+quality limits and the client's supported formats.
+
+To report an issue, use **Logs → Download logs**. It saves this server's log
+files (oldest first) as one text file with its version and platform. Ether
+removes tokens, passwords, API keys, URL credentials, `Authorization` and cookie
+headers from every log line as it is written, and again in the download.
+Settings, the credential key and the database are never included. Skim the file
+before sharing it: the scrubbing recognises credentials by name and position,
+not every possible secret.
 
 ## Owner sign-in and playback access
 
@@ -659,6 +678,10 @@ only updates the draft until you review and save.
   adaptive mode gives repeat watches extra retention credit. Detail-page opening
   windows, resume windows and next-episode warming are independently
   configurable and always yield priority to active streams.
+- **Free-space floor:** Whatever the budget, the cache keeps at least 10 GiB or
+  5% of its volume free (whichever is smaller), evicting the oldest unprotected
+  segments when other files fill the disk. Segments of active streams and
+  pinned titles are never evicted for it.
 - **Managed preloading:** Opt-in movie and TV preloading ranks candidates using
   a configurable blend of household watch history and catalogue popularity, with
   a rolling episode window around each active viewer's progress. Preloading

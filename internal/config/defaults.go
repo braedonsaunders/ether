@@ -31,6 +31,8 @@ func Defaults(dataDir string) Config {
 			Port:               DefaultPort,
 			BindAddress:        "0.0.0.0",
 			FriendlyName:       "Ether",
+			MoviesLibraryName:  "Movies",
+			TVShowsLibraryName: "TV Shows",
 			MachineIdentifier:  randomID(20),
 			LogLevel:           "info",
 			DefaultStreamLimit: 2,
@@ -75,6 +77,7 @@ func Defaults(dataDir string) Config {
 			FastStartSegment:     Duration(2 * time.Second),
 			FastStartMaxHeight:   720,
 			ABRLadder:            true,
+			ABRLadderUnderCopy:   true, // legacy: abrLadder also covered video-copy sessions
 			VBVReservoir:         true,
 			VBVBufferSeconds:     8,
 			SpikeGovernor:        false, // rewrites upcoming playlist entries; opt-in until field-proven

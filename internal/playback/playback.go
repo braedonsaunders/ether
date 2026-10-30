@@ -715,7 +715,7 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 		return nil, fmt.Errorf("playback: %s is a %s, not a playable item: %w", id.key, title.Type, core.ErrNotFound)
 	}
 	profile := m.deps.SelectProfile(caps, user)
-	s := newSession(randomID(16), id, user, caps, title, profile.Name, m.now())
+	s := newSession(randomID(16), id, user, caps, title, profileKey(profile), m.now())
 	s.preparedOnly = deferSupersession
 	s.prefer = prefer
 	s.exact = exact

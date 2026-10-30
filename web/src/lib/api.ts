@@ -54,7 +54,19 @@ import type {
 
 import { t } from "../i18n";
 
-const TOKEN_KEY = "ether-admin-token";
+// The console keeps an Ether-issued session that only opens this API and can
+// be revoked, never the owner's plex.tv account token.
+const TOKEN_KEY = "ether-admin-session";
+/** The header the console authenticates with. */
+export const SESSION_HEADER = "X-Ether-Admin-Token";
+
+// Earlier consoles stored the plex.tv account token under this key; drop it so
+// a browser never keeps that credential at rest.
+try {
+  localStorage.removeItem("ether-admin-token");
+} catch {
+  // Storage is unavailable; there is nothing to remove.
+}
 
 // A browser may allow reads while rejecting writes (quota/privacy settings).
 // Keep the current tab's explicit sign-in/sign-out authoritative in that case.
@@ -100,10 +112,26 @@ export function isAbort(err: unknown): boolean {
 
 export const API_BASE = "/ether/api";
 
-function authHeaders(init: RequestInit): Headers {
+/** True for URLs on this console's own API, the only place the session goes. */
+export function isConsoleApiUrl(url: string): boolean {
+  try {
+    const u = new URL(url, window.location.href);
+    return u.origin === window.location.origin && u.pathname.startsWith(API_BASE + "/");
+  } catch {
+    return false;
+  }
+}
+
+/** hls.js xhrSetup: sends the session to this console's API and nowhere else. */
+export function sessionXhrSetup(xhr: XMLHttpRequest, url: string): void {
+  const token = getToken();
+  if (token && isConsoleApiUrl(url)) xhr.setRequestHeader(SESSION_HEADER, token);
+}
+
+function authHeaders(init: RequestInit, withSession = true): Headers {
   const headers = new Headers(init.headers);
   const token = getToken();
-  if (token) headers.set("X-Plex-Token", token);
+  if (token && withSession) headers.set(SESSION_HEADER, token);
   const method = (init.method ?? "GET").toUpperCase();
   if (method !== "GET" && method !== "HEAD") {
     headers.set("X-Ether-Request", "1");
@@ -162,7 +190,7 @@ export function imageNeedsFetch(src: string | null | undefined): boolean {
 
 /** Fetch an authenticated binary resource (artwork) as a Blob. */
 export async function apiBlob(url: string, signal?: AbortSignal): Promise<Blob> {
-  const res = await fetch(url, { headers: authHeaders({}), signal });
+  const res = await fetch(url, { headers: authHeaders({}, isConsoleApiUrl(url)), signal });
   if (!res.ok)
     throw new ApiError(
       res.status,
@@ -203,6 +231,14 @@ export const api = {
   signInStart: () => post<{ handle: string; code: string; authUrl: string }>("/auth/pin"),
   signInPoll: (handle: string) =>
     apiFetch<{ done: boolean; token?: string }>(`/auth/pin/${encodeURIComponent(handle)}`),
+  /** Exchanges a pasted owner Plex token for a console session. */
+  createSession: (plexToken: string) =>
+    apiFetch<{ done: boolean; token: string }>("/auth/session", {
+      method: "POST",
+      headers: { "X-Plex-Token": plexToken },
+    }),
+  /** Ends this console's session on the server. */
+  signOut: () => apiFetch<{ ok: boolean }>("/auth/session", { method: "DELETE" }),
   setupStatus: () => apiFetch<SetupStatus>("/setup/status"),
   setupComplete: (force = false) => post<SetupStatus>("/setup/complete", { force }),
   setupReopen: () => post<SetupStatus>("/setup/reopen"),

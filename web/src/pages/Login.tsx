@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { EtherLogo } from "../components/brand";
 import { t, tx } from "../i18n";
 import { LanguagePicker } from "../i18n/react";
-import { api, ApiError, errorMessage, getToken, setToken } from "../lib/api";
+import { api, ApiError, errorMessage, setToken } from "../lib/api";
 import type { Bootstrap } from "../lib/types";
 
 const SIGN_IN_TIMEOUT_MS = 10 * 60 * 1000;
@@ -14,6 +14,10 @@ const POLL_MS = 2000;
  * Owner sign-in is required on every connection, including localhost.
  */
 export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () => void }) {
+  // Older servers omit this field; retain their available sign-in paths.
+  const methods = boot.signInMethods ?? ["local", "plex"];
+  const localEnabled = methods.includes("local");
+  const plexEnabled = methods.includes("plex");
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState<{ code: string; authUrl: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -102,64 +106,76 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
         <div className="mb-6 flex flex-col items-center text-center">
           <EtherLogo className="w-48" />
           <h1 className="sr-only">{boot.serverName || "Ether"}</h1>
-          <p className="mt-4 text-sm text-fg-muted">{t("Sign in to the owner account.")}</p>
+          <p className="mt-4 text-sm text-fg-muted">{t("Sign in to Ether")}</p>
         </div>
         {error ? (
           <Alert variant="destructive" className="mb-4" role="alert">
             <AlertDescription>{errorMessage(error)}</AlertDescription>
           </Alert>
         ) : null}
-        <Button
-          type="button"
-          size="lg"
-          className="w-full"
-          onClick={() => void signIn()}
-          disabled={busy}
-        >
-          {busy ? t("Waiting for Plex…") : t("Sign in with Plex")}
-        </Button>
-        {pending ? (
-          <p className="mt-3 text-center text-xs text-fg-muted">
-            {tx("Finish signing in in the Plex window. No window? {link}.", {
-              link: (
-                <a
-                  className="font-medium text-primary underline-offset-4 hover:underline"
-                  href={pending.authUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {t("Open the Plex sign-in page")}
-                </a>
-              ),
-            })}
+        {localEnabled ? (
+          <form onSubmit={(e) => void localSignIn(e)} className="mt-5 space-y-3">
+            <Label htmlFor="local-username">{t("Username")}</Label>
+            <Input
+              id="local-username"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.currentTarget.value)}
+            />
+            <Label htmlFor="local-password">{t("Password")}</Label>
+            <Input
+              id="local-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.currentTarget.value)}
+            />
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled={busy || !username || !password}
+            >
+              {t("Sign in")}
+            </Button>
+          </form>
+        ) : null}
+        {plexEnabled ? (
+          <>
+            <Button
+              type="button"
+              size="lg"
+              variant={localEnabled ? "outline" : undefined}
+              className="mt-5 w-full"
+              onClick={() => void signIn()}
+              disabled={busy}
+            >
+              {pending ? t("Waiting for Plex…") : t("Sign in with Plex")}
+            </Button>
+            {pending ? (
+              <p className="mt-3 text-center text-xs text-fg-muted">
+                {tx("Finish signing in in the Plex window. No window? {link}.", {
+                  link: (
+                    <a
+                      className="font-medium text-primary underline-offset-4 hover:underline"
+                      href={pending.authUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t("Open the Plex sign-in page")}
+                    </a>
+                  ),
+                })}
+              </p>
+            ) : null}
+            <TokenFallback onReady={onReady} />
+          </>
+        ) : null}
+        {!localEnabled && !plexEnabled ? (
+          <p className="mt-5 text-sm text-fg-muted">
+            {t("No sign-in method is available. Contact the server owner.")}
           </p>
         ) : null}
-        <form onSubmit={(e) => void localSignIn(e)} className="mt-5 space-y-3">
-          <Label htmlFor="local-username">{t("Username")}</Label>
-          <Input
-            id="local-username"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.currentTarget.value)}
-          />
-          <Label htmlFor="local-password">{t("Password")}</Label>
-          <Input
-            id="local-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.currentTarget.value)}
-          />
-          <Button
-            type="submit"
-            variant="outline"
-            className="w-full"
-            disabled={busy || !username || !password}
-          >
-            {t("Sign in")}
-          </Button>
-        </form>
-        <TokenFallback onReady={onReady} />
         <p className="mt-6 text-center text-xs text-fg-subtle">
           {t("Only the owner can access this console.")}
         </p>
@@ -169,7 +185,7 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
 }
 
 function TokenFallback({ onReady }: { onReady: () => void }) {
-  const [value, setValue] = useState(getToken());
+  const [value, setValue] = useState("");
   const [error, setError] = useState<unknown>(null);
   const [checking, setChecking] = useState(false);
   const cancelled = useRef(false);
@@ -184,14 +200,15 @@ function TokenFallback({ onReady }: { onReady: () => void }) {
     setChecking(true);
     setError(null);
     const token = value.trim();
-    setToken(token);
     try {
-      await api.setupStatus(); // cheap authenticated probe
-      if (cancelled.current || getToken() !== token) return;
+      // The pasted Plex token is exchanged for a console session and never
+      // stored in the browser.
+      const { token: session } = await api.createSession(token);
+      if (cancelled.current) return;
+      setToken(session);
       onReady();
     } catch (err) {
-      if (cancelled.current || getToken() !== token) return;
-      setToken("");
+      if (cancelled.current) return;
       setError(
         err instanceof ApiError && err.status === 401
           ? new Error(t("That token was not accepted as the owner token."))

@@ -69,6 +69,12 @@ type Server struct {
 	Port         int    `json:"port"`
 	BindAddress  string `json:"bindAddress"`
 	FriendlyName string `json:"friendlyName"`
+	// MoviesLibraryName is the Movies section title shown in Plex apps.
+	// Empty falls back to "Movies".
+	MoviesLibraryName string `json:"moviesLibraryName"`
+	// TVShowsLibraryName is the TV Shows section title shown in Plex apps.
+	// Empty falls back to "TV Shows".
+	TVShowsLibraryName string `json:"tvShowsLibraryName"`
 	// MachineIdentifier is generated on first run and never changes.
 	MachineIdentifier string `json:"machineIdentifier"`
 	LogLevel          string `json:"logLevel"`
@@ -327,6 +333,7 @@ type Transcode struct {
 	FastStartSegment   Duration `json:"fastStartSegment"`   // ramp segment length (default 2s)
 	FastStartMaxHeight int      `json:"fastStartMaxHeight"` // ramp encode height cap (default 720)
 	ABRLadder          bool     `json:"abrLadder"`          // multi-rung master playlist / MPD
+	ABRLadderUnderCopy bool     `json:"abrLadderUnderCopy"` // soft encode rungs under Direct Stream / video-copy (default on; set false to disable)
 	VBVReservoir       bool     `json:"vbvReservoir"`       // constant-quality + generous VBV for capped transcodes
 	VBVBufferSeconds   int      `json:"vbvBufferSeconds"`   // VBV buffer depth in seconds of maxrate (default 8)
 	SpikeGovernor      bool     `json:"spikeGovernor"`      // clamp VBR spikes in copy streams to measured goodput

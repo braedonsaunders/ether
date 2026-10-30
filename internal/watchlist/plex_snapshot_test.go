@@ -59,16 +59,18 @@ func TestPlexSyncFollowsShortPagesWhenTotalIsKnown(t *testing.T) {
 	ctx := context.Background()
 	title := source.titles[0]
 	other := title
-	other.Key = core.MovieKey(9)
+	other.Key = core.ShowKey(9)
+	other.Type = core.TypeShow
 	s.o.Catalog = fakeCatalog{titles: map[core.RatingKey]core.Title{title.Key: title, other.Key: other}}
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		id := 1
+		// Both key orders occur: the scalar must never decode into Guid.
+		item := `{"guid":"plex://movie/example","type":"movie","Guid":[{"id":"tmdb://1"}]}`
 		if r.URL.Query().Get("X-Plex-Container-Start") == "1" {
-			id = 9
+			item = `{"Guid":[{"id":"tmdb://9"}],"type":"show","guid":"plex://show/example"}`
 		}
-		fmt.Fprintf(w, `{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[{"type":"movie","Guid":[{"id":"tmdb://%d"}]}]}}`, id)
+		fmt.Fprintf(w, `{"MediaContainer":{"size":1,"totalSize":2,"Metadata":[%s]}}`, item)
 	}))
 	defer server.Close()
 	s.o.PlexBaseURL = server.URL

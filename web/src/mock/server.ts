@@ -102,6 +102,8 @@ function defaultConfig(): EtherConfig {
       port: 32400,
       bindAddress: "0.0.0.0",
       friendlyName: "Living Room Ether",
+      moviesLibraryName: "Movies",
+      tvShowsLibraryName: "TV Shows",
       machineIdentifier: "mock-machine",
       logLevel: "info",
       defaultStreamLimit: 2,
@@ -1997,6 +1999,10 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return json({ ok: true });
       case "POST /auth/pin":
         return json({ handle: "h1", code: "ABCD", authUrl: "https://app.plex.tv/auth#?code=ABCD" });
+      case "POST /auth/session":
+        return json({ done: true, token: "ether-admin-mock", expiresAt: 0 });
+      case "DELETE /auth/session":
+        return json({ ok: true });
       case "GET /llm/providers":
         return json({ providers: MOCK_LLM_PROVIDERS });
       case "POST /llm/models": {
@@ -2220,6 +2226,12 @@ export function createFakeServer(opts: FakeOptions = {}) {
       case "DELETE /logs":
         state.logs = [];
         return json({ ok: true });
+      case "GET /logs/download":
+        return new Response(
+          "# Ether mock logs\n" +
+            state.logs.map((e) => `${e.time} ${e.level} ${e.message}`).join("\n"),
+          { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" } },
+        );
       case "GET /collections":
         return json({ collections: state.collections });
       case "POST /collections": {

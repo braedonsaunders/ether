@@ -230,7 +230,9 @@ func (s *Service) consoleProfile(name string) (core.QualityProfile, core.ClientC
 			base = p
 		}
 		caps := core.ClientCaps{Download: true}
-		return downloadProfile(copyProfile(base), caps), caps, nil
+		// This path bypasses SelectProfile, so snapshot the configured
+		// ceiling here too, before the download reshape lowers it.
+		return downloadProfile(snapshotConfiguredMaxHeight(copyProfile(base)), caps), caps, nil
 	case "":
 		if p, ok := profileByName(q.Profiles, q.Default); ok {
 			return copyProfile(p), core.ClientCaps{}, nil

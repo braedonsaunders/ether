@@ -54,7 +54,7 @@ func TestRTXNativeLifecycle(t *testing.T) {
 	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
 	defer srv.Close()
 	quality, _ := strconv.Atoi(os.Getenv("ETHER_RTX_TEST_QUALITY"))
-	m, err := New(config.Transcode{ABRLadder: adaptive, FFmpegPath: ff, FFprobePath: fp, TempDir: filepath.Join(dir, "sessions"), RTXVideo: config.RTXVideo{Mode: "on", ExecutablePath: nv, Quality: quality}}, testLogger(t), WithoutHWDetection(), WithBuffering(24*time.Second, 0, 0), WithSegmentTimeout(60*time.Second), withPollInterval(20*time.Millisecond))
+	m, err := New(config.Transcode{ABRLadder: adaptive, ABRLadderUnderCopy: adaptive, FFmpegPath: ff, FFprobePath: fp, TempDir: filepath.Join(dir, "sessions"), RTXVideo: config.RTXVideo{Mode: "on", ExecutablePath: nv, Quality: quality}}, testLogger(t), WithoutHWDetection(), WithBuffering(24*time.Second, 0, 0), WithSegmentTimeout(60*time.Second), withPollInterval(20*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}

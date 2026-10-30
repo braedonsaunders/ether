@@ -253,6 +253,34 @@ func TestThumbnailsGenerateAndServe(t *testing.T) {
 	}
 }
 
+// A local file input (the spike playback path) must reach ffmpeg as a
+// plain path: "?background=1" is loopback query protocol, and appended to
+// a filename it makes the file not exist.
+func TestThumbnailsLocalInputHasNoBackgroundQuery(t *testing.T) {
+	if got := backgroundReadURL("/x/spike.mp4"); got != "/x/spike.mp4" {
+		t.Errorf("backgroundReadURL(local) = %q", got)
+	}
+	if got := backgroundReadURL("http://127.0.0.1:9/src"); got != "http://127.0.0.1:9/src?background=1" {
+		t.Errorf("backgroundReadURL(http) = %q", got)
+	}
+	if got := backgroundReadURL("https://127.0.0.1:9/src?x=1"); got != "https://127.0.0.1:9/src?x=1&background=1" {
+		t.Errorf("backgroundReadURL(https+query) = %q", got)
+	}
+
+	tf := &thumbFake{endAt: -1}
+	th := newTestThumbs(t, tf, nil)
+	th.EnsureTrickplay(context.Background(), core.TrickplaySource{
+		ReleaseID: "rel-local", InputURL: "/x/spike.mp4",
+		Info: core.MediaInfo{Duration: 65 * time.Second}, AvailableUntil: 65 * time.Second,
+	})
+	waitThumbFor(t, "local generation stopped", func() bool { return th.isIdle("rel-local") && th.frameCount("rel-local") == 3 })
+	for _, input := range tf.inputList() {
+		if input != "/x/spike.mp4" {
+			t.Fatalf("thumbnail input %q is not the plain local path", input)
+		}
+	}
+}
+
 func TestThumbnailsKeyframeSeeks(t *testing.T) {
 	tf := &thumbFake{endAt: -1}
 	th := newTestThumbs(t, tf, nil)

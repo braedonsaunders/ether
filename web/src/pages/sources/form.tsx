@@ -278,7 +278,7 @@ export function HealthStrip({ ids }: { ids: HealthItem["id"][] }) {
             <span className="min-w-0 flex-1">
               <span className="flex items-center justify-between gap-2 text-sm font-medium text-fg">
                 {h.label}
-                <LevelBadge level={h.level} />
+                <LevelBadge level={h.level} label={h.statusLabel} />
               </span>
               <span className="block truncate text-xs text-fg-muted">{h.summary}</span>
             </span>

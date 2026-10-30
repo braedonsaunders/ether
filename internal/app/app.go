@@ -29,6 +29,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/llm"
+	"github.com/braedonsaunders/ether/internal/logredact"
 	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/migrate"
 	"github.com/braedonsaunders/ether/internal/newznab"
@@ -207,7 +208,8 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if base == nil {
 		base = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	}
-	a.log = slog.New(admin.TeeHandler(base.Handler(), a.logs))
+	// The in-memory buffer behind Logs gets the same scrubbing as the file.
+	a.log = slog.New(logredact.Handler(admin.TeeHandler(base.Handler(), a.logs)))
 	slog.SetDefault(a.log)
 	var err error
 	if a.instanceLock, err = acquireInstanceLock(opts.DataDir); err != nil {
@@ -224,6 +226,13 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		return nil, err
 	}
 
+	// Opening the config may rewrite it for this version, so capture the
+	// files as they are now: a pre-migrate database snapshot stores them, so
+	// the snapshot can be restored together with its matching settings.
+	snapshotFiles, snapshotErr := preUpgradeFiles(opts.DataDir)
+	if snapshotErr != nil {
+		a.log.Warn("pre-upgrade companion files incomplete; database snapshot alone may not restore settings and credentials", "err", snapshotErr)
+	}
 	if a.cfg, err = config.Open(opts.DataDir); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
@@ -286,6 +295,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.db, dialect, err = store.OpenWithRetry(ctx, store.Options{
 		DataDir: opts.DataDir, Driver: dbCfg.Driver, URL: dbCfg.URL,
 		Logger: a.log.With("component", "store"), MigrationGate: gate,
+		SnapshotFiles: snapshotFiles,
 	}, store.RetryOptions{
 		MinBackoff: a.opts.DBRetryMin, MaxBackoff: a.opts.DBRetryMax,
 		OnRetry: func(attempt int, wait time.Duration, err error) {
@@ -381,6 +391,8 @@ func (a *App) applyConfig(c config.Config) {
 	}
 	a.trakt.UpdateConfig(c.Trakt)
 	a.subtitles.UpdateConfig(c.OpenSubtitles)
+	// Re-publish section titles when Movies / TV Shows library names change.
+	a.publishLibrarySections()
 	a.registrar.Trigger()
 }
 
@@ -465,7 +477,11 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.discoveryFeatures.Run(ctx) })
 	background.start(func() {
 		a.cluster.RunAsLeader(ctx, "scheduled backups", func(ctx context.Context) {
-			a.backups.Run(ctx, func(err error) { a.log.Warn("scheduled backup", "err", err) })
+			alerts := &backupAlerts{log: a.log}
+			if a.notifications != nil {
+				alerts.notify = func(err error) error { return a.notifications.BackupFailed(ctx, err) }
+			}
+			a.backups.Run(ctx, alerts.observe)
 		})
 	})
 	background.start(func() { a.runUpdates(ctx, cancel) })

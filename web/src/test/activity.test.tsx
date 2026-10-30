@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, it, expect, vi } from "vitest";
+import { setToken } from "../lib/api";
 import Activity from "../pages/activity/Activity";
 import Notifications from "../pages/notifications/Notifications";
 import { HardwareStatus } from "../pages/playback/Hardware";
@@ -210,6 +211,7 @@ describe("Notifications", () => {
   });
 
   it("previews the report for the chosen viewer inline", async () => {
+    setToken("ether-admin-report");
     const calls = backend();
     renderAt("/notifications/report");
     await screen.findByLabelText("Email the weekly report", {}, WAIT);
@@ -219,6 +221,11 @@ describe("Notifications", () => {
     await waitFor(() =>
       expect(calls.some((c) => c.url.endsWith("/stats/newsletter?user=12"))).toBe(true),
     );
+    const preview = calls.find((c) => c.url.endsWith("/stats/newsletter?user=12"))!;
+    const sent = new Headers(preview.init?.headers);
+    expect(sent.get("X-Ether-Admin-Token")).toBe("ether-admin-report");
+    expect(sent.get("X-Plex-Token")).toBeNull();
+    setToken("");
     expect(await screen.findByTitle("Weekly newsletter preview")).toBeInTheDocument();
     expect(screen.getByLabelText("Email the weekly report")).toBeChecked();
     expect(screen.getByRole("button", { name: "Report viewer" })).toHaveTextContent("Alex");

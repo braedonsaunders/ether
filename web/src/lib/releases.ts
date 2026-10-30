@@ -119,6 +119,12 @@ export interface HistoryRecord {
   titleKey: string;
   titleName: string;
   profile?: string;
+  /** Max-height ceilings (configured profile / client cap / effective).
+   * The configured value is presence-carrying: absent on pre-tracking
+   * records (unknown), an explicit 0 means no ceiling ("Any"). */
+  profileMaxHeight?: number;
+  clientMaxHeight?: number;
+  effectiveMaxHeight?: number;
   releaseId?: string;
   releaseName?: string;
   indexer?: string;

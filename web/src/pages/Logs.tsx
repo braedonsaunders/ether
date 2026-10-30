@@ -8,12 +8,12 @@ import {
   toast,
   cn,
 } from "@braedonsaunders/appkit-ui";
-import { RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
+import { Download, RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ErrorPanel, LoadingRows } from "../components/feedback";
 import { Segmented } from "../components/fields";
 import { getLocale, localized, t, tn } from "../i18n";
-import { api, errorMessage } from "../lib/api";
+import { api, apiBlob, API_BASE, errorMessage } from "../lib/api";
 import { useDebouncedValue } from "../lib/hooks";
 import type { LogEntry } from "../lib/types";
 
@@ -86,6 +86,25 @@ export default function Logs() {
     }
   };
 
+  const [downloading, setDownloading] = useState(false);
+  // The server's log files with credentials removed, for a bug report.
+  const download = async () => {
+    setDownloading(true);
+    try {
+      const blob = await apiBlob(API_BASE + "/logs/download");
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `ether-logs-${new Date().toISOString().slice(0, 10)}.txt`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      toast.error(t("Couldn't download logs"), { description: errorMessage(e) });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <section aria-label={t("Logs")} className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -99,6 +118,15 @@ export default function Logs() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void load()}>
             <RefreshCw size={14} /> {t("Reload")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={downloading}
+            title={t("Log files with passwords, tokens and keys removed, for a bug report.")}
+            onClick={() => void download()}
+          >
+            <Download size={14} /> {t("Download logs")}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => void clear()}>
             <Trash2 size={14} /> {t("Clear")}

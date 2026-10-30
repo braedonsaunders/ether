@@ -242,7 +242,7 @@ export function ChannelDrawer({
                       k !== "test" &&
                       (k !== "newsletter.weekly" || channel.kind === "smtp") &&
                       (catalog?.find((e) => e.kind === k)?.automatic ??
-                        !["cert.renewed", "update.available", "user.joined"].includes(k)),
+                        !["cert.renewed", "user.joined"].includes(k)),
                   ),
                 })
               }
@@ -262,7 +262,7 @@ export function ChannelDrawer({
                     {eventLabel(k)}
                     <span className="block text-xs text-fg-muted">
                       {catalog?.find((e) => e.kind === k)?.description ??
-                        (["cert.renewed", "update.available", "user.joined"].includes(k)
+                        (["cert.renewed", "user.joined"].includes(k)
                           ? t("Owner API integration only; not produced automatically.")
                           : "")}
                       {k === "newsletter.weekly" && channel.kind !== "smtp"

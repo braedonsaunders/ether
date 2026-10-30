@@ -2,7 +2,7 @@
 # root has the target binary as ./ether plus staged ffmpeg from
 # scripts/fetch-ffmpeg.sh). Used by the `dockers:` section of
 # .goreleaser.yaml. For from-source builds use the repo-root Dockerfile.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Hardware transcoding userspace, loaded by the bundled ffmpeg at runtime:
 # libva + libva-drm (VAAPI on /dev/dri), Mesa VA drivers (AMD), Intel's

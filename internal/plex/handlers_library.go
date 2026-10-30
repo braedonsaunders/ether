@@ -64,7 +64,8 @@ const defaultUnpagedLimit = 500
 // apps read (visibility, collection mode, episode sorting and ordering,
 // season display), with the values Ether actually behaves by. PMS types
 // default/value as strings in this endpoint's JSON, unlike /:/prefs.
-// Writes are not supported (Ether's libraries are generated).
+// Prefs writes are not supported (Ether's libraries are generated). Library
+// titles themselves are configured in Ether's admin UI, not via this endpoint.
 func sectionPrefs(sec Section) []model.Setting {
 	set := func(id, label, summary, typ, def, val, enum string) model.Setting {
 		return model.Setting{ID: id, Label: label, Summary: summary, Type: typ, Default: def, Value: val, EnumValues: enum}

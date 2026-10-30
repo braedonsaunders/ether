@@ -17,7 +17,7 @@ const (
 )
 
 type warmEntry struct {
-	profile    string
+	profileKey string // profileKey of profileObj
 	profileObj core.QualityProfile
 	caps       core.ClientCaps
 	done       chan struct{}
@@ -167,7 +167,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 	}
 	m.warmRequests[bk] = append(recent, now)
 	profileObj := m.deps.SelectProfile(caps, user)
-	e := &warmEntry{profile: profileObj.Name, profileObj: profileObj, caps: caps, done: make(chan struct{}), foreground: make(chan context.Context, 1), expires: now.Add(preResolveTTL)}
+	e := &warmEntry{profileKey: profileKey(profileObj), profileObj: profileObj, caps: caps, done: make(chan struct{}), foreground: make(chan context.Context, 1), expires: now.Add(preResolveTTL)}
 	m.warm[id] = e
 	u := *user
 	m.wg.Add(1)
@@ -190,7 +190,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		}
 		// Warming must not override the source that actually survived the
 		// previous playback with the original, slower top-ranked release.
-		res := m.resumeResolution(ctx, u.ID, key, e.profile, caps)
+		res := m.resumeResolution(ctx, u.ID, key, e.profileKey, caps)
 		if res == nil || !releaseMatchesTitle(res.Release, title) {
 			res, err = m.deps.Resolver.Resolve(ctx, core.ResolveRequest{Title: title, Client: caps, User: &u})
 		}
@@ -201,7 +201,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		if err != nil {
 			return
 		}
-		session := newSession(randomID(16), id, &u, caps, title, e.profile, m.now())
+		session := newSession(randomID(16), id, &u, caps, title, e.profileKey, m.now())
 		generation, err := m.probeGeneration(ctx, session, res, src, func(size int64) core.MediaInfo {
 			info := EstimateInfo(title, caps, m.deps.SelectProfile(caps, &u))
 			info.Size = size

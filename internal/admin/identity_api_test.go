@@ -37,6 +37,26 @@ func TestLocalOwnerAndPortalIsolation(t *testing.T) {
 	}
 	decode(t, setup, &v)
 	ownerGrant := v.Token
+	// A local owner closes anonymous setup before the wizard is complete.
+	// Bootstrap must send browsers to sign-in rather than into protected pages.
+	for _, token := range []string{"", "invalid-owner-token", ownerGrant} {
+		r := req("GET", "/ether/api/bootstrap", "")
+		r.Header.Set("Authorization", "Bearer "+token)
+		res := serve(h, r)
+		var boot struct {
+			AuthRequired  bool     `json:"authRequired"`
+			Authenticated bool     `json:"authenticated"`
+			SetupComplete bool     `json:"setupComplete"`
+			SignInMethods []string `json:"signInMethods"`
+		}
+		decode(t, res, &boot)
+		if res.Code != 200 || !boot.AuthRequired || boot.SetupComplete || boot.Authenticated != (token == ownerGrant) {
+			t.Fatalf("local-owner bootstrap disagrees with access policy: status=%d boot=%+v", res.Code, boot)
+		}
+		if len(boot.SignInMethods) != 1 || boot.SignInMethods[0] != "local" {
+			t.Fatalf("unclaimed local server offered unavailable sign-in: %v", boot.SignInMethods)
+		}
+	}
 	owner, err := users.Owner(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -47,8 +67,13 @@ func TestLocalOwnerAndPortalIsolation(t *testing.T) {
 	}
 	// Setup must close to unauthenticated LAN clients immediately after local creation.
 	r0 := req("GET", "/ether/api/config", "")
-	if res := serve(h, r0); res.Code != 401 && res.Code != 403 {
+	if res := serve(h, r0); res.Code != 401 || strings.Contains(res.Body.String(), "setup_local_host") {
 		t.Fatalf("setup left open after owner: %d", res.Code)
+	}
+	r0 = req("GET", "/ether/api/setup/status", "")
+	r0.Header.Set("Authorization", "Bearer "+ownerGrant)
+	if res := serve(h, r0); res.Code != 200 {
+		t.Fatalf("owner cannot continue unfinished setup: %d", res.Code)
 	}
 	if err := cfg.Update(func(c *config.Config) error {
 		c.Frontends = map[string]config.Frontend{"jellyfin": {Enabled: true}}
@@ -143,6 +168,24 @@ func TestLocalOwnerAndPortalIsolation(t *testing.T) {
 	}
 	if _, err := users.Authenticate(ctx, v.Token); err != core.ErrUnauthorized {
 		t.Fatalf("Plex accepted portal: %v", err)
+	}
+}
+
+func TestBootstrapPlexSignInRequiresConfiguredClaim(t *testing.T) {
+	for _, claimed := range []bool{false, true} {
+		cfg := newStore(t, func(c *config.Config) { c.Plex.Claimed = claimed })
+		h := admin.New(admin.Deps{Config: cfg, SignIn: &fakeSignIn{}})
+		var boot struct {
+			SignInMethods []string `json:"signInMethods"`
+		}
+		decode(t, serve(h, req("GET", "/ether/api/bootstrap", "")), &boot)
+		if claimed {
+			if len(boot.SignInMethods) != 1 || boot.SignInMethods[0] != "plex" {
+				t.Fatalf("claimed server lost Plex sign-in: %v", boot.SignInMethods)
+			}
+		} else if len(boot.SignInMethods) != 0 {
+			t.Fatalf("unclaimed server advertises Plex sign-in: %v", boot.SignInMethods)
+		}
 	}
 }
 

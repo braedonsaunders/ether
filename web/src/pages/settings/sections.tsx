@@ -9,6 +9,7 @@ import { isPlainObject, relativeTime } from "../../lib/format";
 import { plexDirectHealth, remoteHealth } from "../../lib/health";
 import { useAsync } from "../../lib/hooks";
 import type { EtherConfig, UpdateStatus } from "../../lib/types";
+import { SecureAddresses } from "./SecureAddresses";
 
 /**
  * Settings helpers shared with the Settings page. Usenet providers and indexers
@@ -66,8 +67,15 @@ export function PlexStatus({
         description={c.details.join(" · ") || c.summary}
         control={<LevelBadge level={c.level} label={c.summary} />}
       />
+      <SecureAddresses remote={remote} />
       {conns.length ? (
-        <SettingsRow stacked title={t("Published addresses")}>
+        <SettingsRow
+          stacked
+          title={t("Published addresses")}
+          description={t(
+            "These are registration addresses. Plex may provide different HTTPS addresses to apps.",
+          )}
+        >
           <ul className="space-y-1 text-xs">
             {conns.map((uri, i) => (
               <li key={i} className="flex items-center gap-2">

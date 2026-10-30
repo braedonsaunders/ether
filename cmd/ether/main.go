@@ -23,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/app"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/logfile"
+	"github.com/braedonsaunders/ether/internal/logredact"
 	"github.com/braedonsaunders/ether/internal/notify"
 	"github.com/braedonsaunders/ether/internal/service"
 	"github.com/braedonsaunders/ether/internal/updater"
@@ -126,7 +127,8 @@ func setupLogging(dataDir string, level slog.Level) *slog.Logger {
 	if fileErr == nil {
 		out = logfile.Tee(os.Stderr, lw)
 	}
-	logger := slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: level}))
+	// Credentials are scrubbed before anything reaches stderr or the file.
+	logger := slog.New(logredact.Handler(slog.NewTextHandler(out, &slog.HandlerOptions{Level: level})))
 	slog.SetDefault(logger)
 	if fileErr != nil {
 		logger.Warn("file logging disabled", "err", fileErr)

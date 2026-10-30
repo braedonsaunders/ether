@@ -158,7 +158,7 @@ func TestPlexUsesOwnAccountTokenAndResolvesGUID(t *testing.T) {
 			t.Error("wrong endpoint")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"MediaContainer":{"size":1,"totalSize":1,"Metadata":[{"type":"movie","Guid":[{"id":"tmdb://1"}]}]}}`))
+		_, _ = w.Write([]byte(`{"MediaContainer":{"size":1,"totalSize":1,"Metadata":[{"guid":"plex://movie/example","type":"movie","Guid":[{"id":"tmdb://1"}]}]}}`))
 	}))
 	defer srv.Close()
 	s.o.PlexBaseURL = srv.URL

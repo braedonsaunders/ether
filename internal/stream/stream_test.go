@@ -209,8 +209,13 @@ func TestTransientFailuresAreRetried(t *testing.T) {
 	if got := readAll(t, src, 50_000); !bytes.Equal(got, data) {
 		t.Fatal("mismatch")
 	}
-	f.failures[postID("flaky.mkv", 3)] = 5
-	e2 := newTestEngine(t, f, nil, Options{Retries: 1})
+	// The first source can still prefetch after readAll returns. Give the
+	// exhausted-retry scenario its own fetcher so neither its map mutation
+	// nor its failure budget is shared with those background reads.
+	f2 := newFakeFetcher()
+	doc = post(t, f2, 100_000, postFile{name: "flaky.mkv", data: data})
+	f2.failures[postID("flaky.mkv", 3)] = 5
+	e2 := newTestEngine(t, f2, nil, Options{Retries: 1})
 	src2 := openSource(t, e2, "flaky", doc)
 	if _, err := src2.ReadAt(make([]byte, 10), 250_000); err == nil || errors.Is(err, core.ErrArticleMissing) {
 		t.Fatalf("persistent failure err = %v", err)

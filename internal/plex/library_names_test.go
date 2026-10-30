@@ -1,0 +1,68 @@
+package plex
+
+import (
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/braedonsaunders/ether/internal/config"
+)
+
+func TestLibrarySectionTitlesFromConfig(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+
+	base := f.srv.d.Config
+	f.srv.d.Config = func() config.Config {
+		c := base()
+		c.Server.MoviesLibraryName = "Ether Films"
+		c.Server.TVShowsLibraryName = "Ether Series"
+		return c
+	}
+
+	rec := f.get(t, "/library/sections")
+	body := rec.Body.String()
+	if !strings.Contains(body, `title="Ether Films"`) || !strings.Contains(body, `title="Ether Series"`) {
+		t.Fatalf("custom library names missing: %s", body)
+	}
+	if strings.Contains(body, `title="Movies"`) || strings.Contains(body, `title="TV Shows"`) {
+		t.Fatalf("default library names still present: %s", body)
+	}
+
+	movie := f.get(t, "/library/sections/1")
+	if !strings.Contains(movie.Body.String(), `title1="Ether Films"`) {
+		t.Fatalf("movies section title1: %s", movie.Body.String())
+	}
+	show := f.get(t, "/library/sections/2")
+	if !strings.Contains(show.Body.String(), `title1="Ether Series"`) {
+		t.Fatalf("tv section title1: %s", show.Body.String())
+	}
+
+	secs := f.srv.LibrarySections()
+	if len(secs) != 2 || secs[0].Title != "Ether Films" || secs[1].Title != "Ether Series" {
+		t.Fatalf("LibrarySections = %+v", secs)
+	}
+	// UUIDs must stay stable across renames (derived from section id, not title).
+	f.srv.d.Config = func() config.Config {
+		c := base()
+		c.Server.MoviesLibraryName = "Other Films"
+		return c
+	}
+	renamed := f.srv.LibrarySections()
+	if renamed[0].UUID != secs[0].UUID || renamed[1].UUID != secs[1].UUID {
+		t.Fatalf("rename changed UUIDs: %+v -> %+v", secs, renamed)
+	}
+	if renamed[0].Title != "Other Films" {
+		t.Fatalf("live rename missing: %+v", renamed[0])
+	}
+}
+
+func TestLibrarySectionTitlesDefaultWhenEmpty(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	rec := f.request(t, http.MethodGet, "/library/sections", nil)
+	body := rec.Body.String()
+	if !strings.Contains(body, `title="Movies"`) || !strings.Contains(body, `title="TV Shows"`) {
+		t.Fatalf("defaults missing: %s", body)
+	}
+}

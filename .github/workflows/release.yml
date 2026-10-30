@@ -37,7 +37,7 @@ jobs:
         run: |
           set -eu
           run=""
-          for attempt in $(seq 1 12); do
+          for _attempt in $(seq 1 12); do
             run=$(gh run list --repo "$REPO" --workflow ci.yml --commit "$SHA" --event push --limit 1 --json databaseId --jq '.[0].databaseId // empty')
             if [ -n "$run" ]; then break; fi
             sleep 5
@@ -58,6 +58,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+      - name: Require written release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          notes="release-notes/$RELEASE_TAG.md"
+          if [ ! -s "$notes" ]; then
+            echo "::error::Write $notes with the major changes and upgrade notes before tagging."
+            exit 1
+          fi
       - id: ver
         run: |
           v="${GITHUB_REF_NAME#v}"
@@ -280,6 +290,10 @@ jobs:
           VERSION: ${{ needs.goreleaser.outputs.version }}
           CHANNEL: ${{ needs.goreleaser.outputs.channel }}
         run: |
+          set -eu
+          notes="release-notes/v$VERSION.md"
+          test -s "$notes"
+          gh release edit "v$VERSION" --notes-file "$notes"
           if [ -f "$CHANNEL.json" ]; then
             gh release upload "v$VERSION" "$CHANNEL.json" "$CHANNEL.json.sig" feed/ether-* --clobber
           else

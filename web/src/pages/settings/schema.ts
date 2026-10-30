@@ -12,6 +12,22 @@ export const SERVER: FieldGroup[] = localized(() => [
         help: t("How the server appears in Plex apps."),
       },
       {
+        key: "moviesLibraryName",
+        label: t("Movies library name"),
+        kind: "text",
+        help: t(
+          "How the Movies library appears in Plex apps. Ether sets this; Plex's own rename does not stick.",
+        ),
+      },
+      {
+        key: "tvShowsLibraryName",
+        label: t("TV Shows library name"),
+        kind: "text",
+        help: t(
+          "How the TV Shows library appears in Plex apps. Ether sets this; Plex's own rename does not stick.",
+        ),
+      },
+      {
         key: "port",
         label: t("Port"),
         kind: "number",

@@ -167,7 +167,7 @@ type session struct {
 	caps           core.ClientCaps
 	title          *core.Title
 	titleName      string
-	profile        string
+	profileKey     string // profileKey of the resolving profile
 	startedAt      time.Time
 
 	// virtual is the byte/time layout of the first generation: the file the
@@ -219,7 +219,7 @@ type session struct {
 	expectPos  int64     // next sequential read offset (-1 = unknown)
 }
 
-func newSession(id string, ident identity, user *core.User, caps core.ClientCaps, title *core.Title, profile string, now time.Time) *session {
+func newSession(id string, ident identity, user *core.User, caps core.ClientCaps, title *core.Title, profileKey string, now time.Time) *session {
 	stopCtx, stopCancel := context.WithCancel(context.Background())
 	return &session{
 		id:         id,
@@ -230,7 +230,7 @@ func newSession(id string, ident identity, user *core.User, caps core.ClientCaps
 		caps:       caps,
 		title:      title,
 		titleName:  displayTitle(title),
-		profile:    profile,
+		profileKey: profileKey,
 		startedAt:  now,
 		lastActive: now,
 		failSem:    make(chan struct{}, 1),

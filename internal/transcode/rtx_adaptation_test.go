@@ -20,7 +20,7 @@ func TestRTXOrdinaryLadderAndRecovery(t *testing.T) {
 					t.Error("ordinary encoder started before native permit release")
 				}
 			}
-			m.cfg.ABRLadder, m.cfg.FastStart = true, true
+			m.cfg.ABRLadder, m.cfg.ABRLadderUnderCopy, m.cfg.FastStart = true, true, true
 			m.opts.rungDwell = 0 // exercise lifecycle independently of the shared dwell policy
 			req.Protocol = proto
 			if proto == "hls-fmp4" {
@@ -140,7 +140,7 @@ func TestRTXManifestCodecsMatchNativeLevel(t *testing.T) {
 
 func TestRTXFallbackKeepsPerRungMetadataAndTimeline(t *testing.T) {
 	m, rr, req := newRTXSessionManager(t)
-	m.cfg.ABRLadder, m.cfg.FastStart = true, true
+	m.cfg.ABRLadder, m.cfg.ABRLadderUnderCopy, m.cfg.FastStart = true, true, true
 	req.Protocol = core.ProtocolDASH
 	rr.fail = true
 	s := startSession(t, m, req)
@@ -170,7 +170,7 @@ func TestRTXFallbackKeepsPerRungMetadataAndTimeline(t *testing.T) {
 
 func TestRTXBandwidthRecoveryStaysOrdinary(t *testing.T) {
 	m, rr, req := newRTXSessionManager(t)
-	m.cfg.ABRLadder = true
+	m.cfg.ABRLadder, m.cfg.ABRLadderUnderCopy = true, true
 	m.opts.rungDwell = 0
 	s := startSession(t, m, req)
 	if rec := get(t, s, 0); rec.Code != 200 {

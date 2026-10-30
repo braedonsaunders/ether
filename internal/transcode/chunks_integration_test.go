@@ -385,7 +385,7 @@ func TestIntegrationKeyframePlannedEncodedRuns(t *testing.T) {
 	})
 
 	t.Run("ladder rung", func(t *testing.T) {
-		cfg := config.Transcode{ABRLadder: true}
+		cfg := config.Transcode{ABRLadder: true, ABRLadderUnderCopy: true}
 		e.m.UpdateConfig(cfg)
 		defer e.m.UpdateConfig(config.Transcode{})
 		s, starts := start(t, "rung", "kf-480.mkv", big)

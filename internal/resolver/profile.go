@@ -83,6 +83,18 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 		prof.CustomFormatScores = copyScores
 	}
 
+	// Key of the configured definition, taken from this pristine copy
+	// before the configured-height snapshot, download reshaping, and
+	// the client-cap clamp below, so the same configured profile keys
+	// identically for every client.
+	prof.SelectionKey = prof.ComputeSelectionKey()
+
+	// Snapshot the owner's configured ceiling before the download
+	// reshape below (and the client clamp after it) lowers the
+	// effective MaxHeight: "configured" is what the owner set, even
+	// when the reshape is what ends up limiting the release.
+	prof = snapshotConfiguredMaxHeight(prof)
+
 	if caps.Download {
 		prof = downloadProfile(prof, caps)
 	}
@@ -139,6 +151,52 @@ func downloadProfile(prof core.QualityProfile, caps core.ClientCaps) core.Qualit
 		prof.MaxSizeMBPerMin = 80
 	}
 	return prof
+}
+
+// configuredUnlimited marks a profile whose owner set no max-height
+// ceiling ("Any", MaxHeight 0 in config). It keeps "no ceiling" apart
+// from ConfiguredMaxHeight 0 ("field not set") on hand-built profiles.
+const configuredUnlimited = -1
+
+// snapshotConfiguredMaxHeight records the owner's ceiling on p before
+// any reshape or clamp lowers MaxHeight.
+func snapshotConfiguredMaxHeight(p core.QualityProfile) core.QualityProfile {
+	if p.MaxHeight == 0 {
+		p.ConfiguredMaxHeight = configuredUnlimited
+	} else {
+		p.ConfiguredMaxHeight = p.MaxHeight
+	}
+	return p
+}
+
+// configuredMaxHeight is the profile's own ceiling before any download
+// reshape or client clamp: configuredUnlimited when the owner set
+// none, otherwise a positive height. Profiles built outside
+// SelectProfile (ConfiguredMaxHeight unset) report their MaxHeight.
+func configuredMaxHeight(p core.QualityProfile) int {
+	if p.ConfiguredMaxHeight != 0 {
+		return p.ConfiguredMaxHeight
+	}
+	return p.MaxHeight
+}
+
+// traceConfiguredMaxHeight is the configured ceiling as recorded on a
+// trace or history record, with presence: a profile from SelectProfile
+// reports its configured ceiling (a pointer to 0 when the owner set
+// none — explicitly unlimited), while a profile built outside
+// SelectProfile (ConfiguredMaxHeight unset) reports nil, unknown,
+// rather than falling back to its effective MaxHeight.
+func traceConfiguredMaxHeight(p core.QualityProfile) *int {
+	switch {
+	case p.ConfiguredMaxHeight == configuredUnlimited:
+		v := 0
+		return &v
+	case p.ConfiguredMaxHeight > 0:
+		v := p.ConfiguredMaxHeight
+		return &v
+	default:
+		return nil
+	}
 }
 
 func ruleMatches(rule config.QualityRule, caps core.ClientCaps, user *core.User) bool {

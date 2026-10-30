@@ -555,7 +555,12 @@ func missingFrames(e *thumbEntry, plan []time.Duration, end time.Duration) int {
 
 // backgroundReadURL selects the loopback handler's prefetch-priority path;
 // thumbnail misses must never compete with live playback article reads.
+// The query is loopback protocol only: a local file path must reach ffmpeg
+// untouched, or it stops naming a file on disk.
 func backgroundReadURL(input string) string {
+	if !isNetworkURL(input) {
+		return input
+	}
 	sep := "?"
 	if strings.Contains(input, "?") {
 		sep = "&"

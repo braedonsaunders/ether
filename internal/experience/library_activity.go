@@ -20,9 +20,10 @@ func (s *Service) activityLibrary(v *core.User, viewID string) (*Library, error)
 	if err != nil || !SectionAllowed(v, id) {
 		return nil, core.ErrNotFound
 	}
-	for i := range s.d.Libraries {
-		if s.d.Libraries[i].ID == id {
-			return &s.d.Libraries[i], nil
+	libs := s.libraries()
+	for i := range libs {
+		if libs[i].ID == id {
+			return &libs[i], nil
 		}
 	}
 	return nil, core.ErrNotFound
@@ -58,7 +59,7 @@ func (s *Service) latestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 	}
 	limit = activityLimit(limit)
 	var result []frontend.LatestItem
-	libraries := s.d.Libraries
+	libraries := s.libraries()
 	if lib != nil {
 		libraries = []Library{*lib}
 	}

@@ -27,9 +27,19 @@ CREATE TABLE segcache_releases (release_id TEXT PRIMARY KEY, title TEXT NOT NULL
 CREATE TABLE segcache_pins (release_id TEXT NOT NULL, reason TEXT NOT NULL, owner TEXT NOT NULL, expires INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(release_id,reason,owner));
 CREATE TABLE segcache_files (file TEXT PRIMARY KEY, created INTEGER NOT NULL);
 `)
+	// Evicted bytes whose files are still being unlinked (one row per
+	// eviction pass), so free-space measurements on any node count them as
+	// free. Its own component keeps the segcache numbering independent.
+	store.Register("segcache_reclaim", 1, `CREATE TABLE segcache_reclaim(id TEXT PRIMARY KEY, node TEXT NOT NULL, bytes INTEGER NOT NULL, at INTEGER NOT NULL);`)
 }
 
+// reclaimStale is how long an unfinished reclaim record counts: a node that
+// died mid-unlink must not hold the floor open for ever.
+const reclaimStale = 10 * 60 // seconds
+
 type sharedCache struct {
+	beforeUnlink func() // tests: runs between an eviction's commit and its unlinks
+
 	db    *sql.DB
 	node  string
 	token string
@@ -430,16 +440,25 @@ func (s *sharedCache) evictWhere(id string, expire bool) error {
 		return ErrClosed
 	}
 	prot, _ := s.c.protected()
+	s.c.evictMu.Lock()
+	defer s.c.evictMu.Unlock()
+	floorCap, floorOK := s.c.floorCap(s.sharedUsed)
 	ctx, cancel := s.context()
 	defer cancel()
 	var files []string
 	var reclaimed int64
+	var reclaimID string
 	err := s.tx(ctx, func(tx *sql.Tx) error {
 		var used int64
 		if err := tx.QueryRowContext(ctx, `SELECT used FROM segcache_pool WHERE id=1`).Scan(&used); err != nil {
 			return err
 		}
-		if id == "" && !expire && (budget <= 0 || used <= budget) {
+		// The budget, or the free-space floor's cap on pool usage when lower.
+		// The cap is absolute, so a pass that runs after another node's
+		// eviction compares against the pool usage that eviction left.
+		limit := usageLimit(budget, floorCap, floorOK)
+		within := func() bool { return limit < 0 || used <= limit }
+		if id == "" && !expire && within() {
 			return nil
 		}
 		// Segment-granular eviction, with a bounded batch per sweep. Shared pins
@@ -487,7 +506,7 @@ func (s *sharedCache) evictWhere(id string, expire bool) error {
 		deltas := map[string][2]int64{}
 		for _, v := range cs {
 			expired := expire && (p.Mode == "off" || (p.Retention > 0 && time.Since(time.Unix(v.touched, 0)) >= p.Retention))
-			if prot[v.id] || (id == "" && !expired && (budget <= 0 || used <= budget)) {
+			if prot[v.id] || (id == "" && !expired && within()) {
 				continue
 			}
 			if _, err = tx.ExecContext(ctx, `DELETE FROM segcache_segments WHERE release_id=? AND segment=? AND file=?`, v.id, v.seg, v.file); err != nil {
@@ -506,14 +525,31 @@ func (s *sharedCache) evictWhere(id string, expire bool) error {
 				return err
 			}
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE segcache_pool SET used=? WHERE id=1`, used)
+		if _, err = tx.ExecContext(ctx, `UPDATE segcache_pool SET used=? WHERE id=1`, used); err != nil {
+			return err
+		}
+		if reclaimed > 0 {
+			// Until these files are unlinked the volume does not show the
+			// space yet; floor measurements on any node count it as free.
+			reclaimID = rand.Text()
+			_, err = tx.ExecContext(ctx, `INSERT INTO segcache_reclaim(id,node,bytes,at) VALUES(?,?,?,`+s.nowSQL()+`)`, reclaimID, s.node, reclaimed)
+		}
 		return err
 	})
 	if err != nil {
 		return err
 	}
+	if s.beforeUnlink != nil {
+		s.beforeUnlink()
+	}
 	for _, f := range files {
 		s.unlink(f)
+	}
+	if reclaimID != "" {
+		ctx, cancel := s.context()
+		_, err := s.db.ExecContext(ctx, `DELETE FROM segcache_reclaim WHERE id=?`, reclaimID)
+		cancel()
+		s.log(err)
 	}
 	s.c.mu.Lock()
 	s.c.metrics.EvictedBytes += reclaimed
@@ -523,6 +559,9 @@ func (s *sharedCache) evictWhere(id string, expire bool) error {
 func (s *sharedCache) heartbeat() {
 	ctx, cancel := s.context()
 	defer cancel()
+	// Reclaim records of a node that died mid-unlink no longer count.
+	_, err := s.db.ExecContext(ctx, `DELETE FROM segcache_reclaim WHERE at <= `+s.nowSQL()+`-?`, reclaimStale)
+	s.log(err)
 	s.c.mu.Lock()
 	var pins [][2]string
 	for id, rs := range s.active {

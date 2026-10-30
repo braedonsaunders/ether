@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiFetch, getToken, setToken } from "../lib/api";
+import { apiBlob, apiFetch, getToken, SESSION_HEADER, sessionXhrSetup, setToken } from "../lib/api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -22,9 +22,9 @@ describe("owner credentials when browser storage is unavailable", () => {
     setToken("session-only-token");
     expect(getToken()).toBe("session-only-token");
     await apiFetch("/config");
-    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("X-Plex-Token")).toBe(
-      "session-only-token",
-    );
+    const sent = new Headers(fetcher.mock.calls[0]?.[1]?.headers);
+    expect(sent.get(SESSION_HEADER)).toBe("session-only-token");
+    expect(sent.get("X-Plex-Token")).toBeNull();
     setToken("");
     expect(getToken()).toBe("");
   });
@@ -41,5 +41,55 @@ describe("owner credentials when browser storage is unavailable", () => {
     });
     setToken("");
     expect(getToken()).toBe("");
+  });
+});
+
+describe("console session", () => {
+  it("is stored under its own key and drops a stored plex.tv token", async () => {
+    localStorage.setItem("ether-admin-token", "plex-account-token");
+    vi.resetModules();
+    const fresh = await import("../lib/api");
+    expect(localStorage.getItem("ether-admin-token")).toBeNull();
+    expect(fresh.getToken()).toBe("");
+    fresh.setToken("ether-admin-1");
+    expect(localStorage.getItem("ether-admin-session")).toBe("ether-admin-1");
+    fresh.setToken("");
+    expect(localStorage.getItem("ether-admin-session")).toBeNull();
+  });
+
+  it("goes only to this console's API", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => new Response(new Blob(["x"]), { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+    setToken("ether-admin-2");
+    await apiBlob("/ether/api/catalog/artwork/1");
+    await apiBlob(window.location.origin + "/ether/api/backups/download/a");
+    await apiBlob("https://image.tmdb.org/t/p/w500/poster.jpg");
+    await apiBlob("/library/metadata/1/thumb");
+    const sent = fetcher.mock.calls.map((c) => new Headers(c[1]?.headers).get(SESSION_HEADER));
+    expect(sent).toEqual(["ether-admin-2", "ether-admin-2", null, null]);
+  });
+
+  it("is attached to Live TV preview playlist and segment requests, not to channel hosts", () => {
+    setToken("ether-admin-3");
+    const sent: Record<string, string | undefined> = {};
+    for (const url of [
+      "/ether/api/livetv/preview/abc/index.m3u8",
+      window.location.origin + "/ether/api/livetv/preview/abc/seg-1.ts",
+      "https://cdn.example/live/seg-1.ts",
+      "//cdn.example/live/index.m3u8",
+    ]) {
+      const xhr = { setRequestHeader: vi.fn() } as unknown as XMLHttpRequest;
+      sessionXhrSetup(xhr, url);
+      const call = vi.mocked(xhr.setRequestHeader).mock.calls[0];
+      sent[url] = call ? `${call[0]}: ${call[1]}` : undefined;
+    }
+    expect(Object.values(sent)).toEqual([
+      `${SESSION_HEADER}: ether-admin-3`,
+      `${SESSION_HEADER}: ether-admin-3`,
+      undefined,
+      undefined,
+    ]);
   });
 });

@@ -52,6 +52,7 @@ type adaptiveSettings struct {
 	RampDur            time.Duration
 	FastStartMaxHeight int
 	Ladder             bool
+	LadderUnderCopy    bool // soft encode rungs under a video-copy primary
 	VBV                bool
 	VBVBufSeconds      int
 	Governor           bool
@@ -65,6 +66,7 @@ func adaptiveFromConfig(c config.Transcode) adaptiveSettings {
 		RampDur:            c.FastStartSegment.D(),
 		FastStartMaxHeight: c.FastStartMaxHeight,
 		Ladder:             c.ABRLadder,
+		LadderUnderCopy:    c.ABRLadderUnderCopy,
 		VBV:                c.VBVReservoir,
 		VBVBufSeconds:      c.VBVBufferSeconds,
 		Governor:           c.SpikeGovernor,

@@ -297,12 +297,21 @@ func (s *Service) Items(ctx context.Context, u *core.User) ([]Item, error) {
 
 // Check resolves only explicitly watched-for, released titles, never the whole
 // catalogue. A healthy resolver result is required before marking available.
+//
+// A show (or season) becomes available through its first released episode.
+// After that, each newer regular episode is resolved once it airs and, when
+// a healthy release exists, announced and prewarmed once (see newEpisode).
 func (s *Service) Check(ctx context.Context, u *core.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cfg, err := s.Settings(ctx)
 	if err != nil || !cfg.Enabled || s.o.Resolver == nil {
 		return err
+	}
+	if cfg.Notify {
+		if err := s.retryAlerts(ctx); err != nil {
+			return err
+		}
 	}
 	items, err := s.Items(ctx, u)
 	if err != nil {
@@ -317,43 +326,42 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 		if fresh, e := s.o.Catalog.Get(ctx, t.Key); e == nil && fresh != nil {
 			t = *fresh
 		}
-		if !s.allowed(u, &t) || !t.IsReleased(s.o.Now()) || (!it.CheckedAt.IsZero() && s.o.Now().Sub(it.CheckedAt) < time.Duration(cfg.CheckHours)*time.Hour) {
+		if !s.allowed(u, &t) || !t.IsReleased(s.o.Now()) {
+			continue
+		}
+		resolveTitle := &t
+		var first, newest *core.Title
+		isShow := t.Type == core.TypeShow || t.Type == core.TypeSeason
+		if isShow {
+			var e error
+			if first, newest, e = s.episodeRange(ctx, u, &t); e != nil || first == nil {
+				continue
+			}
+			resolveTitle = first
+		}
+		pending := false // a newer episode of an available show awaits a release
+		if isShow && !it.AvailableAt.IsZero() && newest != nil {
+			known, e := s.episodeKnown(ctx, u.ID, t.Key, newest.Key)
+			if e != nil {
+				return e
+			}
+			pending = !known
+		}
+		interval := time.Duration(cfg.CheckHours) * time.Hour
+		if pending && s.o.Now().Sub(newest.Released) < freshAiring {
+			interval = min(interval, freshAiringCheck)
+		}
+		if !it.CheckedAt.IsZero() && s.o.Now().Sub(it.CheckedAt) < interval {
 			continue
 		}
 		checked++
-		resolveTitle := &t
-		if t.Type == core.TypeShow || t.Type == core.TypeSeason {
-			var episodes []core.Title
-			var e error
-			if t.Type == core.TypeSeason {
-				episodes, e = s.o.Catalog.Children(ctx, t.Key)
-			} else {
-				episodes, e = s.o.Catalog.Grandchildren(ctx, t.Key)
+		if pending {
+			if err := s.newEpisode(ctx, cfg, u, &t, newest); err != nil {
+				return err
 			}
-			if e != nil {
-				continue
-			}
-			resolveTitle = nil
-			for i := range episodes {
-				e := &episodes[i]
-				if e.ContentRating == "" {
-					e.ContentRating = t.ContentRating
-				}
-				if t.Adult {
-					e.Adult = true
-				}
-				if e.IsReleased(s.o.Now()) && s.allowed(u, e) && (resolveTitle == nil || e.Season < resolveTitle.Season || (e.Season == resolveTitle.Season && e.Episode < resolveTitle.Episode)) {
-					resolveTitle = e
-				}
-			}
-			if resolveTitle == nil {
-				continue
-			}
+			continue
 		}
-		caps := core.ClientCaps{MaxHeight: 1080, VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3", "eac3"}, Containers: []string{"mkv", "mp4"}}
-		job, cancel := context.WithTimeout(ctx, 45*time.Second)
-		res, e := s.o.Resolver.Resolve(job, core.ResolveRequest{Title: resolveTitle, User: u, Client: caps})
-		cancel()
+		res, e := s.resolve(ctx, u, resolveTitle)
 		now := s.o.Now().Unix()
 		if _, err = s.db.ExecContext(ctx, `UPDATE watchlist_items SET checked=? WHERE user_id=? AND item_key=?`, now, u.ID, t.Key); err != nil {
 			return err
@@ -363,11 +371,17 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 				return err
 			}
 		}
-		if e != nil || res == nil || len(res.NZB) == 0 || res.Release.ID == "" {
+		if e != nil || res == nil {
 			continue
 		}
 		if _, err = s.db.ExecContext(ctx, `UPDATE watchlist_items SET available=CASE WHEN available=0 THEN ? ELSE available END,title=? WHERE user_id=? AND item_key=?`, now, mustTitle(t), u.ID, t.Key); err != nil {
 			return err
+		}
+		if newest != nil {
+			// The show's episodes so far count as seen: only later ones are new.
+			if err := s.recordEpisode(ctx, u.ID, t.Key, newest.Key); err != nil {
+				return err
+			}
 		}
 		var notified, warmed int
 		if err = s.db.QueryRowContext(ctx, `SELECT MAX(notified),MAX(warmed) FROM watchlist_items WHERE user_id=? AND item_key=?`, u.ID, t.Key).Scan(&notified, &warmed); err != nil {
@@ -382,10 +396,7 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 			}
 		}
 		if cfg.Prewarm && warmed == 0 && s.o.Engine != nil {
-			job, cancel := context.WithTimeout(ctx, time.Minute)
-			e := s.o.Engine.Prefetch(job, res.Release.ID, res.NZB, 0, s.o.PrewarmBytes)
-			cancel()
-			if e == nil {
+			if s.prewarm(ctx, res) == nil {
 				_, err = s.db.ExecContext(ctx, `UPDATE watchlist_items SET warmed=1 WHERE user_id=? AND item_key=?`, u.ID, t.Key)
 				if err != nil {
 					return err
@@ -395,6 +406,29 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 	}
 	return ctx.Err()
 }
+
+// resolve asks for a healthy release of title for u. It returns a nil
+// Resolution, with a nil error, when nothing playable was found.
+func (s *Service) resolve(ctx context.Context, u *core.User, title *core.Title) (*core.Resolution, error) {
+	caps := core.ClientCaps{MaxHeight: 1080, VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3", "eac3"}, Containers: []string{"mkv", "mp4"}}
+	job, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	res, err := s.o.Resolver.Resolve(job, core.ResolveRequest{Title: title, User: u, Client: caps})
+	if err != nil {
+		return nil, err
+	}
+	if res == nil || len(res.NZB) == 0 || res.Release.ID == "" {
+		return nil, nil
+	}
+	return res, nil
+}
+
+func (s *Service) prewarm(ctx context.Context, res *core.Resolution) error {
+	job, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	return s.o.Engine.Prefetch(job, res.Release.ID, res.NZB, 0, s.o.PrewarmBytes)
+}
+
 func mustTitle(t core.Title) string { raw, _ := json.Marshal(t); return string(raw) }
 func (s *Service) Hubs(ctx context.Context, u *core.User, limit int) ([]core.Hub, error) {
 	cfg, err := s.Settings(ctx)

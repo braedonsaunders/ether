@@ -18,7 +18,15 @@ import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
 import { getLocale, localized, t, tn, tx } from "../../i18n";
-import { api, apiBlob, apiFetch, API_BASE, errorMessage, getToken } from "../../lib/api";
+import {
+  api,
+  apiBlob,
+  apiFetch,
+  API_BASE,
+  errorMessage,
+  getToken,
+  SESSION_HEADER,
+} from "../../lib/api";
 import { formatBytes } from "../../lib/format";
 import type { EtherUser } from "../../lib/types";
 import { pagedTableLabels, searchSelectLabels } from "../../i18n/appkit-labels";
@@ -90,7 +98,7 @@ async function upload(
     body: file,
     headers: {
       ...headers,
-      "X-Plex-Token": getToken(),
+      [SESSION_HEADER]: getToken(),
       "X-Ether-Request": "1",
       "Content-Type": contentType,
     },
@@ -109,7 +117,7 @@ async function exportBackup(name: string, password: string) {
     method: "POST",
     body: JSON.stringify({ password }),
     headers: {
-      "X-Plex-Token": getToken(),
+      [SESSION_HEADER]: getToken(),
       "X-Ether-Request": "1",
       "Content-Type": "application/json",
     },

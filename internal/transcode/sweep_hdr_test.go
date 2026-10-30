@@ -54,13 +54,18 @@ func TestH264EncodeOfHDRAlwaysToneMaps(t *testing.T) {
 	}
 }
 
-// Ladder rungs below a copied Dolby Vision profile 5 stream (no HDR10
-// base layer) must not be "HDR-kept" HEVC encodes of the IPT picture.
+// Ladder rungs below a Dolby Vision profile 5 primary (no HDR10 base) must
+// not be "HDR-kept" HEVC encodes of the IPT picture. Disabling
+// abrLadderUnderCopy leaves a video-copy session on the primary alone.
 func TestLadderRungsOfDolbyVisionProfile5(t *testing.T) {
 	info := mustParse(t, "mkv_dv_p8.json")
 	info.Streams[0].DolbyVisionProfile = 5
 	info.Streams[0].ColorTransfer = ""
-	primary := core.Decision{Kind: core.DecisionRemux, Container: ContainerFMP4, VideoCopy: true, VideoCodec: "hevc", AudioCopy: true, AudioStream: 1}
+	copyPrimary := core.Decision{Kind: core.DecisionRemux, Container: ContainerFMP4, VideoCopy: true, VideoCodec: "hevc", AudioCopy: true, AudioStream: 1}
+	if rungs := buildRungs(info, copyPrimary, adaptiveFromConfig(config.Transcode{ABRLadder: true, ABRLadderUnderCopy: false})); len(rungs) != 1 {
+		t.Fatalf("copy session ladder = %d", len(rungs))
+	}
+	primary := core.Decision{Kind: core.DecisionTranscode, Container: ContainerFMP4, VideoCodec: "hevc", MaxHeight: 2160, BitrateKbps: 20000, AudioStream: 1, AudioCodec: "aac"}
 	rungs := buildRungs(info, primary, adaptiveFromConfig(config.Transcode{ABRLadder: true}))
 	if len(rungs) < 2 {
 		t.Fatalf("no rungs: %d", len(rungs))
@@ -70,9 +75,10 @@ func TestLadderRungsOfDolbyVisionProfile5(t *testing.T) {
 			t.Errorf("rung %s: codec %s toneMap %v", r.id, r.decision.VideoCodec, r.decision.ToneMap)
 		}
 	}
-	// An HDR10 HEVC copy keeps HDR in its HEVC rungs.
+	// An HDR10 HEVC encode primary keeps HDR in its HEVC rungs.
 	hdr := mustParse(t, "mkv_hevc_hdr10.json")
-	rungs = buildRungs(hdr, primary, adaptiveFromConfig(config.Transcode{ABRLadder: true}))
+	hdrPrimary := core.Decision{Kind: core.DecisionTranscode, Container: ContainerFMP4, VideoCodec: "hevc", MaxHeight: 2160, BitrateKbps: 20000, AudioStream: 1, AudioCodec: "aac"}
+	rungs = buildRungs(hdr, hdrPrimary, adaptiveFromConfig(config.Transcode{ABRLadder: true}))
 	if len(rungs) < 2 || rungs[1].decision.VideoCodec != "hevc" || rungs[1].decision.ToneMap {
 		t.Errorf("HDR10 rungs: %+v", rungs)
 	}
@@ -112,9 +118,13 @@ func TestLadderBandwidthsAreHonest(t *testing.T) {
 	if got := buildRungs(info, toAAC, adapt)[0].avgKbps; got != want {
 		t.Errorf("base rung %d kbps, want %d", got, want)
 	}
-	// FLAC copied into every rung.
+	// FLAC copied into every rung under a video-copy ladder.
 	flac := core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioStream: 2, AudioCopy: true, AudioCodec: "flac"}
-	rungs := buildRungs(info, flac, adapt)
+	under := adaptiveFromConfig(config.Transcode{ABRLadder: true, ABRLadderUnderCopy: true})
+	rungs := buildRungs(info, flac, under)
+	if len(rungs) < 2 {
+		t.Fatalf("under-copy ladder = %+v", rungs)
+	}
 	prev := rungs[0].avgKbps
 	for _, r := range rungs[1:] {
 		if r.avgKbps >= prev || r.avgKbps < minRungVideoKbps+1500 || r.decision.BitrateKbps != r.avgKbps {

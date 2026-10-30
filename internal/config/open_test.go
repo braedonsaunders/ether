@@ -45,7 +45,8 @@ func TestOpenKeepsDefaultsForMissingKeys(t *testing.T) {
 	}
 	c := s.Get()
 	d := Defaults(dir)
-	if c.Server.Port != 1234 || c.Server.MachineIdentifier != "m" || c.Server.FriendlyName != d.Server.FriendlyName {
+	if c.Server.Port != 1234 || c.Server.MachineIdentifier != "m" || c.Server.FriendlyName != d.Server.FriendlyName ||
+		c.Server.MoviesLibraryName != d.Server.MoviesLibraryName || c.Server.TVShowsLibraryName != d.Server.TVShowsLibraryName {
 		t.Fatalf("server = %+v", c.Server)
 	}
 	if c.Quality.Rules != nil || len(c.Quality.Profiles) != len(d.Quality.Profiles) || c.Quality.Default != d.Quality.Default {

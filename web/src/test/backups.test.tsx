@@ -1,6 +1,7 @@
 import { ConfirmRoot } from "@braedonsaunders/appkit-ui";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { setToken } from "../lib/api";
 import { BackupsAndImport } from "../pages/settings/Backups";
 
 function backend() {
@@ -117,6 +118,7 @@ describe("Backups & import", () => {
     const { createObjectURL, revokeObjectURL } = URL;
     URL.createObjectURL = () => "blob:x";
     URL.revokeObjectURL = () => {};
+    setToken("ether-admin-export");
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     render(<BackupsAndImport />);
@@ -140,15 +142,20 @@ describe("Backups & import", () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes("/backups/export/"))).toBe(true));
     const exp = calls.find((c) => c.url.includes("/backups/export/"))!;
     expect(exp.init?.method).toBe("POST");
+    const expHeaders = exp.init?.headers as Record<string, string>;
+    expect(expHeaders["X-Ether-Admin-Token"]).toBe("ether-admin-export");
+    expect(expHeaders["X-Plex-Token"]).toBeUndefined();
     expect(JSON.parse(String(exp.init?.body))).toEqual({ password: "correct horse battery" });
     await waitFor(() => expect(click).toHaveBeenCalled());
     expect(setItem.mock.calls.some((c) => String(c[1]).includes("correct horse"))).toBe(false);
     setItem.mockRestore();
     click.mockRestore();
+    setToken("");
     Object.assign(URL, { createObjectURL, revokeObjectURL });
   });
 
   it("restores an encrypted download with its password", async () => {
+    setToken("ether-admin-backup");
     const calls = backend();
     render(<BackupsAndImport />);
     fireEvent.change(await screen.findByLabelText("Backup password"), {
@@ -163,6 +170,10 @@ describe("Backups & import", () => {
     >;
     expect(headers["Content-Type"]).toBe("application/octet-stream");
     expect(headers["X-Ether-Request"]).toBe("1");
+    // The upload authenticates with the console session, never a Plex token.
+    expect(headers["X-Ether-Admin-Token"]).toBe("ether-admin-backup");
+    expect(headers["X-Plex-Token"]).toBeUndefined();
+    setToken("");
     const sent = Uint8Array.from(atob(headers["X-Ether-Backup-Password"] ?? ""), (c) =>
       c.charCodeAt(0),
     );

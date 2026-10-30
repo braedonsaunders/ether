@@ -16,7 +16,11 @@ func TestMatroskaNativeRenditionsCannotReplaceActiveEncoderDuringProbes(t *testi
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true})
 	req := remuxRequest(t, "native-single-rendition", time.Hour)
 	req.Decision.Container = ContainerMatroska
-	if len(buildRungs(req.Info, req.Decision, adaptiveSettings{Ladder: true})) < 2 {
+	// Encode primaries still get a ladder; copy/Direct Stream sessions do not.
+	enc := req.Decision
+	enc.VideoCopy, enc.Kind = false, core.DecisionTranscode
+	enc.VideoCodec, enc.BitrateKbps = "h264", 20000
+	if len(buildRungs(req.Info, enc, adaptiveSettings{Ladder: true})) < 2 {
 		t.Fatal("fixture must otherwise produce multiple qualities")
 	}
 	s := startSession(t, m, req)
@@ -51,7 +55,28 @@ func ladderInfo(h, bitrate int) core.MediaInfo {
 func TestBuildRungsBelowSourceOnly(t *testing.T) {
 	adapt := adaptiveSettings{Ladder: true}
 	info := ladderInfo(2160, 40000)
-	primary := core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, AudioStream: 1, Container: ContainerMPEGTS}
+	// Video copy without LadderUnderCopy: primary only.
+	copyPrimary := core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, AudioStream: 1, Container: ContainerMPEGTS}
+	if got := buildRungs(info, copyPrimary, adapt); len(got) != 1 || got[0].id != "base" || got[0].height != 2160 {
+		t.Fatalf("copy ladder = %+v", got)
+	}
+	// With LadderUnderCopy: full soft range (legacy abrLadder under copy).
+	under := adaptiveSettings{Ladder: true, LadderUnderCopy: true}
+	got := buildRungs(info, copyPrimary, under)
+	var underIDs []string
+	for _, r := range got {
+		underIDs = append(underIDs, r.id)
+	}
+	if strings.Join(underIDs, ",") != "base,1080p8m,720p4m,480p1500k,360p800k" {
+		t.Fatalf("under-copy ladder = %v", underIDs)
+	}
+	for _, r := range got[1:] {
+		if r.decision.VideoCopy || r.decision.VideoCodec != "h264" {
+			t.Errorf("under-copy soft rung %+v / %+v", r, r.decision)
+		}
+	}
+	// Transcode primary: cheaper rungs below the source.
+	primary := core.Decision{Kind: core.DecisionTranscode, VideoCodec: "h264", MaxHeight: 2160, BitrateKbps: 40000, AudioStream: 1, AudioCodec: "aac", Container: ContainerMPEGTS}
 	rungs := buildRungs(info, primary, adapt)
 	var ids []string
 	for _, r := range rungs {
@@ -78,6 +103,36 @@ func TestBuildRungsBelowSourceOnly(t *testing.T) {
 	}
 }
 
+// ladderEncodeRequest is a high-bitrate encode primary so ABR can attach
+// cheaper rungs (video-copy sessions no longer get a ladder).
+func ladderEncodeRequest(t *testing.T, id string, dur time.Duration) core.HLSRequest {
+	t.Helper()
+	req := remuxRequest(t, id, dur)
+	v := req.Info.Video()
+	h, br := 1080, 12000
+	if v != nil {
+		if v.Height > 0 {
+			h = v.Height
+		}
+		if v.BitrateKbps > 0 {
+			br = max(v.BitrateKbps, 12000)
+		}
+	}
+	req.Decision = core.Decision{
+		Kind: core.DecisionTranscode, VideoCodec: "h264", MaxHeight: h, BitrateKbps: br,
+		AudioStream: 1, AudioCodec: "aac", Container: ContainerMPEGTS,
+	}
+	return req
+}
+
+func ladderEncodeDASHRequest(t *testing.T, id string, dur time.Duration) core.HLSRequest {
+	t.Helper()
+	req := ladderEncodeRequest(t, id, dur)
+	req.Protocol = core.ProtocolDASH
+	req.Decision.Container = ContainerFMP4
+	return req
+}
+
 func TestBuildRungsRespectCap(t *testing.T) {
 	adapt := adaptiveSettings{Ladder: true}
 	// Primary already transcoded down to a 4000 kbps / 720p cap: rungs at
@@ -99,7 +154,7 @@ func TestBuildRungsRespectCap(t *testing.T) {
 func TestLadderSessionLazyRungStart(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true})
-	s := startSession(t, m, remuxRequest(t, "lad", 10*time.Minute))
+	s := startSession(t, m, ladderEncodeRequest(t, "lad", 10*time.Minute))
 	rungs := s.Rungs()
 	if len(rungs) < 3 || rungs[0].ID != "base" {
 		t.Fatalf("rungs = %+v", rungs)
@@ -161,7 +216,7 @@ func TestLadderSessionLazyRungStart(t *testing.T) {
 func TestDASHLadderMPDAndLazyRep(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true})
-	s := startDASHSession(t, m, dashRequest(t, "dlad", 10*time.Minute))
+	s := startDASHSession(t, m, ladderEncodeDASHRequest(t, "dlad", 10*time.Minute))
 	rec := httptest.NewRecorder()
 	s.ServeManifest(rec, httptest.NewRequest(http.MethodGet, "/start.mpd", nil))
 	body := rec.Body.String()
@@ -194,7 +249,7 @@ func TestDASHLadderMPDAndLazyRep(t *testing.T) {
 func TestRungSwitchWaitsOutDwell(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true}, withRungDwell(400*time.Millisecond))
-	s := startSession(t, m, remuxRequest(t, "dwell", 10*time.Minute))
+	s := startSession(t, m, ladderEncodeRequest(t, "dwell", 10*time.Minute))
 	if r := get(t, s, 0); r.Code != 200 {
 		t.Fatalf("base segment 0: %d", r.Code)
 	}

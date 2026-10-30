@@ -13,7 +13,19 @@ import (
 
 // Real FFmpeg proves that expediting a media downswitch still uses the shared
 // timestamps and preserves audio. It does not simulate a browser or a link.
+// The copy-primary case keeps ABRLadderUnderCopy explicit: UpdateConfig
+// replaces the whole transcode config.
 func TestIntegrationAdaptiveRapidMediaHandoff(t *testing.T) {
+	testIntegrationAdaptiveRapidMediaHandoff(t, true)
+}
+
+// Additional encode-primary handoff. Copy and encode alignment are different
+// behaviors; this does not replace the copy-primary case.
+func TestIntegrationAdaptiveRapidEncodeHandoff(t *testing.T) {
+	testIntegrationAdaptiveRapidMediaHandoff(t, false)
+}
+
+func testIntegrationAdaptiveRapidMediaHandoff(t *testing.T, copyPrimary bool) {
 	e := newRealEnv(t, WithoutHWDetection(), WithBuffering(24*time.Second, 8*time.Second, 8*time.Second), withRungDwell(8*time.Second))
 	e.gen(t, "adaptive.mkv", 16, "-vf", "scale=854:480", "-c:v", "libx264", "-threads", "2", "-preset", "ultrafast", "-g", "48", "-sc_threshold", "0", "-c:a", "aac", "-ac", "2")
 	info, err := e.m.Probe(t.Context(), e.url("adaptive.mkv"))
@@ -21,7 +33,7 @@ func TestIntegrationAdaptiveRapidMediaHandoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	info.Keyframes = e.keyframeIndex(t, "adaptive.mkv")
-	e.m.UpdateConfig(config.Transcode{ABRLadder: true})
+	e.m.UpdateConfig(config.Transcode{ABRLadder: true, ABRLadderUnderCopy: true})
 	for _, transport := range []string{ContainerMPEGTS, ContainerFMP4, core.ProtocolDASH} {
 		t.Run(transport, func(t *testing.T) {
 			proto, container := core.ProtocolHLS, transport
@@ -29,12 +41,18 @@ func TestIntegrationAdaptiveRapidMediaHandoff(t *testing.T) {
 				proto, container = core.ProtocolDASH, ContainerFMP4
 			}
 			d := core.Decision{Kind: core.DecisionRemux, Container: container, VideoCopy: true, AudioCopy: true, AudioStream: 1}
+			if !copyPrimary {
+				d = core.Decision{Kind: core.DecisionTranscode, Container: container, VideoCodec: "h264", MaxHeight: 720, BitrateKbps: 8000, AudioStream: 1, AudioCodec: "aac"}
+			}
 			hs, err := e.m.StartHLS(t.Context(), core.HLSRequest{SessionID: "adaptive-" + transport, InputURL: e.url("adaptive.mkv"), Info: *info, Decision: d, Protocol: proto, SegmentDuration: 2 * time.Second})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer hs.Close()
 			s := hs.(*Session)
+			if s.decision.VideoCopy != copyPrimary {
+				t.Fatalf("video copy = %v, want %v", s.decision.VideoCopy, copyPrimary)
+			}
 			if len(s.rungs) < 2 {
 				t.Fatalf("no lower rendition: %+v", s.rungs)
 			}

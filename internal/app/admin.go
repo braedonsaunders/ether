@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
+	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/llm"
@@ -63,13 +65,19 @@ func (a *App) buildAdmin() http.Handler {
 		ValidateExtra: a.validateExtra,
 		Logger:        a.log.With("component", "admin"),
 		Logs:          a.logs,
+		LogDir:        filepath.Join(a.opts.DataDir, "logs"),
 		Version:       a.opts.Version,
 		PlexAuth:      &plexAuth{app: a, pins: map[string]*plextv.PIN{}},
 		SignIn:        &plexSignIn{app: a, pins: map[string]*plextv.PIN{}},
 		IsOwnerToken: func(ctx context.Context, token string) bool {
+			if auth.IsOwnerSession(token) {
+				u, err := a.users.OwnerSession(ctx, token)
+				return err == nil && u.IsOwner
+			}
 			u, err := a.users.Authenticate(ctx, token)
 			return err == nil && u.IsOwner
 		},
+		Sessions: a.users,
 		TestUsenet: func(ctx context.Context, p config.UsenetProvider) error {
 			return usenet.TestProvider(ctx, p)
 		},

@@ -365,10 +365,33 @@ export function SchemaGroups({
   );
 }
 
+/** Labels/help for Advanced keys that would otherwise read as raw camelCase. */
+function advancedFieldMeta(key: string): { label: string; help?: string } | undefined {
+  switch (key) {
+    case "abrLadder":
+      return {
+        label: t("Adaptive bitrate ladder · Transcode"),
+        help: t(
+          "Advertise lower encode qualities during transcodes so clients can switch quality with bandwidth.",
+        ),
+      };
+    case "abrLadderUnderCopy":
+      return {
+        label: t("Adaptive bitrate ladder · Direct Stream"),
+        help: t(
+          "On by default with the transcode ladder. When off, Direct Stream sessions advertise only the copy primary with no soft encode fallbacks.",
+        ),
+      };
+    default:
+      return undefined;
+  }
+}
+
 /** A field definition guessed from a value, for options the UI has no schema for. */
 export function inferField(key: string, value: unknown): FieldDef {
-  const label = humanizeKey(key);
-  if (typeof value === "boolean") return { key, label, kind: "bool" };
+  const meta = advancedFieldMeta(key);
+  const label = meta?.label ?? humanizeKey(key);
+  if (typeof value === "boolean") return { key, label, kind: "bool", help: meta?.help };
   if (typeof value === "number") return { key, label, kind: "number" };
   if (typeof value === "string")
     return {

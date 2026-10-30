@@ -44,6 +44,7 @@ export function createMaintenance() {
     "cache.full",
     "cert.renewed",
     "update.available",
+    "backup.failed",
     "user.joined",
     "title.available",
     "newsletter.weekly",

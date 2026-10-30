@@ -33,8 +33,10 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
 
 # ---- runtime ----------------------------------------------------------------
 # Debian (not Alpine): the jellyfin-ffmpeg portable build and VAAPI/QSV
-# userspace drivers are glibc-based.
-FROM debian:bookworm-slim AS runtime
+# userspace drivers are glibc-based. Trixie ships libva 2.22, which
+# provides vaMapBuffer2. Bookworm's libva 2.17 does not, and the pinned
+# Jellyfin FFmpeg 8.1.3 fails to load VAAPI against it.
+FROM debian:trixie-slim AS runtime
 ARG TARGETARCH
 
 # Hardware-transcode userspace, loaded by the bundled ffmpeg at runtime:

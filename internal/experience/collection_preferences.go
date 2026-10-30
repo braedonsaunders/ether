@@ -52,7 +52,7 @@ func (s *Service) Collections(ctx context.Context, viewer *core.Viewer, _ core.D
 	seenTypes := map[core.MediaType]bool{}
 	seenKeys := map[core.RatingKey]bool{}
 	var visible []core.Collection
-	for _, lib := range s.d.Libraries {
+	for _, lib := range s.libraries() {
 		typ := lib.Type
 		if (typ != core.TypeMovie && typ != core.TypeShow) || !SectionAllowed(v, lib.ID) || (len(requested) > 0 && !requested[typ]) || seenTypes[typ] {
 			continue

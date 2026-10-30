@@ -92,8 +92,14 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		Token:      func() string { return a.cfg.Get().Plex.Token },
 		Background: true,
 	})
-
-	deps.EpisodeOrder = a.episodeorder
+	if !cfg.Spike.Enabled {
+		// EpisodeOrder is TMDB-backed (build_integrations.go): metadataTitle
+		// prefers it over Catalog, and the real catalog does not know the
+		// spike catalog's KindLocal keys, so wiring it in spike mode makes
+		// every /library/metadata/<KindLocal> 404 while hubs and play
+		// queues (which read Catalog directly) keep working.
+		deps.EpisodeOrder = a.episodeorder
+	}
 	deps.Discovery = a.discoveryFeatures
 	deps.LiveTV = a.livetv
 	deps.Subtitles = plexSubtitles{a}
@@ -128,16 +134,29 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	}
 	srv := plex.NewServer(deps)
 	a.plexServer = srv
+	a.publishLibrarySections()
+	// Frontend unmount closes the server and the GUID worker. Server.Close is
+	// idempotent, so the app closer may run as well. Watch refresh stays on
+	// the Plex mount (ExplicitWatchOnly in spike), not a second subscription.
+	a.plexClose = func() { srv.Close(); deps.PlexGUID.Close() }
+	a.closers = append(a.closers, func() { srv.Close() })
+	return srv, nil
+}
+
+// publishLibrarySections pushes the live Movies / TV Shows identities
+// (including configured titles) to plex.tv account registration.
+func (a *App) publishLibrarySections() {
+	if a.plexServer == nil || a.registrar == nil {
+		return
+	}
 	libraries := make([]plextv.LibrarySection, 0)
-	for _, sec := range srv.LibrarySections() {
+	for _, sec := range a.plexServer.LibrarySections() {
 		libraries = append(libraries, plextv.LibrarySection{
 			Key: sec.ID, Type: string(sec.Type), Title: sec.Title,
 			UUID: sec.UUID, Language: sec.Language,
 		})
 	}
 	a.registrar.SetLibrarySections(libraries)
-	a.plexClose = func() { srv.Close(); deps.PlexGUID.Close() }
-	return srv, nil
 }
 
 func plexPlatform() string {

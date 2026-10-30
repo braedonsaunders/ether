@@ -219,6 +219,8 @@ export interface EtherConfig {
     port: number;
     bindAddress: string;
     friendlyName: string;
+    moviesLibraryName: string;
+    tvShowsLibraryName: string;
     machineIdentifier: string;
     logLevel: string;
     defaultStreamLimit: number;
@@ -413,6 +415,7 @@ export interface Bootstrap {
   version: string;
   setupComplete: boolean;
   ownerConfigured?: boolean;
+  signInMethods?: ("local" | "plex")[];
   authenticated: boolean;
   authRequired: boolean;
   serverName: string;
@@ -552,12 +555,20 @@ export interface ResolverTrace {
   limits?: {
     profileMinHeight: number;
     profileMaxHeight: number;
+    profileConfiguredMaxHeight?: number;
     clientMaxHeight: number;
     clientMaxBitrateKbps: number;
   };
   titleKey: string;
   titleName: string;
   profile: string;
+  /** Max-height ceilings behind the profile: as configured, the client's
+   * cap and the effective value in force. For the configured value,
+   * absent = never recorded (unknown, legacy traces) and an explicit
+   * 0 = no ceiling ("Any"); client/effective keep 0 for no ceiling. */
+  profileMaxHeight?: number;
+  clientMaxHeight?: number;
+  effectiveMaxHeight?: number;
   at: string;
   candidates: CandidateTrace[] | null;
   winner?: string;

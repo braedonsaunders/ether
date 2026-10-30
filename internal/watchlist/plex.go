@@ -41,8 +41,12 @@ func (s *Service) plex(ctx context.Context, token string) ([]core.Title, error) 
 				Size      int `json:"size"`
 				TotalSize int `json:"totalSize"`
 				Metadata  []struct {
-					Type string `json:"type"`
-					Guid []struct {
+					// Discover returns both guid (the Plex identity) and Guid (external IDs).
+					// Declare both to prevent encoding/json's case-insensitive fallback
+					// from decoding the lowercase string into the external-ID slice.
+					PlexGUID string `json:"guid"`
+					Type     string `json:"type"`
+					Guid     []struct {
 						ID string `json:"id"`
 					} `json:"Guid"`
 				} `json:"Metadata"`

@@ -14,7 +14,8 @@ import (
 func TestDASHLazyRepresentationStartsOnInit(t *testing.T) {
 	fr := newFakeRunner()
 	m := newTestManager(t, fr, config.Transcode{ABRLadder: true}, WithSegmentTimeout(500*time.Millisecond), withRungDwell(10*time.Second))
-	s := startDASHSession(t, m, dashRequest(t, "init-first", 10*time.Minute))
+	// Encode primary. This manager config leaves abrLadderUnderCopy false, so a copy primary would not advertise soft rungs.
+	s := startDASHSession(t, m, ladderEncodeDASHRequest(t, "init-first", 10*time.Minute))
 	rec := httptest.NewRecorder()
 	s.ServeInit(rec, httptest.NewRequest(http.MethodGet, "/2/header", nil), 2)
 	if rec.Code != http.StatusOK || rec.Body.Len() == 0 {

@@ -42,7 +42,7 @@ ALTER TABLE notify_queue ADD COLUMN claimed_at INTEGER NOT NULL DEFAULT 0;
 
 const Redacted = "[configured]"
 
-var Kinds = []string{"server.started", "server.stopping", "server.crash", "provider.recovered", "indexer.recovered", "cache.recovered", "playback.start", "playback.stop", "playback.error", "playback.failover", "provider.outage", "indexer.outage", "indexer.budget", "cache.full", "cert.renewed", "update.available", "user.joined", "title.available", "newsletter.weekly", "test"}
+var Kinds = []string{"server.started", "server.stopping", "server.crash", "provider.recovered", "indexer.recovered", "cache.recovered", "playback.start", "playback.stop", "playback.error", "playback.failover", "provider.outage", "indexer.outage", "indexer.budget", "cache.full", "cert.renewed", "update.available", "backup.failed", "user.joined", "title.available", "newsletter.weekly", "test"}
 
 type Channel struct {
 	SMTPMode      string            `json:"smtpMode,omitempty"`
@@ -194,30 +194,9 @@ func (s *Service) Save(ctx context.Context, c Channel) error {
 	return err
 }
 func (s *Service) Emit(ctx context.Context, e Event) error {
-	if !known(e.Kind) {
-		return errors.New("unknown event kind")
-	}
-	if len(e.Title) > 500 || len(e.Message) > 8000 || len(e.HTML) > 256000 {
-		return errors.New("event too large")
-	}
-	if e.At.IsZero() {
-		e.At = s.opts.Now()
-	}
-	cs, err := s.channels(ctx)
-	if err != nil {
+	e, selected, err := s.prepare(ctx, e)
+	if err != nil || len(selected) == 0 {
 		return err
-	}
-	var selected []Channel
-	for _, c := range cs {
-		if c.Enabled && matches(c.Events, e.Kind) && (e.Kind != "newsletter.weekly" || c.Kind == "smtp") {
-			selected = append(selected, c)
-		}
-	}
-	if len(selected) == 0 {
-		if e.Kind == "newsletter.weekly" {
-			return errors.New("no enabled SMTP channel selected for weekly newsletters")
-		}
-		return nil
 	}
 	// Commit every destination together. A failed fan-out can be retried
 	// without duplicating notifications already queued for earlier channels.
@@ -232,6 +211,33 @@ func (s *Service) Emit(ctx context.Context, e Event) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// prepare validates e, stamps its time and selects the channels it goes to.
+func (s *Service) prepare(ctx context.Context, e Event) (Event, []Channel, error) {
+	if !known(e.Kind) {
+		return e, nil, errors.New("unknown event kind")
+	}
+	if len(e.Title) > 500 || len(e.Message) > 8000 || len(e.HTML) > 256000 {
+		return e, nil, errors.New("event too large")
+	}
+	if e.At.IsZero() {
+		e.At = s.opts.Now()
+	}
+	cs, err := s.channels(ctx)
+	if err != nil {
+		return e, nil, err
+	}
+	var selected []Channel
+	for _, c := range cs {
+		if c.Enabled && matches(c.Events, e.Kind) && (e.Kind != "newsletter.weekly" || c.Kind == "smtp") {
+			selected = append(selected, c)
+		}
+	}
+	if len(selected) == 0 && e.Kind == "newsletter.weekly" {
+		return e, nil, errors.New("no enabled SMTP channel selected for weekly newsletters")
+	}
+	return e, selected, nil
 }
 func known(k string) bool {
 	for _, v := range Kinds {

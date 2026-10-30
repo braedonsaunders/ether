@@ -324,17 +324,18 @@ func (s *Server) identity() Identity {
 }
 
 // LibrarySections returns the canonical section identities for account
-// registration. The copy prevents publishers from changing local libraries.
+// registration. Titles follow the live config so renames publish to plex.tv.
+// The copy prevents publishers from changing local libraries.
 func (s *Server) LibrarySections() []Section {
-	return append([]Section(nil), s.sections...)
+	return s.withLibraryTitles(s.sections)
 }
 
 func (s *Server) buildSections() []Section {
 	secs := s.d.Sections
 	if len(secs) == 0 {
 		secs = []Section{
-			{ID: 1, Type: core.TypeMovie, Title: "Movies"},
-			{ID: 2, Type: core.TypeShow, Title: "TV Shows"},
+			{ID: 1, Type: core.TypeMovie},
+			{ID: 2, Type: core.TypeShow},
 		}
 	}
 	out := make([]Section, len(secs))
@@ -349,12 +350,42 @@ func (s *Server) buildSections() []Section {
 		}
 		out[i] = sec
 	}
+	return s.withLibraryTitles(out)
+}
+
+// librarySectionTitle is the Movies / TV Shows name Ether advertises to Plex.
+func librarySectionTitle(t core.MediaType, c config.Config) string {
+	switch t {
+	case core.TypeShow, core.TypeSeason, core.TypeEpisode:
+		if n := strings.TrimSpace(c.Server.TVShowsLibraryName); n != "" {
+			return n
+		}
+		return "TV Shows"
+	default:
+		if n := strings.TrimSpace(c.Server.MoviesLibraryName); n != "" {
+			return n
+		}
+		return "Movies"
+	}
+}
+
+// withLibraryTitles copies secs and applies the configured library names.
+// Section UUIDs stay derived from id only, so renames do not break plex.tv.
+func (s *Server) withLibraryTitles(secs []Section) []Section {
+	c := s.cfg()
+	out := append([]Section(nil), secs...)
+	for i := range out {
+		switch out[i].Type {
+		case core.TypeMovie, core.TypeShow:
+			out[i].Title = librarySectionTitle(out[i].Type, c)
+		}
+	}
 	return out
 }
 
 // sectionByID returns the section with the given id.
 func (s *Server) sectionByID(id int) (Section, bool) {
-	for _, sec := range s.sections {
+	for _, sec := range s.withLibraryTitles(s.sections) {
 		if sec.ID == id {
 			return sec, true
 		}
@@ -369,7 +400,7 @@ func (s *Server) sectionFor(t core.MediaType) (Section, bool) {
 	case core.TypeShow, core.TypeSeason, core.TypeEpisode:
 		want = core.TypeShow
 	}
-	for _, sec := range s.sections {
+	for _, sec := range s.withLibraryTitles(s.sections) {
 		if sec.Type == want {
 			return sec, true
 		}
@@ -379,11 +410,12 @@ func (s *Server) sectionFor(t core.MediaType) (Section, bool) {
 
 // userSections lists the sections a user may see.
 func (s *Server) userSections(u *core.User) []Section {
+	secs := s.withLibraryTitles(s.sections)
 	if u == nil || len(u.AllowedSections) == 0 || u.IsOwner {
-		return s.sections
+		return secs
 	}
 	var out []Section
-	for _, sec := range s.sections {
+	for _, sec := range secs {
 		if experience.SectionAllowed(u, sec.ID) {
 			out = append(out, sec)
 		}

@@ -34,7 +34,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		res, cached = warm.res, warm.probe
 	}
 	if res == nil {
-		res = m.resumeResolution(ctx, s.ident.userID, s.ident.key, profile.Name, s.caps)
+		res = m.resumeResolution(ctx, s.ident.userID, s.ident.key, profileKey(profile), s.caps)
 		if res != nil && s.prefer != "" && res.Release.ID != s.prefer {
 			res = nil // a picked version wins over the remembered release
 		}
@@ -981,7 +981,9 @@ func containerFromName(name string) string {
 // Resume records
 
 // resumeResolution rebuilds a Resolution from the stored resume record when
-// it was resolved for the same quality profile.
+// it was resolved for the same profile selection key (configured
+// definition, pre-clamp). Legacy records store a plain name, never
+// match, and are replaced by the fresh resolution's record.
 func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.RatingKey, profile string, caps core.ClientCaps) *core.Resolution {
 	if m.resume == nil || m.deps.Availability.Down() {
 		return nil
@@ -1015,7 +1017,7 @@ func (m *Manager) saveResume(ctx context.Context, s *session, g *generation) {
 		userID:    s.ident.userID,
 		key:       s.ident.key,
 		release:   g.res.Release,
-		profile:   s.profile,
+		profile:   s.profileKey,
 		size:      g.src.Size(),
 		duration:  info.Duration,
 		updatedAt: m.now(),
@@ -1061,7 +1063,7 @@ func (m *Manager) Remember(ctx context.Context, user *core.User, key core.Rating
 	if m.resume == nil || user == nil || res == nil || len(res.NZB) == 0 {
 		return nil
 	}
-	profile := m.deps.SelectProfile(caps, user).Name
+	profile := profileKey(m.deps.SelectProfile(caps, user))
 	rec, err := m.resume.get(ctx, user.ID, key)
 	if err != nil {
 		return err
@@ -1089,9 +1091,11 @@ func (m *Manager) ResumeFor(ctx context.Context, user *core.User, key core.Ratin
 	if err != nil || rp == nil {
 		return nil, err
 	}
-	if rp.Profile != m.deps.SelectProfile(caps, user).Name || !m.resumeSourceAllowed(rp.Release) || !sourceFitsBitrate(rp.Size, rp.Duration, 0, caps.MaxBitrateKbps) {
+	prof := m.deps.SelectProfile(caps, user)
+	if rp.profileKey != profileKey(prof) || !m.resumeSourceAllowed(rp.Release) || !sourceFitsBitrate(rp.Size, rp.Duration, 0, caps.MaxBitrateKbps) {
 		return nil, nil
 	}
+	rp.Profile = prof.Name // name from the profile object, not the stored column
 	return rp, nil
 }
 

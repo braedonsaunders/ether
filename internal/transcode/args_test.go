@@ -61,7 +61,7 @@ func TestVBVHardwareQualityModes(t *testing.T) {
 		{AccelNVENC, []string{"-rc vbr", "-cq 21", "-maxrate 2400k", "-bufsize 19200k"}},
 		{AccelVideoToolbox, []string{"-q:v 65", "-maxrate 2400k", "-bufsize 19200k"}},
 		{AccelQSV, []string{"-global_quality 23", "-maxrate 2400k", "-bufsize 19200k"}},
-		{AccelVAAPI, []string{"-rc_mode QVBR", "-global_quality 23", "-maxrate 2400k", "-bufsize 19200k"}},
+		{AccelVAAPI, []string{"-rc_mode QVBR", "-global_quality 23", "-b:v 1800k", "-maxrate 2400k", "-bufsize 19200k"}},
 	} {
 		t.Run(tc.accel, func(t *testing.T) {
 			s := baseSpec(info, d)

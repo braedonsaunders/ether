@@ -169,3 +169,26 @@ func (t tee) Write(p []byte) (int, error) {
 	}
 	return 0, firstErr
 }
+
+// MainLogName is the main log file inside the logs directory.
+const MainLogName = "ether.log"
+
+// Files lists the log files present in dir, oldest first: the crash log
+// (rotated, then current), then the main log's rotations from the highest
+// number down, then the active main log.
+func Files(dir string) []string {
+	var names []string
+	names = append(names, CrashLogName+".1", CrashLogName)
+	for i := 64; i >= 1; i-- {
+		names = append(names, fmt.Sprintf("%s.%d", MainLogName, i))
+	}
+	names = append(names, MainLogName)
+	var out []string
+	for _, n := range names {
+		p := filepath.Join(dir, n)
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
+			out = append(out, p)
+		}
+	}
+	return out
+}

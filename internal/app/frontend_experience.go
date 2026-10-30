@@ -22,13 +22,29 @@ func situationFor(req frontend.RowRequest) core.HomeSituation {
 	return core.HomeSituation{Device: h.Device, Daypart: h.Daypart, Weekend: h.Weekend, Now: h.Now, LibraryID: h.SectionID, Product: h.Product, Platform: h.Platform, ClientID: h.ClientID, SessionID: h.SessionID}
 }
 
+// configuredLibraries is the live Movies / TV Shows pair. IDs stay 1 and 2 so
+// saved ParentId and section UUIDs do not change when the owner renames them.
+func (a *App) configuredLibraries() []experience.Library {
+	movies, shows := "Movies", "TV Shows"
+	if a.cfg != nil {
+		c := a.cfg.Get()
+		if n := strings.TrimSpace(c.Server.MoviesLibraryName); n != "" {
+			movies = n
+		}
+		if n := strings.TrimSpace(c.Server.TVShowsLibraryName); n != "" {
+			shows = n
+		}
+	}
+	return []experience.Library{{ID: 1, Name: movies, Type: core.TypeMovie}, {ID: 2, Name: shows, Type: core.TypeShow}}
+}
+
 // newSurfaceExperience builds an explicitly surface-bound service. A shared
 // situation is inserted by surfaceExperience.Rows before ranking and receipt issuance.
 func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.Artwork) (frontend.Experience, error) {
 	if a.users == nil || a.catalog == nil || a.safety == nil || a.state == nil || a.personalize == nil || a.favorites == nil || a.playlists == nil || a.db == nil {
 		return nil, errors.New("experience: dependencies unavailable")
 	}
-	libs := []experience.Library{{ID: 1, Name: "Movies", Type: core.TypeMovie}, {ID: 2, Name: "TV Shows", Type: core.TypeShow}}
+	libs := a.configuredLibraries()
 	filter := func(ctx context.Context, ts []core.Title) []core.Title {
 		if a.availability == nil {
 			return ts
@@ -245,7 +261,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			out = append(out, frontend.NotInterestedEntry{Key: entry.Key, AddedAt: entry.AddedAt})
 		}
 		return out, nil
-	}, ByExternalID: a.catalog.ByExternalID, Active: a.users.ActiveUser, Libraries: libs, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, AiredEpisodes: a.catalog.CachedAiredEpisodes, AddedTimes: a.catalog.CachedAddedTimes, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	}, ByExternalID: a.catalog.ByExternalID, Active: a.users.ActiveUser, Libraries: libs, LiveLibraries: a.configuredLibraries, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, AiredEpisodes: a.catalog.CachedAiredEpisodes, AddedTimes: a.catalog.CachedAddedTimes, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		return a.catalog.ResolveShowParents(ctx, keys)
 	}, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
 		if a.episodeorder != nil {

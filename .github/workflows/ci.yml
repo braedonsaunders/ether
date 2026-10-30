@@ -212,7 +212,10 @@ jobs:
               plistlib.load(open(p, "rb"))
               print("ok", p)
           PY
+      - name: Docker runtime stack guard
+        run: packaging/docker/check-runtime-stack.sh
       - name: Docker image builds (host ffmpeg staged)
         run: |
           scripts/fetch-ffmpeg.sh linux-amd64
           docker build -t ether:ci .
+          packaging/docker/check-runtime-stack.sh --image ether:ci

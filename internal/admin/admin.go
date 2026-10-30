@@ -68,6 +68,17 @@ type SignIn interface {
 	PINToken(ctx context.Context, id string) (string, error)
 }
 
+// Sessions issues and revokes owner console sessions (satisfied by
+// *auth.Service). Sign-in hands the browser a session that only opens this
+// API, never the owner's plex.tv account token.
+type Sessions interface {
+	// IssueOwnerSession exchanges an owner credential for a session. It
+	// fails with core.ErrUnauthorized unless credential is the owner's.
+	IssueOwnerSession(ctx context.Context, credential string) (token string, expires time.Time, err error)
+	// RevokeOwnerSession ends a session; other tokens are ignored.
+	RevokeOwnerSession(ctx context.Context, token string) error
+}
+
 // UserStore is the user-administration surface (satisfied by core.Auth
 // implementations; only the two admin methods are required here).
 type UserStore interface {
@@ -121,6 +132,9 @@ type Deps struct {
 	// 2000-entry buffer is created when nil (retrieve it via
 	// Handler.Logs()); pass a shared one to tail server logs.
 	Logs *LogBuffer
+	// LogDir holds the on-disk logs offered by GET /api/logs/download;
+	// empty offers the in-memory buffer instead.
+	LogDir string
 	// Version is reported by /ether/api/bootstrap ("dev" when empty).
 	Version string
 
@@ -130,8 +144,12 @@ type Deps struct {
 	// SignIn powers "Sign in with Plex" on the admin login screen.
 	SignIn SignIn
 
-	// IsOwnerToken reports whether a bearer token belongs to the owner.
+	// IsOwnerToken reports whether a bearer token (an owner credential or
+	// a console session) belongs to the owner.
 	IsOwnerToken func(ctx context.Context, token string) bool
+
+	// Sessions backs console sign-in and sign-out.
+	Sessions Sessions
 
 	// Provider/integration testers used by the wizard and settings pages.
 	TestUsenet        func(ctx context.Context, p config.UsenetProvider) error
@@ -298,10 +316,12 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/me/pin", h.limitIdentityAuth(h.handlePortalPIN))
 	mux.HandleFunc("GET /api/me/pin/{handle}", h.limitIdentityPoll(h.handlePortalPINPoll))
 	mux.HandleFunc("POST /api/me/quickconnect", h.handleApproveQuickConnect)
-	// Public sign-in: yields a token only to the browser that started the
-	// PIN, and only if it belongs to the owner.
+	// Public sign-in: yields a console session only to the browser that
+	// started the PIN, and only if the account owns the server.
 	mux.HandleFunc("POST /api/auth/pin", h.limitAuth(h.handleSignInStart))
 	mux.HandleFunc("GET /api/auth/pin/{handle}", h.limitAuth(h.handleSignInPoll))
+	mux.HandleFunc("POST /api/auth/session", h.limitAuth(h.handleSessionCreate))
+	mux.HandleFunc("DELETE /api/auth/session", h.limitAuth(h.handleSessionDelete))
 
 	api("POST /api/viewers/{id}/quickconnect", h.handleOwnerQuickConnect)
 	api("GET /api/viewers/{id}/favorite-episode-alert", h.ownerFavoriteEpisodeAlert)
@@ -361,6 +381,7 @@ func (h *Handler) routes() *http.ServeMux {
 	api("PATCH /api/users/{id}", h.handleUpdateUser)
 
 	api("GET /api/logs", h.handleLogs)
+	api("GET /api/logs/download", h.handleLogsDownload)
 	api("DELETE /api/logs", h.handleClearLogs)
 
 	for path, handler := range h.deps.Extensions {

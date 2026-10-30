@@ -608,6 +608,20 @@ func TestValidateClusterWeight(t *testing.T) {
 	}
 }
 
+func TestValidateLibraryNames(t *testing.T) {
+	cfg := config.Defaults(t.TempDir())
+	cfg.Server.MoviesLibraryName = "  "
+	cfg.Server.TVShowsLibraryName = ""
+	errs := admin.ValidateConfig(cfg)
+	fields := map[string]bool{}
+	for _, e := range errs {
+		fields[e.Field] = true
+	}
+	if !fields["server.moviesLibraryName"] || !fields["server.tvShowsLibraryName"] {
+		t.Fatalf("expected library name required errors, got %v", errs)
+	}
+}
+
 func TestValidateMaintenanceWindow(t *testing.T) {
 	cfg := config.Defaults(t.TempDir())
 	cfg.Updates.MaintenanceStart = "23:30"

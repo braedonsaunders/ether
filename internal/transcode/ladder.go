@@ -158,7 +158,10 @@ func buildRungs(info core.MediaInfo, primary core.Decision, adapt adaptiveSettin
 	}
 	base.peakKbps = peakKbps(avg)
 	rungs := []rung{base}
-	if !adapt.Ladder || v == nil {
+	// Soft encode rungs under a video-copy primary follow abrLadderUnderCopy
+	// (default on for upgrade compatibility with abrLadder). Set it false to
+	// advertise only the Direct Stream / remux primary.
+	if !adapt.Ladder || v == nil || (primary.VideoCopy && !adapt.LadderUnderCopy) {
 		return rungs
 	}
 	audio := decisionAudioKbps(info, primary) // rungs carry the primary's audio

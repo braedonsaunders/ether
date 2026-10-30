@@ -119,6 +119,12 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if strings.TrimSpace(cfg.Server.FriendlyName) == "" {
 		v.add("server.friendlyName", "is required")
 	}
+	if strings.TrimSpace(cfg.Server.MoviesLibraryName) == "" {
+		v.add("server.moviesLibraryName", "is required")
+	}
+	if strings.TrimSpace(cfg.Server.TVShowsLibraryName) == "" {
+		v.add("server.tvShowsLibraryName", "is required")
+	}
 	if cfg.Server.LogLevel != "" {
 		v.oneOf("server.logLevel", cfg.Server.LogLevel, "debug", "info", "warn", "error")
 	}

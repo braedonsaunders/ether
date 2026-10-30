@@ -114,9 +114,11 @@ func (c *Cache) Sweep() {
 		return
 	}
 	prot, _ := c.protected()
+	c.evictMu.Lock() // a floor measurement must not see these bytes half-freed
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
+		c.evictMu.Unlock()
 		return
 	}
 	now := c.now()
@@ -139,6 +141,7 @@ func (c *Cache) Sweep() {
 	if err := c.deleteFiles(victims); err != nil {
 		c.logger.Warn("expire cache segments", "err", err)
 	}
+	c.evictMu.Unlock()
 	c.evict()
 }
 

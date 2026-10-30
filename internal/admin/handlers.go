@@ -643,3 +643,6 @@ func (h *Handler) handleClearLogs(w http.ResponseWriter, r *http.Request) {
 
 // DiskFree reports available bytes on the filesystem containing path.
 func DiskFree(path string) (int64, error) { _, free, err := diskUsage(path); return free, err }
+
+// DiskUsage reports the size and free bytes of the volume holding path.
+func DiskUsage(path string) (total, free int64, err error) { return diskUsage(path) }

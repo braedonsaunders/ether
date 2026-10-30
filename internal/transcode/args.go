@@ -777,7 +777,10 @@ func planEncodeArgs(s runSpec, pic picturePlan, enc, codec string, hwFrames bool
 		}
 	case "h264_vaapi", "hevc_vaapi":
 		if s.Rate.Quality {
-			e = append(e, "-rc_mode", "QVBR", "-global_quality", "23", "-maxrate", maxr, "-bufsize", buf)
+			// FFmpeg VAAPI QVBR still requires a target bitrate (unlike QSV
+			// quality modes). Without -b:v, encode fails with "Bitrate must
+			// be set for QVBR RC mode" and falls back to CPU.
+			e = append(e, "-rc_mode", "QVBR", "-global_quality", "23", "-b:v", b, "-maxrate", maxr, "-bufsize", buf)
 		} else {
 			e = append(e, "-rc_mode", "VBR", "-b:v", b, "-maxrate", maxr, "-bufsize", buf)
 		}

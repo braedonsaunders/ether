@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { EtherConfig, UsenetProvider } from "../lib/types";
-import { normalizeTraces, TraceDetail } from "../pages/releases/History";
+import { normalizeTraces, resolutionCeilings, TraceDetail } from "../pages/releases/History";
 import { calls, renderApp } from "./harness";
 
 const WAIT = { timeout: 4000 };
@@ -279,6 +280,104 @@ describe("Release traces", () => {
       rejected: true,
       reason: "too big",
     });
+  });
+
+  it("maps max-height ceilings from the trace and from its history record", () => {
+    const t = normalizeTraces([
+      {
+        titleName: "Dune",
+        profileMaxHeight: 2160,
+        clientMaxHeight: 1080,
+        effectiveMaxHeight: 1080,
+        candidates: [],
+      },
+      // As a history entry delivers them: on the record's nested trace.
+      { titleName: "Old", trace: { profileMaxHeight: 1080, effectiveMaxHeight: 1080 } },
+      { titleName: "Legacy" },
+      // The real pre-PR shape: limits without profileConfiguredMaxHeight.
+      {
+        titleName: "LegacyLimits",
+        limits: {
+          profileMinHeight: 1080,
+          profileMaxHeight: 1080,
+          clientMaxHeight: 1080,
+          clientMaxBitrateKbps: 0,
+        },
+      },
+      // A new explicitly unlimited profile: configured recorded as 0.
+      {
+        titleName: "AnyProfile",
+        limits: {
+          profileMinHeight: 0,
+          profileMaxHeight: 1080,
+          profileConfiguredMaxHeight: 0,
+          clientMaxHeight: 1080,
+          clientMaxBitrateKbps: 0,
+        },
+      },
+    ]);
+    expect(t[0]).toMatchObject({
+      profileMaxHeight: 2160,
+      clientMaxHeight: 1080,
+      effectiveMaxHeight: 1080,
+    });
+    expect(t[1]).toMatchObject({
+      profileMaxHeight: 1080,
+      clientMaxHeight: 0,
+      effectiveMaxHeight: 1080,
+    });
+    expect(t[2]!.profileMaxHeight).toBeUndefined();
+    expect(t[2]).toMatchObject({ clientMaxHeight: 0, effectiveMaxHeight: 0 });
+    expect(resolutionCeilings(t[0]!)).toBe("Profile ≤2160 · Client ≤1080 · Effective ≤1080");
+    expect(resolutionCeilings(t[1]!)).toBe("Profile ≤1080 · Client Any · Effective ≤1080");
+    expect(resolutionCeilings(t[2]!)).toBeNull();
+    // Legacy limits never recorded the configured ceiling: unknown,
+    // so no ceilings line at all (not an invented "Profile Any").
+    expect(t[3]!.profileMaxHeight).toBeUndefined();
+    expect(t[3]).toMatchObject({ clientMaxHeight: 1080, effectiveMaxHeight: 1080 });
+    expect(resolutionCeilings(t[3]!)).toBeNull();
+    // Explicitly unlimited is present 0 and does render as "Any".
+    expect(t[4]!.profileMaxHeight).toBe(0);
+    expect(resolutionCeilings(t[4]!)).toBe("Profile Any · Client ≤1080 · Effective ≤1080");
+  });
+
+  it("shows the ceilings in the trace detail", () => {
+    render(
+      <MemoryRouter>
+        <TraceDetail
+          trace={{
+            titleKey: "603",
+            titleName: "Dune",
+            profile: "4K",
+            profileMaxHeight: 2160,
+            clientMaxHeight: 1080,
+            effectiveMaxHeight: 1080,
+            at: "",
+            candidates: [],
+            searchDuration: 0,
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Profile ≤2160 · Client ≤1080 · Effective ≤1080")).toBeInTheDocument();
+  });
+
+  it("omits the ceilings for a legacy trace without them", () => {
+    render(
+      <MemoryRouter>
+        <TraceDetail
+          trace={{
+            titleKey: "603",
+            titleName: "Dune",
+            profile: "1080p",
+            at: "",
+            candidates: [],
+            searchDuration: 0,
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText(/Profile ≤|Profile Any/)).not.toBeInTheDocument();
   });
 
   it("opens the release history tab", async () => {

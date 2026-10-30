@@ -28,8 +28,11 @@ type ServiceDeps struct {
 	NotInterestedSource func(context.Context, *core.User) ([]frontend.NotInterestedEntry, error)
 	ByExternalID        func(context.Context, string, string) (*core.Title, error)
 	Active              func(context.Context, int64) (*core.User, error)
-	Libraries           []Library
-	Visibility          Visibility
+	Libraries []Library
+	// LiveLibraries, when set, is read on each surface call so configured
+	// names stay current. IDs and media types stay stable. Nil uses Libraries.
+	LiveLibraries func() []Library
+	Visibility    Visibility
 	Get                 func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
@@ -77,6 +80,15 @@ func NewService(d ServiceDeps) (*Service, error) {
 	d.Search.Visibility = d.Visibility
 	return &Service{d: d}, nil
 }
+
+func (s *Service) libraries() []Library {
+	if s.d.LiveLibraries != nil {
+		if live := s.d.LiveLibraries(); live != nil {
+			return live
+		}
+	}
+	return s.d.Libraries
+}
 func (s *Service) viewer(ctx context.Context, v *core.User) (*core.User, error) {
 	if v == nil || v.ID <= 0 {
 		return nil, core.ErrNotFound
@@ -117,8 +129,9 @@ func (s *Service) Views(ctx context.Context, viewer *core.Viewer) ([]frontend.Vi
 	if err != nil {
 		return nil, err
 	}
-	out := make([]frontend.View, 0, len(s.d.Libraries))
-	for _, lib := range s.d.Libraries {
+	libs := s.libraries()
+	out := make([]frontend.View, 0, len(libs))
+	for _, lib := range libs {
 		if SectionAllowed(v, lib.ID) {
 			out = append(out, frontend.View{ID: strconv.Itoa(lib.ID), Name: lib.Name, Type: lib.Type})
 		}
@@ -140,7 +153,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			q.Sort = core.SortPopularity
 			q.Desc = true
 		}
-		if q.Sort == core.SortAdded && len(s.d.Libraries) > 1 {
+		if q.Sort == core.SortAdded && len(s.libraries()) > 1 {
 			return core.Page{}, errors.New("experience: global added-time sorting unavailable")
 		}
 		all := make([]core.Title, 0)
@@ -151,7 +164,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		inner.StartAt = 0
 		inner.Sort = ""
 		inner.Desc = false
-		for _, lib := range s.d.Libraries {
+		for _, lib := range s.libraries() {
 			if !SectionAllowed(v, lib.ID) {
 				continue
 			}
@@ -182,10 +195,11 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	if err != nil {
 		return core.Page{}, core.ErrNotFound
 	}
+	libs := s.libraries()
 	var library *Library
-	for i := range s.d.Libraries {
-		if s.d.Libraries[i].ID == id {
-			library = &s.d.Libraries[i]
+	for i := range libs {
+		if libs[i].ID == id {
+			library = &libs[i]
 			break
 		}
 	}
@@ -704,7 +718,7 @@ func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.D
 		return frontend.SearchPage{}, err
 	}
 	var types []core.MediaType
-	for _, lib := range s.d.Libraries {
+	for _, lib := range s.libraries() {
 		if SectionAllowed(v, lib.ID) {
 			types = append(types, lib.Type)
 		}

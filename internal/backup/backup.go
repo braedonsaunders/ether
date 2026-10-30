@@ -595,23 +595,61 @@ func restore(ctx context.Context, r io.Reader, destination string, finish func()
 	}
 	return os.Rename(stage, destination)
 }
-func (s *Service) Run(ctx context.Context, onError func(error)) {
+
+// Run takes scheduled backups until ctx ends. onResult hears every
+// scheduled attempt: its error, or nil once one succeeds. A failing backup
+// is retried with backoff (15 minutes, doubling, at most the interval), not
+// every minute.
+func (s *Service) Run(ctx context.Context, onResult func(error)) {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
+	var r retryState
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-tick.C:
-			v, e := s.Settings(ctx)
-			if e == nil && v.IntervalHours > 0 && schedule.Due(time.Now(), time.Unix(v.LastRun, 0), time.Duration(v.IntervalHours)*time.Hour) {
-				_, e = s.Create(ctx)
-			}
-			if e != nil && onError != nil {
-				onError(e)
+			if attempted, e := s.runScheduled(ctx, time.Now(), &r); attempted && onResult != nil {
+				onResult(e)
 			}
 		}
 	}
+}
+
+// retryState spaces out attempts after scheduled backups fail.
+type retryState struct {
+	failures int
+	next     time.Time
+}
+
+const firstBackupRetry = 15 * time.Minute
+
+// runScheduled takes a backup if one is due and reports whether it tried.
+func (s *Service) runScheduled(ctx context.Context, now time.Time, r *retryState) (bool, error) {
+	if now.Before(r.next) {
+		return false, nil
+	}
+	limit := 24 * time.Hour
+	v, e := s.Settings(ctx)
+	if e == nil {
+		interval := time.Duration(v.IntervalHours) * time.Hour
+		if v.IntervalHours <= 0 || !schedule.Due(now, time.Unix(v.LastRun, 0), interval) {
+			return false, nil
+		}
+		limit = interval
+		_, e = s.Create(ctx)
+	}
+	if e == nil {
+		*r = retryState{}
+		return true, nil
+	}
+	wait := firstBackupRetry << min(r.failures, 8)
+	if wait > limit {
+		wait = limit
+	}
+	r.failures++
+	r.next = now.Add(wait)
+	return true, e
 }
 
 // FilesystemWarning detects the mount containing dataDir on Linux and macOS.

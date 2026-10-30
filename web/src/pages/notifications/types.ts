@@ -55,6 +55,7 @@ export const CRITICAL_EVENTS = [
   "provider.outage",
   "indexer.outage",
   "cache.full",
+  "backup.failed",
 ];
 export const TRANSPORT_HELP: Record<string, string> = localized(() => ({
   smtp: t(
@@ -98,6 +99,7 @@ const EVENT_LABELS: Record<string, string> = localized(() => ({
   "cache.full": t("Cache full"),
   "cert.renewed": t("Certificate renewed"),
   "update.available": t("Update available"),
+  "backup.failed": t("Backup failed"),
   "user.joined": t("Viewer joined"),
   "title.available": t("Watchlist title available"),
   "newsletter.weekly": t("Weekly newsletter"),

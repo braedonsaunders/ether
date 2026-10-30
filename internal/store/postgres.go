@@ -137,7 +137,11 @@ func preparePostgres(ctx context.Context, db *sql.DB, log *slog.Logger, gate Mig
 	if err := checkPostgresServer(ctx, db, log); err != nil {
 		return err
 	}
-	return migratePostgres(ctx, db, gate)
+	if err := migratePostgres(ctx, db, gate); err != nil {
+		return err
+	}
+	warnSchemaAhead(ctx, db, log, "")
+	return nil
 }
 
 // checkPostgresServer requires PostgreSQL 14+ and warns when the database

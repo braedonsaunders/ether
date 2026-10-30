@@ -80,6 +80,11 @@ var (
 )
 
 // browserCaps is Plex Web, which depends on the browser in X-Plex-Platform.
+// Base caps stay conservative: only Safari claims HEVC+HDR10 by default.
+// Chromium may list HEVC without HDR10; Firefox lists neither. Profile-extra
+// can add codecs via applyProfileExtra, but hevc alone never implies HDR10.
+// Audio stays conservative (no EAC3 on Chrome/Firefox) so incompatible
+// soundtracks remux to AAC.
 func browserCaps(platform string) baseCaps {
 	p := strings.ToLower(platform)
 	c := baseCaps{

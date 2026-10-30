@@ -74,6 +74,19 @@ func TestEngineServesGenericUntilBuilt(t *testing.T) {
 func TestEngineHubsServedFromCache(t *testing.T) {
 	h := newHarness(t, nil)
 	ctx := context.Background()
+	// New queues the generic model independently of the viewer's synchronous
+	// rebuild. Finish that startup work before measuring catalogue calls, or
+	// its background reads are incorrectly attributed to cached Home requests.
+	h.e.mu.Lock()
+	startup := h.e.flights[genericID]
+	h.e.mu.Unlock()
+	if startup != nil {
+		select {
+		case <-startup.done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("generic startup model never finished")
+		}
+	}
 	sciFiFan(h, 1)
 	u := core.User{ID: 1}
 	h.rebuild(u)

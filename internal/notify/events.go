@@ -18,6 +18,8 @@ func eventCatalog() []EventInfo {
 		"indexer.outage": "An indexer operation fails; one alert per outage.", "indexer.budget": "An indexer reports budget exhaustion.", "indexer.recovered": "An indexer operation succeeds after an alert.",
 		"cache.full": "The segment cache reaches its configured budget.", "cache.recovered": "The cache drops below its budget again.",
 		"title.available": "A monitored watchlist title becomes available.", "newsletter.weekly": "Scheduled viewing summary; email channels only.",
+		"update.available": "A new Ether release is published; one alert per version.",
+		"backup.failed":    "A scheduled backup fails; one alert until a backup succeeds again.",
 	}
 	out := make([]EventInfo, 0, len(Kinds))
 	for _, k := range Kinds {

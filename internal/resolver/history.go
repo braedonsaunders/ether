@@ -13,19 +13,26 @@ import (
 
 // HistoryRecord is one persisted resolution outcome.
 type HistoryRecord struct {
-	ID          int64          `json:"id"`
-	At          time.Time      `json:"at"`
-	TitleKey    core.RatingKey `json:"titleKey,string"`
-	TitleName   string         `json:"titleName"`
-	Profile     string         `json:"profile,omitempty"`
-	ReleaseID   string         `json:"releaseId,omitempty"`
-	ReleaseName string         `json:"releaseName,omitempty"`
-	Indexer     string         `json:"indexer,omitempty"`
-	Size        int64          `json:"size,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	Failover    bool           `json:"failover,omitempty"`
-	Pinned      bool           `json:"pinned,omitempty"` // the owner's pin was used
-	Candidates  int            `json:"candidates"`
+	ID        int64          `json:"id"`
+	At        time.Time      `json:"at"`
+	TitleKey  core.RatingKey `json:"titleKey,string"`
+	TitleName string         `json:"titleName"`
+	Profile   string         `json:"profile,omitempty"`
+	// Max-height ceilings behind Profile (configured / client caps /
+	// effective). ProfileMaxHeight carries presence: nil on records
+	// written before the configured ceiling was tracked (unknown), a
+	// pointer to 0 for an explicitly unlimited ("Any") profile.
+	ProfileMaxHeight   *int   `json:"profileMaxHeight,omitempty"`
+	ClientMaxHeight    int    `json:"clientMaxHeight,omitempty"`
+	EffectiveMaxHeight int    `json:"effectiveMaxHeight,omitempty"`
+	ReleaseID          string `json:"releaseId,omitempty"`
+	ReleaseName        string `json:"releaseName,omitempty"`
+	Indexer            string `json:"indexer,omitempty"`
+	Size               int64  `json:"size,omitempty"`
+	Error              string `json:"error,omitempty"`
+	Failover           bool   `json:"failover,omitempty"`
+	Pinned             bool   `json:"pinned,omitempty"` // the owner's pin was used
+	Candidates         int    `json:"candidates"`
 	// Trace is the full decision (candidates capped at 50); only
 	// HistoryEntry fills it.
 	Trace *Trace `json:"trace,omitempty"`
@@ -68,6 +75,9 @@ func historyFromTrace(tr Trace) HistoryRecord {
 	h := HistoryRecord{At: tr.At, TitleKey: tr.TitleKey, TitleName: tr.TitleName, Profile: tr.Profile,
 		ReleaseID: tr.Winner, Error: tr.Err, Failover: tr.Failover, Pinned: tr.PinStatus == "used",
 		Candidates: len(tr.Candidates) + tr.Omitted}
+	if tr.Limits != nil {
+		h.ProfileMaxHeight, h.ClientMaxHeight, h.EffectiveMaxHeight = tr.Limits.ProfileConfiguredMaxHeight, tr.Limits.ClientMaxHeight, tr.Limits.ProfileMaxHeight
+	}
 	for _, c := range tr.Candidates {
 		if c.ReleaseID != "" && c.ReleaseID == tr.Winner {
 			h.ReleaseName, h.Indexer, h.Size = c.Name, c.Indexer, c.Size
@@ -147,13 +157,19 @@ func scanHistory(r rowScanner, withTrace bool) (HistoryRecord, error) {
 		var tr Trace
 		if err := json.Unmarshal([]byte(raw), &tr); err == nil {
 			h.Trace = &tr
+			// The ceilings live only in the trace JSON (no new columns);
+			// surface them on the record HistoryEntry returns.
+			if tr.Limits != nil {
+				h.ProfileMaxHeight, h.ClientMaxHeight, h.EffectiveMaxHeight = tr.Limits.ProfileConfiguredMaxHeight, tr.Limits.ClientMaxHeight, tr.Limits.ProfileMaxHeight
+			}
 		}
 	}
 	return h, nil
 }
 
 // History lists persisted resolution outcomes, newest first, without
-// their traces, plus the total matching count.
+// their traces (the stored trace JSON is read only to surface its
+// max-height ceilings on each record), plus the total matching count.
 func (s *Service) History(ctx context.Context, f HistoryFilter) ([]HistoryRecord, int, error) {
 	if f.Limit <= 0 {
 		f.Limit = 50
@@ -194,7 +210,10 @@ func (s *Service) History(ctx context.Context, f HistoryFilter) ([]HistoryRecord
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM resolver_history`+cond, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+historyColumns+` FROM resolver_history`+cond+
+	// The ceilings live only in the stored trace JSON (no columns of
+	// their own), so scan it in and drop the trace itself: the listing
+	// stays trace-free, as documented.
+	rows, err := s.db.QueryContext(ctx, `SELECT `+historyColumns+`, trace FROM resolver_history`+cond+
 		` ORDER BY resolved_at DESC, id DESC LIMIT ? OFFSET ?`, append(args, f.Limit, f.Offset)...)
 	if err != nil {
 		return nil, 0, err
@@ -202,10 +221,11 @@ func (s *Service) History(ctx context.Context, f HistoryFilter) ([]HistoryRecord
 	defer rows.Close()
 	out := []HistoryRecord{}
 	for rows.Next() {
-		h, err := scanHistory(rows, false)
+		h, err := scanHistory(rows, true)
 		if err != nil {
 			return nil, 0, err
 		}
+		h.Trace = nil
 		out = append(out, h)
 	}
 	return out, total, rows.Err()

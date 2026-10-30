@@ -66,7 +66,7 @@ describe("Plex sign-in lifecycle", () => {
 describe("Token fallback lifecycle", () => {
   it("does not clear a newer login when an abandoned token check fails", async () => {
     let reject!: (err: Error) => void;
-    vi.spyOn(api, "setupStatus").mockImplementation(
+    vi.spyOn(api, "createSession").mockImplementation(
       () =>
         new Promise((_, fail) => {
           reject = fail;
@@ -90,5 +90,48 @@ describe("Token fallback lifecycle", () => {
     });
     expect(getToken()).toBe("new-login");
     expect(ready).not.toHaveBeenCalled();
+  });
+
+  it("does not install a session that arrives after the form is gone", async () => {
+    let resolve!: (v: { done: boolean; token: string }) => void;
+    vi.spyOn(api, "createSession").mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const ready = vi.fn();
+    const view = render(<Login boot={boot} onReady={ready} />);
+    fireEvent.click(screen.getByText("Use a Plex token instead"));
+    fireEvent.change(screen.getByLabelText("Owner token (X-Plex-Token)"), {
+      target: { value: "old-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    view.unmount();
+    setToken("new-login");
+    await act(async () => {
+      resolve({ done: true, token: "ether-admin-stale" });
+    });
+    expect(getToken()).toBe("new-login");
+    expect(ready).not.toHaveBeenCalled();
+  });
+
+  it("stores the console session, never the pasted Plex token", async () => {
+    setToken("");
+    const exchange = vi
+      .spyOn(api, "createSession")
+      .mockResolvedValue({ done: true, token: "ether-admin-abc" });
+    const ready = vi.fn();
+    render(<Login boot={boot} onReady={ready} />);
+    fireEvent.click(screen.getByText("Use a Plex token instead"));
+    fireEvent.change(screen.getByLabelText("Owner token (X-Plex-Token)"), {
+      target: { value: " plex-account-token " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce());
+    expect(exchange).toHaveBeenCalledWith("plex-account-token");
+    expect(getToken()).toBe("ether-admin-abc");
+    expect(JSON.stringify({ ...localStorage })).not.toContain("plex-account-token");
+    setToken("");
   });
 });

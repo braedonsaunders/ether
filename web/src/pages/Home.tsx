@@ -77,7 +77,9 @@ export default function Home() {
     ? null
     : problems.length
       ? tn(problems.length, "{count} thing needs attention", "{count} things need attention")
-      : t("Everything is healthy");
+      : health.some((h) => h.level === "unknown")
+        ? t("Status incomplete")
+        : t("Everything is healthy");
 
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
@@ -298,6 +300,8 @@ function HealthPanel({
           <Badge variant={severe ? "destructive" : "warning"}>
             {tn(problems.length, "{count} to fix", "{count} to fix")}
           </Badge>
+        ) : items.some((h) => h.level === "unknown") ? (
+          <LevelBadge level="unknown" label={t("Status incomplete")} />
         ) : (
           <LevelBadge level="ok" label={t("All healthy")} />
         )
@@ -379,11 +383,12 @@ function HealthRow({ h, fix = false }: { h: HealthItem; fix?: boolean }) {
             </Link>
           ) : (
             <span className={cn("shrink-0 text-xs font-medium", LEVEL_TONE[h.level])}>
-              {LEVEL_TEXT[h.level]}
+              {h.statusLabel ?? LEVEL_TEXT[h.level]}
             </span>
           )}
         </span>
         <span className="block truncate text-xs text-fg-muted">{h.summary}</span>
+        {h.note ? <span className="mt-1 block text-xs text-fg-subtle">{h.note}</span> : null}
       </span>
     </li>
   );

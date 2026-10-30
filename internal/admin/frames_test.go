@@ -1,7 +1,10 @@
 package admin_test
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -18,7 +21,8 @@ func TestDashboardFramePolicy(t *testing.T) {
 		r.Header.Set("Origin", "https://untrusted.example")
 		r.Header.Set("Referer", "https://untrusted.example/")
 		rec := serve(h, r)
-		if rec.Code != 200 || rec.Header().Get("Content-Security-Policy") != wantCSP || rec.Header().Get("X-Frame-Options") != wantXFO {
+		csp := rec.Header().Get("Content-Security-Policy")
+		if rec.Code != 200 || !strings.HasPrefix(csp, wantCSP+"; script-src 'self' ") || rec.Header().Get("X-Frame-Options") != wantXFO {
 			t.Fatalf("status=%d headers=%v", rec.Code, rec.Header())
 		}
 	}
@@ -63,4 +67,41 @@ func TestDashboardFramePolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("frame-ancestors 'none'", "DENY")
+}
+
+// Every inline script the embedded console ships is allowed by hash, and
+// nothing else inline is.
+func TestConsoleScriptPolicyMatchesServedIndex(t *testing.T) {
+	store := newStore(t, func(c *config.Config) { seededConfig(c); c.SetupComplete = true })
+	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store)})
+	rec := serve(h, req(http.MethodGet, "/ether/", ""))
+	if rec.Code != 200 {
+		t.Skipf("embedded UI not built: %d", rec.Code)
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	var scriptSrc string
+	for _, d := range strings.Split(csp, ";") {
+		if f := strings.Fields(d); len(f) > 0 && f[0] == "script-src" {
+			scriptSrc = strings.Join(f[1:], " ")
+		}
+	}
+	if strings.Contains(scriptSrc, "unsafe-inline") || strings.Contains(scriptSrc, "unsafe-eval") || !strings.HasPrefix(scriptSrc, "'self'") {
+		t.Fatalf("script-src %q", scriptSrc)
+	}
+	inline := regexp.MustCompile(`(?is)<script([^>]*)>(.*?)</script>`)
+	hashes := 0
+	for _, m := range inline.FindAllStringSubmatch(rec.Body.String(), -1) {
+		if strings.Contains(strings.ToLower(m[1]), "src=") {
+			continue
+		}
+		sum := sha256.Sum256([]byte(m[2]))
+		want := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+		if !strings.Contains(scriptSrc, want) {
+			t.Fatalf("inline script %q not allowed by %q", m[2], scriptSrc)
+		}
+		hashes++
+	}
+	if got := strings.Count(scriptSrc, "'sha256-"); got != hashes {
+		t.Fatalf("policy allows %d inline scripts, page has %d", got, hashes)
+	}
 }

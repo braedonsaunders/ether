@@ -23,6 +23,14 @@ var (
 		VideoCodecs: []string{"h264"}, AudioCodecs: []string{"aac", "mp3", "opus", "flac"},
 		Containers: []string{"mp4"},
 	}
+	// Fixture with HDR10 already set — Decide behavior only. ClientCaps must
+	// not infer HDR10 from hevc alone; that belongs in plex ClientCaps tests.
+	plexWebModern = core.ClientCaps{
+		Product: "Plex Web", Platform: "Chrome", MaxHeight: 2160, HDR10: true,
+		VideoCodecs: []string{"h264", "vp9", "av1", "hevc"},
+		AudioCodecs: []string{"aac", "mp3", "opus", "flac", "vorbis"},
+		Containers:  []string{"mp4", "mkv", "webm", "mpegts"},
+	}
 	hdr10TV = core.ClientCaps{
 		Product: "Plex for Android (TV)", MaxHeight: 2160, HDR10: true,
 		VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3", "eac3"},
@@ -93,6 +101,13 @@ func TestDecide(t *testing.T) {
 			want: want{kind: core.DecisionTranscode, videoCodec: "h264", audioCodec: "aac", container: ContainerMPEGTS,
 				maxHeight: 1080, toneMap: true, audioIdx: 1, maxKbps: 10192,
 				reason: []string{"tone-mapping HDR10", "video codec hevc not supported", "2160p exceeds 1080p"}},
+		},
+		{
+			name: "modern web Direct Streams HDR10 HEVC (video copy, AAC remux)",
+			info: hdr, caps: plexWebModern,
+			want: want{kind: core.DecisionRemux, videoCopy: true, videoCodec: "hevc", audioCodec: "aac",
+				container: ContainerFMP4, maxHeight: 2160, audioIdx: 1,
+				reason: []string{"remux", "eac3", "hevc copied", "aac 2ch"}},
 		},
 		{
 			name: "apple tv: TrueHD Atmos is transcoded to EAC3, video copied",

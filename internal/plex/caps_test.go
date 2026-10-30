@@ -109,6 +109,7 @@ func TestClientCapsByProduct(t *testing.T) {
 		{"Plex for Apple TV", "tvOS", "Apple TV", true, true, true, 2160, true},
 		{"Plex for iOS", "iOS", "iPhone", true, true, true, 2160, true},
 		{"Plex Web", "Chrome", "OSX", true, false, false, 2160, true},
+		{"Plex Web", "Edge", "Windows", true, false, false, 2160, true},
 		{"Plex Web", "Safari", "OSX", true, true, false, 2160, false},
 		{"Plex Web", "Firefox", "Windows", false, false, false, 2160, true},
 		{"Plex Web", "Linux", "standalone", false, false, false, 2160, true},

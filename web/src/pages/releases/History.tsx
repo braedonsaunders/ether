@@ -29,11 +29,50 @@ import type { CandidateTrace, ResolverTrace } from "../../lib/types";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { useLocale } from "../../i18n/react";
 
+/** A max-height ceiling from loose JSON: a positive number, else 0 ("Any"). */
+function ceiling(v: unknown): number {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** A configured ceiling with presence: absent stays undefined (unknown, as
+ * on legacy traces that never recorded it); an explicit 0 is "Any". */
+function configuredCeiling(v: unknown): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 function normalizeTrace(raw: Record<string, unknown>, i: number): ResolverTrace {
+  // Ceilings may ride on the record itself, on a history entry's nested
+  // trace, or in the trace's limits (profileConfiguredMaxHeight /
+  // profileMaxHeight is the effective value there); the record's own
+  // values win, then the nested trace's.
+  const nested = isPlainObject(raw.trace) ? raw.trace : {};
+  const limits = isPlainObject(raw.limits) ? raw.limits : {};
+  const nestedLimits = isPlainObject(nested.limits) ? nested.limits : {};
   return {
     titleKey: String(raw.titleKey ?? raw.key ?? i),
     titleName: String(raw.titleName ?? raw.title ?? raw.name ?? t("Trace {n}", { n: i + 1 })),
     profile: String(raw.profile ?? ""),
+    profileMaxHeight: configuredCeiling(
+      raw.profileMaxHeight ??
+        nested.profileMaxHeight ??
+        limits.profileConfiguredMaxHeight ??
+        nestedLimits.profileConfiguredMaxHeight,
+    ),
+    clientMaxHeight: ceiling(
+      raw.clientMaxHeight ??
+        nested.clientMaxHeight ??
+        limits.clientMaxHeight ??
+        nestedLimits.clientMaxHeight,
+    ),
+    effectiveMaxHeight: ceiling(
+      raw.effectiveMaxHeight ??
+        nested.effectiveMaxHeight ??
+        limits.profileMaxHeight ??
+        nestedLimits.profileMaxHeight,
+    ),
     at: String(raw.at ?? ""),
     candidates: (Array.isArray(raw.candidates)
       ? raw.candidates
@@ -86,6 +125,7 @@ function normalizeTrace(raw: Record<string, unknown>, i: number): ResolverTrace 
       ? {
           profileMinHeight: Number(raw.limits.profileMinHeight ?? 0),
           profileMaxHeight: Number(raw.limits.profileMaxHeight ?? 0),
+          profileConfiguredMaxHeight: configuredCeiling(raw.limits.profileConfiguredMaxHeight),
           clientMaxHeight: Number(raw.limits.clientMaxHeight ?? 0),
           clientMaxBitrateKbps: Number(raw.limits.clientMaxBitrateKbps ?? 0),
         }
@@ -148,13 +188,22 @@ export function HistoryTab() {
     [open?.id],
   );
   const { locale } = useLocale();
-  const trace = useMemo(
-    () =>
-      detail.data && detail.data.id === open?.id && isPlainObject(detail.data.trace)
-        ? normalizeTrace(detail.data.trace as unknown as Record<string, unknown>, 0)
-        : null,
-    [detail.data, open?.id, locale],
-  );
+  const trace = useMemo(() => {
+    if (!detail.data || detail.data.id !== open?.id || !isPlainObject(detail.data.trace))
+      return null;
+    const raw = detail.data.trace as unknown as Record<string, unknown>;
+    // The entry record also carries the ceilings (the listing surfaces
+    // them); fall back to them when the stored trace predates them.
+    return normalizeTrace(
+      {
+        ...raw,
+        profileMaxHeight: raw.profileMaxHeight ?? detail.data.profileMaxHeight,
+        clientMaxHeight: raw.clientMaxHeight ?? detail.data.clientMaxHeight,
+        effectiveMaxHeight: raw.effectiveMaxHeight ?? detail.data.effectiveMaxHeight,
+      },
+      0,
+    );
+  }, [detail.data, open?.id, locale]);
   const rows = state.data?.items ?? [];
 
   return (
@@ -345,8 +394,25 @@ function discoveryLabel(path: string) {
   }
 }
 
+/**
+ * "Profile ≤2160 · Client ≤1080 · Effective ≤1080" for a decision, or
+ * null when the configured ceiling was never recorded (legacy traces:
+ * unknown is not "Any"). A recorded 0 is explicitly unlimited:
+ * "Profile Any", the Quality page's word for no ceiling.
+ */
+export function resolutionCeilings(trace: ResolverTrace): string | null {
+  if (trace.profileMaxHeight === undefined) return null;
+  const parts: Array<[string, number | undefined]> = [
+    [t("Profile"), trace.profileMaxHeight],
+    [t("Client"), trace.clientMaxHeight],
+    [t("Effective"), trace.effectiveMaxHeight],
+  ];
+  return parts.map(([label, h]) => (h ? `${label} ≤${h}` : `${label} ${t("Any")}`)).join(" · ");
+}
+
 /** Every candidate of one decision and why it won or lost. */
 export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKey?: string }) {
+  const ceilings = resolutionCeilings(trace);
   const cands = [...(trace.candidates ?? [])].sort(
     (a, b) =>
       Number(b.releaseId === trace.winner) - Number(a.releaseId === trace.winner) ||
@@ -360,6 +426,7 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
         {flags({ failover: trace.failover, pinned: trace.pinStatus === "used" })}
         {trace.err ? <span className="text-sm text-danger">{trace.err}</span> : null}
       </div>
+      {ceilings ? <p className="text-sm text-fg-muted">{ceilings}</p> : null}
       {trace.routing ? (
         <p className="text-sm text-fg-muted">
           {t("Source routing: {routing}", { routing: trace.routing })}

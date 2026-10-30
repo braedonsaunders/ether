@@ -2,7 +2,7 @@ import { cn } from "@braedonsaunders/appkit-ui";
 import { Loader2, Maximize2, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../../i18n";
-import { API_BASE, errorMessage, getToken } from "../../lib/api";
+import { API_BASE, errorMessage, sessionXhrSetup } from "../../lib/api";
 import { fixed } from "../../lib/format";
 import { ChannelLogo } from "./ChannelLogo";
 import { tv, type Channel, type PreviewSession } from "./model";
@@ -59,12 +59,10 @@ export function LivePreview({ channel, onClose }: { channel: Channel; onClose: (
           fail(t("This browser can't play HLS through Media Source Extensions."));
           return;
         }
-        const token = getToken();
         const h = new Hls({
           liveSyncDurationCount: 3,
-          xhrSetup: (xhr: XMLHttpRequest) => {
-            if (token) xhr.setRequestHeader("X-Plex-Token", token);
-          },
+          // Never hands the session to a channel's own (cross-origin) media host.
+          xhrSetup: sessionXhrSetup,
         }) as unknown as HlsLike;
         hls = h;
         h.on(Hls.Events.ERROR, (...args: unknown[]) => {

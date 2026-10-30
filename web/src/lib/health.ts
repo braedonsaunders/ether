@@ -8,7 +8,7 @@ import {
   relativeTime,
 } from "./format";
 
-/** ok/warn/error carry status; "off" is a deliberate owner choice; "unknown" means not reported. */
+/** "unknown" means unreported or unverified, not necessarily still loading. */
 export type HealthLevel = "ok" | "warn" | "error" | "off" | "unknown";
 
 export interface HealthItem {
@@ -17,6 +17,9 @@ export interface HealthItem {
   level: HealthLevel;
   summary: string;
   details: string[];
+  /** Explain a known limitation without presenting it as a running check. */
+  statusLabel?: string;
+  note?: string;
   /** Where the owner fixes this, for "Needs attention" and health links. */
   href: string;
   /** 0..1 gauge when the item has a natural fill level. */
@@ -350,8 +353,17 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
     details.push(t("Plex apps do not normally trust a self-signed certificate."));
     return { ...base, level: "warn", summary: t("Self-signed certificate"), details };
   }
-  details.push(t("Expiry alone does not verify certificate trust or device association."));
-  if (!expires) return { ...base, level: "unknown", summary: t("Certificate installed"), details };
+  const note = t("Expiry alone does not verify certificate trust or device association.");
+  details.push(note);
+  if (!expires)
+    return {
+      ...base,
+      level: "unknown",
+      summary: t("Certificate installed"),
+      details,
+      statusLabel: t("Not verified"),
+      note,
+    };
   const days = (expires.getTime() - now.getTime()) / 86400000;
   details.push(t("Expires {date}", { date: formatDate(expires) }));
   if (days < 0) return { ...base, level: "error", summary: t("Certificate expired"), details };
@@ -367,6 +379,8 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
     level: "unknown",
     summary: t("Expires {date}", { date: formatDate(expires) }),
     details,
+    statusLabel: t("Not verified"),
+    note,
   };
 }
 

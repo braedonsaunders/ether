@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/cardigann"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/debrid"
@@ -42,6 +43,9 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("segment cache: %w", err)
 	}
 	a.closers = append(a.closers, func() { a.cache.Close() })
+	// Keep part of the cache's volume free whatever the budget says.
+	cacheDir := a.cache.Directory()
+	a.cache.SetDiskUsage(func() (int64, int64, error) { return admin.DiskUsage(cacheDir) })
 	a.configureCache(cfg.Cache)
 	a.engine = stream.New(a.fetcher, a.cache, stream.OptionsFromConfig(cfg), log.With("component", "stream"))
 	a.closers = append(a.closers, func() { a.engine.Close() })

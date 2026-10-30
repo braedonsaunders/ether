@@ -54,15 +54,60 @@ type ResumePoint struct {
 	Key       core.RatingKey
 	Release   core.Release
 	NZB       []byte
-	Profile   string        // quality profile it was resolved for
+	Profile   string        // quality profile name it was resolved for
 	Size      int64         // media file size, 0 if never opened
 	Duration  time.Duration // probed duration, 0 if unknown
 	Keyframes []core.KeyframePoint
 	UpdatedAt time.Time
+
+	// profileKey is the stored `Name|<key>` value (a plain name on
+	// legacy records); Profile above exposes the name only.
+	profileKey string
 }
 
 // ReleaseID is the stable release identifier.
 func (p *ResumePoint) ReleaseID() string { return p.Release.ID }
+
+// profileKey is the stored form of a profile's selection key:
+// `Name|<key>`, where key is p.SelectionKey — the hash of the
+// configured definition computed pre-clamp by SelectProfile, so caps
+// are not an input and the same definition keys identically for
+// every client. Profiles built outside SelectProfile (tests/stubs)
+// have no SelectionKey: fall back to the same canonical hash of the
+// object's own fields.
+func profileKey(p core.QualityProfile) string {
+	key := p.SelectionKey
+	if key == "" {
+		key = p.ComputeSelectionKey()
+	}
+	return p.Name + "|" + key
+}
+
+// profileName is the bare profile name of a stored profile value.
+// New records are `Name|<16 lowercase hex>`. The suffix is stripped
+// only when the last "|" introduces that key, so a legacy name or an
+// owner name that itself contains "|" stays intact.
+func profileName(stored string) string {
+	i := strings.LastIndex(stored, "|")
+	if i < 0 || !selectionKeySuffix(stored[i+1:]) {
+		return stored
+	}
+	return stored[:i]
+}
+
+func selectionKeySuffix(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, c := range s {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f':
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 type resumeRecord struct {
 	userID    int64
@@ -456,10 +501,12 @@ func (rec *resumeRecord) point(nzb []byte) *ResumePoint {
 		Key:       rec.key,
 		Release:   rec.release,
 		NZB:       nzb,
-		Profile:   rec.profile,
+		Profile:   profileName(rec.profile),
 		Size:      rec.size,
 		Duration:  rec.duration,
 		UpdatedAt: rec.updatedAt,
+
+		profileKey: rec.profile,
 	}
 }
 

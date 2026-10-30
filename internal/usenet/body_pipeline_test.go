@@ -143,7 +143,14 @@ func TestBodyPipelineIntegratedBoundAndWire(t *testing.T) {
 			results <- err
 		}(i)
 	}
-	waitPipeline(t, func() bool { p.bodyMu.Lock(); defer p.bodyMu.Unlock(); return len(p.bodyQueue[core.PriorityLive]) == 3 })
+	// Three queued callers alone can also mean the worker has not claimed
+	// its first request and the fourth caller has not registered yet. Wait
+	// for all four flights and the claimed request before releasing the socket.
+	waitPipeline(t, func() bool {
+		p.bodyMu.Lock()
+		defer p.bodyMu.Unlock()
+		return len(p.bodyFlights) == 4 && p.bodyClaimed[core.PriorityLive] == 1 && len(p.bodyQueue[core.PriorityLive]) == 3
+	})
 	p.put(c, core.PriorityLive)
 	for i := 0; i < 4; i++ {
 		if err := <-results; err != nil {

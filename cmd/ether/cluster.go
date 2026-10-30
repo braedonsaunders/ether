@@ -14,6 +14,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/clusterconfig"
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/logredact"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -58,7 +59,7 @@ func runCluster(args []string, defaultDataDir string, stdout, stderr io.Writer) 
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	log := slog.New(logredact.Handler(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn})))
 
 	var err error
 	switch cmd {
