@@ -1,11 +1,11 @@
 import { Button, SettingsSection } from "@braedonsaunders/appkit-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getLocale, localized, t, tn, tx } from "../../i18n";
 import { api, apiFetch } from "../../lib/api";
 import { formatNumber } from "../../lib/format";
 import type { EtherUser } from "../../lib/types";
 
-type Settings = { enabled: boolean; clientId: string; clientSecret: string };
+export type SimklSettings = { enabled: boolean; clientId: string; clientSecret: string };
 type Status = {
   connected: boolean;
   needsReconnect?: boolean;
@@ -30,8 +30,29 @@ const WARNINGS = localized<Record<string, string>>(() => ({
   not_found: t("Simkl could not resolve a history item."),
 }));
 
-export function SimklIntegration() {
-  const [settings, setSettings] = useState<Settings | null>(null);
+export function SimklIntegration({
+  settings: controlled,
+  onSettings,
+  onPersisted,
+  persist,
+  disabled,
+}: {
+  /** Parent draft. When set, this form does not refetch settings over unsaved edits. */
+  settings?: SimklSettings | null;
+  onSettings?: (next: SimklSettings) => void;
+  /** Server document from a successful save, including redacted secrets. */
+  onPersisted?: (next: SimklSettings) => void;
+  persist?: (task: () => Promise<void>) => Promise<unknown>;
+  disabled?: boolean;
+} = {}) {
+  const [local, setLocal] = useState<SimklSettings | null>(null);
+  const settings = onSettings ? (controlled ?? null) : local;
+  const setSettings = (next: SimklSettings) => {
+    if (onSettings) onSettings(next);
+    else setLocal(next);
+  };
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const [users, setUsers] = useState<EtherUser[]>([]);
   const [viewer, setViewer] = useState(0);
   const [status, setStatus] = useState<Status | null>(null);
@@ -41,13 +62,11 @@ export function SimklIntegration() {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
-    Promise.all([apiFetch<{ value: Settings }>("/config/simkl"), api.users()]).then(
-      ([cfg, list]) => {
-        if (live) {
-          setSettings(cfg.value);
-          setUsers(list);
-          setViewer(list[0]?.id ?? 0);
-        }
+    api.users().then(
+      (list) => {
+        if (!live) return;
+        setUsers(list);
+        setViewer(list[0]?.id ?? 0);
       },
       (e) => {
         if (live) setError((e as Error).message);
@@ -57,6 +76,21 @@ export function SimklIntegration() {
       live = false;
     };
   }, []);
+  useEffect(() => {
+    if (onSettings) return;
+    let live = true;
+    apiFetch<{ value: SimklSettings }>("/config/simkl").then(
+      (cfg) => {
+        if (live) setLocal(cfg.value);
+      },
+      (e) => {
+        if (live) setError((e as Error).message);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [onSettings]);
   useEffect(() => {
     let live = true;
     setDevice(null);
@@ -148,16 +182,22 @@ export function SimklIntegration() {
             />
           </label>
           <Button
-            disabled={busy}
-            onClick={() =>
-              void act(async () => {
-                await api.putSection("simkl", settings);
-                const cfg = await apiFetch<{ value: Settings }>("/config/simkl");
-                setSettings(cfg.value);
-                setDevice(null);
-                setMessage(t("Simkl settings saved."));
-              })
-            }
+            disabled={busy || disabled}
+            onClick={() => {
+              const run = () =>
+                act(async () => {
+                  const current = settingsRef.current;
+                  if (!current) return;
+                  const saved = await api.putSection("simkl", current);
+                  const value = (saved.value ?? current) as SimklSettings;
+                  if (onPersisted) onPersisted(value);
+                  else setLocal(value);
+                  setDevice(null);
+                  setMessage(t("Simkl settings saved."));
+                });
+              if (persist) void persist(run);
+              else void run();
+            }}
           >
             {t("Save Simkl settings")}
           </Button>

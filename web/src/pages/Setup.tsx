@@ -16,6 +16,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate } from "react-router-dom";
 import { useAppOptional } from "../app-context";
 import { EtherMark } from "../components/brand";
+import { IntegrationAppCard } from "../components/IntegrationAppCard";
+import { EmbyMark, JellyfinMark, PlexMark } from "../components/integration-brands";
 import { ErrorPanel, MutationError } from "../components/feedback";
 import { Field, NumberInput, SecretInput, TestButton, type TestState } from "../components/fields";
 import {
@@ -26,19 +28,109 @@ import {
   withProvider,
 } from "../components/llm";
 import { localized, t, tx } from "../i18n";
-import { api, newId, setToken } from "../lib/api";
+import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
+import { appLabel, appPurpose } from "./apps/catalog";
 import { DEBRID_KINDS } from "./sources/Debrid";
 import { addonUrlHasDebridKey, isStremio, normalizeAddonUrl } from "./sources/Indexers";
 
-const STEPS = localized(() => [
-  { title: "Plex", heading: t("Sign in to plex.tv and claim this server") },
-  { title: t("Sources"), heading: t("Where Ether streams from") },
-  { title: t("Indexers"), heading: t("Indexers and addons") },
-  { title: t("Cache"), heading: t("Cache folder and disk budget") },
-  { title: t("Catalogue"), heading: t("Catalogue and extras") },
-]);
+export type WizardStepId = "apps" | "account" | "sources" | "indexers" | "cache" | "catalog";
+
+/** Survives a remount after the owner account is created so the visit does not start over. */
+export const SETUP_STEP_KEY = "ether.setup.step";
+
+const STEP_COPY = localized(() => ({
+  appsTitle: t("Apps"),
+  appsHeading: t("Where will your household watch?"),
+  plexTitle: "Plex",
+  plexHeading: t("Sign in to plex.tv and claim this server"),
+  accountTitle: t("Account"),
+  accountHeading: t("Create your owner account"),
+  sourcesTitle: t("Sources"),
+  sourcesHeading: t("Where Ether streams from"),
+  indexersTitle: t("Indexers"),
+  indexersHeading: t("Indexers and addons"),
+  cacheTitle: t("Cache"),
+  cacheHeading: t("Cache folder and disk budget"),
+  catalogTitle: t("Catalogue"),
+  catalogHeading: t("Catalogue and extras"),
+}));
+
+const FALLBACK_APPS = [
+  { id: "plex", name: "Plex" },
+  { id: "jellyfin", name: "Jellyfin" },
+  { id: "emby", name: "Emby" },
+  { id: "silo", name: "Silo" },
+  { id: "stremio", name: "Stremio" },
+  { id: "webdav", name: "Files" },
+];
+
+export interface SetupApp {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export function wizardSteps(
+  plexSelected: boolean,
+): { id: WizardStepId; title: string; heading: string }[] {
+  return [
+    { id: "apps", title: STEP_COPY.appsTitle, heading: STEP_COPY.appsHeading },
+    plexSelected
+      ? { id: "account", title: STEP_COPY.plexTitle, heading: STEP_COPY.plexHeading }
+      : { id: "account", title: STEP_COPY.accountTitle, heading: STEP_COPY.accountHeading },
+    { id: "sources", title: STEP_COPY.sourcesTitle, heading: STEP_COPY.sourcesHeading },
+    { id: "indexers", title: STEP_COPY.indexersTitle, heading: STEP_COPY.indexersHeading },
+    { id: "cache", title: STEP_COPY.cacheTitle, heading: STEP_COPY.cacheHeading },
+    { id: "catalog", title: STEP_COPY.catalogTitle, heading: STEP_COPY.catalogHeading },
+  ];
+}
+
+function storedStep(): number {
+  const n = Number(sessionStorage.getItem(SETUP_STEP_KEY));
+  return Number.isInteger(n) && n >= 0 && n < wizardSteps(true).length ? n : 0;
+}
+
+export function appCatalog(
+  list: { descriptor: { id: string; name: string } }[] | null,
+): SetupApp[] {
+  const rows = list?.length
+    ? list.map((item) => ({ id: item.descriptor.id, name: item.descriptor.name }))
+    : FALLBACK_APPS;
+  return rows.map((row) => {
+    return {
+      id: row.id,
+      name: appLabel(row.id, row.name),
+      description: appPurpose(row.id),
+    };
+  });
+}
+
+export function selectionFrom(cfg: EtherConfig, ids: string[]): Record<string, boolean> {
+  if (cfg.frontends) {
+    return Object.fromEntries(ids.map((id) => [id, Boolean(cfg.frontends?.[id]?.enabled)]));
+  }
+  return Object.fromEntries(ids.map((id) => [id, id === "plex"]));
+}
+
+/** Enabled flags change without dropping settings or front ends the wizard did not list. */
+export function mergeFrontendSelection(
+  cfg: EtherConfig,
+  ids: string[],
+  selected: Record<string, boolean>,
+): EtherConfig {
+  const prev = cfg.frontends ?? {};
+  const frontends: NonNullable<EtherConfig["frontends"]> = { ...prev };
+  for (const id of ids) {
+    const prior = prev[id];
+    frontends[id] = prior
+      ? { ...prior, enabled: Boolean(selected[id]) }
+      : { enabled: Boolean(selected[id]) };
+  }
+  return { ...cfg, frontends };
+}
+
 const GIB = 1024 ** 3;
 
 function blankProvider(): UsenetProvider {
@@ -127,9 +219,10 @@ export function savedDraft(cfg: EtherConfig): EtherConfig {
 
 /** Whether a wizard step may be left: required steps must be complete and tested (or explicitly skipped). */
 export function canAdvance(
-  step: number,
+  step: WizardStepId,
   opts: {
-    plexDone: boolean;
+    /** Plex claim, or the local owner when Plex was not selected. */
+    accountReady: boolean;
     providers: UsenetProvider[];
     indexers: Indexer[];
     providerTests: Record<string, TestState>;
@@ -139,14 +232,17 @@ export function canAdvance(
     /** Debrid accounts and their tests (absent on servers without debrid). */
     debrid?: DebridProvider[];
     debridTests?: Record<string, TestState>;
-    skipped: Record<number, boolean>;
+    skipped: Record<string, boolean>;
   },
 ): boolean {
   if (opts.skipped[step]) return true;
   switch (step) {
-    case 0:
-      return opts.plexDone;
-    case 1: {
+    case "apps":
+    case "cache":
+      return true;
+    case "account":
+      return opts.accountReady;
+    case "sources": {
       // A debrid account, a Usenet provider, or both; every enabled one tested.
       const usenet = opts.providers.filter((p) => p.enabled);
       const debrid = (opts.debrid ?? []).filter((d) => d.enabled);
@@ -156,14 +252,14 @@ export function canAdvance(
         debrid.every((d) => d.apiKey.trim() && opts.debridTests?.[d.id]?.status === "ok")
       );
     }
-    case 2: {
+    case "indexers": {
       const enabled = opts.indexers.filter((i) => i.enabled);
       return (
         enabled.length > 0 &&
         enabled.every((i) => i.url.trim() && opts.indexerTests[i.id]?.status === "ok")
       );
     }
-    case 4:
+    case "catalog":
       // Without TMDB there is no catalogue to browse.
       return opts.tmdbReady !== false;
     default:
@@ -176,13 +272,18 @@ export default function Setup() {
   const app = useAppOptional();
   const [cfg, setCfg] = useState<EtherConfig | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
-  const [step, setStep] = useState(0);
-  const [choosing, setChoosing] = useState(true);
-  const [frontends, setFrontends] = useState<Record<string, boolean>>({ plex: true });
+  const [step, setStepState] = useState(storedStep);
+  const [apps, setApps] = useState<SetupApp[]>(() => appCatalog(null));
+  const [frontends, setFrontends] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const [cacheRestartRequired, setCacheRestartRequired] = useState(false);
-  const [skipped, setSkipped] = useState<Record<number, boolean>>({});
+  const [skipped, setSkipped] = useState<Record<string, boolean>>({});
+  const setStep = (n: number) => {
+    const nextStep = Math.max(0, Math.min(n, wizardSteps(true).length - 1));
+    sessionStorage.setItem(SETUP_STEP_KEY, String(nextStep));
+    setStepState(nextStep);
+  };
   const [providerTests, setProviderTests] = useState<Record<string, TestState>>({});
   const [indexerTests, setIndexerTests] = useState<Record<string, TestState>>({});
   const [debridTests, setDebridTests] = useState<Record<string, TestState>>({});
@@ -220,16 +321,20 @@ export default function Setup() {
   const claiming = useRef(false);
 
   const load = useCallback(() => {
-    api
-      .getConfig()
-      .then((c) => {
+    Promise.all([
+      api.getConfig(),
+      apiFetch<{ descriptor: { id: string; name: string } }[]>("/frontends").catch(() => null),
+    ])
+      .then(([c, list]) => {
+        const catalog = appCatalog(list);
+        setApps(catalog);
+        setFrontends(
+          selectionFrom(
+            c,
+            catalog.map((item) => item.id),
+          ),
+        );
         setCfg(c);
-        if (c.frontends)
-          setFrontends(
-            Object.fromEntries(
-              Object.entries(c.frontends).map(([id, value]) => [id, value.enabled]),
-            ),
-          );
         setPinDone(Boolean(c.plex.token));
         setLoadError(null);
       })
@@ -261,12 +366,15 @@ export default function Setup() {
         if (run === diskRun.current) setDisk(null);
       });
   }, []);
+  const plexSelected = Boolean(frontends.plex);
+  const steps = wizardSteps(plexSelected);
+  const stepId = steps[step]?.id ?? "apps";
   useEffect(() => {
-    if (step === 3 && cfg) refreshDisk(cfg.cache.dir);
+    if (stepId === "cache" && cfg) refreshDisk(cfg.cache.dir);
     return () => {
       diskRun.current++;
     };
-  }, [step, cfg?.cache.dir]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stepId, cfg?.cache.dir]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const claimServer = async () => {
     if (!mounted.current || claiming.current) return;
@@ -385,11 +493,10 @@ export default function Setup() {
   const advanceOk = useMemo(
     () =>
       cfg
-        ? canAdvance(step, {
-            plexDone:
-              (Boolean(cfg.plex.claimed && cfg.plex.token) || localDone) &&
-              !plexRecovery &&
-              !claimFailed,
+        ? canAdvance(stepId, {
+            accountReady: plexSelected
+              ? Boolean(cfg.plex.claimed && cfg.plex.token) && !plexRecovery && !claimFailed
+              : localDone,
             providers: cfg.usenet.providers ?? [],
             indexers: cfg.indexers ?? [],
             providerTests,
@@ -403,7 +510,8 @@ export default function Setup() {
         : false,
     [
       cfg,
-      step,
+      stepId,
+      plexSelected,
       providerTests,
       indexerTests,
       debridTests,
@@ -454,58 +562,6 @@ export default function Setup() {
       </div>
     );
 
-  if (choosing) {
-    const options = [
-      ["plex", "Plex"],
-      ["jellyfin", "Jellyfin"],
-      ["emby", "Emby"],
-      ["silo", "Silo"],
-      ["stremio", "Stremio"],
-      ["webdav", t("Files")],
-    ];
-    return (
-      <div className="mx-auto w-full max-w-2xl space-y-5 p-6">
-        <EtherMark size={40} />
-        <h1 className="text-xl font-semibold">{t("Where will your household watch?")}</h1>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {options.map(([id, label]) => (
-            <label
-              key={id}
-              className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-surface p-4"
-            >
-              <Checkbox
-                checked={Boolean(frontends[id!])}
-                onChange={(e) => setFrontends({ ...frontends, [id!]: e.currentTarget.checked })}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-        <MutationError error={error} />
-        <Button
-          disabled={saving || !Object.values(frontends).some(Boolean)}
-          onClick={() => {
-            const section = Object.fromEntries(
-              options.map(([id]) => [id, { enabled: Boolean(frontends[id!]) }]),
-            );
-            setSaving(true);
-            setError(null);
-            void api
-              .putConfig({ ...cfg, frontends: section })
-              .then((saved) => {
-                setCfg(saved);
-                setChoosing(false);
-              })
-              .catch(setError)
-              .finally(() => setSaving(false));
-          }}
-        >
-          {t("Save and continue")}
-        </Button>
-      </div>
-    );
-  }
-
   const providers = cfg.usenet.providers ?? [];
   const indexers = cfg.indexers ?? [];
   const setProviders = (list: UsenetProvider[]) =>
@@ -537,10 +593,21 @@ export default function Setup() {
     setSaving(true);
     setError(null);
     try {
-      setCfg(await api.putConfig(savedDraft(cfg)));
-      if (step < STEPS.length - 1) setStep(step + 1);
+      setCfg(
+        await api.putConfig(
+          savedDraft(
+            mergeFrontendSelection(
+              cfg,
+              apps.map((item) => item.id),
+              frontends,
+            ),
+          ),
+        ),
+      );
+      if (step < steps.length - 1) setStep(step + 1);
       else {
-        const status = await api.setupComplete(Object.values(skipped).some(Boolean));
+        const status = await api.setupComplete(false);
+        sessionStorage.removeItem(SETUP_STEP_KEY);
         await app?.reloadBoot();
         if (status.cacheRestartRequired) setCacheRestartRequired(true);
         else navigate("/");
@@ -569,7 +636,7 @@ export default function Setup() {
             </div>
           </div>
           <ol className="mt-4 flex gap-1.5" aria-label={t("Setup progress")}>
-            {STEPS.map((s, i) => (
+            {steps.map((s, i) => (
               <li key={i} className="flex-1">
                 <button
                   type="button"
@@ -607,17 +674,17 @@ export default function Setup() {
             {t("Back")}
           </Button>
           {/* After setup, only the owner account can sign in. */}
-          {step !== 0 && step !== 3 ? (
+          {stepId === "sources" || stepId === "indexers" || stepId === "catalog" ? (
             <label className="flex items-center gap-2 text-xs text-fg-muted">
               <Checkbox
-                checked={Boolean(skipped[step])}
-                onChange={(e) => setSkipped({ ...skipped, [step]: e.currentTarget.checked })}
+                checked={Boolean(skipped[stepId])}
+                onChange={(e) => setSkipped({ ...skipped, [stepId]: e.currentTarget.checked })}
               />
               {t("Skip test for this step (advanced)")}
             </label>
           ) : null}
           <span className="flex-1" />
-          {!advanceOk && step !== 3 ? (
+          {!advanceOk && stepId !== "cache" ? (
             <span className="hidden text-xs text-fg-muted sm:inline">
               {t("Complete and test this step to continue.")}
             </span>
@@ -625,14 +692,14 @@ export default function Setup() {
           <Button disabled={!advanceOk || saving} onClick={() => void next()}>
             {saving
               ? t("Saving…")
-              : step === STEPS.length - 1
+              : step === steps.length - 1
                 ? t("Finish setup")
                 : t("Save and continue")}
           </Button>
         </div>
       }
     >
-      {step === 0 ? (
+      {stepId === "account" ? (
         <Alert>
           <AlertDescription>
             {tx("Adding a node to an existing cluster? {join}", {
@@ -645,12 +712,34 @@ export default function Setup() {
           </AlertDescription>
         </Alert>
       ) : null}
-      <h2 className="text-base font-semibold text-fg">
-        {step === 0 && !frontends.plex ? t("Create your owner account") : STEPS[step]!.heading}
-      </h2>
+      <h2 className="text-base font-semibold text-fg">{steps[step]?.heading}</h2>
       <MutationError error={error} />
 
-      {step === 0 && !frontends.plex ? (
+      {stepId === "apps" ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          {apps.map((item) => (
+            <IntegrationAppCard
+              key={item.id}
+              identity={{ id: item.id, name: item.name }}
+              description={item.description}
+              logo={
+                item.id === "plex" ? (
+                  <PlexMark />
+                ) : item.id === "jellyfin" ? (
+                  <JellyfinMark />
+                ) : item.id === "emby" ? (
+                  <EmbyMark />
+                ) : undefined
+              }
+              enabled={Boolean(frontends[item.id])}
+              disabled={saving}
+              busy={saving}
+              onToggle={(enabled) => setFrontends({ ...frontends, [item.id]: enabled })}
+            />
+          ))}
+        </div>
+      ) : null}
+      {stepId === "account" && !plexSelected ? (
         <form
           className="space-y-4"
           onSubmit={(e) => {
@@ -690,7 +779,7 @@ export default function Setup() {
           </Button>
         </form>
       ) : null}
-      {step === 0 && frontends.plex ? (
+      {stepId === "account" && plexSelected ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
             {t(
@@ -751,7 +840,7 @@ export default function Setup() {
         </div>
       ) : null}
 
-      {step === 1 ? (
+      {stepId === "sources" ? (
         <div className="space-y-6">
           <p className="text-sm text-fg-muted">
             {t(
@@ -935,7 +1024,7 @@ export default function Setup() {
         </div>
       ) : null}
 
-      {step === 2 ? (
+      {stepId === "indexers" ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
             {hasDebrid
@@ -1057,7 +1146,7 @@ export default function Setup() {
         </div>
       ) : null}
 
-      {step === 3 ? (
+      {stepId === "cache" ? (
         <div className="space-y-5 rounded-xl border border-border bg-surface p-4">
           <Field
             label={t("Cache folder")}
@@ -1148,7 +1237,7 @@ export default function Setup() {
         </div>
       ) : null}
 
-      {step === 4 ? (
+      {stepId === "catalog" ? (
         <div className="space-y-6">
           <section
             className="space-y-3 rounded-xl border border-border bg-surface p-4"
@@ -1249,7 +1338,7 @@ export default function Setup() {
           <Alert variant="info">
             <AlertDescription>
               {t(
-                "Finishing setup locks this admin page to your owner account. You can reopen setup later from Apps.",
+                "Finishing setup locks this admin page to your owner account. You can reopen setup later from Settings.",
               )}
             </AlertDescription>
           </Alert>

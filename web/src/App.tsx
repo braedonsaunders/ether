@@ -30,7 +30,6 @@ import {
   LogOut,
   MonitorPlay,
   Network,
-  Sparkles,
   Tags,
   Tv,
   Users,
@@ -115,22 +114,12 @@ const linkRender: LinkRender = ({ href, children, className, title, ariaCurrent,
  * Grouped by the owner's questions: what's happening and who watches; what
  * viewers see in their apps; how titles reach the screen; how the server runs.
  */
-function navigation(setupComplete: boolean): SidebarNavGroup[] {
+function navigation(): SidebarNavGroup[] {
   const icon = 18;
   return [
     {
       label: "",
       items: [
-        ...(setupComplete
-          ? []
-          : [
-              {
-                href: "/setup",
-                label: t("Finish setup"),
-                icon: <Sparkles size={icon} />,
-                mobile: true,
-              },
-            ]),
         { href: "/", label: t("Overview"), icon: <Gauge size={icon} />, exact: true, mobile: true },
         {
           href: "/activity",
@@ -179,10 +168,16 @@ function navigation(setupComplete: boolean): SidebarNavGroup[] {
   ];
 }
 
+/** Old Connectivity URLs land on the Plex page. Remote and secure are sections, not app tabs. */
+export function legacyConnectivityTarget(tab?: string) {
+  if (tab === "remote") return "/apps/plex?section=remote";
+  if (tab === "secure") return "/apps/plex?section=secure";
+  return "/apps/plex";
+}
+
 function LegacyConnectivityRedirect() {
   const { tab } = useParams();
-  const target = tab === "remote" || tab === "secure" ? tab : "plex";
-  return <Navigate to={`/apps/${target}`} replace />;
+  return <Navigate to={legacyConnectivityTarget(tab)} replace />;
 }
 
 function HealthIndicator() {
@@ -325,7 +320,7 @@ function Shell() {
   const remoteSession = boot.authRequired && Boolean(getToken());
   return (
     <AppShell
-      groups={navigation(boot.setupComplete)}
+      groups={navigation()}
       pathname={location.pathname}
       navigationMode="sidebar"
       linkRender={linkRender}
@@ -402,7 +397,13 @@ function Shell() {
           <Routes>
             <Route
               path="/"
-              element={boot.setupComplete ? <Home /> : <Navigate to="/setup" replace />}
+              element={
+                boot.setupComplete || boot.ownerConfigured ? (
+                  <Home />
+                ) : (
+                  <Navigate to="/setup" replace />
+                )
+              }
             />
             <Route path="/setup" element={<Setup />} />
             <Route path="/activity/:tab?" element={<Activity />} />
