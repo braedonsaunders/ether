@@ -116,3 +116,37 @@ func TestPolicyWriterProgressesUnderReceiptLoad(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+func TestPolicyLeaseWaitsForDurablePublication(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishing, finish := make(chan struct{}), make(chan struct{})
+	s.SetPolicyEpoch(func() error { close(publishing); <-finish; return nil })
+	updated := make(chan error, 1)
+	go func() {
+		updated <- s.Update(func(c *Config) error { c.Catalog.IncludeAdult = !c.Catalog.IncludeAdult; return nil })
+	}()
+	<-publishing
+	acquired := make(chan error, 1)
+	go func() {
+		release, err := s.AcquirePolicy(context.Background())
+		if release != nil {
+			release()
+		}
+		acquired <- err
+	}()
+	select {
+	case err := <-acquired:
+		t.Fatalf("lease passed uncommitted epoch: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(finish)
+	if err := <-updated; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-acquired; err != nil {
+		t.Fatal(err)
+	}
+}

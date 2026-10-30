@@ -60,9 +60,23 @@ func NewRuntimeRowViews(d RuntimeRowViews) (*RowViewService, error) {
 	// A row snapshot is already drawn from the local catalogue. Revalidation
 	// must never trigger a per-title network refresh while a client pages it.
 	cacheVisibility := visibility
-	cacheVisibility.GetTitle = d.CachedGet
+	readTitle := func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+		if d.CachedGetMany == nil {
+			return d.CachedGet(ctx, key)
+		}
+		titles, err := d.CachedGetMany(ctx, []core.RatingKey{key})
+		if err != nil {
+			return nil, err
+		}
+		title, ok := titles[key]
+		if !ok {
+			return nil, core.ErrNotFound
+		}
+		return &title, nil
+	}
+	cacheVisibility.GetTitle = readTitle
 	getCached := func(ctx context.Context, user *core.User, key core.RatingKey) (*core.Title, error) {
-		title, err := d.CachedGet(ctx, key)
+		title, err := readTitle(ctx, key)
 		if errors.Is(err, core.ErrNotFound) && d.CachedVirtualSeason != nil && key.Kind() == core.KindSeason {
 			return d.CachedVirtualSeason(ctx, user, key)
 		}
