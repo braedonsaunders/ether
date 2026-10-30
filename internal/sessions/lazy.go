@@ -73,11 +73,23 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 	}
 	// Validate policy and item without resolving a release or consuming a stream.
 	req.Viewer = viewer
-	estimate := req
-	estimate.Version = "" // Version lookup may resolve releases; defer it until GET.
-	estimate.Intent.Estimate = true
-	if _, err = s.broker.Plan(ctx, estimate); err != nil {
-		return "", err
+	if stable {
+		// Authenticated paths are requested for every range. Check only local
+		// policy facts here; resolving a release belongs to the first GET.
+		if s.broker.deps.MediaLookup == nil || !s.broker.permitted(viewer, req.Caps) {
+			return "", core.ErrUnauthorized
+		}
+		title, err := s.broker.deps.MediaLookup(ctx, viewer, req.Device, req.Item)
+		if err != nil || title == nil || title.Key != req.Item || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
+			return "", core.ErrUnauthorized
+		}
+	} else {
+		estimate := req
+		estimate.Version = "" // Version lookup may resolve releases; defer it until GET.
+		estimate.Intent.Estimate = true
+		if _, err = s.broker.Plan(ctx, estimate); err != nil {
+			return "", err
+		}
 	}
 	req.Viewer = nil
 	req.Intent.Estimate = false
@@ -89,7 +101,7 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 	if stable {
 		// This token never leaves the process: it keys an authenticated path's
 		// reusable session and cannot be used as the issuing credential.
-		mac := hmac.New(sha256.New, []byte(ref))
+		mac := hmac.New(sha256.New, []byte(credential))
 		_, _ = mac.Write([]byte("ether-authenticated-lazy-v1\x00"))
 		_, _ = mac.Write(data)
 		token = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))

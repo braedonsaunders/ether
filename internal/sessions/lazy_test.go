@@ -47,13 +47,17 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	events := NewEventBus(nil, active)
 	defer events.Close()
 	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 3}
+	networkLookups := 0
 	b, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(_ *core.Viewer, remote bool, _ time.Time) bool { return !remote }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: func() time.Time { return now }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		networkLookups++
 		return &core.Title{Key: k}, nil
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.deps.MediaLookup = b.deps.Lookup
+	b.deps.MediaLookup = func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}
 	defer b.Close(ctx)
 	grants := &fakeLazyGrants{}
 	lazy, err := NewLazyStreams(db, b, "stremio", grants, time.Hour, func(r *http.Request) bool { return r.Header.Get("X-Test-Remote") == "yes" })
@@ -135,6 +139,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	}
 	authenticated := req
 	authenticated.Device.ID = "webdav-device"
+	var firstLookups int
 	for i := 0; i < 2; i++ {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil)
@@ -142,6 +147,11 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 		lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, r, "account-credential-secret", authenticated)
 		if w.Code != http.StatusOK {
 			t.Fatalf("authenticated range %d: %d", i, w.Code)
+		}
+		if i == 0 {
+			firstLookups = networkLookups
+		} else if networkLookups != firstLookups {
+			t.Fatal("reused authenticated range fetched network metadata")
 		}
 	}
 	if pb.prepares != 2 || len(pb.Sessions()) != 2 {
