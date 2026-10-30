@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,20 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 )
+
+func TestRegisteredRoutesMatchMountedRouter(t *testing.T) {
+	routes, err := RegisteredRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, LiveTV: frontendtest.LiveTV{}, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual := inst.(frontend.RouteSource).Routes(); !slices.Equal(routes, actual) || len(routes) != 7 {
+		t.Fatalf("inventory=%v mounted=%v", routes, actual)
+	}
+}
 
 func TestGuideFiltersChannelsAndEscapesXML(t *testing.T) {
 	identity := frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {

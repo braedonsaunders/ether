@@ -19,31 +19,48 @@ import (
 type Frontend struct{}
 
 func (Frontend) Describe() frontend.Descriptor {
-	return frontend.Descriptor{ID: "m3u", Name: "M3U and XMLTV", Version: "1.0"}
+	return frontend.Descriptor{ID: "m3u", Name: "M3U and XMLTV", Version: "1.0", Clients: []string{"Channels DVR", "TiviMate"}}
 }
 func (Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instance, error) {
 	if host.Identity == nil || host.LiveTV == nil || host.Sessions == nil {
 		return nil, errors.New("m3u requires identity, live TV and sessions")
 	}
-	i := &instance{host: host, router: &route.Router{}}
-	if err := i.router.Handle(http.MethodGet, "/{credential}/guide.xml", http.HandlerFunc(i.guide)); err != nil {
-		return nil, err
-	}
-	if err := i.router.Handle(http.MethodGet, "/{credential}/playlist.m3u", http.HandlerFunc(i.playlist)); err != nil {
-		return nil, err
-	}
-	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		if err := i.router.Handle(method, "/{credential}/channel", http.HandlerFunc(i.channel)); err != nil {
-			return nil, err
-		}
-		if err := i.router.Handle(method, "/sessions/lazy/{tail...}", http.HandlerFunc(i.serveLazy)); err != nil {
-			return nil, err
-		}
-	}
-	if err := i.router.Handle(http.MethodGet, "/image/{secret}", http.HandlerFunc(i.image)); err != nil {
+	i := &instance{host: host}
+	if err := i.registerRoutes(); err != nil {
 		return nil, err
 	}
 	return i, nil
+}
+
+// RegisteredRoutes enumerates the same routes mounted at runtime.
+func RegisteredRoutes() ([]route.Route, error) {
+	i := &instance{}
+	if err := i.registerRoutes(); err != nil {
+		return nil, err
+	}
+	return i.router.Routes(), nil
+}
+
+func (i *instance) registerRoutes() error {
+	i.router = &route.Router{}
+	if err := i.router.Handle(http.MethodGet, "/{credential}/guide.xml", http.HandlerFunc(i.guide)); err != nil {
+		return err
+	}
+	if err := i.router.Handle(http.MethodGet, "/{credential}/playlist.m3u", http.HandlerFunc(i.playlist)); err != nil {
+		return err
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if err := i.router.Handle(method, "/{credential}/channel", http.HandlerFunc(i.channel)); err != nil {
+			return err
+		}
+		if err := i.router.Handle(method, "/sessions/lazy/{tail...}", http.HandlerFunc(i.serveLazy)); err != nil {
+			return err
+		}
+	}
+	if err := i.router.Handle(http.MethodGet, "/image/{secret}", http.HandlerFunc(i.image)); err != nil {
+		return err
+	}
+	return nil
 }
 
 type instance struct {

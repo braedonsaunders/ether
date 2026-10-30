@@ -880,3 +880,12 @@ viewer is selected, and accepts requests only from the local network. The owner
 can also create a living-room guest in the DLNA settings. It starts with the
 Kids preset (PG) and can be edited like other viewers. Browse for Ether in a
 DLNA-compatible player after saving the selection.
+
+## M3U and XMLTV
+
+When an owner enables **M3U and XMLTV** under **Apps**, each viewer can create
+an individual playlist address in the viewer portal under **Connect an app**.
+Add that address to a compatible IPTV client. Keep it private: it grants access
+to the channels allowed for that viewer. For the matching XMLTV guide address,
+replace `playlist.m3u` at the end of the address with `guide.xml`. Revoke the
+connection under **Devices** when it is no longer needed.
