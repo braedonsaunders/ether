@@ -3,16 +3,14 @@ package identity
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/handles"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -26,6 +24,7 @@ type TicketService struct {
 	surface frontend.Protocol
 	grants  *Grants
 	now     func() time.Time
+	codec   *handles.Codec
 }
 
 func NewTicketService(db *sql.DB, surface frontend.Protocol, grants *Grants, now func() time.Time) (*TicketService, error) {
@@ -35,15 +34,11 @@ func NewTicketService(db *sql.DB, surface frontend.Protocol, grants *Grants, now
 	if now == nil {
 		now = time.Now
 	}
-	return &TicketService{db, surface, grants, now}, nil
-}
-func ticketHash(token string) (string, bool) {
-	b, e := base64.RawURLEncoding.Strict().DecodeString(token)
-	if e != nil || len(b) != 32 || base64.RawURLEncoding.EncodeToString(b) != token {
-		return "", false
+	codec, err := handles.NewCodec(rand.Reader, "", handles.HashWire)
+	if err != nil {
+		return nil, err
 	}
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:]), true
+	return &TicketService{db: db, surface: surface, grants: grants, now: now, codec: codec}, nil
 }
 func (s *TicketService) Issue(ctx context.Context, credential string, device frontend.Device, purpose string) (string, error) {
 	if purpose == "" || len(purpose) > 64 || device.ID == "" {
@@ -61,12 +56,10 @@ func (s *TicketService) Issue(ctx context.Context, credential string, device fro
 	if err != nil || len(data) > 4096 {
 		return "", core.ErrUnauthorized
 	}
-	var raw [32]byte
-	if _, err = rand.Read(raw[:]); err != nil {
+	token, hash, err := s.codec.Issue()
+	if err != nil {
 		return "", err
 	}
-	token := base64.RawURLEncoding.EncodeToString(raw[:])
-	hash, _ := ticketHash(token)
 	now := s.now().UnixMilli()
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE expires<=?`, now)
 	res, err := s.db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1)`, hash, string(s.surface), purpose, v.ID, source, string(data), now+30000, source, string(s.surface), v.ID, device.ID, now)
@@ -84,7 +77,7 @@ func (s *TicketService) Issue(ctx context.Context, credential string, device fro
 }
 func (s *TicketService) Consume(ctx context.Context, token, purpose string) (frontend.Ticket, error) {
 	var out frontend.Ticket
-	hash, ok := ticketHash(token)
+	hash, ok := s.codec.Hash(token)
 	if !ok || purpose == "" {
 		return out, core.ErrUnauthorized
 	}
