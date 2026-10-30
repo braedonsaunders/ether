@@ -462,7 +462,11 @@ func (s *RowViewService) ResolveRowView(ctx context.Context, req frontend.RowVie
 	}
 	tokens, err := s.o.Receipts.issueBatchChecked(ctx, u, req.Device, req.Protocol, subjects, current, func(tx *sql.Tx) error {
 		var expiry int64
-		if err := tx.QueryRowContext(ctx, `SELECT expires FROM experience_row_views WHERE snapshot=? AND viewer_id=? AND device_id=? AND protocol=?`, req.ID, u.ID, req.Device.ID, string(req.Protocol)).Scan(&expiry); err != nil || expiry <= s.o.Now().UnixMilli() {
+		query := `SELECT expires FROM experience_row_views WHERE snapshot=? AND viewer_id=? AND device_id=? AND protocol=?`
+		if store.DialectOf(s.o.DB) == store.Postgres {
+			query += ` FOR SHARE`
+		}
+		if err := tx.QueryRowContext(ctx, query, req.ID, u.ID, req.Device.ID, string(req.Protocol)).Scan(&expiry); err != nil || expiry <= s.o.Now().UnixMilli() {
 			return ErrRowViewStale
 		}
 		return nil
