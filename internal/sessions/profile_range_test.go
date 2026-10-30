@@ -38,4 +38,9 @@ func TestDVContainerSignallingControlsRequiredDirectProfile(t *testing.T) {
 	if _, err := broker.decideProfile(&core.PlaySession{Info: unprobed}, req); err == nil {
 		t.Fatal("unprobed range accepted")
 	}
+	profiles.Transcoding = []core.ClientTranscodeProfile{{MediaType: "video", Delivery: "hls", Containers: []string{"mpegts"}, VideoCodecs: []string{"h264"}, AudioCodecs: []string{"ac3"}}}
+	decision, err := broker.decideProfile(&core.PlaySession{Info: unprobed}, req)
+	if err != nil || decision.Kind != core.DecisionTranscode || decision.VideoCodec != "h264" {
+		t.Fatalf("unknown range did not use declared fallback: %+v %v", decision, err)
+	}
 }
