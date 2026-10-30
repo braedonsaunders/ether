@@ -19,16 +19,17 @@ type clusterStore struct {
 }
 
 type legacyClusterEntry struct {
-	ID         string         `json:"id"`
-	SessionKey int64          `json:"sessionKey"`
-	User       core.User      `json:"user"`
-	Client     legacyClient   `json:"client"`
-	Key        core.RatingKey `json:"key"`
-	State      string         `json:"state"`
-	StartedAt  time.Time      `json:"startedAt"`
-	UpdatedAt  time.Time      `json:"updatedAt"`
-	SourceID   string         `json:"sourceID,omitempty"`
-	Channel    string         `json:"channel,omitempty"`
+	ID              string         `json:"id"`
+	SessionKey      int64          `json:"sessionKey"`
+	User            core.User      `json:"user"`
+	Client          legacyClient   `json:"client"`
+	Key             core.RatingKey `json:"key"`
+	State           string         `json:"state"`
+	StartedAt       time.Time      `json:"startedAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+	SourceID        string         `json:"sourceID,omitempty"`
+	Channel         string         `json:"channel,omitempty"`
+	ClientSessionID string         `json:"clientSessionID,omitempty"`
 }
 type legacyClient struct {
 	ClientID   string `json:"clientID"`
@@ -91,7 +92,7 @@ func (c clusterStore) putOnce(ctx context.Context, s frontend.Session, sourceID 
 	v := core.User{ID: viewer.ID, Username: viewer.Username, Title: viewer.Title, IsOwner: viewer.IsOwner}
 	d := s.Device
 	d.Client = ""
-	data, err := json.Marshal(legacyClusterEntry{ID: s.ID, SessionKey: key, User: v, Client: legacyClient{ClientID: d.ID, Product: d.Product, Version: d.Version, Platform: d.Platform, DeviceName: d.DeviceName}, Key: s.Item, State: "playing", StartedAt: s.StartedAt, UpdatedAt: now, SourceID: sourceID, Channel: s.Channel})
+	data, err := json.Marshal(legacyClusterEntry{ID: s.ID, SessionKey: key, User: v, Client: legacyClient{ClientID: d.ID, Product: d.Product, Version: d.Version, Platform: d.Platform, DeviceName: d.DeviceName}, Key: s.Item, State: "playing", StartedAt: s.StartedAt, UpdatedAt: now, SourceID: sourceID, Channel: s.Channel, ClientSessionID: s.ClientSessionID})
 	if err != nil {
 		return err
 	}
@@ -175,7 +176,7 @@ func (c clusterStore) list(ctx context.Context, cutoff time.Time, live map[strin
 			continue
 		}
 		d.Client = ""
-		out = append(out, remoteSession{node: node, sourceID: e.SourceID, session: frontend.Session{ID: e.ID, ViewerID: viewer, Protocol: frontend.Protocol(protocol), Item: e.Key, Channel: e.Channel, Device: d, StartedAt: e.StartedAt}})
+		out = append(out, remoteSession{node: node, sourceID: e.SourceID, session: frontend.Session{ID: e.ID, ViewerID: viewer, Protocol: frontend.Protocol(protocol), Item: e.Key, Channel: e.Channel, ClientSessionID: e.ClientSessionID, Device: d, StartedAt: e.StartedAt}})
 	}
 	return out, rows.Err()
 }

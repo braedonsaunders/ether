@@ -386,23 +386,27 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", 400)
 		return
 	}
-	state := "playing"
-	if *b.Paused {
-		state = "paused"
-	}
-	if stop {
-		state = "stopped"
-	}
-	err = i.host.Sessions.Report(r.Context(), access, sessionID, frontend.Timeline{PlaybackID: sessionID, ClientSessionID: b.InstallationID, Position: time.Duration(*b.Position * float64(time.Second)), Sequence: b.Sequence, State: state})
-	if err != nil {
+	reporter, ok := i.host.Sessions.(frontend.SampleReporter)
+	if !ok {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	outcome := "applied"
-	if stop {
-		outcome = "stopped"
+	outcome, err := reporter.ReportSample(r.Context(), access, sessionID, frontend.ProgressSample{InstallationID: b.InstallationID, Sequence: b.Sequence, PositionSeconds: *b.Position, Paused: *b.Paused, Stop: stop})
+	if err != nil {
+		playbackError(w, err)
+		return
 	}
-	response := map[string]any{"outcome": outcome, "accepted": map[string]any{"position": *b.Position, "sequence": b.Sequence, "is_paused": *b.Paused}}
+	if outcome == frontend.ReportConflict {
+		reply(w, 409, map[string]any{"outcome": outcome})
+		return
+	}
+	response := map[string]any{"outcome": outcome}
+	if outcome == frontend.ReportApplied || outcome == frontend.ReportReplayed {
+		response["accepted"] = map[string]any{"position": *b.Position, "sequence": b.Sequence, "is_paused": *b.Paused}
+	}
+	if stop && (outcome == frontend.ReportApplied || outcome == frontend.ReportReplayed) {
+		response["outcome"] = "stopped"
+	}
 	if b.StopID != "" {
 		response["stop_id"] = b.StopID
 	}

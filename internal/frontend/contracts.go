@@ -261,6 +261,14 @@ type Marker struct {
 	Start, End time.Duration
 }
 
+// SessionMarkers describes only a complete set bound to the current source.
+// Known=false means the source has not established a complete marker set.
+type SessionMarkers struct {
+	Known      bool
+	SourceETag string
+	Markers    []Marker
+}
+
 // Extra describes a playable trailer or clip. Key is the broker-facing item
 // identity; Source and SourceID describe the upstream reference, not a resolved
 // URL or credentials. Plex media and part identifiers remain adapter-owned.
@@ -507,11 +515,13 @@ type Session struct {
 	ID, MediaPath string
 	Protocol      Protocol
 	ViewerID      int64
-	Device        core.Device
-	Item          core.RatingKey
-	Channel       string
-	StartedAt     time.Time
-	Capabilities  *SessionCapabilities
+	// ClientSessionID is a non-secret protocol installation/session identifier.
+	ClientSessionID string
+	Device          core.Device
+	Item            core.RatingKey
+	Channel         string
+	StartedAt       time.Time
+	Capabilities    *SessionCapabilities
 }
 
 // SessionCapabilities are declared by an authenticated device on one surface.
@@ -617,6 +627,8 @@ type Sessions interface {
 	StartStream(context.Context, SessionAccess, string, StreamRequest) (string, error)
 	// SubtitleURL returns a scoped URL for a subtitle stream index and format.
 	SubtitleURL(context.Context, SessionAccess, string, int, string) (string, error)
+	// Markers returns source-bound ranges for the authorized playback session.
+	Markers(context.Context, SessionAccess, string) (SessionMarkers, error)
 	// ServeMedia authorizes the scoped grant and serves direct, HLS or DASH data.
 	ServeMedia(http.ResponseWriter, *http.Request)
 	Report(context.Context, SessionAccess, string, Timeline) error

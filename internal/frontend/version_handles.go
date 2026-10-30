@@ -26,3 +26,9 @@ type VersionHandles interface {
 	// this authenticated local playback session.
 	MatchSession(context.Context, VersionScope, string, string) error
 }
+
+// VersionHandleBatch is an optional bounded batch capability. It validates the
+// whole requested offer set once and issues all handles atomically.
+type VersionHandleBatch interface {
+	IssueBatch(context.Context, VersionScope, core.RatingKey, []string) (map[string]string, error)
+}
