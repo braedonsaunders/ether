@@ -44,6 +44,15 @@ func TestCheapSurfacesMountedSSDP(t *testing.T) {
 	}
 	for _, warning := range inst.Status(ctx).Warnings {
 		if strings.HasPrefix(warning, "Discovery unavailable:") {
+			interfaces, e := net.Interfaces()
+			if e != nil {
+				t.Fatal(e)
+			}
+			for _, iface := range interfaces {
+				if iface.Flags&net.FlagUp != 0 && iface.Flags&net.FlagMulticast != 0 && iface.Flags&net.FlagLoopback == 0 {
+					t.Fatal(warning)
+				}
+			}
 			t.Skip(warning)
 		}
 	}
