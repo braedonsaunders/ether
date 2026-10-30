@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -305,5 +306,62 @@ func TestAuthenticatedLazyConcurrentFirstRangesReuseSession(t *testing.T) {
 	}
 	if pb.prepares != 1 || len(pb.Sessions()) != 1 {
 		t.Fatalf("prepared=%d sessions=%d", pb.prepares, len(pb.Sessions()))
+	}
+}
+
+func TestAuthenticatedLazyConflictAndExpiry(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Now()
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key}, nil
+	}
+	broker, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: lookup, MediaLookup: lookup, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	iface, err := NewLazyStreams(db, broker, "stremio", &fakeLazyGrants{}, time.Hour, func(*http.Request) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	lazy := iface.(*lazyStreams)
+	first := frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "same-device"}, Protocol: "stremio", Item: core.MovieKey(1)}
+	second := first
+	second.Caps.MaxHeight = 720
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, request := range []frontend.PlanRequest{first, second} {
+		go func(r frontend.PlanRequest) {
+			<-start
+			_, err := lazy.issue(ctx, "account-credential-secret", r, true)
+			results <- err
+		}(request)
+	}
+	close(start)
+	firstErr, secondErr := <-results, <-results
+	if (firstErr == nil) == (secondErr == nil) {
+		t.Fatalf("conflicting decisions: %v, %v", firstErr, secondErr)
+	}
+	if firstErr != nil && !errors.Is(firstErr, core.ErrNotAvailable) || secondErr != nil && !errors.Is(secondErr, core.ErrNotAvailable) {
+		t.Fatalf("conflict failed unexpectedly: %v, %v", firstErr, secondErr)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions_lazy_streams`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("rows=%d err=%v", count, err)
+	}
+	now = now.Add(time.Hour)
+	if _, err := lazy.issue(ctx, "account-credential-secret", second, true); err != nil {
+		t.Fatalf("replacement after expiry: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions_lazy_streams`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("expiry cleanup rows=%d err=%v", count, err)
+	}
+	if pb.prepares != 0 {
+		t.Fatal("issuing or expiring capabilities opened playback")
 	}
 }
