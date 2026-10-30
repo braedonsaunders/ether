@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
@@ -32,7 +33,8 @@ func TestGDMRejoinKeepsAnswering(t *testing.T) {
 	probe.Close()
 
 	info := GDMInfo{Name: "Ether", MachineIdentifier: "m", Port: 32400, Version: "1"}
-	g := NewGDMResponder(GDMOptions{Info: func() GDMInfo { return info }, Ports: []int{port}, rejoinInterval: 100 * time.Millisecond})
+	logger := slog.New(slog.NewTextHandler(gdmDiagnosticWriter{t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	g := NewGDMResponder(GDMOptions{Info: func() GDMInfo { return info }, Ports: []int{port}, rejoinInterval: 100 * time.Millisecond, Logger: logger})
 	if err := g.Start(context.Background()); err != nil {
 		t.Skipf("cannot bind GDM socket here: %v", err)
 	}
@@ -52,6 +54,12 @@ func TestGDMRejoinKeepsAnswering(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
+			// Diagnostic only: retain the original failure even if the old socket answers.
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			reps, err := DiscoverGDM(ctx, fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
+			cancel()
+			valid := len(reps) == 1 && reps[0].MachineIdentifier == "m"
+			t.Logf("GDM diagnostic retained socket: replies=%d expected_identity=%t err=%v", len(reps), valid, err)
 			t.Fatal("socket was not reopened")
 		}
 		time.Sleep(10 * time.Millisecond)
