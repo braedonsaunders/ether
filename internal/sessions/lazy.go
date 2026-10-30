@@ -461,6 +461,9 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-done:
 		case <-timer.C:
+			if s.broker.deps.OnEventError != nil {
+				s.broker.deps.OnEventError(errors.New("sessions: lazy heartbeat ignored cancellation; its capacity remains reserved until it exits or the process restarts"))
+			}
 		}
 	}()
 	clone := r.Clone(streamCtx)
@@ -500,6 +503,8 @@ func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.
 	http.NotFound(w, r)
 }
 
+// Once all slots are held (including by dependencies that ignored cancellation),
+// new transfers fail closed with 503 until a worker exits or the process restarts.
 const maxLazyHeartbeats = 1024
 
 type lazyTransfer struct{ marker byte }
