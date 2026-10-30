@@ -1,6 +1,7 @@
 package transcode
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -67,6 +68,9 @@ func rungCodecs(info core.MediaInfo, d core.Decision, outHeight int) string {
 		}
 	}
 	c := estimateCodecs(codec, profile, outHeight, depth)
+	if !d.VideoCopy && codec == "h264" && d.H264Level > 0 {
+		c = fmt.Sprintf("avc1.6400%02x", d.H264Level)
+	}
 	if enhancementSelected(d) {
 		// Match the native builder's explicit High 4.1/5.1 contract rather
 		// than the ordinary encoder's resolution-only level estimate.

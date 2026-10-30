@@ -120,3 +120,93 @@ func TestUnknownHEVCConditionTriesDeclaredH264Transcode(t *testing.T) {
 		t.Fatal("fallback ignored declared audio channel limit")
 	}
 }
+
+func TestConstrainedH264OutputRespectsLevelAndProfile(t *testing.T) {
+	info := core.MediaInfo{Streams: []core.StreamInfo{{Type: "video", Codec: "hevc", Width: 3840, Height: 2160, FrameRate: 30}}}
+	d := core.Decision{Kind: core.DecisionTranscode, VideoCodec: "h264", BitrateKbps: 8000}
+	got, ok := constrainedH264(d, info, core.ClientCaps{}, true)
+	if !ok || got.H264Level != 51 {
+		t.Fatalf("4K decision: %+v, allowed %v", got, ok)
+	}
+	caps := core.ClientCaps{VideoLevels: map[string]int{"h264": 41}}
+	if _, ok := constrainedH264(d, info, caps, true); ok {
+		t.Fatal("4K accepted for level 4.1")
+	}
+	d.MaxHeight = 1080
+	got, ok = constrainedH264(d, info, caps, true)
+	if !ok || got.H264Level > 41 {
+		t.Fatalf("1080p decision: %+v, allowed %v", got, ok)
+	}
+	caps.VideoProfiles = map[string][]string{"h264": {"Baseline"}}
+	if _, ok := constrainedH264(d, info, caps, true); ok {
+		t.Fatal("High accepted for a Baseline-only client")
+	}
+	info.Streams[0].FrameRate = 0
+	caps.VideoProfiles = nil
+	if _, ok := constrainedH264(d, info, caps, true); ok {
+		t.Fatal("unknown frame rate accepted against level restriction")
+	}
+}
+
+func TestProfileFallback4KRespectsH264Level(t *testing.T) {
+	info := core.MediaInfo{Container: "mp4", BitrateKbps: 12000, Streams: []core.StreamInfo{{Index: 0, Type: "video", Codec: "hevc", Width: 3840, Height: 2160, FrameRate: 30}, {Index: 1, Type: "audio", Codec: "ac3", Channels: 6}}}
+	profiles := &core.ClientCapabilityProfiles{
+		DirectPlay:  []core.ClientDirectPlayProfile{{MediaType: "video", Containers: []string{"mp4"}, VideoCodecs: []string{"hevc"}, AudioCodecs: []string{"ac3"}}},
+		Codecs:      []core.ClientCodecProfile{{MediaType: "video", Codecs: []string{"hevc"}, Conditions: []core.ClientProfileCondition{{Property: "VideoRangeType", Operator: "NotEquals", Value: "DOVI", Required: true}}}, {MediaType: "video", Codecs: []string{"h264"}, Conditions: []core.ClientProfileCondition{{Property: "VideoProfile", Operator: "Equals", Value: "High", Required: true}, {Property: "VideoLevel", Operator: "LessThanEqual", Value: "41", Required: true}, {Property: "VideoWidth", Operator: "LessThanEqual", Value: "1920", Required: true}, {Property: "VideoFramerate", Operator: "LessThanEqual", Value: "30", Required: true}}}},
+		Transcoding: []core.ClientTranscodeProfile{{MediaType: "video", Delivery: "hls", Containers: []string{"mpegts"}, VideoCodecs: []string{"h264"}, AudioCodecs: []string{"aac", "ac3"}, MaxAudioChannels: "6"}},
+	}
+	req := frontend.PlanRequest{Caps: core.ClientCaps{Profiles: profiles, Containers: []string{"mp4"}, VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3"}, HLSContainers: []string{"mpegts"}, VideoLevels: map[string]int{"h264": 41}}, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: 1, SubtitleStream: -1}}}
+	b := &Broker{deps: BrokerDeps{Transcoder: profileTranscoder{}}}
+	d, err := b.decideProfile(&core.PlaySession{Info: info}, req)
+	if err != nil || d.VideoCodec != "h264" || d.VideoCopy || d.MaxHeight <= 0 || d.MaxHeight > 1080 || d.H264Level == 0 || d.H264Level > 41 {
+		t.Fatalf("expected bounded 4K fallback: %+v, %v", d, err)
+	}
+	profiles.Codecs[1].Conditions[3].Value = "29"
+	if _, err := b.decideProfile(&core.PlaySession{Info: info}, req); err == nil {
+		t.Fatal("accepted output exceeding required client frame rate")
+	}
+	profiles.Codecs[1].Conditions[3].Value = "30"
+	req.Caps.VideoProfiles = map[string][]string{"h264": {"Baseline"}}
+	if _, err := b.decideProfile(&core.PlaySession{Info: info}, req); err == nil {
+		t.Fatal("accepted unsupported High for Baseline-only device")
+	}
+}
+
+type profileHWTranscoder struct {
+	profileTranscoder
+	hw core.HWAccel
+}
+
+func (t profileHWTranscoder) HWAccel() core.HWAccel { return t.hw }
+
+func TestH264OutputContractOnlyForVerifiedEncoderPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		hw   core.HWAccel
+		want bool
+	}{
+		{"software", core.HWAccel{}, true},
+		{"nvenc", core.HWAccel{Name: "nvenc", Encoders: []string{"h264_nvenc"}}, true},
+		{"qsv", core.HWAccel{Name: "qsv", Encoders: []string{"h264_qsv"}}, false},
+		{"vaapi", core.HWAccel{Name: "vaapi", Encoders: []string{"h264_vaapi"}}, false},
+		{"videotoolbox", core.HWAccel{Name: "videotoolbox", Encoders: []string{"h264_videotoolbox"}}, false},
+		{"hardware without h264 falls back to software", core.HWAccel{Name: "qsv"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := &Broker{deps: BrokerDeps{Transcoder: profileHWTranscoder{hw: tc.hw}}}
+			if b.h264EncoderVerified() != tc.want {
+				t.Fatal("incorrect encoder qualification")
+			}
+		})
+	}
+	info := core.MediaInfo{Streams: []core.StreamInfo{{Type: "video", Width: 1920, Height: 1080, FrameRate: 30}}}
+	d := core.Decision{VideoCodec: "h264", BitrateKbps: 8000}
+	caps := core.ClientCaps{VideoLevels: map[string]int{"h264": 41}}
+	if _, ok := constrainedH264(d, info, caps, false); ok {
+		t.Fatal("unverified encoder satisfied required level")
+	}
+	got, ok := constrainedH264(d, info, core.ClientCaps{}, false)
+	if !ok || got.H264Level != 0 {
+		t.Fatalf("unverified encoder claimed a level: %+v", got)
+	}
+}

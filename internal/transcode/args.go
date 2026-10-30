@@ -687,15 +687,24 @@ func planEncodeArgs(s runSpec, pic picturePlan, enc, codec string, hwFrames bool
 	if s.Rate.TargetKbps > 0 {
 		videoKbps = s.Rate.TargetKbps
 	}
-	b := fmt.Sprintf("%dk", videoKbps)
-	maxr := fmt.Sprintf("%dk", videoKbps*3/2)
-	buf := fmt.Sprintf("%dk", videoKbps*2)
+	peakKbps := videoKbps * 3 / 2
+	bufferKbits := videoKbps * 2
 	if s.Rate.MaxrateKbps > 0 {
-		maxr = fmt.Sprintf("%dk", s.Rate.MaxrateKbps)
+		peakKbps = s.Rate.MaxrateKbps
 	}
 	if s.Rate.BufsizeKbps > 0 {
-		buf = fmt.Sprintf("%dk", s.Rate.BufsizeKbps)
+		bufferKbits = s.Rate.BufsizeKbps
 	}
+	if codec == "h264" && s.Decision.H264Level > 0 {
+		if maxRate, maxBuffer, ok := H264HighLevelLimits(s.Decision.H264Level); ok {
+			videoKbps = min(videoKbps, maxRate)
+			peakKbps = min(peakKbps, maxRate)
+			bufferKbits = min(bufferKbits, maxBuffer)
+		}
+	}
+	b := fmt.Sprintf("%dk", videoKbps)
+	maxr := fmt.Sprintf("%dk", peakKbps)
+	buf := fmt.Sprintf("%dk", bufferKbits)
 	e := []string{"-c:v", enc}
 	xPreset := "veryfast"
 	if s.FastStart {
@@ -776,6 +785,26 @@ func planEncodeArgs(s runSpec, pic picturePlan, enc, codec string, hwFrames bool
 			e = append(e, "-profile:v", "high")
 		} else if pic.tenBit {
 			e = append(e, "-profile:v", "main10")
+		}
+	}
+	if codec == "h264" && s.Decision.H264Level > 0 {
+		// Apply only to the negotiated output contract. Legacy Plex decisions
+		// leave H264Level zero and retain their byte-identical arguments.
+		e = append(e, "-level:v", fmt.Sprintf("%d.%d", s.Decision.H264Level/10, s.Decision.H264Level%10))
+		if enc == "h264_nvenc" {
+			// NVENC adds references internally; refs=3,bf=2 requires level
+			// 6.0 at 4K even when the generic four-picture budget fits 5.1.
+			e = append(e, "-refs", "1", "-bf", "0")
+		} else {
+			e = append(e, "-refs", "3", "-bf", "2")
+		}
+		if s.Decision.H264FrameRate > 0 {
+			e = append(e, "-r", strconv.FormatFloat(s.Decision.H264FrameRate, 'f', -1, 64))
+		}
+		if enc == "libx264" {
+			// ultrafast otherwise disables the High-only transform and can emit
+			// Constrained Baseline despite -profile:v high.
+			e = append(e, "-x264-params", "8x8dct=1:b-pyramid=none")
 		}
 	}
 	if codec == "hevc" {

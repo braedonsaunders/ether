@@ -7,6 +7,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // ProfileDiagnostic is a redacted reason emitted only to an explicitly
@@ -139,6 +140,10 @@ func evaluateProfileConditions(cs []core.ClientProfileCondition, info core.Media
 		case "videoheight", "height":
 			if stream != nil {
 				value = strconv.Itoa(stream.Height)
+			}
+		case "videoframerate", "framerate":
+			if stream != nil && stream.FrameRate > 0 {
+				value = strconv.FormatFloat(stream.FrameRate, 'f', -1, 64)
 			}
 		case "videobitdepth":
 			if stream != nil {
@@ -325,11 +330,18 @@ func profileDeliveryAllowed(p *core.ClientCapabilityProfiles, d core.Decision, i
 		if s.Type == "video" {
 			s.Codec = d.VideoCodec
 			if !d.VideoCopy {
-				s.Width = 0
-				s.Height = d.MaxHeight
-				s.Level = 0
+				s.Width, s.Height = transcode.OutputGeometry(s.Width, s.Height, d.MaxHeight)
+				s.Level = d.H264Level
 				s.Profile = ""
 				s.BitDepth = 0
+				if d.VideoCodec == "h264" {
+					s.FrameRate = 0
+					if d.H264Level > 0 {
+						s.Profile, s.BitDepth, s.FrameRate = "High", 8, d.H264FrameRate
+					}
+					no := false
+					s.DolbyVision, s.DolbyVisionConfigurationPresent = false, &no
+				}
 				s.BitrateKbps = 0
 			}
 		} else if s.Type == "audio" && s.Index == d.AudioStream {
@@ -365,6 +377,66 @@ func profileDeliveryAllowed(p *core.ClientCapabilityProfiles, d core.Decision, i
 	return false
 }
 
+// constrainedH264 describes only facts guaranteed by the selected encoder
+// contract. Unknown geometry or rate stays unknown, so required predicates
+// still fail closed.
+func constrainedH264(d core.Decision, info core.MediaInfo, caps core.ClientCaps, encoderVerified bool) (core.Decision, bool) {
+	if d.VideoCopy || d.VideoCodec != "h264" {
+		return d, true
+	}
+	if !encoderVerified || d.Enhancement.Backend != "" {
+		// Do not assert an output profile or level for an unverified hardware
+		// encoder. Required profile predicates fail closed in the caller.
+		return d, caps.VideoLevels["h264"] <= 0 && len(caps.VideoProfiles["h264"]) == 0
+	}
+	if profiles := caps.VideoProfiles["h264"]; len(profiles) > 0 && !profileContains(profiles, "High") {
+		return d, false
+	}
+	v := info.Video()
+	if v == nil {
+		return d, caps.VideoLevels["h264"] <= 0
+	}
+	fps := v.FrameRate
+	if v.ReferenceFrameRate != nil && *v.ReferenceFrameRate > fps {
+		fps = *v.ReferenceFrameRate
+	}
+	if v.AverageFrameRate != nil && *v.AverageFrameRate > fps {
+		fps = *v.AverageFrameRate
+	}
+	w, h := transcode.OutputGeometry(v.Width, v.Height, d.MaxHeight)
+	if w == 0 || h == 0 || fps <= 0 || d.BitrateKbps <= 0 {
+		return d, caps.VideoLevels["h264"] <= 0 && len(caps.VideoProfiles["h264"]) == 0
+	}
+	if d.BitrateKbps > 200000 {
+		return d, false
+	}
+	// The encoder's bounded profile uses at most four decoded pictures and a
+	// peak no greater than 150% of the total decision bitrate.
+	level := transcode.H264HighLevel(w, h, fps, d.BitrateKbps*3/2, 4)
+	if level == 0 || (caps.VideoLevels["h264"] > 0 && level > caps.VideoLevels["h264"]) {
+		return d, false
+	}
+	d.H264Level = level
+	d.H264FrameRate = fps
+	return d, true
+}
+
+// h264EncoderVerified matches the manager's actual encoder-selection rule.
+// QSV, VAAPI and VideoToolbox remain unknown until their SPS is verified.
+func (b *Broker) h264EncoderVerified() bool {
+	if b.deps.Transcoder == nil {
+		return false
+	}
+	hw := b.deps.Transcoder.HWAccel()
+	if hw.Name == "" || hw.Name == transcode.AccelNone {
+		return true
+	}
+	if !slices.Contains(hw.Encoders, "h264_"+hw.Name) {
+		return true
+	}
+	return hw.Name == transcode.AccelNVENC
+}
+
 func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (core.Decision, error) {
 	r := DecisionRequest{Session: ps, Caps: req.Caps, Options: req.Intent.Options, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true}
 	d, err := Decide(b.deps.Playback, b.deps.Transcoder, r)
@@ -383,8 +455,8 @@ func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (
 	allowed := func(d core.Decision) bool {
 		return req.Intent.AllowTranscoding == nil || *req.Intent.AllowTranscoding || !decisionEncodes(d, ps.Info)
 	}
-	if d.Kind != core.DecisionDirectPlay && allowed(d) && (profileDeliveryAllowed(req.Caps.Profiles, d, ps.Info, "hls") || profileDeliveryAllowed(req.Caps.Profiles, d, ps.Info, "dash")) {
-		return d, nil
+	if output, ok := constrainedH264(d, ps.Info, req.Caps, b.h264EncoderVerified()); d.Kind != core.DecisionDirectPlay && ok && allowed(output) && (profileDeliveryAllowed(req.Caps.Profiles, output, ps.Info, "hls") || profileDeliveryAllowed(req.Caps.Profiles, output, ps.Info, "dash")) {
+		return output, nil
 	}
 	if d.Kind != core.DecisionDirectPlay {
 		b.profileDiagnostic(ProfileDeliveryRejected)
@@ -400,8 +472,27 @@ func (b *Broker) decideProfile(ps *core.PlaySession, req frontend.PlanRequest) (
 			caps.HLSContainers = candidate.Containers
 			opts := req.Intent.Options
 			opts.DirectPlay = false
-			decision, err := Decide(b.deps.Playback, b.deps.Transcoder, DecisionRequest{Session: ps, Caps: caps, Options: opts, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true})
-			return decision, err == nil && decision.Kind != core.DecisionDirectPlay && allowed(decision) && profileDeliveryAllowed(req.Caps.Profiles, decision, ps.Info, candidate.Delivery)
+			// Retry only bounded output heights; never raise a client or request
+			// cap. This allows a lower resolution when the required H.264 level
+			// or dimensions cannot support the original size.
+			for _, height := range []int{0, 2160, 1440, 1080, 720, 576, 480, 360, 240, 144} {
+				attempt := opts
+				if height > 0 && (attempt.MaxHeight == 0 || height < attempt.MaxHeight) {
+					attempt.MaxHeight = height
+				}
+				decision, err := Decide(b.deps.Playback, b.deps.Transcoder, DecisionRequest{Session: ps, Caps: caps, Options: attempt, PreferRemux: req.Intent.PreferRemux, PreserveSourceOnFailure: true})
+				if err != nil || decision.Kind == core.DecisionDirectPlay || !allowed(decision) {
+					continue
+				}
+				decision, ok := constrainedH264(decision, ps.Info, caps, b.h264EncoderVerified())
+				if ok && profileDeliveryAllowed(req.Caps.Profiles, decision, ps.Info, candidate.Delivery) {
+					return decision, true
+				}
+				if decision.VideoCopy || decision.VideoCodec != "h264" {
+					break
+				}
+			}
+			return core.Decision{}, false
 		}
 		if decision, ok := try(candidate.VideoCodecs); ok {
 			if decision.Kind == core.DecisionTranscode {

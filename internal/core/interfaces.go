@@ -510,19 +510,24 @@ const (
 type Decision struct {
 	Enhancement VideoEnhancement `json:"enhancement,omitempty"`
 
-	Kind           DecisionKind `json:"kind"`
-	VideoCopy      bool         `json:"videoCopy"`
-	AudioCopy      bool         `json:"audioCopy"`
-	VideoCodec     string       `json:"videoCodec"` // target codec when transcoding
-	AudioCodec     string       `json:"audioCodec"`
-	Container      string       `json:"container"` // "mpegts" (HLS) or original
-	MaxHeight      int          `json:"maxHeight"`
-	BitrateKbps    int          `json:"bitrateKbps"`
-	AudioStream    int          `json:"audioStream"`
-	SubtitleStream int          `json:"subtitleStream"` // -1 none
-	BurnSubtitles  bool         `json:"burnSubtitles"`
-	Reason         string       `json:"reason"`
-	AudioFilters   []string     `json:"audioFilters,omitempty"`
+	Kind       DecisionKind `json:"kind"`
+	VideoCopy  bool         `json:"videoCopy"`
+	AudioCopy  bool         `json:"audioCopy"`
+	VideoCodec string       `json:"videoCodec"` // target codec when transcoding
+	AudioCodec string       `json:"audioCodec"`
+	Container  string       `json:"container"` // "mpegts" (HLS) or original
+	MaxHeight  int          `json:"maxHeight"`
+	// H264Level is a verified output level_idc for a constrained H.264 encode.
+	// Zero retains the encoder's existing automatic selection.
+	H264Level int `json:"h264Level,omitempty"`
+	// H264FrameRate bounds the selected encoder output rate for that level.
+	H264FrameRate  float64  `json:"h264FrameRate,omitempty"`
+	BitrateKbps    int      `json:"bitrateKbps"`
+	AudioStream    int      `json:"audioStream"`
+	SubtitleStream int      `json:"subtitleStream"` // -1 none
+	BurnSubtitles  bool     `json:"burnSubtitles"`
+	Reason         string   `json:"reason"`
+	AudioFilters   []string `json:"audioFilters,omitempty"`
 	// AudioChannels and AudioSampleRate keep the already negotiated audio
 	// decoder configuration across a source change. Zero uses the normal
 	// encoder defaults.
