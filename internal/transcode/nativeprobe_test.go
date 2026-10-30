@@ -373,6 +373,7 @@ func TestProbeSourceDefersToFFprobe(t *testing.T) {
 		"no frame rate":    file(info, el(mkvTrackEntry, elU(mkvTrackNumber, 1), elU(mkvTrackType, 1), elS(mkvCodecID, "V_MPEG4/ISO/AVC"), el(mkvCodecPrivate, avcc), el(mkvVideo, elU(mkvPixelWidth, 128), elU(mkvPixelHeight, 72)))),
 		"vfw video":        file(info, el(mkvTrackEntry, elU(mkvTrackNumber, 1), elU(mkvTrackType, 1), elS(mkvCodecID, "V_MS/VFW/FOURCC"), elU(mkvDefaultDur, 40000000), el(mkvVideo, elU(mkvPixelWidth, 128), elU(mkvPixelHeight, 72)))),
 		"encrypted":        file(info, video(el(mkvEncodings, el(mkvEncoding, elU(mkvEncType, 1))))),
+		"truncated dovi":   file(info, video(el(mkvAddMapping, elU(mkvAddIDType, 0x64766343), el(mkvAddIDExtra, []byte{1})))),
 		"acm audio":        file(info, video(), el(mkvTrackEntry, elU(mkvTrackNumber, 2), elU(mkvTrackType, 2), elS(mkvCodecID, "A_MS/ACM"))),
 		"unknown subtitle": file(info, video(), el(mkvTrackEntry, elU(mkvTrackNumber, 2), elU(mkvTrackType, 0x11), elS(mkvCodecID, "S_KATE"))),
 		"audio only":       file(info, el(mkvTrackEntry, elU(mkvTrackNumber, 1), elU(mkvTrackType, 2), elS(mkvCodecID, "A_AC3"), el(mkvAudio, elF(mkvSampling, 48000), elU(mkvChannels, 2)))),
