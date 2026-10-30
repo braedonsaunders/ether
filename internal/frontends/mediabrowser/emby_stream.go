@@ -10,6 +10,8 @@ import (
 func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.StreamInfo) {
 	streamMetadataDTO(dto, stream)
 	delete(dto, "IsOriginal") // This field is not part of Emby's stream DTO.
+	dto["AttachmentSize"] = 0
+	dto["Protocol"] = "File"
 	if stream.Type == "video" {
 		// Use only positive probe evidence. PQ alone does not prove HDR10,
 		// and missing metadata cannot establish SDR or absence of HDR.
@@ -20,6 +22,13 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 			dto["ExtendedVideoType"] = "Hdr10Plus"
 		case stream.ColorTransfer == "arib-std-b67":
 			dto["ExtendedVideoType"] = "HyperLogGamma"
+		}
+		// A completed probe that found neither Dolby Vision nor HDR10+ has no
+		// extended type. PQ remains unclassified: it can still be HDR10.
+		if _, set := dto["ExtendedVideoType"]; !set && stream.DolbyVisionConfigurationPresent != nil && !*stream.DolbyVisionConfigurationPresent && (stream.HDR10Plus == nil || !*stream.HDR10Plus) && stream.ColorTransfer != "smpte2084" {
+			dto["ExtendedVideoType"] = "None"
+			dto["ExtendedVideoSubType"] = "None"
+			dto["ExtendedVideoSubTypeDescription"] = "None"
 		}
 	}
 	if stream.CodecTag != "" {

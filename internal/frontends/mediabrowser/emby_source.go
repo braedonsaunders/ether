@@ -16,6 +16,21 @@ func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, medi
 	if itemID != "" {
 		source["ItemId"] = itemID
 	}
+	source["HasMixedProtocols"] = false
+	if chapters, ok := source["Chapters"].([]any); ok {
+		for n, raw := range chapters {
+			entry, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, present := entry["ChapterIndex"]; !present {
+				entry["ChapterIndex"] = n
+			}
+			if _, present := entry["MarkerType"]; !present {
+				entry["MarkerType"] = "Chapter"
+			}
+		}
+	}
 	// The common PlaybackInfo path may have populated this from a legacy
 	// default bit; replace it only with an unambiguous authoritative source.
 	delete(source, "DefaultAudioStreamIndex")

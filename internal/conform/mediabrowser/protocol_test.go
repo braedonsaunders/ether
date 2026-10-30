@@ -216,6 +216,20 @@ func TestEmbyUnconfiguredReferenceAddresses(t *testing.T) {
 	}
 }
 
+func TestEmbyUnprovenIndependenceIsNotBlocking(t *testing.T) {
+	p := &Protocol{Dialect: "emby"}
+	reference := conform.Response{Status: 200, Headers: http.Header{"Content-Type": []string{"application/vnd.apple.mpegurl"}}, Body: []byte("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-INDEPENDENT-SEGMENTS\n#EXT-X-STREAM-INF:BANDWIDTH=1\nmain.m3u8\n")}
+	target := conform.Response{Status: 200, Headers: reference.Headers, Body: []byte("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=1\nmain.m3u8\n")}
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/Videos/item/master.m3u8"}, reference, target)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+	jellyfin := &Protocol{Dialect: "jellyfin"}
+	if jellyfin.CompareRequest(conform.Request{Method: "GET", Path: "/Videos/item/master.m3u8"}, reference, target).Blocking() == 0 {
+		t.Fatal("Jellyfin lost the independence difference")
+	}
+}
+
 func TestPlaybackObservationUpdatesAndClearsSession(t *testing.T) {
 	p := &Protocol{Dialect: "jellyfin"}
 	vars := map[string]string{"play_session_id": "old", "media_source_id": "old"}

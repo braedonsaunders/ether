@@ -482,6 +482,19 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 			}
 		}
 	}
+	if p.Dialect == "emby" {
+		for n := range report.Differences {
+			d := &report.Differences[n]
+			if d.Path == "$playlist/#EXT-X-INDEPENDENT-SEGMENTS" && d.Kind == conform.KindMissing {
+				// Emby 4.10 writes this tag on every master playlist. Ether
+				// writes it only after the encoder proves every segment can
+				// be decoded on its own.
+				d.Kind = conform.KindValue
+				d.Blocking = false
+				d.Reason = "independence is advertised only when the encoder proves it"
+			}
+		}
+	}
 	path, _, _ := strings.Cut(req.Path, "?")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 4 && (strings.EqualFold(parts[0], "jellyfin") || strings.EqualFold(parts[0], "emby")) {
