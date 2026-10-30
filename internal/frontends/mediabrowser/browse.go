@@ -290,7 +290,7 @@ func (i *instance) browseRoutes() error {
 		if len(d.Versions) > 0 {
 			sources := make([]any, 0, len(d.Versions))
 			for _, version := range d.Versions {
-				source := i.mediaSourceDTO(version.ID, version.Media)
+				source := i.detailMediaSourceDTO(version.ID, version.Media)
 				source["Name"] = version.Name
 				i.versionSourceFacts(source, version)
 				i.mediaSourceDialect(source)

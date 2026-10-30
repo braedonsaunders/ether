@@ -1,10 +1,17 @@
 package mediabrowser
 
 import (
+	"context"
+	"encoding/json"
+	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
 func TestDetailSourceOmitsEstimatedMediaFacts(t *testing.T) {
@@ -26,6 +33,58 @@ func TestDetailSourceOmitsEstimatedMediaFacts(t *testing.T) {
 			t.Fatalf("%s: authoritative source lost: %#v", dialect, actual)
 		}
 		media.Estimated = true
+	}
+}
+
+func TestItemDetailDoesNotExposeEstimatedVersionStreams(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie"}, Versions: []frontend.Version{{ID: "version", Media: frontend.MediaInfo{Estimated: true, Container: "mkv", Size: 42, Streams: []frontend.StreamInfo{{Type: "video", Width: 1920}}}}}}, nil
+	}}
+	for _, protocol := range []frontend.Protocol{"jellyfin", "emby"} {
+		var front frontend.Frontend
+		if protocol == "jellyfin" {
+			front = Jellyfin{MachineID: "test"}
+		} else {
+			front = Emby{MachineID: "test"}
+		}
+		inst, err := front.Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := "/Items/" + ids.RatingKeyGUID(5)
+		if protocol == "emby" {
+			userID, _ := ids.GUID(ids.User, viewer.ID)
+			path = "/Users/" + userID + path
+		}
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("X-Emby-Token", "grant")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		var dto map[string]any
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &dto) != nil {
+			t.Fatal(protocol, w.Code, w.Body.String())
+		}
+		sources := dto["MediaSources"].([]any)
+		source := sources[0].(map[string]any)
+		if _, ok := source["Container"]; ok || len(source["MediaStreams"].([]any)) != 0 {
+			t.Fatal(protocol, source)
+		}
+		spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", string(protocol), "")
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc, err := openapi.Parse(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := doc.Validate("GET", r.URL.Path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+			t.Fatalf("%s: %v", protocol, err)
+		}
 	}
 }
 
