@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -116,7 +117,11 @@ func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWrite
 
 // requestLog logs requests at debug level and summarizes noisy 401 failures.
 func (s *Server) requestLog(next http.Handler) http.Handler {
-	failures := faillog.New(s.log.With("frontend", "plex"), "authentication")
+	log := s.log
+	if log == nil {
+		log = slog.Default()
+	}
+	failures := faillog.New(log.With("frontend", "plex"), "authentication")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sr := &statusRecorder{ResponseWriter: w}
