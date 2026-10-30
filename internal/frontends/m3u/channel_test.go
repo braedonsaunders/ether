@@ -3,6 +3,7 @@ package m3u
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -18,8 +19,8 @@ type channelIssuer struct {
 	path   string
 }
 
-func (s *channelIssuer) Issue(_ context.Context, credential string, req frontend.PlanRequest) (string, error) {
-	if credential != "grant" || req.Viewer.ID != 7 || req.Protocol != "m3u" || req.Channel != "allowed" || !strings.HasPrefix(req.Device.ID, "m3u-") {
+func (s *channelIssuer) IssueLineup(_ context.Context, credential string, req frontend.PlanRequest) (string, error) {
+	if credential != "grant" || req.Viewer.ID != 7 || req.Protocol != "m3u" || req.Channel != "" || !strings.HasPrefix(req.Device.ID, "m3u-") {
 		return "", errors.New("wrong scope")
 	}
 	s.issued++
@@ -29,9 +30,10 @@ func (*channelIssuer) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusPartialContent)
 }
 
-func TestCachedChannelURLReauthorizesAndRedirectsToScopedStream(t *testing.T) {
-	issuer := &channelIssuer{path: "/sessions/lazy/opaque/live/index.m3u8"}
+func TestPlaylistIssuesOnlyScopedChannelMediaURLs(t *testing.T) {
+	issuer := &channelIssuer{path: "/sessions/lineup/opaque/"}
 	allowed := true
+	channelCount := 1
 	host := frontend.Host{
 		Identity: frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
 			if token != "grant" {
@@ -44,7 +46,11 @@ func TestCachedChannelURLReauthorizesAndRedirectsToScopedStream(t *testing.T) {
 		SurfaceURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/m3u", nil },
 		LiveTV: frontendtest.LiveTV{ChannelsFunc: func(context.Context, *frontend.Viewer) ([]frontend.LiveChannel, error) {
 			if allowed {
-				return []frontend.LiveChannel{{ID: "allowed", Name: "Channel"}}, nil
+				channels := []frontend.LiveChannel{{ID: "allowed", Name: "Channel"}}
+				for n := 1; n < channelCount; n++ {
+					channels = append(channels, frontend.LiveChannel{ID: fmt.Sprint(n), Name: "Channel"})
+				}
+				return channels, nil
 			}
 			return nil, nil
 		}},
@@ -58,26 +64,35 @@ func TestCachedChannelURLReauthorizesAndRedirectsToScopedStream(t *testing.T) {
 		inst.Handler().ServeHTTP(w, httptest.NewRequest(method, target, nil))
 		return w
 	}
-	if w := request(http.MethodHead, "/m3u/grant/channel?id=allowed"); w.Code != 200 || issuer.issued != 0 {
-		t.Fatalf("HEAD %d issued=%d", w.Code, issuer.issued)
+
+	w := request(http.MethodGet, "/m3u/grant/playlist.m3u")
+	if w.Code != 200 || issuer.issued != 1 || !strings.Contains(w.Body.String(), "https://ether.example/m3u/sessions/lineup/opaque/YWxsb3dlZA/live/index.m3u8") || strings.Contains(w.Body.String(), "grant") {
+		t.Fatalf("playlist %d %q issued=%d", w.Code, w.Body, issuer.issued)
 	}
-	w := request(http.MethodGet, "/m3u/grant/channel?id=allowed")
-	if w.Code != 302 || w.Header().Get("Location") != "https://ether.example/m3u/sessions/lazy/opaque/live/index.m3u8" || strings.Contains(w.Header().Get("Location"), "grant") {
-		t.Fatalf("redirect %d %q", w.Code, w.Header().Get("Location"))
+	if w = request(http.MethodGet, "/m3u/grant/channel?id=allowed"); w.Code != 404 {
+		t.Fatal("legacy login-grant media route remains")
 	}
-	if w = request(http.MethodGet, "/m3u/sessions/lazy/opaque/live/index.m3u8"); w.Code != http.StatusPartialContent {
-		t.Fatalf("lazy forwarding %d", w.Code)
+	if w = request(http.MethodGet, "/m3u/sessions/lineup/opaque/"); w.Code != http.StatusPartialContent {
+		t.Fatal(w.Code)
+	}
+	channelCount = 300
+	if w = request(http.MethodGet, "/m3u/grant/playlist.m3u"); w.Code != 200 || strings.Count(w.Body.String(), "#EXTINF:") != 300 || issuer.issued != 2 || strings.Contains(w.Body.String(), "grant") {
+		t.Fatal("lineup must issue once for all channels", w.Code, issuer.issued)
 	}
 	allowed = false
-	if w = request(http.MethodGet, "/m3u/grant/channel?id=allowed"); w.Code != 404 || issuer.issued != 1 {
-		t.Fatalf("restricted channel %d issued=%d", w.Code, issuer.issued)
+	if w = request(http.MethodGet, "/m3u/grant/playlist.m3u"); w.Code != 200 || strings.Contains(w.Body.String(), "opaque") || issuer.issued != 3 {
+		t.Fatal("hidden channel issued")
 	}
-	if w = request(http.MethodGet, "/m3u/invalid/channel?id=allowed"); w.Code != 401 {
-		t.Fatalf("invalid grant %d", w.Code)
+	if w = request(http.MethodGet, "/m3u/invalid/playlist.m3u"); w.Code != 401 {
+		t.Fatal(w.Code)
 	}
 	allowed = true
-	issuer.path = "/sessions/lazy/../escape/live/index.m3u8"
-	if w = request(http.MethodGet, "/m3u/grant/channel?id=allowed"); w.Code != 503 {
-		t.Fatalf("unsafe capability path accepted: %d", w.Code)
+	issuer.path = "/sessions/lineup/../escape/"
+	if w = request(http.MethodGet, "/m3u/grant/playlist.m3u"); w.Code != 503 {
+		t.Fatal("unsafe capability accepted", w.Code)
 	}
+}
+
+func (*channelIssuer) Issue(context.Context, string, frontend.PlanRequest) (string, error) {
+	return "", errors.New("per-channel issuance forbidden")
 }

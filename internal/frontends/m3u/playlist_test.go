@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -34,20 +35,29 @@ func TestPlaylistEscapesChannelMetadataAndRejectsUnsafeURLs(t *testing.T) {
 	}
 }
 
-func TestPlaylistContainsOnlyViewerChannelsAndStableSurfaceURLs(t *testing.T) {
+func TestPlaylistContainsOnlyViewerChannelsAndScopedMediaURLs(t *testing.T) {
 	host := frontend.Host{
 		Identity: frontendtest.Identity{ResolveFunc: func(_ context.Context, credential string) (*frontend.Viewer, error) {
-			if credential != "valid" {
+			if credential != "grant" {
 				return nil, errors.New("bad grant")
 			}
 			return &frontend.Viewer{ID: 7}, nil
 		}},
-		Sessions: frontendtest.Sessions{},
+		Sessions:     frontendtest.Sessions{},
+		LazyStreams:  &channelIssuer{path: "/sessions/lineup/opaque/"},
+		Capabilities: frontendtest.Capabilities{},
+		ClientIP:     func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.168.1.7"), true },
 		LiveTV: frontendtest.LiveTV{ChannelsFunc: func(_ context.Context, viewer *frontend.Viewer) ([]frontend.LiveChannel, error) {
 			if viewer.ID != 7 {
 				t.Fatal("wrong viewer")
 			}
-			return []frontend.LiveChannel{{ID: "live & one", Name: "News"}}, nil
+			return []frontend.LiveChannel{{ID: "allowed", Name: "News", Images: []frontend.Image{{}}}}, nil
+		}},
+		ImageGrants: frontendtest.ImageGrants{IssueFunc: func(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
+			if req.Credential != "grant" || req.Channel != "allowed" {
+				t.Fatal("image scope")
+			}
+			return "image-capability", nil
 		}},
 		SurfaceURL: func(context.Context, *http.Request) (string, error) { return "https://ether.example/m3u", nil },
 	}
@@ -55,16 +65,21 @@ func TestPlaylistContainsOnlyViewerChannelsAndStableSurfaceURLs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	guide := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(guide, httptest.NewRequest("GET", "/m3u/grant/guide.xml", nil))
+	if guide.Code != 200 || strings.Contains(guide.Body.String(), "grant") || !strings.Contains(guide.Body.String(), "/image/image-capability") {
+		t.Fatal("XMLTV exposed credential or lost scoped artwork", guide.Code, guide.Body)
+	}
 	for _, tc := range []struct {
 		credential string
 		status     int
-	}{{"valid", 200}, {"invalid", 401}} {
+	}{{"grant", 200}, {"invalid", 401}} {
 		w := httptest.NewRecorder()
 		inst.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/m3u/"+tc.credential+"/playlist.m3u", nil))
 		if w.Code != tc.status {
 			t.Fatalf("status %d: %s", w.Code, w.Body.String())
 		}
-		if tc.status == 200 && (!strings.Contains(w.Body.String(), `tvg-id="live & one"`) || !strings.Contains(w.Body.String(), "https://ether.example/m3u/valid/channel?id=live+%26+one")) {
+		if tc.status == 200 && (strings.Contains(w.Body.String(), "grant") || !strings.Contains(w.Body.String(), `tvg-id="allowed"`) || !strings.Contains(w.Body.String(), "https://ether.example/m3u/sessions/lineup/opaque/YWxsb3dlZA/live/index.m3u8")) {
 			t.Fatalf("playlist %q", w.Body.String())
 		}
 	}

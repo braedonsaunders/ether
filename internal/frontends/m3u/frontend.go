@@ -50,10 +50,7 @@ func (i *instance) registerRoutes() error {
 		return err
 	}
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		if err := i.router.Handle(method, "/{credential}/channel", http.HandlerFunc(i.channel)); err != nil {
-			return err
-		}
-		if err := i.router.Handle(method, "/sessions/lazy/{tail...}", http.HandlerFunc(i.serveLazy)); err != nil {
+		if err := i.router.Handle(method, "/sessions/lineup/{tail...}", http.HandlerFunc(i.serveLazy)); err != nil {
 			return err
 		}
 	}
