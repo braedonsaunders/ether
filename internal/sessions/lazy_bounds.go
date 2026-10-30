@@ -1,5 +1,7 @@
 package sessions
 
+import "github.com/braedonsaunders/ether/internal/frontend"
+
 // Durable limits span all protocols. Pressure refuses new capabilities; live
 // playback is never selected as an eviction victim. Existing oversized stores
 // are charged in full and must drain before admitting more capabilities.
@@ -47,4 +49,13 @@ func (b *Broker) releaseLazyBindingFlight(hash string) {
 	if entry, ok := b.lazySessions[hash]; ok && entry.id == "" {
 		delete(b.lazySessions, hash)
 	}
+}
+
+// Only authenticated range reuse may treat stable issue as active renewal.
+// The stored decision was already compared; ServeHTTP rechecks current access.
+func (b *Broker) activeLazyBinding(hash string, viewer int64, protocol frontend.Protocol, device string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	entry := b.sessions[b.lazySessions[hash].id]
+	return !b.closed && entry != nil && entry.public.ViewerID == viewer && entry.public.Protocol == protocol && entry.public.Device.ID == device
 }

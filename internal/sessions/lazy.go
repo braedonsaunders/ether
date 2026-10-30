@@ -73,7 +73,7 @@ func (s *lazyStreams) Issue(ctx context.Context, credential string, req frontend
 }
 
 func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend.PlanRequest, stable bool) (string, error) {
-	return s.issueOutput(ctx, credential, req, stable, nil, false)
+	return s.issueOutput(ctx, credential, req, stable, nil, false, false)
 }
 
 // IssueHLS keeps the scoped capability in every playlist and segment URL.
@@ -82,7 +82,7 @@ func (s *lazyStreams) IssueHLS(ctx context.Context, credential string, req front
 	if req.Channel != "" || output.Format != frontend.StreamHLS || output.Position < 0 || output.SegmentDuration < 0 {
 		return "", core.ErrNotAvailable
 	}
-	return s.issueOutput(ctx, credential, req, false, &output, false)
+	return s.issueOutput(ctx, credential, req, false, &output, false, false)
 }
 
 // IssueLineup binds one media-only capability to an M3U viewer and device.
@@ -92,10 +92,10 @@ func (s *lazyStreams) IssueLineup(ctx context.Context, credential string, req fr
 	if s.protocol != "m3u" || req.Item != 0 || req.Channel != "" {
 		return "", core.ErrUnauthorized
 	}
-	return s.issueOutput(ctx, credential, req, true, nil, true)
+	return s.issueOutput(ctx, credential, req, true, nil, true, false)
 }
 
-func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req frontend.PlanRequest, stable bool, output *frontend.StreamRequest, lineup bool) (string, error) {
+func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req frontend.PlanRequest, stable bool, output *frontend.StreamRequest, lineup, activeReuse bool) (string, error) {
 	if req.Protocol != s.protocol || req.Device.ID == "" || req.Viewer == nil || req.Intent.Plex != nil || (!lineup && (req.Item == 0) == (req.Channel == "")) || (stable && req.Channel != "") {
 		return "", core.ErrUnauthorized
 	}
@@ -239,7 +239,7 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 		if err = tx.QueryRowContext(ctx, `SELECT used FROM sessions_lazy_capacity WHERE id=1`).Scan(&totalCount); err != nil {
 			return "", err
 		}
-		if viewerCount > maxLazyViewerCapabilities || totalCount > maxLazyCapabilities {
+		if (viewerCount > maxLazyViewerCapabilities || totalCount > maxLazyCapabilities) && !(activeReuse && s.broker.activeLazyBinding(lazyHash(token), viewer.ID, s.protocol, req.Device.ID)) {
 			return "", &capability.CapacityError{Scope: "viewer"}
 		}
 		if err = s.renewHeader(ctx, tx, lazyHash(token), viewer.ID, expires.UnixMilli(), now.UnixMilli()); err != nil {
@@ -299,7 +299,7 @@ func (s *lazyStreams) ServeAuthenticated(w http.ResponseWriter, r *http.Request,
 		http.NotFound(w, r)
 		return
 	}
-	path, err := s.issue(r.Context(), credential, req, true)
+	path, err := s.issueOutput(r.Context(), credential, req, true, nil, false, true)
 	if err != nil {
 		http.NotFound(w, r)
 		return

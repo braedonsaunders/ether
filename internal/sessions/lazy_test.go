@@ -325,6 +325,23 @@ func TestAuthenticatedLazyConcurrentFirstRangesReuseSession(t *testing.T) {
 	if pb.prepares != 1 || len(pb.Sessions()) != 1 {
 		t.Fatalf("prepared=%d sessions=%d", pb.prepares, len(pb.Sessions()))
 	}
+	seedLazyUpgrade(t, db, maxLazyViewerCapabilities)
+	if _, err := lazy.(*lazyStreams).issue(ctx, "account-credential-secret", request, true); err == nil {
+		t.Fatal("oversized browse stable issuance accepted")
+	}
+	w := httptest.NewRecorder()
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/movie", nil), "account-credential-secret", request)
+	if w.Code != http.StatusOK || pb.prepares != 1 {
+		t.Fatalf("active oversized range status=%d prepares=%d", w.Code, pb.prepares)
+	}
+	different := request
+	different.Device.ID = "new-device"
+	w = httptest.NewRecorder()
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/movie", nil), "account-credential-secret", different)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("new oversized range admitted: %d", w.Code)
+	}
+
 }
 
 func TestAuthenticatedLazyConflictAndExpiry(t *testing.T) {
