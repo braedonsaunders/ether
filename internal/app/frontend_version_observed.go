@@ -16,31 +16,15 @@ type candidateObservationLedger interface {
 // observeVersionOffers attaches only persisted timestamps for actual candidate
 // release IDs. Failure leaves times unknown and does not suppress browsing.
 func observeVersionOffers(ctx context.Context, ledger candidateObservationLedger, parent core.RatingKey, offers []core.ReleaseVariant, versions []frontend.Version, observed time.Time) error {
-	sources := make([]string, 0, len(offers))
-	byIndex := make(map[int]string)
-	for i, offer := range offers {
-		if i >= len(versions) {
-			break
-		}
-		source, ok := experience.CandidateObservationSource(offer.Release.ID)
-		if !ok {
-			continue
-		}
-		sources = append(sources, source)
-		byIndex[i] = source
-	}
-	if len(sources) == 0 {
-		return nil
-	}
-	times, err := ledger.ObserveBatch(ctx, parent, sources, observed)
+	stamps, err := experience.ObserveVersionOffers(ctx, ledger, parent, experience.VersionOffersFrom(nil, offers), len(versions), observed)
 	if err != nil {
 		return err
 	}
-	for i, source := range byIndex {
-		if first, ok := times[source]; ok {
-			value := first
-			versions[i].FirstObservedAt = &value
+	for i, stamp := range stamps {
+		if stamp == nil || i >= len(versions) {
+			continue
 		}
+		versions[i].FirstObservedAt = stamp
 	}
 	return nil
 }

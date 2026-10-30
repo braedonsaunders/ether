@@ -2,17 +2,15 @@ package app
 
 import (
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 // frontendVersion exposes only facts known for this candidate. Resolver names
 // are release labels, not verified file names, and a release's aggregate size
-// does not prove a particular file revision or part count.
+// does not prove a particular file revision or part count. ID stays the
+// candidate id; broker issuance replaces it before a client-facing handle.
 func frontendVersion(title *core.Title, version core.ReleaseVariant) frontend.Version {
-	out := frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info, AddedAt: versionAddedAt(title, version.Release.PubDate)}
-	if !version.Release.PubDate.IsZero() {
-		modified := version.Release.PubDate
-		out.PublishedAt = &modified
-	}
-	return out
+	offer := experience.VersionOfferFrom(title, version)
+	return frontend.Version{ID: offer.ID, Name: offer.Name, Media: offer.Media, AddedAt: offer.AddedAt, PublishedAt: offer.Publication}
 }
