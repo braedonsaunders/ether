@@ -324,6 +324,8 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		return a.favorites.Set(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()}, on)
 	}, IsFavorite: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
 		return a.favorites.Has(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()})
+	}, IsFavoriteMany: func(ctx context.Context, u *core.User, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
+		return a.favorites.HasTitles(ctx, u, keys)
 	}, IsNotInterested: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
 		return a.notInterested.Has(ctx, u, k)
 	}, SetNotInterestedSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {

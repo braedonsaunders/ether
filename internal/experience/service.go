@@ -50,6 +50,7 @@ type ServiceDeps struct {
 	// Favorites manages the stable, per-viewer Favorites playlist mapping.
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
+	IsFavoriteMany          func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
 	IsNotInterested         func(context.Context, *core.User, core.RatingKey) (bool, error)
 	SetNotInterestedSource  func(context.Context, *core.User, core.RatingKey, bool) error
 	IsWatchlisted           func(context.Context, *core.User, core.RatingKey) (bool, error)
@@ -275,8 +276,23 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			}
 			query := q
 			query.Watched = nil
+			var favorites map[core.RatingKey]bool
+			if q.Favorite != nil && s.d.IsFavoriteMany != nil {
+				keys := make([]core.RatingKey, len(chunk))
+				for i := range chunk {
+					keys[i] = chunk[i].Key
+				}
+				favorites, err = s.d.IsFavoriteMany(ctx, v, keys)
+				if err != nil {
+					return core.Page{}, err
+				}
+				query.Favorite = nil
+			}
 			for _, title := range chunk {
 				if q.Watched != nil && (watched[title.Key].ViewCount > 0) != *q.Watched {
+					continue
+				}
+				if q.Favorite != nil && s.d.IsFavoriteMany != nil && favorites[title.Key] != *q.Favorite {
 					continue
 				}
 				ok, e := s.matchesUserQuery(ctx, v, title, query)

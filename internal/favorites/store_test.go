@@ -100,3 +100,36 @@ func TestMirrorEnabledRequiresActiveViewerAndDefaultsOn(t *testing.T) {
 		}
 	}
 }
+
+func TestHasTitlesBatchEnforcesViewerAndSubject(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	denied := core.MovieKey(3)
+	s, err := New(Options{DB: db, Marked: state.New(db, state.Options{}).Playlists().(core.TransactionalMarkedPlaylists), Active: func(_ context.Context, id int64) (*core.User, error) {
+		if id == 9 {
+			return nil, errors.New("revoked")
+		}
+		return &core.User{ID: id}, nil
+	}, Allowed: func(_ context.Context, _ *core.User, sub Subject) bool { return sub.ID != denied.String() }, Changed: func(context.Context, int64, Subject) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, two := core.MovieKey(1), core.MovieKey(2)
+	if _, err = s.Set(ctx, &core.User{ID: 1}, Subject{Kind: KindTitle, ID: one.String()}, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.HasTitles(ctx, &core.User{ID: 1}, []core.RatingKey{one, two})
+	if err != nil || !got[one] || got[two] {
+		t.Fatalf("membership %v %v", got, err)
+	}
+	other, err := s.HasTitles(ctx, &core.User{ID: 2}, []core.RatingKey{one})
+	if err != nil || other[one] {
+		t.Fatalf("cross viewer %v %v", other, err)
+	}
+	if _, err := s.HasTitles(ctx, &core.User{ID: 1}, []core.RatingKey{one, denied}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("denied subject: %v", err)
+	}
+	if _, err := s.HasTitles(ctx, &core.User{ID: 9}, []core.RatingKey{one}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("revoked viewer: %v", err)
+	}
+}

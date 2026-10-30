@@ -82,3 +82,20 @@ func TestLibraryBrowseBatchesWatchStateBeforePagination(t *testing.T) {
 		t.Fatalf("state failure must fail closed: %+v %v", failed, err)
 	}
 }
+
+func TestLibraryBrowseBatchesFavoriteBeforePagination(t *testing.T) {
+	viewer := &core.User{ID: 1}
+	titles := []core.Title{{Key: core.MovieKey(1), Type: core.TypeMovie}, {Key: core.MovieKey(2), Type: core.TypeMovie}, {Key: core.MovieKey(3), Type: core.TypeMovie}}
+	calls := 0
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, Browse: func(context.Context, core.BrowseQuery) (core.Page, error) {
+		return core.Page{Items: titles, Total: len(titles)}, nil
+	}, IsFavoriteMany: func(_ context.Context, _ *core.User, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
+		calls++
+		return map[core.RatingKey]bool{titles[0].Key: true, titles[2].Key: true}, nil
+	}}}
+	favorite := true
+	page, err := s.LibraryItems(context.Background(), viewer, core.Device{}, "1", frontend.ItemQuery{Favorite: &favorite, Offset: 1, Limit: 1})
+	if err != nil || page.Total != 2 || len(page.Items) != 1 || page.Items[0].Key != titles[2].Key || calls != 1 {
+		t.Fatalf("favorite page %+v calls=%d err=%v", page, calls, err)
+	}
+}

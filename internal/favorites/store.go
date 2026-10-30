@@ -200,6 +200,60 @@ func (s *Service) Has(ctx context.Context, viewer *core.User, subject Subject) (
 	return err == nil, err
 }
 
+// HasTitles checks title membership in bounded batches, revalidating every subject.
+func (s *Service) HasTitles(ctx context.Context, viewer *core.User, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
+	out := make(map[core.RatingKey]bool, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	if viewer == nil || viewer.ID <= 0 {
+		return nil, ErrForbidden
+	}
+	active, err := s.o.Active(ctx, viewer.ID)
+	if err != nil || active == nil || active.ID != viewer.ID {
+		return nil, ErrForbidden
+	}
+	for _, key := range keys {
+		subject := Subject{Kind: KindTitle, ID: key.String()}
+		if !valid(subject) || !s.o.Allowed(ctx, active, subject) {
+			return nil, ErrForbidden
+		}
+	}
+	for start := 0; start < len(keys); start += 400 {
+		chunk := keys[start:min(start+400, len(keys))]
+		args := make([]any, 0, len(chunk)+2)
+		args = append(args, viewer.ID, string(KindTitle))
+		marks := make([]string, len(chunk))
+		for i, key := range chunk {
+			marks[i] = "?"
+			args = append(args, key.String())
+		}
+		rows, err := s.o.DB.QueryContext(ctx, `SELECT subject_id FROM favorites_items WHERE viewer_id=? AND kind=? AND subject_id IN (`+strings.Join(marks, ",")+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			key, err := core.ParseRatingKey(id)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[key] = true
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // List returns permitted favorites newest first, without exposing hidden entries.
 func (s *Service) List(ctx context.Context, viewer *core.User, kind Kind, limit int) ([]Entry, error) {
 	if viewer == nil || viewer.ID <= 0 || (kind != KindTitle && kind != KindPerson && kind != KindCollection && kind != KindChannel) {
