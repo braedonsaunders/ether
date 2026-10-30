@@ -34,7 +34,13 @@ func TestEmbyViewReportsUnsupportedMetadataLocking(t *testing.T) {
 	if view["LockData"] != false || len(view["LockedFields"].([]any)) != 0 {
 		t.Fatal(view)
 	}
-	if _, ok := view["ImageTags"]; ok {
-		t.Fatal("unknown view artwork was invented", view)
+	tags, _ := view["ImageTags"].(map[string]any)
+	backdrops, _ := view["BackdropImageTags"].([]any)
+	if len(tags) != 0 || len(backdrops) != 0 || view["ForcedSortName"] != "Movies" || view["Guid"] != view["Id"] || view["PresentationUniqueKey"] != view["Id"] || view["Etag"] == "" {
+		t.Fatal(view)
+	}
+	userData := view["UserData"].(map[string]any)
+	if userData["Played"] != false || userData["IsFavorite"] != false || userData["PlaybackPositionTicks"] != float64(0) {
+		t.Fatal(userData)
 	}
 }

@@ -62,6 +62,7 @@ func TestEmbyExtendedVideoTypeUsesPositiveProbeEvidence(t *testing.T) {
 		{"HDR10+", frontend.StreamInfo{Type: "video", HDR10Plus: &yes}, "Hdr10Plus"},
 		{"HLG", frontend.StreamInfo{Type: "video", ColorTransfer: "arib-std-b67"}, "HyperLogGamma"},
 		{"PQ alone", frontend.StreamInfo{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &no, DolbyVisionConfigurationPresent: &no}, ""},
+		{"probed without extended type", frontend.StreamInfo{Type: "video", Codec: "h264", DolbyVisionConfigurationPresent: &no, HDR10Plus: &no}, "None"},
 		{"unknown", frontend.StreamInfo{Type: "video"}, ""},
 		{"audio", frontend.StreamInfo{Type: "audio", HDR10Plus: &yes}, ""},
 	} {
