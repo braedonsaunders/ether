@@ -290,6 +290,7 @@ func seed(ctx context.Context, dir string) error {
 		if err = st.Progress(ctx, u.ID, played, 30*time.Minute, 90*time.Minute, "stopped"); err != nil {
 			return err
 		}
+		drainParityPlays(ctx, engine)
 		deadline := time.NewTimer(10 * time.Second)
 		for {
 			var count int
