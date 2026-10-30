@@ -94,6 +94,15 @@ func TestDetailSourceReopensSameRevisionOnAnotherNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := second.MatchDetailSession(ctx, scope, detail.DetailSource, session.ID); err != nil {
+		t.Fatalf("matching pinned session: %v", err)
+	}
+	if err := second.MatchDetailSession(ctx, bad, detail.DetailSource, session.ID); err == nil {
+		t.Fatal("foreign device matched session")
+	}
+	if err := second.MatchDetailSession(ctx, scope, detail.DetailSource, "other-session"); err == nil {
+		t.Fatal("unknown session matched handle")
+	}
 	if err := second.Stop(ctx, frontend.SessionAccess{Viewer: friend, Device: device, Protocol: req.Protocol}, session.ID); err != nil {
 		t.Fatal(err)
 	}

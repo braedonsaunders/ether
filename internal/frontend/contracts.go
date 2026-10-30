@@ -478,6 +478,7 @@ type PlayPlan struct {
 type DetailPlanner interface {
 	DetailPlan(ctx context.Context, request PlanRequest) (PlayPlan, error)
 	ResolveDetailSource(ctx context.Context, scope VersionScope, handle string) (DetailSourceTarget, error)
+	MatchDetailSession(ctx context.Context, scope VersionScope, handle, sessionID string) error
 }
 
 type DetailSourceTarget struct {

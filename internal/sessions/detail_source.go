@@ -110,6 +110,27 @@ func (b *Broker) ResolveDetailSource(ctx context.Context, scope frontend.Version
 	return frontend.DetailSourceTarget{Item: r.item, ETag: r.revision}, nil
 }
 
+// MatchDetailSession authorizes an existing session only when it is pinned to
+// the offered source and the authenticated viewer/device/surface still match.
+func (b *Broker) MatchDetailSession(ctx context.Context, scope frontend.VersionScope, handle, sessionID string) error {
+	record, err := b.resolveDetailSource(ctx, scope, handle)
+	if err != nil {
+		return err
+	}
+	s, _, err := b.access(ctx, frontend.SessionAccess{Viewer: scope.Viewer, Device: scope.Device, Protocol: scope.Protocol}, sessionID)
+	if err != nil {
+		return err
+	}
+	if s.public.Item != record.item || !s.sourcePinned || s.sourceETag != record.revision {
+		return frontend.ErrSourceGone
+	}
+	ps, ok := b.deps.Playback.Session(s.playID)
+	if !ok || ps == nil || ps.Resolution == nil || ps.Resolution.Release.ID != record.release || sourceRevision(ps) != record.revision {
+		return frontend.ErrSourceGone
+	}
+	return nil
+}
+
 // localDetailSource finds a still-leased source for the exact authenticated
 // scope; callers hold that scope's owner gate throughout validation and use.
 func (b *Broker) localDetailSource(viewer int64, device string, surface frontend.Protocol, item core.RatingKey, record detailSourceRecord) *core.PlaySession {

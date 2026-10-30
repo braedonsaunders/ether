@@ -53,6 +53,12 @@ func (s scorecardSessionWrapper) ResolveDetailSource(ctx context.Context, scope 
 	}
 	return frontend.DetailSourceTarget{}, core.ErrNotAvailable
 }
+func (s scorecardSessionWrapper) MatchDetailSession(ctx context.Context, scope frontend.VersionScope, handle, sessionID string) error {
+	if planner, ok := s.embeddedScorecardSessions.(frontend.DetailPlanner); ok {
+		return planner.MatchDetailSession(ctx, scope, handle, sessionID)
+	}
+	return core.ErrNotAvailable
+}
 func (s scorecardSessionWrapper) Open(ctx context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 	v, e := s.embeddedScorecardSessions.Open(ctx, r)
 	s.failure("open", e)

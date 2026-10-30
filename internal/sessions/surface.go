@@ -58,6 +58,15 @@ func (s surface) ResolveDetailSource(ctx context.Context, scope frontend.Version
 	}
 	return frontend.DetailSourceTarget{}, core.ErrNotAvailable
 }
+func (s surface) MatchDetailSession(ctx context.Context, scope frontend.VersionScope, handle, sessionID string) error {
+	if scope.Protocol != s.protocol {
+		return core.ErrUnauthorized
+	}
+	if planner, ok := s.broker.(frontend.DetailPlanner); ok {
+		return planner.MatchDetailSession(ctx, scope, handle, sessionID)
+	}
+	return core.ErrNotAvailable
+}
 func (s surface) Open(ctx context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 	if r.Protocol != s.protocol {
 		return frontend.Session{}, core.ErrUnauthorized
