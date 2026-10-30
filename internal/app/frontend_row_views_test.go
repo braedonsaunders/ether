@@ -462,7 +462,7 @@ func TestRowViewBatchAdmissionDatabaseFaultEquivalence(t *testing.T) {
 				return candidate.CachedGet(ctx, k)
 			}
 			got, ge := rowViewResolveBatchTitles(ctx, viewer, device, "jellyfin", refs, makeOne(candidate), candidate.CachedGetMany, get, experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}, live)
-			if lf.Load() || cf.Load() || (we == nil) != (ge == nil) || !reflect.DeepEqual(want, got) {
+			if lf.Load() || cf.Load() || !errors.Is(we, core.ErrNotFound) || !errors.Is(ge, core.ErrNotFound) || !reflect.DeepEqual(want, got) {
 				t.Fatalf("fault not equivalent legacy=%+v %v candidate=%+v %v fired=%v/%v", want, we, got, ge, !lf.Load(), !cf.Load())
 			}
 		})
