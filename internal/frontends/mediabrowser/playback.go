@@ -519,7 +519,7 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 
 // streamAlias translates client-generated URLs into broker-owned, scoped URLs.
 func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
-	viewer, _, err := i.viewer(r)
+	viewer, credential, err := i.viewer(r)
 	if err != nil || viewer == nil {
 		http.Error(w, "Unauthorized", 401)
 		return
@@ -592,6 +592,22 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 				version = sourceIDs[0]
 			}
 		}
+	}
+	if (len(vals) == 0 || vals[0] == "") && channel == "" && format == frontend.StreamDirect && queryBool(r, "Static", false) {
+		lazy, ok := i.host.LazyStreams.(frontend.AuthenticatedLazyStreams)
+		if !ok || i.host.Capabilities == nil {
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		dev := device(r)
+		capability, e := i.host.Capabilities.Build(i.identityContext(r), frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: i.protocol, ClientID: dev.ID, Product: dev.Client, DeviceName: dev.DeviceName, Version: dev.Version}, UserAgent: r.UserAgent()})
+		if e != nil {
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		request := frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: i.protocol, Item: key, Version: version, Caps: capability.Client, Intent: frontend.PlayIntent{ExactVersion: version != "", Options: frontend.DecideOptions{DirectPlay: true}}}
+		lazy.ServeAuthenticated(w, r, credential, request)
+		return
 	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol}
 	if access.Device.ID == "" {
