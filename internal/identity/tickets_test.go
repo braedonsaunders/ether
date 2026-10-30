@@ -3,7 +3,6 @@ package identity_test
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"sync"
@@ -102,40 +101,6 @@ func TestTicketCrossNodeScopeAndExpiry(t *testing.T) {
 	}
 }
 
-// A ticket written by an older node remains consumable after codec extraction.
-func TestTicketConsumesLegacyHash(t *testing.T) {
-	ctx := context.Background()
-	db := store.OpenTest(t)
-	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Unix(10000, 0)
-	clock := func() time.Time { return now }
-	grants, err := identity.NewGrants(db, members{db}, time.Hour, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	device := core.Device{ID: "tv"}
-	credential, err := grants.Issue(ctx, 1, nil, "silo", device)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grantHash := sha256.Sum256([]byte(credential))
-	token := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	digest := sha256.Sum256([]byte(token))
-	if _, err = db.Exec(`INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, hex.EncodeToString(digest[:]), "silo", "events-ws", 1, hex.EncodeToString(grantHash[:]), `{"ID":"tv"}`, now.Add(30*time.Second).UnixMilli()); err != nil {
-		t.Fatal(err)
-	}
-	service, err := identity.NewTicketService(db, "silo", grants, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ticket, err := service.Consume(ctx, token, "events-ws")
-	if err != nil || ticket.Viewer == nil || ticket.Viewer.ID != 1 || ticket.Device.ID != "tv" {
-		t.Fatalf("legacy ticket consume failed: %v", err)
-	}
-}
-
 func TestTicketServiceUsesSharedHeaderAndClock(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
@@ -164,7 +129,7 @@ func TestTicketServiceUsesSharedHeaderAndClock(t *testing.T) {
 	sum := sha256.Sum256([]byte(token))
 	hash := hex.EncodeToString(sum[:])
 	var a, b int64
-	if err = db.QueryRow(`SELECT expires FROM frontend_tickets WHERE hash=?`, hash).Scan(&a); err != nil {
+	if err = db.QueryRow(`SELECT h.expires FROM capability_headers h JOIN capability_tickets t ON t.namespace=h.namespace AND t.digest=h.digest WHERE h.namespace='ticket' AND h.digest=?`, hash).Scan(&a); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.QueryRow(`SELECT expires FROM capability_headers WHERE namespace='ticket' AND digest=?`, hash).Scan(&b); err != nil {
@@ -180,89 +145,6 @@ func TestTicketServiceUsesSharedHeaderAndClock(t *testing.T) {
 	var n int
 	if err = db.QueryRow(`SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, hash).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("header count=%d err=%v", n, err)
-	}
-}
-
-func TestTicketServiceCleansExpiredLegacyWithoutEvictingLive(t *testing.T) {
-	ctx := context.Background()
-	db := store.OpenTest(t)
-	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Unix(10000, 0)
-	clock := func() time.Time { return now }
-	grants, err := identity.NewGrants(db, members{db}, time.Hour, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	device := core.Device{ID: "tv"}
-	credential, err := grants.Issue(ctx, 1, nil, "silo", device)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := sha256.Sum256([]byte(credential))
-	for _, row := range []struct {
-		hash   string
-		expiry int64
-	}{{"expired", now.UnixMilli()}, {"live", now.Add(time.Minute).UnixMilli()}} {
-		if _, err = db.Exec(`INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, row.hash, "silo", "events-ws", 1, hex.EncodeToString(source[:]), `{"ID":"tv"}`, row.expiry); err != nil {
-			t.Fatal(err)
-		}
-	}
-	service, err := identity.NewTicketService(db, "silo", grants, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.Issue(ctx, credential, device, "events-ws"); err != nil {
-		t.Fatal(err)
-	}
-	var expired, live int
-	if err = db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash='expired'`).Scan(&expired); err != nil {
-		t.Fatal(err)
-	}
-	if err = db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash='live'`).Scan(&live); err != nil {
-		t.Fatal(err)
-	}
-	if expired != 0 || live != 1 {
-		t.Fatalf("legacy cleanup expired=%d live=%d", expired, live)
-	}
-}
-
-// New consumer rejects malformed legacy device records without deleting them;
-// the old implementation deleted before decoding and returned a decode error.
-func TestTicketServiceMalformedLegacyRetained(t *testing.T) {
-	ctx := context.Background()
-	db := store.OpenTest(t)
-	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Unix(10000, 0)
-	clock := func() time.Time { return now }
-	grants, err := identity.NewGrants(db, members{db}, time.Hour, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	credential, err := grants.Issue(ctx, 1, nil, "silo", core.Device{ID: "tv"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := sha256.Sum256([]byte(credential))
-	token := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	hash := sha256.Sum256([]byte(token))
-	digest := hex.EncodeToString(hash[:])
-	if _, err = db.Exec(`INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, digest, "silo", "events-ws", 1, hex.EncodeToString(source[:]), `{`, now.Add(time.Minute).UnixMilli()); err != nil {
-		t.Fatal(err)
-	}
-	service, err := identity.NewTicketService(db, "silo", grants, clock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.Consume(ctx, token, "events-ws"); !errors.Is(err, core.ErrUnauthorized) {
-		t.Fatalf("malformed ticket: %v", err)
-	}
-	var n int
-	if err = db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, digest).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("malformed ticket count=%d err=%v", n, err)
 	}
 }
 
@@ -299,14 +181,14 @@ func TestTicketServiceMaintenanceUsesIssuingClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, hash).Scan(&n); err != nil || n != 1 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM capability_tickets WHERE namespace='ticket' AND digest=?`, hash).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("before expiry count=%d err=%v", n, err)
 	}
 	now = now.Add(time.Millisecond)
 	if _, err := capability.PruneExpired(ctx, db, clock()); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, hash).Scan(&n); err != nil || n != 0 {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM capability_tickets WHERE namespace='ticket' AND digest=?`, hash).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("at expiry count=%d err=%v", n, err)
 	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, hash).Scan(&n); err != nil || n != 0 {

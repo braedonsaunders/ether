@@ -35,11 +35,11 @@ func TestFreshProductionMigrations(t *testing.T) {
 		if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES('source',987,'jellyfin','','','','',0,0,100)`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.ExecContext(ctx, insert); err != nil {
-			t.Fatal(err)
+		if _, err := db.ExecContext(ctx, insert); err == nil {
+			t.Fatal("unadmitted image accepted")
 		}
-		if _, err := db.ExecContext(ctx, ticket); err != nil {
-			t.Fatal(err)
+		if _, err := db.ExecContext(ctx, ticket); err == nil {
+			t.Fatal("retired ticket writer accepted")
 		}
 		if _, err := db.ExecContext(ctx, `DELETE FROM identity_grants WHERE hash='source'`); err != nil {
 			t.Fatal(err)
@@ -48,7 +48,7 @@ func TestFreshProductionMigrations(t *testing.T) {
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_image_grants WHERE hash='image'`).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("image grant did not cascade: %d %v", count, err)
 		}
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash='ticket'`).Scan(&count); err != nil || count != 0 {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_tickets WHERE digest='ticket'`).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("ticket did not cascade: %d %v", count, err)
 		}
 	}

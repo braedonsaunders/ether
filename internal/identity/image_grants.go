@@ -162,7 +162,7 @@ func (s *ImageGrantService) Issue(ctx context.Context, req frontend.ImageGrantRe
 	}
 	defer tx.Rollback()
 	row := imageBatchRow{hash: hash, item: req.Item, image: req.Image}
-	if err = s.insertMirrored(ctx, tx, viewer.ID, source, req.Device.ID, string(device), req.Channel, []imageBatchRow{row}); err != nil {
+	if err = s.insertAdmitted(ctx, tx, viewer.ID, source, req.Device.ID, string(device), req.Channel, []imageBatchRow{row}); err != nil {
 		return "", err
 	}
 	if err = tx.Commit(); err != nil {
@@ -183,7 +183,7 @@ func (s *ImageGrantService) Revoke(ctx context.Context, credential, secret strin
 	if !ok {
 		return core.ErrUnauthorized
 	}
-	return s.revokeMirrored(ctx, viewer.ID, source, hash)
+	return s.revokeAdmitted(ctx, viewer.ID, source, hash)
 }
 func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -200,7 +200,7 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	var viewerID, item int64
 	var deviceJSON, channel string
 	var img frontend.Image
-	err := s.db.QueryRowContext(r.Context(), `SELECT i.viewer_id,i.item,i.device,i.image_kind,i.image_path,i.image_tag,i.channel,i.image_subject FROM frontend_image_grants i JOIN identity_grants g ON g.hash=i.source_hash AND g.viewer_id=i.viewer_id AND g.surface=i.surface JOIN auth_users u ON u.id=i.viewer_id WHERE i.hash=? AND i.surface=? AND i.revoked=0 AND i.expires>? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, string(s.surface), now, now).Scan(&viewerID, &item, &deviceJSON, &img.Kind, &img.Path, &img.Tag, &channel, &img.Subject)
+	err := s.db.QueryRowContext(r.Context(), `SELECT i.viewer_id,i.item,i.device,i.image_kind,i.image_path,i.image_tag,i.channel,i.image_subject FROM frontend_image_grants i JOIN capability_headers h ON h.namespace='image' AND h.digest=i.hash AND h.viewer_id=i.viewer_id AND h.surface=i.surface AND h.expires=i.expires JOIN identity_grants g ON g.hash=i.source_hash AND g.viewer_id=i.viewer_id AND g.surface=i.surface JOIN auth_users u ON u.id=i.viewer_id WHERE i.hash=? AND i.surface=? AND i.revoked=0 AND i.expires>? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, string(s.surface), now, now).Scan(&viewerID, &item, &deviceJSON, &img.Kind, &img.Path, &img.Tag, &channel, &img.Subject)
 	if err != nil {
 		http.NotFound(w, r)
 		return

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
