@@ -2,13 +2,16 @@ package plex
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -40,6 +43,17 @@ func TestSectionDateSortRoutesUseAirDates(t *testing.T) {
 	}
 	f := newFixture(func(d *Deps) { d.Catalog = c })
 	defer f.srv.Close()
+	decode := func(t *testing.T, rec *httptest.ResponseRecorder) model.MediaContainer {
+		t.Helper()
+		var body struct{ MediaContainer model.MediaContainer }
+		if rec.Code != 200 {
+			t.Fatalf("HTTP %d: %s", rec.Code, rec.Body.String())
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return body.MediaContainer
+	}
 	for _, tc := range []struct {
 		path string
 		keys []core.RatingKey
@@ -51,7 +65,7 @@ func TestSectionDateSortRoutesUseAirDates(t *testing.T) {
 		{"/library/sections/2/all", []core.RatingKey{a, b}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
-			mc := decodeJSON(t, f.get(t, tc.path, jsonAccept...))
+			mc := decode(t, f.get(t, tc.path, jsonAccept...))
 			if len(mc.Metadata) != len(tc.keys) {
 				t.Fatalf("%s count=%d", tc.path, len(mc.Metadata))
 			}
@@ -62,7 +76,7 @@ func TestSectionDateSortRoutesUseAirDates(t *testing.T) {
 			}
 		})
 	}
-	rec := decodeJSON(t, f.get(t, fmt.Sprintf("/library/metadata/%s", season), jsonAccept...))
+	rec := decode(t, f.get(t, fmt.Sprintf("/library/metadata/%s", season), jsonAccept...))
 	if len(rec.Metadata) != 1 || rec.Metadata[0].AddedAt != date(2024).Unix() {
 		t.Fatalf("season latest aired: %+v", rec.Metadata)
 	}
