@@ -205,3 +205,44 @@ func TestRowViewBatchedTitlePolicyRevalidates(t *testing.T) {
 		t.Fatal("missing parent accepted")
 	}
 }
+
+func TestRowViewBatchedTitlesKeepFallbackAndGuideScope(t *testing.T) {
+	ctx := context.Background()
+	u := &core.User{ID: 7}
+	movie := core.Title{Key: core.MovieKey(4), Type: core.TypeMovie, HomeReleaseChecked: true}
+	season := core.SeasonKey(5, 1)
+	refs := make([]core.NeutralEntryRef, 0, 202)
+	refs = append(refs, core.NeutralEntryRef{Kind: string(frontend.RowEntryTitle), ID: movie.Key.String()}, core.NeutralEntryRef{Kind: string(frontend.RowEntryTitle), ID: season.String()})
+	for i := 0; i < 200; i++ {
+		refs = append(refs, core.NeutralEntryRef{Kind: string(frontend.RowEntryLiveChannel), ID: "channel"})
+	}
+	batch := func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+		out := map[core.RatingKey]core.Title{}
+		for _, key := range keys {
+			if key == movie.Key {
+				out[key] = movie
+			}
+		}
+		return out, nil
+	}
+	legacyCalls, admissions, guides := 0, 0, 0
+	one := func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, ref core.NeutralEntryRef) (frontend.RowEntry, error) {
+		legacyCalls++
+		return frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &core.Title{Key: season, Type: core.TypeSeason}}, nil
+	}
+	get := func(_ context.Context, _ *core.User, k core.RatingKey) (*core.Title, error) {
+		admissions++
+		copy := movie
+		copy.HomeReleaseFallbackAdmitted = true
+		return &copy, nil
+	}
+	vis := experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}
+	live := func(context.Context, *core.User) ([]frontend.RowEntry, error) {
+		guides++
+		return []frontend.RowEntry{{Kind: frontend.RowEntryLiveChannel, LiveChannel: &frontend.LiveChannel{ID: "channel"}}}, nil
+	}
+	got, err := rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, vis, live)
+	if err != nil || len(got) != len(refs) || got[1].Title.Key != season || legacyCalls != 1 || admissions != 1 || guides != 1 {
+		t.Fatalf("result len=%d legacy=%d admission=%d guides=%d err=%v", len(got), legacyCalls, admissions, guides, err)
+	}
+}
