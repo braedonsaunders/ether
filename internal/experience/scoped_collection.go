@@ -91,3 +91,28 @@ func (s ScopedCollection) Page(ctx context.Context, viewer *core.User, collectio
 	end := min(start+size, len(items))
 	return core.Page{Items: items[start:end], Total: len(items)}, nil
 }
+
+// Placeholder resolves a collection-scoped future title and authorizes both
+// the title and its containing library before returning the source record.
+func (s ScopedCollection) Placeholder(ctx context.Context, viewer *core.User, key core.RatingKey, requested *core.RatingKey, device string) (*core.Title, core.RatingKey, error) {
+	source, ok := s.Collections.(core.CollectionPlaceholder)
+	if !ok {
+		return nil, 0, core.ErrNotFound
+	}
+	var title *core.Title
+	var collection core.RatingKey
+	var err error
+	if requested != nil {
+		collection = *requested
+		title, err = source.Placeholder(ctx, viewer, collection, key, device)
+	} else {
+		title, collection, err = source.FindPlaceholder(ctx, viewer, key, device)
+	}
+	if err != nil || title == nil || !s.Visibility.TitleAllowed(viewer, title) {
+		return nil, 0, core.ErrNotFound
+	}
+	if _, err = s.Get(ctx, viewer, collection, "", false); err != nil {
+		return nil, 0, core.ErrNotFound
+	}
+	return title, collection, nil
+}
