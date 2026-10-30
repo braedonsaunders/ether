@@ -38,6 +38,10 @@ func TestExtrasRoutesAuthorizeParentAndReturnEmptyArrays(t *testing.T) {
 		}
 		for _, route := range []string{"LocalTrailers", "SpecialFeatures"} {
 			path := "/Items/" + ids.RatingKeyGUID(5) + "/" + route
+			if tc.name == "emby" {
+				userID, _ := ids.GUID(ids.User, viewer.ID)
+				path = "/Users/" + userID + path
+			}
 			r := httptest.NewRequest("GET", path, nil)
 			r.Header.Set("X-Emby-Token", "valid")
 			w := httptest.NewRecorder()
