@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"sync"
@@ -362,5 +363,43 @@ func TestImageGrantDefaultAdmissionDisabled(t *testing.T) {
 	}
 	if a.legacyCleanup <= 0 || a.headerCleanup <= 0 {
 		t.Fatalf("cleanup disabled: %+v", a)
+	}
+}
+
+func TestImageGrantDefaultIssuesAboveFormerViewerCap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	service, credential := imageAdapterService(t, db, "jellyfin", nil)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	scope := capability.HeaderScope{Namespace: imageCapabilityNamespace, ViewerID: 1, Surface: "jellyfin", DeviceID: "tv"}
+	for start := 0; start < imagePerScope; start += capability.HeaderBatchMax {
+		end := min(start+capability.HeaderBatchMax, imagePerScope)
+		batch := make([]capability.Header, 0, end-start)
+		for i := start; i < end; i++ {
+			batch = append(batch, capability.Header{HeaderScope: scope, Digest: fmt.Sprintf("%064x", i+1), ExpiresMillis: time.Now().Add(time.Hour).UnixMilli()})
+		}
+		if err = capability.BindHeadersInTx(ctx, tx, batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	image := frontend.Image{Kind: frontend.ImagePoster, Path: "opaque-poster", Tag: "v1", Subject: "tmdb:1"}
+	request := frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: core.MovieKey(9), Image: image}
+	if _, err = service.Issue(ctx, request); err != nil {
+		t.Fatalf("default issuance at former cap: %v", err)
+	}
+	var count int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND viewer_id=? AND surface=?`, imageCapabilityNamespace, 1, "jellyfin").Scan(&count); err != nil || count != imagePerScope+1 {
+		t.Fatalf("headers=%d err=%v", count, err)
 	}
 }
