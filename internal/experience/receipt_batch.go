@@ -11,9 +11,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
-// IssueBatch atomically issues a bounded set of receipts in input order. It is
-// not yet wired to row responses: response-level policy revalidation and
-// stale-row handling must be resolved before adopting it there.
+// IssueBatch atomically issues receipts in input order, bounded by the existing
+// per-device quota. A later response-level policy check may still fail after
+// commit; such unreturned receipts remain until their normal expiry and sweep.
 func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject) ([]string, error) {
 	if viewer == nil || viewer.ID <= 0 || device.ID == "" || protocol == "" || len(subjects) == 0 || len(subjects) > s.opts.MaxPerDevice {
 		return nil, ErrReceipt
