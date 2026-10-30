@@ -109,6 +109,29 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			if e != nil || login.AccessToken == "" {
 				t.Fatal("target login failed", e)
 			}
+			// Each simulated client uses the grant issued for its own DeviceId.
+			// Reusing the preflight token for a different client would violate
+			// the production grant/device binding.
+			clientTokens := map[string]string{}
+			for _, clientName := range strings.Split(spec.client, ",") {
+				deviceID := "conform-" + clientName
+				clientReq, e := http.NewRequest("POST", srv.URL+"/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture-viewer","Pw":"fixture-password"}`))
+				if e != nil {
+					t.Fatal("target client login request failed")
+				}
+				clientReq.Header.Set("Authorization", `MediaBrowser Client="Conform", DeviceId="`+deviceID+`"`)
+				clientResp, e := srv.Client().Do(clientReq)
+				if e != nil {
+					t.Fatal("target client login failed")
+				}
+				var clientLogin struct{ AccessToken string }
+				e = json.NewDecoder(clientResp.Body).Decode(&clientLogin)
+				clientResp.Body.Close()
+				if e != nil || clientResp.StatusCode != http.StatusOK || clientLogin.AccessToken == "" {
+					t.Fatal("target client login response invalid")
+				}
+				clientTokens[clientName] = clientLogin.AccessToken
+			}
 			userID, _ := ids.GUID(ids.User, viewer.ID)
 			viewID, _ := ids.GUID(ids.View, 1)
 			itemID := ids.RatingKeyGUID(core.MovieKey(10378))
@@ -125,7 +148,8 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 				t.Fatal("item artwork not issued", itemResp.StatusCode, err)
 			}
 			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
-			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "conform-"+strings.Split(spec.client, ",")[0])
+			firstClient := strings.Split(spec.client, ",")[0]
+			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, clientTokens[firstClient], itemID, "conform-"+firstClient)
 			imgResp, err := srv.Client().Get(srv.URL + "/Items/" + itemID + "/Images/Primary?tag=" + url.QueryEscape(item.ImageTags["Primary"]))
 			if err != nil {
 				t.Fatal(err)
@@ -198,6 +222,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 				report := conform.Report{}
 				for _, clientName := range strings.Split(spec.client, ",") {
 					values["device_id"] = "conform-" + clientName
+					values["access_token"] = clientTokens[clientName]
 					b, _ = json.Marshal(values)
 					if err := os.WriteFile(targetFile, b, 0600); err != nil {
 						t.Fatal(err)
@@ -208,7 +233,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					}
 					cmd := exec.Command("go", args...)
 					cmd.Dir = "../.."
-					cmd.Env = append(os.Environ(), "CONFORM_TARGET_TOKEN="+login.AccessToken, "CONFORM_REFERENCE_TOKEN="+spec.reference.token)
+					cmd.Env = append(os.Environ(), "CONFORM_TARGET_TOKEN="+clientTokens[clientName], "CONFORM_REFERENCE_TOKEN="+spec.reference.token)
 					out, err := cmd.Output()
 					var partial conform.Report
 					if e = json.Unmarshal(out, &partial); e != nil {
@@ -233,7 +258,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 					}
 				}
 				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
-				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "conform-"+strings.Split(spec.client, ",")[0])
+				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, clientTokens[firstClient], itemID, "conform-"+firstClient)
 				if reportDir := os.Getenv("LAB_REPORT_DIR"); reportDir != "" {
 					if err := os.MkdirAll(reportDir, 0700); err != nil {
 						t.Fatal(err)
