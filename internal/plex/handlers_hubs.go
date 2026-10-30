@@ -172,8 +172,7 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 	if v == cwSection {
 		t = sec.Type
 	}
-	items, state := s.inProgressTitles(ctx, pr, t, count+1)
-	items = s.discoveryContinue(ctx, pr, items)
+	items, state, more := s.continueExperience(pr).Shelf(ctx, pr.User, t, count)
 	hs := hubSpec{Hub: core.Hub{Title: "Continue Watching", Style: "hero", Promoted: true}, state: state}
 	switch v {
 	case cwHome:
@@ -191,9 +190,7 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 			hs.ID, hs.Context, hs.Type = "movie.inprogress."+id, "hub.movie.inprogress", core.TypeMovie
 		}
 	}
-	if len(items) > count {
-		items, hs.More = items[:count], true
-	}
+	hs.More = more
 	hs.Items = items
 	return hs
 }
@@ -835,29 +832,22 @@ func (s *Server) searchTypes(u *core.User, sectionID int) []core.MediaType {
 	return out
 }
 
-func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
-	search := experience.Search{
-		Visibility:   s.visibility(),
-		Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) },
-		Natural: func(ctx context.Context, _ *core.User, query string, limit int) ([]core.Title, bool) {
-			return s.discoverySearch(ctx, pr, query, limit)
-		},
-		Catalog: func(ctx context.Context, query string, types []core.MediaType, limit int) ([]core.Title, error) {
-			return s.d.Catalog.Search(ctx, query, types, limit)
-		},
-	}
-	return search.Find(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), limit)
-}
-
-func (s *Server) vibeSearch(ctx context.Context, pr *Request, query string) (*core.Collection, []core.Title, bool, error) {
+func (s *Server) searchExperience() experience.Search {
 	searcher := s.d.VibeSearch
 	if searcher == nil {
 		searcher, _ = s.d.Collections.(core.VibeSearcher)
 	}
-	if searcher == nil || pr == nil {
-		return nil, nil, false, nil
+	unrestricted := func(u *core.User) bool { return !s.viewerRestricted(u) }
+	return experience.Search{
+		Visibility: s.visibility(), Unrestricted: unrestricted,
+		Natural: experience.DiscoverySearch(s.d.Discovery), Catalog: s.d.Catalog.Search,
+		Vibe: experience.VibeSearch{Source: searcher, Visibility: s.visibility(), Unrestricted: unrestricted},
 	}
-	return (experience.VibeSearch{Source: searcher, Visibility: s.visibility(), Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) }}).Find(ctx, pr.User, query)
+}
+
+func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
+	result, err := s.searchExperience().Resolve(ctx, pr.User, query, s.searchTypes(pr.User, sectionID), limit, false)
+	return result.Items, err
 }
 
 func (s *Server) collectionDirectory(ctx context.Context, c *core.Collection) model.Directory {
@@ -884,21 +874,12 @@ func (s *Server) handleHubSearch(w http.ResponseWriter, r *http.Request) {
 		limit = min(n, 100)
 	}
 	sectionID, _ := strconv.Atoi(q.Get("sectionId"))
-	vibe, vibeItems, isVibe, err := s.vibeSearch(ctx, pr, q.Get("query"))
+	result, err := s.searchExperience().Resolve(ctx, pr.User, q.Get("query"), s.searchTypes(pr.User, sectionID), limit*2, true)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	var res []core.Title
-	if isVibe {
-		res = vibeItems
-	} else {
-		res, err = s.runSearch(ctx, pr, q.Get("query"), sectionID, limit*2)
-		if err != nil {
-			s.writeErr(w, r, err)
-			return
-		}
-	}
+	vibe, res, isVibe := result.Collection, result.Items, result.CollectionSearch
 	byType := map[core.MediaType][]core.Title{}
 	for _, t := range res {
 		byType[t.Type] = append(byType[t.Type], t)
@@ -975,21 +956,12 @@ func (s *Server) handleLibrarySearch(w http.ResponseWriter, r *http.Request) {
 	if n, _ := strconv.Atoi(q.Get("limit")); n > 0 {
 		limit = min(n, 200)
 	}
-	vibe, vibeItems, isVibe, err := s.vibeSearch(ctx, pr, q.Get("query"))
+	result, err := s.searchExperience().Resolve(ctx, pr.User, q.Get("query"), s.searchTypes(pr.User, 0), limit, true)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return
 	}
-	var res []core.Title
-	if isVibe {
-		res = vibeItems
-	} else {
-		res, err = s.runSearch(ctx, pr, q.Get("query"), 0, limit)
-		if err != nil {
-			s.writeErr(w, r, err)
-			return
-		}
-	}
+	vibe, res, isVibe := result.Collection, result.Items, result.CollectionSearch
 	searchCollections := false
 	if st := q.Get("searchTypes"); st != "" {
 		allow := map[core.MediaType]bool{}

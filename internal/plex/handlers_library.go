@@ -670,12 +670,13 @@ func (s *Server) sectionSearch(w http.ResponseWriter, r *http.Request, sec Secti
 		if n, _ := strconv.Atoi(r.URL.Query().Get("limit")); n > 0 {
 			limit = min(n, 200)
 		}
-		res, err := s.d.Catalog.Search(ctx, query, []core.MediaType{t}, limit)
+		search := s.searchExperience()
+		res, err := search.Keyword(ctx, pr.User, query, []core.MediaType{t}, limit)
 		if err != nil {
 			s.writeErr(w, r, err)
 			return
 		}
-		items = s.filterAllowed(pr.User, res)
+		items = res
 	}
 	mc.Title2 = "Search for '" + query + "'"
 	mc.Metadata = s.renderTitles(ctx, pr, items, renderOpts{media: true, inSection: true})

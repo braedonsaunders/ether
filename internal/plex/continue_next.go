@@ -22,6 +22,9 @@ func (s *Server) continueExperience(pr *Request) experience.Continue {
 			return !ok || s.canSeeSection(u, sec.ID)
 		},
 		OnError: func(err error) { s.log.Warn("load in-progress", "err", err) }}
+	if s.d.Discovery != nil && s.d.Discovery.Personal != nil {
+		c.Filter = s.d.Discovery.Personal.FilterContinue
+	}
 	if s.d.EpisodeOrder != nil {
 		c.EpisodeOrder = s.d.EpisodeOrder
 	}
