@@ -12,7 +12,6 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
-	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
 
 // RuntimeRowViews binds persistence, snapshot construction and current policy
@@ -37,17 +36,13 @@ type RuntimeRowViews struct {
 // RowViewRevision reads shared preference and layout versions, so snapshots
 // created by another node fail closed after a relevant change.
 func RowViewRevision(ctx context.Context, db *sql.DB, user *core.User) (string, error) {
-	epoch, err := viewerpolicy.Read(ctx, db)
-	if err != nil {
-		return "", err
-	}
 	var layout string
 	var favorites, exclusions int64
-	err = db.QueryRowContext(ctx, `SELECT COALESCE((SELECT document FROM personalize_home_layout WHERE id=1),''), COALESCE((SELECT updated_at FROM favorites_mirror WHERE viewer_id=?),0), COALESCE((SELECT revision FROM notinterested_revisions WHERE viewer_id=?),0)`, user.ID, user.ID).Scan(&layout, &favorites, &exclusions)
+	err := db.QueryRowContext(ctx, `SELECT COALESCE((SELECT document FROM personalize_home_layout WHERE id=1),''), COALESCE((SELECT updated_at FROM favorites_mirror WHERE viewer_id=?),0), COALESCE((SELECT revision FROM notinterested_revisions WHERE viewer_id=?),0)`, user.ID, user.ID).Scan(&layout, &favorites, &exclusions)
 	if err != nil {
 		return "", err
 	}
-	b, err := json.Marshal([]any{user.ID, user.IsOwner, user.MaxContentRating, user.AllowedSections, epoch, layout, favorites, exclusions})
+	b, err := json.Marshal([]any{user.ID, user.IsOwner, user.MaxContentRating, user.AllowedSections, layout, favorites, exclusions})
 	if err != nil {
 		return "", err
 	}
