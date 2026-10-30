@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -126,16 +127,20 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.Viewer = viewer
 	req.Caps.Remote = req.Caps.Remote || s.remote(r)
 	// Recheck the current safety and title policy even when reusing a session.
-	title, err := s.broker.deps.Lookup(ctx, viewer, req.Device, req.Item)
+	// MediaLookup is the host's policy-checked, cache-only source. A missing
+	// cache entry fails closed rather than causing network metadata fetches on
+	// every range request.
+	if s.broker.deps.MediaLookup == nil {
+		http.NotFound(w, r)
+		return
+	}
+	title, err := s.broker.deps.MediaLookup(ctx, viewer, req.Device, req.Item)
 	if err != nil || title == nil || title.Key != req.Item || !s.broker.permitted(viewer, req.Caps) || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
 		http.NotFound(w, r)
 		return
 	}
 	if r.Method == http.MethodHead {
-		estimate := req
-		estimate.Version = ""
-		estimate.Intent.Estimate = true
-		if _, err := s.broker.Plan(ctx, estimate); err != nil || expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
+		if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
 			http.NotFound(w, r)
 			return
 		}
@@ -198,7 +203,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path, err := s.broker.StartStream(ctx, access, id, frontend.StreamRequest{Format: frontend.StreamDirect})
 	if err != nil {
 		if opened {
-			_ = s.broker.Stop(ctx, access, id)
+			s.discardOpened(ctx, access, id)
 			s.broker.mu.Lock()
 			delete(s.broker.lazySessions, hash)
 			s.broker.mu.Unlock()
@@ -208,7 +213,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
 		if opened {
-			_ = s.broker.Stop(ctx, access, id)
+			s.discardOpened(ctx, access, id)
 			s.broker.mu.Lock()
 			delete(s.broker.lazySessions, hash)
 			s.broker.mu.Unlock()
@@ -226,4 +231,26 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	unlock()
 	unlock = func() {}
 	s.broker.ServeMediaFor(s.protocol, w, clone)
+}
+
+// discardOpened rolls back a session that this request just opened, even when
+// its viewer is no longer active. It only operates on the matching local
+// session and takes the same ownership gate as normal stop operations.
+func (s *lazyStreams) discardOpened(ctx context.Context, access frontend.SessionAccess, id string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	s.broker.mu.Lock()
+	entry := s.broker.sessions[id]
+	if entry == nil || access.Viewer == nil || entry.public.ViewerID != access.Viewer.ID || entry.public.Protocol != access.Protocol || entry.public.Device.ID != access.Device.ID {
+		s.broker.mu.Unlock()
+		return
+	}
+	copy := *entry
+	s.broker.mu.Unlock()
+	unlock, err := s.broker.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", copy.public.ViewerID, copy.clientID))
+	if err != nil {
+		return
+	}
+	defer unlock()
+	_ = s.broker.stopLocked(ctx, &copy)
 }

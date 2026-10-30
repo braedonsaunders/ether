@@ -53,6 +53,7 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	b.deps.MediaLookup = b.deps.Lookup
 	defer b.Close(ctx)
 	grants := &fakeLazyGrants{}
 	lazy, err := NewLazyStreams(db, b, "stremio", grants, time.Hour, func(r *http.Request) bool { return r.Header.Get("X-Test-Remote") == "yes" })

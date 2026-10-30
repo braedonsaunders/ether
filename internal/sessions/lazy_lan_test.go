@@ -21,6 +21,7 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	now := time.Now()
 	selected := int64(1)
 	hidden := false
+	checks, revokeAfter := 0, 0
 	active := func(_ context.Context, id int64) (*core.Viewer, error) {
 		if id != selected {
 			return nil, core.ErrUnauthorized
@@ -30,7 +31,9 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	events := NewEventBus(nil, active)
 	defer events.Close()
 	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	lookupCalls := 0
 	broker, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: func() time.Time { return now }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		lookupCalls++
 		if hidden {
 			return nil, core.ErrNotFound
 		}
@@ -38,6 +41,12 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	broker.deps.MediaLookup = func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		if hidden {
+			return nil, core.ErrNotFound
+		}
+		return &core.Title{Key: key}, nil
 	}
 	defer broker.Close(ctx)
 	clientIP := func(r *http.Request) (netip.Addr, bool) {
@@ -49,6 +58,10 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 		return ip, err == nil
 	}
 	lanViewer := func(_ context.Context, r *http.Request) (*core.Viewer, error) {
+		checks++
+		if revokeAfter > 0 && checks >= revokeAfter {
+			selected = 2
+		}
 		ip, ok := clientIP(r)
 		if !ok || !ip.IsPrivate() || selected == 0 {
 			return nil, core.ErrUnauthorized
@@ -85,6 +98,15 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	if err != nil || !strings.HasPrefix(path, "/sessions/lazy/") || pb.prepares != 0 {
 		t.Fatalf("issue %q: %v", path, err)
 	}
+	checks, revokeAfter = 0, 3
+	w := httptest.NewRecorder()
+	issuer.ServeHTTP(w, request(http.MethodGet, path, "192.168.1.3"))
+	if w.Code != http.StatusNotFound || len(pb.Sessions()) != 0 {
+		t.Fatalf("selection changed during open: status=%d sessions=%d", w.Code, len(pb.Sessions()))
+	}
+	selected, revokeAfter = 1, 0
+	pb.prepares = 0
+	beforeHEAD := lookupCalls
 	serve := func(method, peer string) int {
 		w := httptest.NewRecorder()
 		issuer.ServeHTTP(w, request(method, path, peer))
@@ -93,14 +115,21 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	if status := serve(http.MethodHead, "192.168.1.3"); status != 200 || pb.prepares != 0 {
 		t.Fatalf("HEAD %d opened %d", status, pb.prepares)
 	}
+	if lookupCalls != beforeHEAD {
+		t.Fatal("HEAD fetched network-capable metadata")
+	}
 	if status := serve(http.MethodGet, "192.168.1.4"); status != 404 {
 		t.Fatalf("foreign peer %d", status)
 	}
 	if status := serve(http.MethodGet, "192.168.1.3"); status != 200 || pb.prepares != 1 {
 		t.Fatalf("GET %d opens %d", status, pb.prepares)
 	}
+	beforeReuse := lookupCalls
 	if status := serve(http.MethodGet, "192.168.1.3"); status != 200 || pb.prepares != 1 {
 		t.Fatalf("reuse %d opens %d", status, pb.prepares)
+	}
+	if lookupCalls != beforeReuse {
+		t.Fatal("reused GET fetched network-capable metadata")
 	}
 	hidden = true
 	if status := serve(http.MethodGet, "192.168.1.3"); status != 404 {
@@ -115,5 +144,12 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	now = now.Add(time.Hour)
 	if status := serve(http.MethodHead, "192.168.1.3"); status != 404 {
 		t.Fatalf("expired %d", status)
+	}
+	if _, err := issuer.IssueLAN(ctx, issueRequest, plan); err != nil {
+		t.Fatal(err)
+	}
+	var remaining int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions_lazy_streams`).Scan(&remaining); err != nil || remaining != 1 {
+		t.Fatalf("expired capability cleanup: count=%d err=%v", remaining, err)
 	}
 }
