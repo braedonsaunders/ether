@@ -342,6 +342,25 @@ func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.
 	if err != nil {
 		return frontend.ItemDetail{}, err
 	}
+	// Older cached child records may omit their series label even though the
+	// parent show is known. Fill it only on this neutral detail path, using a
+	// cache-only lookup and the same viewer policy as the requested item.
+	if title.ShowKey != 0 && title.ShowTitle == "" && s.d.CachedGet != nil {
+		show, e := s.d.CachedGet(ctx, title.ShowKey)
+		visibility := s.d.Visibility
+		visibility.GetTitle = s.d.CachedGet
+		if e == nil && show != nil && show.Key == title.ShowKey && visibility.SectionFor != nil {
+			section, ok := visibility.SectionFor(show.Type)
+			if ok && SectionAllowed(v, section) && visibility.Visible(ctx, v, show) {
+				copy := *title
+				copy.ShowTitle = show.Title
+				if copy.ShowYear == 0 {
+					copy.ShowYear = show.Year
+				}
+				title = &copy
+			}
+		}
+	}
 	d := frontend.ItemDetail{Title: *title}
 	if s.d.Enrich != nil {
 		d, err = s.d.Enrich(ctx, v, req.Device, title)
