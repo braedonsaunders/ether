@@ -115,18 +115,19 @@ func TestArtworkThumbhashMatchesGrantedImage(t *testing.T) {
 func TestRelatedArtworkUsesAuthorizedOwnerGrants(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
 	const episode, season, series frontend.RatingKey = 10, 20, 30
+	allowed, authoritative := true, true
 	exp := relatedArtworkExperience{fakeArtworkExperience: frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
 		if req.Viewer != viewer || req.Key != episode {
 			return frontend.ItemDetail{}, errors.New("unauthorized")
 		}
 		return frontend.ItemDetail{Title: frontend.Title{Key: episode, Type: "episode"}}, nil
 	}}, related: func(_ context.Context, v *frontend.Viewer, d frontend.Device, key frontend.RatingKey) (frontend.RelatedArtwork, error) {
-		if v != viewer || d.ID != "tv" || key != episode {
+		if !allowed || v != viewer || d.ID != "tv" || key != episode {
 			return frontend.RelatedArtwork{}, errors.New("unauthorized")
 		}
 		return frontend.RelatedArtwork{PeopleAuthoritative: true, People: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/person", ThumbHash: "person-hash"}},
-			Season: &frontend.ArtworkOwner{Item: season, Authoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/season", ThumbHash: "season-hash"}}},
-			Series: &frontend.ArtworkOwner{Item: series, Authoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/series", ThumbHash: "series-hash"}, {Kind: "backdrop", Path: "/backdrop"}}}}, nil
+			Season: &frontend.ArtworkOwner{Item: season, Authoritative: authoritative, Images: []frontend.Image{{Kind: "poster", Path: "/season", ThumbHash: "season-hash"}}},
+			Series: &frontend.ArtworkOwner{Item: series, Authoritative: authoritative, Images: []frontend.Image{{Kind: "poster", Path: "/series", ThumbHash: "series-hash"}, {Kind: "backdrop", Path: "/backdrop"}}}}, nil
 	}}
 	var owners []frontend.RatingKey
 	grants := frontendtest.ImageGrants{IssueFunc: func(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
@@ -150,6 +151,18 @@ func TestRelatedArtworkUsesAuthorizedOwnerGrants(t *testing.T) {
 	portraits := i.creditPortraits(r, viewer, "credential", frontend.ItemDetail{Title: frontend.Title{Key: episode}})
 	if portraits[12].url != "/api/v2/images/person" || portraits[12].thumbHash != "person-hash" || owners[len(owners)-1] != episode {
 		t.Fatalf("person grant: %+v owners=%+v", portraits, owners)
+	}
+	authoritative = false
+	out = map[string]any{}
+	i.artwork(r, viewer, "credential", episode, out)
+	if len(out) != 0 {
+		t.Fatalf("incomplete parent art exposed: %+v", out)
+	}
+	allowed = false
+	out = map[string]any{}
+	i.artwork(r, viewer, "credential", episode, out)
+	if len(out) != 0 {
+		t.Fatalf("unauthorized parent art exposed: %+v", out)
 	}
 }
 
