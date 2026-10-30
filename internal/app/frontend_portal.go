@@ -192,6 +192,13 @@ func portalSecureAddress(ctx context.Context, peer netip.Addr, host, port string
 }
 
 func portalLANAddress(ip netip.Addr, host, port string, interfaces []remote.InterfaceAddr) (string, error) {
+	if ip.IsLoopback() {
+		bound := net.ParseIP(host)
+		if bound != nil && (bound.IsUnspecified() || bound.IsLoopback()) {
+			return (&url.URL{Scheme: "http", Host: net.JoinHostPort(ip.String(), port), Path: "/ether/me"}).String(), nil
+		}
+	}
+
 	for _, candidate := range interfaces {
 		if candidate.Net == nil || !candidate.Net.Contains(net.IP(ip.AsSlice())) {
 			continue

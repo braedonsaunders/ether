@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"golang.org/x/net/ipv4"
 )
 
 type ssdp struct {
@@ -17,6 +18,8 @@ type ssdp struct {
 	id        string
 	mu        sync.Mutex
 	conn      *net.UDPConn
+	packet    *ipv4.PacketConn
+	joined    map[int]net.Interface
 	warning   string
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
@@ -33,7 +36,7 @@ func (s *ssdp) Start(ctx context.Context) error {
 		}
 	}
 	group := &net.UDPAddr{IP: net.IPv4(239, 255, 255, 250), Port: 1900}
-	conn, err := net.ListenMulticastUDP("udp4", nil, group)
+	conn, packet, joined, err := listenSSDP(group)
 	if err != nil {
 		s.mu.Lock()
 		s.warning = "Discovery unavailable: " + err.Error()
@@ -43,11 +46,12 @@ func (s *ssdp) Start(ctx context.Context) error {
 	run, cancel := context.WithCancel(ctx)
 	s.mu.Lock()
 	s.conn, s.cancel = conn, cancel
+	s.packet, s.joined = packet, joined
 	s.warning = ""
 	s.published = make(map[string]advertisement)
 	s.wg.Add(2)
 	s.mu.Unlock()
-	go func() { defer s.wg.Done(); s.serve(run, conn) }()
+	go func() { defer s.wg.Done(); s.serve(run, packet) }()
 	go func() { defer s.wg.Done(); s.announceLoop(run) }()
 	return nil
 }
@@ -55,6 +59,7 @@ func (s *ssdp) Close() error {
 	s.mu.Lock()
 	conn, cancel := s.conn, s.cancel
 	s.conn, s.cancel = nil, nil
+	s.packet, s.joined = nil, nil
 	s.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -73,10 +78,10 @@ func (s *ssdp) warnings() []string {
 	}
 	return []string{s.warning}
 }
-func (s *ssdp) serve(ctx context.Context, conn *net.UDPConn) {
+func (s *ssdp) serve(ctx context.Context, conn *ipv4.PacketConn) {
 	buf := make([]byte, 4096)
 	for {
-		n, peer, err := conn.ReadFromUDP(buf)
+		n, incoming, peer, err := conn.ReadFrom(buf)
 		if err != nil {
 			return
 		}
@@ -109,7 +114,11 @@ func (s *ssdp) serve(ctx context.Context, conn *net.UDPConn) {
 				usn += "::" + st
 			}
 			response := fmt.Sprintf("HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nEXT:\r\nLOCATION: %s/description.xml\r\nSERVER: Ether/1.0 UPnP/1.0\r\nST: %s\r\nUSN: %s\r\n\r\n", strings.TrimRight(base, "/"), st, usn)
-			_, _ = conn.WriteToUDP([]byte(response), peer)
+			var reply *ipv4.ControlMessage
+			if incoming != nil {
+				reply = &ipv4.ControlMessage{IfIndex: incoming.IfIndex}
+			}
+			_, _ = conn.WriteTo([]byte(response), reply, peer)
 		}
 	}
 }
@@ -146,6 +155,7 @@ func (s *ssdp) announceLoop(ctx context.Context) {
 	}
 }
 func (s *ssdp) refreshAdvertisements(ctx context.Context) {
+	s.refreshInterfaces()
 	current := make(map[string]advertisement)
 	if s.host.LANViewer != nil && s.host.SurfaceURL != nil {
 		list := s.addresses
