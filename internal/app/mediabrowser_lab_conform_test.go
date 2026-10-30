@@ -1480,7 +1480,7 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 		dispose()
 		labTargetLifecycle(t, a, viewer.ID, "after_app_close")
 		counts := a.frontends.broker.ConformLabLifecycleCounters(viewer.ID)
-		for _, key := range []string{"plans", "pending", "source_leases", "source_plan_refs", "source_session_refs", "broker_sessions", "detail_flights"} {
+		for _, key := range []string{"plans", "pending", "source_leases", "source_plan_refs", "source_session_refs", "broker_sessions", "detail_inflight"} {
 			if counts[key] != 0 {
 				t.Errorf("target App.Close left %s=%d", key, counts[key])
 			}
