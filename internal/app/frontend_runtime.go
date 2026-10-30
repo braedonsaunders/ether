@@ -15,6 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/compactids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"github.com/braedonsaunders/ether/internal/frontends/dlna"
 	"github.com/braedonsaunders/ether/internal/frontends/mediabrowser"
 	"github.com/braedonsaunders/ether/internal/frontends/silo"
 	"github.com/braedonsaunders/ether/internal/frontends/stremio"
@@ -222,6 +223,12 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return nil, err
 	}
 	if err := r.registry.Register(webdav.Frontend{}); err != nil {
+		r.stateUnsub()
+		r.broker.Close(context.Background())
+		cancel()
+		return nil, err
+	}
+	if err := r.registry.Register(dlna.Frontend{MachineID: cfg.Server.MachineIdentifier}); err != nil {
 		r.stateUnsub()
 		r.broker.Close(context.Background())
 		cancel()

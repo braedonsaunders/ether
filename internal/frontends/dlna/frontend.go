@@ -45,7 +45,25 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 		return nil, errors.New("dlna requires LAN viewer and host services")
 	}
 	sum := sha256.Sum256([]byte("ether:dlna:" + f.MachineID))
-	i := &instance{host: host, id: hex.EncodeToString(sum[:16]), router: &route.Router{}}
+	i := &instance{host: host, id: hex.EncodeToString(sum[:16])}
+	if err := i.registerRoutes(); err != nil {
+		return nil, err
+	}
+	i.ssdp = &ssdp{host: host, id: i.id}
+	return i, nil
+}
+
+// RegisteredRoutes enumerates the same routes mounted at runtime.
+func RegisteredRoutes() ([]route.Route, error) {
+	i := &instance{}
+	if err := i.registerRoutes(); err != nil {
+		return nil, err
+	}
+	return i.router.Routes(), nil
+}
+
+func (i *instance) registerRoutes() error {
+	i.router = &route.Router{}
 	for _, item := range []struct {
 		method, path string
 		handler      http.HandlerFunc
@@ -59,11 +77,10 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 		{http.MethodHead, "/sessions/lazy/{tail...}", i.serveLAN},
 	} {
 		if err := i.router.Handle(item.method, item.path, item.handler); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	i.ssdp = &ssdp{host: host, id: i.id}
-	return i, nil
+	return nil
 }
 
 func (i *instance) serveLAN(w http.ResponseWriter, r *http.Request) {

@@ -9,12 +9,28 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
 )
+
+func TestRegisteredRoutesMatchMountedRouter(t *testing.T) {
+	routes, err := RegisteredRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := frontend.Host{LANViewer: func(context.Context, *http.Request) (*frontend.Viewer, error) { return nil, errors.New("not selected") }, Experience: frontendtest.Experience{}, Sessions: frontendtest.Sessions{}}
+	inst, err := (Frontend{MachineID: "machine"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual := inst.(frontend.RouteSource).Routes(); !slices.Equal(routes, actual) || len(routes) != 7 {
+		t.Fatalf("inventory=%v mounted=%v", routes, actual)
+	}
+}
 
 func TestLANAndContentDirectoryBrowse(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}

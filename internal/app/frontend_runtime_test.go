@@ -310,6 +310,32 @@ func TestWebDAVIsRegisteredAndRequiresSurfaceGrant(t *testing.T) {
 	}
 }
 
+func TestDLNADefaultsOffAndRequiresSelectedViewer(t *testing.T) {
+	a := setupTestApp(t, true)
+	if a.cfg.Get().Frontends["dlna"].Enabled {
+		t.Fatal("DLNA must default to disabled")
+	}
+	found := false
+	for _, descriptor := range a.frontends.registry.Descriptors() {
+		if descriptor.ID == "dlna" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("DLNA missing from registry")
+	}
+	if err := a.frontends.control.listeners.start(context.Background(), "dlna"); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/dlna/description.xml", nil)
+	r.RemoteAddr = "192.168.1.4:1234"
+	w := httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("unselected viewer: %d", w.Code)
+	}
+}
+
 func TestFrontendStatusCountsStreamsByProtocol(t *testing.T) {
 	counts := countFrontendStreams([]*core.PlaySession{{Client: core.ClientCaps{Protocol: "plex"}}, {Client: core.ClientCaps{}}, {Client: core.ClientCaps{Protocol: "stremio"}}, nil})
 	if counts["plex"] != 2 || counts["stremio"] != 1 || counts["jellyfin"] != 0 {

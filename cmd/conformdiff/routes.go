@@ -9,6 +9,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontends/dlna"
 	"github.com/braedonsaunders/ether/internal/frontends/mediabrowser"
 	"github.com/braedonsaunders/ether/internal/frontends/stremio"
 	"github.com/braedonsaunders/ether/internal/frontends/webdav"
@@ -23,7 +24,7 @@ func routes(args []string) error {
 		return err
 	}
 	switch *protocol {
-	case "plex", "jellyfin", "emby", "silo", "stremio", "webdav":
+	case "plex", "jellyfin", "emby", "silo", "stremio", "webdav", "dlna":
 	default:
 		return fmt.Errorf("unknown protocol %q", *protocol)
 	}
@@ -39,6 +40,13 @@ func routes(args []string) error {
 	}
 	if *protocol == "webdav" {
 		registered, err := webdav.RegisteredRoutes()
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(conform.RouteInventory{Available: true, Routes: registered})
+	}
+	if *protocol == "dlna" {
+		registered, err := dlna.RegisteredRoutes()
 		if err != nil {
 			return err
 		}
