@@ -322,6 +322,9 @@ func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device co
 			if !ok {
 				return nil, core.ErrNotFound
 			}
+			if t.Type == core.TypeMovie && t.HomeReleaseChecked && t.HomeReleased.IsZero() && !t.HomeReleaseFallbackAdmitted {
+				return get(ctx, viewer, key)
+			}
 			return &t, nil
 		}
 		// Keep the original mixed-entry resolver for non-title or virtual-season
