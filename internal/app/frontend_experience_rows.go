@@ -283,77 +283,29 @@ func (a *App) experienceContinue(ctx context.Context, viewer *core.User, librari
 	return items, loadErr
 }
 
-// experienceAdditionalRows supplies the viewer's real playlist, watchlist and
-// live rows; the shared row service applies policy before delivery.
-func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequest, playlists core.Playlists, visibility experience.Visibility) ([]frontend.Row, error) {
-	if req.Placement != frontend.PlacementHome || req.Viewer == nil {
-		return nil, nil
-	}
-	var rows []frontend.Row
-	if playlists != nil {
-		entries, more, err := experience.PlaylistEntries(ctx, req.Viewer, playlists, req.Limit)
-		if err != nil {
-			return nil, err
-		}
-		if len(entries) > 0 {
-			rows = append(rows, frontend.Row{ID: "playlists", Title: "Recent Playlists", Purpose: core.RowPurpose("playlist"), Entries: entries, More: more})
-		}
-	}
-	restricted := !req.Viewer.IsOwner && (req.Viewer.MaxContentRating != "" || len(req.Viewer.AllowedSections) > 0 || a.safety.Restricted(req.Viewer))
-	if a.watchlist != nil {
-		hubs, err := loadExperienceDiscovery(ctx, req.Viewer, req.Limit, restricted, visibility, a.watchlist.Hubs)
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, experienceHubRows(hubs)...)
-	}
-	if a.discoveryPersonal != nil {
-		hubs, err := loadExperienceDiscovery(ctx, req.Viewer, req.Limit, restricted, visibility, a.discoveryPersonal.Hubs)
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, experienceHubRows(hubs)...)
-	}
-	if a.livetv != nil {
-		now := time.Now()
-		entries, err := experience.LiveEntries(ctx, req.Viewer, a.livetv, now, now.Add(24*time.Hour), nil)
-		if err != nil {
-			return nil, err
-		}
-		if len(entries) > 0 {
-			rows = append(rows, frontend.Row{ID: "live", Title: "On Now", Purpose: frontend.RowLive, Entries: entries})
-		}
-	}
-	return rows, nil
+// hubDiscoverySource translates existing engine hubs at the dependency boundary;
+// renderer-specific contexts do not enter the shared composer.
+type hubDiscoverySource struct {
+	load func(context.Context, *core.User, int) ([]core.Hub, error)
 }
 
-// loadExperienceDiscovery expands only restricted discovery pools. Ranked
-// personalization rows remain assembled once with their original visit seed.
-func loadExperienceDiscovery(ctx context.Context, viewer *core.User, limit int, restricted bool, visibility experience.Visibility, load func(context.Context, *core.User, int) ([]core.Hub, error)) ([]core.Hub, error) {
-	if !restricted {
-		return load(ctx, viewer, limit)
+func (s hubDiscoverySource) Rows(ctx context.Context, viewer *core.User, limit int) ([]experience.RankedCandidate, error) {
+	return rankedCandidates(s.load(ctx, viewer, limit))
+}
+
+func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequest, playlists core.Playlists, visibility experience.Visibility) ([]frontend.Row, error) {
+	composer := experience.AdditionalRows{Visibility: visibility, Restricted: a.safety.Restricted, Now: time.Now}
+	if playlists != nil {
+		composer.Playlists = playlists
 	}
-	var hubs []core.Hub
-	var loadErr error
-	rows := experience.LoadDiscovery(ctx, viewer, visibility, limit, func(ctx context.Context, fetch int) []experience.DiscoveryCandidate {
-		hubs, loadErr = load(ctx, viewer, fetch)
-		if loadErr != nil {
-			return nil
-		}
-		candidates := make([]experience.DiscoveryCandidate, len(hubs))
-		for i, hub := range hubs {
-			candidates[i] = experience.DiscoveryCandidate{Index: i, Items: hub.Items}
-		}
-		return candidates
-	})
-	if loadErr != nil {
-		return nil, loadErr
+	if a.watchlist != nil {
+		composer.Watchlist = hubDiscoverySource{a.watchlist.Hubs}
 	}
-	out := make([]core.Hub, 0, len(rows))
-	for _, row := range rows {
-		h := hubs[row.Index]
-		h.Items = row.Items
-		out = append(out, h)
+	if a.discoveryPersonal != nil {
+		composer.Personal = hubDiscoverySource{a.discoveryPersonal.Hubs}
 	}
-	return out, nil
+	if a.livetv != nil {
+		composer.Live = a.livetv
+	}
+	return composer.Rows(ctx, req)
 }
