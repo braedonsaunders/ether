@@ -1,0 +1,139 @@
+# Playback authority and retirement ownership
+
+Audit slice 2, based on candidate `82daa1c79`. This is an ownership contract
+and gap inventory, not a claim that durable sticky playback is implemented.
+The accompanying READ change integrates the reviewed `28f9de73` request seam.
+It introduces no migration and changes no broker, encoder or resume ownership.
+
+## Evidence boundaries
+
+| Evidence | Disposition |
+| --- | --- |
+| `wip/fc-sticky-authority` `9eb78e75` | Unlanded prototype. Consumption ledger, pre-work epochs, atomic bundle and conservative payload markers illustrate required predicates; existing held writers, invalidation and GC are not completely fenced. |
+| `wip/fc-sticky-resume` `26c5c23f` | Unlanded test draft distinguishing delivery from URL issuance. It does not make current resume writes delivery-authoritative. |
+| READ `28f9de73` | Integrated request-producer evidence. Not a successful source-close outcome. |
+| ENCODER `dde2dab7` | Unlanded isolated source/open budgets, owner tickets and outcome tracker. No actual manager/encoder wiring. Do not import a parallel retirement framework. |
+| Flight transfer `59632a05` | Unlanded older admission/lease/migration design. Its startup tests do not prove the current common implementation is fenced. Preserve its transfer guarantees, not its obsolete schema. |
+| Candidate Lazy Stream Bounds (`refs/review/slice-lazy-bounds`) | Current bounded binding placeholders/flight map and sessions/8 are already present. Do not reintroduce their predecessor tables or reserve migration 8 again. |
+
+Current manager `playback.go` saves resume when Prepare publishes a session;
+`failover.go` saves again when replacing a generation. These happen before
+successful viewer delivery. `resume.go` held writes are keyed by user/title;
+its NZB reference map and GC mutex are local to one store instance. This is not
+a durable, cross-node sticky-authority contract. Receipt claims in
+`internal/handles/capability` solve scoped atomic admission/claiming, not source
+liveness or payload retention.
+
+## One owner, distinct facts
+
+The broker owns published session lifecycle and source plan/session counts.
+The manager owns each preparation flight and its acquired source generations.
+The encoder owns its input producers independently of an HLS segment request.
+A protocol adapter translates IDs and invokes that ownership; it must not add
+a second destructive stop path for an already-owned session.
+
+Keys include protocol, viewer, broker-scoped client/device, item, session,
+source revision and node incarnation where appropriate. Raw Plex client IDs
+are not interchangeable with broker client IDs. A shared release/hash alone
+does not identify the same acquired source or node-local payload domain.
+
+Three facts must remain distinct:
+
+1. A request's registered producers have exited and released generation refs.
+2. Every acquired source, including prior and provisional generations, has
+   closed successfully or transferred to a protected exact-source owner.
+3. Every encoder/input producer has retired, with its own outcome.
+
+READ proves only (1). In particular generation release might not close a
+source with other references, and `generation.closeSource` discards Close's
+error. A closed READ signal therefore cannot prove (2), even when it waited
+for a synchronous Close call. A segment request's READ scope proves nothing
+about an independent FFmpeg loopback request.
+
+## Linearisation points
+
+| Operation | Required point and failure disposition | Current implementation / remaining work |
+| --- | --- | --- |
+| Plan | Reserve bounded plan/flight capacity before external work. Flight owns the provisional resource independently of its first waiter. | Broker plan bounds and current lazy flight placeholders exist. Full durable source responsibility is pending. |
+| Open | Transfer a plan claim to one accepted session under the owner gate and broker lock. Publish no grant without the exact source/revision attachment. | `transferPlanSourceLocked` orders local counts; durable receipt attachment/commit barrier is pending. |
+| Failed Open | Remove only the failed plan's claim under the same owner gate. Close any acquired source only after its last owner leaves. An Open error does not prove no source was acquired. | Local plan lease tests protect existing/shared sources. Detached/late backend completion needs manager-owned close outcomes. |
+| Cancellation | Cancellation stops accepting work; only producer exit releases its READ slot. Cancelled waiters never authorize destruction of a still-running shared flight. | READ Begin/Seal mutex orders registration. Slot survives stalled ReadAt and generation release. Durable cancelled-flight responsibility is pending. |
+| Stop | Under the broker owner gate, detach exactly the matching session and seal new work. Manager deletion from sessions/byIdent and setting closed blocks session reuse; generation retire seals read admission. | Broker and manager have local linearisation points, not one cross-node durable outcome. Stop return, missing lookup and heartbeat expiry do not authorize payload reclamation. |
+| Failover | Attach replacement responsibility before publishing the new generation; retire old input without dropping old read/Close responsibility. Failed preflight must never publish. | Manager generation refs already delay old Close. Durable ownership spanning all prior/late generations and encoder swaps remains pending. |
+| Successful delivery | After a successful nonzero viewer Write, atomically commit the source-bound authority CAS, resume row, index and probe. Durable order is admission sequence, not clock or physical network arrival. A failed newer attempt does not supersede an older successful one. | Current save-on-Prepare/failover is insufficient. Loopback/probe/prefetch/HEAD/URL issuance are not delivery. Draft atomic bundle remains unlanded. |
+| Renewal | Under the same capability shard/domain lock, CAS the exact still-live scope/revision/incarnation. Revalidate session/grant authority; never resurrect an expired or revoked claim. Commit typed record and header extension together. | Current lazy `renewActiveBinding` and common `RenewHeaderInTx` are the starting primitive. Header expiry alone is not retirement. |
+| Cleanup | Reclaim only after confirmed exact-source transfer or successful source and encoder outcomes plus relevant READ drainage. Serialize with renewal and payload writers; bounded batches retain uncertain markers. | Existing TTL/header pruning and local GC cannot stand in for this outcome. Unknown commits, crashes, timeouts and Close errors retain protection. |
+
+READ registration occurs before the copy producer starts and before generation
+acquisition. Seal rejects future registration. The producer releases its tracker
+only after generation release returns. Failed registration/acquisition releases
+its admission slot. A cancelled context cannot start a tracked producer. At most
+128 tracked copy producers exist per process across managers; a stuck read or
+Close retains a slot. Full admission fails before starting a producer and does
+not evict existing work. Existing untracked Plex/loopback callers retain their
+admission and bytes; this is not a bound on all legacy producers or on arbitrary
+callers of the public tracker. Chunk/read-ahead configuration remains separate.
+
+## Broker seam agreement
+
+Broker lead `thr_fc855ih3dk` owns broker.go, media.go, plex_lookup.go and Plex
+wiring. The first delivery is only `core.WithReadRetirement` /
+`ReadRetirementFrom`, `Begin`, `Seal`, and playback copy-producer integration.
+No broker attaches this scope automatically yet. A future broker consumer can
+attach one tracker per request, seal after its handler stops creating producers,
+and retain the signal as request-producer evidence. It must not free a protected
+source/capability lease solely on that signal.
+
+Lifecycle worker `thr_8g6zxzjbdu` calls existing Report/Stop; no additional Stop
+helper belongs in timeline, terminate or unmount. A cancelled request or a
+Report/Stop error is not proof that ownership was absent. A fallback must not
+stop a replacement after partial broker teardown. Plex unmount detaches the
+mount; runtime shutdown owns broker Close. Legacy transcode IDs and broker
+session IDs require their existing explicit translation.
+
+## Remaining durable integration using the common primitive
+
+Do not land the sticky drafts or old flight migrations wholesale. The next
+implementation must use common `AdmitHeadersInTx`, `LockHeaderScopeInTx`,
+`ClaimHeaderInTx` / `ConsumeHeaderInTx`, and `RenewHeaderInTx` within the domain
+transaction, with typed source bindings and bounded admission. Headers are
+bookkeeping, not source authority. Typed state must protect resources after a
+header expires; generic pruning must not cascade away a live/uncertain owner.
+
+Reserve an idempotent exact-source transfer/barrier under the manager flight
+lock, release that lock for database work, attach it to the target session before
+publication, commit the durable relationship, then finalize under the flight
+lock. Stop captures the barrier without waiting indefinitely. A definite rollback
+can release only an unacquired reservation; an unknown commit retains both
+protected sides. Duplicate cancel/transfer/cleanup must be idempotent.
+
+All source opens must be covered before Engine.Open, including speculative
+preflight and detached late completions. Track successful/error Close outcomes
+through all generations and encoder inputs before releasing responsibility.
+Budget uncertain outcomes, cleanup reservations and payload markers explicitly;
+saturation refuses new acquisition rather than collecting protected resources.
+
+Resume/outbox/pre-work/cachefill/prefetch/invalidation/retention/GC writers must
+all participate in the same ordering and payload-domain guard. A reader-only
+ledger cannot fence them. No timestamp comparison or normalization of Plex
+responses can substitute for that integration.
+
+Mixed-version safety requires the documented maintenance transition: stop all
+old nodes and fence their DB credentials before activating authority writes or
+GC. Startup must reject unsupported schema/authority versions. Application
+advisory locks do not constrain old binaries or direct SQL. Add explicit old
+startup/writer refusal tests against the final schema. No rolling-upgrade safety
+is claimed. Any new sessions migration requires agreement with the broker lead
+and migration acceptance; this READ delivery uses none.
+
+## Validation boundary
+
+READ stalled-read, stalled-Close, cancellation, replacement, concurrent release,
+capacity and rejection tests exercise actual producer exit. HTTP parity compares
+status, headers and body exactly for full, range, suffix, invalid range and HEAD
+responses, without normalization. Existing source lease and Lazy Bounds tests
+run on SQLite and PostgreSQL, using the current capability primitive.
+
+These gates do not certify durable sticky authority, cross-node payload GC,
+encoder retirement or actual Plex broker adoption. Those remain launch blockers
+until their real consumers and failure outcomes are integrated and validated.
