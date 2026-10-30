@@ -34,6 +34,14 @@ into mixed results. Read-only PMS probes returned empty for the affected
 requests. Unscoped mixed Home responses remain supported. Exact before/after
 pairs must be recorded before any difference is approved.
 
+Owner-approved resume improvement: a nonzero position is retained at 60
+seconds or 5% of duration, whichever comes first, until the existing watched
+threshold. This shared-state change affects `/:/timeline`,
+`/library/metadata/{{movieKey}}`, and `/hubs/continueWatching` for those
+positions. The earlier PMS threshold was not established: the Guest probe
+stopped at authorization. This note does not allowlist any response; exact
+reviewed before/after pairs are still required.
+
 The complete v0.2.45 corpus covers every registered Plex GET route, including
 real offline IPTV resource, relay and DASH media. A zero-unapproved result with
 exit 2 means a future inventory route is uncovered and is not a parity verdict.
