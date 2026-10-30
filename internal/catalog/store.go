@@ -14,7 +14,7 @@ import (
 const titleCols = `key,type,tmdb_id,imdb,tvdb,show_key,show_tmdb,show_title,season_title,season,episode,
 title,original_title,sort_title,tagline,summary,year,released_ts,runtime_sec,status,language,
 content_rating,rating,vote_count,popularity,poster,backdrop,still,logo,collection_id,collection_name,
-child_count,leaf_count,browsable,added_at,fetched_at,detail,adult`
+child_count,leaf_count,browsable,added_at,fetched_at,detail,adult,last_air_ts`
 
 type storedTitle struct {
 	t         core.Title
@@ -101,13 +101,13 @@ func scanTitle(s scanner) (*storedTitle, error) {
 	var typ, imdb, showTitle, seasonTitle, title, orig, sortT, tagline, summary, status, lang, crating string
 	var tmdbID, tvdb, showTMDB int64
 	var season, episode, year, voteCount, collID, child, leaf, browsable, detail, adult int
-	var releasedTS, runtimeSec, addedAt, fetchedAt int64
+	var releasedTS, runtimeSec, addedAt, fetchedAt, lastAirTS int64
 	var rating, pop float64
 	var collName, poster, backdrop, still, logo string
 	err := s.Scan(&key, &typ, &tmdbID, &imdb, &tvdb, &showKey, &showTMDB, &showTitle, &seasonTitle, &season, &episode,
 		&title, &orig, &sortT, &tagline, &summary, &year, &releasedTS, &runtimeSec, &status, &lang,
 		&crating, &rating, &voteCount, &pop, &poster, &backdrop, &still, &logo, &collID, &collName,
-		&child, &leaf, &browsable, &addedAt, &fetchedAt, &detail, &adult)
+		&child, &leaf, &browsable, &addedAt, &fetchedAt, &detail, &adult, &lastAirTS)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +126,9 @@ func scanTitle(s scanner) (*storedTitle, error) {
 	}
 	if releasedTS != 0 {
 		t.Released = time.Unix(releasedTS, 0).UTC()
+	}
+	if lastAirTS != 0 {
+		t.LastAirDate = time.Unix(lastAirTS, 0).UTC()
 	}
 	if fetchedAt != 0 {
 		t.UpdatedAt = time.Unix(fetchedAt, 0).UTC()
@@ -487,6 +490,10 @@ func upsertOne(ctx context.Context, tx *sql.Tx, t core.Title, o upsertOpts, now 
 	}
 	// For episodes/seasons, IDs.TMDB is their own TMDB id. show_tmdb stored separately.
 	var releasedTS int64
+	var lastAirTS int64
+	if !t.LastAirDate.IsZero() {
+		lastAirTS = t.LastAirDate.Unix()
+	}
 	if !t.Released.IsZero() {
 		releasedTS = t.Released.Unix()
 		if t.Year == 0 {
@@ -512,8 +519,8 @@ func upsertOne(ctx context.Context, tx *sql.Tx, t core.Title, o upsertOpts, now 
 INSERT INTO catalog_titles (key,type,tmdb_id,imdb,tvdb,show_key,show_tmdb,show_title,season_title,season,episode,
  title,original_title,sort_title,tagline,summary,year,released_ts,runtime_sec,status,language,
  content_rating,content_rating_rank,rating,vote_count,popularity,poster,backdrop,still,logo,
- collection_id,collection_name,child_count,leaf_count,browsable,added_at,fetched_at,detail,adult,detail_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ collection_id,collection_name,child_count,leaf_count,browsable,added_at,fetched_at,detail,adult,detail_at,last_air_ts)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(key) DO UPDATE SET
  type=excluded.type, tmdb_id=excluded.tmdb_id, adult=excluded.adult,
  imdb=CASE WHEN excluded.imdb<>'' THEN excluded.imdb ELSE catalog_titles.imdb END,
@@ -529,6 +536,7 @@ ON CONFLICT(key) DO UPDATE SET
  released_ts=CASE WHEN excluded.detail=1 OR (catalog_titles.detail=0 AND excluded.released_ts<>0) THEN excluded.released_ts ELSE catalog_titles.released_ts END,
  runtime_sec=CASE WHEN excluded.runtime_sec<>0 THEN excluded.runtime_sec ELSE catalog_titles.runtime_sec END,
  status=CASE WHEN excluded.status<>'' THEN excluded.status ELSE catalog_titles.status END,
+ last_air_ts=CASE WHEN excluded.last_air_ts<>0 THEN excluded.last_air_ts ELSE catalog_titles.last_air_ts END,
  language=CASE WHEN excluded.language<>'' THEN excluded.language ELSE catalog_titles.language END,
  content_rating=CASE WHEN excluded.content_rating<>'' THEN excluded.content_rating ELSE catalog_titles.content_rating END,
  content_rating_rank=CASE WHEN excluded.content_rating<>'' THEN excluded.content_rating_rank ELSE catalog_titles.content_rating_rank END,
@@ -550,7 +558,7 @@ ON CONFLICT(key) DO UPDATE SET
 		int64(t.Key), string(t.Type), t.IDs.TMDB, t.IDs.IMDB, t.IDs.TVDB, int64(t.ShowKey), showTMDB, t.ShowTitle, t.SeasonTitle, t.Season, t.Episode,
 		t.Title, t.OriginalTitle, t.SortTitle, t.Tagline, t.Summary, t.Year, releasedTS, int64(t.Runtime.Seconds()), t.Status, t.Language,
 		t.ContentRating, RatingRank(t.ContentRating), t.Rating, t.VoteCount, t.Popularity, t.PosterPath, t.BackdropPath, t.StillPath, t.LogoPath,
-		t.CollectionID, t.CollectionName, t.ChildCount, t.LeafCount, browsableInt, addedAtFor(browsableInt, now), now, detailInt, t.Adult, detailAtFor(detailInt, now))
+		t.CollectionID, t.CollectionName, t.ChildCount, t.LeafCount, browsableInt, addedAtFor(browsableInt, now), now, detailInt, t.Adult, detailAtFor(detailInt, now), lastAirTS)
 	if err != nil {
 		return fmt.Errorf("catalog: upsert %d: %w", t.Key, err)
 	}

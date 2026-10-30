@@ -60,8 +60,9 @@ type Title struct {
 	Tagline                     string        `json:"tagline,omitempty"`
 	Summary                     string        `json:"summary,omitempty"`
 	Year                        int           `json:"year,omitempty"`
-	Released                    time.Time     `json:"released,omitempty"` // first air / release date
-	AddedAt                     time.Time     `json:"addedAt,omitzero"`   // air-derived library date, when known
+	Released                    time.Time     `json:"released,omitempty"`   // first air / release date
+	AddedAt                     time.Time     `json:"addedAt,omitzero"`     // air-derived library date, when known
+	LastAirDate                 time.Time     `json:"lastAirDate,omitzero"` // last aired episode date when known
 	HomeReleaseChecked          bool          `json:"homeReleaseChecked,omitempty"`
 	HomeReleased                time.Time     `json:"homeReleased,omitempty"`
 	HomeReleaseFallbackAdmitted bool          `json:"homeReleaseFallbackAdmitted,omitempty"`

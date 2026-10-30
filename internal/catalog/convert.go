@@ -275,6 +275,7 @@ func (c *Catalog) tvDetailsToTitle(ctx context.Context, d *tmdb.TVDetails) core.
 	t.Keywords = keywordNames(d.Keywords)
 	t.Tagline = d.Tagline
 	t.Status = d.Status
+	t.LastAirDate = tmdb.ParseDate(d.LastAirDate)
 	if len(d.EpisodeRunTime) > 0 && d.EpisodeRunTime[0] > 0 {
 		t.Runtime = time.Duration(d.EpisodeRunTime[0]) * time.Minute
 	}
