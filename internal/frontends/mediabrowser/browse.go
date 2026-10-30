@@ -339,6 +339,9 @@ func (i *instance) browseRoutes() error {
 			}
 		}
 		i.versionItemFacts(dto, d.Versions)
+		if d.Title.Type == "movie" || d.Title.Type == "episode" {
+			i.applyResolvedDetail(r, v, token, key, versionID, dto)
+		}
 		tags, backdrops, imageMetadata := i.imageTags(r, d, token)
 		for key, value := range imageMetadata {
 			dto[key] = value

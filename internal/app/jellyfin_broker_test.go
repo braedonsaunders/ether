@@ -29,6 +29,13 @@ func (p coldFixturePlayback) Prepare(ctx context.Context, viewer *core.User, key
 	return session, err
 }
 
+func (p coldFixturePlayback) PrepareSurface(ctx context.Context, viewer *core.User, key core.RatingKey, caps core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
+	if release != "" || exact {
+		return nil, core.ErrNotAvailable
+	}
+	return p.Prepare(ctx, viewer, key, caps)
+}
+
 func TestJellyfinRealBrokerPlayback(t *testing.T) {
 	ctx := context.Background()
 	viewer := &core.Viewer{ID: 2}
