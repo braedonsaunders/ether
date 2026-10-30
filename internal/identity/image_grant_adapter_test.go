@@ -367,13 +367,13 @@ func TestImageGrantDefaultAdmissionDisabled(t *testing.T) {
 }
 
 func TestImageGrantDefaultIssuesAboveFormerViewerCap(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
 	db := store.OpenTest(t)
-	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
 		t.Fatal(err)
 	}
 	service, credential := imageAdapterService(t, db, "jellyfin", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
