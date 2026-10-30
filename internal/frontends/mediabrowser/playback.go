@@ -627,10 +627,6 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		lazy.ServeAuthenticated(w, r, credential, request)
 		return
 	}
-	if detailSource != "" {
-		http.NotFound(w, r)
-		return
-	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol}
 	if access.Device.ID == "" {
 		http.Error(w, "Unauthorized", 401)
@@ -662,6 +658,13 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 	if version != "" && i.host.VersionHandles.MatchSession(i.identityContext(r), versionScope, version, sessionID) != nil {
 		http.NotFound(w, r)
 		return
+	}
+	if detailSource != "" {
+		planner, ok := i.host.Sessions.(frontend.DetailPlanner)
+		if !ok || planner.MatchDetailSession(i.identityContext(r), versionScope, detailSource, sessionID) != nil {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	url, err := i.host.Sessions.StartStream(r.Context(), access, sessionID, frontend.StreamRequest{Format: format})
 	if err != nil {

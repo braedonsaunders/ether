@@ -92,3 +92,40 @@ func TestStaticAliasBindsDetailSourceRevision(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticAliasChecksDetailSessionBinding(t *testing.T) {
+	const handle = "82b0c3fc-7616-46da-8528-fc26ec5cb4ab"
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	for _, tc := range []struct {
+		name  string
+		front frontend.Frontend
+	}{{"jellyfin", Jellyfin{MachineID: "test"}}, {"emby", Emby{MachineID: "test"}}} {
+		calls := 0
+		sessions := frontendtest.Sessions{SessionsFunc: func(context.Context, frontend.SessionAccess) ([]frontend.Session, error) {
+			return []frontend.Session{{ID: "session", Item: 5, Protocol: frontend.Protocol(tc.name), Device: frontend.Device{ID: "device"}}}, nil
+		}, StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+			calls++
+			return "/sessions/media/session/grant/file", nil
+		}}
+		inst, err := tc.front.Mount(context.Background(), frontend.Host{Identity: identity, Sessions: &detailPlannerStub{embeddedSessions: sessions}, Capabilities: frontendtest.Capabilities{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, test := range []struct {
+			session string
+			status  int
+		}{{"session", http.StatusTemporaryRedirect}, {"other", http.StatusNotFound}} {
+			r := httptest.NewRequest("GET", "/Videos/"+ids.RatingKeyGUID(5)+"/stream?static=true&MediaSourceId="+handle+"&PlaySessionId="+test.session, nil)
+			r.Header.Set("Authorization", `MediaBrowser Token="account-secret", DeviceId="device"`)
+			w := httptest.NewRecorder()
+			inst.Handler().ServeHTTP(w, r)
+			if w.Code != test.status {
+				t.Fatal(tc.name, test.session, w.Code, w.Body.String())
+			}
+		}
+		if calls != 1 {
+			t.Fatal(tc.name, calls)
+		}
+	}
+}

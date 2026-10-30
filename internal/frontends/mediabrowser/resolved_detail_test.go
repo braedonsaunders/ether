@@ -40,6 +40,13 @@ func (s *detailPlannerStub) ResolveDetailSource(_ context.Context, scope fronten
 	return frontend.DetailSourceTarget{Item: 5, ETag: "source-revision"}, nil
 }
 
+func (s *detailPlannerStub) MatchDetailSession(_ context.Context, scope frontend.VersionScope, handle, sessionID string) error {
+	if scope.Viewer == nil || scope.Viewer.ID != 1 || scope.Device.ID != "device" || handle != "82b0c3fc-7616-46da-8528-fc26ec5cb4ab" || sessionID != "session" {
+		return frontend.ErrNotFound
+	}
+	return nil
+}
+
 func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
