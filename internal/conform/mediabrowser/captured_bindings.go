@@ -164,9 +164,33 @@ func captureScope(base, token, profile string) [32]byte {
 	return sha256.Sum256([]byte(strings.TrimRight(base, "/") + "\x00" + profile + "\x00" + token))
 }
 
+// capturedCredential is the MediaBrowser header the rest of this harness sends
+// with a user access token. A bare X-Emby-Token is not the credential that
+// minted the session. DeviceId is included only for this run's own device.
+// Caller item aliases are not part of the header.
+func capturedCredential(token, deviceID, client, device, version string) string {
+	field := func(fallback, value string) string {
+		if value == "" || strings.ContainsAny(value, "\"\r\n") {
+			return fallback
+		}
+		return value
+	}
+	parts := []string{
+		`Client="` + field("conformdiff", client) + `"`,
+		`Device="` + field("conformdiff", device) + `"`,
+		`Version="` + field("1", version) + `"`,
+		`Token="` + token + `"`,
+	}
+	if safeObservedID(deviceID) {
+		parts = append(parts, `DeviceId="`+deviceID+`"`)
+	}
+	return "MediaBrowser " + strings.Join(parts, ", ")
+}
+
 // Discovery is credential scoped. Neither caller-supplied aliases nor a previous
 // server's discovery can confer ownership of a captured user or item.
-func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, token, profile string) conform.DiscoveredIDs {
+// deviceID is this run's device claim, not an item alias.
+func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, token, profile, deviceID string) conform.DiscoveredIDs {
 	out := conform.DiscoveredIDs{Values: map[string]string{}}
 	run := capturedRun{values: map[string]string{}, missing: map[string]string{}}
 	defer func() {
@@ -190,7 +214,14 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 		if err != nil {
 			return false
 		}
+		req.Header.Set("Accept", "application/json")
 		req.Header.Set("X-Emby-Token", token)
+		auth := capturedCredential(token, deviceID, m.client, m.device, m.version)
+		req.Header.Set("Authorization", auth)
+		req.Header.Set("X-Emby-Authorization", auth)
+		if safeObservedID(deviceID) {
+			req.Header.Set("X-Emby-Device-Id", deviceID)
+		}
 		resp, err := c.Do(req)
 		if err != nil {
 			return false

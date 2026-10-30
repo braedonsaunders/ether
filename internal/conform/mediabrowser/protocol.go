@@ -176,7 +176,11 @@ func (p *Protocol) Corpus(profile string) []conform.Request {
 func (p *Protocol) Formats() []bool { return []bool{true} }
 func (p *Protocol) Discover(ctx context.Context, c *http.Client, base, token, profile string, align *conform.DiscoveredIDs) conform.DiscoveredIDs {
 	if p.Dialect == "jellyfin" && p.profiles[profile].isCaptured() {
-		return p.discoverCaptured(ctx, c, base, token, profile)
+		deviceID := ""
+		if align != nil && align.Values != nil {
+			deviceID = align.Values["device_id"]
+		}
+		return p.discoverCaptured(ctx, c, base, token, profile, deviceID)
 	}
 	// Provider identities are obtained from an item listing; absence is surfaced
 	// as a warning rather than silently matching unrelated items.
@@ -220,7 +224,12 @@ func (p *Protocol) Discover(ctx context.Context, c *http.Client, base, token, pr
 			key = strings.ToLower(key)
 			if (key == "tmdb" || key == "imdb") && value != "" && item.ID != "" {
 				out.Values["provider:"+key+":"+value] = item.ID
-				if align == nil && out.Values["itemId"] == "" {
+				// A device claim supplied for captured replay is not a reference item.
+				referenceItem := ""
+				if align != nil && align.Values != nil {
+					referenceItem = align.Values["itemId"]
+				}
+				if referenceItem == "" && out.Values["itemId"] == "" {
 					out.Values["itemId"] = item.ID
 					out.Values["item_id"] = item.ID
 				}
