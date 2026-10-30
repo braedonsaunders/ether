@@ -10,6 +10,14 @@ import (
 
 // watch polls a run's output for finished segments until ffmpeg exits.
 func (s *Session) watch(r *run) {
+	defer func() {
+		s.mu.Lock()
+		unusedStop := r.stopWork
+		r.stopWork = nil
+		s.mu.Unlock()
+		unusedStop.finish()
+		r.watchWork.finish()
+	}()
 	defer s.watchers.Done()
 	t := time.NewTicker(s.m.opts.pollInterval)
 	defer t.Stop()

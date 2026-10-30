@@ -109,19 +109,32 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	// supersedes it; only the newest transition may start another encoder.
 	s.runSeq++
 	sequence := s.runSeq
-	for s.reaping != nil {
-		reaped := s.reaping
+	for s.reaping != nil || s.starting != nil {
+		barrier := s.reaping
+		if s.starting != nil {
+			barrier = s.starting
+		}
+		var canceled <-chan struct{}
+		if s.encoder != nil {
+			canceled = s.encoder.cancel
+		}
 		s.mu.Unlock()
-		<-reaped
+		select {
+		case <-barrier:
+		case <-canceled:
+		}
 		s.mu.Lock()
-		if s.closed {
+		if s.closed || (s.encoder != nil && s.encoder.isSealed()) {
 			return errors.New("transcode: session closed")
 		}
 		if sequence != s.runSeq {
 			return nil
 		}
-		if s.reaping == reaped {
+		if s.reaping == barrier {
 			s.reaping = nil
+		}
+		if s.starting == barrier {
+			s.starting = nil
 		}
 	}
 	s.resumeAt = -1
@@ -166,9 +179,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		spec.Target = s.contract
 		spec.PictureCrop = s.inputCrop
 	}
-	if err := os.MkdirAll(spec.Dir, 0o755); err != nil {
-		return fmt.Errorf("transcode: run dir: %w", err)
-	}
 	var dr *dashRun
 	if s.isDASH() {
 		spec.Dir = filepath.Join(s.dir, fmt.Sprintf("run-%d", s.runSeq))
@@ -176,9 +186,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		spec.ChunkDur = dashChunkDuration
 		if spec.ChunkDur > s.segDur/2 {
 			spec.ChunkDur = s.segDur / 2
-		}
-		if err := os.MkdirAll(spec.Dir, 0o755); err != nil {
-			return fmt.Errorf("transcode: run dir: %w", err)
 		}
 		// The muxer produces video (the wanted rung) then audio; map
 		// those to their session tracks.
@@ -199,9 +206,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	if s.chunkedLocked(spec.Decision) {
 		spec.ChunkDir = filepath.Join(spec.Dir, fmt.Sprintf("c-%d", s.runSeq))
 		spec.ChunkCut = chunkCutFor(s.segDur)
-		if err := os.MkdirAll(spec.ChunkDir, 0o755); err != nil {
-			return fmt.Errorf("transcode: chunk dir: %w", err)
-		}
 		if !spec.Decision.VideoCopy {
 			// Force keyframes at the plan's boundaries (through the one
 			// the run stops at), in the run's output clock.
@@ -241,10 +245,6 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		planEnd:  rp.planEnd,
 		track:    s.wantTrack,
 	}
-	if hint := s.m.opts.onRunStart; hint != nil {
-		// The first segment needs its whole span, and a GOP either side.
-		go hint(spec.Input, spec.Start, spec.Start+2*s.segDur)
-	}
 	if !spec.Decision.VideoCopy && !s.hevcFallbackWarned {
 		// Caller holds s.mu (startRunLocked), guarding hevcFallbackWarned.
 		s.hevcFallbackWarned = warnVideoEncoderFallback(s.log, spec.Decision.VideoCodec, spec.Accel, spec.Features)
@@ -276,31 +276,83 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		r.stderr.add(l)
 		runLog.Debug("ffmpeg", "line", l)
 	}}
-	var proc Process
-	var err error
-	if enhancementSelected(spec.Decision) {
-		proc, args, err = s.startRTXRunLocked(spec, stdout, stderr)
-		if err != nil {
-			s.fallbackRTXLocked(err.Error(), seg)
-			spec.Decision = s.trackDecisionLocked(s.wantTrack)
-			r.spec = spec
-			args = buildArgs(spec)
-		} else {
-			r.rtx = true
-			r.hw = true
-		}
-	}
-	if proc == nil {
-		proc, err = s.m.runner.Start(Command{Path: s.m.ffmpeg, Args: args, Dir: s.dir, Stdout: stdout, Stderr: stderr})
-	}
+	work, err := s.encoder.runWork(!s.decision.VideoCopy || rp.mode != ModeCopy || s.wantTrack != 0)
 	if err != nil {
-		if dr != nil {
-			_ = os.RemoveAll(dr.dir)
+		return err
+	}
+	r.watchWork, r.stopWork = work[0], work[1]
+	var hintWork *encoderWork
+	if s.m.opts.onRunStart != nil {
+		reserved, reserveErr := s.encoder.reserve(1)
+		if reserveErr != nil {
+			r.watchWork.finish()
+			r.stopWork.finish()
+			return reserveErr
 		}
-		if cr != nil {
-			_ = os.RemoveAll(cr.dir)
+		hintWork = reserved[0]
+	}
+	starting := make(chan struct{})
+	s.starting = starting
+	rtxConfig, runDir := s.rtxConfig, s.dir
+	hint := s.m.opts.onRunStart
+	hintEnd := spec.Start + 2*s.segDur
+	s.mu.Unlock()
+	var proc Process
+	if err = os.MkdirAll(spec.Dir, 0o755); err == nil && spec.ChunkDir != "" {
+		err = os.MkdirAll(spec.ChunkDir, 0o755)
+	}
+	if err == nil && hint != nil {
+		go func() {
+			defer hintWork.finish()
+			hint(spec.Input, spec.Start, hintEnd)
+		}()
+	} else {
+		hintWork.finish()
+	}
+	if err == nil && enhancementSelected(spec.Decision) {
+		proc, args, err = s.m.startRTXRun(spec, rtxConfig, runDir, stdout, stderr)
+		if err != nil && proc == nil {
+			s.mu.Lock()
+			if !s.closed && sequence == s.runSeq && (s.encoder == nil || !s.encoder.isSealed()) {
+				s.fallbackRTXLocked(err.Error(), seg)
+				spec.Decision = s.trackDecisionLocked(s.wantTrack)
+				r.spec = spec
+				args = buildArgs(spec)
+				err = nil
+			}
+			s.mu.Unlock()
+		} else if err == nil {
+			r.rtx, r.hw = true, true
 		}
-		return fmt.Errorf("transcode: start ffmpeg: %w", err)
+	}
+	if err == nil && proc == nil {
+		proc, err = s.m.runner.Start(Command{Path: s.m.ffmpeg, Args: args, Dir: runDir, Stdout: stdout, Stderr: stderr})
+	}
+	s.mu.Lock()
+	if s.starting == starting {
+		s.starting = nil
+	}
+	close(starting)
+	stale := s.closed || sequence != s.runSeq || (s.encoder != nil && s.encoder.isSealed())
+	if proc != nil {
+		s.encoder.markStarted()
+	}
+	if err != nil || stale || proc == nil {
+		if proc != nil {
+			s.reapUnpublishedLocked(r, proc)
+		} else {
+			r.watchWork.finish()
+			r.stopWork.finish()
+		}
+		if err != nil {
+			return fmt.Errorf("transcode: start ffmpeg: %w", err)
+		}
+		return errors.New("transcode: start superseded or returned no process")
+	}
+	if r.rtx {
+		s.decision.Enhancement = spec.Decision.Enhancement
+		s.decision.Enhancement.State = "starting"
+		s.decision.Enhancement.Reason = "waiting for enhanced segments from NVEncC/NGX"
 	}
 	r.proc = proc
 	s.cur = r
@@ -358,14 +410,44 @@ func (s *Session) stopRunLocked() {
 		reaped := make(chan struct{})
 		previous := s.reaping
 		s.reaping = reaped
+		stopWork := r.stopWork
+		r.stopWork = nil
 		s.watchers.Add(1)
 		go func() {
+			defer stopWork.finish()
 			defer s.watchers.Done()
 			defer close(reaped)
 			r.proc.Stop()
+			if stopWork != nil {
+				<-r.proc.Done()
+			}
 			if previous != nil {
 				<-previous
 			}
 		}()
 	}
+}
+
+// A process returned together with an error, or after seal, still owns both
+// pre-reserved tickets. It never publishes segments or starts a fallback.
+func (s *Session) reapUnpublishedLocked(r *run, proc Process) {
+	reaped := make(chan struct{})
+	previous := s.reaping
+	s.reaping = reaped
+	s.watchers.Add(2)
+	go func() {
+		defer r.watchWork.finish()
+		defer s.watchers.Done()
+		<-proc.Done()
+	}()
+	go func() {
+		defer r.stopWork.finish()
+		defer s.watchers.Done()
+		defer close(reaped)
+		proc.Stop()
+		<-proc.Done()
+		if previous != nil {
+			<-previous
+		}
+	}()
 }

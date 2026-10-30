@@ -234,3 +234,40 @@ or replacement during probe clears identity and scalar facts. Report/Stop reads
 perform no filesystem/source callback I/O; HDR pointers are defensive copies.
 This is historical open evidence, not fresh authorization or proof that a local
 path stayed immutable. Fresh PinSourceRevision and serve checks are unchanged.
+
+## Staged encoder work accounting
+
+The encoder increment reserves an exact session lifetime before startup and
+output-directory creation. It has no broker caller and supplies no durable
+transfer or sticky-consumption authority. Its source review and execution gates
+are separate from the payload/3 and historical-observation receipts above.
+
+Process-wide admission bounds 1,024 lifetimes, each with at most 64 outstanding
+work tickets. Four fixed cleanup workers share a queue of 1,024 admitted
+lifetimes. Sealing prevents new tickets and queues exact-object detachment;
+workers do not wait for process exit. Starts, session-owned `Runner.Run`
+preflights, run hints, collectors and reapers finish their own tickets only when
+the corresponding operation actually returns. A run reserves its collector and
+future Stop tickets before Start, including a process returned together with an
+error. A stopped or superseded late start is reaped without publication.
+
+`RetireEncoder` seals without taking manager/session locks. Legacy `Close` waits
+on the exact outcome for ten seconds; successful completion still requires
+process/reaper/collector completion before directory removal, session removal
+and capacity release. A stalled Start, Run, Stop, collector, filesystem cleanup
+or shutdown worker returns/retains pending responsibility. A confirmed cleanup
+error is a terminal error and retains directory/lifetime/encoder charges. Another
+manager in the same process skips protected output directories at startup.
+Manager capacity uses scalar lifetime charges and never takes a session mutex
+under the manager mutex. Shutdown has one shared deadline and no per-Close
+WaitGroup waiter or goroutine per detached session.
+
+`EncoderDone` closes only at a terminal result; `EncoderErr` is the explicit
+`core.ErrEncoderPending` sentinel beforehand. A terminal error cannot later turn
+into successful proof. Until the separately reviewed manager-issued input lease
+is implemented, an actual input attempt terminates with
+`core.ErrEncoderInputUnverified` after proven legacy work cleanup. That error
+cannot authorize broker retirement, but it does not retain completed legacy
+process/finalizer capacity. Missing optional input proof must never exhaust
+ordinary successful start/close cycles. Source retirement proves neither encoder
+work nor input drain. Native/global probe processes remain outside this increment.

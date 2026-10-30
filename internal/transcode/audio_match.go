@@ -153,7 +153,7 @@ func (s *Session) sampleAudio(ctx context.Context, input string, track int, at t
 	// Allow encoder priming at the cut, but compare exactly six seconds.
 	const sampleBytes = audioMatchRate * 6 * 4
 	out := &pictureSample{limit: sampleBytes + audioMatchRate*4/10}
-	if s.m.runner.Run(ctx, Command{Path: s.m.ffmpeg, Args: args, Stdout: out, Stderr: io.Discard}) != nil || out.Len() < sampleBytes {
+	if s.encoderRun(ctx, Command{Path: s.m.ffmpeg, Args: args, Stdout: out, Stderr: io.Discard}) != nil || out.Len() < sampleBytes {
 		return nil
 	}
 	return out.Bytes()[:sampleBytes]
