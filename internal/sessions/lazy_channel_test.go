@@ -125,8 +125,14 @@ func TestLazyChannelRechecksGrantAndProgrammeForEveryResource(t *testing.T) {
 	if w = serve(http.MethodGet, variant); w.Code != 200 || !strings.Contains(w.Body.String(), "../relay/0.ts") {
 		t.Fatalf("variant %d %q", w.Code, w.Body.String())
 	}
+	for n := 0; n < cap(broker.startSlots); n++ {
+		broker.startSlots <- struct{}{}
+	}
 	if w = serve(http.MethodGet, segment); w.Code != 200 {
 		t.Fatalf("segment %d", w.Code)
+	}
+	for n := 0; n < cap(broker.startSlots); n++ {
+		<-broker.startSlots
 	}
 	live.allowed.Store(false)
 	if w = serve(http.MethodGet, segment); w.Code != 404 {

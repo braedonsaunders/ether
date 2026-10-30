@@ -295,6 +295,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := s.broker.lazySessions[hash].id
 	s.broker.mu.Unlock()
 	access := frontend.SessionAccess{Viewer: viewer, Device: req.Device, Protocol: s.protocol}
+	var existingLive *brokerSession
 	if id != "" {
 		if existing, _, err := s.broker.access(ctx, access, id); err != nil {
 			id = ""
@@ -303,6 +304,10 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.NotFound(w, r)
 				return
 			}
+			id = ""
+		} else if req.Channel != "" && existing.live && existing.public.Channel == req.Channel {
+			existingLive = existing
+		} else if req.Channel != "" {
 			id = ""
 		}
 	}
@@ -346,7 +351,14 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if req.Channel != "" {
 		format = frontend.StreamHLS
 	}
-	path, err := s.broker.StartStream(ctx, access, id, frontend.StreamRequest{Format: format})
+	var path string
+	if existingLive != nil {
+		// Live sessions are already started; the scoped media handler below
+		// revalidates current channel policy again before serving each resource.
+		path = "/sessions/media/" + id + "/" + existingLive.grant + "/live/index.m3u8"
+	} else {
+		path, err = s.broker.StartStream(ctx, access, id, frontend.StreamRequest{Format: format})
+	}
 	if err != nil {
 		if opened {
 			if s.discardOpened(ctx, access, id) {
