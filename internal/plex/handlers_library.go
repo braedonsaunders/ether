@@ -739,9 +739,6 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 
 // inProgressTitles loads the user's in-progress items and next episodes.
 func (s *Server) inProgressTitles(ctx context.Context, pr *Request, t core.MediaType, limit int) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
-	if !s.viewerRestricted(pr.User) {
-		return s.legacyInProgressTitles(ctx, pr, t, limit)
-	}
 	return s.continueExperience(pr).InProgress(ctx, pr.User, t, limit)
 }
 

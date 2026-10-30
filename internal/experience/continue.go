@@ -23,6 +23,9 @@ type Continue struct {
 	SectionAllowed     func(*core.User, core.MediaType) bool
 	OnError            func(error)
 	FavoriteShows      func(context.Context, *core.User) (map[core.RatingKey]bool, error)
+	// Unrestricted is a trusted policy capability; nil fails closed. It is
+	// supplied only when the catalogue and policy authorize the legacy path.
+	Unrestricted func(*core.User) bool
 }
 
 func (c Continue) appendNext(ctx context.Context, viewer *core.User, titles []core.Title, state map[core.RatingKey]core.WatchStatus, limit int) []core.Title {
@@ -128,6 +131,16 @@ func (c Continue) InProgress(ctx context.Context, viewer *core.User, t core.Medi
 	if c.State == nil || viewer == nil {
 		return nil, nil
 	}
+	if c.Unrestricted != nil && c.Unrestricted(viewer) {
+		sts, err := c.State.InProgress(ctx, viewer.ID, limit*2+10)
+		if err != nil {
+			if c.OnError != nil {
+				c.OnError(err)
+			}
+			return nil, nil
+		}
+		return c.inProgressBatchMode(ctx, viewer, t, limit, sts, true)
+	}
 	// State exposes a limit rather than an offset, so widen the prefix only
 	// while filtering leaves gaps. Bound work for viewers with large histories.
 	request := limit*2 + 10
@@ -152,6 +165,10 @@ func (c Continue) InProgress(ctx context.Context, viewer *core.User, t core.Medi
 }
 
 func (c Continue) inProgressBatch(ctx context.Context, viewer *core.User, t core.MediaType, limit int, sts []core.WatchStatus) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
+	return c.inProgressBatchMode(ctx, viewer, t, limit, sts, false)
+}
+
+func (c Continue) inProgressBatchMode(ctx context.Context, viewer *core.User, t core.MediaType, limit int, sts []core.WatchStatus, unrestricted bool) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
 	keys := make([]core.RatingKey, 0, len(sts))
 	state := make(map[core.RatingKey]core.WatchStatus, len(sts))
 	for _, st := range sts {
@@ -161,7 +178,8 @@ func (c Continue) inProgressBatch(ctx context.Context, viewer *core.User, t core
 	candidates := c.GetTitles(ctx, keys)
 	titles := make([]core.Title, 0, len(candidates))
 	for i := range candidates {
-		if c.Visible(ctx, viewer, &candidates[i]) {
+		allowed := unrestricted || c.Visible(ctx, viewer, &candidates[i])
+		if allowed {
 			titles = append(titles, candidates[i])
 		}
 	}
@@ -194,7 +212,8 @@ func (c Continue) inProgressBatch(ctx context.Context, viewer *core.User, t core
 				continue
 			}
 		}
-		if !c.SectionAllowed(viewer, ti.Type) || !c.Visible(ctx, viewer, &ti) {
+		allowed := unrestricted || c.Visible(ctx, viewer, &ti)
+		if !c.SectionAllowed(viewer, ti.Type) || !allowed {
 			continue
 		}
 		if ti.Type == core.TypeEpisode {
@@ -207,6 +226,9 @@ func (c Continue) inProgressBatch(ctx context.Context, viewer *core.User, t core
 		if limit > 0 && len(out) >= limit {
 			break
 		}
+	}
+	if unrestricted {
+		return out, state
 	}
 	visibleState := make(map[core.RatingKey]core.WatchStatus, len(out))
 	for _, title := range out {

@@ -12,6 +12,7 @@ func (s *Server) continueExperience(pr *Request) experience.Continue {
 		Grandchildren: func(ctx context.Context, k core.RatingKey) ([]core.Title, error) {
 			return s.metadataGrandchildren(ctx, pr, k)
 		},
+		Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) },
 		NextEpisode: func(ctx context.Context, k core.RatingKey) (*core.Title, error) {
 			return s.d.Catalog.NextEpisode(ctx, k)
 		}, Visible: s.visibleTitle,

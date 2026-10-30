@@ -205,3 +205,23 @@ func TestContinueFavoriteShowPrecedesNewerProgressAndRetainsGroupOrder(t *testin
 		}
 	}
 }
+
+func TestContinueUnrestrictedKeepsPrefixAndState(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a, b, denied := core.MovieKey(1), core.MovieKey(2), core.MovieKey(3)
+	state := &prefixContinueState{continueState: continueState{statuses: []core.WatchStatus{{Key: a, LastViewedAt: now}, {Key: b, LastViewedAt: now.Add(-time.Second)}, {Key: denied, LastViewedAt: now.Add(-2 * time.Second)}}}}
+	c := Continue{State: state, Now: func() time.Time { return now }, Unrestricted: func(*core.User) bool { return true }, Visible: func(context.Context, *core.User, *core.Title) bool { return false }, SectionAllowed: func(*core.User, core.MediaType) bool { return true }, GetTitles: func(_ context.Context, keys []core.RatingKey) []core.Title {
+		out := make([]core.Title, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, core.Title{Key: k, Type: core.TypeMovie})
+		}
+		return out
+	}}
+	titles, statuses := c.InProgress(context.Background(), &core.User{ID: 1}, core.TypeMovie, 2)
+	if len(titles) != 2 || titles[0].Key != a || titles[1].Key != b || len(statuses) != 3 {
+		t.Fatalf("titles=%+v state=%+v", titles, statuses)
+	}
+	if len(state.limits) != 1 || state.limits[0] != 14 {
+		t.Fatalf("unexpected backfill: %v", state.limits)
+	}
+}

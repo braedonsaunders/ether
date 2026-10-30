@@ -3,81 +3,13 @@ package plex
 import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/go-chi/chi/v5"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
-
-func (s *Server) legacyInProgressTitles(ctx context.Context, pr *Request, t core.MediaType, limit int) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
-	if s.d.State == nil || pr.User == nil {
-		return nil, nil
-	}
-	sts, err := s.d.State.InProgress(ctx, pr.User.ID, limit*2+10)
-	if err != nil {
-		s.log.Warn("load in-progress", "err", err)
-		return nil, nil
-	}
-	keys := make([]core.RatingKey, 0, len(sts))
-	state := make(map[core.RatingKey]core.WatchStatus, len(sts))
-	for _, st := range sts {
-		keys = append(keys, st.Key)
-		state[st.Key] = st
-	}
-	titles := s.getTitles(ctx, keys)
-	// Resume unfinished media and advance recently completed series. A
-	// completed episode has no offset, so InProgress alone loses the show.
-	if t != core.TypeMovie {
-		titles = s.legacyAppendNextContinue(ctx, pr, titles, state, limit)
-	}
-	sort.SliceStable(titles, func(i, j int) bool {
-		a, b := state[titles[i].Key].LastViewedAt, state[titles[j].Key].LastViewedAt
-		if !a.Equal(b) {
-			return a.After(b)
-		}
-		return titles[i].Key < titles[j].Key
-	})
-	if s.d.FavoriteShows != nil {
-		if favorites, err := s.d.FavoriteShows(ctx, pr.User); err == nil {
-			experience.PrioritizeFavoriteShows(titles, favorites)
-		}
-	}
-	seenShows := map[int64]bool{}
-	out := titles[:0:0]
-	for _, ti := range titles {
-		if t != "" {
-			want := t
-			if t == core.TypeShow {
-				want = core.TypeEpisode
-			}
-			if ti.Type != want {
-				continue
-			}
-		}
-		sec, ok := s.sectionFor(ti.Type)
-		if ok && !s.canSeeSection(pr.User, sec.ID) {
-			continue
-		}
-		if ti.Type == core.TypeEpisode {
-			if seenShows[ti.Key.TMDB()] {
-				continue
-			}
-			seenShows[ti.Key.TMDB()] = true
-		}
-		out = append(out, ti)
-		if limit > 0 && len(out) >= limit {
-			break
-		}
-	}
-	return out, state
-}
-
-// getTitles fetches titles concurrently, preserving order and skipping
-// failures.
 
 func (s *Server) legacySectionRecentlyViewed(w http.ResponseWriter, r *http.Request, sec Section) {
 	ctx := r.Context()
@@ -106,105 +38,6 @@ func (s *Server) legacySectionRecentlyViewed(w http.ResponseWriter, r *http.Requ
 	}
 	mc.Size = len(mc.Metadata)
 	s.write(w, r, mc)
-}
-
-func (s *Server) legacyAppendNextContinue(ctx context.Context, pr *Request, titles []core.Title, state map[core.RatingKey]core.WatchStatus, limit int) []core.Title {
-	history, err := s.d.State.History(ctx, pr.User.ID, s.now().Add(-90*24*time.Hour), 200)
-	if err != nil {
-		return titles
-	}
-	seen := map[int64]bool{}
-	for _, t := range titles {
-		if t.Type == core.TypeEpisode {
-			seen[t.Key.TMDB()] = true
-		}
-	}
-	var recent []core.HistoryEntry
-	var keys, shows []core.RatingKey
-	for _, h := range history {
-		if !h.Completed || h.Key.Kind() != core.KindEpisode || seen[h.Key.TMDB()] {
-			continue
-		}
-		seen[h.Key.TMDB()] = true
-		recent = append(recent, h)
-		keys = append(keys, h.Key)
-		shows = append(shows, core.ShowKey(h.Key.TMDB()))
-		if len(recent) >= min(max(limit, 1), 50) {
-			break
-		}
-	}
-	statuses, err := s.d.State.GetMany(ctx, pr.User.ID, keys)
-	if err != nil {
-		return titles
-	}
-	grouped := map[core.RatingKey]bool{}
-	if s.d.EpisodeOrder != nil {
-		grouped, err = s.d.EpisodeOrder.Grouped(ctx, pr.User, shows)
-		if err != nil {
-			return titles
-		}
-	}
-	for _, h := range recent {
-		if ctx.Err() != nil {
-			break
-		}
-		if statuses[h.Key].ViewCount == 0 {
-			continue
-		} // subsequently marked unwatched
-		current := h.Key
-		var ordered []core.Title
-		if grouped[core.ShowKey(current.TMDB())] {
-			eps, e := s.metadataGrandchildren(ctx, pr, core.ShowKey(current.TMDB()))
-			if e != nil {
-				continue
-			}
-			for i := range eps {
-				if eps[i].Key == current {
-					ordered = eps[i+1:]
-					break
-				}
-			}
-		}
-		for n := 0; n < 32; n++ {
-			var next *core.Title
-			if grouped[core.ShowKey(current.TMDB())] {
-				if n >= len(ordered) {
-					break
-				}
-				next = &ordered[n]
-			} else {
-				next, err = s.d.Catalog.NextEpisode(ctx, current)
-				if err != nil || next == nil || next.Key == current {
-					break
-				}
-			}
-			current = next.Key
-			if next.Season == 0 {
-				continue
-			}
-			if !next.Released.IsZero() && next.Released.After(s.now()) {
-				break
-			}
-			if !s.visibleTitle(ctx, pr.User, next) || s.sameDayUnavailable(ctx, pr, next) {
-				break
-			}
-			st, e := s.d.State.Get(ctx, pr.User.ID, next.Key)
-			if e != nil {
-				break
-			}
-			if st.ViewCount > 0 && st.ViewOffset <= 0 {
-				continue
-			}
-			st.Key = next.Key
-			if st.LastViewedAt.Before(h.ViewedAt) {
-				st.LastViewedAt = h.ViewedAt
-			}
-			state[next.Key] = st
-			titles = append(titles, *next)
-			break
-		}
-	}
-	return titles
 }
 
 func (s *Server) legacyRecentlyAddedHub(ctx context.Context, pr *Request, sec Section, count int) (hubSpec, error) {
