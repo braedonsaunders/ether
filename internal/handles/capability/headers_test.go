@@ -166,3 +166,34 @@ func TestHeadersMaximumBatchAtomic(t *testing.T) {
 		t.Fatalf("partial batch=%d err=%v", n, err)
 	}
 }
+
+func TestHeadersScopedPruneAndEmptyDevice(t *testing.T) {
+	db, _, _ := fixture(t)
+	ctx := context.Background()
+	scope := capability.HeaderScope{Namespace: "image", ViewerID: 1, Surface: "silo"}
+	a := capability.Header{HeaderScope: scope, Digest: entry(31).Digest, ExpiresMillis: 10}
+	other := a
+	other.Surface = "emby"
+	other.Digest = entry(32).Digest
+	live := a
+	live.ExpiresMillis = 11
+	live.Digest = entry(33).Digest
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{a, other, live}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := capability.PruneScopedHeadersInTx(ctx, tx, "image", 1, "silo", 10, 40)
+	if err != nil || n != 1 {
+		t.Fatalf("prune=%d err=%v", n, err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, "image").Scan(&count); err != nil || count != 2 {
+		t.Fatalf("remaining=%d err=%v", count, err)
+	}
+}

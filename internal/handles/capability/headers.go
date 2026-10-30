@@ -29,11 +29,15 @@ type Header struct {
 // against old writers. Adapters must enforce their own durable admission limits.
 const HeaderBatchMax = 40
 
+// HeaderShardCount is the stable shard modulus used by domain adapters when
+// coordinating admission. Changing it requires a migration and writer fence.
+const HeaderShardCount int64 = 64
+
 var ErrInvalidHeader = errors.New("capability: invalid header or scope")
 
 func validHeaderScope(s HeaderScope) bool {
 	return s.Namespace != "" && s.Namespace != ticketNamespace && len(s.Namespace) <= 128 &&
-		strings.TrimSpace(s.Namespace) == s.Namespace && s.ViewerID > 0 && s.Surface != "" && len(s.Surface) <= 128 && s.DeviceID != "" && len(s.DeviceID) <= 512
+		strings.TrimSpace(s.Namespace) == s.Namespace && s.ViewerID > 0 && s.Surface != "" && len(s.Surface) <= 128 && len(s.DeviceID) <= 512
 }
 
 // BindHeadersInTx inserts headers on the caller's transaction. The caller owns
@@ -59,7 +63,7 @@ func BindHeadersInTx(ctx context.Context, tx *sql.Tx, headers []Header) error {
 			query.WriteString(` UNION ALL `)
 		}
 		query.WriteString(`SELECT CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT),CAST(? AS BIGINT),CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT)`)
-		args = append(args, h.Namespace, h.Digest, h.ViewerID%ticketShards, h.ViewerID, h.Surface, h.DeviceID, h.ExpiresMillis)
+		args = append(args, h.Namespace, h.Digest, h.ViewerID%HeaderShardCount, h.ViewerID, h.Surface, h.DeviceID, h.ExpiresMillis)
 	}
 	_, err := tx.ExecContext(ctx, query.String(), args...)
 	return err
@@ -105,6 +109,21 @@ func PruneHeadersInTx(ctx context.Context, tx *sql.Tx, namespace string, cutoffM
 		return 0, ErrInvalidHeader
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, namespace, cutoffMillis, namespace, cutoffMillis, limit)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// PruneScopedHeadersInTx deletes expired headers for one viewer and surface.
+// It takes no advisory lock; callers serialize it with their domain writers.
+// The trusted cutoff must use the domain expiry clock. No domain rows are deleted.
+func PruneScopedHeadersInTx(ctx context.Context, tx *sql.Tx, namespace string, viewerID int64, surface string, cutoffMillis int64, limit int) (int64, error) {
+	if tx == nil || namespace == "" || namespace == ticketNamespace || len(namespace) > 128 || strings.TrimSpace(namespace) != namespace || viewerID <= 0 || surface == "" || len(surface) > 128 || cutoffMillis <= 0 || limit <= 0 || limit > HeaderBatchMax {
+		return 0, ErrInvalidHeader
+	}
+	shard := viewerID % HeaderShardCount
+	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, namespace, shard, viewerID, surface, cutoffMillis, namespace, shard, viewerID, surface, cutoffMillis, limit)
 	if err != nil {
 		return 0, err
 	}
