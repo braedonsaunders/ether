@@ -14,7 +14,7 @@ import (
 // This exercises the production constructor and real SQLite transaction. A
 // successful baseline must mint a handle before the failure cases can pass.
 func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
-	for _, mode := range []string{"bind", "cleanup"} {
+	for _, mode := range []string{"bind", "later-bind", "cleanup"} {
 		t.Run(mode, func(t *testing.T) {
 			a := setupTestApp(t, true)
 			ctx := context.Background()
@@ -79,6 +79,9 @@ func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
 				}
 			}
 			trigger := `CREATE TRIGGER receipt_bind_fail BEFORE INSERT ON capability_headers WHEN NEW.namespace='experience.receipt' BEGIN SELECT RAISE(ABORT,'receipt bind fault'); END`
+			if mode == "later-bind" {
+				trigger = `CREATE TRIGGER receipt_later_bind_fail BEFORE INSERT ON capability_headers WHEN NEW.namespace='experience.receipt' AND EXISTS(SELECT 1 FROM capability_headers WHERE namespace='experience.receipt' AND viewer_id=NEW.viewer_id AND device_id=NEW.device_id) BEGIN SELECT RAISE(ABORT,'receipt later bind fault'); END`
+			}
 			if mode == "cleanup" {
 				trigger = `CREATE TRIGGER receipt_drop_fail BEFORE DELETE ON capability_headers WHEN OLD.namespace='experience.receipt' AND OLD.device_id='tv' BEGIN SELECT RAISE(ABORT,'receipt drop fault'); END`
 			}
