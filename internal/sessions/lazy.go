@@ -235,6 +235,10 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if reserved {
+		s.broker.releaseLazyCleanup()
+		reserved = false
+	}
 	// The scoped path remains internal; every client request must pass this
 	// handler so revoking the issuing grant revokes the capability as well.
 	clone := r.Clone(ctx)

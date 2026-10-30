@@ -16,6 +16,20 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
+type blockingLazyPlayback struct {
+	*fakePlayback
+	started chan struct{}
+	finish  chan struct{}
+}
+
+func (p *blockingLazyPlayback) ServeRange(w http.ResponseWriter, r *http.Request, id string) {
+	if p.started != nil {
+		close(p.started)
+		<-p.finish
+	}
+	p.fakePlayback.ServeRange(w, r, id)
+}
+
 func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)
@@ -31,7 +45,7 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	}
 	events := NewEventBus(nil, active)
 	defer events.Close()
-	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	pb := &blockingLazyPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}}
 	lookupCalls := 0
 	broker, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: func() time.Time { return now }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
 		lookupCalls++
@@ -210,7 +224,26 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 		t.Fatalf("cleanup reservation leaked: %d", reserved)
 	}
 	w = httptest.NewRecorder()
-	issuer.ServeHTTP(w, request(http.MethodGet, newPath, "192.168.1.3"))
+	pb.started, pb.finish = make(chan struct{}), make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		issuer.ServeHTTP(w, request(http.MethodGet, newPath, "192.168.1.3"))
+		close(finished)
+	}()
+	select {
+	case <-pb.started:
+	case <-time.After(3 * time.Second):
+		close(pb.finish)
+		t.Fatal("new session did not begin serving")
+	}
+	broker.mu.Lock()
+	reserved = broker.lazyCleanupReserved
+	broker.mu.Unlock()
+	close(pb.finish)
+	<-finished
+	if reserved != 0 {
+		t.Fatalf("active transfer held rollback reservation: %d", reserved)
+	}
 	if w.Code != http.StatusOK {
 		t.Fatalf("new session: %d", w.Code)
 	}
