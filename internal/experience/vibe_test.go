@@ -54,3 +54,35 @@ func TestVibeSearchFiltersInheritedPolicyAndAvailability(t *testing.T) {
 		t.Fatalf("unexpected results: %+v %v %v", got, ok, err)
 	}
 }
+
+func TestVibeTrustedLegacyOutcome(t *testing.T) {
+	failure := errors.New("vibe unavailable")
+	title := core.Title{Key: 1, Adult: true}
+	for _, tc := range []struct {
+		name string
+		ok   bool
+		err  error
+	}{{"not matched", false, nil}, {"failed", true, failure}} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := VibeSearch{Source: fakeVibe{items: []core.Title{title}, ok: tc.ok, err: tc.err}, Unrestricted: func(*core.User) bool { return true }}
+			collection, items, ok, err := s.Find(context.Background(), &core.User{}, "query")
+			if collection == nil || len(items) != 1 || items[0].Key != title.Key || ok != tc.ok || !errors.Is(err, tc.err) {
+				t.Fatalf("outcome=%+v %+v %v %v", collection, items, ok, err)
+			}
+		})
+	}
+}
+
+func TestVibeUntrustedFailureDoesNotReturnSourcePayload(t *testing.T) {
+	failure := errors.New("unavailable")
+	for _, tc := range []struct {
+		ok  bool
+		err error
+	}{{false, nil}, {true, failure}} {
+		s := VibeSearch{Source: fakeVibe{items: []core.Title{{Key: 1}}, ok: tc.ok, err: tc.err}}
+		c, items, ok, err := s.Find(context.Background(), &core.User{}, "query")
+		if c != nil || items != nil || ok != tc.ok || !errors.Is(err, tc.err) {
+			t.Fatalf("untrusted outcome=%+v %+v %v %v", c, items, ok, err)
+		}
+	}
+}

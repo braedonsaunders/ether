@@ -45,21 +45,6 @@ func (s *Server) legacyHandlePostplay(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Search
 
-func (s *Server) legacyVibeSearch(ctx context.Context, pr *Request, query string) (*core.Collection, []core.Title, bool, error) {
-	searcher := s.d.VibeSearch
-	if searcher == nil {
-		searcher, _ = s.d.Collections.(core.VibeSearcher)
-	}
-	if searcher == nil || pr == nil {
-		return nil, nil, false, nil
-	}
-	c, items, ok, err := searcher.VibeCollection(ctx, pr.User, query)
-	if err != nil || !ok {
-		return c, items, ok, err
-	}
-	return c, s.filterAllowed(pr.User, items), true, nil
-}
-
 func (s *Server) legacyPostPlayHub(ctx context.Context, pr *Request, key core.RatingKey, picks []core.PostPlayPick) (model.Hub, bool) {
 	items := make([]core.Title, 0, len(picks))
 	for _, p := range picks {

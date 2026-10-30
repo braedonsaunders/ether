@@ -850,9 +850,6 @@ func (s *Server) runSearch(ctx context.Context, pr *Request, query string, secti
 }
 
 func (s *Server) vibeSearch(ctx context.Context, pr *Request, query string) (*core.Collection, []core.Title, bool, error) {
-	if pr != nil && !s.viewerRestricted(pr.User) {
-		return s.legacyVibeSearch(ctx, pr, query)
-	}
 	searcher := s.d.VibeSearch
 	if searcher == nil {
 		searcher, _ = s.d.Collections.(core.VibeSearcher)
@@ -860,7 +857,7 @@ func (s *Server) vibeSearch(ctx context.Context, pr *Request, query string) (*co
 	if searcher == nil || pr == nil {
 		return nil, nil, false, nil
 	}
-	return (experience.VibeSearch{Source: searcher, Visibility: s.visibility()}).Find(ctx, pr.User, query)
+	return (experience.VibeSearch{Source: searcher, Visibility: s.visibility(), Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) }}).Find(ctx, pr.User, query)
 }
 
 func (s *Server) collectionDirectory(ctx context.Context, c *core.Collection) model.Directory {
