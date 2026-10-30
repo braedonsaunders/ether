@@ -334,8 +334,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 					versions = []frontend.Version{{Media: plan.Media, AddedAt: d.Title.DateAdded(time.Now())}}
 				}
 				items := make([]any, 0, len(versions))
-				defaultID := ""
-				var defaultDuration int64
+				groups := make([]any, 0, len(versions))
 				for _, version := range versions {
 					if !siloSourceHasKnownHDR10Plus(version.Media) {
 						continue
@@ -347,17 +346,18 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 					id := strconv.FormatInt(int64(file), 10)
-					if defaultID == "" {
-						defaultID = id
-						if !version.Media.Estimated && (version.ID != "" || !plan.Estimated) {
-							defaultDuration = int64(version.Media.Duration.Seconds())
-						}
-					}
 					resolution, video, audio := "", "", ""
 					hdr := false
 					audioTracks := []any{}
 					videoTracks := []any{}
-					for _, stream := range version.Media.Streams {
+					// An unresolved estimate is not a probed source. Required Silo
+					// numbers stay zero and strings stay empty until playback resolves it.
+					estimated := version.Media.Estimated || (version.ID == "" && plan.Estimated)
+					streams := version.Media.Streams
+					if estimated {
+						streams = nil
+					}
+					for _, stream := range streams {
 						if stream.Type == "video" {
 							video = stream.Codec
 							if stream.Height > 0 {
@@ -504,9 +504,16 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 							audioTracks = append(audioTracks, track)
 						}
 					}
-					item := map[string]any{"file_id": id, "file_name": version.Name, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": version.Media.Container, "duration": int64(version.Media.Duration.Seconds()), "file_size": version.Media.Size, "bitrate": version.Media.BitrateKbps, "added_at": version.AddedAt.UTC().Format("2006-01-02T15:04:05.000Z")}
-					if version.AddedAt.IsZero() {
-						delete(item, "added_at")
+					container, duration, size, bitrate := version.Media.Container, int64(version.Media.Duration.Seconds()), version.Media.Size, version.Media.BitrateKbps
+					if estimated {
+						container, duration, size, bitrate = "", 0, 0, 0
+					}
+					item := map[string]any{"file_id": id, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": container, "duration": duration, "file_size": size, "bitrate": bitrate}
+					if !version.AddedAt.IsZero() {
+						item["added_at"] = version.AddedAt.UTC().Format("2006-01-02T15:04:05.000Z")
+					}
+					if version.FileName != "" {
+						item["file_name"] = version.FileName
 					}
 					if len(audioTracks) > 0 {
 						item["audio_tracks"] = audioTracks
@@ -515,16 +522,18 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						item["video_tracks"] = videoTracks
 					}
 					items = append(items, item)
+					if version.PartCount != nil && *version.PartCount == 1 {
+						part := map[string]any{"part_index": 1, "default_file_id": id, "versions": []any{item}}
+						group := map[string]any{"variant_id": id, "default_file_id": id, "part_count": 1, "parts": []any{part}}
+						if duration > 0 {
+							part["total_duration"], group["total_duration"] = duration, duration
+						}
+						groups = append(groups, group)
+					}
 				}
 				out["versions"] = items
-				if len(items) > 0 {
-					part := map[string]any{"part_index": 1, "default_file_id": defaultID, "versions": items}
-					group := map[string]any{"variant_id": "default", "default_file_id": defaultID, "part_count": 1, "parts": []any{part}}
-					if defaultDuration > 0 {
-						part["total_duration"] = defaultDuration
-						group["total_duration"] = defaultDuration
-					}
-					out["playback_variants"] = []any{group}
+				if len(groups) > 0 {
+					out["playback_variants"] = groups
 				}
 
 			}
@@ -547,6 +556,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			item["duration_seconds"] = source["duration"]
+			if kbps, ok := source["bitrate"].(int); ok && kbps > 0 && int64(kbps) <= (1<<63-1)/1000 {
+				item["bitrate"] = int64(kbps) * 1000
+			}
 			item["trickplay_available"] = false
 			versions = append(versions, item)
 		}
@@ -558,9 +570,27 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		if len(versions) > 0 {
-			defaultID := versions[0].(map[string]any)["file_id"]
-			watch["playback_variants"] = []any{map[string]any{"variant_id": "default", "part_count": 1, "default_file_id": defaultID, "parts": []any{map[string]any{"part_index": 1, "default_file_id": defaultID, "versions": versions}}}}
+		if groups, ok := out["playback_variants"].([]any); ok {
+			watchGroups := make([]any, 0, len(groups))
+			for _, raw := range groups {
+				group := raw.(map[string]any)
+				id := group["default_file_id"]
+				for _, rawVersion := range versions {
+					version := rawVersion.(map[string]any)
+					if version["file_id"] != id {
+						continue
+					}
+					part := map[string]any{"part_index": 1, "default_file_id": id, "versions": []any{version}}
+					entry := map[string]any{"variant_id": group["variant_id"], "part_count": 1, "default_file_id": id, "parts": []any{part}}
+					if duration, ok := group["total_duration"]; ok {
+						part["total_duration_seconds"], entry["total_duration_seconds"] = duration, duration
+					}
+					watchGroups = append(watchGroups, entry)
+				}
+			}
+			if len(watchGroups) > 0 {
+				watch["playback_variants"] = watchGroups
+			}
 		}
 		st := d.UserData
 		if st.ViewOffset > 0 || st.ViewCount > 0 {

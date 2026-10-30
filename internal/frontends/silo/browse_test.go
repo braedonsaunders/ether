@@ -2,6 +2,7 @@ package silo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http/httptest"
@@ -332,16 +333,18 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	v := &frontend.Viewer{ID: 1}
 	hdr10Plus := true
 	knownPresent, progressive := true, false
+	partCount := 1
+	media := frontend.MediaInfo{Container: "mp4", Duration: time.Minute, BitrateKbps: 1000, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Width: 1920, Height: 1080, FrameRate: 24, ProbedInterlaced: &progressive, PixelFormat: "yuv420p", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus, DolbyVisionConfigurationPresent: &knownPresent, DolbyVisionBLCompatibilityIDPresent: &knownPresent, DolbyVisionCompatibilityID: 1}, {Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true}}}
 	key := frontend.RatingKey(1000000000000001)
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}
 	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Film", Released: time.Unix(10000, 0)}, Markers: []frontend.Marker{{Type: "intro", Start: time.Second, End: 10 * time.Second}}, Extras: []frontend.Extra{{Title: "Trailer", Kind: "trailer", Source: "YouTube", SourceID: "clip", Language: "en"}}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Film", Released: time.Unix(10000, 0)}, Versions: []frontend.Version{{ID: "cut", Name: "release label", FileName: "real.mp4", AddedAt: time.Unix(10000, 0), Media: media, PartCount: &partCount}}, Markers: []frontend.Marker{{Type: "intro", Start: time.Second, End: 10 * time.Second}}, Extras: []frontend.Extra{{Title: "Trailer", Kind: "trailer", Source: "YouTube", SourceID: "clip", Language: "en"}}}, nil
 	}}
 	sess := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 		if !r.Intent.Estimate {
 			t.Fatal("resolved detail")
 		}
-		return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Container: "mp4", Duration: time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Width: 1920, Height: 1080, FrameRate: 24, ProbedInterlaced: &progressive, PixelFormat: "yuv420p", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus, DolbyVisionConfigurationPresent: &knownPresent, DolbyVisionBLCompatibilityIDPresent: &knownPresent, DolbyVisionCompatibilityID: 1}, {Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true}}}}, nil
+		return frontend.PlayPlan{Estimated: true, Media: media}, nil
 	}}
 	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: sess, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
@@ -359,13 +362,13 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"audio_tracks"`) || !strings.Contains(w.Body.String(), `"language":"en"`) {
 		t.Fatalf("missing real audio tracks: %s", w.Body.String())
 	}
-	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"interlaced":false`, `"pixel_format":"yuv420p"`, `"site_key":"clip"`} {
+	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"interlaced":false`, `"pixel_format":"yuv420p"`, `"site_key":"clip"`, `"file_name":"real.mp4"`, `"total_duration":60`} {
 		if !strings.Contains(w.Body.String(), fact) {
 			t.Errorf("missing known detail %s: %s", fact, w.Body.String())
 		}
 	}
-	if strings.Contains(w.Body.String(), `"total_duration"`) {
-		t.Errorf("estimate advertised as exact part duration: %s", w.Body.String())
+	if strings.Contains(w.Body.String(), `"file_name":"release label"`) {
+		t.Error("release label exposed as a filename")
 	}
 	knownPresent = false
 	negative := httptest.NewRecorder()
@@ -379,6 +382,9 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	req.Header.Set("X-Silo-Device-Id", "tv")
 	rec := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), `"bitrate":1000000`) {
+		t.Errorf("watch bitrate units: %s", rec.Body.String())
+	}
 	if strings.Contains(rec.Body.String(), `"marker_segments"`) || strings.Contains(rec.Body.String(), `"intro"`) {
 		t.Errorf("unbound marker exposed as file-specific: %s", rec.Body.String())
 	}
@@ -400,5 +406,94 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
+	}
+}
+
+type coldFileIDs struct{ ref string }
+
+func (c *coldFileIDs) Compact(_ context.Context, surface, kind, ref string) (int32, error) {
+	if surface != "silo" || kind != "file" {
+		return 0, errors.New("wrong namespace")
+	}
+	c.ref = ref
+	return 1, nil
+}
+func (c *coldFileIDs) Resolve(_ context.Context, surface, kind string, id int32) (string, error) {
+	if surface != "silo" || kind != "file" || id != 1 || c.ref == "" {
+		return "", errors.New("missing")
+	}
+	return c.ref, nil
+}
+
+func TestColdTitleShowsUnknownFactsAndResolvesOnlyOnPlay(t *testing.T) {
+	v := &frontend.Viewer{ID: 7}
+	key := frontend.RatingKey(1000000000000001)
+	allocator := &coldFileIDs{}
+	resolved := 0
+	resolvedStillEstimated := false
+	exp := frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if req.Key != key || req.Viewer != v {
+			return frontend.ItemDetail{}, errors.New("hidden")
+		}
+		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Cold title", UpdatedAt: time.Unix(10000, 0)}}, nil
+	}}
+	sessions := frontendtest.Sessions{
+		PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
+			if req.Intent.Estimate {
+				return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Estimated: true, Container: "mp4", Duration: time.Hour, Size: 123456, BitrateKbps: 9000, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Height: 1080}}}}, nil
+			}
+			resolved++
+			return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Estimated: resolvedStillEstimated, Container: "mp4", Duration: 90 * time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", ColorTransfer: "bt709"}}}, Decision: frontend.Decision{Kind: "directplay", VideoCopy: true}}, nil
+		},
+		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			return frontend.Session{ID: "session"}, nil
+		},
+		StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+			return "/sessions/media/session/grant/file", nil
+		},
+	}
+	host := frontend.Host{Identity: testDeviceIdentity(frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}, v), Experience: exp, Sessions: testScopedMedia{sessions}, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: allocator}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer grant")
+		r.Header.Set("X-Silo-Device-Id", "tv")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	w := request("GET", "/api/v2/catalog/items/"+ids.RatingKeyGUID(key), "")
+	if w.Code != 200 || resolved != 0 {
+		t.Fatalf("cold detail resolved a source: %d %s", w.Code, w.Body.String())
+	}
+	for _, want := range []string{`"file_size":0`, `"duration":0`, `"bitrate":0`, `"codec_video":""`, `"resolution":""`} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("missing unknown sentinel %s: %s", want, w.Body.String())
+		}
+	}
+	if strings.Contains(w.Body.String(), `"file_name"`) || strings.Contains(w.Body.String(), `"playback_variants"`) {
+		t.Fatalf("invented source facts: %s", w.Body.String())
+	}
+	body := `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt"}`
+	w = request("POST", "/api/v2/playback/start", body)
+	if w.Code != 201 || resolved != 1 || !strings.Contains(w.Body.String(), `"duration_seconds":5400`) || !strings.Contains(w.Body.String(), `"video_codec":"h264"`) {
+		t.Fatalf("cold play: %d %s resolves=%d", w.Code, w.Body.String(), resolved)
+	}
+	resolvedStillEstimated = true
+	w = request("POST", "/api/v2/playback/start", body)
+	var result struct {
+		ServerFeatures []string `json:"server_features"`
+		Plan           struct {
+			Source map[string]any `json:"source"`
+		} `json:"playback_plan"`
+	}
+	if w.Code != 201 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !strings.Contains(w.Body.String(), `"plan_source_duration_v1"`) {
+		t.Fatalf("unknown source: %d %s", w.Code, w.Body.String())
+	}
+	if _, ok := result.Plan.Source["duration_seconds"]; ok {
+		t.Fatalf("estimated duration presented as resolved: %s", w.Body.String())
 	}
 }

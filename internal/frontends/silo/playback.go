@@ -196,10 +196,25 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	media = "/api/v2/stream/" + strings.TrimPrefix(media, "/sessions/media/")
-	source := map[string]any{"media_file_id": b.FileID, "duration_seconds": plan.Media.Duration.Seconds(), "container": plan.Media.Container, "bitrate_kbps": plan.Media.BitrateKbps, "hdr10_plus": false, "dv_enhancement_layer": "unknown"}
+	source := map[string]any{"media_file_id": b.FileID, "hdr10_plus": false, "dv_enhancement_layer": "unknown"}
+	if !plan.Media.Estimated {
+		if plan.Media.Duration > 0 {
+			source["duration_seconds"] = plan.Media.Duration.Seconds()
+		}
+		if plan.Media.Container != "" {
+			source["container"] = plan.Media.Container
+		}
+		if plan.Media.BitrateKbps > 0 {
+			source["bitrate_kbps"] = plan.Media.BitrateKbps
+		}
+	}
 	recipe := map[string]any{"video_codec": plan.Decision.VideoCodec, "audio_codec": plan.Decision.AudioCodec, "bitrate_kbps": plan.Decision.BitrateKbps}
 	hdr10, hdr10Plus, hlg, dv := false, false, false, false
-	for _, s := range plan.Media.Streams {
+	streams := plan.Media.Streams
+	if plan.Media.Estimated {
+		streams = nil
+	}
+	for _, s := range streams {
 		if s.Type == "video" {
 			rangeName := siloObservedRange(plan.Media, s)
 			if !plan.Media.Estimated && s.HDR10Plus != nil {
@@ -324,7 +339,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		audioClaim["reason"] = plan.Decision.Reason
 	}
 	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
-	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "session_id": session.ID, "playback_plan": output})
+	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "session_id": session.ID, "playback_plan": output})
 }
 
 func versionUnavailable(w http.ResponseWriter) {
@@ -470,7 +485,7 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 	if !allowed {
 		state = "not_configured"
 	}
-	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": i.installationID(), "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
+	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": i.installationID(), "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
 }
 
 func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Request) {
