@@ -384,7 +384,14 @@ func constrainedH264(d core.Decision, info core.MediaInfo, caps core.ClientCaps,
 	if d.VideoCopy || d.VideoCodec != "h264" {
 		return d, true
 	}
-	if !encoderVerified || d.Enhancement.Backend != "" {
+	ordinary := d.Enhancement.Backend == ""
+	if !ordinary {
+		switch d.Enhancement.State {
+		case "off", "ineligible", "unavailable", "fallback":
+			ordinary = true
+		}
+	}
+	if !encoderVerified || !ordinary {
 		// Do not assert an output profile or level for an unverified hardware
 		// encoder. Required profile predicates fail closed in the caller.
 		return d, caps.VideoLevels["h264"] <= 0 && len(caps.VideoProfiles["h264"]) == 0

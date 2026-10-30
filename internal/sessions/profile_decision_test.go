@@ -210,3 +210,35 @@ func TestH264OutputContractOnlyForVerifiedEncoderPaths(t *testing.T) {
 		t.Fatalf("unverified encoder claimed a level: %+v", got)
 	}
 }
+
+func TestH264OnlyProfileNegotiates4KEncoderContract(t *testing.T) {
+	info := core.MediaInfo{Container: "mp4", BitrateKbps: 3000, Streams: []core.StreamInfo{{Index: 0, Type: "video", Codec: "hevc", Width: 3840, Height: 2160, FrameRate: 30, BitrateKbps: 2462}, {Index: 1, Type: "audio", Codec: "ac3", Channels: 6}}}
+	profiles := &core.ClientCapabilityProfiles{
+		DirectPlay:  []core.ClientDirectPlayProfile{{MediaType: "video", Containers: []string{"mp4"}, VideoCodecs: []string{"h264"}, AudioCodecs: []string{"ac3"}}},
+		Transcoding: []core.ClientTranscodeProfile{{MediaType: "video", Delivery: "hls", Containers: []string{"mpegts"}, VideoCodecs: []string{"h264"}, AudioCodecs: []string{"ac3"}, MaxAudioChannels: "6"}},
+	}
+	caps := core.ClientCaps{Profiles: profiles, Containers: []string{"mp4"}, VideoCodecs: []string{"h264"}, AudioCodecs: []string{"ac3"}, HLSContainers: []string{"mpegts"}}
+	b := &Broker{deps: BrokerDeps{Transcoder: profileTranscoder{}}}
+	d, err := b.decideProfile(&core.PlaySession{Info: info}, frontend.PlanRequest{Caps: caps, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: 1, SubtitleStream: -1}}})
+	if err != nil || d.VideoCopy || d.VideoCodec != "h264" || d.H264Level != 51 || d.H264FrameRate != 30 {
+		t.Fatalf("4K H.264 contract: %+v, %v", d, err)
+	}
+}
+
+func TestH264ContractRecognizesInactiveEnhancement(t *testing.T) {
+	info := core.MediaInfo{Streams: []core.StreamInfo{{Type: "video", Width: 3840, Height: 2160, FrameRate: 30}}}
+	caps := core.ClientCaps{VideoLevels: map[string]int{"h264": 51}}
+	for _, state := range []string{"off", "ineligible", "unavailable", "fallback"} {
+		d := core.Decision{VideoCodec: "h264", BitrateKbps: 8000, Enhancement: core.VideoEnhancement{Backend: "nvenc-ngx-vsr", State: state}}
+		got, ok := constrainedH264(d, info, caps, true)
+		if !ok || got.H264Level != 51 {
+			t.Errorf("inactive state %s: %+v allowed=%v", state, got, ok)
+		}
+	}
+	for _, state := range []string{"selected", "starting", "running", "unknown"} {
+		d := core.Decision{VideoCodec: "h264", BitrateKbps: 8000, Enhancement: core.VideoEnhancement{Backend: "nvenc-ngx-vsr", State: state}}
+		if _, ok := constrainedH264(d, info, caps, true); ok {
+			t.Errorf("unverified state %s accepted", state)
+		}
+	}
+}
