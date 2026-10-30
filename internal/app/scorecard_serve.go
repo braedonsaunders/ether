@@ -26,6 +26,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -317,6 +318,11 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 				_ = json.NewEncoder(w).Encode(events)
 				return
 			}
+			if r.URL.Path == "/__scorecard/traces" && r.Method == http.MethodGet {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(scorecardResolverTraces(a.resolver.Traces()))
+				return
+			}
 			if r.URL.Path == "/__scorecard/broker" && r.Method == http.MethodGet {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(a.frontends.broker.ScorecardSessions(r.Context()))
@@ -447,6 +453,39 @@ func scorecardEvents(entries []admin.LogEntry) []scorecardEvent {
 			}
 		}
 		out = append(out, scorecardEvent{Time: entry.Time, Message: entry.Message, Category: category, Stage: stage})
+	}
+	return out
+}
+
+// scorecardResolverTraces exposes fixed rejection categories only; names,
+// paths, errors, client data, indexers and arbitrary trace text are excluded.
+func scorecardResolverTraces(traces []resolver.Trace) []map[string]any {
+	out := make([]map[string]any, 0, len(traces))
+	for _, trace := range traces {
+		candidates := make([]map[string]any, 0, len(trace.Candidates))
+		for _, c := range trace.Candidates {
+			reason := "other"
+			switch c.Reason {
+			case "video codec unsupported by client", "above profile max height", "below profile min height", "dolby vision not allowed for client", "season/episode mismatch", "quality excluded by imported profile":
+				reason = c.Reason
+			case "":
+				reason = "none"
+			}
+			row := map[string]any{"rejected": c.Rejected, "reason": reason, "attempted": c.Attempted, "health_checked": c.HealthChecked, "healthy": c.Healthy}
+			if strings.HasPrefix(c.ReleaseID, "scorecard-") {
+				_, digest, found := strings.Cut(c.ReleaseID, "-")
+				if found {
+					parts := strings.Split(digest, "-")
+					last := parts[len(parts)-1]
+					decoded, err := hex.DecodeString(last)
+					if err == nil && len(decoded) == sha256.Size {
+						row["fixture_sha256"] = strings.ToLower(last)
+					}
+				}
+			}
+			candidates = append(candidates, row)
+		}
+		out = append(out, map[string]any{"item_id": ids.RatingKeyGUID(trace.TitleKey), "at": trace.At, "winner_present": trace.Winner != "", "error_present": trace.Err != "", "candidates": candidates})
 	}
 	return out
 }

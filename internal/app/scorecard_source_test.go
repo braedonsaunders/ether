@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"github.com/braedonsaunders/ether/internal/resolver"
 )
 
 func TestScorecardFilesAndSource(t *testing.T) {
@@ -431,5 +432,13 @@ func TestScorecardEventsDoNotExposeLogAttributes(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Category != "not available yet" || strings.Contains(string(data), "secret") || strings.Contains(string(data), "/private") {
 		t.Fatalf("unexpected sanitized events: %s", data)
+	}
+}
+
+func TestScorecardResolverTracesRedactUntrustedText(t *testing.T) {
+	traces := []resolver.Trace{{TitleKey: core.MovieKey(123), Err: "secret-token /private/path", Winner: "private", Candidates: []resolver.CandidateTrace{{Name: "secret", ReleaseID: "secret", Reason: "secret-token /private/path", CompatibilityReason: "secret"}, {Rejected: true, Reason: "video codec unsupported by client"}}}}
+	b, err := json.Marshal(scorecardResolverTraces(traces))
+	if err != nil || strings.Contains(string(b), "secret") || strings.Contains(string(b), "/private") || !strings.Contains(string(b), "video codec unsupported by client") {
+		t.Fatalf("trace not redacted: %s %v", b, err)
 	}
 }

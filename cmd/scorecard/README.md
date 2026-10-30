@@ -272,3 +272,9 @@ and `verified_manifest` path selects one reference item whose source path
 matches the independently verified manifest. The chosen hashes are included
 in the result. This is a per-version comparison only; it does not align the
 other reference versions to Ether's title-wide state.
+
+The loopback-only fixture diagnostic `/__scorecard/traces` reports resolver
+candidate rejection categories and, for scorecard sources, fixture SHA-256.
+It omits release names, paths, arbitrary errors and client credentials. The
+trace ring is process-wide; isolate requests before associating a trace with a
+specific test. Recording proxies must deny every `/__scorecard/*` route.
