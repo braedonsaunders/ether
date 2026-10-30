@@ -18,6 +18,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/handles/capability"
 )
 
 // LazyGrants authenticates an issuing surface credential and rechecks the
@@ -30,6 +31,7 @@ type LazyGrants interface {
 type lazySession struct {
 	id      string
 	expires int64
+	viewer  int64
 }
 
 type lazyStreams struct {
@@ -71,7 +73,7 @@ func (s *lazyStreams) Issue(ctx context.Context, credential string, req frontend
 }
 
 func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend.PlanRequest, stable bool) (string, error) {
-	return s.issueOutput(ctx, credential, req, stable, nil)
+	return s.issueOutput(ctx, credential, req, stable, nil, false)
 }
 
 // IssueHLS keeps the scoped capability in every playlist and segment URL.
@@ -80,11 +82,21 @@ func (s *lazyStreams) IssueHLS(ctx context.Context, credential string, req front
 	if req.Channel != "" || output.Format != frontend.StreamHLS || output.Position < 0 || output.SegmentDuration < 0 {
 		return "", core.ErrNotAvailable
 	}
-	return s.issueOutput(ctx, credential, req, false, &output)
+	return s.issueOutput(ctx, credential, req, false, &output, false)
 }
 
-func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req frontend.PlanRequest, stable bool, output *frontend.StreamRequest) (string, error) {
-	if req.Protocol != s.protocol || req.Device.ID == "" || req.Viewer == nil || req.Intent.Plex != nil || (req.Item == 0) == (req.Channel == "") || (stable && req.Channel != "") {
+// IssueLineup binds one media-only capability to an M3U viewer and device.
+// The channel remains a request-time policy decision, never a stored wildcard
+// authorization. It is isolated from ordinary item and live capabilities.
+func (s *lazyStreams) IssueLineup(ctx context.Context, credential string, req frontend.PlanRequest) (string, error) {
+	if s.protocol != "m3u" || req.Item != 0 || req.Channel != "" {
+		return "", core.ErrUnauthorized
+	}
+	return s.issueOutput(ctx, credential, req, true, nil, true)
+}
+
+func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req frontend.PlanRequest, stable bool, output *frontend.StreamRequest, lineup bool) (string, error) {
+	if req.Protocol != s.protocol || req.Device.ID == "" || req.Viewer == nil || req.Intent.Plex != nil || (!lineup && (req.Item == 0) == (req.Channel == "")) || (stable && req.Channel != "") {
 		return "", core.ErrUnauthorized
 	}
 	ref, viewer, err := s.grants.GrantReference(ctx, string(s.protocol), credential)
@@ -93,7 +105,11 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 	}
 	// Validate policy and item without resolving a release or consuming a stream.
 	req.Viewer = viewer
-	if stable {
+	if lineup {
+		if !s.broker.permitted(viewer, req.Caps) || s.broker.deps.Live == nil {
+			return "", core.ErrUnauthorized
+		}
+	} else if stable {
 		// Authenticated paths are requested for every range. Check only local
 		// policy facts here; resolving a release belongs to the first GET.
 		if s.broker.deps.MediaLookup == nil || !s.broker.permitted(viewer, req.Caps) {
@@ -119,8 +135,9 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 	req.Intent.Estimate = false
 	data, err := json.Marshal(struct {
 		frontend.PlanRequest
-		HLS *frontend.StreamRequest `json:"_lazyHLS,omitempty"`
-	}{req, output})
+		HLS    *frontend.StreamRequest `json:"_lazyHLS,omitempty"`
+		Lineup bool                    `json:"_lazyLineup,omitempty"`
+	}{req, output, lineup})
 	if err != nil || len(data) > 65536 {
 		return "", core.ErrNotAvailable
 	}
@@ -139,6 +156,13 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 		}{s.protocol, viewer.ID, req.Device.ID, req.Item, req.Version, req.ExpectedSourceETag, req.DetailSource})
 		if err != nil {
 			return "", core.ErrNotAvailable
+		}
+		if lineup {
+			identity, err = json.Marshal(req)
+			if err != nil {
+				return "", core.ErrNotAvailable
+			}
+			identity = append([]byte("lineup\x00"), identity...)
 		}
 		mac := hmac.New(sha256.New, []byte(credential))
 		_, _ = mac.Write([]byte("ether-authenticated-lazy-v1\x00"))
@@ -161,8 +185,33 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 	if !expires.After(now) {
 		return "", core.ErrUnauthorized
 	}
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions_lazy_streams WHERE expires<=?`, now.UnixMilli())
-	result, err := s.db.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), expires.UnixMilli())
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	// Serialize with old writers before taking the shared reservation lock.
+	if _, err = tx.ExecContext(ctx, `UPDATE sessions_lazy_capacity SET used=used WHERE id=1`); err != nil {
+		return "", err
+	}
+	// Domain guards account for every writer, including binaries without common admission.
+	if _, err = capability.PruneHeadersInTx(ctx, tx, "lazy-stream", now.UnixMilli(), capability.HeaderBatchMax); err != nil {
+		return "", err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM sessions_lazy_streams WHERE expires<=? AND NOT EXISTS(SELECT 1 FROM capability_headers WHERE namespace='lazy-stream' AND digest=sessions_lazy_streams.hash)`, now.UnixMilli()); err != nil {
+		return "", err
+	}
+
+	var present int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions_lazy_streams WHERE hash=?`, lazyHash(token)).Scan(&present); err != nil {
+		return "", err
+	}
+	if present == 0 {
+		if err = capability.AdmitHeadersInTx(ctx, s.db, tx, []capability.Header{{HeaderScope: capability.HeaderScope{Namespace: "lazy-stream", ViewerID: viewer.ID, Surface: string(s.protocol)}, Digest: lazyHash(token), ExpiresMillis: expires.UnixMilli()}}, capability.Limits{PerScope: maxLazyViewerCapabilities, PerShard: maxLazyCapabilities}); err != nil {
+			return "", err
+		}
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), expires.UnixMilli())
 	if err != nil {
 		return "", err
 	}
@@ -176,20 +225,26 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 		}
 		var oldRaw, oldRef string
 		var oldViewer int64
-		if err := s.db.QueryRowContext(ctx, `SELECT request,grant_reference,viewer_id FROM sessions_lazy_streams WHERE hash=? AND protocol=? AND expires>?`, lazyHash(token), string(s.protocol), now.UnixMilli()).Scan(&oldRaw, &oldRef, &oldViewer); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT request,grant_reference,viewer_id FROM sessions_lazy_streams WHERE hash=? AND protocol=? AND expires>?`, lazyHash(token), string(s.protocol), now.UnixMilli()).Scan(&oldRaw, &oldRef, &oldViewer); err != nil {
 			return "", core.ErrNotAvailable
 		}
 		var previous frontend.PlanRequest
 		if oldRef != ref || oldViewer != viewer.ID || json.Unmarshal([]byte(oldRaw), &previous) != nil || !sameLazyDecision(previous, req) {
 			return "", core.ErrNotAvailable
 		}
-		result, err = s.db.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND request=? AND expires>?`, expires.UnixMilli(), lazyHash(token), string(s.protocol), oldRaw, now.UnixMilli())
+		if err = s.renewHeader(ctx, tx, lazyHash(token), viewer.ID, expires.UnixMilli(), now.UnixMilli()); err != nil {
+			return "", err
+		}
+		result, err = tx.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND request=? AND expires>?`, expires.UnixMilli(), lazyHash(token), string(s.protocol), oldRaw, now.UnixMilli())
 		if err != nil {
 			return "", err
 		}
 		if updated, err := result.RowsAffected(); err != nil || updated != 1 {
 			return "", core.ErrNotAvailable
 		}
+	}
+	if err = tx.Commit(); err != nil {
+		return "", err
 	}
 	if stable {
 		s.broker.mu.Lock()
@@ -198,6 +253,9 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 			s.broker.lazySessions[lazyHash(token)] = entry
 		}
 		s.broker.mu.Unlock()
+	}
+	if lineup {
+		return "/sessions/lineup/" + token + "/", nil
 	}
 	if req.Channel != "" {
 		return "/sessions/lazy/" + token + "/live/index.m3u8", nil
@@ -250,11 +308,26 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest, ok := strings.CutPrefix(r.URL.Path, "/sessions/lazy/")
+	lineup := false
+	if !ok {
+		rest, ok = strings.CutPrefix(r.URL.Path, "/sessions/lineup/")
+		lineup = ok
+	}
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	token, tail, ok := strings.Cut(rest, "/")
+	channel := ""
+	if lineup {
+		encoded, remaining, found := strings.Cut(tail, "/")
+		decoded, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
+		if !found || err != nil || len(decoded) == 0 || len(decoded) > 512 || base64.RawURLEncoding.EncodeToString(decoded) != encoded {
+			http.NotFound(w, r)
+			return
+		}
+		channel, tail = string(decoded), remaining
+	}
 	if !ok || token == "" || len(tail) > 1024 || !validLazyTail(tail) {
 		http.NotFound(w, r)
 		return
@@ -275,13 +348,23 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	var stored struct {
 		frontend.PlanRequest
-		HLS *frontend.StreamRequest `json:"_lazyHLS,omitempty"`
+		HLS    *frontend.StreamRequest `json:"_lazyHLS,omitempty"`
+		Lineup bool                    `json:"_lazyLineup,omitempty"`
 	}
 	if json.Unmarshal([]byte(raw), &stored) != nil || stored.Protocol != s.protocol || stored.Device.ID == "" {
 		http.NotFound(w, r)
 		return
 	}
+	if stored.Lineup != lineup || (lineup && (s.protocol != "m3u" || stored.Item != 0 || stored.Channel != "" || stored.HLS != nil)) {
+		http.NotFound(w, r)
+		return
+	}
 	req := stored.PlanRequest
+	binding := hash
+	if lineup {
+		req.Channel = channel
+		binding = hash + "/" + base64.RawURLEncoding.EncodeToString([]byte(channel))
+	}
 	if stored.HLS != nil && (stored.HLS.Format != frontend.StreamHLS || stored.HLS.Position < 0 || stored.HLS.SegmentDuration < 0 || req.Channel != "") {
 		http.NotFound(w, r)
 		return
@@ -317,7 +400,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if (req.Channel != "" && tail != "live/index.m3u8") || (stored.HLS != nil && tail != "hls/master.m3u8") {
 			s.broker.mu.Lock()
-			id := s.broker.lazySessions[hash].id
+			id := s.broker.lazySessions[binding].id
 			s.broker.mu.Unlock()
 			access := frontend.SessionAccess{Viewer: viewer, Device: req.Device, Protocol: s.protocol}
 			if existing, _, err := s.broker.access(ctx, access, id); id == "" || err != nil || (req.Caps.Remote && !existing.caps.Remote) {
@@ -333,6 +416,18 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	// Reserve before opening a source. Stuck dependencies retain a slot, so
+	// they cannot create an unbounded number of heartbeat goroutines.
+	if !s.broker.reserveLazyHeartbeat() {
+		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	heartbeatOwned := true
+	defer func() {
+		if heartbeatOwned {
+			s.broker.releaseLazyHeartbeat()
+		}
+	}()
 	unlock, err := s.broker.gates.Acquire(ctx, "lazy/"+hash)
 	if err != nil {
 		http.NotFound(w, r)
@@ -345,11 +440,11 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.broker.mu.Lock()
 	for key, entry := range s.broker.lazySessions {
-		if entry.expires <= s.broker.deps.Now().UnixMilli() {
+		if entry.id != "" && s.broker.sessions[entry.id] == nil {
 			delete(s.broker.lazySessions, key)
 		}
 	}
-	id := s.broker.lazySessions[hash].id
+	id := s.broker.lazySessions[binding].id
 	s.broker.mu.Unlock()
 	access := frontend.SessionAccess{Viewer: viewer, Device: req.Device, Protocol: s.protocol}
 	var existingLive, existingHLS *brokerSession
@@ -378,18 +473,6 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Reserve before opening a source. Stuck dependencies retain a slot, so
-	// they cannot create an unbounded number of heartbeat goroutines.
-	if !s.broker.reserveLazyHeartbeat() {
-		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	heartbeatOwned := true
-	defer func() {
-		if heartbeatOwned {
-			s.broker.releaseLazyHeartbeat()
-		}
-	}()
 	opened := false
 	reserved := false
 	defer func() {
@@ -398,6 +481,11 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	if id == "" {
+		if !s.broker.reserveLazyBinding(binding, viewerID) {
+			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		defer s.broker.releaseLazyBindingFlight(binding)
 		if !s.broker.reserveLazyCleanup() {
 			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 			return
@@ -427,7 +515,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.broker.lazySessions == nil {
 			s.broker.lazySessions = make(map[string]lazySession)
 		}
-		s.broker.lazySessions[hash] = lazySession{id: id, expires: expires}
+		s.broker.lazySessions[binding] = lazySession{id: id, expires: expires, viewer: viewerID}
 		s.broker.mu.Unlock()
 	}
 	format := frontend.StreamDirect
@@ -454,7 +542,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				reserved = false // retry worker owns the reservation
 			}
 			s.broker.mu.Lock()
-			delete(s.broker.lazySessions, hash)
+			delete(s.broker.lazySessions, binding)
 			s.broker.mu.Unlock()
 		}
 		if errors.Is(err, frontend.ErrSourceGone) {
@@ -481,13 +569,13 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil || s.renewActive(ctx, hash, reference, viewerID, id) != nil {
+	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil || s.renewActiveBinding(ctx, hash, binding, reference, viewerID, id) != nil {
 		if opened {
 			if s.discardOpened(ctx, access, id) {
 				reserved = false // retry worker owns the reservation
 			}
 			s.broker.mu.Lock()
-			delete(s.broker.lazySessions, hash)
+			delete(s.broker.lazySessions, binding)
 			s.broker.mu.Unlock()
 		}
 		http.NotFound(w, r)
@@ -512,7 +600,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer close(done)
 		defer s.broker.releaseLazyHeartbeat()
-		s.heartbeat(streamCtx, cancelStream, hash, reference, viewerID, id, req)
+		s.heartbeatBinding(streamCtx, cancelStream, hash, binding, reference, viewerID, id, req)
 	}()
 	defer func() {
 		cancelStream()
@@ -618,6 +706,9 @@ func (b *Broker) releaseLazyHeartbeat() {
 // Revocation during a transfer is detected at the next tick, at most one
 // minute later. New requests still check authorization immediately.
 func (s *lazyStreams) heartbeat(ctx context.Context, cancel context.CancelFunc, hash, reference string, viewerID int64, id string, req frontend.PlanRequest) {
+	s.heartbeatBinding(ctx, cancel, hash, hash, reference, viewerID, id, req)
+}
+func (s *lazyStreams) heartbeatBinding(ctx context.Context, cancel context.CancelFunc, hash, binding, reference string, viewerID int64, id string, req frontend.PlanRequest) {
 	interval := min(time.Minute, s.ttl/3)
 	var ticks <-chan time.Time
 	var stop func()
@@ -659,7 +750,7 @@ func (s *lazyStreams) heartbeat(ctx context.Context, cancel context.CancelFunc, 
 					return
 				}
 			}
-			if s.renewActive(ctx, hash, reference, viewerID, id) != nil {
+			if s.renewActiveBinding(ctx, hash, binding, reference, viewerID, id) != nil {
 				cancel()
 				return
 			}
@@ -671,6 +762,9 @@ func (s *lazyStreams) heartbeat(ctx context.Context, cancel context.CancelFunc, 
 // and passed grant, viewer and current media policy checks. HEAD probes never
 // keep an abandoned capability alive. The issuing grant is never extended.
 func (s *lazyStreams) renewActive(ctx context.Context, hash, reference string, viewerID int64, sessionID string) error {
+	return s.renewActiveBinding(ctx, hash, hash, reference, viewerID, sessionID)
+}
+func (s *lazyStreams) renewActiveBinding(ctx context.Context, hash, binding, reference string, viewerID int64, sessionID string) error {
 	now := s.broker.deps.Now()
 	until := now.Add(s.ttl)
 	if expiring, ok := s.grants.(interface {
@@ -687,17 +781,31 @@ func (s *lazyStreams) renewActive(ctx context.Context, hash, reference string, v
 	if !until.After(now) {
 		return core.ErrUnauthorized
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND viewer_id=? AND grant_reference=? AND expires>?`, until.UnixMilli(), hash, string(s.protocol), viewerID, reference, now.UnixMilli())
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE sessions_lazy_capacity SET used=used WHERE id=1`); err != nil {
+		return err
+	}
+	if err = s.renewHeader(ctx, tx, hash, viewerID, until.UnixMilli(), now.UnixMilli()); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND viewer_id=? AND grant_reference=? AND expires>?`, until.UnixMilli(), hash, string(s.protocol), viewerID, reference, now.UnixMilli())
 	if err != nil {
 		return err
 	}
 	if n, err := result.RowsAffected(); err != nil || n != 1 {
 		return core.ErrUnauthorized
 	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
 	s.broker.mu.Lock()
-	if entry, ok := s.broker.lazySessions[hash]; ok && entry.id == sessionID {
+	if entry, ok := s.broker.lazySessions[binding]; ok && entry.id == sessionID {
 		entry.expires = until.UnixMilli()
-		s.broker.lazySessions[hash] = entry
+		s.broker.lazySessions[binding] = entry
 	}
 	s.broker.mu.Unlock()
 	return nil
@@ -736,4 +844,18 @@ func (s *lazyStreams) discardOpened(ctx context.Context, access frontend.Session
 		return false
 	}
 	return s.broker.queueLazyCleanup(id, cleanup)
+}
+
+// Renewal replaces the exact live reservation atomically; reusable media never
+// consumes authority outside the transaction that updates its typed lifetime.
+func (s *lazyStreams) renewHeader(ctx context.Context, tx *sql.Tx, hash string, viewer, until, now int64) error {
+	h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: "lazy-stream", ViewerID: viewer, Surface: string(s.protocol)}, Digest: hash, ExpiresMillis: until}
+	consumed, err := capability.ConsumeHeaderInTx(ctx, s.db, tx, h, now)
+	if err != nil {
+		return err
+	}
+	if !consumed {
+		return core.ErrUnauthorized
+	}
+	return capability.AdmitHeadersInTx(ctx, s.db, tx, []capability.Header{h}, capability.Limits{PerScope: maxLazyViewerCapabilities, PerShard: maxLazyCapabilities})
 }

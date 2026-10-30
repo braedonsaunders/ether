@@ -166,3 +166,86 @@ func TestLazyChannelRechecksGrantAndProgrammeForEveryResource(t *testing.T) {
 		t.Fatal("live resource fetched network metadata")
 	}
 }
+
+type lineupGrants struct{ fakeLazyGrants }
+
+func (g *lineupGrants) GrantReference(ctx context.Context, surface, credential string) (string, *core.Viewer, error) {
+	if surface != "m3u" {
+		return "", nil, core.ErrUnauthorized
+	}
+	return g.fakeLazyGrants.GrantReference(ctx, "stremio", credential)
+}
+func (g *lineupGrants) ValidateGrantReference(ctx context.Context, surface, reference string, viewer int64) error {
+	if surface != "m3u" {
+		return core.ErrUnauthorized
+	}
+	return g.fakeLazyGrants.ValidateGrantReference(ctx, "stremio", reference, viewer)
+}
+func TestLazyLineupReusesOneBoundCapability(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	live := &lazyChannelBackend{}
+	live.allowed.Store(true)
+	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	b, err := NewBroker(BrokerDeps{Live: live, Events: events, Playback: pb, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: time.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	grants := &lineupGrants{}
+	streams, err := NewLazyStreams(db, b, "m3u", grants, time.Hour, func(*http.Request) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	lazy := streams.(*lazyStreams)
+	req := frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "m3u-device"}, Protocol: "m3u"}
+	prefix, err := lazy.IssueLineup(ctx, "account-credential-secret", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 300; i++ {
+		got, err := lazy.IssueLineup(ctx, "account-credential-secret", req)
+		if err != nil || got != prefix {
+			t.Fatalf("retry %q %v", got, err)
+		}
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sessions_lazy_streams`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("lineup charged %d %v", n, err)
+	}
+	serve := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		lazy.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		return w
+	}
+	path := prefix + "Y2hhbm5lbA/live/index.m3u8"
+	if w := serve(path); w.Code != 200 || !strings.Contains(w.Body.String(), "./relay/0.ts") {
+		t.Fatalf("manifest %d %q", w.Code, w.Body.String())
+	}
+	if w := serve(prefix + "Y2hhbm5lbA/live/relay/0.ts"); w.Code != 200 {
+		t.Fatalf("segment %d", w.Code)
+	}
+	if w := serve(prefix + "ZGVuaWVk/live/index.m3u8"); w.Code != 404 {
+		t.Fatalf("unauthorized channel %d", w.Code)
+	}
+	// An ordinary lazy path must never turn a lineup scope into an item capability.
+	token := strings.TrimSuffix(strings.TrimPrefix(prefix, "/sessions/lineup/"), "/")
+	if w := serve("/sessions/lazy/" + token + "/live/index.m3u8"); w.Code != 404 {
+		t.Fatal("lineup namespace confused")
+	}
+	live.allowed.Store(false)
+	if w := serve(path); w.Code != 404 {
+		t.Fatal("current channel policy bypassed")
+	}
+	live.allowed.Store(true)
+	grants.mu.Lock()
+	grants.revoked = true
+	grants.mu.Unlock()
+	if w := serve(path); w.Code != 404 {
+		t.Fatal("source revocation bypassed")
+	}
+	checkLazyCounts(t, db)
+}
