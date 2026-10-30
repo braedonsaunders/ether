@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 )
 
 type viewerKey struct{}
@@ -107,11 +110,16 @@ func parseArgs(r *http.Request, expected string) (browseArgs, error) {
 
 type didlObject struct {
 	XMLName    xml.Name
-	ID         string `xml:"id,attr"`
-	ParentID   string `xml:"parentID,attr"`
-	Restricted string `xml:"restricted,attr"`
-	Title      string `xml:"dc:title"`
-	Class      string `xml:"upnp:class"`
+	ID         string        `xml:"id,attr"`
+	ParentID   string        `xml:"parentID,attr"`
+	Restricted string        `xml:"restricted,attr"`
+	Title      string        `xml:"dc:title"`
+	Class      string        `xml:"upnp:class"`
+	Resource   *didlResource `xml:"res,omitempty"`
+}
+type didlResource struct {
+	ProtocolInfo string `xml:"protocolInfo,attr"`
+	URL          string `xml:",chardata"`
 }
 type didl struct {
 	XMLName xml.Name     `xml:"DIDL-Lite"`
@@ -170,6 +178,7 @@ func (i *instance) contentControl(w http.ResponseWriter, r *http.Request) {
 		soapError(w, 701)
 		return
 	}
+	i.addResources(r, viewer, device, peer, objects)
 	document := didl{XMLNS: "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/", DC: "http://purl.org/dc/elements/1.1/", UPNP: "urn:schemas-upnp-org:metadata-1-0/upnp/", Objects: objects}
 	encoded, err := xml.Marshal(document)
 	if err != nil {
@@ -178,4 +187,57 @@ func (i *instance) contentControl(w http.ResponseWriter, r *http.Request) {
 	}
 	body := `<Result>` + escape(string(encoded)) + `</Result><NumberReturned>` + strconv.Itoa(len(objects)) + `</NumberReturned><TotalMatches>` + strconv.Itoa(total) + `</TotalMatches><UpdateID>0</UpdateID>`
 	soap(w, "ContentDirectory", name, body)
+}
+
+func (i *instance) addResources(r *http.Request, viewer *frontend.Viewer, device frontend.Device, peer netip.Addr, objects []didlObject) {
+	if i.host.LANStreams == nil || i.host.Capabilities == nil || i.host.SurfaceURL == nil {
+		return
+	}
+	ctx := frontend.WithClientIP(r.Context(), peer)
+	profile, err := i.host.Capabilities.Build(ctx, frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: "dlna", ClientID: device.ID, Product: device.Product}, UserAgent: r.UserAgent()})
+	if err != nil {
+		return
+	}
+	base, err := i.host.SurfaceURL(ctx, r)
+	if err != nil {
+		return
+	}
+	u, err := url.Parse(base)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return
+	}
+	for n := range objects {
+		if objects[n].XMLName.Local != "item" {
+			continue
+		}
+		key, err := objectKey(objects[n].ID)
+		if err != nil {
+			continue
+		}
+		path, err := i.host.LANStreams.IssueLAN(ctx, r, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "dlna", Item: key, Caps: profile.Client, Intent: frontend.PlayIntent{Options: frontend.DecideOptions{DirectPlay: true}}})
+		if err != nil || !validLANCapability(path) {
+			continue
+		}
+		itemURL := *u
+		itemURL.Path = strings.TrimRight(u.Path, "/") + path
+		itemURL.RawPath = ""
+		objects[n].Resource = &didlResource{ProtocolInfo: "http-get:*:application/octet-stream:*", URL: itemURL.String()}
+	}
+}
+
+func validLANCapability(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/sessions/lazy/")
+	if !ok {
+		return false
+	}
+	token, ok := strings.CutSuffix(rest, "/file")
+	if !ok || token == "" || len(token) > 128 {
+		return false
+	}
+	for _, r := range token {
+		if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+			return false
+		}
+	}
+	return true
 }

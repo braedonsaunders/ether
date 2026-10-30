@@ -257,3 +257,67 @@ func TestNotificationPacketsAdvertiseAndWithdrawEveryTarget(t *testing.T) {
 		}
 	}
 }
+
+type lanStreamFixture struct {
+	issued int
+	served int
+}
+
+func (f *lanStreamFixture) IssueLAN(_ context.Context, _ *http.Request, req frontend.PlanRequest) (string, error) {
+	if req.Viewer == nil || req.Viewer.ID != 7 || req.Protocol != "dlna" || req.Device.ID == "" || req.Item != frontend.RatingKey(1000000000000042) || !req.Intent.Options.DirectPlay {
+		return "", errors.New("wrong scope")
+	}
+	f.issued++
+	return "/sessions/lazy/opaque/file", nil
+}
+func (f *lanStreamFixture) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	f.served++
+	_, _ = w.Write([]byte("media"))
+}
+
+func TestBrowseIssuesOnlyViewerScopedLANMedia(t *testing.T) {
+	streams := &lanStreamFixture{}
+	viewer := &frontend.Viewer{ID: 7}
+	movie := frontend.Title{Key: frontend.RatingKey(1000000000000042), Type: "movie", Title: "Visible"}
+	host := frontend.Host{
+		LANViewer: func(_ context.Context, r *http.Request) (*frontend.Viewer, error) {
+			if r.Header.Get("X-Remote") == "1" {
+				return nil, errors.New("remote")
+			}
+			return viewer, nil
+		},
+		ClientIP:     func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.168.1.5"), true },
+		SurfaceURL:   func(context.Context, *http.Request) (string, error) { return "http://ether.local/dlna", nil },
+		Capabilities: frontendtest.Capabilities{}, LANStreams: streams, Sessions: frontendtest.Sessions{},
+		Experience: frontendtest.Experience{LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, _ string, _ frontend.ItemQuery) (frontend.Page, error) {
+			if v.ID != 7 {
+				t.Fatal("wrong viewer")
+			}
+			return frontend.Page{Items: []frontend.Title{movie}, Total: 1}, nil
+		}},
+	}
+	inst, err := (Frontend{MachineID: "machine"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `<Browse><ObjectID>view:1</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><StartingIndex>0</StartingIndex><RequestedCount>20</RequestedCount></Browse>`
+	r := httptest.NewRequest(http.MethodPost, "/dlna/ContentDirectory/control", strings.NewReader(body))
+	r.Header.Set("SOAPAction", `"urn:schemas-upnp-org:service:ContentDirectory:1#Browse"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || streams.issued != 1 || !strings.Contains(w.Body.String(), "http://ether.local/dlna/sessions/lazy/opaque/file") || strings.Contains(w.Body.String(), "Hidden") {
+		t.Fatalf("browse %d %q issued=%d", w.Code, w.Body.String(), streams.issued)
+	}
+	w = httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/dlna/sessions/lazy/opaque/file", nil))
+	if w.Code != 200 || w.Body.String() != "media" || streams.served != 1 {
+		t.Fatalf("media %d %q", w.Code, w.Body.String())
+	}
+	r = httptest.NewRequest(http.MethodGet, "/dlna/sessions/lazy/opaque/file", nil)
+	r.Header.Set("X-Remote", "1")
+	w = httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 403 || streams.served != 1 {
+		t.Fatalf("remote media %d", w.Code)
+	}
+}

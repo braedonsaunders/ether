@@ -55,6 +55,8 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 		{http.MethodGet, "/ConnectionManager/description.xml", i.connectionDescription},
 		{http.MethodPost, "/ContentDirectory/control", i.contentControl},
 		{http.MethodPost, "/ConnectionManager/control", i.connectionControl},
+		{http.MethodGet, "/sessions/lazy/{tail...}", i.serveLAN},
+		{http.MethodHead, "/sessions/lazy/{tail...}", i.serveLAN},
 	} {
 		if err := i.router.Handle(item.method, item.path, item.handler); err != nil {
 			return nil, err
@@ -62,6 +64,14 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 	}
 	i.ssdp = &ssdp{host: host, id: i.id}
 	return i, nil
+}
+
+func (i *instance) serveLAN(w http.ResponseWriter, r *http.Request) {
+	if i.host.LANStreams == nil {
+		http.NotFound(w, r)
+		return
+	}
+	i.host.LANStreams.ServeHTTP(w, r)
 }
 
 type instance struct {
