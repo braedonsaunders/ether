@@ -226,3 +226,41 @@ func TestTicketServiceCleansExpiredLegacyWithoutEvictingLive(t *testing.T) {
 		t.Fatalf("legacy cleanup expired=%d live=%d", expired, live)
 	}
 }
+
+// New consumer rejects malformed legacy device records without deleting them;
+// the old implementation deleted before decoding and returned a decode error.
+func TestTicketServiceMalformedLegacyRetained(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 0)
+	clock := func() time.Time { return now }
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := grants.Issue(ctx, 1, nil, "silo", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := sha256.Sum256([]byte(credential))
+	token := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	hash := sha256.Sum256([]byte(token))
+	digest := hex.EncodeToString(hash[:])
+	if _, err = db.Exec(`INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, digest, "silo", "events-ws", 1, hex.EncodeToString(source[:]), `{`, now.Add(time.Minute).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	service, err := identity.NewTicketService(db, "silo", grants, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Consume(ctx, token, "events-ws"); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("malformed ticket: %v", err)
+	}
+	var n int
+	if err = db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, digest).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("malformed ticket count=%d err=%v", n, err)
+	}
+}

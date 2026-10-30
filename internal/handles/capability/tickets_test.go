@@ -577,14 +577,6 @@ func TestMirroredCleanupConcurrentOldConsumer(t *testing.T) {
 	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	grants, err := identity.NewGrants(db, activeFixture{}, time.Hour, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	old, err := identity.NewTicketService(db, "silo", grants, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// This helper represents old binary SQL directly because the current service
 	// may be upgraded; it keeps the old DELETE as the authority under test.
 	raw := make([]byte, 32)
@@ -595,7 +587,6 @@ func TestMirroredCleanupConcurrentOldConsumer(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, digest, "silo", "events-ws", 1, scope.SourceHash, scope.DeviceJSON, time.Now().Add(time.Minute).UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
-	_ = old
 	start := make(chan struct{})
 	out := make(chan error, 2)
 	var wg sync.WaitGroup
