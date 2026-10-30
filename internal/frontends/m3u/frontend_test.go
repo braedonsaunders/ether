@@ -12,6 +12,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
 )
 
 func TestRegisteredRoutesMatchMountedRouter(t *testing.T) {
@@ -23,7 +24,22 @@ func TestRegisteredRoutesMatchMountedRouter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual := inst.(frontend.RouteSource).Routes(); !slices.Equal(routes, actual) || len(routes) != 7 {
+	expected := []route.Route{
+		{Method: "GET", Pattern: "/{credential}/guide.xml"},
+		{Method: "GET", Pattern: "/{credential}/playlist.m3u"},
+		{Method: "GET", Pattern: "/sessions/lineup/{tail...}"},
+		{Method: "HEAD", Pattern: "/sessions/lineup/{tail...}"},
+		{Method: "GET", Pattern: "/image/{secret}"},
+	}
+	if !slices.Equal(routes, expected) {
+		t.Fatalf("secure routes=%v want=%v", routes, expected)
+	}
+	for _, registered := range routes {
+		if registered.Pattern == "/{credential}/channel" {
+			t.Fatal("account-grant media route remains")
+		}
+	}
+	if actual := inst.(frontend.RouteSource).Routes(); !slices.Equal(routes, actual) {
 		t.Fatalf("inventory=%v mounted=%v", routes, actual)
 	}
 }
