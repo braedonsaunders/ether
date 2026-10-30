@@ -55,6 +55,23 @@ func TestCounterfactualDoesNotHideApprovedPairs(t *testing.T) {
 	}
 }
 
+func TestScopeApprovalRequiresExactResponsePair(t *testing.T) {
+	old := approvedScopes
+	defer func() { approvedScopes = old }()
+	a := capture{viewer: "owner", client: "web", path: "/hubs/home/recentlyAdded?type=15", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte("mixed")}}
+	b := a
+	b.response.Body = []byte("empty")
+	entry := approvedDifference{Viewer: a.viewer, Client: a.client, Path: a.path, Baseline: signature(a.response), Candidate: signature(b.response), Commit: "19bdfcd1"}
+	approvedScopes, _ = json.Marshal([]approvedDifference{entry})
+	if got, err := approved(a, b); err != nil || got != entry.Commit {
+		t.Fatalf("exact pair: %q %v", got, err)
+	}
+	b.response.Body = []byte("other")
+	if got, err := approved(a, b); err != nil || got != "" {
+		t.Fatalf("unreviewed pair approved: %q %v", got, err)
+	}
+}
+
 func TestApprovedHeadersOnlyPermitValidBodyLengths(t *testing.T) {
 	a := capture{response: protocol.Response{Headers: http.Header{"Content-Length": {"3"}, "Cache-Control": {"no-cache"}}, Body: []byte("old")}}
 	b := capture{response: protocol.Response{Headers: http.Header{"Content-Length": {"4"}, "Cache-Control": {"no-cache"}}, Body: []byte("new!")}}

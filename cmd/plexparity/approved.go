@@ -19,6 +19,12 @@ import (
 //go:embed approved_search.json
 var approvedSearch []byte
 
+// Scope-fix approvals are exact, independently reviewed before/after pairs
+// for the PMS-compatible recent-items filters. No route-only approval exists.
+//
+//go:embed approved_scopes.json
+var approvedScopes []byte
+
 type responseSignature struct {
 	Status      int    `json:"status"`
 	ContentType string `json:"content_type"`
@@ -39,19 +45,24 @@ func signature(r protocol.Response) responseSignature {
 	return responseSignature{r.Status, r.Headers.Get("Content-Type"), hex.EncodeToString(sum[:])}
 }
 func approved(a, b capture) (string, error) {
-	if a.viewer != "teen" && a.viewer != "child" {
-		return "", nil
-	}
-	var entries []approvedDifference
-	if err := json.Unmarshal(approvedSearch, &entries); err != nil {
-		return "", fmt.Errorf("invalid approved differences: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == signature(a.response) && entry.Candidate == signature(b.response) {
-			if entry.Commit == "" {
-				return "c82a7830", nil
+	for _, registry := range []struct {
+		data       []byte
+		restricted bool
+	}{{approvedSearch, true}, {approvedScopes, false}} {
+		if registry.restricted && a.viewer != "teen" && a.viewer != "child" {
+			continue
+		}
+		var entries []approvedDifference
+		if err := json.Unmarshal(registry.data, &entries); err != nil {
+			return "", fmt.Errorf("invalid approved differences: %w", err)
+		}
+		for _, entry := range entries {
+			if entry.Viewer == a.viewer && entry.Client == a.client && entry.JSON == a.json && entry.Path == a.path && entry.Baseline == signature(a.response) && entry.Candidate == signature(b.response) {
+				if entry.Commit == "" && registry.restricted {
+					return "c82a7830", nil
+				}
+				return entry.Commit, nil
 			}
-			return entry.Commit, nil
 		}
 	}
 	return "", nil
