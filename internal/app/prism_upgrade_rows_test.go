@@ -113,6 +113,7 @@ func assertUpgradeTables(t *testing.T, db *sql.DB, before map[string]upgradeTabl
 
 func assertUpgradeInventory(t *testing.T, db *sql.DB) {
 	t.Helper()
+	assertPrismCandidateBoundary(t)
 	known := store.KnownMigrations()
 	for _, reserved := range []string{"state_plexwatch", "plexwatch"} {
 		if _, ok := known[reserved]; ok {
@@ -189,82 +190,94 @@ func TestPrismUpgradeSQLiteLateFailureRecovery(t *testing.T) {
 // failure and automatically follows newly integrated component versions.
 func TestPrismUpgradeFinalStepFailure(t *testing.T) {
 	for _, dialect := range []store.Dialect{store.SQLite, store.Postgres} {
-		t.Run(string(dialect), func(t *testing.T) {
-			ctx := context.Background()
-			var db *sql.DB
-			if dialect == store.Postgres {
-				dsn := os.Getenv(store.TestPostgresEnv)
-				if dsn == "" {
-					t.Skip("ETHER_TEST_POSTGRES is not configured")
-				}
-				db = newPostgresSchema(t, dsn)
-				applyDelivered9503(t, db, dialect)
-				seedDeliveredRows(t, db)
-			} else {
-				dir := t.TempDir()
-				buildDeliveredDB(t, dir, nil)
-				db = openSQLiteRW(t, filepath.Join(dir, "ether.db"))
-				defer db.Close()
-			}
-			before := captureUpgradeTables(t, db, dialect)
-			applied, err := store.AppliedMigrations(ctx, db)
-			if err != nil {
-				t.Fatal(err)
-			}
-			known := store.KnownMigrations()
-			last := ""
-			for _, component := range store.ComponentOrder() {
-				if known[component] > applied[component] {
-					last = component
-				}
-			}
-			if last == "" {
-				t.Fatal("fixture has no pending migrations")
-			}
-			version := known[last]
-			t.Logf("inject failure after DDL for final pending migration %s/%d", last, version)
-			trigger := fmt.Sprintf(`CREATE TRIGGER reject_final_migration BEFORE INSERT ON schema_migrations WHEN NEW.component='%s' AND NEW.version=%d BEGIN SELECT RAISE(ABORT,'acceptance final-step failure'); END`, last, version)
-			if dialect == store.Postgres {
-				trigger = fmt.Sprintf(`CREATE FUNCTION reject_final_migration() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.component='%s' AND NEW.version=%d THEN RAISE EXCEPTION 'acceptance final-step failure'; END IF; RETURN NEW; END; $$; CREATE TRIGGER reject_final_migration BEFORE INSERT ON schema_migrations FOR EACH ROW EXECUTE FUNCTION reject_final_migration()`, last, version)
-			}
-			if _, err := db.Exec(trigger); err != nil {
-				t.Fatal(err)
-			}
-			err = store.Migrate(ctx, db)
-			if err == nil || !strings.Contains(err.Error(), "acceptance final-step failure") {
-				t.Fatalf("injected failure: %v", err)
-			}
-			assertUpgradeTables(t, db, before)
-			got, err := store.AppliedMigrations(ctx, db)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if dialect == store.Postgres {
-				if !reflect.DeepEqual(got, applied) || !reflect.DeepEqual(captureUpgradeTables(t, db, dialect), before) {
-					t.Fatal("final failure retained pending migrations or changed delivered schema")
-				}
-			} else {
-				for component, v := range known {
-					if component == last {
-						v--
-					}
-					if got[component] != v {
-						t.Fatalf("SQLite completed prefix %s=%d want %d", component, got[component], v)
-					}
-				}
-			}
-			drop := `DROP TRIGGER reject_final_migration`
-			if dialect == store.Postgres {
-				drop += ` ON schema_migrations`
-			}
-			if _, err := db.Exec(drop); err != nil {
-				t.Fatal(err)
-			}
-			if err := store.Migrate(ctx, db); err != nil {
-				t.Fatalf("final-step recovery: %v", err)
-			}
-			assertUpgradeTables(t, db, before)
-			assertUpgradeInventory(t, db)
-		})
+		t.Run(string(dialect), func(t *testing.T) { verifyPrismMigrationFailure(t, dialect, "", 0) })
 	}
+}
+
+func verifyPrismMigrationFailure(t *testing.T, dialect store.Dialect, target string, targetVersion int) {
+	t.Helper()
+	ctx := context.Background()
+	var db *sql.DB
+	if dialect == store.Postgres {
+		dsn := os.Getenv(store.TestPostgresEnv)
+		if dsn == "" {
+			t.Skip("ETHER_TEST_POSTGRES is not configured")
+		}
+		db = newPostgresSchema(t, dsn)
+		applyDelivered9503(t, db, dialect)
+		seedDeliveredRows(t, db)
+	} else {
+		dir := t.TempDir()
+		buildDeliveredDB(t, dir, nil)
+		db = openSQLiteRW(t, filepath.Join(dir, "ether.db"))
+		defer db.Close()
+	}
+	before := captureUpgradeTables(t, db, dialect)
+	applied, err := store.AppliedMigrations(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := store.KnownMigrations()
+	last := ""
+	for _, component := range store.ComponentOrder() {
+		if known[component] > applied[component] {
+			last = component
+		}
+	}
+	if last == "" {
+		t.Fatal("fixture has no pending migrations")
+	}
+	version := known[last]
+	if target != "" {
+		last = target
+		version = targetVersion
+	}
+	t.Logf("inject failure after DDL for final pending migration %s/%d", last, version)
+	trigger := fmt.Sprintf(`CREATE TRIGGER reject_final_migration BEFORE INSERT ON schema_migrations WHEN NEW.component='%s' AND NEW.version=%d BEGIN SELECT RAISE(ABORT,'acceptance final-step failure'); END`, last, version)
+	if dialect == store.Postgres {
+		trigger = fmt.Sprintf(`CREATE FUNCTION reject_final_migration() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.component='%s' AND NEW.version=%d THEN RAISE EXCEPTION 'acceptance final-step failure'; END IF; RETURN NEW; END; $$; CREATE TRIGGER reject_final_migration BEFORE INSERT ON schema_migrations FOR EACH ROW EXECUTE FUNCTION reject_final_migration()`, last, version)
+	}
+	if _, err := db.Exec(trigger); err != nil {
+		t.Fatal(err)
+	}
+	err = store.Migrate(ctx, db)
+	if err == nil || !strings.Contains(err.Error(), "acceptance final-step failure") {
+		t.Fatalf("injected failure: %v", err)
+	}
+	assertUpgradeTables(t, db, before)
+	got, err := store.AppliedMigrations(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dialect == store.Postgres {
+		if !reflect.DeepEqual(got, applied) || !reflect.DeepEqual(captureUpgradeTables(t, db, dialect), before) {
+			t.Fatal("final failure retained pending migrations or changed delivered schema")
+		}
+	} else {
+		beforeFailure := true
+		for _, component := range store.ComponentOrder() {
+			v := applied[component]
+			if component == last {
+				v = version - 1
+				beforeFailure = false
+			} else if beforeFailure {
+				v = known[component]
+			}
+			if got[component] != v {
+				t.Fatalf("SQLite completed prefix %s=%d want %d", component, got[component], v)
+			}
+		}
+	}
+	drop := `DROP TRIGGER reject_final_migration`
+	if dialect == store.Postgres {
+		drop += ` ON schema_migrations`
+	}
+	if _, err := db.Exec(drop); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx, db); err != nil {
+		t.Fatalf("final-step recovery: %v", err)
+	}
+	assertUpgradeTables(t, db, before)
+	assertUpgradeInventory(t, db)
 }

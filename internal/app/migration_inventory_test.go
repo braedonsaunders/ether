@@ -15,6 +15,7 @@ func TestFreshProductionMigrations(t *testing.T) {
 	ctx := context.Background()
 	verify := func(t *testing.T, db *sql.DB) {
 		t.Helper()
+		assertPrismCandidateArtifacts(t, db)
 		for component, version := range store.KnownMigrations() {
 			var got int
 			if err := db.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations WHERE component=?`, component).Scan(&got); err != nil || got != version {
