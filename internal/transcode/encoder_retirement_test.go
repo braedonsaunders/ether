@@ -498,3 +498,50 @@ func TestEncoderRetirementSerializesSameIDBeforeStart(t *testing.T) {
 		t.Fatalf("completed ID reservations=%d", left)
 	}
 }
+
+func TestEncoderRetirementCapacityFollowsDecisionAcrossRuns(t *testing.T) {
+	m := newTestManager(t, newFakeRunner(), config.Transcode{MaxTranscodes: 1})
+	s := startSession(t, m, remuxRequest(t, "decision", time.Hour))
+	change := func(copyVideo bool) {
+		t.Helper()
+		s.mu.Lock()
+		s.decision.VideoCopy = copyVideo
+		if copyVideo {
+			s.decision.Kind = core.DecisionRemux
+		} else {
+			s.decision.Kind = core.DecisionTranscode
+		}
+		if len(s.rungs) > 0 {
+			s.rungs[0].decision = s.decision
+		}
+		err := s.startRunLocked(0, false)
+		s.mu.Unlock()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	change(false)
+	s.mu.Lock()
+	s.stopRunLocked()
+	s.mu.Unlock()
+	s.watchers.Wait() // cooperative test processes actually joined, no waiter
+	m.mu.Lock()
+	charged := m.encodingLocked("")
+	m.mu.Unlock()
+	if charged != 1 {
+		t.Fatalf("noncopy decision lost reserved capacity between runs: %d", charged)
+	}
+	if _, err := m.StartHLS(context.Background(), transcodeRequest(t, "over")); !errors.Is(err, ErrTooManyTranscodes) {
+		t.Fatalf("noncopy decision overcommitted: %v", err)
+	}
+	change(true)
+	m.mu.Lock()
+	charged = m.encodingLocked("")
+	m.mu.Unlock()
+	if charged != 0 {
+		t.Fatalf("verified copy replacement retained completed encoder charge: %d", charged)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

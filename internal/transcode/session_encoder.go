@@ -104,6 +104,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	if s.inputFailed {
 		return errInputExhausted
 	}
+	s.encoder.decisionEncoding(!s.decision.VideoCopy)
 	s.stopRunLocked()
 	// Reserve this transition before dropping the lock. A later seek or swap
 	// supersedes it; only the newest transition may start another encoder.

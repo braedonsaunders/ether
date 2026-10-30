@@ -46,6 +46,7 @@ type encoderLifetime struct {
 	done            chan struct{}
 	cancel          chan struct{}
 	encoding        atomic.Bool
+	everEncoded     bool
 	runs            atomic.Int32
 }
 
@@ -152,6 +153,9 @@ func (l *encoderLifetime) seal() {
 	l.mu.Lock()
 	if !l.sealed {
 		l.sealed = true
+		if l.inputClaimed && !l.inputDrained && l.everEncoded {
+			l.encoding.Store(true)
+		}
 		close(l.cancel)
 	}
 	l.queueLocked()
@@ -303,6 +307,12 @@ func (l *encoderLifetime) runWork(encoding bool) ([]*encoderWork, error) {
 	}
 	if encoding {
 		l.runs.Add(1)
+		l.mu.Lock()
+		l.everEncoded = true
+		if l.sealed && l.inputClaimed && !l.inputDrained {
+			l.encoding.Store(true)
+		}
+		l.mu.Unlock()
 		var remaining atomic.Int32
 		remaining.Store(2)
 		for _, w := range work {
@@ -396,4 +406,15 @@ func (l *encoderLifetime) installInput(input core.EncoderInputLease) error {
 	l.queueLocked()
 	l.mu.Unlock()
 	return nil
+}
+
+func (l *encoderLifetime) decisionEncoding(encoding bool) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	if !l.sealed {
+		l.encoding.Store(encoding)
+	}
+	l.mu.Unlock()
 }

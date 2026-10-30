@@ -346,3 +346,8 @@ be forwarded to child playlist/provider requests. Ordinary unscoped live playbac
 keeps its existing header and demuxer behavior. Scoped run and sample commands
 retain the VOD demuxer restrictions, and only the exact nonredirecting loopback
 representation route can receive the private value.
+
+Scalar capacity follows decision changes between runs: noncopy decisions retain
+their reservation even between processes, while copy transitions retain all
+previous real-run charges until both watcher and reaper finish. Sealing a verified
+input with prior encoding retains that charge while input drain is unproved.
