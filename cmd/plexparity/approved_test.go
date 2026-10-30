@@ -72,6 +72,30 @@ func TestScopeApprovalRequiresExactResponsePair(t *testing.T) {
 	}
 }
 
+func TestApprovedScopeRegistryIsExact(t *testing.T) {
+	var entries []approvedDifference
+	if err := json.Unmarshal(approvedScopes, &entries); err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{
+		"/hubs/home/recentlyAdded?type=15":                           true,
+		"/hubs/home/recentlyAdded?type=999":                          true,
+		"/hubs/home/recentlyAdded?type=1%2C4":                        true,
+		"/hubs/home/recentlyAdded?type=2%2C4&contentDirectoryID=2":   true,
+		"/hubs/home/recentlyAdded?contentDirectoryID=1":              true,
+		"/hubs/home/recentlyAdded?contentDirectoryID=2":              true,
+		"/hubs/home/recentlyAdded?pinnedContentDirectoryID=1":        true,
+		"/hubs/home/recentlyAdded?pinnedContentDirectoryID=2":        true,
+		"/hubs/home/recentlyAdded?type=1&contentDirectoryID=2":       true,
+		"/hubs/home/recentlyAdded?type=2&pinnedContentDirectoryID=1": true,
+	}
+	for _, e := range entries {
+		if !allowed[e.Path] || e.Viewer == "" || e.Client == "" || e.Commit == "" || len(e.Baseline.SHA256) != 64 || len(e.Candidate.SHA256) != 64 || e.Baseline.SHA256 == e.Candidate.SHA256 {
+			t.Fatalf("scope approval is not an exact reviewed pair: %+v", e)
+		}
+	}
+}
+
 func TestApprovedHeadersOnlyPermitValidBodyLengths(t *testing.T) {
 	a := capture{response: protocol.Response{Headers: http.Header{"Content-Length": {"3"}, "Cache-Control": {"no-cache"}}, Body: []byte("old")}}
 	b := capture{response: protocol.Response{Headers: http.Header{"Content-Length": {"4"}, "Cache-Control": {"no-cache"}}, Body: []byte("new!")}}
