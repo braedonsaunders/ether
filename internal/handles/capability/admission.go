@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"hash/fnv"
+	"strconv"
+	"strings"
 
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -80,4 +83,83 @@ func ConsumeHeaderInTx(ctx context.Context, db *sql.DB, tx *sql.Tx, h Header, no
 	}
 	n, err := result.RowsAffected()
 	return n == 1, err
+}
+
+// ClaimHeaderInTx atomically claims one purpose on a reusable handle. A false
+// result is an already-claimed purpose; absent, foreign or expired handles fail
+// closed. Typed domain authorization must be checked in this transaction.
+func ClaimHeaderInTx(ctx context.Context, db *sql.DB, tx *sql.Tx, h Header, purpose string, nowMillis int64) (bool, error) {
+	if db == nil || tx == nil || !validHeaderScope(h.HeaderScope) || !digestValid(h.Digest) || purpose == "" || len(purpose) > 128 || nowMillis <= 0 {
+		return false, ErrInvalidHeader
+	}
+	if err := lockHeaders(ctx, db, tx, h.HeaderScope); err != nil {
+		return false, err
+	}
+	var found int
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM capability_headers WHERE namespace=? AND digest=? AND viewer_id=? AND surface=? AND device_id=? AND expires>?`, h.Namespace, h.Digest, h.ViewerID, h.Surface, h.DeviceID, nowMillis).Scan(&found); err != nil {
+		return false, err
+	}
+	result, err := tx.ExecContext(ctx, `INSERT INTO capability_claims(namespace,digest,purpose) VALUES(?,?,?) ON CONFLICT(namespace,digest,purpose) DO NOTHING`, h.Namespace, h.Digest, purpose)
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
+// AdmissionLockSQL returns a PostgreSQL advisory-lock expression matching the
+// Go admission lock. Inputs must be trusted migration constants, never request
+// text. Keeping both forms here prevents domain triggers taking a different lock.
+func AdmissionLockSQL(namespace, viewerSQL string) string {
+	var out strings.Builder
+	out.WriteString("(ARRAY[")
+	for shard := int64(0); shard < HeaderShardCount; shard++ {
+		if shard > 0 {
+			out.WriteByte(',')
+		}
+		hash := fnv.New64a()
+		fmt.Fprintf(hash, "ether:capability:admission:%s:%d", namespace, shard)
+		out.WriteString(strconv.FormatInt(int64(hash.Sum64()), 10))
+		out.WriteString("::bigint")
+	}
+	out.WriteString("])[(")
+	out.WriteString(viewerSQL)
+	fmt.Fprintf(&out, " %% %d)+1]", HeaderShardCount)
+	return out.String()
+}
+
+// RenewHeaderInTx replaces one live, exact-scoped header under the admission
+// lock. It is net-zero admission, with the same current quotas as new issuance;
+// oversized migrated scopes must drain before renewal. Any error requires the
+// caller to roll back, including its typed payload changes.
+func RenewHeaderInTx(ctx context.Context, db *sql.DB, tx *sql.Tx, h Header, nowMillis int64, limits Limits) (bool, error) {
+	scope := h.HeaderScope
+	if scope.Namespace == ticketNamespace {
+		scope.Namespace = "ticket.admission"
+	}
+	if db == nil || tx == nil || !validHeaderScope(scope) || !digestValid(h.Digest) || nowMillis <= 0 || h.ExpiresMillis <= nowMillis || limits.PerScope <= 0 || limits.PerShard < limits.PerScope {
+		return false, ErrInvalidHeader
+	}
+	if err := lockHeaders(ctx, db, tx, h.HeaderScope); err != nil {
+		return false, err
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=?`, h.Namespace, h.ViewerID%HeaderShardCount, h.ViewerID, h.Surface).Scan(&n); err != nil {
+		return false, err
+	}
+	if n > limits.PerScope {
+		return false, &CapacityError{Scope: "viewer"}
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND shard=?`, h.Namespace, h.ViewerID%HeaderShardCount).Scan(&n); err != nil {
+		return false, err
+	}
+	if n > limits.PerShard {
+		return false, &CapacityError{Scope: "shard"}
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE capability_headers SET expires=? WHERE namespace=? AND digest=? AND shard=? AND viewer_id=? AND surface=? AND device_id=? AND expires>?`, h.ExpiresMillis, h.Namespace, h.Digest, h.ViewerID%HeaderShardCount, h.ViewerID, h.Surface, h.DeviceID, nowMillis)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
 }

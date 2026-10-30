@@ -16,6 +16,7 @@ import (
 )
 
 func init() {
+	store.Register("capability_headers", 3, `CREATE TABLE capability_claims(namespace TEXT NOT NULL,digest TEXT NOT NULL,purpose TEXT NOT NULL,PRIMARY KEY(namespace,digest,purpose),FOREIGN KEY(namespace,digest) REFERENCES capability_headers(namespace,digest) ON DELETE CASCADE);`)
 	store.RegisterAfter("capability_headers", "auth", "identity_grants")
 	store.Register("capability_headers", 2, `CREATE INDEX capability_headers_maintenance ON capability_headers(namespace,expires,digest);`)
 	store.Register("capability_headers", 1, `CREATE TABLE capability_headers (namespace TEXT NOT NULL,digest TEXT NOT NULL,shard INTEGER NOT NULL,viewer_id BIGINT NOT NULL,surface TEXT NOT NULL,device_id TEXT NOT NULL,expires BIGINT NOT NULL,PRIMARY KEY(namespace,digest)); CREATE INDEX capability_headers_expiry ON capability_headers(namespace,shard,expires); CREATE INDEX capability_headers_scope ON capability_headers(namespace,shard,viewer_id,surface,expires); CREATE TABLE capability_tickets (namespace TEXT NOT NULL,digest TEXT NOT NULL,purpose TEXT NOT NULL,source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE,device TEXT NOT NULL,legacy_mirror INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(namespace,digest),FOREIGN KEY(namespace,digest) REFERENCES capability_headers(namespace,digest) ON DELETE CASCADE);`)
