@@ -10,15 +10,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/sessions"
 	tmdbpkg "github.com/braedonsaunders/ether/internal/tmdb"
 	"image"
 	"image/color"
@@ -28,6 +31,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -120,7 +124,8 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			if err != nil || itemResp.StatusCode != 200 || item.ImageTags["Primary"] == "" {
 				t.Fatal("item artwork not issued", itemResp.StatusCode, err)
 			}
-			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, login.AccessToken, itemID)
+			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
+			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "conform-"+strings.Split(spec.client, ",")[0])
 			imgResp, err := srv.Client().Get(srv.URL + "/Items/" + itemID + "/Images/Primary?tag=" + url.QueryEscape(item.ImageTags["Primary"]))
 			if err != nil {
 				t.Fatal(err)
@@ -227,7 +232,8 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 						_ = a.stopOwnerSession(session.ID)
 					}
 				}
-				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID)
+				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
+				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "conform-"+strings.Split(spec.client, ",")[0])
 				if reportDir := os.Getenv("LAB_REPORT_DIR"); reportDir != "" {
 					if err := os.MkdirAll(reportDir, 0700); err != nil {
 						t.Fatal(err)
@@ -799,20 +805,49 @@ func TestReadLabSettingsFromEnvironment(t *testing.T) {
 
 // labTraceMediaDetail records only policy-authorized source counts and wire
 // field presence. It never logs credentials, media paths or source names.
-func labTraceMediaDetail(t *testing.T, a *App, viewer *core.User, protocol, stage, referenceItem string, srv *httptest.Server, token, itemID string) {
+func labTraceMediaDetail(t *testing.T, a *App, viewer *core.User, protocol, stage, referenceItem string, srv *httptest.Server, token, itemID, deviceID string) {
 	if os.Getenv("LAB_TRACE_DETAIL") != "1" {
 		return
 	}
 	t.Helper()
+	client, name, version := "", "", ""
+	if deviceID != "" {
+		client, name, version = "Findroid", "Android", "0.15.0"
+		if protocol == "emby" {
+			client, name, version = "Emby.SDK v2 reference client", "Unknown", "4.10"
+		}
+	}
 	experience, err := a.newSurfaceExperience(core.Protocol(protocol))
 	if err != nil {
 		t.Error("detail trace experience unavailable")
 		return
 	}
-	detail, err := experience.Item(context.Background(), frontend.ItemRequest{Viewer: viewer, Key: core.MovieKey(10378)})
+	dev := frontend.Device{ID: deviceID, Client: client, Product: client, DeviceName: name, Version: version}
+	detail, err := experience.Item(context.Background(), frontend.ItemRequest{Viewer: viewer, Device: dev, Key: core.MovieKey(10378)})
 	if err != nil {
 		t.Error("detail trace item unavailable")
 		return
+	}
+	issueOutcome := "no_versions"
+	if len(detail.Versions) != 0 {
+		issueOutcome = "host_unavailable"
+		ctx := frontend.WithClientIP(context.Background(), netip.MustParseAddr("198.51.100.1"))
+		capability, capErr := (surfaceCapabilities{app: a, surface: core.Protocol(protocol)}).Build(ctx, frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: core.Protocol(protocol), ClientID: deviceID, Product: client, DeviceName: name, Version: version}})
+		if capErr != nil {
+			issueOutcome = "scope_error"
+		} else if handles, handleErr := sessions.NewVersionHandles(a.db, a.frontends.broker, core.Protocol(protocol)); handleErr == nil {
+			_, issueErr := handles.Issue(ctx, frontend.VersionScope{Viewer: viewer, Device: dev, Protocol: core.Protocol(protocol), Caps: capability.Client}, core.MovieKey(10378), detail.Versions[0].ID)
+			switch {
+			case issueErr == nil:
+				issueOutcome = "issued"
+			case errors.Is(issueErr, core.ErrNotFound):
+				issueOutcome = "not_found"
+			case errors.Is(issueErr, core.ErrUnauthorized):
+				issueOutcome = "unauthorized"
+			default:
+				issueOutcome = "other_error"
+			}
+		}
 	}
 	req, err := http.NewRequest("GET", srv.URL+"/Items/"+itemID, nil)
 	if err != nil {
@@ -820,6 +855,9 @@ func labTraceMediaDetail(t *testing.T, a *App, viewer *core.User, protocol, stag
 		return
 	}
 	req.Header.Set("X-Emby-Token", token)
+	if deviceID != "" {
+		req.Header.Set("X-Emby-Authorization", `MediaBrowser Client="`+client+`", Device="`+name+`", DeviceId="`+deviceID+`", Version="`+version+`"`)
+	}
 	response, err := srv.Client().Do(req)
 	if err != nil {
 		t.Error("detail trace request failed")
@@ -855,5 +893,5 @@ func labTraceMediaDetail(t *testing.T, a *App, viewer *core.User, protocol, stag
 			}
 		}
 	}
-	t.Logf("detail_trace protocol=%s stage=%s reference_item=%s target_item=%s authorized_versions=%d version_hashes=%v wire_sources=%d source_hashes=%v wire_streams=%d fields=%v", protocol, stage, referenceItem, itemID, len(detail.Versions), versionHashes, len(sources), sourceHashes, len(streams), fields)
+	t.Logf("detail_trace protocol=%s stage=%s device_present=%t issue=%s reference_item=%s target_item=%s authorized_versions=%d version_hashes=%v wire_sources=%d source_hashes=%v wire_streams=%d fields=%v", protocol, stage, deviceID != "", issueOutcome, referenceItem, itemID, len(detail.Versions), versionHashes, len(sources), sourceHashes, len(streams), fields)
 }
