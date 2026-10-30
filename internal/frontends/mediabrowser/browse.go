@@ -478,6 +478,10 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := itemQuery(r)
+	if err := navigationQuery(r, &q, false); err != nil {
+		http.Error(w, "Invalid navigation anchor", http.StatusBadRequest)
+		return
+	}
 	if err := i.resolveFilters(r, v, &q); err != nil {
 		http.Error(w, "Invalid filter", 400)
 		return
@@ -579,6 +583,10 @@ func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := itemQuery(r)
+	if err := navigationQuery(r, &q, true); err != nil {
+		http.Error(w, "Invalid navigation anchor", http.StatusBadRequest)
+		return
+	}
 	q.Types = []frontend.MediaType{"episode"}
 	q.Recursive = true
 	if vals := route.Query(r.URL.Query(), "Season"); len(vals) == 1 {
