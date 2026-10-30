@@ -30,13 +30,13 @@ func TestProgressThresholds(t *testing.T) {
 	key := core.MovieKey(1)
 	dur := 100 * time.Minute
 
-	// 2% — not started, no resume point.
-	if err := s.Progress(ctx, 1, key, 2*time.Minute, dur, "stopped"); err != nil {
+	// 30 seconds — not started, no resume point.
+	if err := s.Progress(ctx, 1, key, 30*time.Second, dur, "stopped"); err != nil {
 		t.Fatal(err)
 	}
 	ws, _ := s.Get(ctx, 1, key)
 	if ws.ViewOffset != 0 || ws.ViewCount != 0 {
-		t.Fatalf("2%%: %+v", ws)
+		t.Fatalf("30s: %+v", ws)
 	}
 
 	// 50% — in progress.
@@ -60,8 +60,8 @@ func TestProgressThresholds(t *testing.T) {
 	if err := s.Progress(ctx, 1, key, 99*time.Minute, dur, "stopped"); err != nil {
 		t.Fatal(err)
 	}
-	// Scrub back under 5% and to the end again in the same viewing: still one.
-	if err := s.Progress(ctx, 1, key, time.Minute, dur, "playing"); err != nil {
+	// Scrub below both start thresholds and to the end again: still one.
+	if err := s.Progress(ctx, 1, key, 30*time.Second, dur, "playing"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Progress(ctx, 1, key, 95*time.Minute, dur, "stopped"); err != nil {
@@ -96,6 +96,49 @@ func TestProgressThresholds(t *testing.T) {
 	}
 	if completed != 2 {
 		t.Fatalf("completed history entries = %d, want 2 (%+v)", completed, hist)
+	}
+}
+
+func TestResumeStartsAtEarlierOfMinuteOrFivePercent(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		duration time.Duration
+		offset   time.Duration
+		resume   bool
+		episode  bool
+	}{
+		{"movie-30s", 97 * time.Minute, 30 * time.Second, false, false},
+		{"movie-61s", 97 * time.Minute, 61 * time.Second, true, false},
+		{"movie-exact-minute", 97 * time.Minute, time.Minute, true, false},
+		{"infuse-actual-stop", 97 * time.Minute, 201274 * time.Millisecond, true, false},
+		{"episode-just-under-five-percent", 20 * time.Minute, 59 * time.Second, false, true},
+		{"short-item-existing-five-percent", 10 * time.Minute, 30 * time.Second, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := newTestState(t)
+			key := core.MovieKey(4951)
+			if tc.episode {
+				key = core.EpisodeKey(1, 1, 1)
+			}
+			if err := s.Progress(ctx, 1, key, tc.offset, tc.duration, "stopped"); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.Get(ctx, 1, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := time.Duration(0)
+			if tc.resume {
+				want = tc.offset
+			}
+			if got.ViewOffset != want || got.ViewCount != 0 {
+				t.Fatalf("offset=%v count=%d; want offset=%v count=0", got.ViewOffset, got.ViewCount, want)
+			}
+			progress, err := s.InProgress(ctx, 1, 10)
+			if err != nil || (len(progress) > 0) != tc.resume {
+				t.Fatalf("in-progress=%+v err=%v; want resumable=%v", progress, err, tc.resume)
+			}
+		})
 	}
 }
 
