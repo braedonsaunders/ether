@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,8 @@ func TestPrismUpgradeFromDelivered9503(t *testing.T) {
 	}
 
 	snap := openSQLiteRO(t, path+store.PreMigrateSuffix)
+	assertUpgradeTables(t, db, captureUpgradeTables(t, snap, store.SQLite))
+	assertUpgradeInventory(t, db)
 	if got := maxMigration(t, snap, "auth"); got != 3 {
 		t.Fatalf("snapshot auth version %d, want the 9503 schema (3)", got)
 	}
@@ -329,12 +332,15 @@ func TestPrismUpgradePostgresPreservesDeliveredRows(t *testing.T) {
 		db := newPostgresSchema(t, dsn)
 		applyDelivered9503(t, db, store.Postgres)
 		seedDeliveredRows(t, db)
+		before := captureUpgradeTables(t, db, store.Postgres)
 		if got := maxMigration(t, db, "auth"); got != 3 {
 			t.Fatalf("postgres fixture auth %d", got)
 		}
 		if err := store.Migrate(ctx, db); err != nil {
 			t.Fatal(err)
 		}
+		assertUpgradeTables(t, db, before)
+		assertUpgradeInventory(t, db)
 		if got := maxMigration(t, db, "auth"); got != 7 {
 			t.Fatalf("postgres auth %d", got)
 		}
@@ -354,14 +360,30 @@ func TestPrismUpgradePostgresPreservesDeliveredRows(t *testing.T) {
 		db := newPostgresSchema(t, dsn)
 		applyDelivered9503(t, db, store.Postgres)
 		seedDeliveredRows(t, db)
+		before := captureUpgradeTables(t, db, store.Postgres)
+		applied, err := store.AppliedMigrations(ctx, db)
+		if err != nil {
+			t.Fatal(err)
+		}
 		// catalog/10 creates this index. It runs after auth/4. A collision
 		// must undo every pending migration, not leave a partial schema.
 		if _, err := db.ExecContext(ctx, `CREATE INDEX catalog_titles_episode_aired ON catalog_titles(key)`); err != nil {
 			t.Fatal(err)
 		}
-		err := store.Migrate(ctx, db)
+		err = store.Migrate(ctx, db)
 		if err == nil || !strings.Contains(err.Error(), "catalog/10") {
 			t.Fatalf("postgres migrate error %v", err)
+		}
+		assertUpgradeTables(t, db, before)
+		if got := captureUpgradeTables(t, db, store.Postgres); !reflect.DeepEqual(got, before) {
+			t.Fatal("failed PostgreSQL migration changed delivered tables or columns")
+		}
+		rolledBack, err := store.AppliedMigrations(ctx, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(applied, rolledBack) {
+			t.Fatalf("rollback inventory got %v want %v", rolledBack, applied)
 		}
 		if got := maxMigration(t, db, "auth"); got != 3 {
 			t.Fatalf("postgres failure left auth at %d; the single migration transaction did not roll back", got)
@@ -381,6 +403,9 @@ func assertUpgradeBoundary(t *testing.T) {
 	known := store.KnownMigrations()
 	if known["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
+	}
+	if _, ok := known["plexwatch"]; ok {
+		t.Fatal("reserved component plexwatch is registered")
 	}
 	if _, ok := known["state_plexwatch"]; ok {
 		t.Fatal("unlanded component state_plexwatch is registered")
@@ -572,13 +597,22 @@ func seedDeliveredRows(t *testing.T, db sqlQuery) {
 		auth.HashToken(upgradeAdminToken), upgradeOwnerID, created, expires)
 	exec(`INSERT INTO state_watch(user_id,rating_key,view_offset_ns,duration_ns,view_count,counted,last_viewed_at,user_rating,updated_at) VALUES(?,?,?,5000000000,2,1,?,8.5,?)`,
 		upgradeOwnerID, upgradeRatingKey, upgradeViewOffset, upgradeClock.Unix(), upgradeClock.Unix())
+	exec(`INSERT INTO auth_delegations(token_hash,user_id,expires_at) VALUES('fixture-delegation',?,?)`, upgradeFriendID, expires)
+	exec(`INSERT INTO state_history(id,user_id,rating_key,viewed_at,completed,imported) VALUES(61,?,?,?,1,1)`, upgradeOwnerID, upgradeRatingKey, created)
+	exec(`INSERT INTO state_playlists(id,user_id,title,smart,updated_at) VALUES(62,?,'Fixture playlist',0,?)`, upgradeFriendID, created)
+	exec(`INSERT INTO state_playlist_items(playlist_id,position,rating_key) VALUES(62,0,?)`, upgradeRatingKey)
+	exec(`INSERT INTO cluster_nodes(id,name,version,started_at,last_seen,incarnation,migrations) VALUES('old-node','Delivered','v0.2.48',?,?,'old-process','{"auth":3,"cluster":2}')`, created, created)
+	exec(`INSERT INTO cluster_leader(id,epoch,node_id,acquired_at) VALUES(1,17,'old-node',?)`, created)
+	exec(`INSERT INTO cluster_update_lease(id,node_id,version,acquired_at,expires_at,failed_version) VALUES(1,'old-node','v0.2.48',?,?,'failed-fixture')`, created, expires)
+	exec(`INSERT INTO plex_sessions(id,node_id,user_id,session_key,data,updated_at) VALUES('fixture-playback','old-node',?,91,'{"fixture":"session"}',?)`, upgradeFriendID, created)
+	exec(`INSERT INTO plex_playqueues(id,user_id,rev,data,updated_at) VALUES(92,?,4,'{"fixture":"queue"}',?)`, upgradeFriendID, created)
 	exec(`INSERT INTO trackprefs_rules(user_id,rules) VALUES(?,?)`, upgradeOwnerID, upgradeRules)
 	exec(`INSERT INTO trackprefs_memory(user_id,show_id,kind,choice,updated_at) VALUES(?,55,'audio','eng',?)`, upgradeOwnerID, upgradeClock.Unix())
 }
 
 func applyDelivered9503(t *testing.T, db sqlQuery, dialect store.Dialect) {
 	t.Helper()
-	steps := loadDelivered9503(t)
+	steps := loadDelivered9503Dialect(t, dialect)
 	ctx := context.Background()
 	create := `CREATE TABLE schema_migrations (component TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY (component, version))`
 	if dialect == store.Postgres {
@@ -589,9 +623,7 @@ func applyDelivered9503(t *testing.T, db sqlQuery, dialect store.Dialect) {
 	}
 	for _, step := range steps {
 		sqlText := step.SQL
-		if dialect == store.Postgres {
-			sqlText = store.TranslateDDL(sqlText)
-		}
+
 		if _, err := db.ExecContext(ctx, sqlText); err != nil {
 			t.Fatalf("apply %s/%d: %v", step.Component, step.Version, err)
 		}
@@ -602,17 +634,26 @@ func applyDelivered9503(t *testing.T, db sqlQuery, dialect store.Dialect) {
 }
 
 func loadDelivered9503(t *testing.T) []deliveredStep {
+	return loadDelivered9503Dialect(t, store.SQLite)
+}
+
+func loadDelivered9503Dialect(t *testing.T, dialect store.Dialect) []deliveredStep {
 	t.Helper()
 	dir := filepath.Join("testdata", "prism-upgrade")
-	schema, err := os.ReadFile(filepath.Join(dir, "schema.sql"))
+	filename := "schema.sql"
+	if dialect == store.Postgres {
+		filename = "schema-postgres.sql"
+	}
+	schema, err := os.ReadFile(filepath.Join(dir, filename))
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(schema)
 	var manifest struct {
-		Commit     string `json:"commit"`
-		SHA256     string `json:"sha256"`
-		Migrations []struct {
+		Commit         string `json:"commit"`
+		SHA256         string `json:"sha256"`
+		PostgresSHA256 string `json:"postgres_sha256"`
+		Migrations     []struct {
 			Component string `json:"component"`
 			Version   int    `json:"version"`
 		} `json:"migrations"`
@@ -624,7 +665,11 @@ func loadDelivered9503(t *testing.T) []deliveredStep {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Commit != delivered9503Commit || manifest.SHA256 != hex.EncodeToString(sum[:]) {
+	expected := manifest.SHA256
+	if dialect == store.Postgres {
+		expected = manifest.PostgresSHA256
+	}
+	if manifest.Commit != delivered9503Commit || expected != hex.EncodeToString(sum[:]) {
 		t.Fatalf("fixture provenance commit %s sha %s", manifest.Commit, manifest.SHA256)
 	}
 	parts := strings.Split(string(schema), "\n-- prism-upgrade-migration-end\n")

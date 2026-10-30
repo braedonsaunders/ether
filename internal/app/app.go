@@ -288,12 +288,12 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	// hang watchdog only starts in Run. Errors retrying cannot fix (bad
 	// password, missing database, invalid URL) still fail at once.
 	var gate store.MigrationGate
-	if dbCfg.IsPostgres() && cfg.Database.DeferMigrations {
+	if dbCfg.IsPostgres() {
 		id, err := cluster.LoadIdentity(opts.DataDir)
 		if err != nil {
 			return nil, fmt.Errorf("cluster: %w", err)
 		}
-		gate = olderNodesGate(id.NodeID, clusterLiveAfter, time.Now)
+		gate = startupMigrationsGate(id.NodeID, cfg.Database.DeferMigrations, clusterLiveAfter, time.Now)
 	}
 	if a.db, dialect, err = store.OpenWithRetry(ctx, store.Options{
 		DataDir: opts.DataDir, Driver: dbCfg.Driver, URL: dbCfg.URL,
