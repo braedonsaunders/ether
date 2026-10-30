@@ -40,3 +40,25 @@ func TestFavoriteTitlesCachedInheritedPolicy(t *testing.T) {
 		t.Fatalf("revoked section allowed: %v %v", ok, err)
 	}
 }
+
+func TestResolveBrowseParentsPreservesGetOutcomes(t *testing.T) {
+	ctx := context.Background()
+	warm, cold, stale, eligible, missing := core.ShowKey(1), core.ShowKey(2), core.ShowKey(3), core.ShowKey(4), core.ShowKey(5)
+	calls := map[core.RatingKey]int{}
+	get := func(_ context.Context, key core.RatingKey) (*core.Title, error) {
+		calls[key]++
+		if key == missing {
+			return nil, core.ErrNotFound
+		}
+		return &core.Title{Key: key, Type: core.TypeShow}, nil
+	}
+	got := resolveBrowseParents(ctx, []core.RatingKey{warm, warm, cold, stale, eligible, missing, missing}, get)
+	for _, key := range []core.RatingKey{warm, cold, stale, eligible} {
+		if got[key].Key != key || calls[key] != 1 {
+			t.Fatalf("key %s result %+v calls %d", key, got[key], calls[key])
+		}
+	}
+	if _, ok := got[missing]; ok || calls[missing] != 1 {
+		t.Fatal("missing parent not denied")
+	}
+}

@@ -33,8 +33,8 @@ type ServiceDeps struct {
 	Get                 func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
-	// CachedParents reads current parent records without remote refresh or writes.
-	CachedParents func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
+	// ParentTitles resolves distinct parents using the same semantics as GetTitle.
+	ParentTitles func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
 	// CachedVirtualSeason resolves a viewer's already-computed episode layout.
 	CachedVirtualSeason   func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	Children              func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
@@ -342,7 +342,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			for start := 0; start < len(children); start += 400 {
 				chunk := children[start:min(start+400, len(children))]
 				vis := s.d.Visibility
-				if s.d.CachedParents != nil {
+				if s.d.ParentTitles != nil {
 					keys := make([]core.RatingKey, 0, len(chunk))
 					seen := make(map[core.RatingKey]bool)
 					for _, child := range chunk {
@@ -351,7 +351,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 							keys = append(keys, child.ShowKey)
 						}
 					}
-					parents, e := s.d.CachedParents(ctx, keys)
+					parents, e := s.d.ParentTitles(ctx, keys)
 					if e != nil {
 						return core.Page{}, e
 					}

@@ -147,7 +147,7 @@ func TestRecursiveBrowseCachedParentsFailClosed(t *testing.T) {
 	}, Libraries: []Library{{ID: 2, Type: core.TypeShow}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 2, true }, GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) {
 		individualCalls++
 		return nil, core.ErrNotFound
-	}}, CachedParents: func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	}}, ParentTitles: func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		batchCalls++
 		if len(keys) > 400 {
 			t.Fatal("unbounded parent batch")
