@@ -304,7 +304,7 @@ func (activeFixture) ActiveUser(_ context.Context, id int64) (*core.User, error)
 	return &core.User{ID: id}, nil
 }
 
-// The unchanged legacy service remains the consume authority in this draft.
+// The frozen legacy service and the new adapter share the legacy consume authority.
 func TestMirroredTicketOldConsumerAndRollback(t *testing.T) {
 	db, tickets, scope := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -313,7 +313,7 @@ func TestMirroredTicketOldConsumerAndRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, err := identity.NewTicketService(db, "silo", grants, nil)
+	old, err := newLegacyTicketService(db, "silo", grants, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestMirroredLegacyOnlyAndConcurrentMixedConsume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, err := identity.NewTicketService(db, "silo", grants, nil)
+	old, err := newLegacyTicketService(db, "silo", grants, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +460,7 @@ func TestMirroredHeaderCannotBypassLegacyAuthority(t *testing.T) {
 	}
 }
 
-// The shared expiry is consumed by an unchanged legacy node at the same exact
+// The shared expiry is consumed by the frozen legacy fixture at the same exact
 // millisecond boundary; token bytes remain the existing canonical format.
 func TestMirroredLegacyTokenAndExpiryBoundary(t *testing.T) {
 	db, tickets, scope := fixture(t)
@@ -491,7 +491,7 @@ func TestMirroredLegacyTokenAndExpiryBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, err := identity.NewTicketService(db, "silo", grants, clock)
+	old, err := newLegacyTicketService(db, "silo", grants, clock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +534,7 @@ func TestMirroredGrantExpiryDeniesWithoutConsume(t *testing.T) {
 	}
 }
 
-// Exercise a genuine legacy Issue rather than only inserting an equivalent row.
+// Exercise the frozen legacy Issue implementation, not an old server binary.
 func TestMirroredConsumesActualLegacyIssue(t *testing.T) {
 	db, tickets, _ := fixture(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -548,7 +548,7 @@ func TestMirroredConsumesActualLegacyIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, err := identity.NewTicketService(db, "silo", grants, nil)
+	old, err := newLegacyTicketService(db, "silo", grants, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
