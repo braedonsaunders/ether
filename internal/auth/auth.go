@@ -162,6 +162,7 @@ func applySQLiteAuthV4(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 	if len(unexpected) > 0 {
+		// Before any copy or DROP. An unhandled child must not cascade.
 		return fmt.Errorf("auth/4: refusing rebuild because unhandled tables reference auth_users: %s", strings.Join(unexpected, ", "))
 	}
 	if sessions {

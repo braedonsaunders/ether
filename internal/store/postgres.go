@@ -233,6 +233,8 @@ func migratePostgres(ctx context.Context, db *sql.DB, gate MigrationGate) error 
 		}
 		// No arguments: pgx sends this over the simple query protocol, which
 		// accepts several ;-separated statements in one round trip.
+		// sqliteApply is not called on PostgreSQL. sqlFor returns the
+		// RegisterDialect override when one exists (auth/4 drops NOT NULL).
 		if _, err := tx.ExecContext(ctx, m.sqlFor(Postgres)); err != nil {
 			return fmt.Errorf("migration %s/%d: %w", m.component, m.version, err)
 		}

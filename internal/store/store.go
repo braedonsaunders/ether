@@ -96,21 +96,30 @@ func RegisterDialect(component string, version int, d Dialect, sql string) {
 	migrations = append(migrations, migration{component: component, version: version, overrides: map[Dialect]string{d: sql}})
 }
 
-// RegisterSQLiteApply runs apply instead of the registered SQLite SQL for one
-// version. PostgreSQL still uses that SQL or its RegisterDialect override.
-// apply runs inside the migration transaction, and an error rolls that
-// version back. Use it when the SQLite statement must branch on tables
-// already present. It does not disable foreign keys.
+// RegisterSQLiteApply binds apply to a migration Register or RegisterDialect
+// already recorded. It does not create a version. SQLite Migrate calls apply
+// instead of that version's SQLite SQL. PostgreSQL never calls apply; it
+// still runs the registered SQL or the RegisterDialect override. Success and
+// failure use the same version bookkeeping as every other migration: the
+// schema_migrations row is inserted only after apply returns nil, and an
+// error rolls the version's transaction back with no row written. apply does
+// not disable foreign keys.
 func RegisterSQLiteApply(component string, version int, apply func(context.Context, *sql.Tx) error) {
+	if apply == nil {
+		panic("store: RegisterSQLiteApply requires a function")
+	}
 	regMu.Lock()
 	defer regMu.Unlock()
 	for i := range migrations {
 		if migrations[i].component == component && migrations[i].version == version {
+			if migrations[i].sqliteApply != nil {
+				panic("store: RegisterSQLiteApply " + component + "/" + strconv.Itoa(version) + " already bound")
+			}
 			migrations[i].sqliteApply = apply
 			return
 		}
 	}
-	migrations = append(migrations, migration{component: component, version: version, sqliteApply: apply})
+	panic("store: RegisterSQLiteApply " + component + "/" + strconv.Itoa(version) + " is not registered")
 }
 
 // sqlFor returns the migration text to run on dialect d.
@@ -418,14 +427,18 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		if err != nil {
 			return err
 		}
+		// sqliteApply is SQLite-only. A nil callback runs sqlFor(SQLite), the
+		// same statement as before this hook existed. PostgreSQL goes through
+		// migratePostgres and never reaches this branch.
+		var applyErr error
 		if m.sqliteApply != nil {
-			if err := m.sqliteApply(ctx, tx); err != nil {
-				tx.Rollback()
-				return fmt.Errorf("migration %s/%d: %w", m.component, m.version, err)
-			}
-		} else if _, err := tx.ExecContext(ctx, m.sqlFor(SQLite)); err != nil {
+			applyErr = m.sqliteApply(ctx, tx)
+		} else {
+			_, applyErr = tx.ExecContext(ctx, m.sqlFor(SQLite))
+		}
+		if applyErr != nil {
 			tx.Rollback()
-			return fmt.Errorf("migration %s/%d: %w", m.component, m.version, err)
+			return fmt.Errorf("migration %s/%d: %w", m.component, m.version, applyErr)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(component, version) VALUES (?, ?)`,
 			m.component, m.version); err != nil {
