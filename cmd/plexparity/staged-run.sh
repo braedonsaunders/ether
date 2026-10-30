@@ -13,6 +13,10 @@ counterfactual=${10:-0}
 train_ranker=${11:-0}
 ranker_train_only=${12:-0}
 both_models=${13:-0}
+expiry_only=${14:-0}
+cluster_only=${15:-0}
+infuse_only=${16:-0}
+expect_early_resume=${17:-0}
 case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
 case "$crowd_diag" in 0|1) ;; *) echo 'invalid crowd diagnostic mode' >&2; exit 1;; esac
 case "$notifications_only" in 0|1) ;; *) echo 'invalid notification-only mode' >&2; exit 1;; esac
@@ -25,8 +29,15 @@ case "$counterfactual" in 0|1) ;; *) echo 'invalid counterfactual mode' >&2; exi
 case "$train_ranker" in 0|1) ;; *) echo 'invalid ranker training mode' >&2; exit 1;; esac
 case "$ranker_train_only" in 0|1|2) ;; *) echo 'invalid ranker training-only mode' >&2; exit 1;; esac
 case "$both_models" in 0|1) ;; *) echo 'invalid both-models mode' >&2; exit 1;; esac
+case "$expiry_only" in 0|1) ;; *) echo 'invalid expiry-only mode' >&2; exit 1;; esac
+case "$cluster_only" in 0|1) ;; *) echo 'invalid cluster-only mode' >&2; exit 1;; esac
+case "$infuse_only" in 0|1) ;; *) echo 'invalid Infuse-only mode' >&2; exit 1;; esac
+case "$expect_early_resume" in 0|1) ;; *) echo 'invalid early-resume assertion mode' >&2; exit 1;; esac
 if [ "$ranker_train_only" != 0 ] && [ "$train_ranker" != 1 ]; then echo 'training-only mode requires ranker training' >&2; exit 1; fi
 if [ "$both_models" = 1 ] && { [ "$train_ranker" != 0 ] || [ "$ranker_train_only" != 0 ]; }; then echo 'both-models mode must start from the ordinary fixture' >&2; exit 1; fi
+if [ "$cluster_only" = 1 ] && { [ "$expiry_only" != 0 ] || [ "$both_models" != 0 ] || [ "$train_ranker" != 0 ]; }; then echo 'cluster-only mode requires the ordinary fixture' >&2; exit 1; fi
+if [ "$infuse_only" = 1 ] && { [ "$cluster_only" != 0 ] || [ "$expiry_only" != 0 ] || [ "$both_models" != 0 ] || [ "$train_ranker" != 0 ]; }; then echo 'Infuse-only mode requires the ordinary fixture' >&2; exit 1; fi
+if [ "$expect_early_resume" = 1 ] && [ "$infuse_only" != 1 ]; then echo 'early-resume assertion requires Infuse-only mode' >&2; exit 1; fi
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -86,6 +97,11 @@ checks = {
 }
 for name, pattern in checks.items():
  if not re.search(pattern, (root / name).read_text()): raise SystemExit(f"missing clock seam in {name}")
+playback = root / 'build_playback.go'
+data = playback.read_text()
+needle = 'transcode.New(cfg.Transcode, log, '
+if data.count(needle) != 1: raise SystemExit('cannot apply parity transcoder idle seam')
+playback.write_text(data.replace(needle, needle + 'transcode.WithIdleTimeout(parityTranscodeIdle()), ', 1))
 live = root.parent / 'livetv/service.go'
 data = live.read_text()
 needle = 'func liveSessionID() string {'
@@ -154,11 +170,35 @@ import ("context"; "fmt"; "os")
 func main() {if len(os.Args)!=2 {os.Exit(2)}; if err:=seed(context.Background(),os.Args[1]);err!=nil {fmt.Fprintln(os.Stderr,err);os.Exit(1)}}
 GO
 [ -x "$HOME/prism-test/.cache/ffmpeg/linux-amd64/ffmpeg" ] || { echo 'CI-pinned ffmpeg missing from remote cache' >&2; exit 1; }
-docker run --rm --network none \
+network=none
+pg_container=
+runner_cid="$root/work/cluster-runner.cid"
+if [ "$cluster_only" = 1 ]; then
+ pg_image='postgres@sha256:7c688148e5e156d0e86df7ba8ae5a05a2386aaec1e2ad8e6d11bdf10504b1fb7'
+ docker image inspect "$pg_image" >/dev/null 2>&1 || { echo 'pinned PostgreSQL fixture image must be cached before offline execution' >&2; exit 1; }
+ network="plexparity-$(basename "$root")"
+ docker network create --internal "$network" >/dev/null
+ cleanup_cluster() {
+  if [ -s "$runner_cid" ]; then docker stop "$(cat "$runner_cid")" >/dev/null 2>&1 || true; fi
+  if [ -n "$pg_container" ]; then docker stop "$pg_container" >/dev/null 2>&1 || true; fi
+  docker network rm "$network" >/dev/null 2>&1 || true
+ }
+ trap cleanup_cluster EXIT
+ pg_container=$(docker run -d --rm --network "$network" --network-alias parity-postgres -e POSTGRES_USER=parity -e POSTGRES_PASSWORD=parity -e POSTGRES_DB=postgres "$pg_image")
+ ready=0
+ for _ in $(seq 1 60); do
+  if docker exec "$pg_container" pg_isready -U parity -d postgres >/dev/null 2>&1; then ready=1; break; fi
+  sleep 1
+ done
+ [ "$ready" = 1 ] || { echo 'offline PostgreSQL fixture failed to start' >&2; exit 1; }
+fi
+runner_args=()
+if [ "$cluster_only" = 1 ]; then runner_args=(--cidfile "$runner_cid"); fi
+docker run --rm "${runner_args[@]}" --network "$network" \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e ETHER_PARITY_POLICY_COUNTERFACTUAL="$counterfactual" -e ETHER_PARITY_TRAIN_RANKER="$train_ranker" -e ETHER_PARITY_RANKER_TRAIN_ONLY="$ranker_train_only" -e ETHER_PARITY_BOTH_MODELS="$both_models" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e ETHER_PARITY_POLICY_COUNTERFACTUAL="$counterfactual" -e ETHER_PARITY_TRAIN_RANKER="$train_ranker" -e ETHER_PARITY_RANKER_TRAIN_ONLY="$ranker_train_only" -e ETHER_PARITY_BOTH_MODELS="$both_models" -e ETHER_PARITY_EXPIRY_ONLY="$expiry_only" -e ETHER_PARITY_CLUSTER_ONLY="$cluster_only" -e ETHER_PARITY_INFUSE_ONLY="$infuse_only" -e ETHER_PARITY_EXPECT_EARLY_RESUME="$expect_early_resume" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
  if [ "$ETHER_PARITY_RANKER_TRAIN_ONLY" = 2 ]; then
@@ -188,6 +228,9 @@ docker run --rm --network none \
   printf "RANKER_PROVENANCE "; cat /work/rankerseed/ranker-training.json
  fi
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart /work/seeddata/parity.mp4
+ if [ "$ETHER_PARITY_EXPIRY_ONLY" = 1 ]; then
+  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -t 300 -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -movflags +faststart /work/seeddata/parity-expiry.mp4
+ fi
  ffmpeg -hide_banner -loglevel error -i /work/seeddata/parity.mp4 -c copy -f mpegts /work/seeddata/iptv.ts
  printf "1\n00:00:00,000 --> 00:00:03,000\nFixture subtitle\n" > /work/seeddata/parity.srt
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -f lavfi -i anullsrc=r=48000:cl=stereo -f srt -i /work/seeddata/parity.srt -t 20 -map 0:v -map 1:a -map 2:a -map 3:s -metadata:s:a:0 language=fra -metadata:s:a:1 language=eng -metadata:s:s:0 language=eng -c:v libx264 -pix_fmt yuv420p -c:a aac -c:s mov_text -movflags +faststart /work/seeddata/parity-tracks.mp4

@@ -21,6 +21,15 @@ func parityClock() func() time.Time {
 // Avoid a second scheduler-triggered rebuild racing that initial warmup.
 func parityRefreshEvery() time.Duration { return -1 }
 
+// Only the dedicated offline expiry probe shortens the idle timeout. Normal
+// parity runs retain the transcoder's production two-minute default.
+func parityTranscodeIdle() time.Duration {
+	if os.Getenv("ETHER_PARITY_EXPIRY_ONLY") == "1" {
+		return 5 * time.Second
+	}
+	return 2 * time.Minute
+}
+
 // Preserve the default learned-ranker training schedule while the model
 // refresh scheduler is disabled. Inference and serve logging remain enabled.
 func parityRankerOptions() personalize.RankerOptions {

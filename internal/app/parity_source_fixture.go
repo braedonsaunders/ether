@@ -44,6 +44,9 @@ func (s paritySource) Open(_ context.Context, id string, _ []byte) (core.MediaSo
 	if strings.HasPrefix(id, "fixture-10004-") {
 		filename = "parity-tracks.mp4"
 	}
+	if os.Getenv("ETHER_PARITY_EXPIRY_ONLY") == "1" {
+		filename = "parity-expiry.mp4"
+	}
 	f, err := os.Open(filepath.Join(s.dir, filename))
 	if err != nil {
 		return nil, err
@@ -61,6 +64,33 @@ type parityMedia struct {
 	*os.File
 	size int64
 	id   string
+}
+
+// The expiry-only source is deliberately slow after its initial bytes so the
+// real FFmpeg process remains observable while the idle reaper runs.
+func (p *parityMedia) ReadAt(b []byte, off int64) (int, error) {
+	if os.Getenv("ETHER_PARITY_EXPIRY_ONLY") != "1" {
+		return p.File.ReadAt(b, off)
+	}
+	// ReadAt callers may request the whole source in one buffer, starting at
+	// zero. Pace each chunk rather than only calls with a nonzero offset.
+	const chunk = 64 * 1024
+	n := 0
+	for n < len(b) {
+		end := n + chunk
+		if end > len(b) {
+			end = len(b)
+		}
+		if off+int64(n) >= 128*1024 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		read, err := p.File.ReadAt(b[n:end], off+int64(n))
+		n += read
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 func (p *parityMedia) Size() int64                               { return p.size }

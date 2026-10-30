@@ -59,6 +59,22 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 	}
 	sort.Strings(names)
 	result := transcript{ids: ids.Values}
+	if os.Getenv("ETHER_PARITY_INFUSE_ONLY") == "1" {
+		captures, err := infuseDirectResume(ctx, client, base, profiles["appletv"].Headers, ids.Values)
+		if err != nil {
+			return result, err
+		}
+		result.captures = append(result.captures, captures...)
+		return result, nil
+	}
+	if os.Getenv("ETHER_PARITY_EXPIRY_ONLY") == "1" {
+		captures, err := expiryCapture(ctx, client, base, profiles["web"].Headers, ids.Values)
+		if err != nil {
+			return result, err
+		}
+		result.captures = append(result.captures, captures...)
+		return result, nil
+	}
 	if os.Getenv("ETHER_PARITY_IPTV_ONLY") == "1" {
 		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 			for _, name := range names {
@@ -505,6 +521,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			result.captures = append(result.captures, capture{viewer, name, "playback:" + directStopPath, false, stopped})
 			for _, mode := range []struct{ name, query string }{{"remux", "directPlay=0&directStream=1"}, {"transcode", "directPlay=0&directStream=0"}} {
 				session := id + "-" + mode.name
+				h.Set("X-Plex-Session-Identifier", session)
 				decisionPath := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=hls&session=" + session + "&" + mode.query
 				h.Set("Accept", "application/xml")
 				decisionReq := protocol.Request{Method: http.MethodGet, Path: decisionPath, Headers: map[string]http.Header{name: h}}
@@ -570,6 +587,11 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					return result, fmt.Errorf("%s %s %s segment failed: status=%d bytes=%d error=%v", viewer, name, mode.name, segment.Status, len(segment.Body), err)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:segment:" + mode.name, false, segment})
+				seek, gonePath, err := seekAndReconnect(ctx, client, base, viewer, name, mode.name, path, playlistPath, h, viewerIDs[viewer])
+				if err != nil {
+					return result, err
+				}
+				result.captures = append(result.captures, seek...)
 				ping := "/video/:/transcode/universal/ping?session=" + session
 				req.Path = ping
 				response, err = strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
@@ -577,6 +599,11 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					return result, fmt.Errorf("%s %s %s ping failed: status=%d error=%v", viewer, name, mode.name, response.Status, err)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:" + ping, false, response})
+				lifecycle, err := timelineLifecycle(ctx, client, base, viewer, name, "hls-"+mode.name, session, gonePath, h, viewerIDs[viewer])
+				if err != nil {
+					return result, err
+				}
+				result.captures = append(result.captures, lifecycle...)
 				stop := "/video/:/transcode/universal/stop?session=" + session
 				req.Path = stop
 				response, err = strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
@@ -586,6 +613,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				result.captures = append(result.captures, capture{viewer, name, "playback:" + stop, false, response})
 			}
 			dashSession := id + "-dash"
+			h.Set("X-Plex-Session-Identifier", dashSession)
 			dashDecisionPath := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=dash&session=" + dashSession + "&directPlay=0&directStream=1"
 			h.Set("Accept", "application/xml")
 			dashDecisionReq := protocol.Request{Method: http.MethodGet, Path: dashDecisionPath, Headers: map[string]http.Header{name: h}}
@@ -610,6 +638,17 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:dash:" + part, false, response})
 			}
+			dashReq.Path = "/video/:/transcode/universal/ping?session=" + dashSession
+			pinged, err := strictFetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
+			if err != nil || pinged.Status != http.StatusOK {
+				return result, fmt.Errorf("%s %s DASH ping: status=%d error=%v", viewer, name, pinged.Status, err)
+			}
+			result.captures = append(result.captures, capture{viewer, name, "playback:dash:ping", false, pinged})
+			lifecycle, err := timelineLifecycle(ctx, client, base, viewer, name, "dash", dashSession, "/video/:/transcode/universal/session/"+dashSession+"/0/0.m4s", h, viewerIDs[viewer])
+			if err != nil {
+				return result, err
+			}
+			result.captures = append(result.captures, lifecycle...)
 			dashReq.Path = "/video/:/transcode/universal/stop?session=" + dashSession
 			stopped, err = strictFetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
 			if err != nil || stopped.Status != http.StatusOK {
@@ -661,6 +700,16 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			}
 		}
 	}
+	isolated, err := collidingClientSessions(ctx, client, base, profiles["web"].Headers, viewerIDs)
+	if err != nil {
+		return result, err
+	}
+	result.captures = append(result.captures, isolated...)
+	infuse, err := infuseDirectResume(ctx, client, base, profiles["appletv"].Headers, viewerIDs["owner"])
+	if err != nil {
+		return result, err
+	}
+	result.captures = append(result.captures, infuse...)
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 		for _, name := range names {
 			events, err := notificationCapture(ctx, client, base, viewer, name, viewerIDs[viewer]["movieKey"], profiles[name].Headers)
