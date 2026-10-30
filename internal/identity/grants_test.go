@@ -114,6 +114,10 @@ func TestGrantReferenceRevalidatesSurfaceMembershipAndExpiry(t *testing.T) {
 	if err = g.ValidateGrantReference(ctx, "stremio", ref, 1); err != nil {
 		t.Fatal(err)
 	}
+	expires, err := g.GrantReferenceExpiry(ctx, "stremio", ref, 1)
+	if err != nil || !expires.Equal(now.Add(time.Hour)) {
+		t.Fatalf("grant expiry %v: %v", expires, err)
+	}
 	for _, tc := range []struct {
 		surface, ref string
 		viewer       int64

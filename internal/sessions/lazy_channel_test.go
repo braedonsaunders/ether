@@ -134,6 +134,13 @@ func TestLazyChannelRechecksGrantAndProgrammeForEveryResource(t *testing.T) {
 	for n := 0; n < cap(broker.startSlots); n++ {
 		<-broker.startSlots
 	}
+	// A live HLS session must survive beyond the original one-hour URL TTL.
+	for n := 0; n < 7; n++ {
+		now = now.Add(30 * time.Minute)
+		if w = serve(http.MethodGet, segment); w.Code != http.StatusOK || live.tunes.Load() != 2 {
+			t.Fatalf("segment after %s: status=%d tunes=%d", time.Duration(n+1)*30*time.Minute, w.Code, live.tunes.Load())
+		}
+	}
 	live.allowed.Store(false)
 	if w = serve(http.MethodGet, segment); w.Code != 404 {
 		t.Fatalf("programme policy bypass %d", w.Code)

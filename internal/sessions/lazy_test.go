@@ -135,6 +135,18 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if pb.prepares != 1 || len(pb.Sessions()) != 1 {
 		t.Fatalf("handler recreation opened another session: %d", pb.prepares)
 	}
+	// Range playback remains authorized over three hours without opening a
+	// second session; each request slides only the capability, not the grant.
+	for n := 0; n < 7; n++ {
+		now = now.Add(30 * time.Minute)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.Header.Set("Range", "bytes=0-2")
+		lazy.ServeHTTP(w, r)
+		if w.Code != http.StatusOK || pb.prepares != 1 {
+			t.Fatalf("range after %s: status=%d prepares=%d", time.Duration(n+1)*30*time.Minute, w.Code, pb.prepares)
+		}
+	}
 	var serialized string
 	if err := db.QueryRow(`SELECT request FROM sessions_lazy_streams LIMIT 1`).Scan(&serialized); err != nil {
 		t.Fatal(err)
@@ -258,7 +270,13 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	grants.revoked = false
 	grants.revokeAt = 0
 	grants.mu.Unlock()
-	now = now.Add(time.Hour)
+	now = now.Add(30 * time.Minute)
+	idleHead := httptest.NewRecorder()
+	lazy.ServeHTTP(idleHead, httptest.NewRequest(http.MethodHead, path, nil))
+	if idleHead.Code != http.StatusOK {
+		t.Fatalf("idle HEAD status %d", idleHead.Code)
+	}
+	now = now.Add(30 * time.Minute)
 	expired := httptest.NewRecorder()
 	lazy.ServeHTTP(expired, httptest.NewRequest(http.MethodGet, path, nil))
 	if expired.Code != http.StatusNotFound {
@@ -363,5 +381,52 @@ func TestAuthenticatedLazyConflictAndExpiry(t *testing.T) {
 	}
 	if pb.prepares != 0 {
 		t.Fatal("issuing or expiring capabilities opened playback")
+	}
+}
+
+type expiringLazyGrants struct {
+	*fakeLazyGrants
+	expires time.Time
+}
+
+func (g *expiringLazyGrants) GrantReferenceExpiry(ctx context.Context, surface, ref string, viewer int64) (time.Time, error) {
+	if err := g.ValidateGrantReference(ctx, surface, ref, viewer); err != nil {
+		return time.Time{}, err
+	}
+	return g.expires, nil
+}
+
+func TestLazyRenewalRespectsGrantAndDatabase(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Now().Truncate(time.Millisecond)
+	grant := &expiringLazyGrants{fakeLazyGrants: &fakeLazyGrants{}, expires: now.Add(20 * time.Minute)}
+	broker := &Broker{deps: BrokerDeps{Now: func() time.Time { return now }}, lazySessions: map[string]lazySession{"hash": {id: "session", expires: now.Add(time.Minute).UnixMilli()}}}
+	streams := &lazyStreams{db: db, broker: broker, protocol: "stremio", grants: grant, ttl: time.Hour}
+	if _, err := db.Exec(`INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?)`, "hash", "stremio", 1, "grant-reference", "{}", now.Add(time.Minute).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err != nil {
+		t.Fatal(err)
+	}
+	var expires int64
+	if err := db.QueryRow(`SELECT expires FROM sessions_lazy_streams WHERE hash=?`, "hash").Scan(&expires); err != nil || expires != grant.expires.UnixMilli() {
+		t.Fatalf("expiry=%d grant=%d err=%v", expires, grant.expires.UnixMilli(), err)
+	}
+	grant.revoked = true
+	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err == nil {
+		t.Fatal("renewed revoked grant")
+	}
+	grant.revoked = false
+	now = grant.expires
+	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err == nil {
+		t.Fatal("renewed expired capability or grant")
+	}
+	now = now.Add(-time.Minute)
+	if _, err := db.Exec(`DROP TABLE sessions_lazy_streams`); err != nil {
+		t.Fatal(err)
+	}
+	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err == nil {
+		t.Fatal("renewed during database failure")
 	}
 }

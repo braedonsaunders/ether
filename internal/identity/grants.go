@@ -221,27 +221,34 @@ func (g *Grants) GrantReference(ctx context.Context, surface, credential string)
 // ValidateGrantReference rechecks the shared grant and active membership for
 // a scoped capability. Unlike Resolve, it does not extend the grant lifetime.
 func (g *Grants) ValidateGrantReference(ctx context.Context, surface, reference string, viewerID int64) error {
+	_, err := g.GrantReferenceExpiry(ctx, surface, reference, viewerID)
+	return err
+}
+
+// GrantReferenceExpiry validates a reference without extending the underlying
+// grant and returns its current absolute expiry.
+func (g *Grants) GrantReferenceExpiry(ctx context.Context, surface, reference string, viewerID int64) (time.Time, error) {
 	decoded, err := hex.DecodeString(reference)
 	if err != nil || len(decoded) != sha256.Size || hex.EncodeToString(decoded) != reference || surface == "" || viewerID <= 0 {
-		return core.ErrUnauthorized
+		return time.Time{}, core.ErrUnauthorized
 	}
-	var id int64
-	err = g.db.QueryRowContext(ctx, `SELECT g.viewer_id FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, reference, surface, viewerID, g.now().UnixMilli()).Scan(&id)
+	var id, expires int64
+	err = g.db.QueryRowContext(ctx, `SELECT g.viewer_id,g.expires FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.revoked=0 AND g.expires>? AND u.active=1 AND (u.origin<>'dlna_guest' OR g.surface='dlna')`, reference, surface, viewerID, g.now().UnixMilli()).Scan(&id, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
-		return core.ErrUnauthorized
+		return time.Time{}, core.ErrUnauthorized
 	}
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	viewer, err := g.viewers.ActiveUser(ctx, id)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if viewer == nil || viewer.ID != viewerID {
-		return core.ErrUnauthorized
+		return time.Time{}, core.ErrUnauthorized
 	}
 	_ = g.times.Observe(ctx, viewer.ID)
-	return nil
+	return time.UnixMilli(expires), nil
 }
 
 // RevokeGrant, RevokeDevice and RevokeViewer invalidate credentials without

@@ -41,7 +41,8 @@ type lazyStreams struct {
 }
 
 // NewLazyStreams creates a surface-bound durable, reusable capability issuer.
-// Capabilities live at most one hour and are revalidated on every request.
+// Capabilities expire after at most one hour of inactivity and are
+// revalidated on every request.
 func NewLazyStreams(db *sql.DB, b *Broker, protocol frontend.Protocol, grants LazyGrants, ttl time.Duration, remote func(*http.Request) bool) (frontend.LazyStreams, error) {
 	if db == nil || b == nil || protocol == "" || grants == nil || remote == nil {
 		return nil, errors.New("sessions: missing lazy stream dependency")
@@ -120,8 +121,23 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 		token = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	}
 	now := s.broker.deps.Now()
+	expires := now.Add(s.ttl)
+	if expiring, ok := s.grants.(interface {
+		GrantReferenceExpiry(context.Context, string, string, int64) (time.Time, error)
+	}); ok {
+		grantExpiry, err := expiring.GrantReferenceExpiry(ctx, string(s.protocol), ref, viewer.ID)
+		if err != nil {
+			return "", core.ErrUnauthorized
+		}
+		if !grantExpiry.IsZero() && grantExpiry.Before(expires) {
+			expires = grantExpiry
+		}
+	}
+	if !expires.After(now) {
+		return "", core.ErrUnauthorized
+	}
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions_lazy_streams WHERE expires<=?`, now.UnixMilli())
-	result, err := s.db.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), now.Add(s.ttl).UnixMilli())
+	result, err := s.db.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), expires.UnixMilli())
 	if err != nil {
 		return "", err
 	}
@@ -142,7 +158,7 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 		if oldRef != ref || oldViewer != viewer.ID || json.Unmarshal([]byte(oldRaw), &previous) != nil || !sameLazyDecision(previous, req) {
 			return "", core.ErrNotAvailable
 		}
-		result, err = s.db.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND request=? AND expires>?`, now.Add(s.ttl).UnixMilli(), lazyHash(token), string(s.protocol), oldRaw, now.UnixMilli())
+		result, err = s.db.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND request=? AND expires>?`, expires.UnixMilli(), lazyHash(token), string(s.protocol), oldRaw, now.UnixMilli())
 		if err != nil {
 			return "", err
 		}
@@ -153,7 +169,7 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 	if stable {
 		s.broker.mu.Lock()
 		if entry, ok := s.broker.lazySessions[lazyHash(token)]; ok {
-			entry.expires = now.Add(s.ttl).UnixMilli()
+			entry.expires = expires.UnixMilli()
 			s.broker.lazySessions[lazyHash(token)] = entry
 		}
 		s.broker.mu.Unlock()
@@ -386,7 +402,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
+	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil || s.renewActive(ctx, hash, reference, viewerID, id) != nil {
 		if opened {
 			if s.discardOpened(ctx, access, id) {
 				reserved = false // retry worker owns the reservation
@@ -439,6 +455,42 @@ func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// renewActive is called only after a GET has established or found a session
+// and passed grant, viewer and current media policy checks. HEAD probes never
+// keep an abandoned capability alive. The issuing grant is never extended.
+func (s *lazyStreams) renewActive(ctx context.Context, hash, reference string, viewerID int64, sessionID string) error {
+	now := s.broker.deps.Now()
+	until := now.Add(s.ttl)
+	if expiring, ok := s.grants.(interface {
+		GrantReferenceExpiry(context.Context, string, string, int64) (time.Time, error)
+	}); ok {
+		grantExpiry, err := expiring.GrantReferenceExpiry(ctx, string(s.protocol), reference, viewerID)
+		if err != nil {
+			return err
+		}
+		if !grantExpiry.IsZero() && grantExpiry.Before(until) {
+			until = grantExpiry
+		}
+	}
+	if !until.After(now) {
+		return core.ErrUnauthorized
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND viewer_id=? AND grant_reference=? AND expires>?`, until.UnixMilli(), hash, string(s.protocol), viewerID, reference, now.UnixMilli())
+	if err != nil {
+		return err
+	}
+	if n, err := result.RowsAffected(); err != nil || n != 1 {
+		return core.ErrUnauthorized
+	}
+	s.broker.mu.Lock()
+	if entry, ok := s.broker.lazySessions[hash]; ok && entry.id == sessionID {
+		entry.expires = until.UnixMilli()
+		s.broker.lazySessions[hash] = entry
+	}
+	s.broker.mu.Unlock()
+	return nil
 }
 
 func validLazyTail(tail string) bool {
