@@ -322,6 +322,17 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	if i.protocol == "emby" {
 		i.embyMediaSourceDTO(source, wireID, media)
 	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinMediaSourceDTO(source, media, channel != "")
+		if body.DeviceProfile.AlwaysUseMostCompatibleTranscodingProfile {
+			source["UseMostCompatibleTranscodingProfile"] = true
+		}
+		if name, _ := source["Name"].(string); name == "" && key != 0 && i.host.Experience != nil {
+			if detail, err := i.host.Experience.Item(i.identityContext(r), frontend.ItemRequest{Viewer: v, Device: dev, Key: key}); err == nil && detail.Title.Title != "" {
+				source["Name"] = detail.Title.Title
+			}
+		}
+	}
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
 }
 

@@ -17,6 +17,9 @@ func (i *instance) defaultMediaSource(r *http.Request, viewer *frontend.Viewer, 
 	if i.protocol == "emby" {
 		i.embyMediaSourceDTO(source, ids.RatingKeyGUID(key), frontend.MediaInfo{Estimated: true})
 	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinMediaSourceDTO(source, frontend.MediaInfo{Estimated: true}, false)
+	}
 	if i.host.Sessions == nil || i.host.Capabilities == nil {
 		return source
 	}

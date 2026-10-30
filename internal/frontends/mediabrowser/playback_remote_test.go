@@ -57,6 +57,15 @@ func TestPlaybackInfoReportsEtherProducedSourcesAsLocal(t *testing.T) {
 				if strings.Contains(w.Body.String(), `"HasSegments":true`) {
 					t.Fatal("session markers were attributed to an unrelated source", w.Body.String())
 				}
+				if protocol == "jellyfin" && !strings.Contains(w.Body.String(), `"UseMostCompatibleTranscodingProfile":false`) {
+					t.Fatal(w.Body.String())
+				}
+				if protocol == "emby" && strings.Contains(w.Body.String(), "UseMostCompatibleTranscodingProfile") {
+					t.Fatal(w.Body.String())
+				}
+				if strings.Contains(w.Body.String(), `"VideoType"`) {
+					t.Fatal("empty media claimed a video file", w.Body.String())
+				}
 				spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", protocol, "")
 				if os.IsNotExist(err) {
 					return

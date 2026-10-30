@@ -63,15 +63,16 @@ type CodecProfile struct {
 	ApplyConditions []ProfileCondition `json:"ApplyConditions"`
 }
 type DeviceProfile struct {
-	DirectPlayProfiles               []DirectPlayProfile  `json:"DirectPlayProfiles"`
-	TranscodingProfiles              []TranscodingProfile `json:"TranscodingProfiles"`
-	SubtitleProfiles                 []SubtitleProfile    `json:"SubtitleProfiles"`
-	ContainerProfiles                []ContainerProfile   `json:"ContainerProfiles"`
-	CodecProfiles                    []CodecProfile       `json:"CodecProfiles"`
-	MaxStreamingBitrate              int                  `json:"MaxStreamingBitrate"`
-	MaxStaticBitrate                 int                  `json:"MaxStaticBitrate"`
-	MusicStreamingTranscodingBitrate int                  `json:"MusicStreamingTranscodingBitrate"`
-	MaxStaticMusicBitrate            int                  `json:"MaxStaticMusicBitrate"`
+	DirectPlayProfiles                        []DirectPlayProfile  `json:"DirectPlayProfiles"`
+	TranscodingProfiles                       []TranscodingProfile `json:"TranscodingProfiles"`
+	SubtitleProfiles                          []SubtitleProfile    `json:"SubtitleProfiles"`
+	ContainerProfiles                         []ContainerProfile   `json:"ContainerProfiles"`
+	CodecProfiles                             []CodecProfile       `json:"CodecProfiles"`
+	MaxStreamingBitrate                       int                  `json:"MaxStreamingBitrate"`
+	AlwaysUseMostCompatibleTranscodingProfile bool                 `json:"AlwaysUseMostCompatibleTranscodingProfile"`
+	MaxStaticBitrate                          int                  `json:"MaxStaticBitrate"`
+	MusicStreamingTranscodingBitrate          int                  `json:"MusicStreamingTranscodingBitrate"`
+	MaxStaticMusicBitrate                     int                  `json:"MaxStaticMusicBitrate"`
 }
 
 // DeviceInfo is the neutral subset of a Silo or other client's declaration.

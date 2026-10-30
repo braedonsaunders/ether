@@ -298,3 +298,28 @@ func TestSessionBusyReturnsRetryAfterOnPlaybackAndStream(t *testing.T) {
 		}
 	}
 }
+
+func TestJellyfinPlaybackInfoNamesProbedVideoSource(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	no := false
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie", Title: "Buck Bunny"}}, nil
+	}}
+	sessions := frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", DolbyVisionConfigurationPresent: &no, HDR10Plus: &no}, {Type: "audio", Language: "eng"}}}, Decision: frontend.Decision{Kind: "directplay"}, DirectPlay: true}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Sessions: sessions, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":false,"DeviceProfile":{"AlwaysUseMostCompatibleTranscodingProfile":true}}`))
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	for _, want := range []string{`"Name":"Buck Bunny"`, `"VideoType":"VideoFile"`, `"UseMostCompatibleTranscodingProfile":true`, `"VideoRange":"SDR"`, `"LocalizedLanguage":"English"`} {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
+			t.Fatal(want, w.Code, w.Body.String())
+		}
+	}
+}

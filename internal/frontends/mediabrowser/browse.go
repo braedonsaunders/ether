@@ -329,6 +329,14 @@ func (i *instance) browseRoutes() error {
 				if i.protocol == "emby" {
 					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)
 				}
+				if i.protocol == "jellyfin" {
+					i.jellyfinMediaSourceDTO(source, version.Media, false)
+					if name, _ := source["Name"].(string); name == "" {
+						if itemName, ok := dto["Name"].(string); ok && itemName != "" {
+							source["Name"] = itemName
+						}
+					}
+				}
 				sources = append(sources, source)
 			}
 			if needDefault {
