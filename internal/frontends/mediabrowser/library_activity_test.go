@@ -91,3 +91,54 @@ func TestSwiftfinLatestAndResumeIgnoreHomeRows(t *testing.T) {
 		}
 	}
 }
+
+type groupedActivityFake struct {
+	*activityFake
+	groupCalls []bool
+}
+
+func (f *groupedActivityFake) LatestAddedGrouped(ctx context.Context, v *frontend.Viewer, d frontend.Device, view string, limit int, group bool) ([]frontend.LatestItem, error) {
+	f.groupCalls = append(f.groupCalls, group)
+	rows, err := f.LatestAdded(ctx, v, d, view, limit)
+	if err == nil && !group && view == "2" {
+		rows[0].Title.Type = "episode"
+		rows[0].Title.Title = "Latest episode"
+	}
+	return rows, err
+}
+
+func TestLatestGroupingAndItemAddedDate(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		front frontend.Frontend
+	}{{"jellyfin", Jellyfin{MachineID: "test"}}, {"emby", Emby{MachineID: "test"}}} {
+		viewer := &frontend.Viewer{ID: 1}
+		exp := &groupedActivityFake{activityFake: &activityFake{viewer: viewer}}
+		identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+		inst, err := tc.front.Mount(context.Background(), frontend.Host{Identity: identity, Experience: exp})
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, _ := ids.GUID(ids.View, 2)
+		for _, v := range []struct{ query, name string }{{"", "Latest series"}, {"&GroupItems=false", "Latest episode"}} {
+			r := httptest.NewRequest("GET", "/Items/Latest?limit=20&ParentId="+view+v.query, nil)
+			r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
+			w := httptest.NewRecorder()
+			inst.Handler().ServeHTTP(w, r)
+			if w.Code != 200 || !strings.Contains(w.Body.String(), v.name) {
+				t.Fatal(tc.name, w.Code, w.Body.String())
+			}
+		}
+		if len(exp.groupCalls) != 2 || !exp.groupCalls[0] || exp.groupCalls[1] {
+			t.Fatal(tc.name, exp.groupCalls)
+		}
+		i := inst.(*instance)
+		at := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+		if dto := i.itemDTO(frontend.Title{Key: 5, Type: "movie", AddedAt: at}, frontend.WatchStatus{}); dto["DateCreated"] != wireTime(at) {
+			t.Fatal(tc.name, dto)
+		}
+		if dto := i.itemDTO(frontend.Title{Key: 5, Type: "movie"}, frontend.WatchStatus{}); dto["DateCreated"] != nil {
+			t.Fatal(tc.name, dto)
+		}
+	}
+}

@@ -63,12 +63,27 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 	added := map[frontend.RatingKey]any{}
 	if latest {
 		groups := route.Query(r.URL.Query(), "GroupItems")
-		if len(groups) > 1 || (len(groups) == 1 && !queryBool(r, "GroupItems", true)) {
-			http.Error(w, "Unsupported grouping", http.StatusBadRequest)
+		if len(groups) > 1 {
+			http.Error(w, "Invalid grouping", http.StatusBadRequest)
 			return
 		}
-		rows, e := service.LatestAdded(r.Context(), viewer, device(r), view, count)
-		err = e
+		group := true
+		if len(groups) == 1 {
+			group, err = strconv.ParseBool(groups[0])
+			if err != nil {
+				http.Error(w, "Invalid grouping", http.StatusBadRequest)
+				return
+			}
+		}
+		var rows []frontend.LatestItem
+		if grouped, ok := i.host.Experience.(frontend.LibraryActivityGrouping); ok {
+			rows, err = grouped.LatestAddedGrouped(r.Context(), viewer, device(r), view, count, group)
+		} else if group {
+			rows, err = service.LatestAdded(r.Context(), viewer, device(r), view, count)
+		} else {
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		for _, row := range rows {
 			titles = append(titles, row.Title)
 			if row.AddedAt != nil {
