@@ -27,7 +27,7 @@ func (b *Broker) ScorecardSessions(ctx context.Context) []ScorecardSession {
 	}
 	b.mu.Unlock()
 	for n := range rows {
-		hs, ok := b.TranscodeFor(ctx, rows[n].ID)
+		hs, ok := b.TranscodeFor(ctx, rows[n].PlaybackID)
 		if !ok {
 			continue
 		}

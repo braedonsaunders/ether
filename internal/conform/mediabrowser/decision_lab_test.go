@@ -204,7 +204,7 @@ func TestLabPlaybackDecisions(t *testing.T) {
 					}
 				}
 
-				if observed.Format == "hls" && targetSource.TranscodingURL != "" {
+				if targetDelivery == "transcode" && targetSource.TranscodingURL != "" {
 					if err = target.readHLS(targetSource.TranscodingURL); err != nil {
 						t.Fatal("could not observe HLS stream", err)
 					}
@@ -213,6 +213,7 @@ func TestLabPlaybackDecisions(t *testing.T) {
 						t.Fatal("missing active broker diagnostic", err)
 					}
 				}
+				t.Logf("observed format=%s transcoder_active=%t transcoder=%+v", observed.Format, observed.TranscoderActive, observed.Transcoder)
 				if refDelivery == "direct" {
 					if targetDelivery != "direct" {
 						t.Error("client requests transcoding from Ether where it requests direct delivery from Jellyfin")
@@ -411,12 +412,20 @@ func (s *decisionLabServer) readHLS(path string) error {
 		if err != nil {
 			return fmt.Errorf("stream request failed")
 		}
-		data, e := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		data, e := io.ReadAll(io.LimitReader(response.Body, 32<<20))
 		response.Body.Close()
 		if e != nil || response.StatusCode != 200 {
 			return fmt.Errorf("stream response unavailable")
 		}
+		if len(data) == 0 || len(data) == 32<<20 {
+			return fmt.Errorf("empty or oversized stream response")
+		}
 		if !bytes.HasPrefix(data, []byte("#EXTM3U")) {
+			if path := os.Getenv("SCORECARD_SEGMENT_EVIDENCE"); path != "" {
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					return fmt.Errorf("cannot retain segment")
+				}
+			}
 			return nil
 		}
 		found := ""
