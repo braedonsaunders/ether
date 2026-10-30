@@ -313,6 +313,24 @@ func TestDesignerHasOnePersistentLayout(t *testing.T) {
 	}
 }
 
+func TestNeutralHomeKeepsFullLibraryBackfill(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	newer := core.Title{Key: core.MovieKey(11), Title: "Newer", Released: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)}
+	older := core.Title{Key: core.MovieKey(12), Title: "Older", Released: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)}
+	candidates := []core.NeutralHomeRow{
+		{ID: "home.continue", Title: "Continue Watching", Kind: "continue-watching", Purpose: "continue", Items: []core.Title{{Key: core.MovieKey(1)}}},
+		{ID: "library.recent.1", Title: "Recently Added Movies", Kind: "recentlyAdded", Purpose: "recentlyAdded", Items: []core.Title{newer, older}},
+	}
+	got, err := h.e.FinalizeNeutralHome(ctx, &core.User{ID: 1}, core.HomeSituation{Now: testNow, Device: core.DeviceTV}, "home", candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1].ID != "library.recent.1" || len(got[1].Items) != 2 || got[1].Items[0].Key != newer.Key || got[1].Items[1].Key != older.Key {
+		t.Fatalf("backfill = %+v", got)
+	}
+}
+
 func TestNeutralHomeLayoutMatchesLegacy(t *testing.T) {
 	h := newHarness(t, nil)
 	ctx := context.Background()

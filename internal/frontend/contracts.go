@@ -30,6 +30,7 @@ const (
 	RowContinue         RowPurpose = "continue"
 	RowNextUp           RowPurpose = "nextUp"
 	RowRecentlyReleased RowPurpose = "recentlyReleased"
+	RowRecentlyAdded    RowPurpose = "recentlyAdded"
 	RowCollection       RowPurpose = "collection"
 	RowRecommendation   RowPurpose = "recommendation"
 	RowLive             RowPurpose = "live"

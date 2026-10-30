@@ -170,7 +170,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
-	rows, err := experience.NewRowsService(experience.RowServiceDeps{Source: source, Visibility: vis, Receipts: receipts, RankedSource: true, Active: func(ctx context.Context, u *core.User) bool {
+	rows, err := experience.NewRowsService(experience.RowServiceDeps{Source: source, Visibility: vis, Receipts: receipts, RankedSource: true, HomeFallback: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+		return a.experienceHomeFallback(ctx, req, libs, vis)
+	}, Active: func(ctx context.Context, u *core.User) bool {
 		v, e := a.users.ActiveUser(ctx, u.ID)
 		return e == nil && v != nil
 	}, AllowRow: func(ctx context.Context, u *core.User, row frontend.Row) bool {
