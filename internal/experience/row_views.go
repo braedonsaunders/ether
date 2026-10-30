@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -100,6 +101,23 @@ func rowViewToken() (string, error) {
 	b[8] = b[8]&0x3f | 0x80
 	h := hex.EncodeToString(b[:])
 	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:], nil
+}
+
+func normalizeRowViewID(id string) string {
+	if len(id) == 36 {
+		if id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
+			return ""
+		}
+		id = strings.ReplaceAll(id, "-", "")
+	}
+	if len(id) != 32 {
+		return ""
+	}
+	raw, err := hex.DecodeString(id)
+	if err != nil || raw[6]>>4 != 4 || raw[8]>>6 != 2 {
+		return ""
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[:4], raw[4:6], raw[6:8], raw[8:10], raw[10:])
 }
 
 func (s *RowViewService) viewer(ctx context.Context, v *core.User, d core.Device, p core.Protocol) (*core.User, error) {
@@ -360,6 +378,7 @@ func (s *RowViewService) loadManifest(ctx context.Context, req frontend.RowViewR
 
 func (s *RowViewService) ResolveRowView(ctx context.Context, req frontend.RowViewPageRequest) (frontend.RowViewPage, error) {
 	var page frontend.RowViewPage
+	req.ID = normalizeRowViewID(req.ID)
 	u, err := s.viewer(ctx, req.Viewer, req.Device, req.Protocol)
 	if err != nil {
 		return page, err

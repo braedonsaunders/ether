@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,6 +74,20 @@ func TestRowViewsScopedStablePagedAndReauthorized(t *testing.T) {
 		t.Fatal(again, err)
 	}
 	query := frontend.RowViewPageRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", ID: views[0].ID, Offset: 1, Limit: 1, Kinds: []frontend.RowEntryKind{frontend.RowEntryTitle}}
+	for _, variant := range []string{strings.ToUpper(views[0].ID), strings.ReplaceAll(views[0].ID, "-", ""), strings.ToUpper(strings.ReplaceAll(views[0].ID, "-", ""))} {
+		alternate := query
+		alternate.ID = variant
+		if got, e := otherNode.ResolveRowView(ctx, alternate); e != nil || len(got.Entries) != 1 || got.Entries[0].Title.Key != core.MovieKey(3) {
+			t.Fatalf("UUID variant %q: %+v %v", variant, got, e)
+		}
+	}
+	for _, invalid := range []string{"not-a-uuid", "00000000-0000-1000-8000-000000000000", "00000000-0000-4000-0000-000000000000"} {
+		alternate := query
+		alternate.ID = invalid
+		if _, e := otherNode.ResolveRowView(ctx, alternate); !errors.Is(e, ErrRowViewNotFound) {
+			t.Fatalf("invalid UUID %q: %v", invalid, e)
+		}
+	}
 	firstPage := query
 	firstPage.Offset = 0
 	if first, e := otherNode.ResolveRowView(ctx, firstPage); e != nil || !first.More || !first.Truncated {
