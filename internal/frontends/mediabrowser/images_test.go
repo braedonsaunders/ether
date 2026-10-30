@@ -25,7 +25,13 @@ func (f *imageBatchFake) IssueBatch(_ context.Context, request frontend.ImageBat
 	}
 	f.batches++
 	if f.batches == 1 {
-		return []frontend.ImageBatchItem{{Item: request.Items[0], Authoritative: true, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster, Width: 600, Height: 300, BlurHash: "gridhash"}, Secret: "scoped-poster"}, {Image: frontend.Image{Kind: frontend.ImageBackdrop}, Secret: "scoped-backdrop"}}}, {Item: request.Items[1], Authoritative: false, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "untrusted"}}}}, nil
+		images := []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster, Width: 600, Height: 300, BlurHash: "gridhash"}, Secret: "scoped-poster"}, {Image: frontend.Image{Kind: frontend.ImageBackdrop}, Secret: "scoped-backdrop"}}
+		for _, kind := range request.Kinds {
+			if kind == frontend.ImageLogo {
+				images = append(images, frontend.GrantedImage{Image: frontend.Image{Kind: frontend.ImageLogo, BlurHash: "logohash"}, Secret: "scoped-logo"})
+			}
+		}
+		return []frontend.ImageBatchItem{{Item: request.Items[0], Authoritative: true, Images: images}, {Item: request.Items[1], Authoritative: false, Images: []frontend.GrantedImage{{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "untrusted"}}}}, nil
 	}
 	return nil, nil
 }
@@ -44,6 +50,9 @@ func TestGridArtworkUsesBoundedAuthorizedBatches(t *testing.T) {
 		t.Fatal(grants.batches, images)
 	}
 	if images[keys[0]]["PrimaryImageAspectRatio"] != float64(2) || images[keys[0]]["ImageBlurHashes"].(map[string]any)["Primary"].(map[string]string)["scoped-poster"] != "gridhash" {
+		t.Fatal(images)
+	}
+	if images[keys[0]]["ImageTags"].(map[string]string)["Logo"] != "scoped-logo" || images[keys[0]]["ImageBlurHashes"].(map[string]any)["Logo"].(map[string]string)["scoped-logo"] != "logohash" {
 		t.Fatal(images)
 	}
 }

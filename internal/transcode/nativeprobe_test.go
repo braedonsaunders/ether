@@ -73,6 +73,140 @@ func TestProbeSourceMatchesRecordedFFprobe(t *testing.T) {
 	}
 }
 
+func TestMP4ProbePublishesContainerFacts(t *testing.T) {
+	check := func(name string, index int, tag, pix, timeBase string, nal int, rate float64, title string) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("testdata", "nativeprobe", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := ProbeSource(context.Background(), bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index >= len(got.Streams) {
+			t.Fatalf("%s stream %d missing", name, index)
+		}
+		s := got.Streams[index]
+		if s.CodecTag != tag || s.PixelFormat != pix || s.TimeBase != timeBase || s.Title != title {
+			t.Fatalf("%s stream %d tag=%q pix=%q time=%q title=%q", name, index, s.CodecTag, s.PixelFormat, s.TimeBase, s.Title)
+		}
+		if nal == 0 {
+			if s.NALLengthSize != nil {
+				t.Fatalf("%s stream %d nal %v", name, index, *s.NALLengthSize)
+			}
+		} else if s.NALLengthSize == nil || *s.NALLengthSize != nal {
+			t.Fatalf("%s stream %d nal %v", name, index, s.NALLengthSize)
+		}
+		if rate == 0 {
+			if s.AverageFrameRate != nil || s.ReferenceFrameRate != nil {
+				t.Fatalf("%s stream %d has a frame rate", name, index)
+			}
+		} else if s.AverageFrameRate == nil || s.ReferenceFrameRate == nil || *s.AverageFrameRate != rate || *s.ReferenceFrameRate != rate {
+			t.Fatalf("%s stream %d rates %v %v", name, index, s.AverageFrameRate, s.ReferenceFrameRate)
+		}
+		if s.ReferenceFrames != nil {
+			t.Fatalf("%s stream %d invented ref frames %d", name, index, *s.ReferenceFrames)
+		}
+	}
+	check("h264_aac_movtext_faststart.mp4", 0, "avc1", "yuv420p", "1/24000", 4, 24000.0/1001, "")
+	check("h264_aac_movtext_faststart.mp4", 1, "mp4a", "", "1/48000", 0, 0, "")
+	check("hevc_hdr10_eac3_ac3_moovtail.mp4", 0, "hvc1", "yuv420p10le", "1/12288", 0, 24, "")
+	check("hevc_hdr10_eac3_ac3_moovtail.mp4", 2, "ac-3", "", "1/48000", 0, 0, "")
+}
+
+func TestMP4ProbeLeavesVariableTimingUnrated(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "nativeprobe", "h264_aac_movtext_faststart.mp4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stts := bytes.Index(data, []byte("stts"))
+	if stts < 4 {
+		t.Fatal("no stts")
+	}
+	stts -= 4
+	old := int(binary.BigEndian.Uint32(data[stts:]))
+	if old != 24 {
+		t.Fatalf("video stts size %d", old)
+	}
+	next := make([]byte, 32)
+	binary.BigEndian.PutUint32(next[0:], 32)
+	copy(next[4:], "stts")
+	binary.BigEndian.PutUint32(next[12:], 2)
+	binary.BigEndian.PutUint32(next[16:], 6)
+	binary.BigEndian.PutUint32(next[20:], 1001)
+	binary.BigEndian.PutUint32(next[24:], 6)
+	binary.BigEndian.PutUint32(next[28:], 2002)
+	rewritten := append(append(append([]byte{}, data[:stts]...), next...), data[stts+old:]...)
+	for _, at := range boxAncestors(data, stts+8) {
+		if at == stts {
+			continue
+		}
+		binary.BigEndian.PutUint32(rewritten[at:], binary.BigEndian.Uint32(rewritten[at:])+8)
+	}
+	got, err := ProbeSource(context.Background(), bytes.NewReader(rewritten), int64(len(rewritten)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	video := got.Streams[0]
+	if video.AverageFrameRate != nil || video.ReferenceFrameRate != nil {
+		t.Fatalf("variable timing published rates %v %v", video.AverageFrameRate, video.ReferenceFrameRate)
+	}
+	if video.FrameRate != 22.132 {
+		t.Fatalf("average clock = %v", video.FrameRate)
+	}
+	if video.CodecTag != "avc1" || video.NALLengthSize == nil || *video.NALLengthSize != 4 {
+		t.Fatalf("container facts dropped: %+v", video)
+	}
+}
+
+func TestMP4ProbeRejectsTruncatedBoxesAndParameterSets(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "nativeprobe", "h264_aac_movtext_faststart.mp4"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reject := func(name string, b []byte) {
+		t.Helper()
+		_, err := ProbeSource(context.Background(), bytes.NewReader(b), int64(len(b)))
+		if !errors.Is(err, ErrProbeIncomplete) {
+			t.Errorf("%s: err = %v, want ErrProbeIncomplete", name, err)
+		}
+	}
+	reject("short file", data[:20])
+	cut := append([]byte(nil), data...)
+	binary.BigEndian.PutUint32(cut[0:], 80)
+	reject("short moov", cut)
+	empty := append([]byte(nil), data...)
+	stts := bytes.Index(empty, []byte("stts"))
+	binary.BigEndian.PutUint32(empty[stts+8:], 0)
+	reject("stts with no runs", empty)
+	short := append([]byte(nil), data...)
+	avc := bytes.Index(short, []byte("avcC"))
+	binary.BigEndian.PutUint32(short[avc-4:], 14)
+	reject("truncated avcC", short)
+}
+
+func boxAncestors(b []byte, point int) []int {
+	var out []int
+	var walk func(start, end int)
+	walk = func(start, end int) {
+		for off := start; off+8 <= end; {
+			size := int(binary.BigEndian.Uint32(b[off:]))
+			if size < 8 || off+size > len(b) {
+				return
+			}
+			if off < point && point < off+size {
+				out = append(out, off)
+				walk(off+8, off+size)
+				return
+			}
+			off += size
+		}
+	}
+	walk(0, len(b))
+	return out
+}
+
 // normalizeForNative removes the facts native probing deliberately leaves
 // to later enrichment: frame-header audio bitrates and the DTS/TrueHD/E-AC-3
 // profiles that need audio packets, plus ffprobe's "unknown" transfer.

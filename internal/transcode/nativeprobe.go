@@ -847,30 +847,6 @@ func spsPicture(si *core.StreamInfo, f spsFacts) {
 // containerPicture applies a container's explicit picture facts: H.273
 // primaries and matrix codes (0 or 2 unspecified), full range (-1 unknown)
 // and display size in pixels (0 unknown).
-func sampledPixelFormat(chroma, depth int) string {
-	var base string
-	switch chroma {
-	case 1:
-		base = "yuv420p"
-	case 2:
-		base = "yuv422p"
-	case 3:
-		base = "yuv444p"
-	default:
-		return ""
-	}
-	switch depth {
-	case 8:
-		return base
-	case 10:
-		return base + "10le"
-	case 12:
-		return base + "12le"
-	default:
-		return ""
-	}
-}
-
 func containerPicture(si *core.StreamInfo, primaries, matrix, fullRange, displayW, displayH int) {
 	if n := primariesName(primaries); n != "" {
 		si.ColorPrimaries = n
@@ -915,13 +891,9 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 			return incomplete("h264 SPS: %v", err)
 		}
 		si.BitDepth = f.bitDepth
+		si.PixelFormat = yuvPixFmt(f.chroma, f.bitDepth)
+		si.NALLengthSize = nalLengthSize(p, 4)
 		spsPicture(si, f)
-		if n := int(p[4]&3) + 1; n >= 1 && n <= 4 {
-			si.NALLengthSize = &n
-		}
-		if format := sampledPixelFormat(f.chroma, f.bitDepth); format != "" {
-			si.PixelFormat = format
-		}
 		if transfer == 0 || transfer == 2 {
 			transfer = f.transfer
 		}
@@ -944,6 +916,7 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 			return incomplete("hevc SPS: %v", err)
 		}
 		si.BitDepth = f.bitDepth
+		si.PixelFormat = yuvPixFmt(f.chroma, f.bitDepth)
 		spsPicture(si, f)
 		if transfer == 0 || transfer == 2 {
 			transfer = f.transfer
@@ -968,6 +941,49 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 	default:
 		return incomplete("video codec %s", codec)
 	}
+	return applyTransfer(si, transfer, dovi)
+}
+
+// yuvPixFmt is the ffprobe pixel format for a signalled chroma_format_idc and
+// luma bit depth. Unsignalled or monochrome chroma stays absent.
+func yuvPixFmt(chroma, depth int) string {
+	var base string
+	switch chroma {
+	case 1:
+		base = "yuv420p"
+	case 2:
+		base = "yuv422p"
+	case 3:
+		base = "yuv444p"
+	default:
+		return ""
+	}
+	if depth == 8 {
+		return base
+	}
+	switch depth {
+	case 9, 10, 12, 14, 16:
+		return fmt.Sprintf("%s%dle", base, depth)
+	default:
+		return ""
+	}
+}
+
+// nalLengthSize reads lengthSizeMinusOne from an avcC byte. ffprobe 8.1.3
+// reports that field for these H.264 fixtures and omits it for the HEVC ones,
+// so HEVC stays absent rather than publishing an unread hvcC bit.
+func nalLengthSize(p []byte, offset int) *int {
+	if len(p) <= offset {
+		return nil
+	}
+	n := int(p[offset]&3) + 1
+	if n < 1 || n > 4 {
+		return nil
+	}
+	return &n
+}
+
+func applyTransfer(si *core.StreamInfo, transfer int, dovi []byte) error {
 	si.ColorTransfer = transferName(transfer)
 	if dovi != nil && len(dovi) < 4 {
 		return incomplete("incomplete Dolby Vision configuration")

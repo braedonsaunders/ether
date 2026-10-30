@@ -90,7 +90,9 @@ func (r *bitReader) se() int64 {
 type spsFacts struct {
 	bitDepth int
 	transfer int
-	// chroma is chroma_format_idc. Baseline and Main are 4:2:0.
+	// chroma is chroma_format_idc. H.264 omits it for the 8-bit 4:2:0 profiles,
+	// where the specification default is 1. Zero means monochrome.
+
 	chroma int
 	// VUI picture format; zero when not signalled (fullRange -1).
 	sarNum, sarDen    int
@@ -291,7 +293,8 @@ func hevcSPS(nal []byte) (spsFacts, error) {
 		}
 	}
 	r.ue() // sps_seq_parameter_set_id
-	if r.ue() == 3 {
+	chroma := int(r.ue())
+	if chroma == 3 {
 		r.skip(1) // separate_colour_plane_flag
 	}
 	r.ue() // pic_width_in_luma_samples
@@ -302,7 +305,7 @@ func hevcSPS(nal []byte) (spsFacts, error) {
 		r.ue()
 		r.ue()
 	}
-	f := spsFacts{bitDepth: int(r.ue()) + 8, fullRange: -1}
+	f := spsFacts{bitDepth: int(r.ue()) + 8, fullRange: -1, chroma: chroma}
 	r.ue() // bit_depth_chroma_minus8
 	pocBits := int(r.ue()) + 4
 	ordering := r.flag()
