@@ -128,3 +128,28 @@ func TestLastSourceLateOldSessionCannotReplaceNewSession(t *testing.T) {
 		t.Fatalf("stale session overwrote newer source: %+v %v", got, err)
 	}
 }
+
+func TestLastSourceBecomesUnknownWhenWatchStateAdvances(t *testing.T) {
+	s, _ := newTestState(t)
+	key := core.MovieKey(1)
+	epoch, err := s.BeginSourceSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := core.PlaybackSourceObservation{Revision: "source", VideoCodec: "h264"}
+	if err = s.RecordLastSource(context.Background(), 1, key, epoch, source); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Progress(context.Background(), 1, key, time.Minute, 10*time.Minute, "playing"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.LastSource(context.Background(), 1, key); err != nil || got != nil {
+		t.Fatalf("stale source exposed after progress: %+v %v", got, err)
+	}
+	if err = s.RecordLastSource(context.Background(), 1, key, epoch, source); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.LastSource(context.Background(), 1, key); err != nil || got == nil {
+		t.Fatalf("fresh source missing: %+v %v", got, err)
+	}
+}
