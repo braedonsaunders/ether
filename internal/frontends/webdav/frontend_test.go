@@ -241,3 +241,78 @@ func TestBrowseDistinguishesUnavailableFromMissing(t *testing.T) {
 	fail = false
 	check(http.StatusNotFound)
 }
+
+type authenticatedRanges struct {
+	calls int
+}
+
+func (*authenticatedRanges) Issue(context.Context, string, frontend.PlanRequest) (string, error) {
+	return "", errors.New("unexpected bearer issuance")
+}
+func (*authenticatedRanges) ServeHTTP(http.ResponseWriter, *http.Request) {
+	panic("unexpected bearer serving")
+}
+func (f *authenticatedRanges) ServeAuthenticated(w http.ResponseWriter, r *http.Request, credential string, request frontend.PlanRequest) {
+	f.calls++
+	if credential != "grant" || request.Viewer.ID != 7 || request.Protocol != "webdav" || request.Item != frontend.RatingKey(1000000000000042) || !strings.HasPrefix(request.Device.ID, "webdav-") || !request.Intent.Options.DirectPlay || r.Header.Get("Range") != "bytes=0-2" {
+		http.Error(w, "wrong scope", 500)
+		return
+	}
+	w.WriteHeader(http.StatusPartialContent)
+	_, _ = w.Write([]byte("abc"))
+}
+
+func TestWebDAVGETDelegatesAuthenticatedRanges(t *testing.T) {
+	movie := frontend.Title{Key: frontend.RatingKey(1000000000000042), Type: "movie", Title: "Film", Year: 2024}
+	ranges := &authenticatedRanges{}
+	host := frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
+			if token != "grant" {
+				return nil, errors.New("bad grant")
+			}
+			return &frontend.Viewer{ID: 7}, nil
+		}},
+		Experience: frontendtest.Experience{
+			ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+				return []frontend.View{{ID: "movies", Type: "movie"}}, nil
+			},
+			LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+				return frontend.Page{Items: []frontend.Title{movie}, Total: 1}, nil
+			},
+		},
+		Sessions: frontendtest.Sessions{}, LazyStreams: ranges, Capabilities: frontendtest.Capabilities{},
+		ClientIP: func(*http.Request) (netip.Addr, bool) { return netip.MustParseAddr("192.168.1.5"), true },
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(inst.Handler())
+	defer server.Close()
+	for _, method := range []string{http.MethodHead, "PROPFIND", http.MethodGet} {
+		req, err := http.NewRequest(method, server.URL+"/webdav/Movies/Film%20%282024%29/Film%20%282024%29.mkv", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.SetBasicAuth("7", "grant")
+		req.Header.Set("Range", "bytes=0-2")
+		if method == "PROPFIND" {
+			req.Header.Set("Depth", "0")
+		}
+		res, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if method == http.MethodGet && (res.StatusCode != http.StatusPartialContent || string(body) != "abc") {
+			t.Fatalf("range status=%d body=%q", res.StatusCode, body)
+		}
+		if method != http.MethodGet && ranges.calls != 0 {
+			t.Fatal("metadata opened a stream")
+		}
+	}
+	if ranges.calls != 1 {
+		t.Fatalf("range calls: %d", ranges.calls)
+	}
+}

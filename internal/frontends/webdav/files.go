@@ -312,5 +312,21 @@ func (i *instance) handleFile(w http.ResponseWriter, r *http.Request, viewer *fr
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	http.Error(w, "Unavailable", http.StatusNotImplemented)
+	lazy, ok := i.host.LazyStreams.(frontend.AuthenticatedLazyStreams)
+	if !ok || i.host.Capabilities == nil || i.host.ClientIP == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ip, ok := i.host.ClientIP(r)
+	if !ok {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := frontend.WithClientIP(r.Context(), ip)
+	profile, err := i.host.Capabilities.Build(ctx, frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: "webdav", ClientID: device.ID, Product: device.Product}, UserAgent: r.UserAgent()})
+	if err != nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	lazy.ServeAuthenticated(w, r.WithContext(ctx), credential, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "webdav", Item: node.title.Key, Caps: profile.Client, Intent: frontend.PlayIntent{Options: frontend.DecideOptions{DirectPlay: true}}})
 }
