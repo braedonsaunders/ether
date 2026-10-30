@@ -1,0 +1,421 @@
+package mediabrowser
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
+)
+
+const (
+	specialNone specialItems = iota
+	specialBoxSets
+	specialPlaylists
+)
+
+type specialItems int
+
+// requestedSpecialItems reports a library query that is only box sets or only
+// playlists. Mixed type queries stay on the title browse path.
+func requestedSpecialItems(r *http.Request) specialItems {
+	values := route.Query(r.URL.Query(), "IncludeItemTypes")
+	if len(values) == 0 {
+		return specialNone
+	}
+	box, playlist, other := false, false, false
+	for _, value := range values {
+		for _, typ := range strings.Split(value, ",") {
+			switch strings.ToLower(strings.TrimSpace(typ)) {
+			case "":
+			case "boxset":
+				box = true
+			case "playlist":
+				playlist = true
+			default:
+				other = true
+			}
+		}
+	}
+	if other || (box && playlist) {
+		return specialNone
+	}
+	if box {
+		return specialBoxSets
+	}
+	if playlist {
+		return specialPlaylists
+	}
+	return specialNone
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func dashedGUID(id string) string {
+	if len(id) != 32 {
+		return id
+	}
+	return id[0:8] + "-" + id[8:12] + "-" + id[12:16] + "-" + id[16:20] + "-" + id[20:]
+}
+
+func itemEtag(id string) string {
+	sum := sha256.Sum256([]byte("jellyfin-item:" + id))
+	return hex.EncodeToString(sum[:16])
+}
+
+func setMissing(m map[string]any, key string, value any) {
+	if _, ok := m[key]; !ok {
+		m[key] = value
+	}
+}
+
+func fieldSet(r *http.Request) map[string]bool {
+	out := map[string]bool{}
+	if r == nil {
+		return out
+	}
+	for _, value := range route.Query(r.URL.Query(), "Fields") {
+		for _, field := range splitCSV(value) {
+			out[strings.ToLower(field)] = true
+		}
+	}
+	return out
+}
+
+func jellyfinSeriesStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "ended", "canceled", "cancelled":
+		return "Ended"
+	case "returning series", "in production", "planned", "continuing":
+		return "Continuing"
+	default:
+		return status
+	}
+}
+
+// jellyfinCollectionFolder fills the CollectionFolder shell Jellyfin 12.4
+// returns for every user view. Counts, dates, paths and artwork stay absent
+// until the view itself carries those facts.
+func (i *instance) jellyfinCollectionFolder(item map[string]any, id string) {
+	item["ChannelId"] = nil
+	item["BackdropImageTags"] = []string{}
+	item["ImageTags"] = map[string]string{}
+	item["ImageBlurHashes"] = map[string]any{}
+	item["Chapters"] = []any{}
+	item["ExternalUrls"] = []any{}
+	item["GenreItems"] = []any{}
+	item["Genres"] = []string{}
+	item["People"] = []any{}
+	item["RemoteTrailers"] = []any{}
+	item["Studios"] = []any{}
+	item["Taglines"] = []string{}
+	item["Tags"] = []string{}
+	item["LockData"] = false
+	item["LockedFields"] = []string{}
+	item["LocalTrailerCount"] = 0
+	item["SpecialFeatureCount"] = 0
+	item["MediaType"] = "Unknown"
+	item["LocationType"] = "FileSystem"
+	item["PlayAccess"] = "Full"
+	item["EnableMediaSourceDisplay"] = true
+	item["Etag"] = itemEtag(id)
+	data := i.userDataDTO(id, frontend.WatchStatus{})
+	delete(data, "PlayedPercentage")
+	item["UserData"] = data
+}
+
+func jellyfinMediaSourceShape(source map[string]any, name string) {
+	if name != "" {
+		setMissing(source, "Name", name)
+	}
+	setMissing(source, "VideoType", "VideoFile")
+	setMissing(source, "UseMostCompatibleTranscodingProfile", false)
+	if id, _ := source["Id"].(string); id != "" {
+		setMissing(source, "ETag", itemEtag(id))
+	}
+}
+
+// shapeJellyfinItem adds the list-item shell recorded from Jellyfin 12.4 and
+// the optional fields the client asked for. Unknown file facts stay empty
+// strings or null rather than invented containers, dates or image tags.
+func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, item map[string]any, title frontend.Title) {
+	if i == nil || i.protocol != "jellyfin" || item == nil {
+		return
+	}
+	setMissing(item, "ChannelId", nil)
+	setMissing(item, "BackdropImageTags", []string{})
+	setMissing(item, "ImageTags", map[string]string{})
+	setMissing(item, "ImageBlurHashes", map[string]any{})
+	switch title.Type {
+	case "movie", "episode":
+		setMissing(item, "VideoType", "VideoFile")
+		setMissing(item, "Container", "")
+	case "show":
+		setMissing(item, "AirDays", []string{})
+		setMissing(item, "MediaType", "Unknown")
+		if title.Status != "" {
+			setMissing(item, "Status", jellyfinSeriesStatus(title.Status))
+		}
+		if !title.LastAirDate.IsZero() {
+			setMissing(item, "EndDate", wireTime(title.LastAirDate))
+		}
+	case "season":
+		setMissing(item, "MediaType", "Unknown")
+	}
+	if title.Type == "episode" || title.Type == "season" {
+		setMissing(item, "ParentBackdropImageTags", []string{})
+		for _, key := range []string{"ParentBackdropItemId", "ParentLogoImageTag", "ParentLogoItemId", "ParentPrimaryImageItemId", "ParentPrimaryImageTag", "SeriesPrimaryImageTag"} {
+			setMissing(item, key, nil)
+		}
+	}
+	if title.ChildCount > 0 {
+		setMissing(item, "ChildCount", title.ChildCount)
+	}
+	if title.LeafCount > 0 {
+		setMissing(item, "RecursiveItemCount", title.LeafCount)
+	}
+	fields := fieldSet(r)
+	if fields["etag"] {
+		if id, _ := item["Id"].(string); id != "" {
+			setMissing(item, "Etag", itemEtag(id))
+		}
+	}
+	if fields["overview"] {
+		setMissing(item, "Overview", title.Summary)
+	}
+	if fields["genres"] {
+		if len(title.Genres) > 0 {
+			setMissing(item, "Genres", title.Genres)
+		} else {
+			setMissing(item, "Genres", []string{})
+		}
+		setMissing(item, "GenreItems", i.genreItems(r, viewer, title))
+	}
+	if fields["datecreated"] {
+		if _, ok := item["DateCreated"]; !ok {
+			if !title.AddedAt.IsZero() {
+				item["DateCreated"] = wireTime(title.AddedAt)
+			} else if !title.Released.IsZero() {
+				item["DateCreated"] = wireTime(title.Released)
+			}
+		}
+	}
+	if fields["childcount"] {
+		setMissing(item, "ChildCount", title.ChildCount)
+	}
+	if fields["recursiveitemcount"] {
+		setMissing(item, "RecursiveItemCount", title.LeafCount)
+	}
+	if sources, ok := item["MediaSources"].([]any); ok {
+		for _, source := range sources {
+			if dto, ok := source.(map[string]any); ok {
+				jellyfinMediaSourceShape(dto, title.Title)
+				if container, _ := dto["Container"].(string); container != "" {
+					item["Container"] = container
+				}
+			}
+		}
+	} else if fields["mediasources"] && (title.Type == "movie" || title.Type == "episode") && r != nil && viewer != nil {
+		source := i.defaultMediaSource(r, viewer, authhdr.MediaBrowserToken(r), title.Key)
+		jellyfinMediaSourceShape(source, title.Title)
+		item["MediaSources"] = []any{source}
+		if container, _ := source["Container"].(string); container != "" {
+			item["Container"] = container
+		}
+	}
+}
+
+func (i *instance) genreItems(r *http.Request, viewer *frontend.Viewer, title frontend.Title) []any {
+	out := []any{}
+	if r == nil || viewer == nil || i.host.Experience == nil || title.Key == 0 || len(title.Genres) == 0 {
+		return out
+	}
+	names := make([]string, 0, min(len(title.Genres), 256))
+	seen := map[string]bool{}
+	for _, name := range title.Genres {
+		if name == "" || seen[name] || len(names) == 256 {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	authorized, err := i.host.Experience.NamedFacetIDs(r.Context(), viewer, device(r), title.Key, "genre", names)
+	if err != nil {
+		return out
+	}
+	for _, name := range names {
+		id := authorized[name]
+		if id == "" {
+			continue
+		}
+		wireID, ok := i.namedFacetWireID(r.Context(), "genre", id)
+		if ok {
+			out = append(out, map[string]any{"Id": wireID, "Name": name})
+		}
+	}
+	return out
+}
+
+func (i *instance) writeBoxSets(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, q frontend.ItemQuery) {
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	page, err := i.host.Experience.Collections(r.Context(), viewer, device(r), frontend.CollectionQuery{Offset: q.Offset, Limit: q.Limit})
+	if errors.Is(err, core.ErrNotAvailable) {
+		jsonReply(w, i.queryResult([]any{}, 0, q.Offset))
+		return
+	}
+	if err != nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	items := make([]any, 0, len(page.Items))
+	for _, collection := range page.Items {
+		items = append(items, i.boxSetDTO(collection))
+	}
+	jsonReply(w, i.queryResult(items, page.Total, q.Offset))
+}
+
+func (i *instance) boxSetDTO(collection frontend.Collection) map[string]any {
+	id := ids.RatingKeyGUID(collection.Key)
+	name := collection.Title
+	item := map[string]any{
+		"Id": id, "Name": name, "Type": "BoxSet", "IsFolder": true, "ChildCount": collection.ChildCount,
+		"Overview": collection.Summary, "ServerId": i.info.ID, "SortName": name, "CanDelete": false, "CanDownload": false,
+		"LocationType": "FileSystem", "ProviderIds": map[string]string{},
+	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinCollectionFolder(item, id)
+		item["Type"] = "BoxSet"
+		item["ChildCount"] = collection.ChildCount
+		item["Overview"] = collection.Summary
+		delete(item, "CollectionType")
+	}
+	if i.protocol == "emby" {
+		i.embyItemDTO(item, frontend.Title{Key: collection.Key, Title: name, Summary: collection.Summary}, frontend.WatchStatus{})
+	}
+	return item
+}
+
+// jellyfinDetailShell fills keys that a Jellyfin item detail response always
+// carries. Empty collections stand in for facts this library does not have.
+// List rows do not get this shell.
+func (i *instance) jellyfinDetailShell(item map[string]any) {
+	if i.protocol != "jellyfin" {
+		return
+	}
+	setMissing(item, "Chapters", []any{})
+	setMissing(item, "ExternalUrls", []any{})
+	setMissing(item, "LockData", false)
+	setMissing(item, "LockedFields", []any{})
+	setMissing(item, "People", []any{})
+	setMissing(item, "RemoteTrailers", []any{})
+	setMissing(item, "Taglines", []any{})
+	setMissing(item, "Tags", []any{})
+	setMissing(item, "LocalTrailerCount", 0)
+	setMissing(item, "SpecialFeatureCount", 0)
+	if id, _ := item["Id"].(string); id != "" {
+		setMissing(item, "Etag", itemEtag(id))
+	}
+}
+
+// jellyfinKnownVersionFacts copies probe facts that BaseItemDto allows from
+// the single known version. Estimated media stays off the item. Several
+// versions do not identify which one owns the top-level fields.
+func (i *instance) jellyfinKnownVersionFacts(dto map[string]any, versions []frontend.Version) {
+	if i.protocol != "jellyfin" || len(versions) != 1 {
+		return
+	}
+	version := versions[0]
+	if version.Media.Estimated {
+		return
+	}
+	if len(version.Media.Chapters) > 0 {
+		chapters := make([]any, 0, len(version.Media.Chapters))
+		for _, chapter := range version.Media.Chapters {
+			entry := map[string]any{"StartPositionTicks": chapter.Start.Nanoseconds() / 100}
+			if chapter.Title != "" {
+				entry["Name"] = chapter.Title
+			}
+			chapters = append(chapters, entry)
+		}
+		dto["Chapters"] = chapters
+	}
+	if version.Media.Container != "" {
+		dto["Container"] = version.Media.Container
+	}
+	if video := version.Media.Video(); video != nil {
+		if video.Width > 0 {
+			dto["Width"] = video.Width
+		}
+		if video.Height > 0 {
+			dto["Height"] = video.Height
+		}
+	}
+}
+
+func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
+	viewer, _, err := i.viewer(r)
+	if err != nil || viewer == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	views, err := i.host.Experience.Views(r.Context(), viewer)
+	if err != nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	result := make([]any, 0, len(views))
+	for _, view := range views {
+		viewNum, err := ids.ParseDecimal(view.ID)
+		if err != nil {
+			continue
+		}
+		viewID, err := ids.GUID(ids.View, viewNum)
+		if err != nil {
+			continue
+		}
+		entry := map[string]any{"Name": view.Name, "ItemId": viewID}
+		switch view.Type {
+		case "movie", "movies":
+			entry["CollectionType"] = "movies"
+		case "show", "tvshows":
+			entry["CollectionType"] = "tvshows"
+		case "music", "musicvideos", "homevideos", "boxsets", "books", "mixed":
+			entry["CollectionType"] = view.Type
+		}
+		result = append(result, entry)
+	}
+	jsonReply(w, result)
+}
+
+// writePlaylists returns an empty page. Jellyfin lists playlists with
+// IncludeItemTypes=Playlist. Membership is not on the browse experience yet.
+func (i *instance) writePlaylists(w http.ResponseWriter, viewer *frontend.Viewer, q frontend.ItemQuery) {
+	if viewer == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	jsonReply(w, i.queryResult([]any{}, 0, q.Offset))
+}
