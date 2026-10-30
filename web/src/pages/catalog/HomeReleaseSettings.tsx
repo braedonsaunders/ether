@@ -18,6 +18,20 @@ export const HomeReleaseSettings: FieldGroup = localized(() => ({
   ],
 }));
 
+export const UpcomingEpisodeSettings: FieldGroup = localized(() => ({
+  title: t("Upcoming episodes"),
+  fields: [
+    {
+      key: "showUpcomingEpisodes",
+      label: t("Show scheduled episodes"),
+      kind: "bool",
+      help: t(
+        "Show unaired episodes with known air dates inside already airing seasons. They are marked as unaired and cannot be played. Alternate episode orders keep their existing lists.",
+      ),
+    },
+  ],
+}));
+
 export function HomeReleaseStatus() {
   const data = useAsync(
     () =>

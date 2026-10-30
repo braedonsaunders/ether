@@ -106,15 +106,18 @@ func (c episodeDetailCatalog) Grandchildren(context.Context, core.RatingKey) ([]
 
 func TestShowMicroReasonUsesNextEpisodeRuntime(t *testing.T) {
 	now := time.Date(2026, 10, 14, 20, 5, 0, 0, time.UTC)
-	h := newHarness(t, func(o *Options) { o.Now = func() time.Time { return now } })
 	u := core.User{ID: 53, Username: "series-viewer"}
-	h.users.users = []core.User{u}
-	h.rebuild(u)
-
 	show := core.Title{Key: showKey(0, 3), Type: core.TypeShow, Title: "A Series", Runtime: 45 * time.Minute}
 	episode := core.Title{Key: core.EpisodeKey(show.Key.TMDB(), 1, 1), Type: core.TypeEpisode, Season: 1,
 		Title: "Pilot", Runtime: 28 * time.Minute}
-	h.e.catalog = episodeDetailCatalog{fakeCatalog: h.cat, episodes: []core.Title{episode}}
+	h := newHarness(t, func(o *Options) {
+		o.Now = func() time.Time { return now }
+		// New starts workers that read these dependencies. Configure the
+		// episode catalogue before construction, never swap a live engine's.
+		o.Catalog = episodeDetailCatalog{fakeCatalog: o.Catalog.(*fakeCatalog), episodes: []core.Title{episode}}
+		o.Users.(*fakeUsers).users = []core.User{u}
+	})
+	h.rebuild(u)
 
 	mr := h.e.MicroReason(context.Background(), &u, &show, now)
 	if !mr.HasEnd || !mr.EndsAt.Equal(now.Add(28*time.Minute)) {

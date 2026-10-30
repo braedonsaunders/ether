@@ -76,6 +76,15 @@ type Catalog interface {
 	ByExternalID(ctx context.Context, source, id string) (*Title, error)
 }
 
+// CatalogSchedule exposes metadata-only placeholders when the owner opts in.
+// Only dated, unaired episodes of an already airing regular season are returned.
+// Callers must authorize the parent season and each episode for the viewer,
+// render no media/playback links, and use the same scope for artwork. Ordinary
+// Catalog methods remain released-only; this interface never authorizes playback.
+type CatalogSchedule interface {
+	ScheduledEpisodes(context.Context, RatingKey) ([]Title, error)
+}
+
 // StoredTitleLookup reads local metadata without remote discovery. Callers
 // must apply their own authorization before exposing the returned title.
 type StoredTitleLookup interface {

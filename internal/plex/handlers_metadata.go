@@ -116,6 +116,14 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 			if err == nil && ((!t.Released.IsZero() && t.Released.After(s.now())) || !s.visibleTitle(ctx, pr.User, t)) {
 				err = core.ErrNotFound
 			}
+			if err != nil && len(keys) == 1 && q.Get("collection") == "" {
+				if future, e := s.scheduledEpisode(ctx, pr, k); e == nil {
+					md = s.scheduledMetadata(ctx, pr, future)
+					mc = s.itemContainer(future.Type)
+					mc.Metadata = append(mc.Metadata, md)
+					continue
+				}
+			}
 			if err != nil && len(keys) == 1 {
 				if t, ck, e := s.lookupPlaceholder(ctx, pr, k, q.Get("collection")); e == nil {
 					md = s.placeholderMetadata(ctx, pr, t, ck)
@@ -349,9 +357,34 @@ func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {
 		mc.ViewMode = viewModeList
 	}
 	kids = s.visibleTitles(pr.User, kids)
+	future := s.scheduledEpisodes(ctx, pr, k)
+	kids = appendScheduled(kids, future)
 	lo, hi := pr.window(len(kids))
 	page := kids[lo:hi]
-	mc.Metadata = s.renderTitles(ctx, pr, page, renderOpts{media: true, inSection: true})
+	if len(future) == 0 {
+		mc.Metadata = s.renderTitles(ctx, pr, page, renderOpts{media: true, inSection: true})
+	} else {
+		// Batch ordinary rendering without ever passing placeholders to media
+		// generation, then restore the canonical episode order.
+		var aired []core.Title
+		for _, child := range page {
+			if !child.Released.After(s.now()) {
+				aired = append(aired, child)
+			}
+		}
+		rendered := s.renderTitles(ctx, pr, aired, renderOpts{media: true, inSection: true})
+		byKey := make(map[string]model.Metadata, len(rendered))
+		for _, md := range rendered {
+			byKey[md.RatingKey] = md
+		}
+		for _, child := range page {
+			if child.Released.After(s.now()) {
+				mc.Metadata = append(mc.Metadata, s.scheduledMetadata(ctx, pr, &child))
+			} else if md, ok := byKey[child.Key.String()]; ok {
+				mc.Metadata = append(mc.Metadata, md)
+			}
+		}
+	}
 	if parent.Type == core.TypeShow {
 		s.applyLeafCounts(ctx, pr, mc.Metadata, page, nil)
 		if allLeaves != nil {

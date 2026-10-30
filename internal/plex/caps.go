@@ -137,10 +137,31 @@ func productCaps(product, platform, device string) baseCaps {
 	return genericCaps
 }
 
+func fireTV4KMax(model string) bool {
+	switch strings.ToUpper(strings.TrimSpace(model)) {
+	case "AFTKA", "AFTKRT":
+		return true
+	default:
+		return false
+	}
+}
+
 // ClientCaps derives core.ClientCaps for the request. remoteMaxKbps caps
 // the bitrate of remote clients (0 = unlimited).
 func (pr *Request) ClientCaps(remoteMaxKbps int) core.ClientCaps {
 	b := productCaps(pr.Product, pr.Platform, pr.Device)
+	// Fire TV can identify itself as generic Android and expose its hardware
+	// model in either header. These exact models are both 4K Max generations:
+	// https://developer.amazon.com/docs/device-specs/identify-fire-tv-devices.html
+	// Do not infer 4K from an AFT prefix (HD devices share it) or DeviceName,
+	// which is an owner-editable friendly name. Request limits apply below.
+	product := strings.ToLower(pr.Product)
+	android := strings.Contains(product, "android") || (strings.EqualFold(pr.Platform, "android") && !strings.Contains(product, "web"))
+	if android && (fireTV4KMax(pr.Device) || fireTV4KMax(pr.Model)) {
+		b.maxHeight = 2160
+		b.hdr10 = true
+	}
+
 	c := core.ClientCaps{
 		Protocol:        "plex",
 		Product:         pr.Product,

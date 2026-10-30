@@ -298,11 +298,17 @@ func (s *Server) serveItemImage(w http.ResponseWriter, r *http.Request, key core
 	path, defWidth, err := s.artPath(r.Context(), key, element)
 	if raw != "" || err != nil || path == "" {
 		t, _, e := s.lookupPlaceholder(r.Context(), FromContext(r.Context()), key, raw)
+		if e != nil && raw == "" {
+			t, e = s.scheduledEpisode(r.Context(), FromContext(r.Context()), key)
+		}
 		if e != nil {
 			writeHTTPError(w, http.StatusNotFound)
 			return
 		}
 		path := t.PosterPath
+		if t.Type == core.TypeEpisode {
+			path = t.StillPath
+		}
 		if element == "art" || element == "background" {
 			path = t.BackdropPath
 		}

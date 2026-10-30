@@ -670,6 +670,13 @@ test, language, region, refresh interval, popularity and vote thresholds, adult
 content option, and catalog health. Settings apply without a restart. Existing
 links to **Metadata → Catalogue** redirect to Catalog.
 
+**Show scheduled episodes** in Catalog settings is off by default. When enabled,
+a season that has already started can list unaired episodes with known air dates.
+They show an **Unaired** label and the scheduled date in their description, with
+no playable media. Unknown dates and wholly future seasons stay hidden. Autoplay,
+Continue Watching and alternate episode-order lists keep their released episodes.
+Turning the option off removes access to these placeholders and their artwork.
+
 ## Metadata artwork
 
 **Metadata → Artwork** previews real catalogue posters with your unsaved design.

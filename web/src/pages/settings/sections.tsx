@@ -132,6 +132,8 @@ export function UpdatesStatus() {
       version: s.failedVersion,
     });
   else if (!s.enabled) availableText = s.disabledReason || t("Updates are disabled in this build");
+  else if (s.lastError) availableText = s.lastError;
+  else if (!s.lastCheck) availableText = t("Not checked yet");
 
   return (
     <SettingsSection title={t("Status")}>

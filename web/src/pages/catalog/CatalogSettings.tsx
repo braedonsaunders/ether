@@ -8,7 +8,11 @@ import { SettingsRow } from "../../components/SettingsRow";
 import { LevelBadge } from "../../components/status";
 import { t } from "../../i18n";
 import { api } from "../../lib/api";
-import { HomeReleaseSettings, HomeReleaseStatus } from "./HomeReleaseSettings";
+import {
+  HomeReleaseSettings,
+  HomeReleaseStatus,
+  UpcomingEpisodeSettings,
+} from "./HomeReleaseSettings";
 import { TrendingStatus } from "./TrendingStatus";
 import { CATALOG } from "../settings/schema";
 
@@ -42,7 +46,7 @@ export function CatalogSettings() {
           <ConfigSection
             configKey="catalog"
             endpoint="catalog"
-            groups={[...CATALOG, HomeReleaseSettings]}
+            groups={[...CATALOG, HomeReleaseSettings, UpcomingEpisodeSettings]}
             label={t("Catalog")}
             test={(draft) => (
               <TestButton
