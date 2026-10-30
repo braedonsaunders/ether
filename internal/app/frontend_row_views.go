@@ -182,7 +182,7 @@ func (a *App) newRowViews(protocol core.Protocol, rows *experience.RowsService, 
 		if p != protocol {
 			return nil, core.ErrNotFound
 		}
-		return rowViewResolveBatch(ctx, u, device, p, refs, options.ResolveEntry, func(ctx context.Context, viewer *core.User) ([]frontend.RowEntry, error) {
+		return rowViewResolveBatchTitles(ctx, u, device, p, refs, options.ResolveEntry, a.catalog.CachedGetMany, getCached, cacheVisibility, func(ctx context.Context, viewer *core.User) ([]frontend.RowEntry, error) {
 			if a.livetv == nil {
 				return nil, core.ErrNotFound
 			}
@@ -272,4 +272,92 @@ func rowViewCollectionMembers(ctx context.Context, source rowViewCollectionSourc
 		}
 	}
 	return false
+}
+
+// rowViewResolveBatchTitles rehydrates titles and inherited parents anew on
+// every policy pass. Non-title and virtual-season entries keep the legacy path.
+func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, refs []core.NeutralEntryRef, one func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error), batch func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error), get func(context.Context, *core.User, core.RatingKey) (*core.Title, error), visibility experience.Visibility, live func(context.Context, *core.User) ([]frontend.RowEntry, error)) ([]frontend.RowEntry, error) {
+	out := make([]frontend.RowEntry, len(refs))
+	for start := 0; start < len(refs); start += 200 {
+		part := refs[start:min(start+200, len(refs))]
+		keys := make([]core.RatingKey, 0, len(part))
+		for _, ref := range part {
+			if ref.Kind == string(frontend.RowEntryTitle) {
+				k, e := core.ParseRatingKey(ref.ID)
+				if e != nil {
+					return nil, core.ErrNotFound
+				}
+				keys = append(keys, k)
+			}
+		}
+		titles, err := batch(ctx, keys)
+		if err != nil {
+			return nil, err
+		}
+		parents := make([]core.RatingKey, 0, len(keys))
+		seen := map[core.RatingKey]bool{}
+		for _, key := range keys {
+			if t, ok := titles[key]; ok && t.ShowKey != 0 && !seen[t.ShowKey] {
+				seen[t.ShowKey] = true
+				parents = append(parents, t.ShowKey)
+			}
+		}
+		inherited, err := batch(ctx, parents)
+		if err != nil {
+			return nil, err
+		}
+		vis := visibility
+		vis.GetTitle = func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+			t, ok := inherited[key]
+			if !ok {
+				return nil, core.ErrNotFound
+			}
+			return &t, nil
+		}
+		// Keep the original mixed-entry resolver for non-title or virtual-season
+		// cases; its live-guide cache is scoped to this bounded chunk.
+		var otherRefs []core.NeutralEntryRef
+		var otherIndexes []int
+		for i, ref := range part {
+			if ref.Kind != string(frontend.RowEntryTitle) {
+				otherRefs = append(otherRefs, ref)
+				otherIndexes = append(otherIndexes, i)
+				continue
+			}
+			key, _ := core.ParseRatingKey(ref.ID)
+			t, ok := titles[key]
+			if !ok && key.Kind() == core.KindSeason {
+				otherRefs = append(otherRefs, ref)
+				otherIndexes = append(otherIndexes, i)
+				continue
+			}
+			if !ok || t.Key != key {
+				return nil, core.ErrNotFound
+			}
+			// CachedGet may persist an eligible home-release admission. Preserve that
+			// existing behavior instead of exposing the batch's unpersisted decision.
+			if t.Type == core.TypeMovie && t.HomeReleaseChecked && t.HomeReleased.IsZero() && !t.HomeReleaseFallbackAdmitted {
+				resolved, e := get(ctx, viewer, key)
+				if e != nil || resolved == nil {
+					return nil, core.ErrNotFound
+				}
+				t = *resolved
+			}
+			if !vis.Visible(ctx, viewer, &t) {
+				return nil, core.ErrNotFound
+			}
+			copy := t
+			out[start+i] = frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &copy}
+		}
+		if len(otherRefs) > 0 {
+			entries, e := rowViewResolveBatch(ctx, viewer, device, protocol, otherRefs, one, live)
+			if e != nil {
+				return nil, e
+			}
+			for i, entry := range entries {
+				out[start+otherIndexes[i]] = entry
+			}
+		}
+	}
+	return out, nil
 }

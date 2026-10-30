@@ -150,3 +150,58 @@ func TestRowViewLiveRehydrationLoadsGuideOncePerFreshPass(t *testing.T) {
 		t.Fatalf("revocation not rechecked: calls=%d err=%v", calls, err)
 	}
 }
+
+func TestRowViewBatchedTitlePolicyRevalidates(t *testing.T) {
+	ctx := context.Background()
+	u := &core.User{ID: 7, MaxContentRating: "PG"}
+	show := core.Title{Key: core.ShowKey(1), Type: core.TypeShow, ContentRating: "TV-G"}
+	ep := core.Title{Key: core.EpisodeKey(1, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key, ContentRating: "TV-G"}
+	movie := core.Title{Key: core.MovieKey(2), Type: core.TypeMovie, ContentRating: "PG"}
+	records := map[core.RatingKey]core.Title{show.Key: show, ep.Key: ep, movie.Key: movie}
+	batchCalls := 0
+	batch := func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+		batchCalls++
+		if len(keys) > 200 {
+			t.Fatal("unbounded batch")
+		}
+		out := map[core.RatingKey]core.Title{}
+		for _, key := range keys {
+			if x, ok := records[key]; ok {
+				out[key] = x
+			}
+		}
+		return out, nil
+	}
+	one := func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error) {
+		return frontend.RowEntry{}, core.ErrNotFound
+	}
+	get := func(_ context.Context, _ *core.User, k core.RatingKey) (*core.Title, error) {
+		v, ok := records[k]
+		if !ok {
+			return nil, core.ErrNotFound
+		}
+		return &v, nil
+	}
+	vis := experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 2, true }}
+	refs := []core.NeutralEntryRef{{Kind: string(frontend.RowEntryTitle), ID: ep.Key.String()}, {Kind: string(frontend.RowEntryTitle), ID: movie.Key.String()}}
+	live := func(context.Context, *core.User) ([]frontend.RowEntry, error) {
+		t.Fatal("unexpected live lookup")
+		return nil, nil
+	}
+	resolve := func() ([]frontend.RowEntry, error) {
+		return rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, vis, live)
+	}
+	got, err := resolve()
+	if err != nil || len(got) != 2 || got[0].Title.Key != ep.Key || got[1].Title.Key != movie.Key || batchCalls != 2 {
+		t.Fatalf("entries %+v calls=%d err=%v", got, batchCalls, err)
+	}
+	show.ContentRating = "TV-MA"
+	records[show.Key] = show
+	if _, err := resolve(); err == nil {
+		t.Fatal("changed parent policy was not revalidated")
+	}
+	delete(records, show.Key)
+	if _, err := resolve(); err == nil {
+		t.Fatal("missing parent accepted")
+	}
+}
