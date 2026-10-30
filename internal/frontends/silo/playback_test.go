@@ -74,6 +74,17 @@ func TestExactVersionFailureAndGenericDefault(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") || planned != 0 {
 		t.Fatalf("unservable exact version: %d %s, planned=%d", w.Code, w.Body.String(), planned)
 	}
+	if data, err := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", ""); err == nil {
+		doc, err := openapi.Parse(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = doc.Validate("POST", "/api/v2/playback/start", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
 	w = start(fileIDs{}, nil)
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") || planned != 0 {
 		t.Fatalf("missing version handles: %d %s", w.Code, w.Body.String())
@@ -247,8 +258,12 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	var timeline frontend.Timeline
 	var stopped string
 	var openErr error
+	var planErr error
 	session := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 		planned = r
+		if planErr != nil {
+			return frontend.PlayPlan{}, planErr
+		}
 		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Duration: time.Hour, Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus}}}, Decision: frontend.Decision{Kind: "transcode", VideoCopy: true}}, nil
 	}, OpenFunc: func(_ context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 		if openErr != nil {
@@ -381,6 +396,12 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"another"}`)
 	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "2" || !strings.Contains(w.Body.String(), "transcode_capacity") {
 		t.Fatalf("open capacity: %d %v %s", w.Code, w.Header(), w.Body.String())
+	}
+	openErr = nil
+	planErr = errors.New("exact release unavailable")
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"another"}`)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") {
+		t.Fatalf("exact plan failure: %d %s", w.Code, w.Body.String())
 	}
 }
 
