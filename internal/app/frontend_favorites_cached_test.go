@@ -11,7 +11,7 @@ func TestFavoriteTitlesCachedInheritedPolicy(t *testing.T) {
 	ctx := context.Background()
 	viewer := &core.User{ID: 1, MaxContentRating: "PG"}
 	show := core.Title{Key: core.ShowKey(4), Type: core.TypeShow, ContentRating: "TV-MA"}
-	episode := core.Title{Key: core.EpisodeKey(4, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key}
+	episode := core.Title{Key: core.EpisodeKey(4, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key, ContentRating: "TV-G"}
 	lookup := map[core.RatingKey]core.Title{episode.Key: episode, show.Key: show}
 	cached := func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		out := map[core.RatingKey]core.Title{}
