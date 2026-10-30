@@ -278,13 +278,20 @@ func TestPostPlayBackfillsFilteredCandidates(t *testing.T) {
 	f.srv.d.Recommender = r
 	pr := &Request{User: &ownerUser}
 	seen := map[core.RatingKey]bool{}
-	row := f.srv.postPlayRow(context.Background(), pr, 0, 1, seen)
+	selection := f.srv.postPlaySelection(context.Background(), pr, 0, false)
+	row := selection.Row(context.Background(), pr.User, 1, seen)
 	if len(row.Items) != 1 || row.Items[0].Key != visible.Key || len(r.pickLimits) != 2 || seen[hidden.Key] {
 		t.Fatalf("row %+v, limits %v, seen %v", row, r.pickLimits, seen)
 	}
 	mc := hubContainer()
 	seen = map[core.RatingKey]bool{}
-	f.srv.relatedAfterPostPlay(context.Background(), pr, mc, 0, 1, seen)
+	hubs, err := selection.RelatedRows(context.Background(), pr.User, 1, seen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hub := range hubs {
+		mc.Hub = append(mc.Hub, f.srv.renderHub(context.Background(), pr, hubSpec{Hub: hub}, hubCtx{}))
+	}
 	if len(mc.Hub) != 1 || len(mc.Hub[0].Metadata) != 1 || len(r.relatedLimits) != 2 || seen[hidden.Key] || !seen[visible.Key] {
 		t.Fatalf("related %+v, limits %v, seen %v", mc.Hub, r.relatedLimits, seen)
 	}

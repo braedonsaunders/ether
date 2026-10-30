@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 )
 
 func TestPreviewAvailabilityExclusionBackfillAndLegacyParity(t *testing.T) {
@@ -31,17 +32,17 @@ func TestPreviewAvailabilityExclusionBackfillAndLegacyParity(t *testing.T) {
 		}
 		return out, nil
 	}
-	got := previewAvailability(ctx, viewer, 2, load, filter)
+	got := experience.PreviewAvailability(ctx, viewer, 2, load, filter)
 	if len(got) != 1 || !reflect.DeepEqual(got[0].Items, items[:2]) || !reflect.DeepEqual(calls, []int{2}) || !got[0].More {
 		t.Fatalf("legacy preview changed: %+v %v", got, calls)
 	}
 	blocked = true
 	calls = nil
-	got = previewAvailability(ctx, viewer, 2, load, filter)
+	got = experience.PreviewAvailability(ctx, viewer, 2, load, filter)
 	if len(got) != 1 || !reflect.DeepEqual(got[0].Items, items[1:3]) || !reflect.DeepEqual(calls, []int{2, 4}) {
 		t.Fatalf("preview backfill failed: %+v %v", got, calls)
 	}
-	got = previewAvailability(ctx, viewer, 2, load, func(context.Context, *core.User, []core.Title) ([]core.Title, error) {
+	got = experience.PreviewAvailability(ctx, viewer, 2, load, func(context.Context, *core.User, []core.Title) ([]core.Title, error) {
 		return nil, errors.New("unavailable")
 	})
 	if got != nil {

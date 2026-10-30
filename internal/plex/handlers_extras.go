@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/transcode"
@@ -125,33 +126,18 @@ func (s *Server) viewerLanguage(pr *Request) string {
 // extrasFor lists a title's playable extras, honouring the extraTypes
 // filter (comma-separated Plex numeric types) when present.
 func (s *Server) extrasFor(ctx context.Context, pr *Request, parent *core.Title, extraTypes string) []extras.Extra {
-	if s.d.Extras == nil || parent == nil || !s.d.Extras.Enabled() {
-		return nil
+	want := map[int]bool{}
+	for _, part := range strings.Split(extraTypes, ",") {
+		if n, err := strconv.Atoi(strings.TrimSpace(part)); err == nil {
+			want[n] = true
+		}
 	}
-	list, err := s.d.Extras.List(ctx, parent, s.viewerLanguage(pr))
+	list, err := experience.DetailExtras(ctx, s.d.Extras, parent, s.viewerLanguage(pr), want)
 	if err != nil {
 		s.log.Debug("extras list", "key", parent.Key, "err", err)
 		return nil
 	}
-	if strings.TrimSpace(extraTypes) == "" {
-		return list
-	}
-	want := map[int]bool{}
-	for _, p := range strings.Split(extraTypes, ",") {
-		if n, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
-			want[n] = true
-		}
-	}
-	if len(want) == 0 {
-		return list
-	}
-	out := list[:0:0]
-	for _, e := range list {
-		if want[e.ExtraType] {
-			out = append(out, e)
-		}
-	}
-	return out
+	return list
 }
 
 // extraEstimateInfo is the virtual media info of an extra before (or

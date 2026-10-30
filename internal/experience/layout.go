@@ -2,8 +2,10 @@ package experience
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 // ArrangeNeutralHome returns candidate indices in the shared layout's order.
@@ -54,6 +56,48 @@ func ArrangeLayout(candidates []LayoutCandidate, finalize func([]LayoutCandidate
 		if i, ok := byID[id]; ok {
 			out = append(out, i)
 		}
+	}
+	return out, nil
+}
+
+// LayoutRows applies shared Home placement to neutral frontend rows.
+func LayoutRows(ctx context.Context, source core.NeutralHomeLayoutSource, libraries []Library, req frontend.RowRequest, sit core.HomeSituation, rows []frontend.Row) ([]frontend.Row, error) {
+	section := "home"
+	if req.Placement == frontend.PlacementLibrary {
+		section = "movies"
+		for _, l := range libraries {
+			if strconv.Itoa(l.ID) == req.ViewID && l.Type == core.TypeShow {
+				section = "shows"
+			}
+		}
+	}
+	if req.Placement == frontend.PlacementDetail {
+		return rows, nil
+	}
+	candidates := make([]core.NeutralHomeRow, 0, len(rows))
+	for _, row := range rows {
+		n := core.NeutralHomeRow{ID: row.ID, Title: row.Title, Kind: row.Kind, Purpose: row.Purpose, ItemCount: len(row.Entries)}
+		for _, entry := range row.Entries {
+			if entry.Title != nil {
+				n.Items = append(n.Items, *entry.Title)
+				if n.Type == "" {
+					n.Type = entry.Title.Type
+				}
+			}
+		}
+		candidates = append(candidates, n)
+	}
+	ordered, err := ArrangeNeutralHome(ctx, source, req.Viewer, sit, section, candidates)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]frontend.Row, 0, len(ordered))
+	for i, index := range ordered {
+		row := rows[index]
+		row.Rank = i
+		row.Layout.Order = i
+		row.Layout.Style = row.Style
+		out = append(out, row)
 	}
 	return out, nil
 }

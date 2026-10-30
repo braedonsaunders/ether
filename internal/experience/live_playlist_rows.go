@@ -92,3 +92,45 @@ func LiveEntries(ctx context.Context, viewer *core.User, source LiveGuideSource,
 	}
 	return out, nil
 }
+
+// RecentPlaylists preserves source records for adapters that render item counts.
+func RecentPlaylists(ctx context.Context, viewer *core.User, source PlaylistRowSource, limit int) ([]core.Playlist, bool, error) {
+	if viewer == nil || source == nil {
+		return nil, false, nil
+	}
+	playlists, err := source.List(ctx, viewer.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(playlists) == 0 {
+		return playlists, false, nil
+	}
+	sort.SliceStable(playlists, func(i, j int) bool { return playlists[i].UpdatedAt.After(playlists[j].UpdatedAt) })
+	more := len(playlists) > limit
+	if more {
+		playlists = playlists[:limit]
+	}
+	return playlists, more, nil
+}
+
+// PlaylistDuration uses cached runtimes and visits every member so a cache can
+// schedule missing titles. The total stays unknown until every runtime is known.
+func PlaylistDuration(items []core.RatingKey, get func(core.RatingKey) *core.Title) time.Duration {
+	if get == nil || len(items) == 0 || len(items) > 200 {
+		return 0
+	}
+	var total time.Duration
+	known := true
+	for _, key := range items {
+		title := get(key)
+		if title == nil || title.Runtime <= 0 {
+			known = false
+			continue
+		}
+		total += title.Runtime
+	}
+	if !known {
+		return 0
+	}
+	return total
+}

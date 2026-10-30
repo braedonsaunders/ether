@@ -61,3 +61,53 @@ func CompleteHome(includePlaylists bool, playlists, discovery, live, selectRows,
 	selectRows()
 	layout()
 }
+
+// HomeAssembly owns row inclusion, deduplication and ordering while adapters
+// supply rendered projections and preserve their exact producer sidecars.
+type HomeAssembly[P any] struct {
+	Render      func(core.Hub) P
+	Identity    func(P) string
+	Continue    func() (core.Hub, P)
+	Playlists   func() (P, bool)
+	Discovery   func() []core.Hub
+	Live        func() (P, bool)
+	InLibraries func(core.Hub) bool
+	Select      func([]P) []P
+	Layout      func([]P) []P
+}
+
+func (a HomeAssembly[P]) Rows(hubs []core.Hub, includeContinue, promotedOnly, includePlaylists bool, purpose func(core.Hub) core.RowPurpose) ([]P, map[string]core.Hub) {
+	var out []P
+	served := map[string]core.Hub{}
+	candidates := make([]HomeCandidate, len(hubs))
+	for i, hub := range hubs {
+		candidates[i] = HomeCandidate{Index: i, Purpose: purpose(hub), Promoted: hub.Promoted, InLibraries: a.InLibraries(hub)}
+	}
+	var projected P
+	AssembleHome(candidates, includeContinue, promotedOnly, "home.continue", func() {
+		hub, row := a.Continue()
+		out = append(out, row)
+		served[a.Identity(row)] = hub
+	}, func(candidate HomeCandidate) string {
+		projected = a.Render(hubs[candidate.Index])
+		return a.Identity(projected)
+	}, func(candidate HomeCandidate) {
+		out = append(out, projected)
+		served[a.Identity(projected)] = hubs[candidate.Index]
+	})
+	if includePlaylists {
+		if row, ok := a.Playlists(); ok {
+			out = append(out, row)
+		}
+	}
+	for _, hub := range a.Discovery() {
+		out = append(out, a.Render(hub))
+		served[hub.ID] = hub
+	}
+	if row, ok := a.Live(); ok {
+		out = append(out, row)
+	}
+	out = a.Select(out)
+	out = a.Layout(out)
+	return out, served
+}
