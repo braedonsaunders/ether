@@ -105,15 +105,45 @@ func TestVirtualPathsScanShortPagesForCollisions(t *testing.T) {
 }
 
 func TestVirtualPathsChildrenContinueShortPagesAndRejectTruncation(t *testing.T) {
-	experience := frontendtest.Experience{ChildrenFunc: func(_ context.Context, _ *core.Viewer, _ core.Device, _ core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
-		if q.Offset == 2 {
-			return core.Page{Total: 3}, nil
-		}
-		return core.Page{Items: []core.Title{{Key: core.MovieKey(int64(q.Offset + 1))}}, Total: 3}, nil
-	}}
-	_, err := (surfaceVirtualPaths{experience: experience}).children(context.Background(), &core.Viewer{ID: 7}, core.Device{}, core.ShowKey(1))
+	show := core.Title{Key: core.ShowKey(1), Type: core.TypeShow, Title: "Show"}
+	experience := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *core.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "tv", Type: core.TypeShow}}, nil
+		},
+		LibraryItemsFunc: func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (core.Page, error) {
+			return core.Page{Items: []core.Title{show}, Total: 1}, nil
+		},
+		ChildrenFunc: func(_ context.Context, _ *core.Viewer, _ core.Device, _ core.RatingKey, q frontend.ItemQuery) (core.Page, error) {
+			if q.Offset == 2 {
+				return core.Page{Total: 3}, nil
+			}
+			return core.Page{Items: []core.Title{{Key: core.SeasonKey(1, q.Offset+1), Type: core.TypeSeason, Season: q.Offset + 1}}, Total: 3}, nil
+		},
+	}
+	_, err := (surfaceVirtualPaths{experience: experience}).Paths(context.Background(), &core.Viewer{ID: 7}, core.Device{}, []core.RatingKey{core.EpisodeKey(1, 1, 1)})
 	if !errors.Is(err, core.ErrNotAvailable) {
 		t.Fatalf("truncated children: %v", err)
+	}
+}
+
+func TestVirtualPathsMalformedLibraryAndDeniedSectionFailClosed(t *testing.T) {
+	viewer := &core.Viewer{ID: 7}
+	malformed := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *core.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "movies", Type: core.TypeMovie}}, nil
+		},
+		LibraryItemsFunc: func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (core.Page, error) {
+			return core.Page{Total: 2}, nil
+		},
+	}
+	if got, err := (surfaceVirtualPaths{experience: malformed}).Paths(context.Background(), viewer, core.Device{}, []core.RatingKey{core.MovieKey(1)}); got != nil || !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("malformed page: %+v %v", got, err)
+	}
+	denied := frontendtest.Experience{ViewsFunc: func(context.Context, *core.Viewer) ([]frontend.View, error) {
+		return nil, core.ErrUnauthorized
+	}}
+	if got, err := (surfaceVirtualPaths{experience: denied}).Paths(context.Background(), viewer, core.Device{}, []core.RatingKey{core.MovieKey(1)}); got != nil || !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("denied section: %+v %v", got, err)
 	}
 }
 

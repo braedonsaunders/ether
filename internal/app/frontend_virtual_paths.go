@@ -2,14 +2,11 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"path"
-	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
-	"github.com/braedonsaunders/ether/internal/frontend/kit/libpath"
 )
 
 type surfaceVirtualPaths struct {
@@ -22,112 +19,7 @@ func (s surfaceVirtualPaths) Paths(ctx context.Context, viewer *core.Viewer, dev
 	if s.experience == nil || (s.enabled != nil && !s.enabled()) {
 		return nil, core.ErrNotAvailable
 	}
-	if len(keys) > 256 {
-		return nil, core.ErrNotAvailable
-	}
-	requested := make(map[core.RatingKey]bool, len(keys))
-	var needMovies, needShows bool
-	wantedShows := map[core.RatingKey]bool{}
-	for _, key := range keys {
-		requested[key] = true
-		switch key.Kind() {
-		case core.KindMovie:
-			needMovies = true
-		case core.KindShow:
-			needShows = true
-			wantedShows[key] = true
-		case core.KindSeason, core.KindEpisode:
-			needShows = true
-			wantedShows[core.ShowKey(key.TMDB())] = true
-		}
-	}
-	if len(requested) > 50 {
-		return nil, core.ErrNotAvailable
-	}
-	result := make(map[core.RatingKey]string)
-	if needMovies {
-		titles, err := s.library(ctx, viewer, device, core.TypeMovie)
-		if err != nil {
-			return nil, err
-		}
-		names := siblingNames(titles, libpath.MovieName)
-		for _, title := range titles {
-			if requested[title.Key] {
-				name := names[title.Key]
-				result[title.Key] = path.Join("Movies", name, name+".mkv")
-			}
-		}
-	}
-	if needShows {
-		shows, err := s.library(ctx, viewer, device, core.TypeShow)
-		if err != nil {
-			return nil, err
-		}
-		names := siblingNames(shows, func(t core.Title) string { return libpath.Safe(t.Title) })
-		for _, show := range shows {
-			if !wantedShows[show.Key] {
-				continue
-			}
-			base := path.Join("TV", names[show.Key])
-			if requested[show.Key] {
-				result[show.Key] = base
-			}
-			var wantsChildren bool
-			for key := range requested {
-				if key.Kind() != core.KindShow && key.TMDB() == show.Key.TMDB() && (key.Kind() == core.KindSeason || key.Kind() == core.KindEpisode) {
-					wantsChildren = true
-					break
-				}
-			}
-			if !wantsChildren {
-				continue
-			}
-			seasonItems, err := s.children(ctx, viewer, device, show.Key)
-			if err != nil {
-				return nil, err
-			}
-			filtered := seasonItems[:0]
-			for _, season := range seasonItems {
-				if season.Type == core.TypeSeason {
-					filtered = append(filtered, season)
-				}
-			}
-			seasonNames := siblingNames(filtered, func(t core.Title) string { return fmt.Sprintf("Season %02d", t.Season) })
-			for _, season := range filtered {
-				seasonBase := path.Join(base, seasonNames[season.Key])
-				if requested[season.Key] {
-					result[season.Key] = seasonBase
-				}
-				var wantsEpisodes bool
-				for key := range requested {
-					if key.Kind() == core.KindEpisode && key.TMDB() == show.Key.TMDB() {
-						wantsEpisodes = true
-						break
-					}
-				}
-				if !wantsEpisodes {
-					continue
-				}
-				episodeItems, err := s.children(ctx, viewer, device, season.Key)
-				if err != nil {
-					return nil, err
-				}
-				filteredEpisodes := episodeItems[:0]
-				for _, episode := range episodeItems {
-					if episode.Type == core.TypeEpisode {
-						filteredEpisodes = append(filteredEpisodes, episode)
-					}
-				}
-				episodeNames := siblingNames(filteredEpisodes, func(t core.Title) string { return strings.TrimSuffix(path.Base(libpath.Episode(t)), ".mkv") })
-				for _, episode := range filteredEpisodes {
-					if requested[episode.Key] {
-						result[episode.Key] = path.Join(seasonBase, episodeNames[episode.Key]+".mkv")
-					}
-				}
-			}
-		}
-	}
-	return result, nil
+	return experience.VirtualPaths(ctx, s.virtualPathCatalog(), viewer, device, keys)
 }
 
 func (s surfaceVirtualPaths) Base(ctx context.Context, req *http.Request) (string, error) {
@@ -135,65 +27,6 @@ func (s surfaceVirtualPaths) Base(ctx context.Context, req *http.Request) (strin
 		return "", core.ErrNotAvailable
 	}
 	return s.base(ctx, req)
-}
-
-func (s surfaceVirtualPaths) library(ctx context.Context, viewer *core.Viewer, device core.Device, typ core.MediaType) ([]core.Title, error) {
-	views, err := s.experience.Views(ctx, viewer)
-	if err != nil {
-		return nil, err
-	}
-	var titles []core.Title
-	for _, view := range views {
-		if view.Type != typ {
-			continue
-		}
-		for offset := 0; offset < 100000; {
-			page, err := s.experience.LibraryItems(ctx, viewer, device, view.ID, frontend.ItemQuery{Offset: offset, Limit: 250})
-			if err != nil {
-				return nil, err
-			}
-			for _, title := range page.Items {
-				if title.Type == typ {
-					titles = append(titles, title)
-				}
-			}
-			offset += len(page.Items)
-			if offset >= page.Total {
-				break
-			}
-			if len(page.Items) == 0 || offset >= 100000 {
-				return nil, core.ErrNotAvailable
-			}
-		}
-	}
-	return titles, nil
-}
-
-func (s surfaceVirtualPaths) children(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]core.Title, error) {
-	var titles []core.Title
-	for offset := 0; offset < 100000; {
-		page, err := s.experience.Children(ctx, viewer, device, key, frontend.ItemQuery{Offset: offset, Limit: 500})
-		if err != nil {
-			return nil, err
-		}
-		titles = append(titles, page.Items...)
-		offset += len(page.Items)
-		if offset >= page.Total {
-			return titles, nil
-		}
-		if len(page.Items) == 0 {
-			return nil, core.ErrNotAvailable
-		}
-	}
-	return nil, core.ErrNotAvailable
-}
-
-func siblingNames(titles []core.Title, name func(core.Title) string) map[core.RatingKey]string {
-	items := make([]libpath.NamedKey, 0, len(titles))
-	for _, title := range titles {
-		items = append(items, libpath.NamedKey{Name: name(title), Key: title.Key})
-	}
-	return libpath.Disambiguate(items)
 }
 
 func (s surfaceVirtualPaths) Path(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) (string, error) {
@@ -211,75 +44,36 @@ func (s surfaceVirtualPaths) Path(ctx context.Context, viewer *core.Viewer, devi
 	if title.Key != key {
 		return "", core.ErrNotFound
 	}
-	if title.Type == core.TypeMovie {
-		titles, err := s.library(ctx, viewer, device, core.TypeMovie)
-		if err != nil {
-			return "", err
-		}
-		name := siblingNames(titles, libpath.MovieName)[key]
-		if name == "" {
-			return "", core.ErrNotFound
-		}
-		return path.Join("Movies", name, name+".mkv"), nil
-	}
-	showKey := title.Key
-	if title.Type == core.TypeEpisode || title.Type == core.TypeSeason {
-		showKey = title.ShowKey
-	}
-	if showKey == 0 {
-		return "", core.ErrNotFound
-	}
-	shows, err := s.library(ctx, viewer, device, core.TypeShow)
-	if err != nil {
-		return "", err
-	}
-	showName := siblingNames(shows, func(t core.Title) string { return libpath.Safe(t.Title) })[showKey]
-	if showName == "" {
-		return "", core.ErrNotFound
-	}
-	base := path.Join("TV", showName)
-	if title.Type == core.TypeShow {
-		return base, nil
-	}
-	if title.Type != core.TypeSeason && title.Type != core.TypeEpisode {
-		return "", core.ErrNotFound
-	}
-	seasonItems, err := s.children(ctx, viewer, device, showKey)
-	if err != nil {
-		return "", err
-	}
-	filteredSeasons := seasonItems[:0]
-	for _, season := range seasonItems {
-		if season.Type == core.TypeSeason {
-			filteredSeasons = append(filteredSeasons, season)
-		}
-	}
-	seasonNames := siblingNames(filteredSeasons, func(t core.Title) string { return fmt.Sprintf("Season %02d", t.Season) })
-	for _, season := range filteredSeasons {
-		seasonName := seasonNames[season.Key]
-		if seasonName == "" {
-			continue
-		}
-		if title.Type == core.TypeSeason && season.Key == key {
-			return path.Join(base, seasonName), nil
-		}
-		if title.Type != core.TypeEpisode {
-			continue
-		}
-		items, err := s.children(ctx, viewer, device, season.Key)
-		if err != nil {
-			return "", err
-		}
-		episodes := items[:0]
-		for _, episode := range items {
-			if episode.Type == core.TypeEpisode {
-				episodes = append(episodes, episode)
+	return experience.VirtualPath(ctx, s.virtualPathCatalog(), viewer, device, title)
+}
+
+func (s surfaceVirtualPaths) virtualPathCatalog() experience.VirtualPathCatalog {
+	exp := s.experience
+	return experience.VirtualPathCatalog{
+		Views: func(ctx context.Context, viewer *core.Viewer) ([]experience.VirtualPathView, error) {
+			views, err := exp.Views(ctx, viewer)
+			if err != nil {
+				return nil, err
 			}
-		}
-		names := siblingNames(episodes, func(t core.Title) string { return strings.TrimSuffix(path.Base(libpath.Episode(t)), ".mkv") })
-		if name := names[key]; name != "" {
-			return path.Join(base, seasonName, name+".mkv"), nil
-		}
+			out := make([]experience.VirtualPathView, len(views))
+			for i, view := range views {
+				out[i] = experience.VirtualPathView{ID: view.ID, Type: view.Type}
+			}
+			return out, nil
+		},
+		LibraryItems: func(ctx context.Context, viewer *core.Viewer, device core.Device, id string, offset, limit int) (experience.VirtualPathPage, error) {
+			page, err := exp.LibraryItems(ctx, viewer, device, id, frontend.ItemQuery{Offset: offset, Limit: limit})
+			if err != nil {
+				return experience.VirtualPathPage{}, err
+			}
+			return experience.VirtualPathPage{Items: page.Items, Total: page.Total}, nil
+		},
+		Children: func(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey, offset, limit int) (experience.VirtualPathPage, error) {
+			page, err := exp.Children(ctx, viewer, device, key, frontend.ItemQuery{Offset: offset, Limit: limit})
+			if err != nil {
+				return experience.VirtualPathPage{}, err
+			}
+			return experience.VirtualPathPage{Items: page.Items, Total: page.Total}, nil
+		},
 	}
-	return "", core.ErrNotFound
 }
