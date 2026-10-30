@@ -61,6 +61,19 @@ func NewRowsService(d RowServiceDeps) (*RowsService, error) {
 // interaction identifiers. Candidate requests expand to a bounded prefix when
 // filtering would otherwise leave a row short.
 func (s *RowsService) Rows(ctx context.Context, req frontend.RowRequest, protocol core.Protocol) ([]frontend.Row, error) {
+	return s.rows(ctx, req, protocol, true)
+}
+
+// SnapshotRows builds and authorizes the same ranked rows without issuing
+// impressions; a paged row view issues receipts only for delivered entries.
+func (s *RowsService) SnapshotRows(ctx context.Context, req frontend.RowRequest, protocol core.Protocol) ([]frontend.Row, error) {
+	if s.plex != nil {
+		return nil, errors.New("experience: Plex row snapshots unavailable")
+	}
+	return s.rows(ctx, req, protocol, false)
+}
+
+func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protocol core.Protocol, issue bool) ([]frontend.Row, error) {
 	if s.plex != nil {
 		if protocol != core.Protocol("plex") || req.Viewer == nil || !s.plex.Active(ctx, req.Viewer) {
 			return nil, errors.New("experience: invalid Plex viewer")
@@ -202,6 +215,9 @@ func (s *RowsService) Rows(ctx context.Context, req frontend.RowRequest, protoco
 				return nil, errors.New("experience: layout returned unauthorized entry")
 			}
 		}
+		if !issue {
+			continue
+		}
 		impression := &core.NeutralImpression{RowID: row.ID, Kind: row.Kind, Title: row.Title, Purpose: row.Purpose, Rank: row.Rank, Situation: situation, Collection: row.Collection, Item: req.Item, Placement: string(req.Placement), ViewID: req.ViewID}
 		for _, entry := range row.Entries {
 			impression.Entries = append(impression.Entries, core.NeutralEntryRef{Kind: string(entry.Kind), ID: entryIdentity(entry)})
@@ -275,3 +291,6 @@ func entryIdentity(e frontend.RowEntry) string {
 	}
 	return ""
 }
+
+// RowEntryIdentity returns the stable neutral identity of a well-formed entry.
+func RowEntryIdentity(e frontend.RowEntry) string { return entryIdentity(e) }

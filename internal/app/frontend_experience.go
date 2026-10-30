@@ -74,6 +74,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			if imp.Collection != 0 && !a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindCollection, ID: imp.Collection.String()}, vis) {
 				return false
 			}
+			if imp.Collection != 0 && !rowViewCollectionMembers(ctx, a.collections, u, imp.Collection, imp.Entries) {
+				return false
+			}
 			switch frontend.Placement(imp.Placement) {
 			case frontend.PlacementHome:
 			case frontend.PlacementLibrary:
@@ -230,6 +233,10 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
+	rowViews, err := a.newRowViews(protocol, rows, receipts, vis, libs)
+	if err != nil {
+		return nil, err
+	}
 	deps := experience.ServiceDeps{NotInterestedSource: func(ctx context.Context, u *core.User) ([]frontend.NotInterestedEntry, error) {
 		entries, _, err := a.notInterested.Snapshot(ctx, u)
 		if err != nil {
@@ -374,7 +381,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if len(artwork) > 0 {
 		artworkSource = artwork[0]
 	}
-	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser}, nil
+	return &surfaceExperience{Service: service, receipts: receipts, protocol: protocol, artwork: artworkSource, active: a.users.ActiveUser, rowViews: rowViews}, nil
 }
 
 type surfaceExperience struct {
@@ -383,7 +390,22 @@ type surfaceExperience struct {
 	protocol    core.Protocol
 	artwork     frontend.Artwork
 	active      func(context.Context, int64) (*core.User, error)
+	rowViews    *experience.RowViewService
 	playability func(context.Context, frontend.ItemRequest) *bool
+}
+
+func (s *surfaceExperience) ListRowViews(ctx context.Context, req frontend.RowViewRequest) ([]frontend.RowView, error) {
+	if req.Protocol != s.protocol || s.rowViews == nil {
+		return nil, core.ErrUnauthorized
+	}
+	return s.rowViews.ListRowViews(ctx, req)
+}
+
+func (s *surfaceExperience) ResolveRowView(ctx context.Context, req frontend.RowViewPageRequest) (frontend.RowViewPage, error) {
+	if req.Protocol != s.protocol || s.rowViews == nil {
+		return frontend.RowViewPage{}, core.ErrUnauthorized
+	}
+	return s.rowViews.ResolveRowView(ctx, req)
 }
 
 func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {
