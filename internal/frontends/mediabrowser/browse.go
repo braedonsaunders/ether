@@ -152,6 +152,12 @@ func (i *instance) browseRoutes() error {
 			}
 			if i.protocol == "jellyfin" {
 				i.jellyfinCollectionFolder(item, viewID)
+				// ChildCount is the number of items this viewer can list in the view.
+				// A failed count stays absent rather than a fabricated zero.
+				page, err := i.host.Experience.LibraryItems(r.Context(), v, device(r), view.ID, frontend.ItemQuery{Limit: 1})
+				if err == nil {
+					item["ChildCount"] = page.Total
+				}
 			}
 			items = append(items, item)
 		}

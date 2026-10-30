@@ -110,8 +110,8 @@ func jellyfinSeriesStatus(status string) string {
 }
 
 // jellyfinCollectionFolder fills the CollectionFolder shell Jellyfin 12.4
-// returns for every user view. Counts, dates, paths and artwork stay absent
-// until the view itself carries those facts.
+// returns for every user view. Dates, paths and artwork stay absent. ChildCount
+// is the viewer's visible library total, set by the views handler.
 func (i *instance) jellyfinCollectionFolder(item map[string]any, id string) {
 	item["ChannelId"] = nil
 	item["BackdropImageTags"] = []string{}

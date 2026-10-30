@@ -86,9 +86,17 @@ func TestJellyfinListShellMatchesRecordedMovieShape(t *testing.T) {
 }
 
 func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
-	exp := frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
-		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
-	}}
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, id string, q frontend.ItemQuery) (frontend.Page, error) {
+			if v == nil || v.ID != 1 || id != "1" || q.Limit != 1 {
+				t.Fatalf("library count query viewer=%v id=%s limit=%d", v, id, q.Limit)
+			}
+			return frontend.Page{Total: 6}, nil
+		},
+	}
 	inst := mountJellyfin(t, exp)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
@@ -100,7 +108,7 @@ func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 	}
 	view := body.Items[0]
 	for _, key := range []string{"ChannelId", "ChildCount", "DateCreated", "DateLastMediaAdded", "Etag", "ImageTags", "LocationType", "LockData", "MediaType", "PlayAccess", "UserData"} {
-		if key == "ChildCount" || key == "DateCreated" || key == "DateLastMediaAdded" {
+		if key == "DateCreated" || key == "DateLastMediaAdded" {
 			if _, ok := view[key]; ok {
 				t.Fatalf("%s was invented: %v", key, view[key])
 			}
@@ -110,8 +118,8 @@ func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 			t.Errorf("missing %s", key)
 		}
 	}
-	if view["MediaType"] != "Unknown" || view["PlayAccess"] != "Full" || view["LockData"] != false || view["ChannelId"] != nil {
-		t.Fatal(view["MediaType"], view["PlayAccess"], view["LockData"], view["ChannelId"])
+	if view["MediaType"] != "Unknown" || view["PlayAccess"] != "Full" || view["LockData"] != false || view["ChannelId"] != nil || view["ChildCount"] != float64(6) {
+		t.Fatal(view["MediaType"], view["PlayAccess"], view["LockData"], view["ChannelId"], view["ChildCount"])
 	}
 	userData := view["UserData"].(map[string]any)
 	if _, ok := userData["PlayedPercentage"]; ok || userData["Played"] != false {
@@ -125,7 +133,7 @@ func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 	for _, diff := range report.Differences {
 		if diff.Blocking && diff.Kind == conform.KindMissing {
 			switch diff.Path {
-			case "$/Items[]/ChildCount", "$/Items[]/DateCreated", "$/Items[]/DateLastMediaAdded", "$/Items[]/ParentId", "$/Items[]/Path", "$/Items[]/PrimaryImageAspectRatio", "$/Items[]/ImageTags/Primary", "$/Items[]/ImageBlurHashes/Primary":
+			case "$/Items[]/DateCreated", "$/Items[]/DateLastMediaAdded", "$/Items[]/ParentId", "$/Items[]/Path", "$/Items[]/PrimaryImageAspectRatio", "$/Items[]/ImageTags/Primary", "$/Items[]/ImageBlurHashes/Primary":
 			default:
 				t.Errorf("view shell missing %s", diff.Path)
 			}
