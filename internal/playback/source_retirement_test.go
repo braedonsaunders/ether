@@ -9,7 +9,14 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/store"
 )
+
+func newOwnedHarness(t *testing.T, releases []*fakeRelease, ids []string) *harness {
+	t.Helper()
+	db := store.OpenTest(t)
+	return newHarness(t, releases, ids, func(h *harness, _ *Options) { h.db = db })
+}
 
 type ownedTestEngine struct {
 	core.Engine
@@ -72,7 +79,7 @@ func requireOwnedPending(t *testing.T, outcome core.SourceRetirement) {
 func TestOwnedSourceRetirementCloseOutcome(t *testing.T) {
 	for _, closeFailure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure"}[closeFailure], func(t *testing.T) {
-			h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+			h := newOwnedHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
 			e := &ownedTestEngine{Engine: h.engine, closeEntered: make(chan struct{}), closeRelease: make(chan struct{})}
 			var release sync.Once
 			unblock := func() { release.Do(func() { close(e.closeRelease) }) }
@@ -127,7 +134,7 @@ func TestOwnedSourceRetirementCloseOutcome(t *testing.T) {
 }
 
 func TestOwnedSourceRetirementPriorGeneration(t *testing.T) {
-	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute), mkv("B", 10000, time.Minute)}, []string{"A", "B"})
+	h := newOwnedHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute), mkv("B", 10000, time.Minute)}, []string{"A", "B"})
 	e := &ownedTestEngine{Engine: h.engine, hookRelease: "A", closeEntered: make(chan struct{}), closeRelease: make(chan struct{})}
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(e.closeRelease) }) }
@@ -168,7 +175,7 @@ func TestOwnedSourceRetirementPriorGeneration(t *testing.T) {
 func TestOwnedSourceRetirementSharedFlight(t *testing.T) {
 	for _, allCancel := range []bool{false, true} {
 		t.Run(map[bool]string{false: "one-cancels", true: "all-cancel"}[allCancel], func(t *testing.T) {
-			h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+			h := newOwnedHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
 			e := &ownedTestEngine{Engine: h.engine, openEntered: make(chan struct{}), openRelease: make(chan struct{})}
 			var once sync.Once
 			unblock := func() { once.Do(func() { close(e.openRelease) }) }
@@ -243,7 +250,7 @@ func TestOwnedSourceRetirementSharedFlight(t *testing.T) {
 }
 
 func TestOwnedSourceRetirementLateFailedOpen(t *testing.T) {
-	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+	h := newOwnedHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
 	e := &ownedTestEngine{Engine: h.engine, openErr: errors.New("failed with acquired source"), closeEntered: make(chan struct{}), closeRelease: make(chan struct{})}
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(e.closeRelease) }) }
@@ -271,7 +278,7 @@ func TestOwnedSourceRetirementLateFailedOpen(t *testing.T) {
 }
 
 func TestOwnedSourceRetirementAdmissionAndReplacement(t *testing.T) {
-	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+	h := newOwnedHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
 	ps := h.prepare(owner, movieKey, "replace")
 	outcome, _ := h.m.SourceRetirement(ps.ID)
 	h.m.sourceAccounting.mu.Lock()
