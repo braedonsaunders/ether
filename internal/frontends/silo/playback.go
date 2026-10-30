@@ -143,61 +143,14 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	options := frontend.DecideOptions{DirectPlay: direct, DirectStream: hls, AudioStream: -1, SubtitleStream: -1}
-	if b.Audio != nil || b.Subtitle != nil {
-		if (b.Audio != nil && *b.Audio < 0) || (b.Subtitle != nil && *b.Subtitle < -1) {
-			http.Error(w, "Bad Request", 400)
-			return
-		}
-		if b.Audio != nil || (b.Subtitle != nil && *b.Subtitle >= 0) {
-			if i.host.Experience == nil {
-				http.Error(w, "Unavailable", 503)
-				return
-			}
-			detail, e := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: d, Key: key})
-			if e != nil {
-				http.NotFound(w, r)
-				return
-			}
-			tracks := detail.Tracks
-			if target.Version != "" {
-				for _, version := range detail.Versions {
-					if version.ID == target.Version {
-						tracks = version.Media.Streams
-						break
-					}
-				}
-			}
-			resolve := func(kind string, ordinal int) (int, bool) {
-				for _, track := range tracks {
-					if track.Type == kind {
-						if ordinal == 0 {
-							return track.Index, true
-						}
-						ordinal--
-					}
-				}
-				return 0, false
-			}
-			if b.Audio != nil {
-				var ok bool
-				if options.AudioStream, ok = resolve("audio", *b.Audio); !ok {
-					http.Error(w, "Audio unavailable", 422)
-					return
-				}
-			}
-			if b.Subtitle != nil && *b.Subtitle >= 0 {
-				var ok bool
-				if options.SubtitleStream, ok = resolve("subtitle", *b.Subtitle); !ok {
-					http.Error(w, "Subtitle unavailable", 422)
-					return
-				}
-			}
-		}
+	if (b.Audio != nil && *b.Audio < 0) || (b.Subtitle != nil && *b.Subtitle < -1) {
+		http.Error(w, "Bad Request", 400)
+		return
 	}
 	pos := time.Duration(b.Position * float64(time.Second))
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioSet: b.Audio != nil, SubtitleSet: b.Subtitle != nil, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
-		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) {
+		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
 			versionUnavailable(w)
 			return
 		}
@@ -210,7 +163,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
 	if err != nil {
-		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) {
+		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
 			versionUnavailable(w)
 			return
 		}
@@ -467,6 +420,14 @@ func (i *instance) progress(w http.ResponseWriter, r *http.Request) {
 }
 
 func playbackError(w http.ResponseWriter, err error) {
+	if errors.Is(err, frontend.ErrTrackNotFound) {
+		http.Error(w, "Selected track unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	if errors.Is(err, frontend.ErrTrackSourceUnavailable) {
+		http.Error(w, "Track source unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	if errors.Is(err, frontend.ErrSessionBusy) {
 		var busy *frontend.SessionBusyError
 		if errors.As(err, &busy) && busy.RetryAfter > 0 {

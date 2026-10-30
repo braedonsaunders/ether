@@ -321,6 +321,9 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if w.Code != 201 || strings.Contains(w.Body.String(), "account-secret") || planned.Version != "handle" || !planned.Intent.ExactVersion || planned.Item != 1000000000000001 || streamed.Format != frontend.StreamHLS {
 		t.Fatalf("play %d %s %+v %+v", w.Code, w.Body.String(), planned, streamed)
 	}
+	if planned.Intent.AudioOrdinal != nil || planned.Intent.SubtitleStreamIndex != nil {
+		t.Fatalf("omitted tracks must preserve preferences: %+v", planned.Intent)
+	}
 	if !strings.Contains(w.Body.String(), `"hdr10_plus":true`) {
 		t.Fatalf("known HDR10+ not reported: %s", w.Body.String())
 	}
@@ -342,9 +345,32 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"X-Silo-Device-Id":"tv"`) {
 		t.Fatal("media request missing device binding", w.Body.String())
 	}
-	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":0,"subtitle_track_index":0}`)
-	if w.Code != 201 || planned.Intent.Options.AudioStream != 2 || planned.Intent.Options.SubtitleStream != 5 {
-		t.Fatalf("track ordinal mapping: %d %+v", w.Code, planned.Intent.Options)
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":0,"subtitle_track_index":5}`)
+	if w.Code != 201 || planned.Intent.AudioOrdinal == nil || *planned.Intent.AudioOrdinal != 0 || planned.Intent.SubtitleStreamIndex == nil || *planned.Intent.SubtitleStreamIndex != 5 || planned.Intent.AudioSet || planned.Intent.SubtitleSet {
+		t.Fatalf("source-bound track selection: %d %+v", w.Code, planned.Intent)
+	}
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":-1}`)
+	if w.Code != 201 || planned.Intent.AudioOrdinal != nil || planned.Intent.SubtitleStreamIndex == nil || *planned.Intent.SubtitleStreamIndex != -1 {
+		t.Fatalf("subtitle off: %d %+v", w.Code, planned.Intent)
+	}
+	for _, tc := range []struct {
+		err    error
+		status int
+	}{{frontend.ErrTrackNotFound, 422}, {frontend.ErrTrackSourceUnavailable, 503}} {
+		planErr = tc.err
+		failed := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":5}`)
+		if failed.Code != tc.status {
+			t.Fatalf("track admission error %v: %d %s", tc.err, failed.Code, failed.Body.String())
+		}
+	}
+	planErr = nil
+	for _, body := range []string{
+		`{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":-1}`,
+		`{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":-2}`,
+	} {
+		if invalid := call("POST", "/api/v2/playback/start", body); invalid.Code != 400 {
+			t.Fatalf("invalid track: %d %s", invalid.Code, invalid.Body.String())
+		}
 	}
 	media := call("GET", "/api/v2/stream/"+sessionID+"/scoped/master.m3u8", "")
 	if media.Code != 200 {
