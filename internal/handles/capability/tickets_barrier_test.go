@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,15 +39,34 @@ func TestTicketConsumeRechecksAfterReissue(t *testing.T) {
 	seen := make(chan struct{})
 	resume := make(chan struct{})
 	consumer, _ := NewTickets(db)
-	consumer.beforeConsumeLock = func() { close(seen); <-resume }
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(resume) }) }
+	consumer.beforeConsumeLock = func() {
+		close(seen)
+		select {
+		case <-resume:
+		case <-ctx.Done():
+		}
+	}
 	type answer struct {
 		ticket Ticket
 		err    error
 	}
 	done := make(chan answer, 1)
+	finished := make(chan struct{})
 	go func() {
+		defer close(finished)
 		ticket, err := consumer.Consume(ctx, "silo", "events-ws", e.Digest)
 		done <- answer{ticket, err}
+	}()
+	defer func() {
+		release()
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("consume worker did not exit after cancellation")
+		}
 	}()
 	select {
 	case <-seen:
@@ -54,16 +74,14 @@ func TestTicketConsumeRechecksAfterReissue(t *testing.T) {
 		t.Fatal("initial read timed out")
 	}
 	if _, err := db.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace='ticket' AND digest=?`, e.Digest); err != nil {
-		close(resume)
 		t.Fatal(err)
 	}
 	scope.SourceHash = sourceB
 	scope.DeviceJSON = `{"ID":"tv","Client":"new"}`
 	if _, err := issuer.IssueBatch(ctx, scope, []TicketEntry{e}); err != nil {
-		close(resume)
 		t.Fatal(err)
 	}
-	close(resume)
+	release()
 	select {
 	case got := <-done:
 		if got.err != nil || got.ticket.SourceHash != sourceB || got.ticket.DeviceJSON != scope.DeviceJSON {
