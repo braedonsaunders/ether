@@ -125,30 +125,3 @@ func (s *Server) legacyDiscoveryHubs(ctx context.Context, pr *Request, limit int
 	}
 	return out
 }
-
-func (s *Server) legacyScopedCollectionItems(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
-	pr := FromContext(ctx)
-	p, ok := s.d.Collections.(core.CollectionPlaceholder)
-	if !ok || !p.AllowsPlaceholders(ctx, u, k, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)) {
-		return nil, core.ErrNotFound
-	}
-	page, err := s.d.Collections.Items(ctx, u, k, 0, 5000)
-	if err != nil {
-		return nil, err
-	}
-	allowed := make([]core.Title, 0, len(page.Items))
-	for _, t := range page.Items {
-		if !s.titleVisible(u, &t) || t.Released.IsZero() {
-			continue
-		}
-		if t.Released.After(s.now()) {
-			if _, ok := s.d.Collections.(core.CollectionPlaceholder); !ok {
-				continue
-			}
-		} else if len(s.availableForViewer(ctx, u, []core.Title{t})) == 0 {
-			continue
-		}
-		allowed = append(allowed, t)
-	}
-	return allowed, nil
-}

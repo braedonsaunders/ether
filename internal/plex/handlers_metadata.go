@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -586,19 +587,9 @@ func (s *Server) collectionRaw(ctx context.Context, u *core.User, k core.RatingK
 }
 
 func (s *Server) scopedCollectionItems(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
-	if !s.viewerRestricted(u) {
-		return s.legacyScopedCollectionItems(ctx, u, k)
-	}
 	pr := FromContext(ctx)
-	p, ok := s.d.Collections.(core.CollectionPlaceholder)
-	if !ok || !p.AllowsPlaceholders(ctx, u, k, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)) {
-		return nil, core.ErrNotFound
-	}
-	page, err := s.d.Collections.Items(ctx, u, k, 0, 5000)
-	if err != nil {
-		return nil, err
-	}
-	return s.visibility().UpcomingItems(ctx, u, page.Items, s.now), nil
+	selection := experience.ScopedCollection{Collections: s.d.Collections, Visibility: s.visibility(), Now: s.now, Unrestricted: func(viewer *core.User) bool { return !s.viewerRestricted(viewer) }}
+	return selection.Items(ctx, u, k, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device))
 }
 
 func (s *Server) lookupPlaceholder(ctx context.Context, pr *Request, key core.RatingKey, raw string) (*core.Title, core.RatingKey, error) {
