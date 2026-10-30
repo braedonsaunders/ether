@@ -325,6 +325,23 @@ func TestAuthenticatedLazyConcurrentFirstRangesReuseSession(t *testing.T) {
 	if pb.prepares != 1 || len(pb.Sessions()) != 1 {
 		t.Fatalf("prepared=%d sessions=%d", pb.prepares, len(pb.Sessions()))
 	}
+	seedLazyUpgrade(t, db, maxLazyViewerCapabilities)
+	if _, err := lazy.(*lazyStreams).issue(ctx, "account-credential-secret", request, true); err == nil {
+		t.Fatal("oversized browse stable issuance accepted")
+	}
+	w := httptest.NewRecorder()
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/movie", nil), "account-credential-secret", request)
+	if w.Code != http.StatusOK || pb.prepares != 1 {
+		t.Fatalf("active oversized range status=%d prepares=%d", w.Code, pb.prepares)
+	}
+	different := request
+	different.Device.ID = "new-device"
+	w = httptest.NewRecorder()
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/movie", nil), "account-credential-secret", different)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("new oversized range admitted: %d", w.Code)
+	}
+
 }
 
 func TestAuthenticatedLazyConflictAndExpiry(t *testing.T) {
@@ -401,32 +418,35 @@ func TestLazyRenewalRespectsGrantAndDatabase(t *testing.T) {
 	db := store.OpenTest(t)
 	now := time.Now().Truncate(time.Millisecond)
 	grant := &expiringLazyGrants{fakeLazyGrants: &fakeLazyGrants{}, expires: now.Add(20 * time.Minute)}
-	broker := &Broker{deps: BrokerDeps{Now: func() time.Time { return now }}, lazySessions: map[string]lazySession{"hash": {id: "session", expires: now.Add(time.Minute).UnixMilli()}}}
+	broker := &Broker{deps: BrokerDeps{Now: func() time.Time { return now }}, lazySessions: map[string]lazySession{lazyHash("hash"): {id: "session", expires: now.Add(time.Minute).UnixMilli()}}}
 	streams := &lazyStreams{db: db, broker: broker, protocol: "stremio", grants: grant, ttl: time.Hour}
-	if _, err := db.Exec(`INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?)`, "hash", "stremio", 1, "grant-reference", "{}", now.Add(time.Minute).UnixMilli()); err != nil {
+	if _, err := db.Exec(`INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) VALUES('lazy-stream',?,1,1,'stremio','',?)`, lazyHash("hash"), now.Add(time.Minute).UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
-	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err != nil {
+	if _, err := db.Exec(`INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?)`, lazyHash("hash"), "stremio", 1, "grant-reference", "{}", now.Add(time.Minute).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if err := streams.renewActive(ctx, lazyHash("hash"), "grant-reference", 1, "session"); err != nil {
 		t.Fatal(err)
 	}
 	var expires int64
-	if err := db.QueryRow(`SELECT expires FROM sessions_lazy_streams WHERE hash=?`, "hash").Scan(&expires); err != nil || expires != grant.expires.UnixMilli() {
+	if err := db.QueryRow(`SELECT expires FROM sessions_lazy_streams WHERE hash=?`, lazyHash("hash")).Scan(&expires); err != nil || expires != grant.expires.UnixMilli() {
 		t.Fatalf("expiry=%d grant=%d err=%v", expires, grant.expires.UnixMilli(), err)
 	}
 	grant.revoked = true
-	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err == nil {
+	if err := streams.renewActive(ctx, lazyHash("hash"), "grant-reference", 1, "session"); err == nil {
 		t.Fatal("renewed revoked grant")
 	}
 	grant.revoked = false
 	now = grant.expires
-	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err == nil {
+	if err := streams.renewActive(ctx, lazyHash("hash"), "grant-reference", 1, "session"); err == nil {
 		t.Fatal("renewed expired capability or grant")
 	}
 	now = now.Add(-time.Minute)
 	if _, err := db.Exec(`DROP TABLE sessions_lazy_streams`); err != nil {
 		t.Fatal(err)
 	}
-	if err := streams.renewActive(ctx, "hash", "grant-reference", 1, "session"); err == nil {
+	if err := streams.renewActive(ctx, lazyHash("hash"), "grant-reference", 1, "session"); err == nil {
 		t.Fatal("renewed during database failure")
 	}
 }
