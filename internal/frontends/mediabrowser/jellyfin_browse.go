@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -331,7 +330,7 @@ func (i *instance) writeBoxSets(w http.ResponseWriter, r *http.Request, viewer *
 		return
 	}
 	page, err := i.host.Experience.Collections(r.Context(), viewer, device(r), frontend.CollectionQuery{Offset: q.Offset, Limit: q.Limit})
-	if errors.Is(err, core.ErrNotAvailable) {
+	if errors.Is(err, frontend.ErrNotAvailable) {
 		jsonReply(w, i.queryResult([]any{}, 0, q.Offset))
 		return
 	}
@@ -373,8 +372,8 @@ func (i *instance) boxSetDTO(collection frontend.Collection) map[string]any {
 // key does not.
 func attachParentIdentity(m map[string]any, t frontend.Title) {
 	show := t.ShowKey
-	if show == 0 && (t.Key.Kind() == core.KindEpisode || t.Key.Kind() == core.KindSeason) {
-		show = core.ShowKey(t.Key.TMDB())
+	if show == 0 && (t.Key.Kind() == frontend.KindEpisode || t.Key.Kind() == frontend.KindSeason) {
+		show = frontend.ShowKey(t.Key.TMDB())
 	}
 	if show != 0 {
 		m["SeriesId"] = ids.RatingKeyGUID(show)
@@ -389,8 +388,8 @@ func attachParentIdentity(m map[string]any, t frontend.Title) {
 	}
 	if t.Type == "episode" {
 		season := t.Key.Parent()
-		if season == 0 && show.Kind() == core.KindShow && (t.Season > 0 || t.SeasonTitle != "") {
-			season = core.SeasonKey(show.TMDB(), t.Season)
+		if season == 0 && show.Kind() == frontend.KindShow && (t.Season > 0 || t.SeasonTitle != "") {
+			season = frontend.SeasonKey(show.TMDB(), t.Season)
 		}
 		if season != 0 {
 			id := ids.RatingKeyGUID(season)
