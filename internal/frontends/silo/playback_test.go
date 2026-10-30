@@ -264,7 +264,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		if planErr != nil {
 			return frontend.PlayPlan{}, planErr
 		}
-		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Duration: time.Hour, Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus}}}, Decision: frontend.Decision{Kind: "transcode", VideoCopy: true}}, nil
+		return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4", Duration: time.Hour, Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: "bt709", HDR10Plus: &hdr10Plus}}}, Decision: frontend.Decision{Kind: "transcode", VideoCopy: true}}, nil
 	}, OpenFunc: func(_ context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 		if openErr != nil {
 			return frontend.Session{}, openErr
@@ -326,6 +326,9 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `"hdr10_plus":true`) {
 		t.Fatalf("known HDR10+ not reported: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"dynamic_range":"hdr10_plus"`) || strings.Contains(w.Body.String(), `"dynamic_range":"sdr"`) {
+		t.Fatalf("positive HDR10+ mislabeled as SDR: %s", w.Body.String())
 	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", "")
 	if e == nil {
