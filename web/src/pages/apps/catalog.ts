@@ -11,7 +11,9 @@ export function appPath(id: string): string {
 }
 
 export function appLabel(id: string, fallbackName: string): string {
-  return id === "webdav" ? t("Files") : fallbackName;
+  if (id === "webdav") return t("Files");
+  if (id === "m3u") return t("M3U and XMLTV");
+  return fallbackName;
 }
 
 /** One human sentence for an overview card or the setup chooser. */

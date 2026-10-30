@@ -35,7 +35,9 @@ describe("sign-in", () => {
     vi.spyOn(api, "bootstrap")
       .mockResolvedValueOnce(pendingSetup)
       .mockResolvedValue({ ...pendingSetup, authenticated: true });
-    const localSignIn = vi.spyOn(api, "localSignIn").mockResolvedValue({ token: "local-owner-token" });
+    const localSignIn = vi
+      .spyOn(api, "localSignIn")
+      .mockResolvedValue({ token: "local-owner-token" });
     const config = vi.spyOn(api, "getConfig");
     renderApp();
     expect(await screen.findByLabelText("Username")).toBeInTheDocument();

@@ -1,4 +1,4 @@
-// conformdiff records and compares Plex Media Server HTTP responses.
+// conformdiff records and compares protocol responses and checks offline reference drift.
 package main
 
 import (
@@ -31,9 +31,12 @@ func main() {
 }
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: conformdiff record|compare|live [flags]")
+		return fmt.Errorf("usage: conformdiff record|compare|live|drift [flags]")
 	}
 	cmd := args[0]
+	if cmd == "drift" {
+		return drift(args[1:])
+	}
 	if cmd == "proxy" {
 		return proxyCommand(args[1:])
 	}

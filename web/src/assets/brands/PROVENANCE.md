@@ -6,13 +6,13 @@ Each SVG is the path geometry from [Simple Icons](https://github.com/simple-icon
 
 Sanitized on that date: XML declaration, titles, roles, and every element other than one `viewBox="0 0 24 24"` root and its `path` data were removed. Fill is `currentColor`. No scripts, external references, or event handlers.
 
-| File | Simple Icons slug |
-| --- | --- |
-| `emby.svg` | `emby` |
-| `jellyfin.svg` | `jellyfin` |
-| `plex.svg` | `plex` |
-| `simkl.svg` | `simkl` |
+| File                   | Simple Icons slug  |
+| ---------------------- | ------------------ |
+| `emby.svg`             | `emby`             |
+| `jellyfin.svg`         | `jellyfin`         |
+| `plex.svg`             | `plex`             |
+| `simkl.svg`            | `simkl`            |
 | `themoviedatabase.svg` | `themoviedatabase` |
-| `trakt.svg` | `trakt` |
+| `trakt.svg`            | `trakt`            |
 
 No vendored mark exists for Silo, Stremio, WebDAV, OpenSubtitles, Prowlarr, OMDb, or MDBList. Do not invent those logos.

@@ -110,15 +110,39 @@ func webPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Vary", "Accept-Language")
 	type copy struct{ heading, instruction string }
 	translations := map[string]copy{
-		"en": {"Connect to Ether", "Open a native Jellyfin or Emby app, add this server's address, and sign in with your Ether viewer account or Quick Connect."},
-		"fr": {"Se connecter à Ether", "Ouvrez une application Jellyfin ou Emby native, ajoutez l’adresse de ce serveur et connectez-vous avec votre compte Ether ou Quick Connect."},
-		"es": {"Conectar a Ether", "Abra una aplicación nativa de Jellyfin o Emby, agregue la dirección de este servidor e inicie sesión con su cuenta de Ether o Quick Connect."},
-		"de": {"Mit Ether verbinden", "Öffnen Sie eine native Jellyfin- oder Emby-App, fügen Sie die Serveradresse hinzu und melden Sie sich mit Ihrem Ether-Konto oder Quick Connect an."},
+		"en":    {"Connect to Ether", "Open a native Jellyfin or Emby app, add this server's address, and sign in with your Ether viewer account or Quick Connect."},
+		"fr":    {"Se connecter à Ether", "Ouvrez une application Jellyfin ou Emby native, ajoutez l’adresse de ce serveur et connectez-vous avec votre compte Ether ou Quick Connect."},
+		"es":    {"Conectar a Ether", "Abra una aplicación nativa de Jellyfin o Emby, agregue la dirección de este servidor e inicie sesión con su cuenta de Ether o Quick Connect."},
+		"de":    {"Mit Ether verbinden", "Öffnen Sie eine native Jellyfin- oder Emby-App, fügen Sie die Serveradresse hinzu und melden Sie sich mit Ihrem Ether-Konto oder Quick Connect an."},
+		"cs":    {"Připojit k Etheru", "Otevřete nativní aplikaci Jellyfin nebo Emby, přidejte adresu tohoto serveru a přihlaste se svým účtem diváka Ether nebo pomocí rychlého připojení."},
+		"da":    {"Opret forbindelse til Ether", "Åbn en indbygget Jellyfin- eller Emby-app, tilføj denne servers adresse, og log ind med din Ether-seerkonto eller hurtig forbindelse."},
+		"fi":    {"Yhdistä Etheriin", "Avaa natiivi Jellyfin- tai Emby-sovellus, lisää tämän palvelimen osoite ja kirjaudu Ether-katselijatililläsi tai pikayhteydellä."},
+		"it":    {"Connettiti a Ether", "Apri un’app nativa Jellyfin o Emby, aggiungi l’indirizzo di questo server e accedi con il tuo account spettatore Ether o con la connessione rapida."},
+		"ja":    {"Ether に接続", "ネイティブの Jellyfin または Emby アプリを開き、このサーバーのアドレスを追加して、Ether の視聴者アカウントまたはクイック接続でログインしてください。"},
+		"ko":    {"Ether에 연결", "Jellyfin 또는 Emby 네이티브 앱을 열고 이 서버의 주소를 추가한 다음 Ether 시청자 계정이나 빠른 연결로 로그인하세요."},
+		"nb":    {"Koble til Ether", "Åpne en innebygd Jellyfin- eller Emby-app, legg til denne serverens adresse og logg inn med Ether-seerkontoen din eller hurtigtilkobling."},
+		"nl":    {"Verbinding maken met Ether", "Open een native Jellyfin- of Emby-app, voeg het adres van deze server toe en meld je aan met je Ether-kijkersaccount of Snel verbinden."},
+		"pl":    {"Połącz z Ether", "Otwórz natywną aplikację Jellyfin lub Emby, dodaj adres tego serwera i zaloguj się za pomocą konta widza Ether lub szybkiego łączenia."},
+		"pt-BR": {"Conectar ao Ether", "Abra um aplicativo nativo do Jellyfin ou Emby, adicione o endereço deste servidor e entre com sua conta de espectador Ether ou com a conexão rápida."},
+		"ru":    {"Подключиться к Ether", "Откройте нативное приложение Jellyfin или Emby, добавьте адрес этого сервера и войдите с учётной записью зрителя Ether или через быстрое подключение."},
+		"sv":    {"Anslut till Ether", "Öppna en inbyggd Jellyfin- eller Emby-app, lägg till den här serverns adress och logga in med ditt Ether-tittarkonto eller snabbanslutning."},
+		"tr":    {"Ether’e bağlan", "Yerel bir Jellyfin veya Emby uygulamasını açın, bu sunucunun adresini ekleyin ve Ether izleyici hesabınızla ya da hızlı bağlantıyla oturum açın."},
+		"uk":    {"Підключитися до Ether", "Відкрийте нативний застосунок Jellyfin або Emby, додайте адресу цього сервера й увійдіть з обліковим записом глядача Ether або через швидке підключення."},
+		"zh-CN": {"连接到 Ether", "打开原生 Jellyfin 或 Emby 应用，添加此服务器的地址，然后使用 Ether 观众账户或快速连接登录。"},
+		"zh-TW": {"連線至 Ether", "開啟原生 Jellyfin 或 Emby 應用程式，新增此伺服器的位址，然後使用 Ether 觀眾帳號或快速連線登入。"},
 	}
 	lang := "en"
 	for _, part := range strings.Split(r.Header.Get("Accept-Language"), ",") {
 		tag := strings.ToLower(strings.TrimSpace(strings.SplitN(part, ";", 2)[0]))
-		tag = strings.SplitN(tag, "-", 2)[0]
+		if strings.HasPrefix(tag, "zh-tw") || strings.HasPrefix(tag, "zh-hant") {
+			tag = "zh-TW"
+		} else if strings.HasPrefix(tag, "zh") {
+			tag = "zh-CN"
+		} else if strings.HasPrefix(tag, "pt") {
+			tag = "pt-BR"
+		} else {
+			tag = strings.SplitN(tag, "-", 2)[0]
+		}
 		if _, ok := translations[tag]; ok {
 			lang = tag
 			break
