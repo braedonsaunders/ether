@@ -80,8 +80,9 @@ func DropHeadersInTx(ctx context.Context, tx *sql.Tx, scope HeaderScope, digests
 }
 
 // PruneHeadersInTx deletes at most limit expired headers in one namespace.
-// cutoffMillis must come from the domain's trusted clock and must not precede
-// its actual authority lifetime. This only removes mirror bookkeeping; domain
+// cutoffMillis must come from the same trusted clock used for domain expiry;
+// callers must account for any authority lifetime extending beyond the header.
+// This only removes mirror bookkeeping; domain
 // retention and active-session retirement remain the caller's responsibility.
 // No capability, including one considered live by its domain, may rely on this
 // header surviving beyond the supplied cutoff. The caller commits or rolls back.
