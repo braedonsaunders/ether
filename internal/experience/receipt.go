@@ -59,6 +59,7 @@ type ReceiptOptions struct {
 	Now           func() time.Time
 	TTL           time.Duration
 	MaxPerDevice  int
+	PolicyLease   func(context.Context) (func(), error)
 	// Generation, when set, is stored on the authority row and rechecked on
 	// report. Nil stores 0 and does not recheck, which is the mixed-version
 	// behavior for callers that have no generation.

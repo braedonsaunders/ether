@@ -122,9 +122,8 @@ func TestRowViewLaterReceiptFailureLeavesNoCommittedReceipts(t *testing.T) {
 	}
 }
 
-// A policy change after the receipt transaction returns no handles, but the
-// already committed receipts remain until their normal expiry and scope sweep.
-func TestRowViewPostCommitStaleReceiptsExpire(t *testing.T) {
+// A bind-time policy change must roll back both authority and shared headers.
+func TestRowViewBindTimePolicyChangeRollsBack(t *testing.T) {
 	db := store.OpenTest(t)
 	now := time.Unix(1700000000, 0)
 	opts := relayOptions(db, &now, 100, true, nil)
@@ -134,7 +133,8 @@ func TestRowViewPostCommitStaleReceiptsExpire(t *testing.T) {
 			return err
 		}
 		valid = false
-		return nil
+		_, err := tx.ExecContext(ctx, `UPDATE viewer_policy_epoch SET generation=generation+1 WHERE id=1`)
+		return err
 	}
 	receipts, err := NewReceipts(opts)
 	if err != nil {
@@ -168,12 +168,13 @@ func TestRowViewPostCommitStaleReceiptsExpire(t *testing.T) {
 	}
 	var n int
 	for _, table := range []string{"experience_receipts", "capability_headers"} {
-		if err = db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n); err != nil || n != 2 {
+		if err = db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n); err != nil || n != 0 {
 			t.Fatalf("%s count=%d err=%v", table, n, err)
 		}
 	}
 	now = now.Add(time.Minute)
 	valid = true
+	receipts.opts.bindHeaders = nil
 	if _, err = receipts.Issue(ctx, viewer, device, "jellyfin", ReceiptSubject{Kind: "title", ID: "next"}); err != nil {
 		t.Fatal(err)
 	}
