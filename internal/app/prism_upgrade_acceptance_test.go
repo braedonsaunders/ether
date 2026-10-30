@@ -136,7 +136,7 @@ func TestPrismUpgradeFromDelivered9503(t *testing.T) {
 
 	snap := openSQLiteRO(t, path+store.PreMigrateSuffix)
 	assertUpgradeTables(t, db, captureUpgradeTables(t, snap, store.SQLite))
-	assertUpgradeInventory(t, db)
+	assertPrismCandidateArtifacts(t, db)
 	if got := maxMigration(t, snap, "auth"); got != 3 {
 		t.Fatalf("snapshot auth version %d, want the 9503 schema (3)", got)
 	}
@@ -340,7 +340,7 @@ func TestPrismUpgradePostgresPreservesDeliveredRows(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertUpgradeTables(t, db, before)
-		assertUpgradeInventory(t, db)
+		assertPrismCandidateArtifacts(t, db)
 		if got := maxMigration(t, db, "auth"); got != 7 {
 			t.Fatalf("postgres auth %d", got)
 		}
@@ -606,6 +606,8 @@ func seedDeliveredRows(t *testing.T, db sqlQuery) {
 	exec(`INSERT INTO cluster_update_lease(id,node_id,version,acquired_at,expires_at,failed_version) VALUES(1,'old-node','v0.2.48',?,?,'failed-fixture')`, created, expires)
 	exec(`INSERT INTO plex_sessions(id,node_id,user_id,session_key,data,updated_at) VALUES('fixture-playback','old-node',?,91,'{"fixture":"session"}',?)`, upgradeFriendID, created)
 	exec(`INSERT INTO plex_playqueues(id,user_id,rev,data,updated_at) VALUES(92,?,4,'{"fixture":"queue"}',?)`, upgradeFriendID, created)
+	exec(`INSERT INTO availability_releases(id,rating_key,source_id,generation,payload,title,name,protocol,first_seen,last_seen) VALUES('fixture-release',?,'fixture-source','generation','{"name":"preserved"}','Fixture title','Fixture release','usenet',?,?)`, upgradeRatingKey, created, created)
+	exec(`INSERT INTO availability_feed_items(id,source_id,generation,match_title,payload,seen_at) VALUES('fixture-feed','fixture-source','generation','Fixture title','{"name":"preserved feed"}',?)`, created)
 	exec(`INSERT INTO trackprefs_rules(user_id,rules) VALUES(?,?)`, upgradeOwnerID, upgradeRules)
 	exec(`INSERT INTO trackprefs_memory(user_id,show_id,kind,choice,updated_at) VALUES(?,55,'audio','eng',?)`, upgradeOwnerID, upgradeClock.Unix())
 }
