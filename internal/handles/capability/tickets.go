@@ -5,6 +5,7 @@ package capability
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,7 +28,11 @@ const ticketBatchMax = 40
 const ticketCleanupMax = 128
 const ticketTTL = 30 * time.Second
 
-type Tickets struct{ db *sql.DB }
+type Tickets struct {
+	db *sql.DB
+	// Only set by package-local tests before concurrent use.
+	beforeConsumeLock func()
+}
 type TicketScope struct {
 	ViewerID                                  int64
 	Surface, DeviceID, SourceHash, DeviceJSON string
@@ -60,7 +65,11 @@ func digestValid(s string) bool {
 	return true
 }
 func (s TicketScope) valid() bool {
-	return s.ViewerID > 0 && s.Surface != "" && len(s.Surface) <= 128 && s.DeviceID != "" && len(s.DeviceID) <= 512 && digestValid(s.SourceHash) && s.DeviceJSON != "" && len(s.DeviceJSON) <= 4096
+	if s.ViewerID <= 0 || s.Surface == "" || len(s.Surface) > 128 || s.DeviceID == "" || len(s.DeviceID) > 512 || !digestValid(s.SourceHash) || s.DeviceJSON == "" || len(s.DeviceJSON) > 4096 {
+		return false
+	}
+	var device core.Device
+	return json.Unmarshal([]byte(s.DeviceJSON), &device) == nil && device.ID == s.DeviceID
 }
 func dbTime(ctx context.Context, db *sql.DB, tx *sql.Tx) (int64, error) {
 	query := `SELECT CAST((julianday('now') - 2440587.5)*86400000 + 0.999 AS INTEGER)`
@@ -163,8 +172,7 @@ func (s *Tickets) IssueBatch(ctx context.Context, scope TicketScope, entries []T
 }
 
 // Consume uses a guarded DELETE as the linearization point; selection alone
-// never authorizes consumption. A caller may try the legacy store only when no
-// new header exists; adapters must not equate a denied header with absence.
+// never authorizes consumption. Legacy fallback is not yet implemented.
 func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) (Ticket, error) {
 	var out Ticket
 	if surface == "" || purpose == "" || !digestValid(digest) {
@@ -188,9 +196,29 @@ func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) 
 	if !storedPurpose.Valid || !storedDevice.Valid || !storedSource.Valid || storedSurface != surface || storedPurpose.String != purpose {
 		return Ticket{}, core.ErrUnauthorized
 	}
-	out.DeviceJSON, out.SourceHash = storedDevice.String, storedSource.String
-	if err = s.lock(ctx, tx, out.ViewerID); err != nil {
+	initialViewer := out.ViewerID
+	if s.beforeConsumeLock != nil {
+		s.beforeConsumeLock()
+	}
+	if err = s.lock(ctx, tx, initialViewer); err != nil {
 		return Ticket{}, err
+	}
+	// Re-read after the lock: the pre-lock identity may have been deleted and
+	// reissued. Never use fields read before the lock as authority.
+	err = tx.QueryRowContext(ctx, `SELECT h.viewer_id,h.device_id,h.expires,t.device,t.source_hash,h.surface,t.purpose FROM capability_headers h LEFT JOIN capability_tickets t ON t.namespace=h.namespace AND t.digest=h.digest WHERE h.namespace=? AND h.digest=?`, ticketNamespace, digest).Scan(&out.ViewerID, &deviceID, &expires, &storedDevice, &storedSource, &storedSurface, &storedPurpose)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, core.ErrUnauthorized
+	}
+	if err != nil {
+		return Ticket{}, err
+	}
+	if out.ViewerID != initialViewer || !storedPurpose.Valid || !storedDevice.Valid || !storedSource.Valid || storedSurface != surface || storedPurpose.String != purpose {
+		return Ticket{}, core.ErrUnauthorized
+	}
+	out.DeviceJSON, out.SourceHash = storedDevice.String, storedSource.String
+	var device core.Device
+	if json.Unmarshal([]byte(out.DeviceJSON), &device) != nil || device.ID != deviceID {
+		return Ticket{}, core.ErrUnauthorized
 	}
 	now, err := dbTime(ctx, s.db, tx)
 	if err != nil {

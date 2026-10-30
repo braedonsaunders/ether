@@ -150,3 +150,15 @@ func TestTicketBatchBoundsAndExpiry(t *testing.T) {
 		t.Fatalf("expired cleanup n=%d err=%v", n, err)
 	}
 }
+
+func TestTicketRejectsForeignDeviceJSON(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, tickets, scope := fixture(t)
+	for _, bad := range []string{`{`, `{"ID":"other"}`, `null`} {
+		scope.DeviceJSON = bad
+		if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1)}); !errors.Is(err, core.ErrUnauthorized) {
+			t.Fatalf("device JSON %q: %v", bad, err)
+		}
+	}
+}
