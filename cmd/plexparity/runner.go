@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -86,6 +87,37 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 }
 
 func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out io.Writer, subtitleMode bool) error {
+	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
+		b, err := os.ReadFile(filepath.Join(seedDir, "ranker-training.json"))
+		if err != nil {
+			return fmt.Errorf("active-ranker training proof missing: %w", err)
+		}
+		var proof struct {
+			Description string `json:"description"`
+			Insight     struct {
+				Active      bool    `json:"active"`
+				Examples    int     `json:"examples"`
+				Positives   int     `json:"positives"`
+				AUC         float64 `json:"auc"`
+				BaselineAUC float64 `json:"baselineAuc"`
+			} `json:"insight"`
+			HoldoutPositives int                           `json:"holdout_positives"`
+			HoldoutNegatives int                           `json:"holdout_negatives"`
+			HoldoutViewers   map[string]rankerHoldoutClass `json:"holdout_viewers"`
+		}
+		if err := json.Unmarshal(b, &proof); err != nil {
+			return fmt.Errorf("invalid active-ranker training proof: %w", err)
+		}
+		if proof.Description == "" || !proof.Insight.Active || proof.Insight.Examples < 2000 || proof.Insight.Positives < 30 || proof.Insight.AUC < 0.55 || proof.Insight.AUC < proof.Insight.BaselineAUC+0.02 || proof.HoldoutPositives < 5 || proof.HoldoutNegatives < 20 {
+			return fmt.Errorf("active-ranker training proof does not satisfy the production gate")
+		}
+		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+			if counts := proof.HoldoutViewers[viewer]; counts.Positives == 0 || counts.Negatives == 0 {
+				return fmt.Errorf("active-ranker training proof lacks both holdout classes for %s", viewer)
+			}
+		}
+		fmt.Fprintf(out, "ACTIVE_RANKER_PROOF %s\n", bytes.TrimSpace(b))
+	}
 	dir, err := os.MkdirTemp("", "ether-plexparity-")
 	if err != nil {
 		return err

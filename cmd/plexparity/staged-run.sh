@@ -12,6 +12,7 @@ iptv_only=${9:-0}
 counterfactual=${10:-0}
 train_ranker=${11:-0}
 ranker_train_only=${12:-0}
+both_models=${13:-0}
 case "$attribution" in 0|1) ;; *) echo 'invalid attribution mode' >&2; exit 1;; esac
 case "$crowd_diag" in 0|1) ;; *) echo 'invalid crowd diagnostic mode' >&2; exit 1;; esac
 case "$notifications_only" in 0|1) ;; *) echo 'invalid notification-only mode' >&2; exit 1;; esac
@@ -22,8 +23,10 @@ case "$subtitles_only" in 0|1) ;; *) echo 'invalid subtitles-only mode' >&2; exi
 case "$iptv_only" in 0|1) ;; *) echo 'invalid IPTV-only mode' >&2; exit 1;; esac
 case "$counterfactual" in 0|1) ;; *) echo 'invalid counterfactual mode' >&2; exit 1;; esac
 case "$train_ranker" in 0|1) ;; *) echo 'invalid ranker training mode' >&2; exit 1;; esac
-case "$ranker_train_only" in 0|1) ;; *) echo 'invalid ranker training-only mode' >&2; exit 1;; esac
-if [ "$ranker_train_only" = 1 ] && [ "$train_ranker" != 1 ]; then echo 'training-only mode requires ranker training' >&2; exit 1; fi
+case "$ranker_train_only" in 0|1|2) ;; *) echo 'invalid ranker training-only mode' >&2; exit 1;; esac
+case "$both_models" in 0|1) ;; *) echo 'invalid both-models mode' >&2; exit 1;; esac
+if [ "$ranker_train_only" != 0 ] && [ "$train_ranker" != 1 ]; then echo 'training-only mode requires ranker training' >&2; exit 1; fi
+if [ "$both_models" = 1 ] && { [ "$train_ranker" != 0 ] || [ "$ranker_train_only" != 0 ]; }; then echo 'both-models mode must start from the ordinary fixture' >&2; exit 1; fi
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -155,9 +158,15 @@ docker run --rm --network none \
  -v "$root/baseline":/baseline -v "$root/candidate":/candidate -v "$root/driver":/driver -v "$root/work":/work \
  -v prism-gomod:/go/pkg/mod -v prism-gobuild:/root/.cache/go-build \
  -v "$HOME/prism-test/.cache/ffmpeg":/ffmpeg:ro \
- -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e ETHER_PARITY_POLICY_COUNTERFACTUAL="$counterfactual" -e ETHER_PARITY_TRAIN_RANKER="$train_ranker" -e ETHER_PARITY_RANKER_TRAIN_ONLY="$ranker_train_only" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+ -e ETHER_PARITY_ATTRIBUTION="$attribution" -e ETHER_PARITY_CROWD_DIAG="$crowd_diag" -e ETHER_PARITY_NOTIFICATIONS_ONLY="$notifications_only" -e ETHER_PARITY_LIVETV_ONLY="$livetv_only" -e ETHER_PARITY_DOWNLOADS_ONLY="$downloads_only" -e ETHER_PARITY_TRICKPLAY_ONLY="$trickplay_only" -e ETHER_PARITY_SUBTITLES_ONLY="$subtitles_only" -e ETHER_PARITY_IPTV_ONLY="$iptv_only" -e ETHER_PARITY_POLICY_COUNTERFACTUAL="$counterfactual" -e ETHER_PARITY_TRAIN_RANKER="$train_ranker" -e ETHER_PARITY_RANKER_TRAIN_ONLY="$ranker_train_only" -e ETHER_PARITY_BOTH_MODELS="$both_models" -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false -e PATH=/ffmpeg/linux-amd64:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
  prism-go:1.27.3 bash -c '
  set -e
+ if [ "$ETHER_PARITY_RANKER_TRAIN_ONLY" = 2 ]; then
+  cd /driver
+  timeout 14m go test -p 1 -tags plexparity -run "^TestTrainedRankerFixtureIsActiveAndDeterministic$" -count=1 -timeout=14m -v ./cmd/plexparity
+  echo "coverage incomplete: ranker repeatability-only experiment"
+  exit 2
+ fi
  cd /baseline
  if [ "$ETHER_PARITY_RANKER_TRAIN_ONLY" = 1 ]; then
   go build -p 1 -tags plexparity -o /work/seed ./cmd/parityseed
@@ -174,9 +183,18 @@ docker run --rm --network none \
  go build -p 4 -o /work/parity ./cmd/plexparity
  /work/seed /work/seeddata
  if [ "$ETHER_PARITY_TRAIN_RANKER" = 1 ]; then printf "RANKER_PROVENANCE "; cat /work/seeddata/ranker-training.json; fi
+ if [ "$ETHER_PARITY_BOTH_MODELS" = 1 ]; then
+  ETHER_PARITY_TRAIN_RANKER=1 /work/seed /work/rankerseed
+  printf "RANKER_PROVENANCE "; cat /work/rankerseed/ranker-training.json
+ fi
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart /work/seeddata/parity.mp4
  ffmpeg -hide_banner -loglevel error -i /work/seeddata/parity.mp4 -c copy -f mpegts /work/seeddata/iptv.ts
  printf "1\n00:00:00,000 --> 00:00:03,000\nFixture subtitle\n" > /work/seeddata/parity.srt
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -f lavfi -i anullsrc=r=48000:cl=stereo -f srt -i /work/seeddata/parity.srt -t 20 -map 0:v -map 1:a -map 2:a -map 3:s -metadata:s:a:0 language=fra -metadata:s:a:1 language=eng -metadata:s:s:0 language=eng -c:v libx264 -pix_fmt yuv420p -c:a aac -c:s mov_text -movflags +faststart /work/seeddata/parity-tracks.mp4
+ if [ "$ETHER_PARITY_BOTH_MODELS" = 1 ]; then cp /work/seeddata/parity.mp4 /work/seeddata/parity-tracks.mp4 /work/seeddata/parity.srt /work/seeddata/iptv.ts /work/rankerseed/; fi
  /work/parity run /work/baseline /work/candidate /work/seeddata
+ if [ "$ETHER_PARITY_BOTH_MODELS" = 1 ]; then
+  echo "ACTIVE RANKER PARITY"
+  ETHER_PARITY_TRAIN_RANKER=1 /work/parity run /work/baseline /work/candidate /work/rankerseed
+ fi
  '

@@ -172,7 +172,11 @@ func trackedTMDBFixture(tracker *fixtureTracker) http.Handler {
 			if strings.Contains(path, "tv") {
 				kind = "tv"
 			}
-			allowed := strings.HasPrefix(path, "discover/") || strings.HasPrefix(path, "search/") || strings.HasPrefix(path, "trending/") || (len(parts) == 3 && (parts[2] == "similar" || parts[2] == "recommendations"))
+			allowed := path == "discover/movie" || path == "discover/tv" || path == "search/movie" || path == "search/tv" || path == "trending/movie/day" || path == "trending/movie/week" || path == "trending/tv/day" || path == "trending/tv/week"
+			if len(parts) == 3 && (parts[2] == "similar" || parts[2] == "recommendations") {
+				id, err := strconv.Atoi(parts[1])
+				allowed = err == nil && ((parts[0] == "movie" && id >= 10001 && id <= 10000+fixtureMovieCount()) || (parts[0] == "tv" && id >= 20001 && id <= 20020))
+			}
 			if allowed && kind != "" {
 				var items []map[string]any
 				if kind == "movie" {

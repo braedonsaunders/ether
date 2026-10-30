@@ -100,6 +100,20 @@ func TestTrainingCatalogueHasNoMissingOrPlaceholderMovies(t *testing.T) {
 	}
 }
 
+func TestTMDBRelatedRejectsUnknownSource(t *testing.T) {
+	tracker := &fixtureTracker{}
+	srv := httptest.NewServer(trackedTMDBFixture(tracker))
+	defer srv.Close()
+	response, err := http.Get(srv.URL + "/3/movie/999999/recommendations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound || len(tracker.failures()) != 1 {
+		t.Fatalf("unknown recommendation source: status=%d missing=%v", response.StatusCode, tracker.failures())
+	}
+}
+
 func TestTMDBFixtureServesRealImages(t *testing.T) {
 	srv := httptest.NewServer(tmdbFixture())
 	defer srv.Close()
