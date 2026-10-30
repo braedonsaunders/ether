@@ -166,6 +166,7 @@ type Catalog struct {
 	admissionsPending bool
 	cfgMu             sync.RWMutex
 	cfg               config.Catalog
+	cfgVersion        *configVersion
 	log               *slog.Logger
 	now               func() time.Time
 
@@ -277,6 +278,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	if log == nil {
 		log = slog.Default()
 	}
+	cfg = cloneCatalogConfig(cfg)
 	visibility, err := libraryfilter.Compile(cfg.Exclusions)
 	if err != nil {
 		return nil, err
@@ -285,7 +287,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	if stale <= 0 {
 		stale = 24 * time.Hour
 	}
-	c := &Catalog{visibility: visibility, db: db, client: client, cfg: cfg, log: log, now: time.Now,
+	c := &Catalog{visibility: visibility, db: db, client: client, cfg: cfg, cfgVersion: &configVersion{}, log: log, now: time.Now,
 		staleAfter: stale, listTTL: 15 * time.Minute,
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
@@ -305,6 +307,7 @@ func (e *simpleError) Error() string { return e.s }
 
 // UpdateConfig swaps the catalogue config (wire to config.Store.Subscribe).
 func (c *Catalog) UpdateConfig(cfg config.Catalog) {
+	cfg = cloneCatalogConfig(cfg)
 	f, err := libraryfilter.Compile(cfg.Exclusions)
 	if err != nil {
 		c.log.Error("catalog: invalid visibility rules")
@@ -324,6 +327,7 @@ func (c *Catalog) UpdateConfig(cfg config.Catalog) {
 	c.cfgMu.Lock()
 	c.cfg = cfg
 	c.visibility = f
+	c.cfgVersion = &configVersion{}
 	c.writeGen.Add(1)
 	c.cfgMu.Unlock()
 	c.listMu.Lock()
