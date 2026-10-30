@@ -272,3 +272,53 @@ func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) 
 	}
 	return out, nil
 }
+
+// ConsumeMirrored treats frontend_tickets as the sole consume authority. It
+// does not consult an absent-header fallback. Shared metadata, when present, is
+// removed in the same transaction. Not wired into the production service.
+func (s *Tickets) ConsumeMirrored(ctx context.Context, surface, purpose, digest string) (Ticket, error) {
+	var out Ticket
+	if surface == "" || purpose == "" || !digestValid(digest) {
+		return out, core.ErrUnauthorized
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	var initialViewer int64
+	var initialDevice, initialSource string
+	err = tx.QueryRowContext(ctx, `SELECT viewer_id,device,source_hash FROM frontend_tickets WHERE hash=? AND surface=? AND purpose=?`, digest, surface, purpose).Scan(&initialViewer, &initialDevice, &initialSource)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, core.ErrUnauthorized
+	}
+	if err != nil {
+		return Ticket{}, err
+	}
+	var device core.Device
+	if json.Unmarshal([]byte(initialDevice), &device) != nil || device.ID == "" {
+		return Ticket{}, core.ErrUnauthorized
+	}
+	// Acquire shard before either legacy or header mutation; this matches issue.
+	if err = s.lock(ctx, tx, initialViewer); err != nil {
+		return Ticket{}, err
+	}
+	now, err := dbTime(ctx, s.db, tx)
+	if err != nil {
+		return Ticket{}, err
+	}
+	err = tx.QueryRowContext(ctx, `DELETE FROM frontend_tickets WHERE hash=? AND surface=? AND purpose=? AND viewer_id=? AND source_hash=? AND device=? AND expires>? AND EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=frontend_tickets.source_hash AND g.viewer_id=frontend_tickets.viewer_id AND g.surface=frontend_tickets.surface AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1) RETURNING viewer_id,device,source_hash`, digest, surface, purpose, initialViewer, initialSource, initialDevice, now, device.ID, now).Scan(&out.ViewerID, &out.DeviceJSON, &out.SourceHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, core.ErrUnauthorized
+	}
+	if err != nil {
+		return Ticket{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest=? AND viewer_id=? AND surface=?`, ticketNamespace, digest, out.ViewerID, surface); err != nil {
+		return Ticket{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return Ticket{}, err
+	}
+	return out, nil
+}

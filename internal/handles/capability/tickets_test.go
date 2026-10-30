@@ -347,3 +347,71 @@ func TestMirroredTicketOldConsumerAndRollback(t *testing.T) {
 		t.Fatalf("partial mirror count=%d err=%v", n, err)
 	}
 }
+
+func TestMirroredLegacyOnlyAndConcurrentMixedConsume(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	grants, err := identity.NewGrants(db, activeFixture{}, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := identity.NewTicketService(db, "silo", grants, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyToken := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	sum := sha256.Sum256([]byte(legacyToken))
+	legacyDigest := hex.EncodeToString(sum[:])
+	if _, err = db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, legacyDigest, "silo", "events-ws", 1, scope.SourceHash, scope.DeviceJSON, time.Now().Add(time.Minute).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tickets.ConsumeMirrored(ctx, "silo", "events-ws", legacyDigest); err != nil {
+		t.Fatalf("legacy-only consume: %v", err)
+	}
+	raw := make([]byte, 32)
+	raw[0] = 1
+	token := base64.RawURLEncoding.EncodeToString(raw)
+	sum = sha256.Sum256([]byte(token))
+	digest := hex.EncodeToString(sum[:])
+	if _, err = tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{{Digest: digest, Purpose: "events-ws"}}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	out := make(chan error, 2)
+	wg.Add(2)
+	go func() { defer wg.Done(); _, e := old.Consume(ctx, token, "events-ws"); out <- e }()
+	go func() { defer wg.Done(); _, e := tickets.ConsumeMirrored(ctx, "silo", "events-ws", digest); out <- e }()
+	wg.Wait()
+	close(out)
+	success := 0
+	for e := range out {
+		if e == nil {
+			success++
+		} else if !errors.Is(e, core.ErrUnauthorized) {
+			t.Fatalf("unexpected mixed consume error: %v", e)
+		}
+	}
+	if success != 1 {
+		t.Fatalf("successful mixed consumes=%d", success)
+	}
+}
+
+func TestMirroredConsumeRejectsChangedDeviceWithoutDeletion(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{entry(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE frontend_tickets SET device=? WHERE hash=?`, `{"ID":"foreign"}`, entry(1).Digest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.ConsumeMirrored(ctx, "silo", "events-ws", entry(1).Digest); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("changed device: %v", err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, entry(1).Digest).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("denied ticket count=%d err=%v", n, err)
+	}
+}
