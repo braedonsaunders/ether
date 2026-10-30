@@ -17,7 +17,7 @@ import (
 )
 
 // maxExpand caps how many items a URI may expand to (a whole section).
-const maxExpand = 500
+const maxExpand = experience.PlaylistExpandLimit
 
 var (
 	reMetadataPath   = regexp.MustCompile(`^/library/metadata/([\d,]+)(?:/(children|allLeaves|grandchildren))?/?$`)
@@ -73,43 +73,12 @@ func uriPath(uri string) (string, error) {
 // expandKey expands containers (show, season, collection, playlist) into
 // playable items.
 func (s *Server) expandKey(ctx context.Context, pr *Request, k core.RatingKey) ([]core.RatingKey, error) {
-	switch k.Kind() {
-	case core.KindShow:
-		eps, err := s.metadataGrandchildren(ctx, pr, k)
-		if err != nil {
-			return nil, err
-		}
-		return titleKeys(s.visibleTitles(pr.User, eps)), nil
-	case core.KindSeason:
-		eps, err := s.metadataChildren(ctx, pr, k)
-		if err != nil {
-			return nil, err
-		}
-		return titleKeys(s.visibleTitles(pr.User, eps)), nil
-	case core.KindCollection, core.KindSmart:
-		if s.d.Collections == nil {
-			return nil, core.ErrNotFound
-		}
-		page, err := s.d.Collections.Items(ctx, pr.User, k, 0, maxExpand)
-		if err != nil {
-			return nil, err
-		}
-		var out []core.RatingKey
-		for _, t := range page.Items {
-			sub, err := s.expandKey(ctx, pr, t.Key)
-			if err == nil {
-				out = append(out, sub...)
-			}
-		}
-		return out, nil
-	case core.KindPlaylist:
-		pl, err := s.playlist(ctx, pr.User, k)
-		if err != nil {
-			return nil, err
-		}
-		return append([]core.RatingKey(nil), pl.Items...), nil
-	}
-	return []core.RatingKey{k}, nil
+	selection := experience.PlaylistSelection{Playlists: s.d.Playlists, Collections: s.d.Collections, Visibility: s.visibility(), Children: func(ctx context.Context, key core.RatingKey) ([]core.Title, error) {
+		return s.metadataChildren(ctx, pr, key)
+	}, Grandchildren: func(ctx context.Context, key core.RatingKey) ([]core.Title, error) {
+		return s.metadataGrandchildren(ctx, pr, key)
+	}}
+	return selection.Expand(ctx, pr.User, k)
 }
 
 func titleKeys(ts []core.Title) []core.RatingKey {
@@ -244,10 +213,7 @@ func capKeys(ks []core.RatingKey) []core.RatingKey {
 // Playlists
 
 func (s *Server) playlist(ctx context.Context, u *core.User, k core.RatingKey) (*core.Playlist, error) {
-	if s.d.Playlists == nil || u == nil {
-		return nil, core.ErrNotFound
-	}
-	return s.d.Playlists.Get(ctx, u.ID, k)
+	return (experience.PlaylistSelection{Playlists: s.d.Playlists}).Get(ctx, u, k)
 }
 
 func (s *Server) playlistMetadata(ctx context.Context, pl *core.Playlist) model.Metadata {

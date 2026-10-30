@@ -579,29 +579,15 @@ func (s *Server) scopedCollectionItems(ctx context.Context, u *core.User, k core
 }
 
 func (s *Server) lookupPlaceholder(ctx context.Context, pr *Request, key core.RatingKey, raw string) (*core.Title, core.RatingKey, error) {
-	p, ok := s.d.Collections.(core.CollectionPlaceholder)
-	if !ok {
-		return nil, 0, core.ErrNotFound
-	}
-	device := core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)
-	var title *core.Title
-	var ck core.RatingKey
-	var err error
+	var requested *core.RatingKey
 	if raw != "" {
-		ck, err = core.ParseRatingKey(raw)
-		if err == nil {
-			title, err = p.Placeholder(ctx, pr.User, ck, key, device)
+		collection, err := core.ParseRatingKey(raw)
+		if err != nil {
+			return nil, 0, core.ErrNotFound
 		}
-	} else {
-		title, ck, err = p.FindPlaceholder(ctx, pr.User, key, device)
+		requested = &collection
 	}
-	if err != nil || title == nil || !s.titleVisible(pr.User, title) {
-		return nil, 0, core.ErrNotFound
-	}
-	if _, err = s.collectionRaw(ctx, pr.User, ck); err != nil {
-		return nil, 0, core.ErrNotFound
-	}
-	return title, ck, nil
+	return s.collectionSelection().Placeholder(ctx, pr.User, key, requested, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device))
 }
 
 func (s *Server) scopedCollectionCounts(ctx context.Context, u *core.User, cs []core.Collection) []core.Collection {
