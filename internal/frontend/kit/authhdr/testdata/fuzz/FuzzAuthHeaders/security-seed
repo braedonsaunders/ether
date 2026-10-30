@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Emby Token=\"a%2Cb\", DeviceId=\"tv\"")

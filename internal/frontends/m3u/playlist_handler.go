@@ -3,17 +3,17 @@ package m3u
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 )
 
-// playlist publishes stable surface-authenticated channel URLs. Each request to
-// such a URL must revalidate the grant and current policy before starting a
-// broker-scoped stream, so clients can safely cache the playlist.
+// playlist publishes channel-scoped media capabilities without exposing the login grant.
 func (i *instance) playlist(w http.ResponseWriter, r *http.Request) {
 	credential := r.PathValue("credential")
 	viewer, err := i.host.Identity.Resolve(r.Context(), credential)
@@ -21,7 +21,7 @@ func (i *instance) playlist(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if i.host.SurfaceURL == nil {
+	if i.host.SurfaceURL == nil || i.host.LazyStreams == nil || i.host.ClientIP == nil || i.host.Capabilities == nil {
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -45,15 +45,36 @@ func (i *instance) playlist(w http.ResponseWriter, r *http.Request) {
 	if i.host.ClientSeen != nil {
 		i.host.ClientSeen(device.ID)
 	}
+	ip, ok := i.host.ClientIP(r)
+	if !ok {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx := frontend.WithClientIP(r.Context(), ip)
+	profile, err := i.host.Capabilities.Build(ctx, frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: "m3u", ClientID: device.ID, Product: device.Product}, UserAgent: r.UserAgent()})
+	if err != nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	lineups, ok := i.host.LazyStreams.(frontend.LineupStreams)
+	if !ok {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	path, err := lineups.IssueLineup(ctx, credential, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "m3u", Caps: profile.Client})
+	if err != nil || !validLineupCapability(path) {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	var entries []playlistEntry
 	for _, channel := range channels {
 		if channel.ID == "" {
 			continue
 		}
 		channelURL := *u
-		channelURL.Path = strings.TrimRight(u.Path, "/") + "/" + credential + "/channel"
+		channelURL.Path = strings.TrimRight(u.Path, "/") + path + base64.RawURLEncoding.EncodeToString([]byte(channel.ID)) + "/live/index.m3u8"
 		channelURL.RawPath = ""
-		channelURL.RawQuery = url.Values{"id": []string{channel.ID}}.Encode()
+		channelURL.RawQuery = ""
 		entries = append(entries, playlistEntry{ID: channel.ID, Name: channel.Name, StreamURL: channelURL.String(), LogoURL: i.imageURL(r, credential, device, 0, channel.ID, channel.Images)})
 	}
 	var output bytes.Buffer
