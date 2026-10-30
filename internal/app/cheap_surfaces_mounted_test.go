@@ -78,7 +78,11 @@ func testCheapSurfacesMounted(t *testing.T, dir string, configure func(*config.C
 	if _, err = a.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1,detail_at=? WHERE key=?`, time.Now().Unix(), int64(title.Key)); err != nil {
 		t.Fatal(err)
 	}
-	channel, err := a.livetv.SaveChannel(ctx, livetv.Channel{ID: "cert-channel", Number: "1", Name: "Cert & News", Kind: "virtual", Enabled: true, AllowedUsers: []int64{id}, Items: []livetv.Item{{Key: title.Key, Title: title.Title, DurationMS: 3600000}}})
+	durationMS := int64(3600000)
+	if len(media) > 0 {
+		durationMS = 120000
+	}
+	channel, err := a.livetv.SaveChannel(ctx, livetv.Channel{ID: "cert-channel", Number: "1", Name: "Cert & News", Kind: "virtual", Enabled: true, AllowedUsers: []int64{id}, Items: []livetv.Item{{Key: title.Key, Title: title.Title, DurationMS: durationMS}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +248,7 @@ func testCheapSurfacesMounted(t *testing.T, dir string, configure func(*config.C
 		}
 		probeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		defer cancel()
-		output, e := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-show_entries", "stream=codec_name", "-of", "json", liveURL).CombinedOutput()
+		output, e := exec.CommandContext(probeCtx, "ffprobe", "-v", "error", "-analyzeduration", "2000000", "-probesize", "32768", "-read_intervals", "%+1", "-show_entries", "stream=codec_name", "-of", "json", liveURL).CombinedOutput()
 		if e != nil || !bytes.Contains(output, []byte("h264")) {
 			t.Fatalf("ffprobe mounted lineup: %v %s", e, output)
 		}
