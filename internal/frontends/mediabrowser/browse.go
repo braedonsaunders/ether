@@ -302,15 +302,17 @@ func (i *instance) browseRoutes() error {
 		if i.protocol == "jellyfin" {
 			dto["EnableMediaSourceDisplay"] = false
 		}
-		if len(d.Versions) > 0 && i.host.VersionHandles != nil {
+		if len(d.Versions) > 0 {
 			sources := make([]any, 0, len(d.Versions))
 			scope, scopeErr := i.versionScope(r, v)
+			needDefault := scopeErr != nil
 			for _, version := range d.Versions {
 				if scopeErr != nil {
 					break
 				}
 				handle, e := i.host.VersionHandles.Issue(i.identityContext(r), scope, key, version.ID)
 				if e != nil || handle == "" {
+					needDefault = true
 					continue
 				}
 				source := i.detailMediaSourceDTO(handle, version.Media)
@@ -325,6 +327,9 @@ func (i *instance) browseRoutes() error {
 					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)
 				}
 				sources = append(sources, source)
+			}
+			if needDefault {
+				sources = append(sources, i.defaultMediaSource(r, v, token, key))
 			}
 			if len(sources) > 0 {
 				dto["MediaSources"] = sources
