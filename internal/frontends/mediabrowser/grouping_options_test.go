@@ -76,6 +76,19 @@ func TestGroupingOptionsInfuseRecordedStatusAndPolicy(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), movie) || !strings.Contains(w.Body.String(), show) || strings.Contains(w.Body.String(), "Music") {
 			t.Fatal(tc.name, w.Code, w.Body.String())
 		}
+		unauth := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(unauth, httptest.NewRequest("GET", "/UserViews/GroupingOptions", nil))
+		if unauth.Code != http.StatusUnauthorized {
+			t.Fatal(tc.name, "unauthenticated", unauth.Code)
+		}
+		other, _ := ids.GUID(ids.User, 2)
+		bad := httptest.NewRequest("GET", "/UserViews/GroupingOptions?userId="+other, nil)
+		bad.Header.Set("X-Emby-Token", "valid")
+		denied := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(denied, bad)
+		if denied.Code != http.StatusUnauthorized {
+			t.Fatal(tc.name, "other viewer", denied.Code)
+		}
 		if tc.name == "jellyfin" {
 			spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
 			if os.IsNotExist(err) {
