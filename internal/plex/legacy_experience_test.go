@@ -56,7 +56,7 @@ func TestPlexRecentOwnerKeepsLegacyCandidates(t *testing.T) {
 	}
 	owner := &core.User{ID: 1, IsOwner: true}
 	restricted := &core.User{ID: 2, AllowedSections: []int{sec.ID}}
-	original, err := f.srv.legacyRecentlyAddedHub(context.Background(), &Request{User: owner}, sec, 1)
+	original, err := f.srv.controlLegacyRecentlyAddedHub(context.Background(), &Request{User: owner}, sec, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

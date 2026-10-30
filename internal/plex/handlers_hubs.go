@@ -199,10 +199,8 @@ func (s *Server) continueHub(ctx context.Context, pr *Request, v cwVariant, sec 
 }
 
 func (s *Server) recentlyAddedHub(ctx context.Context, pr *Request, sec Section, count int) (hubSpec, error) {
-	if !s.viewerRestricted(pr.User) {
-		return s.legacyRecentlyAddedHub(ctx, pr, sec, count)
-	}
-	items, more, err := experience.RecentlyAdded(ctx, pr.User, sec.Type, count, s.visibility(), s.d.Catalog.Browse)
+	recent := experience.Recent{Visibility: s.visibility(), Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) }}
+	items, more, err := recent.Added(ctx, pr.User, sec.Type, count, s.d.Catalog.Browse)
 	if err != nil {
 		return hubSpec{}, err
 	}

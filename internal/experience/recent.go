@@ -7,8 +7,33 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
+// Recent owns recent-list selection. Unrestricted is a trusted host policy
+// capability; nil enforces inherited visibility and availability.
+type Recent struct {
+	Visibility   Visibility
+	Unrestricted func(*core.User) bool
+}
+
 // RecentlyAdded loads the catalogue candidates for a library in added order.
 func RecentlyAdded(ctx context.Context, viewer *core.User, kind core.MediaType, count int, visibility Visibility, browse func(context.Context, core.BrowseQuery) (core.Page, error)) ([]core.Title, bool, error) {
+	return (Recent{Visibility: visibility}).Added(ctx, viewer, kind, count, browse)
+}
+
+func (r Recent) Added(ctx context.Context, viewer *core.User, kind core.MediaType, count int, browse func(context.Context, core.BrowseQuery) (core.Page, error)) ([]core.Title, bool, error) {
+	if r.Unrestricted != nil && r.Unrestricted(viewer) {
+		q := core.BrowseQuery{Filter: core.Filter{Type: kind}, Sort: core.SortAdded, Desc: true, Limit: count + 1}
+		if viewer != nil {
+			q.Filter.MaxContentRating = viewer.MaxContentRating
+		}
+		page, err := browse(ctx, q)
+		if err != nil {
+			return nil, false, err
+		}
+		if len(page.Items) > count {
+			return page.Items[:count], true, nil
+		}
+		return page.Items, false, nil
+	}
 	// Browse clamps a page to 500 entries; advance offsets rather than
 	// requesting ever-larger prefixes. Bound total candidate work at 1000.
 	fetch := min(max(count+1, 1), 500)
@@ -25,7 +50,7 @@ func RecentlyAdded(ctx context.Context, viewer *core.User, kind core.MediaType, 
 			return nil, false, err
 		}
 		for i := range page.Items {
-			if visibility.Visible(ctx, viewer, &page.Items[i]) {
+			if r.Visibility.Visible(ctx, viewer, &page.Items[i]) {
 				items = append(items, page.Items[i])
 				if len(items) > count {
 					return items[:count], true, nil
@@ -43,9 +68,14 @@ func RecentlyAdded(ctx context.Context, viewer *core.User, kind core.MediaType, 
 
 // RecentlyViewed loads unique history entries in their most recent order.
 func RecentlyViewed(ctx context.Context, viewer *core.User, libraryID int, visibility Visibility, history func(context.Context, int64, time.Time, int) ([]core.HistoryEntry, error), titles func(context.Context, []core.RatingKey) []core.Title, libraryFor func(core.MediaType) (int, bool)) ([]core.Title, error) {
+	return (Recent{Visibility: visibility}).Viewed(ctx, viewer, libraryID, history, titles, libraryFor)
+}
+
+func (r Recent) Viewed(ctx context.Context, viewer *core.User, libraryID int, history func(context.Context, int64, time.Time, int) ([]core.HistoryEntry, error), titles func(context.Context, []core.RatingKey) []core.Title, libraryFor func(core.MediaType) (int, bool)) ([]core.Title, error) {
 	if viewer == nil || history == nil {
 		return nil, nil
 	}
+	unrestricted := r.Unrestricted != nil && r.Unrestricted(viewer)
 	fetch := 100
 	for {
 		entries, err := history(ctx, viewer.ID, time.Time{}, fetch)
@@ -62,9 +92,12 @@ func RecentlyViewed(ctx context.Context, viewer *core.User, libraryID int, visib
 		}
 		var out []core.Title
 		for _, title := range titles(ctx, keys) {
-			if id, ok := libraryFor(title.Type); ok && id == libraryID && visibility.Visible(ctx, viewer, &title) {
+			if id, ok := libraryFor(title.Type); ok && id == libraryID && (unrestricted || r.Visibility.Visible(ctx, viewer, &title)) {
 				out = append(out, title)
 			}
+		}
+		if unrestricted {
+			return out, nil
 		}
 		if len(out) >= 100 {
 			return out[:100], nil

@@ -812,16 +812,13 @@ func (s *Server) onDeckItems(ctx context.Context, pr *Request, items []core.Titl
 }
 
 func (s *Server) sectionRecentlyViewed(w http.ResponseWriter, r *http.Request, sec Section) {
-	if !s.viewerRestricted(FromContext(r.Context()).User) {
-		s.legacySectionRecentlyViewed(w, r, sec)
-		return
-	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	mc := s.sectionContainer(sec)
 	mc.Title2 = "Recently Viewed"
 	if s.d.State != nil && pr.User != nil {
-		items, err := experience.RecentlyViewed(ctx, pr.User, sec.ID, s.visibility(), s.d.State.History, s.getTitles, func(t core.MediaType) (int, bool) {
+		recent := experience.Recent{Visibility: s.visibility(), Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) }}
+		items, err := recent.Viewed(ctx, pr.User, sec.ID, s.d.State.History, s.getTitles, func(t core.MediaType) (int, bool) {
 			section, ok := s.sectionFor(t)
 			return section.ID, ok
 		})

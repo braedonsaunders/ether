@@ -2,10 +2,25 @@ package experience
 
 import (
 	"context"
+	"errors"
 	"github.com/braedonsaunders/ether/internal/core"
 	"testing"
 	"time"
 )
+
+func TestRecentTrustedSourceErrors(t *testing.T) {
+	failure := errors.New("source failed")
+	r := Recent{Unrestricted: func(*core.User) bool { return true }}
+	if _, _, err := r.Added(context.Background(), &core.User{}, core.TypeMovie, 2, func(context.Context, core.BrowseQuery) (core.Page, error) { return core.Page{}, failure }); !errors.Is(err, failure) {
+		t.Fatalf("browse error %v", err)
+	}
+	if _, err := r.Viewed(context.Background(), &core.User{}, 1, func(context.Context, int64, time.Time, int) ([]core.HistoryEntry, error) { return nil, failure }, func(context.Context, []core.RatingKey) []core.Title {
+		t.Fatal("titles loaded after history error")
+		return nil
+	}, func(core.MediaType) (int, bool) { return 0, false }); !errors.Is(err, failure) {
+		t.Fatalf("history error %v", err)
+	}
+}
 
 func TestRecentlyAddedQueryAndMore(t *testing.T) {
 	viewer := &core.User{MaxContentRating: "PG"}
@@ -73,5 +88,48 @@ func TestRecentlyAddedPagesPastCatalogueCap(t *testing.T) {
 	}
 	if len(offsets) < 2 || offsets[len(offsets)-1] == 0 {
 		t.Fatalf("missing offset pagination: %v", offsets)
+	}
+}
+
+func TestRecentTrustedLegacySelection(t *testing.T) {
+	ctx := context.Background()
+	viewer := &core.User{ID: 9, MaxContentRating: "PG"}
+	hidden := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Adult: true}
+	other := core.Title{Key: core.ShowKey(2), Type: core.TypeShow}
+	r := Recent{Unrestricted: func(*core.User) bool { return true }, Visibility: Visibility{FilterAvailable: func(context.Context, []core.Title) []core.Title {
+		t.Fatal("unexpected availability lookup")
+		return nil
+	}}}
+	calls := 0
+	items, more, err := r.Added(ctx, viewer, core.TypeMovie, 1, func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
+		calls++
+		if q.Limit != 2 || q.Filter.MaxContentRating != "PG" || q.Sort != core.SortAdded || !q.Desc {
+			t.Fatalf("query %+v", q)
+		}
+		return core.Page{Items: []core.Title{hidden, other}}, nil
+	})
+	if err != nil || calls != 1 || !more || len(items) != 1 || items[0].Key != hidden.Key {
+		t.Fatalf("added=%+v more=%v calls=%d err=%v", items, more, calls, err)
+	}
+	calls = 0
+	items, err = r.Viewed(ctx, viewer, 1, func(_ context.Context, id int64, _ time.Time, limit int) ([]core.HistoryEntry, error) {
+		calls++
+		if id != viewer.ID || limit != 100 {
+			t.Fatal("history query")
+		}
+		return []core.HistoryEntry{{Key: hidden.Key}, {Key: hidden.Key}, {Key: other.Key}}, nil
+	}, func(_ context.Context, keys []core.RatingKey) []core.Title {
+		if len(keys) != 2 {
+			t.Fatalf("dedupe %v", keys)
+		}
+		return []core.Title{hidden, other}
+	}, func(kind core.MediaType) (int, bool) {
+		if kind == core.TypeMovie {
+			return 1, true
+		}
+		return 2, true
+	})
+	if err != nil || calls != 1 || len(items) != 1 || items[0].Key != hidden.Key {
+		t.Fatalf("viewed=%+v calls=%d err=%v", items, calls, err)
 	}
 }
