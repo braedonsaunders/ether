@@ -60,6 +60,13 @@ func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
 			if _, err = a.db.ExecContext(ctx, `DELETE FROM experience_receipts`); err != nil {
 				t.Fatal(err)
 			}
+			other := strings.Repeat("b", 64)
+			if _, err = a.db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, other, viewer.ID, "other", "jellyfin", 1, "row", "other", "continue", 0); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = a.db.ExecContext(ctx, `INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) VALUES(?,?,?,?,?,?,?)`, "experience.receipt", other, viewer.ID%64, viewer.ID, "jellyfin", "other", 1000); err != nil {
+				t.Fatal(err)
+			}
 			digest := strings.Repeat("a", 64)
 			if mode == "cleanup" {
 				if _, err = a.db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, digest, viewer.ID, "tv", "jellyfin", 1, "row", "old", "continue", 0); err != nil {
@@ -85,9 +92,9 @@ func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
 					t.Fatal("returned handle after fault")
 				}
 			}
-			expected := 0
+			expected := 1
 			if mode == "cleanup" {
-				expected = 1
+				expected = 2
 			}
 			var receipts, headers int
 			if err = a.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts`).Scan(&receipts); err != nil {
