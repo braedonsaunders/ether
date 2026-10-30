@@ -197,6 +197,7 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 	}
 	var listing struct{ Items []capturedItem }
 	if !get("/Items?Recursive=true&Fields=ProviderIds", &listing) {
+		listing.Items = nil
 		out.Warnings = append(out.Warnings, "capture item discovery unavailable")
 	}
 	for i := range listing.Items {
