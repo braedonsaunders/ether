@@ -122,6 +122,15 @@ func TestHasTitlesBatchEnforcesViewerAndSubject(t *testing.T) {
 	if err != nil || !got[one] || got[two] {
 		t.Fatalf("membership %v %v", got, err)
 	}
+	keys := make([]core.RatingKey, 401)
+	keys[0] = one
+	for i := 1; i < len(keys); i++ {
+		keys[i] = core.MovieKey(int64(1000 + i))
+	}
+	batch, err := s.HasTitles(ctx, &core.User{ID: 1}, keys)
+	if err != nil || !batch[one] || batch[keys[400]] {
+		t.Fatalf("multi-chunk: %v %v", batch, err)
+	}
 	other, err := s.HasTitles(ctx, &core.User{ID: 2}, []core.RatingKey{one})
 	if err != nil || other[one] {
 		t.Fatalf("cross viewer %v %v", other, err)
