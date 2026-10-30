@@ -29,7 +29,7 @@ func TestWatchRefreshAfterCompletionAndAutoplayStop(t *testing.T) {
 			t.Fatal(err)
 		}
 		notifications = append(notifications, st)
-	})
+	}, false)
 	defer unsubscribe()
 	progress := func(k core.RatingKey, sec int, mode string) {
 		t.Helper()

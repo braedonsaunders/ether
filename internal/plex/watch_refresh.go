@@ -9,7 +9,7 @@ import (
 // refresh the library on every playing heartbeat: it churns recommendation rows
 // and duplicates the separate session-status notifications. Explicit scrobbles
 // already publish their own library notification in the Plex handler.
-func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKey)) func() {
+func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKey), explicitOnly bool) func() {
 	return watch.Subscribe(func(ev state.Event) {
 		// Cross-surface explicit state changes previously came through the shared
 		// event publisher; Plex's own handlers already send these notifications.
@@ -17,7 +17,7 @@ func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKe
 			refresh(ev.UserID, ev.Key)
 			return
 		}
-		if ev.Imported {
+		if explicitOnly || ev.Imported {
 			return
 		}
 		if ev.Kind == state.EventCompleted ||

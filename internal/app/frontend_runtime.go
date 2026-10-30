@@ -207,11 +207,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return countFrontendStreams((ownerPlayback{Playback: a.playback, app: a}).Sessions()), true
 	}
 	r.control.sharedStatus = r.sharedStatus
-	watchState := a.state
-	if cfg.Spike.Enabled {
-		watchState = nil
-	}
-	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, WatchState: watchState, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
+	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, WatchState: a.state, ExplicitWatchOnly: cfg.Spike.Enabled, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		r.stateUnsub()
 		r.broker.Close(context.Background())
 		cancel()

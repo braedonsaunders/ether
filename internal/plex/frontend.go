@@ -14,10 +14,12 @@ import (
 // owns the server's lifetime because Plex-only integrations still reference it;
 // unmounting removes its handler without replacing its playback callbacks.
 type Frontend struct {
-	Server        *Server
-	WatchState    *state.State
-	StatusFunc    func(context.Context) frontend.Status
-	ListenersFunc func() []frontend.ListenerSpec
+	Server     *Server
+	WatchState *state.State
+	// ExplicitWatchOnly preserves spike mode: only cross-surface scrobbles refresh.
+	ExplicitWatchOnly bool
+	StatusFunc        func(context.Context) frontend.Status
+	ListenersFunc     func() []frontend.ListenerSpec
 }
 
 func (f Frontend) Describe() frontend.Descriptor {
@@ -29,7 +31,7 @@ func (f Frontend) Mount(_ context.Context, _ frontend.Host) (frontend.Instance, 
 	}
 	instance := &plexInstance{server: f.Server, status: f.StatusFunc, listeners: f.ListenersFunc}
 	if f.WatchState != nil {
-		instance.unsubscribe = subscribeWatchRefresh(f.WatchState, f.Server.WatchStateChanged)
+		instance.unsubscribe = subscribeWatchRefresh(f.WatchState, f.Server.WatchStateChanged, f.ExplicitWatchOnly)
 	}
 	return instance, nil
 }

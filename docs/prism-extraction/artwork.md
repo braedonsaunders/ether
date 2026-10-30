@@ -48,7 +48,7 @@ Formatting and `git diff --check` were run. Tests below are **pending**, not pas
 Root must allocate an isolated remote/data runner after private RC gates.
 
 ```sh
-go test ./internal/artwork/service ./internal/plex ./internal/app -run 'Artwork|UltraBlur|WatchRefresh|FrontendWatchSubscription|SessionStateEvents|VariantsWorkers|MetadataWorkers' -count=1
+go test ./internal/artwork/service ./internal/plex ./internal/app -run 'Artwork|UltraBlur|WatchRefresh|FrontendWatchSubscription|SessionStateEvents|VariantsWorkers|MetadataWorkers|Neutral' -count=1
 go test -race ./internal/artwork/service ./internal/plex ./internal/app -run 'WorkersJoin|FrontendWatchSubscription|SessionStateEvents' -count=1
 ```
 
