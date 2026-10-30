@@ -191,6 +191,14 @@ type PlaybackSourceObservation struct {
 	HDR                 *bool
 }
 
+// PlaybackSourceHistory contains persisted source facts without raw release
+// identifiers. A digest can only be matched against authorized candidates.
+type PlaybackSourceHistory struct {
+	Revision, ReleaseDigest, VideoCodec string
+	Height                              int
+	HDR                                 *bool
+}
+
 // GuardedPlaybackSource keeps a source generation current until fn completes.
 // Callers must bound ctx and must not call Stop or Failover from fn.
 type GuardedPlaybackSource interface {
