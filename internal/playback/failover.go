@@ -259,10 +259,10 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 		return nil, perr
 	case perr != nil || info == nil:
 		m.log.Warn("probe failed; using estimated media info", "release", res.Release.Name, "err", perr)
-		mi = fallback(src.Size())
+		mi = core.CloneMediaInfo(fallback(src.Size()))
 		mi.Estimated = true
 	default:
-		mi = *info
+		mi = core.CloneMediaInfo(*info)
 	}
 	if mi.Size <= 0 {
 		mi.Size = src.Size()
@@ -309,11 +309,7 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 		}
 	}
 	// The loopback server may already hold g; publish under its lock.
-	g.mu.Lock()
-	g.info = mi
-	g.observation = observation
-	g.tmap = TimeMap{Size: src.Size(), Duration: mi.Duration, Points: points}
-	g.mu.Unlock()
+	g.publishInfo(mi, observation, TimeMap{Size: src.Size(), Duration: mi.Duration, Points: points})
 	if needIndex {
 		// Play never waits for the container index: publish now and fill
 		// TimeMap.Points / MediaInfo.Keyframes in the background.
@@ -380,14 +376,12 @@ func (m *Manager) startTrailerFill(g *generation) {
 		ctx, cancel := context.WithTimeout(g.ctx, m.opts.IndexTimeout)
 		defer cancel()
 		info := g.infoSnapshot()
-		info.Streams = slices.Clone(info.Streams)
-		info.Chapters = slices.Clone(info.Chapters)
 		if !m.deps.NativeTrailer(ctx, g.src, &info) {
 			return
 		}
 		g.mu.Lock()
 		if len(g.info.Chapters) == 0 {
-			g.info.Chapters = info.Chapters
+			g.info.Chapters = slices.Clone(info.Chapters)
 		}
 		streams := slices.Clone(g.info.Streams)
 		for i := range streams {
