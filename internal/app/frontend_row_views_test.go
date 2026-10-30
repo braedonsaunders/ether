@@ -3,14 +3,18 @@ package app
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
 type rowViewCollectionsFake struct {
@@ -244,5 +248,71 @@ func TestRowViewBatchedTitlesKeepFallbackAndGuideScope(t *testing.T) {
 	got, err := rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, vis, live)
 	if err != nil || len(got) != len(refs) || got[1].Title.Key != season || legacyCalls != 1 || admissions != 1 || guides != 1 {
 		t.Fatalf("result len=%d legacy=%d admission=%d guides=%d err=%v", len(got), legacyCalls, admissions, guides, err)
+	}
+}
+
+func TestRowViewBatchMatchesIndependentLegacy(t *testing.T) {
+	for _, mode := range []string{"admission", "virtual", "missing", "batch_error"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			u := &core.User{ID: 7}
+			now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			makeSource := func() (*catalog.Catalog, func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error), func(context.Context, *core.User, core.RatingKey) (*core.Title, error)) {
+				db := store.OpenTest(t)
+				c, e := catalog.New(db, nil, config.Catalog{GateMoviesByHomeRelease: true}, nil, catalog.WithNow(func() time.Time { return now }))
+				if e != nil {
+					t.Fatal(e)
+				}
+				key := core.MovieKey(10)
+				title := core.Title{Key: key, Type: core.TypeMovie, Title: "Eligible", Released: now.AddDate(-1, 0, 0)}
+				if e = c.UpsertTitle(ctx, title, true); e != nil {
+					t.Fatal(e)
+				}
+				if _, e = db.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,fallback_admitted,attempted_at) VALUES(?,1,0,0,0)`, int64(key)); e != nil {
+					t.Fatal(e)
+				}
+				get := func(ctx context.Context, _ *core.User, key core.RatingKey) (*core.Title, error) {
+					return c.CachedGet(ctx, key)
+				}
+				one := func(ctx context.Context, _ *core.User, _ core.Device, _ core.Protocol, ref core.NeutralEntryRef) (frontend.RowEntry, error) {
+					key, e := core.ParseRatingKey(ref.ID)
+					if e != nil {
+						return frontend.RowEntry{}, e
+					}
+					if mode == "virtual" {
+						return frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &core.Title{Key: key, Type: core.TypeSeason}}, nil
+					}
+					title, e := c.CachedGet(ctx, key)
+					if e != nil {
+						return frontend.RowEntry{}, e
+					}
+					return frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: title}, nil
+				}
+				return c, one, get
+			}
+			_, legacy, _ := makeSource()
+			candidate, one, get := makeSource()
+			key := core.MovieKey(10)
+			if mode == "virtual" {
+				key = core.SeasonKey(99, 1)
+			}
+			if mode == "missing" {
+				key = core.MovieKey(999)
+			}
+			refs := []core.NeutralEntryRef{{Kind: string(frontend.RowEntryTitle), ID: key.String()}}
+			live := func(context.Context, *core.User) ([]frontend.RowEntry, error) { return nil, core.ErrNotFound }
+			want, werr := rowViewResolveBatch(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, legacy, live)
+			batch := candidate.CachedGetMany
+			if mode == "batch_error" {
+				batch = func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+					return nil, errors.New("injected batch SQL failure")
+				}
+			}
+			vis := experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}
+			got, gerr := rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, vis, live)
+			if (werr == nil) != (gerr == nil) || !reflect.DeepEqual(got, want) {
+				t.Fatalf("legacy=%+v %v batch=%+v %v", want, werr, got, gerr)
+			}
+		})
 	}
 }

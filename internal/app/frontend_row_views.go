@@ -302,7 +302,7 @@ func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device co
 		}
 		titles, err := batch(ctx, keys)
 		if err != nil {
-			return nil, err
+			return rowViewResolveBatch(ctx, viewer, device, protocol, refs, one, cachedLive)
 		}
 		parents := make([]core.RatingKey, 0, len(keys))
 		seen := map[core.RatingKey]bool{}
@@ -314,7 +314,7 @@ func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device co
 		}
 		inherited, err := batch(ctx, parents)
 		if err != nil {
-			return nil, err
+			return rowViewResolveBatch(ctx, viewer, device, protocol, refs, one, cachedLive)
 		}
 		vis := visibility
 		vis.GetTitle = func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
