@@ -47,6 +47,12 @@ func (s scorecardSessionWrapper) DetailPlan(ctx context.Context, r frontend.Plan
 	}
 	return frontend.PlayPlan{}, core.ErrNotAvailable
 }
+func (s scorecardSessionWrapper) ResolveDetailSource(ctx context.Context, scope frontend.VersionScope, handle string) (frontend.DetailSourceTarget, error) {
+	if planner, ok := s.embeddedScorecardSessions.(frontend.DetailPlanner); ok {
+		return planner.ResolveDetailSource(ctx, scope, handle)
+	}
+	return frontend.DetailSourceTarget{}, core.ErrNotAvailable
+}
 func (s scorecardSessionWrapper) Open(ctx context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 	v, e := s.embeddedScorecardSessions.Open(ctx, r)
 	s.failure("open", e)

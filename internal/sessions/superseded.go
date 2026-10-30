@@ -54,6 +54,11 @@ func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession,
 				_ = b.deps.Live.Stop(ctx, &core.Viewer{ID: old.public.ViewerID}, old.playID)
 			}
 		} else {
+			if old.sourcePinned {
+				if pins, ok := b.deps.Playback.(core.PlaybackRevisionPin); ok {
+					pins.UnpinSourceRevision(old.playID)
+				}
+			}
 			if b.deps.Transcoder != nil {
 				b.deps.Transcoder.Stop(old.public.ID)
 			}

@@ -77,7 +77,7 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 			}
 		}
 		if s.exact && res.Release.ID != s.prefer {
-			return nil, core.ErrNotAvailable
+			return nil, fmt.Errorf("%w: %w", core.ErrNotAvailable, core.ErrSourceChanged)
 		}
 		g, err := m.openGeneration(ctx, s, res, fallback, cached)
 		if err == nil {
@@ -91,6 +91,9 @@ func (m *Manager) openInitial(ctx context.Context, s *session, profile core.Qual
 		}
 		lastErr = err
 		if s.exact {
+			if errors.Is(err, core.ErrNotFound) {
+				return nil, fmt.Errorf("%w: %w", core.ErrNotAvailable, core.ErrSourceChanged)
+			}
 			return nil, fmt.Errorf("%w: selected release could not be opened", core.ErrNotAvailable)
 		}
 		allUncached = allUncached && errors.Is(err, core.ErrNotCached)
@@ -568,7 +571,7 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 	defer unlock(s.failSem)
 
 	s.mu.Lock()
-	cur, closed, failovers := s.cur, s.closed, s.failovers
+	cur, closed, failovers, pinned := s.cur, s.closed, s.failovers, s.sourcePins > 0
 	direct := s.decision == core.DecisionDirectPlay && !spliceable(s.container, s.name)
 	s.mu.Unlock()
 	if closed {
@@ -587,7 +590,7 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 			}
 		}()
 	}
-	if s.exact {
+	if s.exact || pinned {
 		return nil, fmt.Errorf("%w: selected release cannot be replaced", core.ErrNotAvailable)
 	}
 	if failovers >= m.opts.MaxFailovers {

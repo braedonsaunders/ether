@@ -190,6 +190,7 @@ type session struct {
 
 	mu             sync.Mutex
 	preparedOnly   bool
+	sourcePins     int
 	cur            *generation
 	virtualGen     *generation // generation whose layout virtual mirrors
 	gens           int

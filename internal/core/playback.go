@@ -173,3 +173,10 @@ type SurfaceScopedPlayback interface {
 	MarkSurfaceOpened(id string) bool
 	MarkSurfacePrepared(id string) bool
 }
+
+// PlaybackRevisionPin keeps an opened generation from silently failing over
+// while a client consumes metadata bound to its source revision.
+type PlaybackRevisionPin interface {
+	PinSourceRevision(ctx context.Context, id, revision string) error
+	UnpinSourceRevision(id string)
+}

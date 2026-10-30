@@ -27,6 +27,7 @@ func (s *localSource) ReadAt(p []byte, off int64) (int, error) { return s.f.Read
 func (s *localSource) Size() int64                             { return s.size }
 func (s *localSource) Name() string                            { return s.name }
 func (s *localSource) ReleaseID() string                       { return s.id }
+func (s *localSource) LocalFile() *os.File                     { return s.f }
 func (s *localSource) Close() error                            { return s.f.Close() }
 
 type session struct {

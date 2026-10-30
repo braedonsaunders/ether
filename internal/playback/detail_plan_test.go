@@ -2,6 +2,7 @@ package playback
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -60,10 +61,18 @@ func TestDetailPlanSingleFlightAndPlayReusesProbe(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	var expectedETag string
 	for p := range results {
 		if p.ID != "" || p.Estimated || p.Media.Estimated || p.Media.Container != "mp4" || p.Media.Size != release.Size || !p.DirectPlay {
 			t.Fatalf("invalid detail plan: %+v", p)
 		}
+		if p.ETag == "" {
+			t.Fatal("missing source revision")
+		}
+		if expectedETag != "" && p.ETag != expectedETag {
+			t.Fatal("single flight returned different source revisions")
+		}
+		expectedETag = p.ETag
 	}
 	if h.engine.openCount() != 1 {
 		t.Fatalf("detail opened %d sources", h.engine.openCount())
@@ -81,6 +90,7 @@ func TestDetailPlanSingleFlightAndPlayReusesProbe(t *testing.T) {
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("detail created frontend session: %+v %v", rows, err)
 	}
+	req.ExpectedSourceETag = expectedETag
 	plan, err := b.Plan(ctx, req)
 	if err != nil {
 		t.Fatal(err)
@@ -102,18 +112,25 @@ func TestDetailPlanSingleFlightAndPlayReusesProbe(t *testing.T) {
 	if len(sources) != 1 {
 		t.Fatalf("unexpected sources: %+v", sources)
 	}
-	if _, err := h.m.Failover(ctx, sources[0].ID, 0); err != nil {
-		t.Fatal(err)
-	}
-	refreshed, err := b.DetailPlan(ctx, req)
-	if err != nil || refreshed.Media.Container != "mkv" || refreshed.Media.Size != alternate.Size {
-		t.Fatalf("detail cache survived source failover: %+v %v", refreshed, err)
+	if _, err := h.m.Failover(ctx, sources[0].ID, 0); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("pinned playback failed over: %v", err)
 	}
 	if err := b.Stop(ctx, frontend.SessionAccess{Viewer: friend, Device: device, Protocol: req.Protocol}, session.ID); err != nil {
 		t.Fatal(err)
 	}
 	if sources := h.m.Sessions(); len(sources) != 1 || !sources[0].PreparedOnly {
 		t.Fatalf("remaining plan source must be hidden after stop: %+v", sources)
+	}
+	if _, err := h.m.Failover(ctx, sources[0].ID, 0); err != nil {
+		t.Fatalf("stop did not release source pin: %v", err)
+	}
+	if _, err := b.Plan(ctx, req); !errors.Is(err, frontend.ErrSourceGone) {
+		t.Fatalf("stale offered source accepted: %v", err)
+	}
+	req.ExpectedSourceETag = ""
+	refreshed, err := b.DetailPlan(ctx, req)
+	if err != nil || refreshed.Media.Container != "mkv" || refreshed.Media.Size != alternate.Size {
+		t.Fatalf("detail cache survived source failover: %+v %v", refreshed, err)
 	}
 	allowed.Store(false)
 	if _, err := b.DetailPlan(ctx, req); err == nil {

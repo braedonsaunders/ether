@@ -66,6 +66,7 @@ type brokerPlan struct {
 	exactRelease  string
 	versionHandle string
 	opening       bool
+	pinned        bool
 }
 type brokerSession struct {
 	public           frontend.Session
@@ -84,6 +85,8 @@ type brokerSession struct {
 	sequence         uint64
 	versionHandle    string
 	exactRelease     string
+	sourcePinned     bool
+	sourceETag       string
 }
 
 type retiredSession struct {
@@ -281,7 +284,7 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		}
 	}
 	if req.Channel != "" {
-		if req.Version != "" || req.Intent.ExactVersion {
+		if req.Version != "" || req.Intent.ExactVersion || req.ExpectedSourceETag != "" || req.DetailSource != "" {
 			return frontend.PlayPlan{}, core.ErrNotAvailable
 		}
 		return b.planLive(ctx, req, v)
@@ -295,6 +298,21 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	}
 	if !title.Released.IsZero() && title.Released.After(b.deps.Now()) {
 		return frontend.PlayPlan{}, core.ErrUnreleased
+	}
+	var detail *detailSourceRecord
+	if req.DetailSource != "" {
+		if req.Version != "" || req.Intent.ExactVersion {
+			return frontend.PlayPlan{}, core.ErrNotAvailable
+		}
+		record, err := b.resolveDetailSource(ctx, frontend.VersionScope{Viewer: v, Device: req.Device, Protocol: req.Protocol, Caps: req.Caps}, req.DetailSource)
+		if err != nil {
+			return frontend.PlayPlan{}, err
+		}
+		if record.item != req.Item || (req.ExpectedSourceETag != "" && req.ExpectedSourceETag != record.revision) {
+			return frontend.PlayPlan{}, frontend.ErrSourceGone
+		}
+		req.ExpectedSourceETag = record.revision
+		detail = &record
 	}
 	if req.Intent.Estimate && req.Intent.ExactVersion {
 		info := b.deps.Playback.Estimate(ctx, title, req.Caps)
@@ -368,9 +386,31 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	if chosen != nil {
 		release = chosen.ID
 	}
-	previous, existed := playback.SessionForSurface(string(req.Protocol), v.ID, req.Caps.ClientID, req.Item, release, req.Intent.ExactVersion)
-	ps, err := playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, req.Intent.ExactVersion)
+	prepareExact := req.Intent.ExactVersion
+	previous, existed := playback.SessionForSurface(string(req.Protocol), v.ID, req.Caps.ClientID, req.Item, release, prepareExact)
+	if detail != nil {
+		if cached := b.localDetailSource(v.ID, req.Device.ID, req.Protocol, req.Item, *detail); cached != nil {
+			previous, existed = cached, true
+		}
+	}
+	useCachedDetail := detail != nil && existed && previous != nil && sourceRevision(previous) == detail.revision && previous.Resolution != nil && previous.Resolution.Release.ID == detail.release
+	if detail != nil && !useCachedDetail {
+		release, prepareExact = detail.release, true
+		previous, existed = playback.SessionForSurface(string(req.Protocol), v.ID, req.Caps.ClientID, req.Item, release, prepareExact)
+	}
+	if req.ExpectedSourceETag != "" && detail == nil && (!existed || previous == nil || sourceRevision(previous) != req.ExpectedSourceETag) {
+		return frontend.PlayPlan{}, frontend.ErrSourceGone
+	}
+	var ps *core.PlaySession
+	if useCachedDetail {
+		ps = previous
+	} else {
+		ps, err = playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, prepareExact)
+	}
 	if err != nil {
+		if detail != nil && (errors.Is(err, core.ErrNotFound) || errors.Is(err, core.ErrSourceChanged)) {
+			return frontend.PlayPlan{}, frontend.ErrSourceGone
+		}
 		return frontend.PlayPlan{}, err
 	}
 	if ps == nil {
@@ -382,14 +422,42 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		}
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
+	if detail != nil && (ps.Resolution == nil || ps.Resolution.Release.ID != detail.release) {
+		if !existed || previous == nil || previous.ID != ps.ID {
+			b.deps.Playback.Stop(ps.ID)
+		}
+		return frontend.PlayPlan{}, frontend.ErrSourceGone
+	}
 	existed = existed && previous != nil && previous.ID == ps.ID
 	b.acquirePlanSource(ps.ID, !existed)
 	stored := false
+	pinned := false
 	defer func() {
 		if !stored {
-			b.releasePlanSource(ps.ID)
+			b.releasePlanSource(ps.ID, pinned)
 		}
 	}()
+	if req.ExpectedSourceETag != "" {
+		pins, ok := b.deps.Playback.(core.PlaybackRevisionPin)
+		if !ok {
+			return frontend.PlayPlan{}, frontend.ErrSourceGone
+		}
+		if err := pins.PinSourceRevision(ctx, ps.ID, req.ExpectedSourceETag); err != nil {
+			if ctx.Err() != nil {
+				return frontend.PlayPlan{}, ctx.Err()
+			}
+			if errors.Is(err, core.ErrSourceChanged) {
+				return frontend.PlayPlan{}, frontend.ErrSourceGone
+			}
+			return frontend.PlayPlan{}, err
+		}
+		pinned = true
+		current, ok := b.deps.Playback.Session(ps.ID)
+		if !ok || current == nil || sourceRevision(current) != req.ExpectedSourceETag {
+			return frontend.PlayPlan{}, frontend.ErrSourceGone
+		}
+		ps = current
+	}
 	if b.deps.SelectScopedTracks != nil || b.deps.SelectTracks != nil {
 		var selected core.DecideOptions
 		var err error
@@ -424,7 +492,10 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	if req.Intent.ExactVersion {
 		exactRelease = req.Version
 	}
-	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now(), etag: etag, exactRelease: exactRelease, versionHandle: versionHandle}
+	if detail != nil {
+		exactRelease = detail.release
+	}
+	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now(), etag: etag, exactRelease: exactRelease, versionHandle: versionHandle, pinned: pinned}
 	stored = true
 	b.mu.Unlock()
 	direct, remux, transcoding := b.planAlternatives(ps, req)
@@ -482,7 +553,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	transferred := false
 	defer func() {
 		if !transferred && p.source != nil {
-			b.releasePlanSource(p.source.ID)
+			b.releasePlanSource(p.source.ID, p.pinned)
 		}
 	}()
 	if b.deps.Now().Sub(p.created) > planLifetime || !b.permitted(v, p.request.Caps) {
@@ -520,6 +591,9 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	// A plan's tag must not describe a source that failed over before Open.
 	// Ask the frontend to re-plan instead of handing it a stale revision.
 	if p.etag != "" && sourceRevision(ps) != p.etag {
+		if p.pinned {
+			return frontend.Session{}, frontend.ErrSourceGone
+		}
 		return frontend.Session{}, core.ErrNotAvailable
 	}
 	id, err := sessionID(req.Protocol)
@@ -535,7 +609,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if err := b.enrichCapabilities(ctx, &session); err != nil {
 		return frontend.Session{}, err
 	}
-	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding, versionHandle: p.versionHandle, exactRelease: p.exactRelease}
+	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding, versionHandle: p.versionHandle, exactRelease: p.exactRelease, sourcePinned: p.pinned, sourceETag: p.etag}
 	if b.cluster != nil && session.Protocol != "plex" {
 		if err := b.cluster.store.put(ctx, session, ps.ID, *v, b.deps.Now()); err != nil {
 			return frontend.Session{}, err
@@ -834,6 +908,11 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	b.mu.Unlock()
 	if !ok {
 		return nil
+	}
+	if s.sourcePinned {
+		if pins, ok := b.deps.Playback.(core.PlaybackRevisionPin); ok {
+			pins.UnpinSourceRevision(s.playID)
+		}
 	}
 	if b.cluster != nil {
 		if err := b.cluster.store.remove(ctx, s.public.ID); err != nil && b.deps.OnEventError != nil {

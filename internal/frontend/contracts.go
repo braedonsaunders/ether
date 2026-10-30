@@ -440,11 +440,17 @@ type StreamRequest struct {
 type PlanRequest struct {
 	// Version is a resolver-issued variant ID in legacy mode, or a scoped
 	// VersionHandles handle when ExactVersion is set. Empty selects automatically.
-	Version  string
-	Viewer   *core.Viewer
-	Device   core.Device
-	Protocol Protocol
-	Item     core.RatingKey
+	Version string
+	// ExpectedSourceETag binds playback to a previously offered resolved source.
+	// It is not an authorization credential. A missing or changed source fails
+	// closed instead of resolving a different release.
+	ExpectedSourceETag string
+	// DetailSource is an opaque, scoped handle returned by DetailPlan.
+	DetailSource string
+	Viewer       *core.Viewer
+	Device       core.Device
+	Protocol     Protocol
+	Item         core.RatingKey
 	// Channel is the stable Host.LiveTV channel ID. Exactly one of Item and
 	// Channel must be supplied.
 	Channel string
@@ -462,6 +468,8 @@ type PlayPlan struct {
 	// ETag identifies the resolved immutable source when available; it is
 	// empty when the backend cannot prove a stable source identity.
 	ETag string
+	// DetailSource is a scoped, expiring handle for the resolved source.
+	DetailSource string
 }
 
 // DetailPlanner resolves a playable single item within a bounded admission
@@ -469,6 +477,12 @@ type PlayPlan struct {
 // caller must separately obtain a scoped lazy stream capability.
 type DetailPlanner interface {
 	DetailPlan(ctx context.Context, request PlanRequest) (PlayPlan, error)
+	ResolveDetailSource(ctx context.Context, scope VersionScope, handle string) (DetailSourceTarget, error)
+}
+
+type DetailSourceTarget struct {
+	Item RatingKey
+	ETag string
 }
 type OpenRequest struct {
 	Protocol Protocol

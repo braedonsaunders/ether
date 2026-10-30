@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -102,12 +103,14 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 		// This token never leaves the process: it keys an authenticated path's
 		// reusable session and cannot be used as the issuing credential.
 		identity, err := json.Marshal(struct {
-			Protocol frontend.Protocol
-			ViewerID int64
-			DeviceID string
-			Item     core.RatingKey
-			Version  string
-		}{s.protocol, viewer.ID, req.Device.ID, req.Item, req.Version})
+			Protocol           frontend.Protocol
+			ViewerID           int64
+			DeviceID           string
+			Item               core.RatingKey
+			Version            string
+			ExpectedSourceETag string
+			DetailSource       string
+		}{s.protocol, viewer.ID, req.Device.ID, req.Item, req.Version, req.ExpectedSourceETag, req.DetailSource})
 		if err != nil {
 			return "", core.ErrNotAvailable
 		}
@@ -330,11 +333,19 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reserved = true
 		plan, err := s.broker.Plan(ctx, req)
 		if err != nil {
+			if errors.Is(err, frontend.ErrSourceGone) {
+				s.sourceGone(w, r)
+				return
+			}
 			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		session, err := s.broker.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: req.Device, Protocol: s.protocol, PlanID: plan.ID})
 		if err != nil {
+			if errors.Is(err, frontend.ErrSourceGone) {
+				s.sourceGone(w, r)
+				return
+			}
 			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -367,6 +378,10 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.broker.mu.Lock()
 			delete(s.broker.lazySessions, hash)
 			s.broker.mu.Unlock()
+		}
+		if errors.Is(err, frontend.ErrSourceGone) {
+			s.sourceGone(w, r)
+			return
 		}
 		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 		return
@@ -409,6 +424,19 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		s.broker.ServeMediaFor(s.protocol, w, clone)
 	}
+}
+
+func (s *lazyStreams) sourceGone(w http.ResponseWriter, r *http.Request) {
+	serveSourceGone(s.protocol, w, r)
+}
+func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.Request) {
+	if protocol == "jellyfin" {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, "Error processing request.")
+		return
+	}
+	http.NotFound(w, r)
 }
 
 func validLazyTail(tail string) bool {

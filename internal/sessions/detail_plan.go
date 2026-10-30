@@ -142,7 +142,17 @@ func (b *Broker) DetailPlan(ctx context.Context, req frontend.PlanRequest) (fron
 	b.detailPlans[key] = entry
 	b.mu.Unlock()
 	p, err := b.Plan(ctx, req)
-	if err == nil && (p.Estimated || p.Media.Estimated || ctx.Err() != nil) {
+	if err == nil && p.ETag != "" && b.deps.DB != nil {
+		b.mu.Lock()
+		planned, ok := b.plans[p.ID]
+		b.mu.Unlock()
+		if ok && planned.source != nil {
+			p.DetailSource, err = b.issueDetailSource(ctx, req, planned.source, p.ETag)
+		} else {
+			err = core.ErrNotAvailable
+		}
+	}
+	if p.ID != "" && (err != nil || p.Estimated || p.Media.Estimated || ctx.Err() != nil) {
 		cleanup, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 100*time.Millisecond)
 		if !b.dropPlan(cleanup, p.ID, true) {
 			b.mu.Lock()
@@ -155,7 +165,7 @@ func (b *Broker) DetailPlan(ctx context.Context, req frontend.PlanRequest) (fron
 		cancelCleanup()
 		if ctx.Err() != nil {
 			err = ctx.Err()
-		} else {
+		} else if err == nil {
 			err = core.ErrNotAvailable
 		}
 	}

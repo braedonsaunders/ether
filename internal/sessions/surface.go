@@ -49,6 +49,15 @@ func (s surface) DetailPlan(ctx context.Context, r frontend.PlanRequest) (fronte
 	}
 	return frontend.PlayPlan{}, core.ErrNotAvailable
 }
+func (s surface) ResolveDetailSource(ctx context.Context, scope frontend.VersionScope, handle string) (frontend.DetailSourceTarget, error) {
+	if scope.Protocol != s.protocol {
+		return frontend.DetailSourceTarget{}, core.ErrUnauthorized
+	}
+	if planner, ok := s.broker.(frontend.DetailPlanner); ok {
+		return planner.ResolveDetailSource(ctx, scope, handle)
+	}
+	return frontend.DetailSourceTarget{}, core.ErrNotAvailable
+}
 func (s surface) Open(ctx context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 	if r.Protocol != s.protocol {
 		return frontend.Session{}, core.ErrUnauthorized

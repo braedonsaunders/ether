@@ -79,5 +79,16 @@ CREATE UNIQUE INDEX sessions_active_device ON plex_sessions(user_id,surface,devi
 		release_id TEXT NOT NULL,
 		UNIQUE(viewer_id,surface,device_id,item_id,release_id)
 	);`)
+	store.Register("sessions", 7, `CREATE TABLE sessions_detail_sources (
+		handle TEXT PRIMARY KEY,
+		viewer_id BIGINT NOT NULL,
+		surface TEXT NOT NULL,
+		device_id TEXT NOT NULL,
+		item_id BIGINT NOT NULL,
+		release_id TEXT NOT NULL,
+		revision TEXT NOT NULL,
+		expires BIGINT NOT NULL,
+		UNIQUE(viewer_id,surface,device_id,item_id,revision)
+	); CREATE INDEX sessions_detail_sources_expiry ON sessions_detail_sources(expires);`)
 
 }

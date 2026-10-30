@@ -68,7 +68,7 @@ func (b *Broker) acquirePlanSource(id string, owned bool) {
 
 // The caller holds this source's owner gate. Stop outside b.mu while the gate
 // prevents another plan or session from claiming the source.
-func (b *Broker) releasePlanSource(id string) {
+func (b *Broker) releasePlanSource(id string, pinned bool) {
 	b.mu.Lock()
 	lease := b.sourceLeases[id]
 	stop := false
@@ -80,6 +80,11 @@ func (b *Broker) releasePlanSource(id string) {
 		}
 	}
 	b.mu.Unlock()
+	if pinned {
+		if pins, ok := b.deps.Playback.(core.PlaybackRevisionPin); ok {
+			pins.UnpinSourceRevision(id)
+		}
+	}
 	if stop {
 		b.deps.Playback.Stop(id)
 	}
@@ -196,7 +201,7 @@ func (b *Broker) dropPlan(ctx context.Context, id string, force bool) bool {
 	delete(b.plans, id)
 	b.mu.Unlock()
 	if current.source != nil {
-		b.releasePlanSource(current.source.ID)
+		b.releasePlanSource(current.source.ID, current.pinned)
 	}
 	return true
 }

@@ -123,6 +123,7 @@ type scorecardMedia struct {
 func (m *scorecardMedia) Size() int64                                  { return m.size }
 func (m *scorecardMedia) Name() string                                 { return filepath.Base(m.File.Name()) }
 func (m *scorecardMedia) ReleaseID() string                            { return m.id }
+func (m *scorecardMedia) LocalFile() *os.File                          { return m.File }
 func parityIndexer(_ core.Indexer, dir string) core.Indexer            { return scorecardSource{dir} }
 func parityHealth(_ core.HealthChecker, dir string) core.HealthChecker { return scorecardSource{dir} }
 func parityEngine(_ core.Engine, dir string) core.Engine               { return scorecardSource{dir} }

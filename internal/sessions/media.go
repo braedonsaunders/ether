@@ -46,6 +46,12 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 	if err != nil || !b.currentMediaPolicy(ctx, viewer, s) {
 		return "", core.ErrUnauthorized
 	}
+	if s.sourcePinned {
+		ps, ok := b.deps.Playback.Session(s.playID)
+		if !ok || ps == nil || sourceRevision(ps) != s.sourceETag {
+			return "", frontend.ErrSourceGone
+		}
+	}
 	if req.Format != frontend.StreamDirect && req.Format != frontend.StreamHLS && req.Format != frontend.StreamDASH {
 		return "", core.ErrNotAvailable
 	}
@@ -246,6 +252,13 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 	if !b.currentMediaPolicy(r.Context(), viewer, s) {
 		http.NotFound(w, r)
 		return
+	}
+	if s.sourcePinned {
+		ps, ok := b.deps.Playback.Session(s.playID)
+		if !ok || ps == nil || sourceRevision(ps) != s.sourceETag {
+			serveSourceGone(protocol, w, r)
+			return
+		}
 	}
 	tail := parts[2:]
 	if s.live && len(tail) >= 2 && tail[0] == "live" && b.deps.Live != nil {
