@@ -157,7 +157,7 @@ func TestDetailSourceOfferFlowsThroughPlaybackAndSessionCheck(t *testing.T) {
 	}
 	start := `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt"}`
 	w = call("POST", "/api/v2/playback/start", start)
-	if w.Code != 201 || detailCalls != 1 || plans != 1 || streams != 1 || matches != 1 {
+	if w.Code != 201 || detailCalls != 1 || plans != 1 || streams != 1 || matches != 2 {
 		t.Fatalf("play %d %s counts=%d/%d/%d/%d", w.Code, w.Body.String(), detailCalls, plans, streams, matches)
 	}
 	mismatch = true

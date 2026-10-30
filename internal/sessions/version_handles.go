@@ -171,7 +171,8 @@ func (v *versionHandles) resolveRecord(ctx context.Context, scope frontend.Versi
 	}
 	var item int64
 	var release string
-	err = v.db.QueryRowContext(ctx, `SELECT item_id,release_id FROM sessions_version_handles WHERE handle=? AND viewer_id=? AND surface=? AND device_id=?`, handle, viewer.ID, string(v.protocol), scope.Device.ID).Scan(&item, &release)
+	digest := sha256.Sum256([]byte(handle))
+	err = v.db.QueryRowContext(ctx, `SELECT v.item_id,v.release_id FROM sessions_version_handles v JOIN capability_headers h ON h.namespace='sessions.version' AND h.digest=? AND h.viewer_id=v.viewer_id AND h.surface=v.surface AND h.device_id=v.device_id WHERE v.handle=? AND v.viewer_id=? AND v.surface=? AND v.device_id=? AND h.expires>?`, hex.EncodeToString(digest[:]), handle, viewer.ID, string(v.protocol), scope.Device.ID, v.broker.deps.Now().UnixMilli()).Scan(&item, &release)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, "", core.ErrNotFound
 	}

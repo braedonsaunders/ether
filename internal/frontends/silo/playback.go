@@ -1,6 +1,7 @@
 package silo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -148,16 +149,25 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	access := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "silo"}
-	if offer.Target.DetailSource != "" {
-		err = planner.MatchDetailSession(r.Context(), scope, offer.Target.DetailSource, session.ID)
-	} else {
-		err = i.host.VersionHandles.MatchSession(r.Context(), scope, versionHandle, session.ID)
+	matchOffer := func() error {
+		current, err := i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
+		if err != nil {
+			return err
+		}
+		if current.ID != offer.ID || current.Target != offer.Target {
+			return frontend.ErrSourceGone
+		}
+		if offer.Target.DetailSource != "" {
+			return planner.MatchDetailSession(r.Context(), scope, offer.Target.DetailSource, session.ID)
+		}
+		return i.host.VersionHandles.MatchSession(r.Context(), scope, versionHandle, session.ID)
 	}
-	if err != nil {
-		_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+	if err = matchOffer(); err != nil {
+		i.stopFailedAdmission(r.Context(), access, session.ID)
 		versionUnavailable(w)
 		return
 	}
+
 	format := frontend.StreamDirect
 	delivery := "original_http"
 	proto := "http_progressive"
@@ -173,12 +183,19 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	media, err := i.host.Sessions.StartStream(r.Context(), access, session.ID, frontend.StreamRequest{Format: format, Position: pos})
 	if err != nil {
-		_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+		i.stopFailedAdmission(r.Context(), access, session.ID)
 		playbackError(w, err)
 		return
 	}
+	// Admission finishes only after stream preparation and one last exact
+	// selector check. Later expiry does not revoke the independent session.
+	if err = matchOffer(); err != nil {
+		i.stopFailedAdmission(r.Context(), access, session.ID)
+		versionUnavailable(w)
+		return
+	}
 	if !strings.HasPrefix(media, "/sessions/media/") {
-		_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+		i.stopFailedAdmission(r.Context(), access, session.ID)
 		http.Error(w, "Playback unavailable", 503)
 		return
 	}
@@ -301,7 +318,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 				subtitle["track_id"] = trackID
 				subtitle["artifact"] = map[string]any{"url": url, "format": "vtt", "mime_type": "text/vtt", "timing_origin_seconds": 0}
 			} else {
-				_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+				i.stopFailedAdmission(r.Context(), access, session.ID)
 				http.Error(w, "Subtitle unavailable", 503)
 				return
 			}
@@ -328,6 +345,14 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
 	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "session_id": session.ID, "playback_plan": output})
+}
+
+func (i *instance) stopFailedAdmission(ctx context.Context, access frontend.SessionAccess, sessionID string) {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	if err := i.host.Sessions.Stop(cleanup, access, sessionID); err != nil && i.host.Log != nil {
+		i.host.Log.Error("failed playback admission cleanup", "session", sessionID, "err", err)
+	}
 }
 
 func versionUnavailable(w http.ResponseWriter) {
