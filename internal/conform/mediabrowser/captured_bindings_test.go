@@ -301,3 +301,47 @@ func TestCapturedBindingsSourceMarkerCompatibility(t *testing.T) {
 		})
 	}
 }
+
+// A peer that accepts only the session credential (Authorization token plus this
+// run's DeviceId) must prove /Users/Me. A caller-supplied user id is not proof.
+// Token-only discovery stays unproven, which is the recorded Infuse failure.
+func TestCapturedUsersMeProvesRunCredential(t *testing.T) {
+	p := captureTestProtocol(t)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		auth := r.Header.Get("Authorization")
+		owned := r.Header.Get("X-Emby-Token") == "owned-token" && strings.Contains(auth, `Token="owned-token"`) && strings.Contains(auth, `DeviceId="run-device"`) && strings.Contains(auth, `Client="Infuse-Direct"`) && strings.Contains(auth, `Device="Apple TV"`) && !strings.Contains(auth, "${")
+		if r.URL.Path == "/Users/Me" {
+			if !owned {
+				w.WriteHeader(401)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"Id": "server-user", "Name": "viewer", "Policy": map[string]any{}})
+			return
+		}
+		if !owned {
+			w.WriteHeader(401)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{}})
+	}))
+	defer s.Close()
+	align := &conform.DiscoveredIDs{Values: map[string]string{"device_id": "run-device", "user_id": "spoofed-user", "id_1": "spoofed-user"}}
+	p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", align)
+	info := captureRequest(p, "000001")
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", info, map[string]string{"device_id": "run-device", "user_id": "spoofed-user"}); err == nil || !strings.Contains(err.Error(), "cross-owner user variable") {
+		t.Fatal("caller user id was treated as ownership", err)
+	}
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", info, map[string]string{"device_id": "run-device", "user_id": "server-user"}); err != nil {
+		t.Fatal(err)
+	}
+	segments := captureRequest(p, "000036")
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", segments, map[string]string{"device_id": "run-device", "user_id": "server-user"}); err == nil || strings.Contains(err.Error(), "ownership unproven") || !strings.Contains(err.Error(), "ambiguous captured provider identity") {
+		t.Fatal("MediaSegments did not get past ownership", err)
+	}
+	bare := captureTestProtocol(t)
+	bare.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+	if _, _, err := bare.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", info, map[string]string{"device_id": "run-device", "user_id": "server-user"}); err == nil || !strings.Contains(err.Error(), "current credential ownership unproven") {
+		t.Fatal("token-only discovery proved ownership", err)
+	}
+}
