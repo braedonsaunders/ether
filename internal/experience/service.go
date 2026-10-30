@@ -28,12 +28,12 @@ type ServiceDeps struct {
 	NotInterestedSource func(context.Context, *core.User) ([]frontend.NotInterestedEntry, error)
 	ByExternalID        func(context.Context, string, string) (*core.Title, error)
 	Active              func(context.Context, int64) (*core.User, error)
-	Libraries []Library
+	Libraries           []Library
 	// LiveLibraries, when set, is read on each surface call so configured
 	// names stay current. IDs and media types stay stable. Nil uses Libraries.
 	LiveLibraries func() []Library
 	Visibility    Visibility
-	Get                 func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Get           func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
 	// ParentTitles resolves distinct parents using the same semantics as GetTitle.
@@ -153,9 +153,6 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			q.Sort = core.SortPopularity
 			q.Desc = true
 		}
-		if q.Sort == core.SortAdded && len(s.libraries()) > 1 {
-			return core.Page{}, errors.New("experience: global added-time sorting unavailable")
-		}
 		all := make([]core.Title, 0)
 		inner := q
 		inner.Offset = 0
@@ -174,7 +171,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			}
 			all = append(all, page.Items...)
 		}
-		if err = sortTitles(all, q); err != nil {
+		if err = s.sortTitles(ctx, all, q); err != nil {
 			return core.Page{}, err
 		}
 		if q.AdjacentTo != 0 {
@@ -229,9 +226,6 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	expand := q.Recursive && library.Type == core.TypeShow
 	if expand && s.d.Grandchildren == nil {
 		return core.Page{}, errors.New("experience: recursive library unavailable")
-	}
-	if expand && q.Sort == core.SortAdded {
-		return core.Page{}, errors.New("experience: recursive added-time sorting unavailable")
 	}
 	// Recursive episode queries keep at most one bounded batch of visible,
 	// statically matching candidates in addition to the existing results.
@@ -451,7 +445,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		return core.Page{Items: permitted, Total: totalMatched}, nil
 	}
 	if expand {
-		if err := sortTitles(permitted, q); err != nil {
+		if err := s.sortTitles(ctx, permitted, q); err != nil {
 			return core.Page{}, err
 		}
 	}
@@ -650,7 +644,7 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 			}
 		}
 		items = filtered
-		if err = sortTitles(items, q); err != nil {
+		if err = s.sortTitles(ctx, items, q); err != nil {
 			return core.Page{}, err
 		}
 		if q.AdjacentTo != 0 {
@@ -695,7 +689,7 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 			}
 		}
 	}
-	if err := sortTitles(out, q); err != nil {
+	if err := s.sortTitles(ctx, out, q); err != nil {
 		return core.Page{}, err
 	}
 	if q.AdjacentTo != 0 {
@@ -749,7 +743,7 @@ func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.D
 			items = append(items, title)
 		}
 	}
-	if err = sortTitles(items, q); err != nil {
+	if err = s.sortTitles(ctx, items, q); err != nil {
 		return frontend.SearchPage{}, err
 	}
 	start := min(offset, len(items))
@@ -928,18 +922,29 @@ func (s *Service) RemoveFromContinue(ctx context.Context, v *core.Viewer, k core
 	})
 }
 
-func sortTitles(items []core.Title, q frontend.ItemQuery) error {
+func (s *Service) sortTitles(ctx context.Context, items []core.Title, q frontend.ItemQuery) error {
 	if q.Sort == "" {
 		return nil
 	}
-	if q.Sort == core.SortAdded {
-		return errors.New("experience: added-time sorting unavailable for children")
+	if q.Sort == core.SortAdded && s.d.AddedTimes != nil {
+		keys := make([]core.RatingKey, len(items))
+		for i := range items {
+			keys[i] = items[i].Key
+		}
+		dates, err := s.d.AddedTimes(ctx, keys)
+		if err != nil {
+			return err
+		}
+		for i := range items {
+			items[i].AddedAt = dates[items[i].Key]
+		}
 	}
 	switch q.Sort {
-	case core.SortTitle, core.SortReleased, core.SortRating, core.SortPopularity:
+	case core.SortTitle, core.SortReleased, core.SortAdded, core.SortRating, core.SortPopularity:
 	default:
 		return errors.New("experience: unsupported sort")
 	}
+	now := time.Now()
 	sort.SliceStable(items, func(i, j int) bool {
 		a, b := items[i], items[j]
 		cmp := 0
@@ -953,6 +958,13 @@ func sortTitles(items []core.Title, q frontend.ItemQuery) error {
 				bt = b.Title
 			}
 			cmp = strings.Compare(strings.ToLower(at), strings.ToLower(bt))
+		case core.SortAdded:
+			ad, bd := a.DateAdded(now), b.DateAdded(now)
+			if ad.Before(bd) {
+				cmp = -1
+			} else if ad.After(bd) {
+				cmp = 1
+			}
 		case core.SortReleased:
 			if a.Released.Before(b.Released) {
 				cmp = -1
@@ -1017,7 +1029,7 @@ func (s *Service) Similar(ctx context.Context, viewer *core.Viewer, device core.
 			}
 		}
 	}
-	if err = sortTitles(items, q); err != nil {
+	if err = s.sortTitles(ctx, items, q); err != nil {
 		return frontend.SearchPage{}, err
 	}
 	offset := min(max(q.Offset, 0), len(items))

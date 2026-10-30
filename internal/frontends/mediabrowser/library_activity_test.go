@@ -134,7 +134,7 @@ func TestLatestGroupingAndItemAddedDate(t *testing.T) {
 		}
 		i := inst.(*instance)
 		at := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
-		if dto := i.itemDTO(frontend.Title{Key: 5, Type: "movie", AddedAt: at}, frontend.WatchStatus{}); dto["DateCreated"] != wireTime(at) {
+		if dto := i.itemDTO(frontend.Title{Key: 5, Type: "movie", Released: at, AddedAt: at}, frontend.WatchStatus{}); dto["DateCreated"] != wireTime(at) {
 			t.Fatal(tc.name, dto)
 		}
 		if dto := i.itemDTO(frontend.Title{Key: 5, Type: "movie"}, frontend.WatchStatus{}); dto["DateCreated"] != nil {

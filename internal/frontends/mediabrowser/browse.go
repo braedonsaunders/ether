@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -49,8 +50,8 @@ func (i *instance) userDataDTO(id string, st frontend.WatchStatus) map[string]an
 func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	kind := map[frontend.MediaType]string{"movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode"}[t.Type]
 	m := map[string]any{"Id": ids.RatingKeyGUID(t.Key), "Name": t.Title, "Type": kind, "LocationType": "FileSystem", "IsFolder": t.Type == "show" || t.Type == "season", "Overview": t.Summary, "ProductionYear": t.Year, "RunTimeTicks": t.Runtime.Nanoseconds() / 100, "UserData": i.userDataDTO(ids.RatingKeyGUID(t.Key), state)}
-	if !t.AddedAt.IsZero() {
-		m["DateCreated"] = wireTime(t.AddedAt)
+	if added := t.DateAdded(time.Now()); !added.IsZero() {
+		m["DateCreated"] = wireTime(added)
 	}
 	m["CanDelete"] = false
 	m["CanDownload"] = false

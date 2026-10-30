@@ -136,7 +136,7 @@ func browseOrder(q core.BrowseQuery) string {
 	case core.SortRating:
 		col = "t.rating"
 	case core.SortAdded:
-		col = "t.added_at"
+		col = "t.released_ts"
 	case core.SortUpdated:
 		col = "t.fetched_at"
 	case core.SortPopularity, "":
@@ -159,6 +159,10 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	var conds []string
 	var args []any
 	conds = append(conds, "t.browsable=1", "t.adult=0")
+	if f.KnownAddedDate {
+		conds = append(conds, airAddedSQL+">0")
+		args = append(args, airAddedArgs(c.now())...)
+	}
 	if f := c.visibilityFilter(); f != nil {
 		q, a := f.SQLHidden()
 		conds = append(conds, "NOT ("+q+")")

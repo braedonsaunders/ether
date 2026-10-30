@@ -80,12 +80,12 @@ func TestDetailRowsMatchLegacyFrontendOutputAndCalls(t *testing.T) {
 		}
 		if legacy {
 			h, err := controlLegacyExperienceDetailRows(ctx, viewer, key, 1, vis, nextSource, picks, relatedHubs)
-			return experienceHubRows(h), pickCalls, relatedCalls, err
+			return experience.HubRows(h), pickCalls, relatedCalls, err
 		}
 		c, err := experience.DetailRows(ctx, viewer, key, 1, vis, nextSource, picks, func(ctx context.Context, n int) ([]experience.RankedCandidate, error) {
 			return rankedCandidates(relatedHubs(ctx, n))
 		})
-		return experienceCandidateRows(c), pickCalls, relatedCalls, err
+		return experience.CandidateRows(c), pickCalls, relatedCalls, err
 	}
 	want, wp, wr, we := run(true)
 	got, gp, gr, ge := run(false)

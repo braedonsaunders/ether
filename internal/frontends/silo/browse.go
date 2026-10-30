@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 
@@ -330,11 +331,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 			if e == nil {
 				versions := d.Versions
 				if len(versions) == 0 {
-					added := d.Title.UpdatedAt
-					if added.IsZero() {
-						added = d.Title.Released
-					}
-					versions = []frontend.Version{{Media: plan.Media, AddedAt: added}}
+					versions = []frontend.Version{{Media: plan.Media, AddedAt: d.Title.DateAdded(time.Now())}}
 				}
 				items := make([]any, 0, len(versions))
 				defaultID := ""
@@ -355,10 +352,6 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						if !version.Media.Estimated && (version.ID != "" || !plan.Estimated) {
 							defaultDuration = int64(version.Media.Duration.Seconds())
 						}
-					}
-					if version.AddedAt.IsZero() {
-						http.Error(w, "Version timestamp unavailable", 503)
-						return
 					}
 					resolution, video, audio := "", "", ""
 					hdr := false
@@ -512,6 +505,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 					item := map[string]any{"file_id": id, "file_name": version.Name, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": version.Media.Container, "duration": int64(version.Media.Duration.Seconds()), "file_size": version.Media.Size, "bitrate": version.Media.BitrateKbps, "added_at": version.AddedAt.UTC().Format("2006-01-02T15:04:05.000Z")}
+					if version.AddedAt.IsZero() {
+						delete(item, "added_at")
+					}
 					if len(audioTracks) > 0 {
 						item["audio_tracks"] = audioTracks
 					}

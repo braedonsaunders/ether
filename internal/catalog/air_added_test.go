@@ -122,3 +122,25 @@ func TestSeasonAirAddedFallbacks(t *testing.T) {
 		t.Fatalf("airing boundary: %+v %v", got, err)
 	}
 }
+
+func TestMovieAddedSortIgnoresCatalogueInsertion(t *testing.T) {
+	ctx := context.Background()
+	c := newChunkTestCatalog(t)
+	c.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+	old := core.Title{Key: core.MovieKey(7001), Type: core.TypeMovie, Title: "Old", Released: time.Unix(1072915200, 0).UTC()}
+	newer := core.Title{Key: core.MovieKey(7002), Type: core.TypeMovie, Title: "Newer", Released: time.Unix(1262304000, 0).UTC()}
+	unknown := core.Title{Key: core.MovieKey(7003), Type: core.TypeMovie, Title: "Unknown"}
+	future := core.Title{Key: core.MovieKey(7004), Type: core.TypeMovie, Title: "Future", Released: c.now().Add(time.Hour)}
+	for _, title := range []core.Title{old, newer, unknown, future} {
+		if err := c.UpsertTitle(ctx, title, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.db.ExecContext(ctx, `UPDATE catalog_titles SET added_at=? WHERE key=?`, int64(1704067200), int64(old.Key)); err != nil {
+		t.Fatal(err)
+	}
+	page, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: 10})
+	if err != nil || page.Total != 2 || len(page.Items) != 2 || page.Items[0].Key != newer.Key || page.Items[1].Key != old.Key || page.Items[1].AddedAt.Unix() != 1072915200 {
+		t.Fatalf("page=%+v err=%v", page, err)
+	}
+}

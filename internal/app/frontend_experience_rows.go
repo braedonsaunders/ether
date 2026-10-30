@@ -3,94 +3,12 @@ package app
 import (
 	"context"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
-
-// experienceHubRows converts trusted recommender candidates to neutral rows;
-// wire contexts stay on the producer side. Authorization and pagination are
-// performed by experience.RowsService before returning these candidates.
-func experienceHubRows(hubs []core.Hub) []frontend.Row {
-	out := make([]frontend.Row, 0, len(hubs))
-	for _, h := range hubs {
-		purpose := experienceHubPurpose(h)
-		row := frontend.Row{ID: h.ID, Title: h.Title, Purpose: purpose, Style: h.Style, Promoted: h.Promoted, More: h.More, Collection: h.Key}
-		for i := range h.Items {
-			item := h.Items[i]
-			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &item})
-		}
-		out = append(out, row)
-	}
-	return out
-}
-
-// experienceCandidateRows projects already-authorized neutral selection data;
-// source-specific Context is deliberately absent from the candidate contract.
-func experienceCandidateRows(candidates []experience.RankedCandidate) []frontend.Row {
-	out := make([]frontend.Row, 0, len(candidates))
-	for _, c := range candidates {
-		row := frontend.Row{ID: c.ID, Title: c.Title, Purpose: c.Purpose, Style: c.Style, Promoted: c.Promoted, More: c.More, Collection: c.Key}
-		for i := range c.Items {
-			item := c.Items[i]
-			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &item})
-		}
-		out = append(out, row)
-	}
-	return out
-}
-
-func experienceHubPurpose(h core.Hub) core.RowPurpose {
-	purpose := frontend.RowRecommendation
-	id := strings.ToLower(h.ID)
-	switch {
-	case strings.Contains(id, "continue") || strings.Contains(id, "inprogress"):
-		purpose = frontend.RowContinue
-	case strings.Contains(id, "upnext") || strings.Contains(id, "ondeck"):
-		purpose = frontend.RowNextUp
-	case strings.Contains(id, "watchlist"):
-		purpose = frontend.RowWatchlist
-	case h.Key != 0 || strings.Contains(id, "collection"):
-		purpose = frontend.RowCollection
-	case strings.Contains(id, "recentlyreleased"):
-		purpose = frontend.RowRecentlyReleased
-	case strings.Contains(id, "livetv"):
-		purpose = frontend.RowLive
-	}
-	return purpose
-}
-
-type experienceRowSource struct {
-	load       func(context.Context, frontend.RowRequest) ([]experience.RankedCandidate, error)
-	additional func(context.Context, frontend.RowRequest) ([]frontend.Row, error)
-	kind       func(string) string
-}
-
-func (s experienceRowSource) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
-	candidates, err := s.load(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	rows := experienceCandidateRows(candidates)
-	if s.additional != nil {
-		extra, err := s.additional(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, extra...)
-	}
-	for i := range rows {
-		if s.kind != nil {
-			rows[i].Kind = s.kind(rows[i].ID)
-		}
-		rows[i].Rank = i
-		rows[i].Layout.Style = rows[i].Style
-	}
-	return rows, nil
-}
 
 // appCandidateRanker translates the neutral situation into the existing
 // personalization engine's request context without reassembling ranked rows.
@@ -108,7 +26,7 @@ func rankedCandidates(hubs []core.Hub, err error) ([]experience.RankedCandidate,
 	}
 	out := make([]experience.RankedCandidate, len(hubs))
 	for i, h := range hubs {
-		out[i] = experience.RankedCandidate{ID: h.ID, Purpose: experienceHubPurpose(h), Title: h.Title, Type: h.Type, Style: h.Style, Promoted: h.Promoted, Items: h.Items, More: h.More, Key: h.Key, ItemCount: h.ItemCount}
+		out[i] = experience.RankedCandidate{ID: h.ID, Purpose: experience.CandidatePurpose(h), Title: h.Title, Type: h.Type, Style: h.Style, Promoted: h.Promoted, Items: h.Items, More: h.More, Key: h.Key, ItemCount: h.ItemCount}
 	}
 	return out, nil
 }

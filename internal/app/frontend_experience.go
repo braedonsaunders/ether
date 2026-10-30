@@ -58,31 +58,18 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		return a.playback.Sessions()
 	}
 	vis := experienceVisibility(a.safety, a.catalog.Get, filter, sessions, libs)
-	source := experienceRowSource{kind: a.personalize.SemanticRowKind, load: func(ctx context.Context, req frontend.RowRequest) ([]experience.RankedCandidate, error) {
+	source := experience.CandidateRowSource{Kind: a.personalize.SemanticRowKind, Load: func(ctx context.Context, req frontend.RowRequest) ([]experience.RankedCandidate, error) {
 		return a.productionExperienceRows(ctx, req, libs, vis)
-	}, additional: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+	}, Additional: func(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
 		return a.experienceAdditionalRows(ctx, req, a.playlists, vis)
 	}}
-	allowEntry := func(ctx context.Context, u *core.User, kind, id string) bool {
-		switch frontend.RowEntryKind(kind) {
-		case frontend.RowEntryTitle:
-			return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: id}, vis)
-		case frontend.RowEntryCollection:
-			return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindCollection, ID: id}, vis)
-		case frontend.RowEntryPlaylist:
-			k, e := core.ParseRatingKey(id)
-			if e != nil {
-				return false
-			}
-			_, e = a.playlists.Get(ctx, u.ID, k)
-			return e == nil
-		case frontend.RowEntryLiveChannel:
-			return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindChannel, ID: id}, vis)
-		default:
-			return false
-		}
-	}
-	interactions := experience.RowInteractionPolicy{Libraries: libs, Visibility: vis, Get: a.catalog.Get, AllowEntry: allowEntry, CollectionMembers: func(ctx context.Context, u *core.User, key core.RatingKey, entries []core.NeutralEntryRef) bool {
+	entryPolicy := experience.RowEntryPolicy{Visibility: vis, Favorite: func(ctx context.Context, u *core.User, subject experience.FavoriteSubject) bool {
+		return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.Kind(subject.Kind), ID: subject.ID}, vis)
+	}, Playlist: func(ctx context.Context, u *core.User, key core.RatingKey) bool {
+		_, err := a.playlists.Get(ctx, u.ID, key)
+		return err == nil
+	}}
+	interactions := experience.RowInteractionPolicy{Libraries: libs, Visibility: vis, Get: a.catalog.Get, AllowEntry: entryPolicy.Subject, CollectionMembers: func(ctx context.Context, u *core.User, key core.RatingKey, entries []core.NeutralEntryRef) bool {
 		return rowViewCollectionMembers(ctx, a.collections, u, key, entries)
 	}, Impression: a.personalize.RecordNeutralImpression, DetailOpen: a.personalize.RecordDetailOpen}
 	receipts, err := experience.NewReceipts(experience.ReceiptOptions{DB: a.db, PolicyLease: a.cfg.AcquirePolicy, Active: a.users.PolicyUser, TTL: 30 * time.Minute, MaxPerDevice: 10000, Allowed: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject) bool {
@@ -100,28 +87,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	}, Active: func(ctx context.Context, u *core.User) bool {
 		v, e := a.users.ActiveUser(ctx, u.ID)
 		return e == nil && v != nil
-	}, AllowRow: func(ctx context.Context, u *core.User, row frontend.Row) bool {
-		if row.Collection != 0 {
-			return a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindCollection, ID: row.Collection.String()}, vis)
-		}
-		return true
-	}, AllowEntry: func(ctx context.Context, u *core.User, e frontend.RowEntry) bool {
-		switch e.Kind {
-		case frontend.RowEntryTitle:
-			return e.Title != nil && vis.Visible(ctx, u, e.Title)
-		case frontend.RowEntryCollection:
-			return e.Collection != nil && a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindCollection, ID: e.Collection.Key.String()}, vis)
-		case frontend.RowEntryPlaylist:
-			if e.Playlist == nil {
-				return false
-			}
-			_, err := a.playlists.Get(ctx, u.ID, e.Playlist.Key)
-			return err == nil
-		case frontend.RowEntryLiveChannel:
-			return e.LiveChannel != nil && a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindChannel, ID: e.LiveChannel.ID}, vis)
-		}
-		return false
-	}, Layout: func(ctx context.Context, req frontend.RowRequest, rows []frontend.Row) ([]frontend.Row, error) {
+	}, AllowRow: entryPolicy.Row, AllowEntry: entryPolicy.Entry, Layout: func(ctx context.Context, req frontend.RowRequest, rows []frontend.Row) ([]frontend.Row, error) {
 		sit, ok := ctx.Value(experienceSituationKey{}).(core.HomeSituation)
 		if !ok {
 			return nil, errors.New("experience: missing situation")
@@ -447,19 +413,4 @@ func (s *surfaceExperience) ReportRowInteraction(ctx context.Context, i frontend
 		return experience.ErrReceipt
 	}
 	return s.receipts.Report(ctx, i)
-}
-
-// versionAddedAt prefers the actual release publication time. When absent,
-// use Plex's title AddedAt rule: UpdatedAt, then its original release date.
-func versionAddedAt(title *core.Title, published time.Time) time.Time {
-	if !published.IsZero() {
-		return published
-	}
-	if title == nil {
-		return time.Time{}
-	}
-	if !title.UpdatedAt.IsZero() {
-		return title.UpdatedAt
-	}
-	return title.Released
 }

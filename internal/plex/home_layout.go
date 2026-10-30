@@ -21,7 +21,7 @@ func (s *Server) finalizeHomeRows(ctx context.Context, pr *Request, hc core.HubC
 	candidates := make([]core.NeutralHomeRow, len(rows))
 	for i, row := range rows {
 		raw[i] = core.Hub{ID: row.HubIdentifier, Title: row.Title, Type: core.MediaType(row.Type), Context: row.Context, ItemCount: max(row.Size, len(row.Metadata)+len(row.Directory))}
-		candidates[i] = core.NeutralHomeRow{ID: row.HubIdentifier, Title: row.Title, Type: core.MediaType(row.Type), Purpose: homePurpose(core.Hub{ID: row.HubIdentifier, Type: core.MediaType(row.Type)}), ItemCount: max(row.Size, len(row.Metadata)+len(row.Directory))}
+		candidates[i] = core.NeutralHomeRow{ID: row.HubIdentifier, Title: row.Title, Type: core.MediaType(row.Type), Purpose: experience.HomePurpose(core.Hub{ID: row.HubIdentifier, Type: core.MediaType(row.Type)}), ItemCount: max(row.Size, len(row.Metadata)+len(row.Directory))}
 	}
 	indices, err := experience.ArrangeHome(ctx, s.d.Recommender, pr.User, hc, section, raw, candidates)
 	if err != nil {

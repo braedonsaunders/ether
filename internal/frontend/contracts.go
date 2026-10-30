@@ -242,8 +242,7 @@ const (
 
 type Version struct {
 	ID, Name string
-	// AddedAt is release publication time when known, otherwise the title date
-	// used for Plex AddedAt (updated time, then original release time).
+	// AddedAt is the title release/air date, including latest-aired dates for series/seasons.
 	AddedAt time.Time
 	Media   core.MediaInfo
 	// Source facts are absent unless they are known for this version. FileName

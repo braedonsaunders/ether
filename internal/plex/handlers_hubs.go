@@ -58,32 +58,11 @@ func hubItemsKey(h core.Hub, hc hubCtx) string {
 	return k
 }
 
-// Apply source suitability to discovery, including mixed Home shelves. Personal
-// saved lists and playback state must never disappear because sources change.
-func discoveryAvailabilityHub(id string) bool {
-	for _, keep := range []string{"continue", "inprogress", "ondeck", "upnext", "watchlist", "playlist", "collection"} {
-		if strings.Contains(strings.ToLower(id), keep) {
-			return false
-		}
-	}
-	return strings.HasPrefix(id, "home.") || strings.HasPrefix(id, "movie.") || strings.HasPrefix(id, "availability.") || strings.Contains(id, "recommend") || strings.Contains(id, "trending") || strings.Contains(id, "popular")
-}
-
 func (s *Server) renderHub(ctx context.Context, pr *Request, hs hubSpec, hc hubCtx) model.Hub {
 	h := hs.Hub
-	items := s.filterAllowed(pr.User, h.Items)
-	if s.d.PrioritizeAvailable != nil && discoveryAvailabilityHub(h.ID) {
-		items = s.d.PrioritizeAvailable(ctx, items)
-	}
-	if strings.HasSuffix(h.ID, ".ondeck") || h.ID == "tv.upnext" {
-		kept := items[:0:0]
-		for i := range items {
-			if !s.sameDayUnavailable(ctx, pr, &items[i]) {
-				kept = append(kept, items[i])
-			}
-		}
-		items = kept
-	}
+	items := (experience.RowSelection{Visibility: s.visibility(), PrioritizeAvailable: s.d.PrioritizeAvailable,
+		SameDayUnavailable: func(ctx context.Context, t *core.Title) bool { return s.sameDayUnavailable(ctx, pr, t) },
+	}).Items(ctx, pr.User, h)
 	// Related hubs (detail pages, postplay) carry Guid children and omit the
 	// items' library section and the hub's promoted flag, like PMS.
 	related := hc.related != 0
@@ -283,33 +262,11 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 		},
 		Layout: func(rows []model.Hub) []model.Hub { return s.finalizeHomeRows(ctx, pr, hc, "home", rows) },
 	}
-	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0, homePurpose)
+	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0, experience.HomePurpose)
 	mc.Hub = rows
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, hc, mc.Hub, served)
-}
-
-// homePurpose translates producer identifiers at the Plex boundary; no wire
-// context or hub identifier is included in the neutral candidate.
-func homePurpose(h core.Hub) core.RowPurpose {
-	id := strings.ToLower(h.ID)
-	switch {
-	case id == "home.continue":
-		return "continue"
-	case strings.Contains(id, "upnext") || strings.Contains(id, "ondeck"):
-		return "nextUp"
-	case strings.Contains(id, "watchlist"):
-		return "watchlist"
-	case h.Key != 0 || strings.Contains(id, "collection"):
-		return "collection"
-	case strings.Contains(id, "recentlyreleased") || strings.Contains(id, "recently.released"):
-		return "recentlyReleased"
-	case strings.Contains(id, "livetv"):
-		return "live"
-	default:
-		return "recommendation"
-	}
 }
 
 // hubContext is the personalization context of a hubs request: the

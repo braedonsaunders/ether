@@ -140,3 +140,34 @@ func (v Visibility) UpcomingItems(ctx context.Context, viewer *core.User, items 
 	}
 	return out
 }
+
+// TitlesAllowed filters the title/section guard without discovery filtering.
+func (v Visibility) TitlesAllowed(viewer *core.User, titles []core.Title) []core.Title {
+	out := make([]core.Title, 0, len(titles))
+	for i := range titles {
+		if v.TitleAllowed(viewer, &titles[i]) {
+			out = append(out, titles[i])
+		}
+	}
+	return out
+}
+
+// ViewerRestricted chooses inherited visibility for limited or unknown policies.
+func ViewerRestricted(policy AccessPolicy, u *core.User) bool {
+	if u == nil {
+		return true
+	}
+	if u.IsOwner {
+		return false
+	}
+	if u.MaxContentRating != "" || len(u.AllowedSections) > 0 {
+		return true
+	}
+	if policy == nil {
+		return false
+	}
+	if p, ok := policy.(core.ArtworkAccessPolicy); ok {
+		return p.Restricted(u)
+	}
+	return true
+}

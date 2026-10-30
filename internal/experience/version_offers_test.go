@@ -37,7 +37,7 @@ func TestVersionOfferPublicationIsNotModification(t *testing.T) {
 	if got.ID != "candidate" || got.Name != "1080p" || !got.Media.Estimated || got.Media.Size != 99 {
 		t.Fatalf("candidate facts changed: %+v", got)
 	}
-	if got.Publication == nil || !got.Publication.Equal(published) || !got.AddedAt.Equal(published) {
+	if got.Publication == nil || !got.Publication.Equal(published) || !got.AddedAt.Equal(released) {
 		t.Fatalf("publication lost: %+v", got)
 	}
 	variant.Release.PubDate = published.Add(time.Hour)
@@ -46,7 +46,7 @@ func TestVersionOfferPublicationIsNotModification(t *testing.T) {
 	}
 	variant.Release.PubDate = time.Time{}
 	got = VersionOfferFrom(title, variant)
-	if got.Publication != nil || !got.AddedAt.Equal(updated) {
+	if got.Publication != nil || !got.AddedAt.Equal(released) {
 		t.Fatalf("catalogue date became publication: %+v", got)
 	}
 	title.UpdatedAt = time.Time{}
@@ -59,7 +59,7 @@ func TestVersionOfferPublicationIsNotModification(t *testing.T) {
 		t.Fatal("invented date")
 	}
 	variant.Release.PubDate = published
-	if !VersionOfferFrom(nil, variant).AddedAt.Equal(published) {
+	if !VersionOfferFrom(nil, variant).AddedAt.IsZero() {
 		t.Fatal("nil title dropped publication")
 	}
 }

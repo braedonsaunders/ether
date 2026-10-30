@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -28,5 +29,23 @@ func TestRecentlyAddedUsesAirDerivedDatesAcrossSections(t *testing.T) {
 	}
 	if sort, _ := sortFor("updatedAt", "desc"); sort != core.SortUpdated {
 		t.Fatalf("updatedAt sort changed to %q", sort)
+	}
+}
+
+// Owner-approved delta: movie/episode catalogue date 2024 is replaced by the
+// actual 2004 release/air date; original availability and refresh bytes stay.
+func TestApprovedReleaseDateAddedAtDelta(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	for _, typ := range []core.MediaType{core.TypeMovie, core.TypeEpisode} {
+		title := core.Title{Key: core.MovieKey(9003), Type: typ, Title: "Date delta", Released: time.Unix(1072915200, 0).UTC(), AddedAt: time.Unix(1704067200, 0).UTC(), UpdatedAt: time.Unix(1767225600, 0).UTC()}
+		md := f.srv.metadata(context.Background(), &Request{User: &ownerUser}, &title, renderOpts{})
+		if md.AddedAt != 1072915200 || md.OriginallyAvailableAt != "2004-01-01" || md.UpdatedAt != 1767225600 {
+			t.Fatalf("%s: %+v", typ, md)
+		}
+		title.Released = time.Time{}
+		if got := f.srv.metadata(context.Background(), &Request{User: &ownerUser}, &title, renderOpts{}); got.AddedAt != 0 {
+			t.Fatalf("unknown release: %+v", got)
+		}
 	}
 }

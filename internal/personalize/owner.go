@@ -191,7 +191,7 @@ func (e *Engine) playlistsRow(ctx context.Context, user *core.User) (core.HomeRo
 }
 
 func (e *Engine) recentlyAdded(ctx context.Context, user *core.User, t core.MediaType, limit int) []candItem {
-	q := core.BrowseQuery{Filter: core.Filter{Type: t, MaxContentRating: user.MaxContentRating}, Sort: core.SortAdded, Desc: true, Limit: limit}
+	q := core.BrowseQuery{Filter: core.Filter{Type: t, KnownAddedDate: true, MaxContentRating: user.MaxContentRating}, Sort: core.SortAdded, Desc: true, Limit: limit}
 	page, err := e.catalog.Browse(ctx, q)
 	if err != nil {
 		return nil
