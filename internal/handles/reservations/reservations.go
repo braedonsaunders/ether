@@ -48,7 +48,8 @@ type CapacityError struct {
 func (e *CapacityError) Error() string { return "handles: capacity reached (" + e.Scope + ")" }
 
 // Reserve uses the caller's transaction, so quota and the adapter's domain
-// insert commit or roll back together. Expiry cleanup only removes reservation
+// insert commit or roll back together. This initial primitive is for fresh random
+// handles only: stable/reusable retry identity is not implemented. Expiry cleanup only removes reservation
 // bookkeeping; it must never be used to infer playback/session retirement.
 func Reserve(ctx context.Context, db *sql.DB, tx *sql.Tx, policy ReservationPolicy, r Reservation) error {
 	if db == nil || tx == nil || policy.Namespace == "" || len(policy.Namespace) > 64 || policy.Shards <= 0 || policy.Shards > 1024 || policy.PerShard <= 0 || policy.PerViewerSurface <= 0 || r.ViewerID <= 0 || r.Surface == "" || len(r.Surface) > 128 || r.Expires <= r.Now || len(r.Digest) != 64 {
