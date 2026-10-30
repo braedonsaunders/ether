@@ -184,6 +184,13 @@ type chunk struct {
 	err error
 }
 
+// A cancelled request may leave a non-cooperative ReaderAt or Close running.
+// Keep its slot until the producer actually exits, across all Managers using
+// request retirement. Untracked callers preserve their existing admission.
+const maxReadProducers = 128
+
+var readProducers = make(chan struct{}, maxReadProducers)
+
 // copyFrom copies up to length bytes of g's source starting at off into w,
 // reading ahead of the writer in ChunkSize pieces. It returns the bytes
 // written, the read error that stopped it (nil when length was copied) and
@@ -196,14 +203,40 @@ func (m *Manager) copyFrom(ctx context.Context, w io.Writer, g *generation, off,
 	if !background {
 		m.installDamageHandler(g)
 	}
+	var retired func()
+	if tracker := core.ReadRetirementFrom(ctx); tracker != nil {
+		if err := ctx.Err(); err != nil {
+			return 0, err, nil
+		}
+		select {
+		case readProducers <- struct{}{}:
+		default:
+			return 0, core.ErrNotAvailable, nil
+		}
+		var ok bool
+		finish, ok := tracker.Begin()
+		if !ok {
+			<-readProducers
+			return 0, errRetired, nil
+		}
+		retired = func() { <-readProducers; finish() }
+	}
 	if !g.acquire() {
+		if retired != nil {
+			retired()
+		}
 		return 0, errRetired, nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	ch := make(chan chunk, m.opts.ReadAhead)
 	go func() {
-		defer g.release()
+		defer func() {
+			g.release()
+			if retired != nil {
+				retired()
+			}
+		}()
 		defer close(ch)
 		pos, rem := off, length
 		for rem > 0 {
