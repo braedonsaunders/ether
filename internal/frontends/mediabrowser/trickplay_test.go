@@ -21,6 +21,10 @@ type tileSessions struct {
 	offer bool
 }
 
+func (s tileSessions) Markers(ctx context.Context, a frontend.SessionAccess, id string) (frontend.SessionMarkers, error) {
+	return s.base.Markers(ctx, a, id)
+}
+
 func (t tileSessions) Plan(c context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 	return t.base.Plan(c, r)
 }
