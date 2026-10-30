@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -184,6 +185,11 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 			setMissing(item, key, nil)
 		}
 	}
+	if title.Type == "show" || title.Type == "season" {
+		if data, ok := item["UserData"].(map[string]any); ok {
+			delete(data, "PlayedPercentage")
+		}
+	}
 	if title.ChildCount > 0 {
 		setMissing(item, "ChildCount", title.ChildCount)
 	}
@@ -314,6 +320,87 @@ func (i *instance) boxSetDTO(collection frontend.Collection) map[string]any {
 	return item
 }
 
+// attachParentIdentity writes the show and season ids and names the title
+// already carries. An episode key encodes its season when ShowKey was left
+// empty. A show key plus a season number encodes the season when the item
+// key does not.
+func attachParentIdentity(m map[string]any, t frontend.Title) {
+	show := t.ShowKey
+	if show == 0 && (t.Key.Kind() == core.KindEpisode || t.Key.Kind() == core.KindSeason) {
+		show = core.ShowKey(t.Key.TMDB())
+	}
+	if show != 0 {
+		m["SeriesId"] = ids.RatingKeyGUID(show)
+		if t.ShowTitle != "" {
+			m["SeriesName"] = t.ShowTitle
+		}
+	}
+	if t.Type == "episode" || t.Type == "season" {
+		if name := seasonDisplayName(t); name != "" {
+			m["SeasonName"] = name
+		}
+	}
+	if t.Type == "episode" {
+		season := t.Key.Parent()
+		if season == 0 && show.Kind() == core.KindShow && (t.Season > 0 || t.SeasonTitle != "") {
+			season = core.SeasonKey(show.TMDB(), t.Season)
+		}
+		if season != 0 {
+			id := ids.RatingKeyGUID(season)
+			m["SeasonId"] = id
+			m["ParentId"] = id
+		}
+		m["ParentIndexNumber"] = t.Season
+		m["IndexNumber"] = t.Episode
+	}
+	if t.Type == "season" {
+		parent := t.Key.Parent()
+		if parent == 0 && show != 0 {
+			parent = show
+		}
+		if parent != 0 {
+			m["ParentId"] = ids.RatingKeyGUID(parent)
+		}
+		m["IndexNumber"] = t.Season
+	}
+}
+
+func seasonDisplayName(t frontend.Title) string {
+	if t.SeasonTitle != "" {
+		return t.SeasonTitle
+	}
+	if t.Season > 0 && (t.Type == "episode" || t.Type == "season") {
+		return fmt.Sprintf("Season %d", t.Season)
+	}
+	return ""
+}
+
+// jellyfinSeasonListFields drops season keys that Jellyfin omits unless the
+// Fields query asked for them. Counts and names the title has stay.
+func (i *instance) jellyfinSeasonListFields(r *http.Request, item map[string]any, title frontend.Title) {
+	if i == nil || i.protocol != "jellyfin" || title.Type != "season" {
+		return
+	}
+	fields := fieldSet(r)
+	if !fields["overview"] {
+		delete(item, "Overview")
+	}
+	if !fields["datecreated"] {
+		delete(item, "DateCreated")
+	}
+	if !fields["sortname"] {
+		delete(item, "SortName")
+	}
+	if !fields["providerids"] {
+		delete(item, "ProviderIds")
+	}
+	if !fields["mediasources"] {
+		delete(item, "RunTimeTicks")
+	}
+	delete(item, "CanDelete")
+	delete(item, "CanDownload")
+}
+
 // jellyfinDetailShell fills keys that a Jellyfin item detail response always
 // carries. Empty collections stand in for facts this library does not have.
 // List rows do not get this shell.
@@ -333,7 +420,33 @@ func (i *instance) jellyfinDetailShell(item map[string]any) {
 	setMissing(item, "SpecialFeatureCount", 0)
 	if id, _ := item["Id"].(string); id != "" {
 		setMissing(item, "Etag", itemEtag(id))
+		setMissing(item, "DisplayPreferencesId", id)
 	}
+}
+
+// jellyfinStudioFacts records studio names the title already has. Named-facet
+// ids replace this list when the experience issued them.
+func jellyfinStudioFacts(item map[string]any, title frontend.Title) {
+	if _, ok := item["Studios"]; !ok && len(title.Studios) > 0 {
+		pairs := make([]any, 0, len(title.Studios))
+		for _, name := range title.Studios {
+			if name != "" {
+				pairs = append(pairs, map[string]any{"Name": name})
+			}
+		}
+		if len(pairs) > 0 {
+			item["Studios"] = pairs
+		}
+	}
+	if title.Type == "show" || title.Type == "episode" || title.Type == "season" {
+		for _, name := range title.Studios {
+			if name != "" {
+				setMissing(item, "SeriesStudio", name)
+				break
+			}
+		}
+	}
+	setMissing(item, "Studios", []any{})
 }
 
 // jellyfinKnownVersionFacts copies probe facts that BaseItemDto allows from

@@ -102,28 +102,7 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 	if t.Type == "movie" || t.Type == "episode" {
 		m["MediaType"] = "Video"
 	}
-	if t.ShowKey != 0 {
-		m["SeriesId"] = ids.RatingKeyGUID(t.ShowKey)
-		m["SeriesName"] = t.ShowTitle
-	}
-	if t.Type == "episode" {
-		if parent := t.Key.Parent(); parent != 0 {
-			m["SeasonId"] = ids.RatingKeyGUID(parent)
-			m["ParentId"] = ids.RatingKeyGUID(parent)
-		}
-		if t.SeasonTitle != "" {
-			m["SeasonName"] = t.SeasonTitle
-		}
-		m["ParentIndexNumber"] = t.Season
-		m["IndexNumber"] = t.Episode
-
-	}
-	if t.Type == "season" {
-		if parent := t.Key.Parent(); parent != 0 {
-			m["ParentId"] = ids.RatingKeyGUID(parent)
-		}
-		m["IndexNumber"] = t.Season
-	}
+	attachParentIdentity(m, t)
 	if i.protocol == "emby" {
 		i.embyItemDTO(m, t, state)
 	}
@@ -242,6 +221,7 @@ func (i *instance) browseRoutes() error {
 					item[key] = value
 				}
 				i.shapeJellyfinItem(r, v, item, title)
+				i.jellyfinSeasonListFields(r, item, title)
 				items = append(items, item)
 			}
 			if reporter, ok := i.host.Experience.(frontend.RowInteractionReporter); ok && len(page) > 0 {
@@ -365,6 +345,7 @@ func (i *instance) browseRoutes() error {
 			i.jellyfinItemDetailDTO(d, dto)
 			i.shapeJellyfinItem(r, v, dto, d.Title)
 			i.jellyfinKnownVersionFacts(dto, d.Versions)
+			jellyfinStudioFacts(dto, d.Title)
 			i.jellyfinDetailShell(dto)
 		}
 		if i.protocol == "emby" {
@@ -496,6 +477,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 			item[key] = value
 		}
 		i.shapeJellyfinItem(r, v, item, title)
+		i.jellyfinSeasonListFields(r, item, title)
 		items = append(items, item)
 	}
 	jsonReply(w, i.queryResult(items, page.Total, offset))
@@ -683,6 +665,7 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 			item["Path"] = p
 		}
 		i.shapeJellyfinItem(r, v, item, t)
+		i.jellyfinSeasonListFields(r, item, t)
 		items = append(items, item)
 	}
 	jsonReply(w, items)
