@@ -128,33 +128,20 @@ func AdmissionLockSQL(namespace, viewerSQL string) string {
 	return out.String()
 }
 
-// RenewHeaderInTx replaces one live, exact-scoped header under the admission
-// lock. It is net-zero admission, with the same current quotas as new issuance;
-// oversized migrated scopes must drain before renewal. Any error requires the
-// caller to roll back, including its typed payload changes.
-func RenewHeaderInTx(ctx context.Context, db *sql.DB, tx *sql.Tx, h Header, nowMillis int64, limits Limits) (bool, error) {
+// RenewHeaderInTx extends one live, exact-scoped header under the admission
+// lock without adding a reservation. Existing active lifetimes remain renewable
+// when migrated state is over quota; fresh admission still fails closed. The
+// domain must authorize renewal and update its typed payload in the same tx.
+func RenewHeaderInTx(ctx context.Context, db *sql.DB, tx *sql.Tx, h Header, nowMillis int64) (bool, error) {
 	scope := h.HeaderScope
 	if scope.Namespace == ticketNamespace {
 		scope.Namespace = "ticket.admission"
 	}
-	if db == nil || tx == nil || !validHeaderScope(scope) || !digestValid(h.Digest) || nowMillis <= 0 || h.ExpiresMillis <= nowMillis || limits.PerScope <= 0 || limits.PerShard < limits.PerScope {
+	if db == nil || tx == nil || !validHeaderScope(scope) || !digestValid(h.Digest) || nowMillis <= 0 || h.ExpiresMillis <= nowMillis {
 		return false, ErrInvalidHeader
 	}
 	if err := lockHeaders(ctx, db, tx, h.HeaderScope); err != nil {
 		return false, err
-	}
-	var n int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=?`, h.Namespace, h.ViewerID%HeaderShardCount, h.ViewerID, h.Surface).Scan(&n); err != nil {
-		return false, err
-	}
-	if n > limits.PerScope {
-		return false, &CapacityError{Scope: "viewer"}
-	}
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND shard=?`, h.Namespace, h.ViewerID%HeaderShardCount).Scan(&n); err != nil {
-		return false, err
-	}
-	if n > limits.PerShard {
-		return false, &CapacityError{Scope: "shard"}
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE capability_headers SET expires=? WHERE namespace=? AND digest=? AND shard=? AND viewer_id=? AND surface=? AND device_id=? AND expires>?`, h.ExpiresMillis, h.Namespace, h.Digest, h.ViewerID%HeaderShardCount, h.ViewerID, h.Surface, h.DeviceID, nowMillis)
 	if err != nil {
