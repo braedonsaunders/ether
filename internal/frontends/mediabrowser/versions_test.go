@@ -91,13 +91,66 @@ func TestScopedVersionDetailAndPlayback(t *testing.T) {
 	if w.Code != http.StatusTemporaryRedirect || strings.Contains(w.Header().Get("Location"), "account-secret") {
 		t.Fatal(w.Code, w.Header())
 	}
+	w = call("GET", "/Videos/"+ids.RatingKeyGUID(5)+"/stream?PlaySessionId=session&MediaSourceId="+handle, "")
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Fatal(w.Code, w.Body.String())
+	}
 	versions.denyMatch = true
 	w = call("GET", "/Videos/"+handle+"/stream?PlaySessionId=session", "")
 	if w.Code != http.StatusNotFound {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	w = call("GET", "/Videos/"+ids.RatingKeyGUID(5)+"/stream?PlaySessionId=session&MediaSourceId="+handle, "")
+	if w.Code != http.StatusNotFound {
+		t.Fatal(w.Code, w.Body.String())
+	}
 	w = call("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId=private-release", `{}`)
 	if w.Code != http.StatusNotFound {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestEmbyScopedVersionPlaybackIsExact(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	handle := "4e0f0a56-014b-4883-89b7-e9465f03462e"
+	var planned frontend.PlanRequest
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	broker := frontendtest.Sessions{PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
+		planned = req
+		return frontend.PlayPlan{Estimated: true}, nil
+	}}
+	inst, err := (Emby{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: broker, Capabilities: frontendtest.Capabilities{}, VersionHandles: &testVersionHandles{item: 5, handle: handle}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId="+handle, strings.NewReader(`{}`))
+	r.Header.Set("Authorization", `Emby Token="account-secret", DeviceId="device"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || planned.Item != 5 || planned.Version != handle || !planned.Intent.ExactVersion || planned.Protocol != "emby" {
+		t.Fatal(w.Code, planned, w.Body.String())
+	}
+}
+
+func TestEpisodeStartVersionUsesAuthorizedParentAndPreservesHandle(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	handle := "4e0f0a56-014b-4883-89b7-e9465f03462e"
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	experience := frontendtest.Experience{ChildrenFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, show frontend.RatingKey, q frontend.ItemQuery) (frontend.Page, error) {
+		if show != 7 || q.StartAt != 5 || !q.Recursive {
+			t.Fatal(show, q)
+		}
+		return frontend.Page{Items: []frontend.Title{{Key: 5, Type: "episode"}, {Key: 6, Type: "episode"}}, Total: 2}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Capabilities: frontendtest.Capabilities{}, VersionHandles: &testVersionHandles{item: 5, handle: handle}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/Shows/"+ids.RatingKeyGUID(7)+"/Episodes?startItemId="+handle, nil)
+	r.Header.Set("Authorization", `MediaBrowser Token="account-secret", DeviceId="device"`)
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Id":"`+handle+`"`) || !strings.Contains(w.Body.String(), ids.RatingKeyGUID(6)) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }

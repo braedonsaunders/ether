@@ -33,3 +33,26 @@ func navigationQuery(r *http.Request, q *frontend.ItemQuery, allowStart bool) er
 	}
 	return nil
 }
+
+// navigationWithVersion resolves a version anchor through the broker. The
+// returned handle is preserved on the matching episode in the response.
+func (i *instance) navigationWithVersion(r *http.Request, viewer *frontend.Viewer, q *frontend.ItemQuery, allowStart bool) (string, error) {
+	err := navigationQuery(r, q, allowStart)
+	if err == nil || !allowStart {
+		return "", err
+	}
+	start := route.Query(r.URL.Query(), "StartItemId")
+	if len(start) != 1 || len(route.Query(r.URL.Query(), "AdjacentTo")) != 0 {
+		return "", err
+	}
+	scope, scopeErr := i.versionScope(r, viewer)
+	if scopeErr != nil {
+		return "", err
+	}
+	target, scopeErr := i.host.VersionHandles.Resolve(i.identityContext(r), scope, start[0])
+	if scopeErr != nil || target.Item == 0 {
+		return "", err
+	}
+	q.StartAt = target.Item
+	return start[0], nil
+}

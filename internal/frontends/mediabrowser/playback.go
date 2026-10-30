@@ -545,6 +545,32 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", 400)
 		return
 	}
+	sourceIDs := route.Query(r.URL.Query(), "MediaSourceId")
+	if len(sourceIDs) > 1 {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	if len(sourceIDs) == 1 && sourceIDs[0] != "" && !strings.EqualFold(sourceIDs[0], r.PathValue("id")) {
+		if sourceKey, e := ids.ParseRatingKeyGUID(sourceIDs[0]); e != nil || sourceKey != key || channel != "" {
+			if channel != "" || (version != "" && !sameVersionHandle(version, sourceIDs[0])) {
+				http.NotFound(w, r)
+				return
+			}
+			if version == "" {
+				versionScope, err = i.versionScope(r, viewer)
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				target, e := i.host.VersionHandles.Resolve(i.identityContext(r), versionScope, sourceIDs[0])
+				if e != nil || target.Item != key {
+					http.NotFound(w, r)
+					return
+				}
+				version = sourceIDs[0]
+			}
+		}
+	}
 	access := frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: i.protocol}
 	if access.Device.ID == "" {
 		http.Error(w, "Unauthorized", 401)

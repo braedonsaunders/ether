@@ -415,6 +415,10 @@ func itemQuery(r *http.Request) frontend.ItemQuery {
 	return q
 }
 func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, page frontend.Page, offset int) {
+	i.pageWithVersion(w, r, v, page, offset, 0, "")
+}
+
+func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, page frontend.Page, offset int, anchor frontend.RatingKey, version string) {
 	keys := make([]frontend.RatingKey, 0, len(page.Items))
 	for _, title := range page.Items {
 		keys = append(keys, title.Key)
@@ -429,6 +433,9 @@ func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.View
 	paths := i.virtualPaths(r, v, keys)
 	for _, title := range page.Items {
 		item := i.itemDTO(title, state[title.Key])
+		if version != "" && title.Key == anchor {
+			item["Id"] = version
+		}
 		if p := paths[title.Key]; p != "" {
 			item["Path"] = p
 		}
@@ -614,7 +621,8 @@ func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := itemQuery(r)
-	if err := navigationQuery(r, &q, true); err != nil {
+	version, err := i.navigationWithVersion(r, v, &q, true)
+	if err != nil {
 		http.Error(w, "Invalid navigation anchor", http.StatusBadRequest)
 		return
 	}
@@ -633,5 +641,5 @@ func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	i.page(w, r, v, page, q.Offset)
+	i.pageWithVersion(w, r, v, page, q.Offset, q.StartAt, version)
 }

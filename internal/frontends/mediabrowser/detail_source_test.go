@@ -40,7 +40,7 @@ func TestItemDetailDoesNotExposeEstimatedVersionStreams(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
 	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie"}, Versions: []frontend.Version{{ID: "version", Media: frontend.MediaInfo{Estimated: true, Container: "mkv", Size: 42, Streams: []frontend.StreamInfo{{Type: "video", Width: 1920}}}}}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie"}, Versions: []frontend.Version{{ID: "private-release", Media: frontend.MediaInfo{Estimated: true, Container: "mkv", Size: 42, Streams: []frontend.StreamInfo{{Type: "video", Width: 1920}}}}}}, nil
 	}}
 	for _, protocol := range []frontend.Protocol{"jellyfin", "emby"} {
 		var front frontend.Frontend
@@ -49,7 +49,7 @@ func TestItemDetailDoesNotExposeEstimatedVersionStreams(t *testing.T) {
 		} else {
 			front = Emby{MachineID: "test"}
 		}
-		inst, err := front.Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience})
+		inst, err := front.Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Capabilities: frontendtest.Capabilities{}, VersionHandles: &testVersionHandles{item: 5, handle: "4e0f0a56-014b-4883-89b7-e9465f03462e"}})
 		if err != nil {
 			t.Fatal(err)
 		}
