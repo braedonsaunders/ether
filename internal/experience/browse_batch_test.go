@@ -2,6 +2,8 @@ package experience
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -11,6 +13,8 @@ import (
 type countingBrowseState struct {
 	serviceState
 	gets, batches int
+	keys          []core.RatingKey
+	err           error
 }
 
 func (s *countingBrowseState) Get(ctx context.Context, id int64, key core.RatingKey) (core.WatchStatus, error) {
@@ -19,6 +23,10 @@ func (s *countingBrowseState) Get(ctx context.Context, id int64, key core.Rating
 }
 func (s *countingBrowseState) GetMany(_ context.Context, _ int64, keys []core.RatingKey) (map[core.RatingKey]core.WatchStatus, error) {
 	s.batches++
+	s.keys = append(s.keys, keys...)
+	if s.err != nil {
+		return nil, s.err
+	}
 	result := make(map[core.RatingKey]core.WatchStatus, len(keys))
 	for _, key := range keys {
 		if int64(key)%2 == 0 {
@@ -49,5 +57,28 @@ func TestLibraryBrowseBatchesWatchStateBeforePagination(t *testing.T) {
 	}
 	if st.gets != 0 || st.batches != 3 {
 		t.Fatalf("state calls: get=%d batch=%d", st.gets, st.batches)
+	}
+	for _, key := range st.keys {
+		if key == 4 {
+			t.Fatal("hidden item reached watch-state lookup")
+		}
+	}
+	unwatched := false
+	unlimited, err := s.LibraryItems(context.Background(), viewer, core.Device{}, "1", frontend.ItemQuery{Watched: &unwatched})
+	if err != nil || unlimited.Total != 251 {
+		t.Fatalf("unwatched: %+v %v", unlimited, err)
+	}
+	bounded, err := s.LibraryItems(context.Background(), viewer, core.Device{}, "1", frontend.ItemQuery{Watched: &unwatched, Offset: 3, Limit: 5})
+	if err != nil || bounded.Total != unlimited.Total || !reflect.DeepEqual(bounded.Items, unlimited.Items[3:8]) {
+		t.Fatalf("bounded differs: %+v %v", bounded, err)
+	}
+	beyond, err := s.LibraryItems(context.Background(), viewer, core.Device{}, "1", frontend.ItemQuery{Watched: &unwatched, Offset: 999, Limit: 5})
+	if err != nil || beyond.Total != unlimited.Total || len(beyond.Items) != 0 {
+		t.Fatalf("offset beyond total: %+v %v", beyond, err)
+	}
+	st.err = errors.New("state unavailable")
+	failed, err := s.LibraryItems(context.Background(), viewer, core.Device{}, "1", frontend.ItemQuery{Watched: &unwatched, Limit: 5})
+	if !errors.Is(err, st.err) || len(failed.Items) != 0 {
+		t.Fatalf("state failure must fail closed: %+v %v", failed, err)
 	}
 }
