@@ -51,6 +51,13 @@ func (s surfaceIdentity) ResolveDevice(ctx context.Context, credential string, d
 	return s.grants.ResolveDevice(ctx, string(s.surface), credential, device)
 }
 
+func (s surfaceIdentity) ResolveGrantDevice(ctx context.Context, credential, claim string) (*core.Viewer, core.Device, time.Time, error) {
+	if s.surface == "" || s.surface == "plex" || s.grants == nil {
+		return nil, core.Device{}, time.Time{}, core.ErrUnauthorized
+	}
+	return s.grants.ResolveGrantDevice(ctx, string(s.surface), credential, claim)
+}
+
 func (s surfaceIdentity) allow(ctx context.Context, limiter *identity.LoginLimiter, key string) error {
 	ip, ok := frontend.ClientIP(ctx)
 	if !ok || ip.IsUnspecified() || ip.IsMulticast() {

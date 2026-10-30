@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -61,11 +63,53 @@ func TestSeed(t *testing.T) {
 				t.Fatalf("%s watchlist pool count=%d err=%v", token, count, err)
 			}
 		}
+		var attributed int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM personalize_plays WHERE user_id=? AND hub_id<>'' AND kind<>'' AND max_fraction>=0.3`, u.ID).Scan(&attributed); err != nil || attributed == 0 {
+			t.Fatalf("%s attributed personalization plays=%d err=%v", token, attributed, err)
+		}
 		st := state.New(db, state.Options{})
 		w, err := st.Get(ctx, u.ID, core.MovieKey(10020))
 		if err != nil || w.ViewOffset <= 0 {
 			t.Fatalf("%s progress: %+v %v", token, w, err)
 		}
 		st.Close(ctx)
+	}
+}
+
+func TestSeedAttributionIsDeterministic(t *testing.T) {
+	ctx := context.Background()
+	read := func(dir string) []string {
+		t.Helper()
+		if err := seed(ctx, dir); err != nil {
+			t.Fatal(err)
+		}
+		db, err := store.Open(ctx, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		rows, err := db.QueryContext(ctx, `SELECT user_id,item_key,hub_id,kind,max_fraction FROM personalize_plays ORDER BY user_id,item_key,hub_id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var result []string
+		for rows.Next() {
+			var user, key int64
+			var hub, kind string
+			var fraction float64
+			if err := rows.Scan(&user, &key, &hub, &kind, &fraction); err != nil {
+				t.Fatal(err)
+			}
+			result = append(result, fmt.Sprintf("%d/%d/%s/%s/%.3f", user, key, hub, kind, fraction))
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	a, b := read(t.TempDir()), read(t.TempDir())
+	if len(a) != 5 || !reflect.DeepEqual(a, b) {
+		t.Fatalf("seeded play attribution differs: %v vs %v", a, b)
 	}
 }

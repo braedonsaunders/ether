@@ -361,12 +361,25 @@ func TestDeviceIdentityBindsSurfaceAndRejectsPlex(t *testing.T) {
 	if err != nil || viewer == nil || viewer.ID != viewerID || !expires.Equal(now.Add(time.Hour)) {
 		t.Fatalf("viewer=%+v expires=%s err=%v", viewer, expires, err)
 	}
+	bound, actual, boundExpiry, err := surface.ResolveGrantDevice(ctx, token, "")
+	if err != nil || bound == nil || bound.ID != viewerID || actual.ID != device.ID || !boundExpiry.Equal(expires) {
+		t.Fatalf("stored binding=%+v device=%+v expiry=%s err=%v", bound, actual, boundExpiry, err)
+	}
+	if _, _, _, err = surface.ResolveGrantDevice(ctx, token, "wrong"); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("wrong device claim: %v", err)
+	}
 	surface.surface = "emby"
 	if _, _, err = surface.ResolveDevice(ctx, token, device); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("cross surface: %v", err)
 	}
+	if _, _, _, err = surface.ResolveGrantDevice(ctx, token, ""); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("cross-surface stored binding: %v", err)
+	}
 	surface.surface = "plex"
 	if _, _, err = surface.ResolveDevice(ctx, token, device); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("Plex grant: %v", err)
+	}
+	if _, _, _, err = surface.ResolveGrantDevice(ctx, token, ""); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("Plex stored binding: %v", err)
 	}
 }

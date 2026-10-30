@@ -79,6 +79,41 @@ func TestTMDBMissingEndpointsAreRecorded(t *testing.T) {
 	}
 }
 
+func TestTrainingCatalogueHasNoMissingOrPlaceholderMovies(t *testing.T) {
+	t.Setenv("ETHER_PARITY_TRAIN_RANKER", "1")
+	tracker := &fixtureTracker{}
+	srv := httptest.NewServer(trackedTMDBFixture(tracker))
+	defer srv.Close()
+	client := tmdb.New("fixture", nil, tmdb.WithBaseURL(srv.URL+"/3"), tmdb.WithMaxRetries(0))
+	defer client.Close()
+	movie, err := client.MovieDetails(context.Background(), 10360)
+	if err != nil || movie.ID != 10360 || movie.Title != "Fixture Movie 360" {
+		t.Fatalf("training movie=%+v err=%v", movie, err)
+	}
+	response, err := http.Get(srv.URL + "/3/movie/10361")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound || len(tracker.failures()) != 1 {
+		t.Fatalf("unknown training movie: status=%d missing=%v", response.StatusCode, tracker.failures())
+	}
+}
+
+func TestTMDBRelatedRejectsUnknownSource(t *testing.T) {
+	tracker := &fixtureTracker{}
+	srv := httptest.NewServer(trackedTMDBFixture(tracker))
+	defer srv.Close()
+	response, err := http.Get(srv.URL + "/3/movie/999999/recommendations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound || len(tracker.failures()) != 1 {
+		t.Fatalf("unknown recommendation source: status=%d missing=%v", response.StatusCode, tracker.failures())
+	}
+}
+
 func TestTMDBFixtureServesRealImages(t *testing.T) {
 	srv := httptest.NewServer(tmdbFixture())
 	defer srv.Close()

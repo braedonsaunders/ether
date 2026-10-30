@@ -23,7 +23,7 @@ func normalizeCaptureBody(c capture) []byte {
 		return delegationJSON.ReplaceAll(body, []byte(`${1}<DELEGATION-TOKEN>${2}`))
 	}
 	contentType := c.response.Headers.Get("Content-Type")
-	if strings.HasPrefix(c.path, "image:") || strings.HasPrefix(c.path, "playback:segment:") || strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "audio/") || contentType == "application/octet-stream" {
+	if strings.HasPrefix(c.path, "image:") || strings.HasPrefix(c.path, "playback:segment:") || c.path == "subtitle:stream" || c.path == "subtitle:transcode" || strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "video/") || strings.HasPrefix(contentType, "audio/") || contentType == "application/octet-stream" {
 		return c.response.Body
 	}
 	return normalizeResponse(c.response.Body)

@@ -133,6 +133,9 @@ func TestParseProbeGolden(t *testing.T) {
 			}
 			// Assert the additional probe facts without changing the legacy fields.
 			v := &tt.want.Streams[0]
+			if !v.DolbyVision && (tt.want.Container == "mp4" || tt.want.Container == "mkv") {
+				v.DolbyVisionConfigurationPresent = boolean(false)
+			}
 			switch tt.file {
 			case "mkv_hevc_hdr10.json":
 				v.ProbedLevel = integer(153)

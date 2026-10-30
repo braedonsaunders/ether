@@ -41,7 +41,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 	req := frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}
 	ref := frontend.Image{Kind: "poster", Path: "opaque", Tag: "v1"}
 	got := q.get(ctx, req, ref)
-	if got.Width != 0 || got.BlurHash != "" {
+	if got.Width != 0 || got.BlurHash != "" || got.ThumbHash != "" {
 		t.Fatalf("cold read fabricated metadata: %+v", got)
 	}
 	select {
@@ -76,7 +76,7 @@ func TestArtworkMetadataQueuedAndPersisted(t *testing.T) {
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
-	if got.Width != 8 || got.Height != 6 || len(got.BlurHash) != 28 {
+	if got.Width != 8 || got.Height != 6 || len(got.BlurHash) != 28 || got.ThumbHash == "" {
 		t.Fatalf("wrong metadata: %+v", got)
 	}
 	// A new node loads the persisted metadata in its worker, without any
@@ -197,9 +197,9 @@ func TestArtworkMetadataPostClaimExistingRow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	db := store.OpenTest(t)
-	ddl := `CREATE TRIGGER metadata_peer_insert AFTER INSERT ON artwork_image_metadata_claims BEGIN INSERT INTO artwork_image_metadata(image_key,width,height,blurhash) VALUES(NEW.image_key,8,6,'peer-hash'); END;`
+	ddl := `CREATE TRIGGER metadata_peer_insert AFTER INSERT ON artwork_image_metadata_claims BEGIN INSERT INTO artwork_image_metadata(image_key,width,height,blurhash,thumbhash) VALUES(NEW.image_key,8,6,'peer-hash','peer-thumb'); END;`
 	if store.DialectOf(db) == store.Postgres {
-		ddl = `CREATE FUNCTION metadata_peer_insert_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO artwork_image_metadata(image_key,width,height,blurhash) VALUES(NEW.image_key,8,6,'peer-hash'); RETURN NEW; END; $$; CREATE TRIGGER metadata_peer_insert AFTER INSERT ON artwork_image_metadata_claims FOR EACH ROW EXECUTE FUNCTION metadata_peer_insert_fn();`
+		ddl = `CREATE FUNCTION metadata_peer_insert_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO artwork_image_metadata(image_key,width,height,blurhash,thumbhash) VALUES(NEW.image_key,8,6,'peer-hash','peer-thumb'); RETURN NEW; END; $$; CREATE TRIGGER metadata_peer_insert AFTER INSERT ON artwork_image_metadata_claims FOR EACH ROW EXECUTE FUNCTION metadata_peer_insert_fn();`
 	}
 	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		t.Fatal(err)
@@ -212,5 +212,64 @@ func TestArtworkMetadataPostClaimExistingRow(t *testing.T) {
 	img := frontend.Image{Kind: "poster", Path: "opaque", Tag: "v1"}
 	if err := q.compute(ctx, artworkMetadataJob{key: artworkMetadataKey(req, img), request: req, image: img}); err != nil {
 		t.Fatalf("post-claim cached row: %v", err)
+	}
+}
+
+func TestArtworkMetadataUpgradesExistingBlurHash(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db := store.OpenTest(t)
+	img := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	img.SetNRGBA(0, 0, color.NRGBA{R: 255, A: 255})
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
+	req := frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}
+	ref := frontend.Image{Kind: "poster", Path: "opaque", Tag: "v1"}
+	key := artworkMetadataKey(req, ref)
+	if _, err := db.ExecContext(ctx, `INSERT INTO artwork_image_metadata(image_key,width,height,blurhash) VALUES(?,?,?,?)`, key, 1, 1, "existing-blur"); err != nil {
+		t.Fatal(err)
+	}
+	q := newArtworkMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+		return encoded.Bytes(), "image/png", nil
+	})
+	if err := q.compute(ctx, artworkMetadataJob{key: key, request: req, image: ref}); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := q.load(ctx, key)
+	if err != nil || metadata.blurhash != "existing-blur" || metadata.thumbhash != "1fsrB38I9wiIh4hwj3CI+AiIgIAICIgA" {
+		t.Fatalf("upgrade lost old metadata or produced incorrect ThumbHash: %+v %v", metadata, err)
+	}
+}
+
+func TestArtworkMetadataKeepsExistingBlurHashWhenUpgradeFails(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db := store.OpenTest(t)
+	req := frontend.ArtworkRequest{Viewer: &core.User{ID: 1}, Item: core.MovieKey(1)}
+	ref := frontend.Image{Kind: "poster", Path: "opaque", Tag: "v1"}
+	if _, err := db.ExecContext(ctx, `INSERT INTO artwork_image_metadata(image_key,width,height,blurhash) VALUES(?,?,?,?)`, artworkMetadataKey(req, ref), 8, 6, "existing-blur"); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	q := newArtworkMetadataQueue(ctx, db, func(_ context.Context, id int64) (*core.User, error) { return &core.User{ID: id}, nil }, func(context.Context, frontend.ArtworkRequest, frontend.Image, frontend.ArtworkTransform) ([]byte, string, error) {
+		calls.Add(1)
+		return nil, "", core.ErrNotAvailable
+	})
+	deadline := time.After(2 * time.Second)
+	for {
+		got := q.get(ctx, req, ref)
+		if got.BlurHash == "existing-blur" {
+			if got.Width != 8 || got.Height != 6 || got.ThumbHash != "" || calls.Load() != 1 {
+				t.Fatalf("partial cached metadata: %+v, calls=%d", got, calls.Load())
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("existing BlurHash was not restored")
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }

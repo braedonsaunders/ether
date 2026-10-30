@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -42,5 +43,21 @@ func TestBaselineNondeterminismRequiresExactPairAndContext(t *testing.T) {
 	a.viewer, a.path = "owner", "/hubs?count=2"
 	if ok, _ := baselineNondeterministic(a, b); ok {
 		t.Fatal("different route was accepted")
+	}
+}
+
+func TestCounterfactualDoesNotHideBaselineNoise(t *testing.T) {
+	t.Setenv("ETHER_PARITY_POLICY_COUNTERFACTUAL", "1")
+	old := baselineNondeterminism
+	defer func() { baselineNondeterminism = old }()
+	a := capture{viewer: "owner", client: "web", path: "/hubs?count=5", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"text/xml"}}, Body: []byte("first")}}
+	b := a
+	b.response.Body = []byte("second")
+	entry := baselineNoise{Viewer: a.viewer, Client: a.client, Path: a.path, First: signature(a.response), Second: signature(b.response)}
+	baselineNondeterminism, _ = json.Marshal([]baselineNoise{entry})
+	var out bytes.Buffer
+	n, err := diffTranscripts(transcript{captures: []capture{a}}, transcript{captures: []capture{b}}, &out)
+	if err != nil || n != 1 {
+		t.Fatalf("counterfactual hid a difference: n=%d err=%v report=%s", n, err, out.String())
 	}
 }

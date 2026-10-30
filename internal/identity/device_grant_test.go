@@ -103,3 +103,70 @@ func TestResolveDeviceReportsCurrentSlidingExpiry(t *testing.T) {
 		t.Fatalf("current expiry=%s err=%v", expires, err)
 	}
 }
+
+func TestResolveGrantDeviceReturnsStoredBindingAndRejectsInvalidClaims(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,is_owner,created_at,updated_at) VALUES(1,1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 0).UTC()
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "device-1", Client: "native", Product: "TV", Version: "2"}
+	token, err := grants.Issue(ctx, 1, nil, "jellyfin", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unbound, err := grants.Issue(ctx, 1, nil, "jellyfin", core.Device{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var used, expires int64
+	if err := db.QueryRowContext(ctx, `SELECT last_used,expires FROM identity_grants WHERE device_id=?`, device.ID).Scan(&used, &expires); err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range []string{"", device.ID} {
+		viewer, actual, expiry, err := grants.ResolveGrantDevice(ctx, "jellyfin", token, claim)
+		if err != nil || viewer == nil || viewer.ID != 1 || !viewer.IsOwner || actual != device || !expiry.Equal(time.UnixMilli(expires)) {
+			t.Fatalf("claim %q: viewer=%+v device=%+v expiry=%v err=%v", claim, viewer, actual, expiry, err)
+		}
+	}
+	for _, tc := range []struct{ surface, credential, claim string }{
+		{"emby", token, ""}, {"jellyfin", token, "other"}, {"jellyfin", unbound, ""}, {"jellyfin", "invalid", ""},
+	} {
+		if _, _, _, err := grants.ResolveGrantDevice(ctx, tc.surface, tc.credential, tc.claim); !errors.Is(err, core.ErrUnauthorized) {
+			t.Fatalf("accepted %+v: %v", tc, err)
+		}
+	}
+	var afterUsed, afterExpires int64
+	if err := db.QueryRowContext(ctx, `SELECT last_used,expires FROM identity_grants WHERE device_id=?`, device.ID).Scan(&afterUsed, &afterExpires); err != nil || used != afterUsed || expires != afterExpires {
+		t.Fatalf("grant mutated: %v", err)
+	}
+	var observations int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM identity_viewer_times WHERE viewer_id=1`).Scan(&observations); err != nil || observations != 0 {
+		t.Fatalf("activity written: %d %v", observations, err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE auth_users SET active=0 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := grants.ResolveGrantDevice(ctx, "jellyfin", token, ""); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("inactive: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE auth_users SET active=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	now = time.UnixMilli(expires)
+	if _, _, _, err := grants.ResolveGrantDevice(ctx, "jellyfin", token, ""); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("expired: %v", err)
+	}
+	now = now.Add(-time.Minute)
+	if err := grants.RevokeDevice(ctx, 1, device.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := grants.ResolveGrantDevice(ctx, "jellyfin", token, ""); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("revoked: %v", err)
+	}
+}

@@ -24,7 +24,7 @@ func subtitleFixture(tracker *fixtureTracker) http.Handler {
 		case r.Method == http.MethodGet && r.URL.Path == "/subtitles":
 			id, err := strconv.Atoi(r.URL.Query().Get("tmdb_id"))
 			lang := r.URL.Query().Get("languages")
-			if err != nil || id < 10001 || id > 10060 || lang == "" {
+			if err != nil || id < 10001 || id > 10000+fixtureMovieCount() || lang == "" {
 				fail()
 				return
 			}
@@ -34,7 +34,7 @@ func subtitleFixture(tracker *fixtureTracker) http.Handler {
 			var v struct {
 				FileID int `json:"file_id"`
 			}
-			if json.NewDecoder(r.Body).Decode(&v) != nil || v.FileID < 10001 || v.FileID > 10060 {
+			if json.NewDecoder(r.Body).Decode(&v) != nil || v.FileID < 10001 || v.FileID > 10000+fixtureMovieCount() {
 				fail()
 				return
 			}
@@ -43,7 +43,7 @@ func subtitleFixture(tracker *fixtureTracker) http.Handler {
 		default:
 			if r.Method == http.MethodGet && len(r.URL.Path) > 6 && r.URL.Path[:6] == "/file/" {
 				id, err := strconv.Atoi(r.URL.Path[6:])
-				if err == nil && id >= 10001 && id <= 10060 {
+				if err == nil && id >= 10001 && id <= 10000+fixtureMovieCount() {
 					w.Header().Set("Content-Type", "application/x-subrip")
 					fmt.Fprint(w, "1\n00:00:01,000 --> 00:00:03,000\nFixture subtitle\n\n")
 					return

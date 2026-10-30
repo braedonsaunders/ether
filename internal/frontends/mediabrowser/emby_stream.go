@@ -19,6 +19,11 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 	if stream.PixelFormat != "" {
 		dto["PixelFormat"] = stream.PixelFormat
 	}
+	for key, value := range map[string]string{"ColorTransfer": stream.ColorTransfer, "ColorPrimaries": stream.ColorPrimaries, "ColorSpace": stream.ColorSpace} {
+		if value != "" {
+			dto[key] = value
+		}
+	}
 	if stream.AverageFrameRate != nil {
 		dto["AverageFrameRate"] = *stream.AverageFrameRate
 	}

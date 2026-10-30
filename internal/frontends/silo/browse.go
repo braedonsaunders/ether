@@ -242,8 +242,11 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		credit := map[string]any{"name": p.Name, "character": p.Role, "order": n}
 		if p.TMDB > 0 {
 			credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
-			if url := portraits[p.TMDB]; url != "" {
-				credit["photo_url"] = url
+			if portrait := portraits[p.TMDB]; portrait.url != "" {
+				credit["photo_url"] = portrait.url
+				if portrait.thumbHash != "" {
+					credit["photo_thumbhash"] = portrait.thumbHash
+				}
 			}
 		}
 		cast = append(cast, credit)
@@ -254,8 +257,11 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 			credit := map[string]any{"name": p.Name, "job": p.Role}
 			if p.TMDB > 0 {
 				credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
-				if url := portraits[p.TMDB]; url != "" {
-					credit["photo_url"] = url
+				if portrait := portraits[p.TMDB]; portrait.url != "" {
+					credit["photo_url"] = portrait.url
+					if portrait.thumbHash != "" {
+						credit["photo_thumbhash"] = portrait.thumbHash
+					}
 				}
 			}
 			crew = append(crew, credit)

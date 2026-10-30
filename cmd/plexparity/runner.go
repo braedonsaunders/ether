@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -67,6 +69,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 		{"ETHER_PARITY_TRICKPLAY_ONLY", "only trickplay probes executed"},
 		{"ETHER_PARITY_SUBTITLES_ONLY", "only subtitle probes executed"},
 		{"ETHER_PARITY_IPTV_ONLY", "only IPTV probes executed"},
+		{"ETHER_PARITY_POLICY_COUNTERFACTUAL", "diagnostic counterfactual policy replay"},
 	} {
 		if os.Getenv(mode.env) == "1" {
 			return incompleteCoverage{[]string{mode.description}}
@@ -84,6 +87,37 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 }
 
 func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out io.Writer, subtitleMode bool) error {
+	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
+		b, err := os.ReadFile(filepath.Join(seedDir, "ranker-training.json"))
+		if err != nil {
+			return fmt.Errorf("active-ranker training proof missing: %w", err)
+		}
+		var proof struct {
+			Description string `json:"description"`
+			Insight     struct {
+				Active      bool    `json:"active"`
+				Examples    int     `json:"examples"`
+				Positives   int     `json:"positives"`
+				AUC         float64 `json:"auc"`
+				BaselineAUC float64 `json:"baselineAuc"`
+			} `json:"insight"`
+			HoldoutPositives int                           `json:"holdout_positives"`
+			HoldoutNegatives int                           `json:"holdout_negatives"`
+			HoldoutViewers   map[string]rankerHoldoutClass `json:"holdout_viewers"`
+		}
+		if err := json.Unmarshal(b, &proof); err != nil {
+			return fmt.Errorf("invalid active-ranker training proof: %w", err)
+		}
+		if proof.Description == "" || !proof.Insight.Active || proof.Insight.Examples < 2000 || proof.Insight.Positives < 30 || proof.Insight.AUC < 0.55 || proof.Insight.AUC < proof.Insight.BaselineAUC+0.02 || proof.HoldoutPositives < 5 || proof.HoldoutNegatives < 20 {
+			return fmt.Errorf("active-ranker training proof does not satisfy the production gate")
+		}
+		for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+			if counts := proof.HoldoutViewers[viewer]; counts.Positives == 0 || counts.Negatives == 0 {
+				return fmt.Errorf("active-ranker training proof lacks both holdout classes for %s", viewer)
+			}
+		}
+		fmt.Fprintf(out, "ACTIVE_RANKER_PROOF %s\n", bytes.TrimSpace(b))
+	}
 	dir, err := os.MkdirTemp("", "ether-plexparity-")
 	if err != nil {
 		return err
@@ -244,6 +278,26 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 			}
 			fmt.Fprintf(out, "server %d log tail:\n%s\n", i, b)
 			return fmt.Errorf("server %d: %w", i, captureErr)
+		}
+		if os.Getenv("ETHER_PARITY_POLICY_COUNTERFACTUAL") == "1" {
+			for _, c := range captured.captures {
+				if (c.viewer != "teen" && c.viewer != "child") || !(strings.HasPrefix(c.path, "/search?") || strings.HasPrefix(c.path, "/library/search?") || strings.HasPrefix(c.path, "/hubs/search") || strings.Contains(c.path, "/postplay")) {
+					continue
+				}
+				record := struct {
+					Server    int               `json:"server"`
+					Viewer    string            `json:"viewer"`
+					Client    string            `json:"client"`
+					JSON      bool              `json:"json"`
+					Path      string            `json:"path"`
+					Signature responseSignature `json:"signature"`
+				}{i, c.viewer, c.client, c.json, c.path, signature(c.response)}
+				b, err := json.Marshal(record)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "COUNTERFACTUAL %s\n", b)
+			}
 		}
 		transcripts = append(transcripts, captured)
 	}

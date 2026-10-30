@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	protocol "github.com/braedonsaunders/ether/internal/conform/plex"
 	"net/http"
@@ -12,8 +13,8 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 	if err := json.Unmarshal(approvedSearch, &entries); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 190 {
-		t.Fatalf("got %d signatures, want 190", len(entries))
+	if len(entries) != 340 {
+		t.Fatalf("got %d signatures, want 340", len(entries))
 	}
 	for _, e := range entries {
 		if e.Viewer != "teen" && e.Viewer != "child" {
@@ -29,6 +30,45 @@ func TestApprovedDifferencesAreNarrow(t *testing.T) {
 	a := capture{viewer: "owner"}
 	if ok, err := approved(a, a); err != nil || ok != "" {
 		t.Fatalf("unrestricted approval: %v %v", ok, err)
+	}
+	a = capture{viewer: "teen", client: "web", path: "/search?query=fixture", response: protocol.Response{Status: 200, Body: []byte("unreviewed")}}
+	b := a
+	b.response.Body = []byte("different")
+	if ok, err := approved(a, b); err != nil || ok != "" {
+		t.Fatalf("route and viewer alone approved an unreviewed pair: %v %v", ok, err)
+	}
+}
+
+func TestCounterfactualDoesNotHideApprovedPairs(t *testing.T) {
+	t.Setenv("ETHER_PARITY_POLICY_COUNTERFACTUAL", "1")
+	old := approvedSearch
+	defer func() { approvedSearch = old }()
+	a := capture{viewer: "teen", client: "web", path: "/search?query=fixture", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte("first")}}
+	b := a
+	b.response.Body = []byte("second")
+	entry := approvedDifference{Viewer: a.viewer, Client: a.client, Path: a.path, Baseline: signature(a.response), Candidate: signature(b.response), Commit: "c82a7830"}
+	approvedSearch, _ = json.Marshal([]approvedDifference{entry})
+	var out bytes.Buffer
+	n, err := diffTranscripts(transcript{captures: []capture{a}}, transcript{captures: []capture{b}}, &out)
+	if err != nil || n != 1 {
+		t.Fatalf("counterfactual hid an approved pair: n=%d err=%v report=%s", n, err, out.String())
+	}
+}
+
+func TestScopeApprovalRequiresExactResponsePair(t *testing.T) {
+	old := approvedScopes
+	defer func() { approvedScopes = old }()
+	a := capture{viewer: "owner", client: "web", path: "/hubs/home/recentlyAdded?type=15", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte("mixed")}}
+	b := a
+	b.response.Body = []byte("empty")
+	entry := approvedDifference{Viewer: a.viewer, Client: a.client, Path: a.path, Baseline: signature(a.response), Candidate: signature(b.response), Commit: "19bdfcd1"}
+	approvedScopes, _ = json.Marshal([]approvedDifference{entry})
+	if got, err := approved(a, b); err != nil || got != entry.Commit {
+		t.Fatalf("exact pair: %q %v", got, err)
+	}
+	b.response.Body = []byte("other")
+	if got, err := approved(a, b); err != nil || got != "" {
+		t.Fatalf("unreviewed pair approved: %q %v", got, err)
 	}
 }
 

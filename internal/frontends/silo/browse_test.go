@@ -39,14 +39,41 @@ func TestCreditPortraitUsesTitleBoundGrant(t *testing.T) {
 	}}}}
 	r := httptest.NewRequest("GET", "/api/v2/catalog/items/x", nil)
 	r.Header.Set("X-Silo-Device-Id", "tv")
-	d := frontend.ItemDetail{Title: frontend.Title{Key: key}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/private"}}}
+	d := frontend.ItemDetail{Title: frontend.Title{Key: key}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/private", ThumbHash: "AQID"}}}
 	got := i.creditPortraits(r, "account-token", d)
-	if got[12] != "/api/v2/images/opaque-grant" || issued.Item != key || issued.Credential != "account-token" || strings.Contains(got[12], "account-token") {
+	if got[12].url != "/api/v2/images/opaque-grant" || got[12].thumbHash != "AQID" || issued.Item != key || issued.Credential != "account-token" || strings.Contains(got[12].url, "account-token") {
 		t.Fatalf("portrait grant: %v %+v", got, issued)
 	}
 	d.ImagesAuthoritative = false
 	if len(i.creditPortraits(r, "account-token", d)) != 0 {
 		t.Fatal("issued portrait for non-authoritative artwork")
+	}
+}
+
+func TestArtworkThumbhashMatchesGrantedImage(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	key := frontend.RatingKey(1000000000000001)
+	exp := frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if req.Viewer != viewer || req.Key != key {
+			return frontend.ItemDetail{}, errors.New("unauthorized")
+		}
+		return frontend.ItemDetail{ImagesAuthoritative: true, Images: []frontend.Image{
+			{Kind: "poster", Path: "/first"},
+			{Kind: "poster", Path: "/second", ThumbHash: "second-hash"},
+			{Kind: "backdrop", Path: "/backdrop", ThumbHash: "AQID"},
+		}}, nil
+	}}
+	grants := frontendtest.ImageGrants{IssueFunc: func(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
+		return strings.TrimPrefix(req.Image.Path, "/"), nil
+	}}
+	i := &instance{host: frontend.Host{Experience: exp, ImageGrants: grants}}
+	out := map[string]any{}
+	i.artwork(httptest.NewRequest("GET", "/", nil), viewer, "token", key, out)
+	if out["poster_url"] != "/api/v2/images/first" || out["backdrop_url"] != "/api/v2/images/backdrop" || out["backdrop_thumbhash"] != "AQID" {
+		t.Fatalf("artwork: %+v", out)
+	}
+	if _, ok := out["poster_thumbhash"]; ok {
+		t.Fatalf("used hash from a different poster: %+v", out)
 	}
 }
 

@@ -370,6 +370,19 @@ func (f Identity) ResolveDevice(ctx context.Context, credential string, device c
 	}
 	return nil, time.Time{}, frontend.ErrIdentityUnavailable
 }
+
+// GrantDeviceIdentity opts a fake identity into the optional grant-device API.
+type GrantDeviceIdentity struct {
+	Identity
+	ResolveGrantDeviceFunc func(context.Context, string, string) (*core.Viewer, core.Device, time.Time, error)
+}
+
+func (f GrantDeviceIdentity) ResolveGrantDevice(ctx context.Context, credential, claim string) (*core.Viewer, core.Device, time.Time, error) {
+	if f.ResolveGrantDeviceFunc != nil {
+		return f.ResolveGrantDeviceFunc(ctx, credential, claim)
+	}
+	return nil, core.Device{}, time.Time{}, frontend.ErrIdentityUnavailable
+}
 func (f Identity) PublicViewers(ctx context.Context) ([]frontend.PublicViewer, error) {
 	if f.PublicViewersFunc != nil {
 		return f.PublicViewersFunc(ctx)

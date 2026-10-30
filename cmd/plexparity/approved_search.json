@@ -3198,5 +3198,2555 @@
       "sha256": "3098d75d5bcd549b9431cf1b56ac37914d5e356cd8e58e4be512bfe316e864e7"
     },
     "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3825096a9c61882a26bc8ef21988380e99f0ab104a80396b874fb7a864d14631"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3fefecc17038e1494537ae0edc264a67c3ef02200d5ef9e2323fdef2305ef826"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ff27b9e99af78a22443d581da6b7f9df3dc1966a569cef6ea28b008c067e7fc6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "df4827ea4cc790cfd3a443c68920e41395134898f1f14f23809fd5dc671a4d4c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "627f73d70793000147686951384276eb291bcd442fbad9954ce6536c0a26985b"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "33c61d28ecf4c8d29de382fadfedbc84c689865eaaa2b613a5ce465c788c3ed9"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ab7bb51d74d10a9182e0d529792e9ba423db33b4f33cefbac7093861535a8122"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0f00b2a3c284373ad50986a4e8e753d272138159e0661171e80cd9fc58d1c950"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3825096a9c61882a26bc8ef21988380e99f0ab104a80396b874fb7a864d14631"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3fefecc17038e1494537ae0edc264a67c3ef02200d5ef9e2323fdef2305ef826"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ff27b9e99af78a22443d581da6b7f9df3dc1966a569cef6ea28b008c067e7fc6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "df4827ea4cc790cfd3a443c68920e41395134898f1f14f23809fd5dc671a4d4c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3825096a9c61882a26bc8ef21988380e99f0ab104a80396b874fb7a864d14631"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3fefecc17038e1494537ae0edc264a67c3ef02200d5ef9e2323fdef2305ef826"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ff27b9e99af78a22443d581da6b7f9df3dc1966a569cef6ea28b008c067e7fc6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "df4827ea4cc790cfd3a443c68920e41395134898f1f14f23809fd5dc671a4d4c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "44948dd6d4eca1f4f0c2cbb96686afb7ccec6efe943467d20a9b488ff5f0abae"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "54e71753a27a83b742b46b6170df45fa55530df7249a78821862f8998dd5b4ce"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "84b29cd3bf86d4519885f11022bbfc2b527046e3efaedf586b82e7811aca6ff1"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd89ee79f47120d0f8087ae1d3c13abbec5f3535c2a0e2b2b8d79272eea4d180"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1ae2384d99daa85842b64ad1f06f02af6b9e96b03aa7a6db14658ec6359999eb"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6667030c8e6a8c860c08609520e3591c0976adb431737117add5969f6e0cb38c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "066948b922e81300700cda23819262043c16875d9b28819edd16602d7b4a6194"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "333993314f7b883d15252fd80ed9f3e5894fe806968ebcce0cac17d11b6c79c7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "e9b1657ead96bba885d3e699fc0d43d1e379cab75adcb155913cdd2fbcf7569c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f4211ceebfa3830114321c486754fe6d243bf4fb811f8bb9d7fe15a8df39af73"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d72e55a2214300e4c664a6a8965786c9c2fdf6522be4adbb48f3cf74e527e894"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ac693f67a8e9b1b9618d1b003e1979a7c3595330c3ab4bea3a23af6858d1a498"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1ae2384d99daa85842b64ad1f06f02af6b9e96b03aa7a6db14658ec6359999eb"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6667030c8e6a8c860c08609520e3591c0976adb431737117add5969f6e0cb38c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "066948b922e81300700cda23819262043c16875d9b28819edd16602d7b4a6194"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "333993314f7b883d15252fd80ed9f3e5894fe806968ebcce0cac17d11b6c79c7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1ae2384d99daa85842b64ad1f06f02af6b9e96b03aa7a6db14658ec6359999eb"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6667030c8e6a8c860c08609520e3591c0976adb431737117add5969f6e0cb38c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "066948b922e81300700cda23819262043c16875d9b28819edd16602d7b4a6194"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "333993314f7b883d15252fd80ed9f3e5894fe806968ebcce0cac17d11b6c79c7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "25a061c18998d730462f4e2f3f16dd52789ab3f7f43944aa931b80c7def554ab"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2b5807110c96f6bd93997f3493e3d8c5db05dc3f1e362fd948bf3fb0cb6c2457"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "481d18f5f0ec56acb49a5a86036ad31d1f198eff3e41716edace6a3459ab4cf7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "6ab965820817893fb62c8b677f1822d96b4ed7a01878dfb6a6bf367a196e1a8b"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cab102589749f357cb9b90664e8c21303bc8986856d98da8ae492dbd1eb66f7c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "be495dcc5cb0a797a88a06e8da1ebc389c00a97f62449297b4c31ffdfe9ba235"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "dff229d89515b286cda9ef441df4a95f38755bf523e682686e838c4449c87d2c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "baa9db688975b948099bb3872c64f52e13803242242f20f5b5406a53417e4bff"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5017e3e13721d75c30e94029feeec221f7b39917791203cd7a05b261c0925237"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ddedc2b19c4dac29eb39d96f64ab11043a50fff35d52c021fa526b6c3bb809fd"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "c1a3b323d19a4efe54fcd441a1cd7c76a4e368d8684ab3c7f40fa251dfdcefd4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fc8b286ae73d896f12113e3364c06c18050617a618dd647e5e2b77edd47facf6"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6b5677e00ac5aa4643dd536fc38b6801518abc97ddd532b5fd21d7a9341c804b"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3f1aee139d9d447008aa75c7407baf2241ac569a44b890c046a3fe626fbc0687"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "176f2d6d4a2ae09b2426ed5a224df5a16d3fabb42c30df8a324c48b277d8cb73"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2c3d0590c8066bc679a9cda06b6804ab75e3560b4045399789f12b1cb205ee80"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b59e1325b4f7dc68ba037c5286f68f5a5e28220f522e9e043b28835a13dcaa3c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "91ec89e0390bbe185415a6c95245c55978ecad669353bc01798a4142fa70af87"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "afe966b81cb4164946879c3fa4984791b90718717989de80223ac7392a5b2f70"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3b0df29a1b91fd0968c7ce24f528c8589a8ee2f9054c6010a93e8da743911e81"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cab102589749f357cb9b90664e8c21303bc8986856d98da8ae492dbd1eb66f7c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "be495dcc5cb0a797a88a06e8da1ebc389c00a97f62449297b4c31ffdfe9ba235"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "dff229d89515b286cda9ef441df4a95f38755bf523e682686e838c4449c87d2c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "baa9db688975b948099bb3872c64f52e13803242242f20f5b5406a53417e4bff"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5017e3e13721d75c30e94029feeec221f7b39917791203cd7a05b261c0925237"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ddedc2b19c4dac29eb39d96f64ab11043a50fff35d52c021fa526b6c3bb809fd"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "c1a3b323d19a4efe54fcd441a1cd7c76a4e368d8684ab3c7f40fa251dfdcefd4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fc8b286ae73d896f12113e3364c06c18050617a618dd647e5e2b77edd47facf6"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cab102589749f357cb9b90664e8c21303bc8986856d98da8ae492dbd1eb66f7c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "be495dcc5cb0a797a88a06e8da1ebc389c00a97f62449297b4c31ffdfe9ba235"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "dff229d89515b286cda9ef441df4a95f38755bf523e682686e838c4449c87d2c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "baa9db688975b948099bb3872c64f52e13803242242f20f5b5406a53417e4bff"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5017e3e13721d75c30e94029feeec221f7b39917791203cd7a05b261c0925237"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ddedc2b19c4dac29eb39d96f64ab11043a50fff35d52c021fa526b6c3bb809fd"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "c1a3b323d19a4efe54fcd441a1cd7c76a4e368d8684ab3c7f40fa251dfdcefd4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fc8b286ae73d896f12113e3364c06c18050617a618dd647e5e2b77edd47facf6"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "957967cda629156a5d694ed08214086e0cda4196d0454f4e591630260dbeb0b3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "11c209a22df9811f4331e1a99f3db2244347e44f1d5230ff93d5d8904e4285d9"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "a228f6831c2f300db112378cfb23c397c540d53a4d4101e4f0e1fd5226088733"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "4f33c31e5027f3b0ed12e5daa98c6a0a7cdf53c9c03b99c8a841de49347f3eb4"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1c844573bf119c0b1432785b67ef27f10ae58ae274656306801fd877fae7d0ec"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd9f2114dc3ddf52ca6900a72c52e70b8fffe94988d02dda022d565662352892"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5bddc5669406e8337662542088e85545e4038d12fb04e631a239fb3a3f108dcd"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b023d92de53ba9ec7432e998fe654ffc72ce2d5fc6efe426c7ef87eab336801a"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cab102589749f357cb9b90664e8c21303bc8986856d98da8ae492dbd1eb66f7c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "be495dcc5cb0a797a88a06e8da1ebc389c00a97f62449297b4c31ffdfe9ba235"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1ae2384d99daa85842b64ad1f06f02af6b9e96b03aa7a6db14658ec6359999eb"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6667030c8e6a8c860c08609520e3591c0976adb431737117add5969f6e0cb38c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "82d04ee142f2f424c0fa587271822971056371e610be064bfe5d95d7cc207ebe"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fe990aeeaf6ad59f06565169a829e7cc07da0282f006e7b98fa2447ea5dac720"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5017e3e13721d75c30e94029feeec221f7b39917791203cd7a05b261c0925237"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ddedc2b19c4dac29eb39d96f64ab11043a50fff35d52c021fa526b6c3bb809fd"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "066948b922e81300700cda23819262043c16875d9b28819edd16602d7b4a6194"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "333993314f7b883d15252fd80ed9f3e5894fe806968ebcce0cac17d11b6c79c7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7e4a994e29d34bdd290d51a8ff99016cbc3fcca1721eb2071ac50cfd7b5ee6db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "c8ff543a921e960cddd34d645d9f6f8c8d5b6632270c63a68c23ed9ebad0850a"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6b5677e00ac5aa4643dd536fc38b6801518abc97ddd532b5fd21d7a9341c804b"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3f1aee139d9d447008aa75c7407baf2241ac569a44b890c046a3fe626fbc0687"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "e9b1657ead96bba885d3e699fc0d43d1e379cab75adcb155913cdd2fbcf7569c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f4211ceebfa3830114321c486754fe6d243bf4fb811f8bb9d7fe15a8df39af73"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "5f2b243ec0f620d2f73156c079d91de46d8632485006691803de33d5166ca2c4"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f160c72ca5a27eb6237e26bfe9b16e7b81677384feb8ae99f2ad212b6dcae61b"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b59e1325b4f7dc68ba037c5286f68f5a5e28220f522e9e043b28835a13dcaa3c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "91ec89e0390bbe185415a6c95245c55978ecad669353bc01798a4142fa70af87"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d72e55a2214300e4c664a6a8965786c9c2fdf6522be4adbb48f3cf74e527e894"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ac693f67a8e9b1b9618d1b003e1979a7c3595330c3ab4bea3a23af6858d1a498"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d962f3b73552e46dd1d26e8b44beb3a6645a546363c7848e07677e2b38e9c493"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "98bfbc650937bd89ba8b5162270143740d5533b702efd6da453155edda313b15"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cab102589749f357cb9b90664e8c21303bc8986856d98da8ae492dbd1eb66f7c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "be495dcc5cb0a797a88a06e8da1ebc389c00a97f62449297b4c31ffdfe9ba235"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1ae2384d99daa85842b64ad1f06f02af6b9e96b03aa7a6db14658ec6359999eb"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6667030c8e6a8c860c08609520e3591c0976adb431737117add5969f6e0cb38c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "82d04ee142f2f424c0fa587271822971056371e610be064bfe5d95d7cc207ebe"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fe990aeeaf6ad59f06565169a829e7cc07da0282f006e7b98fa2447ea5dac720"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5017e3e13721d75c30e94029feeec221f7b39917791203cd7a05b261c0925237"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ddedc2b19c4dac29eb39d96f64ab11043a50fff35d52c021fa526b6c3bb809fd"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "066948b922e81300700cda23819262043c16875d9b28819edd16602d7b4a6194"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "333993314f7b883d15252fd80ed9f3e5894fe806968ebcce0cac17d11b6c79c7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7e4a994e29d34bdd290d51a8ff99016cbc3fcca1721eb2071ac50cfd7b5ee6db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "c8ff543a921e960cddd34d645d9f6f8c8d5b6632270c63a68c23ed9ebad0850a"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cab102589749f357cb9b90664e8c21303bc8986856d98da8ae492dbd1eb66f7c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "be495dcc5cb0a797a88a06e8da1ebc389c00a97f62449297b4c31ffdfe9ba235"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1ae2384d99daa85842b64ad1f06f02af6b9e96b03aa7a6db14658ec6359999eb"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6667030c8e6a8c860c08609520e3591c0976adb431737117add5969f6e0cb38c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "82d04ee142f2f424c0fa587271822971056371e610be064bfe5d95d7cc207ebe"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fe990aeeaf6ad59f06565169a829e7cc07da0282f006e7b98fa2447ea5dac720"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5017e3e13721d75c30e94029feeec221f7b39917791203cd7a05b261c0925237"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ddedc2b19c4dac29eb39d96f64ab11043a50fff35d52c021fa526b6c3bb809fd"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "066948b922e81300700cda23819262043c16875d9b28819edd16602d7b4a6194"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "333993314f7b883d15252fd80ed9f3e5894fe806968ebcce0cac17d11b6c79c7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7e4a994e29d34bdd290d51a8ff99016cbc3fcca1721eb2071ac50cfd7b5ee6db"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "c8ff543a921e960cddd34d645d9f6f8c8d5b6632270c63a68c23ed9ebad0850a"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "957967cda629156a5d694ed08214086e0cda4196d0454f4e591630260dbeb0b3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "11c209a22df9811f4331e1a99f3db2244347e44f1d5230ff93d5d8904e4285d9"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "25a061c18998d730462f4e2f3f16dd52789ab3f7f43944aa931b80c7def554ab"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2b5807110c96f6bd93997f3493e3d8c5db05dc3f1e362fd948bf3fb0cb6c2457"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "798567457abd69625d81294b513e317deb39d9ef75151b625de9742ad8b33406"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "334f5c703aed23d16533a582da7feca1dfa04e065d352bccfd7fca2d680fcddb"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1c844573bf119c0b1432785b67ef27f10ae58ae274656306801fd877fae7d0ec"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd9f2114dc3ddf52ca6900a72c52e70b8fffe94988d02dda022d565662352892"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "481d18f5f0ec56acb49a5a86036ad31d1f198eff3e41716edace6a3459ab4cf7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "6ab965820817893fb62c8b677f1822d96b4ed7a01878dfb6a6bf367a196e1a8b"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "36a169a6432179245aa0044286fd6da01a44799eb6b5002c63d9c60e3bc9c0c3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2a25a16cbb1754f962c43644df53c3baef894d7b0cc3a0b4b723505b916155af"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1cb13f97656c1aab90a6dfabde1d34c78b7c807ffbab6aa5090777029fc0d1d7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "5d2143037fd8cc57eb2f5238f40103e281fe4b51138a4b9b7178e6dd461bac4d"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9c5752c0e9d41a511a10a10cec86d5156f530e680f274ea5e7b0c49f090826a7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "f08c42888b1c9d6c21eacc5603d83c328088c51461662e675575d7cc5cd42f7e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8db4aabba4112fe46fdc4fc63deff9242ef07b0cc305f160db71aa70e44060e6"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "68a680b72eb88e4b89ce2245d9dd117d60616037b92833272bdbbe9b939cf353"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "c8ec72de43bc083091edb95a8c650b0f9f6bb76c2283aa7e1d19d6637609d4d0"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "a66f522555a582f494cf17ff8ef5d1e86856b55efd3619878bd4a1329ffe866b"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1cb13f97656c1aab90a6dfabde1d34c78b7c807ffbab6aa5090777029fc0d1d7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "5d2143037fd8cc57eb2f5238f40103e281fe4b51138a4b9b7178e6dd461bac4d"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9c5752c0e9d41a511a10a10cec86d5156f530e680f274ea5e7b0c49f090826a7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "f08c42888b1c9d6c21eacc5603d83c328088c51461662e675575d7cc5cd42f7e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1cb13f97656c1aab90a6dfabde1d34c78b7c807ffbab6aa5090777029fc0d1d7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "5d2143037fd8cc57eb2f5238f40103e281fe4b51138a4b9b7178e6dd461bac4d"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9c5752c0e9d41a511a10a10cec86d5156f530e680f274ea5e7b0c49f090826a7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "f08c42888b1c9d6c21eacc5603d83c328088c51461662e675575d7cc5cd42f7e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0d30d0197c7602bcce3d512314647518432aad4c64409948a2ccee5b62639abb"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1353185174899a0cdf390aae3bb58612a78d8ae871e857c442a6c513e52e467b"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "8de5d9f199727a53432784d05baa0dee16e770c2baffe4d3e4cca9001268d972"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d1bddf7b8c5aac949e5d32ad04553c0caa4bce6bca095c9f48598c9422472ba9"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0e38a7c6f81e91286918bf268a60f53a14f357e9b5616894d296870c69cd822c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "94a3a1907b07cd8d73f76dd8c74d0f30526822857453a13918b1c4f52f919950"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f614f6d03a7f0fbd71398d2cba4a6d118deb83cfcbc14c57b32cc018242b051d"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "74a6f80fafcf6a36ff74a96129c4a6c367f42797444e4f29ff5a3bdd79470f9e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d821098fd95d4ff321380f8f34e11a1c59a9decddefe15d915a4de23276fcd0f"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e51e835623853c3039a631981d34478bc215a02f8c131505ac95421e67e78fcf"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "477c3cd470ea05cb25309080324d51ee132e6b0f3fc6c04c6ca7189ae2199be8"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "21e448602a329df055e72e308a8bca85ad37f18115321db12c1d6008a86ec09c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3e0deebcc36d6138a54312b119bc0e9fd8f903d80e1289bc45bd045cd16adc3c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "548481658b041287f356a495448d2bd86b762c21b98e9a91bfb74e83bdc75e11"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "66688ad11234afda9bc882598be6c47b3f2d4b04313bf93d35efad8f9022b67a"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5f5315102d27ff5d7e7c13b7cbe9d80f840d20bdb362dd5350fbbf3ea4fe49a4"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "79c29532bba2913fd0edba69fe7fda3d1798c16977cce77d97d4c13a0f666f0d"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "92e50994adc5d60ae06117b0217611d5db6033e5f6cddabc535011cb891ec6f9"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0e38a7c6f81e91286918bf268a60f53a14f357e9b5616894d296870c69cd822c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "94a3a1907b07cd8d73f76dd8c74d0f30526822857453a13918b1c4f52f919950"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f614f6d03a7f0fbd71398d2cba4a6d118deb83cfcbc14c57b32cc018242b051d"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "74a6f80fafcf6a36ff74a96129c4a6c367f42797444e4f29ff5a3bdd79470f9e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d821098fd95d4ff321380f8f34e11a1c59a9decddefe15d915a4de23276fcd0f"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e51e835623853c3039a631981d34478bc215a02f8c131505ac95421e67e78fcf"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0e38a7c6f81e91286918bf268a60f53a14f357e9b5616894d296870c69cd822c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "94a3a1907b07cd8d73f76dd8c74d0f30526822857453a13918b1c4f52f919950"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f614f6d03a7f0fbd71398d2cba4a6d118deb83cfcbc14c57b32cc018242b051d"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "74a6f80fafcf6a36ff74a96129c4a6c367f42797444e4f29ff5a3bdd79470f9e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d821098fd95d4ff321380f8f34e11a1c59a9decddefe15d915a4de23276fcd0f"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "e51e835623853c3039a631981d34478bc215a02f8c131505ac95421e67e78fcf"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2b1fca3f0ac3ea5d864f85efa34b08475fa2f34e72fa3f26d3704a4b97add413"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "7a75680543d022b28b6d9cc73fe9b398f24a96dce88ca48b52c8cff321cfd0d7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "cbec65f2021a236587ec32ad5e669c4fa1771b3eb5c3d113ed62a8fa86ae8edf"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "54449de3470018eba07d71a051708e5798e2683a1d9028e831476ce7aa5b80e8"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/search?query=fixture&limit=10&includeCollections=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9a96c98275547ead6b00b4a105c78809c131e8bad67ee77b87f0503c5ae5d8a7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d15db4b9e418afa746e58e6fb39e51623fc20c14ff04db0195839e2ae5087b19"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/library/search?query=fixture&limit=10&searchTypes=movies%2Ctv&includeMetadata=1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22bd898fbe71801a3aa9c4f743da76147bc3a1cc02f096a6ce25254c83a33931"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4887239d9b33754fb1d34cfa0f16488756cab1986a01c4c90b8ee8617cf74824"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "85dcd08c70b6149b46b97fd73cc33b8c791b35a9a03d3364a7b8e308cd58c075"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2fcce6eb3a654f43692451d7a34c8260c7a71343b60c2daa6d53f7526d53a663"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0dc814284b832e1f61ac26ba7e0fa23e8fa5576787d120840c24c9d3ab9a7b18"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4469db8c9b483a902ce12b5a9c939d6a5f526beca7400a40039ab74e0dd0d492"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1a076e54e3181695cc0aa0092b7d2817a5b2601f94209be9f4aa55592b4bdf3c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ca530b683fd04b3853ced0e01128ea7c9fbcede9a0a92be357e9e527c374f20e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bf631d0b8a6e61001a323bdd04df142354b772010eed83303609a488fabd8d57"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "10ba0bd514ae7a4b61193814636abe087b145b771fbdd9ccce8f0154c3a6b403"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "1e8b53734ccb1c882b19979f69c3007e8130bc11490beb7c2f60ca791587f147"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f3648efec331b6df0aa895ac7993b026e33c1c9cd69f93ec257762329bfdca29"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0607f88ae4a0a3cd6f272584f8bed97db7a502c894efbd1a8e45c25ed84925ea"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "299e405ce6668da2be5b6d74909627c9d3973272ff2e01fa096614404085c9ce"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "801037433aad2889091aa605caba8ee09c857f4dc3896c2b84fae99789b0c9d8"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "825cace103252ab03fd3259d124d94d3e5b8264fe985e5087b3564e8676aa54a"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "85dcd08c70b6149b46b97fd73cc33b8c791b35a9a03d3364a7b8e308cd58c075"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2fcce6eb3a654f43692451d7a34c8260c7a71343b60c2daa6d53f7526d53a663"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0dc814284b832e1f61ac26ba7e0fa23e8fa5576787d120840c24c9d3ab9a7b18"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4469db8c9b483a902ce12b5a9c939d6a5f526beca7400a40039ab74e0dd0d492"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1a076e54e3181695cc0aa0092b7d2817a5b2601f94209be9f4aa55592b4bdf3c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ca530b683fd04b3853ced0e01128ea7c9fbcede9a0a92be357e9e527c374f20e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "85dcd08c70b6149b46b97fd73cc33b8c791b35a9a03d3364a7b8e308cd58c075"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2fcce6eb3a654f43692451d7a34c8260c7a71343b60c2daa6d53f7526d53a663"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0dc814284b832e1f61ac26ba7e0fa23e8fa5576787d120840c24c9d3ab9a7b18"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "4469db8c9b483a902ce12b5a9c939d6a5f526beca7400a40039ab74e0dd0d492"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1a076e54e3181695cc0aa0092b7d2817a5b2601f94209be9f4aa55592b4bdf3c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "ca530b683fd04b3853ced0e01128ea7c9fbcede9a0a92be357e9e527c374f20e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "137a67d0f827d1b110b82ca868fdbe202eb5336b0a622b00b773b8a180724d5c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "ac89c8df551c42b37e483d998e094155bd825b7b09a0e57da6498e6b1b420b9e"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "f305028237973f5aa77cb2602fff4000d5cbd75c4af831516c9f6b9c9d6955cc"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "621da481b57f5ccb1af38b31a127a161db5d449e22836cb37189da1c1d84212e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3c3493168beb2f263be914aaeee7bca2f6ca6d0450c6c22e10b278bf658d9015"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9402386a26059886b0d98f63f16d0f37293a3f7f8eb8e5a4d26ce1f1cc9b8022"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1fe1d134292583bfe2a86686dc22a5f211c486270b1ff1e062093821f34245ff"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "65ed22c1a0bfdae4a891dba9f3f427b330846c346b13e3625ab09af56161f5e7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c6363c9ff09e8b30474ef8c81ecaee99d6412632120414836526ae51a4c525e9"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0e38a7c6f81e91286918bf268a60f53a14f357e9b5616894d296870c69cd822c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "84778a2f9ef6333ed78cf19a379f628ca695721776bf3150080c919fcf6303ed"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "9bbc197c949c4a3b560fb1587f80024ca6cfa74b3b1c07e3fb34fd1d06cad5cb"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "932516ecc5ded54f6fa68774aa53912fc320574ccc94d9420f6e21a2df7a5f11"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "74a6f80fafcf6a36ff74a96129c4a6c367f42797444e4f29ff5a3bdd79470f9e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "656b61e10fd795fc7bc8acca05c59c3ee76d48f930e7e4f083befce693384d13"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2d63f7d1877d1ad796b458f6811bf6face35bf9944246b1052489c020ec6cc7c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bf631d0b8a6e61001a323bdd04df142354b772010eed83303609a488fabd8d57"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "5f791dce1fa5be30fbc76e67c2d9567ffed842f7f61d6688d10e5102bb1d884e"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "477c3cd470ea05cb25309080324d51ee132e6b0f3fc6c04c6ca7189ae2199be8"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "21e448602a329df055e72e308a8bca85ad37f18115321db12c1d6008a86ec09c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "94c975d9c2e9a1e08cadc9bf5ea4a62587e92d8443aec56ab2959d43bfb7d588"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3f5e5658679078e115c829f3690b096a63281966c79b0e8816c9cfdcc35d332b"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "0607f88ae4a0a3cd6f272584f8bed97db7a502c894efbd1a8e45c25ed84925ea"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "595456460abb0eb31fe6b59f9e3919259820537110bf8ae8c13a0bd8459c7153"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "66688ad11234afda9bc882598be6c47b3f2d4b04313bf93d35efad8f9022b67a"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "5f5315102d27ff5d7e7c13b7cbe9d80f840d20bdb362dd5350fbbf3ea4fe49a4"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1bd407a2fa61cda6c1ee735db84c26ce12c22ed026737beab3eb5995657c2487"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "b11d4efe08e6c4cee966bd3329931b37c045cf4ad5dfc32b69e60fd5b7af1dfd"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c6363c9ff09e8b30474ef8c81ecaee99d6412632120414836526ae51a4c525e9"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0e38a7c6f81e91286918bf268a60f53a14f357e9b5616894d296870c69cd822c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "84778a2f9ef6333ed78cf19a379f628ca695721776bf3150080c919fcf6303ed"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "9bbc197c949c4a3b560fb1587f80024ca6cfa74b3b1c07e3fb34fd1d06cad5cb"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "932516ecc5ded54f6fa68774aa53912fc320574ccc94d9420f6e21a2df7a5f11"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "74a6f80fafcf6a36ff74a96129c4a6c367f42797444e4f29ff5a3bdd79470f9e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "656b61e10fd795fc7bc8acca05c59c3ee76d48f930e7e4f083befce693384d13"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2d63f7d1877d1ad796b458f6811bf6face35bf9944246b1052489c020ec6cc7c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "8f0a4ddfee6e67251e48a9e9d6e9c51519d4c30125f9e31f658efd323cbcf280"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c6363c9ff09e8b30474ef8c81ecaee99d6412632120414836526ae51a4c525e9"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "3753141a86847a4a32b289cf98b1fd95daf05db93244791b28a034d3e23cd648"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "0e38a7c6f81e91286918bf268a60f53a14f357e9b5616894d296870c69cd822c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "84778a2f9ef6333ed78cf19a379f628ca695721776bf3150080c919fcf6303ed"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "9bbc197c949c4a3b560fb1587f80024ca6cfa74b3b1c07e3fb34fd1d06cad5cb"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "29ea5573fbd1be8535657148a6e2f016bd85117fc4e8b5ac0b5f15548bbe5270"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "932516ecc5ded54f6fa68774aa53912fc320574ccc94d9420f6e21a2df7a5f11"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "7a2c21553a803aa78c4a2e8ac389585f1803b5e8f73c73cf78c597f598a2d785"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "74a6f80fafcf6a36ff74a96129c4a6c367f42797444e4f29ff5a3bdd79470f9e"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "656b61e10fd795fc7bc8acca05c59c3ee76d48f930e7e4f083befce693384d13"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "2d63f7d1877d1ad796b458f6811bf6face35bf9944246b1052489c020ec6cc7c"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "137a67d0f827d1b110b82ca868fdbe202eb5336b0a622b00b773b8a180724d5c"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "7588a25c70fe2dcaa71bf2e0ef859f83d2193ac6db0224a1752f2e2084f3cf78"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "2b1fca3f0ac3ea5d864f85efa34b08475fa2f34e72fa3f26d3704a4b97add413"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "7a75680543d022b28b6d9cc73fe9b398f24a96dce88ca48b52c8cff321cfd0d7"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "6d24c2b11624c1d936707b5f742f8b55e5273d342002f22f3affe72a350cadff"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "5610107a04362dcd570dc03cbac3b17f0d70ea2246d77d31a091593dbee9df34"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/metadata/{{movieKey}}/postplay",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "3c3493168beb2f263be914aaeee7bca2f6ca6d0450c6c22e10b278bf658d9015"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "32b0cbbcd3e435973715408306945347edb1dbf626dc3719e6acbfb00ec5e2fe"
+    },
+    "commit": "2c7bcdc9"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/hubs/search/voice?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9a96c98275547ead6b00b4a105c78809c131e8bad67ee77b87f0503c5ae5d8a7"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "d15db4b9e418afa746e58e6fb39e51623fc20c14ff04db0195839e2ae5087b19"
+    },
+    "commit": "c82a7830"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/search?query=fixture",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "9d9bb9035ea2390eeb0e1ab6b37c3a0f3d9293de3f49c64998e4acd7d2404154"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "1723c7c4f0b6a41d5b06a444b86aef6baf64035701cdb2e940b3341875712973"
+    },
+    "commit": "c82a7830"
   }
 ]

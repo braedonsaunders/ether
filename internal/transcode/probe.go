@@ -223,6 +223,18 @@ func ParseProbe(b []byte) (*core.MediaInfo, error) {
 	if m.BitrateKbps == 0 && m.Size > 0 && m.Duration > 0 {
 		m.BitrateKbps = int(float64(m.Size*8) / m.Duration.Seconds() / 1000)
 	}
+	// Only a complete successful MP4/Matroska probe can establish that its
+	// container has no DV configuration record. Partial best-effort probes
+	// must not turn missing evidence into a negative claim.
+	if (m.Container == "mp4" || m.Container == "mkv") && probeCompleteMode(m, false) {
+		for i := range m.Streams {
+			si := &m.Streams[i]
+			if si.Type == "video" && !si.DolbyVision && si.DolbyVisionConfigurationPresent == nil {
+				present := false
+				si.DolbyVisionConfigurationPresent = &present
+			}
+		}
+	}
 	return m, nil
 }
 

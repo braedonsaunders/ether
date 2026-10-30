@@ -259,7 +259,10 @@ func mp4Video(b []byte, e mp4Box, si *core.StreamInfo) error {
 	if si.Width == 0 || si.Height == 0 {
 		return incomplete("video geometry missing")
 	}
-	kids, _ := readBoxes(b, e.start+e.hdr+78, e.end)
+	kids, err := readBoxes(b, e.start+e.hdr+78, e.end)
+	if err != nil {
+		return incomplete("invalid video sample entry")
+	}
 	find := func(typ string) []byte {
 		for _, k := range kids {
 			if k.typ == typ {
@@ -290,7 +293,7 @@ func mp4Video(b []byte, e mp4Box, si *core.StreamInfo) error {
 	if dovi == nil {
 		dovi = find("dvwC")
 	}
-	var err error
+	err = nil
 	switch e.typ {
 	case "avc1", "avc3", "dva1", "dvav":
 		err = videoConfig(si, "h264", find("avcC"), transfer, dovi)
@@ -308,6 +311,9 @@ func mp4Video(b []byte, e mp4Box, si *core.StreamInfo) error {
 	switch e.typ {
 	case "dva1", "dvav", "dvh1", "dvhe", "dav1":
 		si.DolbyVision = true // ffprobe also infers it from the sample entry
+		if dovi == nil {
+			si.DolbyVisionConfigurationPresent = nil // conflicting/incomplete signalling
+		}
 	}
 	return nil
 }

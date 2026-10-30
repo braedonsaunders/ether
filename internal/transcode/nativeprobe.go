@@ -687,7 +687,10 @@ func mkvTracksOf(b []byte) ([]mkvTrack, error) {
 					}
 				}
 			case mkvAddMapping:
-				ms, _ := mkvNodes(f.body)
+				ms, ok := mkvNodes(f.body)
+				if !ok {
+					return nil, incomplete("bad BlockAdditionMapping")
+				}
 				var kind uint64
 				var extra []byte
 				for _, x := range ms {
@@ -700,6 +703,9 @@ func mkvTracksOf(b []byte) ([]mkvTrack, error) {
 				}
 				switch kind {
 				case 0x64766343, 0x64767643, 0x64767743: // dvcC, dvvC, dvwC
+					if len(extra) < 4 {
+						return nil, incomplete("incomplete Dolby Vision mapping")
+					}
 					t.dovi = extra
 				}
 			case mkvEncodings:
@@ -933,6 +939,11 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 		return incomplete("video codec %s", codec)
 	}
 	si.ColorTransfer = transferName(transfer)
+	if dovi != nil && len(dovi) < 4 {
+		return incomplete("incomplete Dolby Vision configuration")
+	}
+	present := len(dovi) >= 4
+	si.DolbyVisionConfigurationPresent = &present
 	if len(dovi) >= 4 {
 		d := dovi
 		si.DolbyVision = true

@@ -841,10 +841,32 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 	size = min(size, 50)
 	var items []core.Title
 	rq := r.URL.Query()
-	wantType := typeFromParam(rq.Get("type"))
-	wantSection, _ := strconv.Atoi(rq.Get("sectionID"))
+	rawType := rq.Get("type")
+	wantType := typeFromParam(rawType)
+	isHomeRecent := r.URL.Path == "/hubs/home/recentlyAdded"
+	// A supplied but unsupported type is an empty result, not an unfiltered
+	// listing. Section constraints apply independently and must never widen it.
+	validScope := !isHomeRecent || rawType == "" || wantType != ""
+	if isHomeRecent && rawType == "" && (rq.Has("sectionID") || rq.Has("contentDirectoryID") || rq.Has("pinnedContentDirectoryID")) {
+		validScope = false
+	}
+	wantSection, sectionErr := strconv.Atoi(rq.Get("sectionID"))
+	if isHomeRecent && rq.Has("sectionID") && (sectionErr != nil || wantSection <= 0) {
+		validScope = false
+	}
+	allowedSection := func(key string, id int) bool {
+		if !isHomeRecent || !rq.Has(key) {
+			return true
+		}
+		for _, n := range parseSectionList(rq.Get(key)) {
+			if n == id {
+				return true
+			}
+		}
+		return false
+	}
 	for _, sec := range s.userSections(pr.User) {
-		if wantSection > 0 && sec.ID != wantSection || wantType != "" && wantType != sec.Type {
+		if !validScope || wantSection > 0 && sec.ID != wantSection || wantType != "" && wantType != sec.Type || !allowedSection("contentDirectoryID", sec.ID) || !allowedSection("pinnedContentDirectoryID", sec.ID) {
 			continue
 		}
 		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type}, Sort: core.SortAdded, Desc: true, Limit: size}

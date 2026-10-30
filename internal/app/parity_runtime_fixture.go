@@ -55,6 +55,15 @@ func parityWarmPersonalization(ctx context.Context, a *App) error {
 			return fmt.Errorf("fixture warm %s: %w", u.Username, err)
 		}
 	}
+	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
+		insight, err := a.personalize.RankerInsight(ctx)
+		if err != nil {
+			return fmt.Errorf("fixture ranker insight: %w", err)
+		}
+		if !insight.Active || insight.AUC < insight.BaselineAUC+0.02 || insight.Examples < 2000 || insight.Positives < 30 {
+			return fmt.Errorf("fixture ranker is not active under the production gate: %+v", insight)
+		}
+	}
 	return nil
 }
 

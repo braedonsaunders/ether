@@ -134,7 +134,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 	// Populate Plex's asynchronous, persistent UltraBlur cache before recording
 	// responses. Otherwise scheduling alone changes which rows contain colors.
 	var warmPaths []string
-	for i := int64(1); i <= 60; i++ {
+	for i := int64(1); i <= int64(fixtureMovieCount()); i++ {
 		warmPaths = append(warmPaths, fmt.Sprintf("/library/metadata/%d", core.MovieKey(10000+i)))
 	}
 	for i := int64(1); i <= 20; i++ {
@@ -732,6 +732,10 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 			}
 			if commit != "" && !approvedHeaders(x, y) {
 				commit = ""
+			}
+			// Counterfactual evidence must not rely on either allowlist.
+			if os.Getenv("ETHER_PARITY_POLICY_COUNTERFACTUAL") == "1" {
+				noise, commit = false, ""
 			}
 			label := "REGRESSION"
 			if noise {
