@@ -83,7 +83,7 @@ func TestConfiguredLibrariesFollowRenameWithoutChangingIDs(t *testing.T) {
 	}
 	a := &App{cfg: st}
 	before := a.configuredLibraries()
-	if len(before) != 2 || before[0].ID != 1 || before[1].ID != 2 || before[0].Name != "Movies" || before[1].Name != "TV Shows" {
+	if len(before) != 2 || before[0].ID != 1 || before[1].ID != 2 || before[0].Name != "Movies" || before[1].Name != "TV Shows" || !before[0].Virtual || !before[1].Virtual {
 		t.Fatalf("defaults = %+v", before)
 	}
 	if err := st.Update(func(c *config.Config) error {
@@ -94,7 +94,7 @@ func TestConfiguredLibrariesFollowRenameWithoutChangingIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := a.configuredLibraries()
-	if after[0].ID != 1 || after[1].ID != 2 || after[0].Name != "Basement Films" || after[1].Name != "Basement Series" {
+	if after[0].ID != 1 || after[1].ID != 2 || after[0].Name != "Basement Films" || after[1].Name != "Basement Series" || !after[0].Virtual || !after[1].Virtual {
 		t.Fatalf("live names = %+v", after)
 	}
 }

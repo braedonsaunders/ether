@@ -485,7 +485,104 @@ func TestJellyfinVirtualFolders(t *testing.T) {
 	if _, ok := folders[0]["Locations"]; ok {
 		t.Fatal("invented library path")
 	}
+	if _, ok := folders[0]["LibraryOptions"]; ok {
+		t.Fatal("copied library options")
+	}
 	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
+}
+
+func TestJellyfinVirtualLibraryHasEmptyLocations(t *testing.T) {
+	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie", Virtual: true}, {ID: "2", Name: "Shows", Type: "show"}}, nil
+	}})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Library/VirtualFolders", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var folders []map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &folders) != nil || len(folders) != 2 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	locations, ok := folders[0]["Locations"].([]any)
+	if !ok || len(locations) != 0 {
+		t.Fatal(folders[0]["Locations"])
+	}
+	if _, ok := folders[1]["Locations"]; ok {
+		t.Fatal("non-virtual library gained locations")
+	}
+	if _, ok := folders[0]["LibraryOptions"]; ok {
+		t.Fatal(folders[0]["LibraryOptions"])
+	}
+	if _, ok := folders[0]["RefreshStatus"]; ok {
+		t.Fatal(folders[0]["RefreshStatus"])
+	}
+	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
+}
+
+func TestJellyfinShowParentIsTheVisibleLibrary(t *testing.T) {
+	show := core.ShowKey(42)
+	parent, err := ids.GUID(ids.View, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
+	}
+	inst := mountJellyfin(t, frontendtest.Experience{
+		ViewsFunc: views,
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var item map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil || item["ParentId"] != parent {
+		t.Fatal(w.Code, item["ParentId"])
+	}
+	if _, ok := item["DateCreated"]; ok {
+		t.Fatal(item["DateCreated"])
+	}
+
+	ambiguous := mountJellyfin(t, frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "2", Type: "show"}, {ID: "4", Type: "show"}}, nil
+		},
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+		},
+	})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	ambiguous.Handler().ServeHTTP(w, r)
+	item = nil
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := item["ParentId"]; ok {
+		t.Fatal(item["ParentId"])
+	}
+
+	movie := mountJellyfin(t, frontendtest.Experience{
+		ViewsFunc: views,
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: core.MovieKey(3), Type: "movie", Title: "Film"}}, nil
+		},
+	})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(core.MovieKey(3)), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	movie.Handler().ServeHTTP(w, r)
+	item = nil
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := item["ParentId"]; ok {
+		t.Fatal(item["ParentId"])
+	}
 }
 
 func requireJellyfinSpec(t *testing.T, method, path string, w *httptest.ResponseRecorder) {

@@ -40,6 +40,9 @@ type View struct {
 	ID   string
 	Name string
 	Type core.MediaType
+	// Virtual is true only when the host asserts this library has no physical
+	// locations. False means the host did not assert virtual origin.
+	Virtual bool
 }
 
 // RowEntryKind identifies a neutral entry independently of wire formats.

@@ -35,7 +35,7 @@ func (a *App) configuredLibraries() []experience.Library {
 			shows = n
 		}
 	}
-	return []experience.Library{{ID: 1, Name: movies, Type: core.TypeMovie}, {ID: 2, Name: shows, Type: core.TypeShow}}
+	return []experience.Library{{ID: 1, Name: movies, Type: core.TypeMovie, Virtual: true}, {ID: 2, Name: shows, Type: core.TypeShow, Virtual: true}}
 }
 
 // newSurfaceExperience builds an explicitly surface-bound service. A shared

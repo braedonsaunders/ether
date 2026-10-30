@@ -170,6 +170,7 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 	case "show":
 		setMissing(item, "AirDays", []string{})
 		setMissing(item, "MediaType", "Unknown")
+		i.attachShowLibraryParent(r, viewer, item)
 		if title.Status != "" {
 			setMissing(item, "Status", jellyfinSeriesStatus(title.Status))
 		}
@@ -403,6 +404,43 @@ func (i *instance) boxSetDTO(collection frontend.Collection) map[string]any {
 	return item
 }
 
+// attachShowLibraryParent sets a show's ParentId to the one visible show
+// library. A missing or ambiguous library leaves the field absent.
+func (i *instance) attachShowLibraryParent(r *http.Request, viewer *frontend.Viewer, item map[string]any) {
+	if r == nil || viewer == nil || i.host.Experience == nil {
+		return
+	}
+	if _, ok := item["ParentId"]; ok {
+		return
+	}
+	views, err := i.host.Experience.Views(r.Context(), viewer)
+	if err != nil {
+		return
+	}
+	var libraryID string
+	for _, view := range views {
+		if view.Type != "show" {
+			continue
+		}
+		if libraryID != "" {
+			return
+		}
+		libraryID = view.ID
+	}
+	if libraryID == "" {
+		return
+	}
+	viewNum, err := ids.ParseDecimal(libraryID)
+	if err != nil {
+		return
+	}
+	viewID, err := ids.GUID(ids.View, viewNum)
+	if err != nil {
+		return
+	}
+	item["ParentId"] = viewID
+}
+
 // attachParentIdentity writes the show and season ids and names the title
 // already carries. An episode key encodes its season when ShowKey was left
 // empty. A show key plus a season number encodes the season when the item
@@ -616,6 +654,9 @@ func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		entry := map[string]any{"Name": view.Name, "ItemId": viewID}
+		if i.protocol == "jellyfin" && view.Virtual {
+			entry["Locations"] = []string{}
+		}
 		switch view.Type {
 		case "movie", "movies":
 			entry["CollectionType"] = "movies"

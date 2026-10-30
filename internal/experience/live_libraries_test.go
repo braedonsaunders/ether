@@ -24,7 +24,7 @@ func TestViewsFollowLiveNamesAndSectionPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(owner) != 2 || owner[0].ID != "1" || owner[0].Name != "Movies" || owner[1].ID != "2" || owner[1].Name != "TV Shows" {
+	if len(owner) != 2 || owner[0].ID != "1" || owner[0].Name != "Movies" || owner[1].ID != "2" || owner[1].Name != "TV Shows" || owner[0].Virtual || owner[1].Virtual {
 		t.Fatalf("owner views = %+v", owner)
 	}
 	movies, shows = "Basement Films", "Basement Series"
@@ -41,5 +41,25 @@ func TestViewsFollowLiveNamesAndSectionPolicy(t *testing.T) {
 	}
 	if len(restricted) != 1 || restricted[0].ID != "1" || restricted[0].Name != "Basement Films" {
 		t.Fatalf("restricted views = %+v", restricted)
+	}
+}
+
+func TestViewsCopyVirtualOriginAndSectionPolicy(t *testing.T) {
+	s := &Service{d: ServiceDeps{
+		Active: func(_ context.Context, id int64) (*core.User, error) {
+			if id == 2 {
+				return &core.User{ID: id, AllowedSections: []int{1}}, nil
+			}
+			return &core.User{ID: id, IsOwner: true}, nil
+		},
+		Libraries: []Library{{ID: 1, Name: "Movies", Type: core.TypeMovie, Virtual: true}, {ID: 2, Name: "TV Shows", Type: core.TypeShow, Virtual: true}},
+	}}
+	owner, err := s.Views(context.Background(), &core.User{ID: 1})
+	if err != nil || len(owner) != 2 || !owner[0].Virtual || !owner[1].Virtual || owner[0].ID != "1" || owner[1].ID != "2" {
+		t.Fatalf("owner views = %+v %v", owner, err)
+	}
+	restricted, err := s.Views(context.Background(), &core.User{ID: 2})
+	if err != nil || len(restricted) != 1 || restricted[0].ID != "1" || !restricted[0].Virtual {
+		t.Fatalf("restricted views = %+v %v", restricted, err)
 	}
 }

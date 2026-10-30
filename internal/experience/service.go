@@ -21,6 +21,9 @@ type Library struct {
 	ID   int
 	Name string
 	Type core.MediaType
+	// Virtual is true only when the host asserts this library has no physical
+	// locations. False means the host did not assert virtual origin.
+	Virtual bool
 }
 
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
@@ -28,12 +31,12 @@ type ServiceDeps struct {
 	NotInterestedSource func(context.Context, *core.User) ([]frontend.NotInterestedEntry, error)
 	ByExternalID        func(context.Context, string, string) (*core.Title, error)
 	Active              func(context.Context, int64) (*core.User, error)
-	Libraries []Library
+	Libraries           []Library
 	// LiveLibraries, when set, is read on each surface call so configured
 	// names stay current. IDs and media types stay stable. Nil uses Libraries.
 	LiveLibraries func() []Library
 	Visibility    Visibility
-	Get                 func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Get           func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
 	// ParentTitles resolves distinct parents using the same semantics as GetTitle.
@@ -133,7 +136,7 @@ func (s *Service) Views(ctx context.Context, viewer *core.Viewer) ([]frontend.Vi
 	out := make([]frontend.View, 0, len(libs))
 	for _, lib := range libs {
 		if SectionAllowed(v, lib.ID) {
-			out = append(out, frontend.View{ID: strconv.Itoa(lib.ID), Name: lib.Name, Type: lib.Type})
+			out = append(out, frontend.View{ID: strconv.Itoa(lib.ID), Name: lib.Name, Type: lib.Type, Virtual: lib.Virtual})
 		}
 	}
 	return out, nil
