@@ -30,7 +30,9 @@ describe("Apps mock API", () => {
       body: JSON.stringify({ enabled: true }),
     });
     expect(await (await fake.fetch("/ether/api/me/apps")).json()).toEqual({ apps: ["stremio"] });
-    const created = await (await fake.fetch("/ether/api/me/apps/stremio", { method: "POST" })).json();
+    const created = await (
+      await fake.fetch("/ether/api/me/apps/stremio", { method: "POST" })
+    ).json();
     expect(created.url).toContain("/stremio/mock-grant/manifest.json");
     expect(created.qr).toMatch(/^data:image\/png;base64,/);
   });

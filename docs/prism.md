@@ -66,3 +66,52 @@ records pending device verification, unsupported web-shell clients, downloads
 and Silo schema/playback limits. Those holds remain in force regardless of the
 architecture name. Plex-specific setup and feature instructions continue to
 apply to Plex clients.
+
+## Candidate-3 first-pass acceptance notes
+
+This describes candidate-3 (`82daa1c7`), before final Plex broker adoption.
+Prism is part of Ether, with no separate service or installer. The proposal is
+a target architecture; it is not a certification or release acceptance receipt.
+
+`internal/app/frontend_runtime.go` composes a `frontend.Registry`, mounts the
+configured protocols and supplies a surface-bound `frontend.Host`. The registry
+owns mount/close and listener configuration. The owner console remains available
+independently of protocol listeners. Plex uses a lazily constructed existing
+`internal/plex` server. The adapter dependency guard covers `internal/frontends`;
+it does not yet establish that Plex uses only Host contracts.
+
+`internal/experience` owns shared policy-filtered views, semantic rows, continue
+and next-up selection, search, details, versions and track ordering. App adapters
+compose these services with catalogue, viewer state and personalization. Protocol
+renderers translate the results into their own DTOs and IDs. Extraction and exact
+Plex parity remain acceptance gates; this candidate is not evidence that every
+legacy orchestration path has been removed. Date added means the title's release
+date, not the catalogue ingestion or first-observed timestamp.
+
+`internal/sessions` supplies shared planning, opening, reporting, stopping,
+recovery, scoped media access and cluster events. New frontends receive a broker
+bound to their surface. Final Plex lifecycle adoption, retirement and combined
+HA acceptance remain pending. Do not infer mixed-protocol failover guarantees
+from individual broker tests. Plex wire behavior must remain byte-identical,
+except for approved restricted-viewer policy leak repairs.
+
+Identity retains the household viewer ID as the owner of history and preferences.
+Identity links attach provider subjects; grants bind a viewer to a surface and
+device, with expiry and revocation. Local accounts and Quick Connect permit
+Plex-free use. An identity link does not merge people by display name. Protocol
+setup routes cannot claim Ether; setup and ownership belong to the owner console.
+See [the threat model](../design.md) for credential, proxy and cluster boundaries.
+Its requirements must be checked against the final build and security receipts;
+they are not a claim that mixed-version or lifecycle acceptance is complete.
+
+The Apps overview enables protocols and reports status. Enabled protocols expose
+configuration tabs, with changes edited in place. Drawers are for records. There
+is no generic Settings menu. The [owner guide](user-guide.md) distinguishes native
+client targets from unsupported web shells. No third-party web client is shipped.
+Conformance, native-client certification, performance comparisons and owner-device
+acceptance are pending until versioned receipts cover the exact integrated build.
+
+The first Prism upgrade is a maintenance transition, including in HA deployments.
+Follow the [upgrade runbook](acceptance/prism-upgrade.md) before serving traffic.
+Reference recording and offline drift checks are described in
+[the reference workflow](acceptance/reference-drift.md).

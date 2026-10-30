@@ -1,5 +1,11 @@
 # Prism security design
 
+This document records security boundaries and requirements for the Prism
+candidate. It is not a completed security certification. See the
+[architecture status](docs/prism.md) and [first-Prism upgrade
+runbook](docs/acceptance/prism-upgrade.md) for implementation and deployment
+limits. Final broker adoption requires another security and documentation pass.
+
 ## Threat model
 
 The owner console, viewer portal, protocol listeners (Plex, Jellyfin, Emby,

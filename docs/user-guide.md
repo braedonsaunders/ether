@@ -73,6 +73,23 @@ seek; this has not yet been verified on the physical devices.
 | Silo for Apple TV, iOS and macOS | Pending | — | — | — | — | — | — |
 | Silo for Android and Android TV | Pending | — | — | — | — | — | — |
 
+## Apps and client support
+
+Enable an app on **Apps**, then edit its configuration in its enabled app tab.
+Use the listening address shown there rather than assuming a default port.
+Client names below identify intended connection methods; native-device
+certification and exact-build conformance remain pending.
+
+| Surface | Intended clients and connection | Limits |
+| --- | --- | --- |
+| Jellyfin | Android TV, Swiftfin, Findroid, Streamyfin, JellyCon, Roku; server URL and viewer sign-in | Native feature matrix above is pending; Android phone and Desktop web shells are unsupported |
+| Emby | Native clients using the server URL and Ether viewer account | No bundled Web; Apple TV Emby for TV 2.x web shell is unsupported; app licensing still applies |
+| Silo | Apple and Android native apps; server URL and viewer sign-in or pairing | Versioned device acceptance pending; see Silo limits above |
+| Stremio | Install the viewer-specific addon from the viewer portal in Stremio | Addon API only; no hosted Stremio web player |
+| Files (WebDAV) | Infuse, VLC or Kodi with the viewer’s WebDAV credentials | Read-only virtual files; client playback and resume behavior require verification |
+| M3U/XMLTV | Channels DVR or TiviMate with viewer-specific playlist and guide links | Live TV export; treat connection links as secrets |
+| DLNA | LAN televisions and players with a ContentDirectory browser | Uses the owner-selected guest viewer’s policy; no per-device login; device compatibility pending |
+
 ## Set up
 
 The setup wizard starts with app selection and owner-account setup. If you
@@ -619,7 +636,7 @@ Revocation alone does not contain a leak.
 **Manage this node** adjusts its provider capacity weight or pauses/resumes new
 streams while existing streams keep playing. A pause ends after a restart.
 Pausing the only available node prevents new playback until you resume it.
-**Open manager** opens a peer node’s own settings; **Updates** handles rolling
+**Open manager** opens a peer node’s own settings; **Updates** handles software
 cluster updates.
 
 Elsewhere, **Backups & import** shows which node holds each backup and offers

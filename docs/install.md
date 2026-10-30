@@ -294,7 +294,11 @@ until it is resumed. A rolling update owns its maintenance state while draining.
 
 Use **Open manager** beside another node to manage that machine's local settings.
 Owner credentials are not forwarded between nodes; sign in there if needed.
-The **Updates** page handles rolling software updates.
+The **Updates** page handles software updates. The first Prism upgrade requires
+a maintenance outage: stop and fence every old database writer, upgrade all
+nodes, then serve traffic. Follow the [mandatory first-Prism upgrade
+runbook](acceptance/prism-upgrade.md); this transition is not a mixed-version
+rolling upgrade.
 
 ### Settings: shared and per node
 
@@ -417,11 +421,13 @@ readable only by the server account. To roll back by hand, stop Ether, install
 the previous version, and replace `ether.db`, `config.json` and
 `.credentials-key` with a set's copies.
 
-If an older version starts on a database a newer one already migrated, for
-example after the updater rolled back a release that kept crashing, it keeps
-running (migrations only add) and logs a warning naming the newer components
-and the newest snapshot. It does not refuse to start, so automatic rollback and
-rolling cluster updates keep working.
+Do not start pre-Prism binaries against a Prism-migrated database. Older
+binaries may merely log newer migration versions and continue running; that
+behavior does not establish schema or writer compatibility. For the first
+Prism transition, stop and fence every old writer, upgrade every serving node,
+and follow the [upgrade and rollback runbook](acceptance/prism-upgrade.md).
+Rollback requires restoring the matching database and configuration backup
+with all Prism writers stopped and fenced.
 
 Not covered: PostgreSQL databases get no pre-upgrade snapshot (use scheduled
 backups), and rolling back a release never restores a snapshot automatically,

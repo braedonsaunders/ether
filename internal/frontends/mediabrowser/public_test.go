@@ -106,3 +106,20 @@ func TestEmbyUnservedWebAssetsReturnNotFound(t *testing.T) {
 		t.Fatalf("connection page: %d %q", w.Code, w.Body.String())
 	}
 }
+
+func TestConnectionPageLocaleCoverage(t *testing.T) {
+	for _, lang := range []string{"en", "fr", "es", "cs", "da", "de", "fi", "it", "ja", "ko", "nb", "nl", "pl", "pt-BR", "ru", "sv", "tr", "uk", "zh-CN", "zh-TW"} {
+		t.Run(lang, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/web", nil)
+			r.Header.Set("Accept-Language", lang)
+			w := httptest.NewRecorder()
+			webPage(w, r)
+			if !strings.Contains(w.Body.String(), `lang="`+lang+`"`) {
+				t.Fatalf("wrong locale: %s", w.Body.String())
+			}
+			if lang != "en" && strings.Contains(w.Body.String(), "Open a native") {
+				t.Fatal("English placeholder")
+			}
+		})
+	}
+}
