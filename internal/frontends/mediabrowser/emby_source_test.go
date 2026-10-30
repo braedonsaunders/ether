@@ -62,7 +62,7 @@ func TestEmbySourceDefaultAudioUsesAuthoritativeDisposition(t *testing.T) {
 		{"estimated", true, []core.StreamInfo{{Type: "audio", Index: 1, DefaultDisposition: &yes}}, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			source := map[string]any{}
+			source := map[string]any{"DefaultAudioStreamIndex": 999}
 			(&instance{}).embyMediaSourceDTO(source, "item", frontend.MediaInfo{Estimated: tc.estimated, Streams: tc.streams})
 			got, ok := source["DefaultAudioStreamIndex"]
 			if ok != tc.present || ok && got != tc.want {

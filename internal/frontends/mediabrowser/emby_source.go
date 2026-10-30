@@ -16,6 +16,9 @@ func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, medi
 	if itemID != "" {
 		source["ItemId"] = itemID
 	}
+	// The common PlaybackInfo path may have populated this from a legacy
+	// default bit; replace it only with an unambiguous authoritative source.
+	delete(source, "DefaultAudioStreamIndex")
 	if !media.Estimated {
 		defaultIndex, defaults := 0, 0
 		for _, stream := range media.Streams {
