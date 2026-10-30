@@ -2,7 +2,13 @@ package catalog
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -90,5 +96,123 @@ func TestResolveShowParentsPreservesHomeAdmission(t *testing.T) {
 	legacy, err := c.Get(ctx, key)
 	if err != nil || legacy.Key != got[key].Key {
 		t.Fatalf("legacy %+v %v", legacy, err)
+	}
+}
+
+func TestResolveShowParentsIndependentControls(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	batchDB, legacyDB := store.OpenTest(t), store.OpenTest(t)
+	makeCatalog := func(db *sql.DB) (*Catalog, *parentBatchTMDB) {
+		client := &parentBatchTMDB{}
+		c, err := New(db, client, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c, client
+	}
+	batch, bc := makeCatalog(batchDB)
+	legacy, lc := makeCatalog(legacyDB)
+	warm, stale, cold, missing := core.ShowKey(21), core.ShowKey(22), core.ShowKey(23), core.ShowKey(99)
+	for _, dbcat := range []struct {
+		db *sql.DB
+		c  *Catalog
+	}{{batchDB, batch}, {legacyDB, legacy}} {
+		for _, key := range []core.RatingKey{warm, stale} {
+			title := core.Title{Key: key, Type: core.TypeShow, IDs: core.IDs{TMDB: key.TMDB()}, Title: "Stored", Released: now.AddDate(-2, 0, 0), ContentRating: "TV-PG", Genres: []string{"Drama"}, Keywords: []string{"forest"}}
+			if err := dbcat.c.UpsertTitle(ctx, title, true); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := dbcat.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1, detail_at=CASE WHEN key=? THEN ? ELSE ? END WHERE key IN (?,?)`, int64(warm), now.Unix(), now.Add(-48*time.Hour).Unix(), int64(warm), int64(stale)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keys := []core.RatingKey{warm, stale, cold, missing}
+	got, err := batch.ResolveShowParents(ctx, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		want, e := legacy.Get(ctx, key)
+		actual, ok := got[key]
+		if e != nil {
+			if ok {
+				t.Fatalf("%s unexpectedly visible", key)
+			}
+			continue
+		}
+		if !ok || !reflect.DeepEqual(actual, *want) {
+			t.Fatalf("%s batch=%+v legacy=%+v", key, actual, want)
+		}
+	}
+	if bc.calls != lc.calls || bc.calls != 3 {
+		t.Fatalf("refresh calls batch=%d legacy=%d", bc.calls, lc.calls)
+	}
+}
+
+type parentFaultDriver struct {
+	base driver.Driver
+	fail *atomic.Bool
+}
+
+func (d parentFaultDriver) Open(name string) (driver.Conn, error) {
+	c, e := d.base.Open(name)
+	if e != nil {
+		return nil, e
+	}
+	return &parentFaultConn{Conn: c, fail: d.fail}, nil
+}
+
+type parentFaultConn struct {
+	driver.Conn
+	fail *atomic.Bool
+}
+
+func (c *parentFaultConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(q, "detail_at FROM catalog_titles WHERE key IN") && c.fail.CompareAndSwap(true, false) {
+		return nil, errors.New("injected batch failure")
+	}
+	if d, ok := c.Conn.(driver.QueryerContext); ok {
+		return d.QueryContext(ctx, q, args)
+	}
+	return nil, driver.ErrSkip
+}
+func TestResolveShowParentsBatchFailureUsesLegacy(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "parents.db")
+	base, err := store.OpenPath(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drv := base.Driver()
+	if err = base.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var fail atomic.Bool
+	sql.Register("parent_batch_fault", parentFaultDriver{base: drv, fail: &fail})
+	db, err := sql.Open("parent_batch_fault", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	c, err := New(db, nil, config.Catalog{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := core.ShowKey(51)
+	title := core.Title{Key: key, Type: core.TypeShow, Title: "Fallback", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), ContentRating: "TV-G", Genres: []string{"Drama"}}
+	if err = c.UpsertTitle(ctx, title, true); err != nil {
+		t.Fatal(err)
+	}
+	want, err := c.Get(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fail.Store(true)
+	got, err := c.ResolveShowParents(ctx, []core.RatingKey{key, core.ShowKey(999)})
+	if err != nil || fail.Load() || !reflect.DeepEqual(got[key], *want) || len(got) != 1 {
+		t.Fatalf("fallback=%+v want=%+v fail=%v err=%v", got, want, fail.Load(), err)
 	}
 }
