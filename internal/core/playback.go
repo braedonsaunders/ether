@@ -199,8 +199,9 @@ type PlaybackSourceHistory struct {
 	HDR                                 *bool
 }
 
-// PlaybackSourceSnapshot captures immutable facts at the time an accepted
-// playback sample is observed. It does not hold a generation across I/O.
+// PlaybackSourceSnapshot copies immutable facts validated at source open/probe
+// for the current generation. It performs no filesystem I/O and is not fresh
+// authorization or a claim that a local path has remained unchanged.
 type PlaybackSourceSnapshot interface {
 	CurrentSource(context.Context, string) (PlaybackSourceObservation, error)
 }
