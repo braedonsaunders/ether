@@ -249,7 +249,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		// Caller holds s.mu (startRunLocked), guarding hevcFallbackWarned.
 		s.hevcFallbackWarned = warnVideoEncoderFallback(s.log, spec.Decision.VideoCodec, spec.Accel, spec.Features)
 	}
-	args := buildArgs(spec)
+	var args []string
 	runLog := s.log.With("run", r.seq)
 	var pp progressParser
 	lastLog := time.Time{}
@@ -269,7 +269,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		}
 	}}
 	stderr := &lineWriter{fn: func(l string) {
-		l = redactRTXLine(l, spec.Input, spec.InputHeaders)
+		l = redactRTXLine(l, spec.Input, spec.commandHeaders())
 		if strings.Contains(strings.ToLower(l), "resize: ngx-vsr ") {
 			r.rtxConfirmed.Store(true)
 		}
@@ -293,12 +293,18 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	}
 	starting := make(chan struct{})
 	s.starting = starting
-	rtxConfig, runDir := s.rtxConfig, s.dir
+	rtxConfig, runDir, inputLease := s.rtxConfig, s.dir, s.inputLease
 	hint := s.m.opts.onRunStart
 	hintEnd := spec.Start + 2*s.segDur
 	s.mu.Unlock()
 	var proc Process
-	if err = os.MkdirAll(spec.Dir, 0o755); err == nil && spec.ChunkDir != "" {
+	spec.InputScopeHeaders, err = encoderScopeHeaders(inputLease, spec.Input)
+	if err == nil {
+		args = buildArgs(spec)
+		r.spec = spec
+		err = os.MkdirAll(spec.Dir, 0o755)
+	}
+	if err == nil && spec.ChunkDir != "" {
 		err = os.MkdirAll(spec.ChunkDir, 0o755)
 	}
 	if err == nil && hint != nil {
@@ -328,6 +334,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	if err == nil && proc == nil {
 		proc, err = s.m.runner.Start(Command{Path: s.m.ffmpeg, Args: args, Dir: runDir, Stdout: stdout, Stderr: stderr})
 	}
+	err = redactScopedCommandError(err, spec)
 	s.mu.Lock()
 	if s.starting == starting {
 		s.starting = nil

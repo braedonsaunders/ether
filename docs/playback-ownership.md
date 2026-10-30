@@ -279,3 +279,70 @@ or terminal cleanup error refuses replacement. Publication checks that exact ID
 reservation together with the seal/manager state, so a late older start cannot
 publish over its successor. The controlled test holds the first external Start,
 lets the second seal it, then proves the process lifetimes never overlap.
+
+## Staged verified encoder input leases
+
+The optional `HLSRequest.InputLease` is excluded from JSON. Only trusted host
+composition can pass the opaque object minted by
+`PlaybackEncoderInputs.ReserveEncoderInput(ctx, id, exactSourceOutcome)`; broker
+activation is still a separate unapproved seam. A manager validates the actual
+private Session and SourceLifetime together when minting. At most 128 scopes
+exist process-wide; no eviction or authority from a provider header is possible.
+Unclaimed leases remain caller-owned if admission/validation fails before claim;
+the caller must seal unused leases. A successfully claimed lease transfers its
+input-drain responsibility to that exact encoder lifetime.
+
+`ClaimInput(onDrained)` succeeds once, before seal. A second claim, claim after
+seal or nil callback refuses without storing that caller's callback. The encoder
+reserves its input ticket before claim; failed claims release it exactly once and
+never seal another encoder's lease. Successful claims yield exactly one callback,
+including a callback racing the claim return. Zero producers or producers already
+released still require seal before drain. The callback may only perform bounded
+accounting/requeue. It runs after the producer count is committed drained, the
+manager registry entry/global scope slot are released and InputDone is closed,
+outside scope, source, generation, manager and session locks.
+
+`HeadersForInput` checks the supplied URL's exact manager loopback origin,
+canonical issued generation path and optional sole `background=1` query. It
+rejects provider/redirect URLs, foreign ports, userinfo, fragments, escaped paths
+and unknown generations. Every use validates token membership against the
+captured Session and SourceLifetime. Future failover generations may attach only
+when issued by that manager to the same captured responsibility. A later current
+session or a replacement with the same client identity cannot be substituted.
+The permitted loopback route serves representations and never redirects; no
+scope-bearing command is constructed for a provider or redirect locator.
+
+The internal header is reserved separately from provider InputHeaders. Run and
+picture/audio sample commands bind it independently before execution; it does
+not disable audio matching by appearing to be provider metadata. Plain provider
+headers retain their existing construction, selection and redaction. Raw
+provider attempts to set the reserved control header refuse. Input values are
+redacted before stderr truncation and in command/start/exit diagnostics; opaque
+lease formatting hides the internal value. The lease grants no viewer, policy,
+source-open or transfer authorization.
+
+A loopback request with a supplied forged/sealed/mismatched scope fails closed.
+Unscoped reads preserve legacy behavior. Request READ and input trackers may
+coexist: both register before generation acquire, and both finish after release
+returns. The global producer slot is returned before input callbacks. Source
+Close success remains an independent SourceRetirement obligation.
+
+To avoid a cycle, the encoder's actual-work count excludes its one retained input
+ticket when deciding to seal. A bounded cleanup task calls SealInput outside all
+lifecycle locks and returns immediately. A stalled producer occupies neither a
+waiter goroutine nor a cleanup worker; its callback later releases that input
+ticket and requeues cleanup. EncoderDone/charges wait for actual work AND verified
+input drain. Missing optional proof remains ErrEncoderInputUnverified after
+confirmed legacy cleanup, with no repeated-close capacity leak. An input proof
+error or unknown actual work retains its cleanup/charge and never becomes nil.
+
+Same-ID startup serialization is a **single Manager** guarantee. Independent
+Managers do not share the ID map. The process-wide admission bound and skipping
+currently protected output directories do not assert cross-manager process
+serialization or durable transfer authority.
+
+Scoped live-playlist input refuses before claim: the private VOD scope must never
+be forwarded to child playlist/provider requests. Ordinary unscoped live playback
+keeps its existing header and demuxer behavior. Scoped run and sample commands
+retain the VOD demuxer restrictions, and only the exact nonredirecting loopback
+representation route can receive the private value.

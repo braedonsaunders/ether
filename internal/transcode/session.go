@@ -62,6 +62,7 @@ type sessionInput struct {
 	rtxTimeline        bool
 	rtxDiscontinuities map[int]bool
 	liveInput          bool
+	inputLease         core.EncoderInputLease
 	inputHeaders       map[string]string
 	input              string
 	info               core.MediaInfo

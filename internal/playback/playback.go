@@ -217,6 +217,7 @@ type Manager struct {
 	sessions       map[string]*session
 	byIdent        map[identity]*session
 	tokens         map[string]*generation
+	encoderInputs  map[string]*encoderInputScope
 	flights        map[flightKey]*flight
 	pending        map[int64]int
 	pendingN       int

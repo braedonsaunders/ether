@@ -467,6 +467,11 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 	if req.InputURL == "" {
 		return nil, errors.New("transcode: StartHLS: empty input URL")
 	}
+	if req.InputLease != nil && req.LiveInput {
+		// Scoped VOD inputs cannot expand a playlist into provider requests
+		// carrying the private header. Ordinary live input remains unchanged.
+		return nil, core.ErrEncoderInputUnverified
+	}
 	inputHeaders, headerErr := validatedInputHeaders(req.InputHeaders)
 	if headerErr != nil {
 		return nil, headerErr
@@ -621,6 +626,11 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 		id = randomHex(12)
 	}
 
+	if req.InputLease != nil {
+		if err := life.installInput(req.InputLease); err != nil {
+			return nil, err
+		}
+	}
 	if err := m.claimEncoderID(ctx, id, life); err != nil {
 		return nil, err
 	}
@@ -662,6 +672,7 @@ func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encod
 			liveInput:    req.LiveInput,
 			input:        req.InputURL,
 			inputHeaders: inputHeaders,
+			inputLease:   req.InputLease,
 			info:         req.Info,
 			decision:     d,
 		},

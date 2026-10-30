@@ -26,22 +26,27 @@ var encoderCleanup = struct {
 }{slots: make(chan struct{}, encoderLifetimeCapacity), jobs: make(chan *encoderLifetime, encoderLifetimeCapacity)}
 
 type encoderLifetime struct {
-	m        *Manager
-	id       string
-	mu       sync.Mutex
-	session  *Session
-	work     int
-	sealed   bool
-	detached bool
-	queued   bool
-	terminal bool
-	started  bool
-	cleanup  error
-	proof    error
-	done     chan struct{}
-	cancel   chan struct{}
-	encoding atomic.Bool
-	runs     atomic.Int32
+	m               *Manager
+	id              string
+	mu              sync.Mutex
+	session         *Session
+	work            int
+	sealed          bool
+	detached        bool
+	queued          bool
+	terminal        bool
+	started         bool
+	input           core.EncoderInputLease
+	inputClaimed    bool
+	inputDrained    bool
+	inputSealIssued bool
+	inputError      error
+	cleanup         error
+	proof           error
+	done            chan struct{}
+	cancel          chan struct{}
+	encoding        atomic.Bool
+	runs            atomic.Int32
 }
 
 type encoderWork struct {
@@ -138,7 +143,7 @@ func (l *encoderLifetime) finishWork() {
 	l.mu.Unlock()
 }
 func (l *encoderLifetime) queueLocked() {
-	if l.sealed && !l.queued && !l.terminal && (!l.detached || l.work == 0) {
+	if l.sealed && !l.queued && !l.terminal && (!l.detached || l.work == 0 || (l.inputClaimed && !l.inputDrained && !l.inputSealIssued && l.work == 1)) {
 		l.queued = true
 		encoderCleanup.jobs <- l // one queued job per admitted lifetime
 	}
@@ -172,8 +177,20 @@ func (l *encoderLifetime) advance() {
 		l.mu.Unlock()
 		return
 	}
-	var err error
-	if s != nil {
+	l.mu.Lock()
+	if l.inputClaimed && !l.inputDrained && !l.inputSealIssued && l.work == 1 {
+		l.inputSealIssued = true
+		l.queued = false
+		input := l.input
+		l.mu.Unlock()
+		// Actual work has drained excluding its reserved input ticket. Never
+		// park a cleanup worker on input producers or wait on our own ticket.
+		input.SealInput()
+		return
+	}
+	err := l.inputError
+	l.mu.Unlock()
+	if err == nil && s != nil {
 		remove := s.m.encoderRemove
 		if remove == nil {
 			remove = removeAllRetry
@@ -188,8 +205,8 @@ func (l *encoderLifetime) advance() {
 	l.mu.Lock()
 	l.cleanup = err
 	l.proof = err
-	if l.proof == nil && l.started {
-		// Optional input producer proof is deliberately not yet activated.
+	if l.proof == nil && l.started && !l.inputClaimed {
+		// Missing optional input proof cannot authorize full retirement.
 		// Proven legacy process/directory cleanup can release its own charge.
 		l.proof = core.ErrEncoderInputUnverified
 	}
@@ -309,8 +326,8 @@ func (s *Session) encoderRun(ctx context.Context, cmd Command) error {
 	return s.m.runner.Run(ctx, cmd)
 }
 
-// claimEncoderID linearizes same-ID replacement before any backend/directory
-// work. A prior admitted start must retire too, even if it never published.
+// claimEncoderID linearizes same-ID replacement within this Manager before
+// any backend/directory work. A prior admitted start must retire too, even if it never published.
 func (m *Manager) claimEncoderID(ctx context.Context, id string, life *encoderLifetime) error {
 	timer := time.NewTimer(m.encoderWait())
 	defer timer.Stop()
@@ -349,4 +366,34 @@ func (m *Manager) claimEncoderID(ctx context.Context, id string, life *encoderLi
 			return core.ErrEncoderPending
 		}
 	}
+}
+
+func (l *encoderLifetime) installInput(input core.EncoderInputLease) error {
+	work, err := l.reserve(1)
+	if err != nil {
+		return err
+	}
+	// Reserve before claim, including a callback racing ClaimInput's return.
+	l.mu.Lock()
+	l.input = input
+	l.mu.Unlock()
+	err = input.ClaimInput(func(inputErr error) {
+		l.mu.Lock()
+		l.inputDrained = true
+		l.inputError = inputErr
+		l.mu.Unlock()
+		work[0].finish()
+	})
+	if err != nil {
+		l.mu.Lock()
+		l.input = nil
+		l.mu.Unlock()
+		work[0].finish() // failed claim guarantees no later callback
+		return err
+	}
+	l.mu.Lock()
+	l.inputClaimed = true
+	l.queueLocked()
+	l.mu.Unlock()
+	return nil
 }
