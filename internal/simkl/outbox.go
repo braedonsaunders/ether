@@ -13,7 +13,7 @@ import (
 // Enqueue records local completions only for linked viewers. Imports do not
 // echo back to their source, and an unwatch never deletes remote history.
 func Enqueue(ctx context.Context, db *sql.DB, ev state.Event) error {
-	if ev.Imported || (ev.Kind != state.EventCompleted && ev.Kind != state.EventScrobble) || ev.UserID <= 0 || ev.At.IsZero() {
+	if ev.Imported || ev.Account || (ev.Kind != state.EventCompleted && ev.Kind != state.EventScrobble) || ev.UserID <= 0 || ev.At.IsZero() {
 		return nil
 	}
 	if _, err := HistoryPayload(ev.Key, ev.At); err != nil {

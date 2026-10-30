@@ -292,7 +292,7 @@ Yes—and if you have local media files on disk, that's the recommended setup. O
 <details>
 <summary><b>What does Ether phone home to?</b></summary>
 
-Nothing. There is **zero telemetry or analytics**. Ether communicates only with `plex.tv` (authentication, claiming, sharing, certificates), TMDB, the providers/indexers/services *you* configure, and GitHub's release feed when checking for updates.
+Nothing. There is **zero telemetry or analytics**. Ether communicates only with `plex.tv` (authentication, claiming, sharing, certificates), TMDB, the providers/indexers/services *you* configure, and GitHub's release feed when checking for updates. If a viewer connects their own Plex account under Limits & preferences, Ether can also send that viewer's future watched and unwatched marks and whole-star ratings to `scrobbles.plex.tv`. That delivery is optional, off until they enable it, and it is not telemetry. Import from the Plex account is a separate button, not a continuous two-way sync. Turning sync off stops queued changes. An update already being sent may still finish. A send does not by itself create a Discover Activity card.
 </details>
 
 ---

@@ -130,3 +130,40 @@ func TestLookupMissingProviderIdentity(t *testing.T) {
 		t.Fatalf("unknown identity=%v %v", k, err)
 	}
 }
+
+func TestExactKeyDoesNotDeriveEpisodeFromShow(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	pg := New(db, Options{Token: func() string { return "" }})
+	defer pg.Close()
+	const showGUID = "plex://show/5d9c086c46115600200aa2fe"
+	const epGUID = "plex://episode/602e5e2294f08e002d003344"
+	show := core.ShowKey(1396)
+	ep := core.EpisodeKey(1396, 1, 1)
+	if err := pg.storeMapping(ctx, show, showGUID, time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if k, err := pg.ExactKey(ctx, epGUID); !errors.Is(err, core.ErrNotFound) || k != 0 {
+		t.Fatalf("episode inferred from show: %v %v", k, err)
+	}
+	if k, err := pg.ExactKey(ctx, showGUID); err != nil || k != show {
+		t.Fatalf("show %v %v", k, err)
+	}
+	if err := pg.storeMapping(ctx, ep, epGUID, time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if k, err := pg.ExactKey(ctx, epGUID); err != nil || k != ep {
+		t.Fatalf("episode %v %v", k, err)
+	}
+	other := core.EpisodeKey(1396, 1, 2)
+	if _, err := db.ExecContext(ctx, `INSERT INTO plexguid_mappings(rating_key,guid,checked_at) VALUES(?,?,?)`, int64(other), epGUID, time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.ExactKey(ctx, epGUID); !errors.Is(err, ErrAmbiguous) {
+		t.Fatalf("ambiguous %v", err)
+	}
+}

@@ -2,6 +2,7 @@ package plexguid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -10,6 +11,60 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
+
+// ErrAmbiguous is returned when one Plex GUID is stored for more than one
+// local title, or the stored title's kind does not match the GUID kind.
+var ErrAmbiguous = errors.New("plexguid: ambiguous identity")
+
+// ExactKey returns the single local title already stored for guid.
+// It does not call Plex and it does not derive an episode from a show's
+// TMDB id. A miss is core.ErrNotFound.
+func (s *Service) ExactKey(ctx context.Context, guid string) (core.RatingKey, error) {
+	kind, ok := guidKind(guid)
+	if !ok {
+		return 0, core.ErrNotFound
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT rating_key FROM plexguid_mappings WHERE guid=? LIMIT 2`, guid)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var found core.RatingKey
+	n := 0
+	for rows.Next() {
+		var k core.RatingKey
+		if err = rows.Scan(&k); err != nil {
+			return 0, err
+		}
+		found = k
+		n++
+	}
+	if err = rows.Err(); err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, core.ErrNotFound
+	}
+	if n != 1 || !found.Valid() || found.Kind() != kind {
+		return 0, ErrAmbiguous
+	}
+	return found, nil
+}
+
+func guidKind(guid string) (core.KeyKind, bool) {
+	switch {
+	case validKindGUID(guid, "movie"):
+		return core.KindMovie, true
+	case validKindGUID(guid, "show"):
+		return core.KindShow, true
+	case validKindGUID(guid, "season"):
+		return core.KindSeason, true
+	case validKindGUID(guid, "episode"):
+		return core.KindEpisode, true
+	default:
+		return 0, false
+	}
+}
 
 // Lookup reverses a verified Plex movie/show identity. It returns an identity,
 // not a visibility decision: callers must load and authorize the title.

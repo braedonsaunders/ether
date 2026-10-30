@@ -103,6 +103,9 @@ type Event struct {
 	Completed bool
 	At        time.Time
 	Imported  bool // reviewed history import; never an active playback timeline
+	// Account is a manual Plex-account import. Local clients refresh from it.
+	// It is not journaled and is not a Trakt or Simkl export.
+	Account bool
 }
 
 // Options tune a State. Now is injectable for tests.
@@ -139,6 +142,13 @@ type State struct {
 	// progress holds timeline writes through a database outage (nil when
 	// Options.Availability is nil).
 	progress *store.Outbox[progressKey, progressWrite]
+
+	// journalGate, when set, decides whether a watch commit also records an
+	// account-sync intent. Nil records every viewer. journalFault, when set,
+	// fails that write so the watch transaction rolls back. Both are per
+	// State, for production wiring and tests.
+	journalGate  func(ctx context.Context, tx *sql.Tx, userID int64) (generation int64, ok bool, err error)
+	journalFault func() error
 }
 
 // State implements core.State; State.Playlists() returns the core.Playlists
@@ -274,10 +284,12 @@ func Fraction(ws core.WatchStatus) float64 {
 }
 
 type row struct {
-	ws      core.WatchStatus
-	counted bool
-	exists  bool  // a stored row was loaded
-	version int64 // stored version when loaded
+	ws       core.WatchStatus
+	counted  bool
+	exists   bool  // a stored row was loaded
+	version  int64 // stored version when loaded
+	watchAt  time.Time
+	ratingAt time.Time
 }
 
 // errConflict means another writer changed the row since it was loaded.
@@ -297,18 +309,19 @@ func saveTx(ctx context.Context, tx *sql.Tx, userID int64, r row) error {
 	if r.counted {
 		counted = 1
 	}
+	watchAt, ratingAt := unixNano(r.watchAt), unixNano(r.ratingAt)
 	var res sql.Result
 	var err error
 	if r.exists {
 		res, err = tx.ExecContext(ctx, `UPDATE state_watch SET view_offset_ns=?, duration_ns=?, view_count=?, counted=?,
-		  last_viewed_at=?, user_rating=?, updated_at=?, version=version+1
+		  last_viewed_at=?, user_rating=?, updated_at=?, watch_at=?, rating_at=?, version=version+1
 		  WHERE user_id=? AND rating_key=? AND version=?`,
-			int64(r.ws.ViewOffset), int64(r.ws.Duration), r.ws.ViewCount, counted, last, r.ws.UserRating, r.ws.UpdatedAt.UnixNano(),
+			int64(r.ws.ViewOffset), int64(r.ws.Duration), r.ws.ViewCount, counted, last, r.ws.UserRating, r.ws.UpdatedAt.UnixNano(), watchAt, ratingAt,
 			userID, int64(r.ws.Key), r.version)
 	} else {
-		res, err = tx.ExecContext(ctx, `INSERT INTO state_watch(user_id, rating_key, view_offset_ns, duration_ns, view_count, counted, last_viewed_at, user_rating, updated_at)
-		VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id, rating_key) DO NOTHING`,
-			userID, int64(r.ws.Key), int64(r.ws.ViewOffset), int64(r.ws.Duration), r.ws.ViewCount, counted, last, r.ws.UserRating, r.ws.UpdatedAt.UnixNano())
+		res, err = tx.ExecContext(ctx, `INSERT INTO state_watch(user_id, rating_key, view_offset_ns, duration_ns, view_count, counted, last_viewed_at, user_rating, updated_at, watch_at, rating_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id, rating_key) DO NOTHING`,
+			userID, int64(r.ws.Key), int64(r.ws.ViewOffset), int64(r.ws.Duration), r.ws.ViewCount, counted, last, r.ws.UserRating, r.ws.UpdatedAt.UnixNano(), watchAt, ratingAt)
 	}
 	if err != nil {
 		return err
@@ -471,16 +484,19 @@ func (s *State) updateTx(ctx context.Context, userID int64, keys []core.RatingKe
 		}
 		events = append(events, evs...)
 	}
+	if err := s.journalEvents(ctx, tx, events, false); err != nil {
+		return nil, err
+	}
 	return events, tx.Commit()
 }
 
 func loadTx(ctx context.Context, tx *sql.Tx, userID int64, key core.RatingKey) (row, error) {
 	r := row{ws: core.WatchStatus{Key: key}}
-	var off, dur, last, upd int64
+	var off, dur, last, upd, watchAt, ratingAt int64
 	var counted int
-	err := tx.QueryRowContext(ctx, `SELECT view_offset_ns, duration_ns, view_count, counted, last_viewed_at, user_rating, updated_at, version
+	err := tx.QueryRowContext(ctx, `SELECT view_offset_ns, duration_ns, view_count, counted, last_viewed_at, user_rating, updated_at, version, watch_at, rating_at
 		FROM state_watch WHERE user_id=? AND rating_key=?`, userID, int64(key)).
-		Scan(&off, &dur, &r.ws.ViewCount, &counted, &last, &r.ws.UserRating, &upd, &r.version)
+		Scan(&off, &dur, &r.ws.ViewCount, &counted, &last, &r.ws.UserRating, &upd, &r.version, &watchAt, &ratingAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, nil
 	}
@@ -497,7 +513,23 @@ func loadTx(ctx context.Context, tx *sql.Tx, userID int64, key core.RatingKey) (
 	if upd > 0 {
 		r.ws.UpdatedAt = time.Unix(0, upd).UTC()
 	}
+	r.watchAt = unixTime(watchAt)
+	r.ratingAt = unixTime(ratingAt)
 	return r, nil
+}
+
+func unixNano(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixNano()
+}
+
+func unixTime(ns int64) time.Time {
+	if ns == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, ns).UTC()
 }
 
 // Progress records a timeline update. state is Plex's timeline state
@@ -558,6 +590,7 @@ func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey
 		}
 		cur.ws.LastViewedAt = now
 		cur.ws.UpdatedAt = now
+		cur.watchAt = now
 
 		evFrac := frac
 		if completed {
@@ -591,6 +624,7 @@ func (s *State) ScrobbleMany(ctx context.Context, userID int64, keys []core.Rati
 		cur.counted = true
 		cur.ws.LastViewedAt = now
 		cur.ws.UpdatedAt = now
+		cur.watchAt = now
 		return true, true, []Event{{Kind: EventScrobble, UserID: userID, Key: cur.ws.Key, Duration: cur.ws.Duration,
 			Fraction: 1, Completed: true, At: now}}
 	})
@@ -610,6 +644,7 @@ func (s *State) UnscrobbleMany(ctx context.Context, userID int64, keys []core.Ra
 		cur.ws.ViewOffset = 0
 		cur.counted = false
 		cur.ws.UpdatedAt = now
+		cur.watchAt = now
 		return false, false, []Event{{Kind: EventUnscrobble, UserID: userID, Key: cur.ws.Key, At: now}}
 	})
 }
@@ -622,6 +657,7 @@ func (s *State) Rate(ctx context.Context, userID int64, key core.RatingKey, rati
 	return s.update(ctx, userID, []core.RatingKey{key}, func(cur *row, now time.Time) (bool, bool, []Event) {
 		cur.ws.UserRating = rating
 		cur.ws.UpdatedAt = now
+		cur.ratingAt = now
 		return false, false, []Event{{Kind: EventRated, UserID: userID, Key: cur.ws.Key, Rating: rating, At: now}}
 	})
 }

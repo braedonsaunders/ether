@@ -89,6 +89,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		Token:      func() string { return a.cfg.Get().Plex.Token },
 		Background: true,
 	})
+	a.plexGUID = deps.PlexGUID
 	a.closers = append(a.closers, deps.PlexGUID.Close)
 	if !cfg.Spike.Enabled {
 		// EpisodeOrder is TMDB-backed (build_integrations.go): metadataTitle
@@ -160,6 +161,10 @@ func (a *App) publishLibrarySections() {
 // already publish their own library notification in the Plex handler.
 func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKey)) func() {
 	return watch.Subscribe(func(ev state.Event) {
+		if ev.Account && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble || ev.Kind == state.EventRated) {
+			refresh(ev.UserID, ev.Key)
+			return
+		}
 		if ev.Imported {
 			return
 		}

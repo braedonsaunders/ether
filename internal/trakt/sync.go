@@ -288,6 +288,9 @@ func (c *Client) SubscribeTo(src interface {
 	Subscribe(func(state.Event)) func()
 }) func() {
 	return src.Subscribe(func(ev state.Event) {
+		if ev.Account {
+			return
+		}
 		if ev.Imported {
 			// Bulk history must not compete with disposable timeline updates.
 			// Persist it before returning to the importer, without network I/O.

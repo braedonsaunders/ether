@@ -56,6 +56,9 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return fmt.Errorf("plex front end: %w", err)
 	}
+	if err := a.buildPlexWatch(); err != nil {
+		return fmt.Errorf("plex watch state: %w", err)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/ether/", lanOnly(a.buildAdmin()))
 	mux.HandleFunc("/ether", func(w http.ResponseWriter, r *http.Request) {
