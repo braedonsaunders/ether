@@ -171,3 +171,53 @@ func TestSurfacePlansDoNotReplaceOtherPreparedSources(t *testing.T) {
 	h.m.Stop(second.ID)
 	h.m.Stop(third.ID)
 }
+
+// A playback request without a selected version must resolve the real source;
+// an estimate is only suitable for browse and cannot describe its bytes.
+func TestColdHandlelessBrokerPlaybackUsesOpenedSource(t *testing.T) {
+	ctx := context.Background()
+	release := &fakeRelease{ID: "cold", Name: "cold.mp4", Size: 15360, Duration: time.Minute}
+	h := newHarness(t, []*fakeRelease{release}, []string{"cold"})
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		if id != friend.ID {
+			return nil, core.ErrUnauthorized
+		}
+		v := *friend
+		return &v, nil
+	}
+	events := sessions.NewEventBus(nil, active)
+	defer events.Close()
+	b, err := sessions.NewBroker(sessions.BrokerDeps{Lookup: func(ctx context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return h.catalog.Get(ctx, k)
+	}, Playback: h.m, Transcoder: h.tr, Progress: h.state, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: events, Now: h.clock.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	device := core.Device{ID: "cold-device"}
+	req := frontend.PlanRequest{Viewer: friend, Device: device, Protocol: "jellyfin", Item: movieKey, Caps: defaultCaps(device.ID), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}}
+	if h.engine.openCount() != 0 {
+		t.Fatal("fixture must begin cold")
+	}
+	plan, err := b.Plan(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Estimated || plan.Media.Estimated || plan.Media.Container != "mp4" || plan.Media.Size != release.Size || h.engine.openCount() != 1 {
+		t.Fatalf("plan does not describe opened source: %+v opens=%d", plan, h.engine.openCount())
+	}
+	if !plan.DirectPlay && !plan.DirectStream && !plan.Transcoding {
+		t.Fatalf("no playable alternative: %+v", plan)
+	}
+	session, err := b.Open(ctx, frontend.OpenRequest{Viewer: friend, Device: device, Protocol: req.Protocol, PlanID: plan.ID})
+	if err != nil || session.ID == "" {
+		t.Fatalf("open: %+v %v", session, err)
+	}
+	path, err := b.StartStream(ctx, frontend.SessionAccess{Viewer: friend, Device: device, Protocol: req.Protocol}, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect})
+	if err != nil || path == "" {
+		t.Fatalf("stream: %q %v", path, err)
+	}
+	if err := b.Stop(ctx, frontend.SessionAccess{Viewer: friend, Device: device, Protocol: req.Protocol}, session.ID); err != nil {
+		t.Fatal(err)
+	}
+}
