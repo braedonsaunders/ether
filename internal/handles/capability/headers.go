@@ -49,13 +49,20 @@ func BindHeadersInTx(ctx context.Context, tx *sql.Tx, headers []Header) error {
 			return ErrInvalidHeader
 		}
 	}
-	for _, h := range headers {
-		_, err := tx.ExecContext(ctx, `INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) VALUES(?,?,?,?,?,?,?)`, h.Namespace, h.Digest, h.ViewerID%ticketShards, h.ViewerID, h.Surface, h.DeviceID, h.ExpiresMillis)
-		if err != nil {
-			return err
+	// 40 rows × 7 fields = at most 280 parameters. Explicit casts keep
+	// PostgreSQL's UNION inputs typed; SQLite accepts the same statement.
+	var query strings.Builder
+	query.WriteString(`INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) `)
+	args := make([]any, 0, len(headers)*7)
+	for i, h := range headers {
+		if i > 0 {
+			query.WriteString(` UNION ALL `)
 		}
+		query.WriteString(`SELECT CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT),CAST(? AS BIGINT),CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT)`)
+		args = append(args, h.Namespace, h.Digest, h.ViewerID%ticketShards, h.ViewerID, h.Surface, h.DeviceID, h.ExpiresMillis)
 	}
-	return nil
+	_, err := tx.ExecContext(ctx, query.String(), args...)
+	return err
 }
 
 // DropHeadersInTx removes only exact scope matches. Unknown or foreign headers
@@ -70,13 +77,20 @@ func DropHeadersInTx(ctx context.Context, tx *sql.Tx, scope HeaderScope, digests
 			return ErrInvalidHeader
 		}
 	}
-	for _, d := range digests {
-		_, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest=? AND viewer_id=? AND surface=? AND device_id=?`, scope.Namespace, d, scope.ViewerID, scope.Surface, scope.DeviceID)
-		if err != nil {
-			return err
+	var query strings.Builder
+	query.WriteString(`DELETE FROM capability_headers WHERE namespace=? AND viewer_id=? AND surface=? AND device_id=? AND digest IN (`)
+	args := make([]any, 0, 4+len(digests))
+	args = append(args, scope.Namespace, scope.ViewerID, scope.Surface, scope.DeviceID)
+	for i, d := range digests {
+		if i > 0 {
+			query.WriteByte(',')
 		}
+		query.WriteByte('?')
+		args = append(args, d)
 	}
-	return nil
+	query.WriteByte(')')
+	_, err := tx.ExecContext(ctx, query.String(), args...)
+	return err
 }
 
 // PruneHeadersInTx deletes at most limit expired headers in one namespace.

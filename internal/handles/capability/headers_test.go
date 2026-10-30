@@ -129,3 +129,40 @@ func TestHeadersPruneIsBoundedAndNamespaceScoped(t *testing.T) {
 		t.Fatalf("foreign=%d err=%v", count, err)
 	}
 }
+
+func TestHeadersMaximumBatchAtomic(t *testing.T) {
+	db, _, _ := fixture(t)
+	ctx := context.Background()
+	scope := capability.HeaderScope{Namespace: "experience.receipt", ViewerID: 1, Surface: "silo", DeviceID: "tv"}
+	batch := make([]capability.Header, capability.HeaderBatchMax)
+	for i := range batch {
+		batch[i] = capability.Header{HeaderScope: scope, Digest: entry(i + 100).Digest, ExpiresMillis: 100}
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = capability.BindHeadersInTx(ctx, tx, batch); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, scope.Namespace).Scan(&n); err != nil || n != len(batch) {
+		t.Fatalf("batch count=%d err=%v", n, err)
+	}
+	tx, err = db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := batch[0]
+	replacement.Digest = entry(999).Digest
+	if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{replacement, batch[1]}); err == nil {
+		t.Fatal("collision succeeded")
+	}
+	_ = tx.Rollback()
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND digest=?`, scope.Namespace, replacement.Digest).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("partial batch=%d err=%v", n, err)
+	}
+}
