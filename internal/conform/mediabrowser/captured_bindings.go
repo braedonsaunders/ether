@@ -36,12 +36,19 @@ type capturedRun struct {
 var capturedID = regexp.MustCompile(`^\$\{(id_[0-9]+)\}$`)
 var capturedSlot = regexp.MustCompile(`\$\{(id_[0-9]+)\}`)
 
+// Only the exact string marker opts in. Other profiles have structured source
+// provenance, historically ignored by replay, which must remain compatible.
+func (p Profile) isCaptured() bool {
+	var marker string
+	return json.Unmarshal(p.Source, &marker) == nil && marker == "captured"
+}
+
 // LoadCapturedBindings must be called before discovery. The fixture directory
 // is explicitly selected by the harness, never guessed from a working directory.
 // Only successful, complete responses attached to this profile's exact requests
 // contribute evidence. Missing fixtures remain errors, not fallback identities.
 func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
-	if p.profiles[profile].Source != "captured" {
+	if !p.profiles[profile].isCaptured() {
 		return nil
 	}
 	m := &capturedMetadata{items: map[string]capturedItem{}, ambiguous: map[string]bool{}}

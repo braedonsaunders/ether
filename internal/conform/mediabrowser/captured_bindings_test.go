@@ -253,7 +253,7 @@ func TestCapturedBindingsProviderCaseCollision(t *testing.T) {
 		t.Fatal("identical aliases should agree")
 	}
 	// New synthetic provenance fixture; never modify the shipped archive.
-	p := &Protocol{Dialect: "jellyfin", profiles: map[string]Profile{"case-test": {Source: "captured", Flows: map[string][]Probe{"captured": {{Name: "one", Method: "GET", Path: "/Items"}}}}}}
+	p := &Protocol{Dialect: "jellyfin", profiles: map[string]Profile{"case-test": {Source: json.RawMessage(`"captured"`), Flows: map[string][]Probe{"captured": {{Name: "one", Method: "GET", Path: "/Items"}}}}}}
 	dir := t.TempDir()
 	r := p.Corpus("case-test")[0]
 	err := conform.SaveFixture(filepath.Join(dir, "case-test"), p.FixtureName("case-test", r, true), conform.Response{Status: 200, Body: []byte(`{"Items":[{"Id":"${id_9}","Type":"Movie","ProviderIds":{"Tmdb":"45745","tmdb":"other"}}]}`)})
@@ -265,5 +265,39 @@ func TestCapturedBindingsProviderCaseCollision(t *testing.T) {
 	}
 	if !p.captures["case-test"].ambiguous["${id_9}"] {
 		t.Fatal("archived provider conflict was not marked ambiguous")
+	}
+}
+
+func TestCapturedBindingsSourceMarkerCompatibility(t *testing.T) {
+	for _, dialect := range []string{"jellyfin", "emby", "silo"} {
+		t.Run(dialect, func(t *testing.T) {
+			p, err := Load(dialect, filepath.Join("..", "profiles", dialect))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, profile := range p.profiles {
+				if profile.isCaptured() {
+					if !(dialect == "jellyfin" && name == "infuse-jellyfin") && !(dialect == "silo" && name == "silo-appletv") {
+						t.Fatalf("unexpected captured marker: %s/%s", dialect, name)
+					}
+				} else if err := p.LoadCapturedBindings("nonexistent-fixture-root", name); err != nil {
+					t.Fatalf("noncaptured source must not load fixtures: %v", err)
+				}
+			}
+		})
+	}
+	for _, tc := range []struct {
+		raw  string
+		want bool
+	}{
+		{`"captured"`, true}, {`"\u0063aptured"`, true},
+		{`{"kind":"captured"}`, false}, {`["captured"]`, false}, {`true`, false}, {`17`, false}, {`null`, false},
+		{`"Captured"`, false}, {`"captured "`, false}, {``, false}, {`"captured`, false},
+	} {
+		t.Run(tc.raw, func(t *testing.T) {
+			if got := (Profile{Source: json.RawMessage(tc.raw)}).isCaptured(); got != tc.want {
+				t.Fatalf("captured marker=%v want=%v", got, tc.want)
+			}
+		})
 	}
 }

@@ -27,7 +27,7 @@ import (
 )
 
 type Profile struct {
-	Source        string             `json:"source"`
+	Source        json.RawMessage    `json:"source"`
 	Protocol      string             `json:"protocol"`
 	Client        string             `json:"client"`
 	Headers       map[string]string  `json:"headers"`
@@ -175,7 +175,7 @@ func (p *Protocol) Corpus(profile string) []conform.Request {
 }
 func (p *Protocol) Formats() []bool { return []bool{true} }
 func (p *Protocol) Discover(ctx context.Context, c *http.Client, base, token, profile string, align *conform.DiscoveredIDs) conform.DiscoveredIDs {
-	if p.Dialect == "jellyfin" && p.profiles[profile].Source == "captured" {
+	if p.Dialect == "jellyfin" && p.profiles[profile].isCaptured() {
 		return p.discoverCaptured(ctx, c, base, token, profile)
 	}
 	// Provider identities are obtained from an item listing; absence is surfaced
@@ -249,7 +249,7 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 	if r.FixtureOnly {
 		return conform.Response{}, fmt.Errorf("fixture-only request cannot be replayed")
 	}
-	if p.Dialect == "jellyfin" && p.profiles[profile].Source == "captured" && strings.HasPrefix(r.Name, "captured_") {
+	if p.Dialect == "jellyfin" && p.profiles[profile].isCaptured() && strings.HasPrefix(r.Name, "captured_") {
 		var err error
 		r, vars, err = p.bindCaptured(base, token, profile, r, vars)
 		if err != nil {
