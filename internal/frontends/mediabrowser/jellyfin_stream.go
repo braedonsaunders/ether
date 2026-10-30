@@ -7,6 +7,7 @@ import (
 
 // jellyfinStreamDTO exposes only probed values, preserving unknowns as absent.
 func (i *instance) jellyfinStreamDTO(dto map[string]any, s frontend.StreamInfo) {
+	streamMetadataDTO(dto, s)
 	if s.AverageFrameRate != nil {
 		dto["AverageFrameRate"] = *s.AverageFrameRate
 	}

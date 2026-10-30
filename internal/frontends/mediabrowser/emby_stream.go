@@ -1,7 +1,6 @@
 package mediabrowser
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -9,6 +8,7 @@ import (
 )
 
 func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.StreamInfo) {
+	streamMetadataDTO(dto, stream)
 	delete(dto, "IsOriginal") // This field is not part of Emby's stream DTO.
 	if stream.Type == "video" {
 		// Use only positive probe evidence. PQ alone does not prove HDR10,
@@ -67,24 +67,6 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 		d, errD = strconv.Atoi(parts[1])
 		if errN == nil && errD == nil && n > 0 && d > 0 && n <= 100000 && d <= 100000 {
 			dto["IsAnamorphic"] = n != d
-		} else {
-			n, d = 0, 0
 		}
 	}
-	if stream.DisplayAspectRatio != "" {
-		dto["AspectRatio"] = stream.DisplayAspectRatio
-		return
-	}
-	if stream.Type != "video" || stream.Width <= 0 || stream.Height <= 0 || stream.Width > 100000 || stream.Height > 100000 {
-		return
-	}
-	if n == 0 || d == 0 {
-		return
-	}
-	w, h := int64(stream.Width)*int64(n), int64(stream.Height)*int64(d)
-	a, b := w, h
-	for b != 0 {
-		a, b = b, a%b
-	}
-	dto["AspectRatio"] = fmt.Sprintf("%d:%d", w/a, h/a)
 }
