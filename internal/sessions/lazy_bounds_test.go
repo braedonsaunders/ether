@@ -3,7 +3,9 @@ package sessions
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"sync"
 	"testing"
 	"time"
@@ -205,7 +207,7 @@ func TestLazyBoundsMigrationPreservesExistingCapabilities(t *testing.T) {
 	}
 	// An oversized old store may have live transfers. Migration must preserve them.
 	for i := 0; i < maxLazyViewerCapabilities+1; i++ {
-		if _, err := db.Exec(`INSERT INTO sessions_lazy_streams VALUES(?,'stremio',1,'grant','{}',1)`, fmt.Sprint(i)); err != nil {
+		if _, err := db.Exec(`INSERT INTO sessions_lazy_streams VALUES(?,'stremio',1,'grant','{}',?)`, fmt.Sprintf("%064x", i), time.Now().Add(time.Hour).UnixMilli()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -213,10 +215,20 @@ func TestLazyBoundsMigrationPreservesExistingCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkLazyCounts(t, db)
+	// Current consume/readmit semantics reject renewal of an in-use capability
+	// when an oversized pre-upgrade store is charged. Preserve this policy proof.
+	activeHash := fmt.Sprintf("%064x", 0)
+	now := time.Now()
+	b := &Broker{deps: BrokerDeps{Now: func() time.Time { return now }}, lazySessions: map[string]lazySession{activeHash: {id: "active", viewer: 1}}}
+	streams := &lazyStreams{db: db, broker: b, protocol: "stremio", grants: &fakeLazyGrants{}, ttl: time.Hour}
+	var capacity *capability.CapacityError
+	if err := streams.renewActive(context.Background(), activeHash, "grant", 1, "active"); !errors.As(err, &capacity) {
+		t.Fatalf("oversized active renewal: %v", err)
+	}
 	if err := insertLazyRow(db, "new", 1); err == nil {
 		t.Fatal("grandfathered store grew")
 	}
-	retireLazyRows(t, db, "hash IN ('0','1')")
+	retireLazyRows(t, db, fmt.Sprintf("hash IN ('%064x','%064x')", 0, 1))
 	if err := insertLazyRow(db, "new", 1); err != nil {
 		t.Fatal(err)
 	}
