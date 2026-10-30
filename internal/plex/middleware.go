@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 )
 
@@ -113,12 +114,17 @@ func (sr *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWriter }
 
-// requestLog logs every request at debug level.
+// requestLog logs requests at debug level and summarizes noisy 401 failures.
 func (s *Server) requestLog(next http.Handler) http.Handler {
+	failures := faillog.New(s.log.With("frontend", "plex"), "authentication")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sr := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(sr, r)
+		if sr.status == http.StatusUnauthorized {
+			failures.Fail(errors.New("unauthorized"))
+			return
+		}
 		pr := FromContext(r.Context())
 		s.log.Debug("request", "method", r.Method, "path", r.URL.Path, "status", sr.status,
 			"dur", time.Since(start).Round(time.Millisecond), "product", pr.Product, "client", pr.ClientID,

@@ -333,6 +333,7 @@ func (h *Handler) routes() *http.ServeMux {
 	api("GET /api/frontends", h.frontendList)
 	api("GET /api/frontends/qr", h.frontendQR)
 	api("GET /api/frontends/{id}/status", h.frontendStatus)
+	api("GET /api/frontends/{id}/health", h.frontendHealth)
 	api("GET /api/frontends/{id}/settings", h.frontendSettings)
 	api("PUT /api/frontends/{id}/settings", h.frontendSettings)
 	api("PUT /api/frontends/{id}/enabled", h.frontendToggle)

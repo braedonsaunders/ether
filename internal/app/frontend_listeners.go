@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -14,12 +15,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/braedonsaunders/ether/internal/faillog"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 // frontendListeners owns listeners and announcers for independently mounted
 // protocol instances. A failed bind is retained as status, not a process error.
 type frontendListeners struct {
+	log               *slog.Logger
+	failures401       map[frontend.Protocol]*faillog.Tracker
 	mu                sync.Mutex
 	opMu              sync.Mutex
 	registry          *frontend.Registry
@@ -111,7 +117,7 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 		if requestedErr == nil && actualErr == nil && requestedPort != "0" && requestedPort != actualPort {
 			run.warnings = append(run.warnings, fmt.Sprintf("Port %s was unavailable; listening on %s", requestedPort, actualPort))
 		}
-		handler := inst.Handler()
+		handler := m.observe(id, inst.Handler())
 		if handler == nil {
 			err = errors.New("frontend returned nil handler")
 			break
@@ -194,7 +200,7 @@ func (m *frontendListeners) sharedHandler(path string) http.Handler {
 		return nil
 	}
 	if instance, ok := m.registry.Instance(chosen); ok {
-		return instance.Handler()
+		return m.observe(chosen, instance.Handler())
 	}
 	return nil
 }
@@ -246,6 +252,7 @@ func (m *frontendListeners) status(ctx context.Context, id frontend.Protocol) fr
 	var st frontend.Status
 	if inst, ok := m.registry.Instance(id); ok {
 		st = inst.Status(ctx)
+		st.Mounted = run != nil
 	}
 	if run != nil {
 		providedURLs := len(st.ConnectURLs) > 0
@@ -363,4 +370,29 @@ func connectionURLs(address, prefix string, interfaces []net.Addr) []string {
 		}
 	}
 	return out
+}
+
+// observe aggregates authentication failures per protocol, across mounts. Request
+// paths, credentials and client identifiers never enter failure summaries.
+func (m *frontendListeners) observe(id frontend.Protocol, next http.Handler) http.Handler {
+	if next == nil || m.log == nil || id == "plex" {
+		return next
+	}
+	m.mu.Lock()
+	if m.failures401 == nil {
+		m.failures401 = make(map[frontend.Protocol]*faillog.Tracker)
+	}
+	tracker := m.failures401[id]
+	if tracker == nil {
+		tracker = faillog.New(m.log.With("frontend", id), "authentication")
+		m.failures401[id] = tracker
+	}
+	m.mu.Unlock()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(recorder, r)
+		if recorder.Status() == http.StatusUnauthorized {
+			tracker.Fail(errors.New("unauthorized"))
+		}
+	})
 }

@@ -1,13 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -248,5 +251,99 @@ func TestFrontendStopForcesLongRequestsClosed(t *testing.T) {
 	}
 	if _, ok := reg.Instance("long"); ok {
 		t.Fatal("frontend still mounted")
+	}
+}
+
+func TestFrontendToggleUnderLoad(t *testing.T) {
+	ctx := context.Background()
+	closed := 0
+	reg := frontend.NewRegistry(func(frontend.Protocol) frontend.Host { return frontend.Host{} })
+	if err := reg.Register(sharedFrontend{id: "files", prefix: "/files"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Register(listenerFrontend{"127.0.0.1:0", &closed}); err != nil {
+		t.Fatal(err)
+	}
+	m := newFrontendListeners(reg)
+	defer m.close(ctx)
+	for _, id := range []frontend.Protocol{"test", "files"} {
+		for cycle := 0; cycle < 3; cycle++ {
+			if err := m.start(ctx, id); err != nil {
+				t.Fatal(err)
+			}
+			if !m.status(ctx, id).Mounted {
+				t.Fatal("not mounted")
+			}
+			done := make(chan struct{})
+			entered := make(chan struct{}, 8)
+			var wg sync.WaitGroup
+			for n := 0; n < 8; n++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					first := true
+					for {
+						select {
+						case <-done:
+							return
+						default:
+						}
+						if id == "files" {
+							if h := m.sharedHandler("/files"); h != nil {
+								h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/files", nil))
+							}
+						} else {
+							st := m.status(ctx, id)
+							if len(st.Addresses) > 0 {
+								resp, err := http.Get("http://" + st.Addresses[0])
+								if err == nil {
+									io.Copy(io.Discard, resp.Body)
+									resp.Body.Close()
+								}
+							}
+						}
+						if first {
+							entered <- struct{}{}
+							first = false
+						}
+					}
+				}()
+			}
+			for n := 0; n < 8; n++ {
+				<-entered
+			}
+			if err := m.stop(ctx, id); err != nil {
+				t.Fatal(err)
+			}
+			close(done)
+			wg.Wait()
+			if m.status(ctx, id).Mounted {
+				t.Fatal("still mounted")
+			}
+			if id == "files" && m.sharedHandler("/files") != nil {
+				t.Fatal("disabled shared handler")
+			}
+		}
+	}
+}
+
+func TestFrontendUnauthorizedLogThrottle(t *testing.T) {
+	var logs bytes.Buffer
+	m := newFrontendListeners(frontend.NewRegistry(nil))
+	m.log = slog.New(slog.NewTextHandler(&logs, nil))
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "Unauthorized", 401) })
+	for _, id := range []frontend.Protocol{"silo", "jellyfin"} {
+		// Recreating wrappers must not reset the protocol's failure budget.
+		for n := 0; n < 100; n++ {
+			h := m.observe(id, next)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest("GET", "/secret?token=secret", nil))
+			if w.Code != 401 || w.Body.String() != "Unauthorized\n" {
+				t.Fatal("wire changed")
+			}
+		}
+	}
+	if bytes.Count(logs.Bytes(), []byte("authentication failed")) != 2 || bytes.Contains(logs.Bytes(), []byte("secret")) {
+		t.Fatal(logs.String())
 	}
 }
