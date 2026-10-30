@@ -1,0 +1,211 @@
+// Package capability contains opt-in shared capability storage. The legacy
+// ticket service remains authoritative until mixed-version cutover is proven.
+package capability
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/store"
+)
+
+func init() {
+	store.RegisterAfter("capability_headers", "auth", "identity_grants")
+	store.Register("capability_headers", 1, `CREATE TABLE capability_headers (namespace TEXT NOT NULL,digest TEXT NOT NULL,shard INTEGER NOT NULL,viewer_id BIGINT NOT NULL,surface TEXT NOT NULL,device_id TEXT NOT NULL,expires BIGINT NOT NULL,PRIMARY KEY(namespace,digest)); CREATE INDEX capability_headers_expiry ON capability_headers(namespace,shard,expires); CREATE INDEX capability_headers_scope ON capability_headers(namespace,shard,viewer_id,surface,expires); CREATE TABLE capability_tickets (namespace TEXT NOT NULL,digest TEXT NOT NULL,purpose TEXT NOT NULL,source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE,device TEXT NOT NULL,PRIMARY KEY(namespace,digest),FOREIGN KEY(namespace,digest) REFERENCES capability_headers(namespace,digest) ON DELETE CASCADE);`)
+}
+
+const ticketNamespace = "ticket"
+const ticketShards int64 = 64
+const ticketPerShard = 256
+const ticketPerScope = 128
+const ticketBatchMax = 40
+const ticketCleanupMax = 128
+const ticketTTL = 30 * time.Second
+
+type Tickets struct{ db *sql.DB }
+type TicketScope struct {
+	ViewerID                                  int64
+	Surface, DeviceID, SourceHash, DeviceJSON string
+}
+type TicketEntry struct{ Digest, Purpose string }
+type Ticket struct {
+	ViewerID               int64
+	DeviceJSON, SourceHash string
+}
+type CapacityError struct{ Scope string }
+
+func (e *CapacityError) Error() string {
+	return "capability: ticket capacity reached (" + e.Scope + ")"
+}
+func NewTickets(db *sql.DB) (*Tickets, error) {
+	if db == nil {
+		return nil, errors.New("capability: database required")
+	}
+	return &Tickets{db: db}, nil
+}
+func digestValid(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+	return true
+}
+func (s TicketScope) valid() bool {
+	return s.ViewerID > 0 && s.Surface != "" && len(s.Surface) <= 128 && s.DeviceID != "" && len(s.DeviceID) <= 512 && digestValid(s.SourceHash) && s.DeviceJSON != "" && len(s.DeviceJSON) <= 4096
+}
+func dbTime(ctx context.Context, db *sql.DB, tx *sql.Tx) (int64, error) {
+	query := `SELECT CAST((julianday('now') - 2440587.5)*86400000 + 0.999 AS INTEGER)`
+	if store.DialectOf(db) == store.Postgres {
+		query = `SELECT CAST(CEIL(EXTRACT(EPOCH FROM clock_timestamp())*1000) AS BIGINT)`
+	}
+	var now int64
+	err := tx.QueryRowContext(ctx, query).Scan(&now)
+	return now, err
+}
+func (s *Tickets) lock(ctx context.Context, tx *sql.Tx, viewer int64) error {
+	return store.LockKey(ctx, store.DialectOf(s.db), tx, fmt.Sprintf("capability:ticket:%d", viewer%ticketShards))
+}
+
+// IssueBatch inserts distinct pre-hashed opaque ticket identifiers. It never
+// accepts a caller-supplied timestamp or an authorization decision: the source
+// grant and active viewer are checked in SQL inside the insertion transaction.
+// Existing legacy ticket rows remain separate and are never migrated or removed.
+func (s *Tickets) IssueBatch(ctx context.Context, scope TicketScope, entries []TicketEntry) (int64, error) {
+	if !scope.valid() || len(entries) == 0 || len(entries) > ticketBatchMax {
+		return 0, core.ErrUnauthorized
+	}
+	seen := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if !digestValid(e.Digest) || e.Purpose == "" || len(e.Purpose) > 64 || seen[e.Digest] {
+			return 0, core.ErrUnauthorized
+		}
+		seen[e.Digest] = true
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err = s.lock(ctx, tx, scope.ViewerID); err != nil {
+		return 0, err
+	}
+	now, err := dbTime(ctx, s.db, tx)
+	if err != nil {
+		return 0, err
+	}
+	shard := scope.ViewerID % ticketShards
+	// Bounded cleanup of this namespace/shard only. Cascades remove typed rows.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, ticketNamespace, ticketNamespace, shard, now, ticketCleanupMax); err != nil {
+		return 0, err
+	}
+	var count int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND shard=? AND viewer_id=? AND surface=?`, ticketNamespace, shard, scope.ViewerID, scope.Surface).Scan(&count); err != nil {
+		return 0, err
+	}
+	if count+len(entries) > ticketPerScope {
+		return 0, &CapacityError{Scope: "viewer"}
+	}
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND shard=?`, ticketNamespace, shard).Scan(&count); err != nil {
+		return 0, err
+	}
+	if count+len(entries) > ticketPerShard {
+		return 0, &CapacityError{Scope: "shard"}
+	}
+	expiry := now + ticketTTL.Milliseconds()
+	// One guarded header INSERT and one typed-child INSERT per bounded batch.
+	var header strings.Builder
+	header.WriteString(`INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) `)
+	var args []any
+	for i, e := range entries {
+		if i > 0 {
+			header.WriteString(` UNION ALL `)
+		}
+		header.WriteString(`SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.surface=? AND g.viewer_id=? AND g.device_id=? AND g.revoked=0 AND g.expires>? AND u.active=1)`)
+		args = append(args, ticketNamespace, e.Digest, shard, scope.ViewerID, scope.Surface, scope.DeviceID, expiry, scope.SourceHash, scope.Surface, scope.ViewerID, scope.DeviceID, now)
+	}
+	res, err := tx.ExecContext(ctx, header.String(), args...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n != int64(len(entries)) {
+		return 0, core.ErrUnauthorized
+	}
+	var child strings.Builder
+	child.WriteString(`INSERT INTO capability_tickets(namespace,digest,purpose,source_hash,device) VALUES `)
+	args = nil
+	for i, e := range entries {
+		if i > 0 {
+			child.WriteString(",")
+		}
+		child.WriteString("(?,?,?,?,?)")
+		args = append(args, ticketNamespace, e.Digest, e.Purpose, scope.SourceHash, scope.DeviceJSON)
+	}
+	if _, err = tx.ExecContext(ctx, child.String(), args...); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return expiry, nil
+}
+
+// Consume uses a guarded DELETE as the linearization point; selection alone
+// never authorizes consumption. A caller may try the legacy store only when no
+// new header exists; adapters must not equate a denied header with absence.
+func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) (Ticket, error) {
+	var out Ticket
+	if surface == "" || purpose == "" || !digestValid(digest) {
+		return out, core.ErrUnauthorized
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	var deviceID, storedSurface string
+	var storedPurpose, storedDevice, storedSource sql.NullString
+	var expires int64
+	err = tx.QueryRowContext(ctx, `SELECT h.viewer_id,h.device_id,h.expires,t.device,t.source_hash,h.surface,t.purpose FROM capability_headers h LEFT JOIN capability_tickets t ON t.namespace=h.namespace AND t.digest=h.digest WHERE h.namespace=? AND h.digest=?`, ticketNamespace, digest).Scan(&out.ViewerID, &deviceID, &expires, &storedDevice, &storedSource, &storedSurface, &storedPurpose)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, sql.ErrNoRows
+	}
+	if err != nil {
+		return Ticket{}, err
+	}
+	if !storedPurpose.Valid || !storedDevice.Valid || !storedSource.Valid || storedSurface != surface || storedPurpose.String != purpose {
+		return Ticket{}, core.ErrUnauthorized
+	}
+	out.DeviceJSON, out.SourceHash = storedDevice.String, storedSource.String
+	if err = s.lock(ctx, tx, out.ViewerID); err != nil {
+		return Ticket{}, err
+	}
+	now, err := dbTime(ctx, s.db, tx)
+	if err != nil {
+		return Ticket{}, err
+	}
+	var removed string
+	err = tx.QueryRowContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest=? AND viewer_id=? AND surface=? AND device_id=? AND expires>? AND EXISTS(SELECT 1 FROM capability_tickets t JOIN identity_grants g ON g.hash=t.source_hash JOIN auth_users u ON u.id=g.viewer_id WHERE t.namespace=capability_headers.namespace AND t.digest=capability_headers.digest AND t.purpose=? AND g.viewer_id=capability_headers.viewer_id AND g.surface=capability_headers.surface AND g.device_id=capability_headers.device_id AND g.revoked=0 AND g.expires>? AND u.active=1) RETURNING digest`, ticketNamespace, digest, out.ViewerID, surface, deviceID, now, purpose, now).Scan(&removed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Ticket{}, core.ErrUnauthorized
+	}
+	if err != nil {
+		return Ticket{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return Ticket{}, err
+	}
+	return out, nil
+}
