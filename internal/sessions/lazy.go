@@ -54,6 +54,9 @@ func NewLazyStreams(db *sql.DB, b *Broker, protocol frontend.Protocol, grants La
 	if ttl > time.Hour {
 		return nil, errors.New("sessions: lazy stream lifetime exceeds one hour")
 	}
+	if ttl < 3*time.Second {
+		return nil, errors.New("sessions: lazy stream lifetime below three seconds")
+	}
 	return &lazyStreams{db: db, broker: b, protocol: protocol, grants: grants, ttl: ttl, remote: remote}, nil
 }
 
@@ -335,6 +338,18 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Reserve before opening a source. Stuck dependencies retain a slot, so
+	// they cannot create an unbounded number of heartbeat goroutines.
+	if !s.broker.reserveLazyHeartbeat() {
+		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	heartbeatOwned := true
+	defer func() {
+		if heartbeatOwned {
+			s.broker.releaseLazyHeartbeat()
+		}
+	}()
 	opened := false
 	reserved := false
 	defer func() {
@@ -423,11 +438,24 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// handler so revoking the issuing grant revokes the capability as well.
 	streamCtx, cancelStream := context.WithCancel(ctx)
 	done := make(chan struct{})
+	heartbeatOwned = false
 	go func() {
 		defer close(done)
+		defer s.broker.releaseLazyHeartbeat()
 		s.heartbeat(streamCtx, cancelStream, hash, reference, viewerID, id, req)
 	}()
-	defer func() { cancelStream(); <-done }()
+	defer func() {
+		cancelStream()
+		// Real dependencies honor context cancellation. A broken dependency
+		// must not hold HTTP teardown forever; its slot remains reserved until
+		// its worker actually exits.
+		timer := time.NewTimer(time.Second)
+		defer timer.Stop()
+		select {
+		case <-done:
+		case <-timer.C:
+		}
+	}()
 	clone := r.Clone(streamCtx)
 	u := *r.URL
 	u.Path = path
@@ -465,13 +493,29 @@ func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.
 	http.NotFound(w, r)
 }
 
+const maxLazyHeartbeats = 1024
+
+func (b *Broker) reserveLazyHeartbeat() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.lazyHeartbeatCount >= maxLazyHeartbeats {
+		return false
+	}
+	b.lazyHeartbeatCount++
+	return true
+}
+
+func (b *Broker) releaseLazyHeartbeat() {
+	b.mu.Lock()
+	b.lazyHeartbeatCount--
+	b.mu.Unlock()
+}
+
 // heartbeat rechecks authority while a response is still being transferred.
-// It exits when that request ends or the session is no longer authorized.
+// Revocation during a transfer is detected at the next tick, at most one
+// minute later. New requests still check authorization immediately.
 func (s *lazyStreams) heartbeat(ctx context.Context, cancel context.CancelFunc, hash, reference string, viewerID int64, id string, req frontend.PlanRequest) {
 	interval := min(time.Minute, s.ttl/3)
-	if interval <= 0 {
-		interval = time.Nanosecond
-	}
 	var ticks <-chan time.Time
 	var stop func()
 	if s.newHeartbeat != nil {

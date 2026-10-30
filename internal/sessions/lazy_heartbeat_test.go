@@ -37,14 +37,23 @@ func (p *heartbeatLazyPlayback) ServeRange(w http.ResponseWriter, r *http.Reques
 }
 
 func TestLazyLongTransferHeartbeat(t *testing.T) {
-	for _, ending := range []string{"retry", "revoke", "database"} {
+	for _, ending := range []string{"retry", "revoke", "database", "stuck"} {
 		t.Run(ending, func(t *testing.T) {
 			ctx := context.Background()
 			db := store.OpenTest(t)
 			var clock atomic.Int64
 			clock.Store(time.Now().UnixMilli())
 			now := func() time.Time { return time.UnixMilli(clock.Load()) }
-			active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+			var blockActive atomic.Bool
+			activeEntered := make(chan struct{})
+			activeRelease := make(chan struct{})
+			active := func(_ context.Context, id int64) (*core.Viewer, error) {
+				if blockActive.Load() {
+					close(activeEntered)
+					<-activeRelease // Deliberately ignores cancellation.
+				}
+				return &core.Viewer{ID: id}, nil
+			}
 			events := NewEventBus(nil, active)
 			defer events.Close()
 			pb := &heartbeatLazyPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}, started: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{})}
@@ -69,6 +78,21 @@ func TestLazyLongTransferHeartbeat(t *testing.T) {
 			path, err := lazy.Issue(ctx, "account-credential-secret", req)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if ending == "retry" {
+				for n := 0; n < maxLazyHeartbeats; n++ {
+					if !b.reserveLazyHeartbeat() {
+						t.Fatal("heartbeat capacity unavailable early")
+					}
+				}
+				w := httptest.NewRecorder()
+				lazy.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+				if w.Code != http.StatusServiceUnavailable || pb.prepares != 0 {
+					t.Fatalf("saturated status=%d prepares=%d", w.Code, pb.prepares)
+				}
+				for n := 0; n < maxLazyHeartbeats; n++ {
+					b.releaseLazyHeartbeat()
+				}
 			}
 			finished := make(chan struct{})
 			go func() {
@@ -134,6 +158,25 @@ func TestLazyLongTransferHeartbeat(t *testing.T) {
 					t.Fatal("database failure did not cancel transfer")
 				}
 				<-finished
+				<-stopped
+			case "stuck":
+				blockActive.Store(true)
+				ticks <- now()
+				<-activeEntered
+				close(pb.release)
+				select {
+				case <-finished:
+				case <-time.After(3 * time.Second):
+					t.Fatal("uncancellable dependency blocked request teardown")
+				}
+				b.mu.Lock()
+				remaining := b.lazyHeartbeatCount
+				b.mu.Unlock()
+				if remaining != 1 {
+					t.Fatalf("stuck worker reservation=%d", remaining)
+				}
+				blockActive.Store(false)
+				close(activeRelease)
 				<-stopped
 			}
 		})

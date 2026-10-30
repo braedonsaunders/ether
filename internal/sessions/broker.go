@@ -115,6 +115,7 @@ type Broker struct {
 	lazyCleanupRunning  bool
 	lazyCleanupWait     time.Duration
 	lazyCleanupReserved int
+	lazyHeartbeatCount  int
 	lazyCleanupCancel   context.CancelFunc
 	lazyCleanupDone     chan struct{}
 	devices             map[deviceKey]frontend.SessionCapabilities
