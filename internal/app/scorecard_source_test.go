@@ -401,6 +401,11 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 	playbackURL := "/Items/" + itemID + "/PlaybackInfo"
 	body, _ := json.Marshal(map[string]any{"IsPlayback": true, "MediaSourceId": handle})
 	req = httptest.NewRequest("POST", playbackURL, strings.NewReader(string(body)))
+	// The fixture appends 6 MiB so the verified hash covers a byte past that
+	// tail. ffprobe 8.1.3 reports that tail as format size 6322121 and
+	// bit_rate 101052883. A loopback client keeps the 8000 kbps remote cap
+	// out of this test; httptest's default peer is the remote address 192.0.2.1.
+	req.RemoteAddr = "127.0.0.1:1"
 	req.Header.Set("Authorization", `MediaBrowser Client="test", DeviceId="test", Token="`+login.AccessToken+`"`)
 	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
