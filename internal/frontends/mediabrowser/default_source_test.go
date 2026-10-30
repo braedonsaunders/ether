@@ -83,3 +83,27 @@ func TestDetailFallsBackToGenericSourceWhenVersionCannotBeIssued(t *testing.T) {
 		}
 	}
 }
+
+func TestColdDetailStillOffersGenericSource(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie"}}, nil
+	}}
+	for _, front := range []frontend.Frontend{Jellyfin{MachineID: "test"}, Emby{MachineID: "test"}} {
+		inst, err := front.Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest("GET", "/Items/"+ids.RatingKeyGUID(5), nil)
+		r.Header.Set("X-Emby-Token", "valid")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		var body struct {
+			Sources []map[string]any `json:"MediaSources"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Sources) != 1 || body.Sources[0]["Id"] != ids.RatingKeyGUID(5) {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+}
