@@ -92,7 +92,7 @@ func (a *App) controlLegacyProductionExperienceRows(ctx context.Context, req fro
 				return picks
 			}
 		}
-		return experienceDetailRows(ctx, req.Viewer, req.Item, req.Limit, visibility, a.catalog.NextEpisode, postPlay,
+		return controlLegacyExperienceDetailRows(ctx, req.Viewer, req.Item, req.Limit, visibility, a.catalog.NextEpisode, postPlay,
 			func(ctx context.Context, limit int) ([]core.Hub, error) {
 				return a.personalize.Related(ctx, req.Viewer, req.Item, limit)
 			})
