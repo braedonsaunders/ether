@@ -22,7 +22,7 @@ func init() {
 }
 
 const ticketNamespace = "ticket"
-const ticketShards int64 = 64
+const ticketShards int64 = HeaderShardCount
 const ticketPerShard = 256
 const ticketPerScope = 128
 const ticketBatchMax = 40
