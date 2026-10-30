@@ -278,3 +278,10 @@ candidate rejection categories and, for scorecard sources, fixture SHA-256.
 It omits release names, paths, arbitrary errors and client credentials. The
 trace ring is process-wide; isolate requests before associating a trace with a
 specific test. Recording proxies must deny every `/__scorecard/*` route.
+
+The loopback-only `/__scorecard/detail-offer?handle=HANDLE` joins an
+unexpired, surface-specific detail handle to its fixture item, release,
+source revision and expected SHA-256. The caller must obtain the handle from
+an authenticated detail response and independently verify the actual opened
+source; this diagnostic is not an authorization check and does not prove the
+requesting viewer or device owns the handle. Recording proxies must block it.

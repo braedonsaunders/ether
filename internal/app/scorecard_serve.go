@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -328,6 +329,16 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 				_ = json.NewEncoder(w).Encode(a.frontends.broker.ScorecardSessions(r.Context()))
 				return
 			}
+			if r.URL.Path == "/__scorecard/detail-offer" && r.Method == http.MethodGet {
+				row, err := scorecardDetailOffer(r.Context(), a.db, dir, p, r.URL.Query().Get("handle"), time.Now())
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(row)
+				return
+			}
 			if r.URL.Path == "/__scorecard/offer" && r.Method == http.MethodGet {
 				// A mapping is evidence only when the handle was first obtained
 				// from this viewer's authenticated item-detail response. This
@@ -488,4 +499,40 @@ func scorecardResolverTraces(traces []resolver.Trace) []map[string]any {
 		out = append(out, map[string]any{"item_id": ids.RatingKeyGUID(trace.TitleKey), "at": trace.At, "winner_present": trace.Winner != "", "error_present": trace.Err != "", "candidates": candidates})
 	}
 	return out
+}
+
+// This fixture-only join is evidence, not authorization: the caller must first
+// obtain the handle from an authenticated detail response and verify the actual
+// opened broker session and source bytes independently.
+type scorecardDetailOfferRow struct {
+	Handle         string `json:"handle"`
+	ItemID         string `json:"item_id"`
+	ReleaseID      string `json:"release_id"`
+	Revision       string `json:"revision"`
+	ExpectedSHA256 string `json:"expected_sha256"`
+}
+
+func scorecardDetailOffer(ctx context.Context, db *sql.DB, dir string, surface core.Protocol, handle string, now time.Time) (scorecardDetailOfferRow, error) {
+	var row scorecardDetailOfferRow
+	if len(handle) != 36 {
+		return row, core.ErrNotFound
+	}
+	var key int64
+	var release, revision string
+	err := db.QueryRowContext(ctx, `SELECT item_id,release_id,revision FROM sessions_detail_sources WHERE handle=? AND surface=? AND expires>?`, handle, string(surface), now.UnixMilli()).Scan(&key, &release, &revision)
+	if err != nil {
+		return row, core.ErrNotFound
+	}
+	if !strings.HasPrefix(revision, "src-") || len(revision) != 36 {
+		return row, core.ErrNotFound
+	}
+	raw, err := hex.DecodeString(strings.TrimPrefix(revision, "src-"))
+	if err != nil || len(raw) != 16 {
+		return row, core.ErrNotFound
+	}
+	file, err := (scorecardSource{dir}).lookup(release)
+	if err != nil {
+		return row, core.ErrNotFound
+	}
+	return scorecardDetailOfferRow{Handle: handle, ItemID: ids.RatingKeyGUID(core.RatingKey(key)), ReleaseID: release, Revision: revision, ExpectedSHA256: file.SHA256}, nil
 }

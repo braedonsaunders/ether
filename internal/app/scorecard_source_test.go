@@ -14,11 +14,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/resolver"
+	"github.com/braedonsaunders/ether/internal/store"
 )
 
 func TestScorecardFilesAndSource(t *testing.T) {
@@ -116,6 +118,13 @@ func TestScorecardServeRejectsMismatchAndServesViewer(t *testing.T) {
 	}
 	if handlers["plex"] != nil {
 		t.Fatal("fixture unexpectedly mounted Plex")
+	}
+	remoteDiagnostic := httptest.NewRequest("GET", "/__scorecard/detail-offer?handle=0fd07009-a5dc-4225-9ac3-dc79b1ad89d5", nil)
+	remoteDiagnostic.RemoteAddr = "203.0.113.2:1234"
+	remoteResponse := httptest.NewRecorder()
+	handlers["jellyfin"].ServeHTTP(remoteResponse, remoteDiagnostic)
+	if remoteResponse.Code != http.StatusNotFound {
+		t.Fatalf("remote detail diagnostic: HTTP %d", remoteResponse.Code)
 	}
 	credentialPath := filepath.Join(dir, "scorecard-app-credentials.json")
 	fileInfo, err := os.Stat(credentialPath)
@@ -440,5 +449,37 @@ func TestScorecardResolverTracesRedactUntrustedText(t *testing.T) {
 	b, err := json.Marshal(scorecardResolverTraces(traces))
 	if err != nil || strings.Contains(string(b), "secret") || strings.Contains(string(b), "/private") || !strings.Contains(string(b), "video codec unsupported by client") {
 		t.Fatalf("trace not redacted: %s %v", b, err)
+	}
+}
+
+func TestScorecardDetailOfferMatchesFixtureAndScope(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	entry := ScorecardFile{TMDB: 123, SHA256: strings.Repeat("a", 64)}
+	data, _ := json.Marshal([]ScorecardFile{entry})
+	if err := os.WriteFile(filepath.Join(dir, "scorecard-files.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	handle := "0fd07009-a5dc-4225-9ac3-dc79b1ad89d5"
+	revision := "src-" + strings.Repeat("b", 32)
+	now := time.Now()
+	_, err = db.ExecContext(ctx, `INSERT INTO sessions_detail_sources(handle,viewer_id,surface,device_id,item_id,release_id,revision,expires) VALUES(?,?,?,?,?,?,?,?)`, handle, 1, "jellyfin", "device", int64(core.MovieKey(123)), scorecardReleaseID(entry), revision, now.Add(time.Minute).UnixMilli())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := scorecardDetailOffer(ctx, db, dir, "jellyfin", handle, now)
+	if err != nil || got.ReleaseID != scorecardReleaseID(entry) || got.ItemID != ids.RatingKeyGUID(core.MovieKey(123)) || got.ExpectedSHA256 != entry.SHA256 || got.Revision != revision {
+		t.Fatalf("offer: %+v %v", got, err)
+	}
+	if _, err = scorecardDetailOffer(ctx, db, dir, "emby", handle, now); err == nil {
+		t.Fatal("cross-surface offer accepted")
+	}
+	if _, err = scorecardDetailOffer(ctx, db, dir, "jellyfin", handle, now.Add(2*time.Minute)); err == nil {
+		t.Fatal("expired offer accepted")
 	}
 }
