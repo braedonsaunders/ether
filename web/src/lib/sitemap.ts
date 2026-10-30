@@ -313,6 +313,7 @@ export const PAGES = localized<PageDef[]>(() => [
         keywords: searchTerms(msg("status tmdb debrid prowlarr ratings")),
       },
       { key: "trakt", title: "Trakt", keywords: searchTerms(msg("sync history")) },
+      { key: "simkl", title: "Simkl", keywords: searchTerms(msg("simkl sync history")) },
       {
         key: "llm",
         title: t("Language model"),

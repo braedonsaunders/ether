@@ -8,7 +8,7 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { RefreshCw, X } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Artwork } from "../../components/Artwork";
 import { ErrorPanel } from "../../components/feedback";
 import { NumberInput } from "../../components/fields";
@@ -44,14 +44,81 @@ const SCORE_CHOICES = localized(() => [
   { value: "popcorn", label: t("Rotten Tomatoes audience (MDBList)") },
 ]);
 
+/**
+ * Field-level draft. A saved document adopts only fields the user has not
+ * changed, so a card toggle can update `enabled` without wiping an unsaved
+ * cache interval. `adopt` takes a server response wholesale after our own save.
+ */
+function useFieldDraft<T extends Record<string, unknown>>(saved: T | null) {
+  const savedKey = useMemo(() => JSON.stringify(saved ?? null), [saved]);
+  const [adopted, setAdopted] = useState(savedKey);
+  const [base, setBase] = useState(savedKey);
+  const [draft, setDraft] = useState<T | null>(() => (saved ? structuredClone(saved) : null));
+  if (adopted !== savedKey) {
+    let next: T | null;
+    if (!saved) next = null;
+    else if (!draft || base === "null" || JSON.stringify(draft) === base)
+      next = structuredClone(saved);
+    else {
+      const previous = JSON.parse(base) as T;
+      next = { ...draft };
+      for (const key of Object.keys(saved) as (keyof T)[]) {
+        if (JSON.stringify(draft[key]) === JSON.stringify(previous[key])) next[key] = saved[key];
+      }
+    }
+    setAdopted(savedKey);
+    setBase(savedKey);
+    setDraft(next);
+  }
+  const dirty = draft !== null && JSON.stringify(draft) !== savedKey;
+  const reset = useCallback(() => {
+    setDraft(saved ? structuredClone(saved) : null);
+    setBase(savedKey);
+    // savedKey stands in for the saved snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+  const adopt = useCallback((next: T) => {
+    const key = JSON.stringify(next);
+    setAdopted(key);
+    setBase(key);
+    setDraft(structuredClone(next));
+  }, []);
+  return { draft, setDraft, dirty, reset, adopt };
+}
+
 /** OMDb / MDBList rating sources, edited in place, with a live badge check beside them. */
-export function RatingSources() {
+export function RatingSources({
+  saved,
+  onPersisted,
+  persist,
+  disabled,
+}: {
+  /** Parent-owned saved document. Omit on the metadata page, which loads its own. */
+  saved?: RatingSettings | null;
+  /** Called with the server's saved document after this form's own successful save. */
+  onPersisted?: (next: RatingSettings) => void;
+  /** Serialize this save with other integration writes. */
+  persist?: (task: () => Promise<void>) => Promise<unknown>;
+  /** Disable the shared save bar while another integration write is in flight. */
+  disabled?: boolean;
+} = {}) {
+  const controlled = saved !== undefined;
   const doc = useAsync(() => apiFetch<RatingSettings>("/discovery/ratings/settings"), []);
-  const { draft, setDraft, dirty, reset } = useDraft(doc.data);
+  const external = useFieldDraft(controlled ? (saved ?? null) : null);
+  const internal = useDraft(controlled ? undefined : doc.data);
+  const draft = controlled ? external.draft : internal.draft;
+  const setDraft = controlled ? external.setDraft : internal.setDraft;
+  const dirty = controlled ? external.dirty : internal.dirty;
+  const reset = controlled ? external.reset : internal.reset;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  if (doc.error) return <ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />;
+  if (!controlled && doc.error)
+    return <ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />;
+  if (controlled && saved == null && doc.error)
+    return <ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />;
   if (!draft)
     return (
       <div className="py-10 text-center">
@@ -61,20 +128,31 @@ export function RatingSources() {
 
   const set = (patch: Partial<RatingSettings>) => setDraft({ ...draft, ...patch });
   const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const next = await apiFetch<RatingSettings>("/discovery/ratings/settings", {
-        method: "PUT",
-        body: JSON.stringify(draft),
-      });
-      doc.setData(next);
-      toast.success(t("Rating sources saved"));
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSaving(false);
-    }
+    const write = async () => {
+      const body = draftRef.current;
+      if (!body) return;
+      setSaving(true);
+      setError(null);
+      try {
+        const next = await apiFetch<RatingSettings>("/discovery/ratings/settings", {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+        if (controlled) {
+          external.adopt(next);
+          onPersisted?.(next);
+        } else {
+          doc.setData(next);
+        }
+        toast.success(t("Rating sources saved"));
+      } catch (e) {
+        setError(e);
+      } finally {
+        setSaving(false);
+      }
+    };
+    if (persist) await persist(write);
+    else await write();
   };
 
   return (
@@ -194,7 +272,10 @@ export function RatingSources() {
         }
         main={
           <div className="space-y-4">
-            <BadgePreview enabled={Boolean(doc.data?.enabled)} dirty={dirty} />
+            <BadgePreview
+              enabled={Boolean((controlled ? saved : doc.data)?.enabled)}
+              dirty={dirty}
+            />
             <Section
               title={t("Plex rating fields")}
               description={
@@ -264,6 +345,7 @@ export function RatingSources() {
       <SaveBar
         dirty={dirty}
         saving={saving}
+        disabled={disabled}
         error={error}
         onSave={save}
         onDiscard={() => {

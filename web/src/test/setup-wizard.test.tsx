@@ -2,7 +2,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { createFakeServer } from "../mock/server";
-import Setup, { canAdvance, savedDraft } from "../pages/Setup";
+import { legacyConnectivityTarget } from "../App";
+import Setup, {
+  SETUP_STEP_KEY,
+  canAdvance,
+  mergeFrontendSelection,
+  savedDraft,
+} from "../pages/Setup";
 import type { DiskInfo, Indexer, UsenetProvider } from "../lib/types";
 import { api } from "../lib/api";
 import { calls, renderApp } from "./harness";
@@ -35,24 +41,28 @@ const indexer: Indexer = {
 
 describe("canAdvance gating", () => {
   const base = {
-    plexDone: false,
+    accountReady: false,
     providers: [provider],
     indexers: [indexer],
     providerTests: {},
     indexerTests: {},
     skipped: {},
   };
-  it("blocks the Plex step until sign-in completes", () => {
-    expect(canAdvance(0, base)).toBe(false);
-    expect(canAdvance(0, { ...base, plexDone: true })).toBe(true);
+  it("blocks the account step until sign-in or a local owner is ready", () => {
+    expect(canAdvance("account", base)).toBe(false);
+    expect(canAdvance("account", { ...base, accountReady: true })).toBe(true);
   });
   it("blocks providers until every enabled provider passes its test", () => {
-    expect(canAdvance(1, base)).toBe(false);
-    expect(canAdvance(1, { ...base, providerTests: { p1: { status: "fail" } } })).toBe(false);
-    expect(canAdvance(1, { ...base, providerTests: { p1: { status: "ok" } } })).toBe(true);
-    expect(canAdvance(1, { ...base, providers: [{ ...provider, enabled: false }] })).toBe(false);
+    expect(canAdvance("sources", base)).toBe(false);
+    expect(canAdvance("sources", { ...base, providerTests: { p1: { status: "fail" } } })).toBe(
+      false,
+    );
+    expect(canAdvance("sources", { ...base, providerTests: { p1: { status: "ok" } } })).toBe(true);
+    expect(canAdvance("sources", { ...base, providers: [{ ...provider, enabled: false }] })).toBe(
+      false,
+    );
     expect(
-      canAdvance(1, {
+      canAdvance("sources", {
         ...base,
         providers: [{ ...provider, host: "" }],
         providerTests: { p1: { status: "ok" } },
@@ -60,10 +70,10 @@ describe("canAdvance gating", () => {
     ).toBe(false);
   });
   it("blocks indexers until tested; the skip escape hatch always passes", () => {
-    expect(canAdvance(2, base)).toBe(false);
-    expect(canAdvance(2, { ...base, indexerTests: { i1: { status: "ok" } } })).toBe(true);
-    expect(canAdvance(0, { ...base, skipped: { 0: true } })).toBe(true);
-    expect(canAdvance(1, { ...base, skipped: { 1: true } })).toBe(true);
+    expect(canAdvance("indexers", base)).toBe(false);
+    expect(canAdvance("indexers", { ...base, indexerTests: { i1: { status: "ok" } } })).toBe(true);
+    expect(canAdvance("account", { ...base, skipped: { account: true } })).toBe(true);
+    expect(canAdvance("sources", { ...base, skipped: { sources: true } })).toBe(true);
   });
   it("accepts debrid instead of Usenet, but every enabled source must be tested", () => {
     const rd = {
@@ -75,25 +85,27 @@ describe("canAdvance gating", () => {
       enabled: true,
     };
     const none = { ...base, providers: [], debrid: [] };
-    expect(canAdvance(1, none)).toBe(false);
-    expect(canAdvance(1, { ...none, debrid: [rd] })).toBe(false);
-    expect(canAdvance(1, { ...none, debrid: [rd], debridTests: { d1: { status: "ok" } } })).toBe(
+    expect(canAdvance("sources", none)).toBe(false);
+    expect(canAdvance("sources", { ...none, debrid: [rd] })).toBe(false);
+    expect(
+      canAdvance("sources", { ...none, debrid: [rd], debridTests: { d1: { status: "ok" } } }),
+    ).toBe(true);
+    // With both kinds, an untested Usenet provider still blocks.
+    expect(
+      canAdvance("sources", { ...base, debrid: [rd], debridTests: { d1: { status: "ok" } } }),
+    ).toBe(false);
+    expect(canAdvance("sources", { ...none, debrid: [{ ...rd, enabled: false }] })).toBe(false);
+  });
+  it("requires a working TMDB key on the catalogue step, or the explicit skip", () => {
+    expect(canAdvance("catalog", { ...base, tmdbReady: false })).toBe(false);
+    expect(canAdvance("catalog", { ...base, tmdbReady: true })).toBe(true);
+    expect(canAdvance("catalog", { ...base, tmdbReady: false, skipped: { catalog: true } })).toBe(
       true,
     );
-    // With both kinds, an untested Usenet provider still blocks.
-    expect(canAdvance(1, { ...base, debrid: [rd], debridTests: { d1: { status: "ok" } } })).toBe(
-      false,
-    );
-    expect(canAdvance(1, { ...none, debrid: [{ ...rd, enabled: false }] })).toBe(false);
   });
-  it("requires a working TMDB key on the last step, or the explicit skip", () => {
-    expect(canAdvance(4, { ...base, tmdbReady: false })).toBe(false);
-    expect(canAdvance(4, { ...base, tmdbReady: true })).toBe(true);
-    expect(canAdvance(4, { ...base, tmdbReady: false, skipped: { 4: true } })).toBe(true);
-  });
-  it("cache and optional steps never block", () => {
-    expect(canAdvance(3, base)).toBe(true);
-    expect(canAdvance(4, base)).toBe(true);
+  it("app choice and cache never block", () => {
+    expect(canAdvance("apps", base)).toBe(true);
+    expect(canAdvance("cache", base)).toBe(true);
   });
 });
 
@@ -128,6 +140,7 @@ describe("savedDraft", () => {
 });
 
 function renderWizard(configure?: (fake: ReturnType<typeof createFakeServer>) => void) {
+  sessionStorage.removeItem(SETUP_STEP_KEY);
   const fake = createFakeServer();
   fake.state.config.setupComplete = false;
   fake.state.config.plex.ownerUsername = "alice";
@@ -629,8 +642,8 @@ describe("setup wizard", () => {
     });
     const create = vi.spyOn(api, "localSetup").mockResolvedValue({ token: "local-session" });
     await screen.findByRole("heading", { name: "Where will your household watch?" });
-    fireEvent.click(screen.getByLabelText("Plex"));
-    fireEvent.click(screen.getByLabelText("Jellyfin"));
+    fireEvent.click(screen.getByRole("switch", { name: "Plex enabled" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Jellyfin enabled" }));
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Create your owner account" });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
@@ -671,10 +684,104 @@ describe("setup wizard", () => {
     expect(screen.getByRole("button", { name: "Save and continue" })).toBeEnabled();
   });
 
-  it("an unfinished setup sends the owner to the wizard instead of Home", async () => {
-    renderApp("/", { bootstrap: { setupComplete: false } });
-    await selectPlex();
+  it("an unfinished fresh install enters the wizard and has no Finish setup nav", async () => {
+    sessionStorage.removeItem(SETUP_STEP_KEY);
+    renderApp("/", { bootstrap: { setupComplete: false, ownerConfigured: false } });
     expect(await screen.findByRole("heading", { name: "Set up Ether" })).toBeInTheDocument();
-    expect(screen.getAllByText("Finish setup").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("heading", { name: "Where will your household watch?" }),
+    ).toBeInTheDocument();
+    expect(screen.queryAllByRole("link", { name: "Finish setup" })).toHaveLength(0);
+    expect(screen.getAllByRole("link", { name: "Overview" }).length).toBeGreaterThan(0);
+  });
+
+  it("sends an existing owner to Overview while setup is still incomplete", async () => {
+    renderApp("/", {
+      bootstrap: { setupComplete: false, ownerConfigured: true, authenticated: true },
+    });
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Where will your household watch?" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("link", { name: "Finish setup" })).toHaveLength(0);
+  });
+
+  it("keeps app settings when the choice is saved, and keeps the choice when saving fails", async () => {
+    const fake = renderWizard((f) => {
+      f.state.config.frontends = {
+        plex: { enabled: true, settings: { serverName: "Keep me" } },
+        jellyfin: { enabled: false, settings: { serverName: "House" } },
+        dlna: { enabled: true, settings: { guest: true } },
+      };
+    });
+    expect(await screen.findByRole("switch", { name: "Jellyfin enabled" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("switch", { name: "Jellyfin enabled" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Plex enabled" }));
+    const put = vi.spyOn(api, "putConfig").mockRejectedValueOnce(new Error("disk full"));
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    expect(await screen.findByText(/disk full/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Where will your household watch?" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Jellyfin enabled" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Plex enabled" })).not.toBeChecked();
+    put.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await screen.findByRole("heading", { name: "Create your owner account" });
+    const body = calls(fake, "PUT", "/config").at(-1)?.body as {
+      frontends: Record<string, { enabled: boolean; settings?: Record<string, unknown> }>;
+    };
+    expect(body.frontends.plex).toEqual({ enabled: false, settings: { serverName: "Keep me" } });
+    expect(body.frontends.jellyfin).toEqual({ enabled: true, settings: { serverName: "House" } });
+    expect(body.frontends.dlna).toEqual({ enabled: true, settings: { guest: true } });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("switch", { name: "Jellyfin enabled" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Plex enabled" })).not.toBeChecked();
+  });
+
+  it("resumes the same wizard step after the owner account is created", async () => {
+    renderWizard((f) => {
+      sessionStorage.setItem(SETUP_STEP_KEY, "1");
+      f.state.config.plex.token = "";
+      f.state.config.plex.claimed = false;
+      f.state.config.frontends = { jellyfin: { enabled: true, settings: { serverName: "House" } } };
+      f.state.boot.ownerConfigured = true;
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Create your owner account" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Set up Ether" })).toBeInTheDocument();
+    expect(screen.queryAllByRole("link", { name: "Finish setup" })).toHaveLength(0);
+  });
+});
+
+describe("mergeFrontendSelection", () => {
+  it("changes enabled flags and keeps settings and unknown front ends", () => {
+    const cfg = createFakeServer().state.config;
+    const next = mergeFrontendSelection(
+      {
+        ...cfg,
+        frontends: {
+          plex: { enabled: true, settings: { serverName: "Keep me" } },
+          m3u: { enabled: true, settings: { path: "/tv" } },
+        },
+      },
+      ["plex", "jellyfin"],
+      { plex: false, jellyfin: true },
+    );
+    expect(next.frontends).toEqual({
+      plex: { enabled: false, settings: { serverName: "Keep me" } },
+      jellyfin: { enabled: true },
+      m3u: { enabled: true, settings: { path: "/tv" } },
+    });
+  });
+});
+
+describe("legacy connectivity routes", () => {
+  it("lands remote and secure on the Plex page sections", () => {
+    expect(legacyConnectivityTarget("remote")).toBe("/apps/plex?section=remote");
+    expect(legacyConnectivityTarget("secure")).toBe("/apps/plex?section=secure");
+    expect(legacyConnectivityTarget("account")).toBe("/apps/plex");
+    expect(legacyConnectivityTarget(undefined)).toBe("/apps/plex");
   });
 });

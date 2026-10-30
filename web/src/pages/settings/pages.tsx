@@ -1,10 +1,17 @@
-import { SubtabNav, toast } from "@braedonsaunders/appkit-ui";
-import { useCallback, useMemo } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import {
+  Button,
+  SettingsSection,
+  SubtabNav,
+  buttonVariants,
+  toast,
+} from "@braedonsaunders/appkit-ui";
+import { useCallback, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { ConfigSection } from "../../components/ConfigSection";
 import { ErrorPanel } from "../../components/feedback";
 import { DomainPage, useRouteTab } from "../../components/layout";
+import { SettingsRow } from "../../components/SettingsRow";
 import { RemoteDiagnostics } from "../../components/RemoteDiagnostics";
 import { localized, t } from "../../i18n";
 import { api } from "../../lib/api";
@@ -13,7 +20,7 @@ import { useAsync } from "../../lib/hooks";
 import Logs from "../Logs";
 import { BackupsAndImport } from "./Backups";
 import { ClusterOverview, useClustered } from "./Cluster";
-import { ConnectedServices } from "./ConnectedServices";
+import { ConnectedServices, integrationTabs, type ServiceTab } from "./ConnectedServices";
 import { inferField, type FieldGroup } from "./SchemaForm";
 import * as S from "./schema";
 import { PlexStatus, UpdatesStatus } from "./sections";
@@ -32,11 +39,14 @@ const KNOWN_KEYS = new Set([
   "indexerSites",
   "debrid",
   "cache",
+  "sharedCache", // Cache owns shared storage settings.
+  "availability", // Sources owns availability synchronization.
   "catalog",
   "resolver",
   "quality",
   "transcode",
   "trakt",
+  "simkl",
   "openSubtitles",
   "llm",
   "updates",
@@ -118,6 +128,7 @@ export function GeneralPage() {
         onFieldErrors={toServer}
         onSaved={() => void reloadBoot()}
       />
+      {tab === "server" ? <RunSetupWizard /> : null}
       {GENERAL_SECTIONS.map((x) => (
         <GeneralSection key={x.key} section={x} hidden={tab !== x.key} />
       ))}
@@ -145,6 +156,52 @@ export function GeneralPage() {
         );
       })}
     </DomainPage>
+  );
+}
+
+function RunSetupWizard() {
+  const navigate = useNavigate();
+  const { boot, reloadBoot } = useApp();
+  const [busy, setBusy] = useState(false);
+  const reopen = async () => {
+    setBusy(true);
+    try {
+      // Completed setup stays complete. Reopen does not wipe configuration;
+      // clearing setupComplete would reopen tokenless LAN access.
+      await api.setupReopen();
+      await reloadBoot();
+      navigate("/setup");
+    } catch (e) {
+      toast.error(t("Couldn't reopen setup"), { description: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <SettingsSection
+      title={t("Setup")}
+      description={t("Open the setup wizard. Saved configuration stays in place.")}
+    >
+      <SettingsRow
+        title={t("Setup wizard")}
+        description={
+          boot.setupComplete
+            ? t("Walk through setup again without erasing this server's settings.")
+            : t("Finish choosing apps and configuring your server.")
+        }
+        control={
+          boot.setupComplete ? (
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => void reopen()}>
+              {t("Run setup wizard")}
+            </Button>
+          ) : (
+            <Link to="/setup" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              {t("Run setup wizard")}
+            </Link>
+          )
+        }
+      />
+    </SettingsSection>
   );
 }
 
@@ -230,29 +287,21 @@ export function RemoteAccessPage() {
   );
 }
 
-const SERVICE_TABS = localized(
-  () =>
-    [
-      { key: "overview", label: t("Overview") },
-      { key: "trakt", label: "Trakt" },
-      { key: "llm", label: t("Language model") },
-      { key: "opensubtitles", label: "OpenSubtitles" },
-    ] as const,
-);
-
 export function ServicesPage() {
-  const tab = useRouteTab(SERVICE_TABS);
+  const [enabled, setEnabled] = useState<Partial<Record<ServiceTab, boolean>>>({});
+  const tabs = integrationTabs(enabled);
+  const tab = useRouteTab(tabs);
   return (
     <DomainPage
       title={t("Integrations")}
       description={t(
-        "Every integration Ether uses and how it's doing. Trakt, a language model and OpenSubtitles are set up here.",
+        "Every integration Ether uses and how it's doing. Turn one on and its settings open on a tab here.",
       )}
       base="/services"
-      tabs={SERVICE_TABS}
+      tabs={tabs}
       active={tab}
     >
-      <ConnectedServices tab={tab} />
+      <ConnectedServices tab={tab} onEnabled={setEnabled} />
     </DomainPage>
   );
 }
