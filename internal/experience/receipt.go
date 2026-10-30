@@ -3,10 +3,7 @@ package experience
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +11,8 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/handles"
+	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -36,6 +35,10 @@ func init() {
 	store.Register("experience_receipts", 2, `ALTER TABLE experience_receipts ADD COLUMN impression TEXT NOT NULL DEFAULT '';`)
 }
 
+func init() {
+	store.Register("experience_receipts", 3, `ALTER TABLE experience_receipts ADD COLUMN generation INTEGER NOT NULL DEFAULT 0;`)
+}
+
 // ReceiptSubject is server-owned neutral information, never supplied by a client report.
 type ReceiptSubject struct {
 	Kind, ID   string
@@ -53,9 +56,23 @@ type ReceiptOptions struct {
 	Now           func() time.Time
 	TTL           time.Duration
 	MaxPerDevice  int
+	// MirrorHeaders mirrors digests into capability headers inside the legacy
+	// transaction. Off leaves experience_receipts as the only store. Headers
+	// are bookkeeping: report, revocation, and quota never consult them.
+	MirrorHeaders bool
+	// Generation, when set, is stored on the authority row and rechecked on
+	// report. Nil stores 0 and does not recheck, which is the mixed-version
+	// behavior for callers that have no generation.
+	Generation func(context.Context, *core.User, core.Device, core.Protocol) (int64, error)
+	// Test seams. Nil uses capability.BindHeadersInTx and DropHeadersInTx.
+	bindHeaders func(context.Context, *sql.Tx, []capability.Header) error
+	dropHeaders func(context.Context, *sql.Tx, capability.HeaderScope, []string) error
 }
 
-type Receipts struct{ opts ReceiptOptions }
+type Receipts struct {
+	opts  ReceiptOptions
+	codec *handles.Codec
+}
 
 func NewReceipts(o ReceiptOptions) (*Receipts, error) {
 	if o.DB == nil || o.Active == nil || o.Allowed == nil || o.AllowedAction == nil || o.Record == nil || o.TTL < time.Second || o.MaxPerDevice <= 0 {
@@ -64,7 +81,13 @@ func NewReceipts(o ReceiptOptions) (*Receipts, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Receipts{opts: o}, nil
+	// HashRaw preserves the existing receipt digest: sha256 of the 32 token
+	// bytes, not the wire encoding. The wire form stays unprefixed base64.
+	codec, err := handles.NewCodec(rand.Reader, "", handles.HashRaw)
+	if err != nil {
+		return nil, err
+	}
+	return &Receipts{opts: o, codec: codec}, nil
 }
 
 var ErrReceipt = errors.New("experience: invalid interaction receipt")
@@ -105,16 +128,25 @@ func (s *Receipts) Issue(ctx context.Context, viewer *core.User, device core.Dev
 	if err != nil || active == nil || active.ID != viewer.ID || !s.opts.Allowed(ctx, active, device, protocol, subject) {
 		return "", ErrReceipt
 	}
+	var generation int64
+	if s.opts.Generation != nil {
+		generation, err = s.opts.Generation(ctx, active, device, protocol)
+		if err != nil || generation < 0 {
+			return "", ErrReceipt
+		}
+	}
 	tx, err := s.opts.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
 	}
 	defer tx.Rollback()
+	// This is the only lock on the issue path. Header bind and drop run after
+	// it, on this same transaction, and do not take a lock of their own.
 	if err = store.LockKey(ctx, store.DialectOf(s.opts.DB), tx, fmt.Sprintf("experience:receipts:%d:%s", viewer.ID, device.ID)); err != nil {
 		return "", err
 	}
 	now := s.opts.Now().Unix()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM experience_receipts WHERE expires<=?`, now); err != nil {
+	if err = s.sweepExpired(ctx, tx, viewer.ID, device.ID, now); err != nil {
 		return "", err
 	}
 	var count int
@@ -125,13 +157,12 @@ func (s *Receipts) Issue(ctx context.Context, viewer *core.User, device core.Dev
 		return "", errors.New("experience: receipt limit reached")
 	}
 	for i := 0; i < 3; i++ {
-		raw := make([]byte, 32)
-		if _, err = rand.Read(raw); err != nil {
+		token, hash, err := s.codec.Issue()
+		if err != nil {
 			return "", err
 		}
-		handle := base64.RawURLEncoding.EncodeToString(raw)
-		sum := sha256.Sum256(raw)
-		res, e := tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, hex.EncodeToString(sum[:]), viewer.ID, device.ID, string(protocol), s.opts.Now().Add(s.opts.TTL).Unix(), subject.Kind, subject.ID, string(subject.Purpose), subject.Rank, snapshot)
+		expires := s.opts.Now().Add(s.opts.TTL).Unix()
+		res, e := tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression,generation) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, hash, viewer.ID, device.ID, string(protocol), expires, subject.Kind, subject.ID, string(subject.Purpose), subject.Rank, snapshot, generation)
 		if e != nil {
 			return "", e
 		}
@@ -142,10 +173,14 @@ func (s *Receipts) Issue(ctx context.Context, viewer *core.User, device core.Dev
 		if n == 0 {
 			continue
 		}
+		// A bind failure aborts the transaction. Do not retry inside it.
+		if err = s.mirrorIssued(ctx, tx, viewer.ID, device.ID, string(protocol), hash, expires); err != nil {
+			return "", err
+		}
 		if err = tx.Commit(); err != nil {
 			return "", err
 		}
-		return handle, nil
+		return token, nil
 	}
 	return "", errors.New("experience: receipt collision")
 }
@@ -161,16 +196,14 @@ func (s *Receipts) Report(ctx context.Context, interaction frontend.RowInteracti
 	default:
 		return ErrReceipt
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(interaction.Handle)
-	if err != nil || len(raw) != 32 || base64.RawURLEncoding.EncodeToString(raw) != interaction.Handle {
+	hash, ok := s.codec.Hash(interaction.Handle)
+	if !ok {
 		return ErrReceipt
 	}
-	sum := sha256.Sum256(raw)
-	hash := hex.EncodeToString(sum[:])
-	var uid, expires int64
+	var uid, expires, generation int64
 	var device, protocol, kind, id, purpose, snapshot string
 	var rank int
-	err = s.opts.DB.QueryRowContext(ctx, `SELECT viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression FROM experience_receipts WHERE hash=?`, hash).Scan(&uid, &device, &protocol, &expires, &kind, &id, &purpose, &rank, &snapshot)
+	err := s.opts.DB.QueryRowContext(ctx, `SELECT viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression,generation FROM experience_receipts WHERE hash=?`, hash).Scan(&uid, &device, &protocol, &expires, &kind, &id, &purpose, &rank, &snapshot, &generation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrReceipt
 	}
@@ -198,8 +231,16 @@ func (s *Receipts) Report(ctx context.Context, interaction frontend.RowInteracti
 	if !s.opts.AllowedAction(ctx, viewer, interaction.Device, interaction.Protocol, subject, interaction.Kind) {
 		return ErrReceipt
 	}
+	if s.opts.Generation != nil {
+		current, gerr := s.opts.Generation(ctx, viewer, interaction.Device, interaction.Protocol)
+		if gerr != nil || current < 0 || current != generation {
+			return ErrReceipt
+		}
+	}
 	// Policy and membership callbacks may use this same database; do not hold
-	// a connection/transaction while invoking them.
+	// a connection/transaction while invoking them. The legacy row is the only
+	// authority. Capability headers are not read here, so a header without a
+	// legacy row cannot authorize and a legacy row does not fall back to one.
 	tx, err := s.opts.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -209,7 +250,7 @@ func (s *Receipts) Report(ctx context.Context, interaction frontend.RowInteracti
 		return err
 	}
 	var exists int
-	err = tx.QueryRowContext(ctx, `SELECT 1 FROM experience_receipts WHERE hash=? AND viewer_id=? AND device_id=? AND protocol=? AND expires>?`, hash, uid, device, protocol, s.opts.Now().Unix()).Scan(&exists)
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM experience_receipts WHERE hash=? AND viewer_id=? AND device_id=? AND protocol=? AND expires>? AND generation=?`, hash, uid, device, protocol, s.opts.Now().Unix(), generation).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrReceipt
 	}
