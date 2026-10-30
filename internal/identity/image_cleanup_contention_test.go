@@ -156,12 +156,12 @@ func TestImageCleanupSkewedShardScanPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO frontend_image_grants(hash,source_hash,viewer_id,surface,item,device,image_kind,image_path,image_tag,expires,channel,image_subject)
-		SELECT lpad(to_hex(g), 64, '0'), ?, CASE WHEN g > ? THEN 1 ELSE 2 END, 'jellyfin', 1, '{"ID":"tv"}', 'poster', 'opaque-poster', 'v1', CASE WHEN g > ? THEN ? ELSE ? - g END, '', 'tmdb:1'
+		SELECT lpad(to_hex(g), 64, '0'), ?, CASE WHEN g > ? THEN 1 ELSE 2 END, 'jellyfin', 1, '{"ID":"tv"}', 'poster', 'opaque-poster', 'v1', CASE WHEN g > CAST(? AS BIGINT) THEN CAST(? AS BIGINT) ELSE CAST(? AS BIGINT) - g END, '', 'tmdb:1'
 		FROM generate_series(1, ?) AS g`, source, otherRows, otherRows, cutoff-1, cutoff-100_000, total); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires)
-		SELECT ?, lpad(to_hex(g), 64, '0'), CASE WHEN g > ? THEN 1 ELSE 2 END, CASE WHEN g > ? THEN 1 ELSE 2 END, 'jellyfin', 'tv', CASE WHEN g > ? THEN ? ELSE ? - g END
+		SELECT ?, lpad(to_hex(g), 64, '0'), CASE WHEN g > ? THEN 1 ELSE 2 END, CASE WHEN g > ? THEN 1 ELSE 2 END, 'jellyfin', 'tv', CASE WHEN g > CAST(? AS BIGINT) THEN CAST(? AS BIGINT) ELSE CAST(? AS BIGINT) - g END
 		FROM generate_series(1, ?) AS g`, imageCapabilityNamespace, otherRows, otherRows, otherRows, cutoff-1, cutoff-100_000, total); err != nil {
 		t.Fatal(err)
 	}
