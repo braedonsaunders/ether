@@ -403,3 +403,49 @@ func TestImageGrantDefaultIssuesAboveFormerViewerCap(t *testing.T) {
 		t.Fatalf("headers=%d err=%v", count, err)
 	}
 }
+
+func TestImageGrantShardMaintenanceIsolation(t *testing.T) {
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0),(2,124,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	service, credential := imageAdapterService(t, db, "jellyfin", nil)
+	now := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	source := sha256.Sum256([]byte(credential))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	for _, row := range []struct {
+		viewer  int64
+		digest  string
+		expires int64
+	}{{1, fmt.Sprintf("%064x", 1), now.Add(-time.Minute).UnixMilli()}, {2, fmt.Sprintf("%064x", 2), now.Add(-time.Minute).UnixMilli()}, {1, fmt.Sprintf("%064x", 3), now.Add(time.Minute).UnixMilli()}} {
+		_, err = tx.ExecContext(ctx, `INSERT INTO frontend_image_grants(hash,source_hash,viewer_id,surface,item,device,image_kind,image_path,image_tag,expires,channel,image_subject) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, row.digest, hex.EncodeToString(source[:]), row.viewer, "jellyfin", 1, `{"ID":"tv"}`, "poster", "opaque", "v1", row.expires, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: imageCapabilityNamespace, ViewerID: row.viewer, Surface: "jellyfin", DeviceID: "tv"}, Digest: row.digest, ExpiresMillis: row.expires}
+		if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{h}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	n, err := PruneImageGrantShard(ctx, db, now, 1)
+	if err != nil || n != 2 {
+		t.Fatalf("removed=%d err=%v", n, err)
+	}
+	var count int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_image_grants`).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("legacy=%d err=%v", count, err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, imageCapabilityNamespace).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("headers=%d err=%v", count, err)
+	}
+	_ = service
+}

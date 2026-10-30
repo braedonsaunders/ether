@@ -286,3 +286,44 @@ func PruneImageGrants(ctx context.Context, db *sql.DB, now time.Time) (int64, er
 	}
 	return removed, nil
 }
+
+// PruneImageGrantShard performs one bounded maintenance transaction for one
+// shard. Scheduling and rotation across shards belong to its caller. It takes
+// only that shard's issue/revoke lock, and rechecks expiry and shard in each
+// outer delete. The caller supplies the same trusted clock as image issuance.
+// Old writers do not take this lock; row predicates protect renewed rows but
+// do not impose a mixed-version capacity bound.
+func PruneImageGrantShard(ctx context.Context, db *sql.DB, now time.Time, shard int64) (int64, error) {
+	if db == nil || now.IsZero() || shard < 0 || shard >= capability.HeaderShardCount {
+		return 0, errors.New("identity: invalid image maintenance scope")
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err = store.LockKey(ctx, store.DialectOf(db), tx, fmt.Sprintf("capability:image:%d", shard)); err != nil {
+		return 0, err
+	}
+	ms := now.UnixMilli()
+	res, err := tx.ExecContext(ctx, `DELETE FROM frontend_image_grants WHERE expires<=? AND (viewer_id % ?)=? AND hash IN (SELECT hash FROM frontend_image_grants WHERE expires<=? AND (viewer_id % ?)=? ORDER BY expires,hash LIMIT ?)`, ms, capability.HeaderShardCount, shard, ms, capability.HeaderShardCount, shard, capability.HeaderBatchMax)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	res, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, imageCapabilityNamespace, shard, ms, imageCapabilityNamespace, shard, ms, capability.HeaderBatchMax)
+	if err != nil {
+		return 0, err
+	}
+	m, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n + m, nil
+}

@@ -24,6 +24,7 @@ func init() {
 	store.Register("frontend_image_grants", 2, `ALTER TABLE frontend_image_grants ADD COLUMN channel TEXT NOT NULL DEFAULT '';`)
 	store.Register("frontend_image_grants", 3, `ALTER TABLE frontend_image_grants ADD COLUMN image_subject TEXT NOT NULL DEFAULT '';`)
 	store.Register("frontend_image_grants", 4, `CREATE INDEX frontend_image_grants_scope_expiry ON frontend_image_grants(viewer_id,surface,expires,hash);`)
+	store.Register("frontend_image_grants", 5, `CREATE INDEX frontend_image_grants_expiry ON frontend_image_grants(expires,hash);`)
 }
 
 type ImageSource interface {
