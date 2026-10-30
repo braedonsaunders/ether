@@ -138,6 +138,13 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 		return 0, err
 	}
 	shard := scope.ViewerID % ticketShards
+	if mirror {
+		// Legacy remains authoritative. Bound expired-only cleanup; never
+		// remove an unexpired ticket. This shares the issue transaction.
+		if _, err = tx.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE hash IN (SELECT hash FROM frontend_tickets WHERE expires<=? ORDER BY expires,hash LIMIT ?)`, now, ticketCleanupMax); err != nil {
+			return 0, err
+		}
+	}
 	// Bounded cleanup of this namespace/shard only. Cascades remove typed rows.
 	if _, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, ticketNamespace, ticketNamespace, shard, now, ticketCleanupMax); err != nil {
 		return 0, err

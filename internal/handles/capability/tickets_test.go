@@ -570,3 +570,55 @@ func TestMirroredConsumesActualLegacyIssue(t *testing.T) {
 		t.Fatalf("legacy replay: %v", err)
 	}
 }
+
+// The legacy DELETE RETURNING and bounded expiry cleanup may race; neither
+// may remove an unexpired ticket before its authorized old consumer uses it.
+func TestMirroredCleanupConcurrentOldConsumer(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	grants, err := identity.NewGrants(db, activeFixture{}, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := identity.NewTicketService(db, "silo", grants, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This helper represents old binary SQL directly because the current service
+	// may be upgraded; it keeps the old DELETE as the authority under test.
+	raw := make([]byte, 32)
+	raw[0] = 42
+	token := base64.RawURLEncoding.EncodeToString(raw)
+	sum := sha256.Sum256([]byte(token))
+	digest := hex.EncodeToString(sum[:])
+	if _, err = db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, digest, "silo", "events-ws", 1, scope.SourceHash, scope.DeviceJSON, time.Now().Add(time.Minute).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	_ = old
+	start := make(chan struct{})
+	out := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		var deleted string
+		err := db.QueryRowContext(ctx, `DELETE FROM frontend_tickets WHERE hash=? AND surface=? AND purpose=? AND expires>? AND EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=frontend_tickets.source_hash AND g.viewer_id=frontend_tickets.viewer_id AND g.surface=frontend_tickets.surface AND g.revoked=0 AND g.expires>? AND u.active=1) RETURNING hash`, digest, "silo", "events-ws", time.Now().UnixMilli(), time.Now().UnixMilli()).Scan(&deleted)
+		out <- err
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err := tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{entry(999)})
+		out <- err
+	}()
+	close(start)
+	wg.Wait()
+	close(out)
+	for err := range out {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
