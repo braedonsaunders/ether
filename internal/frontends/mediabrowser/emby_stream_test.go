@@ -50,3 +50,32 @@ func TestEmbyStreamUsesOptionalProbeFacts(t *testing.T) {
 		t.Fatal("audio cannot be interlaced", audio)
 	}
 }
+
+func TestEmbyExtendedVideoTypeUsesPositiveProbeEvidence(t *testing.T) {
+	yes, no := true, false
+	for _, tc := range []struct {
+		name   string
+		stream frontend.StreamInfo
+		want   string
+	}{
+		{"Dolby Vision", frontend.StreamInfo{Type: "video", DolbyVisionConfigurationPresent: &yes, HDR10Plus: &yes, ColorTransfer: "arib-std-b67"}, "DolbyVision"},
+		{"HDR10+", frontend.StreamInfo{Type: "video", HDR10Plus: &yes}, "Hdr10Plus"},
+		{"HLG", frontend.StreamInfo{Type: "video", ColorTransfer: "arib-std-b67"}, "HyperLogGamma"},
+		{"PQ alone", frontend.StreamInfo{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &no, DolbyVisionConfigurationPresent: &no}, ""},
+		{"unknown", frontend.StreamInfo{Type: "video"}, ""},
+		{"audio", frontend.StreamInfo{Type: "audio", HDR10Plus: &yes}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := (&instance{protocol: "emby"}).mediaStreams([]frontend.StreamInfo{tc.stream})[0].(map[string]any)
+			if tc.want == "" {
+				if _, ok := got["ExtendedVideoType"]; ok {
+					t.Fatalf("unexpected type: %#v", got)
+				}
+				return
+			}
+			if got["ExtendedVideoType"] != tc.want {
+				t.Fatalf("got %#v, want %s", got["ExtendedVideoType"], tc.want)
+			}
+		})
+	}
+}
