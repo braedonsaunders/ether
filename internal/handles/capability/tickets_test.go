@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/handles/capability"
 	_ "github.com/braedonsaunders/ether/internal/identity"
@@ -160,5 +161,52 @@ func TestTicketRejectsForeignDeviceJSON(t *testing.T) {
 		if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1)}); !errors.Is(err, core.ErrUnauthorized) {
 			t.Fatalf("device JSON %q: %v", bad, err)
 		}
+	}
+}
+
+// Deleting the source cascades only the typed child. The header stays charged
+// until bounded expiry cleanup; a live header must not be evicted.
+func TestTicketDeletedGrantOrphanQuotaRecovery(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	db, tickets, scope := fixture(t)
+	other := strings.Repeat("b", 64)
+	if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,1,'silo','tv','','','',0,0,9999999999999)`, other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(1)}); err != nil {
+		t.Fatal(err)
+	}
+	scope.SourceHash = other
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(2)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM identity_grants WHERE hash=?`, strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.Consume(ctx, "silo", "events-ws", entry(1).Digest); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("orphan consume: %v", err)
+	}
+	var headers, children int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket'`).Scan(&headers); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_tickets WHERE namespace='ticket'`).Scan(&children); err != nil {
+		t.Fatal(err)
+	}
+	if headers != 2 || children != 1 {
+		t.Fatalf("source cascade headers=%d children=%d", headers, children)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE capability_headers SET expires=0 WHERE namespace='ticket' AND digest=?`, entry(1).Digest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{entry(3)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, entry(1).Digest).Scan(&headers); err != nil || headers != 0 {
+		t.Fatalf("expired orphan retained=%d err=%v", headers, err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, entry(2).Digest).Scan(&headers); err != nil || headers != 1 {
+		t.Fatalf("live header count=%d err=%v", headers, err)
 	}
 }

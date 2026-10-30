@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/braedonsaunders/ether/internal/auth"
 	_ "github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/store"
 )
