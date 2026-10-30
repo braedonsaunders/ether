@@ -23,12 +23,40 @@ func TestInfuseRecordedGrouping404IsBlocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
+	if err := p.LoadCapturedBindings("../../testdata/conform/jellyfin", "infuse-jellyfin"); err != nil {
+		t.Fatal(err)
+	}
+	groupingHits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Users/Me":
+			if r.Header.Get("X-Emby-Token") != "grant" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Id":"viewer"}`))
+		case "/Items":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Items":[]}`))
+		case "/UserViews/GroupingOptions":
+			groupingHits++
+			if r.URL.Query().Get("userId") != "viewer" || !strings.Contains(r.Header.Get("Authorization"), `Token="grant"`) {
+				t.Error("grouping request lost authenticated owner")
+			}
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
 	defer server.Close()
-	vars := map[string]string{"id_1": "viewer", "device": "Apple TV", "device_id": "device", "access_token": "grant"}
+	vars := map[string]string{"user_id": "viewer", "device_id": "device", "access_token": "grant"}
 	report, err := compare(p, vars, "../../testdata/conform/jellyfin", server.URL, "grant", "infuse-jellyfin", "/UserViews/GroupingOptions", time.Second, 1)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if groupingHits != 1 {
+		t.Fatalf("grouping request did not reach target exactly once: %d", groupingHits)
 	}
 	for _, d := range report.Differences {
 		if d.Kind == pmsconform.KindStatus && d.Blocking && d.Reference == 200 && d.Target == 404 {
