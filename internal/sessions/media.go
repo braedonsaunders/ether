@@ -402,12 +402,31 @@ func (b *Broker) serveMaster(w http.ResponseWriter, r *http.Request, s *brokerSe
 		http.Error(w, "no playable rendition", http.StatusServiceUnavailable)
 		return
 	}
+	master := body.String()
+	if s.public.Protocol == "emby" {
+		independent, ok := hs.(core.HLSIndependentSegments)
+		version := 7 // conservative if the selected media format is unavailable
+		if binding, present := b.bindings.Get(s.public.ID); present && binding.Decision.Container == transcode.ContainerMPEGTS {
+			version = 3
+		}
+		master = embyMasterMetadata(master, version, ok && independent.IndependentSegments())
+	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
+	w.Header().Set("Content-Length", strconv.Itoa(len(master)))
 	if r.Method != http.MethodHead {
-		_, _ = io.WriteString(w, body.String())
+		_, _ = io.WriteString(w, master)
 	}
 }
 
 var _ frontend.Sessions = (*Broker)(nil)
+
+// embyMasterMetadata adds the compatibility version supported by the emitted
+// master tags. Independence is advertised only from a session-wide guarantee.
+func embyMasterMetadata(master string, version int, independent bool) string {
+	metadata := fmt.Sprintf("#EXTM3U\n#EXT-X-VERSION:%d\n", version)
+	if independent {
+		metadata += "#EXT-X-INDEPENDENT-SEGMENTS\n"
+	}
+	return metadata + strings.TrimPrefix(master, "#EXTM3U\n")
+}
