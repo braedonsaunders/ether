@@ -286,6 +286,27 @@ func TestStremioIsRegisteredForOwnerControls(t *testing.T) {
 	}
 }
 
+func TestWebDAVIsRegisteredAndRequiresSurfaceGrant(t *testing.T) {
+	a := setupTestApp(t, true)
+	found := false
+	for _, descriptor := range a.frontends.registry.Descriptors() {
+		if descriptor.ID == "webdav" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("WebDAV missing from registry")
+	}
+	if err := a.frontends.control.listeners.start(context.Background(), "webdav"); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, httptest.NewRequest("PROPFIND", "/webdav/", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("missing grant: %d", w.Code)
+	}
+}
+
 func TestFrontendStatusCountsStreamsByProtocol(t *testing.T) {
 	counts := countFrontendStreams([]*core.PlaySession{{Client: core.ClientCaps{Protocol: "plex"}}, {Client: core.ClientCaps{}}, {Client: core.ClientCaps{Protocol: "stremio"}}, nil})
 	if counts["plex"] != 2 || counts["stremio"] != 1 || counts["jellyfin"] != 0 {

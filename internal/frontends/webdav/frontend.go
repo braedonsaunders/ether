@@ -23,13 +23,30 @@ func (Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instance,
 	if host.Identity == nil || host.Experience == nil || host.Sessions == nil {
 		return nil, errors.New("webdav requires identity, experience and sessions")
 	}
-	i := &instance{host: host, router: &route.Router{}}
-	for _, method := range []string{"OPTIONS", "PROPFIND", "GET", "HEAD"} {
-		if err := i.router.Handle(method, "/{path...}", http.HandlerFunc(i.serve)); err != nil {
-			return nil, err
-		}
+	i := &instance{host: host}
+	if err := i.registerRoutes(); err != nil {
+		return nil, err
 	}
 	return i, nil
+}
+
+// RegisteredRoutes enumerates the same routes mounted at runtime.
+func RegisteredRoutes() ([]route.Route, error) {
+	i := &instance{}
+	if err := i.registerRoutes(); err != nil {
+		return nil, err
+	}
+	return i.router.Routes(), nil
+}
+
+func (i *instance) registerRoutes() error {
+	i.router = &route.Router{}
+	for _, method := range []string{"OPTIONS", "PROPFIND", "GET", "HEAD"} {
+		if err := i.router.Handle(method, "/{path...}", http.HandlerFunc(i.serve)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type instance struct {

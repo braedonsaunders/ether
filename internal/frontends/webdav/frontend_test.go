@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 
@@ -314,5 +315,20 @@ func TestWebDAVGETDelegatesAuthenticatedRanges(t *testing.T) {
 	}
 	if ranges.calls != 1 {
 		t.Fatalf("range calls: %d", ranges.calls)
+	}
+}
+
+func TestRegisteredRoutesMatchMountedRouter(t *testing.T) {
+	got, err := RegisteredRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{}, Experience: frontendtest.Experience{}, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := inst.(frontend.RouteSource).Routes()
+	if !slices.Equal(got, routes) || len(routes) != 4 {
+		t.Fatalf("inventory=%v routes=%v", got, routes)
 	}
 }
