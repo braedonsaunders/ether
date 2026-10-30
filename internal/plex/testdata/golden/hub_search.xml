@@ -4,7 +4,7 @@
 <Hub title="Episodes" type="episode" hubIdentifier="episode" context="" size="0" more="0" style="shelf" />
 <Hub title="Collections" type="collection" hubIdentifier="collection" context="" size="0" more="0" style="shelf" />
 <Hub title="Shows" type="show" hubIdentifier="show" context="" size="1" more="0" style="shelf">
-<Directory ratingKey="2000000000001396" key="/library/metadata/2000000000001396/children" guid="com.plexapp.agents.themoviedb://1396?lang=en" slug="boundary-bay" type="show" title="Boundary Bay" librarySectionTitle="TV Shows" librarySectionID="2" librarySectionKey="/library/sections/2" summary="A chemistry teacher..." index="1" year="2008" thumb="/library/metadata/2000000000001396/thumb/1790899200" art="/library/metadata/2000000000001396/art/1790899200" leafCount="2" viewedLeafCount="0" childCount="1" addedAt="1790899200" updatedAt="1790899200" score="1.00000">
+<Directory ratingKey="2000000000001396" key="/library/metadata/2000000000001396/children" guid="com.plexapp.agents.themoviedb://1396?lang=en" slug="boundary-bay" type="show" title="Boundary Bay" librarySectionTitle="TV Shows" librarySectionID="2" librarySectionKey="/library/sections/2" summary="A chemistry teacher..." index="1" year="2008" thumb="/library/metadata/2000000000001396/thumb/1790899200" art="/library/metadata/2000000000001396/art/1790899200" leafCount="2" viewedLeafCount="0" childCount="1" addedAt="1201392000" updatedAt="1790899200" score="1.00000">
 <Image alt="Boundary Bay" type="coverPoster" url="/library/metadata/2000000000001396/thumb/1790899200" />
 <Image alt="Boundary Bay" type="background" url="/library/metadata/2000000000001396/art/1790899200" />
 <UltraBlurColors topLeft="530c3e" topRight="b9005d" bottomRight="a14c0d" bottomLeft="005468" />
