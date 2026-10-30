@@ -33,10 +33,11 @@ import (
 )
 
 type migration struct {
-	component string
-	version   int
-	sql       string
-	overrides map[Dialect]string
+	component   string
+	version     int
+	sql         string
+	overrides   map[Dialect]string
+	sqliteApply func(context.Context, *sql.Tx) error
 }
 
 var (
@@ -93,6 +94,23 @@ func RegisterDialect(component string, version int, d Dialect, sql string) {
 		}
 	}
 	migrations = append(migrations, migration{component: component, version: version, overrides: map[Dialect]string{d: sql}})
+}
+
+// RegisterSQLiteApply runs apply instead of the registered SQLite SQL for one
+// version. PostgreSQL still uses that SQL or its RegisterDialect override.
+// apply runs inside the migration transaction, and an error rolls that
+// version back. Use it when the SQLite statement must branch on tables
+// already present. It does not disable foreign keys.
+func RegisterSQLiteApply(component string, version int, apply func(context.Context, *sql.Tx) error) {
+	regMu.Lock()
+	defer regMu.Unlock()
+	for i := range migrations {
+		if migrations[i].component == component && migrations[i].version == version {
+			migrations[i].sqliteApply = apply
+			return
+		}
+	}
+	migrations = append(migrations, migration{component: component, version: version, sqliteApply: apply})
 }
 
 // sqlFor returns the migration text to run on dialect d.
@@ -400,7 +418,12 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, m.sqlFor(SQLite)); err != nil {
+		if m.sqliteApply != nil {
+			if err := m.sqliteApply(ctx, tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %s/%d: %w", m.component, m.version, err)
+			}
+		} else if _, err := tx.ExecContext(ctx, m.sqlFor(SQLite)); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %s/%d: %w", m.component, m.version, err)
 		}

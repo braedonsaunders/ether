@@ -80,9 +80,23 @@ UPDATE auth_users SET is_owner=0 WHERE is_owner=1 AND id <> (
 	SELECT id FROM auth_users WHERE is_owner=1 ORDER BY updated_at DESC, id DESC LIMIT 1);
 CREATE UNIQUE INDEX auth_users_one_owner ON auth_users(is_owner) WHERE is_owner=1;
 `)
-	// SQLite enforces foreign keys during migration transactions. Preserve and
-	// recreate the two dependent tables before rebuilding their parent.
-	store.Register("auth", 4, `
+	// SQLite enforces foreign keys for the whole migration transaction, and
+	// PRAGMA foreign_keys cannot be changed inside one. auth_tokens and
+	// auth_delegations exist by version 3 and are copied below. auth_sessions
+	// is created only after every auth version on a fresh database, but a
+	// delivered 9503 database already has it referencing auth_users with
+	// ON DELETE CASCADE. RegisterAfter cannot run anything between auth
+	// versions, so the SQLite apply preserves that table when it is present.
+	store.Register("auth", 4, sqliteAuthV4)
+	store.RegisterDialect("auth", 4, store.Postgres, `ALTER TABLE auth_users ALTER COLUMN plex_id DROP NOT NULL;`)
+	store.RegisterSQLiteApply("auth", 4, applySQLiteAuthV4)
+
+}
+
+// sqliteAuthV4 rebuilds auth_users so plex_id may be null. It copies the
+// dependents that version 3 always has. auth_sessions is not named here:
+// a fresh database does not have that table yet.
+const sqliteAuthV4 = `
 CREATE TEMP TABLE auth_tokens_saved AS SELECT * FROM auth_tokens;
 CREATE TEMP TABLE auth_delegations_saved AS SELECT * FROM auth_delegations;
 DROP TABLE auth_tokens;
@@ -122,9 +136,127 @@ CREATE TABLE auth_delegations (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT 
 INSERT INTO auth_delegations SELECT * FROM auth_delegations_saved;
 DROP TABLE auth_delegations_saved;
 CREATE INDEX auth_delegations_user ON auth_delegations(user_id);
-`)
-	store.RegisterDialect("auth", 4, store.Postgres, `ALTER TABLE auth_users ALTER COLUMN plex_id DROP NOT NULL;`)
+`
 
+var sqliteAuthSessionColumns = []string{"token_hash", "user_id", "created_at", "expires_at"}
+
+// applySQLiteAuthV4 is the SQLite body of auth/4. Delivered databases keep
+// every existing auth_sessions row, including expired ones still stored.
+// Revoked sessions are already deleted and are not inserted. Tables other
+// than tokens, delegations, and sessions that reference auth_users stop the
+// rebuild; this binary does not have a proven copy plan for them.
+func applySQLiteAuthV4(ctx context.Context, tx *sql.Tx) error {
+	children, err := sqliteTablesReferencing(ctx, tx, "auth_users")
+	if err != nil {
+		return err
+	}
+	var unexpected []string
+	sessions := false
+	for _, name := range children {
+		switch name {
+		case "auth_tokens", "auth_delegations":
+		case "auth_sessions":
+			sessions = true
+		default:
+			unexpected = append(unexpected, name)
+		}
+	}
+	if len(unexpected) > 0 {
+		return fmt.Errorf("auth/4: refusing rebuild because unhandled tables reference auth_users: %s", strings.Join(unexpected, ", "))
+	}
+	if sessions {
+		cols, err := sqliteTableColumns(ctx, tx, "auth_sessions")
+		if err != nil {
+			return err
+		}
+		if strings.Join(cols, ",") != strings.Join(sqliteAuthSessionColumns, ",") {
+			return fmt.Errorf("auth/4: auth_sessions columns are %s, want %s", strings.Join(cols, ","), strings.Join(sqliteAuthSessionColumns, ","))
+		}
+		if _, err := tx.ExecContext(ctx, `CREATE TEMP TABLE auth_sessions_saved AS SELECT token_hash, user_id, created_at, expires_at FROM auth_sessions`); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, sqliteAuthV4); err != nil {
+		return err
+	}
+	if !sessions {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO auth_sessions(token_hash, user_id, created_at, expires_at)
+ SELECT token_hash, user_id, created_at, expires_at FROM auth_sessions_saved`); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `DROP TABLE auth_sessions_saved`)
+	return err
+}
+
+func sqliteTablesReferencing(ctx context.Context, tx *sql.Tx, parent string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, name := range names {
+		fks, err := tx.QueryContext(ctx, `SELECT "table" FROM pragma_foreign_key_list(`+quoteSQLiteIdent(name)+`)`)
+		if err != nil {
+			return nil, err
+		}
+		referenced := false
+		for fks.Next() {
+			var table string
+			if err := fks.Scan(&table); err != nil {
+				fks.Close()
+				return nil, err
+			}
+			if table == parent {
+				referenced = true
+			}
+		}
+		err = fks.Err()
+		fks.Close()
+		if err != nil {
+			return nil, err
+		}
+		if referenced {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+func sqliteTableColumns(ctx context.Context, tx *sql.Tx, table string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT name FROM pragma_table_info(`+quoteSQLiteIdent(table)+`) ORDER BY cid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		cols = append(cols, name)
+	}
+	return cols, rows.Err()
+}
+
+func quoteSQLiteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 // User origins.
