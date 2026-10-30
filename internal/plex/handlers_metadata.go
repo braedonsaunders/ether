@@ -205,7 +205,7 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 		}
 	}
 	if related && s.d.Recommender != nil {
-		if hubs, err := s.d.Recommender.Related(ctx, pr.User, t.Key, 12); err == nil {
+		if hubs, err := s.detailRelated(ctx, pr).Rows(ctx, pr.User, t.Key, 12); err == nil {
 			md.Related = &model.Related{Hub: s.renderHubs(ctx, pr, hubs, hubCtx{related: t.Key})}
 		} else {
 			s.log.Debug("related hubs", "key", t.Key, "err", err)
@@ -558,38 +558,24 @@ func (s *Server) handleItemOnDeck(w http.ResponseWriter, r *http.Request) {
 // Collections
 
 func (s *Server) collection(ctx context.Context, u *core.User, k core.RatingKey) (*core.Collection, error) {
-	c, err := s.collectionRaw(ctx, u, k)
-	if err != nil {
-		return nil, err
-	}
-	if c.Upcoming {
-		items, err := s.scopedCollectionItems(ctx, u, k)
-		if err != nil {
-			return nil, err
-		}
-		c.ChildCount = len(items)
-	}
-	return c, nil
+	return s.collectionSelection().Get(ctx, u, k, collectionDevice(ctx), true)
 }
 
 func (s *Server) collectionRaw(ctx context.Context, u *core.User, k core.RatingKey) (*core.Collection, error) {
-	if s.d.Collections == nil {
-		return nil, core.ErrNotFound
-	}
-	c, err := s.d.Collections.Get(ctx, u, k)
-	if err != nil {
-		return nil, err
-	}
-	if !s.collectionVisible(u, c) {
-		return nil, core.ErrNotFound
-	}
-	return c, nil
+	return s.collectionSelection().Get(ctx, u, k, "", false)
+}
+
+func collectionDevice(ctx context.Context) string {
+	pr := FromContext(ctx)
+	return core.ClassifyDevice(pr.Product, pr.Platform, pr.Device)
+}
+
+func (s *Server) collectionSelection() experience.ScopedCollection {
+	return experience.ScopedCollection{Collections: s.d.Collections, Visibility: s.visibility(), Now: s.now, Unrestricted: func(viewer *core.User) bool { return !s.viewerRestricted(viewer) }}
 }
 
 func (s *Server) scopedCollectionItems(ctx context.Context, u *core.User, k core.RatingKey) ([]core.Title, error) {
-	pr := FromContext(ctx)
-	selection := experience.ScopedCollection{Collections: s.d.Collections, Visibility: s.visibility(), Now: s.now, Unrestricted: func(viewer *core.User) bool { return !s.viewerRestricted(viewer) }}
-	return selection.Items(ctx, u, k, core.ClassifyDevice(pr.Product, pr.Platform, pr.Device))
+	return s.collectionSelection().Items(ctx, u, k, collectionDevice(ctx))
 }
 
 func (s *Server) lookupPlaceholder(ctx context.Context, pr *Request, key core.RatingKey, raw string) (*core.Title, core.RatingKey, error) {
@@ -619,18 +605,7 @@ func (s *Server) lookupPlaceholder(ctx context.Context, pr *Request, key core.Ra
 }
 
 func (s *Server) scopedCollectionCounts(ctx context.Context, u *core.User, cs []core.Collection) []core.Collection {
-	out := make([]core.Collection, 0, len(cs))
-	for _, c := range cs {
-		if c.Upcoming {
-			items, err := s.scopedCollectionItems(ctx, u, c.Key)
-			if err != nil || len(items) == 0 {
-				continue
-			}
-			c.ChildCount = len(items)
-		}
-		out = append(out, c)
-	}
-	return out
+	return s.collectionSelection().Counts(ctx, u, cs, collectionDevice(ctx))
 }
 
 // collectionVisible reports whether u may see the section a movie or show
@@ -760,19 +735,7 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request, k core.
 		return
 	}
 	offset, size := pr.pageOf(0)
-	var page core.Page
-	if c.Upcoming {
-		items, e := s.scopedCollectionItems(ctx, pr.User, k)
-		if e != nil {
-			s.writeErr(w, r, e)
-			return
-		}
-		start := min(offset, len(items))
-		end := min(start+size, len(items))
-		page = core.Page{Items: items[start:end], Total: len(items)}
-	} else {
-		page, err = s.d.Collections.Items(ctx, pr.User, k, offset, size)
-	}
+	page, err := s.collectionSelection().Page(ctx, pr.User, c, k, collectionDevice(ctx), offset, size)
 	if err != nil {
 		s.writeErr(w, r, err)
 		return

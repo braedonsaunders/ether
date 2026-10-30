@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -246,7 +245,6 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 	sections := parseSectionList(q.Get("contentDirectoryID"))
 	hc := s.hubContext(pr, 0)
 	mc := hubContainer()
-	served := map[string]core.Hub{} // rendered rows by identifier, for impressions
 	var hubs []core.Hub
 	if s.d.Recommender != nil {
 		var err error
@@ -254,47 +252,39 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 			s.log.Warn("home hubs", "err", err)
 		}
 	}
-	candidates := make([]experience.HomeCandidate, len(hubs))
-	for i, hub := range hubs {
-		purpose := homePurpose(hub)
-		candidates[i] = experience.HomeCandidate{Index: i, Purpose: purpose, Promoted: hub.Promoted, InLibraries: s.hubInSections(hub, sections)}
+	assembly := experience.HomeAssembly[model.Hub]{
+		Render:      func(hub core.Hub) model.Hub { return s.renderHub(ctx, pr, hubSpec{Hub: hub}, hubCtx{}) },
+		Identity:    func(row model.Hub) string { return row.HubIdentifier },
+		InLibraries: func(hub core.Hub) bool { return s.hubInSections(hub, sections) },
+		Continue: func() (core.Hub, model.Hub) {
+			spec := s.continueHub(ctx, pr, cwHome, Section{}, count)
+			return spec.Hub, s.renderHub(ctx, pr, spec, hubCtx{})
+		},
+		Playlists: func() (model.Hub, bool) { hub, _, ok := s.playlistsHubProjection(ctx, pr, count); return hub, ok },
+		Discovery: func() []core.Hub {
+			var hubs []core.Hub
+			for _, spec := range s.discoveryHubs(ctx, pr, count) {
+				hubs = append(hubs, spec.Hub)
+			}
+			return hubs
+		},
+		Live: func() (model.Hub, bool) {
+			hub, _ := s.liveTVHubProjection(r)
+			if hub == nil {
+				return model.Hub{}, false
+			}
+			return *hub, true
+		},
+		Select: func(rows []model.Hub) []model.Hub {
+			if ids := q["identifier"]; len(ids) > 0 {
+				return filterHubs(rows, ids)
+			}
+			return rows
+		},
+		Layout: func(rows []model.Hub) []model.Hub { return s.finalizeHomeRows(ctx, pr, hc, "home", rows) },
 	}
-	// Rendering remains in Plex: its generated identifier governs dedupe and
-	// its exact metadata is kept for the response and impression accounting.
-	var projected model.Hub
-	experience.AssembleHome(candidates, q.Get("excludeContinueWatching") != "1", promotedOnly, "home.continue", func() {
-		spec := s.continueHub(ctx, pr, cwHome, Section{}, count)
-		projection := s.renderHub(ctx, pr, spec, hubCtx{})
-		mc.Hub = append(mc.Hub, projection)
-		served[projection.HubIdentifier] = spec.Hub
-	}, func(candidate experience.HomeCandidate) string {
-		projected = s.renderHub(ctx, pr, hubSpec{Hub: hubs[candidate.Index]}, hubCtx{})
-		return projected.HubIdentifier
-	}, func(candidate experience.HomeCandidate) {
-		mc.Hub = append(mc.Hub, projected)
-		served[projected.HubIdentifier] = hubs[candidate.Index]
-	})
-	experience.CompleteHome(len(sections) == 0, func() {
-		if h, _, ok := s.playlistsHubProjection(ctx, pr, count); ok {
-			mc.Hub = append(mc.Hub, h)
-		}
-	}, func() {
-		for _, hs := range s.discoveryHubs(ctx, pr, count) {
-			p := s.renderHub(ctx, pr, hs, hubCtx{})
-			mc.Hub = append(mc.Hub, p)
-			served[hs.ID] = hs.Hub
-		}
-	}, func() {
-		if h, _ := s.liveTVHubProjection(r); h != nil {
-			mc.Hub = append(mc.Hub, *h)
-		}
-	}, func() {
-		if ids := q["identifier"]; len(ids) > 0 {
-			mc.Hub = filterHubs(mc.Hub, ids)
-		}
-	}, func() {
-		mc.Hub = s.finalizeHomeRows(ctx, pr, hc, "home", mc.Hub)
-	})
+	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0, homePurpose)
+	mc.Hub = rows
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, hc, mc.Hub, served)
@@ -336,75 +326,11 @@ func (s *Server) hubContext(pr *Request, section int) core.HubContext {
 // recommendHome asks for Home rows, with the request context when the
 // recommender adapts to it.
 func (s *Server) recommendHome(ctx context.Context, pr *Request, hc core.HubContext, count int) ([]core.Hub, error) {
-	restricted := s.viewerRestricted(pr.User)
-	if restricted {
-		if c, ok := s.d.Recommender.(core.PolicyHomeCandidateSource); ok {
-			hubs, err := c.HomeCandidatesWithPolicy(ctx, pr.User, hc, count, s.visibility().Visible)
-			if err != nil {
-				return nil, err
-			}
-			return s.filterFallbackHubs(ctx, pr.User, hubs), nil
-		}
-	}
-	var hubs []core.Hub
-	var err error
-	if c, ok := s.d.Recommender.(core.HomeCandidateSource); ok {
-		hubs, err = c.HomeCandidatesFor(ctx, pr.User, hc, count)
-	} else if cr, ok := s.d.Recommender.(core.ContextualRecommender); ok {
-		hubs, err = cr.HomeHubsFor(ctx, pr.User, hc, count)
-	} else {
-		hubs, err = s.d.Recommender.HomeHubs(ctx, pr.User, count)
-	}
-	if restricted && err == nil {
-		hubs = s.filterFallbackHubs(ctx, pr.User, hubs)
-	}
-	return hubs, err
+	return (experience.HomeSelection{Source: s.d.Recommender, Visibility: s.visibility(), Restricted: s.viewerRestricted(pr.User)}).Rows(ctx, pr.User, hc, "", count)
 }
 
-// recommendSection asks for a library section's rows.
 func (s *Server) recommendSection(ctx context.Context, pr *Request, t core.MediaType, hc core.HubContext, count int) ([]core.Hub, error) {
-	restricted := s.viewerRestricted(pr.User)
-	if restricted {
-		if c, ok := s.d.Recommender.(core.PolicyHomeCandidateSource); ok {
-			hubs, err := c.SectionCandidatesWithPolicy(ctx, pr.User, t, hc, count, s.visibility().Visible)
-			if err != nil {
-				return nil, err
-			}
-			return s.filterFallbackHubs(ctx, pr.User, hubs), nil
-		}
-	}
-	var hubs []core.Hub
-	var err error
-	if c, ok := s.d.Recommender.(core.SectionCandidateSource); ok {
-		hubs, err = c.SectionCandidatesFor(ctx, pr.User, t, hc, count)
-	} else if cr, ok := s.d.Recommender.(core.ContextualRecommender); ok {
-		hubs, err = cr.SectionHubsFor(ctx, pr.User, t, hc, count)
-	} else {
-		hubs, err = s.d.Recommender.SectionHubs(ctx, pr.User, t, count)
-	}
-	if restricted && err == nil {
-		hubs = s.filterFallbackHubs(ctx, pr.User, hubs)
-	}
-	return hubs, err
-}
-
-// Legacy/custom sources cannot filter before their own ranking and limits.
-// Apply full visibility before returning their rows; their finite candidate
-// pools may leave short shelves but cannot bypass inherited or availability policy.
-func (s *Server) filterFallbackHubs(ctx context.Context, user *core.User, hubs []core.Hub) []core.Hub {
-	visibility := s.visibility()
-	out := make([]core.Hub, len(hubs))
-	copy(out, hubs)
-	for i := range out {
-		items := make([]core.Title, 0, len(out[i].Items))
-		for _, item := range out[i].Items {
-			if visibility.Visible(ctx, user, &item) {
-				items = append(items, item)
-			}
-		}
-		out[i].Items = items
-	}
-	return out
+	return (experience.HomeSelection{Source: s.d.Recommender, Visibility: s.visibility(), Restricted: s.viewerRestricted(pr.User)}).Rows(ctx, pr.User, hc, t, count)
 }
 
 // recordImpressions hands the rows actually written, in response order, to
@@ -436,21 +362,13 @@ func (s *Server) playlistsHub(ctx context.Context, pr *Request, count int) (mode
 }
 
 func (s *Server) playlistsHubProjection(ctx context.Context, pr *Request, count int) (model.Hub, frontend.Row, bool) {
-	if s.d.Playlists == nil || pr.User == nil {
-		return model.Hub{}, frontend.Row{}, false
-	}
-	pls, err := s.d.Playlists.List(ctx, pr.User.ID)
+	pls, more, err := experience.RecentPlaylists(ctx, pr.User, s.d.Playlists, count)
 	if err != nil {
 		s.log.Warn("playlists hub", "err", err)
 		return model.Hub{}, frontend.Row{}, false
 	}
 	if len(pls) == 0 {
 		return model.Hub{}, frontend.Row{}, false
-	}
-	sort.SliceStable(pls, func(i, j int) bool { return pls[i].UpdatedAt.After(pls[j].UpdatedAt) })
-	more := len(pls) > count
-	if more {
-		pls = pls[:count]
 	}
 	h := model.Hub{
 		Key:           "/playlists/all?type=15&sort=lastViewedAt:desc&playlistType=video,audio",
@@ -735,18 +653,13 @@ func containsInt(xs []int, x int) bool {
 // title's own credits and collection, and are not the viewer's to see when
 // the title is hidden. Non-title keys are left to their own handlers.
 func (s *Server) relatedSourceVisible(ctx context.Context, pr *Request, k core.RatingKey) bool {
-	switch k.Kind() {
-	case core.KindMovie, core.KindShow, core.KindSeason, core.KindEpisode:
-	default:
-		return true
-	}
-	t, err := s.metadataTitle(ctx, pr, k)
-	if err != nil {
-		// Fail closed: the recommender fetches the title again, and a
-		// lookup that failed here may succeed there.
-		return false
-	}
-	return s.visibleTitle(ctx, pr.User, t)
+	return s.detailRelated(ctx, pr).SourceVisible(ctx, pr.User, k)
+}
+
+func (s *Server) detailRelated(ctx context.Context, pr *Request) experience.DetailRelated {
+	return experience.DetailRelated{Source: s.d.Recommender, Visibility: s.visibility(), Get: func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+		return s.metadataTitle(ctx, pr, key)
+	}}
 }
 
 // handleMetadataHubs is /hubs/metadata/{key}[/related] and
@@ -761,7 +674,7 @@ func (s *Server) handleMetadataHubs(w http.ResponseWriter, r *http.Request) {
 	}
 	mc := hubContainer()
 	if s.d.Recommender != nil {
-		hubs, err := s.d.Recommender.Related(ctx, pr.User, k, countParam(r, 12))
+		hubs, err := s.detailRelated(ctx, pr).Rows(ctx, pr.User, k, countParam(r, 12))
 		if err != nil && !errors.Is(err, core.ErrNotFound) {
 			s.log.Debug("related hubs", "key", k, "err", err)
 		}
@@ -790,10 +703,6 @@ func (s *Server) upNextHub(ctx context.Context, pr *Request, k core.RatingKey) (
 // pre-buffered), then the related rows. Without a PostPlayer this is the
 // old behaviour: Up Next, then related.
 func (s *Server) handlePostplay(w http.ResponseWriter, r *http.Request) {
-	if !s.viewerRestricted(FromContext(r.Context()).User) {
-		s.legacyHandlePostplay(w, r)
-		return
-	}
 	ctx := r.Context()
 	pr := FromContext(ctx)
 	k, err := core.ParseRatingKey(chi.URLParam(r, "key"))
@@ -803,17 +712,18 @@ func (s *Server) handlePostplay(w http.ResponseWriter, r *http.Request) {
 	}
 	count := countParam(r, 12)
 	mc := hubContainer()
-	seen := map[core.RatingKey]bool{k: true}
-	if h, ok := s.upNextHub(ctx, pr, k); ok {
-		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, h, hubCtx{related: k}))
-		seen[h.Items[0].Key] = true
+	mc.Hub, err = experience.AssemblePostPlay(ctx, s.postPlaySelection(ctx, pr, k, !s.viewerRestricted(pr.User)), pr.User, k, count,
+		func() (core.RatingKey, model.Hub, bool) {
+			hub, ok := s.upNextHub(ctx, pr, k)
+			if !ok {
+				return 0, model.Hub{}, false
+			}
+			return hub.Items[0].Key, s.renderHub(ctx, pr, hub, hubCtx{related: k}), true
+		}, func(row experience.PostPlayRow) (model.Hub, bool) { return s.postPlayHub(ctx, pr, k, row) },
+		func(hub core.Hub) model.Hub { return s.renderHub(ctx, pr, hubSpec{Hub: hub}, hubCtx{related: k}) })
+	if err != nil {
+		s.log.Debug("postplay related hubs", "key", k, "err", err)
 	}
-	if row := s.postPlayRow(ctx, pr, k, count, seen); len(row.Items) > 0 {
-		if mh, ok := s.postPlayHub(ctx, pr, k, row); ok {
-			mc.Hub = append(mc.Hub, mh)
-		}
-	}
-	s.relatedAfterPostPlay(ctx, pr, mc, k, count, seen)
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 }

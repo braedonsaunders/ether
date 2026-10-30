@@ -33,20 +33,16 @@ func (s *Server) postPlayPicks(ctx context.Context, pr *Request, key core.Rating
 	return picks
 }
 
-// postPlayRow expands candidates only when filtering or deduplication leaves
-// room and the source returned a full page. Seen is committed once.
-func (s *Server) postPlayRow(ctx context.Context, pr *Request, key core.RatingKey, count int, seen map[core.RatingKey]bool) experience.PostPlayRow {
-	return experience.LoadPostPlay(ctx, pr.User, s.visibility(), count, seen, func(ctx context.Context, fetch int) []core.PostPlayPick {
+func (s *Server) postPlaySelection(ctx context.Context, pr *Request, key core.RatingKey, unrestricted bool) experience.PostPlaySelection {
+	selection := experience.PostPlaySelection{Visibility: s.visibility(), Unrestricted: unrestricted, Picks: func(ctx context.Context, fetch int) []core.PostPlayPick {
 		return s.postPlayPicks(ctx, pr, key, fetch)
-	})
-}
-
-func cloneSeen(seen map[core.RatingKey]bool) map[core.RatingKey]bool {
-	out := make(map[core.RatingKey]bool, len(seen))
-	for key, value := range seen {
-		out[key] = value
+	}}
+	if s.d.Recommender != nil {
+		selection.Related = func(ctx context.Context, count int) ([]core.Hub, error) {
+			return s.d.Recommender.Related(ctx, pr.User, key, count)
+		}
 	}
-	return out
+	return selection
 }
 
 // postPlayHub renders ranked picks as one hub in post-play shape. The
@@ -65,37 +61,6 @@ func (s *Server) postPlayHub(ctx context.Context, pr *Request, key core.RatingKe
 		Context: "hub." + prefix + ".postplay", Style: "shelf", Items: items,
 	}
 	return s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}), true
-}
-
-// relatedAfterPostPlay appends the plain Related rows behind the hook
-// queue, dropping titles the queue already shows, as post-play screens
-// scroll from the personal pick into the familiar rows.
-func (s *Server) relatedAfterPostPlay(ctx context.Context, pr *Request, mc *model.MediaContainer, key core.RatingKey, count int, seen map[core.RatingKey]bool) {
-	if s.d.Recommender == nil {
-		return
-	}
-	var hubs []core.Hub
-	rows, err := experience.LoadRelated(ctx, pr.User, s.visibility(), count, seen, func(ctx context.Context, fetch int) ([]experience.RelatedCandidate, error) {
-		var err error
-		hubs, err = s.d.Recommender.Related(ctx, pr.User, key, fetch)
-		if err != nil {
-			return nil, err
-		}
-		rows := make([]experience.RelatedCandidate, len(hubs))
-		for i, hub := range hubs {
-			rows[i] = experience.RelatedCandidate{Index: i, Items: hub.Items}
-		}
-		return rows, nil
-	})
-	if err != nil {
-		s.log.Debug("postplay related hubs", "key", key, "err", err)
-		return
-	}
-	for _, row := range rows {
-		h := hubs[row.Index]
-		h.Items = row.Items
-		mc.Hub = append(mc.Hub, s.renderHub(ctx, pr, hubSpec{Hub: h}, hubCtx{related: key}))
-	}
 }
 
 // decorateDetail adds the viewer's micro-reason decision header (#31) to

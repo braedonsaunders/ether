@@ -82,90 +82,15 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			return false
 		}
 	}
-	allowedSubject := func(ctx context.Context, u *core.User, subject experience.ReceiptSubject) bool {
-		if imp := subject.Impression; imp != nil {
-			if len(imp.Entries) == 0 || imp.Kind == "" {
-				return false
-			}
-			if imp.Collection != 0 && !a.favoriteAllowed(ctx, u, favorites.Subject{Kind: favorites.KindCollection, ID: imp.Collection.String()}, vis) {
-				return false
-			}
-			if imp.Collection != 0 && !rowViewCollectionMembers(ctx, a.collections, u, imp.Collection, imp.Entries) {
-				return false
-			}
-			switch frontend.Placement(imp.Placement) {
-			case frontend.PlacementHome:
-			case frontend.PlacementLibrary:
-				id, err := strconv.Atoi(imp.ViewID)
-				valid := false
-				for _, lib := range libs {
-					if lib.ID == id {
-						valid = true
-						break
-					}
-				}
-				if err != nil || !valid || !experience.SectionAllowed(u, id) {
-					return false
-				}
-			case frontend.PlacementDetail:
-				if imp.Item == 0 {
-					return false
-				}
-				t, err := a.catalog.Get(ctx, imp.Item)
-				if err != nil || !vis.Visible(ctx, u, t) {
-					return false
-				}
-			default:
-				return false
-			}
-			for _, entry := range imp.Entries {
-				if !allowEntry(ctx, u, entry.Kind, entry.ID) {
-					return false
-				}
-			}
-			if subject.Kind == "row" {
-				return true
-			}
-			i := strings.LastIndex(subject.ID, "/"+subject.Kind+"/")
-			if i < 0 {
-				return false
-			}
-			id := subject.ID[i+len(subject.Kind)+2:]
-			for _, entry := range imp.Entries {
-				if entry.Kind == subject.Kind && entry.ID == id {
-					return true
-				}
-			}
-			return false
-		}
-		return false
-	}
+	interactions := experience.RowInteractionPolicy{Libraries: libs, Visibility: vis, Get: a.catalog.Get, AllowEntry: allowEntry, CollectionMembers: func(ctx context.Context, u *core.User, key core.RatingKey, entries []core.NeutralEntryRef) bool {
+		return rowViewCollectionMembers(ctx, a.collections, u, key, entries)
+	}, Impression: a.personalize.RecordNeutralImpression, DetailOpen: a.personalize.RecordDetailOpen}
 	receipts, err := experience.NewReceipts(experience.ReceiptOptions{DB: a.db, Active: a.users.ActiveUser, TTL: 30 * time.Minute, MaxPerDevice: 10000, MirrorHeaders: true, Allowed: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject) bool {
-		return allowedSubject(ctx, u, subject)
+		return interactions.Allowed(ctx, u, subject)
 	}, AllowedAction: func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject, kind frontend.RowInteractionKind) bool {
 		return (kind == frontend.RowImpression && subject.Kind == "row" && subject.Impression != nil) || (kind == frontend.RowClick && subject.Kind == string(frontend.RowEntryTitle))
 	}, Record: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject, kind frontend.RowInteractionKind) error {
-		if kind == frontend.RowImpression && subject.Impression != nil {
-			a.personalize.RecordNeutralImpression(u, *subject.Impression)
-			return nil
-		}
-		if kind == frontend.RowClick && subject.Kind == string(frontend.RowEntryTitle) {
-			idx := strings.LastIndex(subject.ID, "/title/")
-			if idx < 0 {
-				return experience.ErrReceipt
-			}
-			key, err := core.ParseRatingKey(subject.ID[idx+len("/title/"):])
-			if err != nil {
-				return err
-			}
-			title, err := a.catalog.Get(ctx, key)
-			if err != nil || !vis.Visible(ctx, u, title) {
-				return experience.ErrReceipt
-			}
-			a.personalize.RecordDetailOpen(ctx, u, title)
-			return nil
-		}
-		return errors.New("experience: unsupported row interaction")
+		return interactions.Record(ctx, u, subject, kind)
 	}})
 	if err != nil {
 		return nil, err
@@ -199,44 +124,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		if !ok {
 			return nil, errors.New("experience: missing situation")
 		}
-		section := "home"
-		if req.Placement == frontend.PlacementLibrary {
-			section = "movies"
-			for _, l := range libs {
-				if strconv.Itoa(l.ID) == req.ViewID && l.Type == core.TypeShow {
-					section = "shows"
-				}
-			}
-		}
-		if req.Placement == frontend.PlacementDetail {
-			return rows, nil
-		}
-		candidates := make([]core.NeutralHomeRow, 0, len(rows))
-		for _, row := range rows {
-			n := core.NeutralHomeRow{ID: row.ID, Title: row.Title, Kind: row.Kind, Purpose: row.Purpose, ItemCount: len(row.Entries)}
-			for _, entry := range row.Entries {
-				if entry.Title != nil {
-					n.Items = append(n.Items, *entry.Title)
-					if n.Type == "" {
-						n.Type = entry.Title.Type
-					}
-				}
-			}
-			candidates = append(candidates, n)
-		}
-		ordered, err := experience.ArrangeNeutralHome(ctx, a.personalize, req.Viewer, sit, section, candidates)
-		if err != nil {
-			return nil, err
-		}
-		out := make([]frontend.Row, 0, len(ordered))
-		for i, index := range ordered {
-			row := rows[index]
-			row.Rank = i
-			row.Layout.Order = i
-			row.Layout.Style = row.Style
-			out = append(out, row)
-		}
-		return out, nil
+		return experience.LayoutRows(ctx, a.personalize, libs, req, sit, rows)
 	}, Situation: func(ctx context.Context, req frontend.RowRequest) (core.HomeSituation, error) {
 		v, ok := ctx.Value(experienceSituationKey{}).(core.HomeSituation)
 		if !ok {
