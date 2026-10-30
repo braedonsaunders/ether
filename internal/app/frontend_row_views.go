@@ -8,10 +8,13 @@ import (
 )
 
 func (a *App) newRowViews(protocol core.Protocol, rows *experience.RowsService, receipts *experience.Receipts, visibility experience.Visibility, libraries []experience.Library) (*experience.RowViewService, error) {
-	d := experience.RuntimeRowViews{DB: a.db, Protocol: protocol, Receipts: receipts, Visibility: visibility, Libraries: libraries, Active: a.users.ActiveUser, CachedGet: a.catalog.CachedGet, CachedGetMany: a.catalog.CachedGetMany, Collections: a.collections, Playlists: a.playlists, Situation: situationFor,
+	d := experience.RuntimeRowViews{DB: a.db, Protocol: protocol, Receipts: receipts, Visibility: visibility, Libraries: libraries, Active: a.users.ActiveUser, CachedGet: a.catalog.CachedGet, CachedGetMany: a.catalog.CachedGetMany, Playlists: a.playlists, Situation: situationFor,
 		Snapshot: func(ctx context.Context, request frontend.RowRequest, situation core.HomeSituation) ([]frontend.Row, error) {
 			return rows.SnapshotRows(context.WithValue(ctx, experienceSituationKey{}, situation), request, protocol)
 		}}
+	if a.collections != nil {
+		d.Collections = a.collections
+	}
 	if a.episodeorder != nil {
 		d.CachedVirtualSeason = a.episodeorder.CachedVirtualSeason
 	}
