@@ -33,7 +33,7 @@ type Tickets struct {
 	clock func() time.Time
 	// Only set by package-local tests before concurrent use.
 	beforeConsumeLock   func()
-	beforeLegacyCleanup func()
+	beforeLegacyCleanup func(*sql.Tx)
 }
 type TicketScope struct {
 	ViewerID                                  int64
@@ -150,7 +150,7 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 		// Legacy remains authoritative. Bound expired-only cleanup; never
 		// remove an unexpired ticket. This shares the issue transaction.
 		if s.beforeLegacyCleanup != nil {
-			s.beforeLegacyCleanup()
+			s.beforeLegacyCleanup(tx)
 		}
 		if _, err = tx.ExecContext(ctx, `DELETE FROM frontend_tickets WHERE expires<=? AND hash IN (SELECT hash FROM frontend_tickets WHERE expires<=? ORDER BY expires,hash LIMIT ?)`, now, now, ticketCleanupMax); err != nil {
 			return 0, err

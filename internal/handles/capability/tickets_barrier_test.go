@@ -2,6 +2,7 @@ package capability_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"strings"
@@ -193,9 +194,20 @@ func TestMirroredCleanupRechecksRenewedLegacyExpiry(t *testing.T) {
 	if _, err = tx.ExecContext(ctx, `UPDATE frontend_tickets SET expires=? WHERE hash=?`, time.Now().Add(time.Hour).UnixMilli(), oldHash); err != nil {
 		t.Fatal(err)
 	}
+	var holderPID int
+	if err = tx.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&holderPID); err != nil {
+		t.Fatal(err)
+	}
 	engine, _ := NewTickets(db)
-	entered := make(chan struct{})
-	SetBeforeLegacyCleanup(engine, func() { close(entered) })
+	entered := make(chan int, 1)
+	SetBeforeLegacyCleanup(engine, func(cleanupTx *sql.Tx) {
+		var pid int
+		if e := cleanupTx.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); e != nil {
+			entered <- 0
+			return
+		}
+		entered <- pid
+	})
 	finished := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
@@ -212,17 +224,30 @@ func TestMirroredCleanupRechecksRenewedLegacyExpiry(t *testing.T) {
 			t.Error("issuer worker did not exit")
 		}
 	}()
+	var cleanupPID int
 	select {
-	case <-entered:
+	case cleanupPID = <-entered:
+		if cleanupPID == 0 {
+			t.Fatal("cleanup backend unavailable")
+		}
 	case <-ctx.Done():
 		t.Fatal("cleanup did not start")
 	}
-	// This confirms the first transaction remains held; the timer alone does not
-	// prove the competing statement reached a database lock wait.
-	select {
-	case err := <-done:
-		t.Fatalf("issuer returned before renewal commit: %v", err)
-	case <-time.After(150 * time.Millisecond):
+	// Observe the actual owned backend blocked by our renewal transaction.
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	observed := false
+	for !observed {
+		select {
+		case e := <-done:
+			t.Fatalf("issuer returned before observed row wait: %v", e)
+		case <-ctx.Done():
+			t.Fatal("cleanup lock wait was not observed")
+		case <-ticker.C:
+			if e := db.QueryRowContext(ctx, `SELECT ? = ANY(pg_blocking_pids(?))`, holderPID, cleanupPID).Scan(&observed); e != nil {
+				t.Fatal(e)
+			}
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		t.Fatal(err)
