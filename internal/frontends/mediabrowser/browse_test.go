@@ -105,7 +105,7 @@ func TestBrowseUsesExperienceAndValidatesSpec(t *testing.T) {
 		if req.Viewer != user {
 			return nil, errors.New("denied")
 		}
-		return []frontend.Row{{Purpose: frontend.RowContinue, Items: []frontend.Title{title}}}, nil
+		return []frontend.Row{{Purpose: frontend.RowNextUp, Items: []frontend.Title{title}}}, nil
 	}}
 	ident := frontendtest.Identity{ResolveFunc: func(_ context.Context, token string) (*frontend.Viewer, error) {
 		if token != "valid" {
@@ -125,7 +125,7 @@ func TestBrowseUsesExperienceAndValidatesSpec(t *testing.T) {
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/Items/" + ids.RatingKeyGUID(5), "/UserItems/Resume"} {
+	for _, path := range []string{"/Items/" + ids.RatingKeyGUID(5), "/Shows/NextUp"} {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", path, nil)
 		r.Header.Set("X-Emby-Token", "valid")
@@ -302,7 +302,7 @@ func TestOnlyPresentedRowsReportImpressions(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	var handles []string
 	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
-		return []frontend.Row{{Purpose: frontend.RowContinue, Handle: "first", Items: []frontend.Title{{Key: 1, Type: "movie"}}}, {Purpose: frontend.RowContinue, Handle: "second", Items: []frontend.Title{{Key: 2, Type: "movie"}}}}, nil
+		return []frontend.Row{{Purpose: frontend.RowNextUp, Handle: "first", Items: []frontend.Title{{Key: 1, Type: "movie"}}}, {Purpose: frontend.RowNextUp, Handle: "second", Items: []frontend.Title{{Key: 2, Type: "movie"}}}}, nil
 	}, ReportRowInteractionFunc: func(_ context.Context, r frontend.RowInteraction) error {
 		if r.Viewer != viewer || r.Protocol != "jellyfin" || r.Kind != frontend.RowImpression {
 			t.Fatal(r)
@@ -316,7 +316,7 @@ func TestOnlyPresentedRowsReportImpressions(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/UserItems/Resume?StartIndex=1&Limit=1", nil)
+	r := httptest.NewRequest("GET", "/Shows/NextUp?StartIndex=1&Limit=1", nil)
 	r.Header.Set("X-Emby-Token", "grant")
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || len(handles) != 1 || handles[0] != "second" {

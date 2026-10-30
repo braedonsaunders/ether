@@ -46,7 +46,7 @@ func TestVirtualPathsAppearOnlyForAuthorizedItems(t *testing.T) {
 	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
 		return frontend.ItemDetail{Title: title}, nil
 	}, RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
-		return []frontend.Row{{Purpose: frontend.RowContinue, Items: []frontend.Title{title}}}, nil
+		return []frontend.Row{{Purpose: frontend.RowNextUp, Items: []frontend.Title{title}}}, nil
 	}}
 	paths := frontendtest.VirtualPaths{PathsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, keys []frontend.RatingKey) (map[frontend.RatingKey]string, error) {
 		if v != viewer || len(keys) != 1 || keys[0] != 5 {
@@ -59,7 +59,7 @@ func TestVirtualPathsAppearOnlyForAuthorizedItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{"/Items/" + ids.RatingKeyGUID(5), "/UserItems/Resume"} {
+	for _, route := range []string{"/Items/" + ids.RatingKeyGUID(5), "/Shows/NextUp"} {
 		r := httptest.NewRequest("GET", route, nil)
 		r.Header.Set("X-Emby-Token", "grant")
 		w := httptest.NewRecorder()
