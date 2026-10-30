@@ -83,7 +83,7 @@ func TestJellyfinTrickplayRouteUsesBorrowedTiles(t *testing.T) {
 	host := frontend.Host{
 		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }},
 		Experience: frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
-			return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Buck Bunny"}}, nil
+			return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Buck Bunny"}, Tracks: []frontend.StreamInfo{{Type: "video", Width: 3840, Height: 2160}}}, nil
 		}},
 		Sessions: tileSessions{offer: true},
 	}
@@ -98,6 +98,13 @@ func TestJellyfinTrickplayRouteUsesBorrowedTiles(t *testing.T) {
 	inst.Handler().ServeHTTP(dw, detail)
 	if dw.Code != 200 || !strings.Contains(dw.Body.String(), `"Trickplay":{"320":`) || !strings.Contains(dw.Body.String(), `"TileWidth":10`) || !strings.Contains(dw.Body.String(), `"Interval":10000`) {
 		t.Fatal(dw.Code, dw.Body.String())
+	}
+	// The combined browse shell must preserve the playback dimensions while
+	// the final attachment replaces the detail DTO's empty trickplay shell.
+	for _, field := range []string{`"Width":3840`, `"Height":2160`, `"IsHD":true`, `"ChannelId":null`} {
+		if !strings.Contains(dw.Body.String(), field) {
+			t.Fatalf("combined detail missing %s: %s", field, dw.Body.String())
+		}
 	}
 	sheet := httptest.NewRequest(http.MethodGet, "/Videos/"+id+"/Trickplay/320/0.jpg", nil)
 	sheet.Header.Set("X-Emby-Token", "grant")
