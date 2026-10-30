@@ -19,7 +19,7 @@ func downloadCapture(ctx context.Context, client *http.Client, base, viewer, nam
 	h.Set("Accept", "application/json")
 	h.Set("X-Plex-Client-Identifier", "parity-"+viewer+"-"+name+"-download")
 	fetch := func(method, path string) (protocol.Response, error) {
-		return protocol.Fetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
+		return strictFetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
 	}
 	created, err := fetch(http.MethodPost, "/downloadQueue")
 	if err != nil {

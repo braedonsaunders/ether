@@ -21,7 +21,7 @@ func iptvCapture(ctx context.Context, client *http.Client, base, viewer, name st
 	h.Set("Accept", "application/json")
 	h.Set("X-Plex-Client-Identifier", "parity-"+viewer+"-"+name+"-iptv")
 	fetch := func(method, path string) (protocol.Response, error) {
-		return protocol.Fetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
+		return strictFetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
 	}
 	var out []capture
 	for _, ch := range []string{"fixture-iptv", "fixture-iptv-relay"} {

@@ -22,7 +22,7 @@ func subtitleCapture(ctx context.Context, client *http.Client, base, viewer, nam
 	h.Set("X-Plex-Session-Identifier", id)
 	h.Set("Accept", "application/json")
 	fetch := func(method, path string) (protocol.Response, error) {
-		return protocol.Fetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
+		return strictFetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
 	}
 	search, err := fetch(http.MethodGet, "/library/metadata/"+key+"/subtitles?language=eng")
 	if err != nil || search.Status != http.StatusOK {

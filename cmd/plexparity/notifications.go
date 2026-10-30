@@ -28,7 +28,7 @@ func notificationCapture(ctx context.Context, client *http.Client, base, viewer,
 	h.Set("X-Plex-Client-Identifier", "parity-"+viewer+"-"+name+"-notifications")
 	emit := func() error {
 		req := protocol.Request{Method: http.MethodGet, Path: "/:/scrobble?identifier=com.plexapp.plugins.library&key=" + key, Headers: map[string]http.Header{name: h}}
-		r, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, nil, false)
+		r, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, nil, false)
 		if err != nil || r.Status != http.StatusOK {
 			return fmt.Errorf("notification event: status=%d error=%v", r.Status, err)
 		}

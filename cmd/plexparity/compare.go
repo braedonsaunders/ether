@@ -145,7 +145,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 	h.Set("X-Plex-Client-Identifier", "parity-owner")
 	for _, path := range warmPaths {
 		req := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{"web-json": h}}
-		if _, err := protocol.Fetch(ctx, client, base, "parity-owner", req, "web", nil, true); err != nil {
+		if _, err := strictFetch(ctx, client, base, "parity-owner", req, "web", nil, true); err != nil {
 			return result, fmt.Errorf("warm artwork %s: %w", path, err)
 		}
 	}
@@ -153,7 +153,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 		req := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{"web-json": h}}
 		deadline := time.Now().Add(30 * time.Second)
 		for {
-			resp, err := protocol.Fetch(ctx, client, base, "parity-owner", req, "web", nil, true)
+			resp, err := strictFetch(ctx, client, base, "parity-owner", req, "web", nil, true)
 			if err != nil || resp.Status != http.StatusOK {
 				return result, fmt.Errorf("warm artwork %s: status=%d error=%v", path, resp.Status, err)
 			}
@@ -176,7 +176,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 		h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
 		h.Set("Accept", "application/xml")
 		q := protocol.Request{Method: http.MethodGet, Path: "/playlists", Headers: map[string]http.Header{"web": h}}
-		resp, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, q, "web", nil, false)
+		resp, err := strictFetch(ctx, client, base, "parity-"+viewer, q, "web", nil, false)
 		if err != nil || resp.Status != http.StatusOK {
 			return result, fmt.Errorf("%s playlist discovery: status=%d error=%v", viewer, resp.Status, err)
 		}
@@ -208,7 +208,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 						h.Set("Accept", "application/xml")
 					}
 					probe.Headers = map[string]http.Header{name: h, name + "-json": h}
-					response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], jsonMode)
+					response, err := strictFetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], jsonMode)
 					if err != nil {
 						return result, fmt.Errorf("%s %s: %w", viewer, probe.Path, err)
 					}
@@ -234,7 +234,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 						h.Set("Accept", "application/xml")
 					}
 					probe := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h, name + "-json": h}}
-					resp, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], jsonMode)
+					resp, err := strictFetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], jsonMode)
 					if err != nil {
 						return result, fmt.Errorf("browse %s %s: %w", viewer, path, err)
 					}
@@ -262,7 +262,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					h := profiles[name].Headers.Clone()
 					h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
 					req := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h}}
-					resp, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+					resp, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 					if err != nil {
 						return result, fmt.Errorf("image %s %s: %w", viewer, path, err)
 					}
@@ -290,7 +290,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					req := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name + "-json": h}}
 					deadline := time.Now().Add(15 * time.Second)
 					for {
-						resp, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
+						resp, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
 						if err != nil {
 							return result, err
 						}
@@ -323,7 +323,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			h := profiles[name].Headers.Clone()
 			h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
 			request := protocol.Request{Method: http.MethodGet, Path: "/:/resources/fixture", Headers: map[string]http.Header{name: h}}
-			response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, request, name, nil, false)
+			response, err := strictFetch(ctx, client, base, "parity-"+viewer, request, name, nil, false)
 			if err != nil || response.Status != http.StatusNotFound {
 				return result, fmt.Errorf("resource route: status=%d error=%v", response.Status, err)
 			}
@@ -334,7 +334,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 	ownerHeaders.Set("Accept", "application/xml")
 	ownerHeaders.Set("X-Plex-Client-Identifier", "parity-owner")
 	gridReq := protocol.Request{Method: http.MethodGet, Path: "/tv.plex.providers.epg.xmltv:1/grid?beginsAt=1792324800&endsAt=1792328400", Headers: map[string]http.Header{"web": ownerHeaders}}
-	grid, err := protocol.Fetch(ctx, client, base, "parity-owner", gridReq, "web", nil, false)
+	grid, err := strictFetch(ctx, client, base, "parity-owner", gridReq, "web", nil, false)
 	var guide struct {
 		Videos []struct {
 			Key string `xml:"ratingKey,attr"`
@@ -350,7 +350,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
 			h.Set("Accept", "application/xml")
 			req := protocol.Request{Method: http.MethodGet, Path: "/tv.plex.providers.epg.xmltv:1/metadata/" + url.PathEscape(guide.Videos[0].Key), Headers: map[string]http.Header{name: h}}
-			response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, nil, false)
+			response, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, nil, false)
 			if err != nil || (viewer == "owner" && response.Status != http.StatusOK) {
 				return result, fmt.Errorf("%s %s live programme: status=%d error=%v", viewer, name, response.Status, err)
 			}
@@ -382,7 +382,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
 				h.Set("Accept", "application/json")
 				probe := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h, name + "-json": h}}
-				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], true)
+				response, err := strictFetch(ctx, client, base, "parity-"+viewer, probe, name, viewerIDs[viewer], true)
 				if err != nil {
 					return result, fmt.Errorf("mutation %s %s: %w", viewer, path, err)
 				}
@@ -405,7 +405,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			h.Set("Accept", "application/xml")
 			path := "/playQueues?type=video&uri=" + url.QueryEscape("/library/metadata/") + "{{movieKey}}"
 			req := protocol.Request{Method: http.MethodPost, Path: path, Headers: map[string]http.Header{name: h}}
-			created, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+			created, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 			var queue struct {
 				ID string `xml:"playQueueID,attr"`
 			}
@@ -420,7 +420,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					h.Set("Accept", "application/xml")
 				}
 				req.Method, req.Path, req.Headers = http.MethodGet, "/playQueues/"+queue.ID, map[string]http.Header{name: h, name + "-json": h}
-				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, nil, jsonMode)
+				response, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, nil, jsonMode)
 				if err != nil || response.Status != http.StatusOK {
 					return result, fmt.Errorf("%s %s play queue read: status=%d error=%v", viewer, name, response.Status, err)
 				}
@@ -437,27 +437,27 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 		h.Set("Accept", "application/xml")
 		key := fmt.Sprint(core.MovieKey(10002))
 		meta := protocol.Request{Method: http.MethodGet, Path: "/library/metadata/" + key, Headers: map[string]http.Header{"web": h}}
-		response, err := protocol.Fetch(ctx, client, base, "parity-owner", meta, "web", nil, false)
+		response, err := strictFetch(ctx, client, base, "parity-owner", meta, "web", nil, false)
 		if err != nil || response.Status != http.StatusOK || !bytes.Contains(response.Body, []byte("Fixture Movie 002")) {
 			return result, fmt.Errorf("debrid fixture metadata missing: status=%d error=%v", response.Status, err)
 		}
 		path := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F" + key + "&hasMDE=1&protocol=hls&session=parity-owner-debrid&directPlay=1&directStream=1"
 		request := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{"web": h}}
-		response, err = protocol.Fetch(ctx, client, base, "parity-owner", request, "web", nil, false)
+		response, err = strictFetch(ctx, client, base, "parity-owner", request, "web", nil, false)
 		if err != nil || response.Status != http.StatusOK || requireDecision(response.Body, "direct") != nil {
 			return result, fmt.Errorf("debrid HTTP direct play decision failed: status=%d error=%v body=%s", response.Status, err, response.Body)
 		}
 		result.captures = append(result.captures, capture{"owner", "web", "playback:debrid-http:" + path, false, response})
 		h.Set("Range", "bytes=0-4095")
 		request.Path = fmt.Sprintf("/library/parts/%s/%d/file.mp4", key, fixtureNow.Unix())
-		response, err = protocol.Fetch(ctx, client, base, "parity-owner", request, "web", nil, false)
+		response, err = strictFetch(ctx, client, base, "parity-owner", request, "web", nil, false)
 		if err != nil || response.Status != http.StatusPartialContent || len(response.Body) == 0 {
 			return result, fmt.Errorf("debrid HTTP direct start failed: status=%d error=%v", response.Status, err)
 		}
 		result.captures = append(result.captures, capture{"owner", "web", "playback:debrid-http:bytes", false, response})
 		h.Del("Range")
 		request.Path = "/video/:/transcode/universal/stop?session=parity-owner-debrid"
-		response, err = protocol.Fetch(ctx, client, base, "parity-owner", request, "web", nil, false)
+		response, err = strictFetch(ctx, client, base, "parity-owner", request, "web", nil, false)
 		if err != nil || response.Status != http.StatusOK {
 			return result, fmt.Errorf("debrid HTTP stop failed: status=%d error=%v", response.Status, err)
 		}
@@ -473,7 +473,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			directSession := id + "-direct"
 			directDecisionPath := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=http&session=" + directSession + "&directPlay=1&directStream=1"
 			directDecisionReq := protocol.Request{Method: http.MethodGet, Path: directDecisionPath, Headers: map[string]http.Header{name: h}}
-			directDecision, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, directDecisionReq, name, viewerIDs[viewer], false)
+			directDecision, err := strictFetch(ctx, client, base, "parity-"+viewer, directDecisionReq, name, viewerIDs[viewer], false)
 			if err != nil || directDecision.Status != http.StatusOK {
 				return result, fmt.Errorf("%s %s direct decision status %d: %v", viewer, name, directDecision.Status, err)
 			}
@@ -484,13 +484,13 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			h.Set("Range", "bytes=0-4095")
 			directPath := fmt.Sprintf("/library/parts/{{movieKey}}/%d/file.mp4", fixtureNow.Unix())
 			directReq := protocol.Request{Method: http.MethodGet, Path: directPath, Headers: map[string]http.Header{name: h}}
-			direct, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, directReq, name, viewerIDs[viewer], false)
+			direct, err := strictFetch(ctx, client, base, "parity-"+viewer, directReq, name, viewerIDs[viewer], false)
 			if err != nil || direct.Status != http.StatusPartialContent || len(direct.Body) != 4096 {
 				return result, fmt.Errorf("%s %s direct playback failed: status=%d bytes=%d error=%v", viewer, name, direct.Status, len(direct.Body), err)
 			}
 			result.captures = append(result.captures, capture{viewer, name, "playback:" + directPath, false, direct})
 			directReq.Path = "/library/parts/{{movieKey}}/file.mp4"
-			shortPart, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, directReq, name, viewerIDs[viewer], false)
+			shortPart, err := strictFetch(ctx, client, base, "parity-"+viewer, directReq, name, viewerIDs[viewer], false)
 			if err != nil || shortPart.Status != http.StatusPartialContent || len(shortPart.Body) != 4096 {
 				return result, fmt.Errorf("%s %s short direct part failed: status=%d bytes=%d error=%v", viewer, name, shortPart.Status, len(shortPart.Body), err)
 			}
@@ -498,7 +498,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			h.Del("Range")
 			directStopPath := "/video/:/transcode/universal/stop?session=" + directSession
 			directReq.Path = directStopPath
-			stopped, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, directReq, name, viewerIDs[viewer], false)
+			stopped, err := strictFetch(ctx, client, base, "parity-"+viewer, directReq, name, viewerIDs[viewer], false)
 			if err != nil || stopped.Status != http.StatusOK {
 				return result, fmt.Errorf("%s %s direct stop: status=%d error=%v", viewer, name, stopped.Status, err)
 			}
@@ -508,7 +508,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				decisionPath := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=hls&session=" + session + "&" + mode.query
 				h.Set("Accept", "application/xml")
 				decisionReq := protocol.Request{Method: http.MethodGet, Path: decisionPath, Headers: map[string]http.Header{name: h}}
-				decision, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, decisionReq, name, viewerIDs[viewer], false)
+				decision, err := strictFetch(ctx, client, base, "parity-"+viewer, decisionReq, name, viewerIDs[viewer], false)
 				if err != nil || decision.Status != http.StatusOK {
 					return result, fmt.Errorf("%s %s %s decision status %d: %v", viewer, name, mode.name, decision.Status, err)
 				}
@@ -519,7 +519,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				path := "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=hls&session=" + session + "&" + mode.query
 				h.Set("Accept", "application/vnd.apple.mpegurl")
 				req := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h}}
-				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+				response, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 				if err != nil || response.Status != http.StatusOK || !bytes.HasPrefix(response.Body, []byte("#EXTM3U")) {
 					return result, fmt.Errorf("%s %s %s start failed: status=%d error=%v body=%q", viewer, name, mode.name, response.Status, err, response.Body)
 				}
@@ -537,7 +537,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				}
 				playlistPath := "/video/:/transcode/universal/" + uri
 				req.Path = playlistPath
-				playlist, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+				playlist, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 				if err != nil || playlist.Status != http.StatusOK || !bytes.HasPrefix(playlist.Body, []byte("#EXTM3U")) {
 					return result, fmt.Errorf("%s %s media playlist failed: %d %v", viewer, name, playlist.Status, err)
 				}
@@ -565,21 +565,21 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					return result, fmt.Errorf("external HLS segment URL %q", segmentURI)
 				}
 				req.Path = resolved.String()
-				segment, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+				segment, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 				if err != nil || segment.Status != http.StatusOK || len(segment.Body) == 0 {
 					return result, fmt.Errorf("%s %s %s segment failed: status=%d bytes=%d error=%v", viewer, name, mode.name, segment.Status, len(segment.Body), err)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:segment:" + mode.name, false, segment})
 				ping := "/video/:/transcode/universal/ping?session=" + session
 				req.Path = ping
-				response, err = protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+				response, err = strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 				if err != nil || response.Status != http.StatusOK {
 					return result, fmt.Errorf("%s %s %s ping failed: status=%d error=%v", viewer, name, mode.name, response.Status, err)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:" + ping, false, response})
 				stop := "/video/:/transcode/universal/stop?session=" + session
 				req.Path = stop
-				response, err = protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
+				response, err = strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], false)
 				if err != nil || response.Status != http.StatusOK {
 					return result, fmt.Errorf("%s %s %s stop failed: status=%d error=%v", viewer, name, mode.name, response.Status, err)
 				}
@@ -589,7 +589,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			dashDecisionPath := "/video/:/transcode/universal/decision?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=dash&session=" + dashSession + "&directPlay=0&directStream=1"
 			h.Set("Accept", "application/xml")
 			dashDecisionReq := protocol.Request{Method: http.MethodGet, Path: dashDecisionPath, Headers: map[string]http.Header{name: h}}
-			dashDecision, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, dashDecisionReq, name, viewerIDs[viewer], false)
+			dashDecision, err := strictFetch(ctx, client, base, "parity-"+viewer, dashDecisionReq, name, viewerIDs[viewer], false)
 			if err != nil || dashDecision.Status != http.StatusOK || requireDecision(dashDecision.Body, "remux") != nil {
 				return result, fmt.Errorf("%s %s DASH decision: status=%d error=%v body=%s", viewer, name, dashDecision.Status, err, dashDecision.Body)
 			}
@@ -597,21 +597,21 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			dashPath := "/video/:/transcode/universal/start.mpd?path=%2Flibrary%2Fmetadata%2F{{movieKey}}&protocol=dash&session=" + dashSession + "&directPlay=0&directStream=1"
 			h.Set("Accept", "application/dash+xml")
 			dashReq := protocol.Request{Method: http.MethodGet, Path: dashPath, Headers: map[string]http.Header{name: h}}
-			mpd, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
+			mpd, err := strictFetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
 			if err != nil || mpd.Status != http.StatusOK || !bytes.Contains(mpd.Body, []byte("<MPD")) {
 				return result, fmt.Errorf("%s %s DASH start: status=%d error=%v body=%s", viewer, name, mpd.Status, err, mpd.Body)
 			}
 			result.captures = append(result.captures, capture{viewer, name, "playback:dash:manifest", false, mpd})
 			for _, part := range []string{"header", "0.m4s"} {
 				dashReq.Path = "/video/:/transcode/universal/session/" + dashSession + "/0/" + part
-				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
+				response, err := strictFetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
 				if err != nil || response.Status != http.StatusOK || len(response.Body) == 0 {
 					return result, fmt.Errorf("%s %s DASH %s: status=%d error=%v", viewer, name, part, response.Status, err)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "playback:dash:" + part, false, response})
 			}
 			dashReq.Path = "/video/:/transcode/universal/stop?session=" + dashSession
-			stopped, err = protocol.Fetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
+			stopped, err = strictFetch(ctx, client, base, "parity-"+viewer, dashReq, name, viewerIDs[viewer], false)
 			if err != nil || stopped.Status != http.StatusOK {
 				return result, fmt.Errorf("%s %s DASH stop: status=%d error=%v", viewer, name, stopped.Status, err)
 			}
@@ -637,13 +637,13 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				h.Set("X-Plex-Session-Identifier", id)
 				h.Set("Accept", "application/json")
 				req := protocol.Request{Method: http.MethodGet, Path: "/:/timeline?ratingKey={{movieKey}}&state=playing&time=1000&duration=5400000", Headers: map[string]http.Header{name + "-json": h}}
-				started, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
+				started, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
 				if err != nil || started.Status != http.StatusOK {
 					return result, fmt.Errorf("%s %s terminate setup: status=%d error=%v", viewer, name, started.Status, err)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "termination:timeline-start", true, started})
 				req.Path = endpoint + "?sessionId=" + url.QueryEscape(id)
-				response, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, nil, true)
+				response, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, nil, true)
 				want := http.StatusForbidden
 				if viewer == "owner" {
 					want = http.StatusOK
@@ -653,7 +653,7 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				}
 				result.captures = append(result.captures, capture{viewer, name, "termination:" + endpoint, true, response})
 				req.Path = "/:/timeline?ratingKey={{movieKey}}&state=stopped&time=1000&duration=5400000"
-				stopped, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
+				stopped, err := strictFetch(ctx, client, base, "parity-"+viewer, req, name, viewerIDs[viewer], true)
 				if err != nil || stopped.Status != http.StatusOK {
 					return result, fmt.Errorf("%s %s termination stop: status=%d error=%v", viewer, name, stopped.Status, err)
 				}

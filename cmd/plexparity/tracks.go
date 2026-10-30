@@ -59,7 +59,7 @@ func trackIdentity(ctx context.Context, client *http.Client, base, viewer, name 
 	h.Set("Accept", "application/xml")
 	request := protocol.Request{Method: http.MethodGet, Path: "/library/metadata/" + key, Headers: map[string]http.Header{name: h}}
 	fetch := func(label string) (protocol.Response, error) {
-		r, err := protocol.Fetch(ctx, client, base, "parity-"+viewer, request, name, nil, false)
+		r, err := strictFetch(ctx, client, base, "parity-"+viewer, request, name, nil, false)
 		if err != nil || r.Status != http.StatusOK {
 			return r, fmt.Errorf("%s %s track %s: status=%d error=%v", viewer, name, label, r.Status, err)
 		}

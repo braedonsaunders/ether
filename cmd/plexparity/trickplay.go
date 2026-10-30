@@ -21,7 +21,7 @@ func trickplayCapture(ctx context.Context, client *http.Client, base, viewer, na
 	h.Set("X-Plex-Session-Identifier", id)
 	h.Set("Accept", "application/xml")
 	fetch := func(path string) (protocol.Response, error) {
-		return protocol.Fetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
+		return strictFetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
 	}
 	path := "/video/:/transcode/universal/decision?path=" + url.QueryEscape("/library/metadata/"+key) + "&protocol=http&session=" + id + "&directPlay=1&directStream=1"
 	decision, err := fetch(path)

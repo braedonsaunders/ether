@@ -21,7 +21,7 @@ func liveTVCapture(ctx context.Context, client *http.Client, base, viewer, name 
 	h.Set("Accept", "application/json")
 	h.Set("X-Plex-Client-Identifier", "parity-"+viewer+"-"+name+"-livetv")
 	fetch := func(method, path string) (protocol.Response, error) {
-		return protocol.Fetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
+		return strictFetch(ctx, client, base, "parity-"+viewer, protocol.Request{Method: method, Path: path, Headers: map[string]http.Header{name: h}}, name, nil, false)
 	}
 	tune, err := fetch(http.MethodPost, "/livetv/dvrs/1/channels/fixture-channel/tune")
 	if err != nil {
