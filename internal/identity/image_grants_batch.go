@@ -124,7 +124,7 @@ func (s *ImageGrantService) IssueBatch(ctx context.Context, req frontend.ImageBa
 		return nil, err
 	}
 	defer tx.Rollback()
-	if err := s.insertMirrored(ctx, tx, viewer.ID, source, req.Device.ID, string(device), "", rows); err != nil {
+	if err := s.insertAdmitted(ctx, tx, viewer.ID, source, req.Device.ID, string(device), "", rows); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

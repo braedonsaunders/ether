@@ -16,18 +16,18 @@ import (
 )
 
 func init() {
+	store.RegisterAfter("capability_tickets", "capability_headers", "identity_grants")
+	store.Register("capability_tickets", 1, `CREATE TABLE IF NOT EXISTS capability_tickets (namespace TEXT NOT NULL,digest TEXT NOT NULL,purpose TEXT NOT NULL,source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE,device TEXT NOT NULL,legacy_mirror INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(namespace,digest),FOREIGN KEY(namespace,digest) REFERENCES capability_headers(namespace,digest) ON DELETE CASCADE);`)
+	store.RegisterAfter("frontend_tickets", "capability_tickets")
+
 	store.RegisterAfter("frontend_tickets", "auth", "identity_grants")
 	store.Register("frontend_tickets", 2, `CREATE INDEX frontend_tickets_scope_expiry ON frontend_tickets(viewer_id,surface,expires,hash);`)
 	store.Register("frontend_tickets", 1, `CREATE TABLE frontend_tickets (hash TEXT PRIMARY KEY, surface TEXT NOT NULL, purpose TEXT NOT NULL, viewer_id INTEGER NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE, source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE, device TEXT NOT NULL, expires INTEGER NOT NULL); CREATE INDEX frontend_tickets_expiry ON frontend_tickets(expires);`)
 }
 
-// The legacy table remains the single consume authority during rolling
-// upgrades. Old consumers may leave shared headers charged until expiry and
-// old issuers bypass the new quota. Retiring the legacy table requires an
-// independently verified all-writer compatibility fence and migration.
 type ticketEngine interface {
-	IssueMirrored(context.Context, capability.TicketScope, []capability.TicketEntry) (int64, error)
-	ConsumeMirrored(context.Context, string, string, string) (capability.Ticket, error)
+	IssueBatch(context.Context, capability.TicketScope, []capability.TicketEntry) (int64, error)
+	Consume(context.Context, string, string, string) (capability.Ticket, error)
 }
 
 type TicketService struct {
@@ -76,7 +76,7 @@ func (s *TicketService) Issue(ctx context.Context, credential string, device fro
 	if err != nil {
 		return "", err
 	}
-	_, err = s.engine.IssueMirrored(ctx, capability.TicketScope{ViewerID: v.ID, Surface: string(s.surface), DeviceID: device.ID, SourceHash: source, DeviceJSON: string(data)}, []capability.TicketEntry{{Digest: hash, Purpose: purpose}})
+	_, err = s.engine.IssueBatch(ctx, capability.TicketScope{ViewerID: v.ID, Surface: string(s.surface), DeviceID: device.ID, SourceHash: source, DeviceJSON: string(data)}, []capability.TicketEntry{{Digest: hash, Purpose: purpose}})
 	if err != nil {
 		return "", err
 	}
@@ -88,8 +88,11 @@ func (s *TicketService) Consume(ctx context.Context, token, purpose string) (fro
 	if !ok || purpose == "" {
 		return out, core.ErrUnauthorized
 	}
-	result, err := s.engine.ConsumeMirrored(ctx, string(s.surface), purpose, hash)
+	result, err := s.engine.Consume(ctx, string(s.surface), purpose, hash)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return out, core.ErrUnauthorized
+		}
 		return out, err
 	}
 	viewerID, data := result.ViewerID, result.DeviceJSON

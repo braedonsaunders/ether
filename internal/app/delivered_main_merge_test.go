@@ -20,9 +20,10 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		"experience_receipts":   4,
 		"experience_row_views":  3,
 		"release_observations":  1,
-		"frontend_tickets":      2,
-		"frontend_image_grants": 6,
-		"capability_headers":    2,
+		"frontend_tickets":      3,
+		"frontend_image_grants": 7,
+		"capability_headers":    3,
+		"capability_tickets":    1,
 		"viewer_alerts":         2,
 		"viewer_push":           2,
 		"watchlist_episodes":    1,
@@ -47,8 +48,8 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		{"frontend_tickets", "identity_grants"},
 		{"frontend_image_grants", "auth"},
 		{"frontend_image_grants", "identity_grants"},
-		{"capability_headers", "auth"},
-		{"capability_headers", "identity_grants"},
+		{"capability_tickets", "identity_grants"},
+		{"capability_tickets", "capability_headers"},
 	} {
 		if !store.HasDependency(dep.component, dep.after) {
 			t.Errorf("%s missing RegisterAfter %s", dep.component, dep.after)
@@ -64,8 +65,8 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		{"auth", "identity_grants"},
 		{"identity_grants", "frontend_tickets"},
 		{"identity_grants", "frontend_image_grants"},
-		{"auth", "capability_headers"},
-		{"identity_grants", "capability_headers"},
+		{"identity_grants", "capability_tickets"},
+		{"capability_headers", "capability_tickets"},
 	} {
 		if index[pair[0]] > index[pair[1]] {
 			t.Errorf("%s (at %d) applied after %s (at %d)", pair[0], index[pair[0]], pair[1], index[pair[1]])

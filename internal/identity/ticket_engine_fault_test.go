@@ -25,15 +25,15 @@ type ticketCommitFault struct {
 
 var errAmbiguousTicketCommit = errors.New("injected ambiguous commit")
 
-func (f ticketCommitFault) IssueMirrored(ctx context.Context, s capability.TicketScope, e []capability.TicketEntry) (int64, error) {
-	expiry, err := f.delegate.IssueMirrored(ctx, s, e)
+func (f ticketCommitFault) IssueBatch(ctx context.Context, s capability.TicketScope, e []capability.TicketEntry) (int64, error) {
+	expiry, err := f.delegate.IssueBatch(ctx, s, e)
 	if err == nil && f.issue {
 		return 0, errAmbiguousTicketCommit
 	}
 	return expiry, err
 }
-func (f ticketCommitFault) ConsumeMirrored(ctx context.Context, s, p, d string) (capability.Ticket, error) {
-	ticket, err := f.delegate.ConsumeMirrored(ctx, s, p, d)
+func (f ticketCommitFault) Consume(ctx context.Context, s, p, d string) (capability.Ticket, error) {
+	ticket, err := f.delegate.Consume(ctx, s, p, d)
 	if err == nil && f.consume {
 		return capability.Ticket{}, errAmbiguousTicketCommit
 	}
