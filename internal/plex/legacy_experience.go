@@ -7,7 +7,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -102,32 +101,6 @@ func (s *Server) legacyHandlePostplay(w http.ResponseWriter, r *http.Request) {
 
 // ---------------------------------------------------------------------------
 // Search
-
-func (s *Server) legacyRunSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
-	types := s.searchTypes(pr.User, sectionID)
-	if strings.TrimSpace(query) == "" || len(types) == 0 {
-		return nil, nil
-	}
-	if items, ok := s.discoverySearch(ctx, pr, query, limit); ok {
-		items = s.visibleTitles(pr.User, items)
-		allowed := map[core.MediaType]bool{}
-		for _, typ := range types {
-			allowed[typ] = true
-		}
-		filtered := items[:0:0]
-		for _, item := range items {
-			if allowed[item.Type] {
-				filtered = append(filtered, item)
-			}
-		}
-		return filtered, nil
-	}
-	res, err := s.d.Catalog.Search(ctx, query, types, limit)
-	if err != nil {
-		return nil, err
-	}
-	return s.filterAllowed(pr.User, res), nil
-}
 
 func (s *Server) legacyVibeSearch(ctx context.Context, pr *Request, query string) (*core.Collection, []core.Title, bool, error) {
 	searcher := s.d.VibeSearch

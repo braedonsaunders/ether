@@ -87,3 +87,21 @@ func TestSearchFiltersBeforeLimitAndBackfills(t *testing.T) {
 		t.Fatalf("backfill: %+v, %v, calls %d", got, err, calls)
 	}
 }
+
+func TestSearchUnrestrictedNaturalKeepsLegacyLimitAndTitlePolicy(t *testing.T) {
+	calls := 0
+	s := Search{Unrestricted: func(*core.User) bool { return true }, Natural: func(_ context.Context, _ *core.User, _ string, limit int) ([]core.Title, bool) {
+		calls++
+		if limit != 0 {
+			t.Fatalf("limit=%d", limit)
+		}
+		return []core.Title{{Key: 1, Type: core.TypeMovie}, {Key: 2, Type: core.TypeShow}, {Key: 3, Type: core.TypeMovie, Adult: true}}, true
+	}, Visibility: Visibility{FilterAvailable: func(context.Context, []core.Title) []core.Title {
+		t.Fatal("legacy path requested availability")
+		return nil
+	}}}
+	got, err := s.Find(context.Background(), &core.User{}, "query", []core.MediaType{core.TypeMovie}, 0)
+	if err != nil || calls != 1 || len(got) != 1 || got[0].Key != 1 {
+		t.Fatalf("results=%+v calls=%d err=%v", got, calls, err)
+	}
+}

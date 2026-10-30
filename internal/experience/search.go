@@ -13,6 +13,9 @@ type Search struct {
 	Visibility Visibility
 	Natural    func(context.Context, *core.User, string, int) ([]core.Title, bool)
 	Catalog    func(context.Context, string, []core.MediaType, int) ([]core.Title, error)
+	// Unrestricted is a trusted host policy capability. Nil uses the
+	// restricted, inherited-policy and availability path.
+	Unrestricted func(*core.User) bool
 }
 
 func (s Search) Find(ctx context.Context, viewer *core.User, query string, types []core.MediaType, limit int) ([]core.Title, error) {
@@ -22,6 +25,27 @@ func (s Search) Find(ctx context.Context, viewer *core.User, query string, types
 	allowed := make(map[core.MediaType]bool, len(types))
 	for _, typ := range types {
 		allowed[typ] = true
+	}
+	if s.Unrestricted != nil && s.Unrestricted(viewer) {
+		var items []core.Title
+		var natural bool
+		if s.Natural != nil {
+			items, natural = s.Natural(ctx, viewer, query, limit)
+		}
+		if !natural {
+			var err error
+			items, err = s.Catalog(ctx, query, types, limit)
+			if err != nil {
+				return nil, err
+			}
+		}
+		filtered := make([]core.Title, 0, len(items))
+		for i := range items {
+			if s.Visibility.TitleAllowed(viewer, &items[i]) && (!natural || allowed[items[i].Type]) {
+				filtered = append(filtered, items[i])
+			}
+		}
+		return filtered, nil
 	}
 	// The catalogue and natural-search APIs limit candidates, not permitted
 	// results. Expand only when policy removed candidates and the source may

@@ -838,11 +838,9 @@ func (s *Server) searchTypes(u *core.User, sectionID int) []core.MediaType {
 }
 
 func (s *Server) runSearch(ctx context.Context, pr *Request, query string, sectionID, limit int) ([]core.Title, error) {
-	if !s.viewerRestricted(pr.User) {
-		return s.legacyRunSearch(ctx, pr, query, sectionID, limit)
-	}
 	search := experience.Search{
-		Visibility: s.visibility(),
+		Visibility:   s.visibility(),
+		Unrestricted: func(u *core.User) bool { return !s.viewerRestricted(u) },
 		Natural: func(ctx context.Context, _ *core.User, query string, limit int) ([]core.Title, bool) {
 			return s.discoverySearch(ctx, pr, query, limit)
 		},
