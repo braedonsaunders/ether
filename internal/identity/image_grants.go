@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -108,6 +109,23 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 	if experience == nil {
 		return core.ErrNotAvailable
 	}
+	if image.Kind == frontend.ImagePerson {
+		if people, ok := experience.(frontend.PeopleReader); ok {
+			raw, hasPrefix := strings.CutPrefix(image.Subject, "tmdb:")
+			id, parseErr := strconv.ParseInt(raw, 10, 64)
+			if !hasPrefix || parseErr != nil || id <= 0 || strconv.FormatInt(id, 10) != raw {
+				return core.ErrUnauthorized
+			}
+			person, err := people.PersonCredit(ctx, viewer, device, item, id)
+			if err != nil {
+				return err
+			}
+			if person.ID == "" || person.TMDB != id {
+				return core.ErrUnauthorized
+			}
+		}
+	}
+
 	var images []frontend.Image
 	var complete bool
 	var err error

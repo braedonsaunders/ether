@@ -57,6 +57,9 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 	if err := i.browseRoutes(); err != nil {
 		return nil, err
 	}
+	if err := i.peopleRoutes(); err != nil {
+		return nil, err
+	}
 	return i, nil
 }
 

@@ -39,13 +39,17 @@ type ServiceDeps struct {
 	Get           func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
+	// CachedGetMany reads current cached rows in bounded batches without refresh.
+	CachedGetMany func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
 	// ParentTitles resolves distinct parents using the same semantics as GetTitle.
 	ParentTitles func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
 	// CachedVirtualSeason resolves a viewer's already-computed episode layout.
-	CachedVirtualSeason   func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
-	Children              func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Grandchildren         func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Browse                func(context.Context, core.BrowseQuery) (core.Page, error)
+	CachedVirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
+	// CreditItems enumerates cached credit-title keys without browsing or hydration.
+	CreditItems           func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
 	AiredEpisodes         func(context.Context, core.RatingKey, int, int) (core.Page, error)
 	AddedTimes            func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
 	SimilarSource         func(context.Context, core.RatingKey, int) ([]core.Title, error)
