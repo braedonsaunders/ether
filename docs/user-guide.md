@@ -2,6 +2,8 @@
 
 Open <http://localhost:32400/ether/> on the server to manage Ether. Use your
 chosen media apps to browse and watch, subject to the support notes below.
+Ether runs on [Prism](prism.md), the shared server architecture containing
+the Plex, Jellyfin, Emby and Silo frontends.
 If Ether uses another port, such as
 32450 alongside an existing Plex server, use that port instead.
 
@@ -75,7 +77,9 @@ seek; this has not yet been verified on the physical devices.
 
 The setup wizard starts with app selection and owner-account setup. If you
 select Plex, sign in with Plex and claim the server; otherwise, create a local
-Ether owner account. Then choose where Ether streams from: a
+Ether owner account. Jellyfin, Emby and Silo do not require a Plex account;
+use Ether viewer accounts and the connection instructions on the Apps page.
+Then choose where Ether streams from: a
 debrid account (Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link or
 Offcloud), a Usenet provider, or both, each tested before you continue. Next add at least one
 indexer: a Stremio stream addon's install link or a Torznab URL for debrid,
@@ -620,10 +624,15 @@ reporting an issue.
 
 ## Owner sign-in and playback access
 
-After setup, sign in with the Plex account that owns Ether, including when you
-open the owner UI on localhost. Viewers access shared libraries through their
-own Plex accounts. Refreshing Plex sharing removes revoked viewers' access;
-stream links stop working when the viewer is inactive or the session ends.
+After setup, sign in with the owner account configured during setup, including
+when you open the owner UI on localhost: the Plex owner account for Plex setup,
+or the local Ether owner account for setup without Plex. Jellyfin, Emby and
+Silo viewers use Ether viewer accounts through their frontend’s sign-in or
+device-approval flow.
+
+Plex viewers access shared libraries through their own Plex accounts. Refreshing
+Plex sharing removes revoked viewers' access. Stream links stop working when
+the viewer is inactive or the session ends.
 
 ## Source interruptions
 

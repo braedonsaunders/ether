@@ -1,5 +1,9 @@
 # Installing Ether
 
+Ether runs on [Prism](prism.md), its shared server architecture. The app
+frontends, including Plex, run within that architecture. Install Ether as
+below; Prism has no separate installer or service.
+
 Download a macOS DMG, Windows setup EXE, Linux DEB/RPM, or standalone
 archive from the [Releases page](https://github.com/braedonsaunders/ether/releases/latest).
 Docker images are available at `ghcr.io/braedonsaunders/ether`. Packaged
@@ -18,7 +22,9 @@ needs access to FFmpeg and FFprobe for media processing.
 
 After any install, open the web UI and finish the setup wizard. Choose your
 app integrations, sign in with Plex if selected or create a local Ether owner
-account, add your sources and indexers, and pick a cache folder. Review the
+account, add your sources and indexers, and pick a cache folder. Jellyfin,
+Emby and Silo do not require a Plex account or a separate Plex Media Server.
+Review the
 [client support notes](user-guide.md#jellyfin-and-emby-apps) for integration limits.
 Ether ships no content, providers or indexers; see
 [LEGAL.md](../LEGAL.md).
@@ -150,8 +156,10 @@ and fatal crash traces to `<data dir>/logs/crash.log`.
 
 ## Remote access / port forwarding
 
-Ether uses **TCP 32400** for playback. For remote access
-outside your LAN:
+Ether’s main listener defaults to **TCP 32400**. Other frontends can have
+their own listeners; use the addresses shown on the Apps page. The following
+discovery and address-publication instructions apply to the **Plex frontend**
+for remote access outside your LAN:
 
 - Easiest: enable *Remote access* in the web UI — Ether asks your router
   for a UPnP mapping and publishes the address to plex.tv, for Plex clients.

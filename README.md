@@ -35,7 +35,7 @@
 
 A typical automated media setup is built from several excellent projects—Sonarr, Radarr, Prowlarr, SABnzbd, Overseerr, Kometa, Tautulli and more—each of them very good at its job. Wiring them together still means download clients, path mappings, webhooks and, for debrid users, FUSE/WebDAV mounts that Plex Media Server has to scan. A new title still has to download, unpack and be scanned before anyone can press Play.
 
-Ether takes a different approach to the on-demand case. **Ether is a media server backed by the live TMDB catalogue and an on-demand byte-range streaming engine.** Its app integrations connect that library to media clients. Plex is one integration: Ether speaks the PMS protocol directly. Other integrations are in development; consult the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) before choosing an app. An available integration is not a claim that every client or feature is certified.
+Ether takes a different approach to the on-demand case. **Ether is a media server backed by the live TMDB catalogue and an on-demand byte-range streaming engine.** **Ether runs on Prism, its shared protocol-neutral server architecture.** Plex, Jellyfin, Emby and Silo are frontend adapters within Prism, connecting clients to shared server services. Plex apps speak the PMS protocol through the Plex frontend. Other integrations are in development; consult the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) before choosing an app. An available integration is not a claim that every client or feature is certified.
 
 **The catalogue is available without waiting for a local library scan.** When you press **Play**, Ether resolves, health-checks, and streams the bytes on the fly. When you scrub to `01:14:22`, Ether seeks to the matching keyframe offset inside a remote Usenet RAR5 set or debrid HTTPS stream and serves just those bytes.
 
@@ -50,7 +50,7 @@ Ether takes a different approach to the on-demand case. **Ether is a media serve
 
 ## Alongside your local library
 
-Keep the media server and tools that curate the files you own. Ether adds an on-demand catalogue alongside that collection. With the Plex integration, Ether appears as a separate server in your Plex apps. Its availability depends on your configured sources; an on-demand catalogue is not a durable local library.
+Keep the media server and tools that curate the files you own. Ether adds an on-demand catalogue alongside that collection. With the Plex integration, Ether appears as a separate server in your Plex apps. An existing Plex Media Server is an optional, separate external server for local files; Prism does not require it. Ether’s availability depends on your configured sources; an on-demand catalogue is not a durable local library.
 
 The table maps familiar workflows to Ether’s on-demand features. It does not claim feature parity with these mature projects. Clustering, virtual Live TV, hardware enhancement and poster customization are optional integrations; ordinary playback needs none of them.
 
@@ -72,23 +72,37 @@ The table maps familiar workflows to Ether’s on-demand features. It does not c
 
 ## Under the hood
 
+Ether is the product; **Prism** names the architecture inside it. This diagram
+shows the intended ownership of protocol adapters and shared services. Extraction
+from legacy code is still in progress; see [Prism architecture](docs/prism.md) for
+the current code boundaries and migration debt.
+
+```text
+     Plex apps     Jellyfin apps     Emby apps     Silo apps
+         |               |               |             |
+         v               v               v             v
++-------------------------- ETHER ---------------------------+
+| PRISM: shared server architecture                          |
+|                                                           |
+| Frontend adapters: Plex (PMS) | Jellyfin | Emby | Silo       |
+|                            |                              |
+|                            v                              |
+| Shared catalogue | Identity & viewer policy                |
+| Experience: browse, search, Home, personalization, state    |
+| Session broker | Resolver | Playback                       |
+| Health checks | Range streaming | Subtitles | Transcoding  |
++----------------------------+------------------------------+
+                             |
+                             v
+               Configured providers and indexers
+                     Usenet | Debrid | HTTP
 ```
-                       Official Plex Apps (Apple TV · iOS · Android TV · Web · Roku)
-                                     │  browse · search · Play · scrub
-                                     ▼
-  ┌──────────────────────────────────────────── ETHER ────────────────────────────────────────────┐
-  │  PMS Protocol Layer      Native hubs, metadata, PlayQueues, HLS/DASH, GDM, plex.direct TLS   │
-  │  Personalization Engine  Per-viewer taste model · Beta-bandit row ranker · Learned re-ranker  │
-  │  Smart Resolver          Quality profiles · Custom formats · Measured-latency source racing   │
-  │  PAR2 & Health Oracle    16 KiB MD5 de-obfuscation · Mid-file BODY probes · Slice checksums   │
-  │  Zero-Copy Streamer      Seekable RAR4/RAR5/7z (plain & AES) · HTTPS ranges · Disk/NAS tier   │
-  │  Dialogue Aligner        Piecewise subtitle-cue solver for cross-cut failover & skip markers  │
-  │  Media & GPU Transcode   Direct play · Copy remux · HW ABR HLS/DASH · NVIDIA RTX Video VSR    │
-  └──────────────────────────────────┬───────────────────────────────────────┬────────────────────┘
-                                     │                                       │
-                        Usenet Providers (Primary + Backfill)       Debrid Accounts (RD · TorBox · AD · PM)
-                        + Newznab Indexers & Cardigann Sites        + Torznab Indexers & Cardigann Sites
-```
+
+Each frontend translates its client's protocol to shared contracts. Jellyfin,
+Emby and Silo do not require Plex authentication or Plex wire objects; their
+architecture does not route through the Plex frontend. Existing internal Plex
+helpers are migration debt, not the shared-service ownership model. App support
+and certification remain subject to the [user guide](docs/user-guide.md).
 
 ### 1. Native Usenet & Debrid streaming without extraction
 * **Lazy store-mode archive indexing (including encrypted sets):** To open a 60-part RAR4, RAR5, or 7z post on Usenet, Ether touches only the **first, second, and last volume headers** to infer the uniform layout and expose a seekable `io.ReaderAt` immediately—verifying volume boundaries lazily before serving bytes and supporting bounded native AES decryption on password-protected stored RAR4/RAR5/7z sets when the password is supplied in the NZB metadata.
@@ -240,9 +254,9 @@ Open **`http://localhost:32400/ether/`** and finish the 4-step wizard:
 <details>
 <summary><b>Do I need Plex Pass?</b></summary>
 
-At home on your local network, no. **To stream outside your home, yes.** Ether follows Plex's rules just like a standard Plex Media Server: remote playback requires Plex Pass on the server owner's account or a Remote Watch Pass on the viewer's account.
+For Plex clients at home on your local network, no. **To stream with Plex outside your home, yes.** Ether follows Plex's rules just like a standard Plex Media Server: remote playback requires Plex Pass on the server owner's account or a Remote Watch Pass on the viewer's account.
 
-Ether never emulates, unlocks, or bypasses Plex Pass or any paid Plex feature. Every viewer signs in through `plex.tv` and receives the exact entitlements Plex grants their account. If you love the official Plex apps, support Plex.
+Ether never emulates, unlocks, or bypasses Plex Pass or any paid Plex feature. Plex viewers sign in through `plex.tv` and receive the exact entitlements Plex grants their account. If you love the official Plex apps, support Plex.
 </details>
 
 <details>
@@ -292,7 +306,7 @@ Yes—and if you have local media files on disk, that's the recommended setup. O
 <details>
 <summary><b>What does Ether phone home to?</b></summary>
 
-Nothing. There is **zero telemetry or analytics**. Ether communicates only with `plex.tv` (authentication, claiming, sharing, certificates), TMDB, the providers/indexers/services *you* configure, and GitHub's release feed when checking for updates.
+Nothing. There is **zero telemetry or analytics**. Ether communicates only with `plex.tv` for the Plex integration (authentication, claiming, sharing, certificates), TMDB, the providers/indexers/services *you* configure, and GitHub's release feed when checking for updates.
 </details>
 
 ---
