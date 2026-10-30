@@ -335,5 +335,7 @@
       "component": "watchlist_episodes",
       "version": 1
     }
-  ]
+  ],
+  "postgres_sha256": "015dec9de127d547162274760a6c149863743946c954bb8812503d25e345223b",
+  "postgres_source": "9503 internal/store/{translate,lex}.go; no production RegisterDialect overrides"
 }

@@ -35,7 +35,8 @@ import (
 // database was migrated by a newer node) logs a warning and continues.
 // Owners who prefer not to migrate past running older nodes set
 // database.deferMigrations; the node then waits at startup until no live
-// node lacks the pending migrations.
+// node lacks the pending migrations. The first Prism identity transition always
+// defers past pre-Prism nodes, independent of that setting (see startupMigrationsGate).
 
 // leaseOpTimeout bounds each update-lease query.
 const leaseOpTimeout = 5 * time.Second
@@ -140,6 +141,26 @@ func (a *App) warnNewerSchema(ctx context.Context) {
 		"version", a.opts.Version, "unknownMigrations", strings.Join(unknown, ","))
 }
 
+// startupMigrationsGate makes the first Prism identity transition a stop-all
+// upgrade even when optional deferral is disabled. The epoch cannot serialize
+// membership writers in released binaries that predate auth/5. This prevents
+// migrating past a live old node; revoking old writer credentials before the
+// transition also prevents an old binary restarting after it (see the runbook).
+func startupMigrationsGate(selfID string, deferAll bool, liveAfter time.Duration, now func() time.Time) store.MigrationGate {
+	older := olderNodesGate(selfID, liveAfter, now)
+	return func(ctx context.Context, q store.Querier, pending []string) error {
+		if deferAll {
+			return older(ctx, q, pending)
+		}
+		for _, migration := range pending {
+			if migration == "auth/5" {
+				return older(ctx, q, []string{"auth/5"})
+			}
+		}
+		return nil
+	}
+}
+
 // olderNodesGate defers this node's pending migrations while another live
 // node runs a binary that does not know them (database.deferMigrations).
 // Nodes that predate the migrations report count as not knowing them.
@@ -185,7 +206,7 @@ WHERE table_schema = current_schema() AND table_name = 'cluster_nodes' AND colum
 			return err
 		}
 		if len(older) > 0 {
-			return fmt.Errorf("%w: live node(s) %s run a release without migrations %s (database.deferMigrations is set); waiting for them to update or stop",
+			return fmt.Errorf("%w: live node(s) %s run a release without migrations %s (migration deferral required); waiting for them to update or stop",
 				store.ErrMigrationDeferred, strings.Join(older, ", "), strings.Join(pending, ","))
 		}
 		return nil
