@@ -64,7 +64,7 @@ func TestEmbyExtendedVideoTypeUsesPositiveProbeEvidence(t *testing.T) {
 		{"PQ alone", frontend.StreamInfo{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &no, DolbyVisionConfigurationPresent: &no}, ""},
 		{"probed without extended type", frontend.StreamInfo{Type: "video", Codec: "h264", DolbyVisionConfigurationPresent: &no, HDR10Plus: &no}, "None"},
 		{"unknown", frontend.StreamInfo{Type: "video"}, ""},
-		{"audio", frontend.StreamInfo{Type: "audio", HDR10Plus: &yes}, ""},
+		{"audio", frontend.StreamInfo{Type: "audio", HDR10Plus: &yes}, "None"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := (&instance{protocol: "emby"}).mediaStreams([]frontend.StreamInfo{tc.stream})[0].(map[string]any)
@@ -72,10 +72,22 @@ func TestEmbyExtendedVideoTypeUsesPositiveProbeEvidence(t *testing.T) {
 				if _, ok := got["ExtendedVideoType"]; ok {
 					t.Fatalf("unexpected type: %#v", got)
 				}
+				if _, ok := got["VideoRange"]; ok {
+					t.Fatal("unknown video range")
+				}
 				return
 			}
 			if got["ExtendedVideoType"] != tc.want {
 				t.Fatalf("got %#v, want %s", got["ExtendedVideoType"], tc.want)
+			}
+			if tc.name == "probed without extended type" && got["VideoRange"] != "SDR" {
+				t.Fatalf("video range: %#v", got["VideoRange"])
+			}
+			if tc.name == "audio" && got["ExtendedVideoType"] != "None" {
+				t.Fatal(got)
+			}
+			if tc.stream.Type == "audio" && got["VideoRange"] != nil {
+				t.Fatal("audio video range", got["VideoRange"])
 			}
 		})
 	}

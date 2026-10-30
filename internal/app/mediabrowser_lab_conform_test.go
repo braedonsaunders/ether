@@ -389,14 +389,14 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}
 	var listing struct {
 		Items []struct {
-			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating string
-			ProviderIds                                                           map[string]string
-			IndexNumber, ParentIndexNumber, ProductionYear                        int
-			RunTimeTicks                                                          int64
-			CommunityRating                                                       float64
-			Genres, ProductionLocations, Taglines                                 []string
-			Studios                                                               []struct{ Name string }
-			People                                                                []struct{ Name, Role, Type string }
+			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating, SeriesName, SeasonName string
+			ProviderIds                                                                                   map[string]string
+			IndexNumber, ParentIndexNumber, ProductionYear                                                int
+			RunTimeTicks                                                                                  int64
+			CommunityRating                                                                               float64
+			Genres, ProductionLocations, Taglines                                                         []string
+			Studios                                                                                       []struct{ Name string }
+			People                                                                                        []struct{ Name, Role, Type string }
 		}
 	}
 	e = json.NewDecoder(resp.Body).Decode(&listing)
@@ -450,6 +450,8 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 			title.Type = core.TypeEpisode
 			title.ShowKey = core.ShowKey(91461)
 			title.ShowIDs = core.IDs{TMDB: 91461}
+			title.ShowTitle = x.SeriesName
+			title.SeasonTitle = x.SeasonName
 			title.Season = x.ParentIndexNumber
 			title.Episode = x.IndexNumber
 		default:
@@ -1519,6 +1521,11 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 	viewID, _ := ids.GUID(ids.View, 1)
 	itemID := ids.RatingKeyGUID(core.MovieKey(10378))
 	target.values = map[string]string{"username": "fixture-viewer", "password": "fixture-password", "device_id": "conform-" + profile, "user_id": userID, "item_id": itemID, "itemId": itemID, "media_source_id": itemID, "parent_id": viewID, "play_session_id": "initial", "position_ticks": "0"}
+	if dialect == "emby" {
+		// The recorded Emby library browse is The Scene season 1. The movies
+		// view returns a different item shape.
+		target.values["parent_id"] = ids.RatingKeyGUID(core.SeasonKey(91461, 1))
+	}
 	corpus := p.Corpus(profile)
 	if len(corpus) == 0 {
 		t.Fatal("empty profile")

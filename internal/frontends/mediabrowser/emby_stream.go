@@ -29,7 +29,14 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 			dto["ExtendedVideoType"] = "None"
 			dto["ExtendedVideoSubType"] = "None"
 			dto["ExtendedVideoSubTypeDescription"] = "None"
+			dto["VideoRange"] = "SDR"
 		}
+	} else if _, set := dto["ExtendedVideoType"]; !set {
+		// Audio and subtitle streams have no extended video type. Emby still
+		// sends None rather than omitting the fields.
+		dto["ExtendedVideoType"] = "None"
+		dto["ExtendedVideoSubType"] = "None"
+		dto["ExtendedVideoSubTypeDescription"] = "None"
 	}
 	if stream.CodecTag != "" {
 		dto["CodecTag"] = stream.CodecTag

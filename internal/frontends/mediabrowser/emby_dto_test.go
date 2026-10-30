@@ -50,11 +50,14 @@ func TestEmbyItemBaseDoesNotChangeJellyfin(t *testing.T) {
 	title := frontend.Title{Title: "Example", SortTitle: "Example, The", Type: "movie", IDs: core.IDs{IMDB: "tt1234567", TMDB: 42}}
 	emby := (&instance{protocol: "emby"}).itemDTO(title, frontend.WatchStatus{})
 	jellyfin := (&instance{protocol: "jellyfin"}).itemDTO(title, frontend.WatchStatus{})
-	if emby["LockData"] != false || emby["ForcedSortName"] != title.SortTitle {
+	if emby["LockData"] != false || emby["ForcedSortName"] != title.SortTitle || emby["ParentId"] == "" || emby["ParentId"] == nil {
 		t.Fatalf("Emby base fields: %#v", emby)
 	}
 	if _, ok := jellyfin["LockData"]; ok {
 		t.Fatalf("Emby field leaked to Jellyfin: %#v", jellyfin)
+	}
+	if _, ok := jellyfin["ParentId"]; ok {
+		t.Fatalf("library parent leaked to Jellyfin: %#v", jellyfin)
 	}
 	urls := emby["ExternalUrls"].([]any)
 	if len(urls) != 2 || urls[0].(map[string]string)["Url"] != "https://www.imdb.com/title/tt1234567/" || urls[1].(map[string]string)["Url"] != "https://www.themoviedb.org/movie/42" {

@@ -2,6 +2,7 @@ package transcode
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -224,12 +225,14 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 		if si.FrameRate == 0 {
 			return si, false, incomplete("no frame rate")
 		}
+		mp4SampleFacts(&si, entry.typ, scale, deltas)
 		return si, true, nil
 	case "soun":
 		si.Type = "audio"
 		if err := mp4Audio(b, entry, &si); err != nil {
 			return si, false, err
 		}
+		mp4SampleFacts(&si, entry.typ, scale, nil)
 		return si, true, nil
 	case "sbtl", "subt", "text":
 		si.Type = "subtitle"
@@ -244,6 +247,7 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 		default:
 			return si, false, incomplete("subtitle entry %s", entry.typ)
 		}
+		mp4SampleFacts(&si, entry.typ, scale, nil)
 		return si, true, nil
 	}
 	return si, false, nil
@@ -559,6 +563,24 @@ func movLanguage(code uint16) string {
 		return string([]byte{byte(code>>10&0x1f) + 0x60, byte(code>>5&0x1f) + 0x60, byte(code&0x1f) + 0x60})
 	}
 	return ""
+}
+
+// mp4SampleFacts records the sample-entry tag, the track timescale, and a
+// constant video frame rate. A variable rate stays unset rather than averaged.
+func mp4SampleFacts(si *core.StreamInfo, tag string, scale uint32, deltas [][2]uint32) {
+	if tag != "" {
+		si.CodecTag = tag
+	}
+	if scale > 0 {
+		si.TimeBase = fmt.Sprintf("1/%d", scale)
+	}
+	if si.Type != "video" || scale == 0 || len(deltas) == 0 || deltas[0][1] == 0 {
+		return
+	}
+	if len(deltas) == 1 || (len(deltas) == 2 && deltas[1][0] == 1) {
+		avg := float64(scale) / float64(deltas[0][1])
+		si.AverageFrameRate = &avg
+	}
 }
 
 // neroChapters reads a udta/chpl box as libavformat does: ids are the

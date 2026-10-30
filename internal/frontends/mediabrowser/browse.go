@@ -77,7 +77,8 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 	if t.OriginalTitle != "" {
 		m["OriginalTitle"] = t.OriginalTitle
 	}
-	if t.Language != "" {
+	// The pinned Emby 4.10 schema does not describe OriginalLanguage.
+	if t.Language != "" && i.protocol != "emby" {
 		m["OriginalLanguage"] = t.Language
 	}
 	if t.ContentRating != "" {
@@ -125,6 +126,22 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 	}
 	if i.protocol == "emby" {
 		i.embyItemDTO(m, t, state)
+		// Movies and shows belong to their configured library. Episodes and
+		// seasons already name the season or series that contains them.
+		if _, ok := m["ParentId"]; !ok {
+			section := int64(0)
+			switch t.Type {
+			case "movie":
+				section = 1
+			case "show":
+				section = 2
+			}
+			if section != 0 {
+				if id, err := ids.GUID(ids.View, section); err == nil {
+					m["ParentId"] = id
+				}
+			}
+		}
 	}
 	return m
 }

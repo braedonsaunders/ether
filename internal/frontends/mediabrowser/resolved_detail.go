@@ -89,8 +89,18 @@ func (i *instance) applyResolvedDetail(r *http.Request, viewer *frontend.Viewer,
 	if plan.Media.BitrateKbps > 0 {
 		dto["Bitrate"] = plan.Media.BitrateKbps * 1000
 	}
-	if plan.Media.Video() != nil {
-		dto["VideoType"] = "VideoFile"
+	if video := plan.Media.Video(); video != nil {
+		// VideoType is not in the pinned Emby schema. Width and height are.
+		if i.protocol != "emby" {
+			dto["VideoType"] = "VideoFile"
+		} else {
+			if video.Width > 0 {
+				dto["Width"] = video.Width
+			}
+			if video.Height > 0 {
+				dto["Height"] = video.Height
+			}
+		}
 	}
 	if i.protocol == "jellyfin" {
 		dto["EnableMediaSourceDisplay"] = len(sources) > 1
