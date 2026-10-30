@@ -23,6 +23,7 @@ func init() {
 	store.RegisterAfter("frontend_image_grants", "auth", "identity_grants")
 	store.Register("frontend_image_grants", 2, `ALTER TABLE frontend_image_grants ADD COLUMN channel TEXT NOT NULL DEFAULT '';`)
 	store.Register("frontend_image_grants", 3, `ALTER TABLE frontend_image_grants ADD COLUMN image_subject TEXT NOT NULL DEFAULT '';`)
+	store.Register("frontend_image_grants", 4, `CREATE INDEX frontend_image_grants_scope_expiry ON frontend_image_grants(viewer_id,surface,expires,hash);`)
 }
 
 type ImageSource interface {
@@ -37,6 +38,10 @@ type ImageGrantService struct {
 	artwork    frontend.Artwork
 	now        func() time.Time
 	ttl        time.Duration
+	admission  imageAdmission
+	// beforeImageCleanup is test-only. It runs after the shard lock and the
+	// source recheck, and before expired-row deletion.
+	beforeImageCleanup func(*sql.Tx)
 }
 
 // NewArtworkImageGrantService serves descriptors through the authorized
@@ -67,7 +72,7 @@ func NewImageGrantService(db *sql.DB, surface frontend.Protocol, grants *Grants,
 	if now == nil {
 		now = time.Now
 	}
-	return &ImageGrantService{db: db, surface: surface, grants: grants, experience: experience, images: images, now: now, ttl: ttl}, nil
+	return &ImageGrantService{db: db, surface: surface, grants: grants, experience: experience, images: images, now: now, ttl: ttl, admission: defaultImageAdmission()}, nil
 }
 func validImageSecret(secret string) (string, bool) {
 	b, e := base64.RawURLEncoding.Strict().DecodeString(secret)
@@ -148,17 +153,17 @@ func (s *ImageGrantService) Issue(ctx context.Context, req frontend.ImageGrantRe
 	}
 	secret := base64.RawURLEncoding.EncodeToString(random[:])
 	hash, _ := validImageSecret(secret)
-	now := s.now().UnixMilli()
-	result, err := s.db.ExecContext(ctx, `INSERT INTO frontend_image_grants(hash,source_hash,viewer_id,surface,item,device,image_kind,image_path,image_tag,expires,channel,image_subject) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1)`, hash, source, viewer.ID, string(s.surface), int64(req.Item), string(device), req.Image.Kind, req.Image.Path, req.Image.Tag, now+s.ttl.Milliseconds(), req.Channel, req.Image.Subject, source, viewer.ID, string(s.surface), now)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
+	defer tx.Rollback()
+	row := imageBatchRow{hash: hash, item: req.Item, image: req.Image}
+	if err = s.insertMirrored(ctx, tx, viewer.ID, source, req.Device.ID, string(device), req.Channel, []imageBatchRow{row}); err != nil {
 		return "", err
 	}
-	if n != 1 {
-		return "", core.ErrUnauthorized
+	if err = tx.Commit(); err != nil {
+		return "", err
 	}
 	return secret, nil
 }
@@ -175,18 +180,7 @@ func (s *ImageGrantService) Revoke(ctx context.Context, credential, secret strin
 	if !ok {
 		return core.ErrUnauthorized
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE frontend_image_grants SET revoked=1 WHERE hash=? AND source_hash=? AND viewer_id=? AND surface=?`, hash, source, viewer.ID, string(s.surface))
-	if err != nil {
-		return err
-	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return core.ErrUnauthorized
-	}
-	return nil
+	return s.revokeMirrored(ctx, viewer.ID, source, hash)
 }
 func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
