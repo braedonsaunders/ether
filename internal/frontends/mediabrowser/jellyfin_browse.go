@@ -184,11 +184,6 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 			setMissing(item, key, nil)
 		}
 	}
-	if title.Type == "show" || title.Type == "season" {
-		if data, ok := item["UserData"].(map[string]any); ok {
-			delete(data, "PlayedPercentage")
-		}
-	}
 	if title.ChildCount > 0 {
 		setMissing(item, "ChildCount", title.ChildCount)
 	}
@@ -421,8 +416,39 @@ func seasonDisplayName(t frontend.Title) string {
 	return ""
 }
 
-// jellyfinSeasonListFields drops season keys that Jellyfin omits unless the
-// Fields query asked for them. Counts and names the title has stay.
+// jellyfinListFields drops list keys Jellyfin leaves off unless Fields asked
+// for them. Detail responses keep the item DTO. A season also drops runtime
+// unless media sources were requested.
+func (i *instance) jellyfinListFields(r *http.Request, item map[string]any, title frontend.Title) {
+	if i == nil || i.protocol != "jellyfin" {
+		return
+	}
+	fields := fieldSet(r)
+	if !fields["overview"] {
+		delete(item, "Overview")
+	}
+	if !fields["datecreated"] {
+		delete(item, "DateCreated")
+	}
+	if !fields["sortname"] {
+		delete(item, "SortName")
+	}
+	if !fields["providerids"] {
+		delete(item, "ProviderIds")
+	}
+	if !fields["genres"] {
+		delete(item, "Genres")
+		delete(item, "GenreItems")
+	}
+	if title.Type == "season" && !fields["mediasources"] {
+		delete(item, "RunTimeTicks")
+	}
+	delete(item, "CanDelete")
+	delete(item, "CanDownload")
+}
+
+// jellyfinSeasonListFields is the season row trim used by resume, next-up, and
+// ancestors. Those responses keep overview and genres that a folder listing omits.
 func (i *instance) jellyfinSeasonListFields(r *http.Request, item map[string]any, title frontend.Title) {
 	if i == nil || i.protocol != "jellyfin" || title.Type != "season" {
 		return

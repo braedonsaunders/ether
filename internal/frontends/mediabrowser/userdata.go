@@ -63,7 +63,15 @@ func (i *instance) mutate(w http.ResponseWriter, r *http.Request, kind string) {
 	}
 	st := data[key]
 	id := ids.RatingKeyGUID(key)
-	jsonReply(w, i.userDataDTO(id, st))
+	dto := i.userDataDTO(id, st)
+	// Jellyfin omits a zero percentage on the played-item body. Item listings
+	// still carry the key when the watch row has progress.
+	if i.protocol == "jellyfin" {
+		if pct, ok := dto["PlayedPercentage"].(float64); ok && pct == 0 {
+			delete(dto, "PlayedPercentage")
+		}
+	}
+	jsonReply(w, dto)
 }
 func (i *instance) mutationRoutes() error {
 	for _, path := range []struct{ pattern, kind string }{{"/UserItems/{itemId}/Rating", "likes"}, {"/Users/{userId}/Items/{itemId}/Rating", "likes"}, {"/UserPlayedItems/{itemId}", "played"}, {"/Users/{userId}/PlayedItems/{itemId}", "played"}, {"/UserFavoriteItems/{itemId}", "favorite"}, {"/Users/{userId}/FavoriteItems/{itemId}", "favorite"}} {

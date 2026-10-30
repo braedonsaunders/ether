@@ -486,7 +486,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 			item[key] = value
 		}
 		i.shapeJellyfinItem(r, v, item, title)
-		i.jellyfinSeasonListFields(r, item, title)
+		i.jellyfinListFields(r, item, title)
 		items = append(items, item)
 	}
 	jsonReply(w, i.queryResult(items, page.Total, offset))

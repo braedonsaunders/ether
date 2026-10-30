@@ -326,7 +326,7 @@ func TestJellyfinEpisodeParentsComeFromTheTitle(t *testing.T) {
 	show := i.itemDTO(frontend.Title{Key: core.ShowKey(42), Type: "show", Title: "Show", Studios: []string{"A24"}}, frontend.WatchStatus{})
 	i.shapeJellyfinItem(nil, nil, show, frontend.Title{Type: "show", Studios: []string{"A24"}})
 	data, _ := show["UserData"].(map[string]any)
-	if _, ok := data["PlayedPercentage"]; ok {
+	if data["PlayedPercentage"] != float64(0) {
 		t.Fatal(data)
 	}
 }
