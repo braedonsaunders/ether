@@ -28,6 +28,9 @@ func serve(args []string) error {
 	itemsFile := fs.String("items", "", "reference item listing JSON")
 	jf := fs.String("jellyfin", "127.0.0.1:18096", "Jellyfin listen address")
 	emby := fs.String("emby", "127.0.0.1:18097", "Emby listen address")
+	silo := fs.String("silo", "", "optional Silo loopback listen address")
+	webdav := fs.String("webdav", "", "optional WebDAV loopback listen address")
+	stremio := fs.String("stremio", "", "optional Stremio loopback listen address")
 	if e := fs.Parse(args); e != nil {
 		return e
 	}
@@ -87,7 +90,18 @@ func serve(args []string) error {
 	}
 	defer closeApp()
 	servers := []*http.Server{{Addr: *jf, Handler: handlers["jellyfin"], ReadHeaderTimeout: 10 * time.Second}, {Addr: *emby, Handler: handlers["emby"], ReadHeaderTimeout: 10 * time.Second}}
-	errc := make(chan error, 2)
+	for _, surface := range []struct{ name, address string }{{"silo", *silo}, {"webdav", *webdav}, {"stremio", *stremio}} {
+		if surface.address == "" {
+			continue
+		}
+		host, _, err := net.SplitHostPort(surface.address)
+		ip := net.ParseIP(host)
+		if err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("%s listener must bind a loopback IP", surface.name)
+		}
+		servers = append(servers, &http.Server{Addr: surface.address, Handler: handlers[surface.name], ReadHeaderTimeout: 10 * time.Second})
+	}
+	errc := make(chan error, len(servers))
 	for _, s := range servers {
 		ln, e := net.Listen("tcp", s.Addr)
 		if e != nil {

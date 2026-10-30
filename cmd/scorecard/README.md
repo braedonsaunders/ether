@@ -226,3 +226,15 @@ Matched, successful, quality-verified pairs for transcode start, seek to picture
 resume, subtitle/audio switch, browse latency and CPU per stream-minute fail
 when Ether exceeds the reference in that observation. A single passing pair is
 not proof of overall parity: collect repetitions and assess uncertainty.
+
+For disposable TV fixtures, optional `-silo 127.0.0.1:18098`,
+`-webdav 127.0.0.1:18099`, and `-stremio 127.0.0.1:18100` mount the real
+registered handlers, backed by the same fixture catalogue and broker. These
+extra listeners accept loopback IPs only; a separately managed recording proxy
+can provide controlled LAN access. The private fixture data directory contains
+`scorecard-app-credentials.json` (mode 0600), with distinct WebDAV and Stremio
+viewer grants. It is a secret: do not commit, log, or include it in captures.
+Silo uses the seeded local viewer login. Stremio clients may require HTTPS and
+app-origin configuration not provided by this fixture. A mounted handler does
+not establish that end-to-end playback is certified. M3U/XMLTV and DLNA require
+the corresponding product frontends; Plex is deliberately not mounted.

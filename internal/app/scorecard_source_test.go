@@ -107,6 +107,53 @@ func TestScorecardServeRejectsMismatchAndServesViewer(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer closeApp()
+	for _, name := range []string{"silo", "webdav", "stremio"} {
+		if handlers[name] == nil {
+			t.Fatalf("missing %s handler", name)
+		}
+	}
+	if handlers["plex"] != nil {
+		t.Fatal("fixture unexpectedly mounted Plex")
+	}
+	credentialPath := filepath.Join(dir, "scorecard-app-credentials.json")
+	fileInfo, err := os.Stat(credentialPath)
+	if err != nil || fileInfo.Mode().Perm() != 0600 {
+		t.Fatalf("fixture credentials mode: %v", err)
+	}
+	credentialBytes, err := os.ReadFile(credentialPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var credentials map[string]map[string]string
+	if err = json.Unmarshal(credentialBytes, &credentials); err != nil {
+		t.Fatal(err)
+	}
+	webReq := httptest.NewRequest("PROPFIND", "/webdav/", nil)
+	webReq.SetBasicAuth(credentials["webdav"]["username"], credentials["webdav"]["password"])
+	webReq.Header.Set("Depth", "0")
+	webResp := httptest.NewRecorder()
+	handlers["webdav"].ServeHTTP(webResp, webReq)
+	if webResp.Code != http.StatusMultiStatus {
+		t.Fatalf("webdav login: HTTP %d", webResp.Code)
+	}
+	badReq := httptest.NewRequest("PROPFIND", "/webdav/", nil)
+	badReq.SetBasicAuth(credentials["webdav"]["username"], credentials["stremio"]["password"])
+	badResp := httptest.NewRecorder()
+	handlers["webdav"].ServeHTTP(badResp, badReq)
+	if badResp.Code != http.StatusUnauthorized {
+		t.Fatalf("cross-surface grant accepted: HTTP %d", badResp.Code)
+	}
+	stremioReq := httptest.NewRequest("GET", "/stremio/"+credentials["stremio"]["password"]+"/manifest.json", nil)
+	stremioResp := httptest.NewRecorder()
+	handlers["stremio"].ServeHTTP(stremioResp, stremioReq)
+	if stremioResp.Code != http.StatusOK {
+		t.Fatalf("stremio manifest: HTTP %d", stremioResp.Code)
+	}
+	siloResp := httptest.NewRecorder()
+	handlers["silo"].ServeHTTP(siloResp, httptest.NewRequest("GET", "/api/v2/system/identity", nil))
+	if siloResp.Code != http.StatusOK {
+		t.Fatalf("silo identity: HTTP %d", siloResp.Code)
+	}
 	for _, name := range []string{"jellyfin", "emby"} {
 		rr := httptest.NewRecorder()
 		handlers[name].ServeHTTP(rr, httptest.NewRequest("GET", "/System/Info/Public", nil))

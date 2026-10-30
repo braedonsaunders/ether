@@ -155,6 +155,36 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 	if e = a.users.RefreshViewers(ctx); e != nil {
 		return fail(e)
 	}
+	// Fixture-only credentials are written to the private data directory for
+	// the operator; never place them in logs or the diagnostic HTTP endpoints.
+	appGrants, e := identity.NewGrants(a.db, a.users, 30*24*time.Hour, nil)
+	if e != nil {
+		return fail(e)
+	}
+	credentials := make(map[string]map[string]string)
+	for _, surface := range []string{"webdav", "stremio"} {
+		secret, err := appGrants.Issue(ctx, viewerID, nil, surface, core.Device{ID: "scorecard-" + surface, Client: surface, Product: surface})
+		if err != nil {
+			return fail(err)
+		}
+		credentials[surface] = map[string]string{"username": strconv.FormatInt(viewerID, 10), "password": secret}
+	}
+	credentialData, e := json.Marshal(credentials)
+	if e != nil {
+		return fail(e)
+	}
+	credentialFile, e := os.OpenFile(filepath.Join(dir, "scorecard-app-credentials.json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if e != nil {
+		return fail(e)
+	}
+	_, writeErr := credentialFile.Write(credentialData)
+	closeErr := credentialFile.Close()
+	if writeErr != nil {
+		return fail(writeErr)
+	}
+	if closeErr != nil {
+		return fail(closeErr)
+	}
 	viewer, e := a.users.User(ctx, viewerID)
 	if e != nil {
 		return fail(e)
@@ -258,7 +288,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		}
 	}
 	handlers := map[string]http.Handler{}
-	for _, p := range []core.Protocol{"jellyfin", "emby"} {
+	for _, p := range []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio"} {
 		inst, err := a.frontends.registry.Mount(ctx, p)
 		if err != nil {
 			return fail(fmt.Errorf("mount %s: %w", p, err))
