@@ -29,7 +29,7 @@ func installationChanged(w http.ResponseWriter) {
 }
 
 // A PQ stream can contain HDR10+ metadata; absent probe evidence is unknown.
-// Non-PQ video cannot carry HDR10+.
+// Explicit positive metadata takes precedence over a conflicting transfer.
 func siloSourceHasKnownHDR10Plus(media frontend.MediaInfo) bool {
 	for _, stream := range media.Streams {
 		if stream.Type == "video" && stream.ColorTransfer == "smpte2084" && stream.HDR10Plus == nil {
