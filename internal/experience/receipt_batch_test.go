@@ -235,3 +235,49 @@ func TestReceiptBoundedSweepIgnoresExpiredBacklogForQuota(t *testing.T) {
 		t.Fatal("live quota bypassed")
 	}
 }
+
+func TestReceiptBoundedSweepDropFailureRollsBack(t *testing.T) {
+	db := store.OpenTest(t)
+	now := time.Unix(1700000000, 0)
+	opts := relayOptions(db, &now, 10, true, nil)
+	failure := errors.New("drop failed")
+	opts.dropHeaders = func(context.Context, *sql.Tx, capability.HeaderScope, []string) error { return failure }
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, row := range []struct{ digest, device string }{{fmt.Sprintf("%064x", 1), "tv"}, {fmt.Sprintf("%064x", 2), "other"}} {
+		if _, err = db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, row.digest, 7, row.device, "jellyfin", now.Unix()-1, "title", "old", "", 0); err != nil {
+			t.Fatal(err)
+		}
+		tx, e := db.BeginTx(ctx, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: 7, Surface: "jellyfin", DeviceID: row.device}, Digest: row.digest, ExpiresMillis: now.Add(-time.Second).UnixMilli()}
+		if e = capability.BindHeadersInTx(ctx, tx, []capability.Header{h}); e != nil {
+			_ = tx.Rollback()
+			t.Fatal(e)
+		}
+		if e = tx.Commit(); e != nil {
+			t.Fatal(e)
+		}
+	}
+	token, err := s.Issue(ctx, &core.User{ID: 7}, core.Device{ID: "tv"}, "jellyfin", ReceiptSubject{Kind: "title", ID: "new"})
+	if !errors.Is(err, failure) || token != "" {
+		t.Fatalf("token=%q err=%v", token, err)
+	}
+	for _, table := range []string{"experience_receipts", "capability_headers"} {
+		var n int
+		if err = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&n); err != nil || n != 2 {
+			t.Fatalf("%s count=%d err=%v", table, n, err)
+		}
+	}
+	for _, device := range []string{"tv", "other"} {
+		var n int
+		if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE viewer_id=? AND device_id=?`, 7, device).Scan(&n); err != nil || n != 1 {
+			t.Fatalf("device=%s count=%d err=%v", device, n, err)
+		}
+	}
+}
