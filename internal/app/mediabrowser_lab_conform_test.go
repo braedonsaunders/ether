@@ -68,6 +68,10 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 		if v := os.Getenv(key); v != "" {
 			settings[key] = v
 		}
+		// A Jellyfin-only window omits LAB_EMBY_URL. Do not contact Emby then.
+		if key == "LAB_EMBY_URL" && settings[key] == "" {
+			continue
+		}
 		parsed, e := url.Parse(settings[key])
 		if e != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.RawQuery != "" || parsed.Fragment != "" {
 			t.Fatalf("%s must be an HTTP(S) lab URL without credentials", key)
@@ -79,8 +83,11 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	defer cancelWorkload()
 	jellyfinRef := labReference(t, settings, "JELLYFIN", settings["LAB_JELLYFIN_URL"])
 	defer jellyfinRef.logout(t)
-	embyRef := labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
-	defer embyRef.logout(t)
+	var embyRef labReferenceData
+	if settings["LAB_EMBY_URL"] != "" {
+		embyRef = labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
+		defer embyRef.logout(t)
+	}
 	conformBinary := filepath.Join(t.TempDir(), "conformdiff")
 	build := exec.CommandContext(workload, "go", "build", "-o", conformBinary, "./cmd/conformdiff")
 	build.Dir = "../.."
@@ -89,10 +96,15 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	}
 	t.Log("lab_baseline=isolated-profile-phase-v1; old counts and performance are not comparable")
 	summary := conformance.Manifest{Schema: 1, Protocols: map[string]conformance.Summary{}}
-	for _, spec := range []struct {
+	type labProtocolSpec struct {
 		proto, client string
 		reference     labReferenceData
-	}{{"jellyfin", "findroid,jellycon,jellyfin-androidtv,streamyfin,swiftfin,infuse-jellyfin", jellyfinRef}, {"emby", "emby-sdk", embyRef}} {
+	}
+	specs := []labProtocolSpec{{"jellyfin", "findroid,jellycon,jellyfin-androidtv,streamyfin,swiftfin,infuse-jellyfin", jellyfinRef}}
+	if settings["LAB_EMBY_URL"] != "" {
+		specs = append(specs, labProtocolSpec{"emby", "emby-sdk", embyRef})
+	}
+	for _, spec := range specs {
 		t.Run(spec.proto, func(t *testing.T) {
 			combined := map[string]bool{}
 			validEvidence := true
@@ -1547,7 +1559,11 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 		req := conform.Request{Method: "GET", Path: path, Headers: headers}
 		response, err = p.Fetch(context.Background(), client, target.server.URL, login.AccessToken, req, profile, target.values, true)
 		if err != nil || response.Status != http.StatusOK {
-			t.Fatal("current-client preflight failed")
+			body := string(response.Body)
+			if len(body) > 180 {
+				body = body[:180]
+			}
+			t.Fatalf("current-client preflight failed path=%s status=%d err=%v body=%s", path, response.Status, err, body)
 		}
 		if path == "/Items/"+itemID {
 			var item struct{ ImageTags map[string]string }
