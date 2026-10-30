@@ -265,3 +265,48 @@ func (c *Catalog) CachedDiscoveryEpisodes(ctx context.Context, shows []core.Rati
 	}
 	return out, nil
 }
+
+// CachedGetMany applies CachedGet's visibility gates to bounded local reads.
+// Missing or hidden titles are omitted. It never refreshes or admits fallbacks.
+func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	out := make(map[core.RatingKey]core.Title, len(keys))
+	for start := 0; start < len(keys); start += 200 {
+		part := keys[start:min(start+200, len(keys))]
+		args := make([]any, len(part))
+		for i, key := range part {
+			args[i] = int64(key)
+		}
+		rows, err := c.db.QueryContext(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE key IN (`+placeholders(len(part))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		var items []core.Title
+		for rows.Next() {
+			st, e := scanTitle(rows)
+			if e != nil {
+				rows.Close()
+				return nil, e
+			}
+			items = append(items, st.t)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		if err := c.hydrateSlice(ctx, items); err != nil {
+			return nil, err
+		}
+		for i := range items {
+			// A newly eligible fallback must first be admitted by the normal
+			// background path. This read never writes that admission.
+			if c.config().GateMoviesByHomeRelease && items[i].Type == core.TypeMovie && items[i].HomeReleaseChecked && items[i].HomeReleased.IsZero() && !items[i].HomeReleaseFallbackAdmitted {
+				continue
+			}
+			if !items[i].Adult && items[i].IsReleased(c.now()) && (!c.config().GateMoviesByHomeRelease || homeReleaseVisible(&items[i], c.now())) && (items[i].Type != core.TypeSeason || listableSeason(&items[i], c.now())) {
+				out[items[i].Key] = items[i]
+			}
+		}
+	}
+	return out, nil
+}

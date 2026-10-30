@@ -43,12 +43,13 @@ type Entry struct {
 // Options requires Marked to use the same DB as DB, so playlist creation and
 // favorite mutations share one transaction. Callbacks must recheck current access.
 type Options struct {
-	DB      *sql.DB
-	Active  func(context.Context, int64) (*core.User, error)
-	Allowed func(context.Context, *core.User, Subject) bool
-	Changed func(context.Context, int64, Subject)
-	Now     func() time.Time
-	Marked  core.TransactionalMarkedPlaylists
+	DB            *sql.DB
+	Active        func(context.Context, int64) (*core.User, error)
+	Allowed       func(context.Context, *core.User, Subject) bool
+	AllowedTitles func(context.Context, *core.User, []core.RatingKey) (bool, error)
+	Changed       func(context.Context, int64, Subject)
+	Now           func() time.Time
+	Marked        core.TransactionalMarkedPlaylists
 }
 type Service struct{ o Options }
 
@@ -214,9 +215,23 @@ func (s *Service) HasTitles(ctx context.Context, viewer *core.User, keys []core.
 		return nil, ErrForbidden
 	}
 	for _, key := range keys {
-		subject := Subject{Kind: KindTitle, ID: key.String()}
-		if !valid(subject) || !s.o.Allowed(ctx, active, subject) {
+		if !valid(Subject{Kind: KindTitle, ID: key.String()}) {
 			return nil, ErrForbidden
+		}
+	}
+	if s.o.AllowedTitles != nil {
+		allowed, err := s.o.AllowedTitles(ctx, active, keys)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			return nil, ErrForbidden
+		}
+	} else {
+		for _, key := range keys {
+			if !s.o.Allowed(ctx, active, Subject{Kind: KindTitle, ID: key.String()}) {
+				return nil, ErrForbidden
+			}
 		}
 	}
 	for start := 0; start < len(keys); start += 400 {

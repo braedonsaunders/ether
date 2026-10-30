@@ -199,3 +199,36 @@ func TestHomeReleaseBoundary(t *testing.T) {
 		t.Fatal("dated boundary")
 	}
 }
+
+func TestCachedGetManyDoesNotFetchOrAdmitFallback(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	now := time.Date(2025, 4, 1, 12, 0, 0, 0, time.UTC)
+	client := &releaseClient{details: map[int64]*tmdb.MovieDetails{}}
+	c, err := New(db, client, config.Catalog{GateMoviesByHomeRelease: true}, nil, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	movie := core.Title{Key: core.MovieKey(44), Type: core.TypeMovie, IDs: core.IDs{TMDB: 44}, Released: now.AddDate(-1, 0, 0)}
+	if err := c.UpsertTitle(ctx, movie, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,fallback_admitted,attempted_at) VALUES(?,1,0,0,0)`, int64(movie.Key)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.CachedGetMany(ctx, []core.RatingKey{movie.Key, core.MovieKey(999)})
+	if err != nil || len(got) != 0 {
+		t.Fatalf("pending fallback: %v %v", got, err)
+	}
+	var admitted int
+	if err := db.QueryRowContext(ctx, `SELECT fallback_admitted FROM catalog_home_release WHERE key=?`, int64(movie.Key)).Scan(&admitted); err != nil || admitted != 0 {
+		t.Fatalf("fallback write: %d %v", admitted, err)
+	}
+	if client.calls != 0 {
+		t.Fatalf("remote calls: %d", client.calls)
+	}
+}

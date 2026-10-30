@@ -48,6 +48,9 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 		Allowed: func(ctx context.Context, u *core.User, subject favorites.Subject) bool {
 			return a.favoriteAllowed(ctx, u, subject, visibility)
 		},
+		AllowedTitles: func(ctx context.Context, u *core.User, keys []core.RatingKey) (bool, error) {
+			return a.favoriteTitlesCached(ctx, u, keys, visibility)
+		},
 		Changed: func(ctx context.Context, id int64, subject favorites.Subject) { a.favoriteChanged(ctx, id, subject) },
 	})
 	if err != nil {

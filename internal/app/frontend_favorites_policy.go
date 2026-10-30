@@ -81,3 +81,49 @@ func (a *App) favoriteAllowed(ctx context.Context, u *core.User, subject favorit
 	}
 	return false
 }
+
+// favoriteTitlesCached rechecks current policy without fetching metadata.
+func (a *App) favoriteTitlesCached(ctx context.Context, u *core.User, keys []core.RatingKey, visibility experience.Visibility) (bool, error) {
+	if a.catalog == nil {
+		return false, nil
+	}
+	return favoriteTitlesWithCache(ctx, u, keys, visibility, a.catalog.CachedGetMany)
+}
+
+func favoriteTitlesWithCache(ctx context.Context, u *core.User, keys []core.RatingKey, visibility experience.Visibility, cached func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)) (bool, error) {
+	if u == nil || cached == nil {
+		return false, nil
+	}
+	titles, err := cached(ctx, keys)
+	if err != nil {
+		return false, err
+	}
+	var parents []core.RatingKey
+	for _, key := range keys {
+		t, ok := titles[key]
+		if !ok {
+			return false, nil
+		}
+		if t.ShowKey != 0 {
+			parents = append(parents, t.ShowKey)
+		}
+	}
+	shows, err := cached(ctx, parents)
+	if err != nil {
+		return false, err
+	}
+	visibility.GetTitle = func(_ context.Context, key core.RatingKey) (*core.Title, error) {
+		t, ok := shows[key]
+		if !ok {
+			return nil, core.ErrNotFound
+		}
+		return &t, nil
+	}
+	for _, key := range keys {
+		t := titles[key]
+		if !visibility.Visible(ctx, u, &t) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
