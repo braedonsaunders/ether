@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -137,9 +138,24 @@ func (g *generation) setIndex(points []IndexPoint) {
 func (g *generation) infoSnapshot() core.MediaInfo {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	info := g.info
-	info.Keyframes = append([]core.KeyframePoint(nil), g.info.Keyframes...)
-	return info
+	return core.CloneMediaInfo(g.info)
+}
+
+// publishInfo takes a detached copy before exposing probe/augmentation facts.
+// The producer owns info exclusively during this call; retained inputs may be
+// mutated after it returns. Later generation updates and snapshots use g.mu.
+func (g *generation) publishInfo(info core.MediaInfo, observation core.PlaybackSourceObservation, tmap TimeMap) {
+	info = core.CloneMediaInfo(info)
+	if observation.HDR != nil {
+		hdr := *observation.HDR
+		observation.HDR = &hdr
+	}
+	tmap.Points = slices.Clone(tmap.Points)
+	g.mu.Lock()
+	g.info = info
+	g.observation = observation
+	g.tmap = tmap
+	g.mu.Unlock()
 }
 
 // timeMapSnapshot copies the generation's TimeMap under its lock.
