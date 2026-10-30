@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -83,37 +84,69 @@ func TestM3UChannelUsesScopedBrokerAndRevalidates(t *testing.T) {
 		return w
 	}
 	playlist := call(http.MethodGet, "/m3u/grant/playlist.m3u")
-	if playlist.Code != 200 || !strings.Contains(playlist.Body.String(), "/m3u/grant/channel?id=channel") {
-		t.Fatalf("playlist %d %q", playlist.Code, playlist.Body.String())
+	if playlist.Code != http.StatusOK || strings.Contains(playlist.Body.String(), "/grant/") || live.tunes.Load() != 0 {
+		t.Fatalf("playlist %d %q tunes=%d", playlist.Code, playlist.Body.String(), live.tunes.Load())
 	}
-	if head := call(http.MethodHead, "/m3u/grant/channel?id=channel"); head.Code != 200 || live.tunes.Load() != 0 {
-		t.Fatalf("channel HEAD %d", head.Code)
+	var mediaURLs []string
+	for _, line := range strings.Split(playlist.Body.String(), "\n") {
+		if line != "" && !strings.HasPrefix(line, "#") {
+			mediaURLs = append(mediaURLs, line)
+		}
 	}
-	redirect := call(http.MethodGet, "/m3u/grant/channel?id=channel")
-	if redirect.Code != http.StatusFound || strings.Contains(redirect.Header().Get("Location"), "grant") || live.tunes.Load() != 0 {
-		t.Fatalf("redirect %d %q", redirect.Code, redirect.Header().Get("Location"))
+	if len(mediaURLs) != 1 {
+		t.Fatalf("playlist media URLs %v", mediaURLs)
 	}
-	u, err := url.Parse(redirect.Header().Get("Location"))
+	u, err := url.Parse(mediaURLs[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := call(http.MethodGet, u.Path)
-	if manifest.Code != 200 || !strings.Contains(manifest.Body.String(), "./relay/0.ts") || strings.Contains(manifest.Body.String(), "reference") {
-		t.Fatalf("manifest %d %q", manifest.Code, manifest.Body.String())
+	prefix := "/m3u/sessions/lineup/"
+	parts := strings.Split(strings.TrimPrefix(u.Path, prefix), "/")
+	if u.Scheme != "http" || u.Host != "ether.local" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !strings.HasPrefix(u.Path, prefix) || len(parts) != 4 || parts[0] == "" || parts[0] == "grant" || parts[1] != base64.RawURLEncoding.EncodeToString([]byte("channel")) || parts[2] != "live" || parts[3] != "index.m3u8" {
+		t.Fatalf("unscoped lineup media URL %q", mediaURLs[0])
+	}
+	if head := call(http.MethodHead, u.RequestURI()); head.Code != http.StatusOK || head.Body.Len() != 0 || live.tunes.Load() != 0 {
+		t.Fatalf("lineup HEAD %d tunes=%d", head.Code, live.tunes.Load())
+	}
+	access := frontend.SessionAccess{Viewer: &core.Viewer{ID: 1}, Protocol: "m3u"}
+	if sessions, err := broker.Sessions(ctx, access); err != nil || len(sessions) != 0 {
+		t.Fatalf("HEAD opened broker session: %v %v", sessions, err)
+	}
+	manifest := call(http.MethodGet, u.RequestURI())
+	if manifest.Code != http.StatusOK || !strings.Contains(manifest.Body.String(), "./relay/0.ts") || strings.Contains(manifest.Body.String(), "reference") || strings.Contains(manifest.Body.String(), "/grant/") || live.tunes.Load() != 1 {
+		t.Fatalf("manifest %d %q tunes=%d", manifest.Code, manifest.Body.String(), live.tunes.Load())
+	}
+	sessions, err := broker.Sessions(ctx, access)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("broker sessions %v %v", sessions, err)
+	}
+	session := sessions[0]
+	if session.Protocol != "m3u" || session.ViewerID != 1 || session.Channel != "channel" || !strings.HasPrefix(session.Device.ID, "m3u-") {
+		t.Fatalf("wrong broker scope: %+v", session)
+	}
+	if _, _, err := broker.access(ctx, frontend.SessionAccess{Viewer: access.Viewer, Protocol: "jellyfin", Device: session.Device}, session.ID); err == nil {
+		t.Fatal("lineup session accepted cross-surface access")
 	}
 	segment := strings.TrimSuffix(u.Path, "index.m3u8") + "relay/0.ts"
 	if w := call(http.MethodGet, segment); w.Code != 200 || w.Body.String() != "segment" || live.tunes.Load() != 1 {
 		t.Fatalf("segment %d %q", w.Code, w.Body.String())
 	}
 	live.allowed.Store(false)
-	if w := call(http.MethodGet, segment); w.Code != 404 {
-		t.Fatalf("programme restriction %d", w.Code)
+	for _, request := range []struct{ method, path string }{{http.MethodHead, u.Path}, {http.MethodGet, u.Path}, {http.MethodGet, segment}} {
+		if w := call(request.method, request.path); w.Code != http.StatusNotFound {
+			t.Fatalf("programme restriction %s %s: %d", request.method, request.path, w.Code)
+		}
 	}
 	live.allowed.Store(true)
 	grants.mu.Lock()
 	grants.revoked = true
 	grants.mu.Unlock()
-	if w := call(http.MethodGet, segment); w.Code != 404 {
-		t.Fatalf("revoked grant %d", w.Code)
+	for _, request := range []struct{ method, path string }{{http.MethodHead, u.Path}, {http.MethodGet, u.Path}, {http.MethodGet, segment}} {
+		if w := call(request.method, request.path); w.Code != http.StatusNotFound {
+			t.Fatalf("revoked grant %s %s: %d", request.method, request.path, w.Code)
+		}
+	}
+	if live.tunes.Load() != 1 {
+		t.Fatalf("denied request tuned again: %d", live.tunes.Load())
 	}
 }
