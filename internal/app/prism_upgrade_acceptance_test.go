@@ -141,11 +141,11 @@ func TestPrismUpgradeFromDelivered9503(t *testing.T) {
 		t.Fatalf("upgraded auth version %d, want 7", got)
 	}
 	// afdcb3f7 rejected capability_headers because that slice's base had not
-	// landed it. b7049abd is the reviewed inventory: capability_headers v2 is
+	// landed it. b7049abd is the reviewed inventory: capability_headers v3 is
 	// required, and state_plexwatch stays absent. Session checks below are
 	// unchanged.
-	if store.KnownMigrations()["capability_headers"] != 2 {
-		t.Fatalf("capability_headers version = %d, want 2", store.KnownMigrations()["capability_headers"])
+	if store.KnownMigrations()["capability_headers"] != 3 {
+		t.Fatalf("capability_headers version = %d, want 3", store.KnownMigrations()["capability_headers"])
 	}
 	if _, ok := store.KnownMigrations()["state_plexwatch"]; ok {
 		t.Fatal("upgrade gate included unlanded state_plexwatch")
@@ -379,8 +379,8 @@ func TestPrismUpgradePostgresPreservesDeliveredRows(t *testing.T) {
 func assertUpgradeBoundary(t *testing.T) {
 	t.Helper()
 	known := store.KnownMigrations()
-	if known["capability_headers"] != 2 {
-		t.Fatalf("capability_headers version = %d, want 2", known["capability_headers"])
+	if known["capability_headers"] != 3 {
+		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
 	}
 	if _, ok := known["state_plexwatch"]; ok {
 		t.Fatal("unlanded component state_plexwatch is registered")

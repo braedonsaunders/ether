@@ -7,9 +7,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
-// TestDeliveredMainMigrationBoundary records the reviewed b69 adoption.
-// That candidate includes experience_receipts v4, frontend_tickets v2,
-// frontend_image_grants v6, and capability_headers v2. state_plexwatch,
+// TestDeliveredMainMigrationBoundary records bounded handle adoption on b69.
+// That candidate includes experience_receipts v5, frontend_tickets v2,
+// frontend_image_grants v6, and capability_headers v3. state_plexwatch,
 // rules, and watchsync stay unregistered. auth_sessions still applies
 // after auth.
 func TestDeliveredMainMigrationBoundary(t *testing.T) {
@@ -17,12 +17,13 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 	want := map[string]int{
 		"auth":                  7,
 		"auth_sessions":         1,
-		"experience_receipts":   4,
+		"experience_receipts":   5,
 		"experience_row_views":  3,
 		"release_observations":  1,
 		"frontend_tickets":      2,
 		"frontend_image_grants": 6,
-		"capability_headers":    2,
+		"capability_headers":    3,
+		"handle_reservations":   2,
 		"viewer_alerts":         2,
 		"viewer_push":           2,
 		"watchlist_episodes":    1,
