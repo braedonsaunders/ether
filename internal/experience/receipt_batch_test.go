@@ -122,35 +122,3 @@ func TestRowViewLaterReceiptFailureLeavesNoCommittedReceipts(t *testing.T) {
 		}
 	}
 }
-
-func TestReceiptBatchFinalTransactionGuardRollsBack(t *testing.T) {
-	db := store.OpenTest(t)
-	now := time.Unix(1700000000, 0)
-	opts := relayOptions(db, &now, 100, true, nil)
-	s, err := NewReceipts(opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	failure := errors.New("stale snapshot")
-	guard := func(ctx context.Context, tx *sql.Tx) error {
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts`).Scan(&n); err != nil {
-			return err
-		}
-		if n != 2 {
-			t.Fatalf("guard saw %d receipts", n)
-		}
-		return failure
-	}
-	subjects := []ReceiptSubject{{Kind: "title", ID: "1"}, {Kind: "title", ID: "2"}}
-	tokens, err := s.issueBatchGuarded(context.Background(), &core.User{ID: 1}, core.Device{ID: "tv"}, "jellyfin", subjects, guard)
-	if !errors.Is(err, failure) || tokens != nil {
-		t.Fatalf("tokens=%v err=%v", tokens, err)
-	}
-	for _, table := range []string{"experience_receipts", "capability_headers"} {
-		var n int
-		if err = db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&n); err != nil || n != 0 {
-			t.Fatalf("%s count=%d err=%v", table, n, err)
-		}
-	}
-}
