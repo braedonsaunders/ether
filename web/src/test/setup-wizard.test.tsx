@@ -509,6 +509,95 @@ describe("setup wizard", () => {
     expect(screen.getByRole("heading", { name: "Usenet providers" })).toBeInTheDocument();
   });
 
+  it.each(
+    [false, true].flatMap((ownerConfigured) =>
+      ["success", "claim failure", "refresh failure", "wrong owner"].map((outcome) => ({
+        ownerConfigured,
+        outcome,
+      })),
+    ),
+  )(
+    "reconnects a saved revoked Plex account: $outcome (local owner=$ownerConfigured)",
+    async ({ outcome, ownerConfigured }) => {
+      const fake = renderWizard((f) => {
+        f.state.config.setupComplete = true;
+        f.state.config.plex.claimed = true;
+        f.state.config.plex.token = "revoked-token";
+        f.state.boot.ownerConfigured = ownerConfigured;
+      });
+      await selectPlex();
+      await screen.findByText(/Signed in as alice/);
+      const before = structuredClone(fake.state.config);
+      if (outcome === "refresh failure") {
+        vi.spyOn(api, "getConfig").mockRejectedValueOnce(new Error("Config refresh unavailable"));
+      }
+      vi.useFakeTimers();
+      vi.spyOn(window, "open").mockReturnValue(null);
+      vi.spyOn(api, "pinStart").mockResolvedValue({
+        id: "reconnect",
+        code: "ABCD",
+        authUrl: "https://example.test/auth",
+      });
+      const poll = vi.spyOn(api, "pinPoll").mockImplementation(async () => {
+        if (outcome === "wrong owner") throw new Error("Sign in as the existing owner");
+        fake.state.config.plex.token = "fresh-owner-token";
+        return { done: true };
+      });
+      const claim = vi.spyOn(api, "claim").mockImplementation(async () => {
+        if (outcome === "claim failure") throw new Error("Plex claim unavailable");
+        fake.state.config.plex.token = "fresh-server-token";
+        return { ok: true };
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+      });
+      expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
+      expect(screen.queryByText(/Signed in as alice/)).not.toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(screen.queryByText("Waiting for approval")).not.toBeInTheDocument();
+      if (outcome === "wrong owner") {
+        expect(screen.getByText("Sign in as the existing owner")).toBeInTheDocument();
+        expect(claim).not.toHaveBeenCalled();
+        expect(fake.state.config).toEqual(before);
+        expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
+      } else if (outcome === "claim failure" || outcome === "refresh failure") {
+        const failure =
+          outcome === "claim failure" ? /Plex claim unavailable/ : /Config refresh unavailable/;
+        expect(screen.getAllByText(failure).length).toBeGreaterThan(0);
+        expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
+        claim.mockImplementation(async () => {
+          fake.state.config.plex.token = "fresh-server-token";
+          return { ok: true };
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "Claim server" }));
+        });
+        expect(claim).toHaveBeenCalledTimes(2);
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      expect(poll).toHaveBeenCalledOnce();
+      expect(screen.getByRole("button", { name: "Reconnect" })).toBeEnabled();
+      if (outcome !== "wrong owner") {
+        expect(screen.getByRole("button", { name: "Save and continue" })).toBeEnabled();
+        expect(fake.state.config).toEqual({
+          ...before,
+          plex: { ...before.plex, token: "fresh-server-token" },
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+        });
+        expect(calls(fake, "PUT", "/config").at(-1)?.body).toMatchObject({
+          ...before,
+          plex: { ...before.plex, token: "fresh-server-token", claimed: true },
+        });
+      }
+    },
+  );
+
   it("keeps claim failures actionable and refreshes credentials after a retry", async () => {
     const fake = renderWizard((f) => {
       f.state.config.plex.claimed = false;

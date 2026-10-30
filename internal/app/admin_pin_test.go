@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -59,6 +60,8 @@ func TestWizardPINCannotReplaceExistingOwner(t *testing.T) {
 	}{
 		{name: "first sign-in"},
 		{name: "same claimed owner", owner: 42, claimed: true},
+		{name: "reconnect after setup", owner: 42, claimed: true, setup: true},
+		{name: "reconnect rejects different owner", owner: 99, claimed: true, setup: true, reject: true},
 		{name: "different claimed owner", owner: 99, claimed: true, reject: true},
 		{name: "authenticated transfer after unclaim", owner: 99, setup: true},
 		{name: "correct initial account", owner: 99},
@@ -78,7 +81,8 @@ func TestWizardPINCannotReplaceExistingOwner(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			before := a.cfg.Get().Plex
+			beforeConfig := a.cfg.Get()
+			before := beforeConfig.Plex
 			p := &plexAuth{app: a, pins: map[string]*plextv.PIN{"1": {ID: 1, Code: "fixture", ExpiresAt: time.Now().Add(time.Minute)}}}
 			ok, err := p.PollPIN(context.Background(), "1")
 			if tc.reject {
@@ -99,6 +103,13 @@ func TestWizardPINCannotReplaceExistingOwner(t *testing.T) {
 				if a.cfg.Get().Plex.OwnerPlexID != 42 {
 					t.Fatal("owner was not installed")
 				}
+			}
+			// Reauthorizing rotates only account credentials, not the server
+			// identity, setup state, source settings, or listening port.
+			after := a.cfg.Get()
+			after.Plex = beforeConfig.Plex
+			if !reflect.DeepEqual(after, beforeConfig) {
+				t.Fatal("PIN reauthorization changed non-Plex settings")
 			}
 		})
 	}
