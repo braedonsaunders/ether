@@ -95,4 +95,9 @@ func TestPinnedLocalMediaRejectsFileReplacement(t *testing.T) {
 	if w.Code != http.StatusNotFound || w.Body.String() != "Error processing request." {
 		t.Fatalf("replacement stream: %d %q", w.Code, w.Body.String())
 	}
+	head := httptest.NewRecorder()
+	b.ServeMediaFor("jellyfin", head, httptest.NewRequest(http.MethodHead, mediaPath, nil))
+	if head.Code != http.StatusNotFound || head.Body.Len() != 0 {
+		t.Fatalf("replacement HEAD: %d %q", head.Code, head.Body.String())
+	}
 }

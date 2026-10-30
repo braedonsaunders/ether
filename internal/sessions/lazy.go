@@ -433,7 +433,9 @@ func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.
 	if protocol == "jellyfin" {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = io.WriteString(w, "Error processing request.")
+		if r.Method != http.MethodHead {
+			_, _ = io.WriteString(w, "Error processing request.")
+		}
 		return
 	}
 	http.NotFound(w, r)
