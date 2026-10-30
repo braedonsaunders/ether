@@ -11,12 +11,21 @@ import (
 type creditPortrait struct{ url, thumbHash string }
 
 // creditPortraits returns title-bound grants for known credited people.
-func (i *instance) creditPortraits(r *http.Request, credential string, d frontend.ItemDetail) map[int64]creditPortrait {
+func (i *instance) creditPortraits(r *http.Request, viewer *frontend.Viewer, credential string, d frontend.ItemDetail) map[int64]creditPortrait {
 	urls := map[int64]creditPortrait{}
-	if !d.ImagesAuthoritative || i.host.ImageGrants == nil {
+	if i.host.ImageGrants == nil {
 		return urls
 	}
-	for _, img := range d.Images {
+	images, authoritative := d.Images, d.ImagesAuthoritative
+	if provider, ok := i.host.Experience.(frontend.RelatedArtworkProvider); ok {
+		if related, err := provider.RelatedArtwork(r.Context(), viewer, device(r), d.Title.Key); err == nil && related.PeopleAuthoritative {
+			images, authoritative = related.People, true
+		}
+	}
+	if !authoritative {
+		return urls
+	}
+	for _, img := range images {
 		if img.Kind != frontend.ImagePerson || !strings.HasPrefix(img.Subject, "tmdb:") {
 			continue
 		}
@@ -42,11 +51,15 @@ func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential 
 		return
 	}
 	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: key})
-	if err != nil || !detail.ImagesAuthoritative {
+	if err != nil {
 		return
 	}
 	backdrops := []string{}
-	for _, img := range detail.Images {
+	var images []frontend.Image
+	if detail.ImagesAuthoritative {
+		images = detail.Images
+	}
+	for _, img := range images {
 		field := map[string]string{"poster": "poster_url", "backdrop": "backdrop_url", "logo": "logo_url"}[img.Kind]
 		if field == "" || img.Path == "" {
 			continue
@@ -74,6 +87,49 @@ func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential 
 	}
 	if r.PathValue("id") != "" && len(backdrops) > 0 {
 		out["backdrop_urls"] = backdrops
+	}
+	if detail.Title.Type != "episode" {
+		return
+	}
+	provider, ok := i.host.Experience.(frontend.RelatedArtworkProvider)
+	if !ok {
+		return
+	}
+	related, err := provider.RelatedArtwork(r.Context(), viewer, device(r), key)
+	if err != nil {
+		return
+	}
+	for _, relation := range []struct {
+		owner  *frontend.ArtworkOwner
+		fields map[string]string
+	}{
+		{related.Season, map[string]string{"poster": "season_poster"}},
+		{related.Series, map[string]string{"poster": "series_poster", "backdrop": "series_backdrop"}},
+	} {
+		if relation.owner == nil || !relation.owner.Authoritative || relation.owner.Item == 0 {
+			continue
+		}
+		for _, img := range relation.owner.Images {
+			field := relation.fields[img.Kind]
+			if field == "" || img.Path == "" {
+				continue
+			}
+			if _, exists := out[field+"_url"]; exists {
+				continue
+			}
+			token, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: credential, Device: device(r), Item: relation.owner.Item, Image: img})
+			if err != nil {
+				continue
+			}
+			prefix := ""
+			if r.Context().Value(sharedPrefix{}) != nil {
+				prefix = "/silo"
+			}
+			out[field+"_url"] = prefix + "/api/v2/images/" + token
+			if img.ThumbHash != "" {
+				out[field+"_thumbhash"] = img.ThumbHash
+			}
+		}
 	}
 }
 func (i *instance) imageRoutes() error {

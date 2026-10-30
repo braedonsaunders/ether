@@ -241,7 +241,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	if d.Title.IDs.TVDB > 0 {
 		out["tvdb_id"] = strconv.FormatInt(d.Title.IDs.TVDB, 10)
 	}
-	portraits := i.creditPortraits(r, credential, d)
+	portraits := i.creditPortraits(r, v, credential, d)
 	cast := make([]any, 0, len(d.Title.Cast))
 	for n, p := range d.Title.Cast {
 		credit := map[string]any{"name": p.Name, "character": p.Role, "order": n}

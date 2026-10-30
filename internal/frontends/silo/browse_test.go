@@ -15,6 +15,16 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
+type fakeArtworkExperience = frontendtest.Experience
+type relatedArtworkExperience struct {
+	fakeArtworkExperience
+	related func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey) (frontend.RelatedArtwork, error)
+}
+
+func (e relatedArtworkExperience) RelatedArtwork(ctx context.Context, viewer *frontend.Viewer, dev frontend.Device, key frontend.RatingKey) (frontend.RelatedArtwork, error) {
+	return e.related(ctx, viewer, dev, key)
+}
+
 func TestHomeNextUpReportsActualSource(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 5}
 	next := frontend.Title{Key: 1000000000000001, Type: "episode", Title: "Next episode"}
@@ -65,12 +75,12 @@ func TestCreditPortraitUsesTitleBoundGrant(t *testing.T) {
 	r := httptest.NewRequest("GET", "/api/v2/catalog/items/x", nil)
 	r.Header.Set("X-Silo-Device-Id", "tv")
 	d := frontend.ItemDetail{Title: frontend.Title{Key: key}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/private", ThumbHash: "AQID"}}}
-	got := i.creditPortraits(r, "account-token", d)
+	got := i.creditPortraits(r, &frontend.Viewer{ID: 7}, "account-token", d)
 	if got[12].url != "/api/v2/images/opaque-grant" || got[12].thumbHash != "AQID" || issued.Item != key || issued.Credential != "account-token" || strings.Contains(got[12].url, "account-token") {
 		t.Fatalf("portrait grant: %v %+v", got, issued)
 	}
 	d.ImagesAuthoritative = false
-	if len(i.creditPortraits(r, "account-token", d)) != 0 {
+	if len(i.creditPortraits(r, &frontend.Viewer{ID: 7}, "account-token", d)) != 0 {
 		t.Fatal("issued portrait for non-authoritative artwork")
 	}
 }
@@ -99,6 +109,47 @@ func TestArtworkThumbhashMatchesGrantedImage(t *testing.T) {
 	}
 	if _, ok := out["poster_thumbhash"]; ok {
 		t.Fatalf("used hash from a different poster: %+v", out)
+	}
+}
+
+func TestRelatedArtworkUsesAuthorizedOwnerGrants(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	const episode, season, series frontend.RatingKey = 10, 20, 30
+	exp := relatedArtworkExperience{fakeArtworkExperience: frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if req.Viewer != viewer || req.Key != episode {
+			return frontend.ItemDetail{}, errors.New("unauthorized")
+		}
+		return frontend.ItemDetail{Title: frontend.Title{Key: episode, Type: "episode"}}, nil
+	}}, related: func(_ context.Context, v *frontend.Viewer, d frontend.Device, key frontend.RatingKey) (frontend.RelatedArtwork, error) {
+		if v != viewer || d.ID != "tv" || key != episode {
+			return frontend.RelatedArtwork{}, errors.New("unauthorized")
+		}
+		return frontend.RelatedArtwork{PeopleAuthoritative: true, People: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/person", ThumbHash: "person-hash"}},
+			Season: &frontend.ArtworkOwner{Item: season, Authoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/season", ThumbHash: "season-hash"}}},
+			Series: &frontend.ArtworkOwner{Item: series, Authoritative: true, Images: []frontend.Image{{Kind: "poster", Path: "/series", ThumbHash: "series-hash"}, {Kind: "backdrop", Path: "/backdrop"}}}}, nil
+	}}
+	var owners []frontend.RatingKey
+	grants := frontendtest.ImageGrants{IssueFunc: func(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
+		owners = append(owners, req.Item)
+		return strings.TrimPrefix(req.Image.Path, "/"), nil
+	}}
+	i := &instance{host: frontend.Host{Experience: exp, ImageGrants: grants}}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Silo-Device-Id", "tv")
+	out := map[string]any{}
+	i.artwork(r, viewer, "credential", episode, out)
+	if out["season_poster_url"] != "/api/v2/images/season" || out["season_poster_thumbhash"] != "season-hash" || out["series_poster_thumbhash"] != "series-hash" || out["series_backdrop_url"] != "/api/v2/images/backdrop" {
+		t.Fatalf("parent artwork: %+v", out)
+	}
+	if _, ok := out["series_backdrop_thumbhash"]; ok {
+		t.Fatal("invented cold hash")
+	}
+	if len(owners) != 3 || owners[0] != season || owners[1] != series || owners[2] != series {
+		t.Fatalf("wrong grant owners: %+v", owners)
+	}
+	portraits := i.creditPortraits(r, viewer, "credential", frontend.ItemDetail{Title: frontend.Title{Key: episode}})
+	if portraits[12].url != "/api/v2/images/person" || portraits[12].thumbHash != "person-hash" || owners[len(owners)-1] != episode {
+		t.Fatalf("person grant: %+v owners=%+v", portraits, owners)
 	}
 }
 
