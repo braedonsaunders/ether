@@ -470,6 +470,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 
 type labReferenceData struct {
 	base, token, device string
+	protocol, user      string
 	session             string
 	vars                map[string]string
 }
@@ -477,7 +478,7 @@ type labReferenceData struct {
 func (ref labReferenceData) logout(t *testing.T) {
 	t.Helper()
 	receipt := ref.logoutPrimaryProof()
-	t.Logf("lab_primary_cleanup device=%s session=%s authenticated_before=%d logout_status=%d protected_after=%d anonymous_service_health=%d verified=%t", ref.device, ref.session, receipt.Before, receipt.Logout, receipt.After, receipt.ServiceHealth, receipt.Verified)
+	t.Logf("lab_primary_cleanup device=%s session=%s authenticated_before=%d logout_status=%d protected_after=%d anonymous_service_health=%d authenticated_identity=%t verified=%t", ref.device, ref.session, receipt.Before, receipt.Logout, receipt.After, receipt.ServiceHealth, receipt.BeforeIdentity, receipt.Verified)
 	if !receipt.Verified {
 		t.Error("primary credential cleanup proof failed")
 	}
@@ -489,6 +490,7 @@ func (ref labReferenceData) logout(t *testing.T) {
 type labCredentialCleanup struct {
 	LogoutStatus, ProtectedStatus, ControlBefore, ControlAfter int
 	Verified                                                   bool
+	ControlBeforeIdentity, ControlAfterIdentity                bool
 }
 
 func (ref labReferenceData) logoutWithProtectedDenial(control labReferenceData) labCredentialCleanup {
@@ -497,26 +499,17 @@ func (ref labReferenceData) logoutWithProtectedDenial(control labReferenceData) 
 		return result
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
-	request := func(owner labReferenceData, path, method string) int {
-		req, err := http.NewRequest(method, owner.base+path, nil)
-		if err != nil {
-			return 0
-		}
-		req.Header.Set("X-Emby-Token", owner.token)
-		req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+owner.device+`", Version="1", Token="`+owner.token+`"`)
-		response, err := client.Do(req)
-		if err != nil {
-			return 0
-		}
-		response.Body.Close()
-		return response.StatusCode
+	controlValid := ref.protocol != "emby" || (control.protocol == "emby" && labValidUserID(ref.user) && strings.EqualFold(ref.user, control.user))
+	if controlValid {
+		result.ControlBefore, result.ControlBeforeIdentity = control.protectedCheck(client)
 	}
-	result.ControlBefore = request(control, "/Users/Me", "GET")
-	result.LogoutStatus = request(ref, "/Sessions/Logout", "POST")
-	result.ProtectedStatus = request(ref, "/Users/Me", "GET")
-	result.ControlAfter = request(control, "/Users/Me", "GET")
+	result.LogoutStatus = labOwnedStatus(client, ref, "/Sessions/Logout", "POST")
+	result.ProtectedStatus, _ = ref.protectedCheck(client)
+	if controlValid {
+		result.ControlAfter, result.ControlAfterIdentity = control.protectedCheck(client)
+	}
 	logoutAccepted := (result.LogoutStatus >= 200 && result.LogoutStatus < 300) || result.LogoutStatus == 401
-	result.Verified = logoutAccepted && result.ProtectedStatus == 401 && result.ControlBefore == 200 && result.ControlAfter == 200
+	result.Verified = logoutAccepted && result.ProtectedStatus == 401 && result.ControlBefore == 200 && result.ControlAfter == 200 && result.ControlBeforeIdentity && result.ControlAfterIdentity
 	return result
 }
 
@@ -629,18 +622,27 @@ func labProbeProxy(t *testing.T, ref labReferenceData, profileDevices ...string)
 		if json.Unmarshal(decoded, &minted) != nil || minted.AccessToken == "" {
 			return fmt.Errorf("lab login token unavailable")
 		}
-		owner := labReferenceData{base: ref.base, token: minted.AccessToken, device: device}
+		owner := labReferenceData{base: ref.base, token: minted.AccessToken, device: device, protocol: ref.protocol}
 		mu.Lock()
 		quarantine[minted.AccessToken] = owner
 		mu.Unlock()
 		t.Logf("lab_quarantined_probe device=%s", device)
-		var metadata struct{ SessionInfo struct{ Id, DeviceId string } }
+		var metadata struct {
+			SessionInfo struct{ Id, DeviceId, UserId string }
+			User        struct{ Id string }
+		}
 		if json.Unmarshal(decoded, &metadata) != nil {
 			return fmt.Errorf("lab login metadata invalid; credential quarantined")
 		}
 		if metadata.SessionInfo.DeviceId != "" && metadata.SessionInfo.DeviceId != device {
 			return fmt.Errorf("lab login device mismatch; credential quarantined")
 		}
+		user, identityErr := labProbeUserIdentity(ref, metadata.User.Id, metadata.SessionInfo.UserId)
+		if identityErr != nil {
+			return identityErr
+		}
+		owner.user = user
+
 		owner.session = metadata.SessionInfo.Id
 		mu.Lock()
 		quarantine[minted.AccessToken] = owner
@@ -739,7 +741,7 @@ func labProbeProxy(t *testing.T, ref labReferenceData, profileDevices ...string)
 		}
 		for _, owner := range quarantine {
 			receipt := owner.logoutWithProtectedDenial(ref)
-			t.Logf("lab_probe_cleanup device=%s session=%s logout_status=%d protected_status=%d control_before=%d control_after=%d verified=%t", owner.device, owner.session, receipt.LogoutStatus, receipt.ProtectedStatus, receipt.ControlBefore, receipt.ControlAfter, receipt.Verified)
+			t.Logf("lab_probe_cleanup device=%s session=%s logout_status=%d protected_status=%d control_before=%d control_after=%d control_before_identity=%t control_after_identity=%t verified=%t", owner.device, owner.session, receipt.LogoutStatus, receipt.ProtectedStatus, receipt.ControlBefore, receipt.ControlAfter, receipt.ControlBeforeIdentity, receipt.ControlAfterIdentity, receipt.Verified)
 			if !receipt.Verified {
 				t.Error("owned probe credential cleanup denial not verified")
 			}
@@ -817,15 +819,15 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 	}
 	var login struct {
 		AccessToken, ServerId string
-		SessionInfo           struct{ Id string }
+		SessionInfo           struct{ Id, UserId string }
 		User                  struct{ Id string }
 	}
 	err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&login)
 	resp.Body.Close()
-	if err != nil || resp.StatusCode != 200 || login.AccessToken == "" || login.User.Id == "" {
+	if err != nil || resp.StatusCode != 200 || login.AccessToken == "" {
 		t.Fatalf("lab authentication failed (HTTP %d)", resp.StatusCode)
 	}
-	ref := labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, session: login.SessionInfo.Id}
+	ref := labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, session: login.SessionInfo.Id, protocol: strings.ToLower(prefix), user: login.User.Id}
 	t.Logf("lab_owned_reference protocol=%s device=%s probe_device=%s session=%s", prefix, loginDevice, probeDevice, login.SessionInfo.Id)
 	completed := false
 	defer func() {
@@ -833,6 +835,9 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 			ref.logout(t)
 		}
 	}()
+	if ref.protocol == "emby" && (!labValidUserID(ref.user) || (login.SessionInfo.UserId != "" && !strings.EqualFold(login.SessionInfo.UserId, ref.user))) || ref.user == "" {
+		t.Fatal("reference login user identity missing or invalid")
+	}
 	get := func(path string, out any) {
 		t.Helper()
 		req, err := http.NewRequest("GET", strings.TrimRight(base, "/")+path, nil)
@@ -894,7 +899,7 @@ func labReference(t *testing.T, values map[string]string, prefix, base string) l
 	state, _ := json.Marshal(itemState)
 	t.Logf("lab_reference_baseline protocol=%s item=%s state_source_metadata_sha256=%x", prefix, itemID, sha256.Sum256(state))
 	completed = true
-	return labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, session: login.SessionInfo.Id, vars: map[string]string{
+	return labReferenceData{base: strings.TrimRight(base, "/"), token: login.AccessToken, device: loginDevice, session: login.SessionInfo.Id, protocol: strings.ToLower(prefix), user: login.User.Id, vars: map[string]string{
 		"username": username, "password": password, "user_id": login.User.Id, "access_token": login.AccessToken,
 		"item_id": itemID, "itemId": itemID, "parent_id": viewID, "media_source_id": itemID,
 		"play_session_id": "initial", "position_ticks": "0", "device_id": probeDevice, "server_id": login.ServerId,

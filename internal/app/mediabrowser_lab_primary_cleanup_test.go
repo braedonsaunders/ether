@@ -11,6 +11,7 @@ import (
 
 type labPrimaryCleanup struct {
 	Before, Logout, After, ServiceHealth int
+	BeforeIdentity                       bool
 	Verified                             bool
 }
 
@@ -38,12 +39,12 @@ func (ref labReferenceData) logoutPrimaryProof() labPrimaryCleanup {
 		response.Body.Close()
 		return response.StatusCode
 	}
-	result.Before = request("GET", "/Users/Me", true)
+	result.Before, result.BeforeIdentity = ref.protectedCheck(client)
 	// Attempt owned logout even if the precheck fails.
 	result.Logout = request("POST", "/Sessions/Logout", true)
-	result.After = request("GET", "/Users/Me", true)
+	result.After, _ = ref.protectedCheck(client)
 	result.ServiceHealth = request("GET", "/System/Info/Public", false)
-	result.Verified = result.Before == 200 && result.Logout >= 200 && result.Logout < 300 && result.After == 401 && result.ServiceHealth == 200
+	result.Verified = result.Before == 200 && result.BeforeIdentity && result.Logout >= 200 && result.Logout < 300 && result.After == 401 && result.ServiceHealth == 200
 	return result
 }
 
