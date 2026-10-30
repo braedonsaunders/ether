@@ -10,10 +10,10 @@ import (
 func TestFrontendVersionExposesOnlyReleaseSourceFacts(t *testing.T) {
 	titleDate := time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC)
 	published := time.Date(2024, 4, 5, 0, 0, 0, 0, time.UTC)
-	title := &core.Title{UpdatedAt: titleDate}
+	title := &core.Title{Released: titleDate, UpdatedAt: published.Add(time.Hour)}
 	v := core.ReleaseVariant{ID: "release-id", Label: "1080p", Release: core.Release{Name: "/private/folder/movie.mkv?token=secret", PubDate: published}}
 	got := frontendVersion(title, v)
-	if got.PublishedAt == nil || !got.PublishedAt.Equal(published) || got.DateModified != nil || !got.AddedAt.Equal(published) {
+	if got.PublishedAt == nil || !got.PublishedAt.Equal(published) || got.DateModified != nil || !got.AddedAt.Equal(titleDate) {
 		t.Fatalf("publication fact lost: %+v", got)
 	}
 	if got.FileName != "" || got.PartCount != nil || got.ETag != "" {

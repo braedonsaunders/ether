@@ -154,7 +154,7 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 		ContentRating: t.ContentRating,
 		Thumb:         thumbURL(t),
 		Art:           artURL(t),
-		AddedAt:       unixOrZero(t.AddedAt),
+		AddedAt:       unixOrZero(t.DateAdded(s.now())),
 		UpdatedAt:     unixOrZero(t.UpdatedAt),
 	}
 	if t.SortTitle != "" && t.SortTitle != t.Title {
@@ -165,16 +165,9 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 	}
 	if !t.Released.IsZero() {
 		m.OriginallyAvailableAt = t.Released.Format("2006-01-02")
-		if m.AddedAt == 0 && !t.Released.After(s.now()) {
-			m.AddedAt = t.Released.Unix()
-		}
 		if m.Year == 0 {
 			m.Year = t.Released.Year()
 		}
-	}
-	if m.AddedAt == 0 {
-		// Legacy fallback only when the catalogue cannot establish any aired date.
-		m.AddedAt = unixOrZero(t.UpdatedAt)
 	}
 	if t.Runtime > 0 {
 		m.Duration = ms(t.Runtime)

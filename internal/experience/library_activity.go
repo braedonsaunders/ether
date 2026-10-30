@@ -78,7 +78,7 @@ func (s *Service) latestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 				}
 				page, err = s.d.AiredEpisodes(ctx, 0, offset, fetch)
 			} else {
-				page, err = s.d.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: library.Type}, Sort: core.SortAdded, Desc: true, Offset: offset, Limit: fetch})
+				page, err = s.d.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: library.Type, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Offset: offset, Limit: fetch})
 			}
 			if err != nil {
 				return nil, err

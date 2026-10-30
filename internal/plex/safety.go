@@ -11,13 +11,7 @@ import (
 type AccessPolicy = experience.AccessPolicy
 
 func (s *Server) visibleTitles(u *core.User, ts []core.Title) []core.Title {
-	out := make([]core.Title, 0, len(ts))
-	for i := range ts {
-		if s.titleVisible(u, &ts[i]) {
-			out = append(out, ts[i])
-		}
-	}
-	return out
+	return s.visibility().TitlesAllowed(u, ts)
 }
 
 func (s *Server) titleAllowed(u *core.User, t *core.Title) bool {
@@ -46,23 +40,6 @@ func (s *Server) availableForViewer(ctx context.Context, u *core.User, ts []core
 	return s.visibility().Available(ctx, u, ts)
 }
 
-// viewerRestricted selects the stricter shared policy path for viewers whose
-// content access is limited. Unknown custom policies fail closed.
 func (s *Server) viewerRestricted(u *core.User) bool {
-	if u == nil {
-		return true
-	}
-	if u.IsOwner {
-		return false
-	}
-	if u.MaxContentRating != "" || len(u.AllowedSections) > 0 {
-		return true
-	}
-	if s.d.AccessPolicy == nil {
-		return false
-	}
-	if p, ok := s.d.AccessPolicy.(core.ArtworkAccessPolicy); ok {
-		return p.Restricted(u)
-	}
-	return true
+	return experience.ViewerRestricted(s.d.AccessPolicy, u)
 }

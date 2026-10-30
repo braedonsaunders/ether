@@ -97,6 +97,12 @@ func TestRecentlyAddedLegacyControl(t *testing.T) {
 		before := append([]core.BrowseQuery(nil), cat.queries...)
 		cat.queries = nil
 		got, ge := f.srv.recentlyAddedHub(context.Background(), pr, sec, limit)
+		// The owner-approved date rule adds a known-air-date filter before paging.
+		// Assert that exact query delta; rendered selection remains frozen below.
+		if len(before) != 1 || len(cat.queries) != 1 || before[0].Filter.KnownAddedDate || !cat.queries[0].Filter.KnownAddedDate {
+			t.Fatalf("date filter delta: %v -> %v", before, cat.queries)
+		}
+		before[0].Filter.KnownAddedDate = true
 		if we != nil || ge != nil || !reflect.DeepEqual(want, got) || !reflect.DeepEqual(before, cat.queries) {
 			t.Fatalf("limit=%d legacy=%+v %v %v; shared=%+v %v %v", limit, want, we, before, got, ge, cat.queries)
 		}

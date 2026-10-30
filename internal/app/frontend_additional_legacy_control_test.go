@@ -33,14 +33,14 @@ func (a *App) controlLegacyExperienceAdditionalRows(ctx context.Context, req fro
 		if err != nil {
 			return nil, err
 		}
-		rows = append(rows, experienceHubRows(hubs)...)
+		rows = append(rows, experience.HubRows(hubs)...)
 	}
 	if a.discoveryPersonal != nil {
 		hubs, err := controlLegacyLoadExperienceDiscovery(ctx, req.Viewer, req.Limit, restricted, visibility, a.discoveryPersonal.Hubs)
 		if err != nil {
 			return nil, err
 		}
-		rows = append(rows, experienceHubRows(hubs)...)
+		rows = append(rows, experience.HubRows(hubs)...)
 	}
 	if a.livetv != nil {
 		now := time.Now()

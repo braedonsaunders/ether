@@ -635,6 +635,7 @@ func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section
 		mc.Title2 = "Recently Released"
 	case "recentlyAdded":
 		br.q.Sort, br.q.Desc = core.SortAdded, true
+		br.q.Filter.KnownAddedDate = true
 		mc.Title2 = "Recently Added"
 	case "search", "autocomplete":
 		query := q.Get("query")
@@ -867,7 +868,7 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 		if !validScope || wantSection > 0 && sec.ID != wantSection || wantType != "" && wantType != sec.Type || !allowedSection("contentDirectoryID", sec.ID) || !allowedSection("pinnedContentDirectoryID", sec.ID) {
 			continue
 		}
-		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type}, Sort: core.SortAdded, Desc: true, Limit: size}
+		q := core.BrowseQuery{Filter: core.Filter{Type: sec.Type, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: size}
 		if pr.User != nil {
 			q.Filter.MaxContentRating = pr.User.MaxContentRating
 		}
@@ -879,14 +880,7 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 		items = append(items, page.Items...)
 	}
 	sort.SliceStable(items, func(i, j int) bool {
-		left, right := items[i].AddedAt, items[j].AddedAt
-		if left.IsZero() {
-			left = items[i].Released
-		}
-		if right.IsZero() {
-			right = items[j].Released
-		}
-		return left.After(right)
+		return items[i].DateAdded(s.now()).After(items[j].DateAdded(s.now()))
 	})
 	if len(items) > size {
 		items = items[:size]

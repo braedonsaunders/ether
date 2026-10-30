@@ -44,7 +44,7 @@ func VersionOfferFrom(title *core.Title, variant core.ReleaseVariant) VersionOff
 		ID:      variant.ID,
 		Name:    variant.Label,
 		Media:   variant.Info,
-		AddedAt: versionOfferAddedAt(title, published),
+		AddedAt: title.DateAdded(time.Now()),
 	}
 	if !published.IsZero() {
 		value := published
@@ -63,19 +63,6 @@ func VersionOffersFrom(title *core.Title, variants []core.ReleaseVariant) []Vers
 		out[i] = VersionOfferFrom(title, variants[i])
 	}
 	return out
-}
-
-func versionOfferAddedAt(title *core.Title, published time.Time) time.Time {
-	if !published.IsZero() {
-		return published
-	}
-	if title == nil {
-		return time.Time{}
-	}
-	if !title.UpdatedAt.IsZero() {
-		return title.UpdatedAt
-	}
-	return title.Released
 }
 
 // ObserveVersionOffers attaches persisted first-observation times for offers

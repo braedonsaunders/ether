@@ -13,7 +13,7 @@ import (
 )
 
 func controlLegacyFrontendVersion(title *core.Title, version core.ReleaseVariant) frontend.Version {
-	out := frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info, AddedAt: versionAddedAt(title, version.Release.PubDate)}
+	out := frontend.Version{ID: version.ID, Name: version.Label, Media: version.Info, AddedAt: title.DateAdded(time.Now())}
 	if !version.Release.PubDate.IsZero() {
 		modified := version.Release.PubDate
 		out.PublishedAt = &modified

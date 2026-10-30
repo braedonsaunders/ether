@@ -10,18 +10,18 @@ import (
 )
 
 func TestExperienceHubRowsKeepsSemanticData(t *testing.T) {
-	rows := experienceHubRows([]core.Hub{{ID: "home.continue", Context: "hub.home.continue", Items: []core.Title{{Key: core.MovieKey(1)}}}, {ID: "home.watchlist", Context: "hub.private", Title: "Saved"}})
+	rows := experience.HubRows([]core.Hub{{ID: "home.continue", Context: "hub.home.continue", Items: []core.Title{{Key: core.MovieKey(1)}}}, {ID: "home.watchlist", Context: "hub.private", Title: "Saved"}})
 	if len(rows) != 2 || rows[0].Purpose != frontend.RowContinue || len(rows[0].Entries) != 1 || rows[0].Entries[0].Title.Key != core.MovieKey(1) || rows[1].Purpose != frontend.RowWatchlist {
 		t.Fatalf("unexpected rows: %+v", rows)
 	}
 }
 
 func TestExperienceRowSourceAppendsAdditionalRows(t *testing.T) {
-	source := experienceRowSource{
-		load: func(context.Context, frontend.RowRequest) ([]experience.RankedCandidate, error) {
+	source := experience.CandidateRowSource{
+		Load: func(context.Context, frontend.RowRequest) ([]experience.RankedCandidate, error) {
 			return []experience.RankedCandidate{{ID: "home.continue", Style: "hero", Purpose: frontend.RowContinue}}, nil
 		},
-		additional: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+		Additional: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
 			return []frontend.Row{{ID: "playlists", Purpose: core.RowPurpose("playlist")}}, nil
 		},
 	}

@@ -163,7 +163,7 @@ func TestCandidateComposerMatchesLegacyAppPath(t *testing.T) {
 			req := frontend.RowRequest{Viewer: viewer, Device: core.Device{ID: "test-client"}, Placement: placement, ViewID: "1", Limit: 8}
 			want, we := a.controlLegacyProductionExperienceRows(ctx, req, libs, vis)
 			got, ge := a.productionExperienceRows(ctx, req, libs, vis)
-			if (we == nil) != (ge == nil) || !reflect.DeepEqual(experienceHubRows(want), experienceCandidateRows(got)) {
+			if (we == nil) != (ge == nil) || !reflect.DeepEqual(experience.HubRows(want), experience.CandidateRows(got)) {
 				t.Fatalf("viewer=%d placement=%s legacy=%+v %v shared=%+v %v", viewer.ID, placement, want, we, got, ge)
 			}
 		}
@@ -198,8 +198,8 @@ func TestCandidateProjectionMatchesLegacyRowsWithoutWireContext(t *testing.T) {
 	if _, ok := reflect.TypeOf(rows[0]).FieldByName("Context"); ok {
 		t.Fatal("wire context leaked into candidate")
 	}
-	want := experienceHubRows(source)
-	got := experienceCandidateRows(rows)
+	want := experience.HubRows(source)
+	got := experience.CandidateRows(rows)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("legacy rows=%+v neutral rows=%+v", want, got)
 	}

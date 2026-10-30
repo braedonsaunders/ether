@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -228,20 +227,9 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 // sameDayUnavailable is a local visibility lookup. Merely browsing must never
 // spend search quota trying to discover an upload.
 func (s *Server) sameDayUnavailable(ctx context.Context, pr *Request, t *core.Title) bool {
-	if t == nil || t.Type != core.TypeEpisode || t.Released.IsZero() {
-		return false
-	}
-	if s.d.FilterAvailable != nil {
-		return len(s.d.FilterAvailable(ctx, []core.Title{*t})) == 0
-	}
-	if age := s.now().Sub(t.Released); age < 0 || age >= 24*time.Hour {
-		return false
-	}
-	if av, ok := s.d.Variants.(core.AvailabilitySource); ok {
-		known, available := av.Available(ctx, t.Key)
-		return known && !available
-	}
-	return false
+	var source core.AvailabilitySource
+	source, _ = s.d.Variants.(core.AvailabilitySource)
+	return experience.SameDayUnavailable(ctx, t, s.now(), s.d.FilterAvailable, source)
 }
 
 // showOnDeck picks the episode to resume or start next.
@@ -251,29 +239,7 @@ func (s *Server) showOnDeck(ctx context.Context, pr *Request, show core.RatingKe
 		return nil, nil
 	}
 	st := s.stateFor(ctx, pr, eps)
-	lastWatched := -1
-	for i, e := range eps {
-		ws := st[e.Key]
-		if ws.ViewOffset > 0 && ws.ViewCount == 0 {
-			return &eps[i], st
-		}
-		if ws.ViewCount > 0 {
-			lastWatched = i
-		}
-	}
-	for i := lastWatched + 1; i < len(eps); i++ {
-		if eps[i].Season > 0 && st[eps[i].Key].ViewCount == 0 && !s.sameDayUnavailable(ctx, pr, &eps[i]) {
-			return &eps[i], st
-		}
-	}
-	if lastWatched < 0 {
-		for i := range eps {
-			if eps[i].Season > 0 && !s.sameDayUnavailable(ctx, pr, &eps[i]) {
-				return &eps[i], st
-			}
-		}
-	}
-	return nil, nil
+	return experience.ShowOnDeck(eps, st, func(t *core.Title) bool { return s.sameDayUnavailable(ctx, pr, t) }), st
 }
 
 func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {

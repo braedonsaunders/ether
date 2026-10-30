@@ -125,7 +125,7 @@ func matchFilter(t core.Title, f core.Filter) bool {
 func (c catalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, error) {
 	var all []core.Title
 	for _, f := range c.lib.files() {
-		if matchFilter(f.title, q.Filter) {
+		if matchFilter(f.title, q.Filter) && (!q.Filter.KnownAddedDate || (!f.title.Released.IsZero() && !f.title.Released.After(time.Now()))) {
 			all = append(all, f.title)
 		}
 	}
@@ -137,8 +137,8 @@ func (c catalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, error
 				return a.Year < b.Year
 			}
 		case core.SortAdded:
-			if !a.UpdatedAt.Equal(b.UpdatedAt) {
-				return a.UpdatedAt.Before(b.UpdatedAt)
+			if !a.Released.Equal(b.Released) {
+				return a.Released.Before(b.Released)
 			}
 		}
 		return strings.ToLower(sortTitle(a.Title)) < strings.ToLower(sortTitle(b.Title))

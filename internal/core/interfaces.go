@@ -22,6 +22,7 @@ const (
 
 // Filter narrows a browse or a smart collection. Zero values mean "any".
 type Filter struct {
+	KnownAddedDate bool `json:"-"` // only released/aired titles, before pagination
 	// ExcludeKeys applies local visibility policy before counting and pagination.
 	ExcludeKeys      []RatingKey   `json:"-"`
 	Type             MediaType     `json:"type,omitempty"` // movie or show
