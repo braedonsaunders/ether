@@ -12,7 +12,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/spike"
-	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -136,26 +135,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 	}
 	a.registrar.SetLibrarySections(libraries)
 	a.closers = append(a.closers, func() { srv.Close() })
-	if !cfg.Spike.Enabled {
-		a.closers = append(a.closers, subscribeWatchRefresh(a.state, srv.WatchStateChanged))
-	}
 	return srv, nil
-}
-
-// State emits only after committing, including deferred cluster writes. Do not
-// refresh the library on every playing heartbeat: it churns recommendation rows
-// and duplicates the separate session-status notifications. Explicit scrobbles
-// already publish their own library notification in the Plex handler.
-func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKey)) func() {
-	return watch.Subscribe(func(ev state.Event) {
-		if ev.Imported {
-			return
-		}
-		if ev.Kind == state.EventCompleted ||
-			(ev.Kind == state.EventProgress && !ev.Completed && (ev.State == "paused" || ev.State == "stopped")) {
-			refresh(ev.UserID, ev.Key)
-		}
-	})
 }
 
 func plexPlatform() string {

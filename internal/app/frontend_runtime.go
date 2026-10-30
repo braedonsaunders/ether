@@ -10,6 +10,7 @@ import (
 	"time"
 
 	artworkpkg "github.com/braedonsaunders/ether/internal/artwork"
+	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -41,6 +42,7 @@ type frontendRuntime struct {
 	events         *sessions.EventBus
 	broker         *sessions.Broker
 	stateUnsub     func()
+	artworkWait    func()
 	ctx            context.Context
 	cancel         context.CancelFunc
 	mu             sync.Mutex
@@ -82,12 +84,22 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &frontendRuntime{app: a, ctx: ctx, cancel: cancel, events: a.sessionEvents, discovery: a.gdm, newDiscovery: func() plexDiscovery { return a.newGDMResponder() }}
+	initialized := false
+	defer func() {
+		if !initialized {
+			cancel()
+			if r.artworkWait != nil {
+				r.artworkWait()
+			}
+		}
+	}()
+
 	r.broker, err = a.newSessionBroker(r.events)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	r.stateUnsub = subscribeSessionState(a.state, r.events, a.plexServer.WatchStateChanged, func(err error) { a.log.Warn("user data event publication failed", "err", err) })
+	r.stateUnsub = subscribeSessionState(a.state, r.events, func(err error) { a.log.Warn("user data event publication failed", "err", err) })
 	compact, err := compactids.New(a.db)
 	if err != nil {
 		r.stateUnsub()
@@ -98,16 +110,17 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	var artwork frontend.Artwork
 	var channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
 	if a.tmdb != nil {
-		variants := newArtworkVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
-		source := &plex.FrontendArtwork{Server: a.plexServer, Variants: variants.get, Raster: artworkpkg.NewSVGRasterizer()}
+		variants := artworkservice.NewVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
+		source := &plex.FrontendArtwork{Server: a.plexServer, Variants: variants.Get, Raster: artworkpkg.NewSVGRasterizer()}
 		if a.episodeorder != nil {
 			source.VirtualSeason = a.episodeorder.CachedVirtualSeason
 		}
 		if a.images != nil {
 			source.URLImages = a.images
 		}
-		metadata := newArtworkMetadataQueue(ctx, a.db, a.users.ActiveUser, source.Read)
-		source.Metadata = metadata.get
+		metadata := artworkservice.NewMetadataQueue(ctx, a.db, a.users.ActiveUser, source.Read)
+		source.Metadata = metadata.Get
+		r.artworkWait = func() { variants.Wait(); metadata.Wait() }
 		artwork = source
 		channelArtwork = source.ChannelImage
 	}
@@ -194,7 +207,11 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return countFrontendStreams((ownerPlayback{Playback: a.playback, app: a}).Sessions()), true
 	}
 	r.control.sharedStatus = r.sharedStatus
-	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
+	watchState := a.state
+	if cfg.Spike.Enabled {
+		watchState = nil
+	}
+	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, WatchState: watchState, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		r.stateUnsub()
 		r.broker.Close(context.Background())
 		cancel()
@@ -249,6 +266,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			return nil, err
 		}
 	}
+	initialized = true
 	return r, nil
 }
 
@@ -432,6 +450,9 @@ func (r *frontendRuntime) close() {
 	r.closed = true
 	r.mu.Unlock()
 	r.cancel()
+	if r.artworkWait != nil {
+		r.artworkWait()
+	}
 	_ = r.control.listeners.close(context.Background())
 	if r.stateUnsub != nil {
 		r.stateUnsub()

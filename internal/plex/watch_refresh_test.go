@@ -1,4 +1,4 @@
-package app
+package plex
 
 import (
 	"context"

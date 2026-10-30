@@ -33,8 +33,7 @@ func TestSessionStateEventsCrossProtocolsWithoutPlexDuplicate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var refreshes int
-	unsub := subscribeSessionState(watch, events, func(int64, core.RatingKey) { refreshes++ }, nil)
+	unsub := subscribeSessionState(watch, events, nil)
 	defer unsub()
 	key := core.MovieKey(5)
 	if err := watch.Scrobble(state.WithOrigin(ctx, state.Origin{Surface: "plex", ClientID: "p"}), 2, key); err != nil {
@@ -61,9 +60,6 @@ func TestSessionStateEventsCrossProtocolsWithoutPlexDuplicate(t *testing.T) {
 		t.Fatalf("Plex received its own event: %+v", ev)
 	case <-time.After(25 * time.Millisecond):
 	}
-	if refreshes != 0 {
-		t.Fatal("duplicate Plex refresh")
-	}
 	if err := watch.Unscrobble(state.WithOrigin(ctx, state.Origin{Surface: "jellyfin", ClientID: "j"}), 2, key); err != nil {
 		t.Fatal(err)
 	}
@@ -87,9 +83,6 @@ func TestSessionStateEventsCrossProtocolsWithoutPlexDuplicate(t *testing.T) {
 	case ev := <-jf:
 		t.Fatalf("Jellyfin received its own event: %+v", ev)
 	case <-time.After(25 * time.Millisecond):
-	}
-	if refreshes != 1 {
-		t.Fatalf("Plex refreshes %d", refreshes)
 	}
 }
 

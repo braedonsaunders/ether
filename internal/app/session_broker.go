@@ -132,9 +132,8 @@ func cachedSessionTitle(ctx context.Context, viewer *core.Viewer, key core.Ratin
 	return title, nil
 }
 
-// subscribeSessionState publishes committed state invalidations once and keeps
-// Plex's own scrobble notifications on their existing path.
-func subscribeSessionState(watch *state.State, events *sessions.EventBus, plexRefresh func(int64, core.RatingKey), onError func(error)) func() {
+// subscribeSessionState publishes protocol-neutral committed state invalidations.
+func subscribeSessionState(watch *state.State, events *sessions.EventBus, onError func(error)) func() {
 	return watch.Subscribe(func(ev state.Event) {
 		if ev.Kind == state.EventProgress && ev.Completed {
 			return
@@ -148,9 +147,6 @@ func subscribeSessionState(watch *state.State, events *sessions.EventBus, plexRe
 			if err := events.Publish(ctx, frontend.Event{Type: "WatchStateChanged", ViewerID: ev.UserID, Item: ev.Key, OriginProtocol: ev.Origin.Surface, OriginSessionID: ev.Origin.SessionID, OriginClientID: ev.Origin.ClientID}); err != nil && onError != nil {
 				onError(err)
 			}
-		}
-		if ev.Origin.Surface != "plex" && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble) && plexRefresh != nil {
-			plexRefresh(ev.UserID, ev.Key)
 		}
 	})
 }
