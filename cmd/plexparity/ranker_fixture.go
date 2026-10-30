@@ -107,6 +107,12 @@ func trainRankerFixture(ctx context.Context, dir string, db *sql.DB, engine *per
 		}
 	}
 	clock.Store(fixtureNow.UnixNano())
+	for _, viewer := range viewers {
+		progress, err := st.Get(ctx, viewer.ID, core.MovieKey(10020))
+		if err != nil || progress.ViewOffset <= 0 {
+			return fmt.Errorf("ranker training lost %s's seeded in-progress item: %v", viewer.Username, err)
+		}
+	}
 	insight, err := engine.TrainRanker(ctx)
 	if err != nil {
 		return fmt.Errorf("train real ranker: %w", err)
