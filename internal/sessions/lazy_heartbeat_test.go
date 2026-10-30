@@ -37,7 +37,7 @@ func (p *heartbeatLazyPlayback) ServeRange(w http.ResponseWriter, r *http.Reques
 }
 
 func TestLazyLongTransferHeartbeat(t *testing.T) {
-	for _, ending := range []string{"retry", "revoke", "database", "stuck", "stop"} {
+	for _, ending := range []string{"retry", "revoke", "hidden", "database", "stuck", "stop"} {
 		t.Run(ending, func(t *testing.T) {
 			ctx := context.Background()
 			db := store.OpenTest(t)
@@ -57,7 +57,11 @@ func TestLazyLongTransferHeartbeat(t *testing.T) {
 			events := NewEventBus(nil, active)
 			defer events.Close()
 			pb := &heartbeatLazyPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}, started: make(chan struct{}), release: make(chan struct{}), cancelled: make(chan struct{})}
+			var hidden atomic.Bool
 			lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+				if hidden.Load() {
+					return nil, core.ErrNotFound
+				}
 				return &core.Title{Key: key}, nil
 			}
 			b, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: now, Lookup: lookup, MediaLookup: lookup})
@@ -144,6 +148,16 @@ func TestLazyLongTransferHeartbeat(t *testing.T) {
 				case <-pb.cancelled:
 				case <-time.After(5 * time.Second):
 					t.Fatal("revocation did not cancel transfer")
+				}
+				<-finished
+				<-stopped
+			case "hidden":
+				hidden.Store(true)
+				ticks <- now()
+				select {
+				case <-pb.cancelled:
+				case <-time.After(5 * time.Second):
+					t.Fatal("policy change did not cancel transfer")
 				}
 				<-finished
 				<-stopped
