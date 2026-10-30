@@ -438,7 +438,7 @@ type scorecardEvent struct {
 }
 
 func scorecardEvents(entries []admin.LogEntry) []scorecardEvent {
-	allowed := map[string]bool{"prepare failed": true, "release failed to open": true, "probe failed; using estimated media info": true, "ffmpeg failed": true, "start ffmpeg": true, "segment unavailable after restarts": true, "scorecard session stage failure": true}
+	allowed := map[string]bool{"prepare failed": true, "release failed to open": true, "probe failed; using estimated media info": true, "ffmpeg failed": true, "start ffmpeg": true, "segment unavailable after restarts": true, "scorecard session stage failure": true, "scorecard profile decision": true}
 	out := []scorecardEvent{}
 	for _, entry := range entries {
 		if !allowed[entry.Message] {
@@ -456,11 +456,19 @@ func scorecardEvents(entries []admin.LogEntry) []scorecardEvent {
 				category = entry.Attrs["category"]
 			}
 		}
-		v := strings.ToLower(entry.Attrs["err"])
-		for _, known := range []string{"not available yet", "stream limit reached", "transcode capacity exhausted", "context deadline exceeded", "context canceled", "media source temporarily unavailable"} {
-			if strings.Contains(v, known) {
-				category = known
-				break
+		if entry.Message == "scorecard profile decision" {
+			switch entry.Attrs["category"] {
+			case "required_condition_unknown", "direct_rejected", "delivery_rejected", "fallback_transcode", "fallback_remux", "no_delivery":
+				category = entry.Attrs["category"]
+			}
+		}
+		if entry.Message != "scorecard profile decision" {
+			v := strings.ToLower(entry.Attrs["err"])
+			for _, known := range []string{"not available yet", "stream limit reached", "transcode capacity exhausted", "context deadline exceeded", "context canceled", "media source temporarily unavailable"} {
+				if strings.Contains(v, known) {
+					category = known
+					break
+				}
 			}
 		}
 		out = append(out, scorecardEvent{Time: entry.Time, Message: entry.Message, Category: category, Stage: stage})

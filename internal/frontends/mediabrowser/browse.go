@@ -288,6 +288,26 @@ func (i *instance) browseRoutes() error {
 			http.NotFound(w, r)
 			return
 		}
+		if d.Collection != nil || d.Playlist != nil {
+			dto, ok := i.containerDTO(d, key)
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			d.Title.Key = key // Bind image capabilities to the authorized container.
+			tags, backdrops, imageMetadata := i.imageTags(r, d, token)
+			for name, value := range imageMetadata {
+				dto[name] = value
+			}
+			if len(tags) > 0 {
+				dto["ImageTags"] = tags
+			}
+			if len(backdrops) > 0 {
+				dto["BackdropImageTags"] = backdrops
+			}
+			jsonReply(w, dto)
+			return
+		}
 		dto := i.itemDTO(d.Title, d.UserData)
 		if versionID != "" {
 			dto["Id"] = versionID
