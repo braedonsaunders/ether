@@ -459,3 +459,77 @@ func TestMirroredHeaderCannotBypassLegacyAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The shared expiry is consumed by an unchanged legacy node at the same exact
+// millisecond boundary; token bytes remain the existing canonical format.
+func TestMirroredLegacyTokenAndExpiryBoundary(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	raw := make([]byte, 32)
+	raw[0] = 12
+	token := base64.RawURLEncoding.EncodeToString(raw)
+	sum := sha256.Sum256([]byte(token))
+	digest := hex.EncodeToString(sum[:])
+	expiry, err := tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{{Digest: digest, Purpose: "events-ws"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacyExpiry, headerExpiry int64
+	if err = db.QueryRowContext(ctx, `SELECT expires FROM frontend_tickets WHERE hash=?`, digest).Scan(&legacyExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT expires FROM capability_headers WHERE namespace='ticket' AND digest=?`, digest).Scan(&headerExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if legacyExpiry != expiry || headerExpiry != expiry {
+		t.Fatalf("expiry result=%d legacy=%d header=%d", expiry, legacyExpiry, headerExpiry)
+	}
+	now := time.UnixMilli(expiry - 1)
+	clock := func() time.Time { return now }
+	grants, err := identity.NewGrants(db, activeFixture{}, time.Hour, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := identity.NewTicketService(db, "silo", grants, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = old.Consume(ctx, token, "events-ws"); err != nil {
+		t.Fatalf("legacy consume immediately before expiry: %v", err)
+	}
+	raw[0] = 13
+	token = base64.RawURLEncoding.EncodeToString(raw)
+	sum = sha256.Sum256([]byte(token))
+	digest = hex.EncodeToString(sum[:])
+	expiry, err = tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{{Digest: digest, Purpose: "events-ws"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = time.UnixMilli(expiry)
+	if _, err = old.Consume(ctx, token, "events-ws"); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("legacy exact expiry: %v", err)
+	}
+}
+
+func TestMirroredGrantExpiryDeniesWithoutConsume(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{entry(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_grants SET expires=0 WHERE hash=?`, scope.SourceHash); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.ConsumeMirrored(ctx, "silo", "events-ws", entry(1).Digest); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("expired grant: %v", err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, entry(1).Digest).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("expired grant consumed ticket count=%d err=%v", n, err)
+	}
+	if _, err := tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{entry(2)}); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("expired grant issue: %v", err)
+	}
+}
