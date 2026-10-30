@@ -21,3 +21,16 @@ type ClientCaps = core.ClientCaps
 type PlaybackSourceHistory = core.PlaybackSourceHistory
 type Decision = core.Decision
 type HLSSession = core.HLSSession
+
+// Catalogue key kinds and constructors stay owned by core. Adapters compare
+// and rebuild parent keys through these aliases.
+const (
+	KindShow    = core.KindShow
+	KindSeason  = core.KindSeason
+	KindEpisode = core.KindEpisode
+)
+
+func ShowKey(tmdb int64) RatingKey { return core.ShowKey(tmdb) }
+func SeasonKey(show int64, season int) RatingKey {
+	return core.SeasonKey(show, season)
+}

@@ -42,7 +42,7 @@ func (i *instance) userDataDTO(id string, st frontend.WatchStatus) map[string]an
 		}
 	}
 	if i.protocol == "jellyfin" {
-		data["Key"] = id
+		data["Key"] = dashedGUID(id)
 		data["ItemId"] = id
 	}
 	return data
@@ -103,28 +103,7 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 	if t.Type == "movie" || t.Type == "episode" {
 		m["MediaType"] = "Video"
 	}
-	if t.ShowKey != 0 {
-		m["SeriesId"] = ids.RatingKeyGUID(t.ShowKey)
-		m["SeriesName"] = t.ShowTitle
-	}
-	if t.Type == "episode" {
-		if parent := t.Key.Parent(); parent != 0 {
-			m["SeasonId"] = ids.RatingKeyGUID(parent)
-			m["ParentId"] = ids.RatingKeyGUID(parent)
-		}
-		if t.SeasonTitle != "" {
-			m["SeasonName"] = t.SeasonTitle
-		}
-		m["ParentIndexNumber"] = t.Season
-		m["IndexNumber"] = t.Episode
-
-	}
-	if t.Type == "season" {
-		if parent := t.Key.Parent(); parent != 0 {
-			m["ParentId"] = ids.RatingKeyGUID(parent)
-		}
-		m["IndexNumber"] = t.Season
-	}
+	attachParentIdentity(m, t)
 	if i.protocol == "emby" {
 		i.embyItemDTO(m, t, state)
 		// Movies and shows belong to their configured library. Episodes and
@@ -187,6 +166,15 @@ func (i *instance) browseRoutes() error {
 			item := map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true, "ServerId": i.info.ID, "SortName": view.Name, "DisplayPreferencesId": viewID, "CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}}
 			if i.protocol == "emby" {
 				i.embyViewDTO(item)
+			}
+			if i.protocol == "jellyfin" {
+				i.jellyfinCollectionFolder(item, viewID)
+				// ChildCount is the number of items this viewer can list in the view.
+				// A failed count stays absent rather than a fabricated zero.
+				page, err := i.host.Experience.LibraryItems(r.Context(), v, device(r), view.ID, frontend.ItemQuery{Limit: 1})
+				if err == nil {
+					item["ChildCount"] = page.Total
+				}
 			}
 			items = append(items, item)
 		}
@@ -255,6 +243,8 @@ func (i *instance) browseRoutes() error {
 				for key, value := range images[title.Key] {
 					item[key] = value
 				}
+				i.shapeJellyfinItem(r, v, item, title)
+				i.jellyfinSeasonListFields(r, item, title)
 				items = append(items, item)
 			}
 			if reporter, ok := i.host.Experience.(frontend.RowInteractionReporter); ok && len(page) > 0 {
@@ -336,6 +326,11 @@ func (i *instance) browseRoutes() error {
 		if people := i.peopleDTO(r, v, token, d); len(people) > 0 {
 			dto["People"] = people
 		}
+		if i.protocol == "jellyfin" {
+			if urls := jellyfinExternalURLs(d.Title); len(urls) > 0 {
+				dto["ExternalUrls"] = urls
+			}
+		}
 		if len(d.Tracks) > 0 && !d.TracksEstimated {
 			streams := i.mediaStreams(d.Tracks)
 			dto["MediaStreams"] = streams
@@ -404,9 +399,16 @@ func (i *instance) browseRoutes() error {
 		i.addNamedFacets(r, v, d, dto)
 		if i.protocol == "jellyfin" {
 			i.jellyfinItemDetailDTO(d, dto)
-			// shapeJellyfinItem (Jellyfin 12.4 list shell) stays on this path,
-			// before tiles, so the shell does not drop the trickplay map.
+			i.shapeJellyfinItem(r, v, dto, d.Title)
+			i.jellyfinKnownVersionFacts(dto, d.Versions)
+			jellyfinStudioFacts(dto, d.Title)
+			i.jellyfinDetailShell(dto)
+			if d.Title.Type == "show" {
+				i.attachUnplayedCount(r, v, dto, d.Title)
+				i.attachCumulativeRuntime(r, v, dto, d.Title)
+			}
 			i.attachTrickplay(r, v, key, dto)
+
 		}
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)
@@ -425,6 +427,9 @@ func (i *instance) browseRoutes() error {
 	if err := add("GET", "/UserViews/GroupingOptions", i.groupingOptions); err != nil {
 		return err
 	}
+	if err := add("GET", "/Library/VirtualFolders", i.virtualFolders); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -438,8 +443,8 @@ func itemQuery(r *http.Request) frontend.ItemQuery {
 	}
 
 	q.Recursive = queryBool(r, "Recursive", false)
-	if values := route.Query(r.URL.Query(), "IncludeItemTypes"); len(values) == 1 {
-		for _, typ := range strings.Split(values[0], ",") {
+	for _, value := range route.Query(r.URL.Query(), "IncludeItemTypes") {
+		for _, typ := range strings.Split(value, ",") {
 			switch strings.ToLower(strings.TrimSpace(typ)) {
 			case "movie":
 				q.Types = append(q.Types, "movie")
@@ -453,12 +458,39 @@ func itemQuery(r *http.Request) frontend.ItemQuery {
 		}
 	}
 	if values := route.Query(r.URL.Query(), "Genres"); len(values) == 1 && values[0] != "" {
-		q.Filter.Genres = strings.Split(values[0], ",")
+		q.Filter.Genres = splitCSV(values[0])
 	}
 	if values := route.Query(r.URL.Query(), "Years"); len(values) == 1 {
 		if year, e := strconv.Atoi(values[0]); e == nil {
 			q.Filter.YearFrom = year
 			q.Filter.YearTo = year
+		}
+	}
+	if values := route.Query(r.URL.Query(), "MinCommunityRating"); len(values) == 1 {
+		if n, e := strconv.ParseFloat(values[0], 64); e == nil && n > 0 {
+			q.Filter.MinRating = n
+		}
+	}
+	if values := route.Query(r.URL.Query(), "OfficialRatings"); len(values) == 1 && values[0] != "" {
+		q.Filter.ContentRatings = splitCSV(values[0])
+	}
+	if values := route.Query(r.URL.Query(), "Studios"); len(values) == 1 {
+		names := splitCSV(values[0])
+		if len(names) == 1 {
+			q.Filter.Studio = names[0]
+		}
+	}
+	if values := route.Query(r.URL.Query(), "SearchTerm"); len(values) == 1 {
+		q.Filter.Query = strings.TrimSpace(values[0])
+	}
+	if values := route.Query(r.URL.Query(), "MinRuntimeTicks"); len(values) == 1 {
+		if n, e := strconv.ParseInt(values[0], 10, 64); e == nil && n > 0 {
+			q.Filter.MinRuntime = time.Duration(n) * 100
+		}
+	}
+	if values := route.Query(r.URL.Query(), "MaxRuntimeTicks"); len(values) == 1 {
+		if n, e := strconv.ParseInt(values[0], 10, 64); e == nil && n > 0 {
+			q.Filter.MaxRuntime = time.Duration(n) * 100
 		}
 	}
 	for _, value := range route.Query(r.URL.Query(), "Filters") {
@@ -506,6 +538,8 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 		for key, value := range images[title.Key] {
 			item[key] = value
 		}
+		i.shapeJellyfinItem(r, v, item, title)
+		i.jellyfinListFields(r, item, title)
 		items = append(items, item)
 	}
 	jsonReply(w, i.queryResult(items, page.Total, offset))
@@ -559,7 +593,23 @@ func (i *instance) search(w http.ResponseWriter, r *http.Request) {
 	for _, t := range result.Page.Items {
 		id := ids.RatingKeyGUID(t.Key)
 		kind := map[frontend.MediaType]string{"movie": "Movie", "show": "Series", "season": "Season", "episode": "Episode"}[t.Type]
-		hints = append(hints, map[string]any{"Id": id, "ItemId": id, "Name": t.Title, "Type": kind, "ProductionYear": t.Year, "IsFolder": t.Type == "show" || t.Type == "season"})
+		hint := map[string]any{"Id": id, "ItemId": id, "Name": t.Title, "Type": kind, "ProductionYear": t.Year, "IsFolder": t.Type == "show" || t.Type == "season"}
+		if i.protocol == "jellyfin" {
+			if t.Type == "movie" || t.Type == "episode" {
+				hint["MediaType"] = "Video"
+			}
+			if t.Runtime > 0 {
+				hint["RunTimeTicks"] = t.Runtime.Nanoseconds() / 100
+			}
+			if t.Type == "episode" {
+				hint["IndexNumber"] = t.Episode
+				hint["ParentIndexNumber"] = t.Season
+				if t.ShowTitle != "" {
+					hint["Series"] = t.ShowTitle
+				}
+			}
+		}
+		hints = append(hints, hint)
 	}
 	jsonReply(w, map[string]any{"SearchHints": hints, "TotalRecordCount": result.Page.Total})
 }
@@ -580,6 +630,14 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := itemQuery(r)
+	switch requestedSpecialItems(r) {
+	case specialBoxSets:
+		i.writeBoxSets(w, r, v, q)
+		return
+	case specialPlaylists:
+		i.writePlaylists(w, v, q)
+		return
+	}
 	if err := navigationQuery(r, &q, false); err != nil {
 		http.Error(w, "Invalid navigation anchor", http.StatusBadRequest)
 		return
@@ -668,6 +726,8 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 		if p := paths[t.Key]; p != "" {
 			item["Path"] = p
 		}
+		i.shapeJellyfinItem(r, v, item, t)
+		i.jellyfinSeasonListFields(r, item, t)
 		items = append(items, item)
 	}
 	jsonReply(w, items)

@@ -68,6 +68,10 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 		if v := os.Getenv(key); v != "" {
 			settings[key] = v
 		}
+		// A Jellyfin-only window omits LAB_EMBY_URL. Do not contact Emby then.
+		if key == "LAB_EMBY_URL" && settings[key] == "" {
+			continue
+		}
 		parsed, e := url.Parse(settings[key])
 		if e != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.RawQuery != "" || parsed.Fragment != "" {
 			t.Fatalf("%s must be an HTTP(S) lab URL without credentials", key)
@@ -79,8 +83,11 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	defer cancelWorkload()
 	jellyfinRef := labReference(t, settings, "JELLYFIN", settings["LAB_JELLYFIN_URL"])
 	defer jellyfinRef.logout(t)
-	embyRef := labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
-	defer embyRef.logout(t)
+	var embyRef labReferenceData
+	if settings["LAB_EMBY_URL"] != "" {
+		embyRef = labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
+		defer embyRef.logout(t)
+	}
 	conformBinary := filepath.Join(t.TempDir(), "conformdiff")
 	build := exec.CommandContext(workload, "go", "build", "-o", conformBinary, "./cmd/conformdiff")
 	build.Dir = "../.."
@@ -89,10 +96,15 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	}
 	t.Log("lab_baseline=isolated-profile-phase-v1; old counts and performance are not comparable")
 	summary := conformance.Manifest{Schema: 1, Protocols: map[string]conformance.Summary{}}
-	for _, spec := range []struct {
+	type labProtocolSpec struct {
 		proto, client string
 		reference     labReferenceData
-	}{{"jellyfin", "findroid,jellycon,jellyfin-androidtv,streamyfin,swiftfin,infuse-jellyfin", jellyfinRef}, {"emby", "emby-sdk", embyRef}} {
+	}
+	specs := []labProtocolSpec{{"jellyfin", "findroid,jellycon,jellyfin-androidtv,streamyfin,swiftfin,infuse-jellyfin", jellyfinRef}}
+	if settings["LAB_EMBY_URL"] != "" {
+		specs = append(specs, labProtocolSpec{"emby", "emby-sdk", embyRef})
+	}
+	for _, spec := range specs {
 		t.Run(spec.proto, func(t *testing.T) {
 			combined := map[string]bool{}
 			validEvidence := true
@@ -380,7 +392,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	if e = local.Create(ctx, viewer.ID, "fixture-viewer", "fixture-password"); e != nil {
 		t.Fatal(e)
 	}
-	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People", nil)
+	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People,Status,EndDate", nil)
 	request.Header.Set("X-Emby-Token", jellyfinRef.token)
 	request.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+jellyfinRef.device+`", Version="1", Token="`+jellyfinRef.token+`"`)
 	resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(request)
@@ -389,14 +401,14 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}
 	var listing struct {
 		Items []struct {
-			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating, SeriesName, SeasonName string
-			ProviderIds                                                                                   map[string]string
-			IndexNumber, ParentIndexNumber, ProductionYear                                                int
-			RunTimeTicks                                                                                  int64
-			CommunityRating                                                                               float64
-			Genres, ProductionLocations, Taglines                                                         []string
-			Studios                                                                                       []struct{ Name string }
-			People                                                                                        []struct{ Name, Role, Type string }
+			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating, SeriesName, SeasonName, Status, EndDate string
+			ProviderIds                                                                                                    map[string]string
+			IndexNumber, ParentIndexNumber, ProductionYear                                                                 int
+			RunTimeTicks                                                                                                   int64
+			CommunityRating                                                                                                float64
+			Genres, ProductionLocations, Taglines                                                                          []string
+			Studios                                                                                                        []struct{ Name string }
+			People                                                                                                         []struct{ Name, Role, Type string }
 		}
 	}
 	e = json.NewDecoder(resp.Body).Decode(&listing)
@@ -409,7 +421,10 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		tvdb, _ := strconv.ParseInt(x.ProviderIds["Tvdb"], 10, 64)
 		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
 		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
-		title.Genres, title.Countries = x.Genres, x.ProductionLocations
+		title.Genres, title.Countries, title.Status = x.Genres, x.ProductionLocations, x.Status
+		if parsed, err := time.Parse(time.RFC3339Nano, x.EndDate); err == nil {
+			title.LastAirDate = parsed
+		}
 		if len(x.Taglines) > 0 {
 			title.Tagline = x.Taglines[0]
 		}
@@ -1554,7 +1569,11 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 		req := conform.Request{Method: "GET", Path: path, Headers: headers}
 		response, err = p.Fetch(context.Background(), client, target.server.URL, login.AccessToken, req, profile, target.values, true)
 		if err != nil || response.Status != http.StatusOK {
-			t.Fatal("current-client preflight failed")
+			body := string(response.Body)
+			if len(body) > 180 {
+				body = body[:180]
+			}
+			t.Fatalf("current-client preflight failed path=%s status=%d err=%v body=%s", path, response.Status, err, body)
 		}
 		if path == "/Items/"+itemID {
 			var item struct{ ImageTags map[string]string }

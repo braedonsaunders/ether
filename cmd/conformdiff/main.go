@@ -270,7 +270,7 @@ func record(p pmsconform.Protocol, variables map[string]string, base, token, out
 		// describe the same items as the rest of the set.
 		ids, e := loadDiscovery(out, profile)
 		if only == "" || e != nil {
-			ids = p.Discover(ctx, client, base, token, profile, nil)
+			ids = p.Discover(ctx, client, base, token, profile, withRunDevice(nil, variables))
 			for _, w := range ids.Warnings {
 				report.Discovery = append(report.Discovery, profile+": "+w)
 			}
@@ -368,7 +368,7 @@ func compare(p pmsconform.Protocol, variables map[string]string, dir, base, toke
 		if e != nil {
 			refIDs = pmsconform.DiscoveredIDs{Values: map[string]string{}, Warnings: []string{"reference discovery unavailable; fallback IDs may be used"}}
 		}
-		targetIDs := p.Discover(ctx, client, base, token, profile, &refIDs)
+		targetIDs := p.Discover(ctx, client, base, token, profile, withRunDevice(&refIDs, variables))
 		for k, v := range variables {
 			targetIDs.Values[k] = v
 		}
@@ -528,6 +528,26 @@ func formatName(jsonMode bool) string {
 		return "json"
 	}
 	return "xml"
+}
+
+// withRunDevice supplies this run's device claim to discovery. It does not copy
+// item aliases into ownership. An empty device leaves align unchanged.
+func withRunDevice(align *pmsconform.DiscoveredIDs, variables map[string]string) *pmsconform.DiscoveredIDs {
+	deviceID := ""
+	if variables != nil {
+		deviceID = variables["device_id"]
+	}
+	if deviceID == "" {
+		return align
+	}
+	values := map[string]string{}
+	if align != nil {
+		for k, v := range align.Values {
+			values[k] = v
+		}
+	}
+	values["device_id"] = deviceID
+	return &pmsconform.DiscoveredIDs{Values: values}
 }
 func errorDifference(profile string, req pmsconform.Request, e error) pmsconform.Difference {
 	return pmsconform.Difference{Client: profile, Endpoint: req.Path, Path: profile + " " + req.Method + " " + req.Path, Kind: pmsconform.KindRequestError, Reference: string(pmsconform.Redact([]byte(e.Error()))), Blocking: true}

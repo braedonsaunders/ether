@@ -1,0 +1,619 @@
+package mediabrowser
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/conform"
+	"github.com/braedonsaunders/ether/internal/conform/openapi"
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
+)
+
+func TestJellyfinUserDataKeyIsDashed(t *testing.T) {
+	id := ids.RatingKeyGUID(5)
+	data := (&instance{protocol: "jellyfin"}).userDataDTO(id, frontend.WatchStatus{})
+	if data["ItemId"] != id || data["Key"] != dashedGUID(id) || !strings.Contains(data["Key"].(string), "-") {
+		t.Fatal(data)
+	}
+	if _, ok := (&instance{protocol: "emby"}).userDataDTO(id, frontend.WatchStatus{})["Key"]; ok {
+		t.Fatal("emby user data gained a jellyfin key")
+	}
+}
+
+func TestJellyfinListShellMatchesRecordedMovieShape(t *testing.T) {
+	released := time.Date(2020, 5, 1, 0, 0, 0, 0, time.UTC)
+	title := frontend.Title{Key: 5, Type: "movie", Title: "Arrival", Year: 2016, Released: released, Summary: "A linguist.", Runtime: time.Hour, Genres: []string{"Drama"}, Rating: 8, Language: "en", ContentRating: "PG-13", Status: "Released"}
+	exp := frontendtest.Experience{
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{Items: []frontend.Title{title}, Total: 1}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{5: {IsFavorite: true, ViewCount: 2, ViewOffset: time.Minute, Duration: time.Hour, LastViewedAt: released}}, nil
+		},
+		NamedFacetIDsFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, string, []string) (map[string]string, error) {
+			return map[string]string{"Drama": "genre-drama"}, nil
+		},
+	}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?IncludeItemTypes=Movie&Fields=DateCreated,Etag,Genres,Overview,MediaSources&Recursive=true", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var body struct {
+		Items            []map[string]any
+		StartIndex       int
+		TotalRecordCount int
+	}
+	if json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 || body.TotalRecordCount != 1 {
+		t.Fatal(w.Body.String())
+	}
+	item := body.Items[0]
+	for _, key := range []string{"ChannelId", "BackdropImageTags", "ImageTags", "ImageBlurHashes", "VideoType", "Container", "Etag", "Overview", "Genres", "GenreItems", "DateCreated", "MediaSources", "UserData", "PremiereDate", "CommunityRating", "OriginalLanguage", "OfficialRating"} {
+		if _, ok := item[key]; !ok {
+			t.Errorf("missing %s", key)
+		}
+	}
+	if item["ChannelId"] != nil || item["VideoType"] != "VideoFile" || item["Overview"] != "A linguist." {
+		t.Fatal(item["ChannelId"], item["VideoType"], item["Overview"])
+	}
+	genres := item["GenreItems"].([]any)
+	if len(genres) != 1 || genres[0].(map[string]any)["Name"] != "Drama" {
+		t.Fatal(item["GenreItems"])
+	}
+	userData := item["UserData"].(map[string]any)
+	if userData["IsFavorite"] != true || userData["ItemId"] == userData["Key"] {
+		t.Fatal(userData)
+	}
+	sources := item["MediaSources"].([]any)
+	source := sources[0].(map[string]any)
+	if source["VideoType"] != "VideoFile" || source["UseMostCompatibleTranscodingProfile"] != false || source["ETag"] == "" {
+		t.Fatal(source)
+	}
+	requireJellyfinSpec(t, http.MethodGet, "/Items", w)
+}
+
+func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, id string, q frontend.ItemQuery) (frontend.Page, error) {
+			if v == nil || v.ID != 1 || id != "1" || q.Limit != 1 {
+				t.Fatalf("library count query viewer=%v id=%s limit=%d", v, id, q.Limit)
+			}
+			return frontend.Page{Total: 6}, nil
+		},
+	}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var body struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	view := body.Items[0]
+	for _, key := range []string{"ChannelId", "ChildCount", "DateCreated", "DateLastMediaAdded", "Etag", "ImageTags", "LocationType", "LockData", "MediaType", "PlayAccess", "UserData"} {
+		if key == "DateCreated" || key == "DateLastMediaAdded" {
+			if _, ok := view[key]; ok {
+				t.Fatalf("%s was invented: %v", key, view[key])
+			}
+			continue
+		}
+		if _, ok := view[key]; !ok {
+			t.Errorf("missing %s", key)
+		}
+	}
+	if view["MediaType"] != "Unknown" || view["PlayAccess"] != "Full" || view["LockData"] != false || view["ChannelId"] != nil || view["ChildCount"] != float64(6) {
+		t.Fatal(view["MediaType"], view["PlayAccess"], view["LockData"], view["ChannelId"], view["ChildCount"])
+	}
+	userData := view["UserData"].(map[string]any)
+	if _, ok := userData["PlayedPercentage"]; ok || userData["Played"] != false {
+		t.Fatal(userData)
+	}
+	reference, err := conform.LoadFixture("../../../testdata/conform/jellyfin/findroid/findroid_jsonhome_user views_GET__Users_${user_id}_Views.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := conform.Compare(reference, conform.Response{Status: w.Code, Headers: w.Header(), Body: w.Body.Bytes()})
+	for _, diff := range report.Differences {
+		if diff.Blocking && diff.Kind == conform.KindMissing {
+			switch diff.Path {
+			case "$/Items[]/DateCreated", "$/Items[]/DateLastMediaAdded", "$/Items[]/ParentId", "$/Items[]/Path", "$/Items[]/PrimaryImageAspectRatio", "$/Items[]/ImageTags/Primary", "$/Items[]/ImageBlurHashes/Primary":
+			default:
+				t.Errorf("view shell missing %s", diff.Path)
+			}
+		}
+	}
+	requireJellyfinSpec(t, http.MethodGet, "/UserViews", w)
+}
+
+func TestJellyfinBoxSetsAndPlaylists(t *testing.T) {
+	var got frontend.CollectionQuery
+	exp := frontendtest.Experience{CollectionsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, q frontend.CollectionQuery) (frontend.CollectionPage, error) {
+		if v == nil || v.ID != 1 {
+			t.Fatal(v)
+		}
+		got = q
+		return frontend.CollectionPage{Items: []frontend.Collection{{Key: 9, Title: "Before", Summary: "A trilogy", ChildCount: 3}}, Total: 1}, nil
+	}}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?IncludeItemTypes=BoxSet&StartIndex=2&Limit=5", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || got.Offset != 2 || got.Limit != 5 || !strings.Contains(w.Body.String(), `"Type":"BoxSet"`) || !strings.Contains(w.Body.String(), `"Name":"Before"`) || !strings.Contains(w.Body.String(), `"ChildCount":3`) {
+		t.Fatal(w.Code, got, w.Body.String())
+	}
+	requireJellyfinSpec(t, http.MethodGet, "/Items", w)
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items?IncludeItemTypes=Playlist&Limit=10", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Items":[]`) || !strings.Contains(w.Body.String(), `"TotalRecordCount":0`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	requireJellyfinSpec(t, http.MethodGet, "/Items", w)
+}
+
+func TestJellyfinBrowseFiltersReachTheLibrary(t *testing.T) {
+	var got frontend.ItemQuery
+	exp := frontendtest.Experience{LibraryItemsFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, _ string, q frontend.ItemQuery) (frontend.Page, error) {
+		got = q
+		return frontend.Page{}, nil
+	}}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true&MinCommunityRating=7.5&OfficialRatings=PG-13,R&Studios=A24&SearchTerm=Arrival&MinRuntimeTicks=600000000&SortBy=PremiereDate&SortOrder=Descending", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || got.Filter.MinRating != 7.5 || len(got.Filter.ContentRatings) != 2 || got.Filter.ContentRatings[0] != "PG-13" || got.Filter.Studio != "A24" || got.Filter.Query != "Arrival" || got.Filter.MinRuntime != 60*time.Second || got.Sort != core.SortReleased || !got.Desc {
+		t.Fatal(w.Code, got)
+	}
+}
+
+func TestJellyfinEpisodeShellKeepsParentImageSlots(t *testing.T) {
+	title := frontend.Title{Key: 8, Type: "episode", Title: "Pilot", ShowTitle: "Show", Season: 1, Episode: 1, Year: 2016, ShowKey: 4}
+	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+		return []frontend.Row{{Purpose: frontend.RowNextUp, Items: []frontend.Title{title}}}, nil
+	}, UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+		return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+	}}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Shows/NextUp", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var body struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	item := body.Items[0]
+	for _, key := range []string{"ParentPrimaryImageTag", "ParentLogoImageTag", "SeriesPrimaryImageTag", "ParentBackdropImageTags", "VideoType", "Container", "ChannelId"} {
+		if _, ok := item[key]; !ok {
+			t.Errorf("missing %s", key)
+		}
+	}
+	if _, ok := item["Etag"]; ok || item["VideoType"] != "VideoFile" {
+		t.Fatal("etag without a fields request, or video type", item["Etag"], item["VideoType"])
+	}
+}
+
+func TestJellyfinUnplayedCountUsesEpisodeWatchState(t *testing.T) {
+	show := core.ShowKey(42)
+	season := core.SeasonKey(42, 1)
+	watched := core.EpisodeKey(42, 1, 1)
+	fresh := core.EpisodeKey(42, 1, 2)
+	missing := core.EpisodeKey(42, 1, 3)
+	episodes := []frontend.Title{
+		{Key: watched, Type: "episode"},
+		{Key: fresh, Type: "episode"},
+		{Key: missing, Type: "episode"},
+	}
+	children := func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, key frontend.RatingKey, q frontend.ItemQuery) (core.Page, error) {
+		if key == show && q.Recursive {
+			return core.Page{Items: episodes, Total: len(episodes)}, nil
+		}
+		if key == show {
+			return core.Page{Items: []frontend.Title{{Key: season, Type: "season", ShowKey: show, Season: 1, Title: "Season 1"}}, Total: 1}, nil
+		}
+		if key == season {
+			return core.Page{Items: episodes, Total: len(episodes)}, nil
+		}
+		return core.Page{}, errors.New("unavailable")
+	}
+	userData := func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+		return map[frontend.RatingKey]frontend.WatchStatus{watched: {ViewCount: 1}, fresh: {ViewCount: 0}}, nil
+	}
+	inst := mountJellyfin(t, frontendtest.Experience{
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+		},
+		ChildrenFunc: children,
+		UserDataFunc: userData,
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var item map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &item); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := item["UserData"].(map[string]any)
+	if data["UnplayedItemCount"] != float64(2) {
+		t.Fatal(data)
+	}
+	requireJellyfinSpec(t, "GET", r.URL.Path, w)
+
+	seasonList := mountJellyfin(t, frontendtest.Experience{
+		ChildrenFunc: children,
+		UserDataFunc: userData,
+	})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Shows/"+ids.RatingKeyGUID(show)+"/Seasons", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	seasonList.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var page struct {
+		Items []map[string]any
+	}
+	if json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 {
+		t.Fatal(w.Body.String())
+	}
+	seasonData, _ := page.Items[0]["UserData"].(map[string]any)
+	if seasonData["UnplayedItemCount"] != float64(2) {
+		t.Fatal(seasonData)
+	}
+
+	failed := mountJellyfin(t, frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+	}, ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (core.Page, error) {
+		return core.Page{}, errors.New("unavailable")
+	}})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	failed.Handler().ServeHTTP(w, r)
+	var hidden map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &hidden) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	hiddenData, _ := hidden["UserData"].(map[string]any)
+	if _, ok := hiddenData["UnplayedItemCount"]; ok {
+		t.Fatal(hiddenData)
+	}
+}
+
+func TestJellyfinEpisodeParentsComeFromTheTitle(t *testing.T) {
+	i := &instance{protocol: "jellyfin"}
+	encoded := i.itemDTO(frontend.Title{Key: core.EpisodeKey(42, 1, 3), Type: "episode", Title: "Pilot", Season: 1, Episode: 3}, frontend.WatchStatus{})
+	showID := ids.RatingKeyGUID(core.ShowKey(42))
+	seasonID := ids.RatingKeyGUID(core.SeasonKey(42, 1))
+	if encoded["SeriesId"] != showID || encoded["SeasonId"] != seasonID || encoded["ParentId"] != seasonID || encoded["SeasonName"] != "Season 1" {
+		t.Fatal(encoded["SeriesId"], encoded["SeasonId"], encoded["ParentId"], encoded["SeasonName"])
+	}
+	named := i.itemDTO(frontend.Title{Key: 8, Type: "episode", ShowKey: core.ShowKey(42), ShowTitle: "Show", SeasonTitle: "The Beginning", Season: 1, Episode: 3}, frontend.WatchStatus{})
+	if named["SeriesName"] != "Show" || named["SeasonName"] != "The Beginning" || named["SeasonId"] != seasonID {
+		t.Fatal(named["SeriesName"], named["SeasonName"], named["SeasonId"])
+	}
+	movie := i.itemDTO(frontend.Title{Key: core.MovieKey(3), Type: "movie", Title: "Film"}, frontend.WatchStatus{})
+	if _, ok := movie["SeriesId"]; ok {
+		t.Fatal(movie["SeriesId"])
+	}
+	if _, ok := movie["SeasonId"]; ok {
+		t.Fatal(movie["SeasonId"])
+	}
+	show := i.itemDTO(frontend.Title{Key: core.ShowKey(42), Type: "show", Title: "Show", Studios: []string{"A24"}}, frontend.WatchStatus{})
+	i.shapeJellyfinItem(nil, nil, show, frontend.Title{Type: "show", Studios: []string{"A24"}})
+	data, _ := show["UserData"].(map[string]any)
+	if data["PlayedPercentage"] != float64(0) {
+		t.Fatal(data)
+	}
+}
+
+func TestJellyfinSeasonListOmitsUnrequestedFields(t *testing.T) {
+	season := frontend.Title{Key: core.SeasonKey(42, 1), Type: "season", ShowKey: core.ShowKey(42), ShowTitle: "Show", Season: 1, Title: "Season 1", Summary: "secret", Studios: []string{"A24"}}
+	inst := mountJellyfin(t, frontendtest.Experience{ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (core.Page, error) {
+		return core.Page{Items: []frontend.Title{season}, Total: 1}, nil
+	}})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Shows/"+ids.RatingKeyGUID(core.ShowKey(42))+"/Seasons?Fields=Genres,ParentId", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var page struct {
+		Items []map[string]any
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || len(page.Items) != 1 {
+		t.Fatal(err, w.Body.String())
+	}
+	item := page.Items[0]
+	if item["SeriesName"] != "Show" || item["ParentId"] != ids.RatingKeyGUID(core.ShowKey(42)) || item["SeasonName"] != "Season 1" || item["MediaType"] != "Unknown" {
+		t.Fatal(item["SeriesName"], item["ParentId"], item["SeasonName"], item["MediaType"])
+	}
+	for _, key := range []string{"CanDelete", "CanDownload", "Overview", "SortName", "ProviderIds", "RunTimeTicks", "DateCreated"} {
+		if _, ok := item[key]; ok {
+			t.Fatalf("unrequested %s", key)
+		}
+	}
+	requireJellyfinSpec(t, "GET", r.URL.Path, w)
+}
+
+func TestJellyfinDetailShellAndKnownVersionFacts(t *testing.T) {
+	inst := mountJellyfin(t, frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: core.EpisodeKey(42, 1, 1), Type: "episode", Title: "Arrival", ShowKey: core.ShowKey(42), ShowTitle: "Show", Season: 1, Episode: 1, Studios: []string{"A24"}}, Versions: []frontend.Version{{
+			Media: core.MediaInfo{Container: "mkv", Size: 40, BitrateKbps: 8000, Chapters: []core.Chapter{{Title: "Start", Start: time.Second}}, Streams: []core.StreamInfo{{Type: "video", Width: 1920, Height: 800}}},
+		}}}, nil
+	}})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(core.EpisodeKey(42, 1, 1)), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var item map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &item); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"Chapters", "ExternalUrls", "LockData", "LockedFields", "People", "RemoteTrailers", "Taglines", "Tags", "LocalTrailerCount", "SpecialFeatureCount", "Etag", "Container"} {
+		if _, ok := item[key]; !ok {
+			t.Fatalf("missing %s", key)
+		}
+	}
+	for _, key := range []string{"Width", "Height"} {
+		if _, ok := item[key]; ok {
+			t.Fatalf("%s belongs to the playback slice", key)
+		}
+	}
+	for _, key := range []string{"FileName", "Bitrate", "Size", "DateModified"} {
+		if _, ok := item[key]; ok {
+			t.Fatalf("%s is not on BaseItemDto", key)
+		}
+	}
+	if item["Container"] != "mkv" || item["SeriesStudio"] != "A24" {
+		t.Fatal(item["Container"], item["SeriesStudio"])
+	}
+	if item["DisplayPreferencesId"] != item["Id"] {
+		t.Fatal(item["DisplayPreferencesId"], item["Id"])
+	}
+	chapters, _ := item["Chapters"].([]any)
+	if len(chapters) != 1 {
+		t.Fatal(item["Chapters"])
+	}
+	requireJellyfinSpec(t, "GET", "/Items/"+ids.RatingKeyGUID(core.EpisodeKey(42, 1, 1)), w)
+
+	estimated := mountJellyfin(t, frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: 6, Type: "movie"}, Versions: []frontend.Version{{
+			Media: core.MediaInfo{Estimated: true, Container: "mkv", Size: 9, Streams: []core.StreamInfo{{Type: "video", Width: 640, Height: 480}}},
+		}}}, nil
+	}})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(6), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	estimated.Handler().ServeHTTP(w, r)
+	var guess map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &guess) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	for _, key := range []string{"Width", "Height", "Size", "Bitrate"} {
+		if _, ok := guess[key]; ok {
+			t.Fatalf("estimated %s exposed", key)
+		}
+	}
+	if _, ok := guess["Chapters"]; !ok {
+		t.Fatal("detail shell dropped chapters key")
+	}
+}
+
+func TestJellyfinNamedPeopleProviderLinksAndRuntime(t *testing.T) {
+	show := core.ShowKey(42)
+	episode := frontend.Title{Key: core.EpisodeKey(42, 1, 1), Type: "episode", Runtime: 30 * time.Minute}
+	inst := mountJellyfin(t, frontendtest.Experience{
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{
+				Key: show, Type: "show", Title: "Show", IDs: core.IDs{TMDB: 42, IMDB: "tt0000001"},
+				Cast: []core.Person{{Name: "Actor", Role: "Lead"}},
+			}}, nil
+		},
+		ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (core.Page, error) {
+			return core.Page{Items: []frontend.Title{episode}, Total: 1}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var item map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	people, _ := item["People"].([]any)
+	if len(people) != 1 || people[0].(map[string]any)["Name"] != "Actor" || people[0].(map[string]any)["Id"] != nil {
+		t.Fatal(item["People"])
+	}
+	urls, _ := item["ExternalUrls"].([]any)
+	if len(urls) != 2 || item["CumulativeRunTimeTicks"] != float64(30*time.Minute/100) {
+		t.Fatal(item["ExternalUrls"], item["CumulativeRunTimeTicks"])
+	}
+	requireJellyfinSpec(t, http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), w)
+}
+
+func TestJellyfinVirtualFolders(t *testing.T) {
+	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
+	}})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Library/VirtualFolders", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var folders []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &folders); err != nil {
+		t.Fatal(err)
+	}
+	if len(folders) != 2 || folders[0]["CollectionType"] != "movies" || folders[1]["CollectionType"] != "tvshows" || folders[0]["ItemId"] == "" {
+		t.Fatal(folders)
+	}
+	if _, ok := folders[0]["Locations"]; ok {
+		t.Fatal("invented library path")
+	}
+	if _, ok := folders[0]["LibraryOptions"]; ok {
+		t.Fatal("copied library options")
+	}
+	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
+}
+
+func TestJellyfinVirtualLibraryHasEmptyLocations(t *testing.T) {
+	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie", Virtual: true}, {ID: "2", Name: "Shows", Type: "show"}}, nil
+	}})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Library/VirtualFolders", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var folders []map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &folders) != nil || len(folders) != 2 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	locations, ok := folders[0]["Locations"].([]any)
+	if !ok || len(locations) != 0 {
+		t.Fatal(folders[0]["Locations"])
+	}
+	if _, ok := folders[1]["Locations"]; ok {
+		t.Fatal("non-virtual library gained locations")
+	}
+	if _, ok := folders[0]["LibraryOptions"]; ok {
+		t.Fatal(folders[0]["LibraryOptions"])
+	}
+	if _, ok := folders[0]["RefreshStatus"]; ok {
+		t.Fatal(folders[0]["RefreshStatus"])
+	}
+	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
+}
+
+func TestJellyfinShowParentIsTheVisibleLibrary(t *testing.T) {
+	show := core.ShowKey(42)
+	parent, err := ids.GUID(ids.View, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
+	}
+	inst := mountJellyfin(t, frontendtest.Experience{
+		ViewsFunc: views,
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var item map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil || item["ParentId"] != parent {
+		t.Fatal(w.Code, item["ParentId"])
+	}
+	if _, ok := item["DateCreated"]; ok {
+		t.Fatal(item["DateCreated"])
+	}
+
+	ambiguous := mountJellyfin(t, frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "2", Type: "show"}, {ID: "4", Type: "show"}}, nil
+		},
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+		},
+	})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	ambiguous.Handler().ServeHTTP(w, r)
+	item = nil
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := item["ParentId"]; ok {
+		t.Fatal(item["ParentId"])
+	}
+
+	movie := mountJellyfin(t, frontendtest.Experience{
+		ViewsFunc: views,
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: core.MovieKey(3), Type: "movie", Title: "Film"}}, nil
+		},
+	})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(core.MovieKey(3)), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	movie.Handler().ServeHTTP(w, r)
+	item = nil
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if _, ok := item["ParentId"]; ok {
+		t.Fatal(item["ParentId"])
+	}
+}
+
+func requireJellyfinSpec(t *testing.T, method, path string, w *httptest.ResponseRecorder) {
+	t.Helper()
+	spec, err := openapi.CachedSpec("../../conform/specs/manifest.json", "jellyfin", "")
+	if os.IsNotExist(err) {
+		t.Skip("pinned Jellyfin spec is not cached")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := openapi.Parse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = doc.Validate(method, path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mountJellyfin(t *testing.T, exp frontendtest.Experience) frontend.Instance {
+	t.Helper()
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		return &frontend.Viewer{ID: 1}, nil
+	}}
+	if exp.ViewsFunc == nil && exp.LibraryItemsFunc == nil && exp.CollectionsFunc == nil && exp.RowsFunc == nil && exp.ItemFunc == nil && exp.ChildrenFunc == nil {
+		t.Fatal("empty experience")
+	}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return inst
+}

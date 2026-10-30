@@ -21,6 +21,9 @@ type Library struct {
 	ID   int
 	Name string
 	Type core.MediaType
+	// Virtual is true only when the host asserts this library has no physical
+	// locations. False means the host did not assert virtual origin.
+	Virtual bool
 }
 
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
@@ -133,7 +136,7 @@ func (s *Service) Views(ctx context.Context, viewer *core.Viewer) ([]frontend.Vi
 	out := make([]frontend.View, 0, len(libs))
 	for _, lib := range libs {
 		if SectionAllowed(v, lib.ID) {
-			out = append(out, frontend.View{ID: strconv.Itoa(lib.ID), Name: lib.Name, Type: lib.Type})
+			out = append(out, frontend.View{ID: strconv.Itoa(lib.ID), Name: lib.Name, Type: lib.Type, Virtual: lib.Virtual})
 		}
 	}
 	return out, nil

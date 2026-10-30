@@ -35,12 +35,13 @@ func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token str
 		seen[c.id] = true
 		ids = append(ids, c.id)
 	}
-	if len(ids) == 0 {
-		return nil
-	}
-	facets, err := i.host.Experience.PersonFacetIDs(r.Context(), viewer, device(r), detail.Title.Key, ids)
-	if err != nil {
-		return nil
+	facets := map[int64]string{}
+	if len(ids) > 0 {
+		resolved, err := i.host.Experience.PersonFacetIDs(r.Context(), viewer, device(r), detail.Title.Key, ids)
+		if err != nil {
+			return nil
+		}
+		facets = resolved
 	}
 	portraits := map[string]frontend.Image{}
 	if detail.ImagesAuthoritative && i.host.ImageGrants != nil {
@@ -56,11 +57,20 @@ func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token str
 	attempted := map[int64]bool{}
 	result := make([]any, 0, len(credits))
 	for _, c := range credits {
-		id := facets[c.id]
-		if id == "" || c.name == "" {
+		if c.name == "" {
 			continue
 		}
-		dto := map[string]any{"Id": id, "Name": c.name, "Type": c.kind}
+		id := ""
+		if c.id > 0 {
+			id = facets[c.id]
+			if id == "" {
+				continue
+			}
+		}
+		dto := map[string]any{"Name": c.name, "Type": c.kind}
+		if id != "" {
+			dto["Id"] = id
+		}
 		if c.role != "" {
 			dto["Role"] = c.role
 		}
