@@ -17,7 +17,7 @@ import (
 
 func init() {
 	store.RegisterAfter("capability_headers", "auth", "identity_grants")
-	store.Register("capability_headers", 1, `CREATE TABLE capability_headers (namespace TEXT NOT NULL,digest TEXT NOT NULL,shard INTEGER NOT NULL,viewer_id BIGINT NOT NULL,surface TEXT NOT NULL,device_id TEXT NOT NULL,expires BIGINT NOT NULL,PRIMARY KEY(namespace,digest)); CREATE INDEX capability_headers_expiry ON capability_headers(namespace,shard,expires); CREATE INDEX capability_headers_scope ON capability_headers(namespace,shard,viewer_id,surface,expires); CREATE TABLE capability_tickets (namespace TEXT NOT NULL,digest TEXT NOT NULL,purpose TEXT NOT NULL,source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE,device TEXT NOT NULL,PRIMARY KEY(namespace,digest),FOREIGN KEY(namespace,digest) REFERENCES capability_headers(namespace,digest) ON DELETE CASCADE);`)
+	store.Register("capability_headers", 1, `CREATE TABLE capability_headers (namespace TEXT NOT NULL,digest TEXT NOT NULL,shard INTEGER NOT NULL,viewer_id BIGINT NOT NULL,surface TEXT NOT NULL,device_id TEXT NOT NULL,expires BIGINT NOT NULL,PRIMARY KEY(namespace,digest)); CREATE INDEX capability_headers_expiry ON capability_headers(namespace,shard,expires); CREATE INDEX capability_headers_scope ON capability_headers(namespace,shard,viewer_id,surface,expires); CREATE TABLE capability_tickets (namespace TEXT NOT NULL,digest TEXT NOT NULL,purpose TEXT NOT NULL,source_hash TEXT NOT NULL REFERENCES identity_grants(hash) ON DELETE CASCADE,device TEXT NOT NULL,legacy_mirror INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(namespace,digest),FOREIGN KEY(namespace,digest) REFERENCES capability_headers(namespace,digest) ON DELETE CASCADE);`)
 }
 
 const ticketNamespace = "ticket"
@@ -163,14 +163,18 @@ func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []T
 		return 0, core.ErrUnauthorized
 	}
 	var child strings.Builder
-	child.WriteString(`INSERT INTO capability_tickets(namespace,digest,purpose,source_hash,device) VALUES `)
+	child.WriteString(`INSERT INTO capability_tickets(namespace,digest,purpose,source_hash,device,legacy_mirror) VALUES `)
 	args = nil
 	for i, e := range entries {
 		if i > 0 {
 			child.WriteString(",")
 		}
-		child.WriteString("(?,?,?,?,?)")
-		args = append(args, ticketNamespace, e.Digest, e.Purpose, scope.SourceHash, scope.DeviceJSON)
+		child.WriteString("(?,?,?,?,?,?)")
+		mirrorFlag := 0
+		if mirror {
+			mirrorFlag = 1
+		}
+		args = append(args, ticketNamespace, e.Digest, e.Purpose, scope.SourceHash, scope.DeviceJSON, mirrorFlag)
 	}
 	if _, err = tx.ExecContext(ctx, child.String(), args...); err != nil {
 		return 0, err
@@ -220,15 +224,16 @@ func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) 
 	defer tx.Rollback()
 	var deviceID, storedSurface string
 	var storedPurpose, storedDevice, storedSource sql.NullString
+	var storedMirror sql.NullInt64
 	var expires int64
-	err = tx.QueryRowContext(ctx, `SELECT h.viewer_id,h.device_id,h.expires,t.device,t.source_hash,h.surface,t.purpose FROM capability_headers h LEFT JOIN capability_tickets t ON t.namespace=h.namespace AND t.digest=h.digest WHERE h.namespace=? AND h.digest=?`, ticketNamespace, digest).Scan(&out.ViewerID, &deviceID, &expires, &storedDevice, &storedSource, &storedSurface, &storedPurpose)
+	err = tx.QueryRowContext(ctx, `SELECT h.viewer_id,h.device_id,h.expires,t.device,t.source_hash,h.surface,t.purpose,t.legacy_mirror FROM capability_headers h LEFT JOIN capability_tickets t ON t.namespace=h.namespace AND t.digest=h.digest WHERE h.namespace=? AND h.digest=?`, ticketNamespace, digest).Scan(&out.ViewerID, &deviceID, &expires, &storedDevice, &storedSource, &storedSurface, &storedPurpose, &storedMirror)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Ticket{}, sql.ErrNoRows
 	}
 	if err != nil {
 		return Ticket{}, err
 	}
-	if !storedPurpose.Valid || !storedDevice.Valid || !storedSource.Valid || storedSurface != surface || storedPurpose.String != purpose {
+	if !storedPurpose.Valid || !storedDevice.Valid || !storedSource.Valid || !storedMirror.Valid || storedMirror.Int64 != 0 || storedSurface != surface || storedPurpose.String != purpose {
 		return Ticket{}, core.ErrUnauthorized
 	}
 	initialViewer := out.ViewerID
@@ -240,14 +245,14 @@ func (s *Tickets) Consume(ctx context.Context, surface, purpose, digest string) 
 	}
 	// Re-read after the lock: the pre-lock identity may have been deleted and
 	// reissued. Never use fields read before the lock as authority.
-	err = tx.QueryRowContext(ctx, `SELECT h.viewer_id,h.device_id,h.expires,t.device,t.source_hash,h.surface,t.purpose FROM capability_headers h LEFT JOIN capability_tickets t ON t.namespace=h.namespace AND t.digest=h.digest WHERE h.namespace=? AND h.digest=?`, ticketNamespace, digest).Scan(&out.ViewerID, &deviceID, &expires, &storedDevice, &storedSource, &storedSurface, &storedPurpose)
+	err = tx.QueryRowContext(ctx, `SELECT h.viewer_id,h.device_id,h.expires,t.device,t.source_hash,h.surface,t.purpose,t.legacy_mirror FROM capability_headers h LEFT JOIN capability_tickets t ON t.namespace=h.namespace AND t.digest=h.digest WHERE h.namespace=? AND h.digest=?`, ticketNamespace, digest).Scan(&out.ViewerID, &deviceID, &expires, &storedDevice, &storedSource, &storedSurface, &storedPurpose, &storedMirror)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Ticket{}, core.ErrUnauthorized
 	}
 	if err != nil {
 		return Ticket{}, err
 	}
-	if out.ViewerID != initialViewer || !storedPurpose.Valid || !storedDevice.Valid || !storedSource.Valid || storedSurface != surface || storedPurpose.String != purpose {
+	if out.ViewerID != initialViewer || !storedPurpose.Valid || !storedDevice.Valid || !storedSource.Valid || !storedMirror.Valid || storedMirror.Int64 != 0 || storedSurface != surface || storedPurpose.String != purpose {
 		return Ticket{}, core.ErrUnauthorized
 	}
 	out.DeviceJSON, out.SourceHash = storedDevice.String, storedSource.String
@@ -314,7 +319,7 @@ func (s *Tickets) ConsumeMirrored(ctx context.Context, surface, purpose, digest 
 	if err != nil {
 		return Ticket{}, err
 	}
-	if _, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest=? AND viewer_id=? AND surface=?`, ticketNamespace, digest, out.ViewerID, surface); err != nil {
+	if _, err = tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND digest=? AND viewer_id=? AND surface=? AND device_id=? AND EXISTS(SELECT 1 FROM capability_tickets t WHERE t.namespace=capability_headers.namespace AND t.digest=capability_headers.digest AND t.legacy_mirror=1 AND t.purpose=? AND t.source_hash=? AND t.device=?)`, ticketNamespace, digest, out.ViewerID, surface, device.ID, purpose, out.SourceHash, out.DeviceJSON); err != nil {
 		return Ticket{}, err
 	}
 	if err = tx.Commit(); err != nil {

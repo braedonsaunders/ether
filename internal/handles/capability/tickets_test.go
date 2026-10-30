@@ -415,3 +415,47 @@ func TestMirroredConsumeRejectsChangedDeviceWithoutDeletion(t *testing.T) {
 		t.Fatalf("denied ticket count=%d err=%v", n, err)
 	}
 }
+
+func TestMirroredConsumePreservesUnrelatedHeaderCollision(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	other := strings.Repeat("b", 64)
+	if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,1,'silo','tv','','','',0,0,9999999999999)`, other); err != nil {
+		t.Fatal(err)
+	}
+	digest := entry(1).Digest
+	if _, err := db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, digest, "silo", "events-ws", 1, scope.SourceHash, scope.DeviceJSON, time.Now().Add(time.Minute).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	scope.SourceHash = other
+	if _, err := tickets.IssueBatch(ctx, scope, []capability.TicketEntry{{Digest: digest, Purpose: "other"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.ConsumeMirrored(ctx, "silo", "events-ws", digest); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, digest).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("unrelated header count=%d err=%v", n, err)
+	}
+	got, err := tickets.Consume(ctx, "silo", "other", digest)
+	if err != nil || got.SourceHash != other {
+		t.Fatalf("unrelated header unusable: %v", err)
+	}
+}
+
+func TestMirroredHeaderCannotBypassLegacyAuthority(t *testing.T) {
+	_, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{entry(1)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tickets.Consume(ctx, "silo", "events-ws", entry(1).Digest); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("mirror bypass: %v", err)
+	}
+	if _, err := tickets.ConsumeMirrored(ctx, "silo", "events-ws", entry(1).Digest); err != nil {
+		t.Fatal(err)
+	}
+}
