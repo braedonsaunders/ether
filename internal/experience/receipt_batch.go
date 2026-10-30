@@ -2,6 +2,7 @@ package experience
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,13 @@ import (
 // not yet wired to row responses: response-level policy revalidation and
 // stale-row handling must be resolved before adopting it there.
 func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject) ([]string, error) {
+	return s.issueBatchGuarded(ctx, viewer, device, protocol, subjects, nil)
+}
+
+// guard must only use the supplied transaction; it must never call external
+// policy callbacks or acquire a second connection while the write lock is held.
+// A nil guard leaves caller-specific response freshness outside this method.
+func (s *Receipts) issueBatchGuarded(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject, guard func(context.Context, *sql.Tx) error) ([]string, error) {
 	if viewer == nil || viewer.ID <= 0 || device.ID == "" || protocol == "" || len(subjects) == 0 || len(subjects) > s.opts.MaxPerDevice {
 		return nil, ErrReceipt
 	}
@@ -120,6 +128,11 @@ func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device cor
 	}
 	if len(headers) > 0 {
 		if err = s.bindHeaders(ctx, tx, headers); err != nil {
+			return nil, err
+		}
+	}
+	if guard != nil {
+		if err = guard(ctx, tx); err != nil {
 			return nil, err
 		}
 	}
