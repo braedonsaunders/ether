@@ -212,6 +212,7 @@ type fakeResolver struct {
 	calls      int
 	excludes   [][]string
 	prefers    []string
+	exactHEVC  []bool
 	delay      time.Duration
 	started    chan struct{} // closed on first Resolve, if set
 }
@@ -229,6 +230,7 @@ func (r *fakeResolver) Resolve(ctx context.Context, req core.ResolveRequest) (*c
 	r.calls++
 	r.excludes = append(r.excludes, slices.Clone(req.Exclude))
 	r.prefers = append(r.prefers, req.Prefer)
+	r.exactHEVC = append(r.exactHEVC, req.ExactHEVCTranscode)
 	delay := r.delay
 	if r.started != nil && r.calls == 1 {
 		close(r.started)

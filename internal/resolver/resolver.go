@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -495,7 +496,7 @@ func flightKey(req core.ResolveRequest, profile core.QualityProfile) string {
 	sort.Strings(ex)
 	capsJSON, _ := json.Marshal(req.Client)
 	profileJSON, _ := json.Marshal(profile)
-	return fmt.Sprintf("%d|%s|%s|%s|%s|%s", req.Title.Key, profile.Name, strings.Join(ex, ","), capsJSON, profileJSON, req.Prefer)
+	return fmt.Sprintf("%d|%s|%s|%s|%s|%s|%t", req.Title.Key, profile.Name, strings.Join(ex, ","), capsJSON, profileJSON, req.Prefer, req.ExactHEVCTranscode)
 }
 
 // Resolve implements core.Resolver. Concurrent calls for the same
@@ -993,6 +994,13 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 			reason = s.pinRejectReason(rel, sreq, req.Client, exclude)
 		} else {
 			reason = s.rejectReason(rel, t, sreq, profile, rcfg, req.Client, exclude, preferred)
+			if reason == "video codec unsupported by client" && req.ExactHEVCTranscode && !req.Client.Download && req.Prefer != "" && rel.ID == req.Prefer && strings.EqualFold(rel.Info.VideoCodec, "hevc") {
+				// Only relax the codec gate for the explicitly selected source;
+				// every other policy and the final probed output decision still apply.
+				caps := req.Client
+				caps.VideoCodecs = append(slices.Clone(caps.VideoCodecs), rel.Info.VideoCodec)
+				reason = s.rejectReason(rel, t, sreq, profile, rcfg, caps, exclude, preferred)
+			}
 		}
 		if reason != "" {
 			ct.Rejected = true

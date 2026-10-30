@@ -268,6 +268,10 @@ type ResolveRequest struct {
 	// Plex's "Play Version" picker). It is health-checked like any other
 	// candidate; when it is unavailable, normal ranking applies (additive).
 	Prefer string
+	// ExactHEVCTranscode permits the explicitly preferred HEVC source to reach
+	// playback admission for an H.264 encode. The broker must still validate
+	// the probed source and the client's complete output profile.
+	ExactHEVCTranscode bool
 }
 
 type Resolver interface {

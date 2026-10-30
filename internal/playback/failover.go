@@ -150,11 +150,12 @@ func (m *Manager) nextResolution(ctx context.Context, s *session, tried []string
 	}
 	u := s.user
 	res, err := m.deps.Resolver.Resolve(ctx, core.ResolveRequest{
-		Title:   s.title,
-		Client:  s.caps,
-		User:    &u,
-		Exclude: slices.Clone(tried),
-		Prefer:  s.prefer,
+		Title:              s.title,
+		Client:             s.caps,
+		User:               &u,
+		Exclude:            slices.Clone(tried),
+		Prefer:             s.prefer,
+		ExactHEVCTranscode: s.exact && s.ident.surface != "" && allowsH264Transcode(s.caps),
 	})
 	if err != nil {
 		return nil, err
@@ -166,6 +167,25 @@ func (m *Manager) nextResolution(ctx context.Context, s *session, tried []string
 		return nil, fmt.Errorf("%w: resolver returned an excluded release", core.ErrNotAvailable)
 	}
 	return res, nil
+}
+
+// This is only permission to inspect the selected source. The broker's
+// decision still checks output delivery, audio, conditions and capacity.
+func allowsH264Transcode(c core.ClientCaps) bool {
+	if c.Download || c.Profiles == nil {
+		return false
+	}
+	for _, p := range c.Profiles.Transcoding {
+		if !strings.EqualFold(p.MediaType, "video") {
+			continue
+		}
+		for _, codec := range p.VideoCodecs {
+			if strings.EqualFold(codec, "h264") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // openGeneration opens a release through the engine, exposes it on the
