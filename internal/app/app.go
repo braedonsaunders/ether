@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/artwork"
+	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/availability"
 	"github.com/braedonsaunders/ether/internal/backup"
@@ -22,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/debrid"
+	"github.com/braedonsaunders/ether/internal/discovery"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/favorites"
@@ -47,6 +49,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/service"
 	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/simkl"
+	"github.com/braedonsaunders/ether/internal/spike"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/stats"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -166,7 +169,7 @@ type App struct {
 	ratings           *ratings.Service
 	overlays          *overlays.Service
 	discoveryPersonal *personalize.Discovery
-	plexDiscovery     *plex.DiscoveryFeatures
+	discoveryFeatures *discovery.Features
 	stats             *stats.Service
 	notifications     *notify.Service
 	livetv            *livetv.Service
@@ -180,6 +183,11 @@ type App struct {
 	frontends         *frontendRuntime
 	frontendClients   *frontendClients
 	plexServer        *plex.Server
+	artwork           *artworkservice.Source
+	downloadRemuxer   core.DownloadRemuxer
+	plexBuildMu       sync.Mutex
+	plexClose         func()
+	spikeLibrary      *spike.Library
 	handler           http.Handler
 	instanceLock      *instanceLock
 	closers           []func()
@@ -454,7 +462,7 @@ func (a *App) Run(ctx context.Context) error {
 		background.start(func() { a.cluster.RunAsLeader(ctx, "watchlist sync", a.watchlist.Run) })
 	}
 	background.start(func() { a.ratings.Run(ctx) })
-	background.start(func() { a.plexDiscovery.Run(ctx) })
+	background.start(func() { a.discoveryFeatures.Run(ctx) })
 	background.start(func() {
 		a.cluster.RunAsLeader(ctx, "scheduled backups", func(ctx context.Context) {
 			a.backups.Run(ctx, func(err error) { a.log.Warn("scheduled backup", "err", err) })

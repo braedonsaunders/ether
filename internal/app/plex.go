@@ -11,7 +11,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plextv"
-	"github.com/braedonsaunders/ether/internal/spike"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
@@ -20,6 +19,11 @@ import (
 // auth, plex.tv registration and the transcoder are the real ones, so the
 // spike exercises the same path official apps will use.
 func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
+	a.plexBuildMu.Lock()
+	defer a.plexBuildMu.Unlock()
+	if a.plexServer != nil {
+		return a.plexServer, nil
+	}
 	var tc core.Transcoder
 	if a.transcoder != nil {
 		tc = a.transcoder
@@ -49,11 +53,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 
 	var deps plex.Deps
 	if cfg.Spike.Enabled {
-		lib, err := spike.New(context.Background(), a.cfg.Get, spike.Options{Logger: a.log.With("component", "spike")})
-		if err != nil {
-			return nil, err
-		}
-		deps = lib.Deps()
+		deps = a.spikeLibrary.Deps()
 		deps.Auth = a.users
 		if tc != nil {
 			deps.Transcoder = tc
@@ -89,21 +89,16 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		Token:      func() string { return a.cfg.Get().Plex.Token },
 		Background: true,
 	})
-	a.closers = append(a.closers, deps.PlexGUID.Close)
+
 	deps.EpisodeOrder = a.episodeorder
-	deps.Discovery = a.plexDiscovery
+	deps.Discovery = a.discoveryFeatures
 	deps.LiveTV = a.livetv
 	deps.Subtitles = plexSubtitles{a}
 	deps.TrackPreferences = a.trackprefs
 	deps.SessionCoordination = a.sessionCoordination
 	deps.Markers = a.markers
-	if a.transcoder != nil && !cfg.Spike.Enabled {
-		if dl, err := a.transcoder.NewDownloadRemuxer(cfg.Downloads); err == nil {
-			deps.Downloads = dl
-		} else {
-			a.log.Warn("offline downloads unavailable", "err", err)
-		}
-	}
+	deps.Downloads = a.downloadRemuxer
+
 	deps.Extras = a.extras
 	if a.transcoder != nil {
 		deps.Trickplay = transcode.NewThumbnails(transcode.ThumbOptions{
@@ -124,6 +119,10 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 	if node := a.clusterNode(); node != nil && deps.DB != nil {
 		deps.Cluster = node
 	}
+	if a.artwork != nil && !cfg.Spike.Enabled {
+		deps.ArtworkImages = a.artwork.Images
+		deps.ArtworkPalettes = a.artwork.Palettes
+	}
 	srv := plex.NewServer(deps)
 	a.plexServer = srv
 	libraries := make([]plextv.LibrarySection, 0)
@@ -134,7 +133,7 @@ func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
 		})
 	}
 	a.registrar.SetLibrarySections(libraries)
-	a.closers = append(a.closers, func() { srv.Close() })
+	a.plexClose = func() { srv.Close(); deps.PlexGUID.Close() }
 	return srv, nil
 }
 

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/braedonsaunders/ether/internal/spike"
 	"net/http"
 	"time"
 
@@ -54,9 +55,19 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	a.buildExtras()
 	a.frontendClients = newFrontendClients(a.db, a.log.With("component", "frontend-clients"), nil)
 	a.closers = append(a.closers, a.frontendClients.Close)
-	_, err = a.buildPlex(cfg)
-	if err != nil {
-		return fmt.Errorf("plex front end: %w", err)
+	if cfg.Spike.Enabled {
+		a.spikeLibrary, err = spike.New(ctx, a.cfg.Get, spike.Options{Logger: a.log.With("component", "spike")})
+		if err != nil {
+			return fmt.Errorf("local library: %w", err)
+		}
+		a.closers = append(a.closers, func() { _ = a.spikeLibrary.Close() })
+	}
+	if a.transcoder != nil && !cfg.Spike.Enabled {
+		if download, e := a.transcoder.NewDownloadRemuxer(cfg.Downloads); e == nil {
+			a.downloadRemuxer = download
+		} else {
+			a.log.Warn("offline downloads unavailable", "err", e)
+		}
 	}
 	a.frontends, err = newFrontendRuntime(a, cfg)
 	if err != nil {

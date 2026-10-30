@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	experiencepkg "github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/playback"
@@ -57,10 +58,10 @@ func (a *App) viewerCapabilities(local *identity.Local, experience frontend.Expe
 		out.CanTranscodeAudio = &transcode
 		out.CanTranscodeVideo = &transcode
 		out.CanRemux = &transcode
-		if a.plexServer != nil {
-			download := a.plexServer.DownloadsAllowed(v)
-			out.CanDownload = &download
-		}
+		cfg := a.cfg.Get()
+		download := experiencepkg.DownloadsAllowed(v, cfg.Downloads.Enabled && a.downloadRemuxer != nil && a.playback != nil, cfg.Downloads.AllowFriends, a.safety)
+		out.CanDownload = &download
+
 		if a.livetv != nil {
 			out.CanManageLiveTV = &owner
 			if p, e := a.livetv.Policy(ctx, v.ID); e == nil {

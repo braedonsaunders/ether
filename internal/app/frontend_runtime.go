@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	artworkpkg "github.com/braedonsaunders/ether/internal/artwork"
-	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -91,6 +89,9 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			if r.artworkWait != nil {
 				r.artworkWait()
 			}
+			if a.plexClose != nil {
+				a.plexClose()
+			}
 		}
 	}()
 
@@ -110,20 +111,13 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	var artwork frontend.Artwork
 	var channelArtwork func(*core.Viewer, livetv.Channel) frontend.Image
 	if a.tmdb != nil {
-		variants := artworkservice.NewVariantsQueue(ctx, a.tmdb.CachedArtworkVariants, a.tmdb.ArtworkVariants)
-		source := &plex.FrontendArtwork{Server: a.plexServer, Variants: variants.Get, Raster: artworkpkg.NewSVGRasterizer()}
-		if a.episodeorder != nil {
-			source.VirtualSeason = a.episodeorder.CachedVirtualSeason
-		}
-		if a.images != nil {
-			source.URLImages = a.images
-		}
-		metadata := artworkservice.NewMetadataQueue(ctx, a.db, a.users.ActiveUser, source.Read)
-		source.Metadata = metadata.Get
-		r.artworkWait = func() { variants.Wait(); metadata.Wait() }
+		source, wait := a.newSharedArtwork(ctx)
+		a.artwork = source
+		r.artworkWait = wait
 		artwork = source
 		channelArtwork = source.ChannelImage
 	}
+
 	experiences := make(map[frontend.Protocol]frontend.Experience)
 	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby", "silo"} {
 		experience, err := a.newSurfaceExperience(protocol, artwork)
@@ -207,7 +201,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return countFrontendStreams((ownerPlayback{Playback: a.playback, app: a}).Sessions()), true
 	}
 	r.control.sharedStatus = r.sharedStatus
-	if err := r.registry.Register(plex.Frontend{Server: a.plexServer, WatchState: a.state, ExplicitWatchOnly: cfg.Spike.Enabled, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
+	if err := r.registry.Register(plex.Frontend{NewServer: func() (*plex.Server, error) { _, err := a.buildPlex(cfg); return a.plexServer, err }, WatchState: a.state, ExplicitWatchOnly: cfg.Spike.Enabled, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		r.stateUnsub()
 		r.broker.Close(context.Background())
 		cancel()
@@ -455,5 +449,10 @@ func (r *frontendRuntime) close() {
 	}
 	if r.broker != nil {
 		r.broker.Close(context.Background())
+	}
+	r.app.plexBuildMu.Lock()
+	defer r.app.plexBuildMu.Unlock()
+	if r.app.plexClose != nil {
+		r.app.plexClose()
 	}
 }

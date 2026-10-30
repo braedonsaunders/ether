@@ -14,6 +14,7 @@ import (
 // owns the server's lifetime because Plex-only integrations still reference it;
 // unmounting removes its handler without replacing its playback callbacks.
 type Frontend struct {
+	NewServer  func() (*Server, error)
 	Server     *Server
 	WatchState *state.State
 	// ExplicitWatchOnly preserves spike mode: only cross-surface scrobbles refresh.
@@ -26,6 +27,13 @@ func (f Frontend) Describe() frontend.Descriptor {
 	return frontend.Descriptor{ID: "plex", Name: "Plex", DefaultPort: 32400}
 }
 func (f Frontend) Mount(_ context.Context, _ frontend.Host) (frontend.Instance, error) {
+	if f.Server == nil && f.NewServer != nil {
+		var err error
+		f.Server, err = f.NewServer()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if f.Server == nil {
 		return nil, errors.New("plex: frontend server is unavailable")
 	}
