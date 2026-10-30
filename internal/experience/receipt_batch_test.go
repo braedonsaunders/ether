@@ -154,3 +154,29 @@ func TestReceiptBatchFinalTransactionGuardRollsBack(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiptBatchRowViewSnapshotGuard(t *testing.T) {
+	db := store.OpenTest(t)
+	ctx := context.Background()
+	now := time.Unix(1700000000, 0)
+	_, err := db.ExecContext(ctx, `INSERT INTO experience_row_views(id,scope_hash,viewer_id,device_id,protocol,snapshot,expires,payload) VALUES(?,?,?,?,?,?,?,?)`, "view", "scope", 7, "tv", "jellyfin", "snap", now.Add(time.Minute).UnixMilli(), "{}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := relayOptions(db, &now, 10, true, nil)
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard := func(ctx context.Context, tx *sql.Tx) error {
+		return guardRowViewSnapshot(ctx, tx, db, "snap", 7, "tv", "jellyfin", now.Add(time.Minute).UnixMilli())
+	}
+	tokens, err := s.issueBatchGuarded(ctx, &core.User{ID: 7}, core.Device{ID: "tv"}, "jellyfin", []ReceiptSubject{{Kind: "title", ID: "1"}}, guard)
+	if !errors.Is(err, ErrRowViewStale) || tokens != nil {
+		t.Fatalf("tokens=%v err=%v", tokens, err)
+	}
+	var n int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("receipts=%d err=%v", n, err)
+	}
+}
