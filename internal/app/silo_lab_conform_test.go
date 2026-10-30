@@ -248,6 +248,14 @@ func TestSiloLabConformance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer app.frontends.registry.Unmount(context.Background(), core.Protocol("silo"))
+	// The owner view excludes prepared plans. The isolated broker owns those
+	// reservations, so close it before checking the raw local playback manager.
+	defer func() {
+		app.frontends.broker.Close(context.Background())
+		for _, session := range app.playback.Sessions() {
+			t.Errorf("target playback remained after broker close: id=%s prepared=%t", session.ID, session.PreparedOnly)
+		}
+	}()
 	srv := httptest.NewServer(inst.Handler())
 	defer srv.Close()
 	targetDevice := "silo-fixture-device"
@@ -308,6 +316,11 @@ func TestSiloLabConformance(t *testing.T) {
 				t.Errorf("%s %s has blocking differences", mode, profile)
 			}
 			owner := ownerPlayback{Playback: app.playback, app: app}
+			for _, session := range app.playback.Sessions() {
+				if session.PreparedOnly {
+					t.Logf("target prepared reservation retained for broker cleanup id=%s", session.ID)
+				}
+			}
 			for _, session := range owner.Sessions() {
 				t.Logf("target session cleanup id=%s", session.ID)
 				if stopErr := app.stopOwnerSession(session.ID); stopErr != nil {
