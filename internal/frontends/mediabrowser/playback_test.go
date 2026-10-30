@@ -110,6 +110,30 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 	}
 }
 
+func TestPlaybackInfoExplicitEstimateOmitsSyntheticSourceFacts(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	broker := frontendtest.Sessions{PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
+		if !req.Intent.Estimate {
+			t.Fatal("estimate resolved a release")
+		}
+		return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Estimated: true, Container: "mkv", Size: 1203120000, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}}}}, nil
+	}}
+	for _, front := range []frontend.Frontend{Jellyfin{MachineID: "test"}, Emby{MachineID: "test"}} {
+		inst, err := front.Mount(context.Background(), frontend.Host{Identity: identity, Sessions: broker, Capabilities: frontendtest.Capabilities{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":false}`))
+		r.Header.Set("X-Emby-Token", "grant")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != 200 || strings.Contains(w.Body.String(), `"Container":"mkv"`) || strings.Contains(w.Body.String(), `1203120000`) || strings.Contains(w.Body.String(), `"Codec":"h264"`) {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestTimelineReportsAndStops(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	var states []string

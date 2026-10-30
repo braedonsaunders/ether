@@ -19,6 +19,16 @@ import (
 	"github.com/coder/websocket"
 )
 
+type coldFixturePlayback struct{ *activityPlayback }
+
+func (p coldFixturePlayback) Prepare(ctx context.Context, viewer *core.User, key core.RatingKey, caps core.ClientCaps) (*core.PlaySession, error) {
+	session, err := p.activityPlayback.Prepare(ctx, viewer, key, caps)
+	if err == nil {
+		session.Info.Container, session.Info.Size = "mp4", 24680
+	}
+	return session, err
+}
+
 func TestJellyfinRealBrokerPlayback(t *testing.T) {
 	ctx := context.Background()
 	viewer := &core.Viewer{ID: 2}
@@ -33,7 +43,7 @@ func TestJellyfinRealBrokerPlayback(t *testing.T) {
 	defer events.Close()
 	broker, err := sessions.NewBroker(sessions.BrokerDeps{Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
 		return &core.Title{Key: k}, nil
-	}, Playback: p, Transcoder: activityTranscoder{}, Progress: activityProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: events})
+	}, Playback: coldFixturePlayback{p}, Transcoder: activityTranscoder{}, Progress: activityProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Events: events})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,15 +70,19 @@ func TestJellyfinRealBrokerPlayback(t *testing.T) {
 	if w.Code != 200 || len(p.Sessions()) != 0 {
 		t.Fatalf("estimate %d %s sessions=%d", w.Code, w.Body, len(p.Sessions()))
 	}
-	w = call("POST", path, `{"IsPlayback":true,"EnableDirectPlay":true}`)
+	w = call("POST", path, `{"EnableDirectPlay":true}`)
 	if w.Code != 200 {
 		t.Fatalf("play %d %s", w.Code, w.Body)
 	}
 	var result struct {
 		PlaySessionId string
-		MediaSources  []struct{ Path string }
+		MediaSources  []struct {
+			Path, Container    string
+			Size               int64
+			SupportsDirectPlay bool
+		}
 	}
-	if err = json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.PlaySessionId == "" || len(result.MediaSources) != 1 || !strings.HasPrefix(result.MediaSources[0].Path, "/sessions/media/") {
+	if err = json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.PlaySessionId == "" || len(result.MediaSources) != 1 || !strings.HasPrefix(result.MediaSources[0].Path, "/sessions/media/") || result.MediaSources[0].Container != "mp4" || result.MediaSources[0].Size != 24680 || !result.MediaSources[0].SupportsDirectPlay {
 		t.Fatal(result, err)
 	}
 	if len(p.Sessions()) != 1 {

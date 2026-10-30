@@ -123,7 +123,18 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	// Native clients commonly omit IsPlayback when starting a stream. Only an
 	// explicit false is an estimate; opening details does not resolve releases.
-	playback := queryBool(r, "IsPlayback", boolValue(body.IsPlayback, true))
+	playback := boolValue(body.IsPlayback, true)
+	if values := route.Query(r.URL.Query(), "IsPlayback"); len(values) > 1 {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	} else if len(values) == 1 {
+		var e error
+		playback, e = strconv.ParseBool(values[0])
+		if e != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+	}
 	opts := frontend.DecideOptions{DirectPlay: queryBool(r, "EnableDirectPlay", boolValue(body.EnableDirectPlay, true)), DirectStream: queryBool(r, "EnableDirectStream", boolValue(body.EnableDirectStream, true)), AudioStream: -1, SubtitleStream: -1}
 	if body.AudioStreamIndex != nil {
 		opts.AudioStream = *body.AudioStreamIndex
@@ -229,7 +240,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
 	source["IsInfiniteStream"] = channel != ""
 	for _, stream := range plan.Media.Streams {
-		if media.Estimated { break }
+		if media.Estimated {
+			break
+		}
 		if stream.Type == "audio" && stream.Default {
 			source["DefaultAudioStreamIndex"] = stream.Index
 			break
