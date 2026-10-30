@@ -32,4 +32,14 @@ func TestJellyfinPlayAccessUsesHostEstimate(t *testing.T) {
 	if _, ok := empty["Chapters"].([]any); !ok || empty["Trickplay"] == nil {
 		t.Fatal(empty)
 	}
+	sized := map[string]any{"MediaStreams": []any{map[string]any{"Type": "Video", "Width": 3840, "Height": 2160}, map[string]any{"Type": "Audio"}}}
+	i.jellyfinItemDetailDTO(frontend.ItemDetail{Title: frontend.Title{Type: "movie"}}, sized)
+	if sized["Width"] != 3840 || sized["Height"] != 2160 || sized["IsHD"] != true {
+		t.Fatal(sized)
+	}
+	sd := map[string]any{}
+	i.jellyfinItemDetailDTO(frontend.ItemDetail{Title: frontend.Title{Type: "movie"}, Tracks: []frontend.StreamInfo{{Type: "video", Width: 640, Height: 480}}}, sd)
+	if sd["Width"] != 640 || sd["Height"] != 480 || sd["IsHD"] != false {
+		t.Fatal(sd)
+	}
 }

@@ -19,7 +19,7 @@ func (i *instance) gridImages(r *http.Request, keys []frontend.RatingKey) map[fr
 	token := authhdr.MediaBrowserToken(r)
 	for start := 0; start < len(keys); start += 50 {
 		end := min(start+50, len(keys))
-		rows, err := batch.IssueBatch(r.Context(), frontend.ImageBatchRequest{Credential: token, Device: device(r), Items: keys[start:end], Kinds: []string{frontend.ImagePoster, frontend.ImageStill, frontend.ImageBackdrop}})
+		rows, err := batch.IssueBatch(r.Context(), frontend.ImageBatchRequest{Credential: token, Device: device(r), Items: keys[start:end], Kinds: []string{frontend.ImagePoster, frontend.ImageStill, frontend.ImageBackdrop, frontend.ImageLogo, frontend.ImageThumb, frontend.ImageBanner}})
 		if err != nil {
 			continue
 		}
@@ -56,6 +56,15 @@ func (i *instance) gridImages(r *http.Request, keys []frontend.RatingKey) map[fr
 				case frontend.ImageBackdrop:
 					backdrops = append(backdrops, img.Secret)
 					i.addImageMetadata(result, "Backdrop", img.Secret, img.Image)
+				case frontend.ImageLogo:
+					tags["Logo"] = img.Secret
+					i.addImageMetadata(result, "Logo", img.Secret, img.Image)
+				case frontend.ImageThumb:
+					tags["Thumb"] = img.Secret
+					i.addImageMetadata(result, "Thumb", img.Secret, img.Image)
+				case frontend.ImageBanner:
+					tags["Banner"] = img.Secret
+					i.addImageMetadata(result, "Banner", img.Secret, img.Image)
 				}
 			}
 			if len(tags) > 0 {

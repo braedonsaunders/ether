@@ -124,9 +124,8 @@ func (s Source) ArtPath(ctx context.Context, req frontend.ArtworkRequest, elemen
 			return p.LogoPath, 500, nil
 		}
 	case "banner":
-		if t.BackdropPath != "" {
-			return t.BackdropPath, 1280, nil
-		}
+		// A backdrop is not a banner. Titles have no separate banner path, so
+		// Jellyfin must not gain an ImageTags/Banner entry for the backdrop.
 	default: // thumb, poster
 		if t.Type == core.TypeEpisode && t.StillPath != "" {
 			return t.StillPath, 0, nil
