@@ -221,6 +221,9 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 			return si, false, err
 		}
 		switch {
+		case len(deltas) == 0:
+			// No sample timing. The track duration and sample count are not
+			// a frame rate, and neither rational is published.
 		case len(deltas) == 1 || (len(deltas) == 2 && deltas[1][0] == 1):
 			if deltas[0][1] > 0 && scale > 0 {
 				rate := float64(scale) / float64(deltas[0][1])
@@ -229,6 +232,8 @@ func mp4Track(b []byte, trak mp4Box, movieScale uint32) (core.StreamInfo, bool, 
 				si.FrameRate = math.Round(rate*1000) / 1000
 			}
 		case frames > 0 && dur > 0:
+			// Variable sample timing keeps the average clock only. The
+			// constant rationals stay absent.
 			si.FrameRate = math.Round(float64(frames)*float64(scale)/float64(dur)*1000) / 1000
 		}
 		if si.FrameRate == 0 {
