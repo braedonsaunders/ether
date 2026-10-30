@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -64,8 +65,12 @@ func TestSiloLabProxyTracksNestedReferenceSession(t *testing.T) {
 				case "POST /api/v2/playback/start":
 					resource(`{"outcome":"playable","playback_plan":{"session_id":"nested-session"}}`)
 				case "DELETE /api/v2/playback/nested-session":
-					if r.Header.Get("Authorization") != "Bearer probe-owned-token" || r.Header.Get("X-Silo-Device-Id") != "reference-device" {
-						t.Error("cleanup lost exact authority")
+					var body map[string]string
+					valid := json.NewDecoder(r.Body).Decode(&body) == nil && body["installation_id"] == "installation" && regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`).MatchString(body["stop_id"])
+					if r.Header.Get("Authorization") != "Bearer probe-owned-token" || r.Header.Get("X-Silo-Device-Id") != "reference-device" || r.Header.Get("X-Profile-Id") != "profile-7" || r.Header.Get("X-Profile-Token") != "profile-proof" || !valid {
+						http.Error(w, "invalid cleanup authority", http.StatusUnprocessableEntity)
+						t.Error("cleanup lost exact profile/header/body authority")
+						return
 					}
 					stops.Add(1)
 					w.WriteHeader(http.StatusNoContent)
@@ -107,6 +112,8 @@ func TestSiloLabProxyTracksNestedReferenceSession(t *testing.T) {
 					t.Fatal(err)
 				}
 				req.Header.Set("Authorization", "Bearer probe-owned-token")
+				req.Header.Set("X-Profile-Id", "profile-7")
+				req.Header.Set("X-Profile-Token", "profile-proof")
 				res, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Fatal(err)

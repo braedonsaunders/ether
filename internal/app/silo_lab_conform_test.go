@@ -485,7 +485,8 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string, captures
 	}
 	var mu sync.Mutex
 	issued := map[string]bool{}
-	sessions := map[string]string{}
+	type sessionAuthority struct{ authorization, profile, profileToken string }
+	sessions := map[string]sessionAuthority{}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	orig := proxy.Director
 	proxy.Director = func(r *http.Request) { orig(r); r.Host = target.Host }
@@ -552,7 +553,7 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string, captures
 		}
 		if start && data.SessionID != "" {
 			t.Logf("reference session observed id=%s", data.SessionID)
-			sessions[data.SessionID] = r.Request.Header.Get("Authorization")
+			sessions[data.SessionID] = sessionAuthority{r.Request.Header.Get("Authorization"), r.Request.Header.Get("X-Profile-Id"), r.Request.Header.Get("X-Profile-Token")}
 		}
 		return nil
 	}
@@ -562,15 +563,23 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string, captures
 		mu.Lock()
 		defer mu.Unlock()
 		client := &http.Client{Timeout: 15 * time.Second}
-		for id, auth := range sessions {
+		for id, authority := range sessions {
 			var n [16]byte
 			if _, e := rand.Read(n[:]); e != nil {
 				t.Error("unable to create cleanup id")
 				continue
 			}
-			raw, _ := json.Marshal(map[string]string{"installation_id": installation, "stop_id": hex.EncodeToString(n[:])})
+			n[6] = n[6]&0x0f | 0x40
+			n[8] = n[8]&0x3f | 0x80
+			text := hex.EncodeToString(n[:])
+			stopID := text[:8] + "-" + text[8:12] + "-" + text[12:16] + "-" + text[16:20] + "-" + text[20:]
+			raw, _ := json.Marshal(map[string]string{"installation_id": installation, "stop_id": stopID})
 			req, _ := http.NewRequest("DELETE", base+"/api/v2/playback/"+url.PathEscape(id), bytes.NewReader(raw))
-			req.Header.Set("Authorization", auth)
+			req.Header.Set("Authorization", authority.authorization)
+			req.Header.Set("X-Profile-Id", authority.profile)
+			if authority.profileToken != "" {
+				req.Header.Set("X-Profile-Token", authority.profileToken)
+			}
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Silo-Device-Id", device)
 			res, e := client.Do(req)
