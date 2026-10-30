@@ -132,6 +132,9 @@ func TestVirtualPathsMalformedPagesAndDeniedSectionLeaveNoTree(t *testing.T) {
 			t.Fatal("viewer")
 		}
 		return nil, core.ErrUnauthorized
+	}, LibraryItems: func(context.Context, *core.Viewer, core.Device, string, int, int) (VirtualPathPage, error) {
+		t.Fatal("denied section must not query library items")
+		return VirtualPathPage{}, nil
 	}}
 	if got, err := VirtualPaths(context.Background(), denied, viewer, core.Device{}, []core.RatingKey{movie.Key}); got != nil || !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("denied section: %+v %v", got, err)
