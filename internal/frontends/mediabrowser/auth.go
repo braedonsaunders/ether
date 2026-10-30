@@ -32,7 +32,13 @@ func (i *instance) identityContext(r *http.Request) context.Context {
 	}
 	return r.Context()
 }
+
+type verifiedDeviceKey struct{}
+
 func device(r *http.Request) frontend.Device {
+	if stored, ok := r.Context().Value(verifiedDeviceKey{}).(frontend.Device); ok {
+		return stored
+	}
 	p, _ := authhdr.MediaBrowser(r.Header.Get("Authorization"))
 	if len(p) == 0 {
 		p, _ = authhdr.MediaBrowser(r.Header.Get("X-Emby-Authorization"))
@@ -59,6 +65,26 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 		return nil, "", errors.New("missing credential")
 	}
 	v, err := i.host.Identity.Resolve(r.Context(), token)
+	if err == nil && v != nil {
+		if grants, ok := i.host.Identity.(frontend.GrantDeviceIdentity); ok {
+			claim := device(r)
+			boundViewer, stored, _, bindingErr := grants.ResolveGrantDevice(r.Context(), token, claim.ID)
+			if bindingErr != nil || boundViewer == nil || boundViewer.ID != v.ID || stored.ID == "" || (claim.ID != "" && claim.ID != stored.ID) {
+				return nil, "", errors.New("invalid device grant")
+			}
+			// Device ID is authoritative from the grant; client metadata is
+			// descriptive and may change as the application is upgraded.
+			if claim.Client != "" {
+				stored.Client, stored.Product = claim.Client, claim.Product
+			}
+			if claim.Version != "" {
+				stored.Version = claim.Version
+			}
+			stored.DeviceName, stored.Platform, stored.Language = claim.DeviceName, claim.Platform, claim.Language
+			*r = *r.WithContext(context.WithValue(r.Context(), verifiedDeviceKey{}, stored))
+			v = boundViewer
+		}
+	}
 	if err == nil && v != nil {
 		scoped := r.PathValue("userId")
 		if scoped == "" {
