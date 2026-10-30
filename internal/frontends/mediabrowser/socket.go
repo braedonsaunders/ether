@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/authhdr"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/coder/websocket"
 )
@@ -17,7 +18,11 @@ import (
 func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 	viewer, _, err := i.viewer(r)
 	if err != nil || viewer == nil {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+		if authhdr.MediaBrowserToken(r) != "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		} else {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		}
 		return
 	}
 	conn, err := websocket.Accept(w, r, nil)
