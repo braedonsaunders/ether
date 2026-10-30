@@ -189,3 +189,15 @@ func TestConcurrentEnsureRelease(t *testing.T) {
 		t.Fatal("leaked holders")
 	}
 }
+
+func TestBorrowIdentityAndNil(t *testing.T) {
+	var absent *Owner
+	if absent.Borrow() != nil || New(nil).Borrow() != nil {
+		t.Fatal("absent provider advertised")
+	}
+	o := New(&backend{})
+	defer o.Close()
+	if o.Borrow() != o.Borrow() {
+		t.Fatal("consumers received different provider views")
+	}
+}

@@ -19,13 +19,16 @@ var ErrClosed = errors.New("trickplay: owner closed")
 type Owner struct {
 	mu      sync.Mutex
 	backend core.TrickplayProvider
+	view    *borrowed
 	holders map[string]int
 	count   int
 	closed  bool
 }
 
 func New(backend core.TrickplayProvider) *Owner {
-	return &Owner{backend: backend, holders: make(map[string]int)}
+	o := &Owner{backend: backend, holders: make(map[string]int)}
+	o.view = &borrowed{TrickplayProvider: backend, owner: o}
+	return o
 }
 
 type borrowed struct {
@@ -34,7 +37,10 @@ type borrowed struct {
 }
 
 func (o *Owner) Borrow() core.TrickplayProvider {
-	return &borrowed{TrickplayProvider: o.backend, owner: o}
+	if o == nil || o.backend == nil {
+		return nil
+	}
+	return o.view
 }
 func (p *borrowed) AcquireTrickplay(ctx context.Context, src core.TrickplaySource) (core.TrickplayLease, error) {
 	o := p.owner

@@ -11,7 +11,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plextv"
-	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // buildPlex assembles the PMS-compatible front end. In spike mode the
@@ -109,11 +108,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	deps.Downloads = a.downloadRemuxer
 
 	deps.Extras = a.extras
-	if a.transcoder != nil {
-		deps.Trickplay = transcode.NewThumbnails(transcode.ThumbOptions{
-			FFmpeg: a.transcoder.FFmpegPath(), Logger: a.log,
-		})
-	}
+	deps.Trickplay = a.trickplay.Borrow()
 	a.wirePlexPolicy(&deps)
 	deps.FavoriteShows = a.favoriteShows
 	deps.Now = parityClock()
