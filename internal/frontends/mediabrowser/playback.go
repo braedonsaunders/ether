@@ -529,6 +529,10 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 
 // streamAlias translates client-generated URLs into broker-owned, scoped URLs.
 func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
+	name := strings.ToLower(r.PathValue("name"))
+	if i.protocol == "emby" && queryBool(r, "Static", false) && (name == "stream" || strings.HasPrefix(name, "stream.")) {
+		w = &embyStaticResponse{ResponseWriter: w}
+	}
 	viewer, credential, err := i.viewer(r)
 	if err != nil || viewer == nil {
 		http.Error(w, "Unauthorized", 401)
@@ -568,7 +572,6 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 			channel, key = ch.ID, 0
 		}
 	}
-	name := strings.ToLower(r.PathValue("name"))
 	format := frontend.StreamDirect
 	switch {
 	case name == "stream", strings.HasPrefix(name, "stream."):
