@@ -237,7 +237,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 				return e
 			}
 		}
-		eligible := make([]core.Title, 0, len(chunk))
+		// Compact the owned batch in place. Writes only target earlier slots,
+		// and no title pointers escape the batch.
+		eligible := chunk[:0]
 		for _, title := range chunk {
 			if q.Watched == nil || (watched[title.Key].ViewCount > 0) == *q.Watched {
 				eligible = append(eligible, title)
@@ -276,6 +278,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			}
 			permitted = append(permitted, title)
 		}
+		clear(recursiveBatch)
 		recursiveBatch = recursiveBatch[:0]
 		return nil
 	}
@@ -293,41 +296,49 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			return core.Page{}, err
 		}
 		var candidatesPage []core.Title
+		accept := func(title core.Title) error {
+			if !s.visible(ctx, v, &title) {
+				return nil
+			}
+			if !expand {
+				candidatesPage = append(candidatesPage, title)
+				return nil
+			}
+			staticQuery := q
+			staticQuery.Watched, staticQuery.Favorite = nil, nil
+			ok, e := s.matchesUserQuery(ctx, v, title, staticQuery)
+			if e != nil {
+				return e
+			}
+			if ok {
+				recursiveBatch = append(recursiveBatch, title)
+				if len(recursiveBatch) == 400 {
+					return flushRecursive()
+				}
+			}
+			return nil
+		}
 		for i := range page.Items {
 			parent := &page.Items[i]
 			if !s.visible(ctx, v, parent) {
 				continue
 			}
-			candidates := []core.Title{*parent}
+			var children []core.Title
 			if expand && parent.Type == core.TypeShow {
-				children, e := s.d.Grandchildren(ctx, v, parent.Key)
+				var e error
+				children, e = s.d.Grandchildren(ctx, v, parent.Key)
 				if e != nil {
 					return core.Page{}, e
 				}
-				candidates = append(candidates, children...)
 			}
-			for j := range candidates {
-				title := &candidates[j]
-				if !s.visible(ctx, v, title) {
-					continue
-				}
-				if expand {
-					staticQuery := q
-					staticQuery.Watched, staticQuery.Favorite = nil, nil
-					ok, e := s.matchesUserQuery(ctx, v, *title, staticQuery)
-					if e != nil {
-						return core.Page{}, e
-					}
-					if ok {
-						recursiveBatch = append(recursiveBatch, *title)
-						if len(recursiveBatch) == 400 {
-							if e = flushRecursive(); e != nil {
-								return core.Page{}, e
-							}
-						}
-					}
-				} else {
-					candidatesPage = append(candidatesPage, *title)
+			// Copy only accepted values into the bounded batch; do not duplicate
+			// or retain the catalogue's full per-show children slice.
+			if e := accept(*parent); e != nil {
+				return core.Page{}, e
+			}
+			for j := range children {
+				if e := accept(children[j]); e != nil {
+					return core.Page{}, e
 				}
 			}
 		}
