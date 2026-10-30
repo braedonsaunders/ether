@@ -102,6 +102,8 @@ type GDMOptions struct {
 
 	// rejoinInterval overrides gdmRejoinInterval (tests).
 	rejoinInterval time.Duration
+	// listen overrides socket creation for lifecycle tests; nil uses listenGDM.
+	listen func(int) (*net.UDPConn, error)
 }
 
 // gdmRejoinInterval is how often each multicast socket is reopened, which
@@ -148,6 +150,9 @@ func NewGDMResponder(o GDMOptions) *GDMResponder {
 	if o.rejoinInterval <= 0 {
 		o.rejoinInterval = gdmRejoinInterval
 	}
+	if o.listen == nil {
+		o.listen = listenGDM
+	}
 	return &GDMResponder{o: o}
 }
 
@@ -181,7 +186,7 @@ func (g *GDMResponder) Start(ctx context.Context) error {
 		}
 	} else {
 		for _, p := range g.o.Ports {
-			c, err := listenGDM(p)
+			c, err := g.o.listen(p)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("port %d: %w", p, err))
 				continue
@@ -234,7 +239,7 @@ func listenGDM(port int) (*net.UDPConn, error) {
 // and false when the responder is stopping.
 func (g *GDMResponder) rejoin(ctx context.Context, i int, old *net.UDPConn) (*net.UDPConn, bool) {
 	port := old.LocalAddr().(*net.UDPAddr).Port
-	c, err := listenGDM(port)
+	c, err := g.o.listen(port)
 	if err != nil {
 		g.o.Logger.Debug("gdm rejoin failed; keeping the current socket", "port", port, "err", err)
 		return old, ctx.Err() == nil
