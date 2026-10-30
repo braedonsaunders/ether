@@ -1,7 +1,6 @@
 package silo
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +27,9 @@ func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	}
 	if t.Type == "show" && t.Status != "" {
 		out["show_status"] = strings.ReplaceAll(strings.ToLower(t.Status), " ", "_")
+	}
+	if t.Type == "show" && !t.LastAirDate.IsZero() {
+		out["last_air_date"] = t.LastAirDate.Format("2006-01-02")
 	}
 	if t.Type == "movie" || t.Type == "episode" {
 		out["play_content_id"] = id
@@ -243,9 +245,16 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		out["tvdb_id"] = strconv.FormatInt(d.Title.IDs.TVDB, 10)
 	}
 	portraits := i.creditPortraits(r, v, credential, d)
+	personIDs := i.creditIDs(r, v, d)
 	cast := make([]any, 0, len(d.Title.Cast))
 	for n, p := range d.Title.Cast {
 		credit := map[string]any{"name": p.Name, "character": p.Role, "order": n}
+		if p.IMDB != "" {
+			credit["imdb_id"] = p.IMDB
+		}
+		if id := personIDs[p.TMDB]; id != "" {
+			credit["person_id"] = id
+		}
 		if p.TMDB > 0 {
 			credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
 			if portrait := portraits[p.TMDB]; portrait.url != "" {
@@ -261,6 +270,12 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	for _, people := range [][]frontend.Person{d.Title.Crew, d.Title.Directors, d.Title.Writers} {
 		for _, p := range people {
 			credit := map[string]any{"name": p.Name, "job": p.Role}
+			if p.IMDB != "" {
+				credit["imdb_id"] = p.IMDB
+			}
+			if id := personIDs[p.TMDB]; id != "" {
+				credit["person_id"] = id
+			}
 			if p.TMDB > 0 {
 				credit["tmdb_id"] = strconv.FormatInt(p.TMDB, 10)
 				if portrait := portraits[p.TMDB]; portrait.url != "" {
@@ -323,219 +338,211 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		out["user_data"] = rollup
 	}
 	i.artwork(r, v, credential, key, out)
-	if i.host.Sessions != nil && i.host.Capabilities != nil {
+	out["versions"] = []any{}
+	if (d.Title.Type == "movie" || d.Title.Type == "episode") && i.host.Sessions != nil && i.host.Capabilities != nil {
 		dev := device(r)
 		capability, e := i.host.Capabilities.Build(i.identityContext(r), frontend.CapabilityRequest{Viewer: v, Device: caps.DeviceInfo{Protocol: "silo", ClientID: dev.ID, Product: dev.Client, Version: dev.Version}, UserAgent: r.UserAgent()})
 		if e == nil {
-			plan, e := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: dev, Protocol: "silo", Item: key, Caps: capability.Client, Intent: frontend.PlayIntent{Estimate: true, Options: frontend.DecideOptions{DirectPlay: true, DirectStream: true, AudioStream: -1, SubtitleStream: -1}}})
-			if e == nil {
-				versions := d.Versions
-				if len(versions) == 0 {
-					versions = []frontend.Version{{Media: plan.Media, AddedAt: d.Title.DateAdded(time.Now())}}
+			versions, offers, e := i.sourceVersions(r, frontend.VersionScope{Viewer: v, Device: dev, Protocol: "silo", Caps: capability.Client}, d)
+			if e != nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			items := make([]any, 0, len(versions))
+			groups := make([]any, 0, len(versions))
+			for n, version := range versions {
+				if !siloSourceHasKnownHDR10Plus(version.Media) {
+					continue
 				}
-				items := make([]any, 0, len(versions))
-				groups := make([]any, 0, len(versions))
-				for _, version := range versions {
-					if !siloSourceHasKnownHDR10Plus(version.Media) {
-						continue
-					}
-					ref, _ := json.Marshal(fileReference{Key: int64(key), Version: version.ID})
-					file, e := i.host.IDs.Compact(r.Context(), "silo", "file", string(ref))
-					if e != nil {
-						http.Error(w, "Unavailable", 503)
-						return
-					}
-					id := strconv.FormatInt(int64(file), 10)
-					resolution, video, audio := "", "", ""
-					hdr := false
-					audioTracks := []any{}
-					videoTracks := []any{}
-					// An unresolved estimate is not a probed source. Required Silo
-					// numbers stay zero and strings stay empty until playback resolves it.
-					estimated := version.Media.Estimated || (version.ID == "" && plan.Estimated)
-					streams := version.Media.Streams
-					if estimated {
-						streams = nil
-					}
-					for _, stream := range streams {
-						if stream.Type == "video" {
-							video = stream.Codec
-							if stream.Height > 0 {
-								resolution = strconv.Itoa(stream.Height) + "p"
-							}
-							rangeName := siloObservedRange(version.Media, stream)
-							hdr = rangeName != "" && rangeName != "sdr"
-							track := map[string]any{"codec": stream.Codec, "color_range": "unknown", "dv_enhancement_layer": "unknown"}
-							if stream.ColorRange != "" {
-								track["color_range"] = stream.ColorRange
-							}
-							if stream.HDR10Plus != nil {
-								track["hdr10_plus"] = *stream.HDR10Plus
-							} else if stream.ColorTransfer != "smpte2084" {
-								track["hdr10_plus"] = false
-							}
-							if stream.DolbyVisionELPresent != nil && !*stream.DolbyVisionELPresent {
-								track["dv_enhancement_layer"] = "none"
-							}
-							if stream.Width > 0 {
-								track["width"] = stream.Width
-							}
-							if stream.Height > 0 {
-								track["height"] = stream.Height
-							}
-							if stream.BitDepth > 0 {
-								track["bit_depth"] = stream.BitDepth
-							}
-							if stream.BitrateKbps > 0 {
-								track["bitrate"] = stream.BitrateKbps
-							}
-							if stream.Profile != "" {
-								track["profile"] = stream.Profile
-							}
-							if stream.Level > 0 {
-								track["level"] = stream.Level
-							}
-							if stream.Title != "" {
-								track["title"] = stream.Title
-							}
-							if stream.FrameRate > 0 {
-								track["frame_rate"] = strconv.FormatFloat(stream.FrameRate, 'f', 3, 64)
-							}
-							if stream.DisplayAspectRatio != "" {
-								track["aspect_ratio"] = stream.DisplayAspectRatio
-							}
-							if stream.PixelFormat != "" {
-								track["pixel_format"] = stream.PixelFormat
-							}
-							if stream.ColorPrimaries != "" {
-								track["color_primaries"] = stream.ColorPrimaries
-							}
-							if stream.ColorSpace != "" {
-								track["color_space"] = stream.ColorSpace
-							}
-							if stream.ColorTransfer != "" {
-								track["color_transfer"] = stream.ColorTransfer
-							}
-							if stream.ReferenceFrames != nil {
-								track["reference_frames"] = *stream.ReferenceFrames
-							}
-							if stream.ProbedLevel != nil {
-								track["level"] = *stream.ProbedLevel
-							}
-							if stream.ProbedDolbyVisionProfile != nil {
-								track["dv_profile"] = *stream.ProbedDolbyVisionProfile
-							}
-							if stream.ProbedDolbyVisionLevel != nil {
-								track["dv_level"] = *stream.ProbedDolbyVisionLevel
-							}
-							if stream.DolbyVisionBLPresent != nil {
-								track["dv_bl_present"] = *stream.DolbyVisionBLPresent
-							}
-							if stream.DolbyVisionELPresent != nil {
-								track["dv_el_present"] = *stream.DolbyVisionELPresent
-							}
-							if stream.DolbyVisionRPUPresent != nil {
-								track["dv_rpu_present"] = *stream.DolbyVisionRPUPresent
-							}
-							if stream.DolbyVisionBLCompatibilityIDPresent != nil && *stream.DolbyVisionBLCompatibilityIDPresent {
-								track["dv_bl_compat_id"] = stream.DolbyVisionCompatibilityID
-							}
-							switch rangeName {
-							case "sdr":
-								track["video_range_type"] = "SDR"
-							case "hdr10":
-								track["video_range_type"] = "HDR10"
-							case "hlg":
-								track["video_range_type"] = "HLG"
-							}
-							// These booleans are mandatory in Silo's track DTO. Only
-							// publish a track when their presence is established by
-							// the probe; missing metadata is not proof of absence.
-							config, compat, interlaced := stream.DolbyVisionConfigurationPresent, stream.DolbyVisionBLCompatibilityIDPresent, stream.ProbedInterlaced
-							positive := true
-							if config == nil && stream.DolbyVisionVersion != "" {
-								config = &positive
-							}
-							if compat == nil && stream.DolbyVisionCompatibilityID > 0 {
-								compat = &positive
-							}
-							if interlaced == nil && stream.Interlaced {
-								interlaced = &positive
-							}
-							if !version.Media.Estimated && config != nil && compat != nil && interlaced != nil {
-								track["dv_config_present"] = *config
-								track["dv_bl_compat_id_present"] = *compat
-								track["interlaced"] = *interlaced
-								videoTracks = append(videoTracks, track)
-							}
+				id := offers[n].ID
+				resolution, video, audio := "", "", ""
+				hdr := false
+				audioTracks := []any{}
+				videoTracks := []any{}
+				// An unresolved estimate is not a probed source. Required Silo
+				// numbers stay zero and strings stay empty until playback resolves it.
+				estimated := version.Media.Estimated
+				streams := version.Media.Streams
+				if estimated {
+					streams = nil
+				}
+				for _, stream := range streams {
+					if stream.Type == "video" {
+						video = stream.Codec
+						if stream.Height > 0 {
+							resolution = strconv.Itoa(stream.Height) + "p"
 						}
-						if stream.Type == "audio" && audio == "" {
-							audio = stream.Codec
+						rangeName := siloObservedRange(version.Media, stream)
+						hdr = rangeName != "" && rangeName != "sdr"
+						track := map[string]any{"codec": stream.Codec, "color_range": "unknown", "dv_enhancement_layer": "unknown"}
+						if stream.ColorRange != "" {
+							track["color_range"] = stream.ColorRange
 						}
-						if stream.Type == "audio" {
-							track := map[string]any{"default": stream.Default}
-							if stream.Codec != "" {
-								track["codec"] = stream.Codec
-							}
-							if stream.Language != "" {
-								track["language"] = stream.Language
-							}
-							if stream.Title != "" {
-								track["title"] = stream.Title
-							}
-							if stream.Channels > 0 {
-								track["channels"] = stream.Channels
-							}
-							if stream.ChannelLayout != "" {
-								track["layout"] = stream.ChannelLayout
-							}
-							if stream.SampleRate > 0 {
-								track["sample_rate"] = stream.SampleRate
-							}
-							if stream.BitrateKbps > 0 {
-								track["bitrate"] = stream.BitrateKbps
-							}
-							if stream.BitDepth > 0 {
-								track["bit_depth"] = stream.BitDepth
-							}
-							if stream.Profile != "" {
-								track["profile"] = stream.Profile
-							}
-							audioTracks = append(audioTracks, track)
+						if stream.HDR10Plus != nil {
+							track["hdr10_plus"] = *stream.HDR10Plus
+						} else if stream.ColorTransfer != "smpte2084" {
+							track["hdr10_plus"] = false
+						}
+						if stream.DolbyVisionELPresent != nil && !*stream.DolbyVisionELPresent {
+							track["dv_enhancement_layer"] = "none"
+						}
+						if stream.Width > 0 {
+							track["width"] = stream.Width
+						}
+						if stream.Height > 0 {
+							track["height"] = stream.Height
+						}
+						if stream.BitDepth > 0 {
+							track["bit_depth"] = stream.BitDepth
+						}
+						if stream.BitrateKbps > 0 {
+							track["bitrate"] = stream.BitrateKbps
+						}
+						if stream.Profile != "" {
+							track["profile"] = stream.Profile
+						}
+						if stream.Level > 0 {
+							track["level"] = stream.Level
+						}
+						if stream.Title != "" {
+							track["title"] = stream.Title
+						}
+						if stream.FrameRate > 0 {
+							track["frame_rate"] = strconv.FormatFloat(stream.FrameRate, 'f', 3, 64)
+						}
+						if stream.DisplayAspectRatio != "" {
+							track["aspect_ratio"] = stream.DisplayAspectRatio
+						}
+						if stream.PixelFormat != "" {
+							track["pixel_format"] = stream.PixelFormat
+						}
+						if stream.ColorPrimaries != "" {
+							track["color_primaries"] = stream.ColorPrimaries
+						}
+						if stream.ColorSpace != "" {
+							track["color_space"] = stream.ColorSpace
+						}
+						if stream.ColorTransfer != "" {
+							track["color_transfer"] = stream.ColorTransfer
+						}
+						if stream.ReferenceFrames != nil {
+							track["reference_frames"] = *stream.ReferenceFrames
+						}
+						if stream.ProbedLevel != nil {
+							track["level"] = *stream.ProbedLevel
+						}
+						if stream.ProbedDolbyVisionProfile != nil {
+							track["dv_profile"] = *stream.ProbedDolbyVisionProfile
+						}
+						if stream.ProbedDolbyVisionLevel != nil {
+							track["dv_level"] = *stream.ProbedDolbyVisionLevel
+						}
+						if stream.DolbyVisionBLPresent != nil {
+							track["dv_bl_present"] = *stream.DolbyVisionBLPresent
+						}
+						if stream.DolbyVisionELPresent != nil {
+							track["dv_el_present"] = *stream.DolbyVisionELPresent
+						}
+						if stream.DolbyVisionRPUPresent != nil {
+							track["dv_rpu_present"] = *stream.DolbyVisionRPUPresent
+						}
+						if stream.DolbyVisionBLCompatibilityIDPresent != nil && *stream.DolbyVisionBLCompatibilityIDPresent {
+							track["dv_bl_compat_id"] = stream.DolbyVisionCompatibilityID
+						}
+						switch rangeName {
+						case "sdr":
+							track["video_range_type"] = "SDR"
+						case "hdr10":
+							track["video_range_type"] = "HDR10"
+						case "hlg":
+							track["video_range_type"] = "HLG"
+						}
+						// These booleans are mandatory in Silo's track DTO. Only
+						// publish a track when their presence is established by
+						// the probe; missing metadata is not proof of absence.
+						config, compat, interlaced := stream.DolbyVisionConfigurationPresent, stream.DolbyVisionBLCompatibilityIDPresent, stream.ProbedInterlaced
+						positive := true
+						if config == nil && stream.DolbyVisionVersion != "" {
+							config = &positive
+						}
+						if compat == nil && stream.DolbyVisionCompatibilityID > 0 {
+							compat = &positive
+						}
+						if interlaced == nil && stream.Interlaced {
+							interlaced = &positive
+						}
+						if !version.Media.Estimated && config != nil && compat != nil && interlaced != nil {
+							track["dv_config_present"] = *config
+							track["dv_bl_compat_id_present"] = *compat
+							track["interlaced"] = *interlaced
+							videoTracks = append(videoTracks, track)
 						}
 					}
-					container, duration, size, bitrate := version.Media.Container, int64(version.Media.Duration.Seconds()), version.Media.Size, version.Media.BitrateKbps
-					if estimated {
-						container, duration, size, bitrate = "", 0, 0, 0
+					if stream.Type == "audio" && audio == "" {
+						audio = stream.Codec
 					}
-					item := map[string]any{"file_id": id, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": container, "duration": duration, "file_size": size, "bitrate": bitrate}
-					if !version.AddedAt.IsZero() {
-						item["added_at"] = version.AddedAt.UTC().Format("2006-01-02T15:04:05.000Z")
-					}
-					if version.FileName != "" {
-						item["file_name"] = version.FileName
-					}
-					if len(audioTracks) > 0 {
-						item["audio_tracks"] = audioTracks
-					}
-					if len(videoTracks) > 0 {
-						item["video_tracks"] = videoTracks
-					}
-					items = append(items, item)
-					if version.PartCount != nil && *version.PartCount == 1 {
-						part := map[string]any{"part_index": 1, "default_file_id": id, "versions": []any{item}}
-						group := map[string]any{"variant_id": id, "default_file_id": id, "part_count": 1, "parts": []any{part}}
-						if duration > 0 {
-							part["total_duration"], group["total_duration"] = duration, duration
+					if stream.Type == "audio" {
+						track := map[string]any{"default": stream.Default}
+						if stream.Codec != "" {
+							track["codec"] = stream.Codec
 						}
-						groups = append(groups, group)
+						if stream.Language != "" {
+							track["language"] = stream.Language
+						}
+						if stream.Title != "" {
+							track["title"] = stream.Title
+						}
+						if stream.Channels > 0 {
+							track["channels"] = stream.Channels
+						}
+						if stream.ChannelLayout != "" {
+							track["layout"] = stream.ChannelLayout
+						}
+						if stream.SampleRate > 0 {
+							track["sample_rate"] = stream.SampleRate
+						}
+						if stream.BitrateKbps > 0 {
+							track["bitrate"] = stream.BitrateKbps
+						}
+						if stream.BitDepth > 0 {
+							track["bit_depth"] = stream.BitDepth
+						}
+						if stream.Profile != "" {
+							track["profile"] = stream.Profile
+						}
+						audioTracks = append(audioTracks, track)
 					}
 				}
-				out["versions"] = items
-				if len(groups) > 0 {
-					out["playback_variants"] = groups
+				container, duration, size, bitrate := version.Media.Container, int64(version.Media.Duration.Seconds()), version.Media.Size, version.Media.BitrateKbps
+				if estimated {
+					container, duration, size, bitrate = "", 0, 0, 0
 				}
-
+				item := map[string]any{"file_id": id, "resolution": resolution, "codec_video": video, "codec_audio": audio, "hdr": hdr, "container": container, "duration": duration, "file_size": size, "bitrate": bitrate, "added_at": d.Title.DateAdded(time.Now()).UTC().Format("2006-01-02T15:04:05.000Z")}
+				if d.Title.DateAdded(time.Now()).IsZero() {
+					delete(item, "added_at")
+				}
+				if version.FileName != "" {
+					item["file_name"] = version.FileName
+				}
+				if len(audioTracks) > 0 {
+					item["audio_tracks"] = audioTracks
+				}
+				if len(videoTracks) > 0 {
+					item["video_tracks"] = videoTracks
+				}
+				items = append(items, item)
+				if version.PartCount != nil && *version.PartCount == 1 {
+					part := map[string]any{"part_index": 1, "default_file_id": id, "versions": []any{item}}
+					group := map[string]any{"variant_id": id, "default_file_id": id, "part_count": 1, "parts": []any{part}}
+					if duration > 0 {
+						part["total_duration"], group["total_duration"] = duration, duration
+					}
+					groups = append(groups, group)
+				}
+			}
+			out["versions"] = items
+			if len(groups) > 0 {
+				out["playback_variants"] = groups
 			}
 		}
 	}

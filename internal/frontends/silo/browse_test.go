@@ -346,7 +346,7 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 		}
 		return frontend.PlayPlan{Estimated: true, Media: media}, nil
 	}}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: sess, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: sess, SourceOffers: testSourceOffers{}, VersionHandles: testVersionHandles{}, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,91 +409,27 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	}
 }
 
-type coldFileIDs struct{ ref string }
-
-func (c *coldFileIDs) Compact(_ context.Context, surface, kind, ref string) (int32, error) {
-	if surface != "silo" || kind != "file" {
-		return 0, errors.New("wrong namespace")
-	}
-	c.ref = ref
-	return 1, nil
-}
-func (c *coldFileIDs) Resolve(_ context.Context, surface, kind string, id int32) (string, error) {
-	if surface != "silo" || kind != "file" || id != 1 || c.ref == "" {
-		return "", errors.New("missing")
-	}
-	return c.ref, nil
-}
-
-func TestColdTitleShowsUnknownFactsAndResolvesOnlyOnPlay(t *testing.T) {
-	v := &frontend.Viewer{ID: 7}
+func TestUnresolvedColdTitleDoesNotInventAPlayableSource(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
 	key := frontend.RatingKey(1000000000000001)
-	allocator := &coldFileIDs{}
-	resolved := 0
-	resolvedStillEstimated := false
-	exp := frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
-		if req.Key != key || req.Viewer != v {
-			return frontend.ItemDetail{}, errors.New("hidden")
-		}
-		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Cold title", UpdatedAt: time.Unix(10000, 0)}}, nil
+	calls := 0
+	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie"}}, nil
 	}}
-	sessions := frontendtest.Sessions{
-		PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
-			if req.Intent.Estimate {
-				return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Estimated: true, Container: "mp4", Duration: time.Hour, Size: 123456, BitrateKbps: 9000, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Height: 1080}}}}, nil
-			}
-			resolved++
-			return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Estimated: resolvedStillEstimated, Container: "mp4", Duration: 90 * time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", ColorTransfer: "bt709"}}}, Decision: frontend.Decision{Kind: "directplay", VideoCopy: true}}, nil
-		},
-		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
-			return frontend.Session{ID: "session"}, nil
-		},
-		StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
-			return "/sessions/media/session/grant/file", nil
-		},
-	}
-	host := frontend.Host{Identity: testDeviceIdentity(frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}, v), Experience: exp, Sessions: testScopedMedia{sessions}, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: allocator}}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	sessions := frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+		calls++
+		return frontend.PlayPlan{}, nil
+	}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, viewer), Experience: exp, Sessions: sessions, SourceOffers: testSourceOffers{}, Capabilities: frontendtest.Capabilities{}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := func(method, path, body string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, strings.NewReader(body))
-		r.Header.Set("Authorization", "Bearer grant")
-		r.Header.Set("X-Silo-Device-Id", "tv")
-		w := httptest.NewRecorder()
-		inst.Handler().ServeHTTP(w, r)
-		return w
-	}
-	w := request("GET", "/api/v2/catalog/items/"+ids.RatingKeyGUID(key), "")
-	if w.Code != 200 || resolved != 0 {
-		t.Fatalf("cold detail resolved a source: %d %s", w.Code, w.Body.String())
-	}
-	for _, want := range []string{`"file_size":0`, `"duration":0`, `"bitrate":0`, `"codec_video":""`, `"resolution":""`} {
-		if !strings.Contains(w.Body.String(), want) {
-			t.Errorf("missing unknown sentinel %s: %s", want, w.Body.String())
-		}
-	}
-	if strings.Contains(w.Body.String(), `"file_name"`) || strings.Contains(w.Body.String(), `"playback_variants"`) {
-		t.Fatalf("invented source facts: %s", w.Body.String())
-	}
-	body := `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt"}`
-	w = request("POST", "/api/v2/playback/start", body)
-	if w.Code != 201 || resolved != 1 || !strings.Contains(w.Body.String(), `"duration_seconds":5400`) || !strings.Contains(w.Body.String(), `"video_codec":"h264"`) {
-		t.Fatalf("cold play: %d %s resolves=%d", w.Code, w.Body.String(), resolved)
-	}
-	resolvedStillEstimated = true
-	w = request("POST", "/api/v2/playback/start", body)
-	var result struct {
-		ServerFeatures []string `json:"server_features"`
-		Plan           struct {
-			Source map[string]any `json:"source"`
-		} `json:"playback_plan"`
-	}
-	if w.Code != 201 || json.Unmarshal(w.Body.Bytes(), &result) != nil || !strings.Contains(w.Body.String(), `"plan_source_duration_v1"`) {
-		t.Fatalf("unknown source: %d %s", w.Code, w.Body.String())
-	}
-	if _, ok := result.Plan.Source["duration_seconds"]; ok {
-		t.Fatalf("estimated duration presented as resolved: %s", w.Body.String())
+	r := httptest.NewRequest("GET", "/api/v2/watch/"+ids.RatingKeyGUID(key), nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	r.Header.Set("X-Silo-Device-Id", "tv")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || calls != 0 || !strings.Contains(w.Body.String(), `"versions":[]`) {
+		t.Fatalf("invented source: %d %s calls=%d", w.Code, w.Body.String(), calls)
 	}
 }

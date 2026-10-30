@@ -13,11 +13,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 )
 
-type fileReference struct {
-	Key     int64  `json:"key"`
-	Version string `json:"version,omitempty"`
-}
-
 func (i *instance) installationID() string {
 	return i.id[:8] + "-" + i.id[8:12] + "-" + "4" + i.id[13:16] + "-" + "8" + i.id[17:20] + "-" + i.id[20:]
 }
@@ -87,22 +82,6 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
-	n, err := strconv.ParseInt(b.FileID, 10, 32)
-	if err != nil || n <= 0 || strconv.FormatInt(n, 10) != b.FileID {
-		http.Error(w, "Bad Request", 400)
-		return
-	}
-	ref, err := i.host.IDs.Resolve(r.Context(), "silo", "file", int32(n))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	var target fileReference
-	if json.Unmarshal([]byte(ref), &target) != nil || target.Key <= 0 {
-		http.NotFound(w, r)
-		return
-	}
-	key := frontend.RatingKey(target.Key)
 	d := device(r)
 	height, _ := strconv.Atoi(strings.TrimSuffix(b.Capabilities.Resolution, "p"))
 	if h, e := strconv.Atoi(strings.TrimSuffix(b.Quality, "p")); e == nil && h > 0 && (height == 0 || h < height) {
@@ -113,23 +92,21 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	versionHandle := ""
-	if target.Version != "" {
-		if i.host.VersionHandles == nil || (b.Capabilities.Video == nil && b.Capabilities.Audio == nil && b.Capabilities.Containers == nil) {
-			versionUnavailable(w)
-			return
-		}
-		scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
-		versionHandle, err = i.host.VersionHandles.Issue(r.Context(), scope, key, target.Version)
-		if err != nil || versionHandle == "" {
-			versionUnavailable(w)
-			return
-		}
-		resolved, err := i.host.VersionHandles.Resolve(r.Context(), scope, versionHandle)
-		if err != nil || resolved.Item != key {
-			versionUnavailable(w)
-			return
-		}
+	scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
+	if i.host.SourceOffers == nil {
+		versionUnavailable(w)
+		return
+	}
+	offer, err := i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
+	if err != nil || offer.Target.Item == 0 || (offer.Target.VersionHandle == "") == (offer.Target.DetailSource == "") {
+		versionUnavailable(w)
+		return
+	}
+	key, versionHandle := offer.Target.Item, offer.Target.VersionHandle
+	planner, hasDetailPlanner := i.host.Sessions.(frontend.DetailPlanner)
+	if (versionHandle != "" && i.host.VersionHandles == nil) || (offer.Target.DetailSource != "" && (!hasDetailPlanner || offer.Target.ETag == "")) {
+		versionUnavailable(w)
+		return
 	}
 	direct, hls := true, true
 	if b.Context.Deliveries != nil {
@@ -148,9 +125,9 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pos := time.Duration(b.Position * float64(time.Second))
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, DetailSource: offer.Target.DetailSource, ExpectedSourceETag: offer.Target.ETag, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
-		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
+		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
 			versionUnavailable(w)
 			return
 		}
@@ -163,7 +140,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
 	if err != nil {
-		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
+		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
 			versionUnavailable(w)
 			return
 		}
@@ -171,6 +148,16 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	access := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "silo"}
+	if offer.Target.DetailSource != "" {
+		err = planner.MatchDetailSession(r.Context(), scope, offer.Target.DetailSource, session.ID)
+	} else {
+		err = i.host.VersionHandles.MatchSession(r.Context(), scope, versionHandle, session.ID)
+	}
+	if err != nil {
+		_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+		versionUnavailable(w)
+		return
+	}
 	format := frontend.StreamDirect
 	delivery := "original_http"
 	proto := "http_progressive"
@@ -236,6 +223,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 			source["video_profile"] = s.Profile
 			source["video_level"] = s.Level
 			source["frame_rate"] = s.FrameRate
+			source["color_range"] = "unknown"
 			if s.ColorRange != "" {
 				source["color_range"] = s.ColorRange
 			}

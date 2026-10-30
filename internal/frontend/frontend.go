@@ -221,6 +221,7 @@ type Host struct {
 	VirtualPaths       VirtualPaths
 	Sessions           Sessions
 	LastPlayedSource   LastPlayedSourceReader
+	SourceOffers       SourceOffers
 	VersionHandles     VersionHandles
 	// Editions lists locally probed copies of one title. It is empty when the
 	// process has no local media manifest, and it must not search the network.
