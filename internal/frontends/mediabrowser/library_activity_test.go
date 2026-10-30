@@ -17,6 +17,8 @@ type activityFake struct {
 	viewer      *frontend.Viewer
 	latestViews []string
 	resumeCalls int
+	lowerBound  bool
+	lastExact   bool
 }
 
 func (f *activityFake) LatestAdded(_ context.Context, v *frontend.Viewer, d frontend.Device, view string, limit int) ([]frontend.LatestItem, error) {
@@ -34,12 +36,13 @@ func (f *activityFake) LatestAdded(_ context.Context, v *frontend.Viewer, d fron
 	}
 	return []frontend.LatestItem{{Title: title, AddedAt: &at}}, nil
 }
-func (f *activityFake) Resume(_ context.Context, v *frontend.Viewer, d frontend.Device, view string, types []frontend.MediaType, offset, limit int) (frontend.ActivityPage, error) {
+func (f *activityFake) Resume(_ context.Context, v *frontend.Viewer, d frontend.Device, view string, types []frontend.MediaType, offset, limit int, requireExact bool) (frontend.ActivityPage, error) {
 	if v != f.viewer || d.ID != "tv" || view != "" || len(types) != 2 || offset != 0 || limit != 20 {
 		return frontend.ActivityPage{}, frontend.ErrNotFound
 	}
 	f.resumeCalls++
-	return frontend.ActivityPage{Items: []frontend.Title{{Key: 7, Type: "episode", Title: "Resume"}}, Total: 1, TotalExact: true}, nil
+	f.lastExact = requireExact
+	return frontend.ActivityPage{Items: []frontend.Title{{Key: 7, Type: "episode", Title: "Resume"}}, Total: 1, TotalExact: !f.lowerBound, More: f.lowerBound}, nil
 }
 
 func TestSwiftfinLatestAndResumeIgnoreHomeRows(t *testing.T) {
@@ -75,8 +78,16 @@ func TestSwiftfinLatestAndResumeIgnoreHomeRows(t *testing.T) {
 		r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
 		w := httptest.NewRecorder()
 		inst.Handler().ServeHTTP(w, r)
-		if w.Code != 200 || !strings.Contains(w.Body.String(), "Resume") || exp.resumeCalls != 1 || len(exp.latestViews) != 2 {
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "Resume") || exp.resumeCalls != 1 || !exp.lastExact || len(exp.latestViews) != 2 {
 			t.Fatal(tc.name, w.Code, w.Body.String(), exp)
+		}
+		exp.lowerBound = true
+		r = httptest.NewRequest("GET", "/UserItems/Resume?limit=20&mediaTypes=Video&startIndex=0&enableTotalRecordCount=false", nil)
+		r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
+		w = httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != 200 || exp.lastExact || strings.Contains(w.Body.String(), "TotalRecordCount") {
+			t.Fatal(tc.name, w.Code, w.Body.String())
 		}
 	}
 }

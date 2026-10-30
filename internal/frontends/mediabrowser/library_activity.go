@@ -3,6 +3,7 @@ package mediabrowser
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -58,6 +59,7 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 	count := offset + limit
 	var titles []frontend.Title
 	total := 0
+	totalExact := true
 	added := map[frontend.RatingKey]any{}
 	if latest {
 		groups := route.Query(r.URL.Query(), "GroupItems")
@@ -86,8 +88,25 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 				types = []frontend.MediaType{"movie", "episode"}
 			}
 		}
-		page, e := service.Resume(r.Context(), viewer, device(r), view, types, offset, limit)
-		err, titles, total = e, page.Items, page.Total
+		requireExact := true
+		values := route.Query(r.URL.Query(), "EnableTotalRecordCount")
+		if len(values) > 1 {
+			http.Error(w, "Invalid total option", http.StatusBadRequest)
+			return
+		}
+		if len(values) == 1 {
+			requireExact, err = strconv.ParseBool(values[0])
+			if err != nil {
+				http.Error(w, "Invalid total option", http.StatusBadRequest)
+				return
+			}
+		}
+		page, e := service.Resume(r.Context(), viewer, device(r), view, types, offset, limit, requireExact)
+		err, titles, total, totalExact = e, page.Items, page.Total, page.TotalExact
+		if err == nil && requireExact && !totalExact {
+			http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	if err != nil {
 		if errors.Is(err, frontend.ErrNotFound) {
@@ -124,6 +143,10 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 	if latest {
 		jsonReply(w, items)
 	} else {
-		jsonReply(w, i.queryResult(items, total, offset))
+		result := i.queryResult(items, total, offset)
+		if !totalExact {
+			delete(result, "TotalRecordCount")
+		}
+		jsonReply(w, result)
 	}
 }
