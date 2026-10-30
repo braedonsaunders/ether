@@ -305,3 +305,71 @@ func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map
 	}
 	return out, nil
 }
+
+// ResolveShowParents batches fresh mirrored shows and falls back to Get for
+// stale, missing, or non-show keys. Individual Get failures are omitted, as
+// inherited visibility treats them as inaccessible.
+func (c *Catalog) ResolveShowParents(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	out := make(map[core.RatingKey]core.Title, len(keys))
+	if len(keys) == 0 {
+		return out, nil
+	}
+	if err := c.admitFallbacks(ctx); err != nil {
+		return nil, err
+	}
+	for start := 0; start < len(keys); start += 200 {
+		part := keys[start:min(start+200, len(keys))]
+		args := make([]any, len(part))
+		for i, k := range part {
+			args[i] = int64(k)
+		}
+		rows, err := c.db.QueryContext(ctx, `SELECT `+titleCols+`,detail_at FROM catalog_titles WHERE key IN (`+placeholders(len(part))+`)`, args...)
+		if err != nil {
+			return nil, err
+		}
+		stored := map[core.RatingKey]*storedTitle{}
+		for rows.Next() {
+			var detail int64
+			st, e := scanTitle(extraScan{rows, []any{&detail}})
+			if e != nil {
+				rows.Close()
+				return nil, e
+			}
+			if detail != 0 {
+				st.detailAt = time.Unix(detail, 0).UTC()
+			}
+			stored[st.t.Key] = st
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+		var warm []core.Title
+		for _, key := range part {
+			st := stored[key]
+			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.client == nil) {
+				warm = append(warm, st.t)
+			}
+		}
+		if err := c.hydrateSlice(ctx, warm); err != nil {
+			return nil, err
+		}
+		for i := range warm {
+			if c.visibleTitle(&warm[i]) {
+				out[warm[i].Key] = warm[i]
+			}
+		}
+		for _, key := range part {
+			st := stored[key]
+			if key.Kind() == core.KindShow && st != nil && (c.fresh(st) || c.client == nil) {
+				continue
+			}
+			title, e := c.Get(ctx, key)
+			if e == nil && title != nil && title.Key == key {
+				out[key] = *title
+			}
+		}
+	}
+	return out, nil
+}
