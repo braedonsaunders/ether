@@ -164,3 +164,79 @@ func TestMirroredRevokeBeforeDelete(t *testing.T) {
 		t.Fatalf("revoked ticket count=%d err=%v", count, err)
 	}
 }
+
+// PostgreSQL sees the old expired row while another transaction renews it;
+// the outer expiry condition must be rechecked after the update commits.
+func TestMirroredCleanupRechecksRenewedLegacyExpiry(t *testing.T) {
+	if os.Getenv(store.TestPostgresEnv) == "" {
+		t.Skip("requires PostgreSQL row version interleaving")
+	}
+	db := store.OpenTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	source := strings.Repeat("a", 64)
+	if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,1,'silo','tv','','','',0,0,9999999999999)`, source); err != nil {
+		t.Fatal(err)
+	}
+	oldHash := strings.Repeat("b", 64)
+	if _, err := db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, oldHash, "silo", "events-ws", 1, source, `{"ID":"tv"}`, 1); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE frontend_tickets SET expires=? WHERE hash=?`, time.Now().Add(time.Hour).UnixMilli(), oldHash); err != nil {
+		t.Fatal(err)
+	}
+	engine, _ := NewTickets(db)
+	entered := make(chan struct{})
+	SetBeforeLegacyCleanup(engine, func() { close(entered) })
+	finished := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		defer close(finished)
+		_, err := engine.IssueMirrored(ctx, TicketScope{ViewerID: 1, Surface: "silo", DeviceID: "tv", SourceHash: source, DeviceJSON: `{"ID":"tv"}`}, []TicketEntry{{Digest: strings.Repeat("c", 64), Purpose: "events-ws"}})
+		done <- err
+	}()
+	defer func() {
+		cancel()
+		_ = tx.Rollback()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("issuer worker did not exit")
+		}
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("cleanup did not start")
+	}
+	// This confirms the first transaction remains held; the timer alone does not
+	// prove the competing statement reached a database lock wait.
+	select {
+	case err := <-done:
+		t.Fatalf("issuer returned before renewal commit: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err = <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("issuer timed out")
+	}
+	var count int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, oldHash).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("renewed ticket count=%d err=%v", count, err)
+	}
+}
