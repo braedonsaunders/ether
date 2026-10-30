@@ -99,14 +99,17 @@ type DecideOptions struct {
 // PlaySession binds a user, a title and a client to a resolved, open source.
 type PlaySession struct {
 	PlaybackGroup string `json:"playbackGroup,omitempty"`
-	ID            string
-	UserID        int64
-	ClientID      string
-	Key           RatingKey
-	Resolution    *Resolution
-	Source        MediaSource // swaps on failover; read through Playback.Source
-	Info          MediaInfo
-	StartedAt     time.Time
+	// PreparedOnly marks a source reserved for planning but not opened by a
+	// frontend. Cluster snapshots carry it for owner Activity.
+	PreparedOnly bool `json:"preparedOnly,omitempty"`
+	ID           string
+	UserID       int64
+	ClientID     string
+	Key          RatingKey
+	Resolution   *Resolution
+	Source       MediaSource // swaps on failover; read through Playback.Source
+	Info         MediaInfo
+	StartedAt    time.Time
 
 	// Status for the admin dashboard and /status/sessions, filled on the
 	// snapshots Playback returns.
@@ -163,4 +166,6 @@ type Playback interface {
 type SurfaceScopedPlayback interface {
 	PrepareSurface(ctx context.Context, user *User, key RatingKey, caps ClientCaps, releaseID string, exact bool) (*PlaySession, error)
 	SessionForSurface(surface string, userID int64, clientID string, key RatingKey, releaseID string, exact bool) (*PlaySession, bool)
+	MarkSurfaceOpened(id string) bool
+	MarkSurfacePrepared(id string) bool
 }

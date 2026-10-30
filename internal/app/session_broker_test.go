@@ -99,6 +99,17 @@ type activityPlayback struct {
 	entries map[string]*core.PlaySession
 }
 
+func TestOwnerActivityHidesPreparedSources(t *testing.T) {
+	p := &activityPlayback{entries: map[string]*core.PlaySession{
+		"prepared": {ID: "prepared", PreparedOnly: true},
+		"playing":  {ID: "playing"},
+	}}
+	rows := (ownerPlayback{Playback: p, app: &App{}}).Sessions()
+	if len(rows) != 1 || rows[0].ID != "playing" {
+		t.Fatalf("unexpected Activity rows: %+v", rows)
+	}
+}
+
 func (p *activityPlayback) PrepareSurface(ctx context.Context, u *core.User, k core.RatingKey, c core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
 	if release != "" || exact {
 		return nil, core.ErrNotAvailable
@@ -108,6 +119,8 @@ func (p *activityPlayback) PrepareSurface(ctx context.Context, u *core.User, k c
 func (p *activityPlayback) SessionForSurface(_ string, user int64, client string, key core.RatingKey, _ string, _ bool) (*core.PlaySession, bool) {
 	return p.SessionFor(user, client, key)
 }
+func (p *activityPlayback) MarkSurfaceOpened(id string) bool   { _, ok := p.Session(id); return ok }
+func (p *activityPlayback) MarkSurfacePrepared(id string) bool { _, ok := p.Session(id); return ok }
 
 func (p *activityPlayback) Estimate(context.Context, *core.Title, core.ClientCaps) core.MediaInfo {
 	return core.MediaInfo{Estimated: true}

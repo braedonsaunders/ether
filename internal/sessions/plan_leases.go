@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
 )
 
 const (
@@ -100,6 +102,11 @@ func (b *Broker) releaseSessionSourceLocked(id string) bool {
 		return true
 	}
 	lease.sessions--
+	if lease.sessions == 0 && lease.plans > 0 {
+		if playback, ok := b.deps.Playback.(core.SurfaceScopedPlayback); ok {
+			playback.MarkSurfacePrepared(id)
+		}
+	}
 	if lease.plans == 0 && lease.sessions == 0 {
 		stop := lease.owned
 		delete(b.sourceLeases, id)

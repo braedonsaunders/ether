@@ -549,6 +549,13 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		}
 		return frontend.Session{}, core.ErrNotAvailable
 	}
+	if scoped, ok := b.deps.Playback.(core.SurfaceScopedPlayback); !ok || !scoped.MarkSurfaceOpened(ps.ID) {
+		b.mu.Unlock()
+		if b.cluster != nil {
+			_ = b.cluster.store.remove(ctx, session.ID)
+		}
+		return frontend.Session{}, core.ErrNotAvailable
+	}
 	b.bindings.Put(&Binding[frontend.PlayIntent]{ID: id, UserID: v.ID, ClientID: s.clientID, Key: session.Item, PlayID: ps.ID, PlaybackID: s.playbackID, Requested: p.request.Intent, Decision: p.decision, Info: ps.Info, Caps: s.caps, Opts: s.opts, UpdatedAt: b.deps.Now()})
 	b.owners.BindFor("broker", v.ID, s.clientID, session.Item, s.playbackID, ps.ID, true, b.deps.Now())
 	superseded := b.collectSupersededLocked(s)

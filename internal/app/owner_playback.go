@@ -25,7 +25,7 @@ func (p ownerPlayback) Sessions() []*core.PlaySession {
 	}
 	out := make([]*core.PlaySession, 0, len(live))
 	for _, s := range p.Playback.Sessions() {
-		if s.PlaybackGroup == "" || !groups[s.PlaybackGroup] {
+		if !s.PreparedOnly && (s.PlaybackGroup == "" || !groups[s.PlaybackGroup]) {
 			out = append(out, s)
 		}
 	}
@@ -33,7 +33,11 @@ func (p ownerPlayback) Sessions() []*core.PlaySession {
 	// Other cluster nodes' streams (nil on a standalone server).
 	if p.app != nil && p.app.playback != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		out = append(out, p.app.playback.RemoteSessions(ctx)...)
+		for _, s := range p.app.playback.RemoteSessions(ctx) {
+			if !s.PreparedOnly {
+				out = append(out, s)
+			}
+		}
 		cancel()
 	}
 	return out

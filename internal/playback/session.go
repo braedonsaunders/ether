@@ -189,6 +189,7 @@ type session struct {
 	rate       rateMeter
 
 	mu             sync.Mutex
+	preparedOnly   bool
 	cur            *generation
 	virtualGen     *generation // generation whose layout virtual mirrors
 	gens           int
@@ -325,6 +326,7 @@ func (s *session) snapshot(now time.Time) *core.PlaySession {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ps := &core.PlaySession{
+		PreparedOnly:   s.preparedOnly,
 		ID:             s.id,
 		UserID:         s.ident.userID,
 		ClientID:       s.ident.clientID,

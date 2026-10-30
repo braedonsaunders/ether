@@ -716,6 +716,7 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 	}
 	profile := m.deps.SelectProfile(caps, user)
 	s := newSession(randomID(16), id, user, caps, title, profile.Name, m.now())
+	s.preparedOnly = deferSupersession
 	s.prefer = prefer
 	s.exact = exact
 	s.resetSpeed(m.now(), m.opts.SpeedGrace)
@@ -826,6 +827,33 @@ func (m *Manager) SessionForSurface(surface string, userID int64, clientID strin
 		return nil, false
 	}
 	return s.snapshot(m.now()), true
+}
+
+// MarkSurfaceOpened changes Activity visibility only after broker admission.
+func (m *Manager) MarkSurfaceOpened(id string) bool {
+	return m.setSurfacePrepared(id, false)
+}
+
+// MarkSurfacePrepared hides a source after its final frontend session stops
+// while another scoped plan still holds the source lease.
+func (m *Manager) MarkSurfacePrepared(id string) bool {
+	return m.setSurfacePrepared(id, true)
+}
+
+func (m *Manager) setSurfacePrepared(id string, prepared bool) bool {
+	s := m.lookup(id)
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return false
+	}
+	s.preparedOnly = prepared
+	s.mu.Unlock()
+	m.reg.poke()
+	return true
 }
 
 // Sessions returns snapshots of every live session, oldest first.

@@ -15,7 +15,8 @@ import (
 func TestDetailPlanSingleFlightAndPlayReusesProbe(t *testing.T) {
 	ctx := context.Background()
 	release := &fakeRelease{ID: "cold", Name: "cold.mp4", Size: 15360, Duration: time.Minute}
-	h := newHarness(t, []*fakeRelease{release}, []string{"cold"})
+	alternate := mkv("alternate", 16384, time.Minute)
+	h := newHarness(t, []*fakeRelease{release, alternate}, []string{"cold", "alternate"})
 	h.resolver.delay = 100 * time.Millisecond
 	var allowed atomic.Bool
 	allowed.Store(true)
@@ -67,6 +68,9 @@ func TestDetailPlanSingleFlightAndPlayReusesProbe(t *testing.T) {
 	if h.engine.openCount() != 1 {
 		t.Fatalf("detail opened %d sources", h.engine.openCount())
 	}
+	if sources := h.m.Sessions(); len(sources) != 1 || !sources[0].PreparedOnly {
+		t.Fatalf("detail source must stay hidden from Activity: %+v", sources)
+	}
 	h.tr.mu.Lock()
 	probes := h.tr.probes
 	h.tr.mu.Unlock()
@@ -85,14 +89,31 @@ func TestDetailPlanSingleFlightAndPlayReusesProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if sources := h.m.Sessions(); len(sources) != 1 || sources[0].PreparedOnly {
+		t.Fatalf("opened playback must be visible in Activity: %+v", sources)
+	}
 	h.tr.mu.Lock()
 	probes = h.tr.probes
 	h.tr.mu.Unlock()
 	if probes != 1 || h.engine.openCount() != 1 {
 		t.Fatalf("play repeated open/probe: opens=%d probes=%d", h.engine.openCount(), probes)
 	}
+	sources := h.m.Sessions()
+	if len(sources) != 1 {
+		t.Fatalf("unexpected sources: %+v", sources)
+	}
+	if _, err := h.m.Failover(ctx, sources[0].ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := b.DetailPlan(ctx, req)
+	if err != nil || refreshed.Media.Container != "mkv" || refreshed.Media.Size != alternate.Size {
+		t.Fatalf("detail cache survived source failover: %+v %v", refreshed, err)
+	}
 	if err := b.Stop(ctx, frontend.SessionAccess{Viewer: friend, Device: device, Protocol: req.Protocol}, session.ID); err != nil {
 		t.Fatal(err)
+	}
+	if sources := h.m.Sessions(); len(sources) != 1 || !sources[0].PreparedOnly {
+		t.Fatalf("remaining plan source must be hidden after stop: %+v", sources)
 	}
 	allowed.Store(false)
 	if _, err := b.DetailPlan(ctx, req); err == nil {
@@ -109,7 +130,7 @@ func TestDetailPlanSingleFlightAndPlayReusesProbe(t *testing.T) {
 		t.Fatal("canceled detail unexpectedly succeeded")
 	}
 	time.Sleep(300 * time.Millisecond)
-	if h.engine.openCount() != 1 {
-		t.Fatalf("canceled detail opened a source: %d", h.engine.openCount())
+	if h.engine.openCount() != 2 {
+		t.Fatalf("canceled detail opened an extra source: %d", h.engine.openCount())
 	}
 }
