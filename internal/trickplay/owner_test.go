@@ -95,23 +95,27 @@ func TestIdlePolicy(t *testing.T) {
 	}
 }
 func TestAcquireLinearizesBeforeCancel(t *testing.T) {
-	b := &backend{entered: make(chan struct{}, 1), unblock: make(chan struct{})}
+	b := &backend{}
 	o := New(b)
 	defer o.Close()
 	p := o.Borrow()
+	first := acquire(t, p, "r")
+	b.entered = make(chan struct{}, 1)
+	b.unblock = make(chan struct{})
 	got := make(chan core.TrickplayLease, 1)
 	go func() { l, _ := p.(core.TrickplayLeaser).AcquireTrickplay(context.Background(), source("r")); got <- l }()
 	<-b.entered
 	done := make(chan struct{})
-	go func() { p.(core.TrickplayCanceler).CancelTrickplay("r"); close(done) }()
+	go func() { first.Release(true); p.(core.TrickplayCanceler).CancelTrickplay("r"); close(done) }()
 	close(b.unblock)
 	l := <-got
 	<-done
 	if b.cancels != 0 {
-		t.Fatal("cancel crossed acquire")
+		t.Fatal("last release crossed acquire")
 	}
 	l.Release(true)
 }
+
 func TestHolderStopBeforePublicationAndSwap(t *testing.T) {
 	b := &backend{}
 	o := New(b)
