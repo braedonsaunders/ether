@@ -871,3 +871,12 @@ The password is shown once; revoke the connection under **Devices** if it is
 lost or no longer needed. Each viewer sees only media allowed by their account.
 The Movies, TV and Collections folders are read-only. Opening a file starts a
 normal Ether playback session and counts toward the viewer's stream limits.
+
+## DLNA on the local network
+
+The owner can enable **DLNA** under **Apps** and select the viewer whose library
+and safety settings apply to shared devices. DLNA stays unavailable until a
+viewer is selected, and accepts requests only from the local network. The owner
+can also create a living-room guest in the DLNA settings. It starts with the
+Kids preset (PG) and can be edited like other viewers. Browse for Ether in a
+DLNA-compatible player after saving the selection.
