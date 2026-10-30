@@ -281,3 +281,42 @@ func TestReceiptBoundedSweepDropFailureRollsBack(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiptBoundedSweepBatchQuota(t *testing.T) {
+	db := store.OpenTest(t)
+	now := time.Unix(1700000000, 0)
+	opts := relayOptions(db, &now, 2, false, nil)
+	s, err := NewReceipts(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	for i := 0; i < 129; i++ {
+		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, fmt.Sprintf("%064x", i+1), 7, "tv", "jellyfin", now.Unix()-1, "title", "old", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := s.IssueBatch(ctx, &core.User{ID: 7}, core.Device{ID: "tv"}, "jellyfin", []ReceiptSubject{{Kind: "title", ID: "a"}, {Kind: "title", ID: "b"}})
+	if err != nil || len(tokens) != 2 {
+		t.Fatalf("tokens=%d err=%v", len(tokens), err)
+	}
+	var expired, live int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires<=?`, now.Unix()).Scan(&expired); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE expires>?`, now.Unix()).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if expired != 1 || live != 2 {
+		t.Fatalf("expired=%d live=%d", expired, live)
+	}
+}
