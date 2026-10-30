@@ -239,6 +239,14 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		// These streams are produced by Ether, even when their input is remote.
 		source["IsRemote"] = false
 	}
+	if i.protocol == "jellyfin" && channel == "" && !media.Estimated {
+		// Infuse and Swiftfin direct-play a Jellyfin file with
+		// GET /Videos/{id}/stream?Static=true. They do not open Path.
+		// IsRemote true would tell Infuse that Path is an upstream URL to
+		// fetch itself. Ether never publishes that URL.
+		source["IsRemote"] = false
+		source["Protocol"] = "File"
+	}
 	if plan.ETag != "" {
 		source["ETag"] = plan.ETag
 	}
@@ -321,6 +329,17 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	i.mediaSourceDialect(source)
 	if i.protocol == "emby" {
 		i.embyMediaSourceDTO(source, wireID, media)
+	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinMediaSourceDTO(source, media, channel != "")
+		if body.DeviceProfile.AlwaysUseMostCompatibleTranscodingProfile {
+			source["UseMostCompatibleTranscodingProfile"] = true
+		}
+		if name, _ := source["Name"].(string); name == "" && key != 0 && i.host.Experience != nil {
+			if detail, err := i.host.Experience.Item(i.identityContext(r), frontend.ItemRequest{Viewer: v, Device: dev, Key: key}); err == nil && detail.Title.Title != "" {
+				source["Name"] = detail.Title.Title
+			}
+		}
 	}
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
 }
@@ -437,6 +456,11 @@ func (i *instance) playbackRoutes() error {
 		return err
 	}
 	for _, method := range []string{"GET", "HEAD"} {
+		if i.protocol == "jellyfin" {
+			if err := i.router.Handle(method, "/Videos/{id}/Trickplay/{width}/{name}", http.HandlerFunc(i.trickplayImage)); err != nil {
+				return err
+			}
+		}
 		if err := i.router.Handle(method, "/Videos/{id}/{name}", http.HandlerFunc(i.streamAlias)); err != nil {
 			return err
 		}

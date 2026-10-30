@@ -65,6 +65,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/trackprefs"
 	"github.com/braedonsaunders/ether/internal/trakt"
 	"github.com/braedonsaunders/ether/internal/transcode"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 	"github.com/braedonsaunders/ether/internal/updater"
 	"github.com/braedonsaunders/ether/internal/usenet"
 	"github.com/braedonsaunders/ether/internal/viewerpolicy"
@@ -156,6 +157,7 @@ type App struct {
 	sources             *debrid.Indexer // core.Indexer over indexers
 	resolver            *resolver.Service
 	transcoder          *transcode.Manager
+	trickplay           *trickplay.Owner
 	load                *sysload.Sampler // machine load for the Overview
 	playback            *playback.Manager
 	prefetch            *prefetch.Prefetcher

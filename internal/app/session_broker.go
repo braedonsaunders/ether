@@ -34,6 +34,7 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 	visibility := experienceVisibility(a.safety, a.catalog.Get, nil, nil, serverLibraries(a.cfg.Get()))
 
 	return sessions.NewBroker(sessions.BrokerDeps{
+		Trickplay:           a.trickplay.Borrow(),
 		Coordination:        a.sessionCoordination,
 		OnProfileDiagnostic: scorecardProfileDiagnostic(a),
 		DB:                  a.db, Cluster: a.clusterNode(), Live: live,

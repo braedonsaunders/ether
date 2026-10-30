@@ -66,6 +66,14 @@ func (i *instance) applyResolvedDetail(r *http.Request, viewer *frontend.Viewer,
 	if i.protocol == "emby" {
 		i.embyMediaSourceDTO(source, ids.RatingKeyGUID(key), plan.Media)
 	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinMediaSourceDTO(source, plan.Media, false)
+		if name, _ := source["Name"].(string); name == "" {
+			if itemName, ok := dto["Name"].(string); ok && itemName != "" {
+				source["Name"] = itemName
+			}
+		}
+	}
 	// The selected default precedes other scoped alternatives. Remove any
 	// generic placeholder, retaining opaque exact-version entries.
 	sources := []any{source}

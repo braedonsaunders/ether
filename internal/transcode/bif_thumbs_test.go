@@ -520,3 +520,37 @@ func TestThumbnailsFillAfterSeekBack(t *testing.T) {
 		t.Errorf("frames = %d", got)
 	}
 }
+
+func TestThumbnailsEnsureDuringCancellationRestartsAfterExit(t *testing.T) {
+	entered, canceled, unwind := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	fr := newFakeRunner()
+	var calls atomic.Int32
+	fr.runFunc = func(ctx context.Context, cmd Command) error {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-ctx.Done()
+			close(canceled)
+			<-unwind
+			return ctx.Err()
+		}
+		_, err := cmd.Stdout.Write(fakeJPEG(1, 64))
+		return err
+	}
+	th := NewThumbnails(ThumbOptions{Runner: fr, FFmpeg: "ffmpeg", BatchPause: time.Millisecond})
+	defer th.Close()
+	src := core.TrickplaySource{ReleaseID: "r", InputURL: "http://source/old", Info: core.MediaInfo{Duration: time.Second}, AvailableUntil: time.Second}
+	th.EnsureTrickplay(context.Background(), src)
+	<-entered
+	th.CancelTrickplay("r")
+	<-canceled
+	src.InputURL = "http://source/new"
+	th.EnsureTrickplay(context.Background(), src)
+	if calls.Load() != 1 {
+		t.Fatal("replacement overlapped canceled extraction")
+	}
+	close(unwind)
+	waitThumbFor(t, "replacement extraction", func() bool { return th.isIdle("r") && th.frameCount("r") == 1 })
+	if calls.Load() != 2 {
+		t.Fatalf("calls=%d", calls.Load())
+	}
+}

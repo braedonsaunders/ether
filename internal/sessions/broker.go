@@ -17,6 +17,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/state"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 // BrokerDeps are the explicit dependencies shared by all protocol surfaces.
@@ -56,7 +57,11 @@ type BrokerDeps struct {
 	SourceMarkers   func(context.Context, *core.Viewer, core.RatingKey, string, core.MediaInfo) ([]frontend.Marker, bool, error)
 	OpenSubtitle    func(string, string) (io.ReadCloser, string, error)
 	ExtractSubtitle func(context.Context, string, int, string, io.Writer) error
-	Now             func() time.Time
+	// Trickplay is borrowed from the runtime owner (internal/app/trickplay_owner.go).
+	// It is the same provider Plex uses. The broker releases its own leases;
+	// only the runtime owner may Close the provider.
+	Trickplay core.TrickplayProvider
+	Now       func() time.Time
 }
 
 type brokerPlan struct {
@@ -72,6 +77,7 @@ type brokerPlan struct {
 	pinned        bool
 }
 type brokerSession struct {
+	trickplay        *trickplay.Holder
 	public           frontend.Session
 	grant            string
 	playID           string
@@ -925,6 +931,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if t.State == "stopped" {
 		return b.stopLocked(ctx, s)
 	}
+	b.ensureTrickplay(ctx, s, t.Position)
 	return nil
 }
 func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) error {
@@ -982,7 +989,11 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 }
 func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	b.mu.Lock()
-	_, ok := b.sessions[s.public.ID]
+	current, ok := b.sessions[s.public.ID]
+	var hold *trickplay.Holder
+	if ok {
+		hold = current.trickplay
+	}
 	stopSource := false
 	if ok {
 		delete(b.sessions, s.public.ID)
@@ -994,6 +1005,9 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	transfers := b.lazyTransfers[s.public.ID]
 	delete(b.lazyTransfers, s.public.ID)
 	b.mu.Unlock()
+	if hold != nil {
+		hold.Close(true)
+	}
 	for _, cancel := range transfers {
 		cancel()
 	}

@@ -588,6 +588,25 @@ type Event struct {
 	Timeline        *Timeline
 }
 
+// TrickplayOffer is Jellyfin sprite geometry for one generated width.
+// Width and Height are one thumbnail in pixels. Columns and Rows are the
+// grid inside each sheet. Interval is the time between thumbnails.
+type TrickplayOffer struct {
+	Width, Height int
+	Columns, Rows int
+	Count         int
+	Interval      time.Duration
+	Bandwidth     int
+}
+
+// TrickplayTiles serves preview sheets for an item the viewer may play.
+// The broker owns release identity and generation. A false offer means no
+// frame exists yet, which clients render as an empty trickplay map.
+type TrickplayTiles interface {
+	TrickplayOffer(context.Context, SessionAccess, core.RatingKey) (TrickplayOffer, bool)
+	TrickplaySheet(context.Context, SessionAccess, core.RatingKey, int) ([]byte, error)
+}
+
 // SessionAccess binds client operations to an authenticated viewer and surface.
 // Owner requests owner scope; it is not proof of authorization. The broker
 // verifies the authenticated viewer is an active owner.

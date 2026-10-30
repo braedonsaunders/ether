@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
-	"io"
 	"log/slog"
 	"net/http"
 	"runtime"
@@ -28,6 +27,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 // DefaultPMSVersion is reported when Identity.Version is empty. Clients gate
@@ -146,9 +146,12 @@ type Deps struct {
 // Server is the PMS API handler. It is an http.Handler; call Close on
 // shutdown to stop background work and notification streams.
 type Server struct {
-	d      Deps
-	log    *slog.Logger
-	router chi.Router
+	trickplayMu      sync.Mutex
+	trickplayHolders map[string]*trickplay.Holder
+	trickplayClosed  bool
+	d                Deps
+	log              *slog.Logger
+	router           chi.Router
 
 	sections []Section
 
@@ -267,9 +270,7 @@ func (s *Server) Close() error {
 	s.once.Do(func() {
 		s.releaseAllDownloads()
 		s.cancel()
-		if closer, ok := s.d.Trickplay.(io.Closer); ok {
-			_ = closer.Close()
-		}
+		s.closeTrickplayHolders()
 		s.notifier.close()
 		s.wg.Wait()
 		if s.cl != nil {
@@ -449,6 +450,7 @@ func (s *Server) janitor() {
 			return
 		case <-t.C:
 			now := s.now()
+			s.expireTrickplayHolders()
 			s.expireDownloads(now)
 			s.queues.expire(now, 6*time.Hour)
 			s.renderedVariants.expire(now, renderedVariantsTTL)

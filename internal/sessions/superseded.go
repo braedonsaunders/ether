@@ -42,6 +42,9 @@ func (b *Broker) collectSupersededLocked(replacement *brokerSession) []*brokerSe
 
 func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession, newSource string) {
 	for _, old := range entries {
+		if old.trickplay != nil {
+			old.trickplay.Close(true)
+		}
 		b.mu.Lock()
 		transfers := b.lazyTransfers[old.public.ID]
 		delete(b.lazyTransfers, old.public.ID)

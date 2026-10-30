@@ -11,6 +11,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/cachefill"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
+	"github.com/braedonsaunders/ether/internal/transcode"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
@@ -53,6 +55,10 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	a.buildExtras()
+	if a.transcoder != nil {
+		a.trickplay = trickplay.New(transcode.NewThumbnails(transcode.ThumbOptions{FFmpeg: a.transcoder.FFmpegPath(), Logger: a.log}))
+		a.closers = append(a.closers, func() { _ = a.trickplay.Close() })
+	}
 	a.frontendClients = newFrontendClients(a.db, a.log.With("component", "frontend-clients"), nil)
 	a.closers = append(a.closers, a.frontendClients.Close)
 	if cfg.Spike.Enabled {

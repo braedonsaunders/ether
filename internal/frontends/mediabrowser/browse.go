@@ -367,6 +367,14 @@ func (i *instance) browseRoutes() error {
 				if i.protocol == "emby" {
 					i.embyMediaSourceDTO(source, ids.RatingKeyGUID(d.Title.Key), version.Media)
 				}
+				if i.protocol == "jellyfin" {
+					i.jellyfinMediaSourceDTO(source, version.Media, false)
+					if name, _ := source["Name"].(string); name == "" {
+						if itemName, ok := dto["Name"].(string); ok && itemName != "" {
+							source["Name"] = itemName
+						}
+					}
+				}
 				sources = append(sources, source)
 			}
 			if needDefault {
@@ -396,6 +404,9 @@ func (i *instance) browseRoutes() error {
 		i.addNamedFacets(r, v, d, dto)
 		if i.protocol == "jellyfin" {
 			i.jellyfinItemDetailDTO(d, dto)
+			// shapeJellyfinItem (Jellyfin 12.4 list shell) stays on this path,
+			// before tiles, so the shell does not drop the trickplay map.
+			i.attachTrickplay(r, v, key, dto)
 		}
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)

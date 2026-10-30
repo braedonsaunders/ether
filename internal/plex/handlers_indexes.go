@@ -12,6 +12,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/transcode"
+	"github.com/braedonsaunders/ether/internal/trickplay"
 )
 
 // handleIndexBIF serves the sparse BIF snapshot for a currently available
@@ -78,9 +79,42 @@ func (s *Server) ensureTrickplay(ctx context.Context, ps *core.PlaySession, offs
 	if input == "" || releaseID == "" {
 		return
 	}
-	s.d.Trickplay.EnsureTrickplay(ctx, core.TrickplaySource{
+	if _, leased := s.d.Trickplay.(core.TrickplayLeaser); !leased {
+		s.d.Trickplay.EnsureTrickplay(ctx, core.TrickplaySource{ReleaseID: releaseID, InputURL: input, Info: ps.Info, AvailableUntil: offset})
+		return
+	}
+	s.trickplayMu.Lock()
+	if s.trickplayClosed {
+		s.trickplayMu.Unlock()
+		return
+	}
+	if _, active := s.d.Playback.Session(ps.ID); !active {
+		s.trickplayMu.Unlock()
+		return
+	}
+	if s.trickplayHolders == nil {
+		s.trickplayHolders = make(map[string]*trickplay.Holder)
+	}
+	hold := s.trickplayHolders[ps.ID]
+	if hold == nil {
+		hold = &trickplay.Holder{}
+		s.trickplayHolders[ps.ID] = hold
+	}
+	s.trickplayMu.Unlock()
+	if err := hold.UpdateIf(ctx, s.d.Trickplay, core.TrickplaySource{
 		ReleaseID: releaseID, InputURL: input, Info: ps.Info, AvailableUntil: offset,
-	})
+	}, func() bool {
+		s.trickplayMu.Lock()
+		active := !s.trickplayClosed && s.trickplayHolders[ps.ID] == hold
+		s.trickplayMu.Unlock()
+		if !active {
+			return false
+		}
+		latest, ok := s.d.Playback.Session(ps.ID)
+		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == releaseID && latest.Failovers == ps.Failovers && latest.DownFailovers == ps.DownFailovers && s.d.Playback.InputURL(ps.ID) == input
+	}); err != nil {
+		s.log.Warn("trickplay lease", "err", err)
+	}
 }
 
 func (s *Server) cancelTrickplayIfIdle(ps *core.PlaySession) {
@@ -91,13 +125,27 @@ func (s *Server) cancelTrickplayIfIdle(ps *core.PlaySession) {
 	if releaseID == "" {
 		return
 	}
+	s.trickplayMu.Lock()
+	hold := s.trickplayHolders[ps.ID]
+	delete(s.trickplayHolders, ps.ID)
+	s.trickplayMu.Unlock()
+	idle := true
 	for _, active := range s.d.Playback.Sessions() {
 		if active != nil && active.Resolution != nil && active.Resolution.Release.ID == releaseID {
+			idle = false
+			break
+		}
+	}
+	if hold != nil {
+		hold.Close(idle)
+		if _, leased := s.d.Trickplay.(core.TrickplayLeaser); leased {
 			return
 		}
 	}
-	if canceler, ok := s.d.Trickplay.(core.TrickplayCanceler); ok {
-		canceler.CancelTrickplay(releaseID)
+	if idle {
+		if canceler, ok := s.d.Trickplay.(core.TrickplayCanceler); ok {
+			canceler.CancelTrickplay(releaseID)
+		}
 	}
 }
 
@@ -154,4 +202,35 @@ func (s *Server) indexPart(r *http.Request) (core.RatingKey, string, bool) {
 		return 0, "", false
 	}
 	return key, ps.Resolution.Release.ID, true
+}
+
+func (s *Server) closeTrickplayHolders() {
+	s.trickplayMu.Lock()
+	s.trickplayClosed = true
+	holds := s.trickplayHolders
+	s.trickplayHolders = nil
+	s.trickplayMu.Unlock()
+	for _, hold := range holds {
+		hold.Close(true)
+	}
+}
+
+func (s *Server) expireTrickplayHolders() {
+	if s.d.Playback == nil {
+		return
+	}
+	s.trickplayMu.Lock()
+	var expired []*trickplay.Holder
+	for id, hold := range s.trickplayHolders {
+		if _, ok := s.d.Playback.Session(id); !ok {
+			delete(s.trickplayHolders, id)
+			expired = append(expired, hold)
+		}
+	}
+	s.trickplayMu.Unlock()
+	// Expiry historically left extraction to finish or lose its input. Release
+	// ownership without adding a new cancellation timer.
+	for _, hold := range expired {
+		hold.Close(false)
+	}
 }
