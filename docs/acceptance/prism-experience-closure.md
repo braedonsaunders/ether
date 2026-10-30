@@ -63,3 +63,16 @@ Neutral mixed-type sorting: `TestDateAddedSortAcrossTypesAndChildren`.
 Owner/restricted postplay frozen XML/JSON: `TestPostplaySelectionMatchesFrozenBytes`.
 Existing Continue/search/home/row tests retain legacy controls and compare raw
 bytes without normalization. Remote stage receipts accompany the handoff.
+
+## Virtual DVD seasons (separate owner-approved follow-up)
+
+Episode-order virtual seasons have no own premiere. Their added date is now the
+latest aired date among their reordered children, with the series date as the
+fallback and unknown/future-only dates omitted when that fallback is unknown.
+The neutral added-date sorter retains this derived date when the catalogue has
+no physical row for the virtual season key.
+
+Root approved this additional Plex delta on 2026-10-30: a virtual season whose
+latest aired child is 2004-01-01 gains `addedAt=1072915200`, where that attribute
+was previously absent. `originallyAvailableAt` remains absent. The exact value,
+future-child exclusion, series fallback and unknown case are regression-tested.

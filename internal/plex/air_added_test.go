@@ -49,3 +49,15 @@ func TestApprovedReleaseDateAddedAtDelta(t *testing.T) {
 		}
 	}
 }
+
+// Root-approved delta: a DVD season now advertises its derived aired date,
+// while originallyAvailableAt remains absent because it has no own premiere.
+func TestApprovedVirtualSeasonDateAddedDelta(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	title := core.Title{Key: core.SeasonKey(10, 9000), Type: core.TypeSeason, Title: "Disc 1", AddedAt: time.Unix(1072915200, 0).UTC()}
+	md := f.srv.metadata(context.Background(), &Request{User: &ownerUser}, &title, renderOpts{})
+	if md.AddedAt != 1072915200 || md.OriginallyAvailableAt != "" {
+		t.Fatalf("virtual season delta: %+v", md)
+	}
+}

@@ -251,7 +251,17 @@ func (s *Service) layout(ctx context.Context, u *core.User, k core.RatingKey) (*
 		if len(kids) == 0 {
 			return
 		}
-		out.seasons = append(out.seasons, core.Title{Key: core.SeasonKey(show.TMDB(), n), Type: core.TypeSeason, ShowKey: show, ShowTitle: st.Title, Title: name, SeasonTitle: name, Season: n, ChildCount: len(kids), LeafCount: len(kids), PosterPath: st.PosterPath, BackdropPath: st.BackdropPath, ContentRating: st.ContentRating})
+		now := time.Now()
+		var added time.Time
+		for _, ep := range kids {
+			if !ep.Released.After(now) && ep.Released.After(added) {
+				added = ep.Released
+			}
+		}
+		if added.IsZero() {
+			added = st.DateAdded(now)
+		}
+		out.seasons = append(out.seasons, core.Title{Key: core.SeasonKey(show.TMDB(), n), Type: core.TypeSeason, ShowKey: show, ShowTitle: st.Title, Title: name, SeasonTitle: name, Season: n, ChildCount: len(kids), LeafCount: len(kids), PosterPath: st.PosterPath, BackdropPath: st.BackdropPath, ContentRating: st.ContentRating, AddedAt: added})
 		out.episodes = append(out.episodes, kids...)
 	}
 	for i, group := range groups {

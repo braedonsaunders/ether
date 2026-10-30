@@ -43,3 +43,16 @@ func TestDateAddedSortAcrossTypesAndChildren(t *testing.T) {
 		t.Fatalf("order: %+v", items)
 	}
 }
+
+func TestVirtualSeasonAddedSortKeepsDerivedAirDate(t *testing.T) {
+	s := &Service{d: ServiceDeps{AddedTimes: func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error) {
+		return map[core.RatingKey]time.Time{}, nil
+	}}}
+	items := []core.Title{{Key: core.MovieKey(1), Type: core.TypeMovie, Released: time.Unix(946684800, 0).UTC()}, {Key: core.SeasonKey(10, 9000), Type: core.TypeSeason, AddedAt: time.Unix(1072915200, 0).UTC()}}
+	if err := s.sortTitles(context.Background(), items, frontend.ItemQuery{Sort: core.SortAdded, Desc: true}); err != nil {
+		t.Fatal(err)
+	}
+	if items[0].Key != core.SeasonKey(10, 9000) || items[0].AddedAt.Unix() != 1072915200 {
+		t.Fatalf("virtual air date lost: %+v", items)
+	}
+}

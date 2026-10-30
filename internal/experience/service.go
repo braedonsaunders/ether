@@ -936,7 +936,9 @@ func (s *Service) sortTitles(ctx context.Context, items []core.Title, q frontend
 			return err
 		}
 		for i := range items {
-			items[i].AddedAt = dates[items[i].Key]
+			if date, known := dates[items[i].Key]; known {
+				items[i].AddedAt = date
+			}
 		}
 	}
 	switch q.Sort {
