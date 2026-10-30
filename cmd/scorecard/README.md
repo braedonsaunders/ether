@@ -265,3 +265,10 @@ isolated LAN test.
 `-m3u 127.0.0.1:18102` mounts the registered M3U/XMLTV surface using its
 separate viewer grant. Channel and guide coverage require explicitly seeded
 Live TV sources; an empty playlist only proves the handler and grant work.
+
+When duplicate reference versions have different state, an explicit
+`selected_reference_variants` map from movie TMDB ID to lowercase SHA-256
+and `verified_manifest` path selects one reference item whose source path
+matches the independently verified manifest. The chosen hashes are included
+in the result. This is a per-version comparison only; it does not align the
+other reference versions to Ether's title-wide state.

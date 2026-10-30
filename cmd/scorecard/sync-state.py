@@ -41,6 +41,14 @@ class Server:
                 if len(raw) > 16 * 1024 * 1024:
                     raise Failure('response too large')
                 return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as exc:
+            operation = ('playback_info' if '/PlaybackInfo' in path else
+                         'stop' if path == '/Sessions/Playing/Stopped' else
+                         'played' if path.startswith('/UserPlayedItems/') else
+                         'favorite' if path.startswith('/UserFavoriteItems/') else
+                         'login' if path == '/Users/AuthenticateByName' else
+                         'logout' if path == '/Sessions/Logout' else 'read')
+            raise Failure('%s returned HTTP %d' % (operation, exc.code)) from None
         except (urllib.error.URLError, ValueError, OSError):
             raise Failure('HTTP operation failed') from None
 
@@ -57,7 +65,7 @@ class Server:
             self.token = ''
 
     def items(self):
-        q = urllib.parse.urlencode({'Recursive': 'true', 'IncludeItemTypes': 'Movie,Series,Episode', 'Fields': 'ProviderIds,UserData,SeriesId,IndexNumber,ParentIndexNumber', 'Limit': '10000'})
+        q = urllib.parse.urlencode({'Recursive': 'true', 'IncludeItemTypes': 'Movie,Series,Episode', 'Fields': 'ProviderIds,UserData,SeriesId,IndexNumber,ParentIndexNumber,MediaSources,Path', 'Limit': '10000'})
         data = self.call('GET', '/Users/' + urllib.parse.quote(self.user, safe='') + '/Items?' + q)
         items = data.get('Items')
         if not isinstance(items, list) or data.get('TotalRecordCount', len(items)) > len(items):
@@ -65,7 +73,10 @@ class Server:
         return items
 
 
-def key_states(items):
+def key_states(items, selected=None, manifest=None):
+    selected = selected or {}
+    manifest = manifest or []
+    seen_selected = set()
     shows = {x.get('Id'): str(x.get('ProviderIds', {}).get('Tmdb', '')) for x in items if x.get('Type') == 'Series'}
     result = {}
     for x in items:
@@ -83,6 +94,19 @@ def key_states(items):
             continue
         if not tmdb or not x.get('Id') or not isinstance(x.get('UserData'), dict):
             raise Failure('item identity or user state incomplete')
+        if typ == 'Movie' and tmdb in selected:
+            wanted = selected[tmdb]
+            if not isinstance(wanted, str) or len(wanted) != 64 or any(c not in '0123456789abcdef' for c in wanted):
+                raise Failure('invalid selected reference hash')
+            paths = {source.get('Path') for source in x.get('MediaSources', []) if source.get('Path')}
+            if x.get('Path'):
+                paths.add(x['Path'])
+            matches = [f for f in manifest if str(f.get('tmdb')) == tmdb and f.get('sha256', '').lower() == wanted and f.get('path') in paths]
+            if not matches:
+                continue
+            if len(matches) != 1 or tmdb in seen_selected:
+                raise Failure('selected reference source is ambiguous')
+            seen_selected.add(tmdb)
         u = x['UserData']
         position = u.get('PlaybackPositionTicks', 0)
         if not isinstance(position, int) or position < 0:
@@ -96,6 +120,8 @@ def key_states(items):
         if key in result:
             continue
         result[key] = (x['Id'], state)
+    if set(selected) != seen_selected:
+        raise Failure('selected reference source not found in verified manifest')
     return result
 
 
@@ -104,8 +130,8 @@ def target_loopback(base):
     return u.scheme == 'http' and u.hostname in ('127.0.0.1', '::1') and u.port and not u.username and not u.password and not u.query and not u.fragment
 
 
-def align(reference, target, apply):
-    refs, targets = key_states(reference.items()), key_states(target.items())
+def align(reference, target, apply, selected=None, manifest=None):
+    refs, targets = key_states(reference.items(), selected, manifest), key_states(target.items())
     if not refs or set(refs) != set(targets):
         raise Failure('reference and fixture item identities differ')
     changed = 0
@@ -129,7 +155,10 @@ def align(reference, target, apply):
                     raise Failure('cannot clear progress while preserving played state')
                 target.call('DELETE', '/UserPlayedItems/' + path)
             else:
-                reply = target.call('POST', '/Items/' + path + '/PlaybackInfo?IsPlayback=true', {'UserId': target.user, 'IsPlayback': True})
+                try:
+                    reply = target.call('POST', '/Items/' + path + '/PlaybackInfo?IsPlayback=true', {'UserId': target.user, 'IsPlayback': True})
+                except Failure as exc:
+                    raise Failure('resume seed for %s: %s' % (':'.join(map(str, key)), exc)) from None
                 session = reply.get('PlaySessionId', '')
                 if not session:
                     raise Failure('resume seed session missing')
@@ -151,10 +180,20 @@ def main():
         try:
             reference.login(config['reference_user'], config['reference_password'])
             target.login(config['target_user'], config['target_password'])
-            result = align(reference, target, config.get('apply') is True)
+            selected = config.get('selected_reference_variants', {})
+            if not isinstance(selected, dict):
+                raise Failure('invalid selected reference variants')
+            manifest = []
+            if selected:
+                with open(config['verified_manifest'], encoding='utf-8') as f:
+                    manifest = json.load(f)
+                if not isinstance(manifest, list):
+                    raise Failure('invalid verified manifest')
+            result = align(reference, target, config.get('apply') is True, selected, manifest)
+            result['selected_reference_variants'] = selected
         except Failure as exc:
             errors.append(str(exc))
-        except (KeyError, TypeError):
+        except (KeyError, TypeError, OSError, ValueError):
             errors.append('state alignment failed')
         finally:
             for server in (target, reference):

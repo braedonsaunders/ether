@@ -47,6 +47,19 @@ class Tests(unittest.TestCase):
         ref.rows.append(item('other', False, False, 0))
         with self.assertRaises(m.Failure): m.align(ref, tgt, True)
         self.assertEqual(tgt.calls, [])
+    def test_explicit_hash_selects_only_matching_reference_version(self):
+        ref, tgt = Fake((True, True, 0)), Fake((False, False, 0))
+        ref.rows[0]['Path'] = '/media/one.mp4'
+        other = item('other', True, False, 0)
+        other['Path'] = '/media/two.mp4'
+        ref.rows.append(other)
+        sha = 'a' * 64
+        manifest = [{'tmdb': 7, 'sha256': sha, 'path': '/media/one.mp4'}]
+        result = m.align(ref, tgt, True, {'7': sha}, manifest)
+        self.assertTrue(result['applied'])
+        self.assertTrue(tgt.rows[0]['UserData']['IsFavorite'])
+        with self.assertRaises(m.Failure): m.align(ref, tgt, True, {'7': 'b' * 64}, manifest)
+
     def test_target_is_loopback_only(self):
         self.assertTrue(m.target_loopback('http://127.0.0.1:18096'))
         self.assertFalse(m.target_loopback('http://10.0.0.43:32450'))
