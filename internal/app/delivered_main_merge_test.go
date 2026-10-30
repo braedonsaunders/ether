@@ -7,20 +7,22 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
-// TestDeliveredMainMigrationBoundary records the 84f+9503 inventory.
-// Unlanded receipt/capability generations (experience_receipts v3,
-// frontend_tickets v2, frontend_image_grants v4–v5, capability_headers)
-// and state_plexwatch stay out until a separate root review.
+// TestDeliveredMainMigrationBoundary records the reviewed b69 adoption.
+// That candidate includes experience_receipts v4, frontend_tickets v2,
+// frontend_image_grants v6, and capability_headers v2. state_plexwatch,
+// rules, and watchsync stay unregistered. auth_sessions still applies
+// after auth.
 func TestDeliveredMainMigrationBoundary(t *testing.T) {
 	known := store.KnownMigrations()
 	want := map[string]int{
 		"auth":                  7,
 		"auth_sessions":         1,
-		"experience_receipts":   2,
+		"experience_receipts":   4,
 		"experience_row_views":  3,
 		"release_observations":  1,
-		"frontend_tickets":      1,
-		"frontend_image_grants": 3,
+		"frontend_tickets":      2,
+		"frontend_image_grants": 6,
+		"capability_headers":    2,
 		"viewer_alerts":         2,
 		"viewer_push":           2,
 		"watchlist_episodes":    1,
@@ -31,9 +33,9 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 			t.Errorf("%s version = %d, want %d", component, known[component], version)
 		}
 	}
-	for _, absent := range []string{"capability_headers", "state_plexwatch", "rules", "watchsync"} {
+	for _, absent := range []string{"state_plexwatch", "rules", "watchsync"} {
 		if _, ok := known[absent]; ok {
-			t.Errorf("unlanded component %s is registered at v%d", absent, known[absent])
+			t.Errorf("excluded component %s is registered at v%d", absent, known[absent])
 		}
 	}
 	if !store.HasDependency("auth_sessions", "auth") {
@@ -45,6 +47,8 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		{"frontend_tickets", "identity_grants"},
 		{"frontend_image_grants", "auth"},
 		{"frontend_image_grants", "identity_grants"},
+		{"capability_headers", "auth"},
+		{"capability_headers", "identity_grants"},
 	} {
 		if !store.HasDependency(dep.component, dep.after) {
 			t.Errorf("%s missing RegisterAfter %s", dep.component, dep.after)
@@ -60,6 +64,8 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		{"auth", "identity_grants"},
 		{"identity_grants", "frontend_tickets"},
 		{"identity_grants", "frontend_image_grants"},
+		{"auth", "capability_headers"},
+		{"identity_grants", "capability_headers"},
 	} {
 		if index[pair[0]] > index[pair[1]] {
 			t.Errorf("%s (at %d) applied after %s (at %d)", pair[0], index[pair[0]], pair[1], index[pair[1]])

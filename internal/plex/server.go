@@ -370,9 +370,15 @@ func librarySectionTitle(t core.MediaType, c config.Config) string {
 }
 
 // withLibraryTitles copies secs and applies the configured library names.
-// Section UUIDs stay derived from id only, so renames do not break plex.tv.
+// IDs and UUIDs are not rewritten; UUIDs stay derived from section id only.
+// NewServer installs an empty config when none was provided. A hand-built
+// Server skips that, so a nil provider uses the same empty config. Empty
+// library names already resolve to Movies and TV Shows.
 func (s *Server) withLibraryTitles(secs []Section) []Section {
-	c := s.cfg()
+	var c config.Config
+	if s.d.Config != nil {
+		c = s.cfg()
+	}
 	out := append([]Section(nil), secs...)
 	for i := range out {
 		switch out[i].Type {
