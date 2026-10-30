@@ -101,6 +101,9 @@ func TestSiloLabConformance(t *testing.T) {
 		res, e := client.Do(req)
 		if e == nil {
 			res.Body.Close()
+			if res.StatusCode < 200 || res.StatusCode >= 300 {
+				t.Errorf("lab sign-out returned %d", res.StatusCode)
+			}
 		} else {
 			t.Error("lab sign-out failed")
 		}
@@ -303,8 +306,14 @@ func TestSiloLabConformance(t *testing.T) {
 			if report.Blocking() > 0 {
 				t.Errorf("%s %s has blocking differences", mode, profile)
 			}
-			for _, session := range (ownerPlayback{Playback: app.playback, app: app}).Sessions() {
-				_ = app.stopOwnerSession(session.ID)
+			owner := ownerPlayback{Playback: app.playback, app: app}
+			for _, session := range owner.Sessions() {
+				if stopErr := app.stopOwnerSession(session.ID); stopErr != nil {
+					t.Errorf("target session cleanup failed: %v", stopErr)
+				}
+			}
+			if remaining := owner.Sessions(); len(remaining) != 0 {
+				t.Errorf("target session cleanup left %d sessions", len(remaining))
 			}
 		}
 	}
