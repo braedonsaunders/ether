@@ -183,6 +183,28 @@ func TestLazyBoundsActiveBindingsAndFlights(t *testing.T) {
 
 func TestLazyBoundsMigrationPreservesExistingCapabilities(t *testing.T) {
 	db := store.OpenTest(t)
+	seedLazyUpgrade(t, db, maxLazyViewerCapabilities+1)
+	checkLazyCounts(t, db)
+	// In-use renewal must survive an oversized upgrade without admitting more handles.
+	activeHash := fmt.Sprintf("%064x", 0)
+	now := time.Now()
+	b := &Broker{deps: BrokerDeps{Now: func() time.Time { return now }}, lazySessions: map[string]lazySession{activeHash: {id: "active", viewer: 1}}}
+	streams := &lazyStreams{db: db, broker: b, protocol: "stremio", grants: &fakeLazyGrants{}, ttl: time.Hour}
+	if err := streams.renewActive(context.Background(), activeHash, "grant", 1, "active"); err != nil {
+		t.Fatalf("oversized active renewal: %v", err)
+	}
+	if err := insertLazyRow(db, "new", 1); err == nil {
+		t.Fatal("grandfathered store grew")
+	}
+	retireLazyRows(t, db, fmt.Sprintf("hash IN ('%064x','%064x')", 0, 1))
+	if err := insertLazyRow(db, "new", 1); err != nil {
+		t.Fatal(err)
+	}
+	checkLazyCounts(t, db)
+}
+
+func seedLazyUpgrade(t *testing.T, db *sql.DB, count int) {
+	t.Helper()
 	// Reconstruct the exact sessions/7 shape while retaining current other components.
 	for _, name := range []string{"insert", "delete", "update"} {
 		q := `DROP TRIGGER sessions_lazy_` + name
@@ -204,7 +226,7 @@ func TestLazyBoundsMigrationPreservesExistingCapabilities(t *testing.T) {
 		}
 	}
 	// An oversized old store may have live transfers. Migration must preserve them.
-	for i := 0; i < maxLazyViewerCapabilities+1; i++ {
+	for i := 0; i < count; i++ {
 		if _, err := db.Exec(`INSERT INTO sessions_lazy_streams VALUES(?,'stremio',1,'grant','{}',?)`, fmt.Sprintf("%064x", i), time.Now().Add(time.Hour).UnixMilli()); err != nil {
 			t.Fatal(err)
 		}
@@ -212,21 +234,4 @@ func TestLazyBoundsMigrationPreservesExistingCapabilities(t *testing.T) {
 	if err := store.Migrate(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
-	checkLazyCounts(t, db)
-	// In-use renewal must survive an oversized upgrade without admitting more handles.
-	activeHash := fmt.Sprintf("%064x", 0)
-	now := time.Now()
-	b := &Broker{deps: BrokerDeps{Now: func() time.Time { return now }}, lazySessions: map[string]lazySession{activeHash: {id: "active", viewer: 1}}}
-	streams := &lazyStreams{db: db, broker: b, protocol: "stremio", grants: &fakeLazyGrants{}, ttl: time.Hour}
-	if err := streams.renewActive(context.Background(), activeHash, "grant", 1, "active"); err != nil {
-		t.Fatalf("oversized active renewal: %v", err)
-	}
-	if err := insertLazyRow(db, "new", 1); err == nil {
-		t.Fatal("grandfathered store grew")
-	}
-	retireLazyRows(t, db, fmt.Sprintf("hash IN ('%064x','%064x')", 0, 1))
-	if err := insertLazyRow(db, "new", 1); err != nil {
-		t.Fatal(err)
-	}
-	checkLazyCounts(t, db)
 }

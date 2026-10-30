@@ -37,7 +37,7 @@ func (p *heartbeatLazyPlayback) ServeRange(w http.ResponseWriter, r *http.Reques
 }
 
 func TestLazyLongTransferHeartbeat(t *testing.T) {
-	for _, ending := range []string{"retry", "revoke", "hidden", "database", "stuck", "stop"} {
+	for _, ending := range []string{"retry", "revoke", "hidden", "database", "stuck", "stop", "pressure"} {
 		t.Run(ending, func(t *testing.T) {
 			ctx := context.Background()
 			db := store.OpenTest(t)
@@ -82,6 +82,12 @@ func TestLazyLongTransferHeartbeat(t *testing.T) {
 			path, err := lazy.Issue(ctx, "account-credential-secret", req)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if ending == "pressure" {
+				seedLazyUpgrade(t, db, maxLazyViewerCapabilities)
+				if _, err := lazy.Issue(ctx, "account-credential-secret", req); err == nil {
+					t.Fatal("oversized upgrade admitted fresh browse")
+				}
 			}
 			if ending == "retry" {
 				for n := 0; n < maxLazyHeartbeats; n++ {
@@ -129,7 +135,7 @@ func TestLazyLongTransferHeartbeat(t *testing.T) {
 				}
 			}
 			switch ending {
-			case "retry":
+			case "retry", "pressure":
 				close(pb.release)
 				<-finished
 				<-stopped

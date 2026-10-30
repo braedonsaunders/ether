@@ -190,7 +190,9 @@ func TestLazyLineupReusesOneBoundCapability(t *testing.T) {
 	live := &lazyChannelBackend{}
 	live.allowed.Store(true)
 	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
-	b, err := NewBroker(BrokerDeps{Live: live, Events: events, Playback: pb, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: time.Now})
+	b, err := NewBroker(BrokerDeps{Live: live, Events: events, Playback: pb, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Now: time.Now, Lookup: func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error) {
+		return nil, core.ErrNotFound
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
