@@ -15,6 +15,84 @@ import (
 
 const peopleReadBudget = 4 * time.Second
 
+// PeopleRead owns request-local policy and title facts. Finish must reject any
+// intervening durable policy change; Close releases the host policy lease.
+// Neither callback may publish partial results on failure.
+type PeopleRead struct {
+	Policy          AccessPolicy
+	FilterAvailable func(context.Context, []core.Title) []core.Title
+	Titles          func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
+	Finish          func(context.Context) error
+	Close           func()
+}
+
+func (s *Service) readPeople(ctx context.Context, viewer *core.User, read func(*Service) error) error {
+	if s.d.BeginPeopleRead == nil {
+		return core.ErrNotAvailable
+	}
+	access, err := s.d.BeginPeopleRead(ctx, viewer)
+	if err != nil {
+		return err
+	}
+	if access.Close == nil {
+		return core.ErrNotAvailable
+	}
+	defer access.Close()
+	if access.Policy == nil || access.Titles == nil || access.Finish == nil {
+		return core.ErrNotAvailable
+	}
+	snapshot := *s
+	snapshot.d.Visibility.Policy = access.Policy
+	if access.FilterAvailable != nil {
+		snapshot.d.Visibility.FilterAvailable = access.FilterAvailable
+	}
+	snapshot.d.CachedGetMany = access.Titles
+	if err := read(&snapshot); err != nil {
+		return err
+	}
+	return access.Finish(ctx)
+}
+
+func (s *Service) People(ctx context.Context, viewer *core.Viewer, device core.Device, query frontend.PeopleQuery) (result []frontend.PersonDetail, err error) {
+	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
+	defer cancel()
+	err = s.readPeople(ctx, viewer, func(snapshot *Service) error {
+		var readErr error
+		result, readErr = snapshot.people(ctx, viewer, device, query)
+		return readErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+func (s *Service) Person(ctx context.Context, viewer *core.Viewer, device core.Device, id string, options frontend.PersonReadOptions) (result frontend.PersonDetail, err error) {
+	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
+	defer cancel()
+	err = s.readPeople(ctx, viewer, func(snapshot *Service) error {
+		var readErr error
+		result, readErr = snapshot.person(ctx, viewer, device, id, options)
+		return readErr
+	})
+	if err != nil {
+		return frontend.PersonDetail{}, err
+	}
+	return result, nil
+}
+func (s *Service) PersonCredit(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, tmdb int64) (result frontend.PersonDetail, err error) {
+	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
+	defer cancel()
+	err = s.readPeople(ctx, viewer, func(snapshot *Service) error {
+		var readErr error
+		result, readErr = snapshot.personCredit(ctx, viewer, device, item, tmdb)
+		return readErr
+	})
+	if err != nil {
+		return frontend.PersonDetail{}, err
+	}
+	return result, nil
+}
+
 type visiblePerson struct {
 	detail      frontend.PersonDetail
 	hasPortrait bool
@@ -275,7 +353,7 @@ func (s *Service) currentPerson(ctx context.Context, viewer *core.Viewer, person
 	return current.detail, nil
 }
 
-func (s *Service) People(ctx context.Context, viewer *core.Viewer, device core.Device, q frontend.PeopleQuery) ([]frontend.PersonDetail, error) {
+func (s *Service) people(ctx context.Context, viewer *core.Viewer, device core.Device, q frontend.PeopleQuery) ([]frontend.PersonDetail, error) {
 	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
 	defer cancel()
 	if utf8.RuneCountInString(q.Query) > 200 || q.Limit < 0 || q.Limit > 100 {
@@ -331,7 +409,7 @@ func (s *Service) People(ctx context.Context, viewer *core.Viewer, device core.D
 	return result, nil
 }
 
-func (s *Service) Person(ctx context.Context, viewer *core.Viewer, device core.Device, id string, _ frontend.PersonReadOptions) (frontend.PersonDetail, error) {
+func (s *Service) person(ctx context.Context, viewer *core.Viewer, device core.Device, id string, _ frontend.PersonReadOptions) (frontend.PersonDetail, error) {
 	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
 	defer cancel()
 	if id == "" || len(id) > 128 {
@@ -357,7 +435,7 @@ func (s *Service) Person(ctx context.Context, viewer *core.Viewer, device core.D
 
 // PersonCredit revalidates one cached, title-bound person without playback,
 // provider refresh, or an unfiltered catalogue fallback.
-func (s *Service) PersonCredit(ctx context.Context, viewer *core.Viewer, _ core.Device, item core.RatingKey, tmdb int64) (frontend.PersonDetail, error) {
+func (s *Service) personCredit(ctx context.Context, viewer *core.Viewer, _ core.Device, item core.RatingKey, tmdb int64) (frontend.PersonDetail, error) {
 	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
 	defer cancel()
 	if tmdb <= 0 {

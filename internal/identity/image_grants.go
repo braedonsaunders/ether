@@ -109,7 +109,7 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 	if experience == nil {
 		return core.ErrNotAvailable
 	}
-	if image.Kind == frontend.ImagePerson {
+	if s.surface == "silo" && image.Kind == frontend.ImagePerson {
 		if people, ok := experience.(frontend.PeopleReader); ok {
 			raw, hasPrefix := strings.CutPrefix(image.Subject, "tmdb:")
 			id, parseErr := strconv.ParseInt(raw, 10, 64)
@@ -269,6 +269,14 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	if err != nil {
 		http.Error(w, "image unavailable", 502)
 		return
+	}
+	// A Silo portrait fetch may cross I/O after its first authorization. Check
+	// current credited membership and fresh policy again before publishing bytes.
+	if s.surface == "silo" && img.Kind == frontend.ImagePerson {
+		if err := s.authorized(r.Context(), viewer, device, core.RatingKey(item), channel, img); err != nil {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	h := w.Header()
 	h.Set("Content-Type", contentType)

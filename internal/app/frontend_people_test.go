@@ -20,6 +20,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontends/silo"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/safety"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -60,6 +61,7 @@ type peopleUnusedState struct{ core.State }
 type peopleHTTPArtwork struct {
 	state      *peopleHTTPState
 	beforeList func()
+	beforeRead func()
 }
 
 func (a *peopleHTTPArtwork) List(ctx context.Context, req frontend.ArtworkRequest) ([]frontend.Image, bool, error) {
@@ -79,6 +81,9 @@ func (a *peopleHTTPArtwork) List(ctx context.Context, req frontend.ArtworkReques
 	return images, true, nil
 }
 func (a *peopleHTTPArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, image frontend.Image, _ frontend.ArtworkTransform) ([]byte, string, error) {
+	if a.beforeRead != nil {
+		a.beforeRead()
+	}
 	images, _, err := a.List(ctx, req)
 	if err != nil {
 		return nil, "", err
@@ -100,7 +105,7 @@ func peopleHTTPFixture(t *testing.T) (*surfaceExperience, *peopleHTTPState, *peo
 		episode:          {Key: episode, Type: core.TypeEpisode, ShowKey: show, Season: 1, Episode: 1, Cast: []core.Person{{TMDB: 30, Name: "Episode Person", IMDB: "nm30", ThumbPath: "known"}}},
 		core.MovieKey(2): {Key: core.MovieKey(2), Type: core.TypeMovie, Adult: true, Cast: []core.Person{{TMDB: 99, Name: "A Hidden Person"}}},
 	}}
-	service, err := experience.NewService(experience.ServiceDeps{
+	deps := experience.ServiceDeps{
 		Active: state.ActiveUser, Get: func(ctx context.Context, _ *core.User, key core.RatingKey) (*core.Title, error) {
 			return state.get(ctx, key)
 		}, CachedGet: state.get,
@@ -157,7 +162,11 @@ func peopleHTTPFixture(t *testing.T) (*surfaceExperience, *peopleHTTPState, *peo
 		Enrich: func(context.Context, *core.User, core.Device, *core.Title) (frontend.ItemDetail, error) {
 			panic("people read reached playback/source enrichment")
 		},
-	})
+	}
+	deps.BeginPeopleRead = func(context.Context, *core.User) (experience.PeopleRead, error) {
+		return experience.PeopleRead{Policy: peoplePolicy{viewerID: state.viewer.ID, policy: safety.Policy{}}, Titles: deps.CachedGetMany, Finish: func(context.Context) error { return nil }, Close: func() {}}, nil
+	}
+	service, err := experience.NewService(deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +228,7 @@ func TestSiloPeopleHTTPCurrentMembershipAndArtwork(t *testing.T) {
 	if list.Code != 200 || json.Unmarshal(list.Body.Bytes(), &collection) != nil || len(collection.Items) != 2 || strings.Contains(list.Body.String(), "Hidden") {
 		t.Fatalf("visible list %d %s", list.Code, list.Body.String())
 	}
-	detail := call("/api/v2/catalog/people/"+personID+"?prefetch=true", credential, "1")
+	detail := call("/api/v2/catalog/people/"+personID+"?prefetch=false", credential, "1")
 	var person map[string]any
 	if detail.Code != 200 || json.Unmarshal(detail.Body.Bytes(), &person) != nil || person["id"] != personID || person["name"] != "Episode Person" || person["imdb_id"] != "nm30" {
 		t.Fatalf("episode detail %d %s", detail.Code, detail.Body.String())
@@ -332,7 +341,7 @@ func TestProductionPeopleIgnoresStaleMovieCreditCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	person, err := people.Person(ctx, viewer, core.Device{ID: "tv"}, rows[0].ID, frontend.PersonReadOptions{Prefetch: true})
+	person, err := people.Person(ctx, viewer, core.Device{ID: "tv"}, rows[0].ID, frontend.PersonReadOptions{})
 	if err != nil || len(person.Images) != 1 {
 		t.Fatalf("portrait descriptor %+v %v", person, err)
 	}
@@ -354,5 +363,105 @@ func TestProductionPeopleIgnoresStaleMovieCreditCache(t *testing.T) {
 	images.Serve(response, httptest.NewRequest("GET", "/", nil), secret)
 	if response.Code == 200 || strings.Contains(response.Body.String(), "person portrait") {
 		t.Fatalf("stale descriptor bypassed current credit check: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestProductionPeopleUsesFreshSafetyAndRejectsPortraitReplay(t *testing.T) {
+	for _, duringRead := range []bool{false, true} {
+		t.Run(strconv.FormatBool(duringRead), func(t *testing.T) {
+			a := setupTestApp(t, true)
+			ctx := context.Background()
+			if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
+				t.Fatal(err)
+			}
+			viewer, err := a.users.Owner(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			key := core.MovieKey(778)
+			title := core.Title{Key: key, Type: core.TypeMovie, Title: "Restricted credit", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Genres: []string{"Thriller"}, Cast: []core.Person{{TMDB: 30, Name: "Cached Person", ThumbPath: "known"}}}
+			if err := a.catalog.UpsertTitle(ctx, title, false); err != nil {
+				t.Fatal(err)
+			}
+			availability := a.availability
+			a.availability = nil
+			t.Cleanup(func() { a.availability = availability })
+			artwork := &peopleHTTPArtwork{state: &peopleHTTPState{titles: map[core.RatingKey]core.Title{key: title}}}
+			exp, err := a.newSurfaceExperience("silo", artwork)
+			if err != nil {
+				t.Fatal(err)
+			}
+			people := exp.(frontend.PeopleReader)
+			device := core.Device{ID: "tv"}
+			rows, err := people.People(ctx, viewer, device, frontend.PeopleQuery{Scope: frontend.PeopleMovies})
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("initial membership %+v %v", rows, err)
+			}
+			person, err := people.Person(ctx, viewer, device, rows[0].ID, frontend.PersonReadOptions{})
+			if err != nil || len(person.Images) != 1 {
+				t.Fatalf("initial portrait %+v %v", person, err)
+			}
+			grants, err := identity.NewGrants(a.db, a.users, time.Hour, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := grants.Issue(ctx, viewer.ID, nil, "silo", device)
+			if err != nil {
+				t.Fatal(err)
+			}
+			images, err := identity.NewArtworkImageGrantService(a.db, "silo", grants, func() frontend.Experience { return exp }, artwork, time.Minute, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			secret, err := images.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: device, Item: key, Image: person.Images[0]})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writer, err := safety.New(ctx, a.db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writePolicy := func() {
+				t.Helper()
+				if err := writer.Put(ctx, viewer.ID, safety.Policy{BlockedGenres: []string{"Thriller"}}); err != nil {
+					t.Fatal(err)
+				}
+				if !a.safety.Allowed(viewer, &title) {
+					t.Fatal("reader cache unexpectedly refreshed; test needs two Services")
+				}
+			}
+			if duringRead {
+				artwork.beforeRead = writePolicy
+			} else {
+				writePolicy()
+			}
+			response := httptest.NewRecorder()
+			images.Serve(response, httptest.NewRequest("GET", "/", nil), secret)
+			if response.Code == http.StatusOK || strings.Contains(response.Body.String(), "person portrait") {
+				t.Fatalf("stale policy published portrait %d %s", response.Code, response.Body.String())
+			}
+			if _, err := people.Person(ctx, viewer, device, person.ID, frontend.PersonReadOptions{Prefetch: true}); !errors.Is(err, core.ErrNotFound) {
+				t.Fatalf("restricted person resolved: %v", err)
+			}
+			rows, err = people.People(ctx, viewer, device, frontend.PeopleQuery{})
+			if err != nil || len(rows) != 0 {
+				t.Fatalf("restricted person listed %+v %v", rows, err)
+			}
+		})
+	}
+}
+
+func TestSiloPeoplePrefetchDoesNotReachArtworkQueues(t *testing.T) {
+	exp, _, artwork := peopleHTTPFixture(t)
+	ctx := context.Background()
+	viewer := &core.User{ID: 1}
+	ids, err := exp.PersonFacetIDs(ctx, viewer, core.Device{}, core.EpisodeKey(1, 1, 1), []int64{30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artwork.beforeList = func() { t.Fatal("prefetch reached artwork work/refresh queues") }
+	person, err := exp.Person(ctx, viewer, core.Device{}, ids[30], frontend.PersonReadOptions{Prefetch: true})
+	if err != nil || person.ID != ids[30] || person.Name != "Episode Person" || len(person.Images) != 0 {
+		t.Fatalf("cached prefetch %+v %v", person, err)
 	}
 }

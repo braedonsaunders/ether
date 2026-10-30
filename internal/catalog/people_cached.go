@@ -2,6 +2,9 @@ package catalog
 
 import (
 	"context"
+	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/libraryfilter"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
@@ -27,4 +30,35 @@ func (c *Catalog) CachedCreditItems(ctx context.Context, after core.RatingKey, l
 		keys = append(keys, key)
 	}
 	return keys, rows.Err()
+}
+
+// CachedCreditTitles is a read-only People snapshot. Existing cached-read gates
+// may conservatively omit a title; every returned title is additionally checked
+// against the caller's immutable config and time, including inherited parents.
+// The caller must hold the config lease and fence durable changes separately.
+func (c *Catalog) CachedCreditTitles(ctx context.Context, keys []core.RatingKey, cfg config.Catalog, now time.Time) (map[core.RatingKey]core.Title, error) {
+	filter, err := libraryfilter.Compile(cfg.Exclusions)
+	if err != nil {
+		return nil, err
+	}
+	titles, err := c.CachedGetMany(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+	counts := make([]*core.Title, 0, len(titles))
+	for key := range titles {
+		title := titles[key]
+		counts = append(counts, &title)
+	}
+	if err := applyAiredCounts(ctx, c.db, now, counts); err != nil {
+		return nil, err
+	}
+	for _, title := range counts {
+		if title.Adult || !title.IsReleased(now) || filter.Hidden(title) || (cfg.GateMoviesByHomeRelease && !homeReleaseVisible(title, now)) || (title.Type == core.TypeSeason && !listableSeason(title, now)) {
+			delete(titles, title.Key)
+		} else {
+			titles[title.Key] = *title
+		}
+	}
+	return titles, nil
 }

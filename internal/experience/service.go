@@ -28,6 +28,8 @@ type Library struct {
 
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
 type ServiceDeps struct {
+	// BeginPeopleRead supplies fresh, fenced policy facts for the optional People API.
+	BeginPeopleRead     func(context.Context, *core.User) (PeopleRead, error)
 	NotInterestedSource func(context.Context, *core.User) ([]frontend.NotInterestedEntry, error)
 	ByExternalID        func(context.Context, string, string) (*core.Title, error)
 	Active              func(context.Context, int64) (*core.User, error)

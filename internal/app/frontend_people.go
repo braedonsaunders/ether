@@ -67,6 +67,11 @@ func (s *surfaceExperience) Person(ctx context.Context, viewer *frontend.Viewer,
 	if err != nil {
 		return frontend.PersonDetail{}, err
 	}
+	if options.Prefetch {
+		// Artwork List can enqueue metadata/variant work. A prefetch is strictly
+		// a current cached-credit read and must not schedule any refresh.
+		return person, nil
+	}
 	return s.personArtwork(ctx, viewer, device, person)
 }
 

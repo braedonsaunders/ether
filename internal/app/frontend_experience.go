@@ -107,7 +107,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
-	deps := experience.ServiceDeps{NotInterestedSource: func(ctx context.Context, u *core.User) ([]frontend.NotInterestedEntry, error) {
+	deps := experience.ServiceDeps{BeginPeopleRead: a.beginPeopleRead, NotInterestedSource: func(ctx context.Context, u *core.User) ([]frontend.NotInterestedEntry, error) {
 		entries, _, err := a.notInterested.Snapshot(ctx, u)
 		if err != nil {
 			return nil, err

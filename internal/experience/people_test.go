@@ -14,6 +14,10 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+type peopleFixturePolicy struct{}
+
+func (peopleFixturePolicy) Allowed(*core.User, *core.Title) bool { return true }
+
 type peopleCatalogue struct {
 	mu          sync.RWMutex
 	viewer      core.User
@@ -115,6 +119,13 @@ func peopleFixture() (*Service, *peopleCatalogue) {
 			panic("people navigation reached playback/source enrichment")
 		},
 	}}
+	s.d.BeginPeopleRead = func(context.Context, *core.User) (PeopleRead, error) {
+		policy := s.d.Visibility.Policy
+		if policy == nil {
+			policy = peopleFixturePolicy{}
+		}
+		return PeopleRead{Policy: policy, Titles: s.d.CachedGetMany, Finish: func(context.Context) error { return nil }, Close: func() {}}, nil
+	}
 	return s, c
 }
 func TestPeopleCurrentMembershipScopesAndIdentity(t *testing.T) {
@@ -257,5 +268,28 @@ func TestPeopleCreditPagesDoNotTruncateBeforePolicyAndMatch(t *testing.T) {
 	rows, err := s.People(context.Background(), &core.User{ID: 1}, core.Device{}, frontend.PeopleQuery{Query: "Match", Limit: 1, Scope: frontend.PeopleMovies})
 	if err != nil || len(rows) != 1 || rows[0].TMDB != 999 || c.creditCalls.Load() < 2 {
 		t.Fatalf("credit pages truncated before visibility/match %+v calls=%d %v", rows, c.creditCalls.Load(), err)
+	}
+}
+
+func TestPeopleRequiresSnapshotAndDiscardsLosingRead(t *testing.T) {
+	s, _ := peopleFixture()
+	ctx := context.Background()
+	viewer := &core.User{ID: 1}
+	begin := s.d.BeginPeopleRead
+	s.d.BeginPeopleRead = nil
+	if _, err := s.People(ctx, viewer, core.Device{}, frontend.PeopleQuery{}); !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("missing host evidence accepted: %v", err)
+	}
+	var closed atomic.Int32
+	changed := errors.New("snapshot changed")
+	s.d.BeginPeopleRead = func(ctx context.Context, viewer *core.User) (PeopleRead, error) {
+		access, err := begin(ctx, viewer)
+		access.Finish = func(context.Context) error { return changed }
+		access.Close = func() { closed.Add(1) }
+		return access, err
+	}
+	rows, err := s.People(ctx, viewer, core.Device{}, frontend.PeopleQuery{})
+	if !errors.Is(err, changed) || rows != nil || closed.Load() != 1 {
+		t.Fatalf("losing read escaped: %+v %v closed=%d", rows, err, closed.Load())
 	}
 }

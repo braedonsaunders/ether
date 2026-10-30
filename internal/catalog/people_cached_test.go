@@ -2,6 +2,8 @@ package catalog_test
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/braedonsaunders/ether/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -51,5 +53,42 @@ func TestCachedCreditItemsIncludesOnDemandDistinctAndBounds(t *testing.T) {
 		if _, err = c.CachedCreditItems(ctx, core.RatingKey(args[0]), args[1]); err == nil {
 			t.Fatal("unbounded/invalid credit page accepted")
 		}
+	}
+}
+
+func TestCachedCreditTitlesUsesOwnedConfigAndTime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("snapshot reached provider")
+		http.Error(w, "unexpected", 500)
+	}))
+	defer server.Close()
+	c := newTestCatalog(t, server)
+	ctx := context.Background()
+	key := core.MovieKey(604)
+	title := core.Title{Key: key, Type: core.TypeMovie, Title: "Owned snapshot", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Genres: []string{"Thriller"}, Cast: []core.Person{{TMDB: 30, Name: "Person"}}}
+	if err := c.UpsertTitle(ctx, title, false); err != nil {
+		t.Fatal(err)
+	}
+	// The old cached gate is allowed to omit extra entries. Install an open
+	// catalog so this test specifically exercises the stricter owned snapshot.
+	c.UpdateConfig(config.Catalog{})
+	keys := []core.RatingKey{key}
+	now := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	rows, err := c.CachedCreditTitles(ctx, keys, config.Catalog{}, now)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("open snapshot %+v %v", rows, err)
+	}
+	cfg := config.Catalog{Exclusions: []core.LibraryExclusion{{Name: "Blocked genre", MediaType: "movie", Match: "all", Rules: []core.CollectionRule{{Field: "genre", Op: "is", Value: json.RawMessage(`"Thriller"`)}}}}}
+	rows, err = c.CachedCreditTitles(ctx, keys, cfg, now)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("leased exclusion ignored %+v %v", rows, err)
+	}
+	rows, err = c.CachedCreditTitles(ctx, keys, config.Catalog{GateMoviesByHomeRelease: true}, now)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("unknown home release exposed %+v %v", rows, err)
+	}
+	rows, err = c.CachedCreditTitles(ctx, keys, config.Catalog{}, now.AddDate(-2, 0, 0))
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("live clock replaced captured release time %+v %v", rows, err)
 	}
 }
