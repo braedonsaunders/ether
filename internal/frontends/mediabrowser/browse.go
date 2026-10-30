@@ -347,6 +347,9 @@ func (i *instance) browseRoutes() error {
 			i.jellyfinKnownVersionFacts(dto, d.Versions)
 			jellyfinStudioFacts(dto, d.Title)
 			i.jellyfinDetailShell(dto)
+			if d.Title.Type == "show" {
+				i.attachUnplayedCount(r, v, dto, d.Title)
+			}
 		}
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)

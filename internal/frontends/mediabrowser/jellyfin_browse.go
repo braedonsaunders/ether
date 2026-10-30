@@ -245,6 +245,53 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 			item["Container"] = container
 		}
 	}
+	if title.Type == "season" {
+		i.attachUnplayedCount(r, viewer, item, title)
+	}
+}
+
+// attachUnplayedCount sets UserData.UnplayedItemCount from the viewer's watch
+// state of the real child episodes. A failed or non-episode child listing
+// leaves the field absent.
+func (i *instance) attachUnplayedCount(r *http.Request, viewer *frontend.Viewer, item map[string]any, title frontend.Title) {
+	if i == nil || i.protocol != "jellyfin" || r == nil || viewer == nil || i.host.Experience == nil {
+		return
+	}
+	if title.Type != "show" && title.Type != "season" {
+		return
+	}
+	q := frontend.ItemQuery{}
+	if title.Type == "show" {
+		q.Recursive = true
+	}
+	page, err := i.host.Experience.Children(r.Context(), viewer, device(r), title.Key, q)
+	if err != nil || page.Total > len(page.Items) {
+		return
+	}
+	episodes := make([]frontend.RatingKey, 0, len(page.Items))
+	for _, child := range page.Items {
+		if child.Type == "episode" {
+			episodes = append(episodes, child.Key)
+		}
+	}
+	if len(page.Items) > 0 && len(episodes) == 0 {
+		return
+	}
+	states, err := i.host.Experience.UserData(r.Context(), viewer, episodes)
+	if err != nil {
+		return
+	}
+	unplayed := 0
+	for _, key := range episodes {
+		if states[key].ViewCount == 0 {
+			unplayed++
+		}
+	}
+	data, ok := item["UserData"].(map[string]any)
+	if !ok {
+		return
+	}
+	data["UnplayedItemCount"] = unplayed
 }
 
 func (i *instance) genreItems(r *http.Request, viewer *frontend.Viewer, title frontend.Title) []any {

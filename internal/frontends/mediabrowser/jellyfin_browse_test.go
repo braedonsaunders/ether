@@ -3,6 +3,7 @@ package mediabrowser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -201,6 +202,97 @@ func TestJellyfinEpisodeShellKeepsParentImageSlots(t *testing.T) {
 	}
 	if _, ok := item["Etag"]; ok || item["VideoType"] != "VideoFile" {
 		t.Fatal("etag without a fields request, or video type", item["Etag"], item["VideoType"])
+	}
+}
+
+func TestJellyfinUnplayedCountUsesEpisodeWatchState(t *testing.T) {
+	show := core.ShowKey(42)
+	season := core.SeasonKey(42, 1)
+	watched := core.EpisodeKey(42, 1, 1)
+	fresh := core.EpisodeKey(42, 1, 2)
+	missing := core.EpisodeKey(42, 1, 3)
+	episodes := []frontend.Title{
+		{Key: watched, Type: "episode"},
+		{Key: fresh, Type: "episode"},
+		{Key: missing, Type: "episode"},
+	}
+	children := func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, key frontend.RatingKey, q frontend.ItemQuery) (core.Page, error) {
+		if key == show && q.Recursive {
+			return core.Page{Items: episodes, Total: len(episodes)}, nil
+		}
+		if key == show {
+			return core.Page{Items: []frontend.Title{{Key: season, Type: "season", ShowKey: show, Season: 1, Title: "Season 1"}}, Total: 1}, nil
+		}
+		if key == season {
+			return core.Page{Items: episodes, Total: len(episodes)}, nil
+		}
+		return core.Page{}, errors.New("unavailable")
+	}
+	userData := func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+		return map[frontend.RatingKey]frontend.WatchStatus{watched: {ViewCount: 1}, fresh: {ViewCount: 0}}, nil
+	}
+	inst := mountJellyfin(t, frontendtest.Experience{
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+		},
+		ChildrenFunc: children,
+		UserDataFunc: userData,
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var item map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &item); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := item["UserData"].(map[string]any)
+	if data["UnplayedItemCount"] != float64(2) {
+		t.Fatal(data)
+	}
+	requireJellyfinSpec(t, "GET", r.URL.Path, w)
+
+	seasonList := mountJellyfin(t, frontendtest.Experience{
+		ChildrenFunc: children,
+		UserDataFunc: userData,
+	})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Shows/"+ids.RatingKeyGUID(show)+"/Seasons", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	seasonList.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var page struct {
+		Items []map[string]any
+	}
+	if json.Unmarshal(w.Body.Bytes(), &page) != nil || len(page.Items) != 1 {
+		t.Fatal(w.Body.String())
+	}
+	seasonData, _ := page.Items[0]["UserData"].(map[string]any)
+	if seasonData["UnplayedItemCount"] != float64(2) {
+		t.Fatal(seasonData)
+	}
+
+	failed := mountJellyfin(t, frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show"}}, nil
+	}, ChildrenFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, frontend.ItemQuery) (core.Page, error) {
+		return core.Page{}, errors.New("unavailable")
+	}})
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(show), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	failed.Handler().ServeHTTP(w, r)
+	var hidden map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &hidden) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	hiddenData, _ := hidden["UserData"].(map[string]any)
+	if _, ok := hiddenData["UnplayedItemCount"]; ok {
+		t.Fatal(hiddenData)
 	}
 }
 
