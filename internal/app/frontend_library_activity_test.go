@@ -27,6 +27,19 @@ func TestSurfaceLibraryActivityUsesCatalogAndWatchState(t *testing.T) {
 	if err = a.state.Progress(ctx, viewer.ID, title.Key, 10*time.Minute, time.Hour, "paused"); err != nil {
 		t.Fatal(err)
 	}
+	resumable := core.Title{Key: core.MovieKey(832), Type: core.TypeMovie, Title: "One minute", Released: title.Released}
+	tooEarly := core.Title{Key: core.MovieKey(833), Type: core.TypeMovie, Title: "Thirty seconds", Released: title.Released}
+	for _, item := range []core.Title{resumable, tooEarly} {
+		if err = a.catalog.UpsertTitle(ctx, item, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = a.state.Progress(ctx, viewer.ID, resumable.Key, 61*time.Second, 97*time.Minute, "paused"); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.state.Progress(ctx, viewer.ID, tooEarly.Key, 30*time.Second, 97*time.Minute, "paused"); err != nil {
+		t.Fatal(err)
+	}
 	availability := a.availability
 	a.availability = nil
 	t.Cleanup(func() { a.availability = availability })
@@ -39,11 +52,18 @@ func TestSurfaceLibraryActivityUsesCatalogAndWatchState(t *testing.T) {
 		t.Fatal("production experience lacks library activity")
 	}
 	latest, err := activity.LatestAdded(ctx, viewer, core.Device{ID: "tv"}, "1", 20)
-	if err != nil || len(latest) == 0 || latest[0].Title.Key != title.Key || latest[0].AddedAt == nil {
+	if err != nil || len(latest) < 3 || latest[0].AddedAt == nil {
 		t.Fatalf("cold library latest %+v: %v", latest, err)
 	}
 	resume, err := activity.Resume(ctx, viewer, core.Device{ID: "tv"}, "", []core.MediaType{core.TypeMovie}, 0, 20, true)
-	if err != nil || len(resume.Items) == 0 || resume.Items[0].Key != title.Key {
+	if err != nil {
 		t.Fatalf("watch state resume %+v: %v", resume, err)
+	}
+	seen := make(map[core.RatingKey]bool)
+	for _, item := range resume.Items {
+		seen[item.Key] = true
+	}
+	if !seen[title.Key] || !seen[resumable.Key] || seen[tooEarly.Key] {
+		t.Fatalf("resume threshold: %+v", resume)
 	}
 }
