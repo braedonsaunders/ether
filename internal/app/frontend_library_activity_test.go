@@ -67,3 +67,43 @@ func TestSurfaceLibraryActivityUsesCatalogAndWatchState(t *testing.T) {
 		t.Fatalf("resume threshold: %+v", resume)
 	}
 }
+
+func TestSurfaceLatestTVUsesAiredEpisodeDates(t *testing.T) {
+	ctx := context.Background()
+	a := setupTestApp(t, true)
+	if err := a.users.SetOwner(ctx, plextv.Account{ID: 832, Username: "owner"}, "owner-token"); err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := a.users.Owner(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	show := core.Title{Key: core.ShowKey(832), Type: core.TypeShow, Title: "Series", Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}
+	early := core.Title{Key: core.EpisodeKey(832, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key, Title: "First", Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
+	latest := core.Title{Key: core.EpisodeKey(832, 1, 2), Type: core.TypeEpisode, ShowKey: show.Key, Title: "Latest", Released: time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)}
+	future := core.Title{Key: core.EpisodeKey(832, 1, 3), Type: core.TypeEpisode, ShowKey: show.Key, Title: "Unaired", Released: time.Now().Add(48 * time.Hour)}
+	for _, title := range []core.Title{show, early, latest, future} {
+		if err = a.catalog.UpsertTitle(ctx, title, title.Type == core.TypeShow); err != nil {
+			t.Fatal(err)
+		}
+	}
+	availability := a.availability
+	a.availability = nil
+	t.Cleanup(func() { a.availability = availability })
+	experience, err := a.newSurfaceExperience("jellyfin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	activity, ok := experience.(frontend.LibraryActivityGrouping)
+	if !ok {
+		t.Fatal("production experience lacks latest grouping")
+	}
+	grouped, err := activity.LatestAddedGrouped(ctx, viewer, core.Device{ID: "tv"}, "2", 20, true)
+	if err != nil || len(grouped) != 1 || grouped[0].Title.Key != show.Key || grouped[0].AddedAt == nil || !grouped[0].AddedAt.Equal(latest.Released) {
+		t.Fatalf("grouped TV latest %+v: %v", grouped, err)
+	}
+	ungrouped, err := activity.LatestAddedGrouped(ctx, viewer, core.Device{ID: "tv"}, "2", 20, false)
+	if err != nil || len(ungrouped) != 2 || ungrouped[0].Title.Key != latest.Key || ungrouped[0].AddedAt == nil || !ungrouped[0].AddedAt.Equal(latest.Released) || ungrouped[1].Title.Key != early.Key {
+		t.Fatalf("ungrouped TV latest %+v: %v", ungrouped, err)
+	}
+}
