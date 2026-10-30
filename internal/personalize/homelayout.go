@@ -578,7 +578,7 @@ func (e *Engine) FinalizeNeutralHome(ctx context.Context, user *core.User, situa
 			kind = hubKind(candidate.ID)
 		}
 		h := core.Hub{ID: candidate.ID, Title: candidate.Title, Type: candidate.Type, Items: candidate.Items, ItemCount: candidate.ItemCount}
-		rows = append(rows, core.HomeRow{HubID: candidate.ID, Title: candidate.Title, Kind: kind, Source: core.RowSourcePlex, Items: candidate.Items, Hub: h})
+		rows = append(rows, core.HomeRow{HubID: candidate.ID, Title: candidate.Title, Kind: kind, Source: core.RowSourcePrecomposed, Items: candidate.Items, Hub: h})
 		byID[candidate.ID] = candidate
 	}
 	arranged := e.finalizeHomeRows(ctx, user, hc, section, rows)

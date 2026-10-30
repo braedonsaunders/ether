@@ -62,7 +62,7 @@ func leadFromRows(rows []core.HomeRow, items int) *homeLead {
 		if discoveryPriority(r.Kind) >= 5 {
 			seen++
 		}
-		if r.Source == core.RowSourcePlex {
+		if !behaviorForRowSource(r.Source).participatesInLead {
 			continue // Continue Watching: in-progress titles never recur as picks
 		}
 		id := strings.TrimPrefix(r.HubID, "home.")
@@ -122,7 +122,7 @@ func leadFromRows(rows []core.HomeRow, items int) *homeLead {
 // nothing of its own would only repeat the Home and is dropped (unless the
 // owner placed it).
 func (a *assembly) holdBackHomeLead(c *candRow, items []candItem) (kept, held []candItem, demoted bool) {
-	if a.lead == nil || len(a.lead.keys) == 0 && len(a.lead.same[c.id]) == 0 || c.source == core.RowSourcePlex {
+	if a.lead == nil || len(a.lead.keys) == 0 && len(a.lead.same[c.id]) == 0 || !behaviorForRowSource(c.source).participatesInLead {
 		return items, nil, false
 	}
 	// Each page must offer its best picks and timely discovery even when

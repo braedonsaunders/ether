@@ -80,13 +80,17 @@ func (x *rankExample) positive() bool { return x.y >= 0.5 }
 
 // designNames is the model's feature layout: snapshot features, one-hot
 // row kind and surface, then the two position features.
+func learnedRowKind(kind, source string) bool {
+	return !skipKind(kind) && behaviorForRowSource(source).learnsKind
+}
+
 func designNames() []string {
 	names := make([]string, 0, int(numRaw)+len(kinds)+8)
 	for _, f := range rawFeatures {
 		names = append(names, f.name)
 	}
 	for _, k := range kinds {
-		if !skipKind(k.kind) && k.source != core.RowSourcePlex {
+		if learnedRowKind(k.kind, k.source) {
 			names = append(names, "kind:"+k.kind)
 		}
 	}
@@ -97,7 +101,7 @@ func designNames() []string {
 
 // kindFeature is the one-hot feature name of a row kind.
 func kindFeature(kind string) string {
-	if k, ok := kindByName[kind]; ok && !skipKind(k.kind) && k.source != core.RowSourcePlex {
+	if k, ok := kindByName[kind]; ok && learnedRowKind(k.kind, k.source) {
 		return "kind:" + kind
 	}
 	if strings.HasPrefix(kind, KindCollectionPrefix) {

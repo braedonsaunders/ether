@@ -261,7 +261,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			if excluded[r] {
 				continue
 			}
-			if r.c.source != core.RowSourcePlex {
+			if behaviorForRowSource(r.c.source).countsInBudget {
 				if maxRows > 0 && counted >= maxRows {
 					continue
 				}
@@ -273,7 +273,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 		picked := make(map[*rankedRow][]candItem, len(sel))
 		claimed := map[core.RatingKey]bool{}
 		for _, r := range sel {
-			if r.c.source == core.RowSourcePlex {
+			if behaviorForRowSource(r.c.source).claimsFirst {
 				items := r.items
 				if n := a.rowCap(r.c); len(items) > n {
 					items = items[:n]
@@ -305,7 +305,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			// Ordered utility/collection rows retain their live order and priority.
 			if len(a.previous) > 0 {
 				for _, r := range sel {
-					if r.c.kind == KindFavorites || r.c.source == core.RowSourcePlex || (r.c.source == core.RowSourceEngine && !r.c.keepOrder) || !draftsFirst(r.c) || !inPhase(r) {
+					if r.c.kind == KindFavorites || !behaviorForRowSource(r.c.source).participatesInDraft || (r.c.source == core.RowSourceEngine && !r.c.keepOrder) || !draftsFirst(r.c) || !inPhase(r) {
 						continue
 					}
 					for _, it := range r.items {
@@ -321,7 +321,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 				a.retainItems(sel, picked, claimed, inPhase)
 			}
 			for _, r := range draftOrder {
-				if r.c.kind == KindFavorites || r.c.source == core.RowSourcePlex || !draftsFirst(r.c) || !inPhase(r) {
+				if r.c.kind == KindFavorites || !behaviorForRowSource(r.c.source).participatesInDraft || !draftsFirst(r.c) || !inPhase(r) {
 					continue
 				}
 				for _, it := range r.items {
@@ -338,7 +338,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			for progress := true; progress; {
 				progress = false
 				for _, r := range sel {
-					if r.c.source == core.RowSourcePlex || draftsFirst(r.c) || !inPhase(r) || len(picked[r]) >= a.rowCap(r.c) {
+					if !behaviorForRowSource(r.c.source).participatesInDraft || draftsFirst(r.c) || !inPhase(r) || len(picked[r]) >= a.rowCap(r.c) {
 						continue
 					}
 					for cursor[r] < len(r.items) {
@@ -361,7 +361,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 		short := map[*rankedRow]bool{}
 		var drop *rankedRow
 		for _, r := range sel {
-			if r.c.source == core.RowSourcePlex {
+			if !behaviorForRowSource(r.c.source).requiresMinimum {
 				continue
 			}
 			min := r.c.minItems
@@ -396,7 +396,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 		out := make([]core.HomeRow, 0, len(sel))
 		for _, r := range sel {
 			items := picked[r]
-			if r.c.source != core.RowSourcePlex && (len(items) == 0 || short[r]) {
+			if behaviorForRowSource(r.c.source).requiresMinimum && (len(items) == 0 || short[r]) {
 				continue
 			}
 			out = append(out, a.homeRow(r, items, len(r.items) > len(items)))
