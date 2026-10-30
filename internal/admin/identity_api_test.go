@@ -317,3 +317,70 @@ func TestGrantNeverFallsBackToPlexOwner(t *testing.T) {
 		t.Fatalf("grant accepted by permissive Plex validator: %d", res.Code)
 	}
 }
+func TestLocalOwnerConsoleSessionSignOut(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	users, err := auth.New(ctx, db, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, _ := identity.NewLocal(db)
+	grants, _ := identity.NewGrants(db, users, time.Hour, nil)
+	limiter, _ := identity.NewLoginLimiter(db, time.Minute, 100, 20, nil)
+	cfg := newStore(t, nil)
+	h := admin.New(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, RefreshViewers: users.RefreshViewers, Sessions: users})
+	res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret"}`))
+	if res.Code != 200 {
+		t.Fatalf("setup: %d %s", res.Code, res.Body)
+	}
+	var v struct {
+		Token string `json:"token"`
+	}
+	decode(t, res, &v)
+	ownerToken := v.Token
+	if err := cfg.Update(func(c *config.Config) error { c.SetupComplete = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	r := req("GET", "/ether/api/config", "")
+	r.Header.Set("X-Ether-Admin-Token", ownerToken)
+	if res := serve(h, r); res.Code != 200 {
+		t.Fatalf("owner header: %d", res.Code)
+	}
+	res = serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret"}`))
+	if res.Code != 200 {
+		t.Fatalf("viewer login: %d", res.Code)
+	}
+	decode(t, res, &v)
+	for range 2 {
+		r = req("DELETE", "/ether/api/auth/session", "")
+		r.Header.Set("X-Ether-Admin-Token", ownerToken)
+		if res := serve(h, r); res.Code != 200 {
+			t.Fatalf("sign out: %d %s", res.Code, res.Body)
+		}
+	}
+	r = req("GET", "/ether/api/config", "")
+	r.Header.Set("X-Ether-Admin-Token", ownerToken)
+	if res := serve(h, r); res.Code != 401 {
+		t.Fatalf("signed-out owner still accepted: %d", res.Code)
+	}
+	r = req("GET", "/ether/api/me", "")
+	r.Header.Set("Authorization", "Bearer "+v.Token)
+	if res := serve(h, r); res.Code != 200 {
+		t.Fatalf("sign-out revoked independent viewer: %d", res.Code)
+	}
+	// A database failure must not falsely report successful revocation.
+	res = serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"secret"}`))
+	if res.Code != 200 {
+		t.Fatalf("owner login: %d", res.Code)
+	}
+	decode(t, res, &v)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r = req("DELETE", "/ether/api/auth/session", "")
+	r.Header.Set("X-Ether-Admin-Token", v.Token)
+	if res := serve(h, r); res.Code != 503 {
+		t.Fatalf("revocation unavailable: %d", res.Code)
+	}
+
+}

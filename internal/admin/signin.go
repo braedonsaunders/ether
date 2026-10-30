@@ -2,6 +2,7 @@ package admin
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -141,6 +142,24 @@ func (h *Handler) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleSessionDelete(w http.ResponseWriter, r *http.Request) {
 	if !csrfOK(r) {
 		writeError(w, http.StatusForbidden, "csrf", "mutating requests require the X-Ether-Request: 1 header and a JSON content type")
+		return
+	}
+	// Prism local-owner logins use scoped identity grants. Revoke only the
+	// presented owner grant; independent viewer/device grants stay active.
+	if token := tokenFromRequest(r); core.IsGrantCredential(token) && h.deps.IdentityGrants != nil {
+		viewer, err := h.deps.IdentityGrants.Resolve(r.Context(), "owner", token)
+		if err != nil && !errors.Is(err, core.ErrUnauthorized) {
+			writeError(w, http.StatusServiceUnavailable, "session", "Could not sign out.")
+			return
+		}
+		if err == nil && viewer.IsOwner {
+			sum := sha256.Sum256([]byte(token))
+			if err := h.deps.IdentityGrants.RevokeGrant(r.Context(), viewer.ID, hex.EncodeToString(sum[:])); err != nil {
+				writeError(w, http.StatusServiceUnavailable, "session", "Could not sign out: "+err.Error())
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 	if h.deps.Sessions == nil {
