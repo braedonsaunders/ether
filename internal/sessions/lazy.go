@@ -101,16 +101,51 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 	if stable {
 		// This token never leaves the process: it keys an authenticated path's
 		// reusable session and cannot be used as the issuing credential.
+		identity, err := json.Marshal(struct {
+			Protocol frontend.Protocol
+			ViewerID int64
+			DeviceID string
+			Item     core.RatingKey
+			Version  string
+		}{s.protocol, viewer.ID, req.Device.ID, req.Item, req.Version})
+		if err != nil {
+			return "", core.ErrNotAvailable
+		}
 		mac := hmac.New(sha256.New, []byte(credential))
 		_, _ = mac.Write([]byte("ether-authenticated-lazy-v1\x00"))
-		_, _ = mac.Write(data)
+		_, _ = mac.Write(identity)
 		token = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	}
 	now := s.broker.deps.Now()
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions_lazy_streams WHERE expires<=?`, now.UnixMilli())
-	_, err = s.db.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?) ON CONFLICT(hash) DO UPDATE SET expires=excluded.expires`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), now.Add(s.ttl).UnixMilli())
+	result, err := s.db.ExecContext(ctx, `INSERT INTO sessions_lazy_streams(hash,protocol,viewer_id,grant_reference,request,expires) VALUES(?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, lazyHash(token), string(s.protocol), viewer.ID, ref, string(data), now.Add(s.ttl).UnixMilli())
 	if err != nil {
 		return "", err
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if inserted == 0 {
+		if !stable {
+			return "", core.ErrNotAvailable
+		}
+		var oldRaw, oldRef string
+		var oldViewer int64
+		if err := s.db.QueryRowContext(ctx, `SELECT request,grant_reference,viewer_id FROM sessions_lazy_streams WHERE hash=? AND protocol=? AND expires>?`, lazyHash(token), string(s.protocol), now.UnixMilli()).Scan(&oldRaw, &oldRef, &oldViewer); err != nil {
+			return "", core.ErrNotAvailable
+		}
+		var previous frontend.PlanRequest
+		if oldRef != ref || oldViewer != viewer.ID || json.Unmarshal([]byte(oldRaw), &previous) != nil || !sameLazyDecision(previous, req) {
+			return "", core.ErrNotAvailable
+		}
+		result, err = s.db.ExecContext(ctx, `UPDATE sessions_lazy_streams SET expires=? WHERE hash=? AND protocol=? AND request=? AND expires>?`, now.Add(s.ttl).UnixMilli(), lazyHash(token), string(s.protocol), oldRaw, now.UnixMilli())
+		if err != nil {
+			return "", err
+		}
+		if updated, err := result.RowsAffected(); err != nil || updated != 1 {
+			return "", core.ErrNotAvailable
+		}
 	}
 	if stable {
 		s.broker.mu.Lock()
@@ -121,6 +156,22 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 		s.broker.mu.Unlock()
 	}
 	return "/sessions/lazy/" + token + "/file", nil
+}
+
+// sameLazyDecision ignores display-only fields and the current network flag.
+// Current locality is re-derived on every request before the broker uses it.
+func sameLazyDecision(a, b frontend.PlanRequest) bool {
+	normalize := func(r frontend.PlanRequest) frontend.PlanRequest {
+		r.Device.Client = ""
+		r.Device.DeviceName = ""
+		r.Caps.DeviceName = ""
+		r.Caps.ClientID = ""
+		r.Caps.Remote = false
+		return r
+	}
+	x, errX := json.Marshal(normalize(a))
+	y, errY := json.Marshal(normalize(b))
+	return errX == nil && errY == nil && string(x) == string(y)
 }
 
 // ServeAuthenticated is for a surface such as WebDAV that authenticates every

@@ -55,7 +55,11 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mediaHidden := false
 	b.deps.MediaLookup = func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		if mediaHidden {
+			return nil, core.ErrNotFound
+		}
 		return &core.Title{Key: k}, nil
 	}
 	defer b.Close(ctx)
@@ -144,7 +148,13 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil)
 		r.Header.Set("Range", "bytes=0-2")
-		lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, r, "account-credential-secret", authenticated)
+		current := authenticated
+		if i == 1 {
+			current.Device.Client = "renamed client"
+			current.Device.DeviceName = "renamed device"
+			current.Caps.DeviceName = "renamed device"
+		}
+		lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, r, "account-credential-secret", current)
 		if w.Code != http.StatusOK {
 			t.Fatalf("authenticated range %d: %d", i, w.Code)
 		}
@@ -157,6 +167,64 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	if pb.prepares != 2 || len(pb.Sessions()) != 2 {
 		t.Fatalf("authenticated ranges did not reuse a session: prepares=%d", pb.prepares)
 	}
+	changed := authenticated
+	changed.Caps.MaxHeight = 720
+	deniedDecision := httptest.NewRecorder()
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(deniedDecision, httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil), "account-credential-secret", changed)
+	if deniedDecision.Code != http.StatusNotFound || pb.prepares != 2 {
+		t.Fatalf("changed decision was reused: status=%d prepares=%d", deniedDecision.Code, pb.prepares)
+	}
+	var concurrent sync.WaitGroup
+	statuses = make(chan int, 4)
+	for n := 0; n < 4; n++ {
+		concurrent.Add(1)
+		go func() {
+			defer concurrent.Done()
+			w := httptest.NewRecorder()
+			lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
+			statuses <- w.Code
+		}()
+	}
+	concurrent.Wait()
+	close(statuses)
+	for status := range statuses {
+		if status != http.StatusOK {
+			t.Fatalf("concurrent authenticated range: %d", status)
+		}
+	}
+	if pb.prepares != 2 || len(pb.Sessions()) != 2 {
+		t.Fatalf("concurrent ranges opened another session: %d", pb.prepares)
+	}
+	foreign := authenticated
+	foreign.Viewer = &core.Viewer{ID: 2}
+	for _, tc := range []struct {
+		credential string
+		request    frontend.PlanRequest
+	}{{"invalid", authenticated}, {"account-credential-secret", foreign}} {
+		w := httptest.NewRecorder()
+		lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil), tc.credential, tc.request)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("foreign credential/viewer accepted: %d", w.Code)
+		}
+	}
+	grants.mu.Lock()
+	grants.revoked = true
+	grants.mu.Unlock()
+	revokedRange := httptest.NewRecorder()
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(revokedRange, httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
+	if revokedRange.Code != http.StatusNotFound || len(pb.Sessions()) != 2 {
+		t.Fatalf("revoked range status=%d sessions=%d", revokedRange.Code, len(pb.Sessions()))
+	}
+	grants.mu.Lock()
+	grants.revoked = false
+	grants.mu.Unlock()
+	mediaHidden = true
+	hiddenRange := httptest.NewRecorder()
+	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(hiddenRange, httptest.NewRequest(http.MethodGet, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
+	if hiddenRange.Code != http.StatusNotFound || len(pb.Sessions()) != 2 {
+		t.Fatalf("hidden item status=%d sessions=%d", hiddenRange.Code, len(pb.Sessions()))
+	}
+	mediaHidden = false
 	headAuth := httptest.NewRecorder()
 	lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(headAuth, httptest.NewRequest(http.MethodHead, "/dav/movie.mkv", nil), "account-credential-secret", authenticated)
 	if headAuth.Code == http.StatusOK || pb.prepares != 2 {
@@ -194,5 +262,48 @@ func TestLazyStreamCapabilityReusesSessionAndRevalidatesGrant(t *testing.T) {
 	lazy.ServeHTTP(expired, httptest.NewRequest(http.MethodGet, path, nil))
 	if expired.Code != http.StatusNotFound {
 		t.Fatalf("expired status %d", expired.Code)
+	}
+}
+
+func TestAuthenticatedLazyConcurrentFirstRangesReuseSession(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	pb := &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}
+	lookup := func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key}, nil
+	}
+	broker, err := NewBroker(BrokerDeps{Events: events, Playback: pb, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: lookup, MediaLookup: lookup})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close(ctx)
+	lazy, err := NewLazyStreams(db, broker, "stremio", &fakeLazyGrants{}, time.Hour, func(*http.Request) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "webdav-device"}, Protocol: "stremio", Item: core.MovieKey(1), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}}
+	var wg sync.WaitGroup
+	statuses := make(chan int, 8)
+	for n := 0; n < 8; n++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			lazy.(frontend.AuthenticatedLazyStreams).ServeAuthenticated(w, httptest.NewRequest(http.MethodGet, "/movie", nil), "account-credential-secret", request)
+			statuses <- w.Code
+		}()
+	}
+	wg.Wait()
+	close(statuses)
+	for status := range statuses {
+		if status != http.StatusOK {
+			t.Fatalf("concurrent status: %d", status)
+		}
+	}
+	if pb.prepares != 1 || len(pb.Sessions()) != 1 {
+		t.Fatalf("prepared=%d sessions=%d", pb.prepares, len(pb.Sessions()))
 	}
 }
