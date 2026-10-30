@@ -2,7 +2,10 @@ package capability_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -15,7 +18,7 @@ import (
 	_ "github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/handles/capability"
-	_ "github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -292,5 +295,55 @@ func TestTicketMultiBatchPreservesTypedScope(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("header count=%d", count)
+	}
+}
+
+type activeFixture struct{}
+
+func (activeFixture) ActiveUser(_ context.Context, id int64) (*core.User, error) {
+	return &core.User{ID: id}, nil
+}
+
+// The unchanged legacy service remains the consume authority in this draft.
+func TestMirroredTicketOldConsumerAndRollback(t *testing.T) {
+	db, tickets, scope := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	grants, err := identity.NewGrants(db, activeFixture{}, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := identity.NewTicketService(db, "silo", grants, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	hash := sha256.Sum256([]byte(token))
+	digest := hex.EncodeToString(hash[:])
+	if _, err = tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{{Digest: digest, Purpose: "events-ws"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := old.Consume(ctx, token, "events-ws")
+	if err != nil || got.Viewer == nil || got.Viewer.ID != 1 || got.Device.ID != "tv" {
+		t.Fatalf("old consume: %v", err)
+	}
+	if _, err = old.Consume(ctx, token, "events-ws"); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("old replay: %v", err)
+	}
+	// An old consumer leaves mirror metadata reserved until bounded expiry cleanup.
+	var n int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, digest).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("mirror count=%d err=%v", n, err)
+	}
+	// Conflict only in legacy storage must roll back a newly staged mirror.
+	conflict := entry(2).Digest
+	if _, err = db.ExecContext(ctx, `INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) VALUES(?,?,?,?,?,?,?)`, conflict, "silo", "events-ws", 1, scope.SourceHash, scope.DeviceJSON, time.Now().Add(time.Minute).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tickets.IssueMirrored(ctx, scope, []capability.TicketEntry{{Digest: conflict, Purpose: "events-ws"}}); err == nil {
+		t.Fatal("legacy conflict succeeded")
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, conflict).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("partial mirror count=%d err=%v", n, err)
 	}
 }

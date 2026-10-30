@@ -89,6 +89,16 @@ func (s *Tickets) lock(ctx context.Context, tx *sql.Tx, viewer int64) error {
 // grant and active viewer are checked in SQL inside the insertion transaction.
 // Existing legacy ticket rows remain separate and are never migrated or removed.
 func (s *Tickets) IssueBatch(ctx context.Context, scope TicketScope, entries []TicketEntry) (int64, error) {
+	return s.issueBatch(ctx, scope, entries, false)
+}
+
+// IssueMirrored atomically creates the shared header and legacy-authoritative
+// ticket. It is not wired into the production ticket service yet.
+func (s *Tickets) IssueMirrored(ctx context.Context, scope TicketScope, entries []TicketEntry) (int64, error) {
+	return s.issueBatch(ctx, scope, entries, true)
+}
+
+func (s *Tickets) issueBatch(ctx context.Context, scope TicketScope, entries []TicketEntry, mirror bool) (int64, error) {
 	if !scope.valid() || len(entries) == 0 || len(entries) > ticketBatchMax {
 		return 0, core.ErrUnauthorized
 	}
@@ -164,6 +174,31 @@ func (s *Tickets) IssueBatch(ctx context.Context, scope TicketScope, entries []T
 	}
 	if _, err = tx.ExecContext(ctx, child.String(), args...); err != nil {
 		return 0, err
+	}
+	if mirror {
+		// Keep the old table authoritative. The mirrored legacy row and shared
+		// header either both commit or neither does. Recheck the source grant.
+		var legacy strings.Builder
+		legacy.WriteString(`INSERT INTO frontend_tickets(hash,surface,purpose,viewer_id,source_hash,device,expires) `)
+		args = nil
+		for i, e := range entries {
+			if i > 0 {
+				legacy.WriteString(` UNION ALL `)
+			}
+			legacy.WriteString(`SELECT CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT),CAST(? AS TEXT),CAST(? AS TEXT),CAST(? AS BIGINT) WHERE EXISTS(SELECT 1 FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=CAST(? AS TEXT) AND g.surface=CAST(? AS TEXT) AND g.viewer_id=CAST(? AS BIGINT) AND g.device_id=CAST(? AS TEXT) AND g.revoked=0 AND g.expires>CAST(? AS BIGINT) AND u.active=1)`)
+			args = append(args, e.Digest, scope.Surface, e.Purpose, scope.ViewerID, scope.SourceHash, scope.DeviceJSON, expiry, scope.SourceHash, scope.Surface, scope.ViewerID, scope.DeviceID, now)
+		}
+		result, e := tx.ExecContext(ctx, legacy.String(), args...)
+		if e != nil {
+			return 0, e
+		}
+		rows, e := result.RowsAffected()
+		if e != nil {
+			return 0, e
+		}
+		if rows != int64(len(entries)) {
+			return 0, core.ErrUnauthorized
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return 0, err
