@@ -377,6 +377,9 @@ func (s *RowViewService) loadManifest(ctx context.Context, req frontend.RowViewR
 	return out, true, nil
 }
 
+type rowViewPolicyPreflightKey struct{}
+type rowViewPolicyPreflight struct{ titles []core.Title }
+
 func (s *RowViewService) ResolveRowView(ctx context.Context, req frontend.RowViewPageRequest) (frontend.RowViewPage, error) {
 	var page frontend.RowViewPage
 	req.ID = normalizeRowViewID(req.ID)
@@ -427,14 +430,15 @@ func (s *RowViewService) ResolveRowView(ctx context.Context, req frontend.RowVie
 	page.More = end < len(entries)
 	page.Entries = entries[start:end]
 	current := func() bool {
+		policyCtx := context.WithValue(ctx, rowViewPolicyPreflightKey{}, &rowViewPolicyPreflight{})
 		var generation string
 		var expiry int64
 		err := s.o.DB.QueryRowContext(ctx, `SELECT snapshot,expires FROM experience_row_views WHERE snapshot=? AND viewer_id=? AND device_id=? AND protocol=?`, req.ID, u.ID, req.Device.ID, string(req.Protocol)).Scan(&generation, &expiry)
 		active, activeErr := s.viewer(ctx, u, req.Device, req.Protocol)
-		if err != nil || activeErr != nil || generation != req.ID || expiry <= s.o.Now().UnixMilli() || !s.o.ValidRow(ctx, active, req.Device, req.Protocol, snap) {
+		if err != nil || activeErr != nil || generation != req.ID || expiry <= s.o.Now().UnixMilli() || !s.o.ValidRow(policyCtx, active, req.Device, req.Protocol, snap) {
 			return false
 		}
-		_, err = s.resolveAll(ctx, active, req.Device, req.Protocol, snap.Entries)
+		_, err = s.resolveAll(policyCtx, active, req.Device, req.Protocol, snap.Entries)
 		if err != nil {
 			return false
 		}

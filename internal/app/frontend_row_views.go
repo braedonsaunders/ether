@@ -12,6 +12,9 @@ func (a *App) newRowViews(protocol core.Protocol, rows *experience.RowsService, 
 		Snapshot: func(ctx context.Context, request frontend.RowRequest, situation core.HomeSituation) ([]frontend.Row, error) {
 			return rows.SnapshotRows(context.WithValue(ctx, experienceSituationKey{}, situation), request, protocol)
 		}}
+	if a.availability != nil {
+		d.CurrentAvailable = a.availability.FilterDiscoveryCurrent
+	}
 	if a.episodeorder != nil {
 		d.CachedVirtualSeason = a.episodeorder.CachedVirtualSeason
 	}

@@ -55,6 +55,15 @@ func (s *Service) KnownUnavailable(ctx context.Context, keys []core.RatingKey) m
 	return out
 }
 func (s *Service) KnownUnavailableSince(ctx context.Context, keys []core.RatingKey) map[core.RatingKey]time.Time {
+	return s.knownUnavailableSince(ctx, keys, true)
+}
+
+// KnownUnavailableSinceCurrent reads durable observations without a node-local override.
+func (s *Service) KnownUnavailableSinceCurrent(ctx context.Context, keys []core.RatingKey) map[core.RatingKey]time.Time {
+	return s.knownUnavailableSince(ctx, keys, false)
+}
+
+func (s *Service) knownUnavailableSince(ctx context.Context, keys []core.RatingKey, memo bool) map[core.RatingKey]time.Time {
 	out := map[core.RatingKey]time.Time{}
 	now := s.now()
 	if s.db != nil {
@@ -80,6 +89,9 @@ func (s *Service) KnownUnavailableSince(ctx context.Context, keys []core.RatingK
 			}
 			rows.Close()
 		}
+	}
+	if !memo {
+		return out
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()

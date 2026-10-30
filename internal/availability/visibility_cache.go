@@ -73,3 +73,11 @@ func (s *Service) clearVisibility() {
 	s.visibilityCache = nil
 	s.visibilityMu.Unlock()
 }
+
+type currentPolicyKey struct{}
+
+// FilterDiscoveryCurrent bypasses node-local visibility and resolver memos for
+// one bounded policy preflight batch. It performs no provider lookup.
+func (s *Service) FilterDiscoveryCurrent(ctx context.Context, items []core.Title) []core.Title {
+	return s.filterDiscovery(context.WithValue(ctx, currentPolicyKey{}, true), items)
+}
