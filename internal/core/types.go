@@ -180,6 +180,11 @@ type ClientCaps struct {
 	VideoLevels    map[string]int      `json:"videoLevels,omitempty"` // codec level in ffprobe units (H.264 51 = 5.1)
 	Remote         bool                `json:"remote"`                // not on the server's LAN
 
+	// TranscodeAudioCodecs is the explicit audio target for the current
+	// streaming protocol. It constrains remux/transcode output only; source
+	// selection and direct play continue to use AudioCodecs.
+	TranscodeAudioCodecs []string `json:"transcodeAudioCodecs,omitempty"`
+
 	// Download marks a request for an offline download (Plex Downloads /
 	// Sync) rather than live playback: the resolver prefers compact,
 	// mobile-native releases and the whole file is remuxed (additive).

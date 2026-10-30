@@ -177,7 +177,7 @@ func (b *Broker) hlsOutputDecision(ps *core.PlaySession, caps core.ClientCaps, o
 	if ps == nil || b.deps.Transcoder == nil {
 		return core.Decision{}, false
 	}
-	dec = HLSDecision(dec, opts.DirectPlay, func() core.Decision { return b.deps.Transcoder.Decide(ps.Info, caps, opts) })
+	dec = HLSDecision(dec, opts.DirectPlay, func() core.Decision { return b.deps.Transcoder.Decide(ps.Info, caps, opts) }, nil)
 	if allowTranscoding != nil && !*allowTranscoding && decisionEncodes(dec, ps.Info) {
 		return dec, false
 	}

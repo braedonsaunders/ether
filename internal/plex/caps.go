@@ -316,6 +316,32 @@ func applyProfileExtra(c *core.ClientCaps, extra string) {
 	}
 }
 
+// streamingAudioTarget keeps output capabilities separate from direct-play
+// support. A TV may decode EAC3 files while its DASH player requests AAC.
+// Targets for downloads or another streaming protocol cannot widen this one.
+func streamingAudioTarget(extra, protocol string) []string {
+	var codecs []string
+	for _, d := range ParseProfileExtra(extra) {
+		switch d.Verb {
+		case "add-transcode-target", "add-transcode-target-codec", "append-transcode-target-codec":
+		default:
+			continue
+		}
+		a := d.Args
+		if typ := a["type"]; typ != "" && typ != "videoProfile" {
+			continue
+		}
+		if context := a["context"]; context != "" && context != "all" && context != "streaming" {
+			continue
+		}
+		if target := a["protocol"]; target != "" && target != protocol {
+			continue
+		}
+		codecs = addUnique(codecs, splitList(a["audioCodec"])...)
+	}
+	return codecs
+}
+
 func applyLimitation(c *core.ClientCaps, a map[string]string) {
 	scope := a["scope"]
 	if scope != "videoCodec" && scope != "videoAudioCodec" && scope != "transcodeTarget" && scope != "videoContainer" {

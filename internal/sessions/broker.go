@@ -211,6 +211,7 @@ func copyRequest(r frontend.PlanRequest) frontend.PlanRequest {
 	}
 	r.Caps.VideoCodecs = slices.Clone(r.Caps.VideoCodecs)
 	r.Caps.AudioCodecs = slices.Clone(r.Caps.AudioCodecs)
+	r.Caps.TranscodeAudioCodecs = slices.Clone(r.Caps.TranscodeAudioCodecs)
 	r.Caps.Containers = slices.Clone(r.Caps.Containers)
 	r.Caps.HLSContainers = slices.Clone(r.Caps.HLSContainers)
 	r.Caps.SubtitleCodecs = slices.Clone(r.Caps.SubtitleCodecs)

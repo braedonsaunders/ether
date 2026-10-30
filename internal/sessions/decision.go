@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -72,19 +73,28 @@ func Decide(playback core.Playback, transcoder core.Transcoder, r DecisionReques
 			dec.Container = transcode.HLSContainer(r.Caps, videoCodec, audioCodec)
 		}
 		dec.Reason = "Direct stream preserves playback across source changes."
+		if len(r.Caps.TranscodeAudioCodecs) > 0 && audioCodec != "" && !slices.Contains(r.Caps.TranscodeAudioCodecs, audioCodec) {
+			opts := r.Options
+			opts.DirectPlay = false
+			dec = transcoder.Decide(ps.Info, r.Caps, opts)
+		}
 	}
 	return dec, nil
 }
 
 // HLSDecision applies the v39 start-time decision rules. A client may reject
 // direct play after its initial decision; in that case reconsider is called
-// before selecting the segmented output.
-func HLSDecision(dec core.Decision, allowDirect bool, reconsider func() core.Decision) core.Decision {
+// before selecting the segmented output. forcedStream, when supplied, applies
+// adapter output constraints only when a still-direct decision is forced to HLS.
+func HLSDecision(dec core.Decision, allowDirect bool, reconsider func() core.Decision, forcedStream func(core.Decision) core.Decision) core.Decision {
 	if dec.Kind == core.DecisionDirectPlay && !allowDirect {
 		dec = reconsider()
 	}
 	if dec.Kind == core.DecisionDirectPlay {
 		dec.Kind, dec.VideoCopy, dec.AudioCopy, dec.Container = core.DecisionRemux, true, true, "mpegts"
+		if forcedStream != nil {
+			dec = forcedStream(dec)
+		}
 	}
 	if dec.Container == "" {
 		dec.Container = "mpegts"

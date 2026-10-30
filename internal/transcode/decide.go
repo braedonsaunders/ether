@@ -510,6 +510,16 @@ func Decide(info core.MediaInfo, caps core.ClientCaps, opts core.DecideOptions, 
 		return d
 	}
 
+	// File decoding support is not necessarily the segmented player's output
+	// contract. Apply an explicit output target only after direct play was
+	// ruled out, so a valid direct-play soundtrack is never converted for it.
+	if len(caps.TranscodeAudioCodecs) > 0 {
+		caps.AudioCodecs = caps.TranscodeAudioCodecs
+		_, audioIssues, _ = collectIssues(info, v, a, sub, issueContext{
+			caps: caps, heightCap: heightCap, bitrateCap: bitrateCap, burn: burn, audioFilters: d.AudioFilters,
+		})
+	}
+
 	var why []string
 	if hdr10Base {
 		why = append(why, fmt.Sprintf("native Plex Apple TV compatibility: Dolby Vision profile %d uses its HDR10 base layer", v.DolbyVisionProfile))

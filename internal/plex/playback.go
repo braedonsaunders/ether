@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -341,6 +342,7 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 	resolvePlaySelection(p, ps.Info)
 	s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
 	applySelections(p, ps.Info, s.audioLanguages(pr.User))
+	p.caps.TranscodeAudioCodecs = streamingAudioTarget(pr.ProfileExtra, p.protocol)
 	dec, err := sessions.Decide(s.d.Playback, s.d.Transcoder, sessions.DecisionRequest{
 		Session: ps, Caps: p.caps, Options: p.opts, PreferRemux: p.mde,
 		Protocol: p.protocol, RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,
@@ -784,6 +786,14 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 		resolvePlaySelection(&p, ps.Info)
 		applySelections(&p, ps.Info, s.audioLanguages(pr.User))
 		return s.d.Transcoder.Decide(ps.Info, p.caps, p.opts)
+	}, func(dec core.Decision) core.Decision {
+		if len(entry.caps.TranscodeAudioCodecs) > 0 && dec.AudioCodec != "" && !slices.Contains(entry.caps.TranscodeAudioCodecs, dec.AudioCodec) {
+			opts := entry.opts
+			opts.DirectPlay = false
+			opts.DirectStream = true
+			return s.d.Transcoder.Decide(ps.Info, entry.caps, opts)
+		}
+		return dec
 	})
 	if existing, ok := s.d.Transcoder.Session(p.sessionID); ok && existing != nil {
 		if entry.started && entry.offset == p.offset {

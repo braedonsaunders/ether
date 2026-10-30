@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -88,6 +89,12 @@ func (s *Server) handleStartDASH(w http.ResponseWriter, r *http.Request) {
 	if dec.Kind == core.DecisionDirectPlay {
 		// The client asked for DASH anyway: remux.
 		dec.Kind, dec.VideoCopy, dec.AudioCopy = core.DecisionRemux, true, true
+		if len(entry.caps.TranscodeAudioCodecs) > 0 && dec.AudioCodec != "" && !slices.Contains(entry.caps.TranscodeAudioCodecs, dec.AudioCodec) {
+			opts := entry.opts
+			opts.DirectPlay = false
+			opts.DirectStream = true
+			dec = s.d.Transcoder.Decide(ps.Info, entry.caps, opts)
+		}
 	}
 	if existing, ok := s.d.Transcoder.Session(p.sessionID); ok && existing != nil {
 		// The MPD spans the whole title whatever the offset, so a repeated
