@@ -232,6 +232,16 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 		if oldRef != ref || oldViewer != viewer.ID || json.Unmarshal([]byte(oldRaw), &previous) != nil || !sameLazyDecision(previous, req) {
 			return "", core.ErrNotAvailable
 		}
+		var viewerCount, totalCount int
+		if err = tx.QueryRowContext(ctx, `SELECT used FROM sessions_lazy_viewer_capacity WHERE viewer_id=?`, viewer.ID).Scan(&viewerCount); err != nil {
+			return "", err
+		}
+		if err = tx.QueryRowContext(ctx, `SELECT used FROM sessions_lazy_capacity WHERE id=1`).Scan(&totalCount); err != nil {
+			return "", err
+		}
+		if viewerCount > maxLazyViewerCapabilities || totalCount > maxLazyCapabilities {
+			return "", &capability.CapacityError{Scope: "viewer"}
+		}
 		if err = s.renewHeader(ctx, tx, lazyHash(token), viewer.ID, expires.UnixMilli(), now.UnixMilli()); err != nil {
 			return "", err
 		}
@@ -846,16 +856,16 @@ func (s *lazyStreams) discardOpened(ctx context.Context, access frontend.Session
 	return s.broker.queueLazyCleanup(id, cleanup)
 }
 
-// Renewal replaces the exact live reservation atomically; reusable media never
-// consumes authority outside the transaction that updates its typed lifetime.
+// Renewal extends an in-use capability without adding a reservation. Current
+// policy and source-grant lifetime are checked before this transaction.
 func (s *lazyStreams) renewHeader(ctx context.Context, tx *sql.Tx, hash string, viewer, until, now int64) error {
 	h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: "lazy-stream", ViewerID: viewer, Surface: string(s.protocol)}, Digest: hash, ExpiresMillis: until}
-	consumed, err := capability.ConsumeHeaderInTx(ctx, s.db, tx, h, now)
+	renewed, err := capability.RenewHeaderInTx(ctx, s.db, tx, h, now)
 	if err != nil {
 		return err
 	}
-	if !consumed {
+	if !renewed {
 		return core.ErrUnauthorized
 	}
-	return capability.AdmitHeadersInTx(ctx, s.db, tx, []capability.Header{h}, capability.Limits{PerScope: maxLazyViewerCapabilities, PerShard: maxLazyCapabilities})
+	return nil
 }
