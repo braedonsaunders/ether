@@ -1,0 +1,220 @@
+{
+  "Items": [
+    {
+      "Name": "[REDACTED] Buck Bunny",
+      "Type": "Movie",
+      "Overview": "Follow a day of the life of Big Buck Bunny when he meets three bullying rodents: Frank, Rinky, and Gamera. The rodents amuse themselves by harassing helpless creatures by throwing fruits, nuts and rocks at them. After the deaths of two of Bunny's favorite butterflies, and an offensive attack on Bunny himself, Bunny sets aside his gentle nature and orchestrates a complex plan for revenge.",
+      "OriginalTitle": "Big Buck Bunny",
+      "OriginalLanguage": "en",
+      "OfficialRating": "G",
+      "ProviderIds": {
+        "Imdb": "tt1254207",
+        "Tmdb": "10378"
+      },
+      "ProductionYear": 2008,
+      "RunTimeTicks": 6346000000,
+      "CommunityRating": 6.5,
+      "Genres": [
+        "Animation",
+        "Comedy",
+        "Family"
+      ],
+      "ProductionLocations": [
+        "Netherlands"
+      ],
+      "Taglines": [],
+      "Studios": [
+        {
+          "Id": "66ac02ba6812c3e031d36b31750e19e3",
+          "Name": "[REDACTED] Foundation"
+        }
+      ],
+      "People": [
+        {
+          "Id": "e984787b9dc95dcfc659a00f4f812fa3",
+          "Name": "[REDACTED] Goedegebure",
+          "Role": "Director",
+          "Type": "Director"
+        },
+        {
+          "Id": "e984787b9dc95dcfc659a00f4f812fa3",
+          "Name": "[REDACTED] Goedegebure",
+          "Role": "Screenplay",
+          "Type": "Writer"
+        },
+        {
+          "Id": "49f34ba9aaa3cc6004fbee058aea50b7",
+          "ImageBlurHashes": {
+            "Primary": {
+              "e04c463c296af4966e88f9c3e992b009": "dJINUFIp~q=|-4In$eWVOtt7XAj?=_jExB%2bcWXt7xa"
+            }
+          },
+          "Name": "[REDACTED] Roosendaal",
+          "PrimaryImageTag": "e04c463c296af4966e88f9c3e992b009",
+          "Role": "Producer",
+          "Type": "Producer"
+        }
+      ]
+    },
+    {
+      "Name": "[REDACTED] One",
+      "Type": "Episode",
+      "IndexNumber": 1,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2004,
+      "RunTimeTicks": 10854472630
+    },
+    {
+      "Name": "[REDACTED] Two",
+      "Type": "Episode",
+      "IndexNumber": 2,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2004,
+      "RunTimeTicks": 11145145150
+    },
+    {
+      "Name": "[REDACTED] Three",
+      "Type": "Episode",
+      "IndexNumber": 3,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2004,
+      "RunTimeTicks": 9252916670
+    },
+    {
+      "Name": "[REDACTED] Four",
+      "Type": "Episode",
+      "IndexNumber": 4,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 7269583330
+    },
+    {
+      "Name": "[REDACTED] Five",
+      "Type": "Episode",
+      "IndexNumber": 5,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 8442869060
+    },
+    {
+      "Name": "[REDACTED] Six",
+      "Type": "Episode",
+      "IndexNumber": 6,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 12169307760
+    },
+    {
+      "Name": "[REDACTED] Seven",
+      "Type": "Episode",
+      "IndexNumber": 7,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 11907839870
+    },
+    {
+      "Name": "[REDACTED] Eight",
+      "Type": "Episode",
+      "IndexNumber": 8,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 14998998999
+    },
+    {
+      "Name": "[REDACTED] Nine",
+      "Type": "Episode",
+      "IndexNumber": 9,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 8908000000
+    },
+    {
+      "Name": "[REDACTED] Ten",
+      "Type": "Episode",
+      "IndexNumber": 10,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 10350684020
+    },
+    {
+      "Name": "[REDACTED] Eleven",
+      "Type": "Episode",
+      "IndexNumber": 11,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 11665600000
+    },
+    {
+      "Name": "[REDACTED] Twelve",
+      "Type": "Episode",
+      "IndexNumber": 12,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 9387839910
+    },
+    {
+      "Name": "[REDACTED] Thirteen",
+      "Type": "Episode",
+      "IndexNumber": 13,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 19311839910
+    },
+    {
+      "Name": "[REDACTED] Fourteen",
+      "Type": "Episode",
+      "IndexNumber": 14,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 14543760090
+    },
+    {
+      "Name": "[REDACTED] Fifteen",
+      "Type": "Episode",
+      "IndexNumber": 15,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 13776776780
+    },
+    {
+      "Name": "[REDACTED] Sixteen",
+      "Type": "Episode",
+      "IndexNumber": 16,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 12726590020
+    },
+    {
+      "Name": "[REDACTED] Seventeen",
+      "Type": "Episode",
+      "IndexNumber": 17,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 6988988990
+    },
+    {
+      "Name": "[REDACTED] Eighteen",
+      "Type": "Episode",
+      "IndexNumber": 18,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 18407439910
+    },
+    {
+      "Name": "[REDACTED] Nineteen",
+      "Type": "Episode",
+      "IndexNumber": 19,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 15121121120
+    },
+    {
+      "Name": "[REDACTED] Twenty",
+      "Type": "Episode",
+      "IndexNumber": 20,
+      "ParentIndexNumber": 1,
+      "ProductionYear": 2005,
+      "RunTimeTicks": 14061394730
+    }
+  ]
+}

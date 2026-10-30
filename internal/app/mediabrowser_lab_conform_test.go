@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/conform"
+	mbconform "github.com/braedonsaunders/ether/internal/conform/mediabrowser"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
@@ -53,7 +54,7 @@ import (
 // LAB_REPORT_DIR optionally retains redacted JSON reports; otherwise only counts
 // are printed. LAB_SUMMARY_PATH optionally writes release evidence (native
 // clients are never certified by this harness). Credentials and generated
-// media stay in a private temporary dir.
+// media stay in a private temporary dir. Credential variables use anonymous pipes.
 func TestMediaBrowserLabConformance(t *testing.T) {
 	path := os.Getenv("LAB_ENV")
 	if path == "" {
@@ -76,154 +77,22 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	defer jellyfinRef.logout(t)
 	embyRef := labReference(t, settings, "EMBY", settings["LAB_EMBY_URL"])
 	defer embyRef.logout(t)
-	ctx := context.Background()
-	a, viewer, cleanup := newAlignedLabFixture(t, jellyfinRef, labFixtureOptions{PublicViewerPicker: map[string]bool{"emby": true}})
-	defer cleanup()
+	conformBinary := filepath.Join(t.TempDir(), "conformdiff")
+	build := exec.Command("go", "build", "-o", conformBinary, "./cmd/conformdiff")
+	build.Dir = "../.."
+	if err := build.Run(); err != nil {
+		t.Fatal("build lab comparison tool failed")
+	}
+	t.Log("lab_baseline=isolated-profile-phase-v1; old counts and performance are not comparable")
 	summary := conformance.Manifest{Schema: 1, Protocols: map[string]conformance.Summary{}}
 	for _, spec := range []struct {
 		proto, client string
 		reference     labReferenceData
 	}{{"jellyfin", "findroid,jellycon,jellyfin-androidtv,streamyfin,swiftfin,infuse-jellyfin", jellyfinRef}, {"emby", "emby-sdk", embyRef}} {
 		t.Run(spec.proto, func(t *testing.T) {
-			inst, e := a.frontends.registry.Mount(ctx, core.Protocol(spec.proto))
-			if e != nil {
-				t.Fatal(e)
-			}
-			defer a.frontends.registry.Unmount(ctx, core.Protocol(spec.proto))
 			combined := map[string]bool{}
 			validEvidence := true
-			var seq atomic.Uint32
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				n := seq.Add(1)
-				r.RemoteAddr = fmt.Sprintf("198.51.100.%d:1234", n%200+1)
-				inst.Handler().ServeHTTP(w, r)
-			}))
-			defer srv.Close()
-			r, _ := http.NewRequest("POST", srv.URL+"/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture-viewer","Pw":"fixture-password"}`))
-			r.Header.Set("Authorization", `MediaBrowser Client="Conform", DeviceId="conform-device"`)
-			response, e := srv.Client().Do(r)
-			if e != nil {
-				t.Fatal(e)
-			}
-			var login struct{ AccessToken string }
-			e = json.NewDecoder(response.Body).Decode(&login)
-			response.Body.Close()
-			if e != nil || login.AccessToken == "" {
-				t.Fatal("target login failed", e)
-			}
-			// Each simulated client uses the grant issued for its own DeviceId.
-			// Reusing the preflight token for a different client would violate
-			// the production grant/device binding.
-			clientTokens := map[string]string{}
-			defer func() {
-				for clientName, token := range clientTokens {
-					(labReferenceData{base: srv.URL, token: token, device: "conform-" + clientName}).logout(t)
-				}
-				(labReferenceData{base: srv.URL, token: login.AccessToken, device: "conform-device"}).logout(t)
-			}()
-			for _, clientName := range strings.Split(spec.client, ",") {
-				deviceID := "conform-" + clientName
-				clientReq, e := http.NewRequest("POST", srv.URL+"/Users/AuthenticateByName", strings.NewReader(`{"Username":"fixture-viewer","Pw":"fixture-password"}`))
-				if e != nil {
-					t.Fatal("target client login request failed")
-				}
-				clientReq.Header.Set("Authorization", `MediaBrowser Client="Conform", DeviceId="`+deviceID+`"`)
-				clientResp, e := srv.Client().Do(clientReq)
-				if e != nil {
-					t.Fatal("target client login failed")
-				}
-				var clientLogin struct{ AccessToken string }
-				e = json.NewDecoder(clientResp.Body).Decode(&clientLogin)
-				clientResp.Body.Close()
-				if e != nil || clientResp.StatusCode != http.StatusOK || clientLogin.AccessToken == "" {
-					t.Fatal("target client login response invalid")
-				}
-				clientTokens[clientName] = clientLogin.AccessToken
-			}
-			userID, _ := ids.GUID(ids.User, viewer.ID)
-			viewID, _ := ids.GUID(ids.View, 1)
-			itemID := ids.RatingKeyGUID(core.MovieKey(10378))
-			itemReq, _ := http.NewRequest("GET", srv.URL+"/Items/"+itemID, nil)
-			itemReq.Header.Set("X-Emby-Token", login.AccessToken)
-			itemResp, err := srv.Client().Do(itemReq)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var item struct{ ImageTags map[string]string }
-			err = json.NewDecoder(itemResp.Body).Decode(&item)
-			itemResp.Body.Close()
-			if err != nil || itemResp.StatusCode != 200 || item.ImageTags["Primary"] == "" {
-				t.Fatal("item artwork not issued", itemResp.StatusCode, err)
-			}
-			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
-			firstClient := strings.Split(spec.client, ",")[0]
-			labTraceMediaDetail(t, a, viewer, spec.proto, "initial", spec.reference.vars["item_id"], srv, clientTokens[firstClient], itemID, "conform-"+firstClient)
-			imgResp, err := srv.Client().Get(srv.URL + "/Items/" + itemID + "/Images/Primary?tag=" + url.QueryEscape(item.ImageTags["Primary"]))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = io.Copy(io.Discard, imgResp.Body)
-			imgResp.Body.Close()
-			if err != nil || imgResp.StatusCode != 200 || !strings.HasPrefix(imgResp.Header.Get("Content-Type"), "image/") {
-				t.Fatal("fixture artwork fetch failed", imgResp.StatusCode, err)
-			}
-			gridReq, _ := http.NewRequest("GET", srv.URL+"/Items?Recursive=true&Limit=50", nil)
-			gridReq.Header.Set("X-Emby-Token", login.AccessToken)
-			gridResp, err := srv.Client().Do(gridReq)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var grid struct {
-				Items []struct {
-					Id        string
-					ImageTags map[string]string
-				}
-			}
-			err = json.NewDecoder(gridResp.Body).Decode(&grid)
-			gridResp.Body.Close()
-			if err != nil || gridResp.StatusCode != 200 {
-				t.Fatal("grid failed", gridResp.StatusCode, err)
-			}
-			foundImage := false
-			for _, entry := range grid.Items {
-				if entry.Id == itemID && entry.ImageTags["Primary"] != "" {
-					foundImage = true
-				}
-			}
-			if !foundImage {
-				t.Fatal("grid did not issue scoped artwork for seeded title")
-			}
-			similarReq, _ := http.NewRequest("GET", srv.URL+"/Items/"+itemID+"/Similar", nil)
-			similarReq.Header.Set("X-Emby-Token", login.AccessToken)
-			similarResp, err := srv.Client().Do(similarReq)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var similar struct{ Items []struct{ Name string } }
-			err = json.NewDecoder(similarResp.Body).Decode(&similar)
-			similarResp.Body.Close()
-			if err != nil || similarResp.StatusCode != http.StatusOK {
-				t.Fatal(similarResp.StatusCode, err)
-			}
-			for _, item := range similar.Items {
-				if item.Name == "Future hidden title" {
-					t.Fatal("unreleased candidate was exposed")
-				}
-			}
-			values := map[string]string{"username": "fixture-viewer", "password": "fixture-password", "device_id": "conform-device", "access_token": login.AccessToken, "user_id": userID, "item_id": itemID, "itemId": itemID, "media_source_id": itemID, "parent_id": viewID, "play_session_id": "initial", "position_ticks": "0"}
-			targetFile := filepath.Join(t.TempDir(), "target.json")
-			b, _ := json.Marshal(values)
-			if err := os.WriteFile(targetFile, b, 0600); err != nil {
-				t.Fatal(err)
-			}
-			refFile := filepath.Join(t.TempDir(), "reference.json")
-			refJSON, err := json.Marshal(spec.reference.vars)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(refFile, refJSON, 0600); err != nil {
-				t.Fatal(err)
-			}
+			protocolVersion := ""
 			probeDevices := map[string]string{}
 			allowedProbeDevices := []string{}
 			for _, clientName := range strings.Split(spec.client, ",") {
@@ -235,70 +104,51 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			for _, mode := range []string{"compare", "live"} {
 				report := conform.Report{}
 				for _, clientName := range strings.Split(spec.client, ",") {
-					referenceValues := map[string]string{}
-					for key, value := range spec.reference.vars {
-						referenceValues[key] = value
-					}
-					referenceValues["device_id"] = probeDevices[clientName]
-					referenceJSON, err := json.Marshal(referenceValues)
-					if err != nil {
-						t.Fatal("reference profile variables invalid")
-					}
-					if err = os.WriteFile(refFile, referenceJSON, 0600); err != nil {
-						t.Fatal("reference profile variables unavailable")
-					}
-					t.Logf("lab_profile_reference_device protocol=%s mode=%s client=%s device=%s", spec.proto, mode, clientName, probeDevices[clientName])
-					values["device_id"] = "conform-" + clientName
-					values["access_token"] = clientTokens[clientName]
-					b, _ = json.Marshal(values)
-					if err := os.WriteFile(targetFile, b, 0600); err != nil {
-						t.Fatal(err)
-					}
-					args := []string{"run", "./cmd/conformdiff", mode, "-protocol", spec.proto, "-client", clientName, "-target", srv.URL, "-target-vars", targetFile, "-reference-vars", refFile, "-format", "json", "-timeout", "15s"}
-					if mode == "live" {
-						args = append(args, "-reference-server", labProxy)
-					}
-					cmd := exec.Command("go", args...)
-					cmd.Dir = "../.."
-					cmd.Env = append(os.Environ(), "CONFORM_TARGET_TOKEN="+clientTokens[clientName], "CONFORM_REFERENCE_TOKEN="+spec.reference.token)
-					out, err := cmd.Output()
-					var partial conform.Report
-					if e = json.Unmarshal(out, &partial); e != nil {
+					t.Run(mode+"/"+clientName, func(t *testing.T) {
+						target := newLabProfileTarget(t, jellyfinRef, spec.proto, clientName)
+						defer target.close()
+						protocolVersion = target.version
+						referenceValues := map[string]string{}
+						for key, value := range spec.reference.vars {
+							referenceValues[key] = value
+						}
+						referenceValues["device_id"] = probeDevices[clientName]
+						t.Logf("lab_profile_reference_device protocol=%s mode=%s client=%s device=%s", spec.proto, mode, clientName, probeDevices[clientName])
+						args := []string{mode, "-protocol", spec.proto, "-client", clientName, "-target", target.server.URL, "-target-vars", "/dev/fd/3", "-reference-vars", "/dev/fd/4", "-format", "json", "-timeout", "15s"}
+						if mode == "live" {
+							args = append(args, "-reference-server", labProxy)
+						}
+						cmd := exec.Command(conformBinary, args...)
+						cmd.Dir = "../.."
+						cmd.Env = append(os.Environ(), "CONFORM_TARGET_TOKEN="+target.values["access_token"], "CONFORM_REFERENCE_TOKEN="+spec.reference.token)
+						out, err := labCommandVariables(cmd, target.values, referenceValues)
+						var partial conform.Report
+						if errJSON := json.Unmarshal(out, &partial); errJSON != nil {
+							validEvidence = false
+							t.Errorf("%s %s %s invalid report (command failed=%t)", spec.proto, mode, clientName, err != nil)
+							return
+						}
+						for _, diff := range partial.Differences {
+							if diff.Kind == conform.KindRequestError {
+								validEvidence = false
+							}
+							if mode == "live" && diff.Kind == conform.KindStatus && strings.HasSuffix(diff.Endpoint, "/Users/AuthenticateByName") && diff.Reference != float64(http.StatusOK) {
+								validEvidence = false
+								t.Errorf("%s %s reference login did not succeed; comparison invalid", spec.proto, clientName)
+							}
+							if mode == "live" && diff.Kind == conform.KindStatus && diff.Reference == float64(http.StatusUnauthorized) {
+								validEvidence = false
+								t.Errorf("%s %s reference authorization expired; comparison is invalid", spec.proto, clientName)
+								break
+							}
+						}
+						report.Differences = append(report.Differences, partial.Differences...)
+						report.ReferenceDefects = append(report.ReferenceDefects, partial.ReferenceDefects...)
+					})
+					if t.Failed() {
 						validEvidence = false
-						t.Errorf("%s %s %s invalid report: %v", spec.proto, mode, clientName, err)
-						continue
 					}
-					for _, diff := range partial.Differences {
-						if diff.Kind == conform.KindRequestError {
-							validEvidence = false
-						}
-						if mode == "live" && diff.Kind == conform.KindStatus && strings.HasSuffix(diff.Endpoint, "/Users/AuthenticateByName") && diff.Reference != float64(http.StatusOK) {
-							validEvidence = false
-							t.Errorf("%s %s reference login did not succeed; comparison invalid", spec.proto, clientName)
-						}
-						if mode == "live" && diff.Kind == conform.KindStatus && diff.Reference == float64(http.StatusUnauthorized) {
-							validEvidence = false
-							t.Errorf("%s %s reference authorization expired; comparison is invalid", spec.proto, clientName)
-							break
-						}
-					}
-					report.Differences = append(report.Differences, partial.Differences...)
-					report.ReferenceDefects = append(report.ReferenceDefects, partial.ReferenceDefects...)
-					for _, session := range (ownerPlayback{Playback: a.playback, app: a}).Sessions() {
-						t.Logf("lab_target_stop protocol=%s mode=%s client=%s session=%s", spec.proto, mode, clientName, session.ID)
-						if err := a.stopOwnerSession(session.ID); err != nil {
-							validEvidence = false
-							t.Errorf("%s %s target playback cleanup failed", spec.proto, clientName)
-						}
-					}
-					if len((ownerPlayback{Playback: a.playback, app: a}).Sessions()) != 0 {
-						validEvidence = false
-						t.Errorf("%s %s target playback cleanup left active sessions", spec.proto, clientName)
-					}
-					t.Logf("lab_target_remaining protocol=%s mode=%s client=%s count=%d", spec.proto, mode, clientName, len((ownerPlayback{Playback: a.playback, app: a}).Sessions()))
 				}
-				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, login.AccessToken, itemID, "")
-				labTraceMediaDetail(t, a, viewer, spec.proto, "after-"+mode, spec.reference.vars["item_id"], srv, clientTokens[firstClient], itemID, "conform-"+firstClient)
 				if reportDir := os.Getenv("LAB_REPORT_DIR"); reportDir != "" {
 					if err := os.MkdirAll(reportDir, 0700); err != nil {
 						t.Fatal(err)
@@ -337,7 +187,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			}
 			if validEvidence {
 				count := len(combined)
-				summary.Protocols[spec.proto] = conformance.Summary{ProtocolVersion: inst.Status(ctx).TargetVersion, Date: time.Now().UTC().Format(time.RFC3339), Blocking: &count, CertifiedClients: []string{}}
+				summary.Protocols[spec.proto] = conformance.Summary{ProtocolVersion: protocolVersion, Date: time.Now().UTC().Format(time.RFC3339), Blocking: &count, CertifiedClients: []string{}}
 			}
 
 		})
@@ -1592,4 +1442,186 @@ func TestLabProbeProxyDistinctProfileDevices(t *testing.T) {
 	if active["owned-findroid"] || active["owned-swiftfin"] || logouts["owned-findroid"] != 1 || logouts["owned-swiftfin"] != 1 {
 		t.Fatal("distinct profile identities not cleaned independently")
 	}
+}
+
+// Each independent comparison owns a complete target lifetime, including its
+// cache, viewer, broker plans, prepared sources and HTTP listener. Recorded and
+// live phases intentionally do not share it. The historical shared-viewer
+// sequence remains a separate UX regression candidate, not conformance evidence.
+type labProfileTarget struct {
+	app      *App
+	viewer   *core.User
+	server   *httptest.Server
+	protocol *mbconform.Protocol
+	values   map[string]string
+	version  string
+	close    func()
+}
+
+func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profile string) *labProfileTarget {
+	t.Helper()
+	a, viewer, dispose := newAlignedLabFixture(t, listing, labFixtureOptions{PublicViewerPicker: map[string]bool{"emby": true}})
+	target := &labProfileTarget{app: a, viewer: viewer}
+	if len(a.playback.Sessions()) != 0 {
+		t.Fatal("fresh target contains playback state")
+	}
+	fresh := a.frontends.broker.ConformLabLifecycleCounters(viewer.ID)
+	for _, key := range []string{"plans", "pending", "source_leases", "broker_sessions"} {
+		if fresh[key] != 0 {
+			t.Fatal("fresh target contains broker state")
+		}
+	}
+	target.close = sync.OnceFunc(func() {
+		if target.server != nil {
+			target.server.Close()
+		}
+		labTargetLifecycle(t, a, "before_app_close")
+		dispose()
+		labTargetLifecycle(t, a, "after_app_close")
+		counts := a.frontends.broker.ConformLabLifecycleCounters(viewer.ID)
+		for _, key := range []string{"plans", "pending", "source_leases", "source_plan_refs", "source_session_refs", "broker_sessions", "detail_flights"} {
+			if counts[key] != 0 {
+				t.Errorf("target App.Close left %s=%d", key, counts[key])
+			}
+		}
+		if len(a.playback.Sessions()) != 0 {
+			t.Error("target App.Close left playback reservations")
+		}
+	})
+	t.Cleanup(target.close)
+	inst, err := a.frontends.registry.Mount(context.Background(), core.Protocol(dialect))
+	if err != nil {
+		t.Fatal("target mount failed")
+	}
+	target.version = inst.Status(context.Background()).TargetVersion
+	var seq atomic.Uint32
+	target.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.RemoteAddr = fmt.Sprintf("198.51.100.%d:1234", seq.Add(1)%200+1)
+		inst.Handler().ServeHTTP(w, r)
+	}))
+	p, err := mbconform.Load(dialect, filepath.Join("..", "conform", "profiles", dialect))
+	if err != nil {
+		t.Fatal("profile load failed")
+	}
+	target.protocol = p
+	userID, _ := ids.GUID(ids.User, viewer.ID)
+	viewID, _ := ids.GUID(ids.View, 1)
+	itemID := ids.RatingKeyGUID(core.MovieKey(10378))
+	target.values = map[string]string{"username": "fixture-viewer", "password": "fixture-password", "device_id": "conform-" + profile, "user_id": userID, "item_id": itemID, "itemId": itemID, "media_source_id": itemID, "parent_id": viewID, "play_session_id": "initial", "position_ticks": "0"}
+	corpus := p.Corpus(profile)
+	if len(corpus) == 0 {
+		t.Fatal("empty profile")
+	}
+	// Fetch expands the real profile headers, keeping preflight on this client's
+	// DeviceId, product, version and capability scope (never Findroid defaults).
+	headers := corpus[0].Headers
+	loginReq := conform.Request{Method: "POST", Path: "/Users/AuthenticateByName", Headers: headers, Body: []byte(`{"Username":"fixture-viewer","Pw":"fixture-password"}`)}
+	client := &http.Client{Timeout: 15 * time.Second}
+	response, err := p.Fetch(context.Background(), client, target.server.URL, "", loginReq, profile, target.values, true)
+	var login struct{ AccessToken string }
+	if err != nil || response.Status != http.StatusOK || json.Unmarshal(response.Body, &login) != nil || login.AccessToken == "" {
+		t.Fatal("target current-client login failed")
+	}
+	target.values["access_token"] = login.AccessToken
+	for _, path := range []string{"/Items/" + itemID, "/Items?Recursive=true&Limit=50", "/Items/" + itemID + "/Similar"} {
+		req := conform.Request{Method: "GET", Path: path, Headers: headers}
+		response, err = p.Fetch(context.Background(), client, target.server.URL, login.AccessToken, req, profile, target.values, true)
+		if err != nil || response.Status != http.StatusOK {
+			t.Fatal("current-client preflight failed")
+		}
+		if path == "/Items/"+itemID {
+			var item struct{ ImageTags map[string]string }
+			if json.Unmarshal(response.Body, &item) != nil || item.ImageTags["Primary"] == "" {
+				t.Fatal("item artwork not issued")
+			}
+			image, err := client.Get(target.server.URL + "/Items/" + itemID + "/Images/Primary?tag=" + url.QueryEscape(item.ImageTags["Primary"]))
+			if err != nil {
+				t.Fatal("artwork fetch failed")
+			}
+			_, err = io.Copy(io.Discard, image.Body)
+			image.Body.Close()
+			if err != nil || image.StatusCode != http.StatusOK || !strings.HasPrefix(image.Header.Get("Content-Type"), "image/") {
+				t.Fatal("artwork fetch invalid")
+			}
+		}
+		if strings.HasPrefix(path, "/Items?") {
+			var grid struct {
+				Items []struct {
+					Id        string
+					ImageTags map[string]string
+				}
+			}
+			if json.Unmarshal(response.Body, &grid) != nil {
+				t.Fatal("grid invalid")
+			}
+			found := false
+			for _, entry := range grid.Items {
+				if entry.Id == itemID && entry.ImageTags["Primary"] != "" {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("grid did not issue scoped artwork for seeded title")
+			}
+		}
+		if strings.HasSuffix(path, "/Similar") && bytes.Contains(response.Body, []byte("Future hidden title")) {
+			t.Fatal("unreleased candidate was exposed")
+		}
+	}
+	labTargetLifecycle(t, a, "after_current_client_preflight")
+	return target
+}
+
+func labTargetLifecycle(t *testing.T, a *App, stage string) {
+	total, prepared, open := 0, 0, 0
+	for _, source := range a.playback.Sessions() {
+		total++
+		if source.PreparedOnly {
+			prepared++
+		}
+		if source.Source != nil {
+			open++
+		}
+	}
+	t.Logf("lab_target_lifecycle stage=%s playback_total=%d prepared=%d active=%d sources_open=%d owner_visible=%d broker=%v non_atomic=true", stage, total, prepared, total-prepared, open, len((ownerPlayback{Playback: a.playback, app: a}).Sessions()), a.frontends.broker.ConformLabLifecycleCounters(0))
+}
+
+// Anonymous inherited pipes avoid persisting token-bearing variable JSON. Pipe
+// writers finish on both success and early child exit; no background work survives.
+func labCommandVariables(cmd *exec.Cmd, variables ...map[string]string) ([]byte, error) {
+	var readers, writers []*os.File
+	var payloads [][]byte
+	defer func() {
+		for _, f := range readers {
+			f.Close()
+		}
+		for _, f := range writers {
+			f.Close()
+		}
+	}()
+	for _, values := range variables {
+		payload, err := json.Marshal(values)
+		if err != nil {
+			return nil, err
+		}
+		r, w, err := os.Pipe()
+		if err != nil {
+			return nil, err
+		}
+		readers = append(readers, r)
+		writers = append(writers, w)
+		payloads = append(payloads, payload)
+	}
+	cmd.ExtraFiles = readers
+	var wg sync.WaitGroup
+	for i, w := range writers {
+		wg.Add(1)
+		go func(w *os.File, payload []byte) { defer wg.Done(); defer w.Close(); _, _ = w.Write(payload) }(w, payloads[i])
+	}
+	out, err := cmd.Output()
+	for _, r := range readers {
+		r.Close()
+	}
+	wg.Wait()
+	return out, err
 }
