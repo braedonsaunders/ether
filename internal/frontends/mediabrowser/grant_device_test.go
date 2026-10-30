@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestGrantDeviceEnablesTokenOnlyAndRejectsMismatch(t *testing.T) {
 		}
 		for _, claim := range []string{"", "stored-device"} {
 			w := call("valid", claim)
-			if w.Code != 200 || planned.Device.ID != "stored-device" || lazy.seen.Device.ID != "stored-device" {
+			if w.Code != 200 || planned.Device.ID != "stored-device" || lazy.seen.Device.ID != "stored-device" || !strings.Contains(w.Body.String(), "https://ether.example/sessions/lazy/scoped/file") || strings.Contains(w.Body.String(), "valid") {
 				t.Fatal(claim, w.Code, planned.Device, lazy.seen.Device)
 			}
 		}
