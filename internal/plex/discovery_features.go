@@ -49,12 +49,6 @@ func (s *Server) discoveryHubs(ctx context.Context, pr *Request, limit int) []hu
 	}
 	return out
 }
-func (s *Server) discoveryContinue(ctx context.Context, pr *Request, items []core.Title) []core.Title {
-	if s.d.Discovery == nil || s.d.Discovery.Personal == nil {
-		return items
-	}
-	return s.d.Discovery.Personal.FilterContinue(ctx, pr.User, items)
-}
 func (s *Server) discoveryRemoveContinue(ctx context.Context, pr *Request, key core.RatingKey) error {
 	if s.d.Discovery == nil || s.d.Discovery.Personal == nil || pr.User == nil {
 		return nil
@@ -69,22 +63,6 @@ func (s *Server) discoveryRemoveContinue(ctx context.Context, pr *Request, key c
 	return s.d.Discovery.Personal.RemoveContinue(ctx, pr.User.ID, key)
 }
 
-// discoverySearch's bool is false when the owner has left NL search disabled.
-func (s *Server) discoverySearch(ctx context.Context, pr *Request, query string, limit int) ([]core.Title, bool) {
-	d := s.d.Discovery
-	if d == nil || d.LLM == nil || d.Watchlist == nil {
-		return nil, false
-	}
-	cfg, e := d.Watchlist.Settings(ctx)
-	if e != nil || !cfg.NaturalSearch {
-		return nil, false
-	}
-	items, e := d.LLM.NaturalSearch(ctx, pr.User, query, limit)
-	if e != nil {
-		return nil, false
-	}
-	return items, true
-}
 func (s *Server) decorateDiscoveryMetadata(ctx context.Context, pr *Request, t *core.Title, m *model.Metadata) {
 	d := s.d.Discovery
 	if d == nil || t == nil || pr.User == nil || !s.titleAllowed(pr.User, t) {

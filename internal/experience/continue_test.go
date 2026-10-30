@@ -225,3 +225,27 @@ func TestContinueUnrestrictedKeepsPrefixAndState(t *testing.T) {
 		t.Fatalf("unexpected backfill: %v", state.limits)
 	}
 }
+
+func TestContinueShelfFiltersBeforeOverflow(t *testing.T) {
+	now := time.Now()
+	keys := []core.RatingKey{core.MovieKey(1), core.MovieKey(2), core.MovieKey(3)}
+	statuses := []core.WatchStatus{{Key: keys[0], LastViewedAt: now}, {Key: keys[1], LastViewedAt: now.Add(-time.Second)}, {Key: keys[2], LastViewedAt: now.Add(-2 * time.Second)}}
+	c := Continue{State: continueState{statuses: statuses}, Unrestricted: func(*core.User) bool { return true }, SectionAllowed: func(*core.User, core.MediaType) bool { return true }, GetTitles: func(context.Context, []core.RatingKey) []core.Title {
+		return []core.Title{{Key: keys[0], Type: core.TypeMovie}, {Key: keys[1], Type: core.TypeMovie}, {Key: keys[2], Type: core.TypeMovie}}
+	}}
+	viewer := &core.User{ID: 1}
+	items, state, more := c.Shelf(context.Background(), viewer, core.TypeMovie, 1)
+	if len(items) != 1 || items[0].Key != keys[0] || !more || len(state) != 3 {
+		t.Fatalf("items=%v state=%v more=%v", items, state, more)
+	}
+	c.Filter = func(_ context.Context, got *core.User, items []core.Title) []core.Title {
+		if got != viewer || len(items) != 2 {
+			t.Fatalf("wrong preference input: %v %v", got, items)
+		}
+		return items[1:]
+	}
+	items, _, more = c.Shelf(context.Background(), viewer, core.TypeMovie, 1)
+	if len(items) != 1 || items[0].Key != keys[1] || more {
+		t.Fatalf("filtered items=%v more=%v", items, more)
+	}
+}

@@ -105,3 +105,29 @@ func TestSearchUnrestrictedNaturalKeepsLegacyLimitAndTitlePolicy(t *testing.T) {
 		t.Fatalf("results=%+v calls=%d err=%v", got, calls, err)
 	}
 }
+
+func TestSearchResolveSourcePrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		collections, handled bool
+		sourceErr            error
+		wantCatalog          bool
+	}{
+		{name: "flat skips collection source", handled: true, wantCatalog: true},
+		{name: "handled empty stays empty", collections: true, handled: true},
+		{name: "unhandled falls back", collections: true, wantCatalog: true},
+		{name: "error stops fallback", collections: true, sourceErr: errors.New("vibe unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			search := Search{Vibe: VibeSearch{Source: fakeVibe{ok: tc.handled, err: tc.sourceErr}}, Catalog: func(context.Context, string, []core.MediaType, int) ([]core.Title, error) {
+				calls++
+				return []core.Title{{Key: 1, Type: core.TypeMovie}}, nil
+			}}
+			result, err := search.Resolve(context.Background(), &core.User{}, "query", []core.MediaType{core.TypeMovie}, 3, tc.collections)
+			if (err != nil) != (tc.sourceErr != nil) || (calls == 1) != tc.wantCatalog || result.CollectionSearch != (tc.collections && tc.handled) {
+				t.Fatalf("result=%+v err=%v catalog calls=%d", result, err, calls)
+			}
+		})
+	}
+}

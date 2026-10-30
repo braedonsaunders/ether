@@ -10,6 +10,7 @@ import (
 
 // Continue coordinates resume and next-episode selection using viewer-scoped dependencies.
 type Continue struct {
+	Filter       func(context.Context, *core.User, []core.Title) []core.Title
 	State        core.State
 	EpisodeOrder interface {
 		Grouped(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
@@ -255,4 +256,23 @@ func PrioritizeFavoriteShows(titles []core.Title, favorites map[core.RatingKey]b
 		}
 		return favorite(titles[i]) && !favorite(titles[j])
 	})
+}
+
+// Row applies the viewer's Continue Watching preferences after resume selection.
+func (c Continue) Row(ctx context.Context, viewer *core.User, kind core.MediaType, limit int) ([]core.Title, map[core.RatingKey]core.WatchStatus) {
+	items, state := c.InProgress(ctx, viewer, kind, limit)
+	if c.Filter != nil {
+		items = c.Filter(ctx, viewer, items)
+	}
+	return items, state
+}
+
+// Shelf selects one overflow candidate before applying preferences and the shelf limit.
+func (c Continue) Shelf(ctx context.Context, viewer *core.User, kind core.MediaType, limit int) ([]core.Title, map[core.RatingKey]core.WatchStatus, bool) {
+	items, state := c.Row(ctx, viewer, kind, limit+1)
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
+	}
+	return items, state, more
 }

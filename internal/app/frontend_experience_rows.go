@@ -222,10 +222,10 @@ func (a *App) experienceContinue(ctx context.Context, viewer *core.User, librari
 	if a.episodeorder != nil {
 		c.EpisodeOrder = a.episodeorder
 	}
-	items, _ := c.InProgress(ctx, viewer, "", limit)
 	if a.discoveryPersonal != nil {
-		items = a.discoveryPersonal.FilterContinue(ctx, viewer, items)
+		c.Filter = a.discoveryPersonal.FilterContinue
 	}
+	items, _ := c.Row(ctx, viewer, "", limit)
 	return items, loadErr
 }
 

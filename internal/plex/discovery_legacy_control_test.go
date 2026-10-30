@@ -61,6 +61,11 @@ func TestDiscoveryLegacyControlRealWatchlist(t *testing.T) {
 		if !reflect.DeepEqual(want, got) {
 			t.Fatalf("limit=%d legacy=%+v shared=%+v", limit, want, got)
 		}
+		// Settle asynchronous artwork enrichment before either wire snapshot.
+		for _, h := range want {
+			f.srv.renderHub(ctx, pr, h, hubCtx{})
+		}
+		f.srv.waitBackground()
 		legacy := hubContainer()
 		legacy.Hub = f.srv.renderHubs(ctx, pr, func() []core.Hub {
 			out := make([]core.Hub, len(want))
