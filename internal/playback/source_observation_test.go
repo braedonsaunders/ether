@@ -3,11 +3,24 @@ package playback
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
+
+type historyLocalSource struct{ core.MediaSource }
+
+func (historyLocalSource) LocalFile() *os.File {
+	panic("local source must not be inspected under the owner gate")
+}
+
+func TestHistorySourceRevisionOmitsLocalWithoutFilesystemAccess(t *testing.T) {
+	if got := historySourceRevision(movieKey, historyLocalSource{}); got != "" {
+		t.Fatalf("unleased local source exposed a revision: %s", got)
+	}
+}
 
 func TestSourceSnapshotSurvivesFailoverAndStop(t *testing.T) {
 	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute), mkv("B", 10000, time.Minute)}, []string{"A", "B"})

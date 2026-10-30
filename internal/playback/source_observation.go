@@ -29,13 +29,7 @@ func (m *Manager) CurrentSource(ctx context.Context, id string) (core.PlaybackSo
 	key := s.ident.key
 	s.mu.Unlock()
 	observation := core.PlaybackSourceObservation{}
-	// Local SourceRevision stats the filesystem. Do not do that under the
-	// broker owner gate: a stalled mount could otherwise hold up Stop. Local
-	// history stays unknown until a separately reviewed source-lease seam exists.
-	if _, local := source.(core.LocalFileSource); local {
-		return observation, nil
-	}
-	if revision := core.SourceRevision(&core.PlaySession{Key: key, Source: source}); revision != "" {
+	if revision := historySourceRevision(key, source); revision != "" {
 		observation.Revision = revision
 		observation.ReleaseID = releaseID
 		if !info.Estimated {
@@ -46,6 +40,16 @@ func (m *Manager) CurrentSource(ctx context.Context, id string) (core.PlaybackSo
 		}
 	}
 	return observation, nil
+}
+
+func historySourceRevision(key core.RatingKey, source core.MediaSource) string {
+	// Local SourceRevision stats the filesystem. Do not do that under the
+	// broker owner gate: a stalled mount could otherwise hold up Stop. Local
+	// history stays unknown until a separately reviewed source-lease seam exists.
+	if _, local := source.(core.LocalFileSource); local {
+		return ""
+	}
+	return core.SourceRevision(&core.PlaySession{Key: key, Source: source})
 }
 
 // observedHDR keeps contradictory or incomplete probe evidence distinct from
