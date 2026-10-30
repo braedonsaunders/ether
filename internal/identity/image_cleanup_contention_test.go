@@ -177,10 +177,10 @@ func TestImageCleanupSkewedShardScanPlan(t *testing.T) {
 	}
 	t.Logf("server_version=%s other_rows=%d target_rows=%d modulus=%d limit=%d cutoff_ms=%d shard=%d", version, otherRows, targetRows, capability.HeaderShardCount, capability.HeaderBatchMax, cutoff, shard)
 
-	legacySelect := `SELECT hash FROM frontend_image_grants WHERE expires<=? AND (viewer_id % ?)=? ORDER BY expires,hash LIMIT ?`
-	legacyArgs := []any{cutoff, capability.HeaderShardCount, shard, capability.HeaderBatchMax}
-	legacyDelete := `DELETE FROM frontend_image_grants WHERE expires<=? AND (viewer_id % ?)=? AND hash IN (SELECT hash FROM frontend_image_grants WHERE expires<=? AND (viewer_id % ?)=? ORDER BY expires,hash LIMIT ?)`
-	legacyDeleteArgs := []any{cutoff, capability.HeaderShardCount, shard, cutoff, capability.HeaderShardCount, shard, capability.HeaderBatchMax}
+	legacySelect := `SELECT hash FROM frontend_image_grants WHERE expires<=? AND (viewer_id % 64)=? ORDER BY expires,hash LIMIT ?`
+	legacyArgs := []any{cutoff, shard, capability.HeaderBatchMax}
+	legacyDelete := `DELETE FROM frontend_image_grants WHERE expires<=? AND (viewer_id % 64)=? AND hash IN (SELECT hash FROM frontend_image_grants WHERE expires<=? AND (viewer_id % 64)=? ORDER BY expires,hash LIMIT ?)`
+	legacyDeleteArgs := []any{cutoff, shard, cutoff, shard, capability.HeaderBatchMax}
 	headerSelect := `SELECT digest FROM capability_headers WHERE namespace=? AND shard=? AND expires<=? ORDER BY expires,digest LIMIT ?`
 	headerArgs := []any{imageCapabilityNamespace, shard, cutoff, capability.HeaderBatchMax}
 
@@ -191,11 +191,10 @@ func TestImageCleanupSkewedShardScanPlan(t *testing.T) {
 	t.Logf("legacy select index-forced removed=%.0f scan_actual=%.0f indexes=%v", forcedLegacy.stats.removed, forcedLegacy.stats.scanActual, forcedLegacy.stats.indexes)
 	t.Logf("legacy select index-forced plan (enable_seqscan=off, enable_bitmapscan=off):\n%s", forcedLegacy.text)
 	t.Logf("legacy delete plan (not executed):\n%s", readExplain(t, ctx, db, "EXPLAIN", legacyDelete, legacyDeleteArgs...))
-	if !planExceedsLimit(forcedLegacy.stats, float64(capability.HeaderBatchMax)) {
-		t.Fatalf("index-forced legacy scan did not examine more than LIMIT %d: removed=%.0f scan_actual=%.0f", capability.HeaderBatchMax, forcedLegacy.stats.removed, forcedLegacy.stats.scanActual)
-	}
-	if !planExceedsLimit(defaultLegacy.stats, float64(capability.HeaderBatchMax)) {
-		t.Fatalf("default legacy scan did not examine more than LIMIT %d: removed=%.0f scan_actual=%.0f", capability.HeaderBatchMax, defaultLegacy.stats.removed, defaultLegacy.stats.scanActual)
+	for label, plan := range map[string]explained{"default": defaultLegacy, "forced": forcedLegacy} {
+		if !strings.Contains(strings.Join(plan.stats.indexes, ","), "frontend_image_grants_shard_expiry") || planExceedsLimit(plan.stats, float64(capability.HeaderBatchMax)) {
+			t.Fatalf("%s legacy plan missed shard index or exceeded limit: removed=%.0f scan_actual=%.0f indexes=%v", label, plan.stats.removed, plan.stats.scanActual, plan.stats.indexes)
+		}
 	}
 
 	defaultHeader := explainPlan(t, ctx, db, true, headerSelect, headerArgs...)
