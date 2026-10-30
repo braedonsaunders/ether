@@ -426,6 +426,9 @@ func addChapters(source map[string]any, media frontend.MediaInfo) {
 	source["Chapters"] = chapters
 }
 func (i *instance) playbackRoutes() error {
+	if err := i.router.Handle("GET", "/Playback/BitrateTest", http.HandlerFunc(i.bitrateTest)); err != nil {
+		return err
+	}
 	for _, method := range []string{"GET", "HEAD"} {
 		if err := i.router.Handle(method, "/Videos/{id}/{name}", http.HandlerFunc(i.streamAlias)); err != nil {
 			return err
