@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -149,7 +150,35 @@ func TestSiloLabConformance(t *testing.T) {
 	refCaps := call(siloURL, "GET", "/api/v2/playback/capabilities", refToken, refDevice, nil)
 	refInstall, _ := refCaps["installation_id"].(string)
 	refDetail := call(siloURL, "GET", "/api/v2/catalog/items/"+refItem, refToken, refDevice, nil)
+	refHome := call(siloURL, "GET", "/api/v2/home/sections", refToken, refDevice, nil)
+	progress := siloLabHomeProgress(refHome)
+	nextUp := siloLabNextUp(refHome)
+	var watched []core.RatingKey
+	for _, candidate := range nextUp {
+		// Read the reference's actual state; next-up alone does not prove which
+		// earlier episodes were watched, and no reference mutation is needed.
+		for episode := 1; episode < candidate.episode; episode++ {
+			id := fmt.Sprintf("episode-tvdb-78927-%d-%d", candidate.season, episode)
+			detail := call(siloURL, "GET", "/api/v2/catalog/items/"+id, refToken, refDevice, nil)
+			state, _ := detail["user_state"].(map[string]any)
+			if state["played"] == true {
+				watched = append(watched, core.EpisodeKey(91461, candidate.season, episode))
+			}
+		}
+	}
 	seedTitle := func(title *core.Title) {
+		if title.Type == core.TypeEpisode && title.ShowKey == core.ShowKey(91461) {
+			for _, p := range progress {
+				if p.key == title.Key && p.seriesTitle != "" {
+					title.ShowTitle = p.seriesTitle
+				}
+			}
+			for _, p := range nextUp {
+				if p.key == title.Key && p.seriesTitle != "" {
+					title.ShowTitle = p.seriesTitle
+				}
+			}
+		}
 		if title.Key != core.MovieKey(10378) {
 			return
 		}
@@ -193,6 +222,24 @@ func TestSiloLabConformance(t *testing.T) {
 	}
 	app, viewer, cleanup := newAlignedLabFixture(t, jf, labFixtureOptions{Duration: 634 * time.Second, FrameRate: 1, AudioTitle: "Fixture audio", ConfigureTitle: seedTitle})
 	defer cleanup()
+	for _, key := range watched {
+		if title, err := app.catalog.Get(context.Background(), key); err != nil || title == nil || title.Key != key {
+			continue
+		}
+		if err := app.state.Scrobble(context.Background(), viewer.ID, key); err != nil {
+			t.Fatal("failed to seed observed watched episode")
+		}
+	}
+	for _, p := range progress {
+		// The shared fixture may not contain every reference title. Only mirror
+		// observed progress when the matching fake catalogue item exists.
+		if title, err := app.catalog.Get(context.Background(), p.key); err != nil || title == nil || title.Key != p.key {
+			continue
+		}
+		if err := app.state.Progress(context.Background(), viewer.ID, p.key, p.position, p.duration, "paused"); err != nil {
+			t.Fatal("failed to seed reference-matched progress")
+		}
+	}
 	inst, err := app.frontends.registry.Mount(context.Background(), core.Protocol("silo"))
 	if err != nil {
 		t.Fatal(err)
@@ -261,6 +308,94 @@ func TestSiloLabConformance(t *testing.T) {
 			}
 		}
 	}
+}
+
+func nonNilLabItems(value any) []any {
+	items, _ := value.([]any)
+	return items
+}
+
+type siloLabProgressEntry struct {
+	key                core.RatingKey
+	position, duration time.Duration
+	seriesTitle        string
+}
+
+type siloLabNextUpEntry struct {
+	key             core.RatingKey
+	season, episode int
+	seriesTitle     string
+}
+
+func siloLabNextUp(home map[string]any) []siloLabNextUpEntry {
+	var entries []siloLabNextUpEntry
+	for _, rawRow := range nonNilLabItems(home["sections"]) {
+		row, _ := rawRow.(map[string]any)
+		for _, raw := range nonNilLabItems(row["items"]) {
+			item, _ := raw.(map[string]any)
+			if item["type"] != "episode" || item["item_source"] != "next_up" || item["series_id"] != "series-tvdb-78927" {
+				continue
+			}
+			season, sok := item["season_number"].(float64)
+			episode, eok := item["episode_number"].(float64)
+			if !sok || !eok || season < 0 || season > 1000 || episode < 1 || episode > 50 || math.Trunc(season) != season || math.Trunc(episode) != episode {
+				continue
+			}
+			seriesTitle, _ := item["series_title"].(string)
+			entries = append(entries, siloLabNextUpEntry{key: core.EpisodeKey(91461, int(season), int(episode)), season: int(season), episode: int(episode), seriesTitle: seriesTitle})
+		}
+	}
+	return entries
+}
+
+// Match only the reference titles whose identities the shared fixture seeds.
+// The reference is read-only: progress is written exclusively to the fake app.
+func siloLabHomeProgress(home map[string]any) []siloLabProgressEntry {
+	var entries []siloLabProgressEntry
+	rows, _ := home["sections"].([]any)
+	for _, rawRow := range rows {
+		row, _ := rawRow.(map[string]any)
+		items, _ := row["items"].([]any)
+		for _, raw := range items {
+			item, _ := raw.(map[string]any)
+			if item["item_source"] != "in_progress" {
+				continue
+			}
+			position, ok := item["position_seconds"].(float64)
+			if !ok || position <= 0 || math.IsNaN(position) || math.IsInf(position, 0) || position > float64((1<<63-1)/int64(time.Second)) {
+				continue
+			}
+			duration, ok := item["duration_seconds"].(float64)
+			if !ok || duration <= position || math.IsNaN(duration) || math.IsInf(duration, 0) || duration > float64((1<<63-1)/int64(time.Second)) {
+				continue
+			}
+			var key core.RatingKey
+			switch item["type"] {
+			case "movie":
+				id, _ := item["content_id"].(string)
+				if strings.HasPrefix(id, "movie-tmdb-") {
+					if n, err := strconv.ParseInt(strings.TrimPrefix(id, "movie-tmdb-"), 10, 64); err == nil && n > 0 {
+						key = core.MovieKey(n)
+					}
+				}
+			case "episode":
+				if item["series_id"] != "series-tvdb-78927" {
+					continue
+				}
+				season, sok := item["season_number"].(float64)
+				episode, eok := item["episode_number"].(float64)
+				if sok && eok && season >= 0 && season <= 1000 && episode > 0 && episode <= 10000 && math.Trunc(season) == season && math.Trunc(episode) == episode {
+					key = core.EpisodeKey(91461, int(season), int(episode))
+				}
+			}
+			if key == 0 {
+				continue
+			}
+			seriesTitle, _ := item["series_title"].(string)
+			entries = append(entries, siloLabProgressEntry{key: key, position: time.Duration(position * float64(time.Second)), duration: time.Duration(duration * float64(time.Second)), seriesTitle: seriesTitle})
+		}
+	}
+	return entries
 }
 
 func siloLabProbeProxy(t *testing.T, base, device, installation string) (string, func()) {
