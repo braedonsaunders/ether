@@ -197,3 +197,81 @@ func TestHeadersScopedPruneAndEmptyDevice(t *testing.T) {
 		t.Fatalf("remaining=%d err=%v", count, err)
 	}
 }
+
+func TestHeadersPruneProgressesPastRetirementOwners(t *testing.T) {
+	for _, namespace := range []string{"playback-source", "lazy-stream", "image", "experience.receipt"} {
+		for _, scoped := range []bool{false, true} {
+			name := namespace + "/global"
+			if scoped {
+				name = namespace + "/scoped"
+			}
+			t.Run(name, func(t *testing.T) {
+				db, _, _ := fixture(t)
+				ctx := context.Background()
+				scope := capability.HeaderScope{Namespace: namespace, ViewerID: 1, Surface: "silo", DeviceID: "tv"}
+				protected := capability.Header{HeaderScope: scope, Digest: entry(700).Digest, ExpiresMillis: 10}
+				expired := protected
+				expired.Digest = entry(701).Digest
+				expired.ExpiresMillis = 11
+				later := expired
+				later.Digest = entry(702).Digest
+				later.ExpiresMillis = 12
+				tx, err := db.BeginTx(ctx, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback()
+				if err := capability.BindHeadersInTx(ctx, tx, []capability.Header{protected, expired, later}); err != nil {
+					t.Fatal(err)
+				}
+				claimed, err := capability.ClaimHeaderInTx(ctx, db, tx, protected, capability.RetirementOwnerClaim, 1)
+				if err != nil || !claimed {
+					t.Fatalf("claim=%v err=%v", claimed, err)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
+				for _, want := range []int64{1, 1, 0} {
+					tx, err := db.BeginTx(ctx, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var n int64
+					if scoped {
+						n, err = capability.PruneScopedHeadersInTx(ctx, tx, namespace, scope.ViewerID, scope.Surface, 20, 1)
+					} else {
+						n, err = capability.PruneHeadersInTx(ctx, tx, namespace, 20, 1)
+					}
+					if err != nil || n != want {
+						tx.Rollback()
+						t.Fatalf("pruned=%d want=%d err=%v", n, want, err)
+					}
+					if err := tx.Commit(); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var remaining int
+				if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND digest=?`, namespace, protected.Digest).Scan(&remaining); err != nil || remaining != 1 {
+					t.Fatalf("protected=%d err=%v", remaining, err)
+				}
+				// The domain releases its protection only after real retirement. A
+				// normal one-shot consume claim must not pin unrelated housekeeping.
+				if _, err := db.ExecContext(ctx, `DELETE FROM capability_claims WHERE namespace=? AND digest=? AND purpose=?`, namespace, protected.Digest, capability.RetirementOwnerClaim); err != nil {
+					t.Fatal(err)
+				}
+				tx, err = db.BeginTx(ctx, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback()
+				n, err := capability.PruneHeadersInTx(ctx, tx, namespace, 20, 1)
+				if err != nil || n != 1 {
+					t.Fatalf("released prune=%d err=%v", n, err)
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}

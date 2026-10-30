@@ -26,17 +26,18 @@ type identity struct {
 // generation is one opened source of a session. A failover creates a new
 // generation; the old one is retired and closed once in-flight reads end.
 type generation struct {
-	reads    pendingSourceReads
-	standby  standbyState
-	recovery recoveryState
-	damage   damageState
-	sess     *session
-	n        int
-	token    string // loopback path component; unguessable
-	src      core.MediaSource
-	res      *core.Resolution
-	info     core.MediaInfo
-	tmap     TimeMap
+	reads        pendingSourceReads
+	standby      standbyState
+	recovery     recoveryState
+	damage       damageState
+	sess         *session
+	n            int
+	token        string // loopback path component; unguessable
+	src          core.MediaSource
+	finishSource func(error)
+	res          *core.Resolution
+	info         core.MediaInfo
+	tmap         TimeMap
 
 	// indexReady is closed once the container keyframe index has been
 	// read (or given up on); the prewarm path waits for it, Play does not.
@@ -105,7 +106,10 @@ func (g *generation) retire() {
 
 func (g *generation) closeSource() {
 	if g.src != nil {
-		_ = g.src.Close()
+		err := g.src.Close()
+		if g.finishSource != nil {
+			g.finishSource(err)
+		}
 	}
 }
 
@@ -155,6 +159,7 @@ func (g *generation) releaseID() string {
 
 // session is the internal, mutable form of a core.PlaySession.
 type session struct {
+	sources        *sourceLifetime
 	reserve        reserveState
 	viewerPosition time.Duration // guarded by mu, from authenticated Plex timeline
 	viewerAt       time.Time
@@ -223,6 +228,7 @@ func newSession(id string, ident identity, user *core.User, caps core.ClientCaps
 	stopCtx, stopCancel := context.WithCancel(context.Background())
 	return &session{
 		id:         id,
+		sources:    newSourceLifetime(user.ID, string(caps.Protocol), caps.ClientID),
 		stopCtx:    stopCtx,
 		stopCancel: stopCancel,
 		ident:      ident,

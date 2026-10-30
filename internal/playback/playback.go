@@ -194,13 +194,14 @@ func (o *Options) defaults() {
 
 // Manager implements core.Playback.
 type Manager struct {
-	events eventBus
-	deps   Deps
-	opts   Options
-	log    *slog.Logger
-	now    func() time.Time
-	resume *resumeStore
-	reg    *registry // nil on a standalone server
+	sourceAccounting sourceAccounting
+	events           eventBus
+	deps             Deps
+	opts             Options
+	log              *slog.Logger
+	now              func() time.Time
+	resume           *resumeStore
+	reg              *registry // nil on a standalone server
 	// titleInval broadcasts title invalidations (nil standalone).
 	titleInval *clusterbus.Invalidator
 	bufs       sync.Pool
@@ -274,6 +275,7 @@ func (m *Manager) hasFlightLocked(id identity) bool {
 
 // flight is one in-progress Prepare shared by concurrent callers.
 type flight struct {
+	sources *sourceLifetime
 	done    chan struct{}
 	cancel  context.CancelFunc
 	waiters int
@@ -352,6 +354,10 @@ func New(deps Deps, cfg config.Config, opts Options) (*Manager, error) {
 
 	ln, err := net.Listen("tcp", opts.LoopbackAddr)
 	if err != nil {
+		if m.resume != nil {
+			m.resume.close(context.Background())
+		}
+		m.titleInval.Close()
 		return nil, fmt.Errorf("playback: loopback listen: %w", err)
 	}
 	m.ln = ln
@@ -410,6 +416,11 @@ func (m *Manager) Close() error {
 	m.cancel()
 	err := m.srv.Close()
 	m.wg.Wait()
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), sourceCleanupShutdownWait)
+	if cleanupErr := m.drainSourceCleanup(cleanupCtx); cleanupErr != nil {
+		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", cleanupErr))
+	}
+	cleanupCancel()
 	if m.reg != nil {
 		m.reg.close()
 	}
@@ -611,12 +622,17 @@ func (m *Manager) PrepareSurface(ctx context.Context, user *core.User, key core.
 // prepareEntry is Prepare plus an optional picked release (prefer != "").
 // An existing session on a different release is replaced, never reused.
 func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, prefer string, exact, deferSupersession bool) (*core.PlaySession, error) {
+	ps, _, err := m.prepareOwnedEntry(ctx, user, key, caps, prefer, exact, deferSupersession)
+	return ps, err
+}
+
+func (m *Manager) prepareOwnedEntry(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, prefer string, exact, deferSupersession bool) (*core.PlaySession, core.SourceRetirement, error) {
 	if user == nil {
-		return nil, core.ErrUnauthorized
+		return nil, nil, core.ErrUnauthorized
 	}
 	if lookup, ok := m.deps.Catalog.(core.StoredTitleLookup); ok {
 		if title, err := lookup.StoredTitle(ctx, key); err == nil && title != nil && !title.Released.IsZero() && title.Released.After(m.now()) {
-			return nil, fmt.Errorf("playback: title releases on %s: %w", title.Released.Format("2006-01-02"), core.ErrUnreleased)
+			return nil, nil, fmt.Errorf("playback: title releases on %s: %w", title.Released.Format("2006-01-02"), core.ErrUnreleased)
 		}
 	}
 	id := identity{userID: user.ID, clientID: caps.ClientID, key: key, surface: playbackSurface(string(caps.Protocol))}
@@ -627,14 +643,14 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 		m.mu.Lock()
 		if m.closed {
 			m.mu.Unlock()
-			return nil, errors.New("playback: shutting down")
+			return nil, nil, errors.New("playback: shutting down")
 		}
 		m.lastCaps[user.ID] = caps
 		if s := m.byIdent[id]; s != nil {
 			if s.exact == exact && (prefer == "" || s.current().releaseID() == prefer) {
 				m.mu.Unlock()
 				s.touch(m.now())
-				return s.snapshot(m.now()), nil
+				return s.snapshot(m.now()), s.sources, nil
 			}
 			old := s.id
 			m.mu.Unlock()
@@ -648,7 +664,7 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 	f := m.flights[fk]
 	if f == nil {
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.opts.PrepareTimeout)
-		f = &flight{done: make(chan struct{}), cancel: cancel}
+		f = &flight{sources: newSourceLifetime(user.ID, string(caps.Protocol), caps.ClientID), done: make(chan struct{}), cancel: cancel}
 		m.flights[fk] = f
 		u := *user
 		go m.runFlight(wctx, f, fk, &u, caps)
@@ -659,23 +675,23 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 	select {
 	case <-f.done:
 		if f.err != nil {
-			return nil, f.err
+			return nil, f.sources, f.err
 		}
-		return f.sess.snapshot(m.now()), nil
+		return f.sess.snapshot(m.now()), f.sess.sources, nil
 	case <-ctx.Done():
 		m.mu.Lock()
 		if f.waiters--; f.waiters == 0 {
 			f.cancel() // nobody wants it any more
 		}
 		m.mu.Unlock()
-		return nil, ctx.Err()
+		return nil, f.sources, ctx.Err()
 	}
 }
 
 func (m *Manager) runFlight(ctx context.Context, f *flight, fk flightKey, user *core.User, caps core.ClientCaps) {
 	defer close(f.done)
 	defer f.cancel()
-	s, err := m.prepare(ctx, fk.id, user, caps, fk.prefer, fk.exact, fk.deferSupersession)
+	s, err := m.prepare(ctx, fk.id, user, caps, fk.prefer, fk.exact, fk.deferSupersession, f.sources)
 	m.mu.Lock()
 	delete(m.flights, fk)
 	if err != nil && m.byIdent[fk.id] == nil {
@@ -684,11 +700,12 @@ func (m *Manager) runFlight(ctx context.Context, f *flight, fk flightKey, user *
 	m.mu.Unlock()
 	f.sess, f.err = s, err
 	if err != nil {
+		f.sources.seal()
 		m.emitEvent("error", s, err)
 	}
 }
 
-func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, caps core.ClientCaps, prefer string, exact, deferSupersession bool) (*session, error) {
+func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, caps core.ClientCaps, prefer string, exact, deferSupersession bool, sources *sourceLifetime) (*session, error) {
 	log := m.log.With("user", userLabel(user), "client", caps.ClientID, "key", id.key)
 	if err := m.reserve(ctx, user, id); err != nil {
 		log.Info("stream limit", "err", err)
@@ -716,6 +733,12 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 	}
 	profile := m.deps.SelectProfile(caps, user)
 	s := newSession(randomID(16), id, user, caps, title, profileKey(profile), m.now())
+	s.sources = sources
+	defer func() {
+		if !registered {
+			sources.seal()
+		}
+	}()
 	s.preparedOnly = deferSupersession
 	s.prefer = prefer
 	s.exact = exact
@@ -887,7 +910,14 @@ func (m *Manager) Stop(id string) {
 		m.mu.Unlock()
 		return
 	}
-	delete(m.sessions, id)
+	g := m.detachSessionLocked(s)
+	m.mu.Unlock()
+	m.finishSessionStop(s, g)
+}
+
+// Caller holds m.mu; no I/O or backend cleanup occurs here.
+func (m *Manager) detachSessionLocked(s *session) *generation {
+	delete(m.sessions, s.id)
 	if m.byIdent[s.ident] == s {
 		delete(m.byIdent, s.ident)
 		delete(m.channelGroups, s.ident)
@@ -902,8 +932,12 @@ func (m *Manager) Stop(id string) {
 	if g != nil {
 		delete(m.tokens, g.sess.id+"/"+g.token)
 	}
-	m.mu.Unlock()
+	s.sources.seal()
+	return g
+}
 
+func (m *Manager) finishSessionStop(s *session, g *generation) {
+	id := s.id
 	if g != nil {
 		g.retire()
 		m.unpinLive(g.releaseID())

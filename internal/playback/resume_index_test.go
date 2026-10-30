@@ -19,6 +19,7 @@ func TestResumeKeyframeIndexBoundedAndPersisted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { rs.close(context.Background()) })
 	want := []core.KeyframePoint{{Offset: 400, Time: 40 * time.Second}}
 	if err := rs.saveIndex(context.Background(), 7, 42, "release", want); err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -128,10 +129,17 @@ func TestFailoverWithOnlyIncompatibleReplacementsKeepsStream(t *testing.T) {
 	}
 }
 
-type picturePreparedHLS struct{ *fixedFormatHLS }
+type picturePreparedHLS struct {
+	*fixedFormatHLS
+	rejected chan struct{}
+	once     sync.Once
+}
 
 func (h *picturePreparedHLS) PrepareSwap(ctx context.Context, input string, info core.MediaInfo, at time.Duration) error {
 	if info.Video().Width == 1280 {
+		if h.rejected != nil {
+			h.once.Do(func() { close(h.rejected) })
+		}
 		return errors.New("picture sample timed out")
 	}
 	return nil
@@ -141,11 +149,21 @@ func TestFailoverRejectsUnreadablePictureBeforePublication(t *testing.T) {
 		t.Run(fmt.Sprint(race), func(t *testing.T) {
 			b := mkv("B", 100_000, time.Minute)
 			h := newHarness(t, []*fakeRelease{mkv("A", 100_000, time.Minute), b, mkv("C", 100_000, time.Minute)}, []string{"A", "B", "C"})
-			if race {
-				h.m.deps.FetchNZB = func(ctx context.Context, r core.Release) ([]byte, error) { return []byte("nzb-" + r.ID), nil }
-			}
+
 			ps := h.prepare(owner, movieKey, "picture-preflight")
-			hls := &picturePreparedHLS{&fixedFormatHLS{fakeHLS: h.tr.addHLS(ps.ID)}}
+			hls := &picturePreparedHLS{fixedFormatHLS: &fixedFormatHLS{fakeHLS: h.tr.addHLS(ps.ID)}, rejected: make(chan struct{})}
+			if race {
+				h.m.deps.FetchNZB = func(ctx context.Context, r core.Release) ([]byte, error) {
+					if r.ID == "C" {
+						select {
+						case <-hls.rejected:
+						case <-ctx.Done():
+							return nil, ctx.Err()
+						}
+					}
+					return []byte("nzb-" + r.ID), nil
+				}
+			}
 			h.m.deps.HLSLookup = func(string) (core.HLSSession, bool) { return hls, true }
 			// Only B's picture probe is unavailable; it is otherwise healthy.
 			h.m.deps.AugmentMedia = func(ctx context.Context, title *core.Title, user *core.User, res *core.Resolution, src core.MediaSource, info *core.MediaInfo) {

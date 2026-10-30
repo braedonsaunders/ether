@@ -21,6 +21,7 @@ func newTestResumeStore(t *testing.T) *resumeStore {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { rs.close(context.Background()) })
 	return rs
 }
 
@@ -39,7 +40,7 @@ func TestGCKeepsNZBOfRecordBeingWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	// User 2's save of the same NZB is in flight: file found, row pending.
-	hash, err := rs.acquireNZB(nzb)
+	lease, err := rs.acquireNZB(ctx, rec(2, "shared"), nzb)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,18 +48,18 @@ func TestGCKeepsNZBOfRecordBeingWritten(t *testing.T) {
 	if err := rs.save(ctx, rec(1, "other"), []byte("<nzb>other</nzb>")); err != nil {
 		t.Fatal(err)
 	}
-	if err := rs.saveRow(ctx, rec(2, "shared"), hash); err != nil {
+	if err := rs.writeBundle(ctx, rec(2, "shared"), lease, nil, core.MediaInfo{}, nzb); err != nil {
 		t.Fatal(err)
 	}
-	rs.releaseNZB(hash)
-	if _, err := rs.readNZB(hash); err != nil {
+	rs.releaseNZB(lease)
+	if _, err := rs.readNZB(lease.hash); err != nil {
 		t.Fatalf("NZB of user 2's record was deleted: %v", err)
 	}
 	// Once nothing references it, it is collected.
 	if err := rs.delete(ctx, 2, 42); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(rs.nzbPath(hash)); !os.IsNotExist(err) {
+	if _, err := os.Stat(rs.nzbPath(lease.hash)); !os.IsNotExist(err) {
 		t.Fatalf("unreferenced NZB kept: %v", err)
 	}
 }

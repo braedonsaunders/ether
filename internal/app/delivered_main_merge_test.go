@@ -23,6 +23,7 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		"frontend_tickets":      3,
 		"frontend_image_grants": 7,
 		"capability_headers":    3,
+		"playback":              3,
 		"capability_tickets":    1,
 		"handle_reservations":   2,
 		"viewer_alerts":         2,
@@ -45,6 +46,7 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 	}
 	for _, dep := range []struct{ component, after string }{
 		{"identity_grants", "auth"},
+		{"playback", "capability_headers"},
 		{"frontend_tickets", "auth"},
 		{"frontend_tickets", "identity_grants"},
 		{"frontend_image_grants", "auth"},

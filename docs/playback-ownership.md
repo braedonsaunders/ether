@@ -137,3 +137,91 @@ run on SQLite and PostgreSQL, using the current capability primitive.
 These gates do not certify durable sticky authority, cross-node payload GC,
 encoder retirement or actual Plex broker adoption. Those remain launch blockers
 until their real consumers and failure outcomes are integrated and validated.
+
+## Manager source outcome increment
+
+The manager now reserves bounded backend responsibility before every actual
+Engine.Open (initial, failover/preflight, warm-up and verification). Acquired
+sources finish that responsibility only after Close returns; the first Close
+error is retained and its admission charge is not reclaimed. Prior generations
+remain included after failover. Probe-verification HTTP readers also retain
+references until they exit. This replaces the earlier discarded-Close-error gap
+for these actual manager opens; it does not implement encoder retirement.
+
+`PrepareSurfaceSource` returns the shared flight's exact source outcome on
+cancellation/failure, or the accepted session's outcome on success. Cancelling a
+non-last waiter never seals a source needed by another waiter. Failed/unpublished
+preparations seal their scope; acquired or late sources remain pending through
+Close. The manager bounds backend opens/uncertain Close outcomes at1024 and
+asynchronous cleanup tasks at128. Saturation refuses acquisition/detach first.
+
+`RetireSource(id, expected)` validates and detaches one exact manager-private
+lifetime in the same manager critical section used for reuse/publication. Cleanup
+runs after unlocking in a bounded manager-owned task. Shutdown drains these
+tasks for at most one second, reports unfinished cleanup, and retains their
+source outcomes/accounting; it starts no extra waiter goroutine. The existing
+synchronous Stop path retains its cleanup/event order. Duplicate or stale expected
+lifetimes cannot detach a replacement. Callers must hold no broker owner gate.
+
+There is deliberately no broker caller yet. An outcome is not an external owner
+lease: a Prepare that linearized before detach may still return that lifetime.
+A durable claim/transfer barrier is required before broker ownership can safely
+cross a released owner gate. This API does not prove that barrier, last external
+owner release, encoder completion, payload cleanup, or persistent crash recovery.
+
+## Durable payload guard increment (playback/3)
+
+Released `playback/2` is the cluster live-session registry and remains immutable.
+Payload ownership uses `playback/3`; an earlier draft incorrectly reused2 and
+was rejected by upgrade/cluster gates. The delivered9503 fixture caught it.
+Migration preflight refuses unversioned payload tables or reserved indexes on
+both dialects, including a same-name incompatible index; it does not adopt an
+unknown schema. Repair preserves existing delivered rows and then reruns3.
+
+A verified directory has a persisted opaque domain identity and at most128
+fixed witness-slot files. Each live store holds an exclusive kernel witness
+(flock on Unix, LockFileEx on Windows) for its exact domain/incarnation. Its
+registry row and typed owners/deleting markers use RESTRICT references. Source
+opens, resume writes and NZB reads reserve before touching the resource. Common
+headers and RetirementOwnerClaim are committed atomically with typed owners;
+expiry maintenance skips them. Expiry/heartbeat never releases ownership.
+
+The retention anchor identifies only exact `(domain, payload hash, incarnation)`.
+It grants no viewer authorization and does not identify the same backend source.
+The first retain commits bounded common-header admission and its typed anchor.
+Later retains always use the same context-aware gate, verify the held witness,
+and increment per-use references. They can reuse a previously committed anchor
+during a DB outage. A fresh unknown payload still requires durable admission.
+Each actual Engine.Open/Close continues to have its own source-lifetime ticket.
+
+Last release marks the anchor retiring before database work; racing retain either
+wins before that transition or refuses until a fresh anchor can be issued. The
+owner retirement and any required deleting marker commit in one transaction.
+Only then is the file removed; only confirmed removal clears the marker.
+Unknown commit/Close/deletion retains its witness and bounded charge. Duplicate
+per-use releases are idempotent, and a released writer cannot replay through a
+shared anchor retained by another source. Resume row, index and probe updates
+now commit together behind the payload lock and exact writer-owner check.
+Consumption epochs and delivery authority are still separate unfinished work.
+
+Startup and a bounded pin-maintenance actor reconcile dead incarnations. They
+must acquire the exact verified witness nonblocking before retiring any owners.
+A live stalled Close, missing witness, changed content or changed filesystem
+identity cannot authorize recovery. Batches retain deletion markers across
+crash mid-commit and mid-delete. Remaining owners beyond one batch are revisited;
+no timestamp declares a process dead. Unknown outcomes keep process roots so
+ordinary Manager garbage collection cannot release a still-needed witness.
+All128 slots held or unverifiable refuses a new manager, with no eviction.
+
+Reclamation requires a verified local filesystem. Linux admits known local
+ext/XFS/Btrfs/tmpfs/overlay/ZFS types; Darwin admits local APFS/HFS; Windows checks
+the final opened directory path, drive type and NTFS/ReFS filesystem. SMB, NFS,
+remote/unknown filesystems and unresolved identities fail closed and keep
+existing ownership. Windows build/vet is required, but cross-compilation is not
+native Windows runtime certification. No service or production host is contacted.
+
+The mandatory first-Prism maintenance gate/runbook remains the old-writer fence.
+These witnesses cannot constrain an old process that never implemented them;
+all old processes must be stopped and credentials fenced before activation.
+Broker exact-source transfer, external-owner claims, encoder retirement and
+moving broker cleanup outside owner gates remain required before full adoption.

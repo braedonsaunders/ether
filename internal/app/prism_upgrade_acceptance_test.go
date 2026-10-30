@@ -401,6 +401,9 @@ func TestPrismUpgradePostgresPreservesDeliveredRows(t *testing.T) {
 func assertUpgradeBoundary(t *testing.T) {
 	t.Helper()
 	known := store.KnownMigrations()
+	if known["playback"] != 3 {
+		t.Fatalf("playback version=%d want3", known["playback"])
+	}
 	if known["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
 	}
@@ -809,4 +812,105 @@ func jsonBool(t *testing.T, raw []byte, key string) bool {
 
 func discardLog() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+func TestPrismPlaybackPayloadMigrationFailureRepair(t *testing.T) {
+	for _, sabotage := range []string{"malformed-parent", "incompatible-index"} {
+		t.Run(sabotage, func(t *testing.T) {
+			ctx := context.Background()
+			var db *sql.DB
+			if dsn := os.Getenv(store.TestPostgresEnv); dsn != "" {
+				db = newPostgresSchema(t, dsn)
+				applyDelivered9503(t, db, store.Postgres)
+				seedDeliveredRows(t, db)
+			} else {
+				dir := t.TempDir()
+				buildDeliveredDB(t, dir, nil)
+				db = openSQLiteRW(t, filepath.Join(dir, "ether.db"))
+				t.Cleanup(func() { db.Close() })
+			}
+			before := captureUpgradeTables(t, db, store.DialectOf(db))
+			applied, err := store.AppliedMigrations(ctx, db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sabotage == "malformed-parent" {
+				if _, err := db.ExecContext(ctx, `CREATE TABLE playback_payload_incarnations(collision INTEGER)`); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if _, err := db.ExecContext(ctx, `CREATE TABLE payload_index_collision(collision INTEGER); CREATE INDEX playback_payload_incarnation_slot ON payload_index_collision(collision)`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = store.Migrate(ctx, db)
+			if err == nil || !strings.Contains(err.Error(), "playback/3") {
+				t.Fatalf("payload migration failure=%v", err)
+			}
+			assertUpgradeTables(t, db, before)
+			if got := maxMigration(t, db, "playback"); got != 2 {
+				t.Fatalf("failed payload version recorded=%d", got)
+			}
+			if store.DialectOf(db) == store.Postgres {
+				rolledBack, err := store.AppliedMigrations(ctx, db)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(applied, rolledBack) {
+					t.Fatalf("failed PG pending set not rolled back: %v want %v", rolledBack, applied)
+				}
+			}
+			if sabotage == "malformed-parent" {
+				if _, err := db.ExecContext(ctx, `DROP TABLE playback_payload_incarnations`); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if _, err := db.ExecContext(ctx, `DROP INDEX playback_payload_incarnation_slot; DROP TABLE payload_index_collision`); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := store.Migrate(ctx, db); err != nil {
+				t.Fatal(err)
+			}
+			assertUpgradeTables(t, db, before)
+			assertUpgradeInventory(t, db)
+			if got := maxMigration(t, db, "playback"); got != 3 {
+				t.Fatalf("repaired payload version=%d", got)
+			}
+			assertPayloadWitnessUniqueness(t, db)
+			if err := store.Migrate(ctx, db); err != nil {
+				t.Fatalf("valid existing schema rerun=%v", err)
+			}
+		})
+	}
+}
+
+func assertPayloadWitnessUniqueness(t *testing.T, db *sql.DB) {
+	t.Helper()
+	ctx := context.Background()
+	for _, table := range []string{"playback_payload_incarnations", "playback_payload_owners", "playback_payload_deleting"} {
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("fresh payload table %s count=%d err=%v", table, n, err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO playback_payload_incarnations(domain,incarnation,witness_slot) VALUES('constraint-domain','first',0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO playback_payload_incarnations(domain,incarnation,witness_slot) VALUES('constraint-domain','second',0)`); err == nil {
+		t.Fatal("duplicate domain/witness slot accepted")
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO playback_payload_incarnations(domain,incarnation,witness_slot) VALUES('constraint-domain','first',1)`); err == nil {
+		t.Fatal("duplicate incarnation accepted")
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM playback_payload_incarnations WHERE domain='constraint-domain'`); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestPrismPlaybackPayloadFreshConstraints(t *testing.T) {
+	db := store.OpenTest(t)
+	if got := maxMigration(t, db, "playback"); got != 3 {
+		t.Fatalf("fresh playback version=%d", got)
+	}
+	assertPayloadWitnessUniqueness(t, db)
 }

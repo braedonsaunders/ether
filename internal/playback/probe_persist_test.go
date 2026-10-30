@@ -188,6 +188,7 @@ func TestPersistedProbeFactsSanitizedAndBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { rs.close(context.Background()) })
 	ctx := context.Background()
 	info := core.MediaInfo{
 		Container: "mkv", Duration: time.Hour, Size: 1234, BitrateKbps: 5000,

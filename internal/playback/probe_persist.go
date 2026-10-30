@@ -66,6 +66,9 @@ func persistedProbeFacts(info core.MediaInfo) (core.MediaInfo, bool) {
 // digest of the NZB payload they were probed from. Without a payload
 // there is nothing to bind to, so nothing is stored.
 func (s *resumeStore) saveProbe(ctx context.Context, userID int64, key core.RatingKey, releaseID string, nzb []byte, info core.MediaInfo, at time.Time) error {
+	return saveProbeWith(ctx, s.db, userID, key, releaseID, nzb, info, at)
+}
+func saveProbeWith(ctx context.Context, exec resumeExecer, userID int64, key core.RatingKey, releaseID string, nzb []byte, info core.MediaInfo, at time.Time) error {
 	facts, ok := persistedProbeFacts(info)
 	if !ok || releaseID == "" || len(nzb) == 0 {
 		return nil
@@ -77,7 +80,7 @@ func (s *resumeStore) saveProbe(ctx context.Context, userID int64, key core.Rati
 	if len(b) > maxPersistedProbeBytes {
 		return nil
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO playback_probe(user_id,rating_key,release_id,nzb_hash,size,info_json,updated_at) VALUES(?,?,?,?,?,?,?)
+	_, err = exec.ExecContext(ctx, `INSERT INTO playback_probe(user_id,rating_key,release_id,nzb_hash,size,info_json,updated_at) VALUES(?,?,?,?,?,?,?)
 ON CONFLICT(user_id,rating_key,release_id) DO UPDATE SET nzb_hash=excluded.nzb_hash, size=excluded.size, info_json=excluded.info_json, updated_at=excluded.updated_at`,
 		userID, int64(key), releaseID, nzbHash(nzb), facts.Size, string(b), at.UnixMilli())
 	return err

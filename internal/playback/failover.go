@@ -198,7 +198,7 @@ func (m *Manager) openGeneration(ctx context.Context, s *session, res *core.Reso
 	if !releaseMatchesTitle(res.Release, s.title) {
 		return nil, fmt.Errorf("%w: release does not match requested episode", core.ErrNotAvailable)
 	}
-	src, err := m.deps.Engine.Open(ctx, res.Release.ID, res.NZB)
+	src, finish, err := m.openSource(ctx, s.sources, res)
 	if err != nil {
 		if permanentSourceFailure(err) {
 			m.markBad(res.Release.ID, "invalid source on open")
@@ -206,14 +206,14 @@ func (m *Manager) openGeneration(ctx context.Context, s *session, res *core.Reso
 		return nil, fmt.Errorf("open %s: %w", res.Release.Name, err)
 	}
 	if src.Size() <= 0 {
-		src.Close()
+		finish(src.Close())
 		return nil, fmt.Errorf("open %s: empty media file", res.Release.Name)
 	}
-	return m.probeGeneration(ctx, s, res, src, fallback, cached...)
+	return m.probeGeneration(ctx, s, res, src, finish, fallback, cached...)
 }
 
-func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Resolution, src core.MediaSource, fallback func(int64) core.MediaInfo, cached ...*probeCache) (*generation, error) {
-	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: src, res: res, indexReady: make(chan struct{})}
+func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Resolution, src core.MediaSource, finish func(error), fallback func(int64) core.MediaInfo, cached ...*probeCache) (*generation, error) {
+	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: src, finishSource: finish, res: res, indexReady: make(chan struct{})}
 	g.ctx, g.cancel = context.WithCancel(m.ctx)
 	m.mu.Lock()
 	m.tokens[s.id+"/"+g.token] = g
@@ -321,7 +321,7 @@ func (m *Manager) probeMedia(ctx context.Context, g *generation, src core.MediaS
 		info, err := m.deps.NativeProbe(ctx, src)
 		if err == nil && info != nil {
 			if m.opts.VerifyNativeProbe && g.res != nil {
-				m.startProbeVerify(g.res, *info)
+				m.startProbeVerify(g.sess.sources, g.res, *info)
 			}
 			return info, "native", nil
 		}
@@ -387,7 +387,7 @@ func (m *Manager) startTrailerFill(g *generation) {
 // The check opens its own source and serves it on a private loopback
 // listener, because the generation that was probed may be retired (a
 // decision-only session) long before ffprobe finishes.
-func (m *Manager) startProbeVerify(res *core.Resolution, native core.MediaInfo) {
+func (m *Manager) startProbeVerify(sources *sourceLifetime, res *core.Resolution, native core.MediaInfo) {
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -399,16 +399,22 @@ func (m *Manager) startProbeVerify(res *core.Resolution, native core.MediaInfo) 
 		defer m.wg.Done()
 		ctx, cancel := context.WithTimeout(m.ctx, 2*m.opts.ProbeTimeout)
 		defer cancel()
-		src, err := m.deps.Engine.Open(ctx, res.Release.ID, res.NZB)
+		src, finish, err := m.openSource(ctx, sources, res)
 		if err != nil {
 			return
 		}
-		defer src.Close()
+		verification := &generation{src: src, finishSource: finish}
+		defer verification.retire()
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return
 		}
 		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !verification.acquire() {
+				http.Error(w, "gone", http.StatusGone)
+				return
+			}
+			defer verification.release()
 			http.ServeContent(w, r, src.Name(), time.Time{}, io.NewSectionReader(src, 0, src.Size()))
 		})}
 		go srv.Serve(ln)
@@ -996,7 +1002,7 @@ func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.R
 	if rec == nil || m.releaseBlocked(ctx, rec.releaseID) || rec.profile != profile || !m.resumeSourceAllowed(rec.release) || !sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
 		return nil
 	}
-	nzb, err := m.resume.readNZB(rec.nzbHash)
+	nzb, err := m.resume.readResumeNZB(ctx, rec)
 	if err != nil {
 		m.log.Warn("stored nzb unreadable; resolving afresh", "release", rec.releaseID, "err", err)
 		return nil
@@ -1044,7 +1050,7 @@ func (m *Manager) ResumePoint(ctx context.Context, userID int64, key core.Rating
 	if m.releaseBlocked(ctx, rec.releaseID) {
 		return nil, nil
 	}
-	nzb, err := m.resume.readNZB(rec.nzbHash)
+	nzb, err := m.resume.readResumeNZB(ctx, rec)
 	if err != nil {
 		return nil, err
 	}

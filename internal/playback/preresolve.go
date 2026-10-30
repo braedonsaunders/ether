@@ -197,12 +197,13 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		if err != nil || res == nil {
 			return
 		}
-		src, err := m.deps.Engine.Open(ctx, res.Release.ID, res.NZB)
+		session := newSession(randomID(16), id, &u, caps, title, e.profileKey, m.now())
+		defer session.sources.seal()
+		src, finish, err := m.openSource(ctx, session.sources, res)
 		if err != nil {
 			return
 		}
-		session := newSession(randomID(16), id, &u, caps, title, e.profileKey, m.now())
-		generation, err := m.probeGeneration(ctx, session, res, src, func(size int64) core.MediaInfo {
+		generation, err := m.probeGeneration(ctx, session, res, src, finish, func(size int64) core.MediaInfo {
 			info := EstimateInfo(title, caps, m.deps.SelectProfile(caps, &u))
 			info.Size = size
 			return info
