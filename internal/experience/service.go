@@ -33,6 +33,8 @@ type ServiceDeps struct {
 	Get                 func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
+	// CachedParents reads current parent records without remote refresh or writes.
+	CachedParents func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
 	// CachedVirtualSeason resolves a viewer's already-computed episode layout.
 	CachedVirtualSeason   func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	Children              func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
@@ -296,8 +298,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			return core.Page{}, err
 		}
 		var candidatesPage []core.Title
-		accept := func(title core.Title) error {
-			if !s.visible(ctx, v, &title) {
+		accept := func(title core.Title, vis Visibility) error {
+			id, ok := vis.SectionFor(title.Type)
+			if !ok || !SectionAllowed(v, id) || !vis.Visible(ctx, v, &title) {
 				return nil
 			}
 			if !expand {
@@ -333,12 +336,37 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			}
 			// Copy only accepted values into the bounded batch; do not duplicate
 			// or retain the catalogue's full per-show children slice.
-			if e := accept(*parent); e != nil {
+			if e := accept(*parent, s.d.Visibility); e != nil {
 				return core.Page{}, e
 			}
-			for j := range children {
-				if e := accept(children[j]); e != nil {
-					return core.Page{}, e
+			for start := 0; start < len(children); start += 400 {
+				chunk := children[start:min(start+400, len(children))]
+				vis := s.d.Visibility
+				if s.d.CachedParents != nil {
+					keys := make([]core.RatingKey, 0, len(chunk))
+					seen := make(map[core.RatingKey]bool)
+					for _, child := range chunk {
+						if child.ShowKey != 0 && !seen[child.ShowKey] {
+							seen[child.ShowKey] = true
+							keys = append(keys, child.ShowKey)
+						}
+					}
+					parents, e := s.d.CachedParents(ctx, keys)
+					if e != nil {
+						return core.Page{}, e
+					}
+					vis.GetTitle = func(_ context.Context, key core.RatingKey) (*core.Title, error) {
+						title, ok := parents[key]
+						if !ok || title.Key != key {
+							return nil, core.ErrNotFound
+						}
+						return &title, nil
+					}
+				}
+				for j := range chunk {
+					if e := accept(chunk[j], vis); e != nil {
+						return core.Page{}, e
+					}
 				}
 			}
 		}

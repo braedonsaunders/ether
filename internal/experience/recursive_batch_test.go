@@ -129,3 +129,47 @@ func TestRecursiveBrowseBatchesOnlyVisibleEpisodes(t *testing.T) {
 		t.Fatal("revoked viewer accepted")
 	}
 }
+
+func TestRecursiveBrowseCachedParentsFailClosed(t *testing.T) {
+	ctx := context.Background()
+	viewer := &core.User{ID: 7, MaxContentRating: "PG"}
+	active := true
+	show := core.Title{Key: core.ShowKey(10), Type: core.TypeShow, ContentRating: "TV-G"}
+	denied := core.Title{Key: core.ShowKey(11), Type: core.TypeShow, ContentRating: "TV-MA"}
+	children := []core.Title{{Key: core.EpisodeKey(10, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key, ContentRating: "TV-G"}, {Key: core.EpisodeKey(11, 1, 1), Type: core.TypeEpisode, ShowKey: denied.Key, ContentRating: "TV-G"}, {Key: core.EpisodeKey(12, 1, 1), Type: core.TypeEpisode, ShowKey: core.ShowKey(12), ContentRating: "TV-G"}}
+	batchCalls, individualCalls := 0, 0
+	fail := error(nil)
+	svc := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) {
+		if !active {
+			return nil, core.ErrNotFound
+		}
+		return viewer, nil
+	}, Libraries: []Library{{ID: 2, Type: core.TypeShow}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 2, true }, GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) {
+		individualCalls++
+		return nil, core.ErrNotFound
+	}}, CachedParents: func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+		batchCalls++
+		if len(keys) > 400 {
+			t.Fatal("unbounded parent batch")
+		}
+		if fail != nil {
+			return nil, fail
+		}
+		return map[core.RatingKey]core.Title{show.Key: show, denied.Key: denied}, nil
+	}, Browse: func(context.Context, core.BrowseQuery) (core.Page, error) {
+		return core.Page{Items: []core.Title{show}, Total: 1}, nil
+	}, Grandchildren: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) { return children, nil }}}
+	q := frontend.ItemQuery{Recursive: true, Types: []core.MediaType{core.TypeEpisode}, Limit: 20}
+	page, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q)
+	if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Key != children[0].Key || batchCalls != 1 || individualCalls != 0 {
+		t.Fatalf("page=%+v err=%v batches=%d individual=%d", page, err, batchCalls, individualCalls)
+	}
+	fail = errors.New("cache read failed")
+	if got, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q); !errors.Is(err, fail) || len(got.Items) != 0 {
+		t.Fatalf("cache failure %+v %v", got, err)
+	}
+	active = false
+	if _, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q); err == nil {
+		t.Fatal("revoked viewer accepted")
+	}
+}
