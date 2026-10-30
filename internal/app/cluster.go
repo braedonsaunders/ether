@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -76,6 +77,7 @@ func (a *App) buildCluster(dialect store.Dialect) error {
 var (
 	clusterStartRetryMin = time.Second
 	clusterStartRetryMax = 30 * time.Second
+	clusterStartBudget   = 2 * time.Minute
 )
 
 // startCluster joins the cluster, retrying failures other than a
@@ -83,24 +85,29 @@ var (
 // opening it and joining). A node that gave up after one failed attempt
 // would serve without heartbeats, leadership or the event bus until it was
 // restarted, so singleton work would never run on it; like the database
-// wait in New, nothing listens meanwhile. It returns ctx.Err() if ctx ends
-// first.
+// wait in New, nothing listens meanwhile. A bounded startup budget provides
+// a clear error if membership cannot be established.
 func (a *App) startCluster(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, clusterStartBudget)
+	defer cancel()
 	wait := clusterStartRetryMin
 	for attempt := 1; ; attempt++ {
 		err := a.cluster.Start(ctx)
+		if err == nil && ctx.Err() != nil {
+			return fmt.Errorf("cluster: could not establish owned heartbeat: %w", ctx.Err())
+		}
 		if err == nil || errors.Is(err, cluster.ErrDuplicateNode) {
 			return err
 		}
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return fmt.Errorf("cluster: could not establish owned heartbeat: %w", ctx.Err())
 		}
 		a.log.Warn("cluster: could not join; retrying", "attempt", attempt, "retry", wait, "err", err)
 		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			t.Stop()
-			return ctx.Err()
+			return fmt.Errorf("cluster: could not establish owned heartbeat: %w", ctx.Err())
 		case <-t.C:
 		}
 		wait = min(wait*2, clusterStartRetryMax)

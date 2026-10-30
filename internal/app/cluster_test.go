@@ -179,8 +179,10 @@ func (f *flakyStart) Start(context.Context) error {
 }
 
 func TestStartClusterRetriesTransientFailures(t *testing.T) {
-	defer func(lo, hi time.Duration) { clusterStartRetryMin, clusterStartRetryMax = lo, hi }(clusterStartRetryMin, clusterStartRetryMax)
-	clusterStartRetryMin, clusterStartRetryMax = time.Millisecond, 2*time.Millisecond
+	defer func(lo, hi, budget time.Duration) {
+		clusterStartRetryMin, clusterStartRetryMax, clusterStartBudget = lo, hi, budget
+	}(clusterStartRetryMin, clusterStartRetryMax, clusterStartBudget)
+	clusterStartRetryMin, clusterStartRetryMax, clusterStartBudget = time.Millisecond, 2*time.Millisecond, time.Second
 	solo := cluster.NewSolo(cluster.Local{Identity: cluster.Identity{NodeID: "self"}}, nil)
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 
@@ -206,5 +208,10 @@ func TestStartClusterRetriesTransientFailures(t *testing.T) {
 	a = &App{cluster: down, log: quiet}
 	if err := a.startCluster(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled: err %v", err)
+	}
+
+	clusterStartBudget = 10 * time.Millisecond
+	if err := a.startCluster(context.Background()); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "owned heartbeat") {
+		t.Fatalf("unavailable database: %v", err)
 	}
 }

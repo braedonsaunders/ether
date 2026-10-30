@@ -298,10 +298,14 @@ func (p *Postgres) Start(ctx context.Context) error {
 	if p.closed {
 		return errors.New("cluster: closed")
 	}
+	// Bound the complete join, including connection/configuration and clock
+	// checks, not just the final heartbeat write.
+	joinCtx, stopJoin := context.WithTimeout(ctx, max(5*time.Second, 3*p.o.ProbeTimeout+3*p.o.HeartbeatInterval))
+	defer stopJoin()
 	cfg := p.o.ConnConfig
 	if cfg == nil {
 		var err error
-		if cfg, err = connConfigOf(ctx, p.db); err != nil {
+		if cfg, err = connConfigOf(joinCtx, p.db); err != nil {
 			return err
 		}
 	}
@@ -309,24 +313,47 @@ func (p *Postgres) Start(ctx context.Context) error {
 	ch := p.o.Channel
 	if ch == "" {
 		var schema string
-		if err := p.db.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schema); err != nil {
+		if err := p.db.QueryRowContext(joinCtx, `SELECT current_schema()`).Scan(&schema); err != nil {
 			return fmt.Errorf("cluster: read schema: %w", err)
 		}
 		ch = channelFor(schema)
 	}
 	p.channel.Store(&ch)
-	p.checkClock(ctx)
-	if err := p.checkDuplicate(ctx); err != nil {
-		p.log.Error("cluster: refusing to join", "err", err)
+	p.checkClock(joinCtx)
+	// Do not start listeners or background work until this incarnation owns
+	// a durable, versioned heartbeat. Every retry rechecks duplicate ownership.
+	backoff := p.o.MinBackoff
+	for {
+		claim, err := p.checkDuplicate(joinCtx)
+		if err == nil {
+			err = p.beatClaim(joinCtx, &claim)
+		}
+		if err == nil {
+			if err = joinCtx.Err(); err == nil {
+				break
+			}
+		}
+		if errors.Is(err, ErrDuplicateNode) {
+			return err
+		}
+		p.log.Warn("cluster: first heartbeat failed; retrying", "err", err)
+		timer := time.NewTimer(backoff)
+		select {
+		case <-joinCtx.Done():
+			timer.Stop()
+			p.abandonStart()
+			return fmt.Errorf("cluster: initial heartbeat unavailable: %w", joinCtx.Err())
+		case <-timer.C:
+		}
+		backoff = min(backoff*2, p.o.MaxBackoff)
+	}
+	if err := ctx.Err(); err != nil {
+		p.abandonStart()
 		return err
 	}
-
 	rctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 	p.started = true
-	if err := p.beat(ctx); err != nil {
-		p.log.Warn("cluster: first heartbeat failed; retrying", "err", err)
-	}
 	p.wg.Add(4)
 	go p.addrLoop(rctx)
 	go p.heartbeatLoop(rctx)
@@ -338,8 +365,31 @@ func (p *Postgres) Start(ctx context.Context) error {
 		p.log.Warn("cluster: event bus not listening yet; continuing")
 	case <-ctx.Done():
 	}
+	// busReady and cancellation may become ready together; always honor
+	// cancellation rather than leaving a started runtime behind.
+	if err := ctx.Err(); err != nil {
+		p.halt()
+		p.abandonStart()
+		p.started = false
+		p.cancel = nil
+		p.busReady = make(chan struct{})
+		p.busOnce = sync.Once{}
+		return err
+	}
 	p.log.Info("cluster: joined", "name", p.local.Identity.Name, "channel", ch)
 	return nil
+}
+
+// abandonStart relinquishes only this incarnation. A failed delete remains
+// safely owned and may be retried by the same instance on a later Start.
+func (p *Postgres) abandonStart() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := p.db.ExecContext(ctx, `DELETE FROM cluster_nodes WHERE id=? AND incarnation=?`, p.local.Identity.NodeID, p.inc); err == nil {
+		p.mu.Lock()
+		p.joined = false
+		p.mu.Unlock()
+	}
 }
 
 // Close leaves the cluster.
@@ -447,7 +497,9 @@ func (p *Postgres) heartbeatLoop(ctx context.Context) {
 
 // beat upserts this node's row, announces membership changes and prunes
 // long-dead rows.
-func (p *Postgres) beat(ctx context.Context) error {
+func (p *Postgres) beat(ctx context.Context) error { return p.beatClaim(ctx, nil) }
+
+func (p *Postgres) beatClaim(ctx context.Context, claim *nodeClaim) error {
 	now := p.o.Now()
 	p.mu.Lock()
 	addrs := slices.Clone(p.addrs)
@@ -503,14 +555,30 @@ WHERE id=? AND incarnation=?`,
 		}
 	}
 	if !joined {
-		_, err := p.db.ExecContext(ctx, `INSERT INTO cluster_nodes(id,name,version,addrs,caps,active_sessions,started_at,last_seen,incarnation,draining,migrations)
+		query := `INSERT INTO cluster_nodes(id,name,version,addrs,caps,active_sessions,started_at,last_seen,incarnation,draining,migrations)
+VALUES(?,?,?,?,?,?,?,?,?,?,?)
+ON CONFLICT(id) DO NOTHING`
+		args := []any{id, p.local.Identity.Name, p.local.Version, string(addrsJSON), string(capsJSON), load, started.UnixMilli(), now.UnixMilli(), p.inc, drainFlag, migJSON}
+		if claim != nil && claim.exists {
+			query = `INSERT INTO cluster_nodes(id,name,version,addrs,caps,active_sessions,started_at,last_seen,incarnation,draining,migrations)
 VALUES(?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET name=excluded.name, version=excluded.version, addrs=excluded.addrs, caps=excluded.caps,
 active_sessions=excluded.active_sessions, started_at=excluded.started_at, last_seen=excluded.last_seen, incarnation=excluded.incarnation,
-draining=excluded.draining, migrations=excluded.migrations`,
-			id, p.local.Identity.Name, p.local.Version, string(addrsJSON), string(capsJSON), load,
-			started.UnixMilli(), now.UnixMilli(), p.inc, drainFlag, migJSON)
+draining=excluded.draining, migrations=excluded.migrations
+WHERE cluster_nodes.incarnation=? AND cluster_nodes.last_seen=?`
+			args = append(args, claim.incarnation, claim.lastSeen)
+		}
+		res, err := p.db.ExecContext(ctx, query, args...)
 		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return err
+		} else if n != 1 {
+			err := duplicateNodeError(id, p.o.IdentityPath)
+			if claim == nil {
+				p.fail(err)
+			}
 			return err
 		}
 	}
@@ -545,7 +613,13 @@ draining=excluded.draining, migrations=excluded.migrations`,
 // crash or kill) also looks live for up to LiveAfter, so a recent row with
 // another incarnation is watched for two heartbeat intervals: a live
 // process advances its last_seen, a dead one does not.
-func (p *Postgres) checkDuplicate(ctx context.Context) error {
+type nodeClaim struct {
+	incarnation string
+	lastSeen    int64
+	exists      bool
+}
+
+func (p *Postgres) checkDuplicate(ctx context.Context) (nodeClaim, error) {
 	id := p.local.Identity.NodeID
 	read := func() (inc string, seen int64, ok bool, err error) {
 		err = p.db.QueryRowContext(ctx, `SELECT incarnation, last_seen FROM cluster_nodes WHERE id=?`, id).Scan(&inc, &seen)
@@ -555,11 +629,18 @@ func (p *Postgres) checkDuplicate(ctx context.Context) error {
 		return inc, seen, err == nil, err
 	}
 	inc, seen, ok, err := read()
-	if err != nil || !ok || inc == p.inc {
-		return nil // a database error is retried by the heartbeat loop
+	if err != nil {
+		return nodeClaim{}, err
+	}
+	if !ok {
+		return nodeClaim{}, nil
+	}
+	claim := nodeClaim{incarnation: inc, lastSeen: seen, exists: true}
+	if inc == p.inc {
+		return claim, nil
 	}
 	if p.o.Now().Sub(time.UnixMilli(seen)) > p.o.LiveAfter {
-		return nil // long dead: take the row over
+		return claim, nil // long dead: claim only if this exact row is unchanged
 	}
 	p.log.Info("cluster: this node's heartbeat row is recent; checking that no other process uses this node ID", "wait", 2*p.o.HeartbeatInterval)
 	deadline := time.Now().Add(2*p.o.HeartbeatInterval + p.o.HeartbeatInterval/2)
@@ -567,18 +648,21 @@ func (p *Postgres) checkDuplicate(ctx context.Context) error {
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nodeClaim{}, ctx.Err()
 		case <-time.After(step):
 		}
 		inc2, seen2, ok2, err := read()
-		if err != nil || !ok2 {
-			return nil
+		if err != nil {
+			return nodeClaim{}, err
+		}
+		if !ok2 {
+			return nodeClaim{}, nil
 		}
 		if inc2 != inc || seen2 != seen {
-			return duplicateNodeError(id, p.o.IdentityPath)
+			return nodeClaim{}, duplicateNodeError(id, p.o.IdentityPath)
 		}
 	}
-	return nil
+	return claim, nil
 }
 
 // fail stops this node's cluster membership after a fatal conflict and
