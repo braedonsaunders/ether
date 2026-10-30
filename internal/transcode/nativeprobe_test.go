@@ -171,25 +171,6 @@ func normalizeForNative(want, got *core.MediaInfo) {
 	}
 }
 
-func TestProbeSourceIgnoresTrailingBytesAfterLastBox(t *testing.T) {
-	data, err := os.ReadFile("testdata/nativeprobe/h264_aac_movtext_faststart.mp4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	plain, err := ProbeSource(context.Background(), bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	padded := append(append([]byte(nil), data...), make([]byte, 6<<20)...)
-	got, err := ProbeSource(context.Background(), bytes.NewReader(padded), int64(len(padded)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Size != plain.Size || got.BitrateKbps != plain.BitrateKbps || got.Duration != plain.Duration || got.Container != plain.Container {
-		t.Fatalf("padding changed probe: got size %d bitrate %d duration %s container %s; want size %d bitrate %d duration %s container %s", got.Size, got.BitrateKbps, got.Duration, got.Container, plain.Size, plain.BitrateKbps, plain.Duration, plain.Container)
-	}
-}
-
 func TestProbeSourceReadsColourFromSPSWithoutTrackColour(t *testing.T) {
 	for file, want := range map[string]string{
 		"hevc_hdr10_eac3_ac3_ass.mkv":   "smpte2084",

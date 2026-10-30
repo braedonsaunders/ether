@@ -26,47 +26,15 @@ func isISOBMFF(head []byte) bool {
 	return false
 }
 
-// isoBoxType rejects trailing padding. A size-zero header of NUL bytes would
-// otherwise extend to EOF and be counted as media.
-func isoBoxType(t string) bool {
-	if len(t) != 4 {
-		return false
-	}
-	for i := 0; i < 4; i++ {
-		if t[i] < 0x20 || t[i] > 0x7e {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *nativeSource) mp4() (*core.MediaInfo, error) {
 	var moov []byte
-	var end int64
 	for off, n := int64(0), 0; off < s.size && n < 64; n++ {
-		remain := s.size - off
-		if remain < 8 {
-			if moov != nil {
-				break
-			}
-			return nil, incomplete("truncated box header")
-		}
-		h, err := s.read(off, int(min(16, remain)))
+		h, err := s.read(off, int(min(16, s.size-off)))
 		if err != nil {
 			return nil, err
 		}
 		if len(h) < 8 {
-			if moov != nil {
-				break
-			}
 			return nil, incomplete("truncated box header")
-		}
-		typ := string(h[4:8])
-		if !isoBoxType(typ) {
-			if moov != nil {
-				break
-			}
-			return nil, incomplete("bad top-level box")
 		}
 		size, hdr := int64(binary.BigEndian.Uint32(h)), int64(8)
 		switch size {
@@ -81,7 +49,7 @@ func (s *nativeSource) mp4() (*core.MediaInfo, error) {
 		if size < hdr || size > s.size-off {
 			return nil, incomplete("bad top-level box size")
 		}
-		if typ == "moov" {
+		if string(h[4:8]) == "moov" {
 			if size > nativeMoovLimit {
 				return nil, incomplete("moov too large")
 			}
@@ -90,16 +58,14 @@ func (s *nativeSource) mp4() (*core.MediaInfo, error) {
 				return nil, err
 			}
 			moov = b
+			break
 		}
 		off += size
-		end = off
 	}
 	if moov == nil {
 		return nil, incomplete("no moov")
 	}
-	// Bytes after the last box are not samples. Counting them makes a short
-	// file look like a high-bitrate remote transcode.
-	return mp4Info(moov, end)
+	return mp4Info(moov, s.size)
 }
 
 // mp4Info maps a whole moov box (header included) to MediaInfo the way
