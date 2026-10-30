@@ -271,6 +271,7 @@ func TestSiloLabConformance(t *testing.T) {
 	}
 	refProxy, stopProxy := siloLabProbeProxy(t, siloURL, refDevice, refInstall)
 	defer stopProxy()
+	t.Logf("lab run devices reference=%s installation=%s target=%s installation=%s", refDevice, refInstall, targetDevice, targetInstall)
 	refVars := values(settings["SILO_ADULT_USER"], settings["SILO_ADULT_PASSWORD"], refToken, refProfile, refLibrary, refItem, refFile, refInstall, refDevice)
 	targetVars := values("fixture-viewer", "fixture-password", targetToken, strconv.FormatInt(viewer.ID, 10), "1", targetItem, targetFile, targetInstall, targetDevice)
 	write := func(name string, v map[string]string) string {
@@ -308,6 +309,7 @@ func TestSiloLabConformance(t *testing.T) {
 			}
 			owner := ownerPlayback{Playback: app.playback, app: app}
 			for _, session := range owner.Sessions() {
+				t.Logf("target session cleanup id=%s", session.ID)
 				if stopErr := app.stopOwnerSession(session.ID); stopErr != nil {
 					t.Errorf("target session cleanup failed: %v", stopErr)
 				}
@@ -447,6 +449,7 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 			issued[data.AccessToken] = true
 		}
 		if start && data.SessionID != "" {
+			t.Logf("reference session observed id=%s", data.SessionID)
 			sessions[data.SessionID] = r.Request.Header.Get("Authorization")
 		}
 		return nil
@@ -474,7 +477,7 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 				continue
 			}
 			res.Body.Close()
-			if res.StatusCode != 404 && res.StatusCode != 401 && (res.StatusCode < 200 || res.StatusCode >= 300) {
+			if res.StatusCode != 404 && (res.StatusCode < 200 || res.StatusCode >= 300) {
 				t.Errorf("lab session cleanup returned %d", res.StatusCode)
 			}
 		}
