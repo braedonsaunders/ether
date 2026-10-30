@@ -163,8 +163,7 @@ func (h *Holder) UpdateIf(ctx context.Context, p core.TrickplayProvider, src cor
 	}
 	leaser, ok := p.(core.TrickplayLeaser)
 	if !ok {
-		p.EnsureTrickplay(ctx, src)
-		return nil
+		return errors.New("trickplay: holder requires a leased provider")
 	}
 	if h.lease != nil && h.release == src.ReleaseID {
 		h.lease.Ensure(ctx, src)

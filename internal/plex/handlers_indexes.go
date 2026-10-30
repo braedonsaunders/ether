@@ -79,6 +79,10 @@ func (s *Server) ensureTrickplay(ctx context.Context, ps *core.PlaySession, offs
 	if input == "" || releaseID == "" {
 		return
 	}
+	if _, leased := s.d.Trickplay.(core.TrickplayLeaser); !leased {
+		s.d.Trickplay.EnsureTrickplay(ctx, core.TrickplaySource{ReleaseID: releaseID, InputURL: input, Info: ps.Info, AvailableUntil: offset})
+		return
+	}
 	s.trickplayMu.Lock()
 	if s.trickplayClosed {
 		s.trickplayMu.Unlock()

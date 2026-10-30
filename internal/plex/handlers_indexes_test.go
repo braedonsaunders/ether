@@ -231,3 +231,35 @@ func TestSharedTrickplayPlexExactWireParity(t *testing.T) {
 		f.srv.Close()
 	}
 }
+
+type blockedRawTrickplay struct {
+	fakeTrickplay
+	entered, unblock chan struct{}
+}
+
+func (p *blockedRawTrickplay) EnsureTrickplay(context.Context, core.TrickplaySource) {
+	close(p.entered)
+	<-p.unblock
+}
+func TestBlockedStandaloneTrickplayDoesNotBlockStopOrClose(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	raw := &blockedRawTrickplay{entered: make(chan struct{}), unblock: make(chan struct{})}
+	f.srv.d.Trickplay = raw
+	addIndexSession(f, fightClub.Key)
+	ps, _ := f.playback.Session("index-session")
+	ensured := make(chan struct{})
+	go func() { f.srv.ensureTrickplay(context.Background(), ps, time.Second); close(ensured) }()
+	<-raw.entered
+	done := make(chan struct{})
+	go func() { f.playback.Stop(ps.ID); f.srv.cancelTrickplayIfIdle(ps); f.srv.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		close(raw.unblock)
+		<-ensured
+		t.Fatal("standalone Ensure blocked Stop/Close")
+	}
+	close(raw.unblock)
+	<-ensured
+}

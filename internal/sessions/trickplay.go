@@ -73,6 +73,10 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 	if input == "" {
 		return
 	}
+	if _, leased := b.deps.Trickplay.(core.TrickplayLeaser); !leased {
+		b.deps.Trickplay.EnsureTrickplay(ctx, core.TrickplaySource{ReleaseID: ps.Resolution.Release.ID, InputURL: input, Info: ps.Info, AvailableUntil: until})
+		return
+	}
 	b.mu.Lock()
 	current := b.sessions[s.public.ID]
 	if current == nil || b.closed || current.playID != s.playID {
