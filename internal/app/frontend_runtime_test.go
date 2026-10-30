@@ -288,6 +288,9 @@ func TestStremioIsRegisteredForOwnerControls(t *testing.T) {
 
 func TestWebDAVIsRegisteredAndRequiresSurfaceGrant(t *testing.T) {
 	a := setupTestApp(t, true)
+	if a.cfg.Get().Frontends["webdav"].Enabled {
+		t.Fatal("WebDAV must default to disabled")
+	}
 	found := false
 	for _, descriptor := range a.frontends.registry.Descriptors() {
 		if descriptor.ID == "webdav" {
