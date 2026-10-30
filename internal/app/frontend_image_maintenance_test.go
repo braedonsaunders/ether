@@ -9,8 +9,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/handles/capability"
 )
 
-func TestImageMaintenanceRotatesAfterFailureAndLeadership(t *testing.T) {
-	var sweep imageMaintenance
+func TestHeaderMaintenanceRotatesAfterFailureAndLeadership(t *testing.T) {
+	var sweep headerMaintenance
 	now := time.Unix(123, 0)
 	var seen []int64
 	failure := errors.New("transient")

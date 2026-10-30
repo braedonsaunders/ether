@@ -7,14 +7,14 @@ import (
 	"github.com/braedonsaunders/ether/internal/handles/capability"
 )
 
-// imageMaintenance rotates even on error so one blocked shard cannot starve
+// headerMaintenance rotates even on error so one blocked shard cannot starve
 // all others. The cursor is deliberately local; a new leader starts at zero.
 // An unsuccessful shard is retried on the next rotation, not assumed clean.
-type imageMaintenance struct{ next int64 }
+type headerMaintenance struct{ next int64 }
 
-type imageShardPruner func(context.Context, time.Time, int64) error
+type headerShardPruner func(context.Context, time.Time, int64) error
 
-func (m *imageMaintenance) pass(ctx context.Context, leader bool, now func() time.Time, prune imageShardPruner) error {
+func (m *headerMaintenance) pass(ctx context.Context, leader bool, now func() time.Time, prune headerShardPruner) error {
 	if !leader || ctx.Err() != nil {
 		return ctx.Err()
 	}
