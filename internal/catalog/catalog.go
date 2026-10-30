@@ -102,6 +102,9 @@ CREATE TABLE catalog_home_release (key INTEGER PRIMARY KEY, checked INTEGER NOT 
 CREATE INDEX catalog_home_release_pending ON catalog_home_release(checked,earliest_ts,fallback_admitted);
 CREATE TABLE catalog_home_release_dates (key INTEGER NOT NULL, country TEXT NOT NULL, kind INTEGER NOT NULL, released_ts INTEGER NOT NULL, PRIMARY KEY(key,country,kind,released_ts));
 `)
+	store.Register("catalog", 10, `CREATE INDEX catalog_titles_episode_aired ON catalog_titles(show_key, released_ts DESC) WHERE type='episode' AND released_ts>0;
+CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, season, released_ts DESC) WHERE type='episode' AND released_ts>0;
+CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND released_ts>0 AND adult=0;`)
 	store.Register("catalog", 7, `
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC);
 CREATE INDEX catalog_titles_browse_warm ON catalog_titles(browsable, detail, adult, popularity DESC, vote_count DESC);

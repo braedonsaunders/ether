@@ -215,6 +215,7 @@ var (
 	}
 	nineS1 = core.Title{
 		Key: core.SeasonKey(75219, 1), Type: core.TypeSeason, ShowKey: nineShow.Key, ShowTitle: "9-1-1", Season: 1, Title: "Season 1",
+		AddedAt:    time.Date(2018, 1, 3, 0, 0, 0, 0, time.UTC),
 		ChildCount: 1, PosterPath: "/911s1.jpg", UpdatedAt: nineShow.UpdatedAt,
 	}
 	nineE1 = core.Title{

@@ -244,7 +244,7 @@ func (c *Catalog) hydrateSlice(ctx context.Context, items []core.Title) error {
 		}
 	}
 	if len(shows) == 0 {
-		return nil
+		return applyAirAddedTimes(ctx, c.db, items, c.now())
 	}
 	// showArgs is already deduplicated above; chunk it like keys. Each
 	// show lands in exactly one chunk, so identities/keywords accumulate
@@ -317,7 +317,10 @@ func (c *Catalog) hydrateSlice(ctx context.Context, items []core.Title) error {
 			items[i].ShowIDs.TVDB = show.tvdb
 		}
 	}
-	return c.hydrateAbsoluteEpisodes(ctx, items)
+	if err := c.hydrateAbsoluteEpisodes(ctx, items); err != nil {
+		return err
+	}
+	return applyAirAddedTimes(ctx, c.db, items, c.now())
 }
 
 // hydrateAbsoluteEpisodes numbers episodes from the series start (anime

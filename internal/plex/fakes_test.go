@@ -708,11 +708,13 @@ var (
 	breakingBad = core.Title{
 		Key: core.ShowKey(1396), Type: core.TypeShow, IDs: core.IDs{TMDB: 1396, TVDB: 81189},
 		Title: "Boundary Bay", Year: 2008, Summary: "A chemistry teacher...", ChildCount: 1, LeafCount: 2,
+		AddedAt:    time.Date(2008, 1, 27, 0, 0, 0, 0, time.UTC),
 		Popularity: 100, PosterPath: "/bb.jpg", BackdropPath: "/bbart.jpg", UpdatedAt: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
 	}
 	bbS1 = core.Title{
 		Key: core.SeasonKey(1396, 1), Type: core.TypeSeason, ShowKey: core.ShowKey(1396), ShowTitle: "Boundary Bay",
-		Season: 1, Title: "Season 1", ChildCount: 2, PosterPath: "/bbs1.jpg", UpdatedAt: breakingBad.UpdatedAt,
+		AddedAt: time.Date(2008, 1, 27, 0, 0, 0, 0, time.UTC),
+		Season:  1, Title: "Season 1", ChildCount: 2, PosterPath: "/bbs1.jpg", UpdatedAt: breakingBad.UpdatedAt,
 	}
 	bbE1 = core.Title{
 		Key: core.EpisodeKey(1396, 1, 1), Type: core.TypeEpisode, ShowKey: core.ShowKey(1396), ShowTitle: "Boundary Bay",

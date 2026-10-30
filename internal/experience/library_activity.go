@@ -35,9 +35,16 @@ func activityLimit(limit int) int {
 	return min(limit, 500)
 }
 
-// LatestAdded returns the real added-time order for one library's roots.
-// It deliberately does not pretend to supply grouped recent episodes.
-func (s *Service) LatestAdded(ctx context.Context, viewer *core.Viewer, _ core.Device, viewID string, limit int) ([]frontend.LatestItem, error) {
+func (s *Service) LatestAddedGrouped(ctx context.Context, viewer *core.Viewer, device core.Device, viewID string, limit int, group bool) ([]frontend.LatestItem, error) {
+	return s.latestAdded(ctx, viewer, device, viewID, limit, group)
+}
+
+// LatestAdded returns library roots, with TV grouped as series.
+func (s *Service) LatestAdded(ctx context.Context, viewer *core.Viewer, device core.Device, viewID string, limit int) ([]frontend.LatestItem, error) {
+	return s.latestAdded(ctx, viewer, device, viewID, limit, true)
+}
+
+func (s *Service) latestAdded(ctx context.Context, viewer *core.Viewer, _ core.Device, viewID string, limit int, group bool) ([]frontend.LatestItem, error) {
 	v, err := s.viewer(ctx, viewer)
 	if err != nil {
 		return nil, err
@@ -50,7 +57,7 @@ func (s *Service) LatestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 		return nil, core.ErrNotAvailable
 	}
 	limit = activityLimit(limit)
-	var items []core.Title
+	var result []frontend.LatestItem
 	libraries := s.d.Libraries
 	if lib != nil {
 		libraries = []Library{*lib}
@@ -61,13 +68,33 @@ func (s *Service) LatestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 		}
 		found := 0
 		for offset := 0; offset < activityScanLimit; {
-			page, err := s.d.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: library.Type}, Sort: core.SortAdded, Desc: true, Offset: offset, Limit: 500})
+			fetch := min(max(limit*2, 50), 500)
+			var page core.Page
+			var err error
+			if library.Type == core.TypeShow && !group {
+				if s.d.AiredEpisodes == nil {
+					return nil, core.ErrNotAvailable
+				}
+				page, err = s.d.AiredEpisodes(ctx, 0, offset, fetch)
+			} else {
+				page, err = s.d.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: library.Type}, Sort: core.SortAdded, Desc: true, Offset: offset, Limit: fetch})
+			}
+			if err != nil {
+				return nil, err
+			}
+			keys := make([]core.RatingKey, len(page.Items))
+			for i := range page.Items {
+				keys[i] = page.Items[i].Key
+			}
+			times, err := s.d.AddedTimes(ctx, keys)
 			if err != nil {
 				return nil, err
 			}
 			for i := range page.Items {
-				if s.visible(ctx, v, &page.Items[i]) {
-					items = append(items, page.Items[i])
+				at, known := times[page.Items[i].Key]
+				if known && !at.IsZero() && s.visible(ctx, v, &page.Items[i]) {
+					value := at
+					result = append(result, frontend.LatestItem{Title: page.Items[i], AddedAt: &value})
 					found++
 					if found == limit {
 						break
@@ -88,23 +115,6 @@ func (s *Service) LatestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 				return nil, errors.New("experience: latest catalogue scan limit reached")
 			}
 		}
-	}
-	keys := make([]core.RatingKey, len(items))
-	for i := range items {
-		keys[i] = items[i].Key
-	}
-	times, err := s.d.AddedTimes(ctx, keys)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]frontend.LatestItem, 0, len(items))
-	for _, title := range items {
-		item := frontend.LatestItem{Title: title}
-		if at, ok := times[title.Key]; ok && !at.IsZero() {
-			value := at
-			item.AddedAt = &value
-		}
-		result = append(result, item)
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].AddedAt == nil {
@@ -205,3 +215,4 @@ func (s *Service) Resume(ctx context.Context, viewer *core.Viewer, _ core.Device
 }
 
 var _ frontend.LibraryActivity = (*Service)(nil)
+var _ frontend.LibraryActivityGrouping = (*Service)(nil)

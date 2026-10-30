@@ -79,10 +79,26 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		return page, nil
 	}
 	order := browseOrder(q)
+	orderArgs := []any{}
+	asOf := c.now()
+	if q.Sort == core.SortAdded {
+		dir := "ASC"
+		if q.Desc {
+			dir = "DESC"
+		}
+		order = airAddedSQL + " " + dir
+		orderArgs = airAddedArgs(asOf)
+	}
 	query := `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t WHERE ` + where + ` ORDER BY ` + order + `, t.key ASC LIMIT ? OFFSET ?`
-	items, err := c.queryTitles(ctx, query, append(append([]any{}, args...), limit, offset)...)
+	queryArgs := append(append([]any{}, args...), orderArgs...)
+	items, err := c.queryTitles(ctx, query, append(queryArgs, limit, offset)...)
 	if err != nil {
 		return core.Page{}, err
+	}
+	if q.Sort == core.SortAdded {
+		if err := applyAirAddedTimes(ctx, c.db, items, asOf); err != nil {
+			return core.Page{}, err
+		}
 	}
 	if items == nil {
 		items = []core.Title{}
@@ -121,6 +137,8 @@ func browseOrder(q core.BrowseQuery) string {
 		col = "t.rating"
 	case core.SortAdded:
 		col = "t.added_at"
+	case core.SortUpdated:
+		col = "t.fetched_at"
 	case core.SortPopularity, "":
 		col = "t.popularity"
 	}

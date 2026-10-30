@@ -38,6 +38,7 @@ type ServiceDeps struct {
 	Children              func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Grandchildren         func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Browse                func(context.Context, core.BrowseQuery) (core.Page, error)
+	AiredEpisodes         func(context.Context, core.RatingKey, int, int) (core.Page, error)
 	AddedTimes            func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
 	SimilarSource         func(context.Context, core.RatingKey, int) ([]core.Title, error)
 	FilterRecommendations func(context.Context, *core.User, []core.Title) ([]core.Title, error)

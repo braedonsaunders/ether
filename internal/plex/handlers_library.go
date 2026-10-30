@@ -461,8 +461,10 @@ func sortFor(key, dir string) (core.SortOrder, bool) {
 		so = core.SortReleased
 	case "rating", "audienceRating", "userRating":
 		so = core.SortRating
-	case "addedAt", "updatedAt", "lastViewedAt":
+	case "addedAt", "lastViewedAt":
 		so = core.SortAdded
+	case "updatedAt":
+		so = core.SortUpdated
 	default:
 		so = core.SortPopularity
 	}
@@ -880,7 +882,16 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, page.Items...)
 	}
-	sort.SliceStable(items, func(i, j int) bool { return items[i].UpdatedAt.After(items[j].UpdatedAt) })
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i].AddedAt, items[j].AddedAt
+		if left.IsZero() {
+			left = items[i].Released
+		}
+		if right.IsZero() {
+			right = items[j].Released
+		}
+		return left.After(right)
+	})
 	if len(items) > size {
 		items = items[:size]
 	}

@@ -61,6 +61,7 @@ type Title struct {
 	Summary                     string        `json:"summary,omitempty"`
 	Year                        int           `json:"year,omitempty"`
 	Released                    time.Time     `json:"released,omitempty"` // first air / release date
+	AddedAt                     time.Time     `json:"addedAt,omitzero"`   // air-derived library date, when known
 	HomeReleaseChecked          bool          `json:"homeReleaseChecked,omitempty"`
 	HomeReleased                time.Time     `json:"homeReleased,omitempty"`
 	HomeReleaseFallbackAdmitted bool          `json:"homeReleaseFallbackAdmitted,omitempty"`

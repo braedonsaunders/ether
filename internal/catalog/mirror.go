@@ -105,12 +105,12 @@ func (m *Mirror) Snapshot(ctx context.Context) ([]MirrorItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var key core.RatingKey
 		var pid int64
 		var kind string
 		if err := rows.Scan(&key, &pid, &kind); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		i, ok := byKey[key]
@@ -130,7 +130,22 @@ func (m *Mirror) Snapshot(ctx context.Context) ([]MirrorItem, error) {
 			t.Cast = append(t.Cast, p)
 		}
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	titles := make([]core.Title, len(out))
+	for i := range out {
+		titles[i] = out[i].Title
+	}
+	if err = applyAirAddedTimes(ctx, m.db, titles, m.now()); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].Title.AddedAt = titles[i].AddedAt
+	}
+	return out, nil
 }
 
 func (m *Mirror) Franchises(ctx context.Context) ([]core.Collection, error) {

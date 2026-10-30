@@ -147,5 +147,8 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 			out = append(out, *t)
 		}
 	}
+	if err := applyAirAddedTimes(ctx, m.db, out, m.now()); err != nil {
+		return nil, err
+	}
 	return out, nil
 }

@@ -6,7 +6,7 @@ import (
 )
 
 // LatestItem carries the genuine stored catalogue addition time. Nil means
-// unknown; adapters must not substitute premiere or modification dates.
+// unknown; it is the air/release date, or the latest aired episode for a show.
 type LatestItem struct {
 	Title   Title
 	AddedAt *time.Time
@@ -22,11 +22,15 @@ type ActivityPage struct {
 }
 
 // LibraryActivity provides home-independent library and watch-state queries.
-// LatestAdded currently covers movie/show library roots, ordered by their
-// stored catalogue addition time. Episode grouping is a separate capability.
+// LatestAdded returns movie/show library roots; TV defaults to grouped series.
 type LibraryActivity interface {
 	LatestAdded(context.Context, *Viewer, Device, string, int) ([]LatestItem, error)
 	// requireExact requests a complete filtered count; an implementation must
 	// return an error if it cannot determine one within its resource bounds.
 	Resume(context.Context, *Viewer, Device, string, []MediaType, int, int, bool) (ActivityPage, error)
+}
+
+// LibraryActivityGrouping selects grouped series or individual aired episodes.
+type LibraryActivityGrouping interface {
+	LatestAddedGrouped(context.Context, *Viewer, Device, string, int, bool) ([]LatestItem, error)
 }

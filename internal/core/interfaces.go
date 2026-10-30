@@ -16,7 +16,8 @@ const (
 	SortTitle      SortOrder = "title"
 	SortReleased   SortOrder = "released"
 	SortRating     SortOrder = "rating"
-	SortAdded      SortOrder = "added" // when it joined the browsable set
+	SortAdded      SortOrder = "added"   // release or most recent aired episode
+	SortUpdated    SortOrder = "updated" // actual catalogue metadata update time
 )
 
 // Filter narrows a browse or a smart collection. Zero values mean "any".

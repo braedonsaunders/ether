@@ -17,7 +17,7 @@ func TestCachedAddedTimesBatch(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := c.db.ExecContext(ctx, `UPDATE catalog_titles SET added_at=CASE WHEN key=? THEN ? ELSE 0 END WHERE key IN (?,?)`, int64(known), int64(1700000000), int64(known), int64(zero)); err != nil {
+	if _, err := c.db.ExecContext(ctx, `UPDATE catalog_titles SET released_ts=CASE WHEN key=? THEN ? ELSE 0 END WHERE key IN (?,?)`, int64(known), int64(1700000000), int64(known), int64(zero)); err != nil {
 		t.Fatal(err)
 	}
 	keys := []core.RatingKey{known, zero, missing, known}
