@@ -730,7 +730,7 @@ func diffTranscripts(a, b transcript, out io.Writer) (int, error) {
 			if err != nil {
 				return n, err
 			}
-			if commit != "" && !approvedHeaders(x, y) {
+			if commit != "" && !approvedHeaders(x, y) && !(commit == "5d750402" && approvedScopeHeaders(x, y)) {
 				commit = ""
 			}
 			// Counterfactual evidence must not rely on either allowlist.

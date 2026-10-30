@@ -112,3 +112,20 @@ func TestApprovedHeadersOnlyPermitValidBodyLengths(t *testing.T) {
 		t.Fatal("invalid content length accepted")
 	}
 }
+
+func TestScopeApprovalAcceptsOnlyExactCompressionHeaderChange(t *testing.T) {
+	a := capture{response: protocol.Response{Headers: http.Header{"Vary": {"Accept-Encoding"}, "Content-Length": {"3"}, "Cache-Control": {"no-cache"}}, Body: []byte("old")}}
+	b := capture{response: protocol.Response{Headers: http.Header{"Content-Length": {"4"}, "Cache-Control": {"no-cache"}}, Body: []byte("new!")}}
+	if !approvedScopeHeaders(a, b) {
+		t.Fatal("expected exact Vary change")
+	}
+	b.response.Headers.Set("Cache-Control", "public")
+	if approvedScopeHeaders(a, b) {
+		t.Fatal("unrelated header difference accepted")
+	}
+	b.response.Headers.Set("Cache-Control", "no-cache")
+	a.response.Headers.Set("Vary", "Origin")
+	if approvedScopeHeaders(a, b) {
+		t.Fatal("unreviewed Vary value accepted")
+	}
+}

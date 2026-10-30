@@ -87,3 +87,17 @@ func approvedHeaders(a, b capture) bool {
 	}
 	return reflect.DeepEqual(x, y)
 }
+
+// The approved scope fix turns a populated response into a small empty one.
+// Ether's compression middleware consequently omits Vary: Accept-Encoding.
+// Accept that exact directional header pair only for an otherwise exact
+// reviewed scope response; all other headers and valid body lengths still match.
+func approvedScopeHeaders(a, b capture) bool {
+	x, y := a.response.Headers.Clone(), b.response.Headers.Clone()
+	if !reflect.DeepEqual(x.Values("Vary"), []string{"Accept-Encoding"}) || len(y.Values("Vary")) != 0 {
+		return false
+	}
+	x.Del("Vary")
+	a.response.Headers, b.response.Headers = x, y
+	return approvedHeaders(a, b)
+}
