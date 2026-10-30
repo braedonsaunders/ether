@@ -137,3 +137,32 @@ run on SQLite and PostgreSQL, using the current capability primitive.
 These gates do not certify durable sticky authority, cross-node payload GC,
 encoder retirement or actual Plex broker adoption. Those remain launch blockers
 until their real consumers and failure outcomes are integrated and validated.
+
+## Manager source outcome increment
+
+The manager now reserves bounded backend responsibility before every actual
+Engine.Open (initial, failover/preflight, warm-up and verification). Acquired
+sources finish that responsibility only after Close returns; the first Close
+error is retained and its admission charge is not reclaimed. Prior generations
+remain included after failover. Probe-verification HTTP readers also retain
+references until they exit. This replaces the earlier discarded-Close-error gap
+for these actual manager opens; it does not implement encoder retirement.
+
+`PrepareSurfaceSource` returns the shared flight's exact source outcome on
+cancellation/failure, or the accepted session's outcome on success. Cancelling a
+non-last waiter never seals a source needed by another waiter. Failed/unpublished
+preparations seal their scope; acquired or late sources remain pending through
+Close. The manager bounds backend opens/uncertain Close outcomes at1024 and
+asynchronous cleanup tasks at128. Saturation refuses acquisition/detach first.
+
+`RetireSource(id, expected)` validates and detaches one exact manager-private
+lifetime in the same manager critical section used for reuse/publication. Cleanup
+runs after unlocking in a manager-owned, shutdown-tracked task. The existing
+synchronous Stop path retains its cleanup/event order. Duplicate or stale expected
+lifetimes cannot detach a replacement. Callers must hold no broker owner gate.
+
+There is deliberately no broker caller yet. An outcome is not an external owner
+lease: a Prepare that linearized before detach may still return that lifetime.
+A durable claim/transfer barrier is required before broker ownership can safely
+cross a released owner gate. This API does not prove that barrier, last external
+owner release, encoder completion, payload cleanup, or persistent crash recovery.
