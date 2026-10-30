@@ -115,8 +115,16 @@ func TestStreamMetadataMountedSourceFacts(t *testing.T) {
 					}
 					check(source["MediaStreams"])
 					if playbackInfo {
-						if source["ETag"] != "source-revision-7" || source["SupportsDirectPlay"] != true {
+						if source["SupportsDirectPlay"] != true {
 							t.Fatal("broker facts changed", source)
+						}
+						// Emby's existing dialect projection intentionally omits ETag;
+						// Jellyfin exposes the broker's exact source revision.
+						if protocol == "jellyfin" && source["ETag"] != "source-revision-7" {
+							t.Fatal("source revision changed", source)
+						}
+						if _, present := source["ETag"]; protocol == "emby" && present {
+							t.Fatal("Emby gained a Jellyfin-only field", source)
 						}
 					} else if tc.estimated {
 						if _, present := dto["MediaStreams"]; present {
