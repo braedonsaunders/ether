@@ -328,7 +328,7 @@ func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device co
 			return &t, nil
 		}
 		// Keep the original mixed-entry resolver for non-title or virtual-season
-		// cases; its live-guide cache is scoped to this bounded chunk.
+		// cases; cachedLive shares one guide read across this policy pass.
 		var otherRefs []core.NeutralEntryRef
 		var otherIndexes []int
 		for i, ref := range part {
