@@ -32,12 +32,13 @@ type lazySession struct {
 }
 
 type lazyStreams struct {
-	db       *sql.DB
-	broker   *Broker
-	protocol frontend.Protocol
-	grants   LazyGrants
-	ttl      time.Duration
-	remote   func(*http.Request) bool
+	db           *sql.DB
+	broker       *Broker
+	protocol     frontend.Protocol
+	grants       LazyGrants
+	ttl          time.Duration
+	remote       func(*http.Request) bool
+	newHeartbeat func(time.Duration) (<-chan time.Time, func())
 }
 
 // NewLazyStreams creates a surface-bound durable, reusable capability issuer.
@@ -420,7 +421,14 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The scoped path remains internal; every client request must pass this
 	// handler so revoking the issuing grant revokes the capability as well.
-	clone := r.Clone(ctx)
+	streamCtx, cancelStream := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.heartbeat(streamCtx, cancelStream, hash, reference, viewerID, id, req)
+	}()
+	defer func() { cancelStream(); <-done }()
+	clone := r.Clone(streamCtx)
 	u := *r.URL
 	u.Path = path
 	if req.Channel != "" {
@@ -455,6 +463,61 @@ func serveSourceGone(protocol frontend.Protocol, w http.ResponseWriter, r *http.
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// heartbeat rechecks authority while a response is still being transferred.
+// It exits when that request ends or the session is no longer authorized.
+func (s *lazyStreams) heartbeat(ctx context.Context, cancel context.CancelFunc, hash, reference string, viewerID int64, id string, req frontend.PlanRequest) {
+	interval := min(time.Minute, s.ttl/3)
+	if interval <= 0 {
+		interval = time.Nanosecond
+	}
+	var ticks <-chan time.Time
+	var stop func()
+	if s.newHeartbeat != nil {
+		ticks, stop = s.newHeartbeat(interval)
+	} else {
+		ticker := time.NewTicker(interval)
+		ticks, stop = ticker.C, ticker.Stop
+	}
+	defer stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticks:
+			viewer, err := s.broker.deps.ActiveViewer(ctx, viewerID)
+			if err != nil || viewer == nil || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil || !s.broker.permitted(viewer, req.Caps) {
+				cancel()
+				return
+			}
+			access := frontend.SessionAccess{Viewer: viewer, Device: req.Device, Protocol: s.protocol}
+			if _, _, err = s.broker.access(ctx, access, id); err != nil {
+				cancel()
+				return
+			}
+			if req.Channel != "" {
+				if s.broker.deps.Live == nil || s.broker.deps.Live.Allowed(ctx, viewer, req.Channel) != nil {
+					cancel()
+					return
+				}
+			} else {
+				if s.broker.deps.MediaLookup == nil {
+					cancel()
+					return
+				}
+				title, err := s.broker.deps.MediaLookup(ctx, viewer, req.Device, req.Item)
+				if err != nil || title == nil || title.Key != req.Item || (!title.Released.IsZero() && title.Released.After(s.broker.deps.Now())) {
+					cancel()
+					return
+				}
+			}
+			if s.renewActive(ctx, hash, reference, viewerID, id) != nil {
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 // renewActive is called only after a GET has established or found a session
