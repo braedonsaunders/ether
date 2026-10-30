@@ -224,11 +224,30 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			if err := os.WriteFile(refFile, refJSON, 0600); err != nil {
 				t.Fatal(err)
 			}
-			labProxy, stopProxy := labProbeProxy(t, spec.reference)
+			probeDevices := map[string]string{}
+			allowedProbeDevices := []string{}
+			for _, clientName := range strings.Split(spec.client, ",") {
+				probeDevices[clientName] = spec.reference.vars["device_id"] + "-" + clientName
+				allowedProbeDevices = append(allowedProbeDevices, probeDevices[clientName])
+			}
+			labProxy, stopProxy := labProbeProxy(t, spec.reference, allowedProbeDevices...)
 			defer stopProxy()
 			for _, mode := range []string{"compare", "live"} {
 				report := conform.Report{}
 				for _, clientName := range strings.Split(spec.client, ",") {
+					referenceValues := map[string]string{}
+					for key, value := range spec.reference.vars {
+						referenceValues[key] = value
+					}
+					referenceValues["device_id"] = probeDevices[clientName]
+					referenceJSON, err := json.Marshal(referenceValues)
+					if err != nil {
+						t.Fatal("reference profile variables invalid")
+					}
+					if err = os.WriteFile(refFile, referenceJSON, 0600); err != nil {
+						t.Fatal("reference profile variables unavailable")
+					}
+					t.Logf("lab_profile_reference_device protocol=%s mode=%s client=%s device=%s", spec.proto, mode, clientName, probeDevices[clientName])
 					values["device_id"] = "conform-" + clientName
 					values["access_token"] = clientTokens[clientName]
 					b, _ = json.Marshal(values)
@@ -616,6 +635,43 @@ func (ref labReferenceData) logout(t *testing.T) {
 	t.Logf("lab_logout device=%s session=%s status=%d", ref.device, ref.session, response.StatusCode)
 }
 
+// labCredentialCleanup never contains a token or response body. A separate,
+// still-live credential proves the protected endpoint healthy on both sides
+// of the exact owned token's denial check, including an already-invalid token.
+type labCredentialCleanup struct {
+	LogoutStatus, ProtectedStatus, ControlBefore, ControlAfter int
+	Verified                                                   bool
+}
+
+func (ref labReferenceData) logoutWithProtectedDenial(control labReferenceData) labCredentialCleanup {
+	result := labCredentialCleanup{}
+	if ref.token == "" || ref.device == "" || control.token == "" || control.device == "" || ref.token == control.token || ref.base != control.base {
+		return result
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	request := func(owner labReferenceData, path, method string) int {
+		req, err := http.NewRequest(method, owner.base+path, nil)
+		if err != nil {
+			return 0
+		}
+		req.Header.Set("X-Emby-Token", owner.token)
+		req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+owner.device+`", Version="1", Token="`+owner.token+`"`)
+		response, err := client.Do(req)
+		if err != nil {
+			return 0
+		}
+		response.Body.Close()
+		return response.StatusCode
+	}
+	result.ControlBefore = request(control, "/Users/Me", "GET")
+	result.LogoutStatus = request(ref, "/Sessions/Logout", "POST")
+	result.ProtectedStatus = request(ref, "/Users/Me", "GET")
+	result.ControlAfter = request(control, "/Users/Me", "GET")
+	logoutAccepted := (result.LogoutStatus >= 200 && result.LogoutStatus < 300) || result.LogoutStatus == 401
+	result.Verified = logoutAccepted && result.ProtectedStatus == 401 && result.ControlBefore == 200 && result.ControlAfter == 200
+	return result
+}
+
 // labProbeProxy retains newly issued probe tokens only in memory, so every
 // live sign-in can be revoked after the test without writing credentials to a
 // transcript or report. Other requests pass through unchanged.
@@ -659,13 +715,19 @@ type labPlaybackReceipt struct {
 type labPlaybackContextKey struct{}
 type labLoginContextKey struct{}
 
-func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
+func labProbeProxy(t *testing.T, ref labReferenceData, profileDevices ...string) (string, func()) {
 	t.Helper()
 	target, err := url.Parse(ref.base)
 	if err != nil {
 		t.Fatal("invalid lab proxy target")
 	}
 	var mu sync.Mutex
+	ownedDevices := map[string]bool{}
+	for _, device := range append(profileDevices, ref.device, ref.vars["device_id"]) {
+		if device != "" {
+			ownedDevices[device] = true
+		}
+	}
 	issued := map[string]labReferenceData{}
 	// Quarantine is cleanup-only; malformed metadata never makes a token usable.
 	quarantine := map[string]labReferenceData{}
@@ -747,7 +809,7 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/Users/AuthenticateByName") {
 			_, device, err := labRequestIdentity(req)
-			if err != nil || device == "" || (device != ref.device && device != ref.vars["device_id"]) {
+			if err != nil || device == "" || !ownedDevices[device] {
 				http.Error(w, "unowned or ambiguous login device", http.StatusForbidden)
 				return
 			}
@@ -773,7 +835,7 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 		if device == "" {
 			device = owner.device
 		}
-		if device == "" || (device != owner.device && device != ref.vars["device_id"]) {
+		if device == "" || (device != owner.device && !(token == ref.token && ownedDevices[device])) {
 			http.Error(w, "unowned playback device", http.StatusForbidden)
 			return
 		}
@@ -828,7 +890,11 @@ func labProbeProxy(t *testing.T, ref labReferenceData) (string, func()) {
 			}
 		}
 		for _, owner := range quarantine {
-			owner.logout(t)
+			receipt := owner.logoutWithProtectedDenial(ref)
+			t.Logf("lab_probe_cleanup device=%s session=%s logout_status=%d protected_status=%d control_before=%d control_after=%d verified=%t", owner.device, owner.session, receipt.LogoutStatus, receipt.ProtectedStatus, receipt.ControlBefore, receipt.ControlAfter, receipt.Verified)
+			if !receipt.Verified {
+				t.Error("owned probe credential cleanup denial not verified")
+			}
 		}
 	}
 }
@@ -1006,6 +1072,14 @@ func TestLabProbeProxyRevokesIssuedCredentials(t *testing.T) {
 		case "/emby/Users/AuthenticateByName":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"AccessToken":"probe-only-token","SessionInfo":{"DeviceId":"owned-device"}}`)
+		case "/emby/Users/Me":
+			if r.Header.Get("X-Emby-Token") == "control-token" {
+				w.WriteHeader(200)
+			} else if logouts.Load() > 0 {
+				w.WriteHeader(401)
+			} else {
+				w.WriteHeader(200)
+			}
 		case "/emby/Sessions/Logout":
 			if r.Header.Get("X-Emby-Token") != "probe-only-token" {
 				t.Error("wrong sign-out credential")
@@ -1017,7 +1091,7 @@ func TestLabProbeProxyRevokesIssuedCredentials(t *testing.T) {
 		}
 	}))
 	defer backend.Close()
-	proxy, stop := labProbeProxy(t, labReferenceData{base: backend.URL + "/emby", vars: map[string]string{"device_id": "owned-device"}})
+	proxy, stop := labProbeProxy(t, labReferenceData{base: backend.URL + "/emby", token: "control-token", device: "control-device", vars: map[string]string{"device_id": "owned-device"}})
 	req, _ := http.NewRequest("POST", proxy+"/Users/AuthenticateByName", strings.NewReader(`{}`))
 	req.Header.Set("Authorization", `MediaBrowser DeviceId="owned-device"`)
 	resp, err := http.DefaultClient.Do(req)
@@ -1153,6 +1227,14 @@ func TestLabProbeProxyStopsOnlyOwnedPendingPlayback(t *testing.T) {
 			}
 			stopped.Add(1)
 			w.WriteHeader(http.StatusNoContent)
+		case "/Users/Me":
+			if r.Header.Get("X-Emby-Token") == "control-token" {
+				w.WriteHeader(200)
+			} else if loggedOut.Load() > 0 {
+				w.WriteHeader(401)
+			} else {
+				w.WriteHeader(200)
+			}
 		case "/Sessions/Logout":
 			if stopped.Load() != 1 {
 				t.Error("logout preceded playback stop")
@@ -1164,7 +1246,7 @@ func TestLabProbeProxyStopsOnlyOwnedPendingPlayback(t *testing.T) {
 		}
 	}))
 	defer backend.Close()
-	proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, vars: map[string]string{"device_id": "owned-device"}})
+	proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, token: "control-token", device: "control-device", vars: map[string]string{"device_id": "owned-device"}})
 	loginReq, _ := http.NewRequest("POST", proxy+"/Users/AuthenticateByName", strings.NewReader(`{}`))
 	loginReq.Header.Set("Authorization", `MediaBrowser DeviceId="owned-device"`)
 	login, err := http.DefaultClient.Do(loginReq)
@@ -1297,6 +1379,14 @@ func TestLabProbeProxyQuarantinesMintedCredentials(t *testing.T) {
 				case "/Sessions/Playing":
 					plays.Add(1)
 					w.WriteHeader(204)
+				case "/Users/Me":
+					if r.Header.Get("X-Emby-Token") == "primary-token" {
+						w.WriteHeader(200)
+					} else if logouts.Load() > 0 {
+						w.WriteHeader(401)
+					} else {
+						w.WriteHeader(200)
+					}
 				case "/Sessions/Logout":
 					token, device, err := labRequestIdentity(r)
 					if err != nil || token != "minted-token" || device != "owned-device" {
@@ -1369,5 +1459,137 @@ func TestLabProbeProxyRejectsForeignLoginBeforeMint(t *testing.T) {
 	cleanup()
 	if calls.Load() != 0 {
 		t.Fatal("unowned login minted or revoked credentials")
+	}
+}
+
+func TestLabCleanupRequiresProtectedDenialAndHealthyControl(t *testing.T) {
+	for _, tc := range []struct {
+		name                                        string
+		logout, denial, controlBefore, controlAfter int
+		verified                                    bool
+	}{
+		{"normal-logout", 204, 401, 200, 200, true},
+		{"already-invalid-explicit-denial", 401, 401, 200, 200, true},
+		{"logout401-token-still-valid", 401, 200, 200, 200, false},
+		{"logout204-token-still-valid", 204, 200, 200, 200, false},
+		{"all-auth-broken", 401, 401, 401, 401, false},
+		{"endpoint-failed-after-logout", 204, 401, 200, 500, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var controls atomic.Int32
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				token, device, err := labRequestIdentity(r)
+				if err != nil {
+					t.Error("invalid auth headers")
+					w.WriteHeader(400)
+					return
+				}
+				if token == "control-token" {
+					if device != "control-device" || r.URL.Path != "/Users/Me" || r.Method != "GET" {
+						t.Error("control credential used outside health request")
+					}
+					if controls.Add(1) == 1 {
+						w.WriteHeader(tc.controlBefore)
+					} else {
+						w.WriteHeader(tc.controlAfter)
+					}
+					return
+				}
+				if token != "owned-token" || device != "owned-device" {
+					t.Error("foreign cleanup")
+					w.WriteHeader(403)
+					return
+				}
+				if r.URL.Path == "/Sessions/Logout" && r.Method == "POST" {
+					w.WriteHeader(tc.logout)
+				} else if r.URL.Path == "/Users/Me" && r.Method == "GET" {
+					w.WriteHeader(tc.denial)
+				} else {
+					t.Error("unexpected cleanup request")
+					w.WriteHeader(404)
+				}
+			}))
+			defer backend.Close()
+			result := (labReferenceData{base: backend.URL, token: "owned-token", device: "owned-device"}).logoutWithProtectedDenial(labReferenceData{base: backend.URL, token: "control-token", device: "control-device"})
+			if result.Verified != tc.verified || result.LogoutStatus != tc.logout || result.ProtectedStatus != tc.denial || controls.Load() != 2 {
+				t.Fatalf("cleanup proof mismatch: %+v", result)
+			}
+		})
+	}
+}
+
+func TestLabProbeProxyDistinctProfileDevices(t *testing.T) {
+	var mu sync.Mutex
+	active := map[string]bool{}
+	logouts := map[string]int{}
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, device, err := labRequestIdentity(r)
+		if err != nil {
+			t.Error("auth identity invalid")
+			w.WriteHeader(400)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/Users/AuthenticateByName":
+			if device != "owned-findroid" && device != "owned-swiftfin" {
+				t.Error("foreign device authenticated")
+			}
+			active[device] = true
+			_ = json.NewEncoder(w).Encode(map[string]any{"AccessToken": "token-" + device, "SessionInfo": map[string]string{"Id": "session-" + device, "DeviceId": device}})
+		case "/Users/Me":
+			if token == "primary-token" && device == "primary-device" {
+				w.WriteHeader(200)
+				return
+			}
+			if token == "token-"+device && active[device] {
+				w.WriteHeader(200)
+			} else {
+				w.WriteHeader(401)
+			}
+		case "/Sessions/Logout":
+			if token != "token-"+device || !active[device] {
+				t.Error("wrong cleanup identity")
+				w.WriteHeader(401)
+				return
+			}
+			active[device] = false
+			logouts[device]++
+			w.WriteHeader(204)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+	proxy, cleanup := labProbeProxy(t, labReferenceData{base: backend.URL, token: "primary-token", device: "primary-device"}, "owned-findroid", "owned-swiftfin")
+	for _, device := range []string{"owned-findroid", "owned-swiftfin"} {
+		req, _ := http.NewRequest("POST", proxy+"/Users/AuthenticateByName", strings.NewReader(`{}`))
+		req.Header.Set("Authorization", `MediaBrowser DeviceId="`+device+`"`)
+		response, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != 200 {
+			t.Fatal("owned per-profile login failed")
+		}
+	}
+	cross, _ := http.NewRequest("POST", proxy+"/Sessions/Playing", strings.NewReader(`{"ItemId":"item","PlaySessionId":"play"}`))
+	cross.Header.Set("X-Emby-Token", "token-owned-findroid")
+	cross.Header.Set("Authorization", `MediaBrowser DeviceId="owned-swiftfin"`)
+	denied, err := http.DefaultClient.Do(cross)
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied.Body.Close()
+	if denied.StatusCode != 403 {
+		t.Fatal("issued token crossed profile device identity")
+	}
+	cleanup()
+	mu.Lock()
+	defer mu.Unlock()
+	if active["owned-findroid"] || active["owned-swiftfin"] || logouts["owned-findroid"] != 1 || logouts["owned-swiftfin"] != 1 {
+		t.Fatal("distinct profile identities not cleaned independently")
 	}
 }
