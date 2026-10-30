@@ -193,184 +193,47 @@ func (a *App) newRowViews(protocol core.Protocol, rows *experience.RowsService, 
 	return experience.NewRowViewService(options)
 }
 
-// rowViewResolveBatch loads the viewer's live guide at most once per policy
-// pass. Calls are independent so final revalidation observes current policy.
+// rowViewResolveBatch binds this call's viewer, device and protocol into the
+// neutral legacy hydrator. The adapters exist only for this call.
 func rowViewResolveBatch(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, refs []core.NeutralEntryRef, one func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error), live func(context.Context, *core.User) ([]frontend.RowEntry, error)) ([]frontend.RowEntry, error) {
-	var liveRows map[string]frontend.RowEntry
-	out := make([]frontend.RowEntry, 0, len(refs))
-	for _, ref := range refs {
-		if ref.Kind != string(frontend.RowEntryLiveChannel) {
-			entry, err := one(ctx, viewer, device, protocol, ref)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, entry)
-			continue
-		}
-		if liveRows == nil {
-			entries, err := live(ctx, viewer)
-			if err != nil {
-				return nil, err
-			}
-			liveRows = make(map[string]frontend.RowEntry, len(entries))
-			for _, entry := range entries {
-				if entry.Kind == frontend.RowEntryLiveChannel && entry.LiveChannel != nil {
-					liveRows[entry.LiveChannel.ID] = entry
-				}
-			}
-		}
-		entry, ok := liveRows[ref.ID]
-		if !ok {
-			return nil, core.ErrNotFound
-		}
-		out = append(out, entry)
-	}
-	return out, nil
+	return experience.RowViewHydrateLegacy(ctx, viewer, refs, func(ctx context.Context, ref core.NeutralEntryRef) (frontend.RowEntry, error) {
+		return one(ctx, viewer, device, protocol, ref)
+	}, func(ctx context.Context) ([]frontend.RowEntry, error) {
+		return live(ctx, viewer)
+	})
 }
 
 type rowViewCollectionSource interface {
 	Items(context.Context, *core.User, core.RatingKey, int, int) (core.Page, error)
 }
 
-// Snapshot members must still belong to the viewer-visible collection.
-// Stop at a bounded scan and fail closed if membership cannot be established.
+// rowViewCollectionMembers adapts one call's collection source into neutral
+// member keys. A nil source stays a nil port and fails closed.
 func rowViewCollectionMembers(ctx context.Context, source rowViewCollectionSource, user *core.User, collection core.RatingKey, refs []core.NeutralEntryRef) bool {
-	if source == nil || user == nil {
-		return false
+	if source == nil {
+		return experience.RowViewMembers(ctx, nil, user, collection, refs)
 	}
-	want := make(map[core.RatingKey]bool)
-	for _, ref := range refs {
-		if ref.Kind != string(frontend.RowEntryTitle) {
-			return false
-		}
-		key, err := core.ParseRatingKey(ref.ID)
+	return experience.RowViewMembers(ctx, func(ctx context.Context, viewer *core.User, key core.RatingKey, offset, limit int) (experience.RowViewCollectionPage, error) {
+		page, err := source.Items(ctx, viewer, key, offset, limit)
 		if err != nil {
-			return false
+			return experience.RowViewCollectionPage{}, err
 		}
-		want[key] = true
-	}
-	if len(want) == 0 {
-		return false
-	}
-	for offset := 0; offset < 10000; {
-		page, err := source.Items(ctx, user, collection, offset, 100)
-		if err != nil {
-			return false
+		keys := make([]core.RatingKey, len(page.Items))
+		for i := range page.Items {
+			keys[i] = page.Items[i].Key
 		}
-		for _, item := range page.Items {
-			delete(want, item.Key)
-		}
-		if len(want) == 0 {
-			return true
-		}
-		if len(page.Items) == 0 {
-			return false
-		}
-		offset += len(page.Items)
-		if offset >= page.Total {
-			return false
-		}
-	}
-	return false
+		return experience.RowViewCollectionPage{Keys: keys, Total: page.Total}, nil
+	}, user, collection, refs)
 }
 
-// rowViewResolveBatchTitles rehydrates titles and inherited parents anew on
-// every policy pass. Non-title and virtual-season entries keep the legacy path.
+// rowViewResolveBatchTitles binds this call's viewer, device and protocol into
+// the neutral title hydrator. Nothing in the adapter is reused for a later pass.
 func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, refs []core.NeutralEntryRef, one func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error), batch func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error), get func(context.Context, *core.User, core.RatingKey) (*core.Title, error), visibility experience.Visibility, live func(context.Context, *core.User) ([]frontend.RowEntry, error)) ([]frontend.RowEntry, error) {
-	out := make([]frontend.RowEntry, len(refs))
-	var guide []frontend.RowEntry
-	var guideErr error
-	guideLoaded := false
-	cachedLive := func(ctx context.Context, viewer *core.User) ([]frontend.RowEntry, error) {
-		if !guideLoaded {
-			guide, guideErr = live(ctx, viewer)
-			guideLoaded = true
-		}
-		return guide, guideErr
-	}
-	for start := 0; start < len(refs); start += 200 {
-		part := refs[start:min(start+200, len(refs))]
-		keys := make([]core.RatingKey, 0, len(part))
-		for _, ref := range part {
-			if ref.Kind == string(frontend.RowEntryTitle) {
-				k, e := core.ParseRatingKey(ref.ID)
-				if e != nil {
-					return nil, core.ErrNotFound
-				}
-				keys = append(keys, k)
-			}
-		}
-		titles, err := batch(ctx, keys)
-		if err != nil {
-			return rowViewResolveBatch(ctx, viewer, device, protocol, refs, one, cachedLive)
-		}
-		parents := make([]core.RatingKey, 0, len(keys))
-		seen := map[core.RatingKey]bool{}
-		for _, key := range keys {
-			if t, ok := titles[key]; ok && t.ShowKey != 0 && !seen[t.ShowKey] {
-				seen[t.ShowKey] = true
-				parents = append(parents, t.ShowKey)
-			}
-		}
-		inherited, err := batch(ctx, parents)
-		if err != nil {
-			return rowViewResolveBatch(ctx, viewer, device, protocol, refs, one, cachedLive)
-		}
-		vis := visibility
-		vis.GetTitle = func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
-			t, ok := inherited[key]
-			if !ok {
-				return nil, core.ErrNotFound
-			}
-			if t.Type == core.TypeMovie && t.HomeReleaseChecked && t.HomeReleased.IsZero() && !t.HomeReleaseFallbackAdmitted {
-				return get(ctx, viewer, key)
-			}
-			return &t, nil
-		}
-		// Keep the original mixed-entry resolver for non-title or virtual-season
-		// cases; cachedLive shares one guide read across this policy pass.
-		var otherRefs []core.NeutralEntryRef
-		var otherIndexes []int
-		for i, ref := range part {
-			if ref.Kind != string(frontend.RowEntryTitle) {
-				otherRefs = append(otherRefs, ref)
-				otherIndexes = append(otherIndexes, i)
-				continue
-			}
-			key, _ := core.ParseRatingKey(ref.ID)
-			t, ok := titles[key]
-			if !ok && key.Kind() == core.KindSeason {
-				otherRefs = append(otherRefs, ref)
-				otherIndexes = append(otherIndexes, i)
-				continue
-			}
-			if !ok || t.Key != key {
-				return nil, core.ErrNotFound
-			}
-			// CachedGet may persist an eligible home-release admission. Preserve that
-			// existing behavior instead of exposing the batch's unpersisted decision.
-			if t.Type == core.TypeMovie && t.HomeReleaseChecked && t.HomeReleased.IsZero() && !t.HomeReleaseFallbackAdmitted {
-				resolved, e := get(ctx, viewer, key)
-				if e != nil || resolved == nil {
-					return nil, core.ErrNotFound
-				}
-				t = *resolved
-			}
-			if !vis.Visible(ctx, viewer, &t) {
-				return nil, core.ErrNotFound
-			}
-			copy := t
-			out[start+i] = frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &copy}
-		}
-		if len(otherRefs) > 0 {
-			entries, e := rowViewResolveBatch(ctx, viewer, device, protocol, otherRefs, one, cachedLive)
-			if e != nil {
-				return nil, e
-			}
-			for i, entry := range entries {
-				out[start+otherIndexes[i]] = entry
-			}
-		}
-	}
-	return out, nil
+	return experience.RowViewHydrateEntries(ctx, viewer, refs, func(ctx context.Context, ref core.NeutralEntryRef) (frontend.RowEntry, error) {
+		return one(ctx, viewer, device, protocol, ref)
+	}, batch, func(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+		return get(ctx, viewer, key)
+	}, visibility, func(ctx context.Context) ([]frontend.RowEntry, error) {
+		return live(ctx, viewer)
+	})
 }

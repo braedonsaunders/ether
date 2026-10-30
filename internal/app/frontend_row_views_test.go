@@ -511,3 +511,79 @@ func TestRowViewBatchedInheritedMovieUsesAdmission(t *testing.T) {
 		t.Fatalf("admission bypass: %+v attempts=%d err=%v", got, attempts, err)
 	}
 }
+
+func TestRowViewCallbackAdaptersStayOnTheRequest(t *testing.T) {
+	ctx := context.Background()
+	ref := core.NeutralEntryRef{Kind: string(frontend.RowEntryTitle), ID: core.MovieKey(3).String()}
+	season := core.SeasonKey(9, 1)
+	seasonRef := core.NeutralEntryRef{Kind: string(frontend.RowEntryTitle), ID: season.String()}
+	var seen []string
+	one := func(_ context.Context, u *core.User, d core.Device, p core.Protocol, got core.NeutralEntryRef) (frontend.RowEntry, error) {
+		seen = append(seen, strconv.FormatInt(u.ID, 10)+"/"+d.ID+"/"+string(p)+"/"+got.ID)
+		key, err := core.ParseRatingKey(got.ID)
+		if err != nil {
+			return frontend.RowEntry{}, err
+		}
+		kind := core.TypeMovie
+		if key.Kind() == core.KindSeason {
+			kind = core.TypeSeason
+		}
+		return frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &core.Title{Key: key, Type: kind}}, nil
+	}
+	live := func(context.Context, *core.User) ([]frontend.RowEntry, error) {
+		t.Fatal("guide loaded")
+		return nil, nil
+	}
+	first, second := &core.User{ID: 1}, &core.User{ID: 2}
+	if _, err := rowViewResolveBatch(ctx, first, core.Device{ID: "tv"}, "jellyfin", []core.NeutralEntryRef{ref}, one, live); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rowViewResolveBatch(ctx, second, core.Device{ID: "phone"}, "emby", []core.NeutralEntryRef{ref}, one, live); err != nil {
+		t.Fatal(err)
+	}
+	batch := func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+		return map[core.RatingKey]core.Title{}, nil
+	}
+	get := func(context.Context, *core.User, core.RatingKey) (*core.Title, error) {
+		t.Fatal("admission read")
+		return nil, nil
+	}
+	vis := experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}
+	if _, err := rowViewResolveBatchTitles(ctx, first, core.Device{ID: "tv"}, "jellyfin", []core.NeutralEntryRef{seasonRef}, one, batch, get, vis, live); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rowViewResolveBatchTitles(ctx, second, core.Device{ID: "phone"}, "emby", []core.NeutralEntryRef{seasonRef}, one, batch, get, vis, live); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"1/tv/jellyfin/" + ref.ID,
+		"2/phone/emby/" + ref.ID,
+		"1/tv/jellyfin/" + seasonRef.ID,
+		"2/phone/emby/" + seasonRef.ID,
+	}
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("adapters reused another request: %v", seen)
+	}
+	var viewers []int64
+	source := &rowViewViewerSource{items: []core.Title{{Key: core.MovieKey(3)}}}
+	source.seen = &viewers
+	members := []core.NeutralEntryRef{ref}
+	if !rowViewCollectionMembers(ctx, source, first, core.CollectionKey(7), members) || !rowViewCollectionMembers(ctx, source, second, core.CollectionKey(8), members) {
+		t.Fatal("membership rejected")
+	}
+	if !reflect.DeepEqual(viewers, []int64{1, 2}) {
+		t.Fatalf("collection adapter viewers %v", viewers)
+	}
+}
+
+type rowViewViewerSource struct {
+	items []core.Title
+	seen  *[]int64
+}
+
+func (s *rowViewViewerSource) Items(_ context.Context, u *core.User, _ core.RatingKey, offset, limit int) (core.Page, error) {
+	*s.seen = append(*s.seen, u.ID)
+	start := min(offset, len(s.items))
+	end := min(start+limit, len(s.items))
+	return core.Page{Items: s.items[start:end], Total: len(s.items)}, nil
+}
