@@ -40,6 +40,7 @@ type Store struct {
 type Tx struct {
 	owner *Store
 	tx    *sql.Tx
+	shard int64
 }
 
 // New fixes policy at the adapter boundary. All upgraded nodes must use the
@@ -55,15 +56,27 @@ func (s *Store) Begin(ctx context.Context) (*Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Tx{owner: s, tx: tx}, nil
+	return &Tx{owner: s, tx: tx, shard: -1}, nil
 }
 
+// A Tx is not safe for concurrent use and may touch only one shard.
 // SQL exposes only this store's transaction for the adapter's domain record.
 func (t *Tx) SQL() *sql.Tx    { return t.tx }
 func (t *Tx) Commit() error   { return t.tx.Commit() }
 func (t *Tx) Rollback() error { return t.tx.Rollback() }
 func (t *Tx) lock(ctx context.Context, viewer int64) error {
-	return store.LockKey(ctx, store.DialectOf(t.owner.db), t.tx, fmt.Sprintf("handles:%s:%d", t.owner.policy.Namespace, viewer%t.owner.policy.Shards))
+	shard := viewer % t.owner.policy.Shards
+	if t.shard >= 0 && t.shard != shard {
+		return errors.New("handles: transaction cannot span shards")
+	}
+	if t.shard == shard {
+		return nil
+	}
+	if err := store.LockKey(ctx, store.DialectOf(t.owner.db), t.tx, fmt.Sprintf("handles:%s:%d", t.owner.policy.Namespace, shard)); err != nil {
+		return err
+	}
+	t.shard = shard
+	return nil
 }
 func valid(r Reservation) bool {
 	if r.ViewerID <= 0 || r.Surface == "" || len(r.Surface) > 128 || len(r.Digest) != 64 {

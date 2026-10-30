@@ -190,3 +190,31 @@ func TestReservationsReleaseScopeAndDomainRollback(t *testing.T) {
 		t.Fatalf("rollback reservation count=%d err=%v", n, err)
 	}
 }
+
+func TestReservationsRejectCrossShardTransaction(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	db := reservationDB(t)
+	ledger, err := New(db, Policy{Namespace: "ticket", Shards: 2, PerShard: 4, PerViewerSurface: 4, TTL: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := ledger.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	first := Reservation{Digest: fmt.Sprintf("%064x", 1), ViewerID: 1, Surface: "silo"}
+	if _, err = tx.Reserve(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.Digest = fmt.Sprintf("%064x", 2)
+	second.ViewerID = 2
+	if _, err = tx.Reserve(ctx, second); err == nil {
+		t.Fatal("cross-shard reservation accepted")
+	}
+	if removed, err := tx.Release(ctx, second); err == nil || removed {
+		t.Fatalf("cross-shard release removed=%t err=%v", removed, err)
+	}
+}
