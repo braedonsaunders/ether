@@ -84,3 +84,35 @@ func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaybackInfoBindsDetailSourceRevision(t *testing.T) {
+	const handle = "82b0c3fc-7616-46da-8528-fc26ec5cb4ab"
+	viewer := &frontend.Viewer{ID: 1}
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	for _, tc := range []struct {
+		name  string
+		front frontend.Frontend
+	}{{"jellyfin", Jellyfin{MachineID: "test"}}, {"emby", Emby{MachineID: "test"}}} {
+		var observed frontend.PlanRequest
+		sessions := frontendtest.Sessions{PlanFunc: func(_ context.Context, p frontend.PlanRequest) (frontend.PlayPlan, error) {
+			observed = p
+			return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4"}, Decision: frontend.Decision{Kind: "directplay"}, DirectPlay: true}, nil
+		}, OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			return frontend.Session{ID: "session"}, nil
+		}, StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+			return "/sessions/media/session/grant/file", nil
+		}}
+		planner := &detailPlannerStub{embeddedSessions: sessions}
+		inst, err := tc.front.Mount(context.Background(), frontend.Host{Identity: identity, Sessions: planner, Capabilities: frontendtest.Capabilities{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId="+handle, strings.NewReader(`{"IsPlayback":true}`))
+		r.Header.Set("Authorization", `MediaBrowser Token="account-secret", DeviceId="device"`)
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != 200 || observed.Item != 5 || observed.DetailSource != handle || observed.ExpectedSourceETag != "source-revision" || observed.Intent.ExactVersion || observed.Version != "" {
+			t.Fatal(tc.name, w.Code, w.Body.String(), observed)
+		}
+	}
+}
