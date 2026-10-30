@@ -76,10 +76,16 @@ func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
 			return w
 		}
 		w := call("/Items/" + ids.RatingKeyGUID(5))
-		for _, want := range []string{`"Container":"mp4"`, `"RunTimeTicks":10800000000`, `"Size":113973614`, `"Codec":"h264"`, `"VideoType":"VideoFile"`, `"SupportsDirectPlay":true`, `"Path":"https://ether.example/sessions/lazy/scoped/file"`} {
+		for _, want := range []string{`"Container":"mp4"`, `"RunTimeTicks":10800000000`, `"Size":113973614`, `"Codec":"h264"`, `"SupportsDirectPlay":true`, `"Path":"https://ether.example/sessions/lazy/scoped/file"`} {
 			if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
 				t.Fatal(tc.name, want, w.Code, w.Body.String())
 			}
+		}
+		if tc.name == "emby" && strings.Contains(w.Body.String(), `"VideoType"`) {
+			t.Fatal("Emby schema does not describe VideoType")
+		}
+		if tc.name == "jellyfin" && !strings.Contains(w.Body.String(), `"VideoType":"VideoFile"`) {
+			t.Fatal("Jellyfin lost VideoType", w.Body.String())
 		}
 		if strings.Contains(w.Body.String(), "account-secret") || lazy.seen.Item != 5 || lazy.seen.Version != "" || lazy.seen.DetailSource != "82b0c3fc-7616-46da-8528-fc26ec5cb4ab" || lazy.seen.ExpectedSourceETag != "source-revision" {
 			t.Fatal("unsafe scope", lazy.seen, w.Body.String())

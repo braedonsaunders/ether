@@ -51,6 +51,96 @@
       "path": "$[]/LastActivityDate",
       "reason": "The public picker omits activity timestamps until the viewer authenticates.",
       "clientAudit": "Emby.SDK UserDto.LastActivityDate is not required. The same native clients that use the public user list do not need it to sign in or browse. Authenticated user responses still return an observed LastActivityDate."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/Chapters",
+      "reason": "Chapter markers are returned only when the media file contains them. The aligned parity file has none, and titles are not invented.",
+      "clientAudit": "Emby.SDK BaseItemDto.Chapters is optional. Emby Android TV, Emby for iOS, and Emby for Android play and seek without a chapter list; the chapter UI is skipped when the field is absent."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/MediaSources[]/Chapters",
+      "reason": "Media-source chapters follow the file. The aligned parity file has no markers.",
+      "clientAudit": "Emby.SDK MediaSourceInfo.Chapters is optional. Playback uses the media source id and stream URL; chapter markers are a seek aid, not a prerequisite."
+    },
+    {
+      "endpoint": "/Items/${item_id}/PlaybackInfo",
+      "path": "$/MediaSources[]/Chapters",
+      "reason": "Playback chapters follow the file. The aligned parity file has no markers.",
+      "clientAudit": "Emby.SDK PlaybackInfo MediaSourceInfo.Chapters is optional. Direct play and HLS start from the media source id without a chapter list."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/FileName",
+      "reason": "A resolver label is not a verified file basename, so FileName stays absent.",
+      "clientAudit": "Emby.SDK BaseItemDto.FileName is optional. Clients identify the item by Id and open it through PlaybackInfo; they do not require the server basename."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/PartCount",
+      "reason": "PartCount is emitted only when one version reports a real part count. The candidate does not.",
+      "clientAudit": "Emby.SDK BaseItemDto.PartCount is optional. Playback does not use it to choose a stream."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/Path",
+      "reason": "The server filesystem path is not published. The scoped playback URL is on the media source.",
+      "clientAudit": "Emby.SDK BaseItemDto.Path is optional. Clients stream the media source path returned by PlaybackInfo, not a host filesystem path."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/DateModified",
+      "reason": "DateModified is a file timestamp. Catalogue and first-observed times are not substituted.",
+      "clientAudit": "Emby.SDK BaseItemDto.DateModified is optional. Clients sort and display with PremiereDate and UserData when a file modification time is absent."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/UserData/LastPlayedDate",
+      "reason": "LastPlayedDate is returned only after this viewer has a recorded play. The conformance viewer has none.",
+      "clientAudit": "Emby.SDK UserItemDataDto.LastPlayedDate is optional. Clients treat absence as not played and still resume from PlaybackPositionTicks when that field is present."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/MediaStreams[]/RefFrames",
+      "reason": "Reference-frame count is emitted only when the probe reports it. ffprobe does not report refs for this encode, and a count is not invented.",
+      "clientAudit": "Emby.SDK MediaStream.RefFrames is optional. Direct play and transcode decisions use codec, profile, level, width, and frame rate."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Items/${item_id}",
+      "path": "$/MediaSources[]/MediaStreams[]/RefFrames",
+      "reason": "Reference-frame count is emitted only when the probe reports it. ffprobe does not report refs for this encode, and a count is not invented.",
+      "clientAudit": "Emby.SDK MediaStream.RefFrames is optional. Clients select a media source by Id and do not require a reference-frame count to start playback."
+    },
+    {
+      "endpoint": "/Items/${item_id}/PlaybackInfo",
+      "path": "$/MediaSources[]/MediaStreams[]/RefFrames",
+      "reason": "Reference-frame count is emitted only when the probe reports it. ffprobe does not report refs for this encode, and a count is not invented.",
+      "clientAudit": "Emby.SDK PlaybackInfo MediaStream.RefFrames is optional. Playback starts from the media source id without it."
+    },
+    {
+      "endpoint": "/Items/${item_id}/PlaybackInfo",
+      "path": "$/MediaSources[]/Name",
+      "reason": "The media source name is the verified file basename. A resolver label is not used in its place.",
+      "clientAudit": "Emby.SDK MediaSourceInfo.Name is optional. Clients select a source by Id."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Views",
+      "path": "$/Items[]/DateCreated",
+      "reason": "Libraries are configured sections, not folders with a creation time.",
+      "clientAudit": "Emby.SDK views are selected by Id, Name, and CollectionType. DateCreated is optional display text and is not required to open a library."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Views",
+      "path": "$/Items[]/DateModified",
+      "reason": "Libraries are configured sections, not folders with a modification time.",
+      "clientAudit": "Emby.SDK views are selected by Id, Name, and CollectionType. DateModified is optional and is not required to open a library."
+    },
+    {
+      "endpoint": "/Users/${user_id}/Views",
+      "path": "$/Items[]/ParentId",
+      "reason": "Ether libraries are top-level sections and have no parent folder.",
+      "clientAudit": "Emby Android TV, Emby for iOS, and Emby for Android open a view by its Id. A parent folder id is not required when the view list is already the library root."
     }
   ]
 }

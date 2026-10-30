@@ -90,6 +90,8 @@ func (r *bitReader) se() int64 {
 type spsFacts struct {
 	bitDepth int
 	transfer int
+	// chroma is chroma_format_idc. Baseline and Main are 4:2:0.
+	chroma int
 	// VUI picture format; zero when not signalled (fullRange -1).
 	sarNum, sarDen    int
 	fullRange         int
@@ -106,10 +108,11 @@ func avcSPS(nal []byte) (spsFacts, error) {
 	r.skip(8) // constraint flags
 	r.skip(8) // level
 	r.ue()    // seq_parameter_set_id
-	f := spsFacts{bitDepth: 8, fullRange: -1}
+	f := spsFacts{bitDepth: 8, fullRange: -1, chroma: 1}
 	switch profile {
 	case 100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135:
 		chroma := r.ue()
+		f.chroma = int(chroma)
 		if chroma == 3 {
 			r.skip(1) // separate_colour_plane_flag
 		}

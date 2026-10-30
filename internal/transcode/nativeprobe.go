@@ -847,6 +847,30 @@ func spsPicture(si *core.StreamInfo, f spsFacts) {
 // containerPicture applies a container's explicit picture facts: H.273
 // primaries and matrix codes (0 or 2 unspecified), full range (-1 unknown)
 // and display size in pixels (0 unknown).
+func sampledPixelFormat(chroma, depth int) string {
+	var base string
+	switch chroma {
+	case 1:
+		base = "yuv420p"
+	case 2:
+		base = "yuv422p"
+	case 3:
+		base = "yuv444p"
+	default:
+		return ""
+	}
+	switch depth {
+	case 8:
+		return base
+	case 10:
+		return base + "10le"
+	case 12:
+		return base + "12le"
+	default:
+		return ""
+	}
+}
+
 func containerPicture(si *core.StreamInfo, primaries, matrix, fullRange, displayW, displayH int) {
 	if n := primariesName(primaries); n != "" {
 		si.ColorPrimaries = n
@@ -892,6 +916,12 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 		}
 		si.BitDepth = f.bitDepth
 		spsPicture(si, f)
+		if n := int(p[4]&3) + 1; n >= 1 && n <= 4 {
+			si.NALLengthSize = &n
+		}
+		if format := sampledPixelFormat(f.chroma, f.bitDepth); format != "" {
+			si.PixelFormat = format
+		}
 		if transfer == 0 || transfer == 2 {
 			transfer = f.transfer
 		}
