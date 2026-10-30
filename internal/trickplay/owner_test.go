@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -199,5 +200,28 @@ func TestBorrowIdentityAndNil(t *testing.T) {
 	defer o.Close()
 	if o.Borrow() != o.Borrow() {
 		t.Fatal("consumers received different provider views")
+	}
+}
+
+func TestGenerationChangesDuringAcquireDoNotPublishStaleLease(t *testing.T) {
+	b := &backend{entered: make(chan struct{}, 1), unblock: make(chan struct{})}
+	o := New(b)
+	defer o.Close()
+	p := o.Borrow()
+	var h Holder
+	var generation atomic.Int32
+	done := make(chan error, 1)
+	go func() {
+		done <- h.UpdateIf(context.Background(), p, source("r"), func() bool { return generation.Load() == 0 })
+	}()
+	<-b.entered
+	// A→B→A has the same release and input but a later generation.
+	generation.Store(2)
+	close(b.unblock)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if o.count != 0 || h.lease != nil || b.cancels != 1 {
+		t.Fatal("stale acquisition published")
 	}
 }

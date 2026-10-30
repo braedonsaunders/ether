@@ -168,11 +168,20 @@ func (h *Holder) UpdateIf(ctx context.Context, p core.TrickplayProvider, src cor
 	}
 	if h.lease != nil && h.release == src.ReleaseID {
 		h.lease.Ensure(ctx, src)
+		if valid != nil && !valid() {
+			h.lease.Release(true)
+			h.lease = nil
+			h.release = ""
+		}
 		return nil
 	}
 	next, err := leaser.AcquireTrickplay(ctx, src)
 	if err != nil {
 		return err
+	}
+	if valid != nil && !valid() {
+		next.Release(true)
+		return nil
 	}
 	old := h.lease
 	h.lease = next

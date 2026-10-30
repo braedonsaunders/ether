@@ -90,8 +90,14 @@ func (b *Broker) ensureTrickplay(ctx context.Context, s *brokerSession, until ti
 		Info:           ps.Info,
 		AvailableUntil: until,
 	}, func() bool {
+		b.mu.Lock()
+		active := !b.closed && b.sessions[s.public.ID] != nil && b.sessions[s.public.ID].trickplay == hold
+		b.mu.Unlock()
+		if !active {
+			return false
+		}
 		latest, ok := b.deps.Playback.Session(s.playID)
-		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == ps.Resolution.Release.ID && sourceRevision(latest) == sourceRevision(ps)
+		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == ps.Resolution.Release.ID && latest.Failovers == ps.Failovers && latest.DownFailovers == ps.DownFailovers && b.deps.Playback.InputURL(s.playID) == input
 	})
 	if err != nil && b.deps.OnEventError != nil {
 		b.deps.OnEventError(err)

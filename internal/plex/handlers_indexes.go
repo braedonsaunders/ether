@@ -100,8 +100,14 @@ func (s *Server) ensureTrickplay(ctx context.Context, ps *core.PlaySession, offs
 	if err := hold.UpdateIf(ctx, s.d.Trickplay, core.TrickplaySource{
 		ReleaseID: releaseID, InputURL: input, Info: ps.Info, AvailableUntil: offset,
 	}, func() bool {
+		s.trickplayMu.Lock()
+		active := !s.trickplayClosed && s.trickplayHolders[ps.ID] == hold
+		s.trickplayMu.Unlock()
+		if !active {
+			return false
+		}
 		latest, ok := s.d.Playback.Session(ps.ID)
-		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == releaseID && core.SourceRevision(latest) == core.SourceRevision(ps)
+		return ok && latest != nil && latest.Resolution != nil && latest.Resolution.Release.ID == releaseID && latest.Failovers == ps.Failovers && latest.DownFailovers == ps.DownFailovers && s.d.Playback.InputURL(ps.ID) == input
 	}); err != nil {
 		s.log.Warn("trickplay lease", "err", err)
 	}

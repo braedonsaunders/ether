@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"os"
 	"testing"
 	"time"
 
@@ -205,5 +206,46 @@ func TestBrokerTrickplayLeasesReleaseAndFenceLateEnsure(t *testing.T) {
 	}
 	if raw.closed {
 		t.Fatal("broker closed owner")
+	}
+}
+
+// The filesystem revision seam blocks before Stat. Stop must not wait for it.
+type blockedRevisionSource struct {
+	core.MediaSource
+	entered, unblock chan struct{}
+}
+
+func (*blockedRevisionSource) ReleaseID() string     { return "rel-1" }
+func (s *blockedRevisionSource) LocalFile() *os.File { close(s.entered); <-s.unblock; return nil }
+func TestTrickplayBlockedRevisionDoesNotBlockStop(t *testing.T) {
+	ctx := context.Background()
+	src := &blockedRevisionSource{entered: make(chan struct{}), unblock: make(chan struct{})}
+	raw := &memTrickplay{}
+	owner := trickplay.New(raw)
+	defer owner.Close()
+	play := &fakePlayback{sessions: map[string]*core.PlaySession{"play": {ID: "play", Source: src, Resolution: &core.Resolution{Release: core.Release{ID: "rel-1"}}}}}
+	events := NewEventBus(nil, func(context.Context, int64) (*core.Viewer, error) { return &core.Viewer{ID: 7}, nil })
+	defer events.Close()
+	s := &brokerSession{public: frontend.Session{ID: "s", ViewerID: 7}, playID: "play", sourcePinned: true, sourceETag: "expected"}
+	b := &Broker{deps: BrokerDeps{Trickplay: owner.Borrow(), Playback: play, Now: time.Now, Events: events}, sessions: map[string]*brokerSession{"s": s}, retired: make(map[string]retiredSession), owners: NewPlaybackOwners(), bindings: NewBindingTable[frontend.PlayIntent]()}
+	ensured := make(chan struct{})
+	go func() { b.ensureTrickplay(ctx, s, time.Second); close(ensured) }()
+	<-src.entered
+	stopped := make(chan error, 1)
+	go func() { stopped <- b.stopLocked(ctx, s) }()
+	select {
+	case err := <-stopped:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		close(src.unblock)
+		<-ensured
+		t.Fatal("Stop waited for filesystem revision")
+	}
+	close(src.unblock)
+	<-ensured
+	if len(raw.ensured) != 0 {
+		t.Fatal("blocked revision published after stop")
 	}
 }
