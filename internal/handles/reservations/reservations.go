@@ -1,4 +1,4 @@
-package handles
+package reservations
 
 import (
 	"context"
