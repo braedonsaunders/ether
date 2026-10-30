@@ -255,3 +255,10 @@ have made partial changes, so recreate or inspect the disposable fixture before
 rerunning. Supply credentials only over private stdin; never copy or print the
 reference lab credential file. Each invocation aligns one reference viewer to
 one target viewer; multiple viewers need separately provisioned fixture users.
+
+`-dlna 127.0.0.1:18101` additionally mounts the real DLNA handler with the
+fixture's disposable viewer selected and SSDP discovery disabled. A recording
+proxy must enforce LAN-only access and block `/__scorecard/` diagnostics; the
+upstream sees the proxy as loopback. HTTP proxying alone does not provide SSDP
+multicast discovery, so discovery and end-to-end DLNA playback require a separate
+isolated LAN test.

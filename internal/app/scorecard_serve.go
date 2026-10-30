@@ -155,6 +155,14 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 	if e = a.users.RefreshViewers(ctx); e != nil {
 		return fail(e)
 	}
+	// The fixture selects its disposable viewer explicitly; production DLNA
+	// keeps its normal opt-in, viewer and LAN authorization requirements.
+	if e = a.cfg.Update(func(c *config.Config) error {
+		c.Frontends["dlna"] = config.Frontend{Enabled: false, Settings: map[string]any{"viewerId": float64(viewerID), "discovery": false}}
+		return nil
+	}); e != nil {
+		return fail(e)
+	}
 	// Fixture-only credentials are written to the private data directory for
 	// the operator; never place them in logs or the diagnostic HTTP endpoints.
 	appGrants, e := identity.NewGrants(a.db, a.users, 30*24*time.Hour, nil)
@@ -288,7 +296,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		}
 	}
 	handlers := map[string]http.Handler{}
-	for _, p := range []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio"} {
+	for _, p := range []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio", "dlna"} {
 		inst, err := a.frontends.registry.Mount(ctx, p)
 		if err != nil {
 			return fail(fmt.Errorf("mount %s: %w", p, err))

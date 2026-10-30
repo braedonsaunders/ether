@@ -107,7 +107,7 @@ func TestScorecardServeRejectsMismatchAndServesViewer(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer closeApp()
-	for _, name := range []string{"silo", "webdav", "stremio"} {
+	for _, name := range []string{"silo", "webdav", "stremio", "dlna"} {
 		if handlers[name] == nil {
 			t.Fatalf("missing %s handler", name)
 		}
@@ -148,6 +148,20 @@ func TestScorecardServeRejectsMismatchAndServesViewer(t *testing.T) {
 	handlers["stremio"].ServeHTTP(stremioResp, stremioReq)
 	if stremioResp.Code != http.StatusOK {
 		t.Fatalf("stremio manifest: HTTP %d", stremioResp.Code)
+	}
+	dlnaReq := httptest.NewRequest("GET", "/description.xml", nil)
+	dlnaReq.RemoteAddr = "127.0.0.1:1234"
+	dlnaResp := httptest.NewRecorder()
+	handlers["dlna"].ServeHTTP(dlnaResp, dlnaReq)
+	if dlnaResp.Code != http.StatusOK {
+		t.Fatalf("dlna description: HTTP %d", dlnaResp.Code)
+	}
+	dlnaReq = httptest.NewRequest("GET", "/description.xml", nil)
+	dlnaReq.RemoteAddr = "203.0.113.5:1234"
+	dlnaResp = httptest.NewRecorder()
+	handlers["dlna"].ServeHTTP(dlnaResp, dlnaReq)
+	if dlnaResp.Code != http.StatusForbidden {
+		t.Fatalf("dlna public peer: HTTP %d", dlnaResp.Code)
 	}
 	siloResp := httptest.NewRecorder()
 	handlers["silo"].ServeHTTP(siloResp, httptest.NewRequest("GET", "/api/v2/system/identity", nil))
