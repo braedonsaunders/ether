@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -180,7 +179,18 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	opened := false
+	reserved := false
+	defer func() {
+		if reserved {
+			s.broker.releaseLazyCleanup()
+		}
+	}()
 	if id == "" {
+		if !s.broker.reserveLazyCleanup() {
+			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		reserved = true
 		plan, err := s.broker.Plan(ctx, req)
 		if err != nil {
 			http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
@@ -203,7 +213,9 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path, err := s.broker.StartStream(ctx, access, id, frontend.StreamRequest{Format: frontend.StreamDirect})
 	if err != nil {
 		if opened {
-			s.discardOpened(ctx, access, id)
+			if s.discardOpened(ctx, access, id) {
+				reserved = false // retry worker owns the reservation
+			}
 			s.broker.mu.Lock()
 			delete(s.broker.lazySessions, hash)
 			s.broker.mu.Unlock()
@@ -213,7 +225,9 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if expires <= s.broker.deps.Now().UnixMilli() || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil {
 		if opened {
-			s.discardOpened(ctx, access, id)
+			if s.discardOpened(ctx, access, id) {
+				reserved = false // retry worker owns the reservation
+			}
 			s.broker.mu.Lock()
 			delete(s.broker.lazySessions, hash)
 			s.broker.mu.Unlock()
@@ -236,21 +250,19 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // discardOpened rolls back a session that this request just opened, even when
 // its viewer is no longer active. It only operates on the matching local
 // session and takes the same ownership gate as normal stop operations.
-func (s *lazyStreams) discardOpened(ctx context.Context, access frontend.SessionAccess, id string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+func (s *lazyStreams) discardOpened(ctx context.Context, access frontend.SessionAccess, id string) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.broker.lazyCleanupWait)
 	defer cancel()
 	s.broker.mu.Lock()
 	entry := s.broker.sessions[id]
 	if entry == nil || access.Viewer == nil || entry.public.ViewerID != access.Viewer.ID || entry.public.Protocol != access.Protocol || entry.public.Device.ID != access.Device.ID {
 		s.broker.mu.Unlock()
-		return
+		return false
 	}
-	copy := *entry
+	cleanup := lazyCleanupEntry{session: entry, viewerID: access.Viewer.ID, deviceID: access.Device.ID, protocol: access.Protocol, clientID: entry.clientID}
 	s.broker.mu.Unlock()
-	unlock, err := s.broker.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", copy.public.ViewerID, copy.clientID))
-	if err != nil {
-		return
+	if s.broker.attemptLazyCleanup(ctx, cleanup) {
+		return false
 	}
-	defer unlock()
-	_ = s.broker.stopLocked(ctx, &copy)
+	return s.broker.queueLazyCleanup(id, cleanup)
 }

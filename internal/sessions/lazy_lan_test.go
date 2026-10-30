@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -98,6 +99,19 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	if err != nil || !strings.HasPrefix(path, "/sessions/lazy/") || pb.prepares != 0 {
 		t.Fatalf("issue %q: %v", path, err)
 	}
+	for n := 0; n < maxLazyCleanupReservations; n++ {
+		if !broker.reserveLazyCleanup() {
+			t.Fatal("reservation unavailable before capacity")
+		}
+	}
+	full := httptest.NewRecorder()
+	issuer.ServeHTTP(full, request(http.MethodGet, path, "192.168.1.3"))
+	if full.Code != http.StatusServiceUnavailable || pb.prepares != 0 {
+		t.Fatalf("saturated rollback capacity opened source: status=%d opens=%d", full.Code, pb.prepares)
+	}
+	for n := 0; n < maxLazyCleanupReservations; n++ {
+		broker.releaseLazyCleanup()
+	}
 	checks, revokeAfter = 0, 3
 	w := httptest.NewRecorder()
 	issuer.ServeHTTP(w, request(http.MethodGet, path, "192.168.1.3"))
@@ -145,11 +159,98 @@ func TestLANLazyStreamsBindPeerViewerAndPolicy(t *testing.T) {
 	if status := serve(http.MethodHead, "192.168.1.3"); status != 404 {
 		t.Fatalf("expired %d", status)
 	}
-	if _, err := issuer.IssueLAN(ctx, issueRequest, plan); err != nil {
+	newPath, err := issuer.IssueLAN(ctx, issueRequest, plan)
+	if err != nil {
 		t.Fatal(err)
 	}
 	var remaining int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sessions_lazy_streams`).Scan(&remaining); err != nil || remaining != 1 {
 		t.Fatalf("expired capability cleanup: count=%d err=%v", remaining, err)
+	}
+	broker.mu.Lock()
+	var held *brokerSession
+	for _, s := range broker.sessions {
+		held = s
+		break
+	}
+	broker.mu.Unlock()
+	if held == nil {
+		t.Fatal("expected the previously opened session")
+	}
+	broker.lazyCleanupWait = 10 * time.Millisecond
+	unlock, err := broker.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", held.public.ViewerID, held.clientID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !broker.reserveLazyCleanup() {
+		t.Fatal("could not reserve cleanup")
+	}
+	internal := issuer.(*lanLazyStreams).lazy
+	access := frontend.SessionAccess{Viewer: &core.Viewer{ID: 1}, Device: held.public.Device, Protocol: "dlna"}
+	if !internal.discardOpened(ctx, access, held.public.ID) {
+		unlock()
+		t.Fatal("held gate did not schedule retry")
+	}
+	broker.mu.Lock()
+	done := broker.lazyCleanupDone
+	broker.mu.Unlock()
+	unlock()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("retry worker did not finish")
+	}
+	if len(pb.Sessions()) != 0 {
+		t.Fatal("retry failed to clean up source")
+	}
+	broker.mu.Lock()
+	reserved := broker.lazyCleanupReserved
+	broker.mu.Unlock()
+	if reserved != 0 {
+		t.Fatalf("cleanup reservation leaked: %d", reserved)
+	}
+	w = httptest.NewRecorder()
+	issuer.ServeHTTP(w, request(http.MethodGet, newPath, "192.168.1.3"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("new session: %d", w.Code)
+	}
+	broker.mu.Lock()
+	held = nil
+	for _, s := range broker.sessions {
+		held = s
+		break
+	}
+	broker.mu.Unlock()
+	if held == nil {
+		t.Fatal("missing new session")
+	}
+	unlock, err = broker.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", held.public.ViewerID, held.clientID))
+	if err != nil || !broker.reserveLazyCleanup() {
+		t.Fatalf("cannot hold cleanup gate: %v", err)
+	}
+	access.Device = held.public.Device
+	if !internal.discardOpened(ctx, access, held.public.ID) {
+		unlock()
+		t.Fatal("shutdown retry was not queued")
+	}
+	broker.mu.Lock()
+	done = broker.lazyCleanupDone
+	broker.mu.Unlock()
+	closed := make(chan struct{})
+	go func() { broker.Close(ctx); close(closed) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		unlock()
+		t.Fatal("shutdown did not cancel cleanup worker")
+	}
+	unlock()
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("shutdown did not finish")
+	}
+	if len(pb.Sessions()) != 0 {
+		t.Fatal("shutdown failed to drain session")
 	}
 }

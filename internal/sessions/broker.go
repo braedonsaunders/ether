@@ -93,21 +93,27 @@ type retiredSession struct {
 // Plex's legacy timeline tracker is not yet included in Sessions; owner
 // Activity continues to use the shared playback manager until that move lands.
 type Broker struct {
-	deps            BrokerDeps
-	startSlots      chan struct{}
-	shutdownTimeout time.Duration
-	mu              sync.Mutex
-	plans           map[string]brokerPlan
-	sessions        map[string]*brokerSession
-	retired         map[string]retiredSession
-	lazySessions    map[string]lazySession
-	devices         map[deviceKey]frontend.SessionCapabilities
-	owners          *PlaybackOwners
-	gates           *Lifecycle
-	bindings        *BindingTable[frontend.PlayIntent]
-	closed          bool
-	pendingPlans    int
-	cluster         *brokerCluster
+	deps                BrokerDeps
+	startSlots          chan struct{}
+	shutdownTimeout     time.Duration
+	mu                  sync.Mutex
+	plans               map[string]brokerPlan
+	sessions            map[string]*brokerSession
+	retired             map[string]retiredSession
+	lazySessions        map[string]lazySession
+	lazyCleanup         map[string]lazyCleanupEntry
+	lazyCleanupRunning  bool
+	lazyCleanupWait     time.Duration
+	lazyCleanupReserved int
+	lazyCleanupCancel   context.CancelFunc
+	lazyCleanupDone     chan struct{}
+	devices             map[deviceKey]frontend.SessionCapabilities
+	owners              *PlaybackOwners
+	gates               *Lifecycle
+	bindings            *BindingTable[frontend.PlayIntent]
+	closed              bool
+	pendingPlans        int
+	cluster             *brokerCluster
 }
 
 func NewBroker(d BrokerDeps) (*Broker, error) {
@@ -131,7 +137,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if limit > 4096 {
 		return nil, errors.New("sessions: max pending starts exceeds 4096")
 	}
-	b := &Broker{deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
+	b := &Broker{deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -879,6 +885,7 @@ func (b *Broker) Close(ctx context.Context) {
 	}
 	firstClose := !b.closed
 	b.closed = true
+	lazyCancel, lazyDone := b.lazyCleanupCancel, b.lazyCleanupDone
 	var ids, planned []string
 	seen := make(map[string]bool)
 	for _, s := range b.sessions {
@@ -898,6 +905,18 @@ func (b *Broker) Close(ctx context.Context) {
 	// canceled; bound the cleanup so an unresponsive gate cannot block forever.
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.shutdownTimeout)
 	defer cancel()
+	if lazyCancel != nil {
+		lazyCancel()
+	}
+	if lazyDone != nil {
+		select {
+		case <-lazyDone:
+		case <-cleanupCtx.Done():
+			if b.deps.OnEventError != nil {
+				b.deps.OnEventError(fmt.Errorf("sessions: lazy cleanup worker did not stop during shutdown"))
+			}
+		}
+	}
 	for _, id := range ids {
 		if !b.StopPlayback(cleanupCtx, id) && b.deps.OnEventError != nil {
 			b.deps.OnEventError(fmt.Errorf("sessions: could not stop playback %s during shutdown", id))
