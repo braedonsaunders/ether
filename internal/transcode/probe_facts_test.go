@@ -51,7 +51,7 @@ func TestDolbyVisionContainerSignallingIsKnownOnlyAfterSupportedProbe(t *testing
 			if tc.side != "" {
 				side = `,"side_data_list":` + tc.side
 			}
-			data := `{"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","codec_tag_string":"` + tc.tag + `"` + side + `}],"format":{"format_name":"` + tc.format + `"}}`
+			data := `{"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","width":1920,"height":1080,"codec_tag_string":"` + tc.tag + `"` + side + `}],"format":{"format_name":"` + tc.format + `","duration":"60"}}`
 			m, err := ParseProbe([]byte(data))
 			if err != nil {
 				t.Fatal(err)
@@ -61,6 +61,17 @@ func TestDolbyVisionContainerSignallingIsKnownOnlyAfterSupportedProbe(t *testing
 				t.Fatalf("container signalling: %+v", s)
 			}
 		})
+	}
+}
+
+func TestPartialProbeDoesNotAssertAbsentDVConfiguration(t *testing.T) {
+	data := `{"streams":[{"codec_type":"video","codec_name":"hevc"}],"format":{"format_name":"mov,mp4"}}`
+	m, err := ParseProbe([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Streams[0].DolbyVisionConfigurationPresent != nil {
+		t.Fatal("partial probe asserted absence")
 	}
 }
 func boolptr(v bool) *bool { return &v }

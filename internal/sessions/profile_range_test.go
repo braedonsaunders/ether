@@ -16,7 +16,7 @@ func TestDVContainerSignallingControlsRequiredDirectProfile(t *testing.T) {
 	broker := &Broker{deps: BrokerDeps{Transcoder: profileTranscoder{}}}
 	source := func(side string) core.MediaInfo {
 		t.Helper()
-		data := `{"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","codec_tag_string":"hvc1","width":3840,"height":2160` + side + `},{"index":1,"codec_type":"audio","codec_name":"ac3","channels":6}],"format":{"format_name":"mov,mp4"}}`
+		data := `{"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","codec_tag_string":"hvc1","width":3840,"height":2160` + side + `},{"index":1,"codec_type":"audio","codec_name":"ac3","channels":6,"sample_rate":"48000"}],"format":{"format_name":"mov,mp4","duration":"60"}}`
 		info, err := transcode.ParseProbe([]byte(data))
 		if err != nil {
 			t.Fatal(err)
