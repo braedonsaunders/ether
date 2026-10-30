@@ -62,4 +62,10 @@ func TestRecentlyAddedExplicitScopes(t *testing.T) {
 			}
 		})
 	}
+	// The similarly named library endpoint retains its existing behavior.
+	rec := f.get(t, "/library/recentlyAdded?type=15", "Accept", "application/json")
+	var body struct{ MediaContainer model.MediaContainer }
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || len(body.MediaContainer.Metadata) == 0 {
+		t.Fatalf("library endpoint changed: %s (%v)", rec.Body.String(), err)
+	}
 }
