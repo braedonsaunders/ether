@@ -201,6 +201,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	hdr10, hdr10Plus, hlg, dv := false, false, false, false
 	for _, s := range plan.Media.Streams {
 		if s.Type == "video" {
+			rangeName := siloDynamicRange(s)
 			if s.HDR10Plus != nil {
 				source["hdr10_plus"] = *s.HDR10Plus
 			}
@@ -208,10 +209,10 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 				source["dv_enhancement_layer"] = "none"
 			}
 			if plan.Decision.VideoCopy && !plan.Decision.ToneMap {
-				hdr10 = s.ColorTransfer == "smpte2084"
+				hdr10 = rangeName == "hdr10" || rangeName == "hdr10_plus"
 				hdr10Plus = s.HDR10Plus != nil && *s.HDR10Plus
 				hlg = s.ColorTransfer == "arib-std-b67"
-				dv = s.DolbyVision && !plan.Decision.StripDolbyVision
+				dv = rangeName == "dolby_vision" && !plan.Decision.StripDolbyVision
 			}
 			source["video_codec"] = s.Codec
 			source["width"] = s.Width
@@ -222,17 +223,6 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 			source["frame_rate"] = s.FrameRate
 			if s.ColorRange != "" {
 				source["color_range"] = s.ColorRange
-			}
-			rangeName := ""
-			switch {
-			case s.DolbyVision:
-				rangeName = "dolby_vision"
-			case s.ColorTransfer == "smpte2084":
-				rangeName = "hdr10"
-			case s.ColorTransfer == "arib-std-b67":
-				rangeName = "hlg"
-			case s.ColorTransfer == "bt709":
-				rangeName = "sdr"
 			}
 			if rangeName != "" {
 				source["dynamic_range"] = rangeName

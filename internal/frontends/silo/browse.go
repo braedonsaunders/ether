@@ -370,7 +370,8 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 							if stream.Height > 0 {
 								resolution = strconv.Itoa(stream.Height) + "p"
 							}
-							hdr = stream.ColorTransfer == "smpte2084" || stream.ColorTransfer == "arib-std-b67" || stream.DolbyVision
+							rangeName := siloDynamicRange(stream)
+							hdr = rangeName != "" && rangeName != "sdr"
 							track := map[string]any{"codec": stream.Codec, "color_range": "unknown", "dv_enhancement_layer": "unknown"}
 							if stream.ColorRange != "" {
 								track["color_range"] = stream.ColorRange
@@ -446,14 +447,12 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 							if stream.DolbyVisionBLCompatibilityIDPresent != nil && *stream.DolbyVisionBLCompatibilityIDPresent {
 								track["dv_bl_compat_id"] = stream.DolbyVisionCompatibilityID
 							}
-							switch stream.ColorTransfer {
-							case "bt709", "smpte170m", "bt470bg":
+							switch rangeName {
+							case "sdr":
 								track["video_range_type"] = "SDR"
-							case "smpte2084":
-								if !stream.DolbyVision && (stream.HDR10Plus == nil || !*stream.HDR10Plus) {
-									track["video_range_type"] = "HDR10"
-								}
-							case "arib-std-b67":
+							case "hdr10":
+								track["video_range_type"] = "HDR10"
+							case "hlg":
 								track["video_range_type"] = "HLG"
 							}
 							// These booleans are mandatory in Silo's track DTO. Only
