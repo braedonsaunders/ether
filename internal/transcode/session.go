@@ -24,28 +24,36 @@ import (
 // track per representation (video, audio); ffmpeg's dash muxer writes short
 // chunks that the session regroups into numbered segments by timestamp.
 type Session struct {
-	id         string
-	m          *Manager
-	dir        string
-	watchers   sync.WaitGroup // running watch goroutines; Close waits for them
-	removals   pendingRemovals
-	segDur     time.Duration
-	base       time.Duration
-	total      int // segments in the playlist; 0 = unknown duration
-	container  string
-	proto      string // core.ProtocolHLS or core.ProtocolDASH
-	log        *slog.Logger
-	created    time.Time
-	lastAccess atomic.Int64 // unix nanos
-	pauseUntil atomic.Int64 // bounded authenticated player pause
-	mu         sync.Mutex
-	closed     bool
+	id                      string
+	m                       *Manager
+	dir                     string
+	watchers                sync.WaitGroup // running watch goroutines; Close waits for them
+	removals                pendingRemovals
+	segDur                  time.Duration
+	base                    time.Duration
+	total                   int // segments in the playlist; 0 = unknown duration
+	container               string
+	proto                   string // core.ProtocolHLS or core.ProtocolDASH
+	requireIndependentProof bool
+	// False until the packager can prove all segments across all rungs,
+	// including copies, switches, and failovers, are independently decodable.
+	segmentsIndependent bool
+	log                 *slog.Logger
+	created             time.Time
+	lastAccess          atomic.Int64 // unix nanos
+	pauseUntil          atomic.Int64 // bounded authenticated player pause
+	mu                  sync.Mutex
+	closed              bool
 	// Coordinated state transitions use mu; blocking process reaping releases it.
 	sessionInput
 	sessionEncoding
 	sessionDelivery
 	sessionAdaptation
 }
+
+// IndependentSegments implements core.HLSIndependentSegments. It reports
+// a proven all-renditions guarantee, not the legacy playlist convention.
+func (s *Session) IndependentSegments() bool { return s.segmentsIndependent }
 
 // sessionInput owns one aspect of the session. Fields are guarded by Session.mu.
 type sessionInput struct {

@@ -10,8 +10,12 @@ import (
 // Transcoder (internal/transcode)
 
 type HLSRequest struct {
-	SessionID string
-	InputURL  string // ffmpeg input; Ether serves sources on loopback HTTP with range support
+	// RequireIndependentProof emits HLS independence tags only when the
+	// session can guarantee every advertised segment is independently decodable.
+	// Zero preserves the legacy playlist contract for existing callers.
+	RequireIndependentProof bool
+	SessionID               string
+	InputURL                string // ffmpeg input; Ether serves sources on loopback HTTP with range support
 	// LiveInput permits playlist demuxers for owner-configured live sources.
 	// Ordinary resolved media must leave this false, even if duration is unknown.
 	LiveInput bool

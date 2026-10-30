@@ -627,16 +627,17 @@ func (m *Manager) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSe
 		return nil, fmt.Errorf("transcode: session dir: %w", err)
 	}
 	s := &Session{
-		id:        id,
-		m:         m,
-		dir:       dir,
-		segDur:    segDur,
-		base:      base,
-		total:     total,
-		container: d.Container,
-		proto:     proto,
-		log:       m.log.With("session", id),
-		created:   time.Now(),
+		id:                      id,
+		m:                       m,
+		dir:                     dir,
+		segDur:                  segDur,
+		base:                    base,
+		total:                   total,
+		container:               d.Container,
+		proto:                   proto,
+		requireIndependentProof: req.RequireIndependentProof,
+		log:                     m.log.With("session", id),
+		created:                 time.Now(),
 		sessionInput: sessionInput{
 			rtxTimeline:  enhancementSelected(d),
 			rtxConfig:    rtxConfig,
