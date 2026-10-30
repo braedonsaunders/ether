@@ -113,6 +113,24 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	versionHandle := ""
+	if target.Version != "" {
+		if i.host.VersionHandles == nil || (b.Capabilities.Video == nil && b.Capabilities.Audio == nil && b.Capabilities.Containers == nil) {
+			versionUnavailable(w)
+			return
+		}
+		scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
+		versionHandle, err = i.host.VersionHandles.Issue(r.Context(), scope, key, target.Version)
+		if err != nil || versionHandle == "" {
+			versionUnavailable(w)
+			return
+		}
+		resolved, err := i.host.VersionHandles.Resolve(r.Context(), scope, versionHandle)
+		if err != nil || resolved.Item != key {
+			versionUnavailable(w)
+			return
+		}
+	}
 	direct, hls := true, true
 	if b.Context.Deliveries != nil {
 		d, ok := b.Context.Deliveries["original_http"]
@@ -177,8 +195,12 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	pos := time.Duration(b.Position * float64(time.Second))
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: target.Version, Caps: cap.Client, Intent: frontend.PlayIntent{Options: options, AllowTranscoding: &hls, AudioSet: b.Audio != nil, SubtitleSet: b.Subtitle != nil, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioSet: b.Audio != nil, SubtitleSet: b.Subtitle != nil, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
+		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) {
+			versionUnavailable(w)
+			return
+		}
 		playbackError(w, err)
 		return
 	}
@@ -188,6 +210,10 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
 	if err != nil {
+		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) {
+			versionUnavailable(w)
+			return
+		}
 		playbackError(w, err)
 		return
 	}
@@ -356,6 +382,18 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
 	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "session_id": session.ID, "playback_plan": output})
+}
+
+func versionUnavailable(w http.ResponseWriter) {
+	requestID, err := controlCommandID()
+	if err != nil {
+		http.Error(w, "Playback unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("X-Request-ID", requestID)
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": "urn:ether:problem:version-unavailable", "title": "Selected version unavailable", "status": http.StatusServiceUnavailable, "detail": "The selected version cannot be served for this playback request.", "instance": "urn:silo:request:" + requestID})
 }
 
 type progressRequest struct {

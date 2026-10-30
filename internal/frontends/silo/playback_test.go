@@ -19,6 +19,87 @@ import (
 
 type fileIDs struct{}
 
+type testVersionHandles struct {
+	issue func(frontend.VersionScope, frontend.RatingKey, string) (string, error)
+}
+
+type genericFileIDs struct{ fileIDs }
+
+func (genericFileIDs) Resolve(context.Context, string, string, int32) (string, error) {
+	return `{"key":1000000000000001}`, nil
+}
+
+func TestExactVersionFailureAndGenericDefault(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	identity := testDeviceIdentity(frontendtest.Identity{}, viewer)
+	planned := 0
+	sessions := frontendtest.Sessions{
+		PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
+			planned++
+			if req.Version != "" || req.Intent.ExactVersion {
+				t.Fatal("generic default was made exact")
+			}
+			return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4"}, Decision: frontend.Decision{Kind: "directplay"}}, nil
+		},
+		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
+			return frontend.Session{ID: "session"}, nil
+		},
+		StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
+			return "/sessions/media/session/grant/file", nil
+		},
+	}
+	reject := testVersionHandles{issue: func(scope frontend.VersionScope, key frontend.RatingKey, release string) (string, error) {
+		if scope.Viewer != viewer || scope.Device.ID != "tv" || scope.Protocol != "silo" || len(scope.Caps.VideoCodecs) != 1 || scope.Caps.VideoCodecs[0] != "h264" || key != 1000000000000001 || release != "cut" {
+			t.Fatal("wrong version scope")
+		}
+		return "", errors.New("not offered for actual capabilities")
+	}}
+	start := func(allocator ids.CompactAllocator, handles frontend.VersionHandles) *httptest.ResponseRecorder {
+		capabilities := frontendtest.Capabilities{BuildFunc: func(_ context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
+			return frontend.CapabilityResult{Client: frontend.ClientCaps{VideoCodecs: req.Device.VideoCodecs}}, nil
+		}}
+		inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions, Capabilities: capabilities, VersionHandles: handles, IDs: ids.Codecs{Allocator: allocator}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt","client_capabilities":{"codecs_video":["h264"]}}`
+		r := httptest.NewRequest("POST", "/api/v2/playback/start", strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer grant")
+		r.Header.Set("X-Silo-Device-Id", "tv")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	w := start(fileIDs{}, reject)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") || planned != 0 {
+		t.Fatalf("unservable exact version: %d %s, planned=%d", w.Code, w.Body.String(), planned)
+	}
+	w = start(fileIDs{}, nil)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") || planned != 0 {
+		t.Fatalf("missing version handles: %d %s", w.Code, w.Body.String())
+	}
+	w = start(genericFileIDs{}, nil)
+	if w.Code != http.StatusCreated || planned != 1 {
+		t.Fatalf("generic default: %d %s, planned=%d", w.Code, w.Body.String(), planned)
+	}
+}
+
+func (h testVersionHandles) Issue(_ context.Context, scope frontend.VersionScope, key frontend.RatingKey, release string) (string, error) {
+	if h.issue != nil {
+		return h.issue(scope, key, release)
+	}
+	return "handle", nil
+}
+func (testVersionHandles) Resolve(_ context.Context, _ frontend.VersionScope, handle string) (frontend.VersionTarget, error) {
+	if handle != "handle" {
+		return frontend.VersionTarget{}, errors.New("bad handle")
+	}
+	return frontend.VersionTarget{Item: 1000000000000001}, nil
+}
+func (testVersionHandles) MatchSession(context.Context, frontend.VersionScope, string, string) error {
+	return nil
+}
+
 func TestPlaybackAdmissionBusyReturnsRetryableProblem(t *testing.T) {
 	w := httptest.NewRecorder()
 	playbackError(w, &frontend.SessionBusyError{RetryAfter: 1500 * time.Millisecond})
@@ -201,12 +282,15 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
 		return frontend.ItemDetail{Versions: []frontend.Version{{ID: "cut", Media: frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", Index: 0}, {Type: "audio", Index: 2}, {Type: "subtitle", Index: 5}}}}}}, nil
 	}}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, viewer), Experience: experience, Sessions: testScopedMedia{session}, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, viewer), Experience: experience, Sessions: testScopedMedia{session}, Capabilities: frontendtest.Capabilities{}, VersionHandles: testVersionHandles{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	call := func(method, path, body string) *httptest.ResponseRecorder {
 		body = strings.ReplaceAll(body, `"installation_id":"install"`, `"installation_id":"`+inst.(*instance).installationID()+`"`)
+		if path == "/api/v2/playback/start" {
+			body = strings.TrimSuffix(body, "}") + `,"client_capabilities":{"codecs_video":["h264"]}}`
+		}
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer account-secret")
 		req.Header.Set("X-Silo-Device-Id", "tv")
@@ -219,7 +303,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		t.Fatalf("stale installation: %d %s", bad.Code, bad.Body.String())
 	}
 	w := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","start_position":12}`)
-	if w.Code != 201 || strings.Contains(w.Body.String(), "account-secret") || planned.Version != "cut" || planned.Item != 1000000000000001 || streamed.Format != frontend.StreamHLS {
+	if w.Code != 201 || strings.Contains(w.Body.String(), "account-secret") || planned.Version != "handle" || !planned.Intent.ExactVersion || planned.Item != 1000000000000001 || streamed.Format != frontend.StreamHLS {
 		t.Fatalf("play %d %s %+v %+v", w.Code, w.Body.String(), planned, streamed)
 	}
 	if !strings.Contains(w.Body.String(), `"hdr10_plus":true`) {
