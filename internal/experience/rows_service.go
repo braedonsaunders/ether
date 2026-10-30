@@ -151,6 +151,8 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 
 	// Layout only sees permitted rows; reject injected or altered rows rather than
 	// trusting a layout provider to manufacture authorization decisions.
+	var subjects []ReceiptSubject
+	var handles []*string
 	for i := range out {
 		row := &out[i]
 		if !s.d.AllowRow(ctx, req.Viewer, *row) {
@@ -172,17 +174,22 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 				impression.Items = append(impression.Items, entry.Title.Key)
 			}
 		}
-		row.Handle, err = s.d.Receipts.Issue(ctx, req.Viewer, req.Device, protocol, ReceiptSubject{Kind: "row", ID: row.ID, Purpose: row.Purpose, Rank: row.Rank, Impression: impression})
-		if err != nil {
-			return nil, err
-		}
+		subjects = append(subjects, ReceiptSubject{Kind: "row", ID: row.ID, Purpose: row.Purpose, Rank: row.Rank, Impression: impression})
+		handles = append(handles, &row.Handle)
 		for j := range row.Entries {
 			entry := &row.Entries[j]
 			id := row.ID + "/" + string(entry.Kind) + "/" + entryIdentity(*entry)
-			entry.Handle, err = s.d.Receipts.Issue(ctx, req.Viewer, req.Device, protocol, ReceiptSubject{Kind: string(entry.Kind), ID: id, Purpose: row.Purpose, Rank: row.Rank, Impression: impression})
-			if err != nil {
-				return nil, err
-			}
+			subjects = append(subjects, ReceiptSubject{Kind: string(entry.Kind), ID: id, Purpose: row.Purpose, Rank: row.Rank, Impression: impression})
+			handles = append(handles, &entry.Handle)
+		}
+	}
+	if len(subjects) > 0 {
+		tokens, e := s.d.Receipts.IssueBatch(ctx, req.Viewer, req.Device, protocol, subjects)
+		if e != nil {
+			return nil, e
+		}
+		for i := range handles {
+			*handles[i] = tokens[i]
 		}
 	}
 	return out, nil

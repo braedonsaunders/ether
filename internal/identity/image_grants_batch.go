@@ -3,15 +3,12 @@ package identity
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
-	"github.com/braedonsaunders/ether/internal/store"
 )
 
 const maxImageBatchItems = 50
@@ -127,37 +124,8 @@ func (s *ImageGrantService) IssueBatch(ctx context.Context, req frontend.ImageBa
 		return nil, err
 	}
 	defer tx.Rollback()
-	now := s.now().UnixMilli()
-	check := `SELECT g.hash FROM identity_grants g JOIN auth_users u ON u.id=g.viewer_id WHERE g.hash=? AND g.viewer_id=? AND g.surface=? AND g.revoked=0 AND g.expires>? AND u.active=1`
-	if store.DialectOf(s.db) == store.Postgres {
-		check += ` FOR UPDATE OF g,u`
-	}
-	var verified string
-	if err := tx.QueryRowContext(ctx, check, source, viewer.ID, string(s.surface), now).Scan(&verified); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, core.ErrUnauthorized
-		}
+	if err := s.insertMirrored(ctx, tx, viewer.ID, source, req.Device.ID, string(device), "", rows); err != nil {
 		return nil, err
-	}
-	for start := 0; start < len(rows); start += imageBatchInsertChunk {
-		end := min(start+imageBatchInsertChunk, len(rows))
-		var query strings.Builder
-		query.WriteString(`INSERT INTO frontend_image_grants(hash,source_hash,viewer_id,surface,item,device,image_kind,image_path,image_tag,expires,channel,image_subject) VALUES `)
-		args := make([]any, 0, (end-start)*12)
-		for i, row := range rows[start:end] {
-			if i > 0 {
-				query.WriteByte(',')
-			}
-			query.WriteString(`(?,?,?,?,?,?,?,?,?,?,?,?)`)
-			args = append(args, row.hash, source, viewer.ID, string(s.surface), int64(row.item), string(device), row.image.Kind, row.image.Path, row.image.Tag, now+s.ttl.Milliseconds(), "", row.image.Subject)
-		}
-		result, err := tx.ExecContext(ctx, query.String(), args...)
-		if err != nil {
-			return nil, err
-		}
-		if count, err := result.RowsAffected(); err != nil || count != int64(end-start) {
-			return nil, core.ErrUnauthorized
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

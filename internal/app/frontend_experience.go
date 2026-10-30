@@ -140,7 +140,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		}
 		return false
 	}
-	receipts, err := experience.NewReceipts(experience.ReceiptOptions{DB: a.db, Active: a.users.ActiveUser, TTL: 30 * time.Minute, MaxPerDevice: 10000, Allowed: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject) bool {
+	receipts, err := experience.NewReceipts(experience.ReceiptOptions{DB: a.db, Active: a.users.ActiveUser, TTL: 30 * time.Minute, MaxPerDevice: 10000, MirrorHeaders: true, Allowed: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject) bool {
 		return allowedSubject(ctx, u, subject)
 	}, AllowedAction: func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject, kind frontend.RowInteractionKind) bool {
 		return (kind == frontend.RowImpression && subject.Kind == "row" && subject.Impression != nil) || (kind == frontend.RowClick && subject.Kind == string(frontend.RowEntryTitle))
