@@ -18,6 +18,7 @@ import (
 // revalidation inside Experience. The app supplies source capabilities only.
 type RuntimeRowViews struct {
 	DB                  *sql.DB
+	CurrentAvailable    func(context.Context, []core.Title) []core.Title
 	Protocol            core.Protocol
 	Receipts            *Receipts
 	Visibility          Visibility
@@ -142,7 +143,15 @@ func NewRuntimeRowViews(d RuntimeRowViews) (*RowViewService, error) {
 					return false
 				}
 				title, err := getCached(ctx, u, s.Item)
-				if err != nil || !cacheVisibility.Visible(ctx, u, title) {
+				if err != nil {
+					return false
+				}
+				if preflight, ok := ctx.Value(rowViewPolicyPreflightKey{}).(*rowViewPolicyPreflight); ok && d.CurrentAvailable != nil {
+					if !cacheVisibility.Playable(ctx, u, title) {
+						return false
+					}
+					preflight.titles = append(preflight.titles, *title)
+				} else if !cacheVisibility.Visible(ctx, u, title) {
 					return false
 				}
 			default:
@@ -221,13 +230,41 @@ func NewRuntimeRowViews(d RuntimeRowViews) (*RowViewService, error) {
 		if p != protocol {
 			return nil, core.ErrNotFound
 		}
-		return RowViewResolveBatchTitles(ctx, u, device, p, refs, options.ResolveEntry, d.CachedGetMany, getCached, cacheVisibility, func(ctx context.Context, viewer *core.User) ([]frontend.RowEntry, error) {
+		resolutionVisibility := cacheVisibility
+		preflight, current := ctx.Value(rowViewPolicyPreflightKey{}).(*rowViewPolicyPreflight)
+		if current && d.CurrentAvailable != nil {
+			resolutionVisibility.FilterAvailable = nil
+		}
+		entries, err := RowViewResolveBatchTitles(ctx, u, device, p, refs, options.ResolveEntry, d.CachedGetMany, getCached, resolutionVisibility, func(ctx context.Context, viewer *core.User) ([]frontend.RowEntry, error) {
 			if d.Live == nil {
 				return nil, core.ErrNotFound
 			}
 			now := time.Now()
 			return LiveEntries(ctx, viewer, d.Live, now, now.Add(24*time.Hour), nil)
 		})
+		if err != nil {
+			return nil, err
+		}
+		if current && d.CurrentAvailable != nil {
+			titles := append([]core.Title(nil), preflight.titles...)
+			for _, entry := range entries {
+				if entry.Title != nil {
+					titles = append(titles, *entry.Title)
+				}
+			}
+			allowed := map[core.RatingKey]bool{}
+			freshVisibility := cacheVisibility
+			freshVisibility.FilterAvailable = d.CurrentAvailable
+			for _, title := range freshVisibility.Available(ctx, u, titles) {
+				allowed[title.Key] = true
+			}
+			for _, title := range titles {
+				if !allowed[title.Key] {
+					return nil, ErrRowViewStale
+				}
+			}
+		}
+		return entries, nil
 	}
 	return NewRowViewService(options)
 }

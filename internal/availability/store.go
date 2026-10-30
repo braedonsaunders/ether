@@ -10,6 +10,7 @@ import (
 )
 
 func init() {
+	store.Register("availability", 4, `ALTER TABLE availability_releases ADD COLUMN policy_digest TEXT NOT NULL DEFAULT ''; ALTER TABLE availability_feed_items ADD COLUMN policy_digest TEXT NOT NULL DEFAULT '';`)
 	store.Register("availability", 3, `
  ALTER TABLE availability_feeds ADD COLUMN catchup_target TEXT NOT NULL DEFAULT '';
  ALTER TABLE availability_feeds ADD COLUMN catchup_tail TEXT NOT NULL DEFAULT '';
@@ -105,13 +106,13 @@ func (s *Service) remember(ctx context.Context, f core.ReleaseFeed, t core.Title
 		return err
 	}
 	now := s.now().Unix()
-	_, err = s.db.ExecContext(ctx, `INSERT INTO availability_releases(id,rating_key,source_id,generation,payload,title,name,protocol,first_seen,last_seen,priority,policy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
- ON CONFLICT(id,rating_key,source_id) DO UPDATE SET last_seen=excluded.last_seen,payload=excluded.payload,priority=excluded.priority,
+	_, err = s.db.ExecContext(ctx, `INSERT INTO availability_releases(id,rating_key,source_id,generation,payload,title,name,protocol,first_seen,last_seen,priority,policy,policy_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+ ON CONFLICT(id,rating_key,source_id) DO UPDATE SET last_seen=excluded.last_seen,payload=CASE WHEN availability_releases.policy_digest=excluded.policy_digest THEN availability_releases.payload ELSE excluded.payload END,policy_digest=excluded.policy_digest,priority=excluded.priority,
  verified_at=CASE WHEN availability_releases.generation<>excluded.generation THEN 0 ELSE availability_releases.verified_at END,
  first_verified=CASE WHEN availability_releases.generation<>excluded.generation THEN 0 ELSE availability_releases.first_verified END,
  next_check=CASE WHEN availability_releases.generation<>excluded.generation THEN 0 ELSE availability_releases.next_check END,
  state=CASE WHEN availability_releases.generation<>excluded.generation THEN 'observed' ELSE availability_releases.state END,
- generation=excluded.generation`, r.ID, t.Key, f.ID, f.Generation, raw, t.Title, r.Name, r.Protocol, now, now, t.Popularity, policy)
+ generation=excluded.generation`, r.ID, t.Key, f.ID, f.Generation, raw, t.Title, r.Name, r.Protocol, now, now, t.Popularity, policy, releasePolicyDigest(r))
 	return err
 }
 func (s *Service) prune(ctx context.Context) error {

@@ -88,6 +88,9 @@ func (s *Receipts) issueBatchAttempt(ctx context.Context, viewer *core.User, dev
 		return nil, err
 	}
 	defer tx.Rollback()
+	if err = capability.LockHeaderScopeInTx(ctx, s.opts.DB, tx, capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: viewer.ID, Surface: string(protocol), DeviceID: device.ID}); err != nil {
+		return nil, err
+	}
 	if err = store.LockKey(ctx, store.DialectOf(s.opts.DB), tx, fmt.Sprintf("experience:receipts:%d:%s", viewer.ID, device.ID)); err != nil {
 		return nil, err
 	}

@@ -53,7 +53,17 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 	if source, ok := s.d.Validator.(interface {
 		KnownUnavailableSince(context.Context, []core.RatingKey) map[core.RatingKey]time.Time
 	}); ok {
-		unavailable = source.KnownUnavailableSince(ctx, keys)
+		if current, _ := ctx.Value(currentPolicyKey{}).(bool); current {
+			if durable, ok := s.d.Validator.(interface {
+				KnownUnavailableSinceCurrent(context.Context, []core.RatingKey) map[core.RatingKey]time.Time
+			}); ok {
+				unavailable = durable.KnownUnavailableSinceCurrent(ctx, keys)
+			} else {
+				unavailable = source.KnownUnavailableSince(ctx, keys)
+			}
+		} else {
+			unavailable = source.KnownUnavailableSince(ctx, keys)
+		}
 	}
 	acceptable := map[core.RatingKey]bool{}
 	type observation struct {

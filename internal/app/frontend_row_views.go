@@ -15,6 +15,9 @@ func (a *App) newRowViews(protocol core.Protocol, rows *experience.RowsService, 
 	if a.collections != nil {
 		d.Collections = a.collections
 	}
+	if a.availability != nil {
+		d.CurrentAvailable = a.availability.FilterDiscoveryCurrent
+	}
 	if a.episodeorder != nil {
 		d.CachedVirtualSeason = a.episodeorder.CachedVirtualSeason
 	}

@@ -473,3 +473,12 @@ func (s *Service) Invalidate(ctx context.Context, id string) {
 		s.log.Debug("availability invalidation failed", "error", err)
 	}
 }
+
+// Empty digests on upgraded observations are unknown, never trusted as a
+// match. Their first ordinary write computes the canonical digest while policy
+// triggers continue fencing their payload changes throughout the upgrade.
+func releasePolicyDigest(r core.Release) string {
+	b, _ := json.Marshal(r)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}

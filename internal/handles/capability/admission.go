@@ -58,6 +58,19 @@ func AdmitHeadersInTx(ctx context.Context, db *sql.DB, tx *sql.Tx, headers []Hea
 	return insertHeadersInTx(ctx, tx, headers)
 }
 
+// LockHeaderScopeInTx acquires the admission shard lock before a domain
+// touches typed rows. Maintenance and issuance use the same header-first order.
+func LockHeaderScopeInTx(ctx context.Context, db *sql.DB, tx *sql.Tx, scope HeaderScope) error {
+	check := scope
+	if check.Namespace == ticketNamespace {
+		check.Namespace = "ticket.admission"
+	}
+	if db == nil || tx == nil || !validHeaderScope(check) {
+		return ErrInvalidHeader
+	}
+	return lockHeaders(ctx, db, tx, scope)
+}
+
 func lockHeaders(ctx context.Context, db *sql.DB, tx *sql.Tx, scope HeaderScope) error {
 	return store.LockKey(ctx, store.DialectOf(db), tx, fmt.Sprintf("capability:admission:%s:%d", scope.Namespace, scope.ViewerID%HeaderShardCount))
 }

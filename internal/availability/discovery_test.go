@@ -201,3 +201,24 @@ func TestConfigurableMovieWindow(t *testing.T) {
 		t.Fatal("gate did not resume")
 	}
 }
+
+func TestCurrentDiscoveryBypassesRemoteObservationMemo(t *testing.T) {
+	x := setup(t)
+	title := x.cat.titles[core.MovieKey(1)]
+	if err := x.s.remember(t.Context(), x.f.sources[0], title, x.release("remote"), x.s.policy()); err != nil {
+		t.Fatal(err)
+	}
+	if got := x.s.FilterDiscovery(t.Context(), []core.Title{title}); len(got) != 1 {
+		t.Fatal("fixture not visible")
+	}
+	// Another node updates durable observations without clearing this node's memo.
+	if _, err := x.s.db.Exec(`UPDATE availability_releases SET state='unavailable'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := x.s.FilterDiscovery(t.Context(), []core.Title{title}); len(got) != 1 {
+		t.Fatal("fixture did not retain cached observation")
+	}
+	if got := x.s.FilterDiscoveryCurrent(t.Context(), []core.Title{title}); len(got) != 0 {
+		t.Fatal("current preflight reused stale availability")
+	}
+}
