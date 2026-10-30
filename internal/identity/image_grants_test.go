@@ -108,6 +108,7 @@ func TestImageGrantRevalidatesSessionMembershipAndArtwork(t *testing.T) {
 		t.Fatal("valid grant", code)
 	}
 	image.Width, image.Height, image.BlurHash = 1200, 1800, "00TI:j"
+	image.ThumbHash = "AQIDBA=="
 	if code := call(service, secret); code != 200 {
 		t.Fatal("metadata update revoked stable artwork", code)
 	}

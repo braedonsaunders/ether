@@ -218,6 +218,9 @@ type Image struct {
 	Width, Height int
 	// BlurHash is a cached preview of the source; empty means unavailable.
 	BlurHash string
+	// ThumbHash is padded base64 of the cached source's standard ThumbHash;
+	// empty means the background computation has not completed.
+	ThumbHash string
 }
 
 // SameImage compares stable authorization identity, excluding optional metadata.

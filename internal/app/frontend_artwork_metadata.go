@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"image"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 func init() {
 	store.Register("artwork_metadata", 1, `CREATE TABLE artwork_image_metadata (image_key TEXT PRIMARY KEY, width INTEGER NOT NULL, height INTEGER NOT NULL, blurhash TEXT NOT NULL);
 CREATE TABLE artwork_image_metadata_claims (image_key TEXT PRIMARY KEY, token TEXT NOT NULL, expires_at INTEGER NOT NULL);`)
+	store.Register("artwork_metadata", 2, `ALTER TABLE artwork_image_metadata ADD COLUMN thumbhash TEXT NOT NULL DEFAULT '';`)
 }
 
 // artworkMetadataQueue serves only memory hits during requests. Missing
@@ -39,6 +41,7 @@ type artworkMetadataQueue struct {
 type artworkMetadata struct {
 	width, height int
 	blurhash      string
+	thumbhash     string
 }
 type artworkMetadataJob struct {
 	key     string
@@ -82,8 +85,10 @@ func (q *artworkMetadataQueue) get(ctx context.Context, req frontend.ArtworkRequ
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if cached, ok := q.cache[key]; ok {
-		img.Width, img.Height, img.BlurHash = cached.width, cached.height, cached.blurhash
-		return img
+		img.Width, img.Height, img.BlurHash, img.ThumbHash = cached.width, cached.height, cached.blurhash, cached.thumbhash
+		if cached.thumbhash != "" {
+			return img
+		}
 	}
 	if ctx.Err() != nil {
 		return img
@@ -110,9 +115,9 @@ func (q *artworkMetadataQueue) run() {
 		case job := <-q.jobs:
 			ctx, cancel := context.WithTimeout(q.ctx, 30*time.Second)
 			err := q.compute(ctx, job)
-			var metadata artworkMetadata
+			metadata, loadErr := q.load(ctx, job.key)
 			if err == nil {
-				metadata, err = q.load(ctx, job.key)
+				err = loadErr
 			}
 			cancel()
 			q.mu.Lock()
@@ -130,12 +135,12 @@ func (q *artworkMetadataQueue) run() {
 				}
 			} else {
 				delete(q.retry, job.key)
-				if err == nil {
-					if len(q.cache) >= 4096 {
-						q.cache = map[string]artworkMetadata{}
-					}
-					q.cache[job.key] = metadata
+			}
+			if loadErr == nil {
+				if len(q.cache) >= 4096 {
+					q.cache = map[string]artworkMetadata{}
 				}
+				q.cache[job.key] = metadata
 			}
 			q.mu.Unlock()
 		}
@@ -144,7 +149,7 @@ func (q *artworkMetadataQueue) run() {
 
 func (q *artworkMetadataQueue) load(ctx context.Context, key string) (artworkMetadata, error) {
 	var m artworkMetadata
-	err := q.db.QueryRowContext(ctx, `SELECT width,height,blurhash FROM artwork_image_metadata WHERE image_key=?`, key).Scan(&m.width, &m.height, &m.blurhash)
+	err := q.db.QueryRowContext(ctx, `SELECT width,height,blurhash,thumbhash FROM artwork_image_metadata WHERE image_key=?`, key).Scan(&m.width, &m.height, &m.blurhash, &m.thumbhash)
 	return m, err
 }
 
@@ -154,9 +159,9 @@ func (q *artworkMetadataQueue) compute(ctx context.Context, job artworkMetadataJ
 		return core.ErrUnauthorized
 	}
 	job.request.Viewer = viewer
-	if _, err := q.load(ctx, job.key); err == nil {
+	if metadata, err := q.load(ctx, job.key); err == nil && metadata.thumbhash != "" {
 		return nil
-	} else if err != sql.ErrNoRows {
+	} else if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 	// A shared lease prevents two nodes warming the same variant concurrently.
@@ -183,12 +188,10 @@ func (q *artworkMetadataQueue) compute(ctx context.Context, job artworkMetadataJ
 		defer cancel()
 		_, _ = q.db.ExecContext(cleanup, `DELETE FROM artwork_image_metadata_claims WHERE image_key=? AND token=?`, job.key, token)
 	}()
-	var exists bool
-	if err := q.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM artwork_image_metadata WHERE image_key=?)`, job.key).Scan(&exists); err != nil {
-		return err
-	}
-	if exists {
+	if metadata, err := q.load(ctx, job.key); err == nil && metadata.thumbhash != "" {
 		return nil
+	} else if err != nil && err != sql.ErrNoRows {
+		return err
 	}
 	data, _, err := q.read(ctx, job.request, job.image, frontend.ArtworkTransform{})
 	if err != nil {
@@ -209,6 +212,10 @@ func (q *artworkMetadataQueue) compute(ctx context.Context, job artworkMetadataJ
 	if err != nil {
 		return err
 	}
-	_, err = q.db.ExecContext(ctx, `INSERT INTO artwork_image_metadata(image_key,width,height,blurhash) VALUES(?,?,?,?) ON CONFLICT(image_key) DO NOTHING`, job.key, cfg.Width, cfg.Height, hash)
+	thumb, err := artwork.ThumbHash(decoded)
+	if err != nil {
+		return err
+	}
+	_, err = q.db.ExecContext(ctx, `INSERT INTO artwork_image_metadata(image_key,width,height,blurhash,thumbhash) VALUES(?,?,?,?,?) ON CONFLICT(image_key) DO UPDATE SET thumbhash=excluded.thumbhash WHERE artwork_image_metadata.thumbhash=''`, job.key, cfg.Width, cfg.Height, hash, base64.StdEncoding.EncodeToString(thumb))
 	return err
 }
