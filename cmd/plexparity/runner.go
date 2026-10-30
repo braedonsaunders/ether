@@ -94,7 +94,7 @@ func runPair(ctx context.Context, baseline, candidate, seedDir string, out io.Wr
 	return nil
 }
 
-func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out io.Writer, subtitleMode bool) error {
+func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out io.Writer, subtitleMode bool) (err error) {
 	if os.Getenv("ETHER_PARITY_TRAIN_RANKER") == "1" {
 		b, err := os.ReadFile(filepath.Join(seedDir, "ranker-training.json"))
 		if err != nil {
@@ -130,7 +130,13 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
+	retainDir := retainedServerLogDir(seedDir, subtitleMode)
+	defer func() {
+		if retainErr := retainServerLogs(dir, retainDir); retainErr != nil && err == nil {
+			err = fmt.Errorf("retain server logs: %w", retainErr)
+		}
+		os.RemoveAll(dir)
+	}()
 	tracker := &fixtureTracker{}
 	tmdb := httptest.NewServer(trackedTMDBFixture(tracker))
 	defer tmdb.Close()
@@ -242,6 +248,9 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 		if err = cmd.Start(); err != nil {
 			cancel()
 			log.Close()
+			if keepErr := publishServerLog(out, i, log.Name(), retainDir); keepErr != nil {
+				return fmt.Errorf("%w (retaining log: %v)", err, keepErr)
+			}
 			return err
 		}
 		done := make(chan error, 1)
@@ -257,17 +266,26 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 				deadline.Stop()
 				cancel()
 				log.Close()
+				if keepErr := publishServerLog(out, i, log.Name(), retainDir); keepErr != nil {
+					return fmt.Errorf("server %d exited during startup: %v (retaining log: %v)", i, err, keepErr)
+				}
 				return fmt.Errorf("server %d exited during startup: %v", i, err)
 			case <-deadline.C:
 				cancel()
 				<-done
 				log.Close()
+				if keepErr := publishServerLog(out, i, log.Name(), retainDir); keepErr != nil {
+					return fmt.Errorf("server %d startup timed out (retaining log: %v)", i, keepErr)
+				}
 				return fmt.Errorf("server %d startup timed out", i)
 			case <-ctx.Done():
 				deadline.Stop()
 				cancel()
 				<-done
 				log.Close()
+				if keepErr := publishServerLog(out, i, log.Name(), retainDir); keepErr != nil {
+					return fmt.Errorf("%w (retaining log: %v)", ctx.Err(), keepErr)
+				}
 				return ctx.Err()
 			default:
 			}
@@ -283,6 +301,9 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 					cancel()
 					<-done
 					log.Close()
+					if keepErr := publishServerLog(out, i, log.Name(), retainDir); keepErr != nil {
+						return fmt.Errorf("%w (retaining log: %v)", ctx.Err(), keepErr)
+					}
 					return ctx.Err()
 				case <-time.After(100 * time.Millisecond):
 				}
@@ -324,11 +345,9 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 			captureErr = fmt.Errorf("IPTV fixture does not implement %v", missing)
 		}
 		if captureErr != nil {
-			b, _ := os.ReadFile(log.Name())
-			if len(b) > 8192 {
-				b = b[len(b)-8192:]
+			if keepErr := publishServerLog(out, i, log.Name(), retainDir); keepErr != nil {
+				return fmt.Errorf("server %d: %w (retaining log: %v)", i, captureErr, keepErr)
 			}
-			fmt.Fprintf(out, "server %d log tail:\n%s\n", i, b)
 			return fmt.Errorf("server %d: %w", i, captureErr)
 		}
 		if os.Getenv("ETHER_PARITY_POLICY_COUNTERFACTUAL") == "1" {
@@ -360,6 +379,69 @@ func runPairMode(ctx context.Context, baseline, candidate, seedDir string, out i
 	if n > 0 {
 		return fmt.Errorf("%d unapproved response differences", n)
 	}
+	return nil
+}
+
+// retainedServerLogDir is on the stage that outlives the disposable server
+// directory. Seed contents stay untouched so copy verification still matches.
+func retainedServerLogDir(seedDir string, subtitleMode bool) string {
+	mode := "ordinary"
+	if subtitleMode {
+		mode = "subtitles"
+	}
+	return filepath.Join(filepath.Dir(seedDir), "retained-server-logs", filepath.Base(seedDir), mode)
+}
+
+func copyServerLog(src, retainDir string) (string, error) {
+	if err := os.MkdirAll(retainDir, 0700); err != nil {
+		return "", err
+	}
+	dst := filepath.Join(retainDir, filepath.Base(src))
+	in, err := os.Open(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	if err != nil {
+		return "", err
+	}
+	_, err = io.Copy(out, in)
+	closeErr := out.Close()
+	if err != nil {
+		return "", err
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	return dst, nil
+}
+
+func retainServerLogs(tempDir, retainDir string) error {
+	matches, err := filepath.Glob(filepath.Join(tempDir, "server-*.log"))
+	if err != nil {
+		return err
+	}
+	for _, src := range matches {
+		if _, err := copyServerLog(src, retainDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func publishServerLog(out io.Writer, server int, src, retainDir string) error {
+	kept, err := copyServerLog(src, retainDir)
+	if err != nil {
+		return err
+	}
+	if kept == "" {
+		return fmt.Errorf("server log %s is missing", src)
+	}
+	fmt.Fprintf(out, "server %d log: %s\n", server, kept)
 	return nil
 }
 
