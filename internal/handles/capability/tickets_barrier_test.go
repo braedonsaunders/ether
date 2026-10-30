@@ -2,6 +2,7 @@ package capability
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	_ "github.com/braedonsaunders/ether/internal/auth"
+	"github.com/braedonsaunders/ether/internal/core"
 	_ "github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -90,5 +92,74 @@ func TestTicketConsumeRechecksAfterReissue(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("consume timed out")
+	}
+}
+
+func TestMirroredRevokeBeforeDelete(t *testing.T) {
+	if os.Getenv(store.TestPostgresEnv) == "" {
+		t.Skip("requires PostgreSQL transaction interleaving")
+	}
+	db := store.OpenTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	source := strings.Repeat("a", 64)
+	if _, err := db.ExecContext(ctx, `INSERT INTO identity_grants(hash,viewer_id,surface,device_id,client,product,version,created,last_used,expires) VALUES(?,1,'silo','tv','','','',0,0,9999999999999)`, source); err != nil {
+		t.Fatal(err)
+	}
+	issuer, _ := NewTickets(db)
+	scope := TicketScope{ViewerID: 1, Surface: "silo", DeviceID: "tv", SourceHash: source, DeviceJSON: `{"ID":"tv"}`}
+	entry := TicketEntry{Digest: strings.Repeat("c", 64), Purpose: "events-ws"}
+	if _, err := issuer.IssueMirrored(ctx, scope, []TicketEntry{entry}); err != nil {
+		t.Fatal(err)
+	}
+	seen, resume, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(resume) }) }
+	consumer, _ := NewTickets(db)
+	consumer.beforeConsumeLock = func() {
+		close(seen)
+		select {
+		case <-resume:
+		case <-ctx.Done():
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		defer close(finished)
+		_, err := consumer.ConsumeMirrored(ctx, "silo", "events-ws", entry.Digest)
+		done <- err
+	}()
+	defer func() {
+		release()
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(2 * time.Second):
+			t.Error("consume worker did not exit")
+		}
+	}()
+	select {
+	case <-seen:
+	case <-ctx.Done():
+		t.Fatal("pre-lock read timed out")
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE identity_grants SET revoked=1 WHERE hash=?`, source); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	select {
+	case err := <-done:
+		if !errors.Is(err, core.ErrUnauthorized) {
+			t.Fatalf("revoked consume: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("consume timed out")
+	}
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, entry.Digest).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("revoked ticket count=%d err=%v", count, err)
 	}
 }

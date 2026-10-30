@@ -305,6 +305,9 @@ func (s *Tickets) ConsumeMirrored(ctx context.Context, surface, purpose, digest 
 		return Ticket{}, core.ErrUnauthorized
 	}
 	// Acquire shard before either legacy or header mutation; this matches issue.
+	if s.beforeConsumeLock != nil {
+		s.beforeConsumeLock()
+	}
 	if err = s.lock(ctx, tx, initialViewer); err != nil {
 		return Ticket{}, err
 	}
