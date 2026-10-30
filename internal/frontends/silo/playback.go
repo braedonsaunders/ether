@@ -201,17 +201,17 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	hdr10, hdr10Plus, hlg, dv := false, false, false, false
 	for _, s := range plan.Media.Streams {
 		if s.Type == "video" {
-			rangeName := siloDynamicRange(s)
-			if s.HDR10Plus != nil {
+			rangeName := siloObservedRange(plan.Media, s)
+			if !plan.Media.Estimated && s.HDR10Plus != nil {
 				source["hdr10_plus"] = *s.HDR10Plus
 			}
-			if s.DolbyVisionELPresent != nil && !*s.DolbyVisionELPresent {
+			if !plan.Media.Estimated && s.DolbyVisionELPresent != nil && !*s.DolbyVisionELPresent {
 				source["dv_enhancement_layer"] = "none"
 			}
 			if plan.Decision.VideoCopy && !plan.Decision.ToneMap {
 				hdr10 = rangeName == "hdr10" || rangeName == "hdr10_plus"
-				hdr10Plus = s.HDR10Plus != nil && *s.HDR10Plus
-				hlg = s.ColorTransfer == "arib-std-b67"
+				hdr10Plus = !plan.Media.Estimated && s.HDR10Plus != nil && *s.HDR10Plus
+				hlg = rangeName == "hlg"
 				dv = rangeName == "dolby_vision" && !plan.Decision.StripDolbyVision
 			}
 			source["video_codec"] = s.Codec

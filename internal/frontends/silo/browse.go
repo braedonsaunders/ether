@@ -370,7 +370,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 							if stream.Height > 0 {
 								resolution = strconv.Itoa(stream.Height) + "p"
 							}
-							rangeName := siloDynamicRange(stream)
+							rangeName := siloObservedRange(version.Media, stream)
 							hdr = rangeName != "" && rangeName != "sdr"
 							track := map[string]any{"codec": stream.Codec, "color_range": "unknown", "dv_enhancement_layer": "unknown"}
 							if stream.ColorRange != "" {
@@ -469,7 +469,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 							if interlaced == nil && stream.Interlaced {
 								interlaced = &positive
 							}
-							if config != nil && compat != nil && interlaced != nil {
+							if !version.Media.Estimated && config != nil && compat != nil && interlaced != nil {
 								track["dv_config_present"] = *config
 								track["dv_bl_compat_id_present"] = *compat
 								track["interlaced"] = *interlaced

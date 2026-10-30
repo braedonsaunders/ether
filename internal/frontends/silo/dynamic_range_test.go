@@ -29,3 +29,14 @@ func TestSiloDynamicRangeMixedAndUnknown(t *testing.T) {
 		})
 	}
 }
+
+func TestSiloEstimatedRangeRemainsUnknown(t *testing.T) {
+	yes := true
+	stream := frontend.StreamInfo{ColorTransfer: "smpte2084", HDR10Plus: &yes}
+	if got := siloObservedRange(frontend.MediaInfo{Estimated: true}, stream); got != "" {
+		t.Fatalf("estimated range advertised: %q", got)
+	}
+	if got := siloObservedRange(frontend.MediaInfo{}, stream); got != "hdr10_plus" {
+		t.Fatalf("probed range missing: %q", got)
+	}
+}
