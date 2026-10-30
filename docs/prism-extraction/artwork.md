@@ -191,3 +191,29 @@ still call the retained Plex adapter. Their pointer reads are synchronized here;
 behavioral migration belongs to the playback owner. Full enabled-to-disabled
 server destruction, native-client acceptance, ordinary/active parity and race
 acceptance are not claimed by this artwork extraction.
+
+## 69df4b1a normal gate failure
+
+The allocated normal gate for immutable
+`69df4b1aad3b9d6b4cb5008ab48c776195a5063e` exited **1**. The Plex test
+package did not compile: the `mountSessions` fake embedded `frontend.Sessions`,
+whose field name shadowed the interface's `Sessions` method. No Plex tests ran.
+The successor changes only that fake's embedded type name and adds a compile-time
+interface assertion; production code is unchanged. This correction is untested
+until a separately allocated successor gate.
+
+Independent source enumeration expected 67 top-level matches: artwork/service
+13, experience 6, Plex 38, app 10. The raw log contains exactly 29 runs/passes
+(13 service, 6 experience, 10 app), zero skips and zero test-level failures;
+the package compile failure still makes the gate fail. Discovery has no test
+files. Package times: service 0.156s, experience 0.020s, app 39.341s.
+
+Evidence remains at
+`/data/prism-test/artwork-lifetime-69df4b1a.U6tRx7tn/{test.log,exit-code}`
+and local BB thread storage
+`thr_jrz97zjn9h/artwork-lifetime-69df4b1a/{manifest.json,runner.log,exit-code,counts.json,cleanup.log}`.
+The generic helper SHA256 was verified as
+`e4a5f08cbf6eefc506177e54917948a728e00d73b422579279fd04b4bf435cdf`.
+Runner cleanup and an independent SSH check both confirmed the exact owned
+container absent. The conditional race gate was **not dispatched**, because
+normal-pass was required. No retry occurred; earlier evidence is preserved.

@@ -69,7 +69,12 @@ func TestFrontendWatchSubscriptionFollowsMount(t *testing.T) {
 	}
 }
 
-type mountSessions struct{ frontend.Sessions }
+// Use a distinct embedded field name so it does not shadow Sessions().
+type mountSessionContract = frontend.Sessions
+type mountSessions struct{ mountSessionContract }
+
+var _ frontend.Sessions = (*mountSessions)(nil)
+
 type heldArtworkTransport struct{ started, release chan struct{} }
 
 func (t heldArtworkTransport) RoundTrip(*http.Request) (*http.Response, error) {
