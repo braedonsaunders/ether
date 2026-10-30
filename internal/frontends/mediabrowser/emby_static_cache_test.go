@@ -46,7 +46,7 @@ func TestEmbyStaticCacheMounted(t *testing.T) {
 			body, contentRange                                           string
 		}{
 			{name: "full", method: "GET", token: "valid", status: 200, calls: 1, body: "abcdefghij"},
-			{name: "head", method: "HEAD", token: "valid", status: 200, calls: 1},
+			{name: "head-broker-rejects", method: "HEAD", token: "valid", status: 404, brokerStatus: 404, calls: 1},
 			{name: "start", method: "GET", token: "valid", rangeHeader: "bytes=0-2", status: 206, calls: 1, body: "abc", contentRange: "bytes 0-2/10"},
 			{name: "middle", method: "GET", token: "valid", rangeHeader: "bytes=3-5", status: 206, calls: 1, body: "def", contentRange: "bytes 3-5/10"},
 			{name: "suffix", method: "GET", token: "valid", rangeHeader: "bytes=-2", status: 206, calls: 1, body: "ij", contentRange: "bytes 8-9/10"},
