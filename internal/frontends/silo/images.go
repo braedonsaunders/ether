@@ -8,9 +8,11 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+type creditPortrait struct{ url, thumbHash string }
+
 // creditPortraits returns title-bound grants for known credited people.
-func (i *instance) creditPortraits(r *http.Request, credential string, d frontend.ItemDetail) map[int64]string {
-	urls := map[int64]string{}
+func (i *instance) creditPortraits(r *http.Request, credential string, d frontend.ItemDetail) map[int64]creditPortrait {
+	urls := map[int64]creditPortrait{}
 	if !d.ImagesAuthoritative || i.host.ImageGrants == nil {
 		return urls
 	}
@@ -19,7 +21,7 @@ func (i *instance) creditPortraits(r *http.Request, credential string, d fronten
 			continue
 		}
 		id, err := strconv.ParseInt(strings.TrimPrefix(img.Subject, "tmdb:"), 10, 64)
-		if err != nil || id <= 0 || urls[id] != "" {
+		if err != nil || id <= 0 || urls[id].url != "" {
 			continue
 		}
 		grant, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: credential, Device: device(r), Item: d.Title.Key, Image: img})
@@ -30,7 +32,7 @@ func (i *instance) creditPortraits(r *http.Request, credential string, d fronten
 		if r.Context().Value(sharedPrefix{}) != nil {
 			prefix = "/silo"
 		}
-		urls[id] = prefix + "/api/v2/images/" + grant
+		urls[id] = creditPortrait{url: prefix + "/api/v2/images/" + grant, thumbHash: img.ThumbHash}
 	}
 	return urls
 }
@@ -60,6 +62,11 @@ func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential 
 		path := prefix + "/api/v2/images/" + token
 		if _, exists := out[field]; !exists {
 			out[field] = path
+			if img.ThumbHash != "" {
+				if hashField := map[string]string{"poster": "poster_thumbhash", "backdrop": "backdrop_thumbhash"}[img.Kind]; hashField != "" {
+					out[hashField] = img.ThumbHash
+				}
+			}
 		}
 		if img.Kind == "backdrop" {
 			backdrops = append(backdrops, path)
