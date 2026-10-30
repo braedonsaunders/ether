@@ -85,27 +85,17 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	initialized := false
 	defer func() {
 		if !initialized {
-			cancel()
-			if r.artworkWait != nil {
-				r.artworkWait()
-			}
-			if a.plexClose != nil {
-				a.plexClose()
-			}
+			r.close()
 		}
 	}()
 
 	r.broker, err = a.newSessionBroker(r.events)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 	r.stateUnsub = subscribeSessionState(a.state, r.events, func(err error) { a.log.Warn("user data event publication failed", "err", err) })
 	compact, err := compactids.New(a.db)
 	if err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	var artwork frontend.Artwork
@@ -122,9 +112,6 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	for _, protocol := range []frontend.Protocol{"plex", "jellyfin", "emby", "silo"} {
 		experience, err := a.newSurfaceExperience(protocol, artwork)
 		if err != nil {
-			r.stateUnsub()
-			r.broker.Close(context.Background())
-			cancel()
 			return nil, err
 		}
 		if scoped, ok := experience.(*surfaceExperience); ok {
@@ -201,58 +188,45 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		return countFrontendStreams((ownerPlayback{Playback: a.playback, app: a}).Sessions()), true
 	}
 	r.control.sharedStatus = r.sharedStatus
-	if err := r.registry.Register(plex.Frontend{NewServer: func() (*plex.Server, error) { _, err := a.buildPlex(cfg); return a.plexServer, err }, WatchState: a.state, ExplicitWatchOnly: cfg.Spike.Enabled, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
+	if err := r.registry.Register(plex.Frontend{NewServer: func() (*plex.Server, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		current := a.cfg.Get()
+		// Domain construction fixes the spike library for this runtime. First mount
+		// uses current identity/settings without changing the underlying library.
+		current.Spike = cfg.Spike
+		handler, err := a.buildPlex(ctx, current)
+		if err != nil {
+			return nil, err
+		}
+		return handler.(*plex.Server), nil
+	}, WatchState: a.state, ExplicitWatchOnly: cfg.Spike.Enabled, StatusFunc: r.plexStatus, ListenersFunc: r.plexListeners}); err != nil {
 		return nil, err
 	}
 	if err := r.registry.Register(mediabrowser.Jellyfin{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(mediabrowser.Emby{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.events.Close()
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(silo.Frontend{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(stremio.Frontend{}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(webdav.Frontend{}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(dlna.Frontend{MachineID: cfg.Server.MachineIdentifier}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if err := r.registry.Register(m3u.Frontend{}); err != nil {
-		r.stateUnsub()
-		r.broker.Close(context.Background())
-		cancel()
 		return nil, err
 	}
 	if cfg.Frontends == nil || cfg.Frontends["plex"].Enabled {
 		if err := r.control.listeners.start(ctx, "plex"); err != nil {
-			r.stateUnsub()
-			r.broker.Close(context.Background())
-			cancel()
 			return nil, err
 		}
 	}
@@ -435,24 +409,36 @@ func (r *frontendRuntime) stop() {
 func (r *frontendRuntime) close() {
 	r.lifecycleMu.Lock()
 	defer r.lifecycleMu.Unlock()
-	r.stop()
 	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return
+	}
 	r.closed = true
 	r.mu.Unlock()
-	r.cancel()
-	if r.artworkWait != nil {
-		r.artworkWait()
+	r.stop()
+	if r.cancel != nil {
+		r.cancel()
 	}
-	_ = r.control.listeners.close(context.Background())
+	if r.control != nil && r.control.listeners != nil {
+		_ = r.control.listeners.close(context.Background())
+	}
 	if r.stateUnsub != nil {
 		r.stateUnsub()
 	}
 	if r.broker != nil {
 		r.broker.Close(context.Background())
 	}
-	r.app.plexBuildMu.Lock()
-	defer r.app.plexBuildMu.Unlock()
-	if r.app.plexClose != nil {
-		r.app.plexClose()
+	if r.artworkWait != nil {
+		r.artworkWait()
+	}
+	if r.app != nil {
+		r.app.plexBuildMu.Lock()
+		closePlex := r.app.plexClose
+		r.app.plexClose = nil
+		r.app.plexBuildMu.Unlock()
+		if closePlex != nil {
+			closePlex()
+		}
 	}
 }

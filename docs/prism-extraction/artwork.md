@@ -129,3 +129,65 @@ Local evidence remains at BB thread storage
 Runner cleanup and independent exact-container verification both reported absent.
 This result validates the initial queues/watch checkpoint only, not the full
 selector successor. The earlier failed 4fc460e1 evidence remains unchanged.
+
+## b35f9298 focused gate and lifecycle follow-up
+
+The allocated frozen full-selector gate **passed**, exit 0:
+artwork/service 0.143s; discovery compiled (no test files); experience 0.013s;
+Plex 0.668s; app 48.603s. This includes disabled-startup/local-owner artwork and
+state without a Server, existing Plex image/palette/download checks, discovery
+identity/byte equivalence, registry toggle and viewer capability checks.
+
+Evidence is retained at
+`/data/prism-test/artwork-selector-b35f9298.Arc44uBK/{test.log,exit-code}`;
+local BB thread storage contains
+`thr_jrz97zjn9h/artwork-selector-b35f9298/{manifest,runner.log,exit-code}`.
+The reviewed helper hash matched; the runner and a separate SSH check both
+confirmed the exact owned container absent. No retry occurred.
+
+### Supported lifetime contract
+
+- Disabled startup constructs no Plex Server or Plex GUID worker. Artwork,
+  discovery and watch state are independently composed domain services.
+- Once enabled, disabling withdraws registry routing and discovery and removes
+  the mounted watch-refresh subscription. It **does not destroy the cached Plex
+  Server**. Requests that already selected that instance, notification streams,
+  protocol session registries and server-owned background workers remain alive.
+  A route lookup after completed unmount cannot select Plex. Existing playback
+  is not force-stopped; existing idle expiry/stop policies still apply.
+- Remount retains the Server and protocol session state. Each mount captures its
+  own immutable `Host.Sessions`; it never mutates the retained Server's broker
+  scope. The new nil-checked seam does not yet route Plex through the broker.
+- Runtime close owns final server/Plex GUID shutdown, shared queue joins,
+  neutral-state unsubscribe and broker close. App close owns the shared event
+  bus and remaining domain services. Unmount is not a full protocol teardown.
+
+The post-b35 audit adds a synchronized accessor for lazy server publication to
+playback callbacks, checking runtime cancellation under the construction lock,
+one partial-initialization-safe runtime cleanup path, and a watch-subscription
+barrier so a copied/in-flight callback cannot run after unsubscribe returns.
+Callbacks into Plex execute after releasing the construction mutex.
+
+First mount uses current configuration for identity/settings while retaining the
+spike library selected at domain construction. Remount reuses the same server;
+its existing Config getter continues to provide dynamic settings. Neutral
+section IDs, ordering and movie/show/season/episode mapping are tested against
+Plex defaults and spike's Movies-only library.
+
+New successor tests cover a held old-instance request plus playing session
+tracker through remount, distinct immutable mount broker scopes, nil broker
+failure, cancelled factory calls, cancelled construction waiting for the lock,
+partial cleanup exactly once, current config at late first mount, and blocked
+watch callbacks during unsubscribe. They are **not covered by the b35 gate**.
+
+Suggested successor gate, only after allocation:
+
+```sh
+go test -p 1 -timeout 5m -count=1 -v ./internal/artwork/service ./internal/discovery ./internal/experience ./internal/plex ./internal/app -run 'Artwork|UltraBlur|WatchRefresh|FrontendWatchSubscription|FrontendRetains|FrontendCancelled|FrontendPartial|PlexFactory|SessionStateEvents|VariantsWorkers|MetadataWorkers|Neutral|PlexRegistryToggle|ViewerCapabilities|Download'
+```
+
+Remaining broker migration debt: recovery/transcode/owner-stop fallbacks can
+still call the retained Plex adapter. Their pointer reads are synchronized here;
+behavioral migration belongs to the playback owner. Full enabled-to-disabled
+server destruction, native-client acceptance, ordinary/active parity and race
+acceptance are not claimed by this artwork extraction.

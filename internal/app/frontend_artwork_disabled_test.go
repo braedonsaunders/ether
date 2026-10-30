@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -101,13 +102,43 @@ func TestPlexDisabledLocalOwnerArtworkAndStateWithoutServer(t *testing.T) {
 	if a.plexServer != nil {
 		t.Fatal("artwork or state constructed Plex")
 	}
+	if err := a.cfg.Update(func(c *config.Config) error { c.Server.MachineIdentifier = "late-mount-identity"; return nil }); err != nil {
+		t.Fatal(err)
+	}
 	if err := a.frontends.control.Toggle(ctx, "plex", true); err != nil {
 		t.Fatal(err)
 	}
 	if a.plexServer == nil {
 		t.Fatal("enable did not construct adapter")
 	}
+	server := a.currentPlexServer()
+	root := httptest.NewRecorder()
+	server.ServeHTTP(root, httptest.NewRequest("GET", "/identity", nil))
+	if root.Code != 200 || !strings.Contains(root.Body.String(), "late-mount-identity") {
+		t.Fatalf("first mount ignored current identity: %d %s", root.Code, root.Body.String())
+	}
 	if err := a.frontends.control.Toggle(ctx, "plex", false); err != nil {
 		t.Fatal(err)
+	}
+	if a.currentPlexServer() != server {
+		t.Fatal("unmount replaced retained server")
+	}
+	disabled := httptest.NewRecorder()
+	a.Handler().ServeHTTP(disabled, httptest.NewRequest("GET", "/identity", nil))
+	if disabled.Code != 404 {
+		t.Fatal("disabled route still dispatched")
+	}
+	if err := a.frontends.control.Toggle(ctx, "plex", true); err != nil {
+		t.Fatal(err)
+	}
+	if a.currentPlexServer() != server {
+		t.Fatal("remount constructed a second server")
+	}
+	if err := a.frontends.control.Toggle(ctx, "plex", false); err != nil {
+		t.Fatal(err)
+	}
+	a.frontends.close()
+	if _, err := a.frontends.registry.Mount(ctx, "plex"); err == nil {
+		t.Fatal("closed runtime remounted retained server")
 	}
 }

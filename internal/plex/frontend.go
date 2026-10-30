@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/state"
 )
@@ -26,7 +27,10 @@ type Frontend struct {
 func (f Frontend) Describe() frontend.Descriptor {
 	return frontend.Descriptor{ID: "plex", Name: "Plex", DefaultPort: 32400}
 }
-func (f Frontend) Mount(_ context.Context, _ frontend.Host) (frontend.Instance, error) {
+func (f Frontend) Mount(ctx context.Context, host frontend.Host) (frontend.Instance, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if f.Server == nil && f.NewServer != nil {
 		var err error
 		f.Server, err = f.NewServer()
@@ -37,7 +41,10 @@ func (f Frontend) Mount(_ context.Context, _ frontend.Host) (frontend.Instance, 
 	if f.Server == nil {
 		return nil, errors.New("plex: frontend server is unavailable")
 	}
-	instance := &plexInstance{server: f.Server, status: f.StatusFunc, listeners: f.ListenersFunc}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	instance := &plexInstance{sessions: host.Sessions, server: f.Server, status: f.StatusFunc, listeners: f.ListenersFunc}
 	if f.WatchState != nil {
 		instance.unsubscribe = subscribeWatchRefresh(f.WatchState, f.Server.WatchStateChanged, f.ExplicitWatchOnly)
 	}
@@ -45,7 +52,9 @@ func (f Frontend) Mount(_ context.Context, _ frontend.Host) (frontend.Instance, 
 }
 
 type plexInstance struct {
-	server      *Server
+	server *Server
+	// sessions is immutable per mount; never install it on the retained Server.
+	sessions    frontend.Sessions
 	unsubscribe func()
 	closeOnce   sync.Once
 	status      func(context.Context) frontend.Status
@@ -78,3 +87,12 @@ func (i *plexInstance) Close(context.Context) error {
 }
 
 var _ frontend.Frontend = Frontend{}
+
+// sessionBroker is the fail-closed seam for future migrated handlers. Capturing
+// the host here does not route existing Plex traffic through the shared broker.
+func (i *plexInstance) sessionBroker() (frontend.Sessions, error) {
+	if i.sessions == nil {
+		return nil, core.ErrNotAvailable
+	}
+	return i.sessions, nil
+}

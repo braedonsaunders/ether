@@ -18,9 +18,12 @@ import (
 // library is the configured local files instead of the TMDB catalogue, but
 // auth, plex.tv registration and the transcoder are the real ones, so the
 // spike exercises the same path official apps will use.
-func (a *App) buildPlex(cfg config.Config) (http.Handler, error) {
+func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, error) {
 	a.plexBuildMu.Lock()
 	defer a.plexBuildMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if a.plexServer != nil {
 		return a.plexServer, nil
 	}
@@ -151,4 +154,12 @@ func plexPlatform() string {
 // wirePlexPolicy supplies the same safety service to every Plex deployment.
 func (a *App) wirePlexPolicy(deps *plex.Deps) {
 	deps.AccessPolicy = a.safety
+}
+
+// currentPlexServer publishes lazy construction to playback callbacks. The
+// mutex is released before callers invoke the adapter or shared playback.
+func (a *App) currentPlexServer() *plex.Server {
+	a.plexBuildMu.Lock()
+	defer a.plexBuildMu.Unlock()
+	return a.plexServer
 }

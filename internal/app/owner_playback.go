@@ -61,8 +61,8 @@ func (a *App) stopOwnerSession(id string) error {
 			}
 		}
 	}
-	if a.plexServer != nil {
-		a.plexServer.StopPlayback(id, "The server owner has ended this stream.")
+	if server := a.currentPlexServer(); server != nil {
+		server.StopPlayback(id, "The server owner has ended this stream.")
 	} else {
 		a.playback.Stop(id)
 	}

@@ -2,6 +2,8 @@ package plex
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,5 +69,49 @@ func TestWatchRefreshAfterCompletionAndAutoplayStop(t *testing.T) {
 	progress(next, 600, "paused")
 	if len(notifications) != 5 {
 		t.Fatal("subscription leaked after shutdown")
+	}
+}
+
+func TestWatchRefreshUnmountWaitsForExecutingCallback(t *testing.T) {
+	ctx := context.Background()
+	watch := state.New(store.OpenTest(t), state.Options{})
+	defer watch.Close(ctx)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	releaseCallback := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseCallback()
+	var calls atomic.Int32
+	unsub := subscribeWatchRefresh(watch, func(int64, core.RatingKey) { calls.Add(1); close(entered); <-release }, false)
+	updateDone := make(chan error, 1)
+	go func() {
+		updateDone <- watch.Scrobble(state.WithOrigin(ctx, state.Origin{Surface: "jellyfin"}), 1, core.MovieKey(9))
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("callback did not run")
+	}
+	closed := make(chan struct{})
+	go func() { unsub(); close(closed) }()
+	select {
+	case <-closed:
+		t.Fatal("unmount returned with executing callback")
+	case <-time.After(20 * time.Millisecond):
+	}
+	releaseCallback()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("unmount did not finish")
+	}
+	if err := <-updateDone; err != nil {
+		t.Fatal(err)
+	}
+	unsub()
+	if err := watch.Unscrobble(ctx, 1, core.MovieKey(9)); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatal("callback executed after unmount")
 	}
 }
