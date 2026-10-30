@@ -182,11 +182,12 @@ type session struct {
 
 	// stopCtx cancels background recovery when playback ends. Unlike a
 	// generation context, it survives retiring an input during a healthy swap.
-	stopCtx    context.Context
-	stopCancel context.CancelFunc
-	failSem    chan struct{} // serialises failovers
-	bytes      atomic.Int64
-	rate       rateMeter
+	stopCtx      context.Context
+	stopCancel   context.CancelFunc
+	failSem      chan struct{} // serialises failovers
+	sourceCommit chan struct{} // orders swaps/stops with bounded durable observations
+	bytes        atomic.Int64
+	rate         rateMeter
 
 	mu             sync.Mutex
 	preparedOnly   bool
@@ -222,22 +223,23 @@ type session struct {
 func newSession(id string, ident identity, user *core.User, caps core.ClientCaps, title *core.Title, profile string, now time.Time) *session {
 	stopCtx, stopCancel := context.WithCancel(context.Background())
 	return &session{
-		id:         id,
-		stopCtx:    stopCtx,
-		stopCancel: stopCancel,
-		ident:      ident,
-		user:       *user,
-		caps:       caps,
-		title:      title,
-		titleName:  displayTitle(title),
-		profile:    profile,
-		startedAt:  now,
-		lastActive: now,
-		failSem:    make(chan struct{}, 1),
-		rate:       rateMeter{},
-		genSince:   now,
-		graceUntil: now,
-		expectPos:  -1,
+		id:           id,
+		stopCtx:      stopCtx,
+		stopCancel:   stopCancel,
+		ident:        ident,
+		user:         *user,
+		caps:         caps,
+		title:        title,
+		titleName:    displayTitle(title),
+		profile:      profile,
+		startedAt:    now,
+		lastActive:   now,
+		failSem:      make(chan struct{}, 1),
+		sourceCommit: make(chan struct{}, 1),
+		rate:         rateMeter{},
+		genSince:     now,
+		graceUntil:   now,
+		expectPos:    -1,
 	}
 }
 

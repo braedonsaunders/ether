@@ -881,10 +881,19 @@ func (m *Manager) Sessions() []*core.PlaySession {
 // Stop ends a session: its source is closed once reads finish, its live
 // pin is dropped and its HLS session, if any, is stopped.
 func (m *Manager) Stop(id string) {
-	m.mu.Lock()
-	s := m.sessions[id]
+	s := m.lookup(id)
 	if s == nil {
+		return
+	}
+	// A guarded durable observation is bounded and must complete or cancel
+	// before the generation can be retired. Never hold m.mu while waiting.
+	if err := lock(context.Background(), s.sourceCommit); err != nil {
+		return
+	}
+	m.mu.Lock()
+	if m.sessions[id] != s {
 		m.mu.Unlock()
+		unlock(s.sourceCommit)
 		return
 	}
 	delete(m.sessions, id)
@@ -903,6 +912,7 @@ func (m *Manager) Stop(id string) {
 		delete(m.tokens, g.sess.id+"/"+g.token)
 	}
 	m.mu.Unlock()
+	unlock(s.sourceCommit)
 
 	if g != nil {
 		g.retire()

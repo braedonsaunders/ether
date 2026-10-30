@@ -180,3 +180,17 @@ type PlaybackRevisionPin interface {
 	PinSourceRevision(ctx context.Context, id, revision string) error
 	UnpinSourceRevision(id string)
 }
+
+// PlaybackSourceObservation describes one opened source generation. Empty
+// Revision means its identity cannot be established safely. Consumers must
+// omit facts from estimated media.
+type PlaybackSourceObservation struct {
+	Revision, ReleaseID string
+	Info                MediaInfo
+}
+
+// GuardedPlaybackSource keeps a source generation current until fn completes.
+// Callers must bound ctx and must not call Stop or Failover from fn.
+type GuardedPlaybackSource interface {
+	WithCurrentSource(context.Context, string, func(context.Context, PlaybackSourceObservation) error) error
+}
