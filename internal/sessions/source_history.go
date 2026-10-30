@@ -32,8 +32,16 @@ func (b *Broker) recordSourceHistory(ctx context.Context, s *brokerSession) {
 	if err != nil {
 		return
 	}
-	s.historySequence++
-	sample := sourceHistorySample{viewer: s.public.ViewerID, item: s.public.Item, epoch: s.historyEpoch, sequence: s.historySequence, source: source}
+	b.mu.Lock()
+	current := b.sessions[s.public.ID]
+	if current == nil || current.playID != s.playID || current.historyEpoch != s.historyEpoch {
+		b.mu.Unlock()
+		return
+	}
+	current.historySequence++
+	sequence := current.historySequence
+	b.mu.Unlock()
+	sample := sourceHistorySample{viewer: s.public.ViewerID, item: s.public.Item, epoch: s.historyEpoch, sequence: sequence, source: source}
 	select {
 	case b.historyQueue <- sample:
 	default:
@@ -49,6 +57,9 @@ func (b *Broker) runSourceHistory(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case sample := <-b.historyQueue:
+			if ctx.Err() != nil {
+				return
+			}
 			writeCtx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
 			err := b.deps.SourceHistory.RecordLastSource(writeCtx, sample.viewer, sample.item, sample.epoch, sample.sequence, sample.source)
 			cancel()

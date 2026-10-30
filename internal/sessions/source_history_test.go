@@ -2,12 +2,106 @@ package sessions
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/state"
+	"github.com/braedonsaunders/ether/internal/store"
 )
+
+type changingHistoryPlayback struct {
+	*fakePlayback
+	mu    sync.Mutex
+	codec string
+}
+
+func (p *changingHistoryPlayback) CurrentSource(_ context.Context, id string) (core.PlaybackSourceObservation, error) {
+	if _, ok := p.Session(id); !ok {
+		return core.PlaybackSourceObservation{}, core.ErrNotFound
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return core.PlaybackSourceObservation{Revision: p.codec, VideoCodec: p.codec}, nil
+}
+
+func TestSourceHistoryRealStateAdvancesOnlyOnAcceptedSamples(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	history := state.New(db, state.Options{})
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	events := NewEventBus(nil, active)
+	defer events.Close()
+	playback := &changingHistoryPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}, codec: "h264"}
+	b, err := NewBroker(BrokerDeps{Events: events, Playback: playback, Transcoder: fakeBrokerTranscoder{}, Progress: &fakeProgress{}, SourceHistory: history, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close(ctx)
+	viewer, dev, key := &core.Viewer{ID: 2}, core.Device{ID: "tv"}, core.MovieKey(1)
+	plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: dev, Protocol: "silo", Item: key, Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: dev, Protocol: "silo", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := frontend.SessionAccess{Viewer: viewer, Device: dev, Protocol: "silo"}
+	if _, err = b.StartStream(ctx, access, session.ID, frontend.StreamRequest{Format: frontend.StreamDirect}); err != nil {
+		t.Fatal(err)
+	}
+	waitCodec := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			got, err := history.LastSource(ctx, viewer.ID, key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != nil && got.VideoCodec == want {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("source codec %q was not persisted", want)
+	}
+	if err = b.Report(ctx, access, session.ID, frontend.Timeline{Sequence: 1, State: "playing"}); err != nil {
+		t.Fatal(err)
+	}
+	waitCodec("h264")
+	playback.mu.Lock()
+	playback.codec = "hevc"
+	playback.mu.Unlock()
+	if err = b.Report(ctx, access, session.ID, frontend.Timeline{Sequence: 2, State: "playing"}); err != nil {
+		t.Fatal(err)
+	}
+	waitCodec("hevc")
+	playback.mu.Lock()
+	playback.codec = "av1"
+	playback.mu.Unlock()
+	if err = b.Report(ctx, access, session.ID, frontend.Timeline{Sequence: 2, State: "playing"}); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	sequence := b.sessions[session.ID].historySequence
+	b.mu.Unlock()
+	if sequence != 2 {
+		t.Fatalf("replay reserved source sequence %d", sequence)
+	}
+	got, err := history.LastSource(ctx, viewer.ID, key)
+	if err != nil || got == nil || got.VideoCodec != "hevc" {
+		t.Fatalf("replay changed durable source: %+v %v", got, err)
+	}
+}
 
 type guardedHistoryPlayback struct{ *fakePlayback }
 
@@ -23,11 +117,14 @@ type fakeSourceHistory struct {
 	writes chan core.PlaybackSourceObservation
 }
 
-type stalledSourceHistory struct{ entered, release chan struct{} }
+type stalledSourceHistory struct {
+	entered, release chan struct{}
+	once             sync.Once
+}
 
 func (h *stalledSourceHistory) BeginSourceSession(context.Context) (int64, error) { return 1, nil }
 func (h *stalledSourceHistory) RecordLastSource(context.Context, int64, core.RatingKey, int64, int64, core.PlaybackSourceObservation) error {
-	close(h.entered)
+	h.once.Do(func() { close(h.entered) })
 	<-h.release // Deliberately ignore cancellation to model an uncooperative driver.
 	return nil
 }
