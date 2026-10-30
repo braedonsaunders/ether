@@ -16,7 +16,7 @@ var ErrChanged = errors.New("viewer policy changed")
 // Tables includes every durable input to row visibility and membership. A global
 // epoch deliberately invalidates other viewers too; issuance retries once.
 var tables = []string{
-	"auth_users", "auth_membership_epoch", "identity_links",
+	"auth_users", "auth_membership_epoch", "identity_links", "clusterconfig_shared",
 	"personalize_home_layout", "personalize_overrides", "personalize_discovery_hidden",
 	"favorites_items", "favorites_mirror", "notinterested_titles", "notinterested_revisions",
 	"collections_specs", "collections_members", "collections_names", "collections_external", "collections_defaults",
@@ -30,7 +30,7 @@ const authPolicyColumns = "active, owner_enabled, plex_shared, is_owner, origin,
 const schema = `CREATE TABLE viewer_policy_epoch (id INTEGER PRIMARY KEY CHECK(id=1), generation BIGINT NOT NULL CHECK(generation>=0)); INSERT INTO viewer_policy_epoch(id,generation) VALUES(1,1);`
 
 func init() {
-	store.RegisterAfter("viewer_policy", "auth", "identity_links", "personalize", "personalize_discovery", "favorites", "notinterested", "collections", "state", "catalog", "livetv", "safety", "episodeorder")
+	store.RegisterAfter("viewer_policy", "auth", "identity_links", "clusterconfig", "personalize", "personalize_discovery", "favorites", "notinterested", "collections", "state", "catalog", "livetv", "safety", "episodeorder")
 	store.Register("viewer_policy", 1, schema)
 	store.RegisterSQLiteApply("viewer_policy", 1, func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, schema); err != nil {
@@ -88,4 +88,10 @@ func Fence(ctx context.Context, db *sql.DB, tx *sql.Tx, expected int64) error {
 		return ErrChanged
 	}
 	return nil
+}
+
+// Bump publishes a configuration policy transition before releasing its lease barrier.
+func Bump(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `UPDATE viewer_policy_epoch SET generation=generation+1 WHERE id=1`)
+	return err
 }

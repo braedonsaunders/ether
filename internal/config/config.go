@@ -481,6 +481,9 @@ func defaultDataDir(goos string, getenv func(string) string, home func() (string
 
 // Store loads, saves and broadcasts the config.
 type Store struct {
+	policyMu      sync.RWMutex
+	policyBump    func() error
+	policyErr     error
 	path          string
 	credentialKey []byte
 	mu            sync.RWMutex
@@ -679,6 +682,10 @@ func (s *Store) Get() Config {
 // optimistic version check; when another node changed it first, fn is
 // applied again to the fresh settings, so fn must only mutate its argument.
 func (s *Store) Update(fn func(*Config) error) error {
+	return s.policyUpdate(func() error { return s.update(fn) })
+}
+
+func (s *Store) update(fn func(*Config) error) error {
 	if s.Clustered() {
 		return s.updateClustered(fn)
 	}

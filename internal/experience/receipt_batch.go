@@ -28,6 +28,13 @@ func (s *Receipts) issueBatchChecked(ctx context.Context, viewer *core.User, dev
 }
 
 func (s *Receipts) issueBatchAttempt(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject, current func() bool, fence func(*sql.Tx) error) ([]string, error) {
+	if s.opts.PolicyLease != nil {
+		release, err := s.opts.PolicyLease(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+	}
 	epoch, err := viewerpolicy.Read(ctx, s.opts.DB)
 	if err != nil {
 		return nil, err

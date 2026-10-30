@@ -66,6 +66,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/transcode"
 	"github.com/braedonsaunders/ether/internal/updater"
 	"github.com/braedonsaunders/ether/internal/usenet"
+	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 	"github.com/braedonsaunders/ether/internal/watchlist"
 	"log/slog"
 	"net"
@@ -312,6 +313,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.Close() // libera o instance lock (o db não foi aberto)
 		return nil, fmt.Errorf("database: %w", err)
 	}
+	a.cfg.SetPolicyEpoch(func() error { return viewerpolicy.Bump(context.Background(), a.db) })
 	if dialect == store.Postgres {
 		a.log.Info("database: using PostgreSQL", "url", dbCfg.Redacted().URL)
 		a.warnNewerSchema(ctx)

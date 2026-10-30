@@ -147,6 +147,10 @@ func (o SharedOptions) withDefaults() SharedOptions {
 // ErrKeyMismatch when the cluster was sealed with another credential key.
 // Until ctx ends it then follows changes made by other nodes.
 func (s *Store) AttachShared(ctx context.Context, b SharedBackend, o SharedOptions) error {
+	return s.policyUpdate(func() error { return s.attachShared(ctx, b, o) })
+}
+
+func (s *Store) attachShared(ctx context.Context, b SharedBackend, o SharedOptions) error {
 	if b == nil {
 		return errors.New("config: no shared settings backend")
 	}
@@ -298,6 +302,10 @@ func (s *Store) watchShared(ctx context.Context, every time.Duration) {
 // RefreshShared applies the stored shared settings if another node changed
 // them, notifying subscribers. It is a no-op on a standalone server.
 func (s *Store) RefreshShared(ctx context.Context) error {
+	return s.policyUpdate(func() error { return s.refreshShared(ctx) })
+}
+
+func (s *Store) refreshShared(ctx context.Context) error {
 	s.writeMu.Lock()
 	s.mu.RLock()
 	b, have := s.shared, s.sharedVer
