@@ -463,6 +463,13 @@ type PlayPlan struct {
 	// empty when the backend cannot prove a stable source identity.
 	ETag string
 }
+
+// DetailPlanner resolves a playable single item within a bounded admission
+// budget. It returns source facts without creating a frontend session. The
+// caller must separately obtain a scoped lazy stream capability.
+type DetailPlanner interface {
+	DetailPlan(ctx context.Context, request PlanRequest) (PlayPlan, error)
+}
 type OpenRequest struct {
 	Protocol Protocol
 	PlanID   string

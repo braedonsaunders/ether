@@ -28,6 +28,13 @@ type revisionPlayback struct {
 	source *revisionSource
 }
 
+func (p *revisionPlayback) PrepareSurface(ctx context.Context, v *core.User, k core.RatingKey, c core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
+	if release != "" || exact {
+		return nil, core.ErrNotAvailable
+	}
+	return p.Prepare(ctx, v, k, c)
+}
+
 func (p *revisionPlayback) Prepare(ctx context.Context, v *core.User, k core.RatingKey, c core.ClientCaps) (*core.PlaySession, error) {
 	s, err := p.fakePlayback.Prepare(ctx, v, k, c)
 	if s != nil {

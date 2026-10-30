@@ -27,6 +27,15 @@ func (f *fakePlayback) Estimate(context.Context, *core.Title, core.ClientCaps) c
 	f.estimates++
 	return core.MediaInfo{Estimated: true, Container: "mp4"}
 }
+func (f *fakePlayback) PrepareSurface(ctx context.Context, u *core.User, key core.RatingKey, c core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
+	if release != "" || exact {
+		return nil, core.ErrNotAvailable
+	}
+	return f.Prepare(ctx, u, key, c)
+}
+func (f *fakePlayback) SessionForSurface(_ string, user int64, client string, key core.RatingKey, _ string, _ bool) (*core.PlaySession, bool) {
+	return f.SessionFor(user, client, key)
+}
 func (f *fakePlayback) Prepare(_ context.Context, u *core.User, key core.RatingKey, c core.ClientCaps) (*core.PlaySession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

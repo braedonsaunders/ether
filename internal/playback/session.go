@@ -18,6 +18,9 @@ type identity struct {
 	userID   int64
 	clientID string
 	key      core.RatingKey
+	surface  string
+	variant  string
+	exact    bool
 }
 
 // generation is one opened source of a session. A failover creates a new

@@ -75,3 +75,99 @@ func TestLegacyPlexAndBrokerShareAdmission(t *testing.T) {
 		})
 	}
 }
+
+func TestBrokerScopeCannotShareOrStopCollidingPlexSource(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+	caps := defaultCaps("8:jellyfincolliding-device")
+	caps.Protocol = "plex"
+	plex, err := h.m.Prepare(ctx, friend, movieKey, caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := caps
+	other.Protocol = "jellyfin"
+	broker, err := h.m.PrepareSurface(ctx, friend, movieKey, other, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plex.ID == broker.ID {
+		t.Fatal("colliding legacy and broker identities shared a source")
+	}
+	again, err := h.m.PrepareSurface(ctx, friend, movieKey, other, "", false)
+	if err != nil || again.ID != broker.ID {
+		t.Fatalf("broker scope did not reuse its source: %v", err)
+	}
+	h.m.Stop(broker.ID)
+	if _, ok := h.m.Session(plex.ID); !ok {
+		t.Fatal("stopping broker source stopped Plex")
+	}
+	if got, ok := h.m.SessionFor(friend.ID, caps.ClientID, movieKey); !ok || got.ID != plex.ID {
+		t.Fatal("legacy lookup lost Plex source")
+	}
+	h.m.Stop(plex.ID)
+}
+
+func TestCollidingScopesEachConsumeStreamLimit(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"}, func(h *harness, _ *Options) { h.cfg.Server.MaxStreams = 1 })
+	caps := defaultCaps("8:jellyfincolliding-device")
+	caps.Protocol = "plex"
+	plex, err := h.m.Prepare(ctx, friend, movieKey, caps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := caps
+	other.Protocol = "jellyfin"
+	if _, err := h.m.PrepareSurface(ctx, friend, movieKey, other, "", false); !errors.Is(err, core.ErrStreamLimit) {
+		t.Fatalf("collision bypassed limit: %v", err)
+	}
+	h.m.Stop(plex.ID)
+}
+
+func TestRemoteAdmissionCountsCollidingScopesSeparately(t *testing.T) {
+	legacy := identity{userID: 7, clientID: "8:jellyfindevice", key: movieKey}
+	broker := legacy
+	broker.surface = "jellyfin"
+	legacyRow := unitRow{id: "legacy", user: legacy.userID, client: clusterClientID(legacy), kind: unitSession}
+	brokerRow := unitRow{id: "broker", user: broker.userID, client: clusterClientID(broker), kind: unitSession}
+	if user, total := remoteCounts([]unitRow{legacyRow}, broker); user != 1 || total != 1 {
+		t.Fatalf("broker omitted Plex unit: %d %d", user, total)
+	}
+	if user, total := remoteCounts([]unitRow{brokerRow}, legacy); user != 1 || total != 1 {
+		t.Fatalf("Plex omitted broker unit: %d %d", user, total)
+	}
+	if pendingID("node", legacy) == pendingID("node", broker) {
+		t.Fatal("scope reservations collided")
+	}
+}
+
+func TestSurfacePlansDoNotReplaceOtherPreparedSources(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute), mkv("B", 10000, time.Minute)}, []string{"A", "B"})
+	caps := defaultCaps("same-device")
+	caps.Protocol = "jellyfin"
+	first, err := h.m.PrepareSurface(ctx, friend, movieKey, caps, "A", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.m.PrepareSurface(ctx, friend, movieKey, caps, "B", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := h.m.PrepareSurface(ctx, friend, movie2, caps, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID || first.ID == third.ID {
+		t.Fatal("different plans shared one source")
+	}
+	for _, id := range []string{first.ID, second.ID, third.ID} {
+		if _, ok := h.m.Session(id); !ok {
+			t.Fatalf("planning retired source %s", id)
+		}
+	}
+	h.m.Stop(first.ID)
+	h.m.Stop(second.ID)
+	h.m.Stop(third.ID)
+}

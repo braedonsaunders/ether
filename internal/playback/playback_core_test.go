@@ -14,7 +14,7 @@ import (
 func waitWarm(t *testing.T, h *harness, userID int64, client string, key core.RatingKey) {
 	t.Helper()
 	h.m.mu.Lock()
-	e := h.m.warm[identity{userID, client, key}]
+	e := h.m.warm[identity{userID: userID, clientID: client, key: key}]
 	h.m.mu.Unlock()
 	if e == nil {
 		t.Fatal("no warm entry")
@@ -182,7 +182,7 @@ func TestSpeculativePrewarmsCannotConsumeDetailRateBudget(t *testing.T) {
 		deadline := time.Now().Add(time.Second)
 		for {
 			h.m.mu.Lock()
-			pending := h.m.warm[identity{owner.ID, caps.ClientID, key}] != nil
+			pending := h.m.warm[identity{userID: owner.ID, clientID: caps.ClientID, key: key}] != nil
 			h.m.mu.Unlock()
 			if !pending {
 				break
@@ -281,7 +281,7 @@ func TestPrepareVariantIgnoresWarmOfOtherRelease(t *testing.T) {
 		t.Fatalf("variant consumed warm A: %+v", ps)
 	}
 	h.m.mu.Lock()
-	_, warmKept := h.m.warm[identity{owner.ID, "c1", movieKey}]
+	_, warmKept := h.m.warm[identity{userID: owner.ID, clientID: "c1", key: movieKey}]
 	h.m.mu.Unlock()
 	if !warmKept {
 		t.Fatal("warm entry for A was consumed by variant B")
@@ -631,7 +631,7 @@ func TestWarmCachesKeyframes(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		h.m.mu.Lock()
-		entry := h.m.warm[identity{owner.ID, caps.ClientID, movieKey}]
+		entry := h.m.warm[identity{userID: owner.ID, clientID: caps.ClientID, key: movieKey}]
 		ready := entry != nil && entry.probe != nil && len(entry.probe.points) == len(want)
 		h.m.mu.Unlock()
 		if ready {

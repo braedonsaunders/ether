@@ -251,9 +251,10 @@ var (
 // flightKey separates a plain Prepare from a PrepareVariant for a picked
 // release: they must not share one resolution.
 type flightKey struct {
-	id     identity
-	prefer string
-	exact  bool
+	id                identity
+	prefer            string
+	exact             bool
+	deferSupersession bool
 }
 
 type warmBudgetKey struct {
@@ -562,7 +563,7 @@ func (m *Manager) reserve(ctx context.Context, user *core.User, id identity) err
 		m.reg.poke()
 		return nil
 	}
-	claim := unitRow{id: pendingID(m.reg.self, id), user: id.userID, client: id.clientID, grp: group, kind: unitPending}
+	claim := unitRow{id: pendingID(m.reg.self, id), user: id.userID, client: clusterClientID(id), grp: group, kind: unitPending}
 	if err := m.reg.admit(ctx, user, id, claim, userN, total, userLimit, serverLimit); err != nil {
 		m.mu.Lock()
 		m.unreserveLocked(id)
@@ -596,12 +597,20 @@ func userLabel(u *core.User) string {
 // stream limits, or returns the existing session for the same user, client
 // and title. Concurrent calls for the same session share one resolution.
 func (m *Manager) Prepare(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps) (*core.PlaySession, error) {
-	return m.prepareEntry(ctx, user, key, caps, "", false)
+	return m.prepareEntry(ctx, user, key, caps, "", false, false)
+}
+
+// PrepareSurface keeps a prepared source until its owning session opens or expires.
+func (m *Manager) PrepareSurface(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, releaseID string, exact bool) (*core.PlaySession, error) {
+	if exact && releaseID == "" {
+		return nil, core.ErrNotAvailable
+	}
+	return m.prepareEntry(ctx, user, key, caps, releaseID, exact, true)
 }
 
 // prepareEntry is Prepare plus an optional picked release (prefer != "").
 // An existing session on a different release is replaced, never reused.
-func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, prefer string, exact bool) (*core.PlaySession, error) {
+func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, prefer string, exact, deferSupersession bool) (*core.PlaySession, error) {
 	if user == nil {
 		return nil, core.ErrUnauthorized
 	}
@@ -610,7 +619,10 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 			return nil, fmt.Errorf("playback: title releases on %s: %w", title.Released.Format("2006-01-02"), core.ErrUnreleased)
 		}
 	}
-	id := identity{userID: user.ID, clientID: caps.ClientID, key: key}
+	id := identity{userID: user.ID, clientID: caps.ClientID, key: key, surface: playbackSurface(string(caps.Protocol))}
+	if deferSupersession {
+		id.variant, id.exact = prefer, exact
+	}
 	for {
 		m.mu.Lock()
 		if m.closed {
@@ -632,7 +644,7 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 		}
 		break
 	}
-	fk := flightKey{id: id, prefer: prefer, exact: exact}
+	fk := flightKey{id: id, prefer: prefer, exact: exact, deferSupersession: deferSupersession}
 	f := m.flights[fk]
 	if f == nil {
 		wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.opts.PrepareTimeout)
@@ -663,7 +675,7 @@ func (m *Manager) prepareEntry(ctx context.Context, user *core.User, key core.Ra
 func (m *Manager) runFlight(ctx context.Context, f *flight, fk flightKey, user *core.User, caps core.ClientCaps) {
 	defer close(f.done)
 	defer f.cancel()
-	s, err := m.prepare(ctx, fk.id, user, caps, fk.prefer, fk.exact)
+	s, err := m.prepare(ctx, fk.id, user, caps, fk.prefer, fk.exact, fk.deferSupersession)
 	m.mu.Lock()
 	delete(m.flights, fk)
 	if err != nil && m.byIdent[fk.id] == nil {
@@ -676,7 +688,7 @@ func (m *Manager) runFlight(ctx context.Context, f *flight, fk flightKey, user *
 	}
 }
 
-func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, caps core.ClientCaps, prefer string, exact bool) (*session, error) {
+func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, caps core.ClientCaps, prefer string, exact, deferSupersession bool) (*session, error) {
 	log := m.log.With("user", userLabel(user), "client", caps.ClientID, "key", id.key)
 	if err := m.reserve(ctx, user, id); err != nil {
 		log.Info("stream limit", "err", err)
@@ -746,7 +758,8 @@ func (m *Manager) prepare(ctx context.Context, id identity, user *core.User, cap
 	}
 	var replaced []string
 	for _, o := range m.sessions {
-		if o.ident.userID == id.userID && o.ident.clientID == id.clientID && o.ident.key != id.key {
+		// Broker supersession occurs on Open, not while a plan is prepared.
+		if !deferSupersession && o.ident.userID == id.userID && o.ident.clientID == id.clientID && o.ident.surface == id.surface && o.ident.key != id.key {
 			replaced = append(replaced, o.id)
 		}
 	}
@@ -797,7 +810,17 @@ func (m *Manager) Session(id string) (*core.PlaySession, bool) {
 // SessionFor finds the live session of a client for a title.
 func (m *Manager) SessionFor(userID int64, clientID string, key core.RatingKey) (*core.PlaySession, bool) {
 	m.mu.Lock()
-	s := m.byIdent[identity{userID, clientID, key}]
+	s := m.byIdent[identity{userID: userID, clientID: clientID, key: key}]
+	m.mu.Unlock()
+	if s == nil {
+		return nil, false
+	}
+	return s.snapshot(m.now()), true
+}
+
+func (m *Manager) SessionForSurface(surface string, userID int64, clientID string, key core.RatingKey, release string, exact bool) (*core.PlaySession, bool) {
+	m.mu.Lock()
+	s := m.byIdent[identity{userID: userID, clientID: clientID, key: key, surface: playbackSurface(surface), variant: release, exact: exact}]
 	m.mu.Unlock()
 	if s == nil {
 		return nil, false

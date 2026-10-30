@@ -157,3 +157,10 @@ type Playback interface {
 	Stop(sessionID string)
 	Sessions() []*PlaySession
 }
+
+// SurfaceScopedPlayback separates client identifiers by their authenticated
+// protocol surface, even when different clients supply identical IDs.
+type SurfaceScopedPlayback interface {
+	PrepareSurface(ctx context.Context, user *User, key RatingKey, caps ClientCaps, releaseID string, exact bool) (*PlaySession, error)
+	SessionForSurface(surface string, userID int64, clientID string, key RatingKey, releaseID string, exact bool) (*PlaySession, bool)
+}

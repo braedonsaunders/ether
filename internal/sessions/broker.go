@@ -65,6 +65,7 @@ type brokerPlan struct {
 	live          bool
 	exactRelease  string
 	versionHandle string
+	opening       bool
 }
 type brokerSession struct {
 	public           frontend.Session
@@ -116,6 +117,12 @@ type Broker struct {
 	bindings            *BindingTable[frontend.PlayIntent]
 	closed              bool
 	pendingPlans        int
+	pendingByViewer     map[int64]int
+	sourceLeases        map[string]*sourceLease
+	planSweepStop       chan struct{}
+	planSweepDone       chan struct{}
+	planSweepEvery      time.Duration
+	detailPlans         map[string]*detailFlight
 	cluster             *brokerCluster
 }
 
@@ -140,7 +147,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if limit > 4096 {
 		return nil, errors.New("sessions: max pending starts exceeds 4096")
 	}
-	b := &Broker{deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, plans: make(map[string]brokerPlan), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
+	b := &Broker{deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent]()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)
@@ -344,41 +351,25 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		}
 		return frontend.PlayPlan{Estimated: true, Media: publicMedia(info), Decision: dec}, nil
 	}
-	b.mu.Lock()
-	for key, p := range b.plans {
-		if b.deps.Now().Sub(p.created) > 2*time.Minute {
-			delete(b.plans, key)
-		}
-	}
-	if b.closed || len(b.plans)+b.pendingPlans >= 1024 {
-		b.mu.Unlock()
+	if !b.reservePlan(v.ID) {
 		return frontend.PlayPlan{}, core.ErrStreamLimit
 	}
-	b.pendingPlans++
-	b.mu.Unlock()
-	defer func() { b.mu.Lock(); b.pendingPlans--; b.mu.Unlock() }()
+	defer b.releasePlanReservation(v.ID)
 	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", v.ID, req.Caps.ClientID))
 	if err != nil {
 		return frontend.PlayPlan{}, err
 	}
 	defer unlock()
-	previous, existed := b.deps.Playback.SessionFor(v.ID, req.Caps.ClientID, req.Item)
-	var ps *core.PlaySession
-	if chosen != nil && req.Intent.ExactVersion {
-		vp, ok := b.deps.Playback.(core.ExactVariantPlayback)
-		if !ok {
-			return frontend.PlayPlan{}, core.ErrNotAvailable
-		}
-		ps, err = vp.PrepareExactVariant(ctx, v, req.Item, req.Caps, chosen.ID)
-	} else if chosen != nil {
-		vp, ok := b.deps.Playback.(core.VariantPlayback)
-		if !ok {
-			return frontend.PlayPlan{}, core.ErrNotAvailable
-		}
-		ps, err = vp.PrepareVariant(ctx, v, req.Item, req.Caps, chosen.ID)
-	} else {
-		ps, err = b.deps.Playback.Prepare(ctx, v, req.Item, req.Caps)
+	playback, ok := b.deps.Playback.(core.SurfaceScopedPlayback)
+	if !ok {
+		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
+	release := ""
+	if chosen != nil {
+		release = chosen.ID
+	}
+	previous, existed := playback.SessionForSurface(string(req.Protocol), v.ID, req.Caps.ClientID, req.Item, release, req.Intent.ExactVersion)
+	ps, err := playback.PrepareSurface(ctx, v, req.Item, req.Caps, release, req.Intent.ExactVersion)
 	if err != nil {
 		return frontend.PlayPlan{}, err
 	}
@@ -392,6 +383,13 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	existed = existed && previous != nil && previous.ID == ps.ID
+	b.acquirePlanSource(ps.ID, !existed)
+	stored := false
+	defer func() {
+		if !stored {
+			b.releasePlanSource(ps.ID)
+		}
+	}()
 	if b.deps.SelectScopedTracks != nil || b.deps.SelectTracks != nil {
 		var selected core.DecideOptions
 		var err error
@@ -401,30 +399,18 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 			selected, err = b.deps.SelectTracks(ctx, v, title, ps.Info, req.Intent.Options, req.Intent.AudioSet, req.Intent.SubtitleSet)
 		}
 		if err != nil {
-			if !existed {
-				b.deps.Playback.Stop(ps.ID)
-			}
 			return frontend.PlayPlan{}, err
 		}
 		req.Intent.Options = selected
 	}
 	dec, err := b.decideProfile(ps, req)
 	if err != nil {
-		if !existed {
-			b.deps.Playback.Stop(ps.ID)
-		}
 		return frontend.PlayPlan{}, err
 	}
 	if req.Intent.AllowTranscoding != nil && !*req.Intent.AllowTranscoding && decisionEncodes(dec, ps.Info) {
-		if !existed {
-			b.deps.Playback.Stop(ps.ID)
-		}
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	if (dec.Kind == core.DecisionDirectPlay && !req.Intent.Options.DirectPlay) || (dec.Kind == core.DecisionRemux && !req.Intent.Options.DirectStream) {
-		if !existed {
-			b.deps.Playback.Stop(ps.ID)
-		}
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
 	id := rand.Text()
@@ -432,21 +418,14 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
-		if !existed {
-			b.deps.Playback.Stop(ps.ID)
-		}
 		return frontend.PlayPlan{}, core.ErrNotAvailable
-	}
-	for key, p := range b.plans {
-		if b.deps.Now().Sub(p.created) > 2*time.Minute {
-			delete(b.plans, key)
-		}
 	}
 	exactRelease := ""
 	if req.Intent.ExactVersion {
 		exactRelease = req.Version
 	}
 	b.plans[id] = brokerPlan{request: req, source: ps, decision: dec, created: b.deps.Now(), etag: etag, exactRelease: exactRelease, versionHandle: versionHandle}
+	stored = true
 	b.mu.Unlock()
 	direct, remux, transcoding := b.planAlternatives(ps, req)
 	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec, DirectPlay: direct, DirectStream: remux, Transcoding: transcoding, ETag: etag}, nil
@@ -461,21 +440,54 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if b.closed {
 		ok = false
 	}
-	if ok && (p.request.Viewer.ID != v.ID || p.request.Protocol != req.Protocol || req.Device.ID == "" || p.request.Device.ID != req.Device.ID) {
+	if ok && (p.opening || p.request.Viewer.ID != v.ID || p.request.Protocol != req.Protocol || req.Device.ID == "" || p.request.Device.ID != req.Device.ID) {
 		ok = false
 	}
 	if ok {
-		delete(b.plans, req.PlanID)
+		p.opening = true
+		b.plans[req.PlanID] = p
 	}
 	b.mu.Unlock()
-	if !ok || b.deps.Now().Sub(p.created) > 2*time.Minute || !b.permitted(v, p.request.Caps) {
+	if !ok {
 		return frontend.Session{}, core.ErrUnauthorized
 	}
-	unlock, err := b.gates.Acquire(ctx, fmt.Sprintf("broker/owner/%d/%s", v.ID, p.request.Caps.ClientID))
+	gateCtx, cancelGate := context.WithTimeout(ctx, 10*time.Second)
+	unlock, err := b.gates.Acquire(gateCtx, fmt.Sprintf("broker/owner/%d/%s", v.ID, p.request.Caps.ClientID))
+	cancelGate()
 	if err != nil {
+		// Keep the scoped reference for the bounded sweeper; it must acquire
+		// the owner gate before releasing a potentially shared source.
+		b.mu.Lock()
+		if current, exists := b.plans[req.PlanID]; exists && current.opening {
+			current.opening = false
+			current.created = b.deps.Now().Add(-planLifetime - time.Nanosecond)
+			b.plans[req.PlanID] = current
+		}
+		b.mu.Unlock()
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return frontend.Session{}, &frontend.SessionBusyError{RetryAfter: time.Second}
+		}
 		return frontend.Session{}, err
 	}
 	defer unlock()
+	b.mu.Lock()
+	current, exists := b.plans[req.PlanID]
+	if exists && current.opening {
+		delete(b.plans, req.PlanID)
+	}
+	b.mu.Unlock()
+	if !exists || !current.opening {
+		return frontend.Session{}, core.ErrNotAvailable
+	}
+	transferred := false
+	defer func() {
+		if !transferred && p.source != nil {
+			b.releasePlanSource(p.source.ID)
+		}
+	}()
+	if b.deps.Now().Sub(p.created) > planLifetime || !b.permitted(v, p.request.Caps) {
+		return frontend.Session{}, core.ErrUnauthorized
+	}
 	v, err = b.viewer(ctx, req.Viewer)
 	if err != nil || !b.permitted(v, p.request.Caps) {
 		return frontend.Session{}, core.ErrUnauthorized
@@ -541,6 +553,8 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	b.owners.BindFor("broker", v.ID, s.clientID, session.Item, s.playbackID, ps.ID, true, b.deps.Now())
 	superseded := b.collectSupersededLocked(s)
 	b.sessions[id] = s
+	b.transferPlanSourceLocked(ps.ID)
+	transferred = true
 	b.mu.Unlock()
 	b.finishSuperseded(ctx, superseded, ps.ID)
 	if b.cluster != nil {
@@ -802,9 +816,13 @@ func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) 
 func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	b.mu.Lock()
 	_, ok := b.sessions[s.public.ID]
+	stopSource := false
 	if ok {
 		delete(b.sessions, s.public.ID)
 		b.rememberRetiredLocked(s)
+		if !s.live {
+			stopSource = b.releaseSessionSourceLocked(s.playID)
+		}
 	}
 	b.mu.Unlock()
 	if !ok {
@@ -825,7 +843,7 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	if b.deps.Transcoder != nil {
 		b.deps.Transcoder.Stop(s.public.ID)
 	}
-	if !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
+	if stopSource && !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
 		b.deps.Playback.Stop(s.playID)
 	}
 	b.publish(ctx, sessionEvent("SessionStopped", s.public, nil))
@@ -889,7 +907,7 @@ func (b *Broker) Close(ctx context.Context) {
 	firstClose := !b.closed
 	b.closed = true
 	lazyCancel, lazyDone := b.lazyCleanupCancel, b.lazyCleanupDone
-	var ids, planned []string
+	var ids, planIDs []string
 	seen := make(map[string]bool)
 	for _, s := range b.sessions {
 		if !seen[s.playID] {
@@ -897,12 +915,9 @@ func (b *Broker) Close(ctx context.Context) {
 			seen[s.playID] = true
 		}
 	}
-	for _, p := range b.plans {
-		if p.source != nil {
-			planned = append(planned, p.source.ID)
-		}
+	for id := range b.plans {
+		planIDs = append(planIDs, id)
 	}
-	b.plans = make(map[string]brokerPlan)
 	b.mu.Unlock()
 	// Shutdown must still release sessions when its caller has already been
 	// canceled; bound the cleanup so an unresponsive gate cannot block forever.
@@ -920,13 +935,15 @@ func (b *Broker) Close(ctx context.Context) {
 			}
 		}
 	}
+	// The bounded plan sweeper stays alive until outstanding owner gates and
+	// in-flight opens release their references, even after this budget expires.
 	for _, id := range ids {
 		if !b.StopPlayback(cleanupCtx, id) && b.deps.OnEventError != nil {
 			b.deps.OnEventError(fmt.Errorf("sessions: could not stop playback %s during shutdown", id))
 		}
 	}
-	for _, id := range planned {
-		b.deps.Playback.Stop(id)
+	for _, id := range planIDs {
+		b.dropPlan(cleanupCtx, id, true)
 	}
 	if firstClose && b.cluster != nil {
 		b.cluster.close()

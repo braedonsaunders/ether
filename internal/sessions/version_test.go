@@ -15,6 +15,13 @@ type variantPlayback struct {
 	selected string
 }
 
+func (p *variantPlayback) PrepareSurface(ctx context.Context, v *core.User, k core.RatingKey, c core.ClientCaps, id string, exact bool) (*core.PlaySession, error) {
+	if exact {
+		return nil, core.ErrNotAvailable
+	}
+	return p.PrepareVariant(ctx, v, k, c, id)
+}
+
 func (p *variantPlayback) PrepareVariant(ctx context.Context, v *core.User, k core.RatingKey, c core.ClientCaps, id string) (*core.PlaySession, error) {
 	p.selected = id
 	return p.Prepare(ctx, v, k, c)

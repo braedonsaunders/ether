@@ -91,7 +91,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		prefetchBytes = maxWarmPrefetchBytes
 	}
 	timeout := 45 * time.Second
-	id := identity{userID: user.ID, clientID: caps.ClientID, key: key}
+	id := identity{userID: user.ID, clientID: caps.ClientID, key: key, surface: playbackSurface(string(caps.Protocol))}
 	now := m.now()
 	m.mu.Lock()
 	if m.closed || m.byIdent[id] != nil || m.hasFlightLocked(id) {
@@ -356,6 +356,9 @@ func warmAcceptable(e *warmEntry, profile core.QualityProfile, caps core.ClientC
 // acceptable for the Play-time profile and caps (and, for a variant,
 // is the picked release); an unacceptable entry is discarded.
 func (m *Manager) takeWarmResolution(ctx context.Context, id identity, profile core.QualityProfile, caps core.ClientCaps, prefer string) *warmEntry {
+	// Warm facts are keyed by viewer/device/title, then checked against the
+	// selected release below; a plan's variant identity is not a warm key.
+	id.variant, id.exact = "", false
 	m.mu.Lock()
 	e := m.warm[id]
 	if e == nil {

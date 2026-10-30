@@ -2,6 +2,7 @@ package playback
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -183,7 +184,28 @@ func (r *registry) warn(what string, err error) {
 }
 
 func pendingID(node string, id identity) string {
-	return fmt.Sprintf("pending/%s/%d/%s/%d", node, id.userID, id.clientID, id.key)
+	base := fmt.Sprintf("pending/%s/%d/%s/%d", node, id.userID, clusterClientID(id), id.key)
+	if id.variant != "" || id.exact {
+		hash := sha256.Sum256([]byte(fmt.Sprintf("%t:%s", id.exact, id.variant)))
+		return fmt.Sprintf("%s/%x", base, hash)
+	}
+	return base
+}
+
+// The prefix is forbidden in HTTP header values, so one surface cannot forge
+// another surface's cluster identity. Plex's historical representation stays
+// unchanged; session JSON retains the original client identifier.
+func playbackSurface(surface string) string {
+	if surface == "" || surface == "plex" {
+		return ""
+	}
+	return surface
+}
+func clusterClientID(id identity) string {
+	if id.surface != "" {
+		return "\x1fsurface:" + id.surface + ":" + id.clientID
+	}
+	return id.clientID
 }
 
 func groupID(group string) string { return "group/" + group }
@@ -221,7 +243,7 @@ func (r *registry) desired() []unitRow {
 	}
 	var rows []unitRow
 	for id := range m.reservations {
-		rows = append(rows, unitRow{id: pendingID(r.self, id), user: id.userID, client: id.clientID,
+		rows = append(rows, unitRow{id: pendingID(r.self, id), user: id.userID, client: clusterClientID(id),
 			grp: m.channelGroups[id], kind: unitPending})
 	}
 	exts := make([]ext, 0, len(m.externalGroups))
@@ -232,7 +254,7 @@ func (r *registry) desired() []unitRow {
 	now := m.now()
 	for _, s := range sessions {
 		ps := s.snapshot(now)
-		rows = append(rows, unitRow{id: ps.ID, user: ps.UserID, client: ps.ClientID, grp: ps.PlaybackGroup,
+		rows = append(rows, unitRow{id: ps.ID, user: ps.UserID, client: clusterClientID(s.ident), grp: ps.PlaybackGroup,
 			kind: unitSession, data: sharedSnapshot(ps), started: ps.StartedAt.UnixMilli()})
 	}
 	for _, e := range exts {
@@ -353,7 +375,7 @@ func (r *registry) remoteRows(ctx context.Context, q interface {
 func remoteCounts(rows []unitRow, id identity) (user, total int) {
 	units := map[string]int64{}
 	for _, u := range rows {
-		if u.kind == unitSession && u.user == id.userID && u.client == id.clientID {
+		if u.kind == unitSession && u.user == id.userID && u.client == clusterClientID(id) {
 			continue
 		}
 		unit := u.id

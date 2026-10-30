@@ -23,7 +23,7 @@ func TestPreResolveReusedWithoutLiveSessionOrHistory(t *testing.T) {
 		t.Fatal("per-user budget ignored")
 	}
 	h.m.mu.Lock()
-	e := h.m.warm[identity{owner.ID, caps.ClientID, movieKey}]
+	e := h.m.warm[identity{userID: owner.ID, clientID: caps.ClientID, key: movieKey}]
 	h.m.mu.Unlock()
 	select {
 	case <-e.done:
@@ -56,6 +56,42 @@ func TestPreResolveReusedWithoutLiveSessionOrHistory(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("resolved again: %d calls", calls)
+	}
+}
+
+func TestSurfaceVersionUsesMatchingWarmProbe(t *testing.T) {
+	h := newHarness(t, []*fakeRelease{mkv("r1", 2<<30, 90*time.Minute)}, []string{"r1"})
+	caps := defaultCaps("client")
+	caps.Protocol = "jellyfin"
+	if !h.m.PreResolve(context.Background(), owner, movieKey, caps) {
+		t.Fatal("warm skipped")
+	}
+	h.m.mu.Lock()
+	e := h.m.warm[identity{userID: owner.ID, clientID: caps.ClientID, key: movieKey, surface: "jellyfin"}]
+	h.m.mu.Unlock()
+	if e == nil {
+		t.Fatal("surface warm missing")
+	}
+	select {
+	case <-e.done:
+	case <-time.After(time.Second):
+		t.Fatal("warm did not complete")
+	}
+	ps, err := h.m.PrepareSurface(context.Background(), owner, movieKey, caps, "r1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ps.Resolution == nil || ps.Resolution.Release.ID != "r1" {
+		t.Fatal("exact source changed")
+	}
+	h.resolver.mu.Lock()
+	calls := h.resolver.calls
+	h.resolver.mu.Unlock()
+	h.tr.mu.Lock()
+	probes := h.tr.probes
+	h.tr.mu.Unlock()
+	if calls != 1 || probes != 1 {
+		t.Fatalf("matching warm repeated resolve/probe: %d/%d", calls, probes)
 	}
 }
 
@@ -126,7 +162,7 @@ func TestPrewarmRejectsMissingOpeningButNotTransientFailure(t *testing.T) {
 			_, bad := h.resolver.bad["r1"]
 			h.resolver.mu.Unlock()
 			h.m.mu.Lock()
-			_, warm := h.m.warm[identity{owner.ID, "client", movieKey}]
+			_, warm := h.m.warm[identity{userID: owner.ID, clientID: "client", key: movieKey}]
 			h.m.mu.Unlock()
 			if bad != permanent || warm == permanent {
 				t.Fatalf("bad=%v warm=%v permanent=%v", bad, warm, permanent)

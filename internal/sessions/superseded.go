@@ -57,7 +57,10 @@ func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession,
 			if b.deps.Transcoder != nil {
 				b.deps.Transcoder.Stop(old.public.ID)
 			}
-			if old.playID != newSource {
+			b.mu.Lock()
+			stopSource := b.releaseSessionSourceLocked(old.playID)
+			b.mu.Unlock()
+			if stopSource && old.playID != newSource {
 				b.deps.Playback.Stop(old.playID)
 			}
 		}

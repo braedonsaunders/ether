@@ -40,6 +40,15 @@ func (s surface) Plan(ctx context.Context, r frontend.PlanRequest) (frontend.Pla
 	}
 	return s.broker.Plan(ctx, r)
 }
+func (s surface) DetailPlan(ctx context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
+	if r.Protocol != s.protocol {
+		return frontend.PlayPlan{}, core.ErrUnauthorized
+	}
+	if planner, ok := s.broker.(frontend.DetailPlanner); ok {
+		return planner.DetailPlan(ctx, r)
+	}
+	return frontend.PlayPlan{}, core.ErrNotAvailable
+}
 func (s surface) Open(ctx context.Context, r frontend.OpenRequest) (frontend.Session, error) {
 	if r.Protocol != s.protocol {
 		return frontend.Session{}, core.ErrUnauthorized

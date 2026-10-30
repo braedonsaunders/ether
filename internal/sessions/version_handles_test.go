@@ -118,6 +118,13 @@ type exactVersionPlayback struct {
 	wrong bool
 }
 
+func (p *exactVersionPlayback) PrepareSurface(ctx context.Context, v *core.User, key core.RatingKey, caps core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
+	if exact {
+		return p.PrepareExactVariant(ctx, v, key, caps, release)
+	}
+	return p.fakePlayback.PrepareSurface(ctx, v, key, caps, release, false)
+}
+
 func (p *exactVersionPlayback) PrepareExactVariant(ctx context.Context, v *core.User, key core.RatingKey, caps core.ClientCaps, release string) (*core.PlaySession, error) {
 	p.calls++
 	ps, err := p.fakePlayback.Prepare(ctx, v, key, caps)

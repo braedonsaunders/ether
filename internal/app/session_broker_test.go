@@ -99,6 +99,16 @@ type activityPlayback struct {
 	entries map[string]*core.PlaySession
 }
 
+func (p *activityPlayback) PrepareSurface(ctx context.Context, u *core.User, k core.RatingKey, c core.ClientCaps, release string, exact bool) (*core.PlaySession, error) {
+	if release != "" || exact {
+		return nil, core.ErrNotAvailable
+	}
+	return p.Prepare(ctx, u, k, c)
+}
+func (p *activityPlayback) SessionForSurface(_ string, user int64, client string, key core.RatingKey, _ string, _ bool) (*core.PlaySession, bool) {
+	return p.SessionFor(user, client, key)
+}
+
 func (p *activityPlayback) Estimate(context.Context, *core.Title, core.ClientCaps) core.MediaInfo {
 	return core.MediaInfo{Estimated: true}
 }

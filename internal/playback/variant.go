@@ -13,7 +13,7 @@ import (
 // entry is only reused when it holds the picked release. When the picked
 // release is unavailable, resolution falls back to the normal choice.
 func (m *Manager) PrepareVariant(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps, releaseID string) (*core.PlaySession, error) {
-	return m.prepareEntry(ctx, user, key, caps, releaseID, false)
+	return m.prepareEntry(ctx, user, key, caps, releaseID, false, false)
 }
 
 // PrepareExactVariant fails closed when the requested release cannot be
@@ -22,5 +22,5 @@ func (m *Manager) PrepareExactVariant(ctx context.Context, user *core.User, key 
 	if releaseID == "" {
 		return nil, core.ErrNotAvailable
 	}
-	return m.prepareEntry(ctx, user, key, caps, releaseID, true)
+	return m.prepareEntry(ctx, user, key, caps, releaseID, true, false)
 }

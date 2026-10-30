@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"net/http"
-	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -34,16 +33,15 @@ func (b *Broker) planLive(ctx context.Context, req frontend.PlanRequest, viewer 
 	if req.Intent.Estimate {
 		return frontend.PlayPlan{Estimated: true, Media: info, Decision: decision}, nil
 	}
+	if !b.reservePlan(viewer.ID) {
+		return frontend.PlayPlan{}, core.ErrStreamLimit
+	}
+	defer b.releasePlanReservation(viewer.ID)
 	id := rand.Text()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.closed || len(b.plans)+b.pendingPlans >= 1024 {
+	if b.closed {
 		return frontend.PlayPlan{}, core.ErrStreamLimit
-	}
-	for key, p := range b.plans {
-		if b.deps.Now().Sub(p.created) > 2*time.Minute {
-			delete(b.plans, key)
-		}
 	}
 	b.plans[id] = brokerPlan{request: req, decision: decision, created: b.deps.Now(), live: true}
 	return frontend.PlayPlan{ID: id, Media: info, Decision: decision}, nil

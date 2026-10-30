@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -59,6 +60,38 @@ func TestClusterUserLimitSpansNodes(t *testing.T) {
 		_, err := b.m.Prepare(ctx, friend, movie2, defaultCaps("phone"))
 		return err == nil
 	})
+}
+
+func TestClusterCollidingPlexAndBrokerScopesConsumeSeparateSlots(t *testing.T) {
+	for _, brokerFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("brokerFirst=%t", brokerFirst), func(t *testing.T) {
+			a, b, _ := twoNodes(t, func(h *harness, _ *Options) { h.cfg.Server.MaxStreams = 1 })
+			ctx := context.Background()
+			caps := defaultCaps("8:jellyfincolliding-device")
+			caps.Protocol = "plex"
+			other := caps
+			other.Protocol = "jellyfin"
+			var first *core.PlaySession
+			var err error
+			if brokerFirst {
+				first, err = a.m.PrepareSurface(ctx, friend, movieKey, other, "", false)
+			} else {
+				first, err = a.m.Prepare(ctx, friend, movieKey, caps)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if brokerFirst {
+				_, err = b.m.Prepare(ctx, friend, movieKey, caps)
+			} else {
+				_, err = b.m.PrepareSurface(ctx, friend, movieKey, other, "", false)
+			}
+			if !errors.Is(err, core.ErrStreamLimit) {
+				t.Fatalf("remote collision bypassed stream limit: %v", err)
+			}
+			a.m.Stop(first.ID)
+		})
+	}
 }
 
 func TestClusterServerLimitAndLiveTVUnits(t *testing.T) {

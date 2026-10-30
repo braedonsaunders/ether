@@ -19,7 +19,7 @@ func (m *Manager) PrepareChannel(ctx context.Context, u *core.User, key core.Rat
 	if len(group) < 16 || len(group) > 128 || strings.ContainsAny(group, "/\\\x00\r\n") {
 		return nil, fmt.Errorf("invalid channel session")
 	}
-	id := identity{userID: u.ID, clientID: caps.ClientID, key: key}
+	id := identity{userID: u.ID, clientID: caps.ClientID, key: key, surface: playbackSurface(string(caps.Protocol))}
 	m.mu.Lock()
 	if m.channelGroups == nil {
 		m.channelGroups = map[identity]string{}
@@ -63,13 +63,13 @@ func (m *Manager) reservationCountsLocked(id identity) (user, total, children in
 		units[unit] = other.userID
 	}
 	for sid, s := range m.sessions {
-		if s.ident.userID == id.userID && s.ident.clientID == id.clientID {
+		if s.ident.userID == id.userID && s.ident.clientID == id.clientID && s.ident.surface == id.surface {
 			continue
 		}
 		add(s.ident, "session/"+sid)
 	}
 	for other := range m.reservations {
-		add(other, fmt.Sprintf("pending/%d/%s/%d", other.userID, other.clientID, other.key))
+		add(other, pendingID("", other))
 	}
 	for _, uid := range units {
 		total++
