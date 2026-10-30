@@ -636,8 +636,10 @@ Revocation alone does not contain a leak.
 **Manage this node** adjusts its provider capacity weight or pauses/resumes new
 streams while existing streams keep playing. A pause ends after a restart.
 Pausing the only available node prevents new playback until you resume it.
-**Open manager** opens a peer node’s own settings; **Updates** handles software
-cluster updates.
+**Open manager** opens a peer node’s own settings; **Updates** handles cluster
+software updates. The first Prism upgrade requires stopping and fencing all old
+writers, upgrading all nodes, then serving traffic. Follow the
+[mandatory first-Prism upgrade runbook](acceptance/prism-upgrade.md).
 
 Elsewhere, **Backups & import** shows which node holds each backup and offers
 a shared backup folder, the Usenet and Debrid pages show this node's share of
