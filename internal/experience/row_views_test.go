@@ -87,7 +87,7 @@ func TestRowViewsScopedStablePagedAndReauthorized(t *testing.T) {
 	}
 	wrong := query
 	wrong.Viewer = &core.User{ID: 8}
-	if _, err = service.ResolveRowView(ctx, wrong); !errors.Is(err, ErrRowViewNotFound) {
+	if _, err = service.ResolveRowView(ctx, wrong); !errors.Is(err, ErrRowViewNotFound) || !errors.Is(err, frontend.ErrNotFound) {
 		t.Fatal("viewer scope", err)
 	}
 	wrong = query
@@ -101,7 +101,7 @@ func TestRowViewsScopedStablePagedAndReauthorized(t *testing.T) {
 		t.Fatal("surface scope", err)
 	}
 	visible = false
-	if _, err = service.ResolveRowView(ctx, query); !errors.Is(err, ErrRowViewStale) {
+	if _, err = service.ResolveRowView(ctx, query); !errors.Is(err, ErrRowViewStale) || !errors.Is(err, frontend.ErrRowViewStale) {
 		t.Fatal("revoked entry", err)
 	}
 	visible = true

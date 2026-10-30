@@ -22,8 +22,8 @@ func init() {
 	store.Register("experience_row_views", 3, `CREATE UNIQUE INDEX experience_row_views_snapshot ON experience_row_views(snapshot);`)
 }
 
-var ErrRowViewNotFound = errors.New("experience: row view unavailable")
-var ErrRowViewStale = errors.New("experience: row view snapshot expired or changed")
+var ErrRowViewNotFound = fmt.Errorf("experience: row view unavailable: %w", frontend.ErrNotFound)
+var ErrRowViewStale = frontend.ErrRowViewStale
 
 // RowViewSnapshot is produced by the trusted row ranker after policy and
 // layout. Entries are identities only; ResolveEntry must rehydrate them.
