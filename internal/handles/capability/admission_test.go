@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/handles/capability"
 )
@@ -147,6 +148,53 @@ func TestClaimsAndActiveRenewalPreserveOverboundState(t *testing.T) {
 		t.Fatalf("expired renewal %v %v", renewed, e)
 	}
 	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHeaderScopeLockOrdersAdmission(t *testing.T) {
+	db, _, _ := fixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	scope := capability.HeaderScope{Namespace: "proof", ViewerID: 1 + capability.HeaderShardCount, Surface: "plex"}
+	if err := capability.LockHeaderScopeInTx(ctx, db, tx, scope); err != nil {
+		t.Fatal(err)
+	}
+	if err := capability.LockHeaderScopeInTx(ctx, db, tx, capability.HeaderScope{}); !errors.Is(err, capability.ErrInvalidHeader) {
+		t.Fatalf("invalid=%v", err)
+	}
+	done := make(chan error, 1)
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		other, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			done <- err
+			return
+		}
+		defer other.Rollback()
+		h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: "proof", ViewerID: 1, Surface: "silo"}, Digest: entry(1210).Digest, ExpiresMillis: 9999999999999}
+		if err := capability.AdmitHeadersInTx(ctx, db, other, []capability.Header{h}, capability.Limits{PerScope: 2, PerShard: 2}); err != nil {
+			done <- err
+			return
+		}
+		done <- other.Commit()
+	}()
+	<-started
+	select {
+	case err := <-done:
+		t.Fatalf("admission passed held shard lock: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 }
