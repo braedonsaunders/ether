@@ -218,6 +218,14 @@ func ParseProbe(b []byte) (*core.MediaInfo, error) {
 		if !ok {
 			continue
 		}
+		// MP4 and Matroska signal Dolby Vision through a container
+		// configuration record exposed by ffprobe. A completed probe of one
+		// of those containers with no such record is a known absence, while
+		// an unprobed or unsupported container remains unknown.
+		if si.Type == "video" && si.Codec != "" && (m.Container == "mp4" || m.Container == "mkv") && !si.DolbyVision && si.DolbyVisionConfigurationPresent == nil {
+			present := false
+			si.DolbyVisionConfigurationPresent = &present
+		}
 		m.Streams = append(m.Streams, si)
 	}
 	if m.BitrateKbps == 0 && m.Size > 0 && m.Duration > 0 {

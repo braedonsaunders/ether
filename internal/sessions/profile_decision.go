@@ -103,6 +103,16 @@ func evaluateProfileConditions(cs []core.ClientProfileCondition, info core.Media
 	for _, c := range cs {
 		var value string
 		switch strings.ToLower(c.Property) {
+		case "videorangetype":
+			// This condition can establish DOVI versus non-DOVI without
+			// inventing an SDR/HDR subtype. Other comparisons stay unknown.
+			if stream != nil && strings.EqualFold(strings.TrimSpace(c.Value), "DOVI") && (strings.EqualFold(c.Operator, "Equals") || strings.EqualFold(c.Operator, "NotEquals")) {
+				if stream.DolbyVision || (stream.DolbyVisionConfigurationPresent != nil && *stream.DolbyVisionConfigurationPresent) {
+					value = "DOVI"
+				} else if stream.DolbyVisionConfigurationPresent != nil && !*stream.DolbyVisionConfigurationPresent {
+					value = "non-DOVI"
+				}
+			}
 		case "videowidth", "width":
 			if stream != nil {
 				value = strconv.Itoa(stream.Width)

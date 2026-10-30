@@ -31,3 +31,36 @@ func TestDolbyVisionRecordTakesPrecedenceOverConflictingNegativeFlags(t *testing
 		t.Fatalf("positive evidence lost: %+v", s)
 	}
 }
+
+func TestDolbyVisionContainerSignallingIsKnownOnlyAfterSupportedProbe(t *testing.T) {
+	cases := []struct {
+		name, format, tag, side string
+		want                    *bool
+		dv                      bool
+	}{
+		{name: "mp4 absent", format: "mov,mp4", tag: "hvc1", want: boolptr(false)},
+		{name: "matroska absent", format: "matroska,webm", want: boolptr(false)},
+		{name: "present", format: "mov,mp4", tag: "hvc1", side: `[{"side_data_type":"DOVI configuration record","dv_profile":8}]`, want: boolptr(true), dv: true},
+		{name: "unsupported container", format: "mpegts", want: nil},
+		{name: "incomplete container", format: "", want: nil},
+		{name: "contradictory DV tag", format: "mov,mp4", tag: "dvhe", want: nil, dv: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			side := ""
+			if tc.side != "" {
+				side = `,"side_data_list":` + tc.side
+			}
+			data := `{"streams":[{"index":0,"codec_type":"video","codec_name":"hevc","codec_tag_string":"` + tc.tag + `"` + side + `}],"format":{"format_name":"` + tc.format + `"}}`
+			m, err := ParseProbe([]byte(data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := m.Streams[0]
+			if (s.DolbyVisionConfigurationPresent == nil) != (tc.want == nil) || (tc.want != nil && *s.DolbyVisionConfigurationPresent != *tc.want) || s.DolbyVision != tc.dv {
+				t.Fatalf("container signalling: %+v", s)
+			}
+		})
+	}
+}
+func boolptr(v bool) *bool { return &v }

@@ -446,8 +446,9 @@ type StreamInfo struct {
 	DolbyVisionCompatibilityID int    `json:"dolbyVisionCompatibilityId,omitempty"`
 	CodecString                string `json:"codecString,omitempty"` // RFC 6381, derived from the codec configuration
 
-	// Configuration-record facts are optional: codec tags alone do not
-	// establish whether the enhancement/base layers or RPU are present.
+	// Configuration presence is known from a completed MP4/Matroska container
+	// probe; nil means unprobed, unsupported or ambiguous. Codec tags alone do
+	// not establish whether enhancement/base layers or RPU are present.
 	DolbyVisionConfigurationPresent     *bool  `json:"dolbyVisionConfigurationPresent,omitempty"`
 	DolbyVisionBLCompatibilityIDPresent *bool  `json:"dolbyVisionBLCompatibilityIdPresent,omitempty"`
 	ProbedDolbyVisionProfile            *int   `json:"probedDolbyVisionProfile,omitempty"`

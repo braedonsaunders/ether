@@ -337,7 +337,7 @@ func TestProbeSourceFollowsSeekHeadPastAttachments(t *testing.T) {
 	if v.Index != 0 || v.Codec != "hevc" || v.Profile != "Main 10" || v.BitDepth != 10 || v.ColorTransfer != "smpte2084" || v.FrameRate != 23.976 {
 		t.Errorf("video = %+v", v)
 	}
-	if !v.DolbyVision || v.DolbyVisionProfile != 8 || v.DolbyVisionLevel != 6 || v.DolbyVisionCompatibilityID != 1 ||
+	if !v.DolbyVision || v.DolbyVisionConfigurationPresent == nil || !*v.DolbyVisionConfigurationPresent || v.DolbyVisionProfile != 8 || v.DolbyVisionLevel != 6 || v.DolbyVisionCompatibilityID != 1 ||
 		v.DolbyVisionBLPresent == nil || !*v.DolbyVisionBLPresent || v.DolbyVisionELPresent == nil || *v.DolbyVisionELPresent || v.DolbyVisionVersion != "1.0" {
 		t.Errorf("dolby vision = %+v", v)
 	}
