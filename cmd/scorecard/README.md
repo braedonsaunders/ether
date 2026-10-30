@@ -208,3 +208,15 @@ not distinct HLS encodes, independently verified source selection, injected
 provider faults, or full video-quality assessment. The manifest hash and cache
 state are declarations and require independent verification. A passing workload
 alone does not establish comparative superiority.
+
+The acceptance input also accepts `ttff_observations` and `performance_pairs`.
+A verified, completed unresolved first-frame observation must be at most 5,000
+ms (4,000 ms is the stretch target); a cached one must be at most 1,000 ms.
+These are per-observation hard thresholds, not statistical certification.
+Record resolve, probe, decision, first-byte and, for HLS, first-segment durations
+when measured; absent phases remain incomplete and must not be summed as if
+independent. Provide an independently established cache state and source match.
+Matched, successful, quality-verified pairs for transcode start, seek to picture,
+resume, subtitle/audio switch, browse latency and CPU per stream-minute fail
+when Ether exceeds the reference in that observation. A single passing pair is
+not proof of overall parity: collect repetitions and assess uncertainty.

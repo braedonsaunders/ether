@@ -412,6 +412,8 @@ func validateAcceptanceProvenance(in acceptanceInput) error {
 }
 
 type acceptanceInput struct {
+	Performance         []PerformancePair    `json:"performance_pairs"`
+	TTFF                []TTFFObservation    `json:"ttff_observations"`
 	ManifestSHA256      string               `json:"manifest_sha256"`
 	DeclaredAt          time.Time            `json:"declared_at"`
 	ReferenceProvenance acceptanceProvenance `json:"reference_provenance"`
@@ -452,6 +454,8 @@ func recoveryPairs(reference, ether []recoveryTrial) []recoveryPair {
 }
 
 type acceptanceReport struct {
+	Performance       []PerformanceGate  `json:"performance_gates"`
+	TTFF              []TTFFGate         `json:"ttff_gates"`
 	ProvenanceStatus  string             `json:"provenance_status"`
 	ProvenanceReason  string             `json:"provenance_reason,omitempty"`
 	Recovery          recoveryComparison `json:"recovery"`
@@ -484,7 +488,15 @@ func evaluateAcceptance(in acceptanceInput) acceptanceReport {
 		growthComparison = gateComparison{Status: "inconclusive", Reason: "provenance or correctness gate failed"}
 		cleanupComparison = gateComparison{Status: "inconclusive", Reason: "provenance or correctness gate failed"}
 	}
-	return acceptanceReport{provenanceStatus, provenanceReason, recovery, recoveryPairs(in.ReferenceTrials, in.EtherTrials), growthComparison, cleanupComparison, refGrowth, ethGrowth, refCleanup, ethCleanup, "Manifest metadata must be independently collected and signed off before runs; equality checks alone do not authenticate provenance. Growth and cleanup results are individual thresholds, not comparative wins."}
+	var ttff []TTFFGate
+	for _, observation := range in.TTFF {
+		ttff = append(ttff, evaluateTTFF(observation))
+	}
+	var performance []PerformanceGate
+	for _, pair := range in.Performance {
+		performance = append(performance, evaluatePerformancePair(pair))
+	}
+	return acceptanceReport{performance, ttff, provenanceStatus, provenanceReason, recovery, recoveryPairs(in.ReferenceTrials, in.EtherTrials), growthComparison, cleanupComparison, refGrowth, ethGrowth, refCleanup, ethCleanup, "Manifest metadata must be independently collected and signed off before runs; equality checks alone do not authenticate provenance. TTFF is an individual absolute gate; growth and cleanup results are individual thresholds, not comparative wins."}
 }
 
 func acceptance(args []string) error {
