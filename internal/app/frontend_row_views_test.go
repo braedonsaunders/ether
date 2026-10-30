@@ -243,7 +243,7 @@ func TestRowViewBatchedTitlesKeepFallbackAndGuideScope(t *testing.T) {
 	vis := experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}
 	live := func(context.Context, *core.User) ([]frontend.RowEntry, error) {
 		guides++
-		return []frontend.RowEntry{{Kind: frontend.RowEntryLiveChannel, LiveChannel: &frontend.LiveChannel{ID: "channel"}}}, nil
+		return []frontend.RowEntry{{Kind: frontend.RowEntryLiveChannel, LiveChannel: &frontend.RowLiveChannel{ID: "channel"}}}, nil
 	}
 	got, err := rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, vis, live)
 	if err != nil || len(got) != len(refs) || got[1].Title.Key != season || legacyCalls != 1 || admissions != 1 || guides != 1 {
