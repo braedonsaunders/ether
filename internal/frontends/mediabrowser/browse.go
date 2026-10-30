@@ -302,10 +302,10 @@ func (i *instance) browseRoutes() error {
 		if i.protocol == "jellyfin" {
 			dto["EnableMediaSourceDisplay"] = false
 		}
-		if len(d.Versions) > 0 {
+		if len(d.Versions) > 0 || d.Title.Type == "movie" || d.Title.Type == "episode" {
 			sources := make([]any, 0, len(d.Versions))
 			scope, scopeErr := i.versionScope(r, v)
-			needDefault := scopeErr != nil
+			needDefault := scopeErr != nil || len(d.Versions) == 0
 			for _, version := range d.Versions {
 				if scopeErr != nil {
 					break
