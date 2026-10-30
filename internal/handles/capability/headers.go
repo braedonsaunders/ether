@@ -78,3 +78,20 @@ func DropHeadersInTx(ctx context.Context, tx *sql.Tx, scope HeaderScope, digests
 	}
 	return nil
 }
+
+// PruneHeadersInTx deletes at most limit expired headers in one namespace.
+// cutoffMillis must come from the domain's trusted clock and must not precede
+// its actual authority lifetime. This only removes mirror bookkeeping; domain
+// retention and active-session retirement remain the caller's responsibility.
+// No capability, including one considered live by its domain, may rely on this
+// header surviving beyond the supplied cutoff. The caller commits or rolls back.
+func PruneHeadersInTx(ctx context.Context, tx *sql.Tx, namespace string, cutoffMillis int64, limit int) (int64, error) {
+	if tx == nil || namespace == "" || namespace == ticketNamespace || len(namespace) > 128 || strings.TrimSpace(namespace) != namespace || cutoffMillis <= 0 || limit <= 0 || limit > HeaderBatchMax {
+		return 0, ErrInvalidHeader
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace=? AND expires<=? AND digest IN (SELECT digest FROM capability_headers WHERE namespace=? AND expires<=? ORDER BY expires,digest LIMIT ?)`, namespace, cutoffMillis, namespace, cutoffMillis, limit)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
