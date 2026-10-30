@@ -83,7 +83,7 @@ func TestScopedVersionDetailAndPlayback(t *testing.T) {
 			t.Fatal(lazy.seen)
 		}
 	}
-	w := call("POST", "/Items/"+handle+"/PlaybackInfo", `{}`)
+	w := call("POST", "/Items/"+handle+"/PlaybackInfo", `{"IsPlayback":false}`)
 	if w.Code != 200 || plan.Item != 5 || plan.Version != handle || !plan.Intent.ExactVersion || !plan.Intent.Estimate {
 		t.Fatal(w.Code, plan, w.Body.String())
 	}
@@ -123,7 +123,7 @@ func TestEmbyScopedVersionPlaybackIsExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId="+handle, strings.NewReader(`{}`))
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId="+handle, strings.NewReader(`{"IsPlayback":false}`))
 	r.Header.Set("Authorization", `Emby Token="account-secret", DeviceId="device"`)
 	w := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(w, r)

@@ -136,7 +136,7 @@ func TestLivePlaybackUsesAuthorizedChannelTarget(t *testing.T) {
 		inst.Handler().ServeHTTP(w, r)
 		return w
 	}
-	if w := call(`{}`); w.Code != 200 || !estimate || opened {
+	if w := call(`{"IsPlayback":false}`); w.Code != 200 || !estimate || opened {
 		t.Fatal(w.Code, estimate, opened)
 	}
 	if w := call(`{"IsPlayback":true}`); w.Code != 200 || estimate || !opened || !strings.Contains(w.Body.String(), "/sessions/media/") {

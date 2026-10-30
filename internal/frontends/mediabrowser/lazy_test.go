@@ -85,7 +85,7 @@ func TestEstimateIssuesLazyPathWithoutOpeningPlayback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("POST", "/jellyfin/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{}`))
+	r := httptest.NewRequest("POST", "/jellyfin/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":false}`))
 	r.Header.Set("X-Emby-Token", "account-secret")
 	r.Header.Set("X-Emby-Device-Id", "client")
 	w := httptest.NewRecorder()

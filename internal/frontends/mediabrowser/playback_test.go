@@ -89,7 +89,7 @@ func TestPlaybackInfoEstimatesAndOpens(t *testing.T) {
 		inst.Handler().ServeHTTP(w, r)
 		return w
 	}
-	w := call(`{"EnableDirectStream":false,"EnableTranscoding":false}`)
+	w := call(`{"IsPlayback":false,"EnableDirectStream":false,"EnableTranscoding":false}`)
 	if w.Code != 200 || strings.Join(calls, ",") != "estimate" || !strings.Contains(w.Body.String(), `"SupportsDirectPlay":true`) || !strings.Contains(w.Body.String(), `"SupportsTranscoding":false`) {
 		t.Fatal(w.Code, w.Body.String(), calls)
 	}
@@ -212,7 +212,7 @@ func TestPlaybackQueryPassesSelectionsAndVerifiedPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?startTimeTicks=20000000&audioStreamIndex=3&subtitleStreamIndex=-1&maxStreamingBitrate=4000000&enableTranscoding=false", strings.NewReader(`{}`))
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?startTimeTicks=20000000&audioStreamIndex=3&subtitleStreamIndex=-1&maxStreamingBitrate=4000000&enableTranscoding=false", strings.NewReader(`{"IsPlayback":false}`))
 	r.Header.Set("X-Emby-Token", "grant")
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || !capsCalled || !planned {
@@ -233,7 +233,7 @@ func TestVersionSelectionDelegatesToBroker(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId=variant-1", strings.NewReader(`{}`))
+	r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo?MediaSourceId=variant-1", strings.NewReader(`{"IsPlayback":false}`))
 	r.Header.Set("X-Emby-Token", "grant")
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || version != "variant-1" {

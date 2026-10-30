@@ -70,7 +70,7 @@ func TestMediaBrowserRealGrantDeviceTokenOnly(t *testing.T) {
 			if detail.Code != 200 || json.Unmarshal(detail.Body.Bytes(), &body) != nil || len(body.Sources) == 0 || body.Sources[0].ID != ids.RatingKeyGUID(key) {
 				t.Fatal("token-only detail", detail.Code, detail.Body.String())
 			}
-			play := call("POST", "/Items/"+ids.RatingKeyGUID(key)+"/PlaybackInfo", `{}`, signed.AccessToken, "")
+			play := call("POST", "/Items/"+ids.RatingKeyGUID(key)+"/PlaybackInfo", `{"IsPlayback":false}`, signed.AccessToken, "")
 			if play.Code != 200 {
 				t.Fatal("token-only estimate", play.Code, play.Body.String())
 			}

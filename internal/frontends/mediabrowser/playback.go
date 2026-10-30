@@ -17,7 +17,7 @@ import (
 type playbackRequest struct {
 	MediaSourceId       string             `json:"MediaSourceId"`
 	DeviceProfile       caps.DeviceProfile `json:"DeviceProfile"`
-	IsPlayback          bool               `json:"IsPlayback"`
+	IsPlayback          *bool              `json:"IsPlayback"`
 	EnableDirectPlay    *bool              `json:"EnableDirectPlay"`
 	EnableDirectStream  *bool              `json:"EnableDirectStream"`
 	EnableTranscoding   *bool              `json:"EnableTranscoding"`
@@ -121,7 +121,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			channel, key = ch.ID, 0
 		}
 	}
-	playback := queryBool(r, "IsPlayback", body.IsPlayback)
+	// Native clients commonly omit IsPlayback when starting a stream. Only an
+	// explicit false is an estimate; opening details does not resolve releases.
+	playback := queryBool(r, "IsPlayback", boolValue(body.IsPlayback, true))
 	opts := frontend.DecideOptions{DirectPlay: queryBool(r, "EnableDirectPlay", boolValue(body.EnableDirectPlay, true)), DirectStream: queryBool(r, "EnableDirectStream", boolValue(body.EnableDirectStream, true)), AudioStream: -1, SubtitleStream: -1}
 	if body.AudioStreamIndex != nil {
 		opts.AudioStream = *body.AudioStreamIndex
@@ -200,6 +202,10 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Playback unavailable", 503)
 		return
 	}
+	if playback && (plan.Estimated || (channel == "" && plan.Media.Estimated)) {
+		http.Error(w, "Playback unavailable", 503)
+		return
+	}
 	if !allowed && plan.Decision.Kind == "transcode" {
 		http.Error(w, "Playback unavailable", 422)
 		return
@@ -210,7 +216,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	} else if version != "" {
 		sourceID = version
 	}
-	source := i.mediaSourceDTO(sourceID, plan.Media)
+	media := plan.Media
+	media.Estimated = media.Estimated || plan.Estimated
+	source := i.detailMediaSourceDTO(sourceID, media)
 	if channel != "" || plan.Decision.Kind == "transcode" {
 		// These streams are produced by Ether, even when their input is remote.
 		source["IsRemote"] = false
@@ -221,6 +229,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	source["SupportsDirectPlay"], source["SupportsDirectStream"], source["SupportsTranscoding"] = plan.DirectPlay, plan.DirectStream, plan.Transcoding
 	source["IsInfiniteStream"] = channel != ""
 	for _, stream := range plan.Media.Streams {
+		if media.Estimated { break }
 		if stream.Type == "audio" && stream.Default {
 			source["DefaultAudioStreamIndex"] = stream.Index
 			break
@@ -291,7 +300,7 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	i.mediaSourceDialect(source)
 	if i.protocol == "emby" {
-		i.embyMediaSourceDTO(source, wireID, plan.Media)
+		i.embyMediaSourceDTO(source, wireID, media)
 	}
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
 }

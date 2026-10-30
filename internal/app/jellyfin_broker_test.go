@@ -56,7 +56,7 @@ func TestJellyfinRealBrokerPlayback(t *testing.T) {
 		return w
 	}
 	path := "/Items/" + ids.RatingKeyGUID(core.MovieKey(5)) + "/PlaybackInfo"
-	w := call("POST", path, `{"EnableDirectPlay":true}`)
+	w := call("POST", path, `{"IsPlayback":false,"EnableDirectPlay":true}`)
 	if w.Code != 200 || len(p.Sessions()) != 0 {
 		t.Fatalf("estimate %d %s sessions=%d", w.Code, w.Body, len(p.Sessions()))
 	}
