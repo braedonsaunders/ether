@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -262,5 +263,53 @@ func TestTicketServiceMalformedLegacyRetained(t *testing.T) {
 	var n int
 	if err = db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, digest).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("malformed ticket count=%d err=%v", n, err)
+	}
+}
+
+// Maintenance must use the same injected clock as the issuing service.
+func TestTicketServiceMaintenanceUsesIssuingClock(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.Exec(`INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 123000000)
+	clock := func() time.Time { return now }
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "tv"}
+	credential, err := grants.Issue(ctx, 1, nil, "silo", device)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := identity.NewTicketService(db, "silo", grants, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := service.Issue(ctx, credential, device, "events-ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(token))
+	hash := hex.EncodeToString(digest[:])
+	now = now.Add(30*time.Second - time.Millisecond)
+	if _, err := capability.PruneExpired(ctx, db, clock()); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, hash).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("before expiry count=%d err=%v", n, err)
+	}
+	now = now.Add(time.Millisecond)
+	if _, err := capability.PruneExpired(ctx, db, clock()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM frontend_tickets WHERE hash=?`, hash).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("at expiry count=%d err=%v", n, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM capability_headers WHERE namespace='ticket' AND digest=?`, hash).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("expired header count=%d err=%v", n, err)
 	}
 }
