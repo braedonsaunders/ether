@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -71,14 +74,26 @@ func recordingDrift(p conform.Protocol, before, after string) (conform.Report, e
 				if a.Status == 0 || b.Status == 0 {
 					return report, fmt.Errorf("invalid fixture status: %s", name)
 				}
-				var r conform.Report
-				if contextual, ok := p.(conform.RequestComparer); ok {
-					r = contextual.CompareRequest(req, a, b)
-				} else {
-					r = p.Compare(a, b)
+				// Drift checks whether a recording changed. Protocol comparers also
+				// validate media semantics, which is a separate conformance gate:
+				// a partial capture can be byte-identical yet fail range validation.
+				old, err := json.Marshal(a)
+				if err != nil {
+					return report, err
 				}
-				r = r.WithRequest(profile, formatName(jm), req.Path)
-				report = mergeReports(report, r)
+				fresh, err := json.Marshal(b)
+				if err != nil {
+					return report, err
+				}
+				if !bytes.Equal(old, fresh) {
+					report.Differences = append(report.Differences, conform.Difference{
+						Client: profile, Format: formatName(jm), Endpoint: req.Path,
+						Path: "$fixture", Kind: conform.KindValue, Blocking: true,
+						Reference: fmt.Sprintf("sha256:%x", sha256.Sum256(old)),
+						Target:    fmt.Sprintf("sha256:%x", sha256.Sum256(fresh)),
+						Reason:    "recorded response changed; review the fixture diff",
+					})
+				}
 				report.Endpoints = append(report.Endpoints, profile+" "+req.Method+" "+req.Path)
 				count++
 			}

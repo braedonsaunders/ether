@@ -10,12 +10,16 @@ conformdiff drift -protocol emby -fixtures testdata/conform/emby -candidate /pat
 ```
 
 All profiles, requests and response formats in the current corpus must exist in
-both recordings. Missing, malformed or empty corpora fail. Status, headers and
-response schema use the existing protocol comparer, including request-specific
-rules. Value differences reported by that comparer also fail drift review.
-There are no extra ignore expressions or not-applicable manifest suppressions.
-This is a reference comparison, not Plex byte-identity proof or client certification.
-The semantic comparer intentionally does not compare every byte of media bodies.
+both recordings. Missing, malformed or empty corpora fail. Every captured response field is compared, including status, headers, body,
+range metadata, truncation and reference-defect annotations. JSON envelope
+formatting and map order do not count as changes; response bodies remain exact
+bytes. Any change fails review and reports the before/after SHA-256 hashes.
+There is no redaction, ignore expression or not-applicable suppression at this
+step. Inspect the fixture diff to review the content; raw bodies are not echoed
+into reports. This detects recording drift, not protocol validity. In particular,
+identical partial captures may still fail separate range or schema validation.
+Run those conformance gates as well. This is not Plex byte-identity proof or
+client certification.
 
 For a refresh, first reserve a window from the Lab Keeper. Only the Lab Keeper
 starts, stops or changes reference servers. Freeze the reference server version,
