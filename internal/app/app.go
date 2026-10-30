@@ -26,6 +26,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/handles/capability"
+	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/markers"
@@ -543,6 +544,9 @@ func (a *App) Run(ctx context.Context) error {
 func (a *App) housekeeping(ctx context.Context) {
 	pins := time.NewTicker(5 * time.Minute)
 	defer pins.Stop()
+	imageTimer := time.NewTicker(5 * time.Second)
+	defer imageTimer.Stop()
+	var imageSweep imageMaintenance
 	// The PMS release check is cluster-wide: leader only. Pins and
 	// seen-token flushes are this node's own.
 	lastCompat := time.Now()
@@ -555,6 +559,14 @@ func (a *App) housekeeping(ctx context.Context) {
 		case <-ctx.Done():
 			_ = a.users.FlushSeen(context.Background())
 			return
+		case <-imageTimer.C:
+			err := imageSweep.pass(ctx, a.cluster.IsLeader(), time.Now, func(ctx context.Context, now time.Time, shard int64) error {
+				_, err := identity.PruneImageGrantShard(ctx, a.db, now, shard)
+				return err
+			})
+			if err != nil && ctx.Err() == nil {
+				a.log.Warn("image grant maintenance failed", "err", err)
+			}
 		case <-pins.C:
 			if a.cluster.IsLeader() {
 				pruneCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
