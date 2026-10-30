@@ -336,10 +336,6 @@ func (s *Server) recommendSection(ctx context.Context, pr *Request, t core.Media
 	return (experience.HomeSelection{Source: s.d.Recommender, Visibility: s.visibility(), Restricted: s.viewerRestricted(pr.User)}).Rows(ctx, pr.User, hc, t, count)
 }
 
-func (s *Server) filterFallbackHubs(ctx context.Context, user *core.User, hubs []core.Hub) []core.Hub {
-	return (experience.HomeSelection{Visibility: s.visibility()}).Filter(ctx, user, hubs)
-}
-
 // recordImpressions hands the rows actually written, in response order, to
 // the recommender's impression sink when it has one. Sinks record
 // asynchronously; this never delays the response, which is already sent.
