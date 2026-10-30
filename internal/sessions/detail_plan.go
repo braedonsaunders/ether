@@ -33,6 +33,11 @@ func (b *Broker) DetailPlan(ctx context.Context, req frontend.PlanRequest) (fron
 	if req.Viewer == nil || req.Device.ID == "" || req.Protocol == "" || req.Item == 0 || req.Channel != "" || req.Intent.Plex != nil {
 		return frontend.PlayPlan{}, core.ErrUnauthorized
 	}
+	// Explicit source tracks require a generation pin through Open. Detail
+	// planning does not create an openable session, so it cannot promise them.
+	if req.Intent.AudioOrdinal != nil || req.Intent.SubtitleStreamIndex != nil {
+		return frontend.PlayPlan{}, frontend.ErrTrackSourceUnavailable
+	}
 	viewer, err := b.viewer(ctx, req.Viewer)
 	if err != nil {
 		if ctx.Err() != nil {

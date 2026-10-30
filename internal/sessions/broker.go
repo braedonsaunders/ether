@@ -197,6 +197,14 @@ func clientKey(protocol frontend.Protocol, device core.Device) string {
 	return fmt.Sprintf("%d:%s%s", len(protocol), protocol, device.ID)
 }
 func copyRequest(r frontend.PlanRequest) frontend.PlanRequest {
+	if r.Intent.AudioOrdinal != nil {
+		ordinal := *r.Intent.AudioOrdinal
+		r.Intent.AudioOrdinal = &ordinal
+	}
+	if r.Intent.SubtitleStreamIndex != nil {
+		index := *r.Intent.SubtitleStreamIndex
+		r.Intent.SubtitleStreamIndex = &index
+	}
 	if r.Intent.AllowTranscoding != nil {
 		allowed := *r.Intent.AllowTranscoding
 		r.Intent.AllowTranscoding = &allowed
@@ -329,6 +337,9 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		req.ExpectedSourceETag = record.revision
 		detail = &record
 	}
+	if req.Intent.Estimate && (req.Intent.AudioOrdinal != nil || req.Intent.SubtitleStreamIndex != nil) {
+		return frontend.PlayPlan{}, frontend.ErrTrackSourceUnavailable
+	}
 	if req.Intent.Estimate && req.Intent.ExactVersion {
 		info := b.deps.Playback.Estimate(ctx, title, req.Caps)
 		dec := core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true, Container: info.Container}
@@ -452,9 +463,23 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 			b.releasePlanSource(ps.ID, pinned)
 		}
 	}()
+	if req.Intent.AudioOrdinal != nil || req.Intent.SubtitleStreamIndex != nil {
+		if ps.Info.Estimated {
+			return frontend.PlayPlan{}, frontend.ErrTrackSourceUnavailable
+		}
+		if req.ExpectedSourceETag == "" {
+			req.ExpectedSourceETag = sourceRevision(ps)
+			if req.ExpectedSourceETag == "" {
+				return frontend.PlayPlan{}, frontend.ErrTrackSourceUnavailable
+			}
+		}
+	}
 	if req.ExpectedSourceETag != "" {
 		pins, ok := b.deps.Playback.(core.PlaybackRevisionPin)
 		if !ok {
+			if req.Intent.AudioOrdinal != nil || req.Intent.SubtitleStreamIndex != nil {
+				return frontend.PlayPlan{}, frontend.ErrTrackSourceUnavailable
+			}
 			return frontend.PlayPlan{}, frontend.ErrSourceGone
 		}
 		if err := pins.PinSourceRevision(ctx, ps.ID, req.ExpectedSourceETag); err != nil {
@@ -472,6 +497,9 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 			return frontend.PlayPlan{}, frontend.ErrSourceGone
 		}
 		ps = current
+	}
+	if err := bindSourceTracks(&req.Intent, ps.Info); err != nil {
+		return frontend.PlayPlan{}, err
 	}
 	if b.deps.SelectScopedTracks != nil || b.deps.SelectTracks != nil {
 		var selected core.DecideOptions
