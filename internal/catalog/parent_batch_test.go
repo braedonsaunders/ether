@@ -45,7 +45,7 @@ func TestResolveShowParentsMatchesGet(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1, detail_at=CASE WHEN key=? THEN ? ELSE ? END WHERE key IN (?,?)`, int64(warm), now.Unix(), now.Add(-48*time.Hour).Unix(), int64(warm), int64(stale)); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1, detail_at=CASE WHEN key=? THEN CAST(? AS BIGINT) ELSE CAST(? AS BIGINT) END WHERE key IN (?,?)`, int64(warm), now.Unix(), now.Add(-48*time.Hour).Unix(), int64(warm), int64(stale)); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.ResolveShowParents(ctx, []core.RatingKey{warm, stale, cold, missing})
@@ -124,7 +124,7 @@ func TestResolveShowParentsIndependentControls(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if _, err := dbcat.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1, detail_at=CASE WHEN key=? THEN ? ELSE ? END WHERE key IN (?,?)`, int64(warm), now.Unix(), now.Add(-48*time.Hour).Unix(), int64(warm), int64(stale)); err != nil {
+		if _, err := dbcat.db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1, detail_at=CASE WHEN key=? THEN CAST(? AS BIGINT) ELSE CAST(? AS BIGINT) END WHERE key IN (?,?)`, int64(warm), now.Unix(), now.Add(-48*time.Hour).Unix(), int64(warm), int64(stale)); err != nil {
 			t.Fatal(err)
 		}
 	}
