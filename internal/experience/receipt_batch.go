@@ -11,9 +11,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
-// IssueBatch atomically issues receipts in input order, bounded by the existing
-// per-device quota. A later response-level policy check may still fail after
-// commit; such unreturned receipts remain until their normal expiry and sweep.
+// IssueBatch atomically issues receipts and shared admission in input order.
 func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject) ([]string, error) {
 	if viewer == nil || viewer.ID <= 0 || device.ID == "" || protocol == "" || len(subjects) == 0 || len(subjects) > s.opts.MaxPerDevice {
 		return nil, ErrReceipt
@@ -75,51 +73,32 @@ func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device cor
 	if count+len(subjects) > s.opts.MaxPerDevice {
 		return nil, errors.New("experience: receipt limit reached")
 	}
-	tokens := make([]string, 0, len(subjects))
-	headers := make([]capability.Header, 0, min(len(subjects), capability.HeaderBatchMax))
+	tokens := make([]string, len(subjects))
+	hashes := make([]string, len(subjects))
 	expires := s.opts.Now().Add(s.opts.TTL).Unix()
-	for i, subject := range subjects {
-		var token, hash string
-		inserted := false
-		for attempt := 0; attempt < 3; attempt++ {
-			token, hash, err = s.codec.Issue()
-			if err != nil {
-				return nil, err
-			}
-			var resCount int64
-			res, e := tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression,generation) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(hash) DO NOTHING`, hash, viewer.ID, device.ID, string(protocol), expires, subject.Kind, subject.ID, string(subject.Purpose), subject.Rank, snapshots[i], generation)
-			if e != nil {
-				return nil, e
-			}
-			resCount, e = res.RowsAffected()
-			if e != nil {
-				return nil, e
-			}
-			if resCount == 1 {
-				inserted = true
-				break
-			}
-		}
-		if !inserted {
-			return nil, errors.New("experience: receipt collision")
-		}
-		tokens = append(tokens, token)
-		if s.opts.MirrorHeaders {
-			millis, e := receiptExpiresMillis(expires)
-			if e != nil {
-				return nil, e
-			}
-			headers = append(headers, capability.Header{HeaderScope: capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: viewer.ID, Surface: string(protocol), DeviceID: device.ID}, Digest: hash, ExpiresMillis: millis})
-			if len(headers) == capability.HeaderBatchMax {
-				if err = s.bindHeaders(ctx, tx, headers); err != nil {
-					return nil, err
-				}
-				headers = headers[:0]
-			}
+	millis, e := receiptExpiresMillis(expires)
+	if e != nil {
+		return nil, e
+	}
+	for i := range subjects {
+		tokens[i], hashes[i], err = s.codec.Issue()
+		if err != nil {
+			return nil, err
 		}
 	}
-	if len(headers) > 0 {
+	for start := 0; start < len(subjects); start += capability.HeaderBatchMax {
+		end := min(start+capability.HeaderBatchMax, len(subjects))
+		headers := make([]capability.Header, 0, end-start)
+		for _, hash := range hashes[start:end] {
+			headers = append(headers, capability.Header{HeaderScope: capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: viewer.ID, Surface: string(protocol), DeviceID: device.ID}, Digest: hash, ExpiresMillis: millis})
+		}
 		if err = s.bindHeaders(ctx, tx, headers); err != nil {
+			return nil, err
+		}
+	}
+	for i, subject := range subjects {
+		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression,generation) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, hashes[i], viewer.ID, device.ID, string(protocol), expires, subject.Kind, subject.ID, string(subject.Purpose), subject.Rank, snapshots[i], generation)
+		if err != nil {
 			return nil, err
 		}
 	}

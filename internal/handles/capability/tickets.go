@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	_ "github.com/braedonsaunders/ether/internal/handles/reservations"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 

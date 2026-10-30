@@ -105,3 +105,48 @@ func TestAdmissionConcurrentLastSlot(t *testing.T) {
 		t.Fatalf("admitted %d", won.Load())
 	}
 }
+
+func TestClaimsAndActiveRenewalPreserveOverboundState(t *testing.T) {
+	db, _, _ := fixture(t)
+	ctx := context.Background()
+	h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: "renewal", ViewerID: 1, Surface: "silo", DeviceID: "tv"}, Digest: entry(1900).Digest, ExpiresMillis: 10000}
+	other := h
+	other.Digest = entry(1901).Digest
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	// Model a preserved migration set above the new admission quota.
+	if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{h, other}); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, e := capability.ClaimHeaderInTx(ctx, db, tx, h, "impression", 1); e != nil || !claimed {
+		t.Fatalf("claim %v %v", claimed, e)
+	}
+	h.ExpiresMillis = 20000
+	if renewed, e := capability.RenewHeaderInTx(ctx, db, tx, h, 1); e != nil || !renewed {
+		t.Fatalf("active renewal %v %v", renewed, e)
+	}
+	if claimed, e := capability.ClaimHeaderInTx(ctx, db, tx, h, "impression", 1); e != nil || claimed {
+		t.Fatalf("claim reset by renewal %v %v", claimed, e)
+	}
+	fresh := h
+	fresh.Digest = entry(1902).Digest
+	var capacity *capability.CapacityError
+	if e := capability.AdmitHeadersInTx(ctx, db, tx, []capability.Header{fresh}, capability.Limits{PerScope: 1, PerShard: 1}); !errors.As(e, &capacity) {
+		t.Fatalf("fresh overbound admission %v", e)
+	}
+	foreign := h
+	foreign.DeviceID = "foreign"
+	if renewed, e := capability.RenewHeaderInTx(ctx, db, tx, foreign, 1); e != nil || renewed {
+		t.Fatalf("foreign renewal %v %v", renewed, e)
+	}
+	h.ExpiresMillis = 30000
+	if renewed, e := capability.RenewHeaderInTx(ctx, db, tx, h, 20000); e != nil || renewed {
+		t.Fatalf("expired renewal %v %v", renewed, e)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}

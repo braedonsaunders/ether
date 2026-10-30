@@ -63,18 +63,20 @@ func TestProductionReceiptMirrorFailureRollsBack(t *testing.T) {
 				t.Fatal(err)
 			}
 			other := strings.Repeat("b", 64)
-			if _, err = a.db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, other, viewer.ID, "other", "jellyfin", 1, "row", "other", "continue", 0); err != nil {
+			if _, err = a.db.ExecContext(ctx, `INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) VALUES(?,?,?,?,?,?,?)`, "experience.receipt", other, viewer.ID%64, viewer.ID, "jellyfin", "other", 1000); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = a.db.ExecContext(ctx, `INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) VALUES(?,?,?,?,?,?,?)`, "experience.receipt", other, viewer.ID%64, viewer.ID, "jellyfin", "other", 1000); err != nil {
+
+			if _, err = a.db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, other, viewer.ID, "other", "jellyfin", 1, "row", "other", "continue", 0); err != nil {
 				t.Fatal(err)
 			}
 			digest := strings.Repeat("a", 64)
 			if mode == "cleanup" {
-				if _, err = a.db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, digest, viewer.ID, "tv", "jellyfin", 1, "row", "old", "continue", 0); err != nil {
+				if _, err = a.db.ExecContext(ctx, `INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) VALUES(?,?,?,?,?,?,?)`, "experience.receipt", digest, viewer.ID%64, viewer.ID, "jellyfin", "tv", 1000); err != nil {
 					t.Fatal(err)
 				}
-				if _, err = a.db.ExecContext(ctx, `INSERT INTO capability_headers(namespace,digest,shard,viewer_id,surface,device_id,expires) VALUES(?,?,?,?,?,?,?)`, "experience.receipt", digest, viewer.ID%64, viewer.ID, "jellyfin", "tv", 1000); err != nil {
+
+				if _, err = a.db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, digest, viewer.ID, "tv", "jellyfin", 1, "row", "old", "continue", 0); err != nil {
 					t.Fatal(err)
 				}
 			}
