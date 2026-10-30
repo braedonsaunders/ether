@@ -104,7 +104,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 			for _, mode := range []string{"compare", "live"} {
 				report := conform.Report{}
 				for _, clientName := range strings.Split(spec.client, ",") {
-					t.Run(mode+"/"+clientName, func(t *testing.T) {
+					passed := t.Run(mode+"/"+clientName, func(t *testing.T) {
 						target := newLabProfileTarget(t, jellyfinRef, spec.proto, clientName)
 						defer target.close()
 						protocolVersion = target.version
@@ -145,11 +145,12 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 						report.Differences = append(report.Differences, partial.Differences...)
 						report.ReferenceDefects = append(report.ReferenceDefects, partial.ReferenceDefects...)
 					})
-					if t.Failed() {
+					if !passed {
 						validEvidence = false
 					}
 				}
 				if reportDir := os.Getenv("LAB_REPORT_DIR"); reportDir != "" {
+					reportDir = filepath.Join(reportDir, "isolated-profile-phase-v1")
 					if err := os.MkdirAll(reportDir, 0700); err != nil {
 						t.Fatal(err)
 					}
@@ -1475,9 +1476,9 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 		if target.server != nil {
 			target.server.Close()
 		}
-		labTargetLifecycle(t, a, "before_app_close")
+		labTargetLifecycle(t, a, viewer.ID, "before_app_close")
 		dispose()
-		labTargetLifecycle(t, a, "after_app_close")
+		labTargetLifecycle(t, a, viewer.ID, "after_app_close")
 		counts := a.frontends.broker.ConformLabLifecycleCounters(viewer.ID)
 		for _, key := range []string{"plans", "pending", "source_leases", "source_plan_refs", "source_session_refs", "broker_sessions", "detail_flights"} {
 			if counts[key] != 0 {
@@ -1577,11 +1578,11 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 			t.Fatal("unreleased candidate was exposed")
 		}
 	}
-	labTargetLifecycle(t, a, "after_current_client_preflight")
+	labTargetLifecycle(t, a, viewer.ID, "after_current_client_preflight")
 	return target
 }
 
-func labTargetLifecycle(t *testing.T, a *App, stage string) {
+func labTargetLifecycle(t *testing.T, a *App, viewerID int64, stage string) {
 	total, prepared, open := 0, 0, 0
 	for _, source := range a.playback.Sessions() {
 		total++
@@ -1592,7 +1593,7 @@ func labTargetLifecycle(t *testing.T, a *App, stage string) {
 			open++
 		}
 	}
-	t.Logf("lab_target_lifecycle stage=%s playback_total=%d prepared=%d active=%d sources_open=%d owner_visible=%d broker=%v non_atomic=true", stage, total, prepared, total-prepared, open, len((ownerPlayback{Playback: a.playback, app: a}).Sessions()), a.frontends.broker.ConformLabLifecycleCounters(0))
+	t.Logf("lab_target_lifecycle stage=%s playback_total=%d prepared=%d active=%d sources_open=%d owner_visible=%d broker=%v non_atomic=true", stage, total, prepared, total-prepared, open, len((ownerPlayback{Playback: a.playback, app: a}).Sessions()), a.frontends.broker.ConformLabLifecycleCounters(viewerID))
 }
 
 // Anonymous inherited pipes avoid persisting token-bearing variable JSON. Pipe
