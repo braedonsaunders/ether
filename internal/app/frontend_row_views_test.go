@@ -257,13 +257,21 @@ func TestRowViewBatchedTitlesKeepFallbackAndGuideScope(t *testing.T) {
 }
 
 func TestRowViewBatchMatchesIndependentLegacy(t *testing.T) {
+	// Two independently migrated stores are reset before every case. Each
+	// case also constructs a new catalog so no in-process admission cache
+	// or title cache can leak across cases.
+	legacyDB, candidateDB := store.OpenTest(t), store.OpenTest(t)
 	for _, mode := range []string{"admission", "virtual", "missing", "batch_error"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			u := &core.User{ID: 7}
 			now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-			makeSource := func() (*catalog.Catalog, func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error), func(context.Context, *core.User, core.RatingKey) (*core.Title, error)) {
-				db := store.OpenTest(t)
+			makeSource := func(db *sql.DB) (*catalog.Catalog, func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error), func(context.Context, *core.User, core.RatingKey) (*core.Title, error)) {
+				for _, table := range []string{"catalog_home_release", "catalog_titles"} {
+					if _, e := db.ExecContext(ctx, "DELETE FROM "+table); e != nil {
+						t.Fatal(e)
+					}
+				}
 				c, e := catalog.New(db, nil, config.Catalog{GateMoviesByHomeRelease: true}, nil, catalog.WithNow(func() time.Time { return now }))
 				if e != nil {
 					t.Fatal(e)
@@ -295,8 +303,8 @@ func TestRowViewBatchMatchesIndependentLegacy(t *testing.T) {
 				}
 				return c, one, get
 			}
-			_, legacy, _ := makeSource()
-			candidate, one, get := makeSource()
+			_, legacy, _ := makeSource(legacyDB)
+			candidate, one, get := makeSource(candidateDB)
 			key := core.MovieKey(10)
 			if mode == "virtual" {
 				key = core.SeasonKey(99, 1)
