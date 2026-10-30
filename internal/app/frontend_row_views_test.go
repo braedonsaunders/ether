@@ -316,3 +316,48 @@ func TestRowViewBatchMatchesIndependentLegacy(t *testing.T) {
 		})
 	}
 }
+
+func TestRowViewBatchAdmissionFailureAndParentReadFallback(t *testing.T) {
+	ctx := context.Background()
+	u := &core.User{ID: 7}
+	movie := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, HomeReleaseChecked: true}
+	show := core.Title{Key: core.ShowKey(2), Type: core.TypeShow}
+	ep := core.Title{Key: core.EpisodeKey(2, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key}
+	vis := experience.Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }}
+	live := func(context.Context, *core.User) ([]frontend.RowEntry, error) { return nil, core.ErrNotFound }
+	one := func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, ref core.NeutralEntryRef) (frontend.RowEntry, error) {
+		if ref.ID == ep.Key.String() {
+			return frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &ep}, nil
+		}
+		return frontend.RowEntry{}, core.ErrNotFound
+	}
+	get := func(context.Context, *core.User, core.RatingKey) (*core.Title, error) {
+		return nil, errors.New("admission write/read failure")
+	}
+	batch := func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+		out := map[core.RatingKey]core.Title{}
+		for _, k := range keys {
+			if k == movie.Key {
+				out[k] = movie
+			}
+		}
+		return out, nil
+	}
+	refs := []core.NeutralEntryRef{{Kind: string(frontend.RowEntryTitle), ID: movie.Key.String()}}
+	if got, err := rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, vis, live); err == nil || len(got) != 0 {
+		t.Fatalf("admission failure leaked %+v %v", got, err)
+	}
+	calls := 0
+	batch = func(_ context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+		calls++
+		if calls == 2 {
+			return nil, errors.New("parent batch read failed")
+		}
+		return map[core.RatingKey]core.Title{ep.Key: ep}, nil
+	}
+	refs[0].ID = ep.Key.String()
+	got, err := rowViewResolveBatchTitles(ctx, u, core.Device{ID: "d"}, "jellyfin", refs, one, batch, get, vis, live)
+	if err != nil || len(got) != 1 || got[0].Title.Key != ep.Key || calls != 2 {
+		t.Fatalf("legacy parent fallback %+v calls=%d err=%v", got, calls, err)
+	}
+}
