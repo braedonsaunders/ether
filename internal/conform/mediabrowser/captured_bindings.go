@@ -189,7 +189,15 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 			return false
 		}
 		defer resp.Body.Close()
-		return resp.StatusCode == 200 && json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(v) == nil
+		if resp.StatusCode != 200 {
+			return false
+		}
+		decoder := json.NewDecoder(io.LimitReader(resp.Body, 16<<20))
+		if decoder.Decode(v) != nil {
+			return false
+		}
+		var extra any
+		return decoder.Decode(&extra) == io.EOF
 	}
 	var user struct {
 		ID string `json:"Id"`

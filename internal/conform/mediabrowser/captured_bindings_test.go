@@ -218,21 +218,28 @@ func TestCapturedBindingsVersionProvenanceCannotBecomeToken(t *testing.T) {
 }
 
 func TestCapturedBindingsDiscardPartialDiscovery(t *testing.T) {
-	p := captureTestProtocol(t)
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/Users/Me" {
-			_, _ = w.Write([]byte(`{"Id":"owned-user"}`))
-			return
-		}
-		// A type error may leave an otherwise matching first item populated.
-		_, _ = w.Write([]byte(`{"Items":[{"Id":"partial-item","Type":"Movie","ProviderIds":{"Tmdb":"45745"}},{"Id":17}]}`))
-	}))
-	defer s.Close()
-	p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
-	_, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000126"), map[string]string{"device_id": "run-device"})
-	if err == nil {
-		t.Fatal("partial discovery accepted")
+	for _, body := range []string{
+		`{"Items":[{"Id":"partial-item","Type":"Movie","ProviderIds":{"Tmdb":"45745"}},{"Id":17}]}`,
+		`{"Items":[{"Id":"partial-item","Type":"Movie","ProviderIds":{"Tmdb":"45745"}}`,
+		`{"Items":[{"Id":"partial-item","Type":"Movie","ProviderIds":{"Tmdb":"45745"}}]}junk`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			p := captureTestProtocol(t)
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/Users/Me" {
+					_, _ = w.Write([]byte(`{"Id":"owned-user"}`))
+					return
+				}
+				_, _ = w.Write([]byte(body))
+			}))
+			defer s.Close()
+			p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+			_, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000126"), map[string]string{"device_id": "run-device"})
+			if err == nil {
+				t.Fatal("partial or malformed discovery accepted")
+			}
+		})
 	}
 }
 
