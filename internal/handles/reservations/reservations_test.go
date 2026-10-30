@@ -218,3 +218,84 @@ func TestReservationsRejectCrossShardTransaction(t *testing.T) {
 		t.Fatalf("cross-shard release removed=%t err=%v", removed, err)
 	}
 }
+
+func TestReservationsConcurrentReleaseAndReserve(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	db := reservationDB(t)
+	ledger, err := New(db, Policy{Namespace: "ticket", Shards: 2, PerShard: 1, PerViewerSurface: 1, TTL: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := Reservation{Digest: fmt.Sprintf("%064x", 1), ViewerID: 1, Surface: "silo"}
+	fresh := old
+	fresh.Digest = fmt.Sprintf("%064x", 2)
+	tx, err := ledger.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Reserve(ctx, old); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	out := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		tx, e := ledger.Begin(ctx)
+		if e != nil {
+			out <- e
+			return
+		}
+		defer tx.Rollback()
+		removed, e := tx.Release(ctx, old)
+		if e == nil && !removed {
+			e = errors.New("expected old reservation")
+		}
+		if e == nil {
+			e = tx.Commit()
+		}
+		out <- e
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		tx, e := ledger.Begin(ctx)
+		if e != nil {
+			out <- e
+			return
+		}
+		defer tx.Rollback()
+		_, e = tx.Reserve(ctx, fresh)
+		if e == nil {
+			e = tx.Commit()
+		}
+		out <- e
+	}()
+	close(start)
+	wg.Wait()
+	close(out)
+	for e := range out {
+		if e != nil {
+			var capacity *CapacityError
+			if !errors.As(e, &capacity) {
+				t.Fatalf("unexpected race failure: %v", e)
+			}
+		}
+	}
+	var total, oldCount int
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM handle_reservations WHERE namespace=?`, "ticket").Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM handle_reservations WHERE namespace=? AND digest=?`, "ticket", old.Digest).Scan(&oldCount); err != nil {
+		t.Fatal(err)
+	}
+	if total > 1 || oldCount != 0 {
+		t.Fatalf("race state total=%d old=%d", total, oldCount)
+	}
+}
