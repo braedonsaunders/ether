@@ -201,14 +201,15 @@ func TestReceiptBoundedSweepIgnoresExpiredBacklogForQuota(t *testing.T) {
 	scope := capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: 7, Surface: "jellyfin", DeviceID: "tv"}
 	for i := 0; i < 129; i++ {
 		digest := fmt.Sprintf("%064x", i+1)
-		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, digest, 7, "tv", "jellyfin", now.Unix()-1, "title", "old", "", 0)
-		if err != nil {
-			t.Fatal(err)
-		}
 		h := capability.Header{HeaderScope: scope, Digest: digest, ExpiresMillis: now.Add(-time.Second).UnixMilli()}
 		if err = capability.BindHeadersInTx(ctx, tx, []capability.Header{h}); err != nil {
 			t.Fatal(err)
 		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, digest, 7, "tv", "jellyfin", now.Unix()-1, "title", "old", "", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 	}
 	if err = tx.Commit(); err != nil {
 		t.Fatal(err)
@@ -248,9 +249,7 @@ func TestReceiptBoundedSweepDropFailureRollsBack(t *testing.T) {
 	}
 	ctx := context.Background()
 	for _, row := range []struct{ digest, device string }{{fmt.Sprintf("%064x", 1), "tv"}, {fmt.Sprintf("%064x", 2), "other"}} {
-		if _, err = db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, row.digest, 7, row.device, "jellyfin", now.Unix()-1, "title", "old", "", 0); err != nil {
-			t.Fatal(err)
-		}
+
 		tx, e := db.BeginTx(ctx, nil)
 		if e != nil {
 			t.Fatal(e)
@@ -262,6 +261,9 @@ func TestReceiptBoundedSweepDropFailureRollsBack(t *testing.T) {
 		}
 		if e = tx.Commit(); e != nil {
 			t.Fatal(e)
+		}
+		if _, err = db.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, row.digest, 7, row.device, "jellyfin", now.Unix()-1, "title", "old", "", 0); err != nil {
+			t.Fatal(err)
 		}
 	}
 	token, err := s.Issue(ctx, &core.User{ID: 7}, core.Device{ID: "tv"}, "jellyfin", ReceiptSubject{Kind: "title", ID: "new"})
@@ -297,6 +299,10 @@ func TestReceiptBoundedSweepBatchQuota(t *testing.T) {
 	}
 	defer tx.Rollback()
 	for i := 0; i < 129; i++ {
+		h := capability.Header{HeaderScope: capability.HeaderScope{Namespace: ReceiptCapabilityNamespace, ViewerID: 7, Surface: "jellyfin", DeviceID: "tv"}, Digest: fmt.Sprintf("%064x", i+1), ExpiresMillis: now.Add(-time.Second).UnixMilli()}
+		if err = capability.AdmitHeadersInTx(ctx, db, tx, []capability.Header{h}, capability.Limits{PerScope: receiptPerScope, PerShard: receiptPerShard}); err != nil {
+			t.Fatal(err)
+		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank) VALUES(?,?,?,?,?,?,?,?,?)`, fmt.Sprintf("%064x", i+1), 7, "tv", "jellyfin", now.Unix()-1, "title", "old", "", 0)
 		if err != nil {
 			t.Fatal(err)

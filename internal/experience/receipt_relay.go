@@ -12,24 +12,10 @@ import (
 // receipts. It is not the ticket namespace and it is not an authority.
 const ReceiptCapabilityNamespace = "experience.receipt"
 
-// Lock order for a mirrored issue, all inside one transaction on the receipt
-// database:
-//
-//  1. LockKey("experience:receipts:{viewer}:{device}")
-//  2. Delete expired experience_receipts for that viewer and device only
-//  3. DropHeadersInTx for those digests, at most HeaderBatchMax per call,
-//     grouped by surface
-//  4. Count remaining experience_receipts for the quota
-//  5. Insert the legacy receipt
-//  6. BindHeadersInTx for that one digest
-//
-// Report locks only "experience:receipt:{hash}" and does not read or write
-// headers. BindHeadersInTx, DropHeadersInTx, and PruneHeadersInTx are called
-// only when they take no advisory lock. This adapter never calls PruneHeadersInTx
-// and never calls the ticket namespace: a namespace-wide prune would touch
-// other viewers while this transaction holds only the viewer-device lock.
-//
-// MirrorHeaders defaults off. Turning it on is not a production cutover.
+// Receipt admission uses the common bounded header store; domain payload and
+// policy remain here. Both are committed and retired together.
+const receiptPerScope = 100000
+const receiptPerShard = 400000
 
 func receiptExpiresMillis(expiresUnix int64) (int64, error) {
 	if expiresUnix <= 0 || expiresUnix > math.MaxInt64/1000 {
@@ -57,7 +43,7 @@ func (s *Receipts) bindHeaders(ctx context.Context, tx *sql.Tx, headers []capabi
 	if s.opts.bindHeaders != nil {
 		return s.opts.bindHeaders(ctx, tx, headers)
 	}
-	return capability.BindHeadersInTx(ctx, tx, headers)
+	return capability.AdmitHeadersInTx(ctx, s.opts.DB, tx, headers, capability.Limits{PerScope: receiptPerScope, PerShard: receiptPerShard})
 }
 
 func (s *Receipts) dropHeaders(ctx context.Context, tx *sql.Tx, scope capability.HeaderScope, digests []string) error {
@@ -79,10 +65,6 @@ func (s *Receipts) sweepExpired(ctx context.Context, tx *sql.Tx, viewer int64, d
 	}
 	query := `DELETE FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=? AND hash IN (SELECT hash FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=? ORDER BY expires,hash LIMIT ?)`
 	args := []any{viewer, device, now, viewer, device, now, cleanupMax}
-	if !s.opts.MirrorHeaders {
-		_, err := tx.ExecContext(ctx, query, args...)
-		return err
-	}
 	rows, err := tx.QueryContext(ctx, query+` RETURNING hash, protocol`, args...)
 	if err != nil {
 		return err
@@ -116,24 +98,4 @@ func (s *Receipts) sweepExpired(ctx context.Context, tx *sql.Tx, viewer int64, d
 		}
 	}
 	return nil
-}
-
-func (s *Receipts) mirrorIssued(ctx context.Context, tx *sql.Tx, viewer int64, deviceID, surface, digest string, expiresUnix int64) error {
-	if !s.opts.MirrorHeaders {
-		return nil
-	}
-	millis, err := receiptExpiresMillis(expiresUnix)
-	if err != nil {
-		return err
-	}
-	return s.bindHeaders(ctx, tx, []capability.Header{{
-		HeaderScope: capability.HeaderScope{
-			Namespace: ReceiptCapabilityNamespace,
-			ViewerID:  viewer,
-			Surface:   surface,
-			DeviceID:  deviceID,
-		},
-		Digest:        digest,
-		ExpiresMillis: millis,
-	}})
 }

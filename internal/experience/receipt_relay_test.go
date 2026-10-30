@@ -26,12 +26,11 @@ import (
 //
 // PostgreSQL uses the same gate with ETHER_TEST_POSTGRES set to a reviewer-supplied
 // server. OpenTest selects that dialect. Do not point it at production.
-// This process does not switch MirrorHeaders on for callers that leave it unset.
+// Shared admission is mandatory for every issuer.
 
 func relayOptions(db *sql.DB, now *time.Time, max int, mirror bool, calls *int) ReceiptOptions {
 	return ReceiptOptions{
-		DB: db, TTL: time.Minute, MaxPerDevice: max, MirrorHeaders: mirror,
-		Now: func() time.Time { return *now },
+		DB: db, TTL: time.Minute, MaxPerDevice: max, Now: func() time.Time { return *now },
 		Active: func(_ context.Context, id int64) (*core.User, error) {
 			return &core.User{ID: id}, nil
 		},
@@ -75,7 +74,6 @@ func TestReceiptRelayLegacyAuthorityGate(t *testing.T) {
 			t.Fatal(err)
 		}
 		plainOpts := opts
-		plainOpts.MirrorHeaders = false
 		plain, err := NewReceipts(plainOpts)
 		if err != nil {
 			t.Fatal(err)
@@ -157,7 +155,7 @@ func TestReceiptRelayLegacyAuthorityGate(t *testing.T) {
 			t.Fatal("header authorized a missing receipt")
 		}
 		var headers int
-		if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND digest=?`, ReceiptCapabilityNamespace, digest).Scan(&headers); err != nil || headers != 1 {
+		if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=? AND digest=?`, ReceiptCapabilityNamespace, digest).Scan(&headers); err != nil || headers != 0 {
 			t.Fatalf("orphan header count=%d err=%v", headers, err)
 		}
 	})
@@ -188,7 +186,7 @@ func TestReceiptRelayLegacyAuthorityGate(t *testing.T) {
 		if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts`).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("authority rows=%d err=%v", n, err)
 		}
-		if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, ReceiptCapabilityNamespace).Scan(&n); err != nil || n != 2 {
+		if err = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM capability_headers WHERE namespace=?`, ReceiptCapabilityNamespace).Scan(&n); err != nil || n != 1 {
 			t.Fatalf("headers=%d err=%v", n, err)
 		}
 	})
@@ -246,8 +244,8 @@ func TestReceiptRelayLegacyAuthorityGate(t *testing.T) {
 			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM experience_receipts WHERE hash=?`, headers[0].Digest).Scan(&n); err != nil {
 				return err
 			}
-			if n != 1 {
-				t.Errorf("bind ran without the authority row")
+			if n != 0 {
+				t.Errorf("authority inserted before admission")
 			}
 			return errBind
 		}

@@ -85,7 +85,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	interactions := experience.RowInteractionPolicy{Libraries: libs, Visibility: vis, Get: a.catalog.Get, AllowEntry: allowEntry, CollectionMembers: func(ctx context.Context, u *core.User, key core.RatingKey, entries []core.NeutralEntryRef) bool {
 		return rowViewCollectionMembers(ctx, a.collections, u, key, entries)
 	}, Impression: a.personalize.RecordNeutralImpression, DetailOpen: a.personalize.RecordDetailOpen}
-	receipts, err := experience.NewReceipts(experience.ReceiptOptions{DB: a.db, Active: a.users.ActiveUser, TTL: 30 * time.Minute, MaxPerDevice: 10000, MirrorHeaders: true, Allowed: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject) bool {
+	receipts, err := experience.NewReceipts(experience.ReceiptOptions{DB: a.db, Active: a.users.ActiveUser, TTL: 30 * time.Minute, MaxPerDevice: 10000, Allowed: func(ctx context.Context, u *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject) bool {
 		return interactions.Allowed(ctx, u, subject)
 	}, AllowedAction: func(_ context.Context, _ *core.User, _ core.Device, _ core.Protocol, subject experience.ReceiptSubject, kind frontend.RowInteractionKind) bool {
 		return (kind == frontend.RowImpression && subject.Kind == "row" && subject.Impression != nil) || (kind == frontend.RowClick && subject.Kind == string(frontend.RowEntryTitle))
