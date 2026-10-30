@@ -217,6 +217,68 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	if expand && q.Sort == core.SortAdded {
 		return core.Page{}, errors.New("experience: recursive added-time sorting unavailable")
 	}
+	// Recursive episode queries keep at most one bounded batch of visible,
+	// statically matching candidates in addition to the existing results.
+	var recursiveBatch []core.Title
+	flushRecursive := func() error {
+		if len(recursiveBatch) == 0 {
+			return nil
+		}
+		chunk := recursiveBatch
+		var watched map[core.RatingKey]core.WatchStatus
+		if q.Watched != nil {
+			keys := make([]core.RatingKey, len(chunk))
+			for i := range chunk {
+				keys[i] = chunk[i].Key
+			}
+			var e error
+			watched, e = s.d.State.GetMany(ctx, v.ID, keys)
+			if e != nil {
+				return e
+			}
+		}
+		eligible := make([]core.Title, 0, len(chunk))
+		for _, title := range chunk {
+			if q.Watched == nil || (watched[title.Key].ViewCount > 0) == *q.Watched {
+				eligible = append(eligible, title)
+			}
+		}
+		var favorites map[core.RatingKey]bool
+		if q.Favorite != nil && s.d.IsFavoriteMany != nil && len(eligible) > 0 {
+			keys := make([]core.RatingKey, len(eligible))
+			for i := range eligible {
+				keys[i] = eligible[i].Key
+			}
+			var e error
+			favorites, e = s.d.IsFavoriteMany(ctx, v, keys)
+			if e != nil {
+				return e
+			}
+		}
+		for _, title := range eligible {
+			if q.Favorite != nil {
+				var yes bool
+				if s.d.IsFavoriteMany != nil {
+					yes = favorites[title.Key]
+				} else {
+					if s.d.IsFavorite == nil {
+						return errors.New("experience: favorites unavailable")
+					}
+					var e error
+					yes, e = s.d.IsFavorite(ctx, v, title.Key)
+					if e != nil {
+						return e
+					}
+				}
+				if yes != *q.Favorite {
+					continue
+				}
+			}
+			permitted = append(permitted, title)
+		}
+		recursiveBatch = recursiveBatch[:0]
+		return nil
+	}
 	for offset := 0; ; {
 		filter := q.Filter
 		if expand {
@@ -250,12 +312,19 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 					continue
 				}
 				if expand {
-					ok, e := s.matchesUserQuery(ctx, v, *title, q)
+					staticQuery := q
+					staticQuery.Watched, staticQuery.Favorite = nil, nil
+					ok, e := s.matchesUserQuery(ctx, v, *title, staticQuery)
 					if e != nil {
 						return core.Page{}, e
 					}
 					if ok {
-						permitted = append(permitted, *title)
+						recursiveBatch = append(recursiveBatch, *title)
+						if len(recursiveBatch) == 400 {
+							if e = flushRecursive(); e != nil {
+								return core.Page{}, e
+							}
+						}
 					}
 				} else {
 					candidatesPage = append(candidatesPage, *title)
@@ -317,6 +386,11 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			return core.Page{}, errors.New("experience: incomplete catalogue page")
 		}
 		if err = ctx.Err(); err != nil {
+			return core.Page{}, err
+		}
+	}
+	if expand {
+		if err := flushRecursive(); err != nil {
 			return core.Page{}, err
 		}
 	}

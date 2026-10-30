@@ -1,0 +1,105 @@
+package experience
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+func TestRecursiveBrowseBatchesOnlyVisibleEpisodes(t *testing.T) {
+	ctx := context.Background()
+	viewer := &core.User{ID: 7}
+	active := true
+	missingParent := false
+	show := core.Title{Key: core.ShowKey(1), Type: core.TypeShow}
+	hidden := core.Title{Key: core.ShowKey(2), Type: core.TypeShow, Adult: true}
+	var episodes []core.Title
+	for i := 1; i <= 803; i++ {
+		episodes = append(episodes, core.Title{Key: core.EpisodeKey(1, 1, i), ShowKey: show.Key, Type: core.TypeEpisode, Adult: i == 4})
+	}
+	st := &countingBrowseState{}
+	expandedHidden := 0
+	favoriteBatches := 0
+	favoriteErr := error(nil)
+	svc := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) {
+		if !active {
+			return nil, core.ErrNotFound
+		}
+		return viewer, nil
+	}, Libraries: []Library{{ID: 2, Type: core.TypeShow}}, State: st, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 2, true }, GetTitle: func(_ context.Context, k core.RatingKey) (*core.Title, error) {
+		if missingParent {
+			return nil, core.ErrNotFound
+		}
+		if k == show.Key {
+			return &show, nil
+		}
+		return nil, core.ErrNotFound
+	}}, Browse: func(context.Context, core.BrowseQuery) (core.Page, error) {
+		return core.Page{Items: []core.Title{show, hidden}, Total: 2}, nil
+	}, Grandchildren: func(_ context.Context, _ *core.User, k core.RatingKey) ([]core.Title, error) {
+		if k == hidden.Key {
+			expandedHidden++
+		}
+		return episodes, nil
+	}, IsFavoriteMany: func(_ context.Context, _ *core.User, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
+		favoriteBatches++
+		if len(keys) > 400 {
+			t.Fatalf("unbounded favorites batch %d", len(keys))
+		}
+		if favoriteErr != nil {
+			return nil, favoriteErr
+		}
+		out := make(map[core.RatingKey]bool, len(keys))
+		for _, k := range keys {
+			out[k] = true
+		}
+		return out, nil
+	}}}
+	watched, favorite := true, true
+	q := frontend.ItemQuery{Recursive: true, Types: []core.MediaType{core.TypeEpisode}, Watched: &watched, Favorite: &favorite, Offset: 2, Limit: 3}
+	page, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q)
+	if err != nil || page.Total != 400 || len(page.Items) != 3 || page.Items[0].Key != core.EpisodeKey(1, 1, 8) || page.Items[1].Key != core.EpisodeKey(1, 1, 10) || page.Items[2].Key != core.EpisodeKey(1, 1, 12) {
+		t.Fatalf("page %+v: %v", page, err)
+	}
+	if st.gets != 0 || st.batches != 3 || favoriteBatches != 3 || expandedHidden != 0 {
+		t.Fatalf("calls get=%d state batches=%d favorite batches=%d hidden expansion=%d", st.gets, st.batches, favoriteBatches, expandedHidden)
+	}
+	for _, k := range st.keys {
+		if k == core.EpisodeKey(1, 1, 4) || k == show.Key {
+			t.Fatalf("hidden or wrong type key in state batch: %s", k)
+		}
+	}
+	// The optional batch capability may be absent; the established per-item path remains.
+	svc.d.IsFavoriteMany = nil
+	fallback := 0
+	svc.d.IsFavorite = func(context.Context, *core.User, core.RatingKey) (bool, error) { fallback++; return true, nil }
+	fallbackPage, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q)
+	if err != nil || fallbackPage.Total != page.Total || fallback != 400 {
+		t.Fatalf("fallback %+v calls=%d err=%v", fallbackPage, fallback, err)
+	}
+	failure := errors.New("state failed")
+	st.err = failure
+	if got, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q); !errors.Is(err, failure) || len(got.Items) != 0 {
+		t.Fatalf("state failure: %+v %v", got, err)
+	}
+	st.err = nil
+	favoriteErr = errors.New("favorite failed")
+	svc.d.IsFavoriteMany = func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error) {
+		return nil, favoriteErr
+	}
+	if got, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q); !errors.Is(err, favoriteErr) || len(got.Items) != 0 {
+		t.Fatalf("favorite failure: %+v %v", got, err)
+	}
+	favoriteErr = nil
+	missingParent = true
+	if got, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q); err != nil || got.Total != 0 {
+		t.Fatalf("missing parent: %+v %v", got, err)
+	}
+	active = false
+	if _, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", q); err == nil {
+		t.Fatal("revoked viewer accepted")
+	}
+}
