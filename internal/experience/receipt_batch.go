@@ -6,13 +6,32 @@ import (
 	"errors"
 	"fmt"
 
+	"database/sql"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/store"
+	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
 
 // IssueBatch atomically issues receipts and shared admission in input order.
 func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject) ([]string, error) {
+	return s.issueBatchChecked(ctx, viewer, device, protocol, subjects, nil, nil)
+}
+
+func (s *Receipts) issueBatchChecked(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject, current func() bool, fence func(*sql.Tx) error) ([]string, error) {
+	for attempt := 0; ; attempt++ {
+		tokens, err := s.issueBatchAttempt(ctx, viewer, device, protocol, subjects, current, fence)
+		if !errors.Is(err, viewerpolicy.ErrChanged) || attempt == 1 {
+			return tokens, err
+		}
+	}
+}
+
+func (s *Receipts) issueBatchAttempt(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, subjects []ReceiptSubject, current func() bool, fence func(*sql.Tx) error) ([]string, error) {
+	epoch, err := viewerpolicy.Read(ctx, s.opts.DB)
+	if err != nil {
+		return nil, err
+	}
 	if viewer == nil || viewer.ID <= 0 || device.ID == "" || protocol == "" || len(subjects) == 0 || len(subjects) > s.opts.MaxPerDevice {
 		return nil, ErrReceipt
 	}
@@ -54,12 +73,18 @@ func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device cor
 			return nil, ErrReceipt
 		}
 	}
+	if current != nil && !current() {
+		return nil, ErrRowViewStale
+	}
 	tx, err := s.opts.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 	if err = store.LockKey(ctx, store.DialectOf(s.opts.DB), tx, fmt.Sprintf("experience:receipts:%d:%s", viewer.ID, device.ID)); err != nil {
+		return nil, err
+	}
+	if err = viewerpolicy.Fence(ctx, s.opts.DB, tx, epoch); err != nil {
 		return nil, err
 	}
 	now := s.opts.Now().Unix()
@@ -99,6 +124,14 @@ func (s *Receipts) IssueBatch(ctx context.Context, viewer *core.User, device cor
 	for i, subject := range subjects {
 		_, err = tx.ExecContext(ctx, `INSERT INTO experience_receipts(hash,viewer_id,device_id,protocol,expires,kind,subject,purpose,rank,impression,generation) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, hashes[i], viewer.ID, device.ID, string(protocol), expires, subject.Kind, subject.ID, string(subject.Purpose), subject.Rank, snapshots[i], generation)
 		if err != nil {
+			return nil, err
+		}
+	}
+	if err = viewerpolicy.Fence(ctx, s.opts.DB, tx, epoch); err != nil {
+		return nil, err
+	}
+	if fence != nil {
+		if err = fence(tx); err != nil {
 			return nil, err
 		}
 	}

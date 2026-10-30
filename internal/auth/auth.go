@@ -1163,6 +1163,19 @@ func (s *Service) ActiveUser(ctx context.Context, id int64) (*core.User, error) 
 	return nil, core.ErrUnauthorized
 }
 
+// PolicyUser reads durable membership and restrictions without the process cache.
+func (s *Service) PolicyUser(ctx context.Context, id int64) (*core.User, error) {
+	r, err := scanRow(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM auth_users WHERE id=?`, id))
+	if err != nil {
+		return nil, err
+	}
+	if !r.Active {
+		return nil, core.ErrUnauthorized
+	}
+	u := r.effective()
+	return &u, nil
+}
+
 // UserInfo is a user plus bookkeeping for the admin UI.
 type UserInfo struct {
 	core.User
