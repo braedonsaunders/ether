@@ -238,3 +238,20 @@ Silo uses the seeded local viewer login. Stremio clients may require HTTPS and
 app-origin configuration not provided by this fixture. A mounted handler does
 not establish that end-to-end playback is certified. M3U/XMLTV and DLNA require
 the corresponding product frontends; Plex is deliberately not mounted.
+
+`python3 -B cmd/scorecard/sync-state.py` accepts private JSON on stdin with
+`reference_url`, `target_url`, `reference_user`, `reference_password`,
+`target_user`, `target_password`, and optional `apply: true`. The target must
+be a disposable loopback fixture. It reads the reference viewer's movie and
+episode UserData, matches TMDB movie IDs and show/season/episode IDs, and
+rejects missing or conflicting duplicate-version state before changing anything.
+A dry run is the default. Apply uses the target's authenticated played,
+favorite, and playback-stop APIs and verifies the resulting state, surfacing
+errors and logout failures. Resume seeding can open real fixture playback and
+must occur before timed runs. An unsupported state (for example a reference
+resume position the target refuses to retain), incompatible viewers, or
+ambiguous matching is a failure, not evidence of alignment; a failed apply may
+have made partial changes, so recreate or inspect the disposable fixture before
+rerunning. Supply credentials only over private stdin; never copy or print the
+reference lab credential file. Each invocation aligns one reference viewer to
+one target viewer; multiple viewers need separately provisioned fixture users.
