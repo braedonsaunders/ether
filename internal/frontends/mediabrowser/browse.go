@@ -366,6 +366,9 @@ func (i *instance) browseRoutes() error {
 		i.addNamedFacets(r, v, d, dto)
 		if i.protocol == "jellyfin" {
 			i.jellyfinItemDetailDTO(d, dto)
+			// shapeJellyfinItem (Jellyfin 12.4 list shell) stays on this path,
+			// before tiles, so the shell does not drop the trickplay map.
+			i.attachTrickplay(r, v, key, dto)
 		}
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)

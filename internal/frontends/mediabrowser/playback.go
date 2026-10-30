@@ -239,6 +239,14 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 		// These streams are produced by Ether, even when their input is remote.
 		source["IsRemote"] = false
 	}
+	if i.protocol == "jellyfin" && channel == "" && !media.Estimated {
+		// Infuse and Swiftfin direct-play a Jellyfin file with
+		// GET /Videos/{id}/stream?Static=true. They do not open Path.
+		// IsRemote true would tell Infuse that Path is an upstream URL to
+		// fetch itself. Ether never publishes that URL.
+		source["IsRemote"] = false
+		source["Protocol"] = "File"
+	}
 	if plan.ETag != "" {
 		source["ETag"] = plan.ETag
 	}
@@ -448,6 +456,11 @@ func (i *instance) playbackRoutes() error {
 		return err
 	}
 	for _, method := range []string{"GET", "HEAD"} {
+		if i.protocol == "jellyfin" {
+			if err := i.router.Handle(method, "/Videos/{id}/Trickplay/{width}/{name}", http.HandlerFunc(i.trickplayImage)); err != nil {
+				return err
+			}
+		}
 		if err := i.router.Handle(method, "/Videos/{id}/{name}", http.HandlerFunc(i.streamAlias)); err != nil {
 			return err
 		}

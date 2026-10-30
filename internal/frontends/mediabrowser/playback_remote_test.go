@@ -50,9 +50,26 @@ func TestPlaybackInfoReportsEtherProducedSourcesAsLocal(t *testing.T) {
 				r.Header.Set("X-Emby-Token", "grant")
 				w := httptest.NewRecorder()
 				inst.Handler().ServeHTTP(w, r)
-				var body struct{ MediaSources []struct{ IsRemote bool } }
-				if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.MediaSources) != 1 || body.MediaSources[0].IsRemote != tc.remote {
+				wantRemote := tc.remote
+				if protocol == "jellyfin" && !tc.live {
+					// Infuse and Swiftfin open /Videos/{id}/stream?Static=true.
+					// IsRemote would send them to Path as an upstream URL.
+					wantRemote = false
+				}
+				var body struct {
+					MediaSources []struct {
+						IsRemote bool
+						Protocol string
+					}
+				}
+				if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.MediaSources) != 1 || body.MediaSources[0].IsRemote != wantRemote {
 					t.Fatal(w.Code, w.Body.String())
+				}
+				if protocol == "jellyfin" && !tc.live && body.MediaSources[0].Protocol != "File" {
+					t.Fatal(w.Body.String())
+				}
+				if protocol == "jellyfin" && tc.live && body.MediaSources[0].Protocol == "File" {
+					t.Fatal(w.Body.String())
 				}
 				if strings.Contains(w.Body.String(), `"HasSegments":true`) {
 					t.Fatal("session markers were attributed to an unrelated source", w.Body.String())

@@ -101,10 +101,44 @@ func jellyfinVideoRange(s frontend.StreamInfo) (string, string, bool) {
 	case "arib-std-b67":
 		return "HDR", "HLG", true
 	}
-	if s.DolbyVisionConfigurationPresent != nil && !*s.DolbyVisionConfigurationPresent && s.HDR10Plus != nil && !*s.HDR10Plus {
+	if jellyfinSDR(s) {
 		return "SDR", "SDR", true
 	}
 	return "", "", false
+}
+
+// jellyfinSDR is true only with probe evidence. Explicit negative Dolby Vision
+// and HDR10+ results are enough. An untagged 8-bit 4:2:0 frame is SDR when the
+// container probe explicitly found no Dolby Vision configuration: those files
+// omit color transfer and HDR10+ side data, and 8-bit 4:2:0 cannot carry
+// HDR10, HLG, or Dolby Vision. A guessed estimate without that probe stays absent.
+func jellyfinSDR(s frontend.StreamInfo) bool {
+	if s.DolbyVision || s.DolbyVisionProfile > 0 || (s.ProbedDolbyVisionProfile != nil && *s.ProbedDolbyVisionProfile > 0) {
+		return false
+	}
+	positive := func(v *bool) bool { return v != nil && *v }
+	if positive(s.DolbyVisionConfigurationPresent) || positive(s.DolbyVisionBLCompatibilityIDPresent) || positive(s.DolbyVisionRPUPresent) || positive(s.DolbyVisionELPresent) || positive(s.DolbyVisionBLPresent) || positive(s.HDR10Plus) {
+		return false
+	}
+	if s.DolbyVisionConfigurationPresent != nil && !*s.DolbyVisionConfigurationPresent && s.HDR10Plus != nil && !*s.HDR10Plus {
+		return true
+	}
+	if s.DolbyVisionConfigurationPresent == nil || *s.DolbyVisionConfigurationPresent {
+		return false
+	}
+	depth := s.BitDepth
+	if s.BitsPerRawSample != nil && *s.BitsPerRawSample > 0 {
+		depth = *s.BitsPerRawSample
+	}
+	if depth != 8 {
+		return false
+	}
+	switch s.PixelFormat {
+	case "yuv420p", "yuvj420p":
+		return true
+	default:
+		return false
+	}
 }
 
 func jellyfinAnamorphic(s frontend.StreamInfo) (bool, bool) {

@@ -78,6 +78,7 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 			live.format = req.Format
 		}
 		b.mu.Unlock()
+		b.ensureTrickplay(ctx, s, req.Position)
 		return path + "file", nil
 	}
 	if b.deps.Transcoder == nil {
@@ -87,9 +88,11 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		if hs, ok := b.deps.Transcoder.Session(id); ok && hs != nil {
 			if req.Format == frontend.StreamDASH {
 				if _, ok := hs.(core.DASHSession); ok {
+					b.ensureTrickplay(ctx, s, req.Position)
 					return path + "manifest.mpd", nil
 				}
 			} else {
+				b.ensureTrickplay(ctx, s, req.Position)
 				return path + "master.m3u8", nil
 			}
 		}
@@ -164,6 +167,7 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		live.segmentDuration = req.SegmentDuration
 	}
 	b.mu.Unlock()
+	b.ensureTrickplay(ctx, s, req.Position)
 	if req.Format == frontend.StreamDASH {
 		return path + "manifest.mpd", nil
 	}

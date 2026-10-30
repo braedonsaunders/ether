@@ -37,6 +37,15 @@ func TestJellyfinStreamRangeAndAudioLabels(t *testing.T) {
 	if sdr["VideoRange"] != "SDR" || sdr["VideoRangeType"] != "SDR" || sdr["IsAVC"] != true || sdr["IsAnamorphic"] != false {
 		t.Fatal(sdr)
 	}
+	bits := 8
+	untagged := i.mediaStreams([]frontend.StreamInfo{{Type: "video", Codec: "h264", BitDepth: bits, PixelFormat: "yuv420p", DolbyVisionConfigurationPresent: &no}})[0].(map[string]any)
+	if untagged["VideoRange"] != "SDR" || untagged["VideoRangeType"] != "SDR" {
+		t.Fatal(untagged)
+	}
+	guessed := i.mediaStreams([]frontend.StreamInfo{{Type: "video", Codec: "h264", BitDepth: bits, PixelFormat: "yuv420p"}})[0].(map[string]any)
+	if _, ok := guessed["VideoRange"]; ok {
+		t.Fatal("unprobed 8-bit video claimed SDR", guessed["VideoRange"])
+	}
 	wide := i.mediaStreams([]frontend.StreamInfo{{Type: "video", Codec: "hevc", SampleAspectRatio: "8:9", ColorTransfer: "smpte2084"}})[0].(map[string]any)
 	if wide["VideoRange"] != "HDR" || wide["VideoRangeType"] != "HDR10" || wide["IsAnamorphic"] != true || wide["IsAVC"] != false {
 		t.Fatal(wide)
