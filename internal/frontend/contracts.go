@@ -465,6 +465,9 @@ type PlayPlan struct {
 	// Alternatives are evaluated against this same source and client policy.
 	// DirectStream denotes copy-only remux, without encoding either stream.
 	DirectPlay, DirectStream, Transcoding bool
+	// HLS reports whether this resolved source can be delivered as HLS under
+	// the declared client profile. Encoder capacity is checked at stream start.
+	HLS bool
 	// ETag identifies the resolved immutable source when available; it is
 	// empty when the backend cannot prove a stable source identity.
 	ETag string

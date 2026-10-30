@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,19 @@ func (s *lazyStreams) Issue(ctx context.Context, credential string, req frontend
 }
 
 func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend.PlanRequest, stable bool) (string, error) {
+	return s.issueOutput(ctx, credential, req, stable, nil)
+}
+
+// IssueHLS keeps the scoped capability in every playlist and segment URL.
+// Planning and encoder startup are deferred until the master is requested.
+func (s *lazyStreams) IssueHLS(ctx context.Context, credential string, req frontend.PlanRequest, output frontend.StreamRequest) (string, error) {
+	if req.Channel != "" || output.Format != frontend.StreamHLS || output.Position < 0 || output.SegmentDuration < 0 {
+		return "", core.ErrNotAvailable
+	}
+	return s.issueOutput(ctx, credential, req, false, &output)
+}
+
+func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req frontend.PlanRequest, stable bool, output *frontend.StreamRequest) (string, error) {
 	if req.Protocol != s.protocol || req.Device.ID == "" || req.Viewer == nil || req.Intent.Plex != nil || (req.Item == 0) == (req.Channel == "") || (stable && req.Channel != "") {
 		return "", core.ErrUnauthorized
 	}
@@ -99,7 +113,10 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 	}
 	req.Viewer = nil
 	req.Intent.Estimate = false
-	data, err := json.Marshal(req)
+	data, err := json.Marshal(struct {
+		frontend.PlanRequest
+		HLS *frontend.StreamRequest `json:"_lazyHLS,omitempty"`
+	}{req, output})
 	if err != nil || len(data) > 65536 {
 		return "", core.ErrNotAvailable
 	}
@@ -181,6 +198,9 @@ func (s *lazyStreams) issue(ctx context.Context, credential string, req frontend
 	if req.Channel != "" {
 		return "/sessions/lazy/" + token + "/live/index.m3u8", nil
 	}
+	if output != nil {
+		return "/sessions/lazy/" + token + "/hls/master.m3u8", nil
+	}
 	return "/sessions/lazy/" + token + "/file", nil
 }
 
@@ -249,8 +269,16 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var req frontend.PlanRequest
-	if json.Unmarshal([]byte(raw), &req) != nil || req.Protocol != s.protocol || req.Device.ID == "" {
+	var stored struct {
+		frontend.PlanRequest
+		HLS *frontend.StreamRequest `json:"_lazyHLS,omitempty"`
+	}
+	if json.Unmarshal([]byte(raw), &stored) != nil || stored.Protocol != s.protocol || stored.Device.ID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	req := stored.PlanRequest
+	if stored.HLS != nil && (stored.HLS.Format != frontend.StreamHLS || stored.HLS.Position < 0 || stored.HLS.SegmentDuration < 0 || req.Channel != "") {
 		http.NotFound(w, r)
 		return
 	}
@@ -268,7 +296,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Missing cache facts fail closed rather than causing network lookups on
 		// every range request.
-		if tail != "file" || s.broker.deps.MediaLookup == nil {
+		if (stored.HLS == nil && tail != "file") || (stored.HLS != nil && !strings.HasPrefix(tail, "hls/")) || s.broker.deps.MediaLookup == nil {
 			http.NotFound(w, r)
 			return
 		}
@@ -283,7 +311,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		if req.Channel != "" && tail != "live/index.m3u8" {
+		if (req.Channel != "" && tail != "live/index.m3u8") || (stored.HLS != nil && tail != "hls/master.m3u8") {
 			s.broker.mu.Lock()
 			id := s.broker.lazySessions[hash].id
 			s.broker.mu.Unlock()
@@ -292,6 +320,8 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.NotFound(w, r)
 				return
 			}
+		} else if stored.HLS != nil {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		} else if req.Item != 0 {
 			w.Header().Set("Accept-Ranges", "bytes")
 		}
@@ -318,7 +348,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := s.broker.lazySessions[hash].id
 	s.broker.mu.Unlock()
 	access := frontend.SessionAccess{Viewer: viewer, Device: req.Device, Protocol: s.protocol}
-	var existingLive *brokerSession
+	var existingLive, existingHLS *brokerSession
 	if id != "" {
 		if existing, _, err := s.broker.access(ctx, access, id); err != nil {
 			id = ""
@@ -332,9 +362,15 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			existingLive = existing
 		} else if req.Channel != "" {
 			id = ""
+		} else if stored.HLS != nil && existing.format == frontend.StreamHLS && !existing.live {
+			existingHLS = existing
 		}
 	}
 	if req.Channel != "" && tail != "live/index.m3u8" && id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if stored.HLS != nil && tail != "hls/master.m3u8" && existingHLS == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -391,7 +427,7 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.broker.mu.Unlock()
 	}
 	format := frontend.StreamDirect
-	if req.Channel != "" {
+	if req.Channel != "" || stored.HLS != nil {
 		format = frontend.StreamHLS
 	}
 	var path string
@@ -399,8 +435,14 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Live sessions are already started; the scoped media handler below
 		// revalidates current channel policy again before serving each resource.
 		path = "/sessions/media/" + id + "/" + existingLive.grant + "/live/index.m3u8"
+	} else if existingHLS != nil && tail != "hls/master.m3u8" {
+		path = "/sessions/media/" + id + "/" + existingHLS.grant + "/master.m3u8"
 	} else {
-		path, err = s.broker.StartStream(ctx, access, id, frontend.StreamRequest{Format: format})
+		stream := frontend.StreamRequest{Format: format}
+		if stored.HLS != nil {
+			stream = *stored.HLS
+		}
+		path, err = s.broker.StartStream(ctx, access, id, stream)
 	}
 	if err != nil {
 		if opened {
@@ -414,6 +456,23 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, frontend.ErrSourceGone) {
 			s.sourceGone(w, r)
 			return
+		}
+		if stored.HLS != nil {
+			var capacity *frontend.TranscodeCapacityError
+			var busy *frontend.SessionBusyError
+			var retry time.Duration
+			if errors.As(err, &capacity) {
+				retry = capacity.RetryAfter
+			} else if errors.As(err, &busy) {
+				retry = busy.RetryAfter
+			}
+			if retry > 0 {
+				seconds := int64(retry / time.Second)
+				if retry%time.Second != 0 {
+					seconds++
+				}
+				w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+			}
 		}
 		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
 		return
@@ -471,6 +530,8 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u.Path = path
 	if req.Channel != "" {
 		u.Path = strings.TrimSuffix(path, "index.m3u8") + strings.TrimPrefix(tail, "live/")
+	} else if stored.HLS != nil {
+		u.Path = strings.TrimSuffix(path, "master.m3u8") + strings.TrimPrefix(tail, "hls/")
 	}
 	u.RawPath = ""
 	clone.URL = &u
@@ -642,7 +703,7 @@ func validLazyTail(tail string) bool {
 	if tail == "file" {
 		return true
 	}
-	if !strings.HasPrefix(tail, "live/") {
+	if !strings.HasPrefix(tail, "live/") && !strings.HasPrefix(tail, "hls/") {
 		return false
 	}
 	for _, part := range strings.Split(tail, "/") {

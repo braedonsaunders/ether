@@ -514,7 +514,9 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	stored = true
 	b.mu.Unlock()
 	direct, remux, transcoding := b.planAlternatives(ps, req)
-	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec, DirectPlay: direct, DirectStream: remux, Transcoding: transcoding, ETag: etag}, nil
+	_, hls := b.hlsOutputDecision(ps, req.Caps, req.Intent.Options, req.Intent.AllowTranscoding, dec)
+	hls = hls && knownHLSVideo(ps.Info)
+	return frontend.PlayPlan{ID: id, Media: publicMedia(ps.Info), Decision: dec, DirectPlay: direct, DirectStream: remux, Transcoding: transcoding, HLS: hls, ETag: etag}, nil
 }
 func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.Session, error) {
 	v, err := b.viewer(ctx, req.Viewer)

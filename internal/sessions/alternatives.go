@@ -5,6 +5,20 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+// A successful HLS start is not evidence that an estimated or unprobed video
+// is compatible. Advertise HLS only when the source codec is actually known.
+func knownHLSVideo(info core.MediaInfo) bool {
+	if info.Estimated {
+		return false
+	}
+	for _, stream := range info.Streams {
+		if stream.Type == "video" && stream.Codec != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // planAlternatives evaluates the already-open source: it never resolves a
 // second release, starts an encoder, or consumes another stream slot.
 func (b *Broker) planAlternatives(source *core.PlaySession, req frontend.PlanRequest) (direct, remux, encode bool) {

@@ -592,6 +592,8 @@ type harness struct {
 
 	nativeProbe   func(context.Context, core.MediaSource) (*core.MediaInfo, error)
 	nativeTrailer func(context.Context, core.MediaSource, *core.MediaInfo) bool
+	testEngine    core.Engine
+	testTranscode core.Transcoder
 }
 
 var (
@@ -648,10 +650,18 @@ func newHarness(t *testing.T, rels []*fakeRelease, ids []string, opts ...harness
 	if h.noCache {
 		cache = nil
 	}
+	var engine core.Engine = h.engine
+	if h.testEngine != nil {
+		engine = h.testEngine
+	}
+	var transcoder core.Transcoder = h.tr
+	if h.testTranscode != nil {
+		transcoder = h.testTranscode
+	}
 	m, err := New(Deps{
 		Resolver:   h.resolver,
-		Engine:     h.engine,
-		Transcoder: h.tr,
+		Engine:     engine,
+		Transcoder: transcoder,
 		Catalog:    h.catalog,
 		Cache:      cache,
 		State:      h.state,

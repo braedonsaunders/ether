@@ -106,7 +106,11 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 			dec.Kind, dec.VideoCopy, dec.AudioCopy = core.DecisionRemux, true, true
 		}
 	} else {
-		dec = HLSDecision(dec, s.opts.DirectPlay, func() core.Decision { return b.deps.Transcoder.Decide(ps.Info, s.caps, s.opts) })
+		var allowed bool
+		dec, allowed = b.hlsOutputDecision(ps, s.caps, s.opts, s.allowTranscoding, dec)
+		if !allowed {
+			return "", core.ErrNotAvailable
+		}
 	}
 	if s.allowTranscoding != nil && !*s.allowTranscoding && decisionEncodes(dec, ps.Info) {
 		return "", core.ErrNotAvailable
@@ -164,6 +168,23 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		return path + "manifest.mpd", nil
 	}
 	return path + "master.m3u8", nil
+}
+
+// hlsOutputDecision is shared by advisory planning and stream startup, so a
+// detail response cannot advertise HLS from an unsupported delivery profile.
+// Capacity remains an atomic StartHLS check, not a planning reservation.
+func (b *Broker) hlsOutputDecision(ps *core.PlaySession, caps core.ClientCaps, opts core.DecideOptions, allowTranscoding *bool, dec core.Decision) (core.Decision, bool) {
+	if ps == nil || b.deps.Transcoder == nil {
+		return core.Decision{}, false
+	}
+	dec = HLSDecision(dec, opts.DirectPlay, func() core.Decision { return b.deps.Transcoder.Decide(ps.Info, caps, opts) })
+	if allowTranscoding != nil && !*allowTranscoding && decisionEncodes(dec, ps.Info) {
+		return dec, false
+	}
+	if dec.Kind == core.DecisionRemux && !opts.DirectStream {
+		return dec, false
+	}
+	return dec, profileDeliveryAllowed(caps.Profiles, dec, ps.Info, "hls")
 }
 
 // ServeMedia validates a session-scoped capability on every request.
