@@ -278,6 +278,16 @@ func rowViewCollectionMembers(ctx context.Context, source rowViewCollectionSourc
 // every policy pass. Non-title and virtual-season entries keep the legacy path.
 func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device core.Device, protocol core.Protocol, refs []core.NeutralEntryRef, one func(context.Context, *core.User, core.Device, core.Protocol, core.NeutralEntryRef) (frontend.RowEntry, error), batch func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error), get func(context.Context, *core.User, core.RatingKey) (*core.Title, error), visibility experience.Visibility, live func(context.Context, *core.User) ([]frontend.RowEntry, error)) ([]frontend.RowEntry, error) {
 	out := make([]frontend.RowEntry, len(refs))
+	var guide []frontend.RowEntry
+	var guideErr error
+	guideLoaded := false
+	cachedLive := func(ctx context.Context, viewer *core.User) ([]frontend.RowEntry, error) {
+		if !guideLoaded {
+			guide, guideErr = live(ctx, viewer)
+			guideLoaded = true
+		}
+		return guide, guideErr
+	}
 	for start := 0; start < len(refs); start += 200 {
 		part := refs[start:min(start+200, len(refs))]
 		keys := make([]core.RatingKey, 0, len(part))
@@ -350,7 +360,7 @@ func rowViewResolveBatchTitles(ctx context.Context, viewer *core.User, device co
 			out[start+i] = frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &copy}
 		}
 		if len(otherRefs) > 0 {
-			entries, e := rowViewResolveBatch(ctx, viewer, device, protocol, otherRefs, one, live)
+			entries, e := rowViewResolveBatch(ctx, viewer, device, protocol, otherRefs, one, cachedLive)
 			if e != nil {
 				return nil, e
 			}
