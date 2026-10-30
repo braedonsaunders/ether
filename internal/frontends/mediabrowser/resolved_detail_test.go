@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/frontendtest"
@@ -29,7 +30,7 @@ func (s *detailPlannerStub) DetailPlan(_ context.Context, req frontend.PlanReque
 	if s.failure {
 		return frontend.PlayPlan{}, context.DeadlineExceeded
 	}
-	return frontend.PlayPlan{DetailSource: "82b0c3fc-7616-46da-8528-fc26ec5cb4ab", ETag: "source-revision", Media: frontend.MediaInfo{Container: "mp4", Size: 113973614, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Codec: "aac"}}}, DirectPlay: true, DirectStream: true, Transcoding: true}, nil
+	return frontend.PlayPlan{DetailSource: "82b0c3fc-7616-46da-8528-fc26ec5cb4ab", ETag: "source-revision", Media: frontend.MediaInfo{Container: "mp4", Duration: 18 * time.Minute, Size: 113973614, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264"}, {Type: "audio", Codec: "aac"}}}, DirectPlay: true, DirectStream: true, Transcoding: true}, nil
 }
 
 func (s *detailPlannerStub) ResolveDetailSource(_ context.Context, scope frontend.VersionScope, handle string) (frontend.DetailSourceTarget, error) {
@@ -63,7 +64,7 @@ func TestResolvedSingleDetailUsesBrokerFactsAndScopedPath(t *testing.T) {
 			return w
 		}
 		w := call("/Items/" + ids.RatingKeyGUID(5))
-		for _, want := range []string{`"Container":"mp4"`, `"Size":113973614`, `"Codec":"h264"`, `"VideoType":"VideoFile"`, `"SupportsDirectPlay":true`, `"Path":"https://ether.example/sessions/lazy/scoped/file"`} {
+		for _, want := range []string{`"Container":"mp4"`, `"RunTimeTicks":10800000000`, `"Size":113973614`, `"Codec":"h264"`, `"VideoType":"VideoFile"`, `"SupportsDirectPlay":true`, `"Path":"https://ether.example/sessions/lazy/scoped/file"`} {
 			if w.Code != 200 || !strings.Contains(w.Body.String(), want) {
 				t.Fatal(tc.name, want, w.Code, w.Body.String())
 			}

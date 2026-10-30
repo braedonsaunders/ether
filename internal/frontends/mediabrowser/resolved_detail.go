@@ -73,6 +73,9 @@ func (i *instance) applyResolvedDetail(r *http.Request, viewer *frontend.Viewer,
 	dto["MediaSources"] = sources
 	dto["MediaStreams"] = i.mediaStreams(plan.Media.Streams)
 	dto["Container"] = plan.Media.Container
+	if plan.Media.Duration > 0 {
+		dto["RunTimeTicks"] = plan.Media.Duration.Nanoseconds() / 100
+	}
 	if plan.Media.Size > 0 {
 		dto["Size"] = plan.Media.Size
 	}
