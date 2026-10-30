@@ -583,7 +583,7 @@ func (ref labReferenceData) logout(t *testing.T) {
 		return
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusUnauthorized && (response.StatusCode < 200 || response.StatusCode >= 300) {
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		t.Errorf("lab sign-out returned HTTP %d", response.StatusCode)
 	}
 }
