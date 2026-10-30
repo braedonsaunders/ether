@@ -152,6 +152,23 @@ func (t *Thumbnails) Close() error {
 	return nil
 }
 
+// PreviewInterval and PreviewWidth describe the grid the shared provider
+// generates. Callers compose sheets from these values instead of assuming a
+// second thumbnail cache.
+func (t *Thumbnails) PreviewInterval() time.Duration {
+	if t == nil || t.interval <= 0 {
+		return 0
+	}
+	return t.interval
+}
+
+func (t *Thumbnails) PreviewWidth() int {
+	if t == nil || t.width <= 0 {
+		return 0
+	}
+	return t.width
+}
+
 // EnsureTrickplay implements core.TrickplayProvider.
 func (t *Thumbnails) EnsureTrickplay(_ context.Context, src core.TrickplaySource) {
 	if src.ReleaseID == "" || src.InputURL == "" || t.ffmpeg == "" {

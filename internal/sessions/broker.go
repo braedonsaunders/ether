@@ -56,7 +56,12 @@ type BrokerDeps struct {
 	SourceMarkers   func(context.Context, *core.Viewer, core.RatingKey, string, core.MediaInfo) ([]frontend.Marker, bool, error)
 	OpenSubtitle    func(string, string) (io.ReadCloser, string, error)
 	ExtractSubtitle func(context.Context, string, int, string, io.Writer) error
-	Now             func() time.Time
+	// Trickplay is borrowed from the runtime owner (internal/app/trickplay_owner.go).
+	// It is the same provider Plex uses. The broker must not Close it and must
+	// not CancelTrickplay: a check of current sessions cannot fence an Ensure
+	// or a prewarm job that has no session yet. Plex keeps its own cancellation.
+	Trickplay core.TrickplayProvider
+	Now       func() time.Time
 }
 
 type brokerPlan struct {
@@ -925,6 +930,7 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if t.State == "stopped" {
 		return b.stopLocked(ctx, s)
 	}
+	b.ensureTrickplay(ctx, s, t.Position)
 	return nil
 }
 func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) error {
