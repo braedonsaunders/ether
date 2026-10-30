@@ -1,12 +1,18 @@
 package mediabrowser
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, media frontend.MediaInfo) {
+	if path, ok := source["Path"].(string); ok && embyScopedDirectURL(path) {
+		// Issued capability URLs authorize their own read and must not expose
+		// the account credential in a query parameter.
+		source["AddApiKeyToDirectStreamUrl"] = false
+	}
 	if itemID != "" {
 		source["ItemId"] = itemID
 	}
@@ -23,4 +29,34 @@ func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, medi
 	case "webm":
 		source["MimeType"] = "video/webm"
 	}
+}
+
+func embyScopedDirectURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.RawPath != "" {
+		return false
+	}
+	if u.IsAbs() && ((u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	if len(parts) > 0 && strings.EqualFold(parts[0], "emby") {
+		parts = parts[1:]
+	}
+	if len(parts) == 4 && parts[0] == "sessions" && parts[1] == "lazy" && parts[3] == "file" {
+		return embySafeGrant(parts[2])
+	}
+	return len(parts) == 5 && parts[0] == "sessions" && parts[1] == "media" && parts[4] == "file" && embySafeGrant(parts[2]) && embySafeGrant(parts[3])
+}
+
+func embySafeGrant(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
