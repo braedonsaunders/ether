@@ -74,6 +74,9 @@ func (s *Receipts) sweepExpired(ctx context.Context, tx *sql.Tx, viewer int64, d
 	// Recheck outer scope and expiry after any wait on an old writer's row.
 	// At most 128 expired authority rows and their mirrors are touched per issue.
 	const cleanupMax = 128
+	if s.opts.beforeSweep != nil {
+		s.opts.beforeSweep(tx)
+	}
 	query := `DELETE FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=? AND hash IN (SELECT hash FROM experience_receipts WHERE viewer_id=? AND device_id=? AND expires<=? ORDER BY expires,hash LIMIT ?)`
 	args := []any{viewer, device, now, viewer, device, now, cleanupMax}
 	if !s.opts.MirrorHeaders {

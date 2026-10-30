@@ -70,6 +70,7 @@ type ReceiptOptions struct {
 	Generation func(context.Context, *core.User, core.Device, core.Protocol) (int64, error)
 	// Test seams. Nil uses capability.BindHeadersInTx and DropHeadersInTx.
 	bindHeaders func(context.Context, *sql.Tx, []capability.Header) error
+	beforeSweep func(*sql.Tx)
 	dropHeaders func(context.Context, *sql.Tx, capability.HeaderScope, []string) error
 }
 
