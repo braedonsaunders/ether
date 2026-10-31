@@ -56,7 +56,9 @@ func (c *browseCache) wrap(next http.Handler, fresh func() frontend.PageFreshnes
 		}
 		w.Header().Set("ETag", etag)
 		cap := &bodyCapture{ResponseWriter: w}
-		next.ServeHTTP(cap, r)
+		// A stored hash is joined inside the handler. Hashing that has not
+		// finished stays on the background worker; the cache must not wait for it.
+		next.ServeHTTP(cap, r.WithContext(frontend.WithoutSynchronousArtworkMetadata(r.Context())))
 		if cap.code == http.StatusOK && cap.buf.Len() > 0 && cap.buf.Len() <= browseCacheMaxBody {
 			c.put(key, cachedBody{code: cap.code, ctype: cap.Header().Get("Content-Type"), etag: etag, body: append([]byte(nil), cap.buf.Bytes()...), at: time.Now()})
 		}

@@ -215,84 +215,6 @@
           "route": "/Users/{user}/Items/Resume"
         }
       ],
-      "playback": [
-        {
-          "name": "direct_ttff",
-          "reference": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 62.7709049731493,
-            "p95_ms": 291.8190369964577,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 45.77305601560511,
-            "p95_ms": 105.31430100672878,
-            "samples": 3
-          },
-          "p50_winner": "ether",
-          "p95_winner": "ether"
-        },
-        {
-          "name": "seek",
-          "reference": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 54.804324987344444,
-            "p95_ms": 55.64271999173798,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 1285.1600620197132,
-            "p95_ms": 3129.9107219965663,
-            "samples": 3
-          },
-          "p50_winner": "reference",
-          "p95_winner": "reference"
-        },
-        {
-          "name": "resume",
-          "reference": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 46.72786200535484,
-            "p95_ms": 47.24454501410946,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 43.92905399436131,
-            "p95_ms": 47.6197479874827,
-            "samples": 3
-          },
-          "p50_winner": "ether",
-          "p95_winner": "reference"
-        },
-        {
-          "name": "transcode_ttff",
-          "reference": {
-            "errors": 0,
-            "delivery": "hls",
-            "p50_ms": 4228.890379017685,
-            "p95_ms": 5087.9488560021855,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "hls",
-            "p50_ms": 677.2147299780045,
-            "p95_ms": 971.3097719941288,
-            "samples": 3
-          },
-          "p50_winner": "ether",
-          "p95_winner": "ether"
-        }
-      ],
       "errors": [
         "progress"
       ],
@@ -505,84 +427,6 @@
           "route": "/Users/{user}/Items/Resume"
         }
       ],
-      "playback": [
-        {
-          "name": "direct_ttff",
-          "reference": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 15.244169015204534,
-            "p95_ms": 246.2182129966095,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 1984.3815640197136,
-            "p95_ms": 3886.241363012232,
-            "samples": 3
-          },
-          "p50_winner": "reference",
-          "p95_winner": "reference"
-        },
-        {
-          "name": "seek",
-          "reference": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 6.622393004363403,
-            "p95_ms": 6.864735012641177,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 58.98184099351056,
-            "p95_ms": 822.2201270109508,
-            "samples": 3
-          },
-          "p50_winner": "reference",
-          "p95_winner": "reference"
-        },
-        {
-          "name": "resume",
-          "reference": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 7.4666890141088516,
-            "p95_ms": 10.9882710094098,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "direct",
-            "p50_ms": 86.44277899293229,
-            "p95_ms": 124.52748598298058,
-            "samples": 3
-          },
-          "p50_winner": "reference",
-          "p95_winner": "reference"
-        },
-        {
-          "name": "transcode_ttff",
-          "reference": {
-            "errors": 0,
-            "delivery": "hls",
-            "p50_ms": 1834.7958659869619,
-            "p95_ms": 2085.0255039986223,
-            "samples": 3
-          },
-          "ether": {
-            "errors": 0,
-            "delivery": "hls",
-            "p50_ms": 922.2749949840363,
-            "p95_ms": 1000.1052689913195,
-            "samples": 3
-          },
-          "p50_winner": "ether",
-          "p95_winner": "ether"
-        }
-      ],
       "errors": [
         "progress",
         "progress"
@@ -625,16 +469,6 @@
       "kind": "browse_p95"
     },
     {
-      "protocol": "jellyfin",
-      "metric": "seek",
-      "kind": "playback_p95"
-    },
-    {
-      "protocol": "jellyfin",
-      "metric": "resume",
-      "kind": "playback_p95"
-    },
-    {
       "protocol": "emby",
       "metric": "library_movies",
       "concurrency": 1,
@@ -651,21 +485,111 @@
       "metric": "next_up",
       "concurrency": 1,
       "kind": "browse_p95"
-    },
-    {
-      "protocol": "emby",
-      "metric": "direct_ttff",
-      "kind": "playback_p95"
-    },
-    {
-      "protocol": "emby",
-      "metric": "seek",
-      "kind": "playback_p95"
-    },
-    {
-      "protocol": "emby",
-      "metric": "resume",
-      "kind": "playback_p95"
     }
-  ]
+  ],
+  "playback_matched": {
+    "build": "bdd06c108",
+    "samples": 20,
+    "span": "PlaybackInfo plus the first media byte. HLS was not measured.",
+    "limits": {
+      "ether_nano_cpus": 2000000000,
+      "reference_nano_cpus": 2000000000
+    },
+    "protocols": {
+      "jellyfin": {
+        "direct": {
+          "ether": {
+            "p50_ms": 7.68,
+            "p95_ms": 23.39
+          },
+          "reference": {
+            "p50_ms": 38.63,
+            "p95_ms": 57.66
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether"
+        },
+        "seek": {
+          "ether": {
+            "p50_ms": 4.78,
+            "p95_ms": 6.22
+          },
+          "reference": {
+            "p50_ms": 40.57,
+            "p95_ms": 56.71
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether"
+        },
+        "resume": {
+          "ether": {
+            "p50_ms": 4.84,
+            "p95_ms": 8.36
+          },
+          "reference": {
+            "p50_ms": 42.18,
+            "p95_ms": 57.3
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether"
+        }
+      },
+      "emby": {
+        "direct": {
+          "ether": {
+            "p50_ms": 4.28,
+            "p95_ms": 9.69
+          },
+          "reference": {
+            "p50_ms": 5.28,
+            "p95_ms": 7.21
+          },
+          "p50_winner": "ether",
+          "p95_winner": "reference"
+        },
+        "seek": {
+          "ether": {
+            "p50_ms": 4.34,
+            "p95_ms": 6.77
+          },
+          "reference": {
+            "p50_ms": 5.42,
+            "p95_ms": 7.14
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether"
+        },
+        "resume": {
+          "ether": {
+            "p50_ms": 4.13,
+            "p95_ms": 13.83
+          },
+          "reference": {
+            "p50_ms": 5.47,
+            "p95_ms": 7.33
+          },
+          "p50_winner": "ether",
+          "p95_winner": "reference"
+        }
+      }
+    },
+    "trails": [
+      {
+        "protocol": "emby",
+        "metric": "direct",
+        "kind": "p95",
+        "ether_ms": 9.69,
+        "reference_ms": 7.21,
+        "reason": "Ether p95 trails lab Emby by a few milliseconds on the shared host"
+      },
+      {
+        "protocol": "emby",
+        "metric": "resume",
+        "kind": "p95",
+        "ether_ms": 13.83,
+        "reference_ms": 7.33,
+        "reason": "Ether p95 trails lab Emby by a few milliseconds on the shared host"
+      }
+    ]
+  }
 }

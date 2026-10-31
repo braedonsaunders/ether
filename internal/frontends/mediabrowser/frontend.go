@@ -128,11 +128,11 @@ func (i *instance) Handler() http.Handler {
 	}
 	next := StripPrefix("/"+string(i.protocol), inner)
 	if i.protocol == "jellyfin" {
-		// Detail, resume, and Next Up publish blurhashes and aspect from rows
-		// already stored. The queue joins those rows only inside this budget;
-		// an idle worker never attaches them on its own.
+		// Stored blurhashes and dimensions are joined on every request. This
+		// budget only covers hashing already in flight, and the page cache
+		// clears it before a fill so the cache is never held open for it.
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := frontend.WithSynchronousArtworkMetadata(r.Context(), 8*time.Second)
+			ctx := frontend.WithSynchronousArtworkMetadata(r.Context(), 100*time.Millisecond)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

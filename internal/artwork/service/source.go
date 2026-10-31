@@ -36,6 +36,7 @@ type Source struct {
 	Now           func() time.Time
 	Variants      func(*core.Title, string) (*tmdb.Images, bool)
 	Metadata      func(context.Context, frontend.ArtworkRequest, frontend.Image) frontend.Image
+	meta          *MetadataQueue
 	VirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	URLImages     interface {
 		GetUntrustedURL(context.Context, string) ([]byte, string, error)
@@ -294,6 +295,35 @@ func (a Source) Warm(title core.Title, device core.Device) {
 	if a.Variants != nil {
 		_, _ = a.Variants(&title, device.Language)
 	}
+}
+
+// BindMetadata keeps the queue so fixture ingest can store hashes before a page is served.
+func (a *Source) BindMetadata(q *MetadataQueue) {
+	if a != nil {
+		a.meta = q
+	}
+}
+
+// StoreMetadata hashes each title's images and waits until those rows are stored.
+// A later page joins the rows and does not wait on the hash.
+func (a *Source) StoreMetadata(ctx context.Context, viewer *core.User, titles []core.Title) error {
+	if a == nil || a.meta == nil || viewer == nil {
+		return nil
+	}
+	// The queue holds a bounded number of jobs. Repeat until each title's
+	// images have been stored; a stored row returns without new work.
+	for pass := 0; pass < 4; pass++ {
+		for _, title := range titles {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			_, _, _ = a.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Item: title.Key})
+		}
+		if err := a.meta.WaitIdle(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a Source) List(ctx context.Context, req frontend.ArtworkRequest) ([]frontend.Image, bool, error) {

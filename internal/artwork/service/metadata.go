@@ -25,8 +25,10 @@ CREATE TABLE artwork_image_metadata_claims (image_key TEXT PRIMARY KEY, token TE
 	store.Register("artwork_metadata", 2, `ALTER TABLE artwork_image_metadata ADD COLUMN thumbhash TEXT NOT NULL DEFAULT '';`)
 }
 
-// MetadataQueue serves only memory hits during requests. Missing
-// descriptors schedule bounded, coalesced database and source work.
+// MetadataQueue joins stored width, height, and hash rows on the request.
+// Missing descriptors are hashed by the background worker. A caller with a
+// deadline may wait for a hash already in flight, and never longer than
+// artworkInflightWait.
 type MetadataQueue struct {
 	ctx     context.Context
 	workers sync.WaitGroup
@@ -79,57 +81,80 @@ func artworkMetadataKey(req frontend.ArtworkRequest, img frontend.Image) string 
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+const artworkInflightWait = 100 * time.Millisecond
+
 func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, img frontend.Image) frontend.Image {
 	if q == nil || q.db == nil || q.active == nil || q.read == nil || req.Viewer == nil || q.ctx.Err() != nil {
 		return img
 	}
 	key := artworkMetadataKey(req, img)
+	stored, have := q.stored(key)
+	if have && stored.thumbhash != "" {
+		return applyArtworkMetadata(img, stored)
+	}
+	q.enqueue(req, img, key)
+	if have {
+		img = applyArtworkMetadata(img, stored)
+	}
+	wait, ok := synchronousArtworkWait(ctx)
+	if !ok {
+		return img
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if stored, ok := q.stored(key); ok {
+			return applyArtworkMetadata(img, stored)
+		}
+		select {
+		case <-ctx.Done():
+			return img
+		case <-timer.C:
+			return img
+		case <-tick.C:
+		}
+	}
+}
+
+func applyArtworkMetadata(img frontend.Image, metadata artworkMetadata) frontend.Image {
+	img.Width, img.Height, img.BlurHash, img.ThumbHash = metadata.width, metadata.height, metadata.blurhash, metadata.thumbhash
+	return img
+}
+
+func (q *MetadataQueue) stored(key string) (artworkMetadata, bool) {
 	q.mu.Lock()
 	if cached, ok := q.cache[key]; ok && cached.thumbhash != "" {
-		img.Width, img.Height, img.BlurHash, img.ThumbHash = cached.width, cached.height, cached.blurhash, cached.thumbhash
 		q.mu.Unlock()
-		return img
+		return cached, true
 	}
 	q.mu.Unlock()
-	// A crew photo is part of the first item response. A caller that publishes
-	// blurhashes on that response sets a budget; everything else waits for
-	// the background worker. A person image is always hashed before it is granted.
-	if wait, ok := synchronousArtworkWait(ctx, img); ok {
-		job := artworkMetadataJob{key: key, request: req, image: img}
-		waitCtx, cancel := context.WithTimeout(ctx, wait)
-		err := q.compute(waitCtx, job)
-		cancel()
-		if err == nil {
-			if metadata, loadErr := q.load(context.Background(), key); loadErr == nil && metadata.thumbhash != "" {
-				q.mu.Lock()
-				if len(q.cache) >= 4096 {
-					q.cache = map[string]artworkMetadata{}
-				}
-				q.cache[key] = metadata
-				q.mu.Unlock()
-				img.Width, img.Height, img.BlurHash, img.ThumbHash = metadata.width, metadata.height, metadata.blurhash, metadata.thumbhash
-				return img
-			}
-		}
+	// A free lookup is a cheap join. A locked database must not hold the page.
+	loadCtx, cancel := context.WithTimeout(context.Background(), 8*time.Millisecond)
+	metadata, err := q.load(loadCtx, key)
+	cancel()
+	if err != nil || (metadata.blurhash == "" && metadata.thumbhash == "") {
+		return artworkMetadata{}, false
 	}
+	q.remember(key, metadata)
+	return metadata, true
+}
+
+func (q *MetadataQueue) remember(key string, metadata artworkMetadata) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if cached, ok := q.cache[key]; ok {
-		img.Width, img.Height, img.BlurHash, img.ThumbHash = cached.width, cached.height, cached.blurhash, cached.thumbhash
-		if cached.thumbhash != "" {
-			return img
-		}
+	if len(q.cache) >= 4096 {
+		q.cache = map[string]artworkMetadata{}
 	}
-	if ctx.Err() != nil {
-		return img
-	}
-	// A response that asked for hashes already joined or hashed what fit in
-	// its budget. Queueing the rest keeps a write lock across the next request.
-	if _, budgeted := frontend.SynchronousArtworkDeadline(ctx); budgeted {
-		return img
-	}
+	q.cache[key] = metadata
+}
+
+func (q *MetadataQueue) enqueue(req frontend.ArtworkRequest, img frontend.Image, key string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	if q.pending[key] || time.Now().Before(q.retry[key]) || len(q.pending) >= cap(q.jobs) {
-		return img
+		return
 	}
 	// Only the ID is retained. Current membership and policy are checked by
 	// the worker before any bytes are fetched.
@@ -139,10 +164,31 @@ func (q *MetadataQueue) Get(ctx context.Context, req frontend.ArtworkRequest, im
 		q.pending[key] = true
 	default:
 	}
-	return img
 }
 
-func synchronousArtworkWait(ctx context.Context, _ frontend.Image) (time.Duration, bool) {
+// WaitIdle blocks until queued hashes have been stored or ctx ends.
+func (q *MetadataQueue) WaitIdle(ctx context.Context) error {
+	if q == nil {
+		return nil
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		q.mu.Lock()
+		n := len(q.pending)
+		q.mu.Unlock()
+		if n == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func synchronousArtworkWait(ctx context.Context) (time.Duration, bool) {
 	deadline, ok := frontend.SynchronousArtworkDeadline(ctx)
 	if !ok {
 		return 0, false
@@ -151,8 +197,8 @@ func synchronousArtworkWait(ctx context.Context, _ frontend.Image) (time.Duratio
 	if remaining <= 0 {
 		return 0, false
 	}
-	if remaining > 2*time.Second {
-		remaining = 2 * time.Second
+	if remaining > artworkInflightWait {
+		remaining = artworkInflightWait
 	}
 	return remaining, true
 }

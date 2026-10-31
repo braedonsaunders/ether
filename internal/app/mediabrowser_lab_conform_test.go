@@ -869,6 +869,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}
 	personTMDB := labPersonTMDB(t, jellyfinRef, personIDs)
 	var labPending []labMediaPending
+	var primed []core.Title
 	for _, x := range listing.Items {
 		tmdbID, _ := strconv.ParseInt(x.ProviderIds["Tmdb"], 10, 64)
 		tvdb, _ := strconv.ParseInt(x.ProviderIds["Tvdb"], 10, 64)
@@ -946,6 +947,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		if e = a.catalog.UpsertTitle(ctx, title, true); e != nil {
 			t.Fatal(e)
 		}
+		primed = append(primed, title)
 		if x.UserData.Played {
 			if e = a.state.Scrobble(ctx, viewer.ID, title.Key); e != nil {
 				t.Fatal(e)
@@ -970,6 +972,14 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}
 	if _, err := a.catalog.Similar(ctx, core.MovieKey(10378), 5); err != nil {
 		t.Fatal(err)
+	}
+	// Hashes are stored while the fixture is built, before any page is served.
+	primeCtx, primeCancel := context.WithTimeout(ctx, 20*time.Second)
+	defer primeCancel()
+	if a.artwork != nil {
+		if err := a.artwork.StoreMetadata(primeCtx, viewer, primed); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return a, viewer, cleanup
 }
