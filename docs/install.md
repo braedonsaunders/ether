@@ -397,14 +397,58 @@ owner account after setup is complete. In **Backups & import › Snapshots**, en
 a password of at least 12 characters before downloading. Downloads use the
 encrypted `.etherbackup` format. Ether does not store the password.
 
-Restore by uploading the file with the same password. A validated upload is
-staged in `<data directory>/restored-<timestamp>`; the running configuration is
-not replaced. Stop the Ether service, set `ETHER_DATA_DIR` to the staged folder
-in its service environment, then start it again. For a PostgreSQL backup, also
-point `ETHER_DATABASE_URL` at an empty PostgreSQL database, or leave it unset to
-restore as a standalone server. The logical database dump is imported on first
-start. Preserve the original data directory until the restored server has been
-verified.
+Restore from **Backups & import**: choose **Restore** on a snapshot, or
+upload a downloaded file with the same password. Ether first checks the
+backup (password, checksums, database) into `<data directory>/restored-<timestamp>`
+and shows what will change and who is watching. On a standalone server,
+**Restore and restart** then does the rest: on the next start, before the
+settings or database are opened, the current `config.json`, `.credentials-key`
+and `ether.db` (with its `-wal`/`-shm` files) move into
+`<data directory>/rollbacks/restore-<timestamp>/` and the backup takes their
+place. A failure at any point, including a crash part way through, puts the
+original files back. The Backups page then shows a report (what was restored,
+from when, the database integrity check, and the rollback folder) with
+**Undo restore**, which puts the rollback folder back the same way. The three
+newest rollback folders are kept. A cluster's PostgreSQL backup restored on a
+standalone server is imported into its own database; the server stays
+standalone.
+
+A cluster node never replaces the shared PostgreSQL database by itself. The
+backup is checked and staged, and the console guides you: stop every node,
+create an empty PostgreSQL database, start one node with `ETHER_DATABASE_URL`
+pointing at it and `ETHER_DATA_DIR` set to the staged folder (the logical dump
+is imported on first start), then point the other nodes at the new database.
+
+### Restarting from the console
+
+**Maintenance › Restart Ether** (and the restart prompts after storage
+changes) restarts the server without a terminal. The console shows who is
+watching first and can wait until nobody is. Under systemd, launchd or the
+Windows Service Control Manager, Ether exits and the service manager starts
+it again. In a container, and when run from a terminal, it replaces itself
+with a fresh process, so a container keeps running whatever its restart
+policy. The console follows the restart and reconnects by itself.
+
+### While Ether starts
+
+Ether listens as soon as its data directory is locked, before it opens the
+database. Until it is ready, `/ether/` shows what it is doing (waiting for
+PostgreSQL, updating the database step by step, restoring a backup) and
+`/ether/api/startup-status` reports the same as read-only JSON without
+credentials; every other request, the Plex API included, gets `503` with
+`Retry-After`, and GDM discovery and plex.tv publishing wait. A start that
+fails (for example a damaged database or a database that refuses the
+connection) stays on that page with what to do and retries by itself. On a
+standalone server the page can restore a backup: sign in with the Plex
+account that owns the server, or open the page on the server's own machine
+at `http://localhost:<port>/ether/`.
+
+### Database integrity
+
+A standalone server checks its SQLite database for damage (`PRAGMA
+quick_check`) two minutes after it starts and in the daily maintenance. A
+damaged database appears in the console's health checklist with a link to
+restore a backup; Ether keeps running so you can.
 
 Encrypted backups can also be uploaded during initial setup through the local
 setup interface. Restoring an older unencrypted `.tar.gz` requires an owner
