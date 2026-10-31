@@ -123,3 +123,30 @@ func TestConnectionPageLocaleCoverage(t *testing.T) {
 		})
 	}
 }
+
+func TestSystemEndpointReportsCallerNetwork(t *testing.T) {
+	r := &route.Router{}
+	if err := PublicRoutes(r, PublicInfo{ID: "123", ServerName: "Ether", ProductName: "Emby Server"}); err != nil {
+		t.Fatal(err)
+	}
+	h := StripPrefix("/emby", r)
+	for _, tc := range []struct {
+		path, remote string
+		local, lan   bool
+	}{
+		{"/System/Endpoint", "192.168.68.70:51000", false, true},
+		{"/emby/System/Endpoint", "127.0.0.1:51000", true, true},
+		{"/emby/System/Endpoint", "[fe80::1]:51000", false, true},
+		{"/System/Endpoint", "203.0.113.9:51000", false, false},
+	} {
+		req := httptest.NewRequest("GET", tc.path, nil)
+		req.RemoteAddr = tc.remote
+		req.Header.Set("X-Forwarded-For", "10.0.0.5")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		var got map[string]bool
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || got["IsLocal"] != tc.local || got["IsInNetwork"] != tc.lan {
+			t.Fatalf("%s from %s: %d %s", tc.path, tc.remote, w.Code, w.Body.String())
+		}
+	}
+}

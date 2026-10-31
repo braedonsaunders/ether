@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -21,9 +22,9 @@ type PublicInfo struct {
 // A user picker is intentionally not exposed until the host can supply its
 // authorized list of visible viewers.
 func PublicRoutes(r *route.Router, info PublicInfo) error {
-	return publicRoutes(r, func() PublicInfo { return info }, nil)
+	return publicRoutes(r, func() PublicInfo { return info }, nil, nil)
 }
-func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.HandlerFunc) error {
+func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.HandlerFunc, clientIP func(*http.Request) (netip.Addr, bool)) error {
 	if picker == nil {
 		picker = func(w http.ResponseWriter, _ *http.Request) { jsonReply(w, []any{}) }
 	}
@@ -70,6 +71,9 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.Handle
 			webPage(w, r)
 		}},
 		{"GET", "/Users/Public", picker},
+		{"GET", "/System/Endpoint", func(w http.ResponseWriter, r *http.Request) {
+			jsonReply(w, endpointInfo(r, clientIP))
+		}},
 		{"GET", "/System/Ping", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			_ = json.NewEncoder(w).Encode(getInfo().ProductName)
@@ -81,6 +85,26 @@ func publicRoutes(r *route.Router, getInfo func() PublicInfo, picker http.Handle
 		}
 	}
 	return nil
+}
+
+// endpointInfo reports where the caller sits relative to the server. Emby for
+// tvOS and other native clients call it before signing in and treat a 404 as
+// an unreachable server. IsLocal is a loopback peer and IsInNetwork a
+// loopback, private or link-local peer, as in Jellyfin. The peer comes from
+// the host's trusted-proxy resolution, so forwarding headers cannot claim
+// the LAN.
+func endpointInfo(r *http.Request, clientIP func(*http.Request) (netip.Addr, bool)) map[string]bool {
+	var ip netip.Addr
+	ok := false
+	if clientIP != nil {
+		ip, ok = clientIP(r)
+	} else if ap, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
+		ip, ok = ap.Addr(), true
+	}
+	ip = ip.Unmap()
+	local := ok && ip.IsLoopback()
+	network := local || ok && (ip.IsPrivate() || ip.IsLinkLocalUnicast())
+	return map[string]bool{"IsLocal": local, "IsInNetwork": network}
 }
 
 type prefixKey struct{}
