@@ -406,10 +406,11 @@ func warmAcceptable(e *warmEntry, profile core.QualityProfile, caps core.ClientC
 	}
 	if f.size > 0 && f.duration > 0 {
 		mbPerMin := float64(f.size) / (1024 * 1024) / f.duration.Minutes()
-		if profile.MaxSizeMBPerMin > 0 && mbPerMin > profile.MaxSizeMBPerMin {
+		minMBPerMin, maxMBPerMin := profile.SizeBoundsForKey(e.res.Title)
+		if maxMBPerMin > 0 && mbPerMin > maxMBPerMin {
 			return false
 		}
-		if profile.MinSizeMBPerMin > 0 && mbPerMin < profile.MinSizeMBPerMin {
+		if minMBPerMin > 0 && mbPerMin < minMBPerMin {
 			return false
 		}
 	}

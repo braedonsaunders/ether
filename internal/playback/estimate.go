@@ -47,13 +47,14 @@ func EstimateInfo(t *core.Title, caps core.ClientCaps, p core.QualityProfile) co
 
 	// Keep the total inside the profile's size sanity range (MB per minute).
 	total := videoKbps + audio.BitrateKbps
-	if p.MinSizeMBPerMin > 0 {
-		if lo := mbPerMinToKbps(p.MinSizeMBPerMin); total < lo {
+	minMBPerMin, maxMBPerMin := p.SizeBoundsFor(t)
+	if minMBPerMin > 0 {
+		if lo := mbPerMinToKbps(minMBPerMin); total < lo {
 			total = lo
 		}
 	}
-	if p.MaxSizeMBPerMin > 0 {
-		if hi := mbPerMinToKbps(p.MaxSizeMBPerMin); total > hi {
+	if maxMBPerMin > 0 {
+		if hi := mbPerMinToKbps(maxMBPerMin); total > hi {
 			total = hi
 		}
 	}
@@ -122,14 +123,14 @@ func standardHeight(h int) int {
 }
 
 func widthFor(h int) int {
-	switch h {
-	case 2160:
+	switch {
+	case h >= 2160:
 		return 3840
-	case 1080:
+	case h == 1080:
 		return 1920
-	case 720:
+	case h == 720:
 		return 1280
-	case 576:
+	case h == 576:
 		return 1024
 	default:
 		return 854

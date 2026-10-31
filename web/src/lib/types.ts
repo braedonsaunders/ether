@@ -118,7 +118,12 @@ export interface SiteUpdateReport {
 }
 
 export type DebridKind =
-  "realdebrid" | "torbox" | "alldebrid" | "premiumize" | "debridlink" | "offcloud";
+  | "realdebrid"
+  | "torbox"
+  | "alldebrid"
+  | "premiumize"
+  | "debridlink"
+  | "offcloud";
 
 /** One owner-supplied debrid account. `apiKey` is redacted to "••••" when set. */
 export interface DebridProvider {
@@ -396,6 +401,9 @@ export interface QualityProfile {
   preferredAudio: string[] | null;
   minSizeMbPerMin: number;
   maxSizeMbPerMin: number;
+  episodeMinSizeMbPerMin?: number;
+  episodeMaxSizeMbPerMin?: number;
+  preferLargest?: boolean;
   preferredLanguages: string[] | null;
   allowCam: boolean;
   /** Imported profiles: the only source-resolution pairs allowed, e.g. "webdl-1080". */
@@ -411,6 +419,7 @@ export interface QualityRule {
   platform?: string;
   userId?: number;
   profile: string;
+  maxHeight?: number;
 }
 
 export interface SetupStep {

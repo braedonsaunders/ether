@@ -115,7 +115,7 @@ func DefaultQuality() Quality {
 				PreferredCodecs:  []string{"hevc", "av1", "h264"},
 				PreferredAudio:   []string{"truehd", "eac3", "dtshd", "ac3", "aac"},
 				MinSizeMBPerMin:  15,
-				MaxSizeMBPerMin:  600,
+				MaxSizeMBPerMin:  1000,
 			},
 			{
 				Name:             "1080p",

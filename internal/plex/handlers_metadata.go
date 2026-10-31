@@ -247,7 +247,7 @@ func (s *Server) warmDetail(ctx context.Context, pr *Request, t *core.Title) {
 	if t == nil || !isPlayable(t.Type) || s.d.Playback == nil {
 		return
 	}
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.clientCaps(pr)
 	if warm, ok := s.d.Playback.(core.PlaybackPreparer); ok {
 		warm.PreResolve(ctx, pr.User, t.Key, caps)
 	}

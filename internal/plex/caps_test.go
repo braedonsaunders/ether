@@ -257,3 +257,70 @@ func TestDecisionVideoBitrateRefinesSourceCapabilities(t *testing.T) {
 		t.Fatal("query raised an existing limit")
 	}
 }
+
+func TestAndroidMobileClientRuleOverridesDefault1080pCap(t *testing.T) {
+	q := config.DefaultQuality()
+	// Default: no Android mobile rule -> capped at 1080p.
+	pr := &Request{Product: "Plex for Android (Mobile)", Platform: "Android", Device: "Pixel 8"}
+	base := resolver.ApplyClientRules(q, pr.ClientCaps(0), nil)
+	if base.MaxHeight != 1080 || base.HDR10 {
+		t.Fatalf("default Android mobile caps = %+v, want MaxHeight=1080 HDR10=false", base)
+	}
+	prof := resolver.SelectProfile(q, base, nil)
+	if prof.MaxHeight != 1080 {
+		t.Fatalf("default Android mobile profile MaxHeight = %d, want 1080", prof.MaxHeight)
+	}
+
+	// Rule assigning 4K profile to Plex for Android (Mobile) lifts ceiling to 2160p + HDR10.
+	q.Rules = append(q.Rules, config.QualityRule{Product: "Plex for Android (Mobile)", Profile: "4K"})
+	lifted := resolver.ApplyClientRules(q, pr.ClientCaps(0), nil)
+	if lifted.MaxHeight != 2160 || !lifted.HDR10 {
+		t.Fatalf("rule-overridden Android mobile caps = %+v, want MaxHeight=2160 HDR10=true", lifted)
+	}
+	prof4K := resolver.SelectProfile(q, pr.ClientCaps(0), nil)
+	if prof4K.MaxHeight != 2160 || !prof4K.AllowHDR {
+		t.Fatalf("rule-overridden Android mobile profile = %+v, want MaxHeight=2160 AllowHDR=true", prof4K)
+	}
+
+	// Explicit client rule MaxHeight=1440 or 2160 on a 1080p profile is respected.
+	qCap := config.DefaultQuality()
+	qCap.Rules = []config.QualityRule{{Product: "Plex for Android (Mobile)", Profile: "4K", MaxHeight: 720}}
+	capped := resolver.ApplyClientRules(qCap, pr.ClientCaps(0), nil)
+	if capped.MaxHeight != 720 {
+		t.Fatalf("explicit rule MaxHeight caps = %+v, want 720", capped)
+	}
+
+	// Per-request explicit video.height limitation from the client still wins over the rule.
+	prLimited := &Request{
+		Product:      "Plex for Android (Mobile)",
+		Platform:     "Android",
+		Device:       "Pixel 8",
+		ProfileExtra: "add-limitation(scope=videoCodec&scopeName=*&type=upperBound&name=video.height&value=720)",
+	}
+	reqLimited := resolver.ApplyClientRules(q, prLimited.ClientCaps(0), nil)
+	if reqLimited.MaxHeight != 720 {
+		t.Fatalf("per-request limitation should cap at 720, got %+v", reqLimited)
+	}
+}
+
+func TestRemote4KProfileClearsDefault8MbpsRemoteBitrateCap(t *testing.T) {
+	q := config.DefaultQuality()
+	q.Remote = "4K"
+	pr := &Request{Product: "Plex for Apple TV", Platform: "tvOS", Device: "Apple TV", Remote: true}
+	raw := pr.ClientCaps(8000)
+	if raw.MaxBitrateKbps != 8000 || !raw.DefaultRemoteBitrate {
+		t.Fatalf("raw remote caps = %+v", raw)
+	}
+	applied := resolver.ApplyClientRules(q, raw, nil)
+	if applied.MaxBitrateKbps != 0 || applied.DefaultRemoteBitrate {
+		t.Fatalf("4K remote profile should clear default 8000 kbps cap, got %+v", applied)
+	}
+
+	// Explicit client bitrate limit is preserved even on a 4K profile.
+	explicit := pr.ClientCaps(8000)
+	applyDecisionQuery(&explicit, url.Values{"maxVideoBitrate": {"8000"}})
+	appliedExplicit := resolver.ApplyClientRules(q, explicit, nil)
+	if appliedExplicit.MaxBitrateKbps != 8000 {
+		t.Fatalf("explicit client maxVideoBitrate should be preserved, got %+v", appliedExplicit)
+	}
+}

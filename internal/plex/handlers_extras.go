@@ -260,7 +260,7 @@ func extraKeyFromRequest(r *http.Request) (core.RatingKey, bool) {
 func (s *Server) parseExtraPlayRequest(r *http.Request, key core.RatingKey) playRequest {
 	pr := FromContext(r.Context())
 	q := r.URL.Query()
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.clientCaps(pr)
 	applyDecisionQuery(&caps, q)
 	p := playRequest{key: key, caps: caps, audioSel: -1, subSel: -1, protocol: q.Get("protocol"), mde: q.Get("hasMDE") == "1", listAllTracks: androidFamilyClient(pr)}
 	if p.protocol == "" {
@@ -543,7 +543,7 @@ func (s *Server) handleExtraPart(w http.ResponseWriter, r *http.Request) bool {
 		writeHTTPError(w, http.StatusForbidden)
 		return true
 	}
-	s.prewarmFeature(ctx, pr, s.featureForExtra(pr, e), pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps))
+	s.prewarmFeature(ctx, pr, s.featureForExtra(pr, e), s.clientCaps(pr))
 	resolved, err := s.d.Extras.Resolve(ctx, e)
 	if err != nil {
 		s.log.Info("extra part resolve failed", "key", e.Key, "err", err)

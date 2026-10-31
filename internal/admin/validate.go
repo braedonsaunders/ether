@@ -339,6 +339,10 @@ func ValidateConfig(cfg config.Config) []FieldError {
 			(p.MaxSizeMBPerMin > 0 && p.MinSizeMBPerMin > p.MaxSizeMBPerMin) {
 			v.add(f+".minSizeMbPerMin", "must be <= maxSizeMbPerMin")
 		}
+		if p.EpisodeMinSizeMBPerMin < 0 || p.EpisodeMaxSizeMBPerMin < 0 ||
+			(p.EpisodeMaxSizeMBPerMin > 0 && p.EpisodeMinSizeMBPerMin > p.EpisodeMaxSizeMBPerMin) {
+			v.add(f+".episodeMinSizeMbPerMin", "must be <= episodeMaxSizeMbPerMin")
+		}
 	}
 	if cfg.Quality.Default != "" && len(profiles) > 0 && !profiles[cfg.Quality.Default] {
 		v.add("quality.default", "names a profile that does not exist")
@@ -351,6 +355,9 @@ func ValidateConfig(cfg config.Config) []FieldError {
 			v.add(fmt.Sprintf("quality.rules[%d].profile", i), "is required")
 		} else if len(profiles) > 0 && !profiles[r.Profile] {
 			v.add(fmt.Sprintf("quality.rules[%d].profile", i), "names a profile that does not exist")
+		}
+		if r.MaxHeight < 0 {
+			v.add(fmt.Sprintf("quality.rules[%d].maxHeight", i), "must be >= 0")
 		}
 	}
 

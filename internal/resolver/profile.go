@@ -23,6 +23,89 @@ func defaultProfile() core.QualityProfile {
 	}
 }
 
+// defaultCappedAndroidClient reports whether caps describes an Android
+// mobile client whose default base ceiling is 1080p unless overridden by
+// a user-configured client rule.
+func defaultCappedAndroidClient(caps core.ClientCaps) bool {
+	pr := strings.ToLower(caps.Product)
+	pl := strings.ToLower(caps.Platform)
+	dv := strings.ToLower(caps.Device)
+	isAndroid := strings.Contains(pr, "android") || (pl == "android" && !strings.Contains(pr, "web"))
+	if !isAndroid {
+		return false
+	}
+	return !strings.Contains(pr, "tv") && !strings.Contains(dv, "shield") && !strings.Contains(dv, "tv")
+}
+
+// ApplyClientRules returns caps with any matching user-defined client rule
+// resolution override applied. When no rule matches (or when the client
+// sent an explicit per-request resolution limit), the default 1080p ceiling
+// for Android mobile is preserved. When the selected profile for the client
+// allows 2160p (4K) and the request carries only the server's default 1080p
+// remote bitrate cap (rather than an explicit client bitrate limit), the
+// default remote bitrate cap is cleared so 4K releases are not demoted below
+// 8 Mbps.
+func ApplyClientRules(q config.Quality, caps core.ClientCaps, user *core.User) core.ClientCaps {
+	if caps.Download {
+		return caps
+	}
+	byName := map[string]core.QualityProfile{}
+	for _, p := range q.Profiles {
+		byName[p.Name] = p
+	}
+	var selected core.QualityProfile
+	var hasSelected bool
+	if caps.Remote && q.Remote != "" {
+		if p, ok := byName[q.Remote]; ok {
+			selected, hasSelected = p, true
+		}
+	}
+	if !hasSelected {
+		for _, rule := range q.Rules {
+			if !ruleMatches(rule, caps, user) {
+				continue
+			}
+			prof, ok := byName[rule.Profile]
+			if !ok {
+				continue
+			}
+			selected, hasSelected = prof, true
+			targetHeight := rule.MaxHeight
+			if targetHeight <= 0 {
+				if prof.MaxHeight > 0 {
+					targetHeight = prof.MaxHeight
+				} else {
+					targetHeight = 2160
+				}
+			}
+			if !caps.ExplicitMaxHeight {
+				if rule.MaxHeight > 0 {
+					caps.MaxHeight = rule.MaxHeight
+				} else if defaultCappedAndroidClient(caps) && caps.MaxHeight < targetHeight {
+					caps.MaxHeight = targetHeight
+				}
+			}
+			if caps.MaxHeight >= 2160 && prof.AllowHDR && !caps.ExplicitNoHDR && defaultCappedAndroidClient(caps) {
+				caps.HDR10 = true
+			}
+			break
+		}
+	}
+	if !hasSelected && q.Default != "" {
+		if p, ok := byName[q.Default]; ok {
+			selected, hasSelected = p, true
+		}
+	}
+	if !hasSelected && len(q.Profiles) > 0 {
+		selected, hasSelected = q.Profiles[0], true
+	}
+	if hasSelected && caps.DefaultRemoteBitrate && (selected.MaxHeight == 0 || selected.MaxHeight >= 2160) && (caps.MaxHeight == 0 || caps.MaxHeight >= 2160) {
+		caps.MaxBitrateKbps = 0
+		caps.DefaultRemoteBitrate = false
+	}
+	return caps
+}
+
 // SelectProfile picks the quality profile for a client and clamps it
 // to what the client can direct-play. Playback uses it for
 // pre-resolution estimates; the resolver uses it for ranking.
@@ -34,6 +117,7 @@ func defaultProfile() core.QualityProfile {
 // supports them, and preferred codecs the client cannot decode are
 // dropped.
 func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core.QualityProfile {
+	caps = ApplyClientRules(q, caps, user)
 	byName := map[string]core.QualityProfile{}
 	for _, p := range q.Profiles {
 		byName[p.Name] = p
@@ -92,11 +176,6 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 		}
 		prof.ReleaseRules = rules
 	}
-
-	// Key of the configured definition, taken from this pristine copy
-	// before download reshaping and the client-cap clamp below, so the
-	// same configured profile keys identically for every client.
-	prof.SelectionKey = prof.ComputeSelectionKey()
 
 	// Key of the configured definition, taken from this pristine copy
 	// before the configured-height snapshot, download reshaping, and
@@ -165,6 +244,10 @@ func downloadProfile(prof core.QualityProfile, caps core.ClientCaps) core.Qualit
 	if prof.MaxSizeMBPerMin == 0 || prof.MaxSizeMBPerMin > 80 {
 		prof.MaxSizeMBPerMin = 80
 	}
+	if prof.EpisodeMaxSizeMBPerMin > 80 {
+		prof.EpisodeMaxSizeMBPerMin = 80
+	}
+	prof.PreferLargest = false
 	return prof
 }
 

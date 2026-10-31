@@ -528,6 +528,7 @@ func (s *Service) Resolve(ctx context.Context, req core.ResolveRequest) (*core.R
 	if s.indexer == nil {
 		return nil, fmt.Errorf("resolver: no indexer configured")
 	}
+	req.Client = ApplyClientRules(s.qualityCfg(), req.Client, req.User)
 	profile := s.ProfileFor(req.Client, req.User)
 	key := flightKey(req, profile)
 
@@ -1371,11 +1372,12 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 	}
 	if !preferred && size > 0 && t.Runtime > 0 {
 		mbPerMin := float64(size) / (1 << 20) / t.Runtime.Minutes()
-		minMBPerMin := effectiveMinSizeMBPerMin(profile.MinSizeMBPerMin, rel.Info)
+		cfgMin, cfgMax := profile.SizeBoundsFor(t)
+		minMBPerMin := effectiveMinSizeMBPerMin(cfgMin, rel.Info)
 		if minMBPerMin > 0 && mbPerMin < minMBPerMin {
 			return "size too small for runtime"
 		}
-		if profile.MaxSizeMBPerMin > 0 && mbPerMin > profile.MaxSizeMBPerMin {
+		if cfgMax > 0 && mbPerMin > cfgMax {
 			return "size too large for runtime"
 		}
 	}
@@ -1633,11 +1635,34 @@ func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.T
 		sc += 10
 	}
 	// Size sanity: in-range sizes get a small bonus, unknown size none.
+	cfgMin, cfgMax := profile.SizeBoundsFor(t)
 	if rel.Size > 0 && t.Runtime > 0 {
 		mbPerMin := float64(rel.Size) / (1 << 20) / t.Runtime.Minutes()
-		if (profile.MinSizeMBPerMin == 0 || mbPerMin >= profile.MinSizeMBPerMin) &&
-			(profile.MaxSizeMBPerMin == 0 || mbPerMin <= profile.MaxSizeMBPerMin) {
+		if (cfgMin == 0 || mbPerMin >= cfgMin) &&
+			(cfgMax == 0 || mbPerMin <= cfgMax) {
 			sc += 5
+		}
+	}
+	if profile.PreferLargest && rel.Size > 0 {
+		if (profile.MaxHeight > 0 && info.Height >= profile.MaxHeight) || (profile.MaxHeight == 0 && info.Height >= 2160) {
+			sc += 100
+		}
+		if t != nil && t.Runtime > 0 {
+			mbPerMin := float64(rel.Size) / (1 << 20) / t.Runtime.Minutes()
+			ref := cfgMax
+			if ref <= 0 {
+				if maxH >= 2160 {
+					ref = 800
+				} else if maxH >= 1080 {
+					ref = 200
+				} else {
+					ref = 80
+				}
+			}
+			sc += 100 * min(mbPerMin/ref, 1)
+		} else {
+			gb := float64(rel.Size) / (1 << 30)
+			sc += 100 * min(gb/80, 1)
 		}
 	}
 	// Age penalty.

@@ -628,3 +628,38 @@ func hasHypothesis(v CaptureView, code string) bool {
 	}
 	return false
 }
+
+func TestStartEvictsOldestFinishedWhenSlotsAreFull(t *testing.T) {
+	r, clk := newTestRecorder(t)
+	v1, err := r.Start("owner", StartIn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Finish("owner", v1.ID, FinishIn{}); err != nil {
+		t.Fatal(err)
+	}
+	clk.t = clk.t.Add(time.Second)
+	v2, err := r.Start("owner", StartIn{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One finished + one recording = 2 slots; starting a third evicts v1 (finished).
+	clk.t = clk.t.Add(time.Second)
+	v3, err := r.Start("owner", StartIn{})
+	if err != nil {
+		t.Fatalf("third capture should evict oldest finished: %v", err)
+	}
+	if _, err := r.Get("owner", v1.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("oldest finished should be evicted, got %v", err)
+	}
+	if _, err := r.Get("owner", v2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Get("owner", v3.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Two active recordings cannot be evicted; a fourth start must return ErrTooMany.
+	if _, err := r.Start("owner", StartIn{}); !errors.Is(err, ErrTooMany) {
+		t.Fatalf("expected ErrTooMany when two recordings are active, got %v", err)
+	}
+}

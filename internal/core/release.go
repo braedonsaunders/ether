@@ -121,17 +121,20 @@ type QualityProfile struct {
 	// 0 means unset (a profile built outside SelectProfile), in which
 	// case MaxHeight itself is the configured value. Runtime-only,
 	// never persisted with the profile.
-	ConfiguredMaxHeight int      `json:"-"`
-	MinHeight           int      `json:"minHeight"` // floor, e.g. 720
-	AllowHDR            bool     `json:"allowHdr"`  // only applied when the client also supports it
-	AllowDolbyVision    bool     `json:"allowDolbyVision"`
-	PreferredSources    []Source `json:"preferredSources"` // best first
-	PreferredCodecs     []string `json:"preferredCodecs"`  // best first; codecs the client can't play are dropped anyway
-	PreferredAudio      []string `json:"preferredAudio"`
-	MinSizeMBPerMin     float64  `json:"minSizeMbPerMin"` // size sanity, per minute of runtime
-	MaxSizeMBPerMin     float64  `json:"maxSizeMbPerMin"`
-	PreferredLanguages  []string `json:"preferredLanguages"`
-	AllowCam            bool     `json:"allowCam"` // the only CAM switch; cinema recordings play only for profiles that allow them
+	ConfiguredMaxHeight    int      `json:"-"`
+	MinHeight              int      `json:"minHeight"` // floor, e.g. 720
+	AllowHDR               bool     `json:"allowHdr"`  // only applied when the client also supports it
+	AllowDolbyVision       bool     `json:"allowDolbyVision"`
+	PreferredSources       []Source `json:"preferredSources"` // best first
+	PreferredCodecs        []string `json:"preferredCodecs"`  // best first; codecs the client can't play are dropped anyway
+	PreferredAudio         []string `json:"preferredAudio"`
+	MinSizeMBPerMin        float64  `json:"minSizeMbPerMin"` // size sanity, per minute of runtime (movies, and fallback for TV)
+	MaxSizeMBPerMin        float64  `json:"maxSizeMbPerMin"`
+	EpisodeMinSizeMBPerMin float64  `json:"episodeMinSizeMbPerMin,omitempty"` // optional TV episode size bounds (0 uses MinSizeMBPerMin/MaxSizeMBPerMin)
+	EpisodeMaxSizeMBPerMin float64  `json:"episodeMaxSizeMbPerMin,omitempty"`
+	PreferLargest          bool     `json:"preferLargest,omitempty"` // prefer larger files among candidates matching the profile
+	PreferredLanguages     []string `json:"preferredLanguages"`
+	AllowCam               bool     `json:"allowCam"` // the only CAM switch; cinema recordings play only for profiles that allow them
 	// SelectionKey is the canonical hash of this profile's configured
 	// definition, computed by resolver.SelectProfile from the pristine
 	// configured profile before download reshaping or client-cap
@@ -139,6 +142,30 @@ type QualityProfile struct {
 	// original language is not: it is per-title evaluation context, not a
 	// profile fact. Runtime-only, never persisted with the profile.
 	SelectionKey string `json:"-"`
+}
+
+// SizeBoundsForKey returns the configured (min, max) MB/min bounds for a rating key.
+// TV episodes use EpisodeMinSizeMBPerMin / EpisodeMaxSizeMBPerMin when positive,
+// falling back to MinSizeMBPerMin / MaxSizeMBPerMin.
+func (p QualityProfile) SizeBoundsForKey(key RatingKey) (minMBPerMin, maxMBPerMin float64) {
+	minMBPerMin, maxMBPerMin = p.MinSizeMBPerMin, p.MaxSizeMBPerMin
+	if key.Kind() == KindEpisode {
+		if p.EpisodeMinSizeMBPerMin > 0 {
+			minMBPerMin = p.EpisodeMinSizeMBPerMin
+		}
+		if p.EpisodeMaxSizeMBPerMin > 0 {
+			maxMBPerMin = p.EpisodeMaxSizeMBPerMin
+		}
+	}
+	return minMBPerMin, maxMBPerMin
+}
+
+// SizeBoundsFor returns the configured (min, max) MB/min bounds for a title.
+func (p QualityProfile) SizeBoundsFor(t *Title) (minMBPerMin, maxMBPerMin float64) {
+	if t != nil && (t.Type == TypeEpisode || t.Key.Kind() == KindEpisode) {
+		return p.SizeBoundsForKey(EpisodeKey(1, 1, 1))
+	}
+	return p.MinSizeMBPerMin, p.MaxSizeMBPerMin
 }
 
 // ComputeSelectionKey returns the canonical key of the configured

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/resolver"
 )
 
 // baseCaps is what a product/platform can play according to what Plex
@@ -204,9 +205,20 @@ func (pr *Request) ClientCaps(remoteMaxKbps int) core.ClientCaps {
 		applyProfileExtra(&c, pr.ProfileExtra)
 	}
 	if c.Remote && remoteMaxKbps > 0 && (c.MaxBitrateKbps == 0 || c.MaxBitrateKbps > remoteMaxKbps) {
+		if c.MaxBitrateKbps == 0 {
+			c.DefaultRemoteBitrate = true
+		}
 		c.MaxBitrateKbps = remoteMaxKbps
 	}
 	return c
+}
+
+// clientCaps derives core.ClientCaps for the request and applies any
+// matching client rule override from the server's quality configuration.
+func (s *Server) clientCaps(pr *Request) core.ClientCaps {
+	cfg := s.cfg()
+	caps := pr.ClientCaps(cfg.Transcode.RemoteMaxBitrateKbps)
+	return resolver.ApplyClientRules(cfg.Quality, caps, pr.User)
 }
 
 // Directive is one parsed X-Plex-Client-Profile-Extra directive, e.g.
@@ -368,6 +380,7 @@ func applyLimitation(c *core.ClientCaps, a map[string]string) {
 	case scope == "videoCodec" && name == "video.height" && typ == "upperBound" && numErr == nil && n > 0:
 		if c.MaxHeight == 0 || n < c.MaxHeight {
 			c.MaxHeight = n
+			c.ExplicitMaxHeight = true
 		}
 	case scope == "videoCodec" && name == "video.width" && typ == "upperBound" && numErr == nil && n > 0:
 		h := n * 9 / 16
@@ -381,8 +394,10 @@ func applyLimitation(c *core.ClientCaps, a map[string]string) {
 		}
 		if c.MaxHeight == 0 || h < c.MaxHeight {
 			c.MaxHeight = h
+			c.ExplicitMaxHeight = true
 		}
 	case scope == "videoCodec" && name == "video.bitrate" && typ == "upperBound" && numErr == nil && n > 0:
+		c.DefaultRemoteBitrate = false
 		if c.MaxBitrateKbps == 0 || n < c.MaxBitrateKbps {
 			c.MaxBitrateKbps = n
 		}
@@ -392,6 +407,7 @@ func applyLimitation(c *core.ClientCaps, a map[string]string) {
 		sn := normalizeCodec(a["scopeName"])
 		if n < 10 && (sn == "hevc" || sn == "av1" || sn == "*") {
 			c.HDR10 = false
+			c.ExplicitNoHDR = true
 			c.DolbyVision = false
 		}
 	case scope == "videoCodec" && strings.EqualFold(name, "video.DOVIProfile"):
@@ -401,6 +417,7 @@ func applyLimitation(c *core.ClientCaps, a map[string]string) {
 	case scope == "videoCodec" && name == "video.colorTrc" && typ == "notMatch":
 		if strings.Contains(val, "smpte2084") {
 			c.HDR10 = false
+			c.ExplicitNoHDR = true
 		}
 	}
 }
@@ -424,6 +441,7 @@ func applyLegacyCapabilities(c *core.ClientCaps, s string) {
 			}
 			if maxRes > 0 && maxRes < c.MaxHeight {
 				c.MaxHeight = maxRes
+				c.ExplicitMaxHeight = true
 			}
 		case "audioDecoders":
 			for _, dec := range splitDecoders(v) {
@@ -482,12 +500,18 @@ func splitDecoders(s string) []decoder {
 // (maxVideoBitrate, videoResolution, location).
 func applyDecisionQuery(c *core.ClientCaps, q url.Values) {
 	for _, name := range []string{"maxVideoBitrate", "videoBitrate"} {
-		if n, err := strconv.Atoi(q.Get(name)); err == nil && n > 0 && (c.MaxBitrateKbps == 0 || n < c.MaxBitrateKbps) {
-			c.MaxBitrateKbps = n
+		if n, err := strconv.Atoi(q.Get(name)); err == nil && n > 0 {
+			c.DefaultRemoteBitrate = false
+			if c.MaxBitrateKbps == 0 || n < c.MaxBitrateKbps {
+				c.MaxBitrateKbps = n
+			}
 		}
 	}
-	if h := parseResolutionHeight(q.Get("videoResolution")); h > 0 && (c.MaxHeight == 0 || h < c.MaxHeight) {
-		c.MaxHeight = h
+	if h := parseResolutionHeight(q.Get("videoResolution")); h > 0 {
+		c.ExplicitMaxHeight = true
+		if c.MaxHeight == 0 || h < c.MaxHeight {
+			c.MaxHeight = h
+		}
 	}
 	switch q.Get("location") {
 	case "wan", "cellular":

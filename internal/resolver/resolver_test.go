@@ -838,3 +838,77 @@ func TestHealthCheckCachedUntilTTLOrMarkBad(t *testing.T) {
 		t.Fatal("MarkBad must drop the verified entry")
 	}
 }
+
+func TestEpisodeSizeBoundsAndPreferLargest(t *testing.T) {
+	ctx := context.Background()
+	cfg := testCfg()
+	cfg.Quality.Default = "4K"
+	cfg.Quality.Profiles = []core.QualityProfile{{
+		Name:                   "4K",
+		MinHeight:              1080,
+		MaxHeight:              2160,
+		AllowHDR:               true,
+		AllowDolbyVision:       true,
+		PreferredSources:       []core.Source{core.SourceWEBDL, core.SourceRemux},
+		PreferredCodecs:        []string{"hevc", "h264"},
+		MinSizeMBPerMin:        15,
+		MaxSizeMBPerMin:        1000,
+		EpisodeMinSizeMBPerMin: 5,
+		EpisodeMaxSizeMBPerMin: 80,
+		PreferLargest:          true,
+	}}
+	// Movie: 3 GB 2160p WEB-DL vs 84 GB 2160p Remux. Even though WEB-DL is first in PreferredSources,
+	// PreferLargest must pick the 84 GB Remux and the raised 1000 MB/min ceiling must accept it.
+	idx := &fakeIndexer{releases: []core.Release{
+		rel("small-4k", "The.Signal.1999.2160p.WEB-DL.HEVC.AAC-GRP", 3000),
+		rel("remux-4k", "The.Signal.1999.2160p.UHD.BluRay.REMUX.HEVC.TrueHD-GRP", 84000),
+	}}
+	svc := New(idx, fakeHealth{}, nil, cfg, Options{})
+	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: appleTVCaps()})
+	if err != nil || res.Release.ID != "remux-4k" {
+		t.Fatalf("PreferLargest movie winner = %+v, err = %v", res, err)
+	}
+
+	// Episode: 45-minute episode where EpisodeMaxSizeMBPerMin=80 rejects a 6000 MB (133 MB/min) release
+	// that would have passed Movie MaxSizeMBPerMin=1000, and accepts a 2000 MB (44 MB/min) release.
+	epTitle := &core.Title{
+		Key:       core.EpisodeKey(1396, 1, 1),
+		Type:      core.TypeEpisode,
+		ShowIDs:   core.IDs{TMDB: 1396},
+		ShowTitle: "Breaking Bad",
+		ShowYear:  2008,
+		Title:     "Pilot",
+		Season:    1,
+		Episode:   1,
+		Runtime:   45 * time.Minute,
+		Released:  time.Date(2008, 1, 20, 0, 0, 0, 0, time.UTC),
+	}
+	epIdx := &fakeIndexer{releases: []core.Release{
+		rel("ep-huge", "Breaking.Bad.S01E01.2160p.UHD.BluRay.REMUX.HEVC-GRP", 6000),
+		rel("ep-fit", "Breaking.Bad.S01E01.2160p.WEB-DL.HEVC-GRP", 2000),
+	}}
+	epSvc := New(epIdx, fakeHealth{}, nil, cfg, Options{})
+	epRes, err := epSvc.Resolve(ctx, core.ResolveRequest{Title: epTitle, Client: appleTVCaps()})
+	if err != nil || epRes.Release.ID != "ep-fit" {
+		t.Fatalf("episode size bounds winner = %+v, err = %v", epRes, err)
+	}
+}
+
+func TestRemote4KProfileDoesNotDemote2160pUnderDefault8MbpsCap(t *testing.T) {
+	ctx := context.Background()
+	cfg := testCfg()
+	cfg.Quality.Remote = "4K"
+	idx := &fakeIndexer{releases: []core.Release{
+		rel("uhd-18gb", "The.Signal.1999.2160p.BluRay.x265.10bit-GRP", 18000),
+		rel("hd-4gb", "The.Signal.1999.1080p.BluRay.x264-GRP", 4200),
+	}}
+	svc := New(idx, fakeHealth{}, nil, cfg, Options{})
+	caps := appleTVCaps()
+	caps.Remote = true
+	caps.MaxBitrateKbps = 8000
+	caps.DefaultRemoteBitrate = true
+	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: caps})
+	if err != nil || res.Release.ID != "uhd-18gb" {
+		t.Fatalf("remote 4K profile picked %+v (err=%v), want uhd-18gb", res, err)
+	}
+}

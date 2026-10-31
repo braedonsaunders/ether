@@ -307,14 +307,29 @@ func (r *Recorder) Start(token string, in StartIn) (CaptureView, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.expireLocked()
+	recording := 0
 	active := 0
+	var oldestFinished *capture
 	for _, c := range r.captures {
-		if c.state == "recording" || c.state == "finished" {
+		switch c.state {
+		case "recording":
+			recording++
 			active++
+		case "finished":
+			active++
+			if !c.building && (oldestFinished == nil || c.started.Before(oldestFinished.started)) {
+				oldestFinished = c
+			}
 		}
 	}
-	if active >= maxCaptures {
+	if recording >= maxCaptures {
 		return CaptureView{}, ErrTooMany
+	}
+	if active >= maxCaptures {
+		if oldestFinished == nil {
+			return CaptureView{}, ErrTooMany
+		}
+		delete(r.captures, oldestFinished.id)
 	}
 	var deviceKey string
 	confirmed := false

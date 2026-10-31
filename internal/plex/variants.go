@@ -244,7 +244,7 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 	if s.d.Variants == nil || pr.User == nil {
 		return nil, ""
 	}
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.clientCaps(pr)
 	vctx, cancel := context.WithTimeout(ctx, variantRenderBudget)
 	defer cancel()
 	vs, err := s.d.Variants.Variants(vctx, core.ResolveRequest{Title: t, Client: caps, User: pr.User}, core.MaxVariants)

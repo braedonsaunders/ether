@@ -13,7 +13,7 @@ import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { useViewers, viewerName } from "../../components/pickers";
 import { SettingsRow } from "../../components/SettingsRow";
-import { t } from "../../i18n";
+import { localized, t } from "../../i18n";
 import type { Viewer } from "../../lib/contract";
 import type { QualityRule } from "../../lib/types";
 import {
@@ -42,6 +42,16 @@ const DEVICES = [
 ];
 const CUSTOM = "__custom__";
 
+const HEIGHTS = localized(() => [
+  { value: "0", label: t("Any") },
+  { value: "480", label: "480p" },
+  { value: "720", label: "720p" },
+  { value: "1080", label: "1080p" },
+  { value: "2160", label: t("4K (2160p)") },
+]);
+
+const heightLabel = (h: number) => HEIGHTS.find((x) => x.value === String(h))?.label ?? `${h}p`;
+
 function ruleViewer(r: QualityRule, viewers: Viewer[] | null) {
   if (!r.userId) return "";
   const v = viewers?.find((x) => x.id === r.userId);
@@ -49,7 +59,13 @@ function ruleViewer(r: QualityRule, viewers: Viewer[] | null) {
 }
 
 function ruleSummary(r: QualityRule, viewers: Viewer[] | null) {
-  return [r.protocol, r.product || t("Any device"), r.platform, ruleViewer(r, viewers)]
+  return [
+    r.protocol,
+    r.product || t("Any device"),
+    r.platform,
+    ruleViewer(r, viewers),
+    r.maxHeight ? heightLabel(r.maxHeight) : "",
+  ]
     .filter(Boolean)
     .join(" · ");
 }
@@ -311,6 +327,26 @@ export function ClientRulesTab() {
                     onChange={(v) => set({ profile: v })}
                     options={names}
                     ariaLabel={t("Profile")}
+                    searchable={false}
+                  />
+                </div>
+              }
+            />
+            <SettingsRow
+              title={t("Maximum resolution")}
+              description={
+                errors.maxHeight ? (
+                  <span className="text-danger">{errors.maxHeight}</span>
+                ) : undefined
+              }
+              control={
+                <div className="w-56">
+                  <SearchSelect
+                    {...searchSelectLabels()}
+                    value={String(draft.maxHeight ?? 0)}
+                    onChange={(v) => set({ maxHeight: Number(v) || undefined })}
+                    options={HEIGHTS}
+                    ariaLabel={t("Maximum resolution")}
                     searchable={false}
                   />
                 </div>

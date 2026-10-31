@@ -190,7 +190,7 @@ func (s *Server) parsePlayRequest(r *http.Request) (playRequest, error) {
 	if key == 0 || !isPlayableKey(key) {
 		return playRequest{}, fmt.Errorf("no playable item in request")
 	}
-	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	caps := s.clientCaps(pr)
 	applyDecisionQuery(&caps, q)
 	// The decision query can identify WAN even when the metadata request
 	// looked local. Apply the remote ceiling before source resolution too.
@@ -1223,7 +1223,7 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 			s.writeErr(w, r, err)
 			return
 		}
-		caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+		caps := s.clientCaps(pr)
 		ps, err = s.prepareForRelease(ctx, pr.User, key, caps, releaseID)
 		if err != nil {
 			s.log.Info("direct play failed", "key", key, "reason", playbackMessage(err), "err", err)

@@ -504,7 +504,7 @@ func (s *Server) handleLiveTune(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, 404)
 		return
 	}
-	info, err := s.d.LiveTV.TuneWithSession(r.Context(), pr.User, id, pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps), pr.SessionID)
+	info, err := s.d.LiveTV.TuneWithSession(r.Context(), pr.User, id, s.clientCaps(pr), pr.SessionID)
 	if err != nil {
 		s.log.Warn("live tune failed", "channel", id, "client", pr.ClientID, "product", pr.Product, "err", err)
 		if errors.Is(err, context.DeadlineExceeded) {

@@ -42,6 +42,9 @@ function blankProfile(n: number): QualityProfile {
     preferredAudio: ["eac3", "ac3", "aac"],
     minSizeMbPerMin: 5,
     maxSizeMbPerMin: 150,
+    episodeMinSizeMbPerMin: 0,
+    episodeMaxSizeMbPerMin: 0,
+    preferLargest: false,
     preferredLanguages: null,
     allowCam: false,
   };
@@ -608,6 +611,44 @@ function ProfileList({
                     <span className="text-sm text-fg-muted">MB</span>
                   </span>
                 }
+              />
+              <SettingsRow
+                title={t("TV episodes")}
+                description={
+                  errors.episodeMinSizeMbPerMin || errors.episodeMaxSizeMbPerMin ? (
+                    <span className="text-danger">
+                      {errors.episodeMinSizeMbPerMin || errors.episodeMaxSizeMbPerMin}
+                    </span>
+                  ) : (
+                    t("Optional override for TV episodes. 0 uses the movie limits above.")
+                  )
+                }
+                control={
+                  <span className="flex items-center gap-2">
+                    <NumberInput
+                      aria-label={t("Episode minimum MB per minute")}
+                      value={draft.episodeMinSizeMbPerMin ?? 0}
+                      min={0}
+                      className="w-20"
+                      onChange={(n) => patch({ episodeMinSizeMbPerMin: n })}
+                    />
+                    <span className="text-sm text-fg-muted">{t("to")}</span>
+                    <NumberInput
+                      aria-label={t("Episode maximum MB per minute")}
+                      value={draft.episodeMaxSizeMbPerMin ?? 0}
+                      min={0}
+                      className="w-20"
+                      onChange={(n) => patch({ episodeMaxSizeMbPerMin: n })}
+                    />
+                    <span className="text-sm text-fg-muted">MB</span>
+                  </span>
+                }
+              />
+              <BoolRow
+                label={t("Prefer largest file")}
+                value={draft.preferLargest ?? false}
+                help={t("Ranks larger files higher within the allowed size range.")}
+                onChange={(v) => patch({ preferLargest: v })}
               />
             </SettingsSection>
             <ImportedRules draft={draft} patch={patch} />

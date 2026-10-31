@@ -550,7 +550,7 @@ func (s *Server) handlePlayQueueCreate(w http.ResponseWriter, r *http.Request) {
 				merged = append(append(merged, prefix...), keys[featureIdx:]...)
 				keys = merged
 				prefixAt = featureIdx
-				s.prewarmFeature(ctx, pr, feature, pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps))
+				s.prewarmFeature(ctx, pr, feature, s.clientCaps(pr))
 			}
 		}
 	}
