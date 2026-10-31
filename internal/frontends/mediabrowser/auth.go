@@ -151,6 +151,7 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 			}
 		}
 	}
+	i.applyOrderedViews(r, v, configuration)
 	if i.protocol == "emby" {
 		for _, key := range []string{"AllowedTags", "EnableCollectionManagement", "EnableLyricManagement", "ForceRemoteSourceTranscoding", "LoginAttemptsBeforeLockout", "MaxActiveSessions", "PasswordResetProviderId", "SyncPlayAccess"} {
 			delete(policy, key)
@@ -429,6 +430,7 @@ func (i *instance) routes() error {
 			}
 			i.result(w, r, token)
 		}},
+		{"POST", "/Users/{userId}/Configuration", i.saveUserConfiguration},
 		{"GET", "/Users/Me", func(w http.ResponseWriter, r *http.Request) {
 			v, token, err := i.viewer(r)
 			if err != nil || v == nil {

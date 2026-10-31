@@ -170,6 +170,10 @@ func (i *instance) writeCollectionFolder(w http.ResponseWriter, r *http.Request,
 		i.writeUserRoot(w, r, v)
 		return
 	}
+	if ids.PersonalView(viewNum) {
+		i.writePersonalFolder(w, r, v, viewNum)
+		return
+	}
 	vs, err := i.host.Experience.Views(r.Context(), v)
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
@@ -222,6 +226,7 @@ func (i *instance) browseRoutes() error {
 			}
 			items = append(items, item)
 		}
+		items = i.prependPersonalViews(r, v, items)
 		i.replyItems(w, r, i.queryResult(items, len(items), 0))
 	}
 	rowHandler := func(purpose frontend.RowPurpose, asArray bool) http.HandlerFunc {
@@ -566,6 +571,12 @@ func (i *instance) browseRoutes() error {
 	if err := add("GET", "/Users/{userId}/Items/Root", root); err != nil {
 		return err
 	}
+	if err := add("GET", "/Movies/Recommendations", func(w http.ResponseWriter, r *http.Request) { i.recommendations(w, r, "movie") }); err != nil {
+		return err
+	}
+	if err := add("GET", "/Shows/Recommendations", func(w http.ResponseWriter, r *http.Request) { i.recommendations(w, r, "show") }); err != nil {
+		return err
+	}
 	if err := add("GET", "/Library/VirtualFolders", i.virtualFolders); err != nil {
 		return err
 	}
@@ -831,6 +842,9 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 	var page frontend.Page
 	if len(parent) == 0 || parent[0] == "" {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), "", q)
+	} else if id, e := ids.ParseGUID(ids.View, parent[0]); e == nil && ids.PersonalView(id) {
+		i.writePersonalItems(w, r, v, id)
+		return
 	} else if id, e := ids.ParseGUID(ids.View, parent[0]); e == nil {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), ids.Decimal(id), q)
 	} else if key, e := ids.ParseRatingKeyGUID(parent[0]); e == nil {

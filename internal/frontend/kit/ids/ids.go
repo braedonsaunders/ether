@@ -29,6 +29,14 @@ const (
 	Programme
 )
 
+// PersonalViewBit marks a view id that belongs to one viewer's home row
+// rather than a library section. Library ids are small positive integers
+// and never set this bit. The id stays stable for a viewer and row identity.
+const PersonalViewBit int64 = 1 << 62
+
+// PersonalView reports whether a decoded view id is a personalized home row.
+func PersonalView(id int64) bool { return id > 0 && id&PersonalViewBit != 0 }
+
 var ErrInvalid = errors.New("invalid identifier")
 
 func validKind(k Kind) bool { return k >= Item && k <= Programme }

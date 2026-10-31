@@ -25,6 +25,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/conform/specs"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
 
 type Profile struct {
@@ -476,7 +477,17 @@ func (p *Protocol) Compare(a, b conform.Response) conform.Report {
 // CompareRequest treats the target's extra ETag on direct range streams as
 // informational. Ether uses that validator for correct If-Range resumption.
 func (p *Protocol) CompareRequest(req conform.Request, reference, target conform.Response) conform.Report {
+	personal := 0
+	if personalViewsPath(req.Path) {
+		if stripped, n, ok := stripPersonalViews(target.Body); ok && n > 0 {
+			target.Body = stripped
+			personal = n
+		}
+	}
 	report := p.Compare(reference, target)
+	if personal > 0 {
+		report.Differences = append(report.Differences, conform.Difference{Path: "$/Items[]", Kind: conform.KindValue, Blocking: false, Reason: "Ether personalized home view", Count: personal})
+	}
 	if reference.Status == target.Status && len(target.Body) > 0 {
 		p.specOnce.Do(func() {
 			data, err := openapi.CachedSpecManifest(specs.Manifest, p.Dialect, "")
@@ -556,6 +567,69 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 		}
 	}
 	return report
+}
+
+// personalViewsPath is the user-view list. Extra Ether home rows are an
+// intended content difference, not a protocol failure.
+func personalViewsPath(raw string) bool {
+	parsed, err := url.Parse(raw)
+	path := raw
+	if err == nil {
+		path = parsed.Path
+	}
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) > 0 && (strings.EqualFold(parts[0], "jellyfin") || strings.EqualFold(parts[0], "emby")) {
+		parts = parts[1:]
+	}
+	if len(parts) == 1 && strings.EqualFold(parts[0], "UserViews") {
+		return true
+	}
+	return len(parts) == 3 && strings.EqualFold(parts[0], "Users") && parts[1] != "" && strings.EqualFold(parts[2], "Views")
+}
+
+// stripPersonalViews removes CollectionFolders whose ids are personalized
+// home rows, so the remaining library list is what conformance compares.
+func stripPersonalViews(body []byte) ([]byte, int, bool) {
+	var doc map[string]any
+	if json.Unmarshal(body, &doc) != nil {
+		return body, 0, false
+	}
+	items, ok := doc["Items"].([]any)
+	if !ok {
+		return body, 0, false
+	}
+	kept := make([]any, 0, len(items))
+	removed := 0
+	for _, item := range items {
+		folder, ok := item.(map[string]any)
+		if !ok {
+			kept = append(kept, item)
+			continue
+		}
+		id, _ := folder["Id"].(string)
+		number, err := ids.ParseGUID(ids.View, id)
+		if err == nil && ids.PersonalView(number) {
+			removed++
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if removed == 0 {
+		return body, 0, true
+	}
+	doc["Items"] = kept
+	if total, ok := doc["TotalRecordCount"].(float64); ok {
+		next := total - float64(removed)
+		if next < 0 {
+			next = 0
+		}
+		doc["TotalRecordCount"] = next
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return body, 0, false
+	}
+	return out, removed, true
 }
 
 // jellyfinFilesystemPath is an item Path, a media-source Path, a virtual

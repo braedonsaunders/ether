@@ -9,6 +9,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/conform"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"github.com/braedonsaunders/ether/internal/conform/specs"
+	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -56,6 +57,34 @@ func TestJellyfinFilesystemPathsAreInformational(t *testing.T) {
 	kept := p.CompareRequest(conform.Request{Method: "GET", Path: "/UserViews"}, conform.Response{Status: 200, Body: []byte(`{"Items":[{"ParentId":"root"}]}`)}, conform.Response{Status: 200, Body: []byte(`{"Items":[{}]}`)})
 	if kept.Blocking() == 0 {
 		t.Fatal("ParentId was treated as a path")
+	}
+}
+
+func TestPersonalHomeViewsAreIntended(t *testing.T) {
+	p := &Protocol{Dialect: "jellyfin"}
+	personal, err := ids.GUID(ids.View, ids.PersonalViewBit|42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := conform.Response{Status: 200, Body: []byte(`{"Items":[{"Id":"library","Name":"Movies"}],"TotalRecordCount":1}`)}
+	target := conform.Response{Status: 200, Body: []byte(`{"Items":[{"Id":"` + personal + `","Name":"For You","CollectionType":"movies"},{"Id":"library","Name":"Movies"}],"TotalRecordCount":2}`)}
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/Users/abc/Views?userId=abc"}, reference, target)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+	found := false
+	for _, diff := range report.Differences {
+		if diff.Reason == "Ether personalized home view" && !diff.Blocking && diff.Count == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal(report.Differences)
+	}
+	extra := conform.Response{Status: 200, Body: []byte(`{"Items":[{"Id":"library","Name":"Movies"},{"Id":"other","Name":"Extra","Unexpected":true}],"TotalRecordCount":2}`)}
+	blocking := p.CompareRequest(conform.Request{Method: "GET", Path: "/UserViews"}, reference, extra)
+	if blocking.Blocking() == 0 {
+		t.Fatal(blocking.Differences)
 	}
 }
 

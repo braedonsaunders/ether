@@ -45,14 +45,14 @@ func (i *instance) displayPreferences(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := i.host.Preferences.Get(r.Context(), v, client[0], key)
 	if errors.Is(err, frontend.ErrPreferencesNotFound) {
-		i.writeDisplayPreferences(w, key, client[0], nil)
+		i.writeDisplayPreferences(w, r, v, key, client[0], nil)
 		return
 	}
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	i.writeDisplayPreferences(w, key, client[0], body)
+	i.writeDisplayPreferences(w, r, v, key, client[0], body)
 }
 
 // Jellyfin's DisplayPreferences constructor fills these fields even when the
@@ -67,14 +67,22 @@ func jellyfinDisplayDefaults(id, client string) map[string]any {
 	}
 }
 
-func (i *instance) writeDisplayPreferences(w http.ResponseWriter, id, client string, body []byte) {
+func (i *instance) writeDisplayPreferences(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, id, client string, body []byte) {
 	if i.protocol != "jellyfin" {
-		if body == nil {
-			jsonReply(w, map[string]any{"Id": id, "Client": client, "CustomPrefs": map[string]string{}, "ScrollDirection": "Horizontal", "SortOrder": "Ascending"})
+		object := map[string]any{}
+		if body != nil && (json.Unmarshal(body, &object) != nil || object == nil) {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write(body)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write(body)
+		if body == nil {
+			object = map[string]any{"Id": id, "Client": client, "CustomPrefs": map[string]any{}, "ScrollDirection": "Horizontal", "SortOrder": "Ascending"}
+		}
+		if _, ok := object["CustomPrefs"]; !ok {
+			object["CustomPrefs"] = map[string]any{}
+		}
+		i.applyHomeSectionDefaults(r, v, id, object)
+		jsonReply(w, object)
 		return
 	}
 	object := map[string]any{}
@@ -91,5 +99,6 @@ func (i *instance) writeDisplayPreferences(w http.ResponseWriter, id, client str
 	if prefs, ok := object["CustomPrefs"].(map[string]any); !ok || prefs == nil {
 		object["CustomPrefs"] = map[string]any{}
 	}
+	i.applyHomeSectionDefaults(r, v, id, object)
 	jsonReply(w, object)
 }

@@ -19,6 +19,7 @@ type Jellyfin struct{ MachineID string }
 func (Jellyfin) Describe() frontend.Descriptor {
 	return frontend.Descriptor{ID: "jellyfin", Name: "Jellyfin", Version: "12.4.0", DefaultPort: 8096}
 }
+func (Jellyfin) ValidateSettings(s frontend.Settings) error { return validatePersonalSettings(s) }
 func (f Jellyfin) Mount(ctx context.Context, host frontend.Host) (frontend.Instance, error) {
 	return mount(ctx, host, f.MachineID, "jellyfin")
 }
@@ -29,6 +30,7 @@ type Emby struct{ MachineID string }
 func (Emby) Describe() frontend.Descriptor {
 	return frontend.Descriptor{ID: "emby", Name: "Emby", Version: "4.10.2.0", DefaultPort: 8097}
 }
+func (Emby) ValidateSettings(s frontend.Settings) error { return validatePersonalSettings(s) }
 func (f Emby) Mount(ctx context.Context, host frontend.Host) (frontend.Instance, error) {
 	return mount(ctx, host, f.MachineID, "emby")
 }
@@ -119,6 +121,7 @@ type instance struct {
 	router   *route.Router
 	pages    *browseCache
 	itemJSON itemJSONCache
+	credits  playCredits
 }
 
 func (i *instance) Handler() http.Handler {
