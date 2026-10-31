@@ -81,11 +81,23 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	cards := i.catalogCards(r, v, token, page.Items)
+	editions, batched := i.pageEditions(r, v, keys)
 	items := make([]any, 0, len(page.Items))
 	for _, t := range page.Items {
 		item := titleDTO(t, state[t.Key])
-		i.artwork(r, v, token, t.Key, item)
-		i.applyEditionOverlay(r, v, t.Key, item)
+		if granted, ok := cards[t.Key]; ok {
+			paintCatalogArtwork(r, granted, item)
+		} else {
+			i.artwork(r, v, token, t.Key, item)
+		}
+		if batched {
+			if summary := bestSiloOverlay(editions[t.Key]); len(summary) > 0 {
+				item["overlay_summary"] = summary
+			}
+		} else {
+			i.applyEditionOverlay(r, v, t.Key, item)
+		}
 		items = append(items, item)
 	}
 	var next any
@@ -262,4 +274,58 @@ func (i *instance) catalogRoutes() error {
 		}
 	}
 	return nil
+}
+
+// catalogCards signs a catalogue page's movie and series artwork in one
+// stateless pass, as the home rows do, instead of loading each title's
+// detail and writing a grant per image. An episode, or a title the signer
+// could not list, keeps the per-title path.
+func (i *instance) catalogCards(r *http.Request, v *frontend.Viewer, token string, titles []frontend.Title) map[frontend.RatingKey][]frontend.GrantedImage {
+	if _, ok := i.host.ImageGrants.(frontend.ImagePageSigner); !ok {
+		return nil
+	}
+	cards := make([]frontend.Title, 0, len(titles))
+	for _, t := range titles {
+		if t.Type == "movie" || t.Type == "show" {
+			cards = append(cards, t)
+		}
+	}
+	return i.sectionArtwork(r, v, token, cards)
+}
+
+// paintCatalogArtwork writes the fields artwork writes for a list card: the
+// first signed image of each kind and its thumbhash.
+func paintCatalogArtwork(r *http.Request, granted []frontend.GrantedImage, out map[string]any) {
+	prefix := ""
+	if r.Context().Value(sharedPrefix{}) != nil {
+		prefix = "/silo"
+	}
+	fields := map[string]string{frontend.ImagePoster: "poster_url", frontend.ImageBackdrop: "backdrop_url", frontend.ImageLogo: "logo_url"}
+	hashes := map[string]string{frontend.ImagePoster: "poster_thumbhash", frontend.ImageBackdrop: "backdrop_thumbhash"}
+	for _, grant := range granted {
+		field := fields[grant.Image.Kind]
+		if field == "" || grant.Secret == "" || grant.Image.Path == "" {
+			continue
+		}
+		if _, exists := out[field]; exists {
+			continue
+		}
+		out[field] = prefix + "/api/v2/images/" + grant.Secret
+		if hash := hashes[grant.Image.Kind]; hash != "" && grant.Image.ThumbHash != "" {
+			out[hash] = grant.Image.ThumbHash
+		}
+	}
+}
+
+// pageEditions reads a page's editions in one batch when the host can.
+func (i *instance) pageEditions(r *http.Request, v *frontend.Viewer, keys []frontend.RatingKey) (map[frontend.RatingKey][]frontend.Version, bool) {
+	batch, ok := i.host.Editions.(frontend.EditionBatch)
+	if !ok || len(keys) == 0 {
+		return nil, false
+	}
+	versions, err := batch.EditionsMany(r.Context(), v, device(r), keys)
+	if err != nil {
+		return nil, false
+	}
+	return versions, true
 }

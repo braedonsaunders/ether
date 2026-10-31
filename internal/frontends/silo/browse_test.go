@@ -3,6 +3,7 @@ package silo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/braedonsaunders/ether/internal/conform/openapi"
 	"net/http/httptest"
 	"os"
@@ -580,4 +581,77 @@ func TestUnresolvedColdTitleDoesNotInventAPlayableSource(t *testing.T) {
 	if w.Code != 200 || calls != 0 || !strings.Contains(w.Body.String(), `"versions":[]`) {
 		t.Fatalf("invented source: %d %s calls=%d", w.Code, w.Body.String(), calls)
 	}
+}
+
+// TestCatalogPageSignsArtworkOnce keeps a catalogue page off per-title
+// detail loads and per-image grant writes: the page's movies and series are
+// signed in one pass and their editions read in one batch, while an episode
+// keeps the per-title artwork path.
+func TestCatalogPageSignsArtworkOnce(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 5}
+	movie, show := frontend.RatingKey(1000000000000001), frontend.RatingKey(1000000000000002)
+	exp := frontendtest.Experience{
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{Items: []frontend.Title{{Key: movie, Type: "movie", Title: "M"}, {Key: show, Type: "show", Title: "S"}}, Total: 2}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			t.Fatal("a catalogue card must not load the title's detail")
+			return frontend.ItemDetail{}, nil
+		},
+	}
+	pages := 0
+	grants := pageImageSigner{
+		ImageGrants: frontendtest.ImageGrants{IssueFunc: func(context.Context, frontend.ImageGrantRequest) (string, error) {
+			t.Fatal("a catalogue card must not write a grant per image")
+			return "", nil
+		}},
+		sign: func(_ context.Context, req frontend.ImagePageRequest) ([]frontend.ImageBatchItem, error) {
+			pages++
+			var out []frontend.ImageBatchItem
+			for _, title := range req.Titles {
+				out = append(out, frontend.ImageBatchItem{Item: title.Key, Authoritative: true, Images: []frontend.GrantedImage{
+					{Image: frontend.Image{Kind: frontend.ImagePoster, Path: "p", ThumbHash: "hash"}, Secret: fmt.Sprintf("poster-%d", title.Key)},
+					{Image: frontend.Image{Kind: frontend.ImageBackdrop, Path: "b"}, Secret: "backdrop"},
+					{Image: frontend.Image{Kind: frontend.ImageBackdrop, Path: "b2"}, Secret: "second-backdrop"},
+				}})
+			}
+			return out, nil
+		},
+	}
+	editions := 0
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, Experience: exp, ImageGrants: grants,
+		Editions: batchEditions{many: func(_ context.Context, keys []frontend.RatingKey) (map[frontend.RatingKey][]frontend.Version, error) {
+			editions++
+			return map[frontend.RatingKey][]frontend.Version{}, nil
+		}}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/catalog?library_id=1", nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	body := w.Body.String()
+	if w.Code != 200 || !strings.Contains(body, fmt.Sprintf(`"poster_url":"/api/v2/images/poster-%d"`, movie)) || !strings.Contains(body, `"poster_thumbhash":"hash"`) || !strings.Contains(body, `"backdrop_url":"/api/v2/images/backdrop"`) || strings.Contains(body, "second-backdrop") {
+		t.Fatalf("catalogue artwork: %d %s", w.Code, body)
+	}
+	if pages != 1 || editions != 1 {
+		t.Fatalf("signed %d pages, read editions %d times", pages, editions)
+	}
+}
+
+type batchEditions struct {
+	many func(context.Context, []frontend.RatingKey) (map[frontend.RatingKey][]frontend.Version, error)
+}
+
+func (b batchEditions) Editions(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey) ([]frontend.Version, error) {
+	panic("a catalogue page reads its editions in one batch")
+}
+
+func (b batchEditions) EditionsMany(ctx context.Context, _ *frontend.Viewer, _ frontend.Device, keys []frontend.RatingKey) (map[frontend.RatingKey][]frontend.Version, error) {
+	return b.many(ctx, keys)
 }
