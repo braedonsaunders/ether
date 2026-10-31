@@ -369,6 +369,10 @@ func (s *surfaceExperience) Item(ctx context.Context, req frontend.ItemRequest) 
 	return detail, nil
 }
 
+func (s *surfaceExperience) SnapshotRows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+	return s.Service.SnapshotRows(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)), req)
+}
+
 func (s *surfaceExperience) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
 	rows, err := s.Service.Rows(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)), req)
 	if err == nil {

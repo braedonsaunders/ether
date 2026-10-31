@@ -92,13 +92,22 @@ func (i *instance) views(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	items := make([]any, 0, len(views))
+	items := make([]any, 0, len(views)+1)
+	published := false
 	for n, view := range views {
+		if view.ID == nowAvailableLibraryID || view.Name == nowAvailableTitle {
+			published = true
+		}
 		kind := "movies"
 		if view.Type == "show" {
 			kind = "series"
 		}
 		items = append(items, map[string]any{"id": view.ID, "name": view.Name, "type": kind, "sort_order": n + 1})
+	}
+	if !published {
+		if _, ok := i.nowAvailableTitles(r, v); ok {
+			items = append([]any{map[string]any{"id": nowAvailableLibraryID, "name": nowAvailableTitle, "type": "mixed", "sort_order": 0}}, items...)
+		}
 	}
 	reply(w, 200, map[string]any{"items": items})
 }
@@ -114,7 +123,7 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 	}
 	placement := frontend.PlacementHome
 	view := r.PathValue("library")
-	if view != "" {
+	if view != "" && view != nowAvailableLibraryID {
 		placement = frontend.PlacementLibrary
 	}
 	limit := 0
@@ -125,99 +134,29 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: placement, ViewID: view, Limit: limit})
+	var rows []frontend.Row
+	if view == nowAvailableLibraryID {
+		rows, err = i.snapshotHome(r, v, limit)
+	} else {
+		rows, err = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: placement, ViewID: view, Limit: limit})
+	}
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	// Small or newly configured libraries may not yet have enough history for
-	// ranked rows. Keep them discoverable through a policy-scoped browse row.
-	if len(rows) == 0 {
-		views, e := i.host.Experience.Views(r.Context(), v)
-		if e != nil {
-			http.Error(w, "Unavailable", 503)
-			return
-		}
-		pageLimit := limit
-		if pageLimit == 0 {
-			pageLimit = 20
-		}
-		for _, library := range views {
-			if view != "" && library.ID != view {
-				continue
-			}
-			page, e := i.host.Experience.LibraryItems(r.Context(), v, device(r), library.ID, frontend.ItemQuery{Limit: pageLimit})
-			if e != nil {
-				http.Error(w, "Unavailable", 503)
-				return
-			}
-			keys := make([]frontend.RatingKey, 0, len(page.Items))
-			for _, title := range page.Items {
-				keys = append(keys, title.Key)
-			}
-			states, e := i.host.Experience.UserData(r.Context(), v, keys)
-			if e != nil {
-				http.Error(w, "Unavailable", 503)
-				return
-			}
-			items := make([]frontend.Title, 0, len(page.Items))
-			for _, title := range page.Items {
-				if !states[title.Key].IsNotInterested {
-					items = append(items, title)
-				}
-			}
-			if len(items) > 0 {
-				rows = append(rows, frontend.Row{ID: "browse:" + library.ID, Title: library.Name, Purpose: frontend.RowPurpose("browse"), Items: items})
-			}
-		}
+	if view == nowAvailableLibraryID {
+		rows = onlyNowAvailable(rows)
 	}
 	sections := make([]any, 0, len(rows))
 	seen := map[string]int{}
 	used := map[string]bool{}
 	for _, row := range rows {
-		titles := make([]frontend.Title, 0)
-		if len(row.Entries) > 0 {
-			for _, entry := range row.Entries {
-				if entry.Kind == frontend.RowEntryTitle && entry.Title != nil {
-					titles = append(titles, *entry.Title)
-				}
-			}
-		} else {
-			titles = append(titles, row.Items...)
-		}
-		keys := make([]frontend.RatingKey, 0, len(titles))
-		for _, t := range titles {
-			keys = append(keys, t.Key)
-		}
-		states, e := i.host.Experience.UserData(r.Context(), v, keys)
+		items, e := i.sectionCards(r, v, credential, row)
 		if e != nil {
 			http.Error(w, "Unavailable", 503)
 			return
 		}
-		items := make([]any, 0, len(titles))
-		for _, t := range titles {
-			item := titleDTO(t, states[t.Key])
-			// Home cards send an empty keyword list. Library cards keep the
-			// title keywords, including the filter row's lists.
-			if !strings.Contains(r.URL.Path, "/library/") {
-				item["keywords"] = []string{}
-			}
-			if row.Purpose == frontend.RowNextUp {
-				item["item_source"] = "next_up"
-			} else if row.Purpose == frontend.RowContinue && states[t.Key].ViewOffset > 0 {
-				item["item_source"] = "in_progress"
-			}
-			i.artwork(r, v, credential, t.Key, item)
-			i.applyEditionOverlay(r, v, t.Key, item)
-			items = append(items, item)
-		}
-		kind := map[frontend.RowPurpose]string{frontend.RowContinue: "continue_watching", frontend.RowNextUp: "returning_shows", frontend.RowRecentlyReleased: "recently_added", frontend.RowRecentlyAdded: "recently_added", frontend.RowRecommendation: "recommended_for_you", frontend.RowWatchlist: "watchlist", frontend.RowCollection: "collection", frontend.RowLive: "live"}[row.Purpose]
-		if kind == "" {
-			kind = "custom"
-		}
-		if strings.Contains(r.URL.Path, "/library/") && siloKeywordRow(row.Title) {
-			kind = "custom_filter"
-		}
+		kind := siloSectionType(row, strings.Contains(r.URL.Path, "/library/"))
 		id := row.ID
 		if id == "" {
 			id = "row"
@@ -734,7 +673,7 @@ func (i *instance) browseRoutes() error {
 	for _, entry := range []struct {
 		path string
 		h    http.HandlerFunc
-	}{{"/api/v2/home/capabilities", i.homeCapabilities}, {"/api/v2/user/libraries", i.views}, {"/api/v2/home/sections", i.sections}, {"/api/v2/library/{library}/sections", i.sections}, {"/api/v2/watch/{id}", i.detail}, {"/api/v2/catalog/items/{id}/versions", i.detail}, {"/api/v2/catalog/items/{id}", i.detail}} {
+	}{{"/api/v2/home/capabilities", i.homeCapabilities}, {"/api/v2/user/libraries", i.views}, {"/api/v2/home/sections", i.sections}, {"/api/v2/library/{library}/sections", i.sections}, {"/api/v2/recommendations/discover", i.discover}, {"/api/v2/watch/{id}", i.detail}, {"/api/v2/catalog/items/{id}/versions", i.detail}, {"/api/v2/catalog/items/{id}", i.detail}} {
 		if err := i.router.Handle("GET", entry.path, entry.h); err != nil {
 			return err
 		}

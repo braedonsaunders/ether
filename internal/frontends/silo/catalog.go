@@ -48,6 +48,19 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		page = result.Page
 		exact = result.TotalExact
 		more = result.Continuation == frontend.ContinuationMore
+	} else if q.Get("library_id") == nowAvailableLibraryID {
+		titles, ok := i.nowAvailableTitles(r, v)
+		if !ok {
+			titles = nil
+		}
+		total := len(titles)
+		start := min(offset, total)
+		end := total
+		if limit > 0 {
+			end = min(start+limit, total)
+		}
+		page = frontend.Page{Items: titles[start:end], Total: total}
+		more = end < total
 	} else {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), q.Get("library_id"), query)
 		if err != nil {

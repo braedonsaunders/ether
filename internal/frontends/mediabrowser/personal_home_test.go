@@ -260,3 +260,35 @@ func TestPersonalViewIDsDoNotCollideWithLibraries(t *testing.T) {
 		t.Fatal(a, b, c, d)
 	}
 }
+
+func TestNowAvailableLibraryDoesNotUseThePersonalizedRowBudget(t *testing.T) {
+	ready := frontend.Title{Key: 8, Type: "movie", Title: "Ready"}
+	shown := frontend.Title{Key: 4, Type: "show", Title: "Shown"}
+	exp := frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+	}, RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+		return []frontend.Row{
+			{ID: "home.trending", Title: "Trending", Kind: "trending", Purpose: frontend.RowRecommendation, Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &shown}}},
+			{ID: "home.because.dune", Title: "Because you watched Dune", Kind: "because-you-watched", Purpose: frontend.RowRecommendation, Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &shown}}},
+			{ID: "watchlist.available", Title: "Now available", Purpose: frontend.RowWatchlist, Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &ready}}},
+		}, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		v := frontend.Viewer{ID: 1, Username: "ada"}
+		return &v, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: frontendtest.Sessions{}, Config: func() frontend.Settings {
+		return frontend.Settings{"homeRowCount": float64(1), "homeRowKinds": []any{"trending"}}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	r.Header.Set("X-Emby-Device-Id", "living-room")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Name":"Trending"`) || !strings.Contains(w.Body.String(), `"Name":"Now available"`) || strings.Contains(w.Body.String(), "Dune and Similar") {
+		t.Fatalf("views %d %s", w.Code, w.Body.String())
+	}
+}

@@ -107,6 +107,14 @@ until turned off. The count defaults to 4. Kinds left all on means every
 personalized row except Continue Watching and Up Next, which those apps already
 have. Date added on a real title remains its release date.
 
+Silo Home (`GET /api/v2/home/sections`) paints those same Experience rows and
+does not invent a shelf when Experience returns none. `GET /api/v2/recommendations/discover`
+returns the recommendation rows, including **Now available**, without recording
+a second impression. The watchlist hub id is `watchlist.available`. Silo also
+publishes it as library `now-available` when Experience has not already published
+a library of that name. Jellyfin and Emby publish that hub as a library without
+counting it against the owner's personalized-row limit.
+
 | Client | How Home is built | Where Ether's rows appear | Order |
 | --- | --- | --- | --- |
 | jellyfin-web | `homesections.js` reads `usersettings` `homesection0`..`9`, else tiles, resume, audio, books, live TV, next up, latest. Latest Media walks every user view except playlists, live TV, box sets, channels and folders, and views in `LatestItemsExcludes`. | One shelf per view, titled "Recently Added in {name}", from `GET /Items/Latest` with no sort. Suggestions uses `GET /Movies/Recommendations`. | User-view order, which Ether leads with the personalized libraries. Server array order is what the cards use. |

@@ -191,21 +191,19 @@ func TestRecentlyAddedHomeRowKeepsLibrarySectionType(t *testing.T) {
 	}
 }
 
-func TestEmptyHomeUsesAuthorizedBrowseFallback(t *testing.T) {
+func TestEmptyHomeStaysOnExperienceRows(t *testing.T) {
 	v := &frontend.Viewer{ID: 5}
-	visible, excluded := frontend.RatingKey(1000000000000001), frontend.RatingKey(1000000000000002)
 	exp := frontendtest.Experience{
 		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
-			return []frontend.View{{ID: "1", Name: "Movies"}}, nil
+			t.Fatal("home must not invent library shelves")
+			return nil, nil
 		},
-		LibraryItemsFunc: func(_ context.Context, viewer *frontend.Viewer, _ frontend.Device, library string, _ frontend.ItemQuery) (frontend.Page, error) {
-			if viewer != v || library != "1" {
-				t.Fatal("incorrect library policy context")
-			}
-			return frontend.Page{Items: []frontend.Title{{Key: visible, Type: "movie", Title: "Visible"}, {Key: excluded, Type: "movie", Title: "Excluded"}}}, nil
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			t.Fatal("home must not browse libraries itself")
+			return frontend.Page{}, nil
 		},
-		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
-			return map[frontend.RatingKey]frontend.WatchStatus{excluded: {IsNotInterested: true}}, nil
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			return nil, nil
 		},
 	}
 	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}, Experience: exp}
@@ -217,8 +215,8 @@ func TestEmptyHomeUsesAuthorizedBrowseFallback(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer grant")
 	w := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(w, req)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"title":"Visible"`) || strings.Contains(w.Body.String(), `"title":"Excluded"`) {
-		t.Fatalf("fallback: %d %s", w.Code, w.Body.String())
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"sections":[]`) {
+		t.Fatalf("empty home: %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -413,6 +411,62 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
+	}
+}
+
+func TestDiscoverAndNowAvailableUseExperienceRows(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 5}
+	ready := frontend.Title{Key: frontend.RatingKey(1000000000000003), Type: "movie", Title: "Ready"}
+	similar := frontend.Title{Key: frontend.RatingKey(1000000000000004), Type: "movie", Title: "Similar"}
+	var impressions int
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+		},
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			impressions++
+			return []frontend.Row{
+				{ID: "home.continue", Title: "Continue Watching", Purpose: frontend.RowContinue, Items: []frontend.Title{similar}},
+				{ID: "home.because.dune", Title: "Because you watched Dune", Kind: "because-you-watched", Purpose: frontend.RowRecommendation, Items: []frontend.Title{similar}},
+				{ID: nowAvailableRowID, Title: nowAvailableTitle, Purpose: frontend.RowWatchlist, Items: []frontend.Title{ready}},
+				{ID: "watchlist.coming", Title: "Waiting for a stream", Purpose: frontend.RowWatchlist, Items: []frontend.Title{similar}},
+			}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer grant")
+		r.Header.Set("X-Silo-Device-Id", "tv")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	home := call("/api/v2/home/sections")
+	if home.Code != 200 || !strings.Contains(home.Body.String(), `"section_type":"because_you_watched"`) || !strings.Contains(home.Body.String(), `"section_type":"new_to_library"`) || !strings.Contains(home.Body.String(), `"section_type":"continue_watching"`) {
+		t.Fatalf("home %d %s", home.Code, home.Body.String())
+	}
+	before := impressions
+	discover := call("/api/v2/recommendations/discover?image_size=medium")
+	if discover.Code != 200 || !strings.Contains(discover.Body.String(), `"title":"Because you watched Dune"`) || !strings.Contains(discover.Body.String(), `"title":"Now available"`) || strings.Contains(discover.Body.String(), "Continue Watching") || strings.Contains(discover.Body.String(), "Waiting for a stream") {
+		t.Fatalf("discover %d %s", discover.Code, discover.Body.String())
+	}
+	if impressions == before {
+		t.Fatal("discover did not read Experience rows")
+	}
+	libs := call("/api/v2/user/libraries")
+	if libs.Code != 200 || !strings.Contains(libs.Body.String(), `"id":"now-available"`) || !strings.Contains(libs.Body.String(), `"name":"Movies"`) {
+		t.Fatalf("libraries %d %s", libs.Code, libs.Body.String())
+	}
+	catalog := call("/api/v2/catalog?library_id=now-available")
+	if catalog.Code != 200 || !strings.Contains(catalog.Body.String(), `"title":"Ready"`) || strings.Contains(catalog.Body.String(), "Similar") {
+		t.Fatalf("catalog %d %s", catalog.Code, catalog.Body.String())
 	}
 }
 

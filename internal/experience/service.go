@@ -537,6 +537,18 @@ func (s *Service) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend
 	req.Viewer = v
 	return s.d.Rows.Rows(ctx, req, s.d.Protocol)
 }
+
+// SnapshotRows is the same authorized Home as Rows without issuing impressions.
+// A second surface that paints those rows, such as Silo Discover, uses it so
+// the bandit is not charged twice for one visit.
+func (s *Service) SnapshotRows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+	v, err := s.viewer(ctx, req.Viewer)
+	if err != nil {
+		return nil, err
+	}
+	req.Viewer = v
+	return s.d.Rows.SnapshotRows(ctx, req, s.d.Protocol)
+}
 func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
 	v, err := s.viewer(ctx, req.Viewer)
 	if err != nil {

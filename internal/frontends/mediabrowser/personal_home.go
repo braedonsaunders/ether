@@ -139,11 +139,13 @@ func (i *instance) personalShelves(r *http.Request, v *frontend.Viewer) []person
 	}
 	out := make([]personalShelf, 0, cfg.count)
 	seen := map[string]bool{}
+	var pinned *personalShelf
 	for _, row := range rows {
-		if len(out) >= cfg.count {
-			break
+		if row.ID == "" || seen[row.ID] {
+			continue
 		}
-		if row.ID == "" || seen[row.ID] || !personalRowAllowed(cfg, row) {
+		available := nowAvailableExperienceRow(row)
+		if !available && (!personalRowAllowed(cfg, row) || len(out) >= cfg.count) {
 			continue
 		}
 		titles := personalTitles(row)
@@ -156,9 +158,25 @@ func (i *instance) personalShelves(r *http.Request, v *frontend.Viewer) []person
 		if err != nil {
 			continue
 		}
-		out = append(out, personalShelf{number: number, wireID: wire, name: personalLibraryName(row), kind: personalCollectionType(titles), row: row, titles: titles})
+		shelf := personalShelf{number: number, wireID: wire, name: personalLibraryName(row), kind: personalCollectionType(titles), row: row, titles: titles}
+		if available {
+			copy := shelf
+			pinned = &copy
+			continue
+		}
+		out = append(out, shelf)
+	}
+	if pinned != nil {
+		out = append(out, *pinned)
 	}
 	return out
+}
+
+// nowAvailableExperienceRow is the watchlist hub the library-features work
+// fills. Its id stays watchlist.available so Jellyfin, Emby and Silo publish
+// the same shelf. It does not consume the owner's personalized-row count.
+func nowAvailableExperienceRow(row frontend.Row) bool {
+	return row.ID == "watchlist.available" || row.Title == "Now available"
 }
 
 func personalRowAllowed(cfg personalHomeConfig, row frontend.Row) bool {
