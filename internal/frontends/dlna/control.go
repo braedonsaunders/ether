@@ -107,13 +107,14 @@ func parseArgs(r *http.Request, expected string) (browseArgs, error) {
 }
 
 type didlObject struct {
-	XMLName    xml.Name
-	ID         string        `xml:"id,attr"`
-	ParentID   string        `xml:"parentID,attr"`
-	Restricted string        `xml:"restricted,attr"`
-	Title      string        `xml:"dc:title"`
-	Class      string        `xml:"upnp:class"`
-	Resource   *didlResource `xml:"res,omitempty"`
+	XMLName     xml.Name
+	ID          string        `xml:"id,attr"`
+	ParentID    string        `xml:"parentID,attr"`
+	Restricted  string        `xml:"restricted,attr"`
+	Title       string        `xml:"dc:title"`
+	Class       string        `xml:"upnp:class"`
+	AlbumArtURI string        `xml:"upnp:albumArtURI,omitempty"`
+	Resource    *didlResource `xml:"res,omitempty"`
 }
 type didlResource struct {
 	ProtocolInfo string `xml:"protocolInfo,attr"`
@@ -188,14 +189,10 @@ func (i *instance) contentControl(w http.ResponseWriter, r *http.Request) {
 }
 
 func (i *instance) addResources(r *http.Request, viewer *frontend.Viewer, device frontend.Device, peer netip.Addr, objects []didlObject) {
-	if i.host.LANStreams == nil || i.host.Capabilities == nil || i.host.SurfaceURL == nil {
+	if i.host.SurfaceURL == nil {
 		return
 	}
 	ctx := frontend.WithClientIP(r.Context(), peer)
-	profile, err := i.host.Capabilities.Build(ctx, frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: "dlna", ClientID: device.ID, Product: device.Product}, UserAgent: r.UserAgent()})
-	if err != nil {
-		return
-	}
 	base, err := i.host.SurfaceURL(ctx, r)
 	if err != nil {
 		return
@@ -204,12 +201,35 @@ func (i *instance) addResources(r *http.Request, viewer *frontend.Viewer, device
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return
 	}
+	var profile frontend.CapabilityResult
+	var profileOK bool
+	if i.host.LANStreams != nil && i.host.Capabilities != nil {
+		built, err := i.host.Capabilities.Build(ctx, frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: "dlna", ClientID: device.ID, Product: device.Product}, UserAgent: r.UserAgent()})
+		if err == nil {
+			profile = built
+			profileOK = true
+		}
+	}
 	for n := range objects {
 		if objects[n].XMLName.Local != "item" {
 			continue
 		}
 		key, err := objectKey(objects[n].ID)
 		if err != nil {
+			continue
+		}
+		if art := i.posterFor(ctx, viewer, device, key); art.Tag != "" || art.Path != "" {
+			version := art.Tag
+			if version == "" {
+				version = art.Path
+			}
+			artURL := *u
+			artURL.Path = strings.TrimRight(u.Path, "/") + "/images/" + strconv.FormatInt(int64(key), 10)
+			artURL.RawPath = ""
+			artURL.RawQuery = "v=" + url.QueryEscape(version)
+			objects[n].AlbumArtURI = artURL.String()
+		}
+		if !profileOK {
 			continue
 		}
 		path, err := i.host.LANStreams.IssueLAN(ctx, r, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "dlna", Item: key, Caps: profile.Client, Intent: frontend.PlayIntent{Options: frontend.DecideOptions{DirectPlay: true}}})

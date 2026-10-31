@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -50,6 +51,7 @@ type pageClaims struct {
 	Source  string          `json:"source"`
 	Viewer  int64           `json:"viewer"`
 	Expires int64           `json:"expires"`
+	Gen     uint64          `json:"gen,omitempty"`
 }
 
 // SetImageKey installs the node key for stateless page grants. An empty key
@@ -124,7 +126,7 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 	if master == nil {
 		return nil, core.ErrNotAvailable
 	}
-	expires := s.now().Add(s.ttl).UnixMilli()
+	expires := s.pageExpires()
 	reqKey := pageRequestKey(master, viewer.ID, expires, string(s.surface))
 	out := make([]frontend.ImageBatchItem, 0, len(req.Titles))
 	seen := map[core.RatingKey]bool{}
@@ -170,7 +172,7 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 				secret, err := sealPageGrant(reqKey, pageClaims{
 					Item: int64(title.Key), Images: sealed,
 					Kind: sealed[0].Kind, Path: sealed[0].Path, Tag: sealed[0].Tag, Subject: sealed[0].Subject,
-					Device: deviceJSON, Source: source, Viewer: viewer.ID, Expires: expires,
+					Device: deviceJSON, Source: source, Viewer: viewer.ID, Expires: expires, Gen: s.Generation(),
 				})
 				if err != nil {
 					return nil, err
@@ -244,6 +246,31 @@ func sectionsKey(sections []int) string {
 	return string(b)
 }
 
+// pageExpires keeps one image tag stable inside a minute so clients can cache
+// it, and moves the tag when that window or a revocation generation changes.
+func (s *ImageGrantService) pageExpires() int64 {
+	ttl := s.ttl.Milliseconds()
+	if ttl < 1000 {
+		ttl = 1000
+	}
+	now := s.now().UnixMilli()
+	step := int64(time.Minute / time.Millisecond)
+	if step > ttl {
+		step = ttl
+	}
+	return now - (now % step) + ttl
+}
+
+func pageNonce(key, plain []byte, size int) []byte {
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write(plain)
+	sum := mac.Sum(nil)
+	if size > len(sum) {
+		size = len(sum)
+	}
+	return sum[:size]
+}
+
 func pageRequestKey(master []byte, viewer, expires int64, surface string) []byte {
 	mac := hmac.New(sha256.New, master)
 	var buf [16]byte
@@ -267,10 +294,7 @@ func sealPageGrant(reqKey []byte, claims pageClaims) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err = rand.Read(nonce); err != nil {
-		return "", err
-	}
+	nonce := pageNonce(reqKey, plain, gcm.NonceSize())
 	sealed := gcm.Seal(nonce, nonce, plain, nil)
 	body := make([]byte, 16+len(sealed))
 	binary.BigEndian.PutUint64(body[:8], uint64(claims.Viewer))

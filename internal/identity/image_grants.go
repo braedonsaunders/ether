@@ -281,6 +281,22 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	s.writeGrantedImage(w, r, viewer, device, core.RatingKey(item), channel, img, hash, sourceHash, deviceJSON)
 }
 
+func imageETag(img frontend.Image, width, height int, format string, blur bool) string {
+	identity := img.Tag
+	if identity == "" {
+		identity = img.Path
+	}
+	if identity == "" {
+		return ""
+	}
+	blurText := "0"
+	if blur {
+		blurText = "1"
+	}
+	sum := sha256.Sum256([]byte(identity + "\x00" + strconv.Itoa(width) + "\x00" + strconv.Itoa(height) + "\x00" + format + "\x00" + blurText))
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
 func (s *ImageGrantService) writeGrantedImage(w http.ResponseWriter, r *http.Request, viewer *core.Viewer, device core.Device, item core.RatingKey, channel string, img frontend.Image, hash, sourceHash, deviceJSON string) {
 	width, _ := strconv.Atoi(r.URL.Query().Get("w"))
 	if width < 0 || width > 4000 {
@@ -289,26 +305,36 @@ func (s *ImageGrantService) writeGrantedImage(w http.ResponseWriter, r *http.Req
 	if width == 0 && r.URL.Query().Get("h") == "" {
 		width = 500
 	}
-	var data []byte
-	var contentType string
-	var err error
+	height, _ := strconv.Atoi(r.URL.Query().Get("h"))
+	format := r.URL.Query().Get("format")
+	blur := r.URL.Query().Get("blur") == "1"
 	if s.artwork != nil {
-		height, _ := strconv.Atoi(r.URL.Query().Get("h"))
 		if height < 0 || height > 4000 {
 			http.Error(w, "invalid image height", http.StatusBadRequest)
 			return
 		}
-		format := r.URL.Query().Get("format")
 		if format != "" && format != "jpeg" && format != "png" {
 			http.Error(w, "invalid image format", http.StatusBadRequest)
 			return
 		}
-		blur := r.URL.Query().Get("blur")
-		if blur != "" && blur != "0" && blur != "1" {
+		if blurQuery := r.URL.Query().Get("blur"); blurQuery != "" && blurQuery != "0" && blurQuery != "1" {
 			http.Error(w, "invalid image blur", http.StatusBadRequest)
 			return
 		}
-		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: item, Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur == "1"})
+	}
+	if etag := imageETag(img, width, height, format, blur); etag != "" {
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "private, max-age=86400")
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+	var data []byte
+	var contentType string
+	var err error
+	if s.artwork != nil {
+		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: item, Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur})
 	} else {
 		data, contentType, err = s.images.Get(r.Context(), img.Path, width)
 	}
@@ -328,7 +354,9 @@ func (s *ImageGrantService) writeGrantedImage(w http.ResponseWriter, r *http.Req
 	h.Set("Content-Type", contentType)
 	h.Set("Content-Security-Policy", "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Cache-Control", "private, no-store")
+	if h.Get("ETag") == "" {
+		h.Set("Cache-Control", "private, no-store")
+	}
 	h.Set("Content-Length", strconv.Itoa(len(data)))
 	if r.Method == http.MethodGet {
 		_, _ = w.Write(data)

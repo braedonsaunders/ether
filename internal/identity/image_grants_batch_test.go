@@ -342,3 +342,64 @@ func TestSignedPageGrantSealsOncePerTitle(t *testing.T) {
 		t.Fatalf("backdrop %d %s path=%s", rec.Code, rec.Body.String(), source.path)
 	}
 }
+
+func TestPageGrantTagStaysStableAndImageRevalidates(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_700_000_000, 0)
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := grants.Issue(ctx, 1, nil, "jellyfin", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := true
+	calls := 0
+	images := &imageFixture{}
+	service, err := identity.NewImageGrantService(db, "jellyfin", grants, func() frontend.Experience {
+		return &pageArtwork{allow: &allowed, calls: &calls}
+	}, images, 10*time.Minute, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetImageKey([]byte("test-image-page-key"))
+	title := core.Title{Key: core.MovieKey(9), Type: core.TypeMovie, Title: "Bench"}
+	req := frontend.ImagePageRequest{Credential: credential, Device: core.Device{ID: "tv"}, Titles: []core.Title{title}, Kinds: []string{frontend.ImagePoster}}
+	first, err := service.SignPage(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.SignPage(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first[0].Images[0].Secret == "" || first[0].Images[0].Secret != second[0].Images[0].Secret {
+		t.Fatalf("tag changed %q %q", first[0].Images[0].Secret, second[0].Images[0].Secret)
+	}
+	secret := first[0].Images[0].Secret
+	rec := httptest.NewRecorder()
+	service.Serve(rec, httptest.NewRequest("GET", "/Items/9/Images/Primary", nil), secret)
+	etag := rec.Header().Get("ETag")
+	if rec.Code != 200 || etag == "" || !strings.Contains(rec.Header().Get("Cache-Control"), "max-age=86400") || images.calls != 1 {
+		t.Fatalf("serve %d etag=%q cache=%q calls=%d", rec.Code, etag, rec.Header().Get("Cache-Control"), images.calls)
+	}
+	revalidating := httptest.NewRequest("GET", "/Items/9/Images/Primary", nil)
+	revalidating.Header.Set("If-None-Match", etag)
+	rec = httptest.NewRecorder()
+	service.Serve(rec, revalidating, secret)
+	if rec.Code != 304 || images.calls != 1 {
+		t.Fatalf("revalidate %d calls=%d", rec.Code, images.calls)
+	}
+	if err := service.Revoke(ctx, credential, secret); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := service.SignPage(ctx, req)
+	if err != nil || fresh[0].Images[0].Secret == secret {
+		t.Fatalf("revoke did not rotate the tag: %v", fresh)
+	}
+}

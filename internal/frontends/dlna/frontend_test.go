@@ -27,7 +27,7 @@ func TestRegisteredRoutesMatchMountedRouter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual := inst.(frontend.RouteSource).Routes(); !slices.Equal(routes, actual) || len(routes) != 7 {
+	if actual := inst.(frontend.RouteSource).Routes(); !slices.Equal(routes, actual) || len(routes) != 9 {
 		t.Fatalf("inventory=%v mounted=%v", routes, actual)
 	}
 }

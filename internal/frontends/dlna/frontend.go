@@ -71,6 +71,8 @@ func (i *instance) registerRoutes() error {
 		{http.MethodPost, "/ConnectionManager/control", i.connectionControl},
 		{http.MethodGet, "/sessions/lazy/{tail...}", i.serveLAN},
 		{http.MethodHead, "/sessions/lazy/{tail...}", i.serveLAN},
+		{http.MethodGet, "/images/{id}", i.serveImage},
+		{http.MethodHead, "/images/{id}", i.serveImage},
 	} {
 		if err := i.router.Handle(item.method, item.path, item.handler); err != nil {
 			return err

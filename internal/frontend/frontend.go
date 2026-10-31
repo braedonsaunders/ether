@@ -260,6 +260,9 @@ type Host struct {
 	Tickets     Tickets
 	Images      Images
 	ImageGrants ImageGrants
+	// Artwork serves the same composited poster bytes the other frontends
+	// grant. DLNA has no credential, so it reads this after LANViewer.
+	Artwork Artwork
 	Config      func() Settings
 	Log         *slog.Logger
 	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
