@@ -353,16 +353,12 @@ func (run *soakRun) faultStep(ctx context.Context, action string, hold time.Dura
 	}
 	if action == "encoder_crash" || action == "encoder_kill" {
 		go run.operate(ctx, "plex", "transcode", "encoder-hold")
-		if err := sleep(ctx, minDuration(hold*2/3, 8*time.Second)); err != nil {
-			return err
-		}
+		_ = run.waitFFmpeg(ctx, minDuration(hold*2/3, 8*time.Second))
 	}
 	fault, err := run.postFault(ctx, action, delay, durationMS)
 	if err != nil && (action == "encoder_crash" || action == "encoder_kill") {
 		go run.operate(ctx, "plex", "transcode", "encoder-retry")
-		if sleepErr := sleep(ctx, minDuration(hold*2/3, 8*time.Second)); sleepErr != nil {
-			return sleepErr
-		}
+		_ = run.waitFFmpeg(ctx, minDuration(hold*2/3, 8*time.Second))
 		fault, err = run.postFault(ctx, action, delay, durationMS)
 	}
 	run.mu.Lock()
@@ -376,6 +372,46 @@ func (run *soakRun) faultStep(ctx context.Context, action string, hold time.Dura
 	}
 	_, err = run.postFault(ctx, "clear", 0, 0)
 	return err
+}
+
+func (run *soakRun) waitFFmpeg(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return false
+	}
+	deadline := time.Now().Add(d)
+	for {
+		if run.ffmpegNow(ctx) > 0 {
+			return true
+		}
+		remain := time.Until(deadline)
+		if remain <= 0 || ctx.Err() != nil {
+			return false
+		}
+		step := 200 * time.Millisecond
+		if remain < step {
+			step = remain
+		}
+		if err := sleep(ctx, step); err != nil {
+			return false
+		}
+	}
+}
+
+func (run *soakRun) ffmpegNow(ctx context.Context) int {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, run.cfg.Jellyfin+"/__scorecard/telemetry", nil)
+	if err != nil {
+		return 0
+	}
+	resp, err := run.client.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	var sample SoakSample
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&sample); err != nil {
+		return 0
+	}
+	return sample.FFmpeg
 }
 
 func (run *soakRun) postFault(ctx context.Context, action string, delayMS, durationMS int) (SoakFault, error) {
