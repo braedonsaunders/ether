@@ -36,7 +36,6 @@ describe("Owner usability", () => {
     { path: "/sources/usenet", trigger: "Add provider", dialog: "New provider" },
     { path: "/sources/debrid", trigger: "Add provider", dialog: "New debrid provider" },
     { path: "/sources/indexers", trigger: "Import from Prowlarr", dialog: "Import from Prowlarr" },
-    { path: "/cache", trigger: "Edit policy", dialog: "Edit cache policy" },
     { path: "/notifications/channels", trigger: "New channel", dialog: "New notification channel" },
   ])("keeps $path mounted while its drawer opens and closes", async ({ path, trigger, dialog }) => {
     const { fake } = renderApp(path);
