@@ -5,14 +5,13 @@ import {
   Checkbox,
   Input,
   SearchSelect,
-  Slider,
   Spinner,
   Switch,
   WizardLayout,
   cn,
 } from "@braedonsaunders/appkit-ui";
 import { Check, ExternalLink, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppOptional } from "../app-context";
 import { EtherMark } from "../components/brand";
@@ -20,18 +19,12 @@ import { IntegrationAppCard } from "../components/IntegrationAppCard";
 import { EmbyMark, JellyfinMark, PlexMark } from "../components/integration-brands";
 import { ErrorPanel, MutationError } from "../components/feedback";
 import { Field, NumberInput, SecretInput, TestButton, type TestState } from "../components/fields";
-import {
-  findProvider,
-  ModelPicker,
-  providerOptions,
-  useLLMProviders,
-  withProvider,
-} from "../components/llm";
 import { localized, t, tx } from "../i18n";
 import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
 import { appLabel, appPurpose } from "./apps/catalog";
+import { CachePresetCards, cachePresetKey } from "./cache/presets";
 import { DEBRID_KINDS } from "./sources/Debrid";
 import { addonUrlHasDebridKey, isStremio, normalizeAddonUrl } from "./sources/Indexers";
 
@@ -130,8 +123,6 @@ export function mergeFrontendSelection(
   }
   return { ...cfg, frontends };
 }
-
-const GIB = 1024 ** 3;
 
 function blankProvider(): UsenetProvider {
   return {
@@ -620,7 +611,6 @@ export default function Setup() {
   };
 
   const plexSigned = pinDone || Boolean(cfg.plex.claimed && cfg.plex.token);
-  const maxBudget = disk ? Math.max(GIB, disk.freeBytes + cfg.cache.budgetBytes) : 500 * GIB;
 
   return (
     <WizardLayout
@@ -1176,66 +1166,10 @@ export default function Setup() {
               })}
             </p>
           ) : null}
-          <Field
-            label={t("Disk budget: {size}", { size: formatBytes(cfg.cache.budgetBytes) })}
-            hint={t("Older segments are evicted when the cache reaches this size.")}
-          >
-            <div className="flex items-center gap-3">
-              <Slider
-                min={GIB}
-                max={maxBudget}
-                step={GIB}
-                value={Math.min(cfg.cache.budgetBytes, maxBudget)}
-                aria-label={t("Disk budget")}
-                className="flex-1"
-                onChange={(e) =>
-                  setCfg({
-                    ...cfg,
-                    cache: { ...cfg.cache, budgetBytes: e.currentTarget.valueAsNumber },
-                  })
-                }
-              />
-              <NumberInput
-                aria-label={t("Disk budget in GiB")}
-                className="w-24"
-                value={Math.round(cfg.cache.budgetBytes / GIB)}
-                min={1}
-                onChange={(n) =>
-                  setCfg({
-                    ...cfg,
-                    cache: { ...cfg.cache, budgetBytes: Math.max(1, Math.round(n)) * GIB },
-                  })
-                }
-              />
-              <span className="text-sm text-fg-muted">GiB</span>
-            </div>
-          </Field>
-          <div className="flex flex-wrap gap-5 text-sm text-fg">
-            <label className="flex items-center gap-2">
-              <Switch
-                checked={cfg.cache.prefetchNextEpisode}
-                onChange={(e) =>
-                  setCfg({
-                    ...cfg,
-                    cache: { ...cfg.cache, prefetchNextEpisode: e.currentTarget.checked },
-                  })
-                }
-              />{" "}
-              {t("Prefetch the next episode")}
-            </label>
-            <label className="flex items-center gap-2">
-              <Switch
-                checked={cfg.cache.keepInProgressWarm}
-                onChange={(e) =>
-                  setCfg({
-                    ...cfg,
-                    cache: { ...cfg.cache, keepInProgressWarm: e.currentTarget.checked },
-                  })
-                }
-              />{" "}
-              {t("Keep in-progress titles warm")}
-            </label>
-          </div>
+          <CachePresetCards
+            selected={cachePresetKey(cfg.cache)}
+            onSelect={(preset) => setCfg({ ...cfg, cache: { ...cfg.cache, ...preset.values } })}
+          />
         </div>
       ) : null}
 
@@ -1283,60 +1217,18 @@ export default function Setup() {
               </div>
             </Field>
           </section>
-          <p className="text-sm text-fg-muted">
-            {t("Optional. You can add these later under Integrations.")}
-          </p>
-          <div className="grid gap-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2">
-            <Field label={t("Trakt client ID")}>
-              <Input
-                value={cfg.trakt.clientId}
-                onChange={(e) =>
-                  setCfg({
-                    ...cfg,
-                    trakt: {
-                      ...cfg.trakt,
-                      clientId: e.currentTarget.value,
-                      enabled: Boolean(e.currentTarget.value),
-                    },
-                  })
-                }
-              />
-            </Field>
-            <Field label={t("OpenSubtitles API key")}>
-              <SecretInput
-                ariaLabel={t("OpenSubtitles API key")}
-                value={cfg.openSubtitles.apiKey}
-                onChange={(v) =>
-                  setCfg({
-                    ...cfg,
-                    openSubtitles: { ...cfg.openSubtitles, apiKey: v, enabled: Boolean(v) },
-                  })
-                }
-              />
-            </Field>
-            <LanguageModelFields
-              llm={cfg.llm}
-              onChange={(llm) => setCfg({ ...cfg, llm })}
-              test={
-                <TestButton
-                  state={optTests.llm ?? { status: "idle" }}
-                  onTest={() => void runTest("opt", "llm", () => api.testLLM(cfg.llm))}
-                />
+          <label className="flex items-center gap-2 text-sm text-fg">
+            <Switch
+              checked={cfg.resolver.allowCam}
+              onChange={(e) =>
+                setCfg({
+                  ...cfg,
+                  resolver: { ...cfg.resolver, allowCam: e.currentTarget.checked },
+                })
               }
-            />
-            <label className="flex items-center gap-2 self-end text-sm text-fg">
-              <Switch
-                checked={cfg.resolver.allowCam}
-                onChange={(e) =>
-                  setCfg({
-                    ...cfg,
-                    resolver: { ...cfg.resolver, allowCam: e.currentTarget.checked },
-                  })
-                }
-              />{" "}
-              {t("Allow CAM / telesync releases")}
-            </label>
-          </div>
+            />{" "}
+            {t("Allow CAM / telesync releases")}
+          </label>
           <Alert variant="info">
             <AlertDescription>
               {t(
@@ -1347,76 +1239,5 @@ export default function Setup() {
         </div>
       ) : null}
     </WizardLayout>
-  );
-}
-
-/** Wizard step 4's language model: provider, key or endpoint, then model. */
-function LanguageModelFields({
-  llm,
-  onChange,
-  test,
-}: {
-  llm: EtherConfig["llm"];
-  onChange: (llm: EtherConfig["llm"]) => void;
-  test: ReactNode;
-}) {
-  const { providers } = useLLMProviders();
-  // "None" selected: no endpoint, key or model fields (findProvider reads an
-  // empty id as the custom endpoint).
-  const provider = llm.provider ? findProvider(providers, llm.provider) : undefined;
-  return (
-    <>
-      <Field
-        label={t("Language model provider")}
-        hint={t("Powers “Describe it” and themed Home rows.")}
-      >
-        <SearchSelect
-          value={llm.provider}
-          onChange={(id) => onChange({ ...withProvider(llm, undefined, id), enabled: false })}
-          options={providerOptions(providers)}
-          ariaLabel={t("Language model provider")}
-          placeholder={providers ? t("None") : t("Loading…")}
-          searchPlaceholder={t("Search…")}
-          noMatchesLabel={t("No matches")}
-          selectLabel={t("Select")}
-          closeLabel={t("Close")}
-          searchable
-        />
-      </Field>
-      {provider?.local ? (
-        <Field label={t("Language model endpoint")} htmlFor="setup-llm-url">
-          <Input
-            id="setup-llm-url"
-            value={llm.baseUrl}
-            placeholder={provider.baseUrl || "https://example.com/v1"}
-            onChange={(e) => onChange({ ...llm, baseUrl: e.currentTarget.value })}
-            spellCheck={false}
-          />
-        </Field>
-      ) : null}
-      {provider ? (
-        <Field label={t("Language model API key")}>
-          <SecretInput
-            ariaLabel={t("Language model API key")}
-            value={llm.apiKey}
-            placeholder={provider.keyHint}
-            onChange={(apiKey) => onChange({ ...llm, apiKey })}
-          />
-        </Field>
-      ) : null}
-      {provider ? (
-        <Field label={t("Language model")} hint={provider.modelHint}>
-          <div className="space-y-2">
-            <ModelPicker
-              cfg={llm}
-              provider={provider}
-              value={llm.model}
-              onChange={(model) => onChange({ ...llm, model, enabled: Boolean(model) })}
-            />
-            {test}
-          </div>
-        </Field>
-      ) : null}
-    </>
   );
 }
