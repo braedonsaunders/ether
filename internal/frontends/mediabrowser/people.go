@@ -11,17 +11,18 @@ import (
 func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token string, detail frontend.ItemDetail) []any {
 	type credit struct {
 		id               int64
+		wire             string
 		name, role, kind string
 	}
 	var credits []credit
 	for _, p := range detail.Title.Cast {
-		credits = append(credits, credit{p.TMDB, p.Name, p.Role, "Actor"})
+		credits = append(credits, credit{p.TMDB, p.ID, p.Name, p.Role, "Actor"})
 	}
 	for _, p := range detail.Title.Directors {
-		credits = append(credits, credit{p.TMDB, p.Name, p.Role, "Director"})
+		credits = append(credits, credit{p.TMDB, p.ID, p.Name, p.Role, "Director"})
 	}
 	for _, p := range detail.Title.Writers {
-		credits = append(credits, credit{p.TMDB, p.Name, p.Role, "Writer"})
+		credits = append(credits, credit{p.TMDB, p.ID, p.Name, p.Role, "Writer"})
 	}
 	ids := make([]int64, 0, min(len(credits), 256))
 	seen := map[int64]bool{}
@@ -67,6 +68,8 @@ func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token str
 			if id == "" {
 				continue
 			}
+		} else {
+			id = c.wire
 		}
 		dto := map[string]any{"Name": c.name, "Type": c.kind}
 		if id != "" {

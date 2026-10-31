@@ -44,3 +44,23 @@ func TestCreditsUseParentAuthorizedFacetAndPortrait(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 }
+
+func TestCataloguePersonIDIsEmittedWithoutAFacet(t *testing.T) {
+	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie", Cast: []core.Person{{ID: "lab-person", Name: "Actor", Role: "Hero"}}}}, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		return &frontend.Viewer{ID: 1}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/Items/"+ids.RatingKeyGUID(5), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"Id":"lab-person"`) || strings.Contains(w.Body.String(), "PrimaryImageTag") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
