@@ -66,3 +66,41 @@ func TestJellyfinStreamRangeAndAudioLabels(t *testing.T) {
 		t.Fatal(text["IsTextSubtitleStream"], image["IsTextSubtitleStream"])
 	}
 }
+
+func TestJellyfinDefaultStreamIndexesUseProbeEvidence(t *testing.T) {
+	i := &instance{protocol: "jellyfin"}
+	source := map[string]any{}
+	i.jellyfinMediaSourceDTO(source, frontend.MediaInfo{Container: "mp4", Streams: []frontend.StreamInfo{
+		{Type: "video", Index: 0, Codec: "h264"},
+		{Type: "audio", Index: 1, Codec: "aac"},
+		{Type: "subtitle", Index: 2, Codec: "subrip"},
+	}}, false)
+	if source["DefaultAudioStreamIndex"] != 1 || source["DefaultSubtitleStreamIndex"] != -1 || source["VideoType"] != "VideoFile" {
+		t.Fatal(source)
+	}
+	marked := map[string]any{}
+	yes := true
+	i.jellyfinMediaSourceDTO(marked, frontend.MediaInfo{Container: "mp4", Streams: []frontend.StreamInfo{
+		{Type: "audio", Index: 0},
+		{Type: "audio", Index: 1, DefaultDisposition: &yes},
+		{Type: "subtitle", Index: 2, Default: true},
+		{Type: "subtitle", Index: 3},
+	}}, false)
+	if marked["DefaultAudioStreamIndex"] != 1 || marked["DefaultSubtitleStreamIndex"] != 2 {
+		t.Fatal(marked)
+	}
+	ambiguous := map[string]any{}
+	i.jellyfinMediaSourceDTO(ambiguous, frontend.MediaInfo{Container: "mkv", Streams: []frontend.StreamInfo{
+		{Type: "video", Index: 0},
+		{Type: "audio", Index: 1},
+		{Type: "audio", Index: 2},
+	}}, false)
+	if _, ok := ambiguous["DefaultAudioStreamIndex"]; ok {
+		t.Fatal(ambiguous)
+	}
+	estimated := map[string]any{}
+	i.jellyfinMediaSourceDTO(estimated, frontend.MediaInfo{Estimated: true, Streams: []frontend.StreamInfo{{Type: "audio", Index: 1}}}, false)
+	if _, ok := estimated["DefaultAudioStreamIndex"]; ok || estimated["VideoType"] != nil {
+		t.Fatal(estimated)
+	}
+}

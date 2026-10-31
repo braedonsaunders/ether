@@ -249,6 +249,21 @@ func TestPlaybackObservationUpdatesAndClearsSession(t *testing.T) {
 	}
 }
 
+func TestJellyfinUserItemRouteAndBlurHashKeys(t *testing.T) {
+	doc, err := openapi.Parse([]byte(`{"openapi":"3.0.0","paths":{"/Items/{itemId}":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object","properties":{"MediaSources":{"type":"array","items":{"type":"object","properties":{"TranscodingUrl":{"type":"string"},"TranscodingContainer":{"type":"string"}}}}}}}}}}}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &Protocol{Dialect: "jellyfin", spec: doc}
+	p.specOnce.Do(func() {})
+	ref := conform.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte(`{"MediaSources":[{}],"ImageBlurHashes":{"Primary":{"tag-a":"hash"}}}`)}
+	target := conform.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte(`{"MediaSources":[{"TranscodingUrl":"https://ether.example/master.m3u8","TranscodingContainer":"ts"}],"ImageBlurHashes":{"Primary":{"tag-b":"hash"}}}`)}
+	report := p.CompareRequest(conform.Request{Method: "GET", Path: "/Users/${user_id}/Items/${item_id}"}, ref, target)
+	if report.Blocking() != 0 {
+		t.Fatal(report.Differences)
+	}
+}
+
 func TestCompareRequestClassifiesOnlySchemaValidExtras(t *testing.T) {
 	doc, err := openapi.Parse([]byte(`{"openapi":"3.0.0","paths":{"/Items":{"get":{"responses":{"200":{"content":{"application/json":{"schema":{"type":"object","properties":{"Items":{"type":"array","items":{"type":"object","properties":{"Overview":{"type":"string"}}}}}}}}}}}}}}`))
 	if err != nil {
