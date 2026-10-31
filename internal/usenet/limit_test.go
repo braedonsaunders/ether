@@ -76,7 +76,9 @@ func TestStatedLimitCapsAndRatchetsDown(t *testing.T) {
 	}
 
 	p := poolFor(t, f, "p")
-	p.lastClose.Store(0) // closing sockets above the cap opened a teardown grace
+	p.mu.Lock()
+	p.limit.lastClose = time.Time{} // closing sockets above the cap opened a teardown grace
+	p.mu.Unlock()
 	p.refused(refusal("connection limit (3) reached"), 2)
 	if st := statsFor(f, "p"); st.ServerLimit != 3 || st.MaxConnections != 2 {
 		t.Fatalf("lower stated limit not applied: %+v", st)
@@ -136,7 +138,7 @@ func TestUnknownLimitWidensOnePerInterval(t *testing.T) {
 // rather than learned as a limit or counted against the breaker.
 func TestTeardownGraceRetriesRefusal(t *testing.T) {
 	run := func(t *testing.T, grace time.Duration) (ProviderStats, error) {
-		s := nntptest.Start(t, nntptest.Options{MaxConns: 1, TeardownDelay: 150 * time.Millisecond})
+		s := nntptest.Start(t, nntptest.Options{MaxConns: 1, TeardownDelay: 100 * time.Millisecond})
 		addSeg(t, s, "a@x", []byte("alpha"))
 		addSeg(t, s, "slow@x", []byte("slow body line\r\nmore"))
 		s.SetFault(func(cmd, arg string) nntptest.Fault {
@@ -147,7 +149,7 @@ func TestTeardownGraceRetriesRefusal(t *testing.T) {
 		})
 		f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 1)}, Options{
 			BackoffMin: time.Minute, BackoffMax: time.Minute,
-			limits: limitTiming{teardownGrace: grace, refusalPause: 60 * time.Millisecond},
+			limits: limitTiming{teardownGrace: grace, refusalPause: 120 * time.Millisecond},
 		})
 		if _, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive); err != nil {
 			t.Fatal(err)
@@ -280,4 +282,25 @@ func maxTime(a, b time.Time) time.Time {
 		return b
 	}
 	return a
+}
+
+// Each socket Ether closed excuses at most two refusals; after that a
+// refusal inside the grace window is a real limit.
+func TestTeardownGraceIsBoundedByCloses(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{})
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 6)}, Options{limits: limitTiming{widen: time.Hour, teardownGrace: time.Hour}})
+	p := poolFor(t, f, "p")
+	p.noteClose(1)
+	for i := 0; i < 2; i++ {
+		if !p.refused(refusal("too many connections"), 3) {
+			t.Fatal("excused refusal not retried")
+		}
+	}
+	if st := statsFor(f, "p"); st.TeardownRefusals != 2 || st.LimitRefusals != 0 || st.LimitLearned {
+		t.Fatalf("first two refusals not excused: %+v", st)
+	}
+	p.refused(refusal("too many connections"), 3)
+	if st := statsFor(f, "p"); st.TeardownRefusals != 2 || st.LimitRefusals != 1 || st.MaxConnections != 3 {
+		t.Fatalf("third refusal should be learned: %+v", st)
+	}
 }
