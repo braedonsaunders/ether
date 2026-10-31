@@ -65,12 +65,15 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 		tc = got
 	}
 
-	a.trackprefs = trackprefs.New(a.db, trackprefs.Options{ShowName: func(ctx context.Context, id int64) string {
-		if title, err := a.catalog.CachedTitle(ctx, core.ShowKey(id)); err == nil {
-			return title.Title
-		}
-		return ""
-	}})
+	a.trackprefs = trackprefs.New(a.db, trackprefs.Options{
+		ShowName: func(ctx context.Context, id int64) string {
+			if title, err := a.catalog.CachedTitle(ctx, core.ShowKey(id)); err == nil {
+				return title.Title
+			}
+			return ""
+		},
+		SyncSubtitleLanguages: a.syncSubtitleLanguages,
+	})
 	a.markers = markers.New(markers.Options{DB: a.db, Logger: log.With("component", "markers"), Config: func() (bool, string) { c := a.cfg.Get().Markers; return c.TheIntroDB, c.APIKey }, Aligner: a.subtitles.TimelineAligner(), Dialogue: a.markerDialogue})
 	a.buildAdoption()
 	// Playback and prefetch.

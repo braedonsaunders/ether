@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/trackprefs"
@@ -25,13 +27,13 @@ func (s surfaceTrackPreferences) GetScoped(ctx context.Context, v *frontend.View
 		return frontend.TrackPreferences{}, 0, 0, "", nil, err
 	}
 	r, sources, err := s.app.trackprefs.ScopedRulesWithSources(ctx, v.ID, trackprefs.Scope{Device: scope.Device, Series: scope.Series, Library: scope.Library})
-	return frontend.TrackPreferences{AudioLanguages: r.AudioLanguages, SubtitleLanguages: r.SubtitleLanguages, SubtitleMode: r.SubtitleMode}, r.MaxBitrateKbps, r.MaxHeight, r.PreferredQuality, sources, err
+	return frontend.TrackPreferences{AudioLanguages: r.AudioLanguages, SubtitleLanguages: r.SubtitleLanguages, SubtitleMode: r.SubtitleMode, SubtitleAppearance: append(json.RawMessage(nil), r.SubtitleAppearance...)}, r.MaxBitrateKbps, r.MaxHeight, r.PreferredQuality, sources, err
 }
 func (s surfaceTrackPreferences) SetScoped(ctx context.Context, v *frontend.Viewer, scope, id string, patch frontend.TrackPreferencePatch) error {
 	if err := s.active(ctx, v); err != nil {
 		return err
 	}
-	return s.app.trackprefs.PutScoped(ctx, v.ID, scope, id, trackprefs.ScopedRules{AudioLanguages: patch.AudioLanguages, SubtitleLanguages: patch.SubtitleLanguages, SubtitleMode: patch.SubtitleMode, MaxBitrateKbps: patch.MaxBitrateKbps, MaxHeight: patch.MaxHeight, PreferredQuality: patch.PreferredQuality})
+	return s.app.trackprefs.PutScoped(ctx, v.ID, scope, id, trackprefs.ScopedRules{AudioLanguages: patch.AudioLanguages, SubtitleLanguages: patch.SubtitleLanguages, SubtitleMode: patch.SubtitleMode, SubtitleAppearance: patch.SubtitleAppearance, MaxBitrateKbps: patch.MaxBitrateKbps, MaxHeight: patch.MaxHeight, PreferredQuality: patch.PreferredQuality})
 }
 func (s surfaceTrackPreferences) DeleteScoped(ctx context.Context, v *frontend.Viewer, scope, id, field string) error {
 	if err := s.active(ctx, v); err != nil {
@@ -57,6 +59,12 @@ func (s surfaceTrackPreferences) SetSubtitleMode(ctx context.Context, v *fronten
 	}
 	return s.app.trackprefs.SetSubtitleMode(ctx, v.ID, mode)
 }
+func (s surfaceTrackPreferences) SetAppearance(ctx context.Context, v *frontend.Viewer, raw json.RawMessage) error {
+	if err := s.active(ctx, v); err != nil {
+		return err
+	}
+	return s.app.trackprefs.SetAppearance(ctx, v.ID, raw)
+}
 func (s surfaceTrackPreferences) SetBitrate(ctx context.Context, v *frontend.Viewer, kbps int) error {
 	if err := s.active(ctx, v); err != nil {
 		return err
@@ -77,7 +85,7 @@ func (s surfaceTrackPreferences) Get(ctx context.Context, v *frontend.Viewer) (f
 	if err != nil {
 		return frontend.TrackPreferences{}, err
 	}
-	return frontend.TrackPreferences{AudioLanguages: rules.AudioLanguages, SubtitleLanguages: rules.SubtitleLanguages, SubtitleMode: rules.SubtitleMode}, nil
+	return frontend.TrackPreferences{AudioLanguages: rules.AudioLanguages, SubtitleLanguages: rules.SubtitleLanguages, SubtitleMode: rules.SubtitleMode, SubtitleAppearance: append(json.RawMessage(nil), rules.SubtitleAppearance...)}, nil
 }
 func (s surfaceTrackPreferences) SetSubtitle(ctx context.Context, v *frontend.Viewer, languages []string, mode string) error {
 	if err := s.active(ctx, v); err != nil {
