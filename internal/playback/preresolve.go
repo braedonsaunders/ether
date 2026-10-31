@@ -13,6 +13,15 @@ import (
 
 const preResolveTTL = 10 * time.Minute
 
+// parityRetainWarm is nil in production, so warm-up eviction is unchanged.
+// A plexparity build points it at a function that keeps fixture probes, which
+// otherwise get dropped once thirty-two warm entries are recorded.
+var parityRetainWarm func(identity) bool
+
+func warmRetained(id identity) bool {
+	return parityRetainWarm != nil && parityRetainWarm(id)
+}
+
 // detailWarmWait is the longest a detail render spends on a probe this
 // request already started. The probe is published before its prefetch, and
 // main does not hold the detail request open for either. A probe still
@@ -113,7 +122,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		return false
 	}
 	for ident, e := range m.warm {
-		if !now.Before(e.expires) {
+		if !now.Before(e.expires) && !warmRetained(ident) {
 			delete(m.warm, ident)
 		}
 	}
@@ -142,6 +151,9 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		var oldest identity
 		var expiry time.Time
 		for ident, e := range m.warm {
+			if warmRetained(ident) {
+				continue
+			}
 			select {
 			case <-e.done:
 				if expiry.IsZero() || e.expires.Before(expiry) {

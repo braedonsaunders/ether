@@ -6,9 +6,38 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 )
+
+// parityProbeTTL keeps a fixture probe available for the whole read pass.
+// The product warm-up expires after ten minutes, which is shorter than one
+// parity world, and a later speculative warm-up would otherwise replace it.
+const parityProbeTTL = 6 * time.Hour
+
+func holdParityProbes(identity) bool { return true }
+
+// publishParityProbe stores facts on an entry the in-flight prewarm does not
+// own, so that goroutine's prefetch failure cannot delete them.
+func (m *Manager) publishParityProbe(id identity, profile core.QualityProfile, caps core.ClientCaps, runtime time.Duration, res *core.Resolution, releaseID string, info core.MediaInfo) {
+	parityRetainWarm = holdParityProbes
+	done := make(chan struct{})
+	close(done)
+	entry := &warmEntry{
+		profileKey: profileKey(profile),
+		profileObj: profile,
+		caps:       caps,
+		done:       done,
+		expires:    m.now().Add(parityProbeTTL),
+		runtime:    runtime,
+		res:        res,
+		probe:      &probeCache{releaseID: releaseID, info: info},
+	}
+	m.mu.Lock()
+	m.warm[id] = entry
+	m.mu.Unlock()
+}
 
 // ParitySettleWarm starts this title's detail warm-up when none is recorded,
 // then waits until that warm-up has finished or failed. Disposable parity
@@ -91,11 +120,21 @@ func (m *Manager) ParityProbeNow(ctx context.Context, user *core.User, key core.
 	// Plex reads look the probe up without a surface. Leaving newer identity
 	// fields zero keeps this seam compiling against released main.
 	id := identity{userID: user.ID, clientID: caps.ClientID, key: key}
+	parityRetainWarm = holdParityProbes
 	m.mu.Lock()
 	if e := m.warm[id]; e != nil && m.now().Before(e.expires) && e.probe != nil && !e.probe.info.Estimated && len(e.probe.info.Streams) > 0 {
 		select {
 		case <-e.done:
+			info := e.probe.info
+			releaseID := e.probe.releaseID
+			res := e.res
+			profile := e.profileObj
+			storedCaps := e.caps
+			runtime := e.runtime
 			m.mu.Unlock()
+			// Detach from the prewarm entry. Its prefetch can still delete
+			// that pointer after the ready signal.
+			m.publishParityProbe(id, profile, storedCaps, runtime, res, releaseID, info)
 			return nil
 		default:
 		}
@@ -139,20 +178,6 @@ func (m *Manager) ParityProbeNow(ctx context.Context, user *core.User, key core.
 	if probed.Size <= 0 {
 		probed.Size = src.Size()
 	}
-	done := make(chan struct{})
-	close(done)
-	entry := &warmEntry{
-		profileKey: profileKey(profile),
-		profileObj: profile,
-		caps:       caps,
-		done:       done,
-		expires:    m.now().Add(preResolveTTL),
-		runtime:    title.Runtime,
-		res:        res,
-		probe:      &probeCache{releaseID: res.Release.ID, info: probed},
-	}
-	m.mu.Lock()
-	m.warm[id] = entry
-	m.mu.Unlock()
+	m.publishParityProbe(id, profile, caps, title.Runtime, res, res.Release.ID, probed)
 	return nil
 }

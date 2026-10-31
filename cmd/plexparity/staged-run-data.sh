@@ -49,6 +49,7 @@ if [ "$expect_early_resume" = 1 ] && [ "$infuse_only" != 1 ]; then echo 'early-r
 # that checkout does not already contain it.
 #   baseline-seam.patch         determinism seams (clock, fixtures) for older trees
 #   baseline-diagnostics.patch  8862fd78d encoder nil-deref; removes the panic only
+#   baseline-warm-retain.patch  nil hook so fixture probes survive the 32-entry cap
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
@@ -58,6 +59,12 @@ for tree in baseline candidate; do
    (cd "$root/$tree" && git apply "$root/harness/baseline-diagnostics.patch")
   elif ! grep -q 'r.devices\[dev\] != nil' "$root/$tree/internal/diagnostics/recorder.go"; then
    echo 'baseline diagnostics patch did not apply' >&2
+   exit 1
+  fi
+  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-warm-retain.patch" >/dev/null 2>&1); then
+   (cd "$root/$tree" && git apply "$root/harness/baseline-warm-retain.patch")
+  elif ! grep -q 'parityRetainWarm' "$root/$tree/internal/playback/preresolve.go"; then
+   echo 'baseline warm-retain patch did not apply' >&2
    exit 1
   fi
  fi
