@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/url"
@@ -335,10 +336,52 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		if len(u.SubtitleLanguages) > 0 {
 			a.DefaultSubtitleLang = u.SubtitleLanguages[0]
 		}
+		if s.d.TrackPreferences != nil && viewerStoredSubtitlePreference(r.Context(), s.d.TrackPreferences, u.ID) {
+			if rules, err := s.d.TrackPreferences.GetRules(r.Context(), u.ID); err == nil {
+				// Plex account subtitleMode: 0 manual, 1 with foreign audio, 2 always.
+				// Unset and off stay 0, which is the value already written for every account.
+				// Shared defaults (user 0) stay off this document so an untouched account
+				// keeps the bytes it had before this viewer chose a preference.
+				a.SubtitleMode = plexSubtitleMode(rules.SubtitleMode)
+				if len(rules.SubtitleLanguages) > 0 {
+					a.DefaultSubtitleLang = rules.SubtitleLanguages[0]
+				}
+			}
+		}
 		mc.Account = append(mc.Account, a)
 	}
 	mc.Size = len(mc.Account)
 	s.write(w, r, mc)
+}
+
+// plexSubtitleMode matches Plex's account attribute: 0 is manual, 1 is shown
+// with foreign audio, 2 is always. Forced-only has no Plex value; 1 tells the
+// client to enable subtitles while Ether's selector still picks a forced track.
+// Off stays 0, the same attribute every unchanged account already carries.
+// viewerStoredSubtitlePreference is true when this account has its own
+// trackprefs row. Stores that cannot tell own from inherited still report
+// the GetRules result, which tests and older fakes rely on.
+func viewerStoredSubtitlePreference(ctx context.Context, prefs TrackPreferences, user int64) bool {
+	type own interface {
+		HasViewerRules(context.Context, int64) (bool, error)
+	}
+	checker, ok := prefs.(own)
+	if !ok {
+		return true
+	}
+	has, err := checker.HasViewerRules(ctx, user)
+	return err == nil && has
+}
+
+func plexSubtitleMode(mode string) int {
+	switch mode {
+	case "always":
+		return 2
+	case "foreign-only", "forced-only":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (s *Server) handleSecurityToken(w http.ResponseWriter, r *http.Request) {
