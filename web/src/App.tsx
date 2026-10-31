@@ -163,8 +163,8 @@ function navigation(): SidebarNavGroup[] {
       label: t("Server"),
       items: [
         { href: "/server", label: t("General"), icon: <Server size={icon} /> },
-        { href: "/cache", label: t("Cache"), icon: <HardDrive size={icon} /> },
         { href: "/apps", label: t("Apps"), icon: <Globe size={icon} /> },
+        { href: "/cache", label: t("Cache"), icon: <HardDrive size={icon} /> },
         { href: "/services", label: t("Integrations"), icon: <Plug size={icon} /> },
         { href: "/cluster", label: t("Cluster"), icon: <Boxes size={icon} /> },
         { href: "/notifications", label: t("Notifications"), icon: <Bell size={icon} /> },
