@@ -31,7 +31,8 @@ type server struct {
 	port    int
 	started time.Time
 	ready   time.Duration
-	exited  chan error
+	exited  chan struct{} // closed when the process has exited
+	err     error
 }
 
 // startServer runs bin on dataDir with outbound network blocked. On macOS it
@@ -56,14 +57,15 @@ func startServer(ctx context.Context, bin, dataDir string, port int, trace, logP
 	cmd.Env = append(os.Environ(), "ETHER_PORT="+strconv.Itoa(port), "ETHER_PERF_TRACE="+trace, "ETHER_DATA_DIR="+dataDir, "ETHER_PPROF_ADDR=127.0.0.1:"+strconv.Itoa(port+9))
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	setProcessGroup(cmd)
-	s := &server{cmd: cmd, port: port, started: time.Now(), exited: make(chan error, 1)}
+	s := &server{cmd: cmd, port: port, started: time.Now(), exited: make(chan struct{})}
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
 		return nil, err
 	}
 	go func() {
-		s.exited <- cmd.Wait()
+		s.err = cmd.Wait()
 		logFile.Close()
+		close(s.exited)
 	}()
 	if err := s.waitReady(ctx); err != nil {
 		s.stop()
@@ -79,8 +81,8 @@ func (s *server) waitReady(ctx context.Context) error {
 	deadline := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(deadline) {
 		select {
-		case err := <-s.exited:
-			return fmt.Errorf("server exited during startup: %v", err)
+		case <-s.exited:
+			return fmt.Errorf("server exited during startup: %v", s.err)
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(50 * time.Millisecond):
@@ -97,10 +99,16 @@ func (s *server) waitReady(ctx context.Context) error {
 	return errors.New("server did not become ready within 5 minutes")
 }
 
-// stop interrupts the server's process group and waits for it to exit.
+// stop interrupts the server's process group and waits for it to exit. It
+// may be called more than once.
 func (s *server) stop() {
 	if s == nil || s.cmd.Process == nil {
 		return
+	}
+	select {
+	case <-s.exited:
+		return
+	default:
 	}
 	interruptGroup(s.cmd.Process)
 	select {

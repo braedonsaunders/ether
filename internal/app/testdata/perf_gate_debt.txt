@@ -1,0 +1,3 @@
+# Endpoints that still scale with the library (TestPerformanceGate).
+# One "client | step" per line. Remove a line when its endpoint is fixed;
+# never add one for new code.

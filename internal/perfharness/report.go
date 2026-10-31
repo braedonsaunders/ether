@@ -1,4 +1,4 @@
-package main
+package perfharness
 
 import (
 	"bufio"
@@ -13,12 +13,12 @@ import (
 
 // budget is the latency a class must meet: p95 of the warm phase, the
 // single cold request, and p95 under concurrent viewers or a busy writer.
-type budget struct {
+type Budget struct {
 	Warm, Cold, Loaded time.Duration
 	Gated              bool
 }
 
-var budgets = map[string]budget{
+var Budgets = map[string]Budget{
 	classStatic:   {Warm: 50 * time.Millisecond, Cold: 500 * time.Millisecond, Loaded: 150 * time.Millisecond, Gated: true},
 	classSignIn:   {Warm: 100 * time.Millisecond, Cold: 500 * time.Millisecond, Loaded: 300 * time.Millisecond, Gated: true},
 	classHome:     {Warm: 150 * time.Millisecond, Cold: time.Second, Loaded: 450 * time.Millisecond, Gated: true},
@@ -31,7 +31,7 @@ var budgets = map[string]budget{
 }
 
 // traceRecord mirrors app.PerfTraceRecord (one line of ETHER_PERF_TRACE).
-type traceRecord struct {
+type TraceRecord struct {
 	Tag        string          `json:"tag"`
 	Surface    string          `json:"surface"`
 	Method     string          `json:"method"`
@@ -53,18 +53,18 @@ type statementStat struct {
 	Time  time.Duration `json:"time"`
 }
 
-func readTrace(path string) (map[string]traceRecord, []traceRecord, error) {
+func ReadTrace(path string) (map[string]TraceRecord, []TraceRecord, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer f.Close()
-	byTag := map[string]traceRecord{}
-	var untagged []traceRecord
+	byTag := map[string]TraceRecord{}
+	var untagged []TraceRecord
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for sc.Scan() {
-		var rec traceRecord
+		var rec TraceRecord
 		if json.Unmarshal(sc.Bytes(), &rec) != nil {
 			continue
 		}
@@ -78,7 +78,7 @@ func readTrace(path string) (map[string]traceRecord, []traceRecord, error) {
 }
 
 // row is one endpoint's line in the report.
-type row struct {
+type Row struct {
 	Client, Step, Class                    string
 	Cold, WarmP50, WarmP95, ConcP95, BgP95 time.Duration
 	Queries, Rows                          int64
@@ -113,18 +113,18 @@ func median64(xs []int64) int64 {
 
 // summarize groups results by client and step and checks each against its
 // class budget. A step with no samples in a phase is not judged for it.
-func summarize(results []result, trace map[string]traceRecord, order []client) []*row {
-	rows := map[string]*row{}
+func Summarize(results []Result, trace map[string]TraceRecord, order []Client) []*Row {
+	rows := map[string]*Row{}
 	var keys []string
 	for _, c := range order {
 		steps := c.Steps
 		if c.SignIn != nil {
-			steps = append([]step{*c.SignIn}, steps...)
+			steps = append([]Step{*c.SignIn}, steps...)
 		}
 		for _, st := range steps {
 			k := c.Name + "\x00" + st.Name
 			if rows[k] == nil {
-				rows[k] = &row{Client: c.Name, Step: st.Name, Class: st.Class, samples: map[string][]time.Duration{}}
+				rows[k] = &Row{Client: c.Name, Step: st.Name, Class: st.Class, samples: map[string][]time.Duration{}}
 				keys = append(keys, k)
 			}
 		}
@@ -152,10 +152,10 @@ func summarize(results []result, trace map[string]traceRecord, order []client) [
 			r.lockWaits = append(r.lockWaits, tr.LockWait)
 		}
 	}
-	out := make([]*row, 0, len(keys))
+	out := make([]*Row, 0, len(keys))
 	for _, k := range keys {
 		r := rows[k]
-		b := budgets[r.Class]
+		b := Budgets[r.Class]
 		if s := r.samples["cold"]; len(s) > 0 {
 			r.Cold = s[0]
 		}
@@ -204,7 +204,7 @@ func ms(d time.Duration) string {
 	return fmt.Sprintf("%dms", d.Milliseconds())
 }
 
-func writeReport(w io.Writer, title string, meta []string, rows []*row) (failed int) {
+func WriteReport(w io.Writer, title string, meta []string, rows []*Row) (failed int) {
 	fmt.Fprintf(w, "# %s\n\n", title)
 	for _, m := range meta {
 		fmt.Fprintf(w, "- %s\n", m)
@@ -233,7 +233,7 @@ func writeReport(w io.Writer, title string, meta []string, rows []*row) (failed 
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Budgets (p95): ")
 	for _, c := range []string{classStatic, classSignIn, classHome, classBrowse, classDetail, classSearch, classGuide, classConsole, classPlayback} {
-		b := budgets[c]
+		b := Budgets[c]
 		gate := "gated"
 		if !b.Gated {
 			gate = "reported only"

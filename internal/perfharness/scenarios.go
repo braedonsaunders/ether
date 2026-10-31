@@ -1,4 +1,4 @@
-package main
+package perfharness
 
 import (
 	"encoding/json"
@@ -25,7 +25,7 @@ const (
 // step is one request a client makes. Path and Body are templates: {name}
 // is replaced from the session's variables; a step whose variables were not
 // discovered is reported as skipped rather than guessed.
-type step struct {
+type Step struct {
 	Name     string
 	Class    string
 	Method   string
@@ -35,20 +35,22 @@ type step struct {
 }
 
 // client is one real client's request sequence against one protocol.
-type client struct {
+type Client struct {
 	Name    string
 	Surface string
-	// Port offset from the base port (0 main, 1 Jellyfin, 2 Emby, 3 Silo).
-	Port    int
-	Prefix  string
-	Headers func(s *session) http.Header
-	SignIn  *step
-	Steps   []step
+	// Port offset from the base port (0 main, 1 Jellyfin, 2 Emby, 3 Silo),
+	// or SharedPrefix on the main port when the runner shares one port.
+	Port         int
+	SharedPrefix string
+	Prefix       string
+	Headers      func(s *session) http.Header
+	SignIn       *Step
+	Steps        []Step
 }
 
 // session is one viewer driving one client.
 type session struct {
-	viewer viewer
+	Viewer Viewer
 	vars   map[string]string
 }
 
@@ -74,8 +76,9 @@ func expand(tpl string, vars map[string]string) (string, string, bool) {
 // Infuse's exact field list (captured from Infuse 8 against Jellyfin).
 const infuseFields = "DateCreated%2CEtag%2CGenres%2CMediaSources%2CAlternateMediaSources%2COverview%2CParentId%2CPath%2CProviderIds%2CSortName%2CRecursiveItemCount%2CChildCount"
 
-func clients() []client {
-	return []client{plexClient("plex-appletv", "Plex for Apple TV", "tvOS", "Apple TV"), plexClient("plex-web", "Plex Web", "Chrome", "Windows"),
+// Clients is every replayed client, in report order.
+func Clients() []Client {
+	return []Client{plexClient("plex-appletv", "Plex for Apple TV", "tvOS", "Apple TV"), plexClient("plex-web", "Plex Web", "Chrome", "Windows"),
 		infuseJellyfin(), swiftfin(), embySDK(), infuseEmby(), siloAppleTV(), stremio(), console()}
 }
 
@@ -89,16 +92,16 @@ func plexHeaders(product, platform, device string) func(*session) http.Header {
 		h.Set("X-Plex-Platform-Version", "18.0")
 		h.Set("X-Plex-Device", device)
 		h.Set("X-Plex-Device-Name", "etherperf")
-		h.Set("X-Plex-Client-Identifier", "etherperf-"+strings.ReplaceAll(strings.ToLower(product), " ", "-")+"-"+strconv.FormatInt(s.viewer.ID, 10))
+		h.Set("X-Plex-Client-Identifier", "etherperf-"+strings.ReplaceAll(strings.ToLower(product), " ", "-")+"-"+strconv.FormatInt(s.Viewer.ID, 10))
 		h.Set("X-Plex-Provides", "player,controller")
-		h.Set("X-Plex-Token", s.viewer.PlexToken)
+		h.Set("X-Plex-Token", s.Viewer.PlexToken)
 		return h
 	}
 }
 
-func plexClient(name, product, platform, device string) client {
+func plexClient(name, product, platform, device string) Client {
 	page := "&includeCollections=1&includeAdvanced=1&includeMeta=1&excludeFields=summary&X-Plex-Container-Size=60"
-	return client{Name: name, Surface: "plex", Headers: plexHeaders(product, platform, device), Steps: []step{
+	return Client{Name: name, Surface: "plex", Headers: plexHeaders(product, platform, device), Steps: []Step{
 		{Name: "/identity", Class: classStatic, Path: "/identity"},
 		{Name: "/", Class: classStatic, Path: "/"},
 		{Name: "/library/sections", Class: classBrowse, Path: "/library/sections", Discover: discoverPlexSections},
@@ -179,13 +182,13 @@ func setOnce(vars map[string]string, k, v string) {
 	}
 }
 
-func mediaBrowserHeaders(client, version, device string, emby bool) func(*session) http.Header {
+func mediaBrowserHeaders(app, version, device string, emby bool) func(*session) http.Header {
 	return func(s *session) http.Header {
 		h := http.Header{}
 		h.Set("Accept", "application/json")
 		h.Set("Content-Type", "application/json")
-		deviceID := "etherperf-" + strings.ToLower(strings.ReplaceAll(client, " ", "-")) + "-" + strconv.FormatInt(s.viewer.ID, 10)
-		auth := `MediaBrowser Client="` + client + `", Device="` + device + `", DeviceId="` + deviceID + `", Version="` + version + `"`
+		deviceID := "etherperf-" + strings.ToLower(strings.ReplaceAll(app, " ", "-")) + "-" + strconv.FormatInt(s.Viewer.ID, 10)
+		auth := `MediaBrowser Client="` + app + `", Device="` + device + `", DeviceId="` + deviceID + `", Version="` + version + `"`
 		if tok := s.vars["token"]; tok != "" {
 			auth += `, Token="` + tok + `"`
 			if emby {
@@ -197,13 +200,13 @@ func mediaBrowserHeaders(client, version, device string, emby bool) func(*sessio
 		} else {
 			h.Set("Authorization", auth)
 		}
-		h.Set("User-Agent", client+"/"+version)
+		h.Set("User-Agent", app+"/"+version)
 		return h
 	}
 }
 
-func mediaBrowserSignIn() *step {
-	return &step{Name: "AuthenticateByName", Class: classSignIn, Method: http.MethodPost, Path: "/Users/AuthenticateByName",
+func mediaBrowserSignIn() *Step {
+	return &Step{Name: "AuthenticateByName", Class: classSignIn, Method: http.MethodPost, Path: "/Users/AuthenticateByName",
 		Body: `{"Username":"{username}","Pw":"{password}"}`, Discover: func(vars map[string]string, body []byte) {
 			var r struct {
 				AccessToken string `json:"AccessToken"`
@@ -267,9 +270,9 @@ func discoverMBItem(name, typ string) func(map[string]string, []byte) {
 	}
 }
 
-func infuseJellyfin() client {
+func infuseJellyfin() Client {
 	f := infuseFields
-	return client{Name: "infuse-jellyfin", Surface: "jellyfin", Port: 1, Headers: mediaBrowserHeaders("Infuse-Library", "8.1", "Apple TV", false), SignIn: mediaBrowserSignIn(), Steps: []step{
+	return Client{Name: "infuse-jellyfin", Surface: "jellyfin", Port: 1, SharedPrefix: "/jellyfin", Headers: mediaBrowserHeaders("Infuse-Library", "8.1", "Apple TV", false), SignIn: mediaBrowserSignIn(), Steps: []Step{
 		{Name: "/System/Info/Public", Class: classStatic, Path: "/System/Info/Public"},
 		{Name: "/Users/{id}", Class: classStatic, Path: "/Users/{userId}?userId={userId}"},
 		{Name: "/UserItems/Resume", Class: classHome, Path: "/UserItems/Resume?fields=" + f + "&limit=40&mediaTypes=Video&userId={userId}"},
@@ -298,8 +301,8 @@ func infuseJellyfin() client {
 	}}
 }
 
-func swiftfin() client {
-	return client{Name: "swiftfin", Surface: "jellyfin", Port: 1, Headers: mediaBrowserHeaders("Swiftfin tvOS", "1.3", "Apple TV", false), SignIn: mediaBrowserSignIn(), Steps: []step{
+func swiftfin() Client {
+	return Client{Name: "swiftfin", Surface: "jellyfin", Port: 1, SharedPrefix: "/jellyfin", Headers: mediaBrowserHeaders("Swiftfin tvOS", "1.3", "Apple TV", false), SignIn: mediaBrowserSignIn(), Steps: []Step{
 		{Name: "/Users/{id}/Views", Class: classHome, Path: "/Users/{userId}/Views", Discover: discoverViews},
 		{Name: "/Users/{id}/Items/Resume", Class: classHome, Path: "/Users/{userId}/Items/Resume?enableUserData=true&fields=PrimaryImageAspectRatio%2COverview&limit=20&mediaTypes=Video"},
 		{Name: "/Shows/NextUp", Class: classHome, Path: "/Shows/NextUp?enableUserData=true&fields=PrimaryImageAspectRatio%2COverview&limit=20&userId={userId}"},
@@ -309,8 +312,8 @@ func swiftfin() client {
 	}}
 }
 
-func embySDK() client {
-	return client{Name: "emby-sdk", Surface: "emby", Port: 2, Headers: mediaBrowserHeaders("Emby Theater", "4.8", "etherperf", true), SignIn: mediaBrowserSignIn(), Steps: []step{
+func embySDK() Client {
+	return Client{Name: "emby-sdk", Surface: "emby", Port: 2, SharedPrefix: "/emby", Headers: mediaBrowserHeaders("Emby Theater", "4.8", "etherperf", true), SignIn: mediaBrowserSignIn(), Steps: []Step{
 		{Name: "/System/Info/Public", Class: classStatic, Path: "/System/Info/Public"},
 		{Name: "/Users/{id}/Views", Class: classHome, Path: "/Users/{userId}/Views", Discover: discoverViews},
 		{Name: "/Users/{id}/Items/Resume", Class: classHome, Path: "/Users/{userId}/Items/Resume?Limit=12&MediaTypes=Video&Fields=PrimaryImageAspectRatio"},
@@ -326,9 +329,9 @@ func embySDK() client {
 	}}
 }
 
-func infuseEmby() client {
+func infuseEmby() Client {
 	f := infuseFields
-	return client{Name: "infuse-emby", Surface: "emby", Port: 2, Headers: mediaBrowserHeaders("Infuse-Library", "8.1", "Apple TV", true), SignIn: mediaBrowserSignIn(), Steps: []step{
+	return Client{Name: "infuse-emby", Surface: "emby", Port: 2, SharedPrefix: "/emby", Headers: mediaBrowserHeaders("Infuse-Library", "8.1", "Apple TV", true), SignIn: mediaBrowserSignIn(), Steps: []Step{
 		{Name: "/Users/{id}/Views", Class: classHome, Path: "/Users/{userId}/Views", Discover: discoverViews},
 		{Name: "/Users/{id}/Items/Resume", Class: classHome, Path: "/Users/{userId}/Items/Resume?fields=" + f + "&limit=40&mediaTypes=Video"},
 		{Name: "movies p1 SortName", Class: classBrowse, Path: "/Users/{userId}/Items?excludeLocationTypes=Virtual&fields=" + f + "&includeItemTypes=Movie&limit=50&parentId={moviesView}&recursive=true&sortBy=SortName&sortOrder=Ascending&startIndex=0"},
@@ -341,9 +344,11 @@ func siloHeaders(s *session) http.Header {
 	h.Set("Content-Type", "application/json")
 	h.Set("X-Silo-Client", "silo-appletv")
 	h.Set("X-Silo-Client-Version", "1.0")
-	h.Set("X-Silo-Device-Id", "etherperf-silo-"+strconv.FormatInt(s.viewer.ID, 10))
+	h.Set("X-Silo-Device-Id", "etherperf-silo-"+strconv.FormatInt(s.Viewer.ID, 10))
 	h.Set("X-Silo-Device-Name", "etherperf")
 	h.Set("X-Silo-Device-Platform", "tvos")
+	// Silo apps send the chosen profile, which is the viewer.
+	h.Set("X-Profile-Id", strconv.FormatInt(s.Viewer.ID, 10))
 	if tok := s.vars["token"]; tok != "" {
 		h.Set("Authorization", "Bearer "+tok)
 	}
@@ -405,10 +410,10 @@ func jsonText(v any) string {
 	return ""
 }
 
-func siloAppleTV() client {
+func siloAppleTV() Client {
 	img := "backdrop_width=2688&image_size=medium&logo_width=1760"
-	return client{Name: "silo-appletv", Surface: "silo", Port: 3, Headers: siloHeaders,
-		SignIn: &step{Name: "auth/login", Class: classSignIn, Method: http.MethodPost, Path: "/api/v2/auth/login", Body: `{"username":"{username}","password":"{password}"}`,
+	return Client{Name: "silo-appletv", Surface: "silo", Port: 3, SharedPrefix: "/silo", Headers: siloHeaders,
+		SignIn: &Step{Name: "auth/login", Class: classSignIn, Method: http.MethodPost, Path: "/api/v2/auth/login", Body: `{"username":"{username}","password":"{password}"}`,
 			Discover: func(vars map[string]string, body []byte) {
 				var r struct {
 					AccessToken string `json:"access_token"`
@@ -417,7 +422,7 @@ func siloAppleTV() client {
 					vars["token"] = r.AccessToken
 				}
 			}},
-		Steps: []step{
+		Steps: []Step{
 			{Name: "system/info", Class: classStatic, Path: "/api/v2/system/info"},
 			{Name: "account/me", Class: classStatic, Path: "/api/v2/account/me"},
 			{Name: "profiles", Class: classStatic, Path: "/api/v2/profiles"},
@@ -439,12 +444,12 @@ func siloAppleTV() client {
 
 var stremioMetaID = regexp.MustCompile(`"id"\s*:\s*"((?:tmdb:|tt)[^"]+)"`)
 
-func stremio() client {
-	return client{Name: "stremio", Surface: "stremio", Prefix: "/stremio/{stremio}", Headers: func(*session) http.Header {
+func stremio() Client {
+	return Client{Name: "stremio", Surface: "stremio", Prefix: "/stremio/{stremio}", Headers: func(*session) http.Header {
 		h := http.Header{}
 		h.Set("Accept", "application/json")
 		return h
-	}, Steps: []step{
+	}, Steps: []Step{
 		{Name: "manifest", Class: classStatic, Path: "/manifest.json"},
 		{Name: "catalog movies", Class: classBrowse, Path: "/catalog/movie/ether-movies.json", Discover: discoverRegexp("movieMeta", stremioMetaID)},
 		{Name: "catalog movies skip=1000", Class: classBrowse, Path: "/catalog/movie/ether-movies/skip=1000.json"},
@@ -459,18 +464,18 @@ func stremio() client {
 	}}
 }
 
-func console() client {
-	return client{Name: "console", Surface: "console", Prefix: "/ether/api", Headers: func(s *session) http.Header {
+func console() Client {
+	return Client{Name: "console", Surface: "console", Prefix: "/ether/api", Headers: func(s *session) http.Header {
 		h := http.Header{}
 		h.Set("Accept", "application/json")
 		h.Set("X-Ether-Admin-Token", s.vars["ownerToken"])
 		return h
-	}, Steps: []step{
+	}, Steps: []Step{
 		{Name: "bootstrap", Class: classConsole, Path: "/bootstrap"},
 		{Name: "dashboard", Class: classConsole, Path: "/dashboard"},
 		{Name: "status", Class: classConsole, Path: "/status"},
 		{Name: "system/load", Class: classConsole, Path: "/system/load"},
-		{Name: "catalog browse movies", Class: classConsole, Path: "/catalog/browse?type=movie&sort=popular&offset=0&limit=48"},
+		{Name: "catalog browse movies", Class: classConsole, Path: "/catalog/browse?type=movie&offset=0&limit=48"},
 		{Name: "catalog browse deep", Class: classConsole, Path: "/catalog/browse?type=movie&sort=title&offset=4800&limit=48"},
 		{Name: "catalog facets genre", Class: classConsole, Path: "/catalog/facets?type=movie&facet=genre"},
 		{Name: "catalog facets decade", Class: classConsole, Path: "/catalog/facets?type=movie&facet=decade"},
@@ -483,6 +488,49 @@ func console() client {
 		{Name: "frontends", Class: classConsole, Path: "/frontends"},
 		{Name: "layout", Class: classConsole, Path: "/layout"},
 	}}
+}
+
+// Only keeps the clients named in names (all of them when names is empty).
+func Only(cs []Client, names []string) []Client {
+	if len(names) == 0 {
+		return cs
+	}
+	want := map[string]bool{}
+	for _, n := range names {
+		want[strings.TrimSpace(n)] = true
+	}
+	var keep []Client
+	for _, c := range cs {
+		if want[c.Name] {
+			keep = append(keep, c)
+		}
+	}
+	return keep
+}
+
+// OnlySteps keeps the steps whose name contains one of names (case
+// insensitive); clients left with no steps are dropped. Sign-in always runs.
+func OnlySteps(cs []Client, names []string) []Client {
+	if len(names) == 0 {
+		return cs
+	}
+	var out []Client
+	for _, c := range cs {
+		var steps []Step
+		for _, st := range c.Steps {
+			for _, n := range names {
+				if n = strings.TrimSpace(n); n != "" && strings.Contains(strings.ToLower(st.Name), strings.ToLower(n)) {
+					steps = append(steps, st)
+					break
+				}
+			}
+		}
+		if len(steps) > 0 {
+			c.Steps = steps
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // queryEscape is used for credentials placed in a path.

@@ -146,6 +146,30 @@ jobs:
       - name: Scan reachable Go vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
+  performance:
+    name: Library-scale performance gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Replays every protocol against a 50k and a 500k+ row synthetic
+      # library and fails when an endpoint's statements, rows read or
+      # database time grow with the library (docs/performance.md).
+      - name: Performance gate
+        env:
+          CGO_ENABLED: "0"
+          ETHER_PERF_GATE: "1"
+          ETHER_PERF_GATE_REPORT: ${{ runner.temp }}/perf-gate.md
+        run: go test ./internal/app -run '^TestPerformanceGate$' -count=1 -timeout 60m -v
+      - name: Publish the gate report
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/perf-gate.md" ]; then cat "$RUNNER_TEMP/perf-gate.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
   web:
     name: Web UI
     runs-on: ubuntu-latest

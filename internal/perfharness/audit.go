@@ -1,4 +1,4 @@
-package main
+package perfharness
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,13 +31,41 @@ var (
 	tempBTree  = regexp.MustCompile(`USE TEMP B-TREE FOR (.*)`)
 	autoIndex  = regexp.MustCompile(`AUTOMATIC (PARTIAL )?COVERING INDEX`)
 	correlated = regexp.MustCompile(`CORRELATED (SCALAR|LIST) SUBQUERY`)
+	searchRe   = regexp.MustCompile(`^SEARCH (\S+)(?: AS \S+)? USING (?:COVERING )?INDEX (\S+) \((.*)\)`)
 )
+
+// indexStats reads sqlite_stat1: for each index, the estimated rows per
+// distinct value of its leading 1, 2, ... columns.
+func indexStats(ctx context.Context, db *sql.DB) map[string][]int64 {
+	out := map[string][]int64{}
+	rows, err := db.QueryContext(ctx, `SELECT idx, stat FROM sqlite_stat1 WHERE idx IS NOT NULL`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var idx, stat string
+		if rows.Scan(&idx, &stat) != nil {
+			continue
+		}
+		var nums []int64
+		for _, f := range strings.Fields(stat) {
+			v, err := strconv.ParseInt(f, 10, 64)
+			if err != nil {
+				break
+			}
+			nums = append(nums, v)
+		}
+		out[idx] = nums
+	}
+	return out
+}
 
 // audit runs EXPLAIN QUERY PLAN for every statement the trace attributes to
 // a request and ranks them by the time they cost, flagging full scans of
 // large tables, temporary sort trees, automatic indexes, correlated
 // subqueries and statements repeated within one request.
-func audit(ctx context.Context, dbPath string, trace map[string]traceRecord, w io.Writer) error {
+func Audit(ctx context.Context, dbPath string, trace map[string]TraceRecord, w io.Writer) error {
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?mode=ro&_pragma=busy_timeout(10000)")
 	if err != nil {
 		return err
@@ -61,6 +90,7 @@ func audit(ctx context.Context, dbPath string, trace map[string]traceRecord, w i
 			sizes[t] = n
 		}
 	}
+	stats := indexStats(ctx, db)
 	entries := map[string]*auditEntry{}
 	for tag, rec := range trace {
 		parts := strings.SplitN(tag, "|", 4)
@@ -86,7 +116,7 @@ func audit(ctx context.Context, dbPath string, trace map[string]traceRecord, w i
 	}
 	list := make([]*auditEntry, 0, len(entries))
 	for _, e := range entries {
-		e.Plan, e.Issues = explain(ctx, db, e.SQL, sizes)
+		e.Plan, e.Issues = explain(ctx, db, e.SQL, sizes, stats)
 		if e.MaxPerReq >= 20 {
 			e.Issues = append(e.Issues, fmt.Sprintf("N+1: %d executions in one request", e.MaxPerReq))
 		}
@@ -126,13 +156,14 @@ func audit(ctx context.Context, dbPath string, trace map[string]traceRecord, w i
 	return nil
 }
 
-func explain(ctx context.Context, db *sql.DB, query string, sizes map[string]int64) ([]string, []string) {
+func explain(ctx context.Context, db *sql.DB, query string, sizes map[string]int64, stats map[string][]int64) ([]string, []string) {
 	q := strings.TrimSpace(query)
 	upper := strings.ToUpper(q)
 	if !(strings.HasPrefix(upper, "SELECT") || strings.HasPrefix(upper, "WITH") || strings.HasPrefix(upper, "UPDATE") || strings.HasPrefix(upper, "DELETE") || strings.HasPrefix(upper, "INSERT")) {
 		return nil, nil
 	}
-	rows, err := db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+q)
+	// Parameters are bound to NULL; the plan does not depend on them.
+	rows, err := db.QueryContext(ctx, "EXPLAIN QUERY PLAN "+q, make([]any, placeholders(q))...)
 	if err != nil {
 		return []string{"explain failed: " + err.Error()}, nil
 	}
@@ -162,6 +193,14 @@ func explain(ctx context.Context, db *sql.DB, query string, sizes map[string]int
 				add(fmt.Sprintf("full index scan of %s (%d rows)", table, n))
 			case !strings.Contains(rest, "INDEX") && n >= 2000:
 				add(fmt.Sprintf("full table scan of %s (%d rows)", table, n))
+			}
+		}
+		if m := searchRe.FindStringSubmatch(detail); m != nil {
+			// An equality prefix that still selects thousands of rows is a
+			// scan in disguise (type IN ('movie','show') on 500k rows).
+			eq := strings.Count(m[3], "=?") - strings.Count(m[3], "<=?") - strings.Count(m[3], ">=?")
+			if st := stats[m[2]]; eq >= 1 && eq < len(st) && st[eq] >= 2000 && !strings.Contains(m[3], "rowid=") {
+				add(fmt.Sprintf("index %s selects ~%d rows per probe", m[2], st[eq]))
 			}
 		}
 		if m := tempBTree.FindStringSubmatch(detail); m != nil {
@@ -216,4 +255,39 @@ func clip(s string, n int) string {
 		return s[:n] + "…"
 	}
 	return s
+}
+
+// placeholders counts a statement's parameters: ? and ?NNN outside string
+// literals, quoted identifiers and comments.
+func placeholders(q string) int {
+	n, numbered := 0, 0
+	for i := 0; i < len(q); i++ {
+		switch c := q[i]; c {
+		case '\'', '"', '`':
+			for i++; i < len(q) && q[i] != c; i++ {
+			}
+		case '-':
+			if i+1 < len(q) && q[i+1] == '-' {
+				for i < len(q) && q[i] != '\n' {
+					i++
+				}
+			}
+		case '?':
+			j := i + 1
+			for j < len(q) && q[j] >= '0' && q[j] <= '9' {
+				j++
+			}
+			if j > i+1 {
+				v := 0
+				for _, d := range q[i+1 : j] {
+					v = v*10 + int(d-'0')
+				}
+				numbered = max(numbered, v)
+				i = j - 1
+			} else {
+				n++
+			}
+		}
+	}
+	return max(n, numbered)
 }

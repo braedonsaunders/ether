@@ -1,4 +1,4 @@
-package main
+package perfharness
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/rand/v2"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,7 +16,7 @@ import (
 )
 
 // result is one timed request.
-type result struct {
+type Result struct {
 	Phase   string        `json:"phase"`
 	Client  string        `json:"client"`
 	Surface string        `json:"surface"`
@@ -32,32 +31,38 @@ type result struct {
 	Skipped string        `json:"skipped,omitempty"`
 }
 
-type runner struct {
+type Runner struct {
 	basePort int
-	http     *http.Client
-	viewers  []viewer
-	owner    viewer
+	// shared sends every protocol to the base port under its shared path
+	// prefix (/jellyfin, /emby, /silo) instead of its own port.
+	shared  bool
+	http    *http.Client
+	viewers []Viewer
+	owner   Viewer
 
 	mu       sync.Mutex
-	results  []result
+	results  []Result
 	sessions map[string]*session // viewer/client
 	seq      atomic.Int64
 }
 
-func newRunner(basePort int, viewers []viewer) *runner {
+// NewRunner drives a server whose main port is basePort. With shared set,
+// Jellyfin, Emby and Silo are reached under their path prefixes on that
+// port; otherwise on basePort+1, +2 and +3.
+func NewRunner(basePort int, shared bool, viewers []Viewer) *Runner {
 	tr := &http.Transport{MaxIdleConnsPerHost: 64, MaxConnsPerHost: 0, IdleConnTimeout: 90 * time.Second}
-	return &runner{basePort: basePort, viewers: viewers, owner: viewers[0], sessions: map[string]*session{},
+	return &Runner{basePort: basePort, shared: shared, viewers: viewers, owner: viewers[0], sessions: map[string]*session{},
 		http: &http.Client{Transport: tr, Timeout: 90 * time.Second}}
 }
 
-func (r *runner) session(v viewer, c client) *session {
+func (r *Runner) session(v Viewer, c Client) *session {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := v.Username + "/" + c.Name
 	s := r.sessions[key]
 	if s == nil {
-		s = &session{viewer: v, vars: map[string]string{
-			"username": v.Username, "password": perfPassword, "stremio": queryEscape(v.Stremio),
+		s = &session{Viewer: v, vars: map[string]string{
+			"username": v.Username, "password": Password, "stremio": queryEscape(v.Stremio),
 			"ownerToken": r.owner.PlexToken, "viewerId": strconv.FormatInt(v.ID, 10),
 		}}
 		r.sessions[key] = s
@@ -66,9 +71,14 @@ func (r *runner) session(v viewer, c client) *session {
 }
 
 // runClient drives one client's whole sequence for one viewer.
-func (r *runner) runClient(ctx context.Context, phase string, c client, v viewer) {
+func (r *Runner) runClient(ctx context.Context, phase string, c Client, v Viewer) {
 	s := r.session(v, c)
-	if c.SignIn != nil {
+	// Clients sign in once and keep their token, as real apps do; repeated
+	// sign-ins would also trip the sign-in rate limiter.
+	r.mu.Lock()
+	signedIn := s.vars["token"] != ""
+	r.mu.Unlock()
+	if c.SignIn != nil && !signedIn {
 		r.do(ctx, phase, c, s, *c.SignIn)
 	}
 	for _, st := range c.Steps {
@@ -79,7 +89,7 @@ func (r *runner) runClient(ctx context.Context, phase string, c client, v viewer
 	}
 }
 
-func (r *runner) do(ctx context.Context, phase string, c client, s *session, st step) {
+func (r *Runner) do(ctx context.Context, phase string, c Client, s *session, st Step) {
 	now := time.Now()
 	r.mu.Lock()
 	s.vars["now"] = strconv.FormatInt(now.Unix(), 10)
@@ -90,7 +100,7 @@ func (r *runner) do(ctx context.Context, phase string, c client, s *session, st 
 	}
 	r.mu.Unlock()
 	tag := phase + "|" + c.Name + "|" + st.Name + "|" + strconv.FormatInt(r.seq.Add(1), 10)
-	res := result{Phase: phase, Client: c.Name, Surface: c.Surface, Step: st.Name, Class: st.Class, Viewer: s.viewer.Username, Tag: tag}
+	res := Result{Phase: phase, Client: c.Name, Surface: c.Surface, Step: st.Name, Class: st.Class, Viewer: s.Viewer.Username, Tag: tag}
 	path, missing, ok := expand(c.Prefix+st.Path, vars)
 	body, missingBody, okBody := expand(st.Body, vars)
 	if !ok || !okBody {
@@ -109,13 +119,17 @@ func (r *runner) do(ctx context.Context, phase string, c client, s *session, st 
 	if body != "" {
 		reader = strings.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, "http://127.0.0.1:"+strconv.Itoa(r.basePort+c.Port)+path, reader)
+	port := r.basePort + c.Port
+	if r.shared {
+		port, path = r.basePort, c.SharedPrefix+path
+	}
+	req, err := http.NewRequestWithContext(ctx, method, "http://127.0.0.1:"+strconv.Itoa(port)+path, reader)
 	if err != nil {
 		res.Err = err.Error()
 		r.record(res)
 		return
 	}
-	req.Header = c.Headers(&session{viewer: s.viewer, vars: vars})
+	req.Header = c.Headers(&session{Viewer: s.Viewer, vars: vars})
 	req.Header.Set("X-Ether-Perf-Tag", tag)
 	start := time.Now()
 	resp, err := r.http.Do(req)
@@ -141,14 +155,21 @@ func (r *runner) do(ctx context.Context, phase string, c client, s *session, st 
 	r.record(res)
 }
 
-func (r *runner) record(res result) {
+// Results returns every timed request so far.
+func (r *Runner) Results() []Result {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]Result(nil), r.results...)
+}
+
+func (r *Runner) record(res Result) {
 	r.mu.Lock()
 	r.results = append(r.results, res)
 	r.mu.Unlock()
 }
 
 // sequential runs every client for each viewer, one request at a time.
-func (r *runner) sequential(ctx context.Context, phase string, viewers []viewer, cs []client) {
+func (r *Runner) Sequential(ctx context.Context, phase string, viewers []Viewer, cs []Client) {
 	for _, v := range viewers {
 		for _, c := range cs {
 			r.runClient(ctx, phase, c, v)
@@ -158,7 +179,7 @@ func (r *runner) sequential(ctx context.Context, phase string, viewers []viewer,
 
 // concurrent runs n workers, each a viewer working through every client in
 // its own order, rounds times.
-func (r *runner) concurrent(ctx context.Context, phase string, n, rounds int, cs []client) {
+func (r *Runner) Concurrent(ctx context.Context, phase string, n, rounds int, cs []Client) {
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Add(1)
@@ -179,7 +200,7 @@ func (r *runner) concurrent(ctx context.Context, phase string, n, rounds int, cs
 // backgroundWriter imitates a catalogue refresh against the same database:
 // write transactions of 500 title rows, back to back with a short pause, so
 // request paths meet a busy writer the way they do while the mirror syncs.
-type backgroundWriter struct {
+type BackgroundWriter struct {
 	db     *sql.DB
 	stop   chan struct{}
 	done   chan struct{}
@@ -188,7 +209,7 @@ type backgroundWriter struct {
 	errors atomic.Int64
 }
 
-func startBackgroundWriter(dbPath string) (*backgroundWriter, error) {
+func StartBackgroundWriter(dbPath string) (*BackgroundWriter, error) {
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)")
 	if err != nil {
 		return nil, err
@@ -199,7 +220,7 @@ func startBackgroundWriter(dbPath string) (*backgroundWriter, error) {
 		db.Close()
 		return nil, err
 	}
-	w := &backgroundWriter{db: db, stop: make(chan struct{}), done: make(chan struct{})}
+	w := &BackgroundWriter{db: db, stop: make(chan struct{}), done: make(chan struct{})}
 	go func() {
 		defer close(w.done)
 		rng := rand.New(rand.NewPCG(1, 2))
@@ -233,14 +254,9 @@ func startBackgroundWriter(dbPath string) (*backgroundWriter, error) {
 	return w, nil
 }
 
-func (w *backgroundWriter) close() string {
+func (w *BackgroundWriter) Close() string {
 	close(w.stop)
 	<-w.done
 	w.db.Close()
 	return fmt.Sprintf("%d write transactions of 500 rows (longest %s, %d failed)", w.txs.Load(), time.Duration(w.maxTx.Load()).Round(time.Millisecond), w.errors.Load())
-}
-
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
 }

@@ -1,0 +1,257 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/perfharness"
+	"github.com/braedonsaunders/ether/internal/store"
+)
+
+// PerfGateEnv runs TestPerformanceGate. CI sets it in its own job; see
+// docs/performance.md.
+const PerfGateEnv = "ETHER_PERF_GATE"
+
+// gateClients are replayed against both scales: one client per protocol.
+var gateClients = []string{"plex-appletv", "infuse-jellyfin", "emby-sdk", "silo-appletv", "stremio", "console"}
+
+// TestPerformanceGate fails when a request path scales with the library.
+// It builds the same synthetic household over a library of SmallScale and
+// one ten times larger (LargeScale, 500k+ catalogue rows), replays every
+// protocol's request sequence against a real App on each, and compares each
+// endpoint's statements, rows read and database time between the two. A
+// path that walks the catalogue does ten times the work on the larger
+// library; an indexed path does about the same.
+func TestPerformanceGate(t *testing.T) {
+	mode := os.Getenv(PerfGateEnv)
+	if *perfGateFlag != "" {
+		mode = *perfGateFlag
+	}
+	if mode == "" {
+		t.Skip("set " + PerfGateEnv + "=1 (or -args -perf-gate=1) to run the library-scale performance gate (docs/performance.md)")
+	}
+	smallScale, largeScale := perfharness.SmallScale, perfharness.LargeScale
+	if mode == "quick" {
+		// A faster pair, also 10× apart, for iterating locally.
+		smallScale, largeScale = perfharness.SmallScale.Divide(10), perfharness.SmallScale
+	}
+	small := runPerfScale(t, "small", smallScale)
+	large := runPerfScale(t, "large", largeScale)
+	var report bytes.Buffer
+	failures := comparePerfScales(&report, small, large)
+	t.Log("\n" + report.String())
+	if path := os.Getenv("ETHER_PERF_GATE_REPORT"); path != "" {
+		_ = os.WriteFile(path, report.Bytes(), 0o644)
+	}
+	debt, err := readPerfDebt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode == "quick" {
+		// The quick pair is for iterating; only the full pair is ratcheted.
+		for _, f := range failures {
+			t.Log("would fail: " + f.key + ": " + f.why)
+		}
+		return
+	}
+	failed := map[string]bool{}
+	for _, f := range failures {
+		failed[f.key] = true
+		if debt[f.key] {
+			t.Logf("known debt: %s: %s", f.key, f.why)
+			continue
+		}
+		t.Errorf("%s: %s", f.key, f.why)
+	}
+	for key := range debt {
+		if !failed[key] {
+			t.Errorf("%s now stays flat as the library grows: remove it from %s", key, perfDebtFile)
+		}
+	}
+}
+
+var perfGateFlag = flag.String("perf-gate", "", "run TestPerformanceGate (1, or quick for a smaller pair)")
+
+// perfDebtFile lists the endpoints known to scale with the library, one
+// "client | step" per line. The gate fails on any other endpoint that
+// scales, and on a listed endpoint that no longer does, so the list only
+// shrinks.
+const perfDebtFile = "testdata/perf_gate_debt.txt"
+
+func readPerfDebt() (map[string]bool, error) {
+	b, err := os.ReadFile(perfDebtFile)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if i := strings.Index(line, " #"); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+		}
+		out[line] = true
+	}
+	return out, nil
+}
+
+type gateFailure struct{ key, why string }
+
+// Gate thresholds between scales 10× apart. Each allows for noise and for
+// logarithmic growth, never for linear growth.
+const (
+	gateRowsFactor    = 2.0
+	gateRowsSlack     = 200
+	gateQueriesFactor = 1.5
+	gateQueriesSlack  = 20
+	gateDBFactor      = 4.0
+	gateDBSlack       = 25 * time.Millisecond
+	gateWallCeiling   = 2 * time.Second
+)
+
+func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateFailure {
+	bySmall := map[string]*perfharness.Row{}
+	for _, r := range small {
+		bySmall[r.Client+" "+r.Step] = r
+	}
+	var failures []gateFailure
+	fmt.Fprintln(w, "| client | step | queries S→L | rows S→L | db S→L | warm p50 S→L | verdict |")
+	fmt.Fprintln(w, "|---|---|---:|---:|---:|---:|---|")
+	for _, l := range large {
+		s := bySmall[l.Client+" "+l.Step]
+		if s == nil || l.Class == "playback" {
+			continue
+		}
+		verdict := "ok"
+		var why []string
+		switch {
+		case l.Status == "SKIP" || s.Status == "SKIP":
+			verdict = "skipped " + l.Skipped + s.Skipped
+		case l.Status == "ERROR" && s.Status != "ERROR":
+			why = append(why, "fails only on the large library: "+strings.Join(l.Errors, "; "))
+		case l.Status == "ERROR":
+			verdict = "error on both: " + strings.Join(l.Errors, "; ")
+		default:
+			if float64(l.Rows) > gateRowsFactor*float64(s.Rows)+gateRowsSlack {
+				why = append(why, fmt.Sprintf("rows read grow with the library (%d → %d)", s.Rows, l.Rows))
+			}
+			if float64(l.Queries) > gateQueriesFactor*float64(s.Queries)+gateQueriesSlack {
+				why = append(why, fmt.Sprintf("statements grow with the library (%d → %d)", s.Queries, l.Queries))
+			}
+			if l.DBTime > time.Duration(gateDBFactor*float64(s.DBTime))+gateDBSlack {
+				why = append(why, fmt.Sprintf("database time grows with the library (%s → %s)", s.DBTime, l.DBTime))
+			}
+			if l.WarmP50 > gateWallCeiling {
+				why = append(why, fmt.Sprintf("warm p50 %s over %s", l.WarmP50, gateWallCeiling))
+			}
+		}
+		if len(why) > 0 {
+			verdict = "FAIL: " + strings.Join(why, "; ")
+			failures = append(failures, gateFailure{key: l.Client + " | " + l.Step, why: strings.Join(why, "; ")})
+		}
+		fmt.Fprintf(w, "| %s | %s | %d → %d | %d → %d | %s → %s | %s → %s | %s |\n", l.Client, l.Step, s.Queries, l.Queries, s.Rows, l.Rows,
+			s.DBTime.Round(time.Microsecond*100), l.DBTime.Round(time.Microsecond*100), s.WarmP50.Round(time.Microsecond*100), l.WarmP50.Round(time.Microsecond*100), verdict)
+	}
+	return failures
+}
+
+func freePorts(t *testing.T, n int) []int {
+	t.Helper()
+	var out []int
+	var ls []net.Listener
+	for range n {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ls = append(ls, l)
+		out = append(out, l.Addr().(*net.TCPAddr).Port)
+	}
+	for _, l := range ls {
+		l.Close()
+	}
+	return out
+}
+
+func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfharness.Row {
+	ctx := context.Background()
+	dir := t.TempDir()
+	start := time.Now()
+	cfg, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports := freePorts(t, 3)
+	if err = cfg.Update(func(c *config.Config) error {
+		c.SetupComplete = true
+		c.Frontends = map[string]config.Frontend{"plex": {Enabled: true}, "jellyfin": {Enabled: true}, "emby": {Enabled: true}, "silo": {Enabled: true}, "stremio": {Enabled: true}}
+		c.FrontendPorts = map[string]int{"jellyfin": ports[0], "emby": ports[1], "silo": ports[2]}
+		c.Transcode.FFmpegPath = "/not-installed/ffmpeg"
+		c.Server.BindAddress = "127.0.0.1"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = perfharness.Generate(ctx, db, scale, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	viewers, err := perfharness.MintCredentials(ctx, db, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	t.Logf("%s: generated %d catalogue rows in %s", name, scale.Rows(), time.Since(start).Round(time.Millisecond))
+
+	trace := filepath.Join(dir, "trace.jsonl")
+	t.Setenv(PerfTraceEnv, trace)
+	var appLog bytes.Buffer
+	a, err := New(ctx, Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(&appLog, &slog.HandlerOptions{Level: slog.LevelWarn}))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(a.Handler())
+	a.frontends.start(ctx, server.Listener.Addr())
+	port := server.Listener.Addr().(*net.TCPAddr).Port
+	cs := perfharness.Only(perfharness.Clients(), gateClients)
+	var viewing []perfharness.Client
+	for _, c := range cs {
+		if c.Surface != "console" {
+			viewing = append(viewing, c)
+		}
+	}
+	r := perfharness.NewRunner(port, true, viewers)
+	r.Sequential(ctx, "cold", viewers[:1], cs)
+	for range 3 {
+		r.Sequential(ctx, "warm", viewers[:1], cs)
+		r.Sequential(ctx, "warm", viewers[1:], viewing)
+	}
+	server.Close()
+	a.Close()
+	byTag, _, err := perfharness.ReadTrace(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := perfharness.Summarize(r.Results(), byTag, cs)
+	if t.Failed() {
+		t.Log(appLog.String())
+	}
+	t.Logf("%s: replayed in %s", name, time.Since(start).Round(time.Millisecond))
+	return rows
+}

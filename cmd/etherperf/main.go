@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/perfharness"
 )
 
 func main() {
@@ -64,6 +66,7 @@ func runReal(ctx context.Context, args []string) (int, error) {
 	concRounds := f.Int("concurrent-rounds", 2, "rounds per concurrent viewer")
 	background := f.Bool("background", true, "run a phase beside a catalogue-shaped background writer")
 	only := f.String("clients", "", "comma-separated client names (default all)")
+	stepNames := f.String("steps", "", "comma-separated substrings of step names to replay (default all)")
 	strict := f.Bool("strict", false, "exit 1 when any gated endpoint misses its budget or errors")
 	_ = f.Parse(args)
 	if *source == "" {
@@ -100,23 +103,17 @@ func runReal(ctx context.Context, args []string) (int, error) {
 	if err := sanitizeConfig(filepath.Join(data, "config.json"), *port); err != nil {
 		return 2, fmt.Errorf("sanitize settings: %w", err)
 	}
-	viewers, err := mintCredentials(ctx, data, *viewerCount)
+	viewers, err := mintCopy(ctx, data, *viewerCount)
 	if err != nil {
 		return 2, fmt.Errorf("credentials: %w", err)
 	}
-	cs := clients()
+	var names []string
 	if *only != "" {
-		want := map[string]bool{}
-		for _, n := range strings.Split(*only, ",") {
-			want[strings.TrimSpace(n)] = true
-		}
-		var keep []client
-		for _, c := range cs {
-			if want[c.Name] {
-				keep = append(keep, c)
-			}
-		}
-		cs = keep
+		names = strings.Split(*only, ",")
+	}
+	cs := perfharness.Only(perfharness.Clients(), names)
+	if *stepNames != "" {
+		cs = perfharness.OnlySteps(cs, strings.Split(*stepNames, ","))
 	}
 	trace := filepath.Join(dir, "trace.jsonl")
 	log("starting server on 127.0.0.1:%d (outbound network blocked)", *port)
@@ -126,9 +123,9 @@ func runReal(ctx context.Context, args []string) (int, error) {
 	}
 	defer srv.stop()
 	log("ready after %s", srv.ready.Round(time.Millisecond))
-	r := newRunner(*port, viewers)
-	consoleOnlyOwner := func(cs []client) []client {
-		var out []client
+	r := perfharness.NewRunner(*port, false, viewers)
+	consoleOnlyOwner := func(cs []perfharness.Client) []perfharness.Client {
+		var out []perfharness.Client
 		for _, c := range cs {
 			if c.Surface != "console" {
 				out = append(out, c)
@@ -142,53 +139,53 @@ func runReal(ctx context.Context, args []string) (int, error) {
 		fmt.Sprintf("viewers: %s", viewerNames(viewers)),
 	}
 	log("cold: owner, every client once")
-	r.sequential(ctx, "cold", viewers[:1], cs)
+	r.Sequential(ctx, "cold", viewers[:1], cs)
 	if len(viewers) > 1 {
 		log("first: other viewers, every client once")
-		r.sequential(ctx, "first", viewers[1:], consoleOnlyOwner(cs))
+		r.Sequential(ctx, "first", viewers[1:], consoleOnlyOwner(cs))
 	}
 	log("warm: %d rounds", *rounds)
 	for range *rounds {
-		r.sequential(ctx, "warm", viewers[:1], cs)
+		r.Sequential(ctx, "warm", viewers[:1], cs)
 		if len(viewers) > 1 {
-			r.sequential(ctx, "warm", viewers[1:], consoleOnlyOwner(cs))
+			r.Sequential(ctx, "warm", viewers[1:], consoleOnlyOwner(cs))
 		}
 	}
 	log("concurrent: %d viewers × %d rounds", *conc, *concRounds)
 	start := time.Now()
-	r.concurrent(ctx, "concurrent", *conc, *concRounds, consoleOnlyOwner(cs))
+	r.Concurrent(ctx, "concurrent", *conc, *concRounds, consoleOnlyOwner(cs))
 	meta = append(meta, fmt.Sprintf("concurrent phase: %d workers × %d rounds in %s", *conc, *concRounds, time.Since(start).Round(time.Millisecond)))
 	if *background {
 		log("background: warm rounds beside a catalogue writer")
-		w, err := startBackgroundWriter(filepath.Join(data, "ether.db"))
+		w, err := perfharness.StartBackgroundWriter(filepath.Join(data, "ether.db"))
 		if err != nil {
 			return 2, fmt.Errorf("background writer: %w", err)
 		}
 		for range 2 {
-			r.sequential(ctx, "background", viewers, consoleOnlyOwner(cs))
+			r.Sequential(ctx, "background", viewers, consoleOnlyOwner(cs))
 		}
-		meta = append(meta, "busy-writer phase: "+w.close())
+		meta = append(meta, "busy-writer phase: "+w.Close())
 	}
 	srv.stop()
-	byTag, _, err := readTrace(trace)
+	byTag, _, err := perfharness.ReadTrace(trace)
 	if err != nil {
 		return 2, fmt.Errorf("trace: %w", err)
 	}
-	rows := summarize(r.results, byTag, cs)
+	rows := perfharness.Summarize(r.Results(), byTag, cs)
 	report, err := os.Create(filepath.Join(dir, "report.md"))
 	if err != nil {
 		return 2, err
 	}
-	failed := writeReport(report, "Ether performance — real data", meta, rows)
+	failed := perfharness.WriteReport(report, "Ether performance — real data", meta, rows)
 	report.Close()
-	if b, err := json.MarshalIndent(r.results, "", " "); err == nil {
+	if b, err := json.MarshalIndent(r.Results(), "", " "); err == nil {
 		_ = os.WriteFile(filepath.Join(dir, "results.json"), b, 0o600)
 	}
 	auditFile, err := os.Create(filepath.Join(dir, "audit.md"))
 	if err != nil {
 		return 2, err
 	}
-	if err := audit(ctx, filepath.Join(data, "ether.db"), byTag, auditFile); err != nil {
+	if err := perfharness.Audit(ctx, filepath.Join(data, "ether.db"), byTag, auditFile); err != nil {
 		log("audit: %v", err)
 	}
 	auditFile.Close()
@@ -206,14 +203,14 @@ func runAudit(ctx context.Context, args []string) error {
 	trace := f.String("trace", "", "trace.jsonl from a run")
 	db := f.String("db", "", "the run's copied ether.db")
 	_ = f.Parse(args)
-	byTag, _, err := readTrace(*trace)
+	byTag, _, err := perfharness.ReadTrace(*trace)
 	if err != nil {
 		return err
 	}
-	return audit(ctx, *db, byTag, os.Stdout)
+	return perfharness.Audit(ctx, *db, byTag, os.Stdout)
 }
 
-func viewerNames(vs []viewer) string {
+func viewerNames(vs []perfharness.Viewer) string {
 	var names []string
 	for _, v := range vs {
 		n := v.Username
