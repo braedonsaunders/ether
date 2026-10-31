@@ -742,6 +742,13 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 	}
 	id := strconv.Itoa(sec.ID)
 	for _, v := range vals {
+		// Titles that sort after Z stay in the library, but they are not a
+		// second jump-bar "#". Plex tvOS adds every directory titled "#" into
+		// the offset of A–Z, so a trailing bucket titled "#" lands that many
+		// titles past the letter. PMS lists one "#" (the prefix before "a").
+		if sub == "firstCharacter" && v.Key == "~" {
+			continue
+		}
 		var d model.Directory
 		switch sub {
 		case "firstCharacter":

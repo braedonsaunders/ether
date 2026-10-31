@@ -99,3 +99,10 @@ allowlist any response.
 The complete v0.2.45 corpus covers every registered Plex GET route, including
 real offline IPTV resource, relay and DASH media. A zero-unapproved result with
 exit 2 means a future inventory route is uncovered and is not a parity verdict.
+
+Jump bar: `/library/sections/{id}/firstCharacter` lists one `#` for titles
+whose sort title is before "a", then A–Z. Titles that sort after "z" stay in
+the library and are not a second `#`. Plex tvOS adds every directory titled
+`#` into the offset of later letters, so the trailing bucket shifted
+jump-to-letter by that count. `/firstCharacter/~` still filters those titles.
+This note does not allowlist any response.

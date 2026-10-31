@@ -91,15 +91,26 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 	}
 
 	dirs := decode(t, f.get(t, "/library/sections/1/firstCharacter", jsonAccept...)).Directory
-	if len(dirs) != 28 {
-		t.Fatalf("expected 28 firstCharacter buckets, got %d", len(dirs))
+	// One "#" (digits and symbols that sort before "a") plus A–Z. The
+	// non-ASCII title sorts after Z and is not a second "#".
+	if len(dirs) != 27 {
+		t.Fatalf("expected 27 firstCharacter buckets, got %d", len(dirs))
+	}
+	hashTitles := 0
+	for _, d := range dirs {
+		if d.Title == "#" {
+			hashTitles++
+		}
+	}
+	if hashTitles != 1 {
+		t.Fatalf("jump bar titled %d entries #; tvOS adds every one into the A offset", hashTitles)
 	}
 	if dirs[0].Key != "%23" && dirs[0].Key != "#" || dirs[0].Title != "#" || dirs[0].Size == nil || *dirs[0].Size != 4 {
 		t.Fatalf("unexpected leading # bucket: %+v", dirs[0])
 	}
 	last := dirs[len(dirs)-1]
-	if last.Key != "~" || last.Title != "#" || last.Size == nil || *last.Size != 1 {
-		t.Fatalf("unexpected trailing non-ASCII bucket: %+v", last)
+	if last.Key != "Z" || last.Title != "Z" {
+		t.Fatalf("jump bar should end on Z, got %+v", last)
 	}
 	reversed := decode(t, f.get(t, "/library/sections/1/firstCharacter?sort=titleSort:desc", jsonAccept...)).Directory
 	if len(reversed) != len(dirs) || reversed[0].Key != last.Key || reversed[len(reversed)-1].Key != dirs[0].Key {
@@ -143,7 +154,12 @@ func TestFirstCharacterJumpbarOffsetsMatchTitleSortEveryLetter(t *testing.T) {
 		}
 		offset += *d.Size
 	}
-	if offset != *all.TotalSize {
-		t.Fatalf("sum of firstCharacter counts (%d) != title-sorted total (%d)", offset, *all.TotalSize)
+	// Non-ASCII sort titles sit after Z. They stay in the library total and
+	// off the jump bar, so they cannot inflate the offset of A.
+	if offset != *all.TotalSize-1 {
+		t.Fatalf("sum of jump-bar counts (%d) != title-sorted total minus the trailing title (%d)", offset, *all.TotalSize-1)
+	}
+	if got := all.Metadata[len(all.Metadata)-1].Title; got != "Été 85" {
+		t.Fatalf("expected the non-ASCII title after Z, last item %q", got)
 	}
 }
