@@ -179,6 +179,11 @@ type index struct {
 	buildDone chan struct{}
 	extra     map[core.RatingKey]*entry // joined since the last rebuild
 	intern    *interner
+	// gen is the catalogue's write generation, when it has one.
+	gen        func() uint64
+	vouchedGen uint64    // gen at the last build or matching fingerprint
+	vouchedAt  time.Time // when vouchedGen was taken
+	nextBuild  time.Time // the earliest background rebuild
 	// beforeLoad, when set (tests), runs before a build reads the mirror.
 	beforeLoad func()
 }
@@ -263,23 +268,47 @@ func (ix *index) readyWithin(ctx context.Context, d time.Duration) *snapshot {
 	return ix.current()
 }
 
-// checkBehind compares the mirror's fingerprint once per checkTTL, off the
-// request, and rebuilds when it changed.
+// fingerprintEvery bounds how long an unchanged write generation alone
+// vouches for the snapshot: writes from another cluster node do not move it.
+const fingerprintEvery = 10 * time.Minute
+
+// checkBehind looks for catalogue changes once per checkTTL, off the
+// request, and rebuilds when there are any. An unchanged write generation
+// skips the fingerprint, which counts the whole catalogue. A rebuild reads
+// the whole catalogue too, so rebuilds are spaced by ten times the last
+// one's duration.
 func (ix *index) checkBehind() {
 	ix.mu.Lock()
-	if ix.building || ix.now().Sub(ix.checkedAt) < ix.checkTTL {
+	now := ix.now()
+	if ix.building || now.Sub(ix.checkedAt) < ix.checkTTL || now.Before(ix.nextBuild) {
 		ix.mu.Unlock()
 		return
 	}
-	ix.checkedAt = ix.now()
+	ix.checkedAt = now
 	print := ix.snap.print
+	var gen uint64
+	if ix.gen != nil {
+		gen = ix.gen()
+		if gen == ix.vouchedGen && now.Sub(ix.vouchedAt) < fingerprintEvery {
+			ix.mu.Unlock()
+			return
+		}
+	}
 	ix.mu.Unlock()
 	go func() {
 		bctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		if fp, err := ix.fingerprint(bctx); err == nil && fp != print {
-			_, _ = ix.rebuild(bctx)
+		fp, err := ix.fingerprint(bctx)
+		if err != nil {
+			return
 		}
+		if fp == print {
+			ix.mu.Lock()
+			ix.vouchedGen, ix.vouchedAt = gen, ix.now()
+			ix.mu.Unlock()
+			return
+		}
+		_, _ = ix.rebuild(bctx)
 	}()
 }
 
@@ -383,6 +412,10 @@ func (ix *index) rebuild(ctx context.Context) (*snapshot, error) {
 	ix.building = true
 	ix.buildDone = make(chan struct{})
 	started := ix.now()
+	var gen uint64
+	if ix.gen != nil {
+		gen = ix.gen()
+	}
 	ix.mu.Unlock()
 
 	snap, err := ix.load(ctx)
@@ -391,6 +424,8 @@ func (ix *index) rebuild(ctx context.Context) (*snapshot, error) {
 	ix.building = false
 	close(ix.buildDone)
 	if err == nil {
+		ix.vouchedGen, ix.vouchedAt = gen, started
+		ix.nextBuild = ix.now().Add(10 * ix.now().Sub(started))
 		// Keep joined entries the new snapshot does not have yet.
 		var keep []*entry
 		for k, e := range ix.extra {

@@ -190,6 +190,9 @@ func New(db *sql.DB, cat core.Catalog, log *slog.Logger, opts ...Option) (*Servi
 	s.names = newNameResolver(db, s.api, s.now)
 	s.mirror = catalog.NewMirror(db, s.now)
 	s.idx = newIndex(db, s.now, s.opts.indexTTL)
+	if g, ok := cat.(interface{ WriteGeneration() uint64 }); ok {
+		s.idx.gen = g.WriteGeneration
+	}
 	ua := s.opts.userAgent
 	if ua == "" {
 		ua = "Ether (+https://github.com/braedonsaunders/ether)"
