@@ -10,7 +10,27 @@ import (
 // handleSPA serves the embedded React build. Real files are served
 // directly (fingerprinted assets get immutable caching); any other GET
 // falls back to index.html so client-side routes survive reloads.
-func (h *Handler) handleSPA(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleSPA(w http.ResponseWriter, r *http.Request) { serveSPA(w, r) }
+
+// Shell serves the console's static files without its API, for a server
+// whose settings and database are not open yet (internal/startup's status
+// page). The owner's frame allowlist is not loaded then, so framing is
+// refused outright.
+func Shell() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = strings.TrimPrefix(r.URL.Path, "/ether")
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'; "+consoleScriptPolicy())
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		serveSPA(w, r2)
+	})
+}
+
+func serveSPA(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only GET is supported here")
 		return

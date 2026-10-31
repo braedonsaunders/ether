@@ -59,8 +59,16 @@ func (h *Handler) localLogin(w http.ResponseWriter, r *http.Request, surface str
 			writeError(w, 401, "unauthorized", "invalid credentials")
 			return
 		}
+		h.ownerCredentialChanged(r)
 	}
 	writeJSON(w, 200, map[string]any{"token": token})
+}
+
+// ownerCredentialChanged tells the app an owner credential may have changed.
+func (h *Handler) ownerCredentialChanged(r *http.Request) {
+	if h.deps.OwnerCredentialChanged != nil {
+		h.deps.OwnerCredentialChanged(r.Context())
+	}
 }
 func (h *Handler) handleLocalOwnerLogin(w http.ResponseWriter, r *http.Request) {
 	h.localLogin(w, r, "owner")
@@ -104,6 +112,7 @@ func (h *Handler) localLoginBody(w http.ResponseWriter, r *http.Request, body lo
 		writeError(w, 500, "unavailable", "sign in unavailable")
 		return
 	}
+	h.ownerCredentialChanged(r)
 	writeJSON(w, 200, map[string]any{"token": token})
 }
 func (h *Handler) portalViewer(r *http.Request) (*core.Viewer, error) {
@@ -264,6 +273,7 @@ func (h *Handler) handleMePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid", "could not set password")
 		return
 	}
+	h.ownerCredentialChanged(r)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 func (h *Handler) handleMeDevices(w http.ResponseWriter, r *http.Request) {
@@ -417,6 +427,7 @@ func (h *Handler) ownerIdentityManagement(w http.ResponseWriter, r *http.Request
 			writeError(w, 400, "invalid", "could not set password")
 			return
 		}
+		h.ownerCredentialChanged(r)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	case strings.HasSuffix(r.URL.Path, "/devices/revoke"):
 		var body struct {

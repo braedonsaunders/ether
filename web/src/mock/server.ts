@@ -51,6 +51,7 @@ import {
 } from "./data";
 import { createMetadataMock } from "./metadata";
 import { createMaintenance } from "./maintenance";
+import { createOpsMock, UNREACHABLE } from "./ops";
 import { createReleaseConsoleMock } from "./releases";
 import { createSitesMock } from "./sites";
 import { createTrashMock } from "./trash";
@@ -79,6 +80,18 @@ export interface FakeOptions {
   latencyMs?: number;
   /** Serve as a node of a three-node PostgreSQL cluster instead of a standalone server. */
   cluster?: boolean;
+  /** Pin the server in a startup state (see mock/ops.ts), e.g. "migrating" or "failed:database_corrupt". */
+  startup?: string;
+  /** Milliseconds per step of a simulated restart or restore. */
+  opsPace?: number;
+  /** Viewers watching, for the restart and restore drawers. */
+  viewers?: number;
+  /** The cache storage changed and needs a restart. */
+  cacheRestart?: boolean;
+  /** Report a damaged SQLite database in the health checklist. */
+  damagedDatabase?: boolean;
+  /** Start with a restore report ("restored", "failed") or a scheduled restore ("pending"). */
+  restore?: string;
 }
 
 function json(body: unknown, status = 200): Response {
@@ -419,7 +432,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
   const trash = createTrashMock();
   const maintenance = createMaintenance();
   const sites = createSitesMock();
-  const cacheMock = createCacheMock();
+  const cacheMock = createCacheMock(opts.cacheRestart);
   const liveTV = createLiveTVMock(catalog);
   const calendar = createCalendarMock();
   const state = {
@@ -1586,6 +1599,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       names: [
         "cache",
         "catalog",
+        "database",
         "debrid",
         "hwaccel",
         "indexers",
@@ -1597,6 +1611,28 @@ export function createFakeServer(opts: FakeOptions = {}) {
       version: state.boot.version,
       sections: {
         cache: { used: 87 * 1024 ** 3, budget: state.config.cache.budgetBytes },
+        database: state.clustered
+          ? { clustered: true, state: "ok", reachable: true, held: 0 }
+          : {
+              clustered: false,
+              state: "ok",
+              reachable: true,
+              integrity: opts.damagedDatabase
+                ? {
+                    ok: false,
+                    findings: [
+                      "*** in database main ***",
+                      "Page 4127: btreeInitPage() returns error code 11",
+                    ],
+                    checked: new Date(Date.now() - 20 * 60_000).toISOString(),
+                    tookSeconds: 1.2,
+                  }
+                : {
+                    ok: true,
+                    checked: new Date(Date.now() - 3 * 3600_000).toISOString(),
+                    tookSeconds: 0.9,
+                  },
+            },
         catalog: {
           movies: 24929,
           shows: 24298,
@@ -1837,6 +1873,15 @@ export function createFakeServer(opts: FakeOptions = {}) {
       plexId?: number;
     }
   >();
+
+  const ops = createOpsMock({
+    startup: opts.startup,
+    pace: opts.opsPace,
+    viewers: opts.viewers,
+    restore: opts.restore,
+    clustered: () => state.clustered,
+    backups: () => state.backups,
+  });
 
   // ---- Router ------------------------------------------------------------------------
 
@@ -3101,6 +3146,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
     if (opts.latencyMs)
       await new Promise((r) => setTimeout(r, opts.latencyMs! * (0.5 + Math.random())));
     if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const seg = url.pathname
+      .replace(/^\/ether\/api/, "")
+      .split("/")
+      .filter(Boolean);
+    const gate = ops.handle(method, seg, body, new Headers(init?.headers ?? req?.headers));
+    if (gate === UNREACHABLE) throw new TypeError("Failed to fetch");
+    if (gate) return json(gate.body, gate.status);
     return handle(method, url, body);
   }
 

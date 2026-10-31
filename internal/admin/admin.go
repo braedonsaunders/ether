@@ -100,26 +100,30 @@ type StatusFuncE func(ctx context.Context) (any, error)
 // tuning knobs, Logger/Logs, the dashboard status providers, Extensions,
 // ValidateExtra and DiskUsage have defaults or may be left empty.
 type Deps struct {
-	Frontends            FrontendAdmin
-	FavoritesMirror      FavoritesMirror
-	NotInterested        NotInterestedPortal
-	ViewerAlerts         ViewerAlertPreferences
-	ActiveViewer         func(context.Context, int64) (*core.User, error)
-	ViewerPortalURL      func(context.Context, *http.Request) (string, error)
-	StremioPortalURL     func(context.Context, *http.Request) (string, error)
-	CreateDLNAGuest      func(context.Context) (*core.Viewer, error)
-	LocalIdentity        *identity.Local
-	IdentityGrants       *identity.Grants
-	IdentityLimiter      *identity.LoginLimiter
-	PollLimiter          *identity.LoginLimiter
-	QuickConnect         *identity.QuickConnect
-	Invites              *identity.Invite
-	RefreshViewers       func(context.Context) error
-	OwnerConfigured      func(context.Context) bool
-	LocalOwnerConfigured func(context.Context) bool
-	SetViewerActive      func(context.Context, int64, bool) error
-	AuthenticatePlex     func(context.Context, string) (*core.User, error)
-	LinkPlex             func(context.Context, int64, string) error
+	Frontends        FrontendAdmin
+	FavoritesMirror  FavoritesMirror
+	NotInterested    NotInterestedPortal
+	ViewerAlerts     ViewerAlertPreferences
+	ActiveViewer     func(context.Context, int64) (*core.User, error)
+	ViewerPortalURL  func(context.Context, *http.Request) (string, error)
+	StremioPortalURL func(context.Context, *http.Request) (string, error)
+	CreateDLNAGuest  func(context.Context) (*core.Viewer, error)
+	LocalIdentity    *identity.Local
+	IdentityGrants   *identity.Grants
+	IdentityLimiter  *identity.LoginLimiter
+	// OwnerCredentialChanged runs after an owner local sign-in, setup and
+	// any local password change (the app refreshes the owner's recovery
+	// sign-in from it). Nil does nothing.
+	OwnerCredentialChanged func(context.Context)
+	PollLimiter            *identity.LoginLimiter
+	QuickConnect           *identity.QuickConnect
+	Invites                *identity.Invite
+	RefreshViewers         func(context.Context) error
+	OwnerConfigured        func(context.Context) bool
+	LocalOwnerConfigured   func(context.Context) bool
+	SetViewerActive        func(context.Context, int64, bool) error
+	AuthenticatePlex       func(context.Context, string) (*core.User, error)
+	LinkPlex               func(context.Context, int64, string) error
 
 	// Extensions are owner-authenticated API subtrees keyed by relative path.
 	Extensions    map[string]http.Handler

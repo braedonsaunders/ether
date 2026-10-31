@@ -17,6 +17,7 @@ func (a *App) buildAdoption() {
 		self := a.cluster.Self()
 		a.backups.SetCluster(backup.Node{ID: self.ID, Name: self.Name})
 	}
+	a.backups.SetRestart(a.scheduleRestart)
 	a.migration = migrate.New(a.db, a.catalog, migrate.Options{State: a.state, Logger: a.log.With("component", "migrate")})
 }
 

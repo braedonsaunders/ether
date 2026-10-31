@@ -98,7 +98,7 @@ const preMigrateIncomplete = ".incomplete"
 // it is owner-only like the database. It reports whether a snapshot was
 // written. Callers treat errors as non-fatal and call finishPreMigrate once
 // Migrate succeeds.
-func snapshotBeforeMigrate(ctx context.Context, db *sql.DB, path string, ms []migration, files []SnapshotFile) (bool, error) {
+func snapshotBeforeMigrate(ctx context.Context, db *sql.DB, path string, ms []migration, files []SnapshotFile, progress func(Progress)) (bool, error) {
 	pending, err := pendingMigrations(ctx, db, ms)
 	if err != nil || pending == 0 {
 		return false, err
@@ -130,6 +130,7 @@ func snapshotBeforeMigrate(ctx context.Context, db *sql.DB, path string, ms []mi
 		return false, err
 	}
 	f.Close()
+	report(progress, Progress{Stage: StageSnapshot, Total: pending})
 	if _, err := db.ExecContext(ctx, `VACUUM INTO ?`, tmp); err != nil {
 		cleanup()
 		return false, fmt.Errorf("vacuum into %s: %w", tmp, err)

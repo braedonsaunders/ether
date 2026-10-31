@@ -66,7 +66,7 @@ func TestSQLiteApplyIsSQLiteOnlyAndKeepsVersionBookkeeping(t *testing.T) {
 
 	ctx := context.Background()
 	dir := t.TempDir()
-	db, err := openSQLite(ctx, filepath.Join(dir, "ether.db"), nil)
+	db, err := openSQLite(ctx, filepath.Join(dir, "ether.db"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSQLiteApplyIsSQLiteOnlyAndKeepsVersionBookkeeping(t *testing.T) {
 		t.Fatalf("recorded version %d (%v)", version, err)
 	}
 	db.Close()
-	db, err = openSQLite(ctx, filepath.Join(dir, "ether.db"), nil)
+	db, err = openSQLite(ctx, filepath.Join(dir, "ether.db"), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestSQLiteApplyIsSQLiteOnlyAndKeepsVersionBookkeeping(t *testing.T) {
 		return errors.New("probe rollback")
 	})
 	failed := filepath.Join(t.TempDir(), "ether.db")
-	db, err = openSQLite(ctx, failed, nil)
+	db, err = openSQLite(ctx, failed, nil, nil)
 	if err == nil {
 		db.Close()
 		t.Fatal("failing apply was recorded")

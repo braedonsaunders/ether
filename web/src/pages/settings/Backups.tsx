@@ -6,10 +6,9 @@ import {
   PagedTable,
   SearchSelect,
   SettingsSection,
-  confirmDialog,
   toast,
 } from "@braedonsaunders/appkit-ui";
-import { Download, FileUp, Plus } from "lucide-react";
+import { Download, FileUp, Plus, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { useClustered } from "./Cluster";
@@ -17,7 +16,10 @@ import { NumberInput, PasswordInput } from "../../components/fields";
 import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
-import { getLocale, localized, t, tn, tx } from "../../i18n";
+import { restoreApi, type RestoreState } from "../../lib/ops";
+import { PendingRestore, RestoreReportPanel } from "./RestoreReport";
+import { RestoreDrawer, type RestoreSource } from "./RestoreDrawer";
+import { getLocale, localized, t, tn } from "../../i18n";
 import {
   api,
   apiBlob,
@@ -116,8 +118,6 @@ async function upload(
 
 /** Backups leave the server encrypted with a password of at least this length. */
 export const MIN_BACKUP_PASSWORD = 12;
-const ENCRYPTED_MAGIC = "ETHERBK1";
-
 /** Downloads a snapshot encrypted with password (never stored). */
 async function exportBackup(name: string, password: string) {
   const res = await fetch(API_BASE + base + "/backups/export/" + encodeURIComponent(name), {
@@ -131,50 +131,6 @@ async function exportBackup(name: string, password: string) {
   });
   if (!res.ok) throw await failure(res);
   saveBlob(await res.blob(), name.replace(/\.tar\.gz$/, "") + ".etherbackup");
-}
-
-function readHead(file: File, n: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () =>
-      resolve(String.fromCharCode(...new Uint8Array(reader.result as ArrayBuffer)));
-    reader.onerror = () => reject(reader.error ?? new Error(t("Could not read the file")));
-    reader.readAsArrayBuffer(file.slice(0, n));
-  });
-}
-
-/** Header values are Latin-1 only, so the password travels as base64 of UTF-8. */
-function base64Utf8(s: string): string {
-  let bin = "";
-  for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b);
-  return btoa(bin);
-}
-
-/**
- * Restores an uploaded bundle: an encrypted download with its password, or
- * (after an explicit confirmation) an unencrypted bundle from an older
- * version. Returns the staged folder, or null when the owner cancelled.
- */
-async function restoreBackup(file: File, password: string): Promise<string | null> {
-  const headers: Record<string, string> = {};
-  if ((await readHead(file, ENCRYPTED_MAGIC.length)) === ENCRYPTED_MAGIC) {
-    if (!password) throw new Error(t("Enter the backup password first."));
-    headers["X-Ether-Backup-Password"] = base64Utf8(password);
-  } else {
-    const ok = await confirmDialog({
-      title: t("Restore an unencrypted backup?"),
-      message: t(
-        "This bundle is from an older version and is not password protected. Restore it only if it came straight from your own server.",
-      ),
-      confirmLabel: t("Restore"),
-    });
-    if (!ok) return null;
-    headers["X-Ether-Backup-Legacy"] = "plaintext";
-  }
-  const result = (await upload("/backups/restore", file, "application/octet-stream", headers)) as {
-    path?: string;
-  };
-  return result.path ?? "";
 }
 
 /** Runs one action at a time, reporting failures as toasts. */
@@ -255,7 +211,9 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
   const clustered = useClustered();
   const [data, setData] = useState<Backups | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
-  const [restored, setRestored] = useState("");
+  // The guided restore: what the drawer restores, and this server's restore state.
+  const [restoring, setRestoring] = useState<RestoreSource | null>(null);
+  const [restore, setRestore] = useState<RestoreState | null>(null);
   // Held in memory only: never saved, and gone when the page closes.
   const [password, setPassword] = useState("");
   const passwordOK = password.length >= MIN_BACKUP_PASSWORD;
@@ -273,6 +231,8 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
     } catch (e) {
       setLoadError(e);
     }
+    // The restore report is an extra: a failure leaves the page usable.
+    restoreApi.state().then(setRestore, () => setRestore(null));
   }, []);
   useEffect(() => {
     void load();
@@ -304,6 +264,14 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
           <ErrorPanel error={loadError} onRetry={() => void load()} />
         ) : (
           <>
+            {restore?.report ? (
+              <RestoreReportPanel
+                report={restore.report}
+                onUndo={() => setRestoring({ kind: "undo", report: restore.report! })}
+                onDismissed={() => setRestore({ ...restore, report: null })}
+              />
+            ) : null}
+            {restore?.pending ? <PendingRestore onCancelled={() => void load()} /> : null}
             <SettingsSection
               title={t("Automatic backups")}
               description={t("Snapshots hold your settings and a consistent copy of the database.")}
@@ -466,23 +434,34 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                       align: "right",
                       cell: (s) => (
                         <div className="flex flex-col items-end gap-1">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={busy || s.remote}
-                            aria-label={t("Download {name}", { name: s.name })}
-                            onClick={() => {
-                              if (!passwordOK) {
-                                setPasswordPrompt(true);
-                                passwordInput.current?.focus();
-                                passwordInput.current?.scrollIntoView?.({ block: "center" });
-                                return;
-                              }
-                              void run(() => exportBackup(s.name, password));
-                            }}
-                          >
-                            <Download size={14} /> {t("Download")}
-                          </Button>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy || s.remote || restoring !== null}
+                              aria-label={t("Restore {name}", { name: s.name })}
+                              onClick={() => setRestoring({ kind: "snapshot", name: s.name })}
+                            >
+                              <RotateCcw size={14} /> {t("Restore")}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={busy || s.remote}
+                              aria-label={t("Download {name}", { name: s.name })}
+                              onClick={() => {
+                                if (!passwordOK) {
+                                  setPasswordPrompt(true);
+                                  passwordInput.current?.focus();
+                                  passwordInput.current?.scrollIntoView?.({ block: "center" });
+                                  return;
+                                }
+                                void run(() => exportBackup(s.name, password));
+                              }}
+                            >
+                              <Download size={14} /> {t("Download")}
+                            </Button>
+                          </div>
                           {s.remote ? (
                             <p className="max-w-xs text-xs text-fg-muted">
                               {s.node
@@ -506,35 +485,22 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
 
             <Section
               title={t("Restore a backup")}
-              description={t(
-                "Ether decrypts the download with the backup password, checks its checksums and database, then prepares it in a separate data folder. Nothing changes until you stop Ether and start it from that folder.",
-              )}
+              description={
+                restore?.oneClick === false
+                  ? t(
+                      "Restore a backup you downloaded from Ether. Ether checks it first; on a cluster it then guides you through replacing the shared database.",
+                    )
+                  : t(
+                      "Restore a backup you downloaded from Ether, or pick a snapshot above. Ether checks it first, keeps your current data so you can undo, and restarts by itself.",
+                    )
+              }
             >
               <FilePick
-                label={t("Choose backup bundle")}
+                label={t("Choose backup file")}
                 accept=".etherbackup,.tar.gz,.gz"
-                disabled={busy}
-                onFile={(file) =>
-                  void run(async () => {
-                    const path = await restoreBackup(file, password);
-                    if (path === null) return;
-                    setRestored(path);
-                    toast.success(t("Restore validated and staged"));
-                  })
-                }
+                disabled={busy || restoring !== null}
+                onFile={(file) => setRestoring({ kind: "upload", file, password })}
               />
-              {restored ? (
-                <Alert variant="success" role="status">
-                  <AlertDescription>
-                    {tx(
-                      "Ready to restore. Stop Ether and start it with the data folder {folder}.",
-                      {
-                        folder: <code className="break-all">{restored}</code>,
-                      },
-                    )}
-                  </AlertDescription>
-                </Alert>
-              ) : null}
             </Section>
           </>
         )}
@@ -544,6 +510,14 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
         <CsvTools users={users} />
       </div>
 
+      <RestoreDrawer
+        source={restoring}
+        oneClick={restore?.oneClick !== false}
+        onClose={() => {
+          setRestoring(null);
+          void load();
+        }}
+      />
       <SaveBar
         dirty={dirty}
         saving={saving}
