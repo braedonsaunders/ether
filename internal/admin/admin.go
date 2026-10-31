@@ -335,6 +335,8 @@ func (h *Handler) routes() *http.ServeMux {
 	mux.HandleFunc("DELETE /api/auth/session", h.limitAuth(h.handleSessionDelete))
 
 	api("POST /api/viewers/{id}/quickconnect", h.handleOwnerQuickConnect)
+	api("GET /api/viewers/{id}/not-interested", h.ownerNotInterested)
+	api("POST /api/viewers/{id}/not-interested/restore", h.ownerNotInterested)
 	api("GET /api/viewers/{id}/favorite-episode-alert", h.ownerFavoriteEpisodeAlert)
 	api("GET /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)
 	api("POST /api/viewers/{id}/favorites-mirror", h.ownerFavoritesMirror)

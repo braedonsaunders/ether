@@ -28,6 +28,7 @@ import {
   Layers,
   ListFilter,
   LogOut,
+  UserRound,
   MonitorPlay,
   Network,
   Tags,
@@ -65,6 +66,7 @@ import { CommandSearch } from "./components/CommandSearch";
 import { Drawer } from "./components/Drawer";
 import { ErrorPanel } from "./components/feedback";
 import { SaveBarHost } from "./components/SaveBar";
+import { UpdateReady } from "./components/UpdateReady";
 import { LEVEL_LABEL, LevelBadge, StatusDot } from "./components/status";
 import { api, getToken, setToken } from "./lib/api";
 import type { Bootstrap } from "./lib/types";
@@ -94,6 +96,7 @@ const Sources = lazy(() => import("./pages/sources/Sources"));
 const Releases = lazy(() => import("./pages/releases/Releases"));
 const Cache = lazy(() => import("./pages/cache/Cache"));
 const Playback = lazy(() => import("./pages/playback/Playback"));
+const Profile = lazy(() => import("./pages/Profile"));
 
 /** react-router links for every AppKit navigation primitive. */
 const RouterAnchor = forwardRef<
@@ -333,6 +336,14 @@ function Shell() {
                 }),
             }}
           />
+          <Link
+            to="/profile"
+            aria-label={t("Your account")}
+            className="inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <UserRound size={15} />
+            <span className="hidden sm:inline">{t("Your account")}</span>
+          </Link>
           {remoteSession ? (
             <Button
               variant="ghost"
@@ -407,6 +418,7 @@ function Shell() {
             <Route path="/cache/:tab?" element={<Cache />} />
             <Route path="/playback/:tab?" element={<Playback />} />
             <Route path="/notifications/:tab?" element={<Notifications />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/server/:tab?" element={<GeneralPage />} />
             <Route path="/apps/:tab?/:section?" element={<Apps />} />
             <Route path="/services/:tab?" element={<ServicesPage />} />
@@ -519,6 +531,7 @@ export default function App() {
               )}
             </Chrome>
             {location.pathname !== "/me" ? <BrandSplash ready={ready} /> : null}
+            <UpdateReady />
             <Toaster richColors closeButton position="bottom-right" />
           </UiLinkProvider>
         </ThemeProvider>

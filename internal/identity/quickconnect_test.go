@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -84,7 +85,7 @@ func TestQuickConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	now = now.Add(time.Minute)
-	if err = q.Approve(ctx, code, 1); !errors.Is(err, core.ErrUnauthorized) {
+	if err = q.Approve(ctx, code, 1); !errors.Is(err, identity.ErrQuickConnectExpired) {
 		t.Fatalf("expired approval: %v", err)
 	}
 	if _, err = q.Poll(ctx, secret); !errors.Is(err, core.ErrUnauthorized) {
@@ -195,5 +196,29 @@ func TestQuickConnectRedeemStaysFastOnALargeDatabase(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		t.Fatalf("large-db redeem took %s", elapsed)
+	}
+}
+
+func TestQuickConnectApprovalNamesTheDevice(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,99,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(2000, 0)
+	q, err := identity.NewQuickConnect(db, time.Minute, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, err := q.Initiate(ctx, "jellyfin", core.Device{DeviceName: "Living Room", Product: "Jellyfin", Client: "Apple TV"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = q.Approve(ctx, " "+strings.ToLower(code[:3])+"-"+code[3:]+" ", 1); err != nil {
+		t.Fatal(err)
+	}
+	target, err := q.ApprovedTarget(ctx, code, 1)
+	if err != nil || target.DeviceName != "Living Room" || target.Surface != "jellyfin" || target.Product != "Jellyfin" {
+		t.Fatalf("target: %+v %v", target, err)
 	}
 }

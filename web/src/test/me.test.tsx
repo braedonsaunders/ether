@@ -1,128 +1,128 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import Me from "../pages/me/Me";
+
 afterEach(() => sessionStorage.clear());
-it("uses a separate portal credential to approve a device", async () => {
-  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+
+function portalFetch(extra?: (url: string, init?: RequestInit) => Response | undefined) {
+  return vi.fn(async (url: string, init?: RequestInit) => {
+    const hit = extra?.(url, init);
+    if (hit) return hit;
+    if (url.endsWith("/bootstrap"))
+      return new Response(JSON.stringify({ signInMethods: ["local", "plex"], version: "1" }));
     if (url.endsWith("/login"))
       return new Response(JSON.stringify({ token: "viewer-grant" }), { status: 200 });
     if (url.endsWith("/quickconnect"))
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
-    return new Response(JSON.stringify({ id: 1, username: "alice" }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true, device: "Living Room", app: "jellyfin" }));
+    return new Response(JSON.stringify({ id: 1, username: "alice", title: "Alice" }));
+  });
+}
+
+async function choosePassword() {
+  fireEvent.click(await screen.findByRole("radio", { name: "Username & password" }));
+}
+
+it("shows a sign-in toggle and asks for a password only for that method", async () => {
+  vi.stubGlobal("fetch", portalFetch());
+  render(<Me />);
+  expect(await screen.findByRole("radio", { name: "Sign in with Plex" })).toBeChecked();
+  expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
+  await choosePassword();
+  expect(screen.getByLabelText("Username")).toBeInTheDocument();
+  expect(screen.getByLabelText("Password")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Sign in with Plex" })).not.toBeInTheDocument();
+});
+
+it("offers only the sign-in methods this server configured", async () => {
+  vi.stubGlobal(
+    "fetch",
+    portalFetch(() => undefined),
+  );
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url.endsWith("/bootstrap"))
+      return new Response(JSON.stringify({ signInMethods: ["plex"], version: "1" }));
+    return new Response(JSON.stringify({}));
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Me />);
+  expect(await screen.findByRole("button", { name: "Sign in with Plex" })).toBeInTheDocument();
+  expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
+});
+
+it("uses a separate portal credential to approve a device", async () => {
+  const fetchMock = portalFetch((url, init) => {
+    if (url.endsWith("/quickconnect")) {
+      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
+      return new Response(JSON.stringify({ ok: true, device: "Living Room", app: "jellyfin" }));
+    }
+    return undefined;
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Me />);
+  await choosePassword();
   fireEvent.change(screen.getByLabelText("Username"), { target: { value: "alice" } });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-  fireEvent.change(await screen.findByLabelText("Enter the code shown on your TV"), {
-    target: { value: "ABC123" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Approve device" }));
-  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Device approved."));
-  const [, options] = fetchMock.mock.calls.find(([url]) => url.endsWith("/quickconnect"))!;
+  const code = await screen.findByLabelText("Enter the code shown on your TV");
+  fireEvent.change(code, { target: { value: "abc-123" } });
+  expect(await screen.findByRole("heading", { name: "Device approved" })).toBeInTheDocument();
+  expect(screen.getByText("Jellyfin on Living Room")).toBeInTheDocument();
+  const [, options] = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/quickconnect"))!;
   expect((options?.headers as Record<string, string>)["X-Ether-Request"]).toBe("1");
   expect((options?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
+  expect(JSON.parse(String(options?.body))).toEqual({ code: "ABC123" });
   expect(localStorage.getItem("ether.viewerPortal")).toBeNull();
+  expect(screen.queryByText("Favorites in Plex")).not.toBeInTheDocument();
+  expect(screen.queryByText("Not interested")).not.toBeInTheDocument();
+  expect(screen.queryByText("Browser push")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Devices" })).not.toBeInTheDocument();
+});
+
+it("explains an expired code and lets the viewer approve another device", async () => {
+  sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
+  vi.stubGlobal(
+    "fetch",
+    portalFetch((url) => {
+      if (url.endsWith("/quickconnect"))
+        return new Response(
+          JSON.stringify({ error: { code: "expired", message: "code expired" } }),
+          {
+            status: 400,
+          },
+        );
+      return undefined;
+    }),
+  );
+  render(<Me />);
+  fireEvent.change(await screen.findByLabelText("Enter the code shown on your TV"), {
+    target: { value: "ABCDEF" },
+  });
+  expect(
+    await screen.findByText("That code has expired. Get a new one on your TV and try again."),
+  ).toBeInTheDocument();
 });
 
 it("removes an invite from the address and redeems it only on acceptance", async () => {
   window.history.replaceState(null, "", "/ether/me#invite=secret-invite");
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith("/bootstrap"))
+      return new Response(JSON.stringify({ signInMethods: ["local"], version: "1" }));
     if (url.endsWith("/invite/redeem")) {
       expect(JSON.parse(String(init?.body))).toEqual({ secret: "secret-invite" });
       return new Response(JSON.stringify({ token: "viewer-grant" }));
     }
-    if (url.endsWith("/identities")) return new Response(JSON.stringify({ identities: [] }));
-    if (url.endsWith("/devices")) return new Response(JSON.stringify({ devices: [] }));
-    return new Response(JSON.stringify({ id: 1, username: "alice" }));
+    return new Response(JSON.stringify({ id: 1, username: "alice", title: "Alice" }));
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<Me />);
   expect(window.location.hash).toBe("");
-  expect(fetchMock).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Accept invite" }));
+  expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/invite/redeem"))).toBe(false);
+  fireEvent.click(await screen.findByRole("button", { name: "Accept invite" }));
   expect(
-    await screen.findByText("Invite accepted. Set a password to sign in again."),
+    await screen.findByText("Invite accepted. You can approve a TV now."),
   ).toBeInTheDocument();
   expect(sessionStorage.getItem("ether.viewerPortal")).toBe("viewer-grant");
+  expect(await screen.findByLabelText("Enter the code shown on your TV")).toBeInTheDocument();
   window.history.replaceState(null, "", "/");
-});
-
-it("uses the portal grant to update the viewer's Plex favourites playlist", async () => {
-  sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
-  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith("/favorites-mirror")) {
-      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
-      return new Response(JSON.stringify({ enabled: init?.method === "POST" ? false : true }));
-    }
-    if (url.endsWith("/identities")) return new Response(JSON.stringify({ identities: [] }));
-    if (url.endsWith("/devices")) return new Response(JSON.stringify({ devices: [] }));
-    return new Response(JSON.stringify({ id: 1, username: "alice" }));
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  render(<Me />);
-  const toggle = await screen.findByRole("switch", {
-    name: "Show my favourites as a playlist in Plex.",
-  });
-  await waitFor(() => expect(toggle).toBeChecked());
-  fireEvent.click(toggle);
-  await waitFor(() => expect(toggle).not.toBeChecked());
-  const [, options] = fetchMock.mock.calls.find(
-    ([url, init]) => url.endsWith("/favorites-mirror") && init?.method === "POST",
-  )!;
-  expect(JSON.parse(String(options?.body))).toEqual({ enabled: false });
-});
-
-it("uses the viewer grant to opt into favourite episode alerts", async () => {
-  sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
-  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith("/favorite-episode-alert")) {
-      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
-      return new Response(JSON.stringify({ enabled: init?.method === "POST" }));
-    }
-    if (url.endsWith("/favorites-mirror")) return new Response(JSON.stringify({ enabled: false }));
-    if (url.endsWith("/identities")) return new Response(JSON.stringify({ identities: [] }));
-    if (url.endsWith("/devices")) return new Response(JSON.stringify({ devices: [] }));
-    return new Response(JSON.stringify({ id: 1, username: "alice" }));
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  render(<Me />);
-  const toggle = await screen.findByRole("switch", { name: "New episodes from favourite shows" });
-  await waitFor(() => expect(toggle).toBeEnabled());
-  expect(toggle).not.toBeChecked();
-  fireEvent.click(toggle);
-  await waitFor(() => expect(toggle).toBeChecked());
-  const [, options] = fetchMock.mock.calls.find(
-    ([url, init]) => url.endsWith("/favorite-episode-alert") && init?.method === "POST",
-  )!;
-  expect(JSON.parse(String(options?.body))).toEqual({ enabled: true });
-  expect((options?.headers as Record<string, string>)["X-Ether-Request"]).toBe("1");
-});
-
-it("restores a hidden recommendation using the portal grant and opaque handle", async () => {
-  sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
-  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith("/not-interested/restore")) {
-      expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer viewer-grant");
-      expect((init?.headers as Record<string, string>)["X-Ether-Request"]).toBe("1");
-      expect(JSON.parse(String(init?.body))).toEqual({ handle: "opaque" });
-      return new Response(JSON.stringify({ restored: true }));
-    }
-    if (url.endsWith("/not-interested"))
-      return new Response(JSON.stringify({ items: [{ handle: "opaque" }] }));
-    if (url.endsWith("/favorites-mirror") || url.endsWith("/favorite-episode-alert"))
-      return new Response(JSON.stringify({ enabled: false }));
-    if (url.endsWith("/identities")) return new Response(JSON.stringify({ identities: [] }));
-    if (url.endsWith("/devices")) return new Response(JSON.stringify({ devices: [] }));
-    return new Response(JSON.stringify({ id: 1, username: "alice" }));
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  render(<Me />);
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Show Unavailable title in recommendations" }),
-  );
-  expect(await screen.findByText("No hidden recommendations.")).toBeInTheDocument();
-  expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/not-interested/restore"))).toBe(true);
 });

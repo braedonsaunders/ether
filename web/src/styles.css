@@ -204,12 +204,47 @@
     transform: scaleX(1);
   }
 }
+@keyframes ether-approve-pop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes ether-approve-draw {
+  from {
+    stroke-dashoffset: 48;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.ether-approve-pop {
+  animation: ether-approve-pop 480ms ease-out both;
+}
+.ether-approve-check {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: ether-approve-draw 420ms 100ms ease-out forwards;
+}
 @media (prefers-reduced-motion: reduce) {
   .ether-logo .ether-trace,
   .ether-logo .ether-signal,
   .ether-splash-center p,
-  .ether-splash-progress::after {
+  .ether-splash-progress::after,
+  .ether-approve-pop,
+  .ether-approve-check {
     animation: none !important;
+  }
+  .ether-approve-check {
+    stroke-dashoffset: 0;
   }
   .ether-splash {
     transition: none;

@@ -1,16 +1,30 @@
 import { t } from "../../i18n";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsaunders/appkit-ui";
-import SignInMethods from "./SignInMethods";
-import { FavoritesMirror } from "./FavoritesMirror";
-import { FavoriteEpisodeAlerts } from "./FavoriteEpisodeAlerts";
-import { ViewerPush } from "./ViewerPush";
-import { NotInterested, type NotInterestedEntry } from "./NotInterested";
-import { ConnectApps } from "./ConnectApps";
+import { Segmented } from "../../components/fields";
 import { EtherLogo } from "../../components/brand";
 
 const SESSION_KEY = "ether.viewerPortal";
+const CODE_LENGTH = 6;
+type Method = "plex" | "local";
 type Viewer = { id: number; username?: string; title?: string };
+type Approval = { ok: boolean; device?: string; app?: string };
+
+const APP_NAMES: Record<string, string> = {
+  plex: "Plex",
+  jellyfin: "Jellyfin",
+  emby: "Emby",
+  silo: "Silo",
+  stremio: "Stremio",
+};
+
+class PortalError extends Error {
+  code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 async function request<T>(
   path: string,
@@ -26,27 +40,86 @@ async function request<T>(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  if (!res.ok)
-    throw new Error(
-      res.status === 401
-        ? t("Sign-in failed. Check your credentials.")
-        : t("The request could not be completed. Try again."),
-    );
-  return res.status === 204 ? (undefined as T) : (res.json() as Promise<T>);
+  const text = await res.text();
+  const data = text ? (JSON.parse(text) as { error?: { code?: string } }) : {};
+  if (!res.ok) {
+    throw new PortalError(data.error?.code ?? "", failureMessage(res.status, data.error?.code));
+  }
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+function failureMessage(status: number, code: string | undefined): string {
+  if (code === "expired")
+    return t("That code has expired. Get a new one on your TV and try again.");
+  if (code === "invalid")
+    return t("That code isn't valid. Check the code on your TV and try again.");
+  if (status === 429) return t("Too many tries. Wait a moment, then enter the code again.");
+  if (status === 401) return t("Sign-in failed. Check your credentials.");
+  return t("The request could not be completed. Try again.");
+}
+
+function normalizeCode(raw: string): string {
+  return raw
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, CODE_LENGTH);
+}
+
+function approvalDetail(device: string, app: string): string {
+  const known = APP_NAMES[app.toLowerCase()];
+  const name = known || app;
+  if (name && device && name.toLowerCase() !== device.toLowerCase())
+    return t("{app} on {device}", { app: name, device });
+  return device || name;
+}
+
+/** A short rising chime. Browsers that block autoplay leave it silent. */
+function playApprovalSound() {
+  const Ctx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return;
+  try {
+    const ctx = new Ctx();
+    const start = ctx.currentTime;
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const at = start + i * 0.11;
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.07, at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.28);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(at);
+      osc.stop(at + 0.3);
+    });
+    void ctx.resume().catch(() => undefined);
+    window.setTimeout(() => void ctx.close().catch(() => undefined), 900);
+  } catch {
+    // Autoplay was blocked, or this browser has no audio engine.
+  }
 }
 
 export default function Me() {
   const [token, setToken] = useState(() => sessionStorage.getItem(SESSION_KEY) ?? "");
   const [viewer, setViewer] = useState<Viewer | null>(null);
+  const [methods, setMethods] = useState<Method[] | null>(null);
+  const [method, setMethod] = useState<Method>("plex");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
+  const [approved, setApproved] = useState<Approval | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pinURL, setPinURL] = useState("");
   const [inviteSecret, setInviteSecret] = useState("");
   const cancelled = useRef(false);
+  const codeRef = useRef<HTMLInputElement>(null);
+  const submitted = useRef("");
+
   useEffect(() => {
     cancelled.current = false;
     return () => {
@@ -68,86 +141,54 @@ export default function Me() {
   }, []);
 
   useEffect(() => {
+    let stop = false;
+    fetch("/ether/api/bootstrap")
+      .then((res) => (res.ok ? (res.json() as Promise<{ signInMethods?: string[] }>) : null))
+      .then((boot) => {
+        if (stop) return;
+        const offered = (boot?.signInMethods ?? ["local", "plex"]).filter(
+          (item): item is Method => item === "local" || item === "plex",
+        );
+        const next = offered.length ? offered : (["local", "plex"] as Method[]);
+        setMethods(next);
+        setMethod(next.includes("plex") ? "plex" : "local");
+      })
+      .catch(() => {
+        if (!stop) {
+          setMethods(["local", "plex"]);
+          setMethod("plex");
+        }
+      });
+    return () => {
+      stop = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!token) {
       setViewer(null);
       return;
     }
-    let cancelled = false;
+    let stop = false;
     request<Viewer>("", token)
       .then((v) => {
-        if (!cancelled) setViewer(v);
+        if (!stop) setViewer(v);
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!stop) {
           sessionStorage.removeItem(SESSION_KEY);
           setToken("");
           setError(t("Your session has expired. Sign in again."));
         }
       });
     return () => {
-      cancelled = true;
+      stop = true;
     };
   }, [token]);
 
-  const loadFavorites = useCallback(
-    () => request<{ enabled: boolean }>("/favorites-mirror", token),
-    [token],
-  );
-  const saveFavorites = useCallback(
-    (enabled: boolean) => request("/favorites-mirror", token, { enabled }),
-    [token],
-  );
-  const loadAlerts = useCallback(
-    () => request<{ enabled: boolean }>("/favorite-episode-alert", token),
-    [token],
-  );
-  const saveAlerts = useCallback(
-    (enabled: boolean) => request("/favorite-episode-alert", token, { enabled }),
-    [token],
-  );
-  const getPushKey = useCallback(
-    () => request<{ publicKey: string }>("/alerts/push/key", token),
-    [token],
-  );
-  const pushStatus = useCallback(
-    (endpoint: string) =>
-      request<{ registered: boolean }>("/alerts/push/status", token, { endpoint }),
-    [token],
-  );
-  const pushSubscribe = useCallback(
-    (subscription: PushSubscriptionJSON) =>
-      request(
-        "/alerts/push/subscription",
-        token,
-        { endpoint: subscription.endpoint, keys: subscription.keys },
-        "PUT",
-      ),
-    [token],
-  );
-  const pushRemove = useCallback(
-    (endpoint: string) => request("/alerts/push/subscription", token, { endpoint }, "DELETE"),
-    [token],
-  );
-  const loadNotInterested = useCallback(async (): Promise<NotInterestedEntry[]> => {
-    const result = await request<{ items: { handle: string; title?: string }[] }>(
-      "/not-interested",
-      token,
-    );
-    return result.items.map((item) => ({
-      handle: item.handle,
-      title: item.title,
-      unavailable: !item.title,
-    }));
-  }, [token]);
-  const restoreInterest = useCallback(
-    async (handle: string) => {
-      const result = await request<{ restored: boolean }>("/not-interested/restore", token, {
-        handle,
-      });
-      if (!result.restored) throw new Error("restore failed");
-    },
-    [token],
-  );
+  useEffect(() => {
+    if (viewer && !approved) codeRef.current?.focus();
+  }, [viewer, approved]);
 
   async function redeemInvite() {
     setBusy(true);
@@ -159,7 +200,7 @@ export default function Me() {
       sessionStorage.setItem(SESSION_KEY, result.token);
       setToken(result.token);
       setInviteSecret("");
-      setMessage(t("Invite accepted. Set a password to sign in again."));
+      setMessage(t("Invite accepted. You can approve a TV now."));
     } catch {
       setError(t("This invite could not be accepted."));
     } finally {
@@ -176,12 +217,13 @@ export default function Me() {
       sessionStorage.setItem(SESSION_KEY, result.token);
       setToken(result.token);
       setPassword("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("Sign-in failed."));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Sign-in failed."));
     } finally {
       setBusy(false);
     }
   }
+
   async function plexSignIn() {
     setError("");
     setBusy(true);
@@ -215,26 +257,51 @@ export default function Me() {
       }
     }
   }
-  async function approve(e: FormEvent) {
-    e.preventDefault();
+
+  async function approve(value: string) {
+    if (value.length !== CODE_LENGTH || submitted.current === value) return;
+    submitted.current = value;
     setError("");
     setMessage("");
     setBusy(true);
     try {
-      await request("/quickconnect", token, { code });
+      const result = await request<Approval>("/quickconnect", token, { code: value });
+      setApproved(result);
       setCode("");
-      setMessage(t("Device approved."));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("The request could not be completed."));
+      playApprovalSound();
+    } catch (err) {
+      submitted.current = "";
+      setError(err instanceof Error ? err.message : t("The request could not be completed."));
     } finally {
       setBusy(false);
     }
   }
+
+  function onCode(raw: string) {
+    const next = normalizeCode(raw);
+    setCode(next);
+    if (next.length === CODE_LENGTH) void approve(next);
+  }
+
+  const localOn = methods?.includes("local") ?? false;
+  const plexOn = methods?.includes("plex") ?? false;
+  const signedIn = Boolean(token && viewer);
+  const detail = approved ? approvalDetail(approved.device ?? "", approved.app ?? "") : "";
+
   return (
     <main className="grid min-h-screen place-items-center bg-bg-subtle p-4">
-      <Card className="w-full max-w-sm space-y-5 p-7 shadow-lg">
+      <Card className="w-full max-w-md space-y-6 p-7 shadow-lg">
         <EtherLogo className="mx-auto w-40" />
-        <h1 className="text-xl font-semibold text-fg">{t("Viewer portal")}</h1>
+        <div className="space-y-1 text-center">
+          <h1 className="text-xl font-semibold text-fg">{t("Approve a TV")}</h1>
+          {approved ? null : (
+            <p className="text-sm text-fg-muted">
+              {signedIn
+                ? t("Enter the code shown on your TV.")
+                : t("Sign in, then enter the code shown on your TV.")}
+            </p>
+          )}
+        </div>
         {error ? (
           <Alert variant="destructive" role="alert">
             <AlertDescription>{error}</AlertDescription>
@@ -246,94 +313,173 @@ export default function Me() {
           </p>
         ) : null}
         {inviteSecret ? (
-          <Button type="button" disabled={busy} onClick={() => void redeemInvite()}>
+          <Button
+            type="button"
+            className="w-full"
+            disabled={busy}
+            onClick={() => void redeemInvite()}
+          >
             {t("Accept invite")}
           </Button>
         ) : null}
         {!token ? (
-          <form className="space-y-4" onSubmit={login}>
-            <div>
-              <Label htmlFor="me-username">{t("Username")}</Label>
-              <Input
-                id="me-username"
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.currentTarget.value)}
-                required
-              />
+          methods == null ? (
+            <p role="status" className="text-center text-sm text-fg-muted">
+              {t("Loading…")}
+            </p>
+          ) : !localOn && !plexOn ? (
+            <p className="text-sm text-fg-muted">
+              {t("No sign-in method is available. Contact the server owner.")}
+            </p>
+          ) : (
+            <div className="space-y-5">
+              {localOn && plexOn ? (
+                <Segmented
+                  ariaLabel={t("Sign-in method")}
+                  className="flex w-full [&>button]:min-w-0 [&>button]:flex-1"
+                  value={method}
+                  onChange={setMethod}
+                  options={[
+                    { value: "plex", label: t("Sign in with Plex") },
+                    { value: "local", label: t("Username & password") },
+                  ]}
+                />
+              ) : null}
+              {method === "local" && localOn ? (
+                <form className="space-y-4" onSubmit={(e) => void login(e)}>
+                  <div className="space-y-2">
+                    <Label htmlFor="me-username">{t("Username")}</Label>
+                    <Input
+                      id="me-username"
+                      autoComplete="username"
+                      value={username}
+                      onChange={(e) => setUsername(e.currentTarget.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="me-password">{t("Password")}</Label>
+                    <Input
+                      id="me-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.currentTarget.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={busy}>
+                    {t("Sign in")}
+                  </Button>
+                </form>
+              ) : null}
+              {method === "plex" && plexOn ? (
+                <div className="space-y-3">
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={busy}
+                    onClick={() => void plexSignIn()}
+                  >
+                    {t("Sign in with Plex")}
+                  </Button>
+                  {pinURL ? (
+                    <p className="text-center text-sm">
+                      <a href={pinURL} target="_blank" rel="noreferrer">
+                        {t("Open Plex sign-in")}
+                      </a>
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-            <div>
-              <Label htmlFor="me-password">{t("Password")}</Label>
-              <Input
-                id="me-password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.currentTarget.value)}
-                required
-              />
-            </div>
-            <Button type="submit" disabled={busy}>
-              {t("Sign in")}
-            </Button>
-            <Button
-              variant="outline"
-              type="button"
-              disabled={busy}
-              onClick={() => void plexSignIn()}
-            >
-              {t("Sign in with Plex")}
-            </Button>
-            {pinURL ? (
-              <p>
-                <a href={pinURL} target="_blank" rel="noreferrer">
-                  {t("Open Plex sign-in")}
-                </a>
-              </p>
-            ) : null}
-          </form>
+          )
         ) : viewer ? (
-          <>
-            <p className="text-sm text-fg-muted">{viewer.title || viewer.username}</p>
-            <form className="space-y-3" onSubmit={approve}>
-              <Label htmlFor="me-code">{t("Enter the code shown on your TV")}</Label>
-              <Input
-                id="me-code"
-                value={code}
-                onChange={(e) => setCode(e.currentTarget.value)}
-                required
-                autoComplete="off"
-              />
-              <Button type="submit" disabled={busy}>
+          approved ? (
+            <div role="status" className="space-y-4 text-center">
+              <div className="ether-approve-pop text-primary" aria-hidden="true">
+                <svg viewBox="0 0 80 80" className="mx-auto h-28 w-28">
+                  <circle cx="40" cy="40" r="36" className="fill-primary/15" />
+                  <path
+                    d="M24 42 l10 10 l22-24"
+                    className="ether-approve-check fill-none stroke-current"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-semibold text-fg">{t("Device approved")}</h2>
+              {detail ? <p className="text-sm text-fg-muted">{detail}</p> : null}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  submitted.current = "";
+                  setApproved(null);
+                  setCode("");
+                }}
+              >
+                {t("Approve another device")}
+              </Button>
+            </div>
+          ) : (
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void approve(code);
+              }}
+            >
+              <p className="text-center text-sm text-fg-muted">{viewer.title || viewer.username}</p>
+              <div className="space-y-2">
+                <Label htmlFor="me-code" className="sr-only">
+                  {t("Enter the code shown on your TV")}
+                </Label>
+                <Input
+                  ref={codeRef}
+                  id="me-code"
+                  value={code}
+                  onChange={(e) => onCode(e.currentTarget.value)}
+                  autoFocus
+                  autoComplete="one-time-code"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  inputMode="text"
+                  aria-label={t("Enter the code shown on your TV")}
+                  className="h-16 text-center font-mono text-3xl tracking-[0.3em] uppercase"
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={busy || code.length !== CODE_LENGTH}
+              >
                 {t("Approve device")}
               </Button>
             </form>
-            <FavoritesMirror load={loadFavorites} save={saveFavorites} />
-            <FavoriteEpisodeAlerts load={loadAlerts} save={saveAlerts} />
-            <ViewerPush
-              getKey={getPushKey}
-              status={pushStatus}
-              subscribe={pushSubscribe}
-              remove={pushRemove}
-            />
-            <NotInterested load={loadNotInterested} restore={restoreInterest} />
-            <SignInMethods base="/me" token={token} />
-            <ConnectApps base="/me" token={token} />
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => {
-                sessionStorage.removeItem(SESSION_KEY);
-                setToken("");
-                setMessage("");
-              }}
-            >
-              {t("Sign out")}
-            </Button>
-          </>
+          )
         ) : (
           <p role="status">{t("Loading…")}</p>
         )}
+        {token ? (
+          <Button
+            variant="ghost"
+            type="button"
+            className="w-full"
+            onClick={() => {
+              sessionStorage.removeItem(SESSION_KEY);
+              setToken("");
+              setViewer(null);
+              setApproved(null);
+              setMessage("");
+              setCode("");
+            }}
+          >
+            {t("Sign out")}
+          </Button>
+        ) : null}
       </Card>
     </main>
   );

@@ -419,6 +419,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       authenticated: true,
       authRequired: false,
       serverName: "Living Room Ether",
+      signInMethods: ["local", "plex"],
       ...opts.bootstrap,
     } as Bootstrap,
     config: defaultConfig(),
@@ -2192,7 +2193,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
               name: "Apple TV",
               dolbyVisionProfiles: [5, 8],
               subtitleCodecs: ["srt"],
-              notes: "Dolby Vision profile 7 uses a compatible HDR base layer; TrueHD requires an audio transcode unless declared supported.",
+              notes:
+                "Dolby Vision profile 7 uses a compatible HDR base layer; TrueHD requires an audio transcode unless declared supported.",
             },
             {
               name: "Android TV",
@@ -2207,7 +2209,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
               notes: "Browser codec declarations govern playback; text subtitles remain sidecars.",
             },
           ],
-          observed: [{ protocol: "jellyfin", name: "Jellyfin TV", lastSeen: "2026-10-31T12:00:00Z" }],
+          observed: [
+            { protocol: "jellyfin", name: "Jellyfin TV", lastSeen: "2026-10-31T12:00:00Z" },
+          ],
         });
       case "POST /playback/prowlarr": {
         const req = body as {
@@ -2898,6 +2902,61 @@ export function createFakeServer(opts: FakeOptions = {}) {
         name: seg[1],
         value: (dashboard().sections as Record<string, unknown>)[seg[1]] ?? null,
       });
+    if (seg[0] === "me") {
+      const sub = seg.slice(1).join("/");
+      if (method === "POST" && sub === "login") return json({ token: "viewer-grant" });
+      if (method === "POST" && sub === "pin")
+        return json({ handle: "pin1", code: "ABCD", authUrl: "https://plex.example/auth" });
+      if (method === "GET" && sub === "pin/pin1")
+        return json({ done: true, token: "viewer-grant" });
+      if (method === "GET" && sub === "") return json({ id: 1, username: "alice", title: "Alice" });
+      if (method === "POST" && sub === "quickconnect") {
+        const code = String((body as { code?: string } | null)?.code ?? "");
+        if (code === "EXPIRED") return err(400, "expired", "code expired");
+        if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return err(400, "invalid", "invalid code");
+        return json({ ok: true, device: "Living Room Apple TV", app: "Jellyfin" });
+      }
+      if (method === "GET" && sub === "identities")
+        return json({ identities: [{ id: 1, provider: "plex", display: "alice" }] });
+      if (method === "GET" && sub === "devices")
+        return json({
+          devices: [
+            {
+              hash: "abc",
+              surface: "jellyfin",
+              client: "Apple TV",
+              product: "Jellyfin",
+              version: "1",
+              lastUsed: Date.now(),
+            },
+          ],
+        });
+      if (sub === "not-interested" && method === "GET") return json({ items: [] });
+      if (sub === "favorite-episode-alert") return json({ enabled: false });
+      if (sub === "alerts/push/key") return json({ publicKey: "" });
+      if (method === "POST" && sub === "invite/redeem") return json({ token: "viewer-grant" });
+      if (method === "POST" && sub === "password") return json({ ok: true });
+      if (method === "POST" && sub === "devices/revoke") return json({ ok: true });
+    }
+    if (seg[0] === "users" && seg[1] && seg[2] === "identities" && method === "GET")
+      return json({ identities: [{ id: 1, provider: "local", display: "owner" }] });
+    if (
+      seg[0] === "users" &&
+      seg[1] &&
+      seg[2] === "devices" &&
+      seg.length === 3 &&
+      method === "GET"
+    )
+      return json({ devices: [] });
+    if (seg[0] === "users" && seg[1] && seg[2] === "password" && method === "POST")
+      return json({ ok: true });
+    if (seg[0] === "users" && seg[1] && seg[2] === "devices" && seg[3] === "revoke")
+      return json({ ok: true });
+    const viewerHidden = /^\/viewers\/(\d+)\/not-interested(?:\/restore)?$/.exec(p);
+    if (viewerHidden && (method === "GET" || method === "POST")) {
+      if (method === "GET") return json({ items: [] });
+      return json({ restored: true });
+    }
     return err(404, "not_found", "no such API endpoint");
   }
 

@@ -3,6 +3,7 @@ package admin
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -143,10 +144,36 @@ func (h *Handler) handleApproveQuickConnect(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err = h.deps.QuickConnect.Approve(r.Context(), body.Code, u.ID); err != nil {
+		if errors.Is(err, identity.ErrQuickConnectExpired) {
+			writeError(w, 400, "expired", "code expired")
+			return
+		}
 		writeError(w, 400, "invalid", "invalid code")
 		return
 	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	writeJSON(w, 200, quickConnectApproval(r, h, body.Code, u.ID))
+}
+
+func quickConnectApproval(r *http.Request, h *Handler, code string, viewerID int64) map[string]any {
+	out := map[string]any{"ok": true}
+	target, err := h.deps.QuickConnect.ApprovedTarget(r.Context(), code, viewerID)
+	if err != nil {
+		return out
+	}
+	device := strings.TrimSpace(target.DeviceName)
+	if device == "" {
+		device = strings.TrimSpace(target.Product)
+	}
+	if device == "" {
+		device = strings.TrimSpace(target.Client)
+	}
+	if device != "" {
+		out["device"] = device
+	}
+	if app := strings.TrimSpace(target.Surface); app != "" {
+		out["app"] = app
+	}
+	return out
 }
 
 func (h *Handler) handlePortalPIN(w http.ResponseWriter, r *http.Request) {
@@ -294,10 +321,14 @@ func (h *Handler) handleOwnerQuickConnect(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err = h.deps.QuickConnect.Approve(r.Context(), body.Code, id); err != nil {
+		if errors.Is(err, identity.ErrQuickConnectExpired) {
+			writeError(w, 400, "expired", "code expired")
+			return
+		}
 		writeError(w, 400, "invalid", "invalid code")
 		return
 	}
-	writeJSON(w, 200, map[string]bool{"ok": true})
+	writeJSON(w, 200, quickConnectApproval(r, h, body.Code, id))
 }
 
 func (h *Handler) handleInviteCreate(w http.ResponseWriter, r *http.Request) {

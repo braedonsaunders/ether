@@ -16,10 +16,13 @@ export default function SignInMethods({
   base,
   token,
   owner = false,
+  showInvite = owner,
 }: {
   base: string;
   token: string;
   owner?: boolean;
+  /** Invite links are for adding a viewer. The owner's own account page leaves this off. */
+  showInvite?: boolean;
 }) {
   const [methods, setMethods] = useState<Method[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -206,7 +209,7 @@ export default function SignInMethods({
             {t("Set or reset password")}
           </Button>
         </form>
-        {owner ? (
+        {showInvite ? (
           <div>
             <Button
               variant="outline"

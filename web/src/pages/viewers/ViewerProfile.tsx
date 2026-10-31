@@ -21,6 +21,7 @@ import SignInMethods from "../me/SignInMethods";
 import { FavoritesMirror } from "../me/FavoritesMirror";
 import { ConnectApps } from "../me/ConnectApps";
 import { FavoriteEpisodeAlerts } from "../me/FavoriteEpisodeAlerts";
+import { NotInterested, type NotInterestedEntry } from "../me/NotInterested";
 import { getToken } from "../../lib/api";
 import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer, ViewerDetail } from "../../lib/contract";
@@ -74,6 +75,26 @@ export default function ViewerProfile() {
   );
   const loadAlerts = useCallback(
     () => apiFetch<{ enabled: boolean }>(`/viewers/${id}/favorite-episode-alert`),
+    [id],
+  );
+  const loadHidden = useCallback(async (): Promise<NotInterestedEntry[]> => {
+    const result = await apiFetch<{ items: { handle: string; title?: string }[] }>(
+      `/viewers/${id}/not-interested`,
+    );
+    return (result.items ?? []).map((item) => ({
+      handle: item.handle,
+      title: item.title,
+      unavailable: !item.title,
+    }));
+  }, [id]);
+  const restoreHidden = useCallback(
+    async (handle: string) => {
+      const result = await apiFetch<{ restored: boolean }>(
+        `/viewers/${id}/not-interested/restore`,
+        { method: "POST", body: JSON.stringify({ handle }) },
+      );
+      if (!result.restored) throw new Error("restore failed");
+    },
     [id],
   );
 
@@ -183,7 +204,10 @@ export default function ViewerProfile() {
       ) : tab === "playback" ? (
         <ViewerPlayback key={id} viewer={v} />
       ) : tab === "alerts" ? (
-        <FavoriteEpisodeAlerts load={loadAlerts} />
+        <div className="space-y-6">
+          <FavoriteEpisodeAlerts load={loadAlerts} />
+          <NotInterested load={loadHidden} restore={restoreHidden} />
+        </div>
       ) : tab === "sign-in" ? (
         <div className="space-y-6">
           {!v.isOwner ? (

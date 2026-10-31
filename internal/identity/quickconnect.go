@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -152,7 +153,18 @@ func (q *QuickConnect) ApproveSurface(ctx context.Context, surface, code string,
 	return q.approve(ctx, surface, code, viewerID)
 }
 
+func normalizeQuickCode(code string) string {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	return strings.Map(func(r rune) rune {
+		if r == ' ' || r == '-' {
+			return -1
+		}
+		return r
+	}, code)
+}
+
 func (q *QuickConnect) approve(ctx context.Context, surface, code string, viewerID int64) error {
+	code = normalizeQuickCode(code)
 	res, err := q.db.ExecContext(ctx, `UPDATE identity_quickconnect SET viewer_id=? WHERE code=? AND (?='' OR surface=?) AND viewer_id IS NULL AND consumed=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND origin<>'dlna_guest')`, viewerID, code, surface, surface, q.now().UnixMilli(), viewerID)
 	if err != nil {
 		return err
@@ -162,14 +174,44 @@ func (q *QuickConnect) approve(ctx context.Context, surface, code string, viewer
 		return err
 	}
 	if n != 1 {
-		return core.ErrUnauthorized
+		return q.rejectCode(ctx, code)
 	}
 	return nil
+}
+
+func (q *QuickConnect) rejectCode(ctx context.Context, code string) error {
+	var expires int64
+	err := q.db.QueryRowContext(ctx, `SELECT expires FROM identity_quickconnect WHERE code=?`, code).Scan(&expires)
+	if err != nil {
+		return core.ErrUnauthorized
+	}
+	if expires <= q.now().UnixMilli() {
+		return ErrQuickConnectExpired
+	}
+	return core.ErrUnauthorized
+}
+
+// ApprovedTarget reports the device bound to a code this viewer just approved.
+func (q *QuickConnect) ApprovedTarget(ctx context.Context, code string, viewerID int64) (ApprovedTarget, error) {
+	var target ApprovedTarget
+	err := q.db.QueryRowContext(ctx, `SELECT device_name, client, product, surface FROM identity_quickconnect WHERE code=? AND viewer_id=?`, normalizeQuickCode(code), viewerID).Scan(&target.DeviceName, &target.Client, &target.Product, &target.Surface)
+	return target, err
 }
 
 // Poll consumes an approved request and creates its grant in one transaction.
 // ErrQuickConnectPending means that approval has not yet happened.
 var ErrQuickConnectPending = errors.New("identity: quick connect pending")
+
+// ErrQuickConnectExpired means the code was real and its window has closed.
+var ErrQuickConnectExpired = errors.New("identity: quick connect expired")
+
+// ApprovedTarget is the device a successful approval was bound to.
+type ApprovedTarget struct {
+	DeviceName string
+	Client     string
+	Product    string
+	Surface    string
+}
 
 // StatusSurface reports approval without consuming the secret or issuing a grant.
 func (q *QuickConnect) StatusSurface(ctx context.Context, surface, secret string) (bool, error) {

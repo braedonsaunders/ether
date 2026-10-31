@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { t, tn } from "../i18n";
+import { setSaveBarDirty } from "../lib/console-editing";
 import { MutationError } from "./feedback";
 
 /**
@@ -92,6 +93,10 @@ export function SaveBarHost({ children }: { children: ReactNode }) {
   );
   const list = Object.values(forms);
   const dirty = list.filter((f) => f.dirty);
+  useEffect(() => {
+    setSaveBarDirty(dirty.length > 0);
+  }, [dirty.length]);
+  useEffect(() => () => setSaveBarDirty(false), []);
   const errors = list.filter((f) => f.error).map((f) => f.error);
   const single = dirty.length === 1 ? dirty[0]! : null;
   return (
