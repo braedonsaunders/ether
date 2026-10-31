@@ -292,13 +292,8 @@ func (c *Catalog) titlesByKeys(ctx context.Context, keys []core.RatingKey) ([]co
 		}
 		if c.writeGen.Load() == gen {
 			c.cacheMu.Lock()
-			if len(c.titleCache) >= 8192 {
-				c.titleCache = map[core.RatingKey]cachedStoredTitle{}
-			}
 			for _, t := range ts {
-				if t.Key.Kind() == core.KindMovie {
-					c.titleCache[t.Key] = cachedStoredTitle{st: storedTitle{t: cloneTitle(t)}, gen: gen, minute: minBucket}
-				}
+				c.putSnapshotLocked(t.Key, gen, minBucket, storedTitle{t: cloneTitle(t)})
 			}
 			c.cacheMu.Unlock()
 		}

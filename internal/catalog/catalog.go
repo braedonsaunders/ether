@@ -174,7 +174,7 @@ type Catalog struct {
 	cfg               config.Catalog
 	cfgVersion        *configVersion
 	log               *slog.Logger
-	now               func() time.Time
+	clock             atomic.Value // func() time.Time
 
 	staleAfter time.Duration
 	listTTL    time.Duration
@@ -261,7 +261,33 @@ type listEntry struct {
 // Option customises a Catalog.
 type Option func(*Catalog)
 
-func WithNow(fn func() time.Time) Option { return func(c *Catalog) { c.now = fn } }
+func WithNow(fn func() time.Time) Option {
+	return func(c *Catalog) { c.setNow(fn) }
+}
+
+// SetNow replaces the clock used for release checks and the minute snapshot.
+// The swap is atomic so a background browse can keep reading it.
+func (c *Catalog) SetNow(now func() time.Time) {
+	if c == nil {
+		return
+	}
+	c.setNow(now)
+}
+
+func (c *Catalog) setNow(fn func() time.Time) {
+	if fn == nil {
+		fn = time.Now
+	}
+	c.clock.Store(fn)
+}
+
+func (c *Catalog) now() time.Time {
+	fn, _ := c.clock.Load().(func() time.Time)
+	if fn == nil {
+		return time.Now()
+	}
+	return fn()
+}
 func WithStaleAfter(d time.Duration) Option {
 	return func(c *Catalog) { c.staleAfter = d }
 }
@@ -294,12 +320,13 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 	if stale <= 0 {
 		stale = 24 * time.Hour
 	}
-	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log, now: time.Now,
+	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log,
 		staleAfter: stale, listTTL: 15 * time.Minute,
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
 		browseCache: map[string]cachedBrowse{}, grandCache: map[core.RatingKey]cachedBrowse{}, facetCache: map[string]cachedFacet{},
 		personHydrated: map[int64]time.Time{}}
+	c.setNow(time.Now)
 	c.SetTMDB(client)
 	for _, fn := range opts {
 		fn(c)

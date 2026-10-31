@@ -572,7 +572,14 @@ func TestSiloPortraitDeniesMissingReaderAndGrantChangesDuringRead(t *testing.T) 
 }
 
 func TestSiloPortraitRejectsStaleMovieThumbBeforeEpochCapture(t *testing.T) {
-	a := setupTestApp(t, true)
+	// The minute snapshot follows the catalog clock. Pin it before any
+	// background browse starts, so a slow run cannot cross a minute
+	// between the warm read and the stale check.
+	frozen := time.Date(2026, 1, 1, 12, 0, 30, 0, time.UTC)
+	a := setupTestAppWith(t, true, Options{CatalogNow: func() time.Time { return frozen }})
+	if a.prewarmDone != nil {
+		<-a.prewarmDone
+	}
 	ctx := context.Background()
 	if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
 		t.Fatal(err)

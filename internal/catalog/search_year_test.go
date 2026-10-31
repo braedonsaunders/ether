@@ -25,7 +25,7 @@ func TestSearchYearFallbackAndLiteralTitles(t *testing.T) {
 	for i := range titles {
 		titles[i].Released = time.Date(titles[i].Year, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
-	c.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+	c.SetNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
 	if err := c.upsertMany(ctx, titles, upsertOpts{browsable: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestSearchRemoteOutageKeepsLocalKeyword(t *testing.T) {
 	c.SetTMDB(failingSearchTMDB{})
 	ctx := context.Background()
 	released := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	c.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+	c.SetNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
 	episode := core.EpisodeKey(8, 1, 1)
 	titles := []core.Title{
 		{Key: core.MovieKey(9), Type: core.TypeMovie, Title: "Fixture Film", Released: released},
