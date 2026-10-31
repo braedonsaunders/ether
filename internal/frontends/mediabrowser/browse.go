@@ -866,6 +866,19 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var page frontend.Page
+	if search := q.Filter.Query; search != "" && i.searchableParent(parent) {
+		// /Items?searchTerm= is how Jellyfin and Emby apps search. Answer it
+		// from the title index with a bounded window, not a library walk
+		// filtered by name.
+		q.Filter.Query = ""
+		result, e := i.host.Experience.Search(r.Context(), v, device(r), search, q)
+		if e != nil {
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+		i.page(w, r, v, result.Page, q.Offset)
+		return
+	}
 	if len(parent) == 0 || parent[0] == "" {
 		page, err = i.host.Experience.LibraryItems(r.Context(), v, device(r), "", q)
 	} else if id, e := ids.ParseGUID(ids.View, parent[0]); e == nil && ids.PersonalView(id) {
@@ -889,6 +902,18 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 	}
 	i.page(w, r, v, page, q.Offset)
 }
+
+// searchableParent reports whether a search may use the title index: no
+// parent, or a library view. Searches inside a show, season or personal
+// library keep filtering that listing.
+func (i *instance) searchableParent(parent []string) bool {
+	if len(parent) == 0 || parent[0] == "" {
+		return true
+	}
+	id, err := ids.ParseGUID(ids.View, parent[0])
+	return err == nil && !ids.PersonalView(id)
+}
+
 func (i *instance) similar(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.viewer(r)
 	if err != nil || v == nil {

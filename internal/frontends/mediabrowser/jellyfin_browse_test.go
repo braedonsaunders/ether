@@ -299,11 +299,36 @@ func TestJellyfinBrowseFiltersReachTheLibrary(t *testing.T) {
 	}}
 	inst := mountJellyfin(t, exp)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true&MinCommunityRating=7.5&OfficialRatings=PG-13,DE-16&Studios=A24&SearchTerm=Arrival&MinRuntimeTicks=600000000&SortBy=PremiereDate&SortOrder=Descending", nil)
+	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true&MinCommunityRating=7.5&OfficialRatings=PG-13,DE-16&Studios=A24&MinRuntimeTicks=600000000&SortBy=PremiereDate&SortOrder=Descending", nil)
 	r.Header.Set("X-Emby-Token", "grant")
 	inst.Handler().ServeHTTP(w, r)
-	if w.Code != 200 || got.Filter.MinRating != 7.5 || len(got.Filter.ContentRatings) != 2 || got.Filter.ContentRatings[0] != "PG-13" || got.Filter.ContentRatings[1] != "de/16" || got.Filter.Studio != "A24" || got.Filter.Query != "Arrival" || got.Filter.MinRuntime != 60*time.Second || got.Sort != core.SortReleased || !got.Desc {
+	if w.Code != 200 || got.Filter.MinRating != 7.5 || len(got.Filter.ContentRatings) != 2 || got.Filter.ContentRatings[0] != "PG-13" || got.Filter.ContentRatings[1] != "de/16" || got.Filter.Studio != "A24" || got.Filter.MinRuntime != 60*time.Second || got.Sort != core.SortReleased || !got.Desc {
 		t.Fatal(w.Code, got)
+	}
+}
+
+// /Items?searchTerm= is a search: it goes to the title index with the
+// request's other filters, sort and paging, never to a filtered library walk.
+func TestJellyfinItemsSearchTermUsesSearch(t *testing.T) {
+	var got frontend.ItemQuery
+	var term string
+	exp := frontendtest.Experience{
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			t.Fatal("a search walked the library")
+			return frontend.Page{}, nil
+		},
+		SearchFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, s string, q frontend.ItemQuery) (frontend.SearchPage, error) {
+			term, got = s, q
+			return frontend.SearchPage{}, nil
+		},
+	}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true&IncludeItemTypes=Movie,Series&MinCommunityRating=7.5&Studios=A24&SearchTerm=Arrival&StartIndex=24&Limit=24&SortBy=PremiereDate&SortOrder=Descending", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || term != "Arrival" || got.Filter.Query != "" || got.Filter.MinRating != 7.5 || got.Filter.Studio != "A24" || got.Offset != 24 || got.Limit != 24 || len(got.Types) != 2 || got.Sort != core.SortReleased || !got.Desc {
+		t.Fatal(w.Code, term, got)
 	}
 }
 
@@ -1074,5 +1099,52 @@ func TestOfficialRatingUsesCountryPrefix(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"OfficialRating":"TV-PG"`) || !strings.Contains(w.Body.String(), `"OfficialRating":"DE-6"`) {
 		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+// peopleExperience adds the people reader the host's experience provides.
+type peopleExperience struct {
+	frontendtest.Experience
+	people func(frontend.PeopleQuery) []frontend.PersonDetail
+}
+
+func (p peopleExperience) People(_ context.Context, _ *frontend.Viewer, _ frontend.Device, q frontend.PeopleQuery) ([]frontend.PersonDetail, error) {
+	return p.people(q), nil
+}
+func (peopleExperience) Person(context.Context, *frontend.Viewer, frontend.Device, string, frontend.PersonReadOptions) (frontend.PersonDetail, error) {
+	return frontend.PersonDetail{}, frontend.ErrNotFound
+}
+func (peopleExperience) PersonCredit(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey, int64) (frontend.PersonDetail, error) {
+	return frontend.PersonDetail{}, frontend.ErrNotFound
+}
+
+// /Persons?searchTerm= returns the people whose names match, from the
+// people search, never every person in the library.
+func TestJellyfinPersonsHonourSearchTerm(t *testing.T) {
+	var asked frontend.PeopleQuery
+	exp := peopleExperience{
+		Experience: frontendtest.Experience{FacetsFunc: func(context.Context, *core.Viewer, core.Device, string, string) ([]core.FacetValue, error) {
+			t.Fatal("a people search listed every person")
+			return nil, nil
+		}},
+		people: func(q frontend.PeopleQuery) []frontend.PersonDetail {
+			asked = q
+			return []frontend.PersonDetail{{ID: "a1", Name: "Ringo Starr", TMDB: 1}, {ID: "b2", Name: "Star Person", TMDB: 2}}
+		},
+	}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		return &frontend.Viewer{ID: 1}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Persons?searchTerm=star&limit=24&recursive=true", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	body := w.Body.String()
+	if w.Code != 200 || asked.Query != "star" || asked.Limit != 24 || !strings.Contains(body, `"Name":"Ringo Starr"`) || !strings.Contains(body, `"Type":"Person"`) || !strings.Contains(body, `"TotalRecordCount":2`) {
+		t.Fatal(w.Code, asked, body)
 	}
 }

@@ -20,11 +20,11 @@ import (
 
 type parentBatchTMDB struct {
 	TMDB
-	calls int
+	calls atomic.Int64 // refreshes run behind reads, concurrently
 }
 
 func (f *parentBatchTMDB) TVDetails(_ context.Context, id int64) (*tmdb.TVDetails, error) {
-	f.calls++
+	f.calls.Add(1)
 	if id == 99 {
 		return nil, errors.New("missing")
 	}
@@ -48,12 +48,21 @@ func TestResolveShowParentsMatchesGet(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET detail=1, detail_at=CASE WHEN key=? THEN CAST(? AS BIGINT) ELSE CAST(? AS BIGINT) END WHERE key IN (?,?)`, int64(warm), now.Unix(), now.Add(-48*time.Hour).Unix(), int64(warm), int64(stale)); err != nil {
 		t.Fatal(err)
 	}
+	// Stale stored details are served at once and refreshed behind the read;
+	// a show with no details waits for its fetch.
 	got, err := c.ResolveShowParents(ctx, []core.RatingKey{warm, stale, cold, missing})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[warm].Title != "Original" || got[stale].Title != "Refreshed" || got[cold].Title != "Refreshed" || got[missing].Key != 0 || client.calls != 3 {
-		t.Fatalf("results %+v calls=%d", got, client.calls)
+	c.waitHydrations()
+	if got[warm].Title != "Original" || got[stale].Title != "Original" || got[cold].Title != "Refreshed" || got[missing].Key != 0 || client.calls.Load() != 3 {
+		t.Fatalf("results %+v calls=%d", got, client.calls.Load())
+	}
+	if got, err = c.ResolveShowParents(ctx, []core.RatingKey{warm, stale, cold, missing}); err != nil {
+		t.Fatal(err)
+	}
+	if got[stale].Title != "Refreshed" {
+		t.Fatalf("stale show not refreshed behind the read: %+v", got[stale])
 	}
 	for _, key := range []core.RatingKey{warm, stale, cold, missing} {
 		legacy, e := c.Get(ctx, key)
@@ -146,8 +155,10 @@ func TestResolveShowParentsIndependentControls(t *testing.T) {
 			t.Fatalf("%s batch=%+v legacy=%+v", key, actual, want)
 		}
 	}
-	if bc.calls != lc.calls || bc.calls != 3 {
-		t.Fatalf("refresh calls batch=%d legacy=%d", bc.calls, lc.calls)
+	batch.WaitRefreshes()
+	legacy.WaitRefreshes()
+	if bc.calls.Load() != lc.calls.Load() || bc.calls.Load() != 3 {
+		t.Fatalf("refresh calls batch=%d legacy=%d", bc.calls.Load(), lc.calls.Load())
 	}
 }
 

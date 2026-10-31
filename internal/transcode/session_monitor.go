@@ -236,20 +236,22 @@ func (s *Session) finish(r *run) {
 		// has not hit the end of the input: chain the next mode's run
 		// when the player is in (or near) this run's range.
 		if s.boundaryReadyLocked(r) && r.produced > 0 {
-			if s.clientNearLocked(r.planEnd) && s.lastReq >= r.startSeg {
+			if s.clientNearLocked(r.planEnd) {
+				// Chain even when the player has not fetched this run yet.
+				// A governor clamp (or any mode boundary) starts the run
+				// ahead of the playhead; declaring EOF there drops the rest
+				// of the title.
 				log.Debug("ffmpeg finished at plan boundary; chaining", "segment", r.planEnd, "playhead", s.lastReq)
 				if err := s.startRunLocked(r.planEnd, false); err != nil {
 					s.failErr = err
 				}
 				return
 			}
-			if !s.clientNearLocked(r.planEnd) {
-				// The process exited at the cap. This is not the end of the
-				// input; resume there once the player arrives.
-				s.resumeAt = r.planEnd
-				log.Info("transcode run reached its segment cap ahead of the player", "segment", r.planEnd, "playhead", s.lastReq)
-				return
-			}
+			// The process exited at the cap. This is not the end of the
+			// input; resume there once the player arrives.
+			s.resumeAt = r.planEnd
+			log.Info("transcode run reached its segment cap ahead of the player", "segment", r.planEnd, "playhead", s.lastReq)
+			return
 		}
 		// ffmpeg reached the end of the input.
 		if r.produced > 0 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -149,38 +150,50 @@ func (c *Catalog) getMovie(ctx context.Context, id int64) (*core.Title, error) {
 	if err == nil && c.fresh(st) {
 		return &st.t, nil
 	}
-	if c.tmdb() != nil {
-		if c.refreshMissed(movieRefreshKey(id)) {
-			if err == nil {
-				return &st.t, nil
-			}
-			return nil, core.ErrNotFound
+	if c.tmdb() == nil {
+		if err != nil {
+			return nil, err
 		}
-		d, ferr := c.tmdb().MovieDetails(ctx, id)
-		if ferr != nil {
-			if ctx.Err() == nil {
-				c.noteRefreshMiss(movieRefreshKey(id))
-			}
-			if err == nil {
-				return &st.t, nil // serve stale on fetch failure
-			}
-			return nil, ferr
+		return &st.t, nil
+	}
+	if c.refreshMissed(movieRefreshKey(id)) {
+		if err == nil {
+			return &st.t, nil
+		}
+		return nil, core.ErrNotFound
+	}
+	fetch := func(ctx context.Context) error {
+		d, err := c.tmdb().MovieDetails(ctx, id)
+		if err != nil {
+			return err
 		}
 		t := c.movieDetailsToTitle(ctx, d)
-		if uerr := c.upsert(ctx, t, upsertOpts{browsable: c.meetsThreshold(t), detail: true, releaseDates: d.ReleaseDates, gateEnabled: c.config().GateMoviesByHomeRelease}); uerr != nil {
-			return nil, uerr
+		if err := c.upsert(ctx, t, upsertOpts{browsable: c.meetsThreshold(t), detail: true, releaseDates: d.ReleaseDates, gateEnabled: c.config().GateMoviesByHomeRelease}); err != nil {
+			return err
 		}
 		c.harvestMovieCrowd(ctx, key, d.Recommendations)
-		st2, lerr := c.loadByKey(ctx, key)
-		if lerr != nil {
-			return &t, nil
-		}
-		return &st2.t, nil
+		return nil
 	}
+	if ferr := c.hydrate(ctx, movieRefreshKey(id), c.readWait(err == nil && st.detail), fetch); ferr != nil {
+		if err == nil {
+			return &st.t, nil // serve stored details while the refresh runs or after it failed
+		}
+		return nil, ferr
+	}
+	st2, err := c.loadByKey(ctx, key)
 	if err != nil {
 		return nil, err
 	}
-	return &st.t, nil
+	return &st2.t, nil
+}
+
+// readWait is how long a read waits for a TMDB refresh: not at all when it
+// already has stored details to serve, otherwise at most hydrateWait.
+func (c *Catalog) readWait(haveDetails bool) time.Duration {
+	if haveDetails {
+		return 0
+	}
+	return hydrateWait
 }
 
 // storeShowDetails mirrors a show's details and its season summaries, so a
@@ -223,38 +236,41 @@ func (c *Catalog) getShow(ctx context.Context, id int64) (*core.Title, error) {
 	if err == nil && c.showFresh(st) {
 		return &st.t, nil
 	}
-	if c.tmdb() != nil {
-		if c.refreshMissed(showRefreshKey(id)) {
-			if err == nil {
-				return &st.t, nil
-			}
-			return nil, core.ErrNotFound
+	if c.tmdb() == nil {
+		if err != nil {
+			return nil, err
 		}
-		d, ferr := c.tmdb().TVDetails(ctx, id)
-		if ferr != nil {
-			if ctx.Err() == nil {
-				c.noteRefreshMiss(showRefreshKey(id))
-			}
-			if err == nil {
-				return &st.t, nil
-			}
-			return nil, ferr
+		return &st.t, nil
+	}
+	if c.refreshMissed(showRefreshKey(id)) {
+		if err == nil {
+			return &st.t, nil
+		}
+		return nil, core.ErrNotFound
+	}
+	fetch := func(ctx context.Context) error {
+		d, err := c.tmdb().TVDetails(ctx, id)
+		if err != nil {
+			return err
 		}
 		t := c.tvDetailsToTitle(ctx, d)
-		if uerr := c.storeShowDetails(ctx, t, d); uerr != nil {
-			return nil, uerr
+		if err := c.storeShowDetails(ctx, t, d); err != nil {
+			return err
 		}
 		c.harvestTVCrowd(ctx, key, d.Recommendations)
-		st2, lerr := c.loadByKey(ctx, key)
-		if lerr != nil {
-			return &t, nil
-		}
-		return &st2.t, nil
+		return nil
 	}
+	if ferr := c.hydrate(ctx, showRefreshKey(id), c.readWait(err == nil && st.detail), fetch); ferr != nil {
+		if err == nil {
+			return &st.t, nil
+		}
+		return nil, ferr
+	}
+	st2, err := c.loadByKey(ctx, key)
 	if err != nil {
 		return nil, err
 	}
-	return &st.t, nil
+	return &st2.t, nil
 }
 
 // ensureShow returns the show title, fetching if needed.
@@ -295,10 +311,12 @@ func (c *Catalog) seasonFresh(st *storedTitle, show *core.Title) bool {
 // fetchSeason ensures season+episodes are in the mirror, fetching TMDB when
 // missing or stale. Returns the season title.
 func (c *Catalog) fetchSeason(ctx context.Context, showID int64, season int) (*core.Title, error) {
-	return c.fetchSeasonOpts(ctx, showID, season, false)
+	return c.fetchSeasonOpts(ctx, showID, season, false, false)
 }
 
-func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int, force bool) (*core.Title, error) {
+// fetchSeasonOpts refreshes a season; force waits for TMDB, and
+// knownMirrored says the caller already holds one of its episodes.
+func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int, force, knownMirrored bool) (*core.Title, error) {
 	key := core.SeasonKey(showID, season)
 	show, err := c.ensureShow(ctx, showID)
 	if err != nil {
@@ -307,60 +325,69 @@ func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int,
 	// If season row is fresh-detailed and episodes exist, skip network.
 	// Mirrored, not aired: a fresh season whose episodes are all still
 	// to air must not refetch on every read.
-	if !force {
-		if st, lerr := c.loadByKey(ctx, key); lerr == nil && c.seasonFresh(st, show) {
-			if ok, qerr := c.seasonMirrored(ctx, showID, season); qerr == nil && ok {
-				return &st.t, nil
-			}
-		}
+	stored, lerr := c.loadByKey(ctx, key)
+	mirrored := knownMirrored
+	if lerr == nil && !mirrored {
+		mirrored, _ = c.seasonMirrored(ctx, showID, season)
+	}
+	if !force && lerr == nil && mirrored && c.seasonFresh(stored, show) {
+		return &stored.t, nil
 	}
 	if c.tmdb() == nil {
-		st, lerr := c.loadByKey(ctx, key)
 		if lerr != nil {
 			return nil, lerr
 		}
-		return &st.t, nil
+		return &stored.t, nil
 	}
 	if c.refreshMissed(seasonRefreshKey(showID, season)) {
-		st, lerr := c.loadByKey(ctx, key)
 		if lerr != nil {
 			return nil, core.ErrNotFound
 		}
-		return &st.t, nil
+		return &stored.t, nil
 	}
-	sd, err := c.tmdb().SeasonDetails(ctx, showID, season)
+	fetch := func(ctx context.Context) error {
+		sd, err := c.tmdb().SeasonDetails(ctx, showID, season)
+		if err != nil {
+			return err
+		}
+		seasonName := sd.Name
+		if seasonName == "" {
+			seasonName = "Season " + itoa(season)
+		}
+		seasonT := seasonToTitle(*show, tmdbSeasonSummary(sd))
+		eps := make([]core.Title, 0, len(sd.Episodes))
+		for _, e := range sd.Episodes {
+			if !episodeKeyFits(e.SeasonNumber, e.EpisodeNumber) {
+				// Its rating key would decode as another title's episode.
+				continue
+			}
+			eps = append(eps, episodeToTitle(*show, seasonName, e))
+		}
+		seasonT.ChildCount = len(eps)
+		if err := c.upsert(ctx, seasonT, upsertOpts{detail: true}); err != nil {
+			return err
+		}
+		// Episodes from a season payload lack their own external ids, so they are
+		// not marked detail; Get(episode) enriches and marks them.
+		return c.upsertMany(ctx, eps, upsertOpts{airDates: true})
+	}
+	// A forced refresh is synchronous; a mirrored season is served while it
+	// refreshes; a season with no episodes stored waits briefly.
+	wait := c.readWait(lerr == nil && stored.detail && mirrored)
+	if force {
+		wait = hydrateBudget
+	}
+	if err := c.hydrate(ctx, seasonRefreshKey(showID, season), wait, fetch); err != nil {
+		if lerr == nil {
+			return &stored.t, nil
+		}
+		return nil, err
+	}
+	st, err := c.loadByKey(ctx, key)
 	if err != nil {
-		if ctx.Err() == nil {
-			c.noteRefreshMiss(seasonRefreshKey(showID, season))
-		}
-		if st, lerr := c.loadByKey(ctx, key); lerr == nil {
-			return &st.t, nil
-		}
 		return nil, err
 	}
-	seasonName := sd.Name
-	if seasonName == "" {
-		seasonName = "Season " + itoa(season)
-	}
-	seasonT := seasonToTitle(*show, tmdbSeasonSummary(sd))
-	eps := make([]core.Title, 0, len(sd.Episodes))
-	for _, e := range sd.Episodes {
-		if !episodeKeyFits(e.SeasonNumber, e.EpisodeNumber) {
-			// Its rating key would decode as another title's episode.
-			continue
-		}
-		eps = append(eps, episodeToTitle(*show, seasonName, e))
-	}
-	seasonT.ChildCount = len(eps)
-	if err := c.upsert(ctx, seasonT, upsertOpts{detail: true}); err != nil {
-		return nil, err
-	}
-	// Episodes from a season payload lack their own external ids, so they are
-	// not marked detail; Get(episode) enriches and marks them.
-	if err := c.upsertMany(ctx, eps, upsertOpts{airDates: true}); err != nil {
-		return nil, err
-	}
-	return &seasonT, nil
+	return &st.t, nil
 }
 
 // episodeKeyFits reports whether an episode's numbers fit its rating key
@@ -375,10 +402,13 @@ func tmdbSeasonSummary(sd *tmdb.SeasonDetails) tmdb.SeasonSummary {
 }
 
 func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Title, error) {
-	if st, err := c.loadByKey(ctx, key); err == nil && c.fresh(st) {
-		return &st.t, nil
+	stored, lerr := c.loadByKey(ctx, key)
+	if lerr == nil && c.fresh(stored) {
+		return &stored.t, nil
 	}
-	if _, err := c.fetchSeason(ctx, key.TMDB(), key.Season()); err != nil {
+	// A stored episode proves its season is mirrored, so the season check
+	// needs no episode count.
+	if _, err := c.fetchSeasonOpts(ctx, key.TMDB(), key.Season(), false, lerr == nil); err != nil {
 		if st, lerr := c.loadByKey(ctx, key); lerr == nil {
 			return &st.t, nil
 		}
@@ -391,9 +421,15 @@ func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Tit
 	// Best-effort episode external ids (its own IMDb id is useful to indexers).
 	// A season refresh that just failed will fail these too; do not fan that
 	// wait out across every episode in a list.
-	if c.tmdb() != nil && st.t.IDs.IMDB == "" && !c.refreshMissed(seasonRefreshKey(key.TMDB(), key.Season())) {
-		if ext, ferr := c.tmdb().EpisodeExternalIDs(ctx, key.TMDB(), key.Season(), key.Episode()); ferr == nil && ext != nil && (ext.IMDBID != "" || ext.TVDBID != 0) {
-			t := st.t
+	refreshKey := "episode-ids:" + strconv.FormatUint(uint64(key), 10)
+	if c.tmdb() != nil && st.t.IDs.IMDB == "" && !c.refreshMissed(seasonRefreshKey(key.TMDB(), key.Season())) && !c.refreshing(seasonRefreshKey(key.TMDB(), key.Season())) && !c.refreshMissed(refreshKey) {
+		stored := st.t
+		fetch := func(ctx context.Context) error {
+			ext, err := c.tmdb().EpisodeExternalIDs(ctx, key.TMDB(), key.Season(), key.Episode())
+			if err != nil || ext == nil || (ext.IMDBID == "" && ext.TVDBID == 0) {
+				return err
+			}
+			t := stored
 			t.IDs.IMDB = ext.IMDBID
 			if ext.TVDBID != 0 {
 				t.IDs.TVDB = ext.TVDBID
@@ -403,10 +439,11 @@ func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Tit
 			// on read), which must not be saved as the episode's own.
 			t.Cast, t.Directors, t.Writers, t.Crew = nil, nil, nil, nil
 			t.Genres, t.Studios, t.Countries, t.Keywords, t.AlternativeTitles = nil, nil, nil, nil, nil
-			_ = c.upsert(ctx, t, upsertOpts{detail: true})
-			st.t.IDs.IMDB = ext.IMDBID
-			if ext.TVDBID != 0 {
-				st.t.IDs.TVDB = ext.TVDBID
+			return c.upsert(ctx, t, upsertOpts{detail: true})
+		}
+		if c.hydrate(ctx, refreshKey, hydrateWait, fetch) == nil {
+			if st2, err := c.loadByKey(ctx, key); err == nil {
+				return &st2.t, nil
 			}
 		}
 	}
@@ -701,7 +738,7 @@ func (c *Catalog) NextEpisode(ctx context.Context, episode core.RatingKey) (*cor
 			if show != nil && strings.EqualFold(show.Status, "Returning Series") {
 				sKey := core.SeasonKey(showID, curSeason)
 				if st, lerr := c.loadByKey(ctx, sKey); lerr == nil && c.now().Sub(st.detailAt) >= min(c.staleAfter, caughtUpRefreshTTL) {
-					if _, ferr := c.fetchSeasonOpts(ctx, showID, curSeason, true); ferr == nil {
+					if _, ferr := c.fetchSeasonOpts(ctx, showID, curSeason, true, false); ferr == nil {
 						if eps2, eerr := c.episodesOfSeason(ctx, showID, curSeason); eerr == nil {
 							for _, e := range eps2 {
 								if e.Episode > curEp {

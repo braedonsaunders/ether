@@ -81,7 +81,10 @@ type queryer interface {
 }
 
 func listTables(ctx context.Context, q queryer, d Dialect) ([]string, error) {
-	query := `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY name`
+	// Ordinary tables only: a virtual table (a full-text index) and its
+	// shadow tables are derived from the tables they index and are rebuilt
+	// by their triggers as rows are restored.
+	query := `SELECT name FROM pragma_table_list WHERE schema='main' AND type='table' AND name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY name`
 	if d == Postgres {
 		query = `SELECT table_name FROM information_schema.tables WHERE table_schema=current_schema() AND table_type='BASE TABLE' ORDER BY table_name`
 	}

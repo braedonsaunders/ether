@@ -58,6 +58,10 @@ type ImageGrantService struct {
 	short              map[string]pageClaims
 	denied             sync.Map
 	gen                atomic.Uint64
+	// cleaned is when each viewer's expired image rows were last pruned
+	// on the issue path (imageCleanupDue).
+	cleanMu sync.Mutex
+	cleaned map[int64]time.Time
 }
 
 // Generation changes when an image grant is revoked, so a cached page stops

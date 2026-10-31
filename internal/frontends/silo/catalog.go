@@ -140,6 +140,8 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
+	overlays, batched := i.editionOverlays(r, v, keys)
+	artwork := i.sectionArtwork(r, v, token, page.Items)
 	items := make([]any, 0, len(page.Items))
 	for _, t := range page.Items {
 		item := titleDTO(t, states[t.Key])
@@ -147,8 +149,16 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 		item["episode_number"] = t.Episode
 		item["is_specials"] = t.Season == 0
 		item["episode_count"] = t.LeafCount
-		i.artwork(r, v, token, t.Key, item)
-		i.applyEditionOverlay(r, v, t.Key, item)
+		i.paintCardArtwork(r, artwork[t.Key], item)
+		if t.Type == "episode" && (t.StillPath != "" || t.PosterPath != "" || t.BackdropPath != "") {
+			item["poster_is_episode_still"] = t.StillPath != "" && t.PosterPath == t.StillPath
+			item["backdrop_is_episode_still"] = t.StillPath != "" && t.BackdropPath == t.StillPath
+		}
+		if summary := overlays[t.Key]; len(summary) > 0 {
+			item["overlay_summary"] = summary
+		} else if !batched {
+			i.applyEditionOverlay(r, v, t.Key, item)
+		}
 		items = append(items, item)
 	}
 	reply(w, 200, map[string]any{"items": items, "page": map[string]any{"has_more": false, "next_cursor": nil}})

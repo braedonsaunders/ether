@@ -7,7 +7,6 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/store"
 )
 
 // Browse queries the browsable mirror entirely in SQL, with generation-stamped
@@ -82,7 +81,8 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	order := browseOrder(q)
 	orderArgs := []any{}
 	asOf := c.now()
-	if q.Sort == core.SortAdded {
+	computedAdded := q.Sort == core.SortAdded && q.Filter.Type != core.TypeMovie
+	if computedAdded {
 		dir := "ASC"
 		if q.Desc {
 			dir = "DESC"
@@ -90,8 +90,27 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		order = airAddedSQL + " " + dir
 		orderArgs = airAddedArgs(asOf)
 	}
+	// A movie's date added is its release date, and browseWhere keeps only
+	// movies released by now, so browseOrder's t.released_ts gives the same
+	// order from the (type, browsable, released_ts) index instead of a
+	// computed expression sorted over the whole library.
 	query := `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t WHERE ` + where + ` ORDER BY ` + order + `, t.key ASC LIMIT ? OFFSET ?`
+	if computedAdded {
+		// The computed date added has no index, so the whole filtered set is
+		// sorted. Sort narrow (key, date) rows from the covering index and
+		// read the full rows of the page only.
+		dir := "ASC"
+		if q.Desc {
+			dir = "DESC"
+		}
+		query = `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t JOIN (SELECT t.key AS page_key, ` + airAddedSQL + ` AS page_added FROM catalog_titles t WHERE ` + where +
+			` ORDER BY page_added ` + dir + `, t.key ASC LIMIT ? OFFSET ?) p ON t.key=p.page_key ORDER BY p.page_added ` + dir + `, p.page_key ASC`
+	}
 	queryArgs := append(append([]any{}, args...), orderArgs...)
+	if computedAdded {
+		// The date expression comes before the filter in the narrow subquery.
+		queryArgs = append(append([]any{}, orderArgs...), args...)
+	}
 	items, err := c.queryTitles(ctx, query, append(queryArgs, limit, offset)...)
 	if err != nil {
 		return core.Page{}, err
@@ -320,11 +339,13 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		args = append(args, f.Collection)
 	}
 	if f.Person > 0 {
-		conds = append(conds, `EXISTS (SELECT 1 FROM catalog_credits cr WHERE cr.key=t.key AND cr.person_tmdb=?)`)
+		// IN, not a correlated EXISTS: a person's few titles drive the
+		// query by key instead of a walk over every browsable title.
+		conds = append(conds, `t.key IN (SELECT key FROM catalog_credits WHERE person_tmdb=?)`)
 		args = append(args, f.Person)
 	}
 	if f.Studio != "" {
-		conds = append(conds, `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND s.studio=?)`)
+		conds = append(conds, `t.key IN (SELECT key FROM catalog_studios WHERE studio=?)`)
 		args = append(args, f.Studio)
 	}
 	if fc := strings.TrimSpace(f.FirstCharacter); fc != "" {
@@ -341,10 +362,9 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		}
 	}
 	if f.Query != "" {
-		op := store.Like(store.DialectOf(c.db))
-		conds = append(conds, "(t.title "+op+" ? ESCAPE '\\' OR t.original_title "+op+" ? ESCAPE '\\')")
-		like := "%" + escapeLike(f.Query) + "%"
-		args = append(args, like, like)
+		match, matchArgs := c.titleMatch("t.", f.Query)
+		conds = append(conds, match)
+		args = append(args, matchArgs...)
 	}
 	conds = append(conds, "t.released_ts<>0 AND t.released_ts<=?")
 	args = append(args, c.now().Unix())
@@ -365,13 +385,29 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 	minBucket := c.minuteBucket()
 	fkey := string(t) + "|" + facet
 	c.cacheMu.RLock()
-	if ent, ok := c.facetCache[fkey]; ok && ent.gen == gen && ent.minute == minBucket {
-		out := append([]core.FacetValue(nil), ent.vals...)
-		c.cacheMu.RUnlock()
-		return out, nil
-	}
+	ent, cached := c.facetCache[fkey]
 	c.cacheMu.RUnlock()
+	if cached && ent.gen == gen && ent.minute == minBucket {
+		return append([]core.FacetValue(nil), ent.vals...), nil
+	}
+	if cached {
+		// Library-wide counts walk every title. Serve the last counts and
+		// recount behind the read; the next read has the new ones.
+		_ = c.hydrate(ctx, "facet:"+fkey, 0, func(ctx context.Context) error {
+			_, err := c.countFacet(ctx, t, facet)
+			return err
+		})
+		return append([]core.FacetValue(nil), ent.vals...), nil
+	}
+	return c.countFacet(ctx, t, facet)
+}
 
+// countFacet computes a facet's value counts over the browsable set and
+// caches them.
+func (c *Catalog) countFacet(ctx context.Context, t core.MediaType, facet string) ([]core.FacetValue, error) {
+	gen := c.writeGen.Load()
+	minBucket := c.minuteBucket()
+	fkey := string(t) + "|" + facet
 	base, args, err := c.browseWhere(core.Filter{Type: t})
 	if err != nil {
 		return nil, err

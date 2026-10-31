@@ -378,6 +378,9 @@ func (s *Service) people(ctx context.Context, viewer *core.Viewer, device core.D
 	}
 	terms := peopleTerms(q.Query)
 	exact := strings.Join(peopleWords(q.Query), " ")
+	if len(terms) > 0 && s.d.PeopleIndex != nil && s.d.PersonCredits != nil {
+		return s.indexedPeople(ctx, viewer, q, terms, exact)
+	}
 	// Keep only the requested best people while scanning authorized credits.
 	// No persistent/global mapping or unbounded result set is accumulated here.
 	best := make(map[string]visiblePerson, q.Limit)
@@ -412,6 +415,102 @@ func (s *Service) people(ctx context.Context, viewer *core.Viewer, device core.D
 	result := make([]frontend.PersonDetail, 0, len(best))
 	for _, person := range best {
 		current, err := s.currentPerson(ctx, viewer, person.detail)
+		if err != nil {
+			return nil, err
+		}
+		if personMatches(current.Name, terms) {
+			result = append(result, current)
+		}
+	}
+	sort.Slice(result, func(a, b int) bool { return personBefore(result[a], result[b], exact) })
+	return result, nil
+}
+
+// PersonCandidate is a credited person whose name a people search matched.
+type PersonCandidate struct {
+	TMDB int64
+	Name string
+}
+
+// People searches look at the most credited matching people and, for each,
+// their most popular credited titles. Both bounds keep a search's cost
+// independent of the library and the credits table.
+const (
+	peopleCandidateLimit = 500
+	personCreditLimit    = 12
+)
+
+// indexedPeople answers a people search from the name index: candidates in
+// the search's own order (an exact name first, then by name), each kept when
+// one of its most popular credited titles is visible to the viewer, until
+// the limit is reached.
+func (s *Service) indexedPeople(ctx context.Context, viewer *core.Viewer, q frontend.PeopleQuery, terms []string, exact string) ([]frontend.PersonDetail, error) {
+	types, err := peopleTypes(q.Scope)
+	if err != nil {
+		return nil, err
+	}
+	v, err := s.viewer(ctx, viewer)
+	if err != nil {
+		return nil, err
+	}
+	if s.d.CachedGetMany == nil {
+		return nil, core.ErrNotAvailable
+	}
+	found, err := s.d.PeopleIndex(ctx, terms, peopleCandidateLimit)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]frontend.PersonDetail, 0, len(found))
+	for _, c := range found {
+		if c.TMDB > 0 && personMatches(c.Name, terms) {
+			candidates = append(candidates, frontend.PersonDetail{ID: facetID("person", strconv.FormatInt(c.TMDB, 10)), Name: c.Name, TMDB: c.TMDB})
+		}
+	}
+	sort.Slice(candidates, func(a, b int) bool { return personBefore(candidates[a], candidates[b], exact) })
+	result := make([]frontend.PersonDetail, 0, q.Limit)
+	for _, candidate := range candidates {
+		if len(result) == q.Limit {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		keys, err := s.d.PersonCredits(ctx, candidate.TMDB, types, personCreditLimit)
+		if err != nil {
+			return nil, err
+		}
+		if len(keys) == 0 {
+			continue
+		}
+		titles, err := s.d.CachedGetMany(ctx, keys)
+		if err != nil {
+			return nil, err
+		}
+		visibility, err := s.peopleVisibility(ctx, titles)
+		if err != nil {
+			return nil, err
+		}
+		var best visiblePerson
+		for _, key := range keys {
+			title, ok := titles[key]
+			if !ok || title.Key != key || !peopleTitleVisible(ctx, v, &title, visibility) {
+				continue
+			}
+			for _, group := range [][]core.Person{title.Cast, title.Directors, title.Writers, title.Crew} {
+				for _, person := range group {
+					if person.TMDB != candidate.TMDB || strings.TrimSpace(person.Name) == "" {
+						continue
+					}
+					if best, err = mergeVisiblePerson(best, person, title.Key); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+		if best.detail.ID == "" {
+			continue
+		}
+		current, err := s.currentPerson(ctx, viewer, best.detail)
 		if err != nil {
 			return nil, err
 		}

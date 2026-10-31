@@ -125,6 +125,7 @@ type Options struct {
 
 // App is a running Ether server.
 type App struct {
+	perf          *perfObserver // per-request database cost, budgets and trace
 	availability  *availability.Service
 	opts          Options
 	log           *slog.Logger
@@ -273,6 +274,8 @@ func New(ctx context.Context, opts Options) (_ *App, err error) {
 		}
 		a.closers = append(a.closers, a.instanceLock.Release)
 	}
+	a.perf = newPerfObserver(a.log.With("component", "perf"))
+	a.closers = append(a.closers, a.perf.close)
 	started := false
 	defer func() {
 		if !started {
@@ -573,6 +576,7 @@ func (a *App) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	a.bindRestart(ctx, cancel)
+	servePprof(ctx, a.log)
 	cfg := a.cfg.Get()
 
 	// Leave the cluster last, after background work has stopped.

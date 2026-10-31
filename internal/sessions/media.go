@@ -253,6 +253,45 @@ func (b *Broker) ServeMediaAccess(w http.ResponseWriter, r *http.Request, a fron
 	b.serveMedia(a.Protocol, &a, w, r)
 }
 
+// ServeSessionMedia serves one session resource for a device that already
+// proved it owns the session. The grant stays on the internal path; callers
+// must not copy it into a client URL.
+func (b *Broker) ServeSessionMedia(w http.ResponseWriter, r *http.Request, a frontend.SessionAccess, sessionID, resource string) {
+	if !sessionResource(sessionID, resource) {
+		http.NotFound(w, r)
+		return
+	}
+	b.mu.Lock()
+	live := b.sessions[sessionID]
+	grant := ""
+	if live != nil {
+		grant = live.grant
+	}
+	b.mu.Unlock()
+	if grant == "" {
+		http.NotFound(w, r)
+		return
+	}
+	forward := r.Clone(r.Context())
+	u := *r.URL
+	u.Path = "/sessions/media/" + sessionID + "/" + grant + "/" + resource
+	u.RawPath = ""
+	forward.URL = &u
+	b.ServeMediaAccess(w, forward, a)
+}
+
+func sessionResource(sessionID, resource string) bool {
+	if sessionID == "" || resource == "" || strings.Contains(sessionID, "/") || strings.HasPrefix(resource, "/") || strings.HasSuffix(resource, "/") {
+		return false
+	}
+	for _, part := range strings.Split(resource, "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 func (b *Broker) currentMediaPolicy(ctx context.Context, viewer *core.Viewer, s *brokerSession) bool {
 	confirmed, err := b.confirm(ctx, viewer, s.caps)
 	if err != nil || confirmed.ID != s.public.ViewerID {

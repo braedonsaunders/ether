@@ -170,8 +170,10 @@ func TestPersonalHomeViewsAreStableRankedAndAttributed(t *testing.T) {
 	}
 	hidden[2] = true
 	restricted := mount(2, nil)
+	// Another viewer's shelf id yields nothing: an empty list, the same as a
+	// shelf of this viewer's that has since gone, never the other's titles.
 	restrictedLatest := call(restricted, http.MethodGet, "/Items/Latest?ParentId="+becauseID, "")
-	if restrictedLatest.Code != 404 {
+	if restrictedLatest.Code != 200 || strings.TrimSpace(restrictedLatest.Body.String()) != "[]" {
 		t.Fatal(restrictedLatest.Code, restrictedLatest.Body.String())
 	}
 	ownLatest := waitFor(t, func() *httptest.ResponseRecorder { return call(restricted, http.MethodGet, "/UserViews", "") }, "Dune and Similar")

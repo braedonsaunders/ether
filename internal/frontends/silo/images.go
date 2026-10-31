@@ -220,7 +220,34 @@ func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential 
 		}
 	}
 }
+
+// imageCapabilities matches the reference Silo document the Apple TV client
+// reads before it asks for sized artwork. Widths are the sizes this server
+// can actually scale to.
+const imageCapabilities = `{"revision":"2ba41576a16a8b6a3c8f7d0647f849a505c9cddcfb83ed6520e9bde2c794319b","state":"available","allowed":true,"episode_still_provenance":true,"episode_parent_artwork":true,"extended_item_artwork":true,"season_list_artwork_param":"include_artwork","param":"image_size","slot_width_params":{"backdrop":"backdrop_width","logo":"logo_width","photo":"photo_width","poster":"poster_width","still":"still_width"},"sizes":["small","medium","large","original"],"widths":{"backdrop":{"small":300,"medium":1920,"large":2560},"banner":{"small":500,"medium":500,"large":1000},"clearart":{"small":500,"medium":500,"large":1000},"disc":{"small":300,"medium":500,"large":1000},"logo":{"small":500,"medium":500,"large":1280},"poster":{"small":300,"medium":500,"large":1000},"profile":{"small":300,"medium":500,"large":500},"still":{"small":300,"medium":500,"large":1280},"thumb":{"small":300,"medium":500,"large":1280}},"original_max_width_px":3840,"storage_backend":"local","delivery":"server"}`
+
+func (i *instance) imageCapabilities(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.viewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	etag := `"2ba41576a16a8b6a3c8f7d0647f849a505c9cddcfb83ed6520e9bde2c794319b"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(imageCapabilities))
+}
+
 func (i *instance) imageRoutes() error {
+	if err := i.router.Handle("GET", "/api/v2/images/capabilities", http.HandlerFunc(i.imageCapabilities)); err != nil {
+		return err
+	}
 	for _, method := range []string{"GET", "HEAD"} {
 		if err := i.router.Handle(method, "/api/v2/images/{ticket}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if i.host.ImageGrants == nil {

@@ -68,6 +68,12 @@ func TestReturningShowDiscoversNewSeason(t *testing.T) {
 					t.Fatalf("fresh reads fetched %d times", f.calls)
 				}
 				now = now.Add(time.Minute)
+				// The stale read serves the stored seasons and refreshes the
+				// show behind it.
+				if _, err := c.Children(ctx, key); err != nil {
+					t.Fatal(err)
+				}
+				c.WaitRefreshes()
 			}
 			got, err := c.Children(ctx, key)
 			if err != nil {

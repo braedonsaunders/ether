@@ -205,6 +205,37 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) ([]byte, er
 }
 
 func (c *Client) doWithRetry(ctx context.Context, full, etag string, cfg clientSettings) (body []byte, newETag string, notModified bool, err error) {
+	if c.brk.open(time.Now()) {
+		return nil, "", false, ErrUnavailable
+	}
+	body, newETag, notModified, err = c.doAttempts(ctx, full, etag, cfg)
+	switch {
+	case err != nil && ctx.Err() != nil:
+		// The caller gave up; that says nothing about TMDB.
+	case err != nil && !errors.Is(err, core.ErrNotFound) && retryableFailure(err):
+		var he *HTTPError
+		if errors.As(err, &he) {
+			// Transport failures were counted per attempt; an exhausted
+			// 429/5xx ladder counts once.
+			c.brk.failure(time.Now())
+		}
+	default:
+		// A definite answer (data, 304, 404, 401) proves TMDB is reachable.
+		c.brk.success()
+	}
+	return body, newETag, notModified, err
+}
+
+// retryableFailure reports transport errors and exhausted 429/5xx answers.
+func retryableFailure(err error) bool {
+	var he *HTTPError
+	if errors.As(err, &he) {
+		return he.StatusCode == http.StatusTooManyRequests || he.StatusCode >= 500
+	}
+	return true
+}
+
+func (c *Client) doAttempts(ctx context.Context, full, etag string, cfg clientSettings) (body []byte, newETag string, notModified bool, err error) {
 	var lastErr error
 	backoff := 500 * time.Millisecond
 	for attempt := 0; attempt <= c.opts.maxRetries; attempt++ {
@@ -229,6 +260,9 @@ func (c *Client) doWithRetry(ctx context.Context, full, etag string, cfg clientS
 			if ctx.Err() != nil {
 				return nil, "", false, ctx.Err()
 			}
+			// Every unreachable attempt counts, so an outage opens the
+			// breaker within the first request's retries.
+			c.brk.failure(time.Now())
 		} else {
 			b, rerr := io.ReadAll(io.LimitReader(resp.Body, (32<<20)+1))
 			resp.Body.Close()
@@ -254,7 +288,7 @@ func (c *Client) doWithRetry(ctx context.Context, full, etag string, cfg clientS
 					if ra, _ := retryafter.Parse(resp.Header.Get("Retry-After"), time.Now(), 0); ra > 0 {
 						wait = ra
 					}
-					if attempt < c.opts.maxRetries {
+					if attempt < c.opts.maxRetries && !c.brk.open(time.Now()) {
 						if err := sleepCtx(ctx, wait); err != nil {
 							return nil, "", false, err
 						}
@@ -266,7 +300,7 @@ func (c *Client) doWithRetry(ctx context.Context, full, etag string, cfg clientS
 				return nil, "", false, he
 			}
 		}
-		if attempt < c.opts.maxRetries {
+		if attempt < c.opts.maxRetries && !c.brk.open(time.Now()) {
 			if err := sleepCtx(ctx, backoff); err != nil {
 				return nil, "", false, err
 			}

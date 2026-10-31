@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -60,10 +61,42 @@ func (s *Server) titleVisible(u *core.User, t *core.Title) bool {
 	return s.visibility().TitleAllowed(u, t)
 }
 
+// metadataKeys parses a detail key. Numeric rating keys stay as they are.
+// A plex:// guid (More Ways to Watch keeps the discover identity and asks
+// this server for it) resolves through the local mapping. A variant part id
+// resolves to the title that owns that part, so a re-read of the part the
+// client just selected still shows the subtitle.
+func (s *Server) metadataKeys(ctx context.Context, raw string) ([]core.RatingKey, error) {
+	raw = strings.TrimSpace(raw)
+	if decoded, err := url.PathUnescape(raw); err == nil && decoded != "" {
+		raw = decoded
+	}
+	if strings.Contains(raw, "://") {
+		if s.d.PlexGUID == nil {
+			return nil, errors.New("no keys")
+		}
+		k, err := s.d.PlexGUID.ExactKey(ctx, raw)
+		if err != nil {
+			return nil, err
+		}
+		return []core.RatingKey{k}, nil
+	}
+	keys, err := parseKeys(raw)
+	if err != nil {
+		return nil, err
+	}
+	for i, k := range keys {
+		if mapped, rel, ok := s.partTitle(int64(k)); ok && rel != "" {
+			keys[i] = mapped
+		}
+	}
+	return keys, nil
+}
+
 func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pr := FromContext(ctx)
-	keys, err := parseKeys(chi.URLParam(r, "key"))
+	keys, err := s.metadataKeys(ctx, chi.URLParam(r, "key"))
 	if err != nil {
 		writeHTTPError(w, http.StatusNotFound)
 		return

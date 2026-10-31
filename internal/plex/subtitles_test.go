@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/langtag"
+	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/trackprefs"
 )
@@ -680,6 +682,103 @@ func assertSidecarDecision(t *testing.T, f *fixture, body, langCode, want string
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Fatalf("GET %s: %d %q", key, rec.Code, rec.Body.String())
 	}
+}
+
+// TestWaysToWatchSubtitleReread is the Apple TV discover path: search,
+// More Ways to Watch, then More › Subtitles. The detail is addressed by a
+// plex:// guid and by Play Version part ids (the 8×10^15 block and the
+// 9×10^15 ids the registry issues). The client PUTs with the plex.tv token
+// and allParts=1, then re-reads the guid, the rating key, and the part id.
+func TestWaysToWatchSubtitleReread(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	pb.info = estimateInfo
+	subs := newFakeSubtitles()
+	subs.cache(fightClub.Key, sidecar("es", "ether-subtitle:cached-es"))
+	subs.files["ether-subtitle:cached-es"] = spanishSidecarSRT
+	f.srv.d.Subtitles = subs
+
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	rules := trackprefs.Default()
+	rules.SubtitleMode = "off"
+	if err := prefs.PutRules(context.Background(), ownerUser.ID, rules); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.d.TrackPreferences = prefs
+
+	const guid = "plex://movie/5d77688123d5a3001f4ed3df"
+	if _, err := db.Exec(`INSERT INTO plexguid_mappings(rating_key, guid, checked_at) VALUES(?,?,?)`, int64(fightClub.Key), guid, time.Now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	pg := plexguid.New(db, plexguid.Options{})
+	t.Cleanup(func() { pg.Close() })
+	f.srv.d.PlexGUID = pg
+
+	const plexToken = "plex-tv-user-token"
+	f.srv.d.Auth.(*fakeAuth).users[plexToken] = ownerUser
+	hdr := append([]string{"X-Plex-Token", plexToken}, appleTV...)
+
+	key := fightClub.Key.String()
+	meta := f.get(t, "/library/metadata/"+key, hdr...)
+	if meta.Code != http.StatusOK {
+		t.Fatalf("detail: %d %s", meta.Code, meta.Body.String())
+	}
+	esID := subtitleChoice(subtitleTags(meta.Body.String()), "spa", true)
+	if esID == "" {
+		t.Fatalf("spanish srt missing from the discover detail: %s", meta.Body.String())
+	}
+	variant := variantPartRE.FindStringSubmatch(meta.Body.String())
+	if variant == nil {
+		t.Fatalf("variant part id missing:\n%s", meta.Body.String())
+	}
+	guidPath := "/library/metadata/" + url.PathEscape(guid)
+
+	put := func(partID string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/library/parts/"+partID+"?subtitleStreamID="+esID+"&allParts=1", nil)
+		req.RemoteAddr = "192.168.1.50:51000"
+		for i := 0; i+1 < len(hdr); i += 2 {
+			req.Header.Set(hdr[i], hdr[i+1])
+		}
+		rec := httptest.NewRecorder()
+		f.srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("PUT part %s: %d %s", partID, rec.Code, rec.Body.String())
+		}
+	}
+	assertSpanish := func(path string) {
+		t.Helper()
+		rec := f.get(t, path, hdr...)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, rec.Code, rec.Body.String())
+		}
+		chosen := selectedTag(subtitleTags(rec.Body.String()))
+		if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `languageCode="spa"`) {
+			t.Fatalf("GET %s did not mark Spanish selected: %q", path, chosen)
+		}
+	}
+
+	// A different title's part must not take the stream.
+	put(alien.Key.String())
+	if chosen := selectedTag(subtitleTags(f.get(t, "/library/metadata/"+key, hdr...).Body.String())); chosen != "" {
+		t.Fatalf("cross-title part stored a selection: %s", chosen)
+	}
+
+	// Unregistered id in the 8×10^15 block: the stream id names the title.
+	put("8000000000000001")
+	assertSpanish("/library/metadata/" + key)
+	assertSpanish(guidPath)
+
+	// Registered variant part, then the Auto part. Re-read the part id itself
+	// and the plex:// guid the discover row keeps.
+	put(variant[1])
+	assertSpanish("/library/metadata/" + key)
+	assertSpanish("/library/metadata/" + variant[1])
+	assertSpanish(guidPath)
+
+	put(key)
+	assertSpanish("/library/metadata/" + key)
+	assertSpanish(guidPath)
 }
 
 func TestDetailDoesNotDownloadSidecars(t *testing.T) {

@@ -59,7 +59,13 @@ type ServiceDeps struct {
 	// of browsing titles.
 	CountBrowsable func(context.Context, core.MediaType) (int, error)
 	// CreditItems enumerates cached credit-title keys without browsing or hydration.
-	CreditItems   func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
+	CreditItems func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
+	// PeopleIndex lists credited people with a name word starting with every
+	// term, most credited first. PersonCredits lists a person's most popular
+	// credited titles of the given types. With both, people searches use the
+	// name index instead of walking every credited title. Optional.
+	PeopleIndex   func(context.Context, []string, int) ([]PersonCandidate, error)
+	PersonCredits func(context.Context, int64, []core.MediaType, int) ([]core.RatingKey, error)
 	AiredEpisodes func(context.Context, core.RatingKey, int, int) (core.Page, error)
 	AddedTimes    func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
 	// RecentAir is the indexed date-added window. Nil keeps the catalogue scan.
@@ -250,6 +256,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		if q.Sort == "" {
 			q.Sort = core.SortPopularity
 			q.Desc = true
+		}
+		if q.AdjacentTo == 0 && q.StartAt == 0 && q.Limit > 0 {
+			return s.rootWindow(ctx, v, device, q)
 		}
 		all := make([]core.Title, 0)
 		inner := q
@@ -967,6 +976,54 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 	}
 	return core.Page{Items: out[start:end], Total: total}, nil
 }
+
+// rootWindow answers a bounded page across every library (Swiftfin's and
+// Infuse's cross-library "Recently Added"): each library returns only its
+// own first offset+limit titles in the requested order, from its indexed
+// page, and the windows are merged. The old path listed every title of
+// every library and sorted them in memory.
+func (s *Service) rootWindow(ctx context.Context, v *core.User, device core.Device, q frontend.ItemQuery) (core.Page, error) {
+	inner := q
+	inner.Offset = 0
+	inner.Limit = max(q.Offset, 0) + q.Limit
+	all := make([]core.Title, 0, inner.Limit*2)
+	total := 0
+	for _, lib := range s.libraries() {
+		if !SectionAllowed(v, lib.ID) {
+			continue
+		}
+		// Ask each library only for the requested types it can hold, so its
+		// page is one indexed catalogue page.
+		libQuery := inner
+		if len(q.Types) > 0 {
+			libQuery.Types = nil
+			for _, typ := range q.Types {
+				if typ == lib.Type || (lib.Type == core.TypeShow && (typ == core.TypeSeason || typ == core.TypeEpisode)) {
+					libQuery.Types = append(libQuery.Types, typ)
+				}
+			}
+			if len(libQuery.Types) == 0 {
+				continue
+			}
+		}
+		page, err := s.LibraryItems(ctx, v, device, strconv.Itoa(lib.ID), libQuery)
+		if err != nil {
+			return core.Page{}, err
+		}
+		all = append(all, page.Items...)
+		total += page.Total
+	}
+	if err := s.sortTitles(ctx, all, q); err != nil {
+		return core.Page{}, err
+	}
+	start := min(max(q.Offset, 0), len(all))
+	end := min(start+q.Limit, len(all))
+	return core.Page{Items: all[start:end], Total: total}, nil
+}
+
+// searchWindowMin is the smallest candidate window a search reads.
+const searchWindowMin = 100
+
 func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.Device, query string, q frontend.ItemQuery) (frontend.SearchPage, error) {
 	v, err := s.viewer(ctx, viewer)
 	if err != nil {
@@ -995,7 +1052,10 @@ func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.D
 		return frontend.SearchPage{Continuation: frontend.ContinuationUnknown}, nil
 	}
 	end := min(offset+limit, 1000)
-	candidates, err := s.d.Search.Find(ctx, v, query, types, 1000)
+	// The candidate window grows with the page asked for, so a first page
+	// of search results does not load and hydrate a thousand titles.
+	window := min(max(2*end, searchWindowMin), 1000)
+	candidates, err := s.d.Search.Find(ctx, v, query, types, window)
 	if err != nil {
 		return frontend.SearchPage{}, err
 	}

@@ -159,24 +159,25 @@ type run struct {
 	rtx          bool
 	rtxConfirmed atomic.Bool
 
-	seq       int
-	startSeg  int
-	spec      runSpec
-	proc      Process
-	watchWork *encoderWork
-	stopWork  *encoderWork
-	hw        bool
-	maxDone   int // last segment finished (DASH: on every track)
-	produced  int // segments finished (DASH: on the slowest track)
-	finished  bool
-	stopped   bool // stopped deliberately, not a failure
-	paused    bool
-	err       error
-	stderr    *tailBuffer
-	started   time.Time
-	mode      SegMode // plan mode this run produces
-	planEnd   int     // first segment NOT produced by this run (mode change); -1 none
-	track     int     // session track (HLS rung / DASH video rep) encoded
+	seq        int
+	startSeg   int
+	spec       runSpec
+	proc       Process
+	watchWork  *encoderWork
+	stopWork   *encoderWork
+	hw         bool
+	maxDone    int // last segment finished (DASH: on every track)
+	produced   int // segments finished (DASH: on the slowest track)
+	finished   bool
+	stopped    bool // stopped deliberately, not a failure
+	paused     bool
+	pausedDone int // maxDone when Pause was applied; later growth means it did not hold
+	err        error
+	stderr     *tailBuffer
+	started    time.Time
+	mode       SegMode // plan mode this run produces
+	planEnd    int     // first segment NOT produced by this run (mode change); -1 none
+	track      int     // session track (HLS rung / DASH video rep) encoded
 
 	progressMu sync.Mutex
 	progress   Progress

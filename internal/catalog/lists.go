@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
 
@@ -55,6 +55,13 @@ func limitTitles(items []core.Title, limit int) []core.Title {
 	}
 	return items
 }
+
+// A search waits at most searchRemoteWait for TMDB when the mirror has too
+// few matches, and searchRemoteGrace when it already has enough.
+const (
+	searchRemoteWait  = time.Second
+	searchRemoteGrace = 150 * time.Millisecond
+)
 
 // Search reaches all of TMDB; matched titles join the browsable set.
 func (c *Catalog) Search(ctx context.Context, query string, types []core.MediaType, limit int) ([]core.Title, error) {
@@ -159,15 +166,15 @@ func (c *Catalog) searchTitlesOpts(ctx context.Context, query string, types []co
 	}
 	// Local first (instant, works offline). Seasons and episodes are library
 	// keyword hits; the remote catalogue only knows movies and shows.
-	like := store.Like(store.DialectOf(c.db))
+	match, localArgs := c.titleMatch("", query)
 	var local []core.Title
 	var localErr error
 	localSQL := `SELECT ` + titleCols + ` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
-		AND (title ` + like + ` ? ESCAPE '\' OR original_title ` + like + ` ? ESCAPE '\') ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
-	localArgs := []any{"%" + escapeLike(query) + "%", "%" + escapeLike(query) + "%", year, year, limit * 2}
+		AND ` + match + ` ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
+	localArgs = append(localArgs, year, year, limit*2)
 	if unfiltered {
 		localSQL = `SELECT ` + titleCols + ` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
-			AND adult=0 AND (title ` + like + ` ? ESCAPE '\' OR original_title ` + like + ` ? ESCAPE '\') ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
+			AND adult=0 AND ` + match + ` ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
 		local, localErr = c.queryTitlesUnfiltered(ctx, localSQL, localArgs...)
 	} else {
 		local, localErr = c.queryTitles(ctx, localSQL, localArgs...)
@@ -196,54 +203,70 @@ func (c *Catalog) searchTitlesOpts(ctx context.Context, query string, types []co
 	if c.tmdb() == nil || (!wantMovie && !wantTV) {
 		return localAnswer()
 	}
-	var remote []core.Title
-	// Page through TMDB until we have enough or run out (max 3 pages).
-	if wantMovie && wantTV {
-		for page := 1; page <= 3 && len(remote) < limit*2; page++ {
-			res, err := c.tmdb().SearchMulti(ctx, query, page)
+	// TMDB widens the search beyond the mirror. It runs detached and is
+	// waited for briefly: a search never waits long on the provider, and
+	// results that arrive late are already in the mirror for the next one.
+	fetch := func(ctx context.Context) (any, error) {
+		var remote []core.Title
+		if wantMovie && wantTV {
+			for page := 1; page <= 3 && len(remote) < limit*2; page++ {
+				res, err := c.tmdb().SearchMulti(ctx, query, page)
+				if err != nil {
+					if page == 1 {
+						return nil, err
+					}
+					break
+				}
+				for _, r := range res.Results {
+					switch r.MediaType {
+					case "movie":
+						remote = append(remote, c.movieToTitle(ctx, r.AsMovie()))
+					case "tv":
+						remote = append(remote, c.tvToTitle(ctx, r.AsTV()))
+					}
+				}
+				if page >= res.TotalPages {
+					break
+				}
+			}
+		} else if wantMovie {
+			res, err := c.tmdb().SearchMovies(ctx, query, 1)
 			if err != nil {
-				if page == 1 && len(out) == 0 {
-					return localAnswer()
-				}
-				break
+				return nil, err
 			}
-			for _, r := range res.Results {
-				switch r.MediaType {
-				case "movie":
-					remote = append(remote, c.movieToTitle(ctx, r.AsMovie()))
-				case "tv":
-					remote = append(remote, c.tvToTitle(ctx, r.AsTV()))
-				}
-			}
-			if page >= res.TotalPages {
-				break
-			}
-		}
-	} else if wantMovie {
-		res, err := c.tmdb().SearchMovies(ctx, query, 1)
-		if err != nil && len(out) == 0 {
-			return localAnswer()
-		}
-		if err == nil {
 			for _, m := range res.Results {
 				remote = append(remote, c.movieToTitle(ctx, m))
 			}
-		}
-	} else if wantTV {
-		res, err := c.tmdb().SearchTV(ctx, query, 1)
-		if err != nil && len(out) == 0 {
-			return localAnswer()
-		}
-		if err == nil {
+		} else if wantTV {
+			res, err := c.tmdb().SearchTV(ctx, query, 1)
+			if err != nil {
+				return nil, err
+			}
 			for _, s := range res.Results {
 				remote = append(remote, c.tvToTitle(ctx, s))
 			}
 		}
-	}
-	if len(remote) > 0 {
-		if err := c.upsertMany(ctx, remote, upsertOpts{browsable: true}); err != nil {
-			return nil, err
+		if len(remote) > 0 {
+			if err := c.upsertMany(ctx, remote, upsertOpts{browsable: true}); err != nil {
+				return nil, err
+			}
 		}
+		return remote, nil
+	}
+	wait := searchRemoteWait
+	if len(out) >= limit {
+		// The mirror already answers the search; take TMDB's results only if
+		// they are immediate.
+		wait = searchRemoteGrace
+	}
+	kinds := fmt.Sprintf("%t%t", wantMovie, wantTV)
+	got, err := c.hydrateValue(ctx, "search:"+kinds+":"+strconv.Itoa(limit)+":"+query, wait, fetch)
+	if err != nil {
+		// TMDB is slow, failing or still answering: the mirror's matches stand.
+		return localAnswer()
+	}
+	remote, _ := got.([]core.Title)
+	if len(remote) > 0 {
 		// Reload so callers get hydrated/genres-preserved rows.
 		for _, t := range remote {
 			if st, err := c.loadByKey(ctx, t.Key); err == nil {

@@ -35,13 +35,21 @@ func (s *Session) throttleLocked() {
 	if r.produced == 0 {
 		ahead = 0
 	}
+	// SIGSTOP on the ffmpeg pid does not always stop a VideoToolbox encode.
+	// One extra segment can land after the signal; a run that keeps
+	// publishing has to be stopped or it reaches the eviction window.
+	if r.paused && r.maxDone > r.pausedDone+2 {
+		s.stopForLeadLocked(r, ahead)
+		return
+	}
 	switch {
 	case !r.paused && ahead > limit:
 		if !s.noPause {
 			err := r.proc.Pause()
 			if err == nil {
 				r.paused = true
-				s.log.Debug("throttle: paused ffmpeg", "ahead", ahead)
+				r.pausedDone = r.maxDone
+				s.log.Debug("throttle: paused ffmpeg", "ahead", ahead, "playhead", s.lastReq)
 				return
 			}
 			if !errors.Is(err, ErrPauseUnsupported) {
@@ -59,6 +67,29 @@ func (s *Session) throttleLocked() {
 			s.log.Debug("throttle: resumed ffmpeg", "ahead", ahead)
 		}
 	}
+}
+
+// stopForLeadLocked stops a run that got ahead of the playhead and resumes
+// inside the throttle window, not at the encoder head.
+func (s *Session) stopForLeadLocked(r *run, ahead int) {
+	resume := s.lastReq + s.aheadLimit()
+	if r != nil && r.maxDone+1 < resume {
+		resume = r.maxDone + 1
+	}
+	if resume < 0 {
+		resume = 0
+	}
+	s.stopRunLocked()
+	s.resumeAt = resume
+	s.log.Info("transcode lead capped", "ahead", ahead, "playhead", s.lastReq, "resumeAt", resume)
+}
+
+// leadOverLocked reports that this run has published past the throttle window.
+func (s *Session) leadOverLocked(r *run) bool {
+	if s.m == nil || s.m.opts.maxAhead <= 0 || s.segDur <= 0 || r == nil || r.produced == 0 {
+		return false
+	}
+	return r.maxDone-s.lastReq > s.aheadLimit()
 }
 
 // aheadLimit is how many segments ffmpeg may run ahead of the player.
@@ -386,12 +417,11 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	}
 	r.proc = proc
 	s.cur = r
-	if s.isDASH() {
-		// A prior seek may have ended on an empty trailing audio/video
-		// fragment. Its EOF is not a bound on another rendition: the new
-		// run must finish and publish its own rounded-up final alias.
-		s.endSeg = -1
-	}
+	// A previous run's EOF does not bound the replacement. The copy of a
+	// short title can finish before a governor clamp restarts at an earlier
+	// segment, and a DASH seek can end on an empty trailing fragment. The
+	// new run publishes its own end.
+	s.endSeg = -1
 	s.deliveredCount = 0
 	runLog.Info("ffmpeg started", "segment", seg, "at", spec.Start, "kind", s.decision.Kind,
 		"videoCopy", s.decision.VideoCopy, "audioCopy", s.decision.AudioCopy, "hw", r.hw)

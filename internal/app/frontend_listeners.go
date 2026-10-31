@@ -25,6 +25,7 @@ import (
 // protocol instances. A failed bind is retained as status, not a process error.
 type frontendListeners struct {
 	log               *slog.Logger
+	perf              *perfObserver
 	failures401       map[frontend.Protocol]*faillog.Tracker
 	mu                sync.Mutex
 	opMu              sync.Mutex
@@ -378,6 +379,10 @@ func connectionURLs(address, prefix string, interfaces []net.Addr) []string {
 // observe aggregates authentication failures per protocol, across mounts. Request
 // paths, credentials and client identifiers never enter failure summaries.
 func (m *frontendListeners) observe(id frontend.Protocol, next http.Handler) http.Handler {
+	return m.perf.wrap(string(id), m.observeFailures(id, next))
+}
+
+func (m *frontendListeners) observeFailures(id frontend.Protocol, next http.Handler) http.Handler {
 	if next == nil || m.log == nil || id == "plex" {
 		return next
 	}

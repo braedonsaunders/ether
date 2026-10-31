@@ -1023,6 +1023,71 @@ func TestForcedKeyCapDoesNotChainAheadOfPlayhead(t *testing.T) {
 	}
 }
 
+// A resume seek stays the playhead after the encoder has run past it.
+// Fetching the encoder head must not evict the segment the client is on.
+func TestEncoderHeadFetchKeepsTheResumeSegment(t *testing.T) {
+	fr := newFakeRunner()
+	fr.segDelay = 20 * time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	s := startSession(t, m, remuxRequest(t, "resume-head", time.Hour))
+	if r := get(t, s, 175); r.Code != 200 {
+		t.Fatalf("segment 175: %d %s", r.Code, r.Body.String())
+	}
+	waitFor(t, "encoder throttled past the resume point", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.cur != nil && s.cur.paused && s.cur.maxDone > 175+s.aheadLimit()
+	})
+	s.mu.Lock()
+	head := s.cur.maxDone
+	s.mu.Unlock()
+	if r := get(t, s, head); r.Code != 200 {
+		t.Fatalf("segment %d: %d %s", head, r.Code, r.Body.String())
+	}
+	if _, err := os.Stat(s.segPath(175)); err != nil {
+		t.Fatalf("resume segment evicted: %v", err)
+	}
+	s.mu.Lock()
+	playhead := s.lastReq
+	s.mu.Unlock()
+	if playhead > 175+s.restartLimit() {
+		t.Fatalf("playhead = %d, encoder head moved it", playhead)
+	}
+}
+
+// Pause that does not stop the encoder used to leave the lead at the
+// encoder head. The next poll stops the run and resumes inside the window.
+func TestPauseThatKeepsWritingStopsAtThePlayhead(t *testing.T) {
+	m := newTestManager(t, newFakeRunner(), config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	done := make(chan struct{})
+	close(done)
+	p := &fakeProc{done: done, kill: make(chan struct{}), paused: true}
+	s := &Session{
+		m:        m,
+		log:      slog.New(slog.DiscardHandler),
+		segDur:   4 * time.Second,
+		info:     core.MediaInfo{Duration: 90 * time.Minute},
+		lastReq:  359,
+		resumeAt: -1,
+		changed:  make(chan struct{}),
+		cur: &run{
+			startSeg: 359, maxDone: 639, produced: 280,
+			paused: true, pausedDone: 390, proc: p,
+		},
+	}
+	s.mu.Lock()
+	s.throttleLocked()
+	resume, cur := s.resumeAt, s.cur
+	s.mu.Unlock()
+	s.watchers.Wait()
+	if cur != nil {
+		t.Fatal("encoder kept writing after pause failed to hold")
+	}
+	if resume != 359+s.aheadLimit() {
+		t.Fatalf("resumeAt = %d, want %d", resume, 359+s.aheadLimit())
+	}
+}
+
 type holdResponse struct {
 	hdr  http.Header
 	code int

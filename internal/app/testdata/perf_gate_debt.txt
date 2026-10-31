@@ -1,0 +1,54 @@
+# Endpoints that scale with the library (TestPerformanceGate), as measured
+# when the gate was introduced (54k vs 540k synthetic rows). One
+# "client | step" per line. Remove a line when its endpoint is fixed; never
+# add one for new code: a new path must stay flat as the library grows.
+plex-appletv | /hubs/promoted
+plex-appletv | /library/onDeck
+plex-appletv | /hubs/sections/movies
+plex-appletv | /hubs/sections/shows
+plex-appletv | movies all titleSort p1
+plex-appletv | movies all titleSort deep
+plex-appletv | movies all addedAt
+plex-appletv | movies all rating
+plex-appletv | movies genre filter list
+plex-appletv | shows all titleSort p1
+plex-appletv | /hubs/search star
+infuse-jellyfin | /UserItems/Resume
+infuse-jellyfin | /Shows/NextUp
+infuse-jellyfin | /Items/Latest movies
+infuse-jellyfin | /Items/Latest shows
+infuse-jellyfin | movies p1 SortName
+infuse-jellyfin | movies deep SortName
+infuse-jellyfin | movies p1 DateCreated
+infuse-jellyfin | series p1 SortName
+infuse-jellyfin | personal library p1
+infuse-jellyfin | season Episodes
+infuse-jellyfin | search items star
+emby-sdk | /Users/{id}/Items/Resume
+emby-sdk | /Shows/NextUp
+emby-sdk | /Users/{id}/Items/Latest
+emby-sdk | movies p1
+emby-sdk | movies deep
+emby-sdk | series p1
+emby-sdk | search
+silo-appletv | home/sections
+silo-appletv | catalog movies title
+silo-appletv | catalog series title
+stremio | catalog movies
+stremio | catalog movies skip=1000
+stremio | catalog movies genre
+stremio | catalog series
+stremio | catalog continue
+stremio | catalog recent
+stremio | catalog recommendations
+stremio | catalog search
+stremio | meta series
+console | dashboard
+console | catalog browse movies
+console | catalog browse deep
+console | catalog facets genre
+console | catalog facets decade
+console | catalog search
+console | viewer home
+console | collections
+console | layout
