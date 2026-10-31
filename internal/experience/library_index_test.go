@@ -50,6 +50,52 @@ func TestIndexedLibraryPagePushesOffsetIntoOneBrowse(t *testing.T) {
 	}
 }
 
+func TestIndexedLibraryPagePushesRecursiveSortNameIntoSQL(t *testing.T) {
+	viewer := &core.User{ID: 1, IsOwner: true}
+	calls := 0
+	var got core.BrowseQuery
+	s := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 1, Type: core.TypeMovie}, {ID: 2, Type: core.TypeShow}}, Visibility: Visibility{SectionFor: func(typ core.MediaType) (int, bool) {
+		if typ == core.TypeShow {
+			return 2, true
+		}
+		return 1, true
+	}}, PageExclusions: func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string) {
+		return nil, nil, nil, ""
+	}, Browse: func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
+		calls++
+		got = q
+		return core.Page{Items: []core.Title{{Key: core.MovieKey(1), Type: q.Filter.Type, Title: "A"}}, Total: 40}, nil
+	}, Grandchildren: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
+		t.Fatal("recursive movie and series pages must not expand episodes")
+		return nil, nil
+	}}}
+	q := frontend.ItemQuery{Recursive: true, Types: []core.MediaType{core.TypeMovie}, Sort: core.SortTitle, Limit: 50}
+	page, err := s.LibraryItems(context.Background(), viewer, core.Device{}, "1", q)
+	if err != nil || calls != 1 || got.Offset != 0 || got.Limit != 50 || got.Sort != core.SortTitle || got.Filter.Type != core.TypeMovie || page.Total != 40 {
+		t.Fatalf("movie calls=%d query=%+v page=%+v err=%v", calls, got, page, err)
+	}
+	q.Types = []core.MediaType{core.TypeShow}
+	page, err = s.LibraryItems(context.Background(), viewer, core.Device{}, "2", q)
+	if err != nil || calls != 2 || got.Filter.Type != core.TypeShow || got.Limit != 50 || page.Items[0].Type != core.TypeShow {
+		t.Fatalf("series calls=%d query=%+v page=%+v err=%v", calls, got, page, err)
+	}
+	q.Types = []core.MediaType{core.TypeEpisode}
+	expanded := 0
+	s.d.Grandchildren = func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
+		expanded++
+		return []core.Title{{Key: core.EpisodeKey(9, 1, 1), Type: core.TypeEpisode}}, nil
+	}
+	s.d.Children = func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) { return nil, nil }
+	s.d.Browse = func(_ context.Context, q core.BrowseQuery) (core.Page, error) {
+		calls++
+		return core.Page{Items: []core.Title{{Key: core.ShowKey(9), Type: core.TypeShow}}, Total: 1}, nil
+	}
+	page, err = s.LibraryItems(context.Background(), viewer, core.Device{}, "2", q)
+	if err != nil || expanded != 1 || page.Total != 1 || page.Items[0].Type != core.TypeEpisode {
+		t.Fatalf("episodes expanded=%d page=%+v err=%v", expanded, page, err)
+	}
+}
+
 func TestIndexedLibraryPageFallsBackWhenARowIsHidden(t *testing.T) {
 	viewer := &core.User{ID: 1, IsOwner: true}
 	calls := 0

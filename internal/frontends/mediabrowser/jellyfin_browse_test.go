@@ -86,6 +86,37 @@ func TestJellyfinListShellMatchesRecordedMovieShape(t *testing.T) {
 	requireJellyfinSpec(t, http.MethodGet, "/Items", w)
 }
 
+func TestJellyfinSortNameListOmitsUnrequestedFacts(t *testing.T) {
+	title := frontend.Title{Key: 5, Type: "movie", Title: "Arrival", SortTitle: "arrival", Year: 2016, Summary: strings.Repeat("overview ", 80), OriginalTitle: "Arrival Original", Tagline: "A tagline", Keywords: []string{"linguist", "alien"}, Countries: []string{"United States"}, Genres: []string{"Drama"}, Runtime: time.Hour}
+	exp := frontendtest.Experience{LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+		return frontend.Page{Items: []frontend.Title{title}, Total: 1}, nil
+	}}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?IncludeItemTypes=Movie&Fields=SortName&Recursive=true&SortBy=SortName&Limit=50", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var body struct{ Items []map[string]any }
+	if json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 {
+		t.Fatal(w.Body.String())
+	}
+	item := body.Items[0]
+	if item["SortName"] != "arrival" || item["Name"] != "Arrival" {
+		t.Fatal(item["SortName"], item["Name"])
+	}
+	for _, key := range []string{"Overview", "Genres", "GenreItems", "Taglines", "Tags", "ProductionLocations", "OriginalTitle", "ProviderIds", "MediaSources"} {
+		if _, ok := item[key]; ok {
+			t.Errorf("list kept %s", key)
+		}
+	}
+	if len(w.Body.Bytes()) > 2500 {
+		t.Fatalf("sortname row is %d bytes", len(w.Body.Bytes()))
+	}
+}
+
 func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 	exp := frontendtest.Experience{
 		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {

@@ -324,7 +324,7 @@ func (i *instance) browseRoutes() error {
 				return
 			}
 			items := make([]any, 0, len(page))
-			images := i.gridImagesFor(r, page)
+			images := i.gridListImages(r, page)
 			ratingFacts := i.pageRatingFacts(r, v, page)
 			paths := i.virtualPaths(r, v, keys)
 			if fieldSet(r)["mediasources"] {
@@ -701,7 +701,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 		return
 	}
 	items := make([]any, 0, len(page.Items))
-	images := i.gridImagesFor(r, page.Items)
+	images := i.gridListImages(r, page.Items)
 	ratingFacts := i.pageRatingFacts(r, v, page.Items)
 	paths := i.virtualPaths(r, v, keys)
 	r = i.pageEditions(r, v, keys)

@@ -717,6 +717,21 @@ func (i *instance) jellyfinListFields(r *http.Request, item map[string]any, titl
 		delete(item, "Genres")
 		delete(item, "GenreItems")
 	}
+	if !fields["taglines"] {
+		delete(item, "Taglines")
+	}
+	if !fields["tags"] {
+		delete(item, "Tags")
+	}
+	if !fields["productionlocations"] {
+		delete(item, "ProductionLocations")
+	}
+	if !fields["originaltitle"] {
+		delete(item, "OriginalTitle")
+	}
+	// Blurhash maps repeat the image grant as a key. Library rows keep the
+	// empty shell Jellyfin sends and leave the hash for item detail.
+	item["ImageBlurHashes"] = map[string]any{}
 	if title.Type == "season" && !fields["mediasources"] {
 		delete(item, "RunTimeTicks")
 	}

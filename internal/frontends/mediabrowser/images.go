@@ -11,21 +11,27 @@ import (
 // gridImages issues bounded, policy-checked grants without loading item
 // details or resolving playback versions. An unavailable batch is omitted.
 func (i *instance) gridImages(r *http.Request, keys []frontend.RatingKey) map[frontend.RatingKey]map[string]any {
-	return i.gridImageRows(r, nil, keys)
+	return i.gridImageRows(r, nil, keys, nil)
 }
 
 func (i *instance) gridImagesFor(r *http.Request, titles []frontend.Title) map[frontend.RatingKey]map[string]any {
-	return i.gridImageRows(r, titles, nil)
+	return i.gridImageRows(r, titles, nil, nil)
 }
 
-func (i *instance) gridImageRows(r *http.Request, titles []frontend.Title, keys []frontend.RatingKey) map[frontend.RatingKey]map[string]any {
+// gridListImages signs the poster a library row shows. Logos, backdrops and
+// thumbs stay off the page so fifty SortName rows do not carry every grant.
+func (i *instance) gridListImages(r *http.Request, titles []frontend.Title) map[frontend.RatingKey]map[string]any {
+	return i.gridImageRows(r, titles, nil, []string{frontend.ImagePoster, frontend.ImageStill})
+}
+
+func (i *instance) gridImageRows(r *http.Request, titles []frontend.Title, keys []frontend.RatingKey, kinds []string) map[frontend.RatingKey]map[string]any {
 	out := make(map[frontend.RatingKey]map[string]any)
 	token := authhdr.MediaBrowserToken(r)
 	if len(titles) > 0 {
 		if signer, ok := i.host.ImageGrants.(frontend.ImagePageSigner); ok {
 			for start := 0; start < len(titles); start += 50 {
 				end := min(start+50, len(titles))
-				rows, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{Credential: token, Device: device(r), Titles: titles[start:end], Kinds: []string{frontend.ImagePoster, frontend.ImageStill, frontend.ImageBackdrop, frontend.ImageLogo, frontend.ImageThumb, frontend.ImageBanner}})
+				rows, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{Credential: token, Device: device(r), Titles: titles[start:end], Kinds: gridKinds(kinds)})
 				if err != nil {
 					continue
 				}
@@ -46,13 +52,20 @@ func (i *instance) gridImageRows(r *http.Request, titles []frontend.Title, keys 
 	}
 	for start := 0; start < len(keys); start += 50 {
 		end := min(start+50, len(keys))
-		rows, err := batch.IssueBatch(r.Context(), frontend.ImageBatchRequest{Credential: token, Device: device(r), Items: keys[start:end], Kinds: []string{frontend.ImagePoster, frontend.ImageStill, frontend.ImageBackdrop, frontend.ImageLogo, frontend.ImageThumb, frontend.ImageBanner}})
+		rows, err := batch.IssueBatch(r.Context(), frontend.ImageBatchRequest{Credential: token, Device: device(r), Items: keys[start:end], Kinds: gridKinds(kinds)})
 		if err != nil {
 			continue
 		}
 		i.collectGridImages(out, rows)
 	}
 	return out
+}
+
+func gridKinds(kinds []string) []string {
+	if len(kinds) > 0 {
+		return kinds
+	}
+	return []string{frontend.ImagePoster, frontend.ImageStill, frontend.ImageBackdrop, frontend.ImageLogo, frontend.ImageThumb, frontend.ImageBanner}
 }
 
 func (i *instance) collectGridImages(out map[frontend.RatingKey]map[string]any, rows []frontend.ImageBatchItem) {

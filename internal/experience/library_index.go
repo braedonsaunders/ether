@@ -18,7 +18,7 @@ func (s *Service) indexedLibraryPage(ctx context.Context, v *core.User, library 
 	if s == nil || s.d.PageExclusions == nil || s.d.Browse == nil || library == nil || v == nil {
 		return core.Page{}, false, nil
 	}
-	if q.Recursive || q.Watched != nil || q.Favorite != nil || len(q.Types) > 0 || q.Season != nil || q.AdjacentTo != 0 || q.StartAt != 0 || q.Limit <= 0 {
+	if !indexedBrowseQuery(library, q) {
 		return core.Page{}, false, nil
 	}
 	keys, genres, keywords, maxRating := s.d.PageExclusions(ctx, v)
@@ -67,6 +67,24 @@ func (s *Service) indexedPageHolds(ctx context.Context, v *core.User, items []co
 		if err != nil || !ok {
 			return false
 		}
+	}
+	return true
+}
+
+// indexedBrowseQuery is a single catalogue page. A recursive movie library is
+// still that page: movies have no children. A recursive show library is not,
+// once the request can include seasons or episodes.
+func indexedBrowseQuery(library *Library, q frontend.ItemQuery) bool {
+	if library == nil || q.Watched != nil || q.Favorite != nil || q.Season != nil || q.AdjacentTo != 0 || q.StartAt != 0 || q.Limit <= 0 {
+		return false
+	}
+	for _, typ := range q.Types {
+		if typ != library.Type {
+			return false
+		}
+	}
+	if library.Type == core.TypeShow && q.Recursive && (len(q.Types) == 0 || containsMediaType(q.Types, core.TypeSeason) || containsMediaType(q.Types, core.TypeEpisode)) {
+		return false
 	}
 	return true
 }
