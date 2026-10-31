@@ -507,6 +507,9 @@ func (p *plexClient) discover(ctx context.Context) error {
 			continue
 		}
 		data, status, err := p.req(ctx, http.MethodGet, part, "sections", nil, "bytes=0-65535")
+		p.ratingKey = item.RatingKey
+		p.partKey = part
+		p.stop(ctx, "sections")
 		if err != nil {
 			last = err
 			continue
@@ -515,8 +518,6 @@ func (p *plexClient) discover(ctx context.Context) error {
 			last = fmt.Errorf("rating %s status %d %s", item.RatingKey, status, snippet(data))
 			continue
 		}
-		p.ratingKey = item.RatingKey
-		p.partKey = part
 		return nil
 	}
 	if last == nil {
@@ -556,6 +557,16 @@ func (p *plexClient) partFor(ctx context.Context, ratingKey string) (string, err
 	return "", fmt.Errorf("plex item has no part")
 }
 
+func (p *plexClient) stop(ctx context.Context, client string) {
+	q := url.Values{}
+	q.Set("ratingKey", p.ratingKey)
+	q.Set("key", "/library/metadata/"+p.ratingKey)
+	q.Set("state", "stopped")
+	q.Set("time", "1000")
+	q.Set("duration", "1000")
+	_, _, _ = p.req(ctx, http.MethodGet, "/:/timeline?"+q.Encode(), client, nil, "")
+}
+
 func (p *plexClient) explain(ctx context.Context) {
 	q := url.Values{}
 	q.Set("path", "/library/metadata/"+p.ratingKey)
@@ -584,6 +595,7 @@ func (p *plexClient) do(ctx context.Context, client, kind string) (string, error
 		return "browse", nil
 	}
 	if kind == "direct" {
+		defer p.stop(context.Background(), client)
 		body, status, err := p.req(ctx, http.MethodGet, p.partKey, client, nil, "bytes=0-65535")
 		if err != nil {
 			return "", err
