@@ -74,15 +74,15 @@ func TestLiveAdapterRewritesNestedResourcesToLazyCapability(t *testing.T) {
 		return ""
 	}
 	master := read("index.m3u8", "./")
-	if master.Code != 200 || strings.Contains(master.Body.String(), "source-token") || strings.Contains(master.Body.String(), "account-token") || strings.Contains(master.Body.String(), "/sessions/media/") {
+	if master.Code != 200 || strings.Contains(master.Body.String(), "source-token") || strings.Contains(master.Body.String(), "account-token") || strings.Contains(master.Body.String(), "/sessions/media/") || !strings.Contains(master.Body.String(), "X-Ether-Stream-Token=") {
 		t.Fatalf("master %d %q", master.Code, master.Body.String())
 	}
-	variantKey := firstURI(master.Body.String(), "./resource/")
+	variantKey, _, _ := strings.Cut(firstURI(master.Body.String(), "./resource/"), "?")
 	variant := read("resource/"+variantKey, "../")
-	if variant.Code != 200 || strings.Contains(variant.Body.String(), "source-token") || strings.Contains(variant.Body.String(), "account-token") {
+	if variant.Code != 200 || strings.Contains(variant.Body.String(), "source-token") || strings.Contains(variant.Body.String(), "account-token") || !strings.Contains(variant.Body.String(), "X-Ether-Stream-Token=") {
 		t.Fatalf("variant %d %q", variant.Code, variant.Body.String())
 	}
-	segmentKey := firstURI(variant.Body.String(), "../resource/")
+	segmentKey, _, _ := strings.Cut(firstURI(variant.Body.String(), "../resource/"), "?")
 	segment := read("resource/"+segmentKey, "../")
 	if segment.Code != 200 || segment.Body.String() != "media-bytes" {
 		t.Fatalf("segment %d %q", segment.Code, segment.Body.String())
