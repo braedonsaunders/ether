@@ -7,12 +7,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
+	"github.com/braedonsaunders/ether/internal/config"
 )
 
 // Handler is the owner's backup API, mounted behind the admin API's
@@ -22,7 +23,12 @@ import (
 //	POST /settings       change the schedule              owner, setup complete
 //	POST /               create a bundle now              owner, setup complete
 //	POST /export/{name}  {"password"} → .etherbackup      owner, setup complete
-//	POST /restore        stage an uploaded bundle (below)
+//	GET  /restore              guided restore: report, pending, one-click?
+//	POST /restore              stage an uploaded bundle (below)
+//	POST /restore/snapshot/{n} stage a bundle kept here     owner, setup complete
+//	POST /restore/apply/{id}   restore a staged bundle and restart
+//	POST /restore/undo         put back what the last restore replaced
+//	DELETE /restore/staged/{id}, DELETE /restore/report
 //
 // A bundle holds config.json, the database and the credential key that
 // unseals them, so it leaves the server only encrypted with a password the
@@ -36,8 +42,10 @@ import (
 // being restored from backup). An unencrypted bundle from before
 // encryption needs the signed-in owner and X-Ether-Backup-Legacy:
 // plaintext. Either way the bundle is only validated and staged in a new
-// directory; nothing replaces the running server until the operator
-// restarts Ether from that directory.
+// directory. On a standalone server apply then records a pending restore
+// and restarts: the next start swaps the staged files in (pending.go),
+// keeping the replaced ones for undo. A cluster node only stages: its
+// shared database is restored through a guided procedure.
 func (s *Service) Handler() http.Handler {
 	m := http.NewServeMux()
 	fail := func(w http.ResponseWriter, status int, code, msg string) {
@@ -152,10 +160,35 @@ func (s *Service) Handler() http.Handler {
 			panic(http.ErrAbortHandler)
 		}
 	})
-	m.HandleFunc("POST /restore", func(w http.ResponseWriter, r *http.Request) {
-		access, ok := admin.RequestAccess(r.Context())
-		if !ok {
+	// restoreAccess admits the owner, or anyone the admin API admits
+	// before setup completes (a fresh server restored from a backup).
+	restoreAccess := func(w http.ResponseWriter, r *http.Request) (admin.Access, bool) {
+		a, ok := admin.RequestAccess(r.Context())
+		if !ok || (!a.Owner && a.SetupComplete) {
 			fail(w, http.StatusForbidden, "owner_required", "sign in as the owner to restore a backup")
+			return a, false
+		}
+		return a, true
+	}
+	dataDir := filepath.Dir(s.configPath)
+	m.HandleFunc("GET /restore", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := restoreAccess(w, r); !ok {
+			return
+		}
+		report, e := ReadReport(dataDir)
+		if e != nil {
+			fail(w, http.StatusInternalServerError, "report", e.Error())
+			return
+		}
+		out := map[string]any{"oneClick": s.OneClick(), "report": report}
+		if p, _ := ReadPending(dataDir); p != nil {
+			out["pending"] = p
+		}
+		reply(w, out, nil)
+	})
+	m.HandleFunc("POST /restore", func(w http.ResponseWriter, r *http.Request) {
+		access, ok := restoreAccess(w, r)
+		if !ok {
 			return
 		}
 		// One restore at a time: each can take a few GB of disk and a
@@ -167,17 +200,11 @@ func (s *Service) Handler() http.Handler {
 		defer s.restoring.Unlock()
 		body := bufio.NewReaderSize(http.MaxBytesReader(w, r.Body, maxBundleFile+32<<20), 64<<10)
 		head, _ := body.Peek(len(encMagic))
-		dest := filepath.Join(filepath.Dir(s.configPath), "restored-"+time.Now().UTC().Format("20060102T150405.000000000"))
-		var e error
+		password := ""
 		if IsEncrypted(head) {
-			password, ok := backupPassword(r)
-			if !ok {
+			var ok bool
+			if password, ok = backupPassword(r); !ok {
 				fail(w, http.StatusBadRequest, "password_required", "enter the password the backup was downloaded with")
-				return
-			}
-			e = RestoreEncrypted(r.Context(), body, password, dest)
-			if errors.Is(e, ErrBadPassword) {
-				fail(w, http.StatusBadRequest, "bad_password", e.Error())
 				return
 			}
 		} else {
@@ -189,15 +216,113 @@ func (s *Service) Handler() http.Handler {
 				fail(w, http.StatusBadRequest, "legacy_confirm", "this is an unencrypted backup from an older version; confirm to restore it")
 				return
 			}
-			e = RestoreBundle(r.Context(), body, dest)
 		}
-		msg := "Validated restore staged. Stop Ether and start it with ETHER_DATA_DIR pointing to this directory."
-		if _, se := os.Stat(filepath.Join(dest, LogicalDumpFile)); se == nil {
-			msg = "Validated restore staged. Stop Ether and start it with ETHER_DATA_DIR pointing to this directory and ETHER_DATABASE_URL pointing to an empty PostgreSQL database (or none, for a standalone server); the data is imported on first start."
+		st, e := StageUpload(r.Context(), dataDir, body, password, uploadName(r))
+		if errors.Is(e, ErrBadPassword) {
+			fail(w, http.StatusBadRequest, "bad_password", e.Error())
+			return
 		}
-		reply(w, map[string]string{"path": dest, "message": msg}, e)
+		reply(w, st, e)
+	})
+	m.HandleFunc("POST /restore/snapshot/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if !ownerReady(w, r) {
+			return
+		}
+		if !s.restoring.TryLock() {
+			fail(w, http.StatusConflict, "busy", "another restore is in progress")
+			return
+		}
+		defer s.restoring.Unlock()
+		st, e := s.StageSnapshot(r.Context(), r.PathValue("name"))
+		var elsewhere errElsewhere
+		switch {
+		case errors.As(e, &elsewhere):
+			fail(w, http.StatusNotFound, "on_other_node", elsewhere.Error())
+		case errors.Is(e, os.ErrNotExist):
+			fail(w, http.StatusNotFound, "not_found", "no such backup")
+		default:
+			reply(w, st, e)
+		}
+	})
+	m.HandleFunc("DELETE /restore/staged/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := restoreAccess(w, r); !ok {
+			return
+		}
+		reply(w, map[string]bool{"ok": true}, DiscardStaged(dataDir, r.PathValue("id")))
+	})
+	// restartFor requests a restore and restarts into it.
+	restartFor := func(w http.ResponseWriter, r *http.Request, request func(whenIdle bool) error) {
+		if _, ok := restoreAccess(w, r); !ok {
+			return
+		}
+		if !s.OneClick() {
+			fail(w, http.StatusConflict, "guided_restore", "a cluster node restores through the guided cluster restore")
+			return
+		}
+		var q struct {
+			WhenIdle bool `json:"whenIdle"`
+		}
+		if r.ContentLength != 0 {
+			if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&q) != nil {
+				fail(w, http.StatusBadRequest, "bad_json", "invalid JSON body")
+				return
+			}
+		}
+		if s.restart == nil {
+			fail(w, http.StatusServiceUnavailable, "restart_unavailable", "this server cannot restart itself")
+			return
+		}
+		if e := request(q.WhenIdle); e != nil {
+			fail(w, http.StatusBadRequest, "invalid_request", e.Error())
+			return
+		}
+		if e := s.restart("restore a backup", q.WhenIdle); e != nil {
+			_ = CancelPending(dataDir)
+			fail(w, http.StatusConflict, "restart_failed", e.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	}
+	m.HandleFunc("POST /restore/apply/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		restartFor(w, r, func(bool) error {
+			cur, e := config.Read(dataDir)
+			if e != nil {
+				return e
+			}
+			if e := PrepareStaged(dataDir, id, cur.Server); e != nil {
+				return e
+			}
+			return RequestStaged(dataDir, id)
+		})
+	})
+	m.HandleFunc("POST /restore/undo", func(w http.ResponseWriter, r *http.Request) {
+		restartFor(w, r, func(bool) error { return RequestUndo(dataDir) })
+	})
+	m.HandleFunc("DELETE /restore/report", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := restoreAccess(w, r); !ok {
+			return
+		}
+		reply(w, map[string]bool{"ok": true}, DismissReport(dataDir))
 	})
 	return m
+}
+
+// uploadName is the uploaded file's name, from X-Ether-Backup-Name, for
+// the confirmation and the report.
+func uploadName(r *http.Request) string {
+	// The console percent-encodes it: header values are Latin-1 only.
+	raw := strings.TrimSpace(r.Header.Get("X-Ether-Backup-Name"))
+	if dec, err := url.PathUnescape(raw); err == nil {
+		raw = dec
+	}
+	name := filepath.Base(raw)
+	if name == "." || name == "/" || len(name) > 200 || strings.ContainsAny(name, "\x00\r\n") {
+		return ""
+	}
+	return name
 }
 
 // backupPassword reads the restore password header (base64 of UTF-8, as
