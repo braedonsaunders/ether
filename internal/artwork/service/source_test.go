@@ -108,6 +108,40 @@ func TestNeutralArtworkColdSelectionRevocationAndReferences(t *testing.T) {
 	}
 }
 
+type refreshingArtwork struct {
+	storedArtwork
+	fresh core.Title
+}
+
+func (s refreshingArtwork) RefreshStoredTitle(context.Context, core.RatingKey) (*core.Title, error) {
+	title := s.fresh
+	return &title, nil
+}
+
+func TestStalePortraitCacheFetchesTheCurrentThumb(t *testing.T) {
+	ctx := context.Background()
+	key := core.MovieKey(550)
+	stale := core.Title{Key: key, Type: core.TypeMovie, Released: time.Unix(1, 0)}
+	fresh := stale
+	fresh.Cast = []core.Person{{Name: "Actor", TMDB: 42, ThumbPath: "/actor.jpg"}}
+	viewer := &core.User{ID: 7, IsOwner: true}
+	var fetched []string
+	images := NewRemoteCache(1024, &http.Client{Transport: imageTransport(func(r *http.Request) (*http.Response, error) {
+		fetched = append(fetched, r.URL.Path)
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/jpeg"}}, Body: io.NopCloser(strings.NewReader("portrait-bytes"))}, nil
+	})})
+	source := Source{Catalog: refreshingArtwork{storedArtwork: storedArtwork{key: stale}, fresh: fresh}, Visibility: experience.Visibility{Policy: &artworkPolicy{viewer: viewer}}, Images: images, ImageURL: func(path, size string) string { return "https://fixture.invalid/" + size + path }}
+	req := frontend.ArtworkRequest{Viewer: viewer, Item: key}
+	listed, err := source.PersonImages(ctx, req, fresh)
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("descriptor: %+v %v", listed, err)
+	}
+	got, ct, err := source.Read(ctx, req, listed[0], frontend.ArtworkTransform{})
+	if err != nil || ct != "image/jpeg" || !bytes.Equal(got, []byte("portrait-bytes")) || len(fetched) != 1 || !strings.Contains(fetched[0], "actor.jpg") {
+		t.Fatalf("on-demand portrait: %s %q %v %+v", ct, got, err, fetched)
+	}
+}
+
 func TestNeutralArtworkParentLookupIsStoredOnly(t *testing.T) {
 	show := core.ShowKey(1)
 	episode := core.EpisodeKey(1, 1, 1)

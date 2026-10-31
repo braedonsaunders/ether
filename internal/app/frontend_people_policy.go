@@ -27,9 +27,10 @@ func (p peoplePolicy) Allowed(viewer *core.User, title *core.Title) bool {
 	return viewer != nil && viewer.ID == p.viewerID && safety.AllowedWithPolicy(viewer, title, p.policy)
 }
 
-// beginPeopleRead takes no joint locks while reading metadata. The final epoch
-// fence validates epoch-covered membership and visibility inputs, and checks the
-// exact shared config version while the local config lease is still held.
+// beginPeopleRead takes no joint locks and does not hold the policy lock while
+// reading metadata. The snapshot is a copy. The final epoch fence validates
+// epoch-covered membership and visibility inputs, and rechecks the shared
+// config version inside the transaction.
 // Playback hours do not restrict metadata navigation: this uses Allowed's rule
 // body, not CanPlay. Release/home-release gates use one captured time and only
 // become more permissive as time advances; a backwards clock fails closed.

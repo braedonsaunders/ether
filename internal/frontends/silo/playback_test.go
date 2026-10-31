@@ -286,6 +286,10 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"hdr10_plus":true`) {
 		t.Fatalf("known HDR10+ not reported: %s", w.Body.String())
 	}
+	// No fixed transcode ladder exists, and the source is not a menu rung.
+	if !strings.Contains(w.Body.String(), `"available_qualities":[]`) {
+		t.Fatalf("invented quality rungs: %s", w.Body.String())
+	}
 	if !strings.Contains(w.Body.String(), `"color_range":"unknown"`) {
 		t.Fatalf("unknown color range missing: %s", w.Body.String())
 	}

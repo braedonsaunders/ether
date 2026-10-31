@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -25,7 +27,25 @@ func (s surfaceEditions) Editions(ctx context.Context, _ *core.Viewer, _ core.De
 	}
 	out := make([]frontend.Version, 0, len(variants))
 	for _, variant := range variants {
-		out = append(out, frontendVersion(title, variant))
+		version := frontendVersion(title, variant)
+		if name := probedFileName(variant.Label); name != "" {
+			version.FileName = name
+		}
+		out = append(out, version)
 	}
 	return out, nil
+}
+
+// probedFileName accepts a local edition label only when it is the probed
+// file's basename. Release titles and indexer names are not file names.
+func probedFileName(label string) string {
+	if label == "" || strings.ContainsAny(label, `/\`) {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimPrefix(filepath.Ext(label), ".")) {
+	case "mkv", "mp4", "m4v", "avi", "mov", "wmv", "webm", "mpg", "mpeg", "ts", "m2ts", "mpegts":
+		return label
+	default:
+		return ""
+	}
 }

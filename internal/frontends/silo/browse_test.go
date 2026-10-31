@@ -361,13 +361,18 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"audio_tracks"`) || !strings.Contains(w.Body.String(), `"language":"en"`) {
 		t.Fatalf("missing real audio tracks: %s", w.Body.String())
 	}
-	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"interlaced":false`, `"pixel_format":"yuv420p"`, `"site_key":"clip"`, `"file_name":"real.mp4"`, `"total_duration":60`} {
+	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"interlaced":false`, `"pixel_format":"yuv420p"`, `"site_key":"clip"`, `"file_name":"real.mp4"`, `"total_duration":60`, `"overlay_summary"`, `"resolution":"1080p"`, `"hdr":"Dolby Vision"`, `"kind":"trailer"`} {
 		if !strings.Contains(w.Body.String(), fact) {
 			t.Errorf("missing known detail %s: %s", fact, w.Body.String())
 		}
 	}
 	if strings.Contains(w.Body.String(), `"file_name":"release label"`) {
 		t.Error("release label exposed as a filename")
+	}
+	// Theme songs need an owned audio file (id, duration, container). Ether
+	// stores no theme-song assets, so the field stays absent.
+	if strings.Contains(w.Body.String(), `"themes"`) {
+		t.Error("invented a theme song")
 	}
 	knownPresent = false
 	negative := httptest.NewRecorder()

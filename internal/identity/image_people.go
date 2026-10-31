@@ -11,8 +11,9 @@ import (
 )
 
 // authorizePersonGrant is Silo-only. Descriptor I/O happens before its callback
-// takes joint DB locks. The host holds its local config lease until the callback
-// has committed and its own final epoch/config proof has also succeeded.
+// takes joint DB locks. The host copies policy and releases the lock before the
+// callback; the callback's epoch fence and the host's final config proof both
+// have to succeed.
 // No output may be published on either callback or host validation failure.
 func (s *ImageGrantService) authorizePersonGrant(ctx context.Context, viewer *core.User, device core.Device, item core.RatingKey, channel string, image frontend.Image, hash, sourceHash, deviceJSON string) error {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)

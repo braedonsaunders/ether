@@ -208,3 +208,41 @@ func TestEstimatedAlternativeKeepsUnknownFacts(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionsRouteProbesOneSource(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	key := frontend.RatingKey(1000000000000001)
+	calls := 0
+	known, progressive := true, false
+	media := frontend.MediaInfo{Container: "mp4", Duration: time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Height: 1080, Width: 1920, ProbedInterlaced: &progressive, DolbyVisionConfigurationPresent: &known, DolbyVisionBLCompatibilityIDPresent: &known, ColorTransfer: "bt709", HDR10Plus: &progressive}}}
+	sessions := testDetailSessions{embeddedDetailSessions: frontendtest.Sessions{}, detail: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
+		calls++
+		if req.Intent.Estimate || req.Item != key {
+			t.Fatal(req)
+		}
+		return frontend.PlayPlan{Media: media, DetailSource: "detail", ETag: "generation"}, nil
+	}}
+	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Film"}}, nil
+	}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, viewer), Experience: exp, Sessions: sessions, SourceOffers: testSourceOffers{}, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer grant")
+		r.Header.Set("X-Silo-Device-Id", "tv")
+		w := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(w, r)
+		return w
+	}
+	item := call("/api/v2/catalog/items/" + ids.RatingKeyGUID(key))
+	if item.Code != 200 || calls != 0 || !strings.Contains(item.Body.String(), `"versions":[]`) {
+		t.Fatalf("item browse probed: %d calls=%d %s", item.Code, calls, item.Body.String())
+	}
+	versions := call("/api/v2/catalog/items/" + ids.RatingKeyGUID(key) + "/versions")
+	if versions.Code != 200 || calls != 1 || !strings.Contains(versions.Body.String(), `"file_id"`) || !strings.Contains(versions.Body.String(), `"interlaced":false`) || strings.Contains(versions.Body.String(), `"file_name"`) {
+		t.Fatalf("versions probe: %d calls=%d %s", versions.Code, calls, versions.Body.String())
+	}
+}

@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestPolicySnapshotHoldsDetachedConfigAndSharedVersion(t *testing.T) {
@@ -25,9 +26,23 @@ func TestPolicySnapshotHoldsDetachedConfigAndSharedVersion(t *testing.T) {
 	if lease.Config().Catalog.IncludeAdult != before.Catalog.IncludeAdult {
 		t.Fatal("returned config aliases snapshot")
 	}
-	if s.policyMu.TryLock() {
-		s.policyMu.Unlock()
-		t.Fatal("snapshot lost policy lease")
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Update(func(cfg *Config) error {
+			cfg.Catalog.IncludeAdult = !before.Catalog.IncludeAdult
+			return nil
+		})
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("policy snapshot blocked a writer")
+	}
+	if lease.Config().Catalog.IncludeAdult != before.Catalog.IncludeAdult {
+		t.Fatal("snapshot followed a later write")
 	}
 	lease.Close()
 	lease.Close()

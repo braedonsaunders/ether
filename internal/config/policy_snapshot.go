@@ -5,11 +5,12 @@ import (
 	"sync"
 )
 
-// PolicySnapshot owns a local policy read lease and an immutable configuration
-// copy. SharedVersion is the exact clustered version checked at acquisition;
-// it may already be stale after a remote write. A durable authorization must
-// recheck that version inside its epoch-fenced transaction before publishing.
-// The caller must Close; this type does not itself authorize any operation.
+// PolicySnapshot is an immutable configuration copy plus the clustered
+// version observed when it was taken. It does not hold the policy lock:
+// a browse path must not stall a writer. SharedVersion may already be stale
+// after a remote write. A durable authorization must recheck that version
+// inside its epoch-fenced transaction before publishing. Close is idempotent
+// and does not authorize any operation.
 type PolicySnapshot struct {
 	config        Config
 	sharedVersion int64
@@ -19,14 +20,46 @@ type PolicySnapshot struct {
 }
 
 func (s *Store) AcquirePolicySnapshot(ctx context.Context) (*PolicySnapshot, error) {
-	release, err := s.AcquirePolicy(ctx)
-	if err != nil {
-		return nil, err
+	for attempt := 0; ; attempt++ {
+		snap, lag, err := s.copyPolicySnapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !lag {
+			return snap, nil
+		}
+		if attempt == 1 {
+			return nil, errPolicyLag
+		}
+		if err := s.RefreshShared(ctx); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// copyPolicySnapshot copies config under a brief read lock, then checks the
+// clustered version after releasing it. Writers are not blocked on that read.
+func (s *Store) copyPolicySnapshot(ctx context.Context) (*PolicySnapshot, bool, error) {
+	s.policyMu.RLock()
+	if s.policyErr != nil {
+		err := s.policyErr
+		s.policyMu.RUnlock()
+		return nil, false, err
 	}
 	s.mu.RLock()
-	cfg, version, clustered := clone(s.cfg), s.sharedVer, s.shared != nil
+	cfg, shared, version := clone(s.cfg), s.shared, s.sharedVer
 	s.mu.RUnlock()
-	return &PolicySnapshot{config: cfg, sharedVersion: version, clustered: clustered, release: release}, nil
+	s.policyMu.RUnlock()
+	if shared != nil {
+		current, err := shared.SharedVersion(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		if current != version {
+			return nil, true, nil
+		}
+	}
+	return &PolicySnapshot{config: cfg, sharedVersion: version, clustered: shared != nil, release: func() {}}, false, nil
 }
 
 // Config returns a detached copy. It is meaningful for authorization only

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"html"
 	"strings"
@@ -61,7 +62,47 @@ func (a Source) Read(ctx context.Context, req frontend.ArtworkRequest, img front
 		}
 		return a.transform(ctx, img.Path, data, ct, transform)
 	}
+	if img.Kind == frontend.ImagePerson {
+		if data, ct, err := a.readFreshPortrait(ctx, req, img, transform); err == nil || !errors.Is(err, core.ErrNotFound) {
+			return data, ct, err
+		}
+	}
 	return nil, "", core.ErrUnauthorized
+}
+
+// readFreshPortrait loads the stored title again when the minute cache does
+// not yet list a credit that was just written, then fetches that thumb the
+// same way other remote artwork does.
+func (a Source) readFreshPortrait(ctx context.Context, req frontend.ArtworkRequest, img frontend.Image, transform frontend.ArtworkTransform) ([]byte, string, error) {
+	fresh, ok := a.Catalog.(interface {
+		RefreshStoredTitle(context.Context, core.RatingKey) (*core.Title, error)
+	})
+	if !ok {
+		return nil, "", core.ErrNotFound
+	}
+	title, err := fresh.RefreshStoredTitle(ctx, req.Item)
+	if err != nil || title == nil || !title.IsReleased(a.now()) || !a.visible(ctx, req.Viewer, title) {
+		if err == nil {
+			err = core.ErrNotFound
+		}
+		return nil, "", err
+	}
+	for _, portrait := range creditedPortraits(*title) {
+		ref := artworkReference(req, frontend.ImagePerson, portrait.source)
+		candidate := frontend.Image{Kind: frontend.ImagePerson, Path: ref, Tag: ref, Subject: portrait.subject}
+		if !frontend.SameImage(candidate, img) {
+			continue
+		}
+		data, ct, err := a.remote(ctx, portrait.thumb, 185)
+		if err != nil || len(data) > MaxImageBytes {
+			return nil, "", core.ErrNotAvailable
+		}
+		if len(data) == 0 {
+			return nil, "", core.ErrNotFound
+		}
+		return a.transform(ctx, img.Path, data, ct, transform)
+	}
+	return nil, "", core.ErrNotFound
 }
 
 func (a Source) remote(ctx context.Context, path string, width int) ([]byte, string, error) {
