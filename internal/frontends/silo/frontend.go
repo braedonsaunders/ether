@@ -43,6 +43,9 @@ func (f Frontend) Mount(_ context.Context, host frontend.Host) (frontend.Instanc
 	if err := i.playbackRoutes(); err != nil {
 		return nil, err
 	}
+	if err := i.watchPartyRoutes(); err != nil {
+		return nil, err
+	}
 	if err := i.subtitleRoutes(); err != nil {
 		return nil, err
 	}

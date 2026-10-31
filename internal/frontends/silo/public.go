@@ -109,6 +109,10 @@ func (i *instance) optionalCapability(w http.ResponseWriter, r *http.Request) {
 		}
 		base["schema_version"], base["enabled"], base["providers"] = 1, enabled, providers
 	case "/api/v2/watch-together/capabilities":
+		if i.host.WatchParty != nil {
+			i.watchPartyCapabilities(w, r)
+			return
+		}
 		for _, key := range []string{"staged_selection", "lobby_ready", "connection_replaced", "selection_mode_switch", "member_state", "picker", "vote_host_override", "stop_playback"} {
 			base[key] = false
 		}
