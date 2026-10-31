@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	kitsort "github.com/braedonsaunders/ether/internal/frontend/kit/sort"
 )
 
 func deviceFor(credential string) frontend.Device {
@@ -70,7 +70,8 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 	}
 	var titles []frontend.Title
 	if purpose == frontend.RowRecentlyReleased {
-		q.Sort, q.Desc = core.SortReleased, true
+		q.Sort, _ = kitsort.Order("PremiereDate")
+		q.Desc = true
 		titles, err = i.libraryPage(r, viewer, device, typ, q)
 	} else if purpose != "" {
 		var rows []frontend.Row
