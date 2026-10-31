@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/animemap"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/safefetch"
@@ -101,10 +102,10 @@ func NewService(client *http.Client) *Service {
 // NewServiceWithOptions returns a Service built from o.
 func NewServiceWithOptions(o Options) *Service {
 	if o.Client == nil {
-		o.Client = &http.Client{Timeout: defaultTimeout}
+		o.Client = egress.Client(egress.CapStremio, defaultTimeout)
 	}
 	if o.NZBClient == nil {
-		o.NZBClient = (&safefetch.Guard{}).Client(&http.Client{Timeout: nzbTimeout})
+		o.NZBClient = (&safefetch.Guard{}).Client(egress.Client(egress.CapStremio, nzbTimeout))
 	}
 	return &Service{client: o.Client, nzb: o.NZBClient, anime: o.Anime, backends: map[string]*Backend{}}
 }

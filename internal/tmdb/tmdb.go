@@ -13,6 +13,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/flight"
 )
 
@@ -129,7 +130,7 @@ func NewFromConfig(cfg config.Catalog, log *slog.Logger, opts ...Option) *Client
 }
 
 func newClient(key, lang, region string, log *slog.Logger, opts ...Option) *Client {
-	o := options{baseURL: DefaultBaseURL, httpClient: &http.Client{Timeout: 30 * time.Second},
+	o := options{baseURL: DefaultBaseURL, httpClient: egress.Client(egress.CapMetadata, 30*time.Second),
 		ratePerSec: 40, burst: 40, cacheTTL: 10 * time.Minute, maxRetries: 3, userAgent: "Ether/0.1 (+https://github.com/braedonsaunders/ether)"}
 	for _, fn := range opts {
 		fn(&o)

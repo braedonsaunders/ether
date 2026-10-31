@@ -33,6 +33,7 @@ func RedactConfig(cfg config.Config) config.Config {
 	out.Simkl.ClientSecret = redact(out.Simkl.ClientSecret)
 	out.OpenSubtitles = redactOpenSubtitles(out.OpenSubtitles)
 	out.LLM = redactLLM(out.LLM)
+	out.Outbound.Password = redact(out.Outbound.Password)
 	out.Database = out.Database.Redacted()
 	if cfg.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(cfg.Usenet.Providers))
@@ -211,6 +212,7 @@ func UnredactConfig(next, prev config.Config) (config.Config, []FieldError) {
 	out.Simkl.ClientSecret = errs.restore("simkl.clientSecret", next.Simkl.ClientSecret, prev.Simkl.ClientSecret, strings.TrimSpace(next.Simkl.ClientID) == strings.TrimSpace(prev.Simkl.ClientID))
 	out.OpenSubtitles = errs.unredactOpenSubtitles(next.OpenSubtitles, prev.OpenSubtitles)
 	out.LLM = errs.unredactLLM(next.LLM, prev.LLM)
+	out.Outbound.Password = errs.restore("outbound.password", next.Outbound.Password, prev.Outbound.Password, strings.TrimSpace(next.Outbound.URL) == strings.TrimSpace(prev.Outbound.URL))
 	if next.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(next.Usenet.Providers))
 		for i, p := range next.Usenet.Providers {

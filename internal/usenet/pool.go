@@ -33,6 +33,7 @@ type pool struct {
 	bodyPipelined atomic.Int64
 	key           string // unique per pool instance (provider id + generation)
 	cfg           config.UsenetProvider
+	dialGen       uint64 // fetcher dial generation; a bump drops warm connections
 	o             *Options
 	log           *slog.Logger
 	sem           *prioSem

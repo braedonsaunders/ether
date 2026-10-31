@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/store"
 	"io"
 	"math"
@@ -113,7 +114,8 @@ func New(db *sql.DB, o Options) *Service {
 		o.Now = time.Now
 	}
 	if o.Client == nil {
-		o.Client = &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		o.Client = egress.Client(egress.CapMetadata, 15*time.Second)
+		o.Client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	if o.OMDbBaseURL == "" {
 		o.OMDbBaseURL = "https://www.omdbapi.com/"

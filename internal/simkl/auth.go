@@ -71,7 +71,7 @@ func (c AuthClient) post(ctx context.Context, path string, form url.Values, dst 
 	req.Header.Set("User-Agent", "Ether/1.0")
 	hc := c.HTTP
 	if hc == nil {
-		hc = http.DefaultClient
+		hc = metadataClient()
 	}
 	// Never forward form credentials across a redirect.
 	safe := *hc

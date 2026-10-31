@@ -15,6 +15,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
@@ -281,4 +282,4 @@ func (b *Broker) openExternalSidecar(ctx context.Context, info core.StreamInfo) 
 	return f, info, nil
 }
 
-var plexSidecarClient = &http.Client{Timeout: 20 * time.Second}
+var plexSidecarClient = egress.Client(egress.CapDirect, 20*time.Second)

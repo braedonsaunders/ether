@@ -54,6 +54,8 @@ var sectionScopes = map[string]Scope{
 	"spike": Local,
 	// Each node holds its own connection settings; the URL is sealed.
 	"database": Local,
+	// How this computer reaches indexers, debrid and Usenet.
+	"outbound": Local,
 }
 
 // mixedSections classifies, key by key, the sections that hold both shared

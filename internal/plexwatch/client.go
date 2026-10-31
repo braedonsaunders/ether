@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/retryafter"
 )
 
@@ -93,7 +94,7 @@ func newClient(base, clientID string, hc *http.Client, now func() time.Time) (*C
 		c.plex, c.servers, c.scrobble = u, u, u
 	}
 	if hc == nil {
-		hc = &http.Client{Timeout: 20 * time.Second}
+		hc = egress.Client(egress.CapDirect, 20*time.Second)
 	}
 	clone := *hc
 	clone.CheckRedirect = func(*http.Request, []*http.Request) error {

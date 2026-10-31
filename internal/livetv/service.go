@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -56,7 +56,7 @@ func New(o Options) (*Service, error) {
 		o.Now = time.Now
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapDirect, 20*time.Second)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{o: o, sessions: map[string]*session{}, transcodes: map[string]core.HLSSession{}, ctx: ctx, cancel: cancel}

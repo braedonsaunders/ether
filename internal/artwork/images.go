@@ -24,6 +24,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/flight"
 	"github.com/braedonsaunders/ether/internal/lru"
 	"github.com/braedonsaunders/ether/internal/safefetch"
@@ -111,7 +112,7 @@ func NewImages(o ImagesOptions) *Images {
 		o.DiskBytes = 512 << 20
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
 	}
 	if o.ImageURL == nil {
 		o.ImageURL = func(path, size string) string { return "https://image.tmdb.org/t/p/" + size + path }

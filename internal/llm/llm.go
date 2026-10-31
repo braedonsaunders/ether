@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/egress"
 )
 
 // Message is one chat message.
@@ -51,7 +52,7 @@ type ClientOptions struct {
 // NewClient builds a Client.
 func NewClient(opts ClientOptions) *Client {
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 120 * time.Second}
+		opts.HTTPClient = egress.Client(egress.CapMetadata, 120*time.Second)
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()

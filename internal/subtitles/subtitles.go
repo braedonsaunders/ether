@@ -37,6 +37,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/flight"
 	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/retryafter"
@@ -109,7 +110,7 @@ func New(opts Options) *Service {
 		opts.BaseURL = defaultBaseURL
 	}
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = &http.Client{Timeout: 30 * time.Second}
+		opts.HTTPClient = egress.Client(egress.CapMetadata, 30*time.Second)
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()

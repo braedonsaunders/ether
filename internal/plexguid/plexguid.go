@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -58,7 +59,7 @@ type Service struct {
 
 func New(db *sql.DB, o Options) *Service {
 	if o.HTTP == nil {
-		o.HTTP = &http.Client{Timeout: 5 * time.Second}
+		o.HTTP = egress.Client(egress.CapDirect, 5*time.Second)
 	}
 	if o.BaseURL == "" {
 		o.BaseURL = "https://metadata.provider.plex.tv"

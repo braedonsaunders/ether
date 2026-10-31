@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/braedonsaunders/ether/internal/admin"
@@ -12,6 +11,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/debrid"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/segcache"
@@ -25,12 +25,9 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 	log := a.log
 	dataDir := a.opts.DataDir
 	var err error
-	// Usenet, cache, stream engine.
-	usenetDial, err := usenetProxyDialer(os.Getenv("ETHER_USENET_PROXY"))
-	if err != nil {
-		return err
-	}
-	a.fetcher = usenet.New(cfg.Usenet.Providers, usenet.Options{Logger: log.With("component", "usenet"), MinIdle: cfg.Usenet.MinIdle, DialContext: usenetDial})
+	// Usenet, cache, stream engine. The dialer reads the live proxy policy.
+	a.applyOutbound(cfg)
+	a.fetcher = usenet.New(cfg.Usenet.Providers, usenet.Options{Logger: log.With("component", "usenet"), MinIdle: cfg.Usenet.MinIdle, DialContext: egress.Dial})
 	a.closers = append(a.closers, func() { a.fetcher.Close() })
 	if cfg.Cache.Storage == "shared" {
 		if cfg.SharedCache == nil {

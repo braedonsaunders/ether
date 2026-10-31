@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -66,7 +67,7 @@ func New(o Options) *Service {
 		o.BaseURL = "https://api.theintrodb.org/v4"
 	}
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 2 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapMetadata, 2*time.Second)
 	}
 	if o.TTL <= 0 {
 		o.TTL = 7 * 24 * time.Hour

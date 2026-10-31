@@ -51,9 +51,11 @@ type Config struct {
 	Extras        Extras        `json:"extras"`
 	Debrid        Debrid        `json:"debrid"`
 	// Database is node-local storage selection (SQLite or PostgreSQL).
-	Database      Database     `json:"database"`
-	IndexerSites  IndexerSites `json:"indexerSites"`
-	SetupComplete bool         `json:"setupComplete"`
+	Database     Database     `json:"database"`
+	IndexerSites IndexerSites `json:"indexerSites"`
+	// Outbound is this computer's optional proxy for source traffic.
+	Outbound      Outbound `json:"outbound"`
+	SetupComplete bool     `json:"setupComplete"`
 }
 
 // Frontend holds the enabled state of a protocol front end.

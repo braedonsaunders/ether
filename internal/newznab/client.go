@@ -24,6 +24,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/safefetch"
 )
@@ -155,7 +156,7 @@ func New(cfg config.Indexer, db *sql.DB, opts Options) *Client {
 	c := &Client{cfg: cfg, db: db, nzbDir: opts.NZBDir, backends: opts.Backend}
 	c.http = opts.HTTPClient
 	if c.http == nil {
-		c.http = &http.Client{Timeout: defaultHTTPTimeout}
+		c.http = egress.Client(egress.CapIndexers, defaultHTTPTimeout)
 	}
 	c.guarded = (&safefetch.Guard{}).Client(c.http)
 	c.log = opts.Logger

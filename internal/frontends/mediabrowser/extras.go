@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -292,7 +293,7 @@ func publicExtraURL(raw string) bool {
 var extraHTTPClient = &http.Client{
 	Timeout: 0,
 	Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 egress.ProxyFunc(egress.CapDirect),
 		ResponseHeaderTimeout: 20 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	},

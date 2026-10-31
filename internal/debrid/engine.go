@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/lru"
 )
 
@@ -151,13 +152,17 @@ const (
 )
 
 func newStreamingTransport(limit *connCap) *http.Transport {
+	return streamingTransport(limit, egress.CapDebrid)
+}
+
+func streamingTransport(limit *connCap, cap egress.Capability) *http.Transport {
 	d := &net.Dialer{Timeout: mediaDialTimeout, KeepAlive: 30 * time.Second}
 	dial := d.DialContext
 	if limit != nil {
 		dial = limit.wrap(dial)
 	}
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 egress.ProxyFunc(cap),
 		DialContext:           dial,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          64,

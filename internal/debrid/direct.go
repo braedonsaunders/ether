@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
@@ -59,7 +60,7 @@ func (d *directClients) init() {
 			g = &safefetch.Guard{}
 		}
 		mk := func() *http.Client {
-			return g.Client(&http.Client{Transport: newStreamingTransport(nil), CheckRedirect: dropHeadersAcrossOrigins})
+			return g.Client(&http.Client{Transport: streamingTransport(nil, egress.CapStremio), CheckRedirect: dropHeadersAcrossOrigins})
 		}
 		d.primary, d.hedge = mk(), mk()
 	})

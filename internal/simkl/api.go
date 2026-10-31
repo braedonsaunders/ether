@@ -10,7 +10,11 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 )
+
+func metadataClient() *http.Client { return egress.Client(egress.CapMetadata, 30*time.Second) }
 
 // HTTPError exposes status and Retry-After without copying upstream bodies
 // into logs. Callers must honor Retry-After before retrying a rate limit.
@@ -59,7 +63,7 @@ func (c AuthClient) request(ctx context.Context, method, path, token string, que
 	}
 	hc := c.HTTP
 	if hc == nil {
-		hc = http.DefaultClient
+		hc = metadataClient()
 	}
 	safe := *hc
 	safe.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

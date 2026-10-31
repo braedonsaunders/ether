@@ -19,6 +19,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/releaseparse"
 	"github.com/braedonsaunders/ether/internal/retryafter"
 )
@@ -157,7 +158,7 @@ type ProviderOptions struct {
 
 func (o ProviderOptions) withDefaults(base string) ProviderOptions {
 	if o.HTTPClient == nil {
-		o.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+		o.HTTPClient = egress.Client(egress.CapDebrid, 20*time.Second)
 	}
 	if o.BaseURL == "" {
 		o.BaseURL = base

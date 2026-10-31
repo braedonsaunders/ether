@@ -371,6 +371,7 @@ func (h *Handler) routes() *http.ServeMux {
 	api("POST /api/llm/models", h.handleLLMModels)
 	api("POST /api/test/trakt", h.handleTestTrakt)
 	api("POST /api/test/introdb", h.handleTestIntroDB)
+	api("POST /api/outbound/check", h.handleOutboundCheck)
 
 	api("GET /api/dashboard", h.handleDashboard)
 	api("GET /api/system/load", h.handleSystemLoad)

@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/plex/model"
@@ -64,7 +65,7 @@ func newExtraPlayStore() *extraPlayStore {
 	return &extraPlayStore{
 		sessions: map[string]*extraSession{},
 		warmed:   map[string]time.Time{},
-		client:   &http.Client{Transport: http.DefaultTransport},
+		client:   &http.Client{Transport: egress.Transport(egress.CapDirect)},
 	}
 }
 

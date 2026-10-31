@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/retryafter"
 )
 
@@ -125,7 +126,7 @@ func DiscoverProwlarrReport(ctx context.Context, cfg config.Prowlarr, opts Optio
 	req.Header.Set("Accept", "application/json")
 	cl := opts.HTTPClient
 	if cl == nil {
-		cl = &http.Client{Timeout: defaultHTTPTimeout}
+		cl = egress.Client(egress.CapIndexers, defaultHTTPTimeout)
 	}
 	resp, err := cl.Do(req)
 	if err != nil {

@@ -40,10 +40,13 @@
 //     reescrito para o IP validado (acima), e destino não-público é
 //     recusado antes de o proxy ser chamado. O host do proxy em si pode
 //     ser privado: é a origem de rede que o dono escolheu.
-//   - Modo não amarrável não é bypass silencioso: proxy com scheme
-//     diferente de http (https, socks5, …) ou sem host retorna
-//     ErrUnsupportedTransport. Só proxy HTTP (CONNECT / forma absoluta)
-//     é suportado por este desenho.
+//   - http, https and socks5 proxies are pinned to the validated IP.
+//     socks5 is not allowed to resolve the name (the address type is the
+//     IP, not a domain). Any other scheme, or a proxy with no host,
+//     returns ErrUnsupportedTransport. A failed proxy dial is not retried
+//     as a direct connection. A destination the guard has already allowed
+//     that is not public (the trusted-origin exception) stays direct, so
+//     a LAN indexer is not sent to the proxy.
 //
 // Two further invariants keep the check from being bypassed:
 //
@@ -641,6 +644,22 @@ type policyTransport struct {
 	proxied   *http.Transport
 }
 
+// supportedProxy accepts the schemes that can be pinned to a validated IP.
+func supportedProxy(u *url.URL) error {
+	if u == nil {
+		return nil
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5", "socks5h":
+		if u.Hostname() == "" {
+			return fmt.Errorf("%w: proxy has no host", ErrUnsupportedTransport)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: proxy scheme %q is not supported", ErrUnsupportedTransport, u.Scheme)
+	}
+}
+
 func (p policyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if (req.URL.Scheme != "http" && req.URL.Scheme != "https") || req.URL.Hostname() == "" {
 		return nil, fmt.Errorf("%w: %q is not an http(s) URL with a host", ErrBlocked, req.URL.Redacted())
@@ -656,20 +675,18 @@ func (p policyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	ip := ips[0]
 	// 2) Selecionar a rota UMA vez, sobre a requisição original.
+	// A trusted destination that is not public stays direct: the proxy
+	// must not be asked to dial a LAN address the guard already accepted.
 	var proxyURL *url.URL
-	if p.selector != nil {
+	if IsPublicIP(ip) && p.selector != nil {
 		u, err := p.selector(req)
 		if err != nil {
 			return nil, err
 		}
 		proxyURL = u
 	}
-	if proxyURL != nil && (proxyURL.Scheme != "http" || proxyURL.Hostname() == "") {
-		// Só proxy HTTP pode receber o destino como IP literal
-		// (CONNECT/forma absoluta) neste desenho. Outro modo (proxy
-		// https, socks5, …) é recusado com erro claro — nunca um
-		// bypass silencioso sem amarração ao IP validado.
-		return nil, fmt.Errorf("%w: proxy scheme %q is not supported, only http proxies can be bound to the validated IP", ErrUnsupportedTransport, proxyURL.Scheme)
+	if err := supportedProxy(proxyURL); err != nil {
+		return nil, err
 	}
 	// 3) Decisão no contexto + rewrite do host para o IP validado.
 	port := req.URL.Port()
@@ -706,7 +723,7 @@ func (p policyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	case proxyURL == nil:
 		bound.URL.Host = dec.poolAddr
 		resp, err = p.direct.RoundTrip(bound)
-	case bound.URL.Scheme == "https":
+	case proxyURL.Scheme == "socks5" || proxyURL.Scheme == "socks5h" || bound.URL.Scheme == "https":
 		// TLS ao destino sobre o CONNECT: o ServerName precisa ser o
 		// hostname original, e o TLSClientConfig do transporte
 		// compartilhado não pode ser mutado por requisição. Clone por
@@ -775,6 +792,9 @@ func (p policyTransport) roundTripViaHTTPProxy(bound *http.Request, dec *routeDe
 	proxyPort := proxy.Port()
 	if proxyPort == "" {
 		proxyPort = "80"
+		if proxy.Scheme == "https" {
+			proxyPort = "443"
+		}
 	}
 	conn, err := p.proxyDial(bound.Context(), "tcp", net.JoinHostPort(proxy.Hostname(), proxyPort))
 	if err != nil {
@@ -782,6 +802,17 @@ func (p policyTransport) roundTripViaHTTPProxy(bound *http.Request, dec *routeDe
 			bound.Body.Close()
 		}
 		return nil, err
+	}
+	if proxy.Scheme == "https" {
+		tc := tls.Client(conn, &tls.Config{ServerName: proxy.Hostname(), MinVersion: tls.VersionTLS12})
+		if err := tc.HandshakeContext(bound.Context()); err != nil {
+			conn.Close()
+			if bound.Body != nil {
+				bound.Body.Close()
+			}
+			return nil, err
+		}
+		conn = tc
 	}
 	stop := context.AfterFunc(bound.Context(), func() { conn.Close() })
 
@@ -923,7 +954,8 @@ func (b *proxyConnBody) Close() error {
 // separate trusted-origin and public connection pools (see the package
 // documentation). A nil base means http.DefaultTransport. A base that
 // is not a *http.Transport yields a RoundTripper whose requests all
-// fail with ErrUnsupportedTransport, as does a non-http proxy route.
+// fail with ErrUnsupportedTransport, as does a proxy scheme other than
+// http, https, or socks5.
 func (g *Guard) Transport(base http.RoundTripper) http.RoundTripper {
 	if g == nil {
 		g = &Guard{}

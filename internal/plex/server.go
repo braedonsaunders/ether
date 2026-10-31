@@ -23,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/diagnostics"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -209,7 +210,7 @@ func NewServer(d Deps) *Server {
 		d.ImageURL = func(path, size string) string { return "https://image.tmdb.org/t/p/" + size + path }
 	}
 	if d.HTTPClient == nil {
-		d.HTTPClient = &http.Client{Timeout: 20 * time.Second}
+		d.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
 	}
 	if d.ImageCacheBytes <= 0 {
 		d.ImageCacheBytes = 128 << 20

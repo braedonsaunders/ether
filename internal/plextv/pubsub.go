@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 	"strconv"
 	"strings"
 	"sync"
@@ -118,7 +120,7 @@ type Presence struct {
 
 func NewPresence(o PresenceOptions) *Presence {
 	if o.StreamClient == nil {
-		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr := egress.Transport(egress.CapDirect)
 		tr.TLSClientConfig = &tls.Config{ServerName: PubsubTLSName, MinVersion: tls.VersionTLS12}
 		tr.ForceAttemptHTTP2 = false
 		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}

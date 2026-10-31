@@ -141,9 +141,10 @@ type App struct {
 
 	// cluster is Solo on SQLite and Postgres on a shared database; peers
 	// caches the other nodes' URIs for the plex.tv publisher.
-	cluster cluster.Cluster
-	peers   *peerSet
-	egress  *egressIP // this node's public address, heartbeated when clustered
+	cluster      cluster.Cluster
+	peers        *peerSet
+	egress       *egressIP // this node's public address, heartbeated when clustered
+	outboundDial string    // last Usenet dial identity; a change drops warm connections
 	// clusterFatal receives the error that ended this node's cluster
 	// membership (a duplicate node identity); nil on a standalone server.
 	clusterFatal chan error
@@ -458,6 +459,7 @@ func (a *App) warmFixtureEpisodes(ctx context.Context) {
 // applyConfig pushes an edited config into the running components.
 func (a *App) applyConfig(c config.Config) {
 	c.Cache = c.EffectiveCache()
+	a.applyOutbound(c)
 	a.tmdb.UpdateConfig(c.Catalog)
 	a.llm.UpdateConfig(c.LLM)
 	a.fetcher.UpdateConfig(c.Usenet)

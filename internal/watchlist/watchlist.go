@@ -17,6 +17,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/schedule"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -107,7 +108,8 @@ func New(db *sql.DB, o Options) *Service {
 		o.Now = time.Now
 	}
 	if o.Client == nil {
-		o.Client = &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		o.Client = egress.Client(egress.CapMetadata, 20*time.Second)
+		o.Client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
 	if o.PlexBaseURL == "" {
 		o.PlexBaseURL = "https://discover.provider.plex.tv"

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/safefetch"
 )
 
@@ -75,7 +76,7 @@ func New(opts Options) *Service {
 		opts.URL = DefaultURL
 	}
 	if opts.Client == nil {
-		opts.Client = (&safefetch.Guard{}).Client(&http.Client{})
+		opts.Client = (&safefetch.Guard{}).Client(&http.Client{Transport: egress.Transport(egress.CapMetadata)})
 	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"net/http"
 	"path/filepath"
 	"sync"
 	"time"
@@ -11,6 +10,7 @@ import (
 	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/experience"
 )
 
@@ -26,7 +26,7 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 		imageURL = func(path, size string) string { return "https://image.tmdb.org/t/p/" + size + path }
 		paletteDB = nil
 	}
-	images := artworkservice.NewRemoteCache(128<<20, &http.Client{Timeout: 20 * time.Second})
+	images := artworkservice.NewRemoteCache(128<<20, egress.Client(egress.CapMetadata, 20*time.Second))
 	var workers sync.WaitGroup
 	queue := artworkservice.NewQueue(ctx, &workers, 2, 512)
 	collections := a.discoveryPersonal.ReviewCollections(a.collections)

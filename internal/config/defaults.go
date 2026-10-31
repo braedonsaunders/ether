@@ -26,7 +26,8 @@ func Defaults(dataDir string) Config {
 		Personalize: Personalize{
 			PostPlay: true, PostPlayPrebuffer: true, MicroReasons: true, SessionIntent: true,
 		},
-		Extras: Extras{PrewarmBytes: 48 << 20, ResolverTimeout: Duration(20 * time.Second)},
+		Extras:   Extras{PrewarmBytes: 48 << 20, ResolverTimeout: Duration(20 * time.Second)},
+		Outbound: Outbound{Indexers: true, Stremio: true, Debrid: true, Usenet: true},
 		Server: Server{
 			Port:               DefaultPort,
 			BindAddress:        "0.0.0.0",

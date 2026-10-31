@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 )
 
 // Probe checks that TheIntroDB answers, and that apiKey is accepted when one
@@ -29,7 +31,7 @@ func Probe(ctx context.Context, baseURL, apiKey string) error {
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := egress.Client(egress.CapMetadata, 10*time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

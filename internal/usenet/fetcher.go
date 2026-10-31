@@ -186,9 +186,10 @@ type Fetcher struct {
 	closed  bool
 	// share maps a provider's configured connections to this node's part
 	// of them (clustered); nil uses every configured connection.
-	share func(configured int) int
-	gen   atomic.Uint64
-	rr    atomic.Uint64
+	share   func(configured int) int
+	gen     atomic.Uint64
+	dialGen uint64 // bumped when the outbound dialer must drop warm connections
+	rr      atomic.Uint64
 	// minIdle is the fetcher-wide warm floor (already defaulted);
 	// UpdateConfig changes it live.
 	minIdle atomic.Int32
@@ -211,6 +212,27 @@ func New(providers []config.UsenetProvider, opts Options) *Fetcher {
 	f.minIdle.Store(int32(opts.MinIdle))
 	f.Update(providers)
 	return f
+}
+
+// Redial drops warm connections so the next dial uses the current
+// outbound proxy. Existing pools compare equal by provider settings, so
+// a proxy change would otherwise keep sockets opened on the old route.
+func (f *Fetcher) Redial() {
+	if f == nil {
+		return
+	}
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		return
+	}
+	f.dialGen++
+	cfgs := make([]config.UsenetProvider, len(f.pools))
+	for i, p := range f.pools {
+		cfgs[i] = p.cfg
+	}
+	f.mu.Unlock()
+	f.Update(cfgs)
 }
 
 // UpdateConfig applies an edited Usenet config: the provider list (see
@@ -256,7 +278,7 @@ func (f *Fetcher) Update(providers []config.UsenetProvider) {
 		}
 		var p *pool
 		for _, op := range old {
-			if op.cfg == cfg && !reused[op] {
+			if op.cfg == cfg && op.dialGen == f.dialGen && !reused[op] {
 				p = op
 				break
 			}
@@ -264,6 +286,7 @@ func (f *Fetcher) Update(providers []config.UsenetProvider) {
 		if p == nil {
 			key := cmp.Or(cfg.ID, cfg.Host) + "#" + strconv.FormatUint(f.gen.Add(1), 10)
 			p = newPool(key, cfg, &f.o, f.log, int(f.minIdle.Load()))
+			p.dialGen = f.dialGen
 			p.setShare(shareFor(f.share, p.size))
 		}
 		reused[p] = true

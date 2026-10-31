@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/braedonsaunders/ether/internal/egress"
 )
 
 // Reachability is the result of a remote-access self-test.
@@ -45,7 +47,7 @@ type ReachabilityChecker struct {
 // NewReachabilityChecker uses client (a 10s-timeout client when nil).
 func NewReachabilityChecker(client *http.Client) *ReachabilityChecker {
 	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
+		client = egress.Client(egress.CapDirect, 10*time.Second)
 	}
 	return &ReachabilityChecker{Client: client, Timeout: 8 * time.Second}
 }

@@ -138,6 +138,9 @@ func ValidateConfig(cfg config.Config) []FieldError {
 	if cfg.Server.ClusterWeight < 0 || cfg.Server.ClusterWeight > 100 {
 		v.add("server.clusterWeight", "must be between 0 and 100")
 	}
+	for _, p := range cfg.Outbound.Problems() {
+		v.add(p.Field, "%s", p.Message)
+	}
 
 	v.port("plex.publicPort", cfg.Plex.PublicPort, true)
 	if cfg.Plex.SecureConnections != "" {

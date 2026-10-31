@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/cluster"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/remote"
 )
 
@@ -22,10 +23,10 @@ import (
 // (cluster.Caps.EgressIP) and the cluster status warns the owner when live
 // nodes differ; the leader also logs the warning once per change.
 //
-// The address comes from the plex.tv registrar when it already detected
-// one (remote access on, no custom public host name); otherwise, only when
-// a debrid provider is enabled, from the same public-IP detector the
-// registrar uses. Nodes with no known address are ignored.
+// The address is the one source traffic leaves from: through the outbound
+// proxy when indexers, addons, debrid or Usenet are routed, otherwise the
+// direct public address. It is not the UPnP or plex.tv published address.
+// Nodes with no known address are ignored.
 
 // egressInterval is how often a node re-detects its public address.
 const egressInterval = 10 * time.Minute
@@ -52,23 +53,17 @@ func (e *egressIP) set(ip string) {
 	e.mu.Unlock()
 }
 
-// detectEgress finds this node's public address ("" when unknown or not
-// worth an outbound lookup).
+// detectEgress finds the public address source traffic leaves from
+// ("" when the lookup fails).
 func (a *App) detectEgress(ctx context.Context, wan interface {
 	Detect(context.Context) (net.IP, error)
 }) string {
-	cfg := a.cfg.Get()
-	if a.registrar != nil && cfg.Plex.PublicHost == "" {
-		if ip := net.ParseIP(a.registrar.Status().PublicIP); ip != nil && remote.IsPublicIP(ip) {
-			return ip.String()
-		}
-	}
-	if !cfg.Debrid.EnabledProviders() || wan == nil {
+	if wan == nil {
 		return ""
 	}
 	ip, err := wan.Detect(ctx)
 	if err != nil {
-		a.log.Debug("cluster: detect public address", "err", err)
+		a.log.Debug("cluster: detect source address", "err", err)
 		return ""
 	}
 	return ip.String()
@@ -80,7 +75,7 @@ func (a *App) runEgress(ctx context.Context) {
 	if !a.clustered() {
 		return
 	}
-	wan := remote.NewWANDetector(nil, a.log.With("component", "cluster"))
+	wan := remote.NewWANDetector(egress.Client(egress.CapProbe, 10*time.Second), a.log.With("component", "cluster"))
 	t := time.NewTicker(egressInterval)
 	defer t.Stop()
 	for {
@@ -126,8 +121,8 @@ func egressWarning(nodes []cluster.Node) string {
 		names := slices.Sorted(slices.Values(byIP[ip]))
 		parts = append(parts, fmt.Sprintf("%s: %s", ip, strings.Join(names, ", ")))
 	}
-	return "nodes reach the internet from different public addresses (" + strings.Join(parts, "; ") +
-		"); debrid providers may flag simultaneous use of one account from several IPs"
+	return "nodes reach providers from different public addresses (" + strings.Join(parts, "; ") +
+		"); a debrid account can be limited when it is used from more than one address"
 }
 
 // noteEgress logs the egress warning on the leader when it changes.
