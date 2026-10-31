@@ -15,11 +15,24 @@ import (
 // ConfirmPlayback reads membership and safety policy inside one fenced
 // transaction. Restricted viewers fail closed when the store is unavailable.
 // Unrestricted viewers return ErrPolicyUnconfirmed so cached playback can continue.
+// An unrestricted viewer whose epoch has not moved since the last fence is
+// answered from that snapshot, so a play does not take a write lock.
 func (s *Service) ConfirmPlayback(ctx context.Context, u *core.User, remote bool, now time.Time) (*core.User, error) {
 	if s == nil || s.db == nil || u == nil || u.ID <= 0 {
 		return nil, core.ErrUnauthorized
 	}
 	restricted := s.Restricted(u)
+	if !restricted {
+		epoch, err := viewerpolicy.Read(ctx, s.db)
+		if err == nil {
+			if merged, policy, ok := s.cachedConfirm(u.ID, epoch); ok {
+				if !CanPlayWithPolicy(merged, policy, remote, now) {
+					return nil, core.ErrUnauthorized
+				}
+				return merged, nil
+			}
+		}
+	}
 	for attempt := 0; attempt < 3; attempt++ {
 		epoch, err := viewerpolicy.Read(ctx, s.db)
 		if err != nil {
@@ -55,9 +68,38 @@ func (s *Service) ConfirmPlayback(ctx context.Context, u *core.User, remote bool
 		if !CanPlayWithPolicy(merged, policy, remote, started) || !CanPlayWithPolicy(merged, policy, remote, ended) || !CanPlayWithPolicy(merged, policy, remote, now) {
 			return nil, core.ErrUnauthorized
 		}
+		if !s.Restricted(merged) {
+			s.storeConfirm(merged.ID, epoch, merged, policy)
+		}
 		return merged, nil
 	}
 	return confirmFallback(restricted)
+}
+
+func (s *Service) cachedConfirm(id, epoch int64) (*core.User, Policy, bool) {
+	s.playbackMu.Lock()
+	defer s.playbackMu.Unlock()
+	hit, ok := s.playbackEpoch[id]
+	if !ok || hit.epoch != epoch {
+		return nil, Policy{}, false
+	}
+	user := hit.user
+	user.AllowedSections = append([]int(nil), hit.user.AllowedSections...)
+	return &user, hit.policy, true
+}
+
+func (s *Service) storeConfirm(id, epoch int64, user *core.User, policy Policy) {
+	if user == nil {
+		return
+	}
+	stored := *user
+	stored.AllowedSections = append([]int(nil), user.AllowedSections...)
+	s.playbackMu.Lock()
+	defer s.playbackMu.Unlock()
+	if s.playbackEpoch == nil {
+		s.playbackEpoch = map[int64]playbackConfirm{}
+	}
+	s.playbackEpoch[id] = playbackConfirm{epoch: epoch, user: stored, policy: policy}
 }
 
 func confirmFallback(restricted bool) (*core.User, error) {

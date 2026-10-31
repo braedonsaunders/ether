@@ -52,3 +52,48 @@ func TestConfirmPlaybackSeesDurableRestrictionBeforeCacheReload(t *testing.T) {
 		t.Fatalf("deactivated viewer: %v", err)
 	}
 }
+
+func TestUnrestrictedConfirmSkipsStartupWrite(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	users, err := auth.New(ctx, db, auth.Options{Now: time.Now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := users.BootstrapOwner(ctx, config.Plex{OwnerPlexID: 7, OwnerUsername: "owner", Token: "server-token"}); err != nil {
+		t.Fatal(err)
+	}
+	owner, err := users.Authenticate(ctx, "server-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := New(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := policy.ConfirmPlayback(ctx, owner, false, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	hold, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hold.Rollback()
+	if _, err := hold.Exec(`UPDATE viewer_policy_epoch SET generation=generation WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	playCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	fresh, err := policy.ConfirmPlayback(playCtx, owner, false, time.Now())
+	if err != nil {
+		t.Fatalf("confirm while startup holds the database: %v after %s", err, time.Since(started))
+	}
+	if fresh == nil || fresh.ID != owner.ID {
+		t.Fatalf("viewer %#v", fresh)
+	}
+}

@@ -165,7 +165,9 @@ func nodesWithoutMigration(nodes []cluster.Node, component string, version int) 
 // repeats the database pass hourly.
 func (a *App) runCredentialUpgrade(ctx context.Context) {
 	var waitingFor string
-	t := time.NewTimer(0)
+	// The first pass already ran before the listener opened. Repeating it
+	// here would hold the database across the first play.
+	t := time.NewTimer(credentialCheckEvery)
 	defer t.Stop()
 	for {
 		select {

@@ -431,6 +431,26 @@ func (a *App) protectedReleases() map[string]bool {
 // Handler is the combined Plex + owner UI handler (tests).
 func (a *App) Handler() http.Handler { return a.handler }
 
+// settleBeforeListen finishes startup database work that would otherwise
+// hold the write lock across the first play. The listener is not open yet.
+func (a *App) settleBeforeListen(ctx context.Context) {
+	var waitingFor string
+	a.credentialPass(ctx, &waitingFor)
+	if a.safety != nil && a.users != nil {
+		owner, err := a.users.Owner(ctx)
+		if err == nil && owner != nil {
+			if _, err := a.safety.ConfirmPlayback(ctx, owner, false, time.Now()); err != nil && !errors.Is(err, core.ErrPolicyUnconfirmed) && !errors.Is(err, core.ErrUnauthorized) {
+				a.log.Debug("playback confirm warm-up", "err", err)
+			}
+		}
+	}
+	if a.db != nil && store.DialectOf(a.db) == store.SQLite {
+		if _, err := a.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			a.log.Warn("startup checkpoint", "err", err)
+		}
+	}
+}
+
 // Config is the settings store.
 func (a *App) Config() *config.Store { return a.cfg }
 
@@ -509,6 +529,9 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.runBudgets(ctx) })
 	background.start(func() { a.runEgress(ctx) })
 	background.start(func() { a.runCredentialUpgrade(ctx) })
+	// Credential sealing and the startup WAL checkpoint finish before the
+	// listener accepts a play. A play must not wait on that write.
+	a.settleBeforeListen(ctx)
 
 	ln, err := a.listen(cfg)
 	if err != nil {

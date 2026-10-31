@@ -47,6 +47,9 @@ type Service struct {
 	invalMu sync.Mutex
 	inval   *clusterbus.Invalidator // nil on a standalone server
 	gen     atomic.Uint64
+
+	playbackMu    sync.Mutex
+	playbackEpoch map[int64]playbackConfirm
 }
 
 // Generation changes when a viewer's safety policy is saved.
@@ -55,6 +58,14 @@ func (s *Service) Generation() uint64 {
 		return 0
 	}
 	return s.gen.Load()
+}
+
+// playbackConfirm is an unrestricted viewer's fenced snapshot at one epoch.
+// A later play re-reads the epoch and skips the write when it has not moved.
+type playbackConfirm struct {
+	epoch  int64
+	user   core.User
+	policy Policy
 }
 
 func New(ctx context.Context, db *sql.DB) (*Service, error) {
