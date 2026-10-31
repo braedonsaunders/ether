@@ -34,7 +34,7 @@ func largeCatalogue(tb testing.TB, n int) *Catalog {
 	released := time.Now().Add(-48 * time.Hour).Unix()
 	for i := 1; i <= n; i++ {
 		title := fmt.Sprintf("Title %05d", i)
-		if _, err := stmt.Exec(int64(core.MovieKey(int64(i))), "movie", i, title, title, 2000, released, float64(n-i), i); err != nil {
+		if _, err := stmt.Exec(int64(core.MovieKey(int64(i))), "movie", i, title, title, 2000, released, float64(n-i)); err != nil {
 			tb.Fatal(err)
 		}
 	}
