@@ -20,11 +20,11 @@ func (i *instance) mutation(w http.ResponseWriter, r *http.Request) {
 	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
 	if err != nil {
-		http.NotFound(w, r)
+		notFound(w)
 		return
 	}
 	if _, err = i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key}); err != nil {
-		http.NotFound(w, r)
+		notFound(w)
 		return
 	}
 	switch r.PathValue("kind") {
@@ -88,7 +88,7 @@ func (i *instance) membershipItem(w http.ResponseWriter, r *http.Request) {
 	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
 	if err != nil {
-		http.NotFound(w, r)
+		notFound(w)
 		return
 	}
 	var got frontend.Membership
@@ -98,7 +98,7 @@ func (i *instance) membershipItem(w http.ResponseWriter, r *http.Request) {
 		got, err = reader.FavoriteItem(r.Context(), v, device(r), key)
 	}
 	if errors.Is(err, frontend.ErrNotFound) || (err == nil && !got.Present) {
-		http.NotFound(w, r)
+		notFound(w)
 		return
 	}
 	if err != nil || got.AddedAt == nil || got.AddedAt.IsZero() {

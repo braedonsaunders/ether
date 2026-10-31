@@ -1,93 +1,155 @@
-import { getLocale, localized, t } from "../../i18n";
-import { Badge, Button, SettingsSection, Spinner, SubtabNav, Switch, toast } from "@braedonsaunders/appkit-ui";
-import { Activity, Radio, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
-import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { getLocale, t, tn } from "../../i18n";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  FilterChips,
+  ListNavProvider,
+  PagedTable,
+  SearchInput,
+  SettingsSection,
+  Spinner,
+  Switch,
+  toast,
+  type ListSearchParams,
+} from "@braedonsaunders/appkit-ui";
+import { Film, Settings2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Artwork } from "../../components/Artwork";
 import { ConfigSection, MoreOptions } from "../../components/ConfigSection";
-import { RELEASE_SEARCH } from "../settings/schema";
 import { ErrorPanel, MutationError } from "../../components/feedback";
-import { Section } from "../../components/layout";
-import type { AvailabilityConfig } from "../../lib/types";
+import { Segmented } from "../../components/fields";
+import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { api, apiFetch } from "../../lib/api";
-import { formatNumber } from "../../lib/format";
+import { formatNumber, relativeTime } from "../../lib/format";
 import { useAsync, useInterval } from "../../lib/hooks";
+import type { AvailabilityConfig } from "../../lib/types";
+import { RELEASE_SEARCH } from "../settings/schema";
 import { BoolRow, NumRow, RecordDrawer } from "./form";
 
 interface Feed {
   id: string;
   name: string;
-  protocol: string;
   supported: boolean;
-  reason?: string;
   selected: boolean;
-  lastSync: number;
-  gap: boolean;
-  message: string;
-  matched: number;
-}
-interface Observation {
-  key: number;
-  title: string;
-  release: string;
-  protocol: string;
-  state: string;
-  reason: string;
-  firstSeen: number;
-  verifiedAt: number;
 }
 interface Status {
-  mode: string;
-  message: string;
   feeds: Feed[];
   usage: Record<string, number>;
-  counts: Record<string, number>;
-  recent: Observation[];
   day: string;
+  effort?: string;
+  effectiveFeedRequests?: number;
+  effectivePollMinutes?: number;
+  effectiveMaxPages?: number;
+  overAllowance?: boolean;
 }
-const EVIDENCE_PAGE = 25;
-const stamp = (n: number) =>
-  n ? new Date(n * 1000).toLocaleString(getLocale()) : t("Not yet synced");
-const labels: Record<string, string> = localized(() => ({
-  observed: t("Discovered"),
-  verified: t("Health checked"),
-  stale: t("Needs refresh"),
-  policy: t("Outside quality policy"),
-  unknown: t("Unknown"),
-  unavailable: t("Source unavailable"),
-}));
+interface NewRelease {
+  key: string;
+  title: string;
+  year?: number;
+  poster?: string;
+  theatrical?: number;
+  digital?: number;
+  code: string;
+  source?: string;
+  nextCheck?: number;
+  reason?: string;
+}
+
+type Effort = "gentle" | "normal" | "unlimited" | "custom";
+
+const STATUSES = ["playable", "searching", "theatrical", "quality"] as const;
+
+function queryMap(search: string): ListSearchParams {
+  const out: ListSearchParams = {};
+  for (const [key, value] of new URLSearchParams(search)) out[key] = value;
+  return out;
+}
+
+function selected(params: ListSearchParams, key: string) {
+  const raw = params[key];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return !value || value === "all" ? "" : value;
+}
+
+function shownEffort(effort?: string): Effort {
+  if (effort === "gentle" || effort === "unlimited" || effort === "custom") return effort;
+  return "normal";
+}
+
+function day(unix?: number) {
+  if (!unix) return "—";
+  return new Date(unix * 1000).toLocaleDateString(getLocale(), { dateStyle: "medium" });
+}
+
+function statusName(code: string) {
+  if (code === "playable") return t("Ready to play");
+  if (code === "theatrical") return t("In theatres only");
+  if (code === "quality") return t("Hidden by your quality profile");
+  return t("Waiting for a release");
+}
+
+function statusLabel(row: NewRelease) {
+  if (row.code !== "searching") return statusName(row.code);
+  const when = row.nextCheck ? relativeTime(new Date(row.nextCheck * 1000)) : t("soon");
+  return t("Waiting for a release · next check {when}", { when });
+}
+
+function sourceLabel(source?: string) {
+  if (!source || source === "date") return t("Digital or physical release date");
+  return source;
+}
 
 export function Availability() {
-  const { sub } = useParams();
   const navigate = useNavigate();
-  const playTab = sub === "evidence" ? "evidence" : "feeds";
+  const location = useLocation();
+  const params = queryMap(location.search);
+  const statusFilter = selected(params, "status");
+  const listNav = useMemo(
+    () => ({
+      pathname: location.pathname,
+      search: location.search.replace(/^\?/, ""),
+      replace: (href: string) => navigate(href, { replace: true }),
+      push: (href: string) => navigate(href),
+    }),
+    [location.pathname, location.search, navigate],
+  );
   const status = useAsync((signal) => apiFetch<Status>("/availability/", { signal }), []);
+  const titles = useAsync(
+    (signal) => apiFetch<NewRelease[]>("/availability/titles", { signal }),
+    [],
+  );
   const config = useAsync(() => api.getConfig(), []);
   const [draft, setDraft] = useState<AvailabilityConfig | null>(null);
   const [saving, setSaving] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [toggling, setToggling] = useState(false);
-  const [evidencePage, setEvidencePage] = useState(0);
-  const [error, setError] = useState<unknown>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
-  useInterval(() => void status.reload(), 30000);
+  useInterval(() => {
+    void status.reload();
+    void titles.reload();
+  }, 30000);
   const cfg = config.data?.availability as AvailabilityConfig | undefined;
   const s = status.data;
-  if (status.error || config.error)
+  const movies = titles.data;
+  if (status.error || titles.error || config.error)
     return (
       <ErrorPanel
-        error={status.error || config.error}
+        error={status.error || titles.error || config.error}
         onRetry={() => {
           void status.reload();
+          void titles.reload();
           void config.reload();
         }}
       />
     );
-  if (!s || !cfg)
+  if (!s || !cfg || !movies)
     return (
       <div className="py-12 text-center">
-        <Spinner label={t("Loading availability")} />
+        <Spinner label={t("Loading new releases")} />
       </div>
     );
+
   const change = <K extends keyof AvailabilityConfig>(key: K, value: AvailabilityConfig[K]) =>
     setDraft((d) => (d ? { ...d, [key]: value } : d));
   const evidenceDays = draft?.movieEvidenceDays ?? 60;
@@ -108,29 +170,6 @@ export function Availability() {
       setSaving(false);
     }
   };
-  const sync = async () => {
-    setSyncing(true);
-    setError(null);
-    try {
-      await apiFetch("/availability/sync", { method: "POST" });
-      toast.success(t("Feed sync scheduled"), {
-        description: t("The scheduler will pick it up within a minute, within your allowance."),
-      });
-      await status.reload();
-    } catch (e) {
-      setError(e);
-    } finally {
-      setSyncing(false);
-    }
-  };
-  const activeFeeds = s.feeds.filter((f) => f.supported && f.selected).length;
-  const dailyRequests = Math.ceil(1440 / Math.max(5, cfg.pollMinutes)) * activeFeeds;
-  const evidencePages = Math.max(1, Math.ceil(s.recent.length / EVIDENCE_PAGE));
-  const evidenceAt = Math.min(evidencePage, evidencePages - 1);
-  const evidenceRows = s.recent.slice(
-    evidenceAt * EVIDENCE_PAGE,
-    evidenceAt * EVIDENCE_PAGE + EVIDENCE_PAGE,
-  );
   const setMonitor = async (on: boolean) => {
     setToggling(true);
     setSaveError(null);
@@ -144,8 +183,36 @@ export function Availability() {
       setToggling(false);
     }
   };
+  const query = selected(params, "q").trim().toLowerCase();
+  const rows = movies.filter((row) => {
+    if (statusFilter && row.code !== statusFilter) return false;
+    if (!query) return true;
+    return `${row.title} ${row.year ?? ""} ${statusLabel(row)}`.toLowerCase().includes(query);
+  });
+  const counts = Object.fromEntries(
+    STATUSES.map((code) => [code, movies.filter((row) => row.code === code).length]),
+  );
+  const watched = s.feeds.filter((f) => f.supported && f.selected).length;
+  const cap = s.effectiveFeedRequests || cfg.feedRequests;
+  const used = s.usage.feedRequests ?? 0;
+  const effort = draft ? shownEffort(draft.effort) : "normal";
+  const openSettings = () => {
+    setSaveError(null);
+    setDraft({
+      ...structuredClone(cfg),
+      movieEvidenceDays: cfg.movieEvidenceDays || 60,
+      effort: shownEffort(cfg.effort ?? s.effort),
+      feedRequests: s.effectiveFeedRequests || cfg.feedRequests,
+      pollMinutes: s.effectivePollMinutes || cfg.pollMinutes,
+      maxPages: s.effectiveMaxPages || cfg.maxPages,
+    });
+  };
+
   return (
-    <>
+    <ListNavProvider value={listNav}>
+      <p className="text-sm text-fg-muted">
+        {t("New movies appear as soon as a release you can play is found.")}
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <label className="flex items-center gap-3 text-sm font-medium text-fg">
           <Switch
@@ -153,182 +220,136 @@ export function Availability() {
             disabled={toggling}
             onChange={(e) => void setMonitor(e.currentTarget.checked)}
           />
-          {t("Watch release feeds")}
+          {t("Look for playable releases")}
         </label>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!cfg.monitor || syncing}
-            onClick={() => void sync()}
-          >
-            <RefreshCw size={14} />
-            {syncing ? t("Scheduling…") : t("Sync feeds")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSaveError(null);
-              setDraft({ ...structuredClone(cfg), movieEvidenceDays: cfg.movieEvidenceDays || 60 });
-            }}
-          >
-            <Settings2 size={14} />
-            {t("Settings")}
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={openSettings}>
+          <Settings2 size={14} />
+          {t("Settings")}
+        </Button>
       </div>
-      {error ? <MutationError error={error} /> : null}
       {saveError ? <MutationError error={saveError} /> : null}
-      {cfg.monitor && cfg.feedRequests < dailyRequests ? (
-        <p className="text-sm text-danger" role="status">
-          {t("The current allowance cannot sustain this polling interval for every feed.")}
+      <p className="text-sm text-fg">
+        {cfg.monitor
+          ? tn(
+              watched,
+              "Watching new uploads on {count} indexer",
+              "Watching new uploads on {count} indexers",
+              { count: watched },
+            )
+          : t("Release checks are off.")}
+      </p>
+      <div className="max-w-md rounded-xl border border-border bg-surface px-5 py-4">
+        <p className="text-xs text-fg-muted">{t("Indexer requests today")}</p>
+        <p className="mt-2 text-2xl font-semibold tabular-nums">
+          {formatNumber(used)}
+          <span className="text-sm font-normal text-fg-muted"> / {formatNumber(cap)}</span>
         </p>
-      ) : null}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          [Radio, t("Feed requests"), s.usage.feedRequests ?? 0, cfg.feedRequests],
-          [Activity, t("Check API requests"), s.usage.checkRequests ?? 0, cfg.checkRequests],
-          [ShieldCheck, t("Source checks"), s.usage.checks ?? 0, cfg.checks],
-        ].map(([Icon, title, used, cap]) => {
-          const Glyph = Icon as typeof Radio;
-          return (
-            <div
-              key={String(title)}
-              className="rounded-xl border border-border bg-surface px-5 py-4"
-            >
-              <div className="flex items-center gap-2 text-xs text-fg-muted">
-                <Glyph size={15} />
-                {String(title)}
-              </div>
-              <p className="mt-3 text-2xl font-semibold tabular-nums">
-                {formatNumber(Number(used))}
-                <span className="text-sm font-normal text-fg-muted">
-                  {" "}
-                  / {formatNumber(Number(cap))}
-                </span>
-              </p>
-              <progress
-                aria-label={String(title)}
-                value={Number(used)}
-                max={Math.max(1, Number(cap))}
-                className="mt-3 h-1 w-full accent-current"
-              />
-              <p className="mt-2 text-xs text-fg-muted">
-                {Number(cap) === 0
-                  ? t("Disabled")
-                  : t("Daily allowance · {day} UTC", { day: s.day })}
-              </p>
-            </div>
-          );
-        })}
+        <progress
+          aria-label={t("Indexer requests today")}
+          value={used}
+          max={Math.max(1, cap)}
+          className="mt-3 h-1 w-full accent-current"
+        />
+        <p className="mt-2 text-xs text-fg-muted">
+          {s.overAllowance
+            ? t(
+                "The allowance was lowered after these requests. New checks wait until midnight UTC.",
+              )
+            : t("Budget for {day} UTC", { day: s.day })}
+        </p>
       </div>
-      <SubtabNav
-        ariaLabel={t("Will it play sections")}
-        active={playTab}
-        onSelect={(key) => navigate(`/sources/availability/${key}`)}
-        tabs={[
-          { key: "feeds", label: t("Release feeds") },
-          { key: "evidence", label: t("Recent source evidence") },
-        ]}
-      />
-      {playTab === "feeds" ? (
-      <Section title={t("Release feeds")}>
-        {s.feeds.length ? (
-          <ul className="divide-y divide-border">
-            {s.feeds.map((f) => (
-              <li key={f.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">
-                    {f.name}{" "}
-                    <span className="font-normal text-fg-muted">· {f.protocol || "Usenet"}</span>
-                  </p>
-                  <p className="mt-1 text-xs text-fg-muted">
-                    {f.reason || f.message || t("Ready to monitor")}
-                  </p>
-                  <p className="mt-1 text-xs text-fg-muted">{stamp(f.lastSync)}</p>
-                </div>
-                <Badge>
-                  {!f.supported
-                    ? t("Search only")
-                    : !f.selected
-                      ? t("Excluded")
-                      : f.gap
-                        ? t("Coverage gap")
-                        : f.lastSync
-                          ? t("Synced")
-                          : t("Waiting")}
+      <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          searchLabel={t("Search new releases")}
+          placeholder={t("Find a movie…")}
+          clearLabel={t("Clear search")}
+        />
+        <FilterChips
+          basePath={location.pathname}
+          currentParams={params}
+          paramKey="status"
+          label={t("Status")}
+          allLabel={t("All statuses")}
+          options={STATUSES.map((code) => ({
+            value: code,
+            label: statusName(code),
+            count: counts[code],
+          }))}
+        />
+      </div>
+      {movies.length ? (
+        <PagedTable
+          rows={rows}
+          rowKey={(row) => row.key}
+          pageSize={25}
+          empty={t("No new releases match this status.")}
+          labels={pagedTableLabels({
+            searchLabel: t("Search new releases"),
+            searchPlaceholder: t("Find a movie…"),
+          })}
+          columns={[
+            {
+              key: "title",
+              header: t("Movie"),
+              search: (row) => `${row.title} ${row.year ?? ""}`,
+              sortValue: (row) => row.title,
+              cell: (row) => (
+                <span className="flex items-center gap-3">
+                  <Artwork src={row.poster} alt="" className="aspect-[2/3] w-10 shrink-0 rounded" />
+                  <span>
+                    <span className="block font-medium">{row.title}</span>
+                    {row.year ? <span className="text-xs text-fg-muted">{row.year}</span> : null}
+                  </span>
+                </span>
+              ),
+            },
+            {
+              key: "theatrical",
+              header: t("In theatres"),
+              sortValue: (row) => row.theatrical ?? 0,
+              cell: (row) => day(row.theatrical),
+            },
+            {
+              key: "digital",
+              header: t("Digital"),
+              sortValue: (row) => row.digital ?? 0,
+              cell: (row) => day(row.digital),
+            },
+            {
+              key: "source",
+              header: t("Evidence"),
+              search: (row) => (row.code === "playable" ? sourceLabel(row.source) : ""),
+              cell: (row) => (row.code === "playable" ? sourceLabel(row.source) : "—"),
+            },
+            {
+              key: "status",
+              header: t("Status"),
+              search: (row) => statusLabel(row),
+              sortValue: (row) => row.code,
+              cell: (row) => (
+                <Badge
+                  variant={
+                    row.code === "playable"
+                      ? "success"
+                      : row.code === "quality"
+                        ? "destructive"
+                        : row.code === "theatrical"
+                          ? "secondary"
+                          : "info"
+                  }
+                >
+                  {statusLabel(row)}
                 </Badge>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="py-4 text-sm text-fg-muted">
-            {t("Add a Newznab or Torznab indexer to discover recent releases.")}
-          </p>
-        )}
-      </Section>
+              ),
+            },
+          ]}
+        />
       ) : (
-      <Section title={t("Recent source evidence")}>
-        {s.recent.length ? (
-          <>
-          <ul className="divide-y divide-border">
-            {evidenceRows.map((r, i) => (
-              <li key={`${r.key}-${i}`} className="flex flex-wrap items-start gap-3 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{r.title}</p>
-                  <p className="mt-1 break-all text-xs text-fg-muted">{r.release}</p>
-                  <p className="mt-1 text-xs text-fg-muted">
-                    {r.reason || t("Waiting for a selective check")} ·{" "}
-                    {stamp(r.verifiedAt || r.firstSeen)}
-                  </p>
-                </div>
-                <Badge>{labels[r.state] || r.state}</Badge>
-              </li>
-            ))}
-          </ul>
-          {s.recent.length > EVIDENCE_PAGE ? (
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <p className="text-xs text-fg-muted">
-                {t("{start}–{end} of {count}", {
-                  start: evidenceAt * EVIDENCE_PAGE + 1,
-                  end: Math.min(s.recent.length, evidenceAt * EVIDENCE_PAGE + EVIDENCE_PAGE),
-                  count: s.recent.length,
-                })}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={evidenceAt === 0}
-                  onClick={() => setEvidencePage(evidenceAt - 1)}
-                >
-                  {t("Previous")}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={evidenceAt >= evidencePages - 1}
-                  onClick={() => setEvidencePage(evidenceAt + 1)}
-                >
-                  {t("Next")}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          </>
-        ) : (
-          <div className="py-8 text-center">
-            <ShieldCheck className="mx-auto mb-3 text-fg-muted" size={28} />
-            <p className="text-sm font-medium">{t("Evidence will appear here")}</p>
-            <p className="mx-auto mt-2 max-w-lg text-sm text-fg-muted">
-              {cfg.monitor
-                ? t("Checked releases show up here after Ether watches a feed.")
-                : t("Turn on Watch release feeds to start collecting this.")}
-            </p>
-          </div>
-        )}
-      </Section>
+        <EmptyState
+          icon={<Film />}
+          title={t("No new movies in this window")}
+          description={t("New movies appear as soon as a release you can play is found.")}
+        />
       )}
       <ConfigSection
         configKey="resolver"
@@ -338,10 +359,8 @@ export function Availability() {
       />
       <RecordDrawer
         open={draft !== null}
-        title={t("Availability settings")}
-        description={t(
-          "This watches your search sites for new releases and can spot-check that a file is really there before someone presses Play. It does not change which account Ether streams from.",
-        )}
+        title={t("New release settings")}
+        description={t("Choose how often Ether asks your indexers about new movies.")}
         onClose={() => {
           if (!saving) setDraft(null);
         }}
@@ -353,185 +372,154 @@ export function Availability() {
       >
         {draft ? (
           <>
-          <SettingsSection
-            title={t("Movie visibility")}
-            description={t(
-              "An eligible observed release unlocks a movie immediately; this is not a mandatory delay or a guarantee of quality or playback. Episodes retain their 24-hour policy.",
-            )}
-          >
-            <BoolRow
-              label={t("Require movie release evidence")}
-              value={!draft.disableMovieEvidenceGate}
-              onChange={(v) => change("disableMovieEvidenceGate", !v)}
-            />
-            <NumRow
-              label={t("Movie evidence window")}
-              value={draft.movieEvidenceDays ?? 60}
-              onChange={(v) => change("movieEvidenceDays", v)}
-              min={1}
-              max={366}
-              unit={t("days")}
-              error={
-                draft.movieEvidenceDays! < 1 || draft.movieEvidenceDays! > 366
-                  ? t("Enter 1 to 366 days")
-                  : undefined
-              }
-            />
-          </SettingsSection>
-          <SettingsSection title={t("Discovery & presentation")}>
-            <BoolRow
-              label={t("Monitor release feeds")}
-              value={draft.monitor}
-              onChange={(v) => change("monitor", v)}
-              help={t(
-                "Use your configured indexers automatically. No separate RSS URL. Requests count toward API budgets; catch-up is bounded.",
-              )}
-            />
-            <BoolRow
-              label={t("Check discovered sources")}
-              value={draft.verify}
-              onChange={(v) => change("verify", v)}
-              help={t(
-                "Spend a small allowance validating promising sources. Checks pause while playback is active.",
-              )}
-            />
-            <BoolRow
-              label={t("Use debrid for checks")}
-              value={draft.debrid}
-              onChange={(v) => change("debrid", v)}
-              help={t(
-                "Use supported cache checks and existing account files. Provider capabilities vary; unknown is never treated as absent.",
-              )}
-            />
-            <BoolRow
-              label={t("Prefer checked recommendations")}
-              value={draft.preferVerified}
-              onChange={(v) => change("preferVerified", v)}
-              help={t(
-                "Move fresh checked movies forward in discovery shelves. Visibility follows the evidence settings above.",
-              )}
-            />
-            <BoolRow
-              label={t("Show newly available shelves")}
-              value={draft.newlyAvailable}
-              onChange={(v) => change("newlyAvailable", v)}
-            />
-          </SettingsSection>
-          <MoreOptions label={t("More options")}>
-            <p className="mt-2 mb-3 px-4 text-sm text-fg-muted">
-              {t(
-                "Polling, which search sites to watch, and how much of each day's allowance this work may use. The defaults are safe.",
-              )}
-            </p>
-            <SettingsSection
-              title={t("Participating feeds")}
-              description={t(
-                "All supported enabled indexers are included by default. Search remains enabled for excluded feeds.",
-              )}
-            >
+            <SettingsSection title={t("How hard to use your indexers")}>
+              <div className="px-4 py-3">
+                <Segmented
+                  ariaLabel={t("How hard to use your indexers")}
+                  value={effort}
+                  onChange={(value) => change("effort", value)}
+                  options={[
+                    { value: "gentle", label: t("Gentle") },
+                    { value: "normal", label: t("Normal") },
+                    { value: "unlimited", label: t("Unlimited") },
+                  ]}
+                />
+                {effort === "custom" ? (
+                  <p className="mt-2 text-sm text-fg-muted">
+                    {t("Using the numbers under More options.")}
+                  </p>
+                ) : null}
+              </div>
+            </SettingsSection>
+            <SettingsSection title={t("Movie visibility")}>
               <BoolRow
-                label={t("Use all supported feeds")}
-                value={!draft.indexerIds?.length}
-                onChange={(v) => change("indexerIds", v ? [] : ["__none__"])}
+                label={t("Require movie release evidence")}
+                value={!draft.disableMovieEvidenceGate}
+                onChange={(v) => change("disableMovieEvidenceGate", !v)}
               />
-              {draft.indexerIds?.length
-                ? s.feeds
-                    .filter((f) => f.supported)
-                    .map((f) => (
-                      <BoolRow
-                        key={f.id}
-                        label={f.name}
-                        value={draft.indexerIds!.includes(f.id)}
-                        onChange={(v) => {
-                          const ids = draft.indexerIds!.filter(
-                            (id) => id !== f.id && id !== "__none__",
-                          );
-                          change(
-                            "indexerIds",
-                            v ? [...ids, f.id] : ids.length ? ids : ["__none__"],
-                          );
-                        }}
-                      />
-                    ))
-                : null}
-            </SettingsSection>
-            <SettingsSection
-              title={t("Daily allowances")}
-              description={t(
-                "Shared across the server, reset at midnight UTC. A zero allowance disables that work. Normal playback retains its existing provider budgets.",
-              )}
-            >
-              <NumRow
-                label={t("Feed API requests")}
-                value={draft.feedRequests}
-                onChange={(v) => change("feedRequests", v)}
-                min={0}
-                max={100000}
-              />
-              <NumRow
-                label={t("Check API requests")}
-                value={draft.checkRequests}
-                onChange={(v) => change("checkRequests", v)}
-                min={0}
-                max={100000}
-                help={t("Indexer and debrid API calls used by source validation.")}
-              />
-              <NumRow
-                label={t("Source checks")}
-                value={draft.checks}
-                onChange={(v) => change("checks", v)}
-                min={0}
-                max={100000}
-              />
-              <NumRow
-                label={t("Descriptor grabs")}
-                value={draft.grabs}
-                onChange={(v) => change("grabs", v)}
-                min={0}
-                max={100000}
-              />
-              <NumRow
-                label={t("Validation data")}
-                value={draft.checkBytes / 1048576}
-                onChange={(v) => change("checkBytes", v * 1048576)}
-                min={0}
-                max={102400}
-                unit="MiB"
-              />
-              <NumRow
-                label={t("Reserve for playback")}
-                value={draft.reservePercent}
-                onChange={(v) => change("reservePercent", v)}
-                min={0}
-                max={99}
-                unit="%"
+              <BoolRow
+                label={t("Count a passed digital date")}
+                value={!!draft.digitalDateEvidence}
+                onChange={(v) => change("digitalDateEvidence", v)}
                 help={t(
-                  "Background requests stop before using this share of each indexer's configured daily cap. Set those caps on the Indexers tab.",
-                )}
-              />
-              <NumRow
-                label={t("Poll interval")}
-                value={draft.pollMinutes}
-                onChange={(v) => change("pollMinutes", v)}
-                min={5}
-                max={1440}
-                unit={t("minutes")}
-              />
-              <NumRow
-                label={t("Maximum pages per sync")}
-                value={draft.maxPages}
-                onChange={(v) => change("maxPages", v)}
-                min={1}
-                max={20}
-                help={t(
-                  "A page contains up to 100 releases. Unfinished catch-up resumes on later polls, within the daily allowance; fresh arrivals are checked first.",
+                  "A digital or physical date can show a movie before a file is found. Theatrical dates never do.",
                 )}
               />
             </SettingsSection>
-          </MoreOptions>
+            <MoreOptions label={t("More options")}>
+              <SettingsSection title={t("Daily allowances")}>
+                <NumRow
+                  label={t("Feed API requests")}
+                  value={draft.feedRequests}
+                  onChange={(v) => setDraft({ ...draft, feedRequests: v, effort: "custom" })}
+                  min={0}
+                  max={100000}
+                />
+                <NumRow
+                  label={t("Check API requests")}
+                  value={draft.checkRequests}
+                  onChange={(v) => setDraft({ ...draft, checkRequests: v, effort: "custom" })}
+                  min={0}
+                  max={100000}
+                />
+                <NumRow
+                  label={t("Source checks")}
+                  value={draft.checks}
+                  onChange={(v) => setDraft({ ...draft, checks: v, effort: "custom" })}
+                  min={0}
+                  max={100000}
+                />
+                <NumRow
+                  label={t("Descriptor grabs")}
+                  value={draft.grabs}
+                  onChange={(v) => setDraft({ ...draft, grabs: v, effort: "custom" })}
+                  min={0}
+                  max={100000}
+                />
+                <NumRow
+                  label={t("Validation data")}
+                  value={draft.checkBytes / 1048576}
+                  onChange={(v) =>
+                    setDraft({ ...draft, checkBytes: v * 1048576, effort: "custom" })
+                  }
+                  min={0}
+                  max={102400}
+                  unit="MiB"
+                />
+                <NumRow
+                  label={t("Reserve for playback")}
+                  value={draft.reservePercent}
+                  onChange={(v) => setDraft({ ...draft, reservePercent: v, effort: "custom" })}
+                  min={0}
+                  max={99}
+                  unit="%"
+                />
+                <NumRow
+                  label={t("Poll interval")}
+                  value={draft.pollMinutes}
+                  onChange={(v) => setDraft({ ...draft, pollMinutes: v, effort: "custom" })}
+                  min={5}
+                  max={1440}
+                  unit={t("minutes")}
+                />
+                <NumRow
+                  label={t("Maximum pages per sync")}
+                  value={draft.maxPages}
+                  onChange={(v) => setDraft({ ...draft, maxPages: v, effort: "custom" })}
+                  min={1}
+                  max={20}
+                />
+                <NumRow
+                  label={t("Movie evidence window")}
+                  value={draft.movieEvidenceDays ?? 60}
+                  onChange={(v) => change("movieEvidenceDays", v)}
+                  min={1}
+                  max={366}
+                  unit={t("days")}
+                  error={
+                    (draft.movieEvidenceDays ?? 60) < 1 || (draft.movieEvidenceDays ?? 60) > 366
+                      ? t("Enter 1 to 366 days")
+                      : undefined
+                  }
+                />
+              </SettingsSection>
+              <SettingsSection title={t("Participating feeds")}>
+                <BoolRow
+                  label={t("Use all supported feeds")}
+                  value={!draft.indexerIds?.length}
+                  onChange={(v) => change("indexerIds", v ? [] : ["__none__"])}
+                />
+                <BoolRow
+                  label={t("Also walk older uploads")}
+                  value={!!draft.catchUp}
+                  onChange={(v) => change("catchUp", v)}
+                  help={t("Optional. New movies do not wait for this.")}
+                />
+                {draft.indexerIds?.length
+                  ? s.feeds
+                      .filter((f) => f.supported)
+                      .map((f) => (
+                        <BoolRow
+                          key={f.id}
+                          label={f.name}
+                          value={draft.indexerIds!.includes(f.id)}
+                          onChange={(v) => {
+                            const ids = draft.indexerIds!.filter(
+                              (id) => id !== f.id && id !== "__none__",
+                            );
+                            change(
+                              "indexerIds",
+                              v ? [...ids, f.id] : ids.length ? ids : ["__none__"],
+                            );
+                          }}
+                        />
+                      ))
+                  : null}
+              </SettingsSection>
+            </MoreOptions>
           </>
         ) : null}
       </RecordDrawer>
-    </>
+    </ListNavProvider>
   );
 }

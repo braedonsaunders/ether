@@ -35,14 +35,17 @@ type Validator interface {
 	VerifyFeedCandidate(context.Context, *core.Title, core.Release) error
 }
 type Deps struct {
-	DB               *sql.DB
-	Config           func() config.Config
-	Feeds            Feeds
-	Catalog          Catalog
-	Validator        Validator
-	Seal             func(string) (string, error)
-	Open             func(string) (string, error)
-	CacheCheck       func(context.Context, []string) (map[string]bool, bool)
+	DB         *sql.DB
+	Config     func() config.Config
+	Feeds      Feeds
+	Catalog    Catalog
+	Validator  Validator
+	Seal       func(string) (string, error)
+	Open       func(string) (string, error)
+	CacheCheck func(context.Context, []string) (map[string]bool, bool)
+	// Search is a budgeted id search across indexers and configured addons.
+	Search           func(context.Context, core.SearchRequest) ([]core.Release, error)
+	Watchlist        func(context.Context) (map[core.RatingKey]bool, error)
 	Active           func() bool
 	Now              func() time.Time
 	Logger           *slog.Logger
@@ -152,6 +155,20 @@ func settingsPolicy(c config.Config) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
+func (s *Service) budgets() config.Availability {
+	raw := s.cfg().Availability
+	var caps []config.IndexerCap
+	if s.d.Feeds != nil {
+		for _, f := range s.d.Feeds.FeedSources() {
+			if !selected(raw.IndexerIDs, f.ID) {
+				continue
+			}
+			caps = append(caps, config.IndexerCap{ID: f.ID, DailyLimit: f.DailyLimit, PageMax: f.PageMax})
+		}
+	}
+	return raw.Resolved(caps)
+}
+
 func selected(ids []string, id string) bool {
 	if len(ids) == 0 {
 		return true
@@ -214,6 +231,7 @@ func (s *Service) Cycle(ctx context.Context) error {
 		s.cacheSeeded = true
 	}
 	if cfg.Monitor {
+		live := s.budgets()
 		feeds := s.d.Feeds.FeedSources()
 		type due struct {
 			f  core.ReleaseFeed
@@ -224,11 +242,17 @@ func (s *Service) Cycle(ctx context.Context) error {
 			if !f.Supported || !selected(cfg.IndexerIDs, f.ID) {
 				continue
 			}
-			_, at, _, err := s.feedState(ctx, f)
+			_, at, gap, err := s.feedState(ctx, f)
 			if err != nil {
 				return err
 			}
-			if at == 0 || schedule.Due(s.now(), time.Unix(at, 0), time.Duration(max(5, cfg.PollMinutes))*time.Minute) {
+			interval := time.Duration(max(5, live.PollMinutes)) * time.Minute
+			// An open catch-up continues every minute. Head polls stay on the
+			// normal interval once the recent window has been walked.
+			if cfg.CatchUp && gap {
+				interval = time.Minute
+			}
+			if at == 0 || schedule.Due(s.now(), time.Unix(at, 0), interval) {
 				work = append(work, due{f, at})
 			}
 		}
@@ -252,6 +276,9 @@ func (s *Service) Cycle(ctx context.Context) error {
 		if err := s.verify(ctx); err != nil && !benign(err) {
 			return err
 		}
+	}
+	if err := s.probeDue(ctx); err != nil && !benign(err) {
+		s.log.Warn("availability title probe failed", "error", err)
 	}
 	return s.prune(ctx)
 }

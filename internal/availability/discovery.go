@@ -100,6 +100,9 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 		}
 		rows.Close()
 	}
+	if input.availability.DigitalDateEvidence {
+		s.acceptDigitalReleases(ctx, keys, input.now, acceptable)
+	}
 	// Close the cursor before policy checks, which may read the same database.
 	for _, o := range observations {
 		if acceptable[o.key] || (o.state == "unknown" && o.revision > 0) || o.state == "unavailable" {

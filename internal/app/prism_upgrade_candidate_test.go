@@ -15,7 +15,7 @@ var prismCandidateMigrations = map[string]int{
 	"sessions":              9,
 	"sessions_samples":      1,
 	"viewer_policy":         4,
-	"availability":          4,
+	"availability":          5,
 	"capability_tickets":    1,
 	"capability_headers":    3,
 	"frontend_image_grants": 7,

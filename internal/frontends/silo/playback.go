@@ -86,11 +86,11 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
-	// A channel GUID is the On Now card's play_content_id. It tunes through
-	// the same live session as Jellyfin and Plex instead of a catalogue file.
+	// A channel GUID or live channel file_id tunes through the same live
+	// session as Jellyfin and Plex instead of a catalogue file.
 	channel, liveFile, err := i.resolveLiveFile(r, v, b.FileID)
 	if err != nil {
-		http.NotFound(w, r)
+		notFound(w)
 		return
 	}
 	var offer frontend.SourceOffer
@@ -400,17 +400,25 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 // siloMediaURL is the only stream address the Apple TV client will play.
 // Direct play is the session itself. HLS, including remux and transcode, is
 // the session master. A grant in the path is rejected before the request.
-// resolveLiveFile maps an On Now play_content_id to the neutral channel id.
-// Any other file id is a catalogue offer. A channel id the viewer cannot
-// tune is not a catalogue miss.
+// resolveLiveFile maps an On Now play_content_id or live channel file_id to
+// the neutral channel id. Any other file id is a catalogue offer. A channel id
+// the viewer cannot tune is not a catalogue miss.
 func (i *instance) resolveLiveFile(r *http.Request, v *frontend.Viewer, fileID string) (string, bool, error) {
-	if _, err := ids.ParseGUID(ids.Channel, fileID); err != nil {
+	channelGUID := ""
+	if _, err := ids.ParseGUID(ids.Channel, fileID); err == nil {
+		channelGUID = fileID
+	} else if isLiveChannelFileID(fileID) {
+		channelGUID = i.resolveLiveChannelFileID(r.Context(), v, fileID)
+		if channelGUID == "" {
+			return "", false, frontend.ErrNotFound
+		}
+	} else {
 		return "", false, nil
 	}
 	if i.host.LiveTV == nil {
 		return "", false, frontend.ErrNotFound
 	}
-	ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, fileID)
+	ch, err := i.host.LiveTV.ResolveChannelGUID(r.Context(), v, channelGUID)
 	if err != nil || ch.ID == "" {
 		if err == nil {
 			err = frontend.ErrNotFound
@@ -418,6 +426,34 @@ func (i *instance) resolveLiveFile(r *http.Request, v *frontend.Viewer, fileID s
 		return "", false, err
 	}
 	return ch.ID, true, nil
+}
+
+func (i *instance) resolveLiveChannelFileID(ctx context.Context, v *frontend.Viewer, fileID string) string {
+	if guid := i.rememberedLiveChannel(fileID); guid != "" {
+		return guid
+	}
+	if i.host.LiveTV == nil {
+		return ""
+	}
+	channels, err := i.host.LiveTV.Channels(ctx, v)
+	if err != nil {
+		return ""
+	}
+	for _, ch := range channels {
+		guid, err := ids.StringGUID(ids.Channel, ch.ID)
+		if err != nil {
+			continue
+		}
+		candidate, err := liveChannelFileID(guid)
+		if err != nil {
+			continue
+		}
+		if candidate == fileID {
+			_, _ = i.rememberLiveChannel(guid, liveChannelCardMeta{})
+			return guid
+		}
+	}
+	return ""
 }
 
 func siloMediaURL(sessionID string, format frontend.StreamFormat) string {

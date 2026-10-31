@@ -19,7 +19,7 @@ const TABS = localized(
   () =>
     [
       { key: "yours", label: t("Your sources") },
-      { key: "availability", label: t("Will it play") },
+      { key: "availability", label: t("New releases") },
       { key: "stats", label: t("Stats") },
     ] as const,
 );

@@ -6,8 +6,6 @@ import { destinations } from "../lib/sitemap";
 const matchMedia = window.matchMedia;
 
 beforeEach(() => {
-  // Reduced motion turns the settings drawer exit into a short opacity
-  // transition. settleUi jumps that clock instead of waiting on frames.
   window.matchMedia = (query: string) => ({
     matches: query.includes("min-width") || query.includes("prefers-reduced-motion"),
     media: query,
@@ -23,27 +21,47 @@ afterEach(() => {
   window.matchMedia = matchMedia;
 });
 
-describe("Sources availability", () => {
-  it("is discoverable and does not start checks just by viewing", async () => {
+describe("Sources new releases", () => {
+  it("lists in-window movies and does not start checks just by viewing", async () => {
     const { fake } = renderApp("/sources/availability");
     await settleUi(() => {
-      expect(screen.getByText("Watch release feeds")).toBeVisible();
+      expect(
+        screen.getByText("New movies appear as soon as a release you can play is found."),
+      ).toBeVisible();
+      expect(screen.getByText("Ready Movie")).toBeVisible();
     });
-    expect(destinations().some((d) => d.href === "/sources/availability")).toBe(true);
-    expect(screen.getByRole("button", { name: "Sync feeds" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("tab", { name: "Recent source evidence" }));
-    expect(screen.getByText("Evidence will appear here")).toBeVisible();
+    expect(
+      destinations().some((d) => d.href === "/sources/availability" && d.title === "New releases"),
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Sync feeds" })).not.toBeInTheDocument();
+    expect(screen.getByText("Release checks are off.")).toBeVisible();
+    fireEvent.click(screen.getByRole("switch", { name: "Look for playable releases" }));
+    await settleUi(() => {
+      expect(screen.getByText("Watching new uploads on 4 indexers")).toBeVisible();
+    });
     expect(calls(fake, "POST", "/availability")).toHaveLength(0);
+    expect(calls(fake, "POST", "/availability/sync")).toHaveLength(0);
   });
-  it("saves monitoring and budgets, then schedules sync", async () => {
+  it("filters by status", async () => {
+    renderApp("/sources/availability");
+    await settleUi(() => {
+      expect(screen.getByText("Ready Movie")).toBeVisible();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    fireEvent.click(screen.getByRole("option", { name: /In theatres only/ }));
+    await settleUi(() => {
+      expect(screen.getByText("Theatre Movie")).toBeVisible();
+      expect(screen.queryByText("Ready Movie")).not.toBeInTheDocument();
+    });
+  });
+  it("saves a gentler preset and a custom budget", async () => {
     const { fake } = renderApp("/sources/availability");
     await settleUi(() => {
       expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
     });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const d = screen.getByRole("dialog", { name: "Availability settings" });
-    fireEvent.click(within(d).getByRole("switch", { name: "Monitor release feeds" }));
-    fireEvent.click(within(d).getByRole("switch", { name: "Check discovered sources" }));
+    const d = screen.getByRole("dialog", { name: "New release settings" });
+    fireEvent.click(within(d).getByRole("radio", { name: "Gentle" }));
     fireEvent.click(within(d).getByText("More options"));
     fireEvent.change(within(d).getByLabelText("Feed API requests"), { target: { value: "48" } });
     fireEvent.click(within(d).getByRole("button", { name: "Save settings" }));
@@ -52,14 +70,9 @@ describe("Sources availability", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     expect(calls(fake, "PUT", "/config/availability")[0]!.body).toMatchObject({
-      monitor: true,
-      verify: true,
+      effort: "custom",
       feedRequests: 48,
       reservePercent: 80,
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Sync feeds" }));
-    await settleUi(() => {
-      expect(calls(fake, "POST", "/availability/sync")).toHaveLength(1);
     });
   });
   it("preserves the movie window when disabling the gate", async () => {
@@ -68,7 +81,8 @@ describe("Sources availability", () => {
       expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
     });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const d = screen.getByRole("dialog", { name: "Availability settings" });
+    const d = screen.getByRole("dialog", { name: "New release settings" });
+    fireEvent.click(within(d).getByText("More options"));
     expect(within(d).getByLabelText("Movie evidence window")).toHaveValue(60);
     fireEvent.change(within(d).getByLabelText("Movie evidence window"), {
       target: { value: "120" },
@@ -89,7 +103,7 @@ describe("Sources availability", () => {
       expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
     });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const d = screen.getByRole("dialog", { name: "Availability settings" });
+    const d = screen.getByRole("dialog", { name: "New release settings" });
     fireEvent.click(within(d).getByText("More options"));
     fireEvent.click(within(d).getByRole("switch", { name: "Use all supported feeds" }));
     fireEvent.click(within(d).getByRole("button", { name: "Cancel" }));
@@ -98,7 +112,7 @@ describe("Sources availability", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const again = screen.getByRole("dialog", { name: "Availability settings" });
+    const again = screen.getByRole("dialog", { name: "New release settings" });
     fireEvent.click(within(again).getByRole("button", { name: "More options" }));
     expect(within(again).getByRole("switch", { name: "Use all supported feeds" })).toBeChecked();
   });
