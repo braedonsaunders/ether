@@ -80,6 +80,7 @@ func TestScopeOf(t *testing.T) {
 		"spike":                      Local,
 		"usenet":                     Shared,
 		"indexers":                   Shared,
+		"prowlarr":                   Shared,
 		"setupComplete":              Shared,
 		"debrid.providers":           Shared,
 		"debrid.cachedOnly":          Shared,

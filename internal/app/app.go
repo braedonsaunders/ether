@@ -133,6 +133,9 @@ type App struct {
 	support       *diagnostics.Recorder
 	cfg           *config.Store
 	proxyMu       sync.Mutex
+	prowlarrMu    sync.Mutex
+	prowlarrState string
+	prowlarrKept  bool
 	proxyGen      uint64
 	proxyReady    bool
 	proxyPrefixes []netip.Prefix
@@ -654,6 +657,7 @@ func (a *App) Run(ctx context.Context) error {
 	background.start(func() { a.runUpdates(ctx) })
 	background.start(func() { a.runClusterSync(ctx) })
 	background.start(func() { a.runBudgets(ctx) })
+	background.start(func() { a.cluster.RunAsLeader(ctx, "prowlarr indexer sync", a.runProwlarrSync) })
 	background.start(func() { a.runEgress(ctx) })
 	background.start(func() { a.runCredentialUpgrade(ctx) })
 	// Credential sealing and the startup WAL checkpoint finish before the

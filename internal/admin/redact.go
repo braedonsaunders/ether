@@ -10,6 +10,13 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 )
 
+// sameProwlarrURL reports whether two Prowlarr base URLs name the same
+// saved connection. A trailing slash does not make a new destination, so
+// the stored API key can be restored. Any other change requires the key again.
+func sameProwlarrURL(a, b string) bool {
+	return strings.TrimRight(strings.TrimSpace(a), "/") == strings.TrimRight(strings.TrimSpace(b), "/")
+}
+
 func redact(s string) string {
 	if s == "" {
 		return ""
@@ -34,6 +41,7 @@ func RedactConfig(cfg config.Config) config.Config {
 	out.OpenSubtitles = redactOpenSubtitles(out.OpenSubtitles)
 	out.LLM = redactLLM(out.LLM)
 	out.Outbound.Password = redact(out.Outbound.Password)
+	out.Prowlarr.APIKey = redact(out.Prowlarr.APIKey)
 	out.Database = out.Database.Redacted()
 	if cfg.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(cfg.Usenet.Providers))
@@ -213,6 +221,7 @@ func UnredactConfig(next, prev config.Config) (config.Config, []FieldError) {
 	out.OpenSubtitles = errs.unredactOpenSubtitles(next.OpenSubtitles, prev.OpenSubtitles)
 	out.LLM = errs.unredactLLM(next.LLM, prev.LLM)
 	out.Outbound.Password = errs.restore("outbound.password", next.Outbound.Password, prev.Outbound.Password, strings.TrimSpace(next.Outbound.URL) == strings.TrimSpace(prev.Outbound.URL))
+	out.Prowlarr.APIKey = errs.restore("prowlarr.apiKey", next.Prowlarr.APIKey, prev.Prowlarr.APIKey, sameProwlarrURL(next.Prowlarr.URL, prev.Prowlarr.URL))
 	if next.Usenet.Providers != nil {
 		out.Usenet.Providers = make([]config.UsenetProvider, len(next.Usenet.Providers))
 		for i, p := range next.Usenet.Providers {

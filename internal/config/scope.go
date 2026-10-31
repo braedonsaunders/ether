@@ -39,6 +39,7 @@ var sectionScopes = map[string]Scope{
 	"availability":  Shared,
 	"usenet":        Shared,
 	"indexers":      Shared,
+	"prowlarr":      Shared, // one connection, and the indexers it syncs, for the cluster
 	"catalog":       Shared,
 	"resolver":      Shared,
 	"quality":       Shared,

@@ -29,11 +29,14 @@ type Config struct {
 	Posters       Posters        `json:"posters"`
 	Availability  Availability   `json:"availability"`
 	// SharedCache is the cluster-wide NAS policy. Mount paths stay in Cache.
-	SharedCache   *Cache        `json:"sharedCache,omitempty"`
-	Server        Server        `json:"server"`
-	Plex          Plex          `json:"plex"`
-	Usenet        Usenet        `json:"usenet"`
-	Indexers      []Indexer     `json:"indexers"`
+	SharedCache *Cache    `json:"sharedCache,omitempty"`
+	Server      Server    `json:"server"`
+	Plex        Plex      `json:"plex"`
+	Usenet      Usenet    `json:"usenet"`
+	Indexers    []Indexer `json:"indexers"`
+	// Prowlarr is the saved connection for indexer sync. Empty means the
+	// owner has not saved one. The API key is a secret, redacted like indexer keys.
+	Prowlarr      Prowlarr      `json:"prowlarr,omitempty"`
 	Cache         Cache         `json:"cache"`
 	Catalog       Catalog       `json:"catalog"`
 	Resolver      Resolver      `json:"resolver"`
