@@ -233,12 +233,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		return core.Page{}, errors.New("experience: recursive library unavailable")
 	}
 	if expand && wantShowChildren && s.d.Children == nil {
-		// An explicit season filter cannot be answered without the season list.
-		// An unfiltered recursive query keeps the show and its episodes.
-		if len(q.Types) > 0 {
-			return core.Page{}, errors.New("experience: recursive library unavailable")
-		}
-		wantShowChildren = false
+		return core.Page{}, errors.New("experience: recursive library unavailable")
 	}
 	// Recursive episode queries keep at most one bounded batch of visible,
 	// statically matching candidates in addition to the existing results.
