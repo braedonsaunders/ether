@@ -782,9 +782,30 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	if e = a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "fixture-owner-token"); e != nil {
 		t.Fatal(e)
 	}
-	viewer, e := a.users.Owner(ctx)
+	if _, e = a.users.Owner(ctx); e != nil {
+		t.Fatal(e)
+	}
+	// The lab Jellyfin account is not an administrator. VirtualFolders is
+	// elevation-only, so the fixture viewer has to be a non-admin too.
+	if e = a.users.SyncFriends(ctx, []plextv.Friend{{
+		PlexID: 1001, Username: "fixture-viewer", Title: "Fixture Viewer", AllLibs: true,
+	}}); e != nil {
+		t.Fatal(e)
+	}
+	users, e := a.users.Users(ctx)
 	if e != nil {
 		t.Fatal(e)
+	}
+	var viewer *core.User
+	for i := range users {
+		if !users[i].IsOwner && users[i].Username == "fixture-viewer" {
+			u := users[i]
+			viewer = &u
+			break
+		}
+	}
+	if viewer == nil {
+		t.Fatal("lab viewer missing")
 	}
 	local, _ := identity.NewLocal(a.db)
 	if e = local.Create(ctx, viewer.ID, "fixture-viewer", "fixture-password"); e != nil {

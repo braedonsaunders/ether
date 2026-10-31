@@ -847,7 +847,11 @@ func (i *instance) jellyfinResumeFields(r *http.Request, item map[string]any) {
 	delete(item, "CanDelete")
 	delete(item, "CanDownload")
 	delete(item, "OriginalTitle")
-	delete(item, "ParentId")
+	// Infuse asks for ParentId on resume. Other resume queries omit the field,
+	// and those rows stay without it.
+	if !fields["parentid"] {
+		delete(item, "ParentId")
+	}
 	delete(item, "SeriesStudio")
 	delete(item, "ProductionLocations")
 }
@@ -1055,6 +1059,12 @@ func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 	}
 	if i.host.Experience == nil {
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	// Jellyfin requires elevation. A non-admin gets an empty 403 with no
+	// content type, which is what the lab reference returns.
+	if i.protocol == "jellyfin" && (viewer.Delegated || !viewer.IsOwner) {
+		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 	views, err := i.host.Experience.Views(r.Context(), viewer)
