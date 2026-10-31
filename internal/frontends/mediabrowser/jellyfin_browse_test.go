@@ -624,7 +624,7 @@ func TestJellyfinVirtualFolders(t *testing.T) {
 		t.Fatal("invented library path")
 	}
 	options, _ := folders[0]["LibraryOptions"].(map[string]any)
-	if options["PreferredMetadataLanguage"] != "en" || options["MetadataCountryCode"] != "US" || options["EnableChapterImageExtraction"] != false || options["EnableTrickplayImageExtraction"] != false || options["EnableInternetProviders"] != false || options["SaveSubtitlesWithMedia"] != false {
+	if _, ok := options["PreferredMetadataLanguage"]; ok || options["MetadataCountryCode"] != nil || options["EnableChapterImageExtraction"] != false || options["EnableTrickplayImageExtraction"] != false || options["EnableInternetProviders"] != false || options["SaveSubtitlesWithMedia"] != false {
 		t.Fatal(options)
 	}
 	if paths, ok := options["PathInfos"].([]any); !ok || len(paths) != 0 {

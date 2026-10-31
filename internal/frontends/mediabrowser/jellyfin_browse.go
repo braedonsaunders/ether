@@ -887,8 +887,6 @@ func jellyfinLibraryOptions() map[string]any {
 		"PreferNonstandardArtistsTag":             false,
 		"UseCustomTagDelimiters":                  false,
 		"SeasonZeroDisplayName":                   "Specials",
-		"PreferredMetadataLanguage":               "en",
-		"MetadataCountryCode":                     "US",
 		"PathInfos":                               []any{},
 		"DisabledLocalMetadataReaders":            []any{},
 		"DisabledLyricFetchers":                   []any{},
