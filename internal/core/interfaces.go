@@ -16,7 +16,7 @@ const (
 	SortTitle      SortOrder = "title"
 	SortReleased   SortOrder = "released"
 	SortRating     SortOrder = "rating"
-	SortAdded      SortOrder = "added"   // the title's own release or air date
+	SortAdded      SortOrder = "added"   // movie/episode release or air date; series and seasons use the latest aired episode, then the premiere
 	SortUpdated    SortOrder = "updated" // actual catalogue metadata update time
 )
 

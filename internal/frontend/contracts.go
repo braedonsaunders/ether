@@ -245,8 +245,9 @@ const (
 
 type Version struct {
 	ID, Name string
-	// AddedAt is the title's own release or air date. It is not a catalogue
-	// insertion, observation, refresh, or descendant episode date.
+	// AddedAt follows date added. Movies and episodes use their own release
+	// or air date. Series and seasons use the latest aired episode, then
+	// the premiere. It is not a catalogue insertion, observation, or refresh.
 	AddedAt time.Time
 	Media   core.MediaInfo
 	// Source facts are absent unless they are known for this version. FileName

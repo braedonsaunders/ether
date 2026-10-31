@@ -24,34 +24,36 @@ by Experience B (`3a8c9a3bf`, `18846f422`), not duplicated here.
 
 ## Date contract and approved Plex differences
 
-Root confirmed the owner decision in thread `thr_6hmqzepnsk` on 2026-10-30:
+The owner decision of 2026-10-29, restated on 2026-10-30:
 
-- Movie, episode, series and season: that title's own release or air date.
-- A series or season premiere is not replaced by a later episode.
-- A show or season with no premiere of its own may still advertise a derived
-  air date stored on `AddedAt` (virtual DVD seasons). That is not a catalogue
-  insertion time.
-- Future/unknown dates are absent from Recently Added. No catalogue insertion,
-  metadata refresh, file modification, publication or observation fallback.
+- A movie's date added is its release date. An episode's is its air date.
+- A series' date added is the air date of its most recently aired episode,
+  falling back to its first-air date.
+- A season's date added is the latest aired episode in that season, falling
+  back to the season premiere. It does not borrow another season or the series premiere.
+- Only episodes aired at or before now count. Unreleased and unaired items
+  are absent from Recently Added.
+- Catalogue insertion, metadata refresh, file modification, publication and
+  observation times are never date added. A virtual season with no premiere
+  of its own may still carry a derived air date on `AddedAt`.
 
-`releaseAddedSQL` and `CachedAddedTimes` read `released_ts` only.
+`airAddedSQL` and `CachedAddedTimes` implement that rule.
 `KnownAddedDate` adds that expression to the filter **before counting and
 pagination**, only for Recently Added queries. Plain library date-added sorts
 still include unknown items. Spike's local-file catalogue sorts by release
 instead of modification.
 
-Approved Plex differences: `addedAt` is the title's own release date, including
-series and seasons. A supplied catalogue `AddedAt` of `1704067200` (2024-01-01)
-for a title released at `1072915200` (2004-01-01) becomes **1072915200**.
+Plex `addedAt` follows the same rule. A movie or episode ignores a conflicting
+catalogue `AddedAt`: `1704067200` (2024-01-01) for a title released at
+`1072915200` (2004-01-01) becomes **1072915200**. A series whose latest aired
+episode is 2024-01-01 sorts ahead of a movie released in 2020.
 `originallyAvailableAt` remains the premiere; metadata `updatedAt` is unchanged.
-Recently Added orders and filters by that same release date, so a 2004 series
-does not sort ahead of a 2020 movie because a descendant aired in 2024.
-Recently Added excludes unknown/future items before its limit. No date
+Recently Added excludes unknown and future items before its limit. No date
 differences are normalized out of comparisons.
 
-Jellyfin and Emby `DateCreated` use this title date; `PremiereDate` remains the
-original release. Latest grouped series rows use the series premiere, not the
-newest episode. Ungrouped episode rows still use each episode's air date.
+Jellyfin and Emby `DateCreated` use this date; `PremiereDate` remains the
+original release. Latest grouped series rows use the latest aired episode.
+Ungrouped episode rows use each episode's air date.
 Silo version `added_at` uses the same title date, omitting it when unknown.
 Version `Publication` and persisted `FirstObservedAt` remain distinct facts;
 neither is serialized by protocol adapters as an added date.
@@ -60,8 +62,9 @@ neither is serialized by protocol adapters as an added date.
 
 Exact approved date values: `TestApprovedReleaseDateAddedAtDelta`.
 Catalogue insertion/order/filter regression: `TestMovieAddedSortIgnoresCatalogueInsertion`.
-Series and season premieres, not descendant air dates: `TestAirAddedAndAiredEpisodeBrowse`,
-`TestSeasonAirAddedFallbacks`, `TestSectionDateSortRoutesUseAirDates`.
+Latest aired episode, then premiere: `TestAirAddedAndAiredEpisodeBrowse`,
+`TestSeasonAirAddedFallbacks`, `TestNewEpisodeLiftsShowInRecentlyAdded`,
+`TestSectionDateSortRoutesUseAirDates`.
 Neutral mixed-type sorting: `TestDateAddedSortAcrossTypesAndChildren`.
 Owner/restricted postplay frozen XML/JSON: `TestPostplaySelectionMatchesFrozenBytes`.
 Existing Continue/search/home/row tests retain legacy controls and compare raw
