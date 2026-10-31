@@ -56,6 +56,27 @@ func (a *App) runPruners(ctx context.Context) {
 	}
 }
 
+// checkpointWAL copies the SQLite WAL from a background goroutine. A commit
+// on a request must not run that checkpoint itself.
+func (a *App) checkpointWAL(ctx context.Context) {
+	if a.db == nil || store.DialectOf(a.db) != store.SQLite {
+		return
+	}
+	store.RunCheckpointer(ctx, a.db, a.walTruncateAllowed, func(err error) {
+		a.log.Warn("wal checkpoint", "err", err)
+	})
+}
+
+// walTruncateAllowed reports whether a TRUNCATE checkpoint is safe. PASSIVE
+// checkpoints still run when this is false. A live playback, or any other
+// connection inside a query, keeps the exclusive truncate off the request.
+func (a *App) walTruncateAllowed() bool {
+	if a.playback != nil && len(a.playback.Sessions()) > 0 {
+		return false
+	}
+	return a.db != nil && a.db.Stats().InUse == 0
+}
+
 // maintainDB prunes derived data and runs store.Maintain daily until ctx
 // ends.
 func (a *App) maintainDB(ctx context.Context) {

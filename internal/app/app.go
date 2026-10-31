@@ -559,6 +559,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	background.start(func() { a.housekeeping(ctx) })
+	background.start(func() { a.checkpointWAL(ctx) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "database maintenance", a.maintainDB) })
 	background.start(func() { a.stats.Run(ctx) })
 	background.start(func() { a.cluster.RunAsLeader(ctx, "notification delivery", a.notifications.Run) })

@@ -282,7 +282,10 @@ func OpenPath(ctx context.Context, path string) (*sql.DB, error) {
 func openSQLite(ctx context.Context, path string, files []SnapshotFile) (*sql.DB, error) {
 	// journal_size_limit caps the WAL left on disk after a checkpoint; without
 	// it one large transaction leaves a WAL file that never shrinks.
-	dsn := "file:" + path + "?_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=cache_size(-65536)&_pragma=temp_store(MEMORY)&_pragma=mmap_size(268435456)" +
+	// wal_autocheckpoint=0 keeps a commit from running a checkpoint. Under
+	// WAL + synchronous=NORMAL the checkpoint is the fsync; a request must
+	// not wait on it. RunCheckpointer does that work in the background.
+	dsn := "file:" + path + "?_txlock=immediate&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=wal_autocheckpoint(0)&_pragma=cache_size(-65536)&_pragma=temp_store(MEMORY)&_pragma=mmap_size(268435456)" +
 		fmt.Sprintf("&_pragma=journal_size_limit(%d)", journalSizeLimit)
 	if path == ":memory:" {
 		dsn = "file::memory:?_pragma=foreign_keys(1)"
