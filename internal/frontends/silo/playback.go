@@ -186,7 +186,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Playback unavailable", 503)
 		return
 	}
-	media = "/api/v2/stream/" + strings.TrimPrefix(media, "/sessions/media/")
+	media = siloMediaURL(session.ID, format)
 	source := map[string]any{"media_file_id": b.FileID, "hdr10_plus": false, "dv_enhancement_layer": "unknown"}
 	if !plan.Media.Estimated {
 		if plan.Media.Duration > 0 {
@@ -310,7 +310,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		url, e := i.host.Sessions.SubtitleURL(r.Context(), access, session.ID, track.Index, "vtt")
 		if e == nil && strings.HasPrefix(url, "/sessions/media/") {
 			entry["delivery"] = "sidecar"
-			entry["url"] = "/api/v2/stream/" + strings.TrimPrefix(url, "/sessions/media/")
+			entry["url"] = "/api/v2/stream/" + session.ID + "/subtitles/" + strconv.Itoa(track.Index) + ".vtt"
 			if sync := i.subtitleSyncMS(r, v); sync != 0 {
 				entry["url"] = entry["url"].(string) + "?sync_ms=" + strconv.Itoa(sync)
 			}
@@ -360,7 +360,40 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	if active := siloActiveQuality(b.Quality, qualities, plan.Decision.VideoCopy, encodeHeight); active != "" {
 		output["active_quality"] = active
 	}
-	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "session_id": session.ID, "playback_plan": output})
+	document := map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "session_id": session.ID, "playback_plan": output}
+	i.rememberPlan(session.ID, format, document)
+	reply(w, 201, document)
+}
+
+// siloMediaURL is the only stream address the Apple TV client will play.
+// Direct play is the session itself. HLS, including remux and transcode, is
+// the session master. A grant in the path is rejected before the request.
+func siloMediaURL(sessionID string, format frontend.StreamFormat) string {
+	if format == frontend.StreamHLS {
+		return "/api/v2/playback/transcode/" + sessionID + "/master.m3u8"
+	}
+	return "/api/v2/stream/" + sessionID
+}
+
+type playbackPlan struct {
+	format frontend.StreamFormat
+	body   map[string]any
+}
+
+func (i *instance) rememberPlan(id string, format frontend.StreamFormat, body map[string]any) {
+	i.plansMu.Lock()
+	defer i.plansMu.Unlock()
+	if i.plans == nil {
+		i.plans = map[string]playbackPlan{}
+	}
+	i.plans[id] = playbackPlan{format: format, body: body}
+}
+
+func (i *instance) rememberedPlan(id string) (playbackPlan, bool) {
+	i.plansMu.Lock()
+	defer i.plansMu.Unlock()
+	plan, ok := i.plans[id]
+	return plan, ok
 }
 
 // siloQualityMenu lists Ether's default quality profiles (config.DefaultQuality)
@@ -621,7 +654,186 @@ func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Re
 
 type sharedPrefix struct{}
 
+type replanRequest struct {
+	InstallationID string   `json:"installation_id"`
+	Protocol       int      `json:"protocol_version"`
+	Attempt        string   `json:"playback_attempt_id"`
+	ReplanID       string   `json:"replan_request_id"`
+	FailedPlan     string   `json:"failed_plan_id"`
+	PlanAttempt    string   `json:"plan_attempt_id"`
+	PlanKey        string   `json:"plan_attempt_key"`
+	AttemptCount   int      `json:"attempt_count"`
+	Quality        string   `json:"quality_preference"`
+	Position       float64  `json:"position_seconds"`
+	Attempted      []string `json:"attempted_plan_keys"`
+}
+
+func (i *instance) playbackReplan(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.deviceViewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	if i.host.Sessions == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	var b replanRequest
+	if decode(r, &b) != nil || b.Protocol != 3 || b.InstallationID == "" || b.Attempt == "" || b.ReplanID == "" || b.FailedPlan == "" || b.PlanAttempt == "" || b.PlanKey == "" || b.Quality == "" || b.AttemptCount < 1 || len(b.Attempted) == 0 || b.Position < 0 || math.IsNaN(b.Position) || math.IsInf(b.Position, 0) {
+		problem(w, http.StatusBadRequest, "urn:ether:problem:validation-failed", "Validation failed", "The replan request is missing a required field.")
+		return
+	}
+	if b.InstallationID != i.installationID() {
+		installationChanged(w)
+		return
+	}
+	id := r.PathValue("session")
+	if !i.ownsSession(r.Context(), v, device(r), id) {
+		problem(w, http.StatusNotFound, "urn:ether:problem:playback-session-not-found", "Playback session not found", "No playback session matches this device.")
+		return
+	}
+	snap, ok := i.rememberedPlan(id)
+	if !ok {
+		problem(w, http.StatusNotFound, "urn:ether:problem:playback-session-not-found", "Playback session not found", "This server has no plan to revise for the session.")
+		return
+	}
+	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: "silo"}
+	pos := time.Duration(b.Position * float64(time.Second))
+	if _, err = i.host.Sessions.StartStream(r.Context(), access, id, frontend.StreamRequest{Format: snap.format, Position: pos}); err != nil {
+		playbackError(w, err)
+		return
+	}
+	raw, err := json.Marshal(snap.body)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	var document map[string]any
+	if json.Unmarshal(raw, &document) != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	plan, _ := document["playback_plan"].(map[string]any)
+	if plan == nil {
+		problem(w, http.StatusNotFound, "urn:ether:problem:playback-session-not-found", "Playback session not found", "This server has no plan to revise for the session.")
+		return
+	}
+	stream, _ := plan["stream"].(map[string]any)
+	if stream == nil {
+		stream = map[string]any{}
+		plan["stream"] = stream
+	}
+	stream["url"] = siloMediaURL(id, snap.format)
+	timeline, _ := plan["timeline"].(map[string]any)
+	if timeline == nil {
+		timeline = map[string]any{}
+		plan["timeline"] = timeline
+	}
+	timeline["source_start_seconds"] = b.Position
+	if snap.format == frontend.StreamHLS {
+		timeline["stream_origin_seconds"] = b.Position
+		timeline["player_start_seconds"] = 0
+		timeline["timeline_offset_seconds"] = b.Position
+	} else {
+		timeline["stream_origin_seconds"] = 0
+		timeline["player_start_seconds"] = b.Position
+		timeline["timeline_offset_seconds"] = 0
+	}
+	document["session_id"] = id
+	reply(w, http.StatusOK, document)
+}
+
+func (i *instance) ownsSession(ctx context.Context, v *frontend.Viewer, d frontend.Device, id string) bool {
+	if i.host.Sessions == nil || id == "" || v == nil || d.ID == "" {
+		return false
+	}
+	list, err := i.host.Sessions.Sessions(ctx, frontend.SessionAccess{Viewer: v, Device: d, Protocol: "silo"})
+	if err != nil {
+		return false
+	}
+	for _, session := range list {
+		if session.ID == id && session.ViewerID == v.ID && session.Protocol == "silo" && session.Device.ID == d.ID {
+			return true
+		}
+	}
+	return false
+}
+
+type routeEventRequest struct {
+	InstallationID string            `json:"installation_id"`
+	EventID        string            `json:"event_id"`
+	Protocol       int               `json:"protocol_version"`
+	Attempt        string            `json:"playback_attempt_id"`
+	Event          string            `json:"event"`
+	Diagnostics    map[string]string `json:"diagnostics"`
+}
+
+func (i *instance) routeEvent(w http.ResponseWriter, r *http.Request) {
+	v, _, err := i.deviceViewer(r)
+	if err != nil || v == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	var b routeEventRequest
+	if decode(r, &b) != nil || b.InstallationID == "" || b.EventID == "" || b.Protocol != 3 || b.Attempt == "" || b.Event == "" || b.Diagnostics == nil {
+		problem(w, http.StatusBadRequest, "urn:ether:problem:validation-failed", "Validation failed", "The route event is missing a required field.")
+		return
+	}
+	if b.InstallationID != i.installationID() {
+		installationChanged(w)
+		return
+	}
+	reply(w, http.StatusAccepted, map[string]any{"event_id": b.EventID, "outcome": "accepted"})
+}
+
+func problem(w http.ResponseWriter, status int, typ, title, detail string) {
+	requestID, err := controlCommandID()
+	if err != nil {
+		http.Error(w, title, status)
+		return
+	}
+	w.Header().Set("X-Request-ID", requestID)
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": typ, "title": title, "status": status, "detail": detail, "instance": "urn:silo:request:" + requestID})
+}
+
+type sessionMedia interface {
+	ServeSessionMedia(w http.ResponseWriter, r *http.Request, a frontend.SessionAccess, sessionID, resource string)
+}
+
+func (i *instance) serveSessionMedia(w http.ResponseWriter, r *http.Request, sessionID, resource string) {
+	if i.host.Sessions == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	viewer, _, err := i.deviceViewer(r)
+	if err != nil || viewer == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	media, ok := i.host.Sessions.(sessionMedia)
+	if !ok {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	media.ServeSessionMedia(w, r, frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: "silo"}, sessionID, resource)
+}
+
 func (i *instance) playbackRoutes() error {
+	if err := i.router.Handle("POST", "/api/v2/playback/route-events", http.HandlerFunc(i.routeEvent)); err != nil {
+		return err
+	}
+	if err := i.router.Handle("POST", "/api/v2/playback/{session}/replan", http.HandlerFunc(i.playbackReplan)); err != nil {
+		return err
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if err := i.router.Handle(method, "/api/v2/playback/transcode/{session}/{path...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			i.serveSessionMedia(w, r, r.PathValue("session"), r.PathValue("path"))
+		})); err != nil {
+			return err
+		}
+	}
 	if err := i.router.Handle("GET", "/api/v2/playback/sessions/control/capabilities", http.HandlerFunc(i.playbackControlCapabilities)); err != nil {
 		return err
 	}
@@ -642,33 +854,13 @@ func (i *instance) playbackRoutes() error {
 	if err := i.router.Handle("POST", "/api/v2/playback/start", http.HandlerFunc(i.playbackStart)); err != nil {
 		return err
 	}
-	for _, method := range []string{"GET", "HEAD"} {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		if err := i.router.Handle(method, "/api/v2/stream/{path...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if i.host.Sessions == nil {
-				http.Error(w, "Unavailable", 503)
-				return
-			}
-			viewer, _, err := i.deviceViewer(r)
-			if err != nil || viewer == nil {
-				http.Error(w, "Unauthorized", 401)
-				return
-			}
-			parts := strings.SplitN(r.PathValue("path"), "/", 2)
-			if len(parts) != 2 {
-				http.NotFound(w, r)
-				return
-			}
-			media, ok := i.host.Sessions.(frontend.ScopedMedia)
+			sessionID, resource, ok := strings.Cut(r.PathValue("path"), "/")
 			if !ok {
-				http.Error(w, "Unavailable", 503)
-				return
+				sessionID, resource = r.PathValue("path"), "file"
 			}
-			forward := r.Clone(r.Context())
-			u := *r.URL
-			u.Path = "/sessions/media/" + r.PathValue("path")
-			u.RawPath = ""
-			forward.URL = &u
-			media.ServeMediaAccess(w, forward, frontend.SessionAccess{Viewer: viewer, Device: device(r), Protocol: "silo"})
+			i.serveSessionMedia(w, r, sessionID, resource)
 		})); err != nil {
 			return err
 		}

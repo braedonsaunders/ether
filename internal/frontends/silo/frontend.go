@@ -80,6 +80,9 @@ type instance struct {
 
 	sectionsMu    sync.Mutex
 	sectionsCache map[string]siloSectionPage
+
+	plansMu sync.Mutex
+	plans   map[string]playbackPlan
 }
 
 func (i *instance) Handler() http.Handler {

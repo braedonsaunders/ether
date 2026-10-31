@@ -119,6 +119,15 @@ func (s testScopedMedia) ServeMediaAccess(w http.ResponseWriter, r *http.Request
 	s.ServeMedia(w, r)
 }
 
+func (s testScopedMedia) ServeSessionMedia(w http.ResponseWriter, r *http.Request, a frontend.SessionAccess, sessionID, resource string) {
+	forward := r.Clone(r.Context())
+	u := *r.URL
+	u.Path = "/sessions/media/" + sessionID + "/scoped/" + resource
+	u.RawPath = ""
+	forward.URL = &u
+	s.ServeMediaAccess(w, forward, a)
+}
+
 func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
 	revoked := false
@@ -156,7 +165,7 @@ func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 		{"revoked", "tv", 401},
 		{"tv-grant", "", 401},
 	} {
-		r := httptest.NewRequest("GET", "/api/v2/stream/session/scoped/file", nil)
+		r := httptest.NewRequest("GET", "/api/v2/stream/session", nil)
 		r.Header.Set("Authorization", "Bearer "+tc.token)
 		r.Header.Set("X-Silo-Device-Id", tc.device)
 		w := httptest.NewRecorder()
@@ -169,7 +178,7 @@ func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 		t.Fatalf("served %d requests", served)
 	}
 	revoked = true
-	request := httptest.NewRequest("GET", "/api/v2/stream/session/scoped/file", nil)
+	request := httptest.NewRequest("GET", "/api/v2/stream/session", nil)
 	request.Header.Set("Authorization", "Bearer tv-grant")
 	request.Header.Set("X-Silo-Device-Id", "tv")
 	revokedResponse := httptest.NewRecorder()
@@ -182,7 +191,7 @@ func TestMediaRequiresBoundLiveDeviceGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("GET", "/api/v2/stream/session/scoped/file", nil)
+	r := httptest.NewRequest("GET", "/api/v2/stream/session", nil)
 	r.Header.Set("Authorization", "Bearer tv-grant")
 	r.Header.Set("X-Silo-Device-Id", "tv")
 	w := httptest.NewRecorder()
@@ -238,7 +247,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	}, SessionsFunc: func(_ context.Context, _ frontend.SessionAccess) ([]frontend.Session, error) {
 		return []frontend.Session{{ID: sessionID, ViewerID: 7, Protocol: "silo", Device: frontend.Device{ID: "tv"}}}, nil
 	}, ServeMediaFunc: func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/sessions/media/"+sessionID+"/scoped/master.m3u8" {
+		if !strings.HasPrefix(r.URL.Path, "/sessions/media/"+sessionID+"/scoped/") || strings.Contains(r.URL.Path, "secret") {
 			t.Fatal(r.URL.Path)
 		}
 		w.WriteHeader(200)
@@ -308,7 +317,8 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
 	}
-	if !strings.Contains(w.Body.String(), "/api/v2/stream/"+sessionID+"/scoped/master.m3u8") || !strings.Contains(w.Body.String(), `"session_id":"`+sessionID+`"`) {
+	wantMedia := "/api/v2/playback/transcode/" + sessionID + "/master.m3u8"
+	if !strings.Contains(w.Body.String(), `"url":"`+wantMedia+`"`) || strings.Contains(w.Body.String(), "/scoped/") || !strings.Contains(w.Body.String(), `"session_id":"`+sessionID+`"`) {
 		t.Fatal("media URL not native", w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), `"X-Silo-Device-Id":"tv"`) {
@@ -341,11 +351,31 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 			t.Fatalf("invalid track: %d %s", invalid.Code, invalid.Body.String())
 		}
 	}
-	media := call("GET", "/api/v2/stream/"+sessionID+"/scoped/master.m3u8", "")
+	media := call("GET", "/api/v2/playback/transcode/"+sessionID+"/master.m3u8", "")
 	if media.Code != 200 {
 		t.Fatalf("media %d", media.Code)
 	}
-	wrongDevice := httptest.NewRequest("GET", "/api/v2/stream/"+sessionID+"/scoped/master.m3u8", nil)
+	variant := call("GET", "/api/v2/playback/transcode/"+sessionID+"/base/index.m3u8?seek=12", "")
+	if variant.Code != 200 {
+		t.Fatalf("variant %d", variant.Code)
+	}
+	replan := call("POST", "/api/v2/playback/"+sessionID+"/replan", `{"installation_id":"install","protocol_version":3,"playback_attempt_id":"attempt","replan_request_id":"apple-replan-1","failed_plan_id":"failedplan","plan_attempt_id":"planattempt","plan_attempt_key":"plankey123","attempted_plan_keys":["plankey123"],"attempt_count":1,"quality_preference":"auto","position_seconds":12,"selected_tracks":{},"client_capabilities":{},"client_playback_context":{}}`)
+	if replan.Code != 200 || !strings.Contains(replan.Body.String(), wantMedia) || !strings.Contains(replan.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("replan %d %s", replan.Code, replan.Body.String())
+	}
+	missing := call("POST", "/api/v2/playback/missing-session/replan", `{"installation_id":"install","protocol_version":3,"playback_attempt_id":"attempt","replan_request_id":"apple-replan-2","failed_plan_id":"failedplan","plan_attempt_id":"planattempt","plan_attempt_key":"plankey123","attempted_plan_keys":["plankey123"],"attempt_count":1,"quality_preference":"auto","position_seconds":1,"selected_tracks":{},"client_capabilities":{},"client_playback_context":{}}`)
+	if missing.Code != 404 || missing.Header().Get("Content-Type") != "application/problem+json" || !strings.Contains(missing.Body.String(), `"status":404`) {
+		t.Fatalf("missing replan %d %s", missing.Code, missing.Body.String())
+	}
+	routeEvent := call("POST", "/api/v2/playback/route-events", `{"installation_id":"install","event_id":"event-1","protocol_version":3,"playback_attempt_id":"attempt","event":"plan_failed","diagnostics":{"error_cause":"ValidationError"}}`)
+	if routeEvent.Code != 202 || !strings.Contains(routeEvent.Body.String(), `"outcome":"accepted"`) || !strings.Contains(routeEvent.Body.String(), `"event_id":"event-1"`) {
+		t.Fatalf("route event %d %s", routeEvent.Code, routeEvent.Body.String())
+	}
+	images := call("GET", "/api/v2/images/capabilities", "")
+	if images.Code != 200 || !strings.Contains(images.Body.String(), `"state":"available"`) || !strings.Contains(images.Body.String(), `"still_width"`) {
+		t.Fatalf("image capabilities %d %s", images.Code, images.Body.String())
+	}
+	wrongDevice := httptest.NewRequest("GET", "/api/v2/playback/transcode/"+sessionID+"/master.m3u8", nil)
 	wrongDevice.Header.Set("Authorization", "Bearer account-secret")
 	wrongDevice.Header.Set("X-Silo-Device-Id", "other")
 	denied := httptest.NewRecorder()

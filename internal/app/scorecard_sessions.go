@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -65,6 +66,16 @@ func (s scorecardSessionWrapper) Open(ctx context.Context, r frontend.OpenReques
 	v, e := s.embeddedScorecardSessions.Open(ctx, r)
 	s.failure("open", e)
 	return v, e
+}
+func (s scorecardSessionWrapper) ServeSessionMedia(w http.ResponseWriter, r *http.Request, a frontend.SessionAccess, sessionID, resource string) {
+	media, ok := s.embeddedScorecardSessions.(interface {
+		ServeSessionMedia(http.ResponseWriter, *http.Request, frontend.SessionAccess, string, string)
+	})
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	media.ServeSessionMedia(w, r, a, sessionID, resource)
 }
 func (s scorecardSessionWrapper) StartStream(ctx context.Context, a frontend.SessionAccess, id string, r frontend.StreamRequest) (string, error) {
 	v, e := s.embeddedScorecardSessions.StartStream(ctx, a, id, r)
