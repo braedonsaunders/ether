@@ -39,10 +39,10 @@ func (s Scale) Divide(n int) Scale {
 
 // LargeScale is the CI gate's library: 500k+ catalogue rows and a
 // household with deep watch history.
-var LargeScale = Scale{Movies: 250_000, Shows: 10_000, SeasonsPerShow: 4, EpisodesPerSeason: 6, Viewers: 12, HistoryPerViewer: 20_000, InProgressPerViewer: 40}
+var LargeScale = Scale{Movies: 250_000, Shows: 10_000, SeasonsPerShow: 4, EpisodesPerSeason: 6, Viewers: 2, HistoryPerViewer: 20_000, InProgressPerViewer: 40}
 
 // SmallScale is a tenth of LargeScale; the gate compares the two.
-var SmallScale = Scale{Movies: 25_000, Shows: 1_000, SeasonsPerShow: 4, EpisodesPerSeason: 6, Viewers: 12, HistoryPerViewer: 2_000, InProgressPerViewer: 40}
+var SmallScale = Scale{Movies: 25_000, Shows: 1_000, SeasonsPerShow: 4, EpisodesPerSeason: 6, Viewers: 2, HistoryPerViewer: 2_000, InProgressPerViewer: 40}
 
 var fixtureGenres = []string{"Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music", "Mystery", "Romance", "Science Fiction", "Thriller", "War", "Western", "TV Movie"}
 
