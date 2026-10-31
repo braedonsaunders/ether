@@ -82,7 +82,10 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 			return a.cfg.Get().Catalog.Language
 		},
 	})
-	a.markers = markers.New(markers.Options{DB: a.db, Logger: log.With("component", "markers"), Config: func() (bool, string) { c := a.cfg.Get().Markers; return c.TheIntroDB, c.APIKey }, Aligner: a.subtitles.TimelineAligner(), Dialogue: a.markerDialogue})
+	a.markers = markers.New(markers.Options{DB: a.db, Logger: log.With("component", "markers"), Config: func() markers.Lookup {
+		c := a.cfg.Get().Markers
+		return markers.Lookup{Enabled: c.TheIntroDB, APIKey: c.APIKey, IntroOff: !c.OfferIntro(), CreditsOff: !c.OfferCredits()}
+	}, Aligner: a.subtitles.TimelineAligner(), Dialogue: a.markerDialogue})
 	a.buildAdoption()
 	// Playback and prefetch.
 	a.playback, err = playback.New(playback.Deps{

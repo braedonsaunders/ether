@@ -12,6 +12,25 @@ import (
 	"time"
 )
 
+func TestSkipSwitchesHideIntroAndCredits(t *testing.T) {
+	info := core.MediaInfo{Duration: 20 * time.Minute, Chapters: []core.Chapter{
+		{Title: "Intro", Start: time.Second, End: 30 * time.Second},
+		{Title: "Recap", Start: 0, End: time.Second},
+		{Title: "Credits", Start: 18 * time.Minute, End: 20 * time.Minute},
+	}}
+	key := core.EpisodeKey(1, 1, 1)
+	introOff := New(Options{Config: func() Lookup { return Lookup{IntroOff: true} }})
+	got, err := introOff.Markers(context.Background(), key, info)
+	if err != nil || len(got) != 1 || got[0].Type != "credits" || got[0].Source != "chapter" {
+		t.Fatalf("intro off: %+v %v", got, err)
+	}
+	creditsOff := New(Options{Config: func() Lookup { return Lookup{CreditsOff: true} }})
+	got, err = creditsOff.Markers(context.Background(), key, info)
+	if err != nil || len(got) != 2 || got[0].Type != "recap" || got[1].Type != "intro" {
+		t.Fatalf("credits off: %+v %v", got, err)
+	}
+}
+
 func TestRemoteDurationCacheAndChapters(t *testing.T) {
 	ctx := context.Background()
 	db, err := store.OpenMemory(ctx)

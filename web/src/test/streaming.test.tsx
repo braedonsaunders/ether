@@ -107,11 +107,15 @@ describe("Playback devices", () => {
     fireEvent.change(screen.getByLabelText("Device"), { target: { value: "Apple TV" } });
     expect(screen.queryByText("Jellyfin TV")).not.toBeInTheDocument();
     expect(screen.getByText("Swiftfin")).toBeInTheDocument();
-    expect(screen.getByText("5, 8")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    expect(await screen.findByText("Profile 5", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("H.265/HEVC")).toBeInTheDocument();
+    expect(screen.getByText("Dolby Vision")).toBeInTheDocument();
   });
 
   it("saves an app compatibility override from a drawer", async () => {
     const { fake } = renderApp("/playback/devices");
+    fireEvent.click(await screen.findByRole("tab", { name: "Devices" }, WAIT));
     fireEvent.click(await screen.findByRole("button", { name: "Edit Apple TV" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "Edit Apple TV" });
     const profiles = within(drawer).getByLabelText("Dolby Vision profiles");
@@ -498,10 +502,10 @@ describe("Playback", () => {
       "aria-selected",
       "true",
     );
-    expect(
-      await screen.findByText("Hardware acceleration: videotoolbox", {}, WAIT),
-    ).toBeInTheDocument();
-    expect(screen.getByText("h264_videotoolbox")).toBeInTheDocument();
+    expect(await screen.findByText("Apple VideoToolbox", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByText("H.264")).toBeInTheDocument();
+    expect(screen.getByText("H.265/HEVC")).toBeInTheDocument();
+    expect(screen.getByText("HDR10")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hardware acceleration" })).toBeInTheDocument();
     expect(screen.getByText("RTX Video: Unavailable")).toBeInTheDocument();
   });
@@ -520,6 +524,30 @@ describe("Playback", () => {
     fireEvent.click(screen.getByRole("button", { name: /Adjust timing for Some Show/ }));
     expect(await screen.findByRole("dialog", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByLabelText("Offset (milliseconds)")).toBeInTheDocument();
+  });
+
+  it("turns the intro skip button off and names IntroDB", async () => {
+    const { fake } = renderApp("/playback/markers");
+    expect(
+      await screen.findByText("Intro and credit times from IntroDB.", {}, WAIT),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Integrations" })
+        .some((link) => link.getAttribute("href")?.endsWith("/services/introdb")),
+    ).toBe(true);
+    expect(screen.getByText("Chapter titles")).toBeInTheDocument();
+    expect(screen.getByText("Subtitle dialogue")).toBeInTheDocument();
+    const intro = screen.getByRole("switch", { name: "Skip intro" });
+    expect(intro).toBeChecked();
+    fireEvent.click(intro);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/markers")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/markers")[0]!.body).toMatchObject({
+      theIntroDb: true,
+      skipIntro: false,
+      skipCredits: true,
+    });
   });
 
   it("saves nested server enhancement settings without losing transcoding preferences", async () => {

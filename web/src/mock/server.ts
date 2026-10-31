@@ -360,6 +360,7 @@ function defaultConfig(): EtherConfig {
       clockFormat: "",
     },
     extras: { enabled: false, resolverTimeout: "20s", prewarmBytes: 48 * 1024 ** 2 },
+    markers: { theIntroDb: true, apiKey: "" },
     setupComplete: true,
   };
 }
@@ -1661,6 +1662,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
         },
         hwaccel: {
           ffmpeg: "8.0.1",
+          filtersProbed: true,
+          toneMap: ["videotoolbox"],
+          colour: ["zscale", "colorspace", "scale"],
           hwaccel: { name: "videotoolbox", encoders: ["h264_videotoolbox", "hevc_videotoolbox"] },
           enhancement: {
             backend: "nvenc-ngx",
@@ -2328,6 +2332,13 @@ export function createFakeServer(opts: FakeOptions = {}) {
               id: "apple-tv",
               dolbyVisionProfiles: [5, 8],
               subtitleCodecs: ["srt"],
+              videoCodecs: ["h264", "hevc"],
+              maxHeight: 2160,
+              hdr10: true,
+              dolbyVision: true,
+              builtinMaxHeight: 2160,
+              builtinHdr10: true,
+              builtinDolbyVision: true,
               notes:
                 "Dolby Vision profile 7 uses a compatible HDR base layer; TrueHD requires an audio transcode unless declared supported.",
             },

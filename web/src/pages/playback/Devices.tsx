@@ -1,4 +1,7 @@
 import {
+  Badge,
+  Button,
+  SubtabNav,
   Table,
   TableBody,
   TableCell,
@@ -7,7 +10,7 @@ import {
   TableRow,
 } from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import { t, tn, tx } from "../../i18n";
@@ -15,6 +18,7 @@ import { api, apiFetch } from "../../lib/api";
 import { relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
 import { BoolRow, RecordDrawer, TextRow } from "../sources/form";
+import { codecLabel } from "./hardwareCodecs";
 
 type CompatApp = {
   protocol: string;
@@ -166,6 +170,36 @@ function seenFor(app: CompatApp, observed: ObservedClient[]) {
   );
 }
 
+function overridden(row: CompatDevice) {
+  return (
+    (row.maxHeight ?? 0) !== (row.builtinMaxHeight ?? 0) ||
+    Boolean(row.hdr10) !== Boolean(row.builtinHdr10) ||
+    Boolean(row.dolbyVision) !== Boolean(row.builtinDolbyVision)
+  );
+}
+
+function CapabilityBadges({ row }: { row: CompatDevice }) {
+  const badges = [
+    ...(row.videoCodecs ?? []).map((codec) => codecLabel(codec)),
+    row.maxHeight ? t("Up to {height}p", { height: row.maxHeight }) : "",
+    row.hdr10 ? t("HDR") : "",
+    row.dolbyVision ? t("Dolby Vision") : "",
+    ...(row.dolbyVisionProfiles ?? []).map((profile) => t("Profile {profile}", { profile })),
+  ].filter(Boolean);
+  if (!badges.length) {
+    return <span className="text-fg-muted">{t("Reported by the app")}</span>;
+  }
+  return (
+    <span className="flex flex-wrap gap-1">
+      {badges.map((label) => (
+        <Badge key={label} variant="secondary">
+          {label}
+        </Badge>
+      ))}
+    </span>
+  );
+}
+
 function listText(values: string[] | null | undefined) {
   return values?.join(", ") ?? "";
 }
@@ -185,6 +219,9 @@ function parseProfiles(value: string) {
 
 /** Built-in app reference, separate from the devices those apps run on. */
 export function DeviceCapabilities() {
+  const navigate = useNavigate();
+  const { section } = useParams();
+  const view = section === "devices" ? "devices" : "apps";
   const [protocol, setProtocol] = useState("");
   const [device, setDevice] = useState("");
   const [editing, setEditing] = useState<CompatDevice | null>(null);
@@ -297,6 +334,22 @@ export function DeviceCapabilities() {
           },
         )}
       </p>
+      <SubtabNav
+        ariaLabel={t("App compatibility sections")}
+        active={view}
+        onSelect={(key) => navigate(`/playback/devices/${key}`)}
+        tabs={[
+          { key: "apps", label: t("Apps") },
+          { key: "devices", label: t("Devices") },
+        ]}
+      />
+      <p className="max-w-3xl text-sm text-fg-muted">
+        {view === "apps"
+          ? t("An app is the program someone presses Play in.")
+          : t(
+              "A device is the box or screen. Every app on it shares these limits. Open a row to change what Ether assumes.",
+            )}
+      </p>
       {matrix.data ? (
         <p className="text-sm">
           {tn(apps.length, "{count} known app.", "{count} known apps.")}{" "}
@@ -347,55 +400,65 @@ export function DeviceCapabilities() {
         <LoadingRows />
       ) : (
         <>
-          <Section title={t("Apps")} bodyClassName="overflow-x-auto">
-            {visibleApps.length === 0 ? (
-              <p className="text-sm text-fg-muted">{t("No apps match this filter.")}</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("App")}</TableHead>
-                    <TableHead>{t("Protocol")}</TableHead>
-                    <TableHead>{t("Typical devices")}</TableHead>
-                    <TableHead>{t("Plays directly")}</TableHead>
-                    <TableHead>{t("Subtitles")}</TableHead>
-                    <TableHead>{t("Certification")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleApps.map((app) => {
-                    const seen = seenFor(app, observed);
-                    const note = appNote(app.note);
-                    return (
-                      <TableRow key={`${app.protocol}:${app.name}`}>
-                        <TableCell className="font-medium">
-                          {app.name}
-                          {seen.length > 0 ? (
-                            <span className="mt-1 block text-xs font-normal text-fg-muted">
-                              {tx("Seen on this server, last {when}", {
-                                when: relativeTime(seen[0]!.lastSeen),
-                              })}
-                            </span>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>{protocolLabel(app.protocol)}</TableCell>
-                        <TableCell>{app.devices.join(", ") || t("Any")}</TableCell>
-                        <TableCell>
-                          {plays(app)}
-                          {note ? <span className="mt-1 block text-fg-muted">{note}</span> : null}
-                        </TableCell>
-                        <TableCell>
-                          {app.subtitles?.join(", ") || t("Reported by the app")}
-                        </TableCell>
-                        <TableCell>{certificationLabel(app.certification)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </Section>
-          {unmatched.length > 0 ? (
+          {view === "apps" ? (
+            <Section title={t("Apps")} bodyClassName="overflow-x-auto">
+              {visibleApps.length === 0 ? (
+                <p className="text-sm text-fg-muted">{t("No apps match this filter.")}</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t("App")}</TableHead>
+                      <TableHead>{t("Protocol")}</TableHead>
+                      <TableHead>{t("Typical devices")}</TableHead>
+                      <TableHead>{t("Plays directly")}</TableHead>
+                      <TableHead>{t("Subtitles")}</TableHead>
+                      <TableHead>{t("Certification")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleApps.map((app) => {
+                      const seen = seenFor(app, observed);
+                      const note = appNote(app.note);
+                      return (
+                        <TableRow key={`${app.protocol}:${app.name}`}>
+                          <TableCell className="font-medium">
+                            {app.name}
+                            {seen.length > 0 ? (
+                              <span className="mt-1 block text-xs font-normal text-fg-muted">
+                                {tx("Seen on this server, last {when}", {
+                                  when: relativeTime(seen[0]!.lastSeen),
+                                })}
+                              </span>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>{protocolLabel(app.protocol)}</TableCell>
+                          <TableCell>{app.devices.join(", ") || t("Any")}</TableCell>
+                          <TableCell>
+                            {plays(app)}
+                            {note ? <span className="mt-1 block text-fg-muted">{note}</span> : null}
+                          </TableCell>
+                          <TableCell>
+                            {app.subtitles?.join(", ") || t("Reported by the app")}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                app.certification === "unsupported" ? "warning" : "secondary"
+                              }
+                            >
+                              {certificationLabel(app.certification)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </Section>
+          ) : null}
+          {view === "apps" && unmatched.length > 0 ? (
             <Section title={t("Also seen on this server")}>
               <ul className="text-sm">
                 {unmatched.map((row) => (
@@ -406,49 +469,52 @@ export function DeviceCapabilities() {
               </ul>
             </Section>
           ) : null}
-          <Section title={t("Devices")} bodyClassName="overflow-x-auto">
-            <p className="mb-3 max-w-3xl text-sm text-fg-muted">
-              {t(
-                "A device is the box or screen. These rows are shared by every app that runs on it, and they are not a Plex list.",
-              )}
-            </p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("Device")}</TableHead>
-                  <TableHead>{t("Dolby Vision")}</TableHead>
-                  <TableHead>{t("Subtitles")}</TableHead>
-                  <TableHead>{t("Behaviour")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visibleDevices.map((row) => (
-                  <TableRow key={row.name}>
-                    <TableCell className="font-medium">
-                      {row.name}
-                      {row.id ? (
-                        <button
-                          type="button"
-                          className="mt-1 block text-xs font-normal text-primary underline"
-                          aria-label={t("Edit {name}", { name: row.name })}
-                          onClick={() => openDevice(row)}
-                        >
-                          {t("Edit")}
-                        </button>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      {row.dolbyVisionProfiles?.join(", ") || t("Reported by the app")}
-                    </TableCell>
-                    <TableCell>
-                      {row.subtitleCodecs?.join(", ") || t("Reported by the app")}
-                    </TableCell>
-                    <TableCell className="text-fg-muted">{deviceNote(row.notes)}</TableCell>
+          {view === "devices" ? (
+            <Section title={t("Devices")} bodyClassName="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("Device")}</TableHead>
+                    <TableHead>{t("Plays")}</TableHead>
+                    <TableHead>{t("Subtitles")}</TableHead>
+                    <TableHead>{t("Notes")}</TableHead>
+                    <TableHead />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Section>
+                </TableHeader>
+                <TableBody>
+                  {visibleDevices.map((row) => (
+                    <TableRow key={row.name}>
+                      <TableCell className="font-medium">
+                        <span className="flex flex-wrap items-center gap-2">
+                          {row.name}
+                          {overridden(row) ? <Badge variant="warning">{t("Changed")}</Badge> : null}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <CapabilityBadges row={row} />
+                      </TableCell>
+                      <TableCell>
+                        {row.subtitleCodecs?.join(", ") || t("Reported by the app")}
+                      </TableCell>
+                      <TableCell className="text-fg-muted">{deviceNote(row.notes)}</TableCell>
+                      <TableCell className="text-right">
+                        {row.id ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-label={t("Edit {name}", { name: row.name })}
+                            onClick={() => openDevice(row)}
+                          >
+                            {t("Edit")}
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Section>
+          ) : null}
           <RecordDrawer
             open={editing != null}
             title={editing ? tx("Edit {name}", { name: editing.name }) : ""}
@@ -479,16 +545,23 @@ export function DeviceCapabilities() {
             />
             <TextRow
               label={t("Maximum resolution")}
+              help={
+                editing?.builtinMaxHeight
+                  ? t("Built in is {height}p.", { height: editing.builtinMaxHeight })
+                  : undefined
+              }
               value={draft.height}
               onChange={(height) => setDraft({ ...draft, height })}
             />
             <BoolRow
               label={t("HDR")}
+              help={editing?.builtinHdr10 ? t("Built in: on.") : t("Built in: off.")}
               value={draft.hdr}
               onChange={(hdr) => setDraft({ ...draft, hdr })}
             />
             <BoolRow
               label={t("Dolby Vision")}
+              help={editing?.builtinDolbyVision ? t("Built in: on.") : t("Built in: off.")}
               value={draft.dolby}
               onChange={(dolby) => setDraft({ ...draft, dolby })}
             />

@@ -436,7 +436,7 @@ function Shell() {
               <Route path="/sources/:tab?/:sub?" element={<Sources />} />
               <Route path="/releases/:tab?" element={<Releases />} />
               <Route path="/cache/:tab?" element={<Cache />} />
-              <Route path="/playback/:tab?" element={<Playback />} />
+              <Route path="/playback/:tab?/:section?" element={<Playback />} />
               <Route path="/notifications/:tab?" element={<Notifications />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/server/:tab?" element={<GeneralPage />} />
