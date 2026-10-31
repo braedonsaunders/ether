@@ -14,6 +14,7 @@ import { Check, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppOptional } from "../app-context";
+import { RestartButton } from "../components/RestartDrawer";
 import { EtherMark } from "../components/brand";
 import { IntegrationAppCard } from "../components/IntegrationAppCard";
 import { EmbyMark, JellyfinMark, PlexMark } from "../components/integration-brands";
@@ -540,11 +541,7 @@ export default function Setup() {
       <div className="mx-auto w-full max-w-2xl space-y-4 p-6">
         <EtherMark size={40} />
         <h1 className="text-xl font-semibold">{t("Restart Ether to use your cache folder")}</h1>
-        <p>
-          {t(
-            "Setup is saved. Restart Ether, or restart its Docker container, before playing media.",
-          )}
-        </p>
+        <p>{t("Setup is saved. Restart Ether once to start using the cache folder you chose.")}</p>
         <p className="text-sm text-fg-muted">
           {tx(
             "Your selected media cache folder is {folder}. The running server keeps using its previous folder until it restarts. Existing cached media stays in its original folder; it is not moved automatically.",
@@ -556,7 +553,16 @@ export default function Setup() {
             "Posters and other artwork remain in the configuration folder's cache. They are separate from the media cache.",
           )}
         </p>
-        <Button onClick={() => navigate("/cache")}>{t("Open cache settings")}</Button>
+        <div className="flex flex-wrap gap-2 pt-2">
+          <RestartButton
+            variant="default"
+            size="md"
+            context={t("Restarting puts your new cache folder to work.")}
+          />
+          <Button variant="outline" onClick={() => navigate("/cache")}>
+            {t("Open cache settings")}
+          </Button>
+        </div>
       </div>
     );
 

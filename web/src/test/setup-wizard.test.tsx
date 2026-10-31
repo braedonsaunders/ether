@@ -348,7 +348,8 @@ describe("setup wizard", () => {
       await screen.findByRole("heading", { name: "Restart Ether to use your cache folder" }),
     ).toBeInTheDocument();
     expect(screen.getByText("/cache")).toBeInTheDocument();
-    expect(screen.getByText(/Docker container/)).toBeInTheDocument();
+    // The restart is one click away, not a manual Docker or service step.
+    expect(screen.getByRole("button", { name: "Restart Ether" })).toBeInTheDocument();
     expect(fake.state.config.cache.dir).toBe("/cache");
   });
 

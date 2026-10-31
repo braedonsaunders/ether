@@ -74,6 +74,7 @@ import type { Bootstrap } from "./lib/types";
 import { theme } from "./theme";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import Startup, { isStarting } from "./pages/Startup";
 
 const CollectionsGallery = lazy(() => import("./pages/collections/Gallery"));
 const CollectionEditor = lazy(() => import("./pages/collections/Editor"));
@@ -472,6 +473,7 @@ function Gate({ onReady }: { onReady: () => void }) {
     if (boot || error) onReady();
   }, [boot, error, onReady]);
 
+  if (!boot && isStarting(error)) return <Startup onReady={() => void loadBoot()} />;
   if (!boot) {
     return (
       <main className="grid min-h-screen place-items-center bg-bg-subtle p-4">
