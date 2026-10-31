@@ -121,7 +121,9 @@ const LONG = { timeout: 15_000 };
 describe("restart from the console", () => {
   it("shows who is watching, waits for them by default and follows the restart back", async () => {
     const { fake } = renderApp("/maintenance/backups", { opsPace: 20, viewers: 2 });
-    fireEvent.click(await screen.findByRole("button", { name: "Restart Ether" }));
+    // The first test here pays the lazy Maintenance page import, which can
+    // take more than findBy's default second under a loaded full run.
+    fireEvent.click(await screen.findByRole("button", { name: "Restart Ether" }, LONG));
     const drawer = await screen.findByRole("dialog");
     expect(await within(drawer).findByText("2 streams are playing")).toBeInTheDocument();
     expect(within(drawer).getByText("The Long Harbor (2021)")).toBeInTheDocument();
