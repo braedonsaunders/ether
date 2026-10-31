@@ -2,7 +2,3 @@
 # when the gate was introduced (54k vs 540k synthetic rows). One
 # "client | step" per line. Remove a line when its endpoint is fixed; never
 # add one for new code: a new path must stay flat as the library grows.
-plex-appletv | shows all titleSort p1
-plex-appletv | /hubs/search star
-infuse-jellyfin | search items star
-stremio | catalog search

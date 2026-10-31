@@ -152,7 +152,12 @@ func comparePerfScales(w *bytes.Buffer, small, large []*perfharness.Row) []gateF
 		case l.Status == "ERROR":
 			verdict = "error on both: " + strings.Join(l.Errors, "; ")
 		default:
-			if float64(l.Rows) > gateRowsFactor*float64(s.Rows)+gateRowsSlack {
+			switch {
+			case l.RowsBound > 0:
+				if l.Rows > int64(l.RowsBound) {
+					why = append(why, fmt.Sprintf("rows read %d over the step's bound %d", l.Rows, l.RowsBound))
+				}
+			case float64(l.Rows) > gateRowsFactor*float64(s.Rows)+gateRowsSlack:
 				why = append(why, fmt.Sprintf("rows read grow with the library (%d → %d)", s.Rows, l.Rows))
 			}
 			if float64(l.Queries) > gateQueriesFactor*float64(s.Queries)+gateQueriesSlack {
@@ -269,7 +274,9 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 		}
 	}
 	r.Sequential(ctx, "cold", viewers[:1], cs)
-	for range 2 {
+	// Three warm passes, so a pass that straddles a cache's minute bucket
+	// does not decide the median.
+	for range 3 {
 		r.Sequential(ctx, "warm", viewers[:1], cs)
 	}
 	r.Sequential(ctx, "warm", viewers[1:2], viewing)

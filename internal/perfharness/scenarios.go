@@ -27,13 +27,24 @@ const (
 // step is one request a client makes. Path and Body are templates: {name}
 // is replaced from the session's variables; a step whose variables were not
 // discovered is reported as skipped rather than guessed.
+// searchRowsBound bounds a search step's rows: these searches read at most
+// 100 to 200 candidates (experience's searchWindowMin for a first page,
+// Plex's hub limits), each hydrated with its genres, keywords and credits,
+// however many titles match.
+const searchRowsBound = 1500
+
 type Step struct {
-	Name     string
-	Class    string
-	Method   string
-	Path     string
-	Body     string
-	Discover func(vars map[string]string, body []byte)
+	Name  string
+	Class string
+	// RowsBound, when set, is a hard bound on the rows the step reads,
+	// whatever the library's size: a search reads at most its candidate
+	// window, so its rows grow with the matches only until the window
+	// fills. The gate checks the bound instead of comparing scales.
+	RowsBound int
+	Method    string
+	Path      string
+	Body      string
+	Discover  func(vars map[string]string, body []byte)
 }
 
 // client is one real client's request sequence against one protocol.
@@ -124,7 +135,7 @@ func plexClient(name, product, platform, device string) Client {
 		{Name: "show children", Class: classDetail, Path: "/library/metadata/{showKey}/children?excludeAllLeaves=1", Discover: discoverPlexItem("seasonKey", "season")},
 		{Name: "season children", Class: classDetail, Path: "/library/metadata/{seasonKey}/children?excludeAllLeaves=1", Discover: discoverPlexItem("episodeKey", "episode")},
 		{Name: "episode detail", Class: classDetail, Path: "/library/metadata/{episodeKey}?includeMarkers=1&includeChapters=1&includeExtras=1"},
-		{Name: "/hubs/search star", Class: classSearch, Path: "/hubs/search?query=star&limit=30&includeCollections=1&includeExternalMedia=1"},
+		{Name: "/hubs/search star", Class: classSearch, RowsBound: searchRowsBound, Path: "/hubs/search?query=star&limit=30&includeCollections=1&includeExternalMedia=1"},
 		{Name: "/hubs/search the", Class: classSearch, Path: "/hubs/search?query=the&limit=30&includeCollections=1"},
 		{Name: "/playlists", Class: classBrowse, Path: "/playlists?playlistType=video&includeCollections=1"},
 		{Name: "/media/providers", Class: classStatic, Path: "/media/providers"},
@@ -304,7 +315,7 @@ func infuseJellyfin() Client {
 		{Name: "series Seasons", Class: classDetail, Path: "/Shows/{seriesId}/Seasons?excludeLocationTypes=Virtual&fields=Genres%2CParentId&limit=200&startIndex=0&userId={userId}", Discover: discoverMBItem("seasonId", "Season")},
 		{Name: "season Episodes", Class: classDetail, Path: "/Shows/{seriesId}/Episodes?excludeLocationTypes=Virtual&fields=Etag%2CMediaSources%2CAlternateMediaSources%2CGenres%2COverview%2CParentId%2CProviderIds&seasonId={seasonId}&userId={userId}", Discover: discoverMBItem("episodeId", "Episode")},
 		{Name: "episode detail", Class: classDetail, Path: "/Items/{episodeId}?fields=" + f + "&userId={userId}"},
-		{Name: "search items star", Class: classSearch, Path: "/Items?fields=" + f + "&includeItemTypes=Movie%2CSeries&limit=24&recursive=true&searchTerm=star&userId={userId}"},
+		{Name: "search items star", Class: classSearch, RowsBound: searchRowsBound, Path: "/Items?fields=" + f + "&includeItemTypes=Movie%2CSeries&limit=24&recursive=true&searchTerm=star&userId={userId}"},
 		{Name: "search persons", Class: classSearch, Path: "/Persons?imageTypeLimit=1&limit=24&recursive=true&searchTerm=star&userId={userId}"},
 		{Name: "movie PlaybackInfo", Class: classPlayback, Method: http.MethodPost, Path: "/Items/{movieId}/PlaybackInfo?userId={userId}", Body: `{}`},
 	}}
@@ -468,7 +479,7 @@ func stremio() Client {
 		{Name: "catalog continue", Class: classHome, Path: "/catalog/movie/ether-continue.json"},
 		{Name: "catalog recent", Class: classHome, Path: "/catalog/movie/ether-recent.json"},
 		{Name: "catalog recommendations", Class: classHome, Path: "/catalog/movie/ether-recommendations.json"},
-		{Name: "catalog search", Class: classSearch, Path: "/catalog/movie/ether-movies/search=star.json"},
+		{Name: "catalog search", Class: classSearch, RowsBound: searchRowsBound, Path: "/catalog/movie/ether-movies/search=star.json"},
 		{Name: "meta movie", Class: classDetail, Path: "/meta/movie/{movieMeta}.json"},
 		{Name: "meta series", Class: classDetail, Path: "/meta/series/{seriesMeta}.json"},
 	}}

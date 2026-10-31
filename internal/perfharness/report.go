@@ -81,6 +81,7 @@ func ReadTrace(path string) (map[string]TraceRecord, []TraceRecord, error) {
 // row is one endpoint's line in the report.
 type Row struct {
 	Client, Step, Class                    string
+	RowsBound                              int
 	Cold, WarmP50, WarmP95, ConcP95, BgP95 time.Duration
 	Queries, Writes, Rows                  int64
 	DBTime, LockWait                       time.Duration
@@ -125,7 +126,7 @@ func Summarize(results []Result, trace map[string]TraceRecord, order []Client) [
 		for _, st := range steps {
 			k := c.Name + "\x00" + st.Name
 			if rows[k] == nil {
-				rows[k] = &Row{Client: c.Name, Step: st.Name, Class: st.Class, samples: map[string][]time.Duration{}}
+				rows[k] = &Row{Client: c.Name, Step: st.Name, Class: st.Class, RowsBound: st.RowsBound, samples: map[string][]time.Duration{}}
 				keys = append(keys, k)
 			}
 		}
