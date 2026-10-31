@@ -427,8 +427,18 @@ choice, other releases of the same cut, resolution and HDR type are listed,
 named by quality, audio, size and release group, so you can switch if one
 fails. Releases → Release selection → **Same-quality versions to offer** sets
 how many (0 to 3; 1 by default, 0 turns the extra versions off). Choose one with Plex's **Play Version**; otherwise Ether picks the
-best version for the device. Search
-also accepts descriptions such as "90s thrillers under 100 mins" and offers a
+best version for the device. After a restart or candidate-cache expiry, an
+admitted detail-page warm-up that reuses your remembered release also requests a
+background search for versions. Your remembered source does not wait or change;
+a later page load can show alternatives after that search succeeds. Refills
+share an episode-specific search key across viewers and clients, allow at most
+two searches at once with a 45-second ceiling, and use the existing indexer
+limits and cache lifetimes. Full capacity skips the refill rather than queuing
+it; there is no polling or automatic retry. Disabled or refused warming does
+not request one, and empty or failed searches retain the current single-version
+fallback. Version lookup itself remains cache-only.
+
+Search also accepts descriptions such as "90s thrillers under 100 mins" and offers a
 matching collection; rate it to keep it as a personal collection.
 
 These settings have no dedicated pages yet. The owner UI lists them alongside

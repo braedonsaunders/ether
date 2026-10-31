@@ -85,6 +85,12 @@ type PolicyHomeCandidateSource interface {
 	SectionCandidatesWithPolicy(context.Context, *User, MediaType, HubContext, int, func(context.Context, *User, *Title) bool) ([]Hub, error)
 }
 
+// HubItemSource exposes the optional HubItemsFor capability for resolving a
+// specific hub by identifier even after a model or window transition.
+type HubItemSource interface {
+	HubItemsFor(context.Context, *User, HubContext, string, int) (Hub, bool)
+}
+
 // HomeLayoutSource exposes the optional FinalizeHome capability.
 type HomeLayoutSource interface {
 	FinalizeHome(context.Context, *User, HubContext, string, []Hub) ([]Hub, error)

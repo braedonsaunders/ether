@@ -13,6 +13,7 @@ import (
 // node changes either it publishes a hint:
 //
 //	layout          reload the home layout
+//	owner_rows      clear cached owner collection rows
 //	overrides:<id>  rebuild that viewer's model if this node holds one
 
 // SetBus connects the cluster bus (nil disconnects). A standalone server
@@ -35,17 +36,23 @@ func (e *Engine) notify(hint string) {
 
 func (e *Engine) applyRemote(ctx context.Context, hints []string, all bool) {
 	layout := all
+	ownerRows := all
 	var rebuild []int64
 	for _, h := range hints {
 		kind, arg, _ := strings.Cut(h, ":")
 		switch kind {
 		case "layout":
 			layout = true
+		case "owner_rows":
+			ownerRows = true
 		case "overrides":
 			if id, err := strconv.ParseInt(arg, 10, 64); err == nil {
 				rebuild = append(rebuild, id)
 			}
 		}
+	}
+	if ownerRows {
+		e.clearOwnerRows()
 	}
 	if layout {
 		if d, err := e.store.homeLayout(ctx); err == nil {

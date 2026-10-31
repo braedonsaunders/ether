@@ -23,6 +23,7 @@ func TestMinimumResolutionIsAProfileGate(t *testing.T) {
 		{"at minimum", "The.Signal.1999.2160p.WEB-DL.HEVC-GRP", 2160, false, ""},
 		{"unlabelled sd web", "The.Signal.1999.WEB-DL.H.264-GRP", 0, false, "below profile min height"},
 		{"unlabelled sd webrip", "The.Signal.1999.WEBRip.x264-GRP", 0, false, "below profile min height"},
+		{"unlabelled xvid rip", "The.Signal.1999.XviD-AFG", 0, false, "below profile min height"},
 		{"unlabelled legacy hdtv", "The.Signal.1999.HDTV.x264-GRP", 0, false, ""},
 		{"unlabelled dvd rip", "The.Signal.1999.DVDRip.XviD-GRP", 0, false, ""},
 		{"explicit version", "The.Signal.1999.2160p.WEB-DL.HEVC-GRP", 1080, true, ""},

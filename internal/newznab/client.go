@@ -236,21 +236,39 @@ func (c *Client) Name() string {
 
 func (c *Client) apiURL(params url.Values) (string, error) {
 	cfg := c.Config()
-	base := strings.TrimRight(cfg.URL, "/")
-	if base == "" {
+	raw := strings.TrimSpace(cfg.URL)
+	if raw == "" {
 		return "", fmt.Errorf("newznab: indexer %q has no URL", c.Name())
 	}
-	if !strings.HasSuffix(base, "/api") {
-		base += "/api"
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		base := strings.TrimRight(raw, "/")
+		if !strings.HasSuffix(base, "/api") {
+			base += "/api"
+		}
+		q := url.Values{}
+		for k, vs := range params {
+			q[k] = vs
+		}
+		if cfg.APIKey != "" && q.Get("apikey") == "" {
+			q.Set("apikey", cfg.APIKey)
+		}
+		return base + "?" + q.Encode(), nil
 	}
-	q := url.Values{}
+	u.Path = strings.TrimRight(u.Path, "/")
+	if !strings.HasSuffix(u.Path, "/api") {
+		u.Path += "/api"
+	}
+	q := u.Query()
+	q.Del("t")
 	for k, vs := range params {
 		q[k] = vs
 	}
 	if cfg.APIKey != "" && q.Get("apikey") == "" {
 		q.Set("apikey", cfg.APIKey)
 	}
-	return base + "?" + q.Encode(), nil
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }
 
 // trustedCtx selects the safefetch policy for one fetch explicitly:

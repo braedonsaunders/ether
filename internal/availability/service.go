@@ -143,6 +143,10 @@ func (s *Service) discoverySnap() (string, config.Availability) {
 }
 
 func policyOf(c config.Config) string {
+	return settingsPolicy(c)
+}
+
+func settingsPolicy(c config.Config) string {
 	b, _ := json.Marshal([]any{"source-suitability-v2", c.Quality, c.Resolver, c.Usenet, c.Debrid, c.Indexers})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
@@ -159,7 +163,10 @@ func selected(ids []string, id string) bool {
 	return false
 }
 func (s *Service) usable(protocol string) bool {
-	c := s.cfg()
+	return settingsUsable(s.cfg(), protocol)
+}
+
+func settingsUsable(c config.Config, protocol string) bool {
 	if protocol == core.ProtocolTorrent {
 		if !c.Availability.Debrid {
 			return false

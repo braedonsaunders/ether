@@ -304,6 +304,13 @@ func (m *sourceMapper) resolveBody(ctx context.Context, item media, fetched bool
 		}
 		if e == nil {
 			details := append(c.Videos, c.Metadata...)
+			for _, d := range c.Directories {
+				dKey := d.RatingKey
+				if dKey == "" {
+					dKey = d.Key
+				}
+				details = append(details, media{Key: dKey, Title: d.Title, OrigTitle: d.OrigTitle, Year: d.Year, AirDate: d.AirDate, Type: d.Type, GUID: d.GUID, GUIDs: d.GUIDs})
+			}
 			if len(details) > 0 {
 				detail := mergeMedia(details[0], item)
 				if detail.Type == "episode" {

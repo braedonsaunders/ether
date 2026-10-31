@@ -163,7 +163,7 @@ func TestGenerateDraftsResolvesAndValidates(t *testing.T) {
 	      {"field": "runtime", "op": "<=", "value": 120},
 	      {"field": "rating", "op": "gte", "value": 7.5},
 	      {"field": "keyword", "op": "in", "value": ["time loop"]},
-	      {"field": "vibes", "op": "is", "value": "rad"},
+	      {"field": "vibes", "op": "is", "value": "rad"}
 	    ],
 	    "sort": "rating",
 	    "limit": 50
@@ -306,6 +306,19 @@ func TestLookupsAndFacets(t *testing.T) {
 	genres, err := e.svc.Facets(e.ctx, core.TypeMovie, "genre")
 	if err != nil || len(genres) == 0 {
 		t.Fatalf("genre facet: %v %v", genres, err)
+	}
+	ratings, err := e.svc.Facets(e.ctx, core.TypeMovie, "contentRating")
+	if err != nil {
+		t.Fatalf("contentRating facet: %v", err)
+	}
+	haveRating := map[string]bool{}
+	for _, v := range ratings {
+		haveRating[v.Key] = true
+	}
+	for _, want := range []string{"G", "PG", "PG-13", "R", "TV-G", "TV-PG", "TV-14", "TV-MA"} {
+		if !haveRating[want] {
+			t.Fatalf("movie contentRating facet missing %q in %+v", want, ratings)
+		}
 	}
 	items, err := e.svc.SearchTitles(e.ctx, "Dream", core.TypeMovie, 5)
 	if err != nil || len(items) == 0 || items[0].Title != "Dream Heist" {

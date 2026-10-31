@@ -518,6 +518,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 		p.Viewers = append(p.Viewers, v)
 		keyMap := map[string]core.RatingKey{}
 		mapper := sourceMapper{service: s, base: base, token: token, keys: keyMap, parents: map[string]core.RatingKey{}, missing: map[string]bool{}}
+		itemIdxByKey := map[core.RatingKey]int{}
 		addProgress(ctx, func(pr *PreviewProgress) { pr.Phase = "library" })
 		for _, section := range sections.Directories {
 			if section.Type != "movie" && section.Type != "show" {
@@ -565,6 +566,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 					p.Warnings = append(p.Warnings, row.warn)
 				}
 				if row.keep {
+					itemIdxByKey[row.item.Key] = len(p.Items)
 					p.Items = append(p.Items, row.item)
 				}
 			}
@@ -580,7 +582,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 					list, e := s.readList(ctx, &mapper, c, "collection", v.LocalUserID)
 					if e != nil {
 						p.Warnings = append(p.Warnings, "Collection unavailable: "+c.Title)
-					} else {
+					} else if len(list.Keys) > 0 {
 						p.Lists = append(p.Lists, list)
 					}
 				}
@@ -633,6 +635,17 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 				}
 				if row.keep {
 					p.History = append(p.History, row.item)
+					if idx, ok := itemIdxByKey[row.item.Key]; !ok {
+						itemIdxByKey[row.item.Key] = len(p.Items)
+						p.Items = append(p.Items, row.item)
+					} else {
+						if p.Items[idx].External == "" {
+							p.Items[idx].Views++
+						}
+						if row.item.ViewedAt > p.Items[idx].ViewedAt {
+							p.Items[idx].ViewedAt = row.item.ViewedAt
+						}
+					}
 				}
 			}
 			s.logProgress(ctx, "plex preview progress")
@@ -648,7 +661,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 				l, e := s.readList(ctx, &mapper, pl, "playlist", v.LocalUserID)
 				if e != nil {
 					p.Warnings = append(p.Warnings, "Playlist unavailable: "+pl.Title)
-				} else {
+				} else if len(l.Keys) > 0 {
 					p.Lists = append(p.Lists, l)
 				}
 			}
@@ -770,10 +783,16 @@ func stateImportRecord(it Item) state.ImportRecord {
 }
 
 func importList(ctx context.Context, tx *sql.Tx, source string, l List, now int64) error {
+	if l.Kind != "playlist" && l.Kind != "collection" {
+		return errors.New("invalid imported list kind")
+	}
 	var id int64
 	err := tx.QueryRowContext(ctx, `SELECT local_id FROM migrate_objects WHERE source=? AND viewer=? AND kind=? AND external=?`, source, l.Viewer, l.Kind, l.External).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
+	}
+	if len(l.Keys) == 0 {
+		return nil
 	}
 	switch l.Kind {
 	case "playlist":

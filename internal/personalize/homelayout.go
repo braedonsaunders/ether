@@ -626,6 +626,106 @@ var _ core.PolicyHomeCandidateSource = (*Engine)(nil)
 func (e *Engine) SectionCandidatesFor(ctx context.Context, u *core.User, t core.MediaType, hc core.HubContext, limit int) ([]core.Hub, error) {
 	return toHubs(e.home(ctx, u, hc, t, limit, false).Rows), nil
 }
+
+// HubItemsFor resolves a specific hub by identifier from the viewer's warm
+// model, the generic model, or owner collection rows when the active page no
+// longer includes that row (e.g. a cold-start showcase row after the viewer's
+// personal model finishes building, or a shelf dropped under a wider count).
+func (e *Engine) HubItemsFor(ctx context.Context, u *core.User, hc core.HubContext, id string, limit int) (core.Hub, bool) {
+	if limit <= 0 {
+		limit = 12
+	}
+	if hc.Now.IsZero() {
+		hc.Now = e.now().In(e.loc)
+	}
+	user := core.User{}
+	if u != nil {
+		user = *u
+	}
+	var section core.MediaType
+	switch {
+	case strings.HasPrefix(id, "movie."):
+		section = core.TypeMovie
+	case strings.HasPrefix(id, "tv."):
+		section = core.TypeShow
+	}
+	layoutDoc := e.layoutForContext(ctx)
+	owner, _ := e.ownerRows(ctx, &user, hc, section, layoutDoc, false)
+	e.mu.Lock()
+	m := e.models[user.ID]
+	gm := e.models[genericID]
+	e.mu.Unlock()
+	models := []*userModel{}
+	if m != nil {
+		models = append(models, m)
+	}
+	if gm != nil && gm != m {
+		models = append(models, gm)
+	}
+	if len(models) == 0 {
+		if fm := e.modelFor(ctx, &user, false); fm != nil {
+			models = append(models, fm)
+		}
+	}
+	day := dayOf(hc.Now, e.loc)
+	intent, _ := e.intentFor(user.ID, hc.Now)
+	tune := resolveTuning(layoutDoc, user.ID, sectionName(section))
+	allowed := e.allowedFor(&user)
+	for _, mod := range models {
+		a := &assembly{
+			visit:   int64(day),
+			layout:  &layoutDoc,
+			model:   mod,
+			user:    user,
+			hc:      hc,
+			section: section,
+			limit:   limit,
+			owner:   owner,
+			allowed: allowed,
+			day:     day,
+			intent:  intent,
+			tune:    &tune,
+		}
+		cands := append(append([]*candRow{}, mod.rows...), owner...)
+		for _, c := range cands {
+			if a.hubID(c) != id {
+				continue
+			}
+			items := a.contextItems(c)
+			if len(items) == 0 {
+				continue
+			}
+			if e.opts.FilterAvailable != nil {
+				pool := make([]core.Title, len(items))
+				for i, it := range items {
+					pool[i] = it.t
+				}
+				avail := map[core.RatingKey]bool{}
+				for _, t := range e.opts.FilterAvailable(ctx, pool) {
+					avail[t.Key] = true
+				}
+				filtered := items[:0]
+				for _, it := range items {
+					if avail[it.t.Key] {
+						filtered = append(filtered, it)
+					}
+				}
+				items = filtered
+				if len(items) == 0 {
+					continue
+				}
+			}
+			cap := a.rowCap(c)
+			more := len(items) > cap
+			if more {
+				items = items[:cap]
+			}
+			hr := a.homeRow(&rankedRow{c: c, items: items, hubID: id}, items, more)
+			return hr.Hub, true
+		}
+	}
+	return core.Hub{}, false
+}
 func (e *Engine) LayoutDefaults() map[string]int {
 	return map[string]int{"home": e.opts.MaxHomeRows, "movies": e.opts.MaxSectionRows, "shows": e.opts.MaxSectionRows}
 }

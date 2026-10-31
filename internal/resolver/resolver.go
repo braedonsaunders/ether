@@ -193,6 +193,7 @@ type Service struct {
 	bgMu     sync.Mutex
 	bgClosed bool
 	bgWG     sync.WaitGroup
+	refills  map[string]chan struct{} // episode search key -> completion; guarded by bgMu
 
 	flightMu sync.Mutex
 	flights  map[string]*inflight
@@ -1404,6 +1405,9 @@ func floorHeight(info core.ReleaseInfo) int {
 		return info.Height
 	}
 	if info.Source == core.SourceWEBDL || info.Source == core.SourceWEBRip {
+		return 480
+	}
+	if info.Source == core.SourceUnknown && (info.VideoCodec == "xvid" || info.VideoCodec == "mpeg2") {
 		return 480
 	}
 	return 0

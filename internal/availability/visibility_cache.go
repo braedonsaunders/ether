@@ -18,17 +18,20 @@ type visibilityEntry struct {
 // New observations and invalidations clear it immediately. Other cluster nodes
 // see changes within fifteen seconds, without a provider request.
 func (s *Service) FilterDiscovery(ctx context.Context, items []core.Title) []core.Title {
-	now := s.now()
+	return s.filterDiscoverySnapshot(ctx, items, s.discoverySnapshot())
+}
+
+func (s *Service) filterDiscoverySnapshot(ctx context.Context, items []core.Title, input discoverySnapshot) []core.Title {
+	now := input.now
 	keys := make(map[core.RatingKey]string)
 	allowed := map[core.RatingKey]bool{}
 	var pending []core.Title
-	stamp, avail := s.discoverySnap()
-	policy := fmt.Sprintf("%s:%+v", stamp, avail)
-	feeds := []byte(fmt.Sprintf("%+v", s.d.Feeds.FeedSources()))
+	policy := fmt.Sprintf("%s:%+v", input.policy, input.availability)
+	feeds := []byte(fmt.Sprintf("%+v", input.feeds))
 	s.visibilityMu.Lock()
 	revision := s.visibilityRevision
 	for _, t := range items {
-		if !evidenceWindow(t, now, avail) {
+		if !evidenceWindow(t, now, input.availability) {
 			allowed[t.Key] = true
 			continue
 		}
@@ -46,7 +49,7 @@ func (s *Service) FilterDiscovery(ctx context.Context, items []core.Title) []cor
 	}
 	s.visibilityMu.Unlock()
 	if len(pending) > 0 {
-		for _, t := range s.filterDiscovery(ctx, pending) {
+		for _, t := range s.filterDiscovery(ctx, pending, input) {
 			allowed[t.Key] = true
 		}
 		s.visibilityMu.Lock()
@@ -80,5 +83,5 @@ type currentPolicyKey struct{}
 // FilterDiscoveryCurrent bypasses node-local visibility and resolver memos for
 // one bounded policy preflight batch. It performs no provider lookup.
 func (s *Service) FilterDiscoveryCurrent(ctx context.Context, items []core.Title) []core.Title {
-	return s.filterDiscovery(context.WithValue(ctx, currentPolicyKey{}, true), items)
+	return s.filterDiscovery(context.WithValue(ctx, currentPolicyKey{}, true), items, s.discoverySnapshot())
 }

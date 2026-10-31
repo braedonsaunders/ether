@@ -365,7 +365,7 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 				continue
 			}
 			min := r.c.minItems
-			if r.c.source == core.RowSourceEngine || !a.ownerPlaced(r.c, r.hubID) {
+			if r.c.source != core.RowSourceOwner && !a.ownerPlaced(r.c, r.hubID) {
 				floor := a.rowFloor(r.c.kind)
 				if cap := a.rowCap(r.c); floor > cap {
 					floor = cap
@@ -379,6 +379,13 @@ func (a *assembly) fill(ordered []*rankedRow, maxRows int) []core.HomeRow {
 			// editorial minimum. A full window is still a useful shelf.
 			if cap := a.rowCap(r.c); min > cap {
 				min = cap
+			}
+			// A shelf already shown in the active browsing presentation
+			// with a smaller card window (e.g. /hubs/promoted followed by
+			// /hubs/items with count=50) must not be dropped when higher
+			// rows expand to a wider window.
+			if prev := a.previousCount(r.hubID); prev > 0 && min > prev {
+				min = prev
 			}
 			if n := len(picked[r]); n == 0 || n < min {
 				short[r] = true

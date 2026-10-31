@@ -7,11 +7,11 @@ import (
 
 // A first-day series is a navigation container, not release evidence itself.
 // Use the same episode gate as its children, without fetching their metadata.
-func (s *Service) filterDiscovery(ctx context.Context, items []core.Title) []core.Title {
+func (s *Service) filterDiscovery(ctx context.Context, items []core.Title, input discoverySnapshot) []core.Title {
 	var shows, releases []core.Title
 	var keys []core.RatingKey
 	for _, t := range items {
-		if t.Type == core.TypeShow && EvidenceWindow(t, s.now()) {
+		if t.Type == core.TypeShow && EvidenceWindow(t, input.now) {
 			shows = append(shows, t)
 			keys = append(keys, t.Key)
 		} else {
@@ -19,7 +19,7 @@ func (s *Service) filterDiscovery(ctx context.Context, items []core.Title) []cor
 		}
 	}
 	allowed := map[core.RatingKey]bool{}
-	for _, t := range s.filterReleaseDiscovery(ctx, releases) {
+	for _, t := range s.filterReleaseDiscovery(ctx, releases, input) {
 		allowed[t.Key] = true
 	}
 	if len(shows) > 0 {
@@ -33,7 +33,7 @@ func (s *Service) filterDiscovery(ctx context.Context, items []core.Title) []cor
 		var episodes []core.Title
 		parents := map[core.RatingKey]core.RatingKey{}
 		for _, show := range shows {
-			if err != nil || show.Adult || !show.IsReleased(s.now()) || show.Key.Kind() != core.KindShow {
+			if err != nil || show.Adult || !show.IsReleased(input.now) || show.Key.Kind() != core.KindShow {
 				continue
 			}
 			eps := children[show.Key]
@@ -45,7 +45,7 @@ func (s *Service) filterDiscovery(ctx context.Context, items []core.Title) []cor
 					Season: 1, Episode: 1, Released: show.Released, Language: show.Language}}
 			}
 			for _, ep := range eps {
-				if ep.Adult || !ep.IsReleased(s.now()) {
+				if ep.Adult || !ep.IsReleased(input.now) {
 					continue
 				}
 				ep.ShowKey, ep.ShowIDs = show.Key, show.IDs
@@ -57,7 +57,7 @@ func (s *Service) filterDiscovery(ctx context.Context, items []core.Title) []cor
 				parents[ep.Key] = show.Key
 			}
 		}
-		for _, ep := range s.filterReleaseDiscovery(ctx, episodes) {
+		for _, ep := range s.filterReleaseDiscovery(ctx, episodes, input) {
 			allowed[parents[ep.Key]] = true
 		}
 	}

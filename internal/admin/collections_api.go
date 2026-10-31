@@ -127,6 +127,12 @@ func (h *Handler) handleGetCollection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, viewOf(*s))
 }
 
+func (h *Handler) invalidateOwnerRows() {
+	if inv, ok := h.deps.Personalization.(interface{ InvalidateOwnerRows() }); ok {
+		inv.InvalidateOwnerRows()
+	}
+}
+
 func (h *Handler) handleCreateCollection(w http.ResponseWriter, r *http.Request) {
 	spec, err := decodeSpec(r)
 	if err != nil {
@@ -138,6 +144,7 @@ func (h *Handler) handleCreateCollection(w http.ResponseWriter, r *http.Request)
 		h.writeServiceError(w, err)
 		return
 	}
+	h.invalidateOwnerRows()
 	writeJSON(w, http.StatusCreated, viewOf(*s))
 }
 
@@ -152,6 +159,7 @@ func (h *Handler) handleUpdateCollection(w http.ResponseWriter, r *http.Request)
 		h.writeServiceError(w, err)
 		return
 	}
+	h.invalidateOwnerRows()
 	writeJSON(w, http.StatusOK, viewOf(*s))
 }
 
@@ -160,6 +168,7 @@ func (h *Handler) handleDeleteCollection(w http.ResponseWriter, r *http.Request)
 		h.writeServiceError(w, err)
 		return
 	}
+	h.invalidateOwnerRows()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -206,6 +215,7 @@ func (h *Handler) handleRebuildCollection(w http.ResponseWriter, r *http.Request
 		h.writeServiceError(w, err)
 		return
 	}
+	h.invalidateOwnerRows()
 	writeJSON(w, http.StatusOK, map[string]any{"itemCount": s.ItemCount, "lastBuiltAt": s.LastBuiltAt, "warnings": s.Warnings})
 }
 

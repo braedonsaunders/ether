@@ -162,7 +162,7 @@ function ValueEditor({
   label: string;
 }) {
   const multi = rule.op === "in" || rule.op === "notIn";
-  const facetType = mediaType === "show" ? "show" : "movie";
+  const facetType = mediaType === "show" ? "show" : mediaType === "movie" ? "movie" : "";
   switch (meta.kind) {
     case "facet":
       return multi ? (

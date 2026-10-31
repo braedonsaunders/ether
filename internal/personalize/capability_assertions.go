@@ -8,5 +8,6 @@ var (
 	_ core.HomeCandidateSource     = (*Engine)(nil)
 	_ core.SectionCandidateSource  = (*Engine)(nil)
 	_ core.HomeLayoutSource        = (*Engine)(nil)
+	_ core.HubItemSource           = (*Engine)(nil)
 	_ core.CollectionArtworkSource = (*reviewCollections)(nil)
 )

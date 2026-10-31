@@ -126,11 +126,36 @@ func (s *State) importTx(ctx context.Context, tx *sql.Tx, b ImportBatch) ([]Even
 			events = append(events, Event{Kind: EventRated, UserID: r.UserID, Key: r.Key, Rating: r.Rating, At: s.now()})
 		}
 	}
+	type histAgg struct {
+		userID int64
+		key    core.RatingKey
+		views  int
+		latest int64
+	}
+	var histOrder [][2]int64
+	histByIdent := map[[2]int64]*histAgg{}
 	for _, r := range b.History {
 		if !r.Key.Valid() || r.UserID <= 0 || r.ViewedAt.IsZero() {
 			return nil, errors.New("invalid imported history event")
 		}
 		if err := addHistory(r); err != nil {
+			return nil, err
+		}
+		ident := [2]int64{r.UserID, int64(r.Key)}
+		agg := histByIdent[ident]
+		if agg == nil {
+			agg = &histAgg{userID: r.UserID, key: r.Key}
+			histByIdent[ident] = agg
+			histOrder = append(histOrder, ident)
+		}
+		agg.views++
+		if v := r.ViewedAt.UnixNano(); v > agg.latest {
+			agg.latest = v
+		}
+	}
+	for _, ident := range histOrder {
+		agg := histByIdent[ident]
+		if _, err := tx.ExecContext(ctx, `INSERT INTO state_watch(user_id,rating_key,view_offset_ns,duration_ns,view_count,counted,last_viewed_at,user_rating,updated_at) VALUES(?,?,0,0,?,1,?,0,?) ON CONFLICT(user_id,rating_key) DO UPDATE SET counted=CASE WHEN state_watch.view_offset_ns=0 THEN 1 ELSE state_watch.counted END,view_count=CASE WHEN excluded.view_count>state_watch.view_count THEN excluded.view_count ELSE state_watch.view_count END,last_viewed_at=CASE WHEN excluded.last_viewed_at>state_watch.last_viewed_at THEN excluded.last_viewed_at ELSE state_watch.last_viewed_at END,updated_at=excluded.updated_at,version=state_watch.version+1`, agg.userID, agg.key, agg.views, agg.latest, now); err != nil {
 			return nil, err
 		}
 	}

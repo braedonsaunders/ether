@@ -189,7 +189,7 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 	// Active playback takes priority over speculation, unless the caller
 	// is warming the next thing while the viewer watches (a trailer or
 	// the end of a film).
-	if !opts.DuringPlayback && (len(m.sessions) > 0 || m.pendingN > 0) {
+	if !opts.DuringPlayback && m.hasActivePlaybackLocked() {
 		m.mu.Unlock()
 		return false
 	}
@@ -244,6 +244,12 @@ func (m *Manager) Prewarm(_ context.Context, user *core.User, key core.RatingKey
 		}
 		if res == nil || !releaseMatchesTitle(res.Release, title) {
 			res, err = m.deps.Resolver.Resolve(ctx, core.ResolveRequest{Title: title, Client: caps, User: &u})
+		} else if reason == core.PrewarmDetail {
+			// Reusing the remembered source skips Resolve/search. Recover only
+			// the picker candidates, without delaying or changing that source.
+			if refill, ok := m.deps.Resolver.(core.SearchCacheRefiller); ok {
+				refill.RefillSearchCache(title)
+			}
 		}
 		if err != nil || res == nil {
 			return
@@ -591,6 +597,21 @@ func (m *Manager) releaseBlocked(ctx context.Context, id string) bool {
 	if checker, ok := m.deps.Resolver.(core.ReleaseBlockChecker); ok {
 		blocked, err := checker.ReleaseBlocked(ctx, id)
 		return blocked || err != nil
+	}
+	return false
+}
+
+func (m *Manager) hasActivePlaybackLocked() bool {
+	if m.pendingN > 0 {
+		return true
+	}
+	for _, s := range m.sessions {
+		s.mu.Lock()
+		active := s.stopAt.IsZero() && s.viewerState != "paused"
+		s.mu.Unlock()
+		if active {
+			return true
+		}
 	}
 	return false
 }

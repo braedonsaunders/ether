@@ -704,6 +704,29 @@ type ownerEntry struct {
 // ownerRowsTTL is how long owner collection rows are reused per context.
 const ownerRowsTTL = 5 * time.Minute
 
+// InvalidateOwnerRows drops cached owner collection rows and assembled-page
+// memos so collection creates, edits, deletes and rebuilds take effect on the
+// next Home or section request.
+func (e *Engine) InvalidateOwnerRows() {
+	e.clearOwnerRows()
+	e.notify("owner_rows")
+}
+
+func (e *Engine) clearOwnerRows() {
+	e.mu.Lock()
+	for k, v := range e.owner {
+		if !v.loading {
+			delete(e.owner, k)
+		} else {
+			v.at = time.Time{}
+		}
+	}
+	e.mu.Unlock()
+	e.memoMu.Lock()
+	e.memo = map[memoKey]*memoEntry{}
+	e.memoMu.Unlock()
+}
+
 // ownerRows returns owner collection rows for the viewer and context from a
 // per-context cache. Misses fetch in the background; the request waits at
 // most OwnerRowsWait for a context it has never fetched.

@@ -246,10 +246,11 @@ func TestFilterDiscoveryReadsConfigOncePerBatch(t *testing.T) {
 		t.Fatalf("first generation read config %d times", calls)
 	}
 	calls = 0
-	if got := x.s.FilterDiscovery(t.Context(), titles); len(got) != len(titles) || calls != 0 {
-		t.Fatalf("cached reads=%d visible=%d", calls, len(got))
+	if got := x.s.FilterDiscovery(t.Context(), titles); len(got) != len(titles) || calls != 1 {
+		t.Fatalf("fresh snapshot reads=%d visible=%d", calls, len(got))
 	}
 	before := x.s.policy()
+	calls = 0
 	gen++
 	x.c.Quality.Default = "bench-changed"
 	after := x.s.policy()

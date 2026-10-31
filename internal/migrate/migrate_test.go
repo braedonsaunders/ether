@@ -416,7 +416,9 @@ func TestStrippedHistoryRowsAndGUIDOrder(t *testing.T) {
 				`<Video accountID="1" historyKey="/status/sessions/history/5" librarySectionID="1" originallyAvailableAt="2014-11-05" title="Interstellar" type="movie" viewedAt="1700000500"/>` +
 				`<Video accountID="1" historyKey="/status/sessions/history/6" librarySectionID="1" originallyAvailableAt="2019-06-01" title="Removed Film" type="movie" viewedAt="1700000600"/>` +
 				`</MediaContainer>`))
-		case "/library/sections/1/collections", "/library/sections/2/collections", "/playlists":
+		case "/library/sections/1/collections":
+			w.Write([]byte(`<MediaContainer totalSize="1"><Directory key="empty_col" title="Kong Collection"/></MediaContainer>`))
+		case "/library/collections/empty_col/children", "/library/sections/2/collections", "/playlists":
 			w.Write([]byte(`<MediaContainer totalSize="0"/>`))
 		default:
 			t.Errorf("unexpected endpoint %s", r.URL.Path)
@@ -437,8 +439,14 @@ func TestStrippedHistoryRowsAndGUIDOrder(t *testing.T) {
 			t.Fatalf("unexpected unmatched warning: %s", warn)
 		}
 	}
+	if len(plan.Lists) != 0 {
+		t.Fatalf("expected empty collection to be skipped, got lists=%+v", plan.Lists)
+	}
 	if len(plan.History) != 6 {
 		t.Fatalf("expected 6 matched history rows, got %d (%+v) warnings=%v", len(plan.History), plan.History, plan.Warnings)
+	}
+	if len(plan.Items) != 6 {
+		t.Fatalf("expected 6 matched items (including history-only watches), got %d (%+v)", len(plan.Items), plan.Items)
 	}
 	wantKeys := []core.RatingKey{
 		core.EpisodeKey(1396, 1, 2),
@@ -452,5 +460,15 @@ func TestStrippedHistoryRowsAndGUIDOrder(t *testing.T) {
 		if plan.History[i].Key != want {
 			t.Fatalf("history[%d] key=%s want %s", i, plan.History[i].Key, want)
 		}
+	}
+	if _, err := svc.Import(ctx, plan.ID); err != nil {
+		t.Fatal(err)
+	}
+	var watchCount, histCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM state_watch WHERE user_id=1 AND view_count>0`).Scan(&watchCount); err != nil || watchCount != 6 {
+		t.Fatalf("state_watch watched count=%d want 6 err=%v", watchCount, err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM state_history WHERE user_id=1`).Scan(&histCount); err != nil || histCount != 6 {
+		t.Fatalf("state_history count=%d want 6 err=%v", histCount, err)
 	}
 }

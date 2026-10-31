@@ -15,6 +15,10 @@ import (
 
 // Catalogue helpers for the Collection Studio's pickers.
 
+var standardContentRatings = []string{
+	"G", "TV-Y", "TV-G", "TV-Y7", "PG", "TV-PG", "PG-13", "TV-14", "R", "TV-MA", "NC-17", "NR",
+}
+
 // BrowseTitles lists the released local catalogue with filters and pagination.
 func (s *Service) BrowseTitles(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
 	return s.cat.Browse(ctx, q)
@@ -45,6 +49,18 @@ func (s *Service) Facets(ctx context.Context, t core.MediaType, facet string) ([
 	vals, err := s.cat.Facet(ctx, t, facet)
 	if err != nil {
 		return nil, err
+	}
+	if facet == "contentRating" {
+		seen := make(map[string]bool, len(vals))
+		for _, v := range vals {
+			seen[strings.ToUpper(v.Key)] = true
+		}
+		for _, r := range standardContentRatings {
+			if !seen[r] {
+				vals = append(vals, core.FacetValue{Key: r, Title: r})
+			}
+		}
+		return vals, nil
 	}
 	if facet == "country" {
 		// Movies store country names, shows ISO codes; merge them.

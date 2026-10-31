@@ -154,7 +154,11 @@ func (s *Service) Handler() http.Handler {
 	return mux
 }
 func (s *Service) verifiedKeys(ctx context.Context) []core.RatingKey {
-	rows, err := s.db.QueryContext(ctx, `SELECT rating_key,MAX(first_verified) AS first_at FROM availability_releases WHERE verified_at>=? AND policy=? AND state='verified' GROUP BY rating_key ORDER BY first_at DESC LIMIT 1000`, s.now().Add(-6*time.Hour).Unix(), s.policy())
+	return s.verifiedKeysSnapshot(ctx, s.now(), s.policy())
+}
+
+func (s *Service) verifiedKeysSnapshot(ctx context.Context, now time.Time, policy string) []core.RatingKey {
+	rows, err := s.db.QueryContext(ctx, `SELECT rating_key,MAX(first_verified) AS first_at FROM availability_releases WHERE verified_at>=? AND policy=? AND state='verified' GROUP BY rating_key ORDER BY first_at DESC LIMIT 1000`, now.Add(-6*time.Hour).Unix(), policy)
 	if err != nil {
 		return nil
 	}
@@ -173,12 +177,13 @@ func (s *Service) verifiedKeys(ctx context.Context) []core.RatingKey {
 	return out
 }
 func (s *Service) Prioritize(ctx context.Context, items []core.Title) []core.Title {
-	items = s.FilterDiscovery(ctx, items)
-	if !s.cfg().Availability.PreferVerified {
+	input := s.discoverySnapshot()
+	items = s.filterDiscoverySnapshot(ctx, items, input)
+	if !input.availability.PreferVerified {
 		return items
 	}
 	known := map[core.RatingKey]bool{}
-	for _, k := range s.verifiedKeys(ctx) {
+	for _, k := range s.verifiedKeysSnapshot(ctx, input.now, input.policy) {
 		known[k] = true
 	}
 	out := append([]core.Title(nil), items...)
@@ -186,10 +191,11 @@ func (s *Service) Prioritize(ctx context.Context, items []core.Title) []core.Tit
 	return out
 }
 func (s *Service) Hubs(ctx context.Context, limit int) []core.Hub {
-	if !s.cfg().Availability.NewlyAvailable {
+	input := s.discoverySnapshot()
+	if !input.availability.NewlyAvailable {
 		return nil
 	}
-	keys := s.verifiedKeys(ctx)
+	keys := s.verifiedKeysSnapshot(ctx, input.now, input.policy)
 	if len(keys) == 0 {
 		return nil
 	}
@@ -197,12 +203,12 @@ func (s *Service) Hubs(ctx context.Context, limit int) []core.Hub {
 	if err != nil {
 		return nil
 	}
-	items = s.FilterDiscovery(ctx, items)
+	items = s.filterDiscoverySnapshot(ctx, items, input)
 	limit = min(200, max(1, limit))
 	movie := core.Hub{ID: "availability.movies", Title: "Newly available movies", Type: core.TypeMovie}
 	tv := core.Hub{ID: "availability.episodes", Title: "Newly available episodes", Type: core.TypeEpisode}
 	for _, t := range items {
-		if !t.IsReleased(s.now()) {
+		if !t.IsReleased(input.now) {
 			continue
 		}
 		switch t.Type {

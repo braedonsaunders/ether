@@ -589,6 +589,15 @@ func (s *Server) findHub(ctx context.Context, pr *Request, id string, sections [
 			}
 		}
 	}
+	if src, ok := s.d.Recommender.(core.HubItemSource); ok {
+		secID := 0
+		if len(sections) == 1 {
+			secID = sections[0]
+		}
+		if h, ok := src.HubItemsFor(ctx, pr.User, s.hubContext(pr, secID), id, count); ok && s.hubInSections(h, sections) {
+			return hubSpec{Hub: h}, true
+		}
+	}
 	return hubSpec{}, false
 }
 

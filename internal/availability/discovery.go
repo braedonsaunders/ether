@@ -31,13 +31,12 @@ func evidenceWindow(t core.Title, now time.Time, cfg config.Availability) bool {
 
 // FilterDiscovery reads local observations only. A feed listing establishes
 // release existence, not guaranteed playback; playback still checks the source.
-func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title) []core.Title {
+func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title, input discoverySnapshot) []core.Title {
 	titles := map[core.RatingKey]*core.Title{}
 	keys := []core.RatingKey{}
-	_, avail := s.discoverySnap()
 	for i := range items {
 		t := &items[i]
-		if evidenceWindow(*t, s.now(), avail) && titles[t.Key] == nil {
+		if evidenceWindow(*t, input.now, input.availability) && titles[t.Key] == nil {
 			keys = append(keys, t.Key)
 			titles[t.Key] = t
 		}
@@ -46,10 +45,10 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 		return items
 	}
 	feeds := map[string]core.ReleaseFeed{}
-	for _, f := range s.d.Feeds.FeedSources() {
+	for _, f := range input.feeds {
 		feeds[f.ID] = f
 	}
-	s.attachRetained(ctx, titles, feeds)
+	s.attachRetained(ctx, titles, feeds, input)
 	unavailable := map[core.RatingKey]time.Time{}
 	if source, ok := s.d.Validator.(interface {
 		KnownUnavailableSince(context.Context, []core.RatingKey) map[core.RatingKey]time.Time
@@ -82,7 +81,7 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 			marks[i] = "?"
 			args = append(args, k)
 		}
-		args = append(args, s.retentionCutoff().Unix())
+		args = append(args, input.retentionCutoff().Unix())
 		rows, err := s.db.QueryContext(ctx, `SELECT rating_key,source_id,generation,payload,state,first_seen,revision FROM availability_releases WHERE rating_key IN (`+strings.Join(marks, ",")+`) AND last_seen>=?`, args...)
 		if err != nil {
 			continue
@@ -104,7 +103,7 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 			continue
 		}
 		f, ok := feeds[o.source]
-		if !ok || f.Generation != o.generation || !s.usable(f.Protocol) {
+		if !ok || f.Generation != o.generation || !input.usable(f.Protocol) {
 			continue
 		}
 		if since, ok := unavailable[o.key]; ok && o.firstSeen <= since.Unix() {
@@ -122,7 +121,7 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 	}
 	out := make([]core.Title, 0, len(items))
 	for _, t := range items {
-		if titles[t.Key] == nil || (!t.Released.After(s.now()) && acceptable[t.Key]) {
+		if titles[t.Key] == nil || (!t.Released.After(input.now) && acceptable[t.Key]) {
 			out = append(out, t)
 		}
 	}
@@ -132,7 +131,8 @@ func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title
 // HiddenMovies supplies SQL pagination with exclusions from the recent local
 // mirror only. No per-title provider lookup or historical catalogue walk occurs.
 func (s *Service) HiddenMovies(ctx context.Context) []core.RatingKey {
-	if s.cfg().Availability.DisableMovieEvidenceGate {
+	input := s.discoverySnapshot()
+	if input.availability.DisableMovieEvidenceGate {
 		return nil
 	}
 	c, ok := s.d.Catalog.(interface {
@@ -141,12 +141,12 @@ func (s *Service) HiddenMovies(ctx context.Context) []core.RatingKey {
 	if !ok {
 		return nil
 	}
-	items, err := c.RecentMovies(ctx, s.now().Add(-time.Duration(s.cfg().Availability.EffectiveMovieEvidenceDays())*24*time.Hour))
+	items, err := c.RecentMovies(ctx, input.now.Add(-time.Duration(input.availability.EffectiveMovieEvidenceDays())*24*time.Hour))
 	if err != nil {
 		return nil
 	}
 	visible := map[core.RatingKey]bool{}
-	for _, t := range s.FilterDiscovery(ctx, items) {
+	for _, t := range s.filterDiscoverySnapshot(ctx, items, input) {
 		visible[t.Key] = true
 	}
 	var hidden []core.RatingKey
@@ -160,18 +160,19 @@ func (s *Service) HiddenMovies(ctx context.Context) []core.RatingKey {
 
 // HiddenShows excludes first-day series before SQL pagination, just as movies.
 func (s *Service) HiddenShows(ctx context.Context) []core.RatingKey {
+	input := s.discoverySnapshot()
 	c, ok := s.d.Catalog.(interface {
 		RecentShows(context.Context, time.Time) ([]core.Title, error)
 	})
 	if !ok {
 		return nil
 	}
-	items, err := c.RecentShows(ctx, s.now().Add(-24*time.Hour))
+	items, err := c.RecentShows(ctx, input.now.Add(-24*time.Hour))
 	if err != nil {
 		return nil
 	}
 	visible := map[core.RatingKey]bool{}
-	for _, t := range s.FilterDiscovery(ctx, items) {
+	for _, t := range s.filterDiscoverySnapshot(ctx, items, input) {
 		visible[t.Key] = true
 	}
 	var hidden []core.RatingKey

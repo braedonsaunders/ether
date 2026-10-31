@@ -102,7 +102,7 @@ func (s *Service) retainFeed(ctx context.Context, f core.ReleaseFeed, rs []core.
 	return nil
 }
 
-func (s *Service) attachRetained(ctx context.Context, titles map[core.RatingKey]*core.Title, feeds map[string]core.ReleaseFeed) {
+func (s *Service) attachRetained(ctx context.Context, titles map[core.RatingKey]*core.Title, feeds map[string]core.ReleaseFeed, input discoverySnapshot) {
 	byName := map[string][]*core.Title{}
 	for _, t := range titles {
 		names := []string{t.Title, t.OriginalTitle}
@@ -133,7 +133,7 @@ func (s *Service) attachRetained(ctx context.Context, titles map[core.RatingKey]
 			marks[i] = "?"
 			args = append(args, n)
 		}
-		args = append(args, s.retentionCutoff().Unix())
+		args = append(args, input.retentionCutoff().Unix())
 		rows, err := s.db.QueryContext(ctx, `SELECT source_id,generation,payload,seen_at FROM availability_feed_items WHERE match_title IN (`+strings.Join(marks, ",")+`) AND seen_at>=? ORDER BY seen_at DESC LIMIT 2000`, args...)
 		if err != nil {
 			continue
@@ -149,10 +149,10 @@ func (s *Service) attachRetained(ctx context.Context, titles map[core.RatingKey]
 		}
 		rows.Close()
 	}
-	policy := s.policy()
+	policy := input.policy
 	for _, p := range work {
 		f, ok := feeds[p.source]
-		if !ok || f.Generation != p.gen || !s.usable(f.Protocol) {
+		if !ok || f.Generation != p.gen || !input.usable(f.Protocol) {
 			continue
 		}
 		r, err := s.decode(p.raw)

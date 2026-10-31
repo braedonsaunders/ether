@@ -13,7 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"golang.org/x/net/ipv4"
 )
 
 // GDM ("G'Day Mate") is Plex's LAN discovery protocol. Clients send
@@ -223,21 +226,63 @@ func (g *GDMResponder) Start(ctx context.Context) error {
 	return nil
 }
 
-// listenGDM opens one GDM socket. ListenMulticastUDP binds the wildcard
-// address with SO_REUSEADDR (so a replacement can be opened before the old
-// socket closes) and receives multicast, broadcast and unicast.
+// listenGDM opens one GDM socket bound to 0.0.0.0:port and joins the GDM
+// multicast group on every active LAN interface so the socket receives
+// multicast (239.0.0.250), broadcast (255.255.255.255 / subnet) and unicast
+// M-SEARCH queries on Linux, macOS and Windows.
 func listenGDM(port int) (*net.UDPConn, error) {
-	c, err := net.ListenMulticastUDP("udp4", nil, &net.UDPAddr{IP: net.ParseIP(GDMMulticastGroup), Port: port})
+	// Reuse lets rejoin open the replacement while the current socket is still
+	// answering. The old socket is closed only after the new one is installed.
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+		return c.Control(func(fd uintptr) {
+			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+		})
+	}}
+	pc, err := lc.ListenPacket(context.Background(), "udp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
 	if err != nil {
-		c, err = net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+		return nil, err
 	}
-	return c, err
+	c := pc.(*net.UDPConn)
+	joinGDMMulticast(c)
+	return c, nil
+}
+
+func joinGDMMulticast(c *net.UDPConn) {
+	group := &net.UDPAddr{IP: net.ParseIP(GDMMulticastGroup)}
+	pc := ipv4.NewPacketConn(c)
+	ifs, err := net.Interfaces()
+	if err != nil {
+		_ = pc.JoinGroup(nil, group)
+		return
+	}
+	joined := false
+	for i := range ifs {
+		ifi := &ifs[i]
+		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagMulticast == 0 {
+			continue
+		}
+		if ifi.Flags&net.FlagLoopback == 0 && IsVirtualInterface(ifi.Name) {
+			continue
+		}
+		if err := pc.JoinGroup(ifi, group); err == nil {
+			joined = true
+		}
+	}
+	if !joined {
+		_ = pc.JoinGroup(nil, group)
+	}
 }
 
 // rejoin replaces socket i with a freshly opened one on the same port,
 // re-joining the multicast group. It returns the socket to keep serving on
 // and false when the responder is stopping.
 func (g *GDMResponder) rejoin(ctx context.Context, i int, old *net.UDPConn) (*net.UDPConn, bool) {
+	g.mu.Lock()
+	if ctx.Err() != nil || i >= len(g.conns) || g.conns[i] != old {
+		g.mu.Unlock()
+		return old, false
+	}
+	g.mu.Unlock()
 	port := old.LocalAddr().(*net.UDPAddr).Port
 	c, err := g.o.listen(port)
 	if err != nil {

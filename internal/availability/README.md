@@ -62,6 +62,16 @@ unsupported checks remain unknown. Normal resolver health-cache hits do not rene
 evidence timestamps. Sampled health is useful evidence, not a guarantee of all
 bytes or all clients.
 
+Discovery filtering captures one isolated settings value, policy fingerprint,
+source list and clock reading per operation. Nested episode and retained-release
+reads, pagination exclusions, recommendation priority and newly available shelves
+reuse those inputs. The next operation sees settings and source-generation
+changes; existing observation invalidation still prevents stale memo writes.
+`config.Store.Get` retains its deep-copy isolation. Background admission remains
+live so owner pauses and allowance changes take effect during background work.
+Resolver candidate checks still apply their existing policy; this snapshot does
+not bypass access, identity or quality checks or promise to remove all Home delay.
+
 Only fresh checked movies move ahead within popular/trending/recommendation
 shelves; no items are removed. Explicit chronology and Continue Watching retain
 their order. Newly available shelves mean first successfully checked by this

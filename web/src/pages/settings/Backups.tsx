@@ -622,7 +622,7 @@ function ImportReview({
       ) : null}
       {plan.items.length ? (
         <ul className="max-h-64 space-y-0.5 overflow-auto text-sm">
-          {plan.items.slice(0, 100).map((it, i) => (
+          {plan.items.map((it, i) => (
             <li key={i}>
               {it.title} · {tn(it.views, "{count} watch", "{count} watches")} ·{" "}
               {t("rating {rating}", { rating: it.rating || "—" })}

@@ -52,11 +52,17 @@ func (e *Engine) assemblePage(a *assembly, key memoKey, draft bool) []core.HomeR
 	if e.presentations == nil {
 		e.presentations = map[memoKey]presentation{}
 	}
-	key = presentationKey(key, a.model.generic)
+	origKey := key
+	key = presentationKey(origKey, a.model.generic)
 	a.visit = now.UnixNano()
 	if old, ok := e.presentations[key]; ok && !now.Before(old.at) && now.Sub(old.at) < presentationTTL {
 		a.previous = old.rows
 		a.visit = old.seed
+	} else if !a.model.generic && a.newViewer() {
+		if coldOld, ok := e.presentations[presentationKey(origKey, true)]; ok && !now.Before(coldOld.at) && now.Sub(coldOld.at) < presentationTTL {
+			a.previous = coldOld.rows
+			a.visit = coldOld.seed
+		}
 	}
 	rows := a.run()
 	p := presentation{at: now, seed: a.visit}
@@ -114,6 +120,15 @@ func (a *assembly) retainRowOrder(rows []*rankedRow) {
 		}
 		return oi && pi < pj
 	})
+}
+
+func (a *assembly) previousCount(hubID string) int {
+	for _, r := range a.previous {
+		if r.id == hubID {
+			return len(r.keys)
+		}
+	}
+	return 0
 }
 
 // Reserve the surviving cards in their old row before any other row can

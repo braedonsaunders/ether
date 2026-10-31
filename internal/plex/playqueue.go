@@ -834,6 +834,9 @@ func (s *Server) writePlayQueue(w http.ResponseWriter, r *http.Request, pq playQ
 	if pq.selected < len(pq.items) {
 		selItem = pq.items[pq.selected]
 	}
+	if selTitle, ok := byKey[selItem.key]; ok {
+		s.warmDetail(ctx, pr, selTitle)
+	}
 	mc := libraryContainer()
 	mc.Extra = []model.Attr{
 		model.A("playQueueID", pq.id),

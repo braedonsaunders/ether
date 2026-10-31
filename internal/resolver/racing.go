@@ -37,7 +37,8 @@ const (
 
 var errHealthBudget = errors.New("source validation limit reached; more releases remain to try")
 
-// Close cancels and joins optimistic checks. Owners should close before the DB.
+// Close cancels and joins optimistic checks and search refills.
+// Owners should close before the DB.
 func (s *Service) Close() error {
 	s.bgMu.Lock()
 	s.bgClosed = true
