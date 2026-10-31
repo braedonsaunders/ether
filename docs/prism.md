@@ -56,9 +56,12 @@ dependencies remain migration debt to remove while preserving Plex behavior.
 
 The import boundary for implementations under `internal/frontends` is recorded
 in [`internal/frontend/depguard_test.go`](../internal/frontend/depguard_test.go).
-It does not establish that the legacy Plex package or application wiring is
-fully neutral. Protocol adapters and shared contracts also do not establish
-native-client certification, complete conformance or performance parity.
+Plex production imports are ratcheted there too: new internal imports fail.
+The package still imports playback domain packages, so it is not yet held to
+the frontends-only rule. Rename-aware line accounting is in
+[plex size](prism-extraction/plex-size.md). Protocol adapters and shared
+contracts also do not establish native-client certification, complete
+conformance or performance parity.
 
 [Jellyfin and Emby support](user-guide.md#jellyfin-and-emby-apps) and
 [Silo support](user-guide.md#silo-apps) remain in development. The user guide
@@ -81,12 +84,13 @@ independently of protocol listeners. Plex uses a lazily constructed existing
 it does not yet establish that Plex uses only Host contracts.
 
 `internal/experience` owns shared policy-filtered views, semantic rows, continue
-and next-up selection, search, details, versions and track ordering. App adapters
-compose these services with catalogue, viewer state and personalization. Protocol
-renderers translate the results into their own DTOs and IDs. Extraction and exact
-Plex parity remain acceptance gates; this candidate is not evidence that every
-legacy orchestration path has been removed. Date added means the title's release
-date, not the catalogue ingestion or first-observed timestamp.
+and next-up selection, search, details, versions and track ordering. Home layout
+facts are captured when a Plex row is painted; the layout pass reorders those
+facts and does not rebuild them by scanning wire sidecars. App adapters bind
+catalogue, viewer state and personalization into those ports. Protocol renderers
+translate the results into their own DTOs and IDs. Playback routing is still the
+Plex broker cutover. Date added means the title's release date, not the catalogue
+ingestion or first-observed timestamp.
 
 `internal/sessions` supplies shared planning, opening, reporting, stopping,
 recovery, scoped media access and cluster events. New frontends receive a broker
