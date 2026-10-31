@@ -10,6 +10,7 @@ import { api, ApiError, errorMessage } from "../../lib/api";
 import { useAsync } from "../../lib/hooks";
 import { isRuleComplete } from "../../lib/rules";
 import { asObj, SchemaField, type FieldGroup } from "../settings/SchemaForm";
+import { CatalogPickers, isCatalogPicker } from "./CatalogPickers";
 import { CATALOG } from "../settings/schema";
 import { HomeReleaseSettings, HomeReleaseStatus, UpcomingEpisodeSettings } from "./HomeReleaseSettings";
 import { RulesPanel, type VisibilityRule } from "./LibraryVisibility";
@@ -64,9 +65,7 @@ export function CatalogSettings() {
   const [saving, setSaving] = useState(false);
   const rules = (Array.isArray(draft?.exclusions) ? draft.exclusions : []) as VisibilityRule[];
   const fallback = draft?.visibilityDefault === "hide" ? "hide" : "show";
-  const rulesReady = rules.every(
-    (g) => g.name.trim() && g.rules.length > 0 && g.rules.every(isRuleComplete),
-  );
+  const rulesReady = rules.every((g) => g.rules.length > 0 && g.rules.every(isRuleComplete));
   const save = useCallback(async () => {
     if (!draft) return;
     setSaving(true);
@@ -92,7 +91,7 @@ export function CatalogSettings() {
           active={section}
           onSelect={(key) => navigate(key === "rules" ? "/catalog/visibility" : "/catalog/settings")}
           tabs={[
-            { key: "library", label: t("Library") },
+            { key: "library", label: t("General") },
             { key: "rules", label: t("Visibility") },
           ]}
         />
@@ -116,7 +115,7 @@ export function CatalogSettings() {
               {groups.map((g, i) => (
                 <SettingsSection key={g.title ?? i} title={g.title}>
                   {g.fields.map((f, j) =>
-                    f.kind === "group" ? null : (
+                    f.kind === "group" || isCatalogPicker(f.key) ? null : (
                       <SchemaField
                         key={`${f.key}-${j}`}
                         def={f}
@@ -127,6 +126,14 @@ export function CatalogSettings() {
                       />
                     ),
                   )}
+                  {g.fields.some((f) => isCatalogPicker(f.key)) ? (
+                    <CatalogPickers
+                      language={draft.language}
+                      region={draft.region}
+                      refreshInterval={draft.refreshInterval}
+                      onChange={(key, value) => setDraft({ ...draft, [key]: value })}
+                    />
+                  ) : null}
                 </SettingsSection>
               ))}
             </div>

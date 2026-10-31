@@ -18,11 +18,11 @@ describe("Library visibility", () => {
     });
     await settleUi(() => {
       expect(screen.getByText("63,996")).toBeInTheDocument();
-      expect(screen.getByText("No rules. Everything uses the last row.")).toBeInTheDocument();
+      expect(screen.getByText("No rules yet. Everything is shown.")).toBeInTheDocument();
     });
     expect(screen.queryByText("Hidden")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add rule" }));
-    expect(screen.getByLabelText("Rule name")).toHaveValue("Rule 1");
+    expect(screen.getByLabelText("Rule name")).toHaveValue("");
     expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(0);
   });
 
@@ -70,9 +70,10 @@ describe("Library visibility", () => {
       </MemoryRouter>,
     );
     await settleUi(() => {
-      expect(screen.getByText("Country boundary")).toBeInTheDocument();
+      expect(screen.getByText(/Hide · Country is IN/)).toBeInTheDocument();
       expect(fake.state.calls.filter((c) => c.path.includes("preview")).length).toBeGreaterThan(0);
-      expect(screen.getByText(/1,200 hidden/)).toBeInTheDocument();
+      expect(screen.getByText("Hidden: 800 movies · 400 shows")).toBeInTheDocument();
+      expect(screen.getByText("800 movies · 400 shows")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "Delete rule 1" }));
     await settleUi(() => {
@@ -92,7 +93,7 @@ describe("Library visibility", () => {
     let flashedEmpty = false;
     const observer = new MutationObserver(() => {
       flashedEmpty ||=
-        document.body.textContent?.includes("No rules. Everything uses the last row.") ?? false;
+        document.body.textContent?.includes("No rules yet. Everything is shown.") ?? false;
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     renderApp("/catalog/visibility", {}, (server) => {
@@ -106,7 +107,7 @@ describe("Library visibility", () => {
       ];
     });
     await settleUi(() => {
-      expect(screen.getByText("Stored group")).toBeInTheDocument();
+      expect(screen.getByText(/Hide · Country is IN/)).toBeInTheDocument();
     });
     observer.disconnect();
     expect(flashedEmpty).toBe(false);
@@ -115,7 +116,7 @@ describe("Library visibility", () => {
   it("does not save an unfinished rule", async () => {
     const { fake } = renderApp("/catalog/visibility");
     await settleUi(() => {
-      expect(screen.getByText("No rules. Everything uses the last row.")).toBeInTheDocument();
+      expect(screen.getByText("No rules yet. Everything is shown.")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "Add rule" }));
     expect(screen.getByLabelText("Rule name")).toBeInTheDocument();
@@ -134,7 +135,7 @@ describe("Library visibility", () => {
       ];
     });
     await settleUi(() => {
-      expect(screen.getByText("Family")).toBeInTheDocument();
+      expect(screen.getByText(/Hide · Content rating is/)).toBeInTheDocument();
       expect(screen.getByText(/G · TV-G · TV-Y/)).toBeInTheDocument();
       expect(screen.getByText(/PG · TV-PG/)).toBeInTheDocument();
     });

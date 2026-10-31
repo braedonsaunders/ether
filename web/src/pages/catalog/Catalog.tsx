@@ -45,8 +45,10 @@ export default function Catalog() {
   const [params, setParams] = useSearchParams();
   const settings = tab === "settings";
   const visibility = tab === "visibility";
+  const onSettings = settings || visibility;
   const { health, refreshDashboard } = useApp();
   const status = health.find((h) => h.id === "catalog");
+  const catalogPath = `/catalog${params.size ? `?${params}` : ""}`;
   return (
     <Workspace
       title={t("Catalog")}
@@ -60,28 +62,17 @@ export default function Catalog() {
               />
             </span>
           ) : null}
-          <Button
-            size="sm"
-            variant={visibility ? "secondary" : "outline"}
-            onClick={() => navigate(visibility ? "/catalog" : "/catalog/visibility")}
-          >
-            <SlidersHorizontal size={14} />
-            {t("Library visibility")}
-          </Button>
-          <Button
-            size="sm"
-            variant={settings ? "secondary" : "outline"}
-            onClick={() =>
-              navigate(
-                settings
-                  ? `/catalog${params.size ? `?${params}` : ""}`
-                  : `/catalog/settings${params.size ? `?${params}` : ""}`,
-              )
-            }
-          >
-            {settings ? <ArrowLeft size={14} /> : <Settings2 size={14} />}
-            {settings ? t("Back to catalog") : t("Catalog settings")}
-          </Button>
+          {onSettings ? (
+            <Button size="sm" variant="outline" onClick={() => navigate(catalogPath)}>
+              <ArrowLeft size={14} />
+              {t("Back to catalog")}
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => navigate("/catalog/settings")}>
+              <Settings2 size={14} />
+              {t("Settings")}
+            </Button>
+          )}
         </>
       }
     >

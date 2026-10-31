@@ -72,7 +72,8 @@ describe("Catalog workspace", () => {
     const upcoming = screen.getByLabelText("Show scheduled episodes");
     expect(upcoming).not.toBeChecked();
     fireEvent.click(upcoming);
-    fireEvent.change(language, { target: { value: "fr-FR" } });
+    fireEvent.click(language);
+    fireEvent.click(await screen.findByRole("option", { name: "French (France)" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/catalog").length).toBe(1));
     expect(calls(fake, "PUT", "/config/catalog")[0]?.body).toMatchObject({

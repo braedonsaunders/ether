@@ -2544,22 +2544,32 @@ export function createFakeServer(opts: FakeOptions = {}) {
         const groups =
           (body as { exclusions: { mediaType: string; match: string; rules: Rule[] }[] })
             .exclusions ?? [];
-        const items = catalog.filter((t) =>
-          groups.some(
-            (g) =>
+        const hits = (g: (typeof groups)[number]) =>
+          catalog.filter(
+            (t) =>
               (g.mediaType === "mixed" || g.mediaType === t.type) &&
               (g.match === "any"
                 ? g.rules.some((r) => fieldValues(t, r.field).length > 0 && matches(t, r))
                 : g.rules.every((r) => fieldValues(t, r.field).length > 0 && matches(t, r))),
-          ),
-        );
+          );
+        const items = catalog.filter((t) => groups.some((g) => hits(g).includes(t)));
+        const shown = catalog.filter((t) => !items.includes(t));
         return json({
           total: catalog.length,
           hidden: items.length,
+          visible: shown.length,
           movies: items.filter((t) => t.type === "movie").length,
           shows: items.filter((t) => t.type === "show").length,
+          rules: groups.map((g) => {
+            const hit = hits(g);
+            return {
+              movies: hit.filter((t) => t.type === "movie").length,
+              shows: hit.filter((t) => t.type === "show").length,
+            };
+          }),
           unknownCountry: catalog.filter((t) => !fieldValues(t, "country").length).length,
           items: items.slice(0, 48).map(card),
+          shown: shown.slice(0, 48).map(card),
         });
       }
       case "GET /catalog/browse": {

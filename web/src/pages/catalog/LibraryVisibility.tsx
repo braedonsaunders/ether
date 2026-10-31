@@ -72,11 +72,21 @@ function actionOf(rule: VisibilityRule) {
   return rule.action === "show" ? "show" : "hide";
 }
 
-function summary(rule: VisibilityRule) {
-  const bits = rule.rules.filter(isRuleComplete).map(describeRule);
-  const who =
-    rule.mediaType === "movie" ? t("Movies") : rule.mediaType === "show" ? t("TV") : t("Movies + TV");
-  return [who, bits.join(rule.match === "any" ? " · " : " + ")].filter(Boolean).join(" — ");
+function conditionLine(rule: Rule) {
+  if (rule.op === "in") return describeRule({ ...rule, op: "is" });
+  return describeRule(rule);
+}
+
+/** "Hide · Genre is Horror, Thriller". The stored name stays in the drawer. */
+export function ruleLabel(rule: VisibilityRule) {
+  const action = actionOf(rule) === "show" ? t("Show") : t("Hide");
+  const bits = rule.rules.filter(isRuleComplete).map(conditionLine);
+  const body =
+    rule.match === "any" && bits.length > 1
+      ? bits.reduce((left, right) => t("{left} or {right}", { left, right }))
+      : bits.join(" · ");
+  const media = rule.mediaType === "movie" ? t("Movies") : rule.mediaType === "show" ? t("TV") : "";
+  return [action, body, media].filter(Boolean).join(" · ");
 }
 
 export function RulesPanel({
@@ -94,9 +104,8 @@ export function RulesPanel({
 }) {
   const [open, setOpen] = useState<number | null>(null);
   const [drag, setDrag] = useState<number | null>(null);
-  const complete = rules.every(
-    (g) => g.name.trim() && g.rules.length > 0 && g.rules.every(isRuleComplete),
-  );
+  const [fresh, setFresh] = useState<number | null>(null);
+  const complete = rules.every((g) => g.rules.length > 0 && g.rules.every(isRuleComplete));
   const spec = useMemo(() => ({ rules, fallback }), [rules, fallback]);
   const draft = useDebouncedValue(spec, 400);
   const preview = useAsync(
@@ -138,7 +147,9 @@ export function RulesPanel({
         </p>
         {rules.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-fg-muted">
-            {t("No rules. Everything uses the last row.")}
+            {fallback === "hide"
+              ? t("No rules yet. Everything is hidden.")
+              : t("No rules yet. Everything is shown.")}
           </p>
         ) : null}
         <ol className="space-y-2">
@@ -167,25 +178,15 @@ export function RulesPanel({
                 >
                   <GripVertical size={16} />
                 </button>
-                <span
-                  className={
-                    actionOf(rule) === "show"
-                      ? "rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"
-                      : "rounded bg-rose-500/15 px-2 py-0.5 text-xs font-medium text-rose-700 dark:text-rose-300"
-                  }
-                >
-                  {actionOf(rule) === "show" ? t("Show") : t("Hide")}
-                </span>
                 <button
                   type="button"
                   className="min-w-0 flex-1 text-left"
                   onClick={() => setOpen(i)}
                 >
-                  <span className="block truncate text-sm font-medium">{rule.name}</span>
-                  <span className="block truncate text-xs text-fg-muted">{summary(rule)}</span>
+                  <span className="block truncate text-sm font-medium">{ruleLabel(rule)}</span>
                 </button>
                 {counts ? (
-                  <span className="hidden text-xs text-fg-muted sm:block">
+                  <span className="shrink-0 text-xs text-fg-muted">
                     {tn(counts.movies, "{count} movie", "{count} movies")}
                     {" · "}
                     {tn(counts.shows, "{count} show", "{count} shows")}
@@ -253,13 +254,14 @@ export function RulesPanel({
             onRules([
               ...rules,
               {
-                name: t("Rule {n}", { n: rules.length + 1 }),
+                name: "",
                 action: "hide",
                 mediaType: "mixed",
                 match: "all",
                 rules: [blank()],
               },
             ]);
+            setFresh(0);
             setOpen(rules.length);
           }}
         >
@@ -278,13 +280,14 @@ export function RulesPanel({
               <p className="text-sm text-fg-muted">
                 {tn(visible, "{count} title visible", "{count} titles visible")}
               </p>
-              <p className="mt-2 text-xs text-fg-muted">
-                {tn(preview.data?.hidden ?? 0, "{count} hidden", "{count} hidden")}
-                {" · "}
-                {tn(preview.data?.movies ?? 0, "{count} movie", "{count} movies")}
-                {" · "}
-                {tn(preview.data?.shows ?? 0, "{count} show", "{count} shows")}
-              </p>
+              {(preview.data?.hidden ?? 0) > 0 ? (
+                <p className="mt-2 text-xs text-fg-muted">
+                  {t("Hidden: {movies} · {shows}", {
+                    movies: tn(preview.data?.movies ?? 0, "{count} movie", "{count} movies"),
+                    shows: tn(preview.data?.shows ?? 0, "{count} show", "{count} shows"),
+                  })}
+                </p>
+              ) : null}
             </>
           )}
         </div>
@@ -294,13 +297,14 @@ export function RulesPanel({
       <Drawer
         open={editing != null}
         onClose={() => setOpen(null)}
-        title={editing?.name || t("Rule")}
+        title={editing ? editing.name.trim() || ruleLabel(editing) : t("Rule")}
         size="lg"
       >
         {editing && open != null ? (
           <div className="space-y-4">
             <Input
               aria-label={t("Rule name")}
+              placeholder={t("Name (optional)")}
               value={editing.name}
               onChange={(e) => update(open, { name: e.target.value })}
             />
@@ -344,6 +348,8 @@ export function RulesPanel({
                 region={region}
                 allowedFields={FIELDS}
                 metaFor={metaFor}
+                inline
+                openValue={fresh === j}
                 onChange={(v) =>
                   update(open, { rules: editing.rules.map((r, k) => (k === j ? v : r)) })
                 }
@@ -354,7 +360,10 @@ export function RulesPanel({
               size="sm"
               variant="outline"
               disabled={editing.rules.length >= 20}
-              onClick={() => update(open, { rules: [...editing.rules, blank()] })}
+              onClick={() => {
+                setFresh(editing.rules.length);
+                update(open, { rules: [...editing.rules, blank()] });
+              }}
             >
               <Plus size={14} />
               {t("Add condition")}

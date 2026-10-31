@@ -24,9 +24,6 @@ export function TrendingStatus() {
         <TrendingUp size={18} />
         {t("Global trending")}
       </h3>
-      <p className="mt-2 text-xs text-fg-muted">
-        {t("TMDB daily + weekly charts · refreshed hourly · shared by all viewers")}
-      </p>
       {data.error ? (
         <p className="mt-3 text-sm text-danger">{t("Chart status unavailable")}</p>
       ) : null}
@@ -48,11 +45,6 @@ export function TrendingStatus() {
           </div>
         ))}
       </div>
-      <p className="mt-3 text-xs text-fg-muted">
-        {t(
-          "The last successful chart survives restarts and temporary outages. Eligibility and your visibility rules still apply.",
-        )}
-      </p>
     </section>
   );
 }
