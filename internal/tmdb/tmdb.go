@@ -95,6 +95,7 @@ type Client struct {
 	opts     options
 
 	lim *rateLimiter
+	brk breaker
 
 	mu         sync.Mutex
 	cache      *respCache
