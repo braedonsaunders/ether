@@ -105,14 +105,14 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 		if err := pair(`SELECT key,country FROM catalog_countries WHERE key IN (`+ph+`) ORDER BY country`, func(t *core.Title, v string) { t.Countries = append(t.Countries, v) }); err != nil {
 			return nil, err
 		}
-		crows, err := m.db.QueryContext(ctx, `SELECT c.key,c.person_tmdb,c.name,c.role,c.kind,c.thumb,COALESCE(p.imdb,'') FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (`+ph+`) ORDER BY c.kind,c.ord`, args...)
+		crows, err := m.db.QueryContext(ctx, `SELECT c.key,c.person_tmdb,c.name,c.role,c.kind,c.thumb,COALESCE(p.imdb,''),c.provider_id FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (`+ph+`) ORDER BY c.kind,c.ord`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for crows.Next() {
 			var k, pid int64
-			var name, role, kind, thumb, imdb string
-			if err := crows.Scan(&k, &pid, &name, &role, &kind, &thumb, &imdb); err != nil {
+			var name, role, kind, thumb, imdb, provider string
+			if err := crows.Scan(&k, &pid, &name, &role, &kind, &thumb, &imdb, &provider); err != nil {
 				crows.Close()
 				return nil, err
 			}
@@ -120,7 +120,7 @@ func (m *Mirror) titles(ctx context.Context, keys []core.RatingKey, includeFutur
 			if t == nil {
 				continue
 			}
-			p := core.Person{TMDB: pid, IMDB: imdb, Name: name, Role: role, ThumbPath: thumb}
+			p := core.Person{TMDB: pid, IMDB: imdb, ID: provider, Name: name, Role: role, ThumbPath: thumb}
 			switch kind {
 			case "director":
 				t.Directors = append(t.Directors, p)

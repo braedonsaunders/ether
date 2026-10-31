@@ -58,6 +58,23 @@ func TestPersonIMDbPersistsAcrossCreditReplacement(t *testing.T) {
 	}
 }
 
+func TestCataloguePersonIDRoundTrips(t *testing.T) {
+	db := store.OpenTest(t)
+	c, err := New(db, nil, config.Catalog{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := core.MovieKey(42)
+	ctx := context.Background()
+	if err := c.UpsertTitle(ctx, core.Title{Key: key, Type: core.TypeMovie, Title: "Credit", Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), Cast: []core.Person{{ID: "lab-person", Name: "Actor", Role: "Hero"}}}, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.StoredTitle(ctx, key)
+	if err != nil || len(got.Cast) != 1 || got.Cast[0].ID != "lab-person" || got.Cast[0].TMDB != 0 {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
+
 func TestValidPersonIMDB(t *testing.T) {
 	for _, tc := range []struct {
 		id    string

@@ -213,6 +213,7 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 		}
 		if !title.LastAirDate.IsZero() {
 			setMissing(item, "EndDate", wireTime(title.LastAirDate))
+			setMissing(item, "DateLastMediaAdded", wireTime(title.LastAirDate))
 		}
 	case "season":
 		setMissing(item, "MediaType", "Unknown")

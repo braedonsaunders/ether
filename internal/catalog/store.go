@@ -216,18 +216,18 @@ type creditFact struct {
 
 func (c *Catalog) hydrateFactBatch(ctx context.Context, items []core.Title, idx map[core.RatingKey][]int, args []any) error {
 	ph := placeholders(len(args))
-	q := `SELECT key, tag, a, b, c, d, e, f, g FROM (
-SELECT key, 'genre' AS tag, genre AS a, '' AS b, '' AS c, '' AS d, '' AS e, '' AS f, '' AS g FROM catalog_genres WHERE key IN (` + ph + `)
+	q := `SELECT key, tag, a, b, c, d, e, f, g, extra FROM (
+SELECT key, 'genre' AS tag, genre AS a, '' AS b, '' AS c, '' AS d, '' AS e, '' AS f, '' AS g, '' AS extra FROM catalog_genres WHERE key IN (` + ph + `)
 UNION ALL
-SELECT key, 'keyword', keyword, '', '', '', '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
+SELECT key, 'keyword', keyword, '', '', '', '', '', '', '' FROM catalog_keywords WHERE key IN (` + ph + `)
 UNION ALL
-SELECT key, 'studio', studio, '', '', '', '', '', '' FROM catalog_studios WHERE key IN (` + ph + `)
+SELECT key, 'studio', studio, '', '', '', '', '', '', '' FROM catalog_studios WHERE key IN (` + ph + `)
 UNION ALL
-SELECT key, 'country', country, '', '', '', '', '', '' FROM catalog_countries WHERE key IN (` + ph + `)
+SELECT key, 'country', country, '', '', '', '', '', '', '' FROM catalog_countries WHERE key IN (` + ph + `)
 UNION ALL
-SELECT c.key, 'credit', c.kind, c.name, c.role, c.thumb, CAST(c.person_tmdb AS TEXT), COALESCE(p.imdb,''), CAST(c.ord AS TEXT) FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (` + ph + `)
+SELECT c.key, 'credit', c.kind, c.name, c.role, c.thumb, CAST(c.person_tmdb AS TEXT), COALESCE(p.imdb,''), CAST(c.ord AS TEXT), c.provider_id FROM catalog_credits c LEFT JOIN catalog_people p ON p.person_tmdb=c.person_tmdb WHERE c.key IN (` + ph + `)
 UNION ALL
-SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST(h.fallback_admitted AS TEXT), CAST(t.released_ts AS TEXT), CAST(t.year AS TEXT), '', '' FROM catalog_home_release h JOIN catalog_titles t ON t.key=h.key WHERE h.key IN (` + ph + `)
+SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST(h.fallback_admitted AS TEXT), CAST(t.released_ts AS TEXT), CAST(t.year AS TEXT), '', '', '' FROM catalog_home_release h JOIN catalog_titles t ON t.key=h.key WHERE h.key IN (` + ph + `)
 )`
 	bound := make([]any, 0, len(args)*6)
 	for i := 0; i < 6; i++ {
@@ -242,8 +242,8 @@ SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST
 	touched := map[core.RatingKey]bool{}
 	for rows.Next() {
 		var key int64
-		var tag, a, b, ccol, d, e, f, g string
-		if err := rows.Scan(&key, &tag, &a, &b, &ccol, &d, &e, &f, &g); err != nil {
+		var tag, a, b, ccol, d, e, f, g, extra string
+		if err := rows.Scan(&key, &tag, &a, &b, &ccol, &d, &e, &f, &g, &extra); err != nil {
 			return err
 		}
 		k := core.RatingKey(key)
@@ -268,7 +268,7 @@ SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST
 		case "credit":
 			pid, _ := strconv.ParseInt(e, 10, 64)
 			ord, _ := strconv.ParseInt(g, 10, 64)
-			credits[k] = append(credits[k], creditFact{kind: a, ord: ord, person: core.Person{TMDB: pid, IMDB: f, Name: b, Role: ccol, ThumbPath: d}})
+			credits[k] = append(credits[k], creditFact{kind: a, ord: ord, person: core.Person{TMDB: pid, IMDB: f, ID: extra, Name: b, Role: ccol, ThumbPath: d}})
 		case "home":
 			checked, _ := strconv.Atoi(a)
 			earliest, _ := strconv.ParseInt(b, 10, 64)
@@ -675,8 +675,8 @@ ON CONFLICT(key) DO UPDATE SET
 		}
 		insert := func(ps []core.Person, kind string) error {
 			for i, p := range ps {
-				if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_credits(key,person_tmdb,name,role,kind,ord,thumb) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
-					int64(t.Key), p.TMDB, p.Name, p.Role, kind, i, p.ThumbPath); err != nil {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_credits(key,person_tmdb,name,role,kind,ord,thumb,provider_id) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+					int64(t.Key), p.TMDB, p.Name, p.Role, kind, i, p.ThumbPath, p.ID); err != nil {
 					return err
 				}
 				if p.TMDB > 0 && validPersonIMDB(p.IMDB) {
