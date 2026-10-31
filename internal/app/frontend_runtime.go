@@ -175,6 +175,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			a.log.Error("lazy streams unavailable", "surface", id, "err", lazyErr)
 		}
 		var imageGrants frontend.ImageGrants
+		var imageRevision func() uint64
 		if id != "plex" {
 			var svc *identity.ImageGrantService
 			var err error
@@ -198,6 +199,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 					return gen
 				})
 				imageGrants = svc
+				imageRevision = svc.Generation
 			}
 		}
 		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, LastPlayedSource: surfaceLastPlayedSource{experience: experience, state: a.state}, VersionHandles: versionHandles, SourceOffers: sourceOffers, Editions: surfaceEditions{app: a}, VirtualPaths: surfaceVirtualPaths{experience: experience, index: &pathIndex{}, stamp: func(v *core.Viewer) string {
@@ -207,7 +209,16 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 			return fmt.Sprintf("%d|%d|%d|%s|%v", a.catalog.WriteGeneration(), a.cfg.Generation(), v.ID, v.MaxContentRating, v.AllowedSections)
 		}, enabled: func() bool { _, ok := r.registry.Instance("webdav"); return ok }, base: func(ctx context.Context, req *http.Request) (string, error) { return r.surfaceURL(ctx, "webdav", req) }}, ViewerCapabilities: a.viewerCapabilities(local, experience), ViewerPolicy: surfaceViewerPolicy{app: a}, ImageGrants: imageGrants, Preferences: identity.NewPreferences(a.db, id), TrackPreferences: surfaceTrackPreferences{app: a}, LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: scorecardSessions(a, sessions.BindSurface(r.broker, id)), LazyStreams: lazy, LANStreams: lanStreams, Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll, times: times}, Events: sessions.BindEvents(r.events, id), Tickets: tickets, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
 			return scorecardSurfaceURL(ctx, r, id, req)
-		}, LANViewer: lanViewer, Config: settings}
+		}, LANViewer: lanViewer, PageFreshness: func() frontend.PageFreshness {
+			f := a.browseFreshness()
+			if imageRevision != nil {
+				f.Images = imageRevision()
+			}
+			if grants != nil {
+				f.Grants = grants.Generation()
+			}
+			return f
+		}, Config: settings}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.listeners.log = a.log
@@ -476,4 +487,35 @@ func (r *frontendRuntime) close() {
 			closePlex()
 		}
 	}
+}
+
+// browseFreshness is the stamp of a cached Jellyfin or Emby page. Image
+// grants last ten minutes, so the art bucket rotates well inside that.
+func (a *App) browseFreshness() frontend.PageFreshness {
+	f := frontend.PageFreshness{ArtBucket: time.Now().Unix() / 120}
+	if a == nil {
+		return f
+	}
+	if a.catalog != nil {
+		f.Catalog = a.catalog.WriteGeneration()
+	}
+	if a.cfg != nil {
+		f.Config = a.cfg.Generation()
+	}
+	if a.state != nil {
+		f.Watch = a.state.Generation()
+	}
+	if a.favorites != nil {
+		f.Favorite = a.favorites.Generation()
+	}
+	if a.notInterested != nil {
+		f.Hidden = a.notInterested.Generation()
+	}
+	if a.watchlist != nil {
+		f.Listed = a.watchlist.Generation()
+	}
+	if a.users != nil {
+		f.Accounts = a.users.Generation()
+	}
+	return f
 }

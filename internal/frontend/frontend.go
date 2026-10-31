@@ -249,6 +249,15 @@ type Host struct {
 	ClientSeen func(deviceID string)
 	// ClientIP resolves the transport peer using the configured trusted proxies.
 	ClientIP func(*http.Request) (netip.Addr, bool)
+	// PageFreshness invalidates cached browse bodies. Nil disables the cache.
+	PageFreshness func() PageFreshness
+}
+
+// PageFreshness is every input of a cached browse response. A change drops
+// the cached body. ArtBucket rotates image grants before they expire.
+type PageFreshness struct {
+	Catalog, Config, Watch, Favorite, Hidden, Listed, Images, Grants, Accounts uint64
+	ArtBucket                                                                  int64
 }
 
 var ErrNotRegistered = errors.New("frontend not registered")

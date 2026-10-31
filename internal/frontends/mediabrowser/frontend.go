@@ -45,6 +45,9 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 
 	life, cancel := context.WithCancel(ctx)
 	inst := &instance{host: host, info: info, router: r, protocol: protocol, life: life, cancel: cancel}
+	if host.PageFreshness != nil {
+		inst.pages = newBrowseCache()
+	}
 	unmatched := &unmatchedLogger{}
 	r.SetUnmatched(func(req *http.Request, status int) { unmatched.log(inst, req, status) })
 	mounted := false
@@ -113,10 +116,15 @@ type instance struct {
 	host     frontend.Host
 	info     PublicInfo
 	router   *route.Router
+	pages    *browseCache
 }
 
 func (i *instance) Handler() http.Handler {
-	next := StripPrefix("/"+string(i.protocol), i.router)
+	var inner http.Handler = i.router
+	if i.pages != nil && i.host.PageFreshness != nil {
+		inner = i.pages.wrap(inner, i.host.PageFreshness)
+	}
+	next := StripPrefix("/"+string(i.protocol), inner)
 	if i.protocol != "emby" {
 		return next
 	}
