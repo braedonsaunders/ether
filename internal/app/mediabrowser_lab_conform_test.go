@@ -166,6 +166,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 						}
 						report.Differences = append(report.Differences, partial.Differences...)
 						report.ReferenceDefects = append(report.ReferenceDefects, partial.ReferenceDefects...)
+						t.Logf("%s %s %s blocking=%d differences=%d", spec.proto, mode, clientName, partial.Blocking(), len(partial.Differences))
 					})
 					if !passed {
 						validEvidence = false
@@ -311,6 +312,7 @@ func fetchLabPersonTMDB(ref labReferenceData, ids []string) map[string]int64 {
 			continue
 		}
 		req.Header.Set("X-Emby-Token", ref.token)
+		req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+ref.device+`", Version="1", Token="`+ref.token+`"`)
 		resp, err := client.Do(req)
 		if err != nil {
 			continue
@@ -1783,7 +1785,7 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 		t.Fatal("target current-client login failed")
 	}
 	target.values["access_token"] = login.AccessToken
-	for _, path := range []string{"/Items/" + itemID, "/Items?Recursive=true&Limit=50", "/Items/" + itemID + "/Similar"} {
+	for _, path := range []string{"/Items/" + itemID, "/Items?Recursive=true&Limit=100", "/Items/" + itemID + "/Similar"} {
 		req := conform.Request{Method: "GET", Path: path, Headers: headers}
 		response, err = p.Fetch(context.Background(), client, target.server.URL, login.AccessToken, req, profile, target.values, true)
 		if err != nil || response.Status != http.StatusOK {
@@ -1819,9 +1821,21 @@ func newLabProfileTarget(t *testing.T, listing labReferenceData, dialect, profil
 				t.Fatal("grid invalid")
 			}
 			found := false
+			seeded := int64(core.MovieKey(10378))
 			for _, entry := range grid.Items {
-				if entry.Id == itemID && entry.ImageTags["Primary"] != "" {
+				if entry.ImageTags["Primary"] == "" {
+					continue
+				}
+				if entry.Id == itemID {
 					found = true
+					break
+				}
+				// Several probed copies are separate items. The rating-key id
+				// stays on the detail route; the grid lists each copy by handle.
+				var parent int64
+				if err := a.db.QueryRow(`SELECT item_id FROM sessions_version_handles WHERE handle=? AND viewer_id=?`, entry.Id, viewer.ID).Scan(&parent); err == nil && parent == seeded {
+					found = true
+					break
 				}
 			}
 			if !found {
