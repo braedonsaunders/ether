@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -232,6 +233,18 @@ func TestPersistedProbeFactsSanitizedAndBounded(t *testing.T) {
 	}
 	if got, err := rs.loadProbe(ctx, 7, movie2, "rel", nzb); err != nil || got != nil {
 		t.Fatalf("estimated probe persisted: %+v, %v", got, err)
+	}
+
+	// A probe saved before facts were versioned must not be reused.
+	legacy, err := json.Marshal(got.info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE playback_probe SET info_json=? WHERE release_id='rel'`, string(legacy)); err != nil {
+		t.Fatal(err)
+	}
+	if stale, err := rs.loadProbe(ctx, 7, movieKey, "rel", nzb); err != nil || stale != nil {
+		t.Fatalf("unversioned probe = %+v, %v, want nil miss", stale, err)
 	}
 
 	// A corrupt row is a cache miss, not an error or a trusted probe.

@@ -23,7 +23,7 @@ func TestObservedMediaPreservesIdentityAndViewerScope(t *testing.T) {
 		{Type: "video", Height: 2160, Codec: "hevc", DolbyVision: true},
 		{Type: "subtitle", External: true, ExternalURL: "https://fixture.invalid/secret"},
 	}}
-	raw, _ := json.Marshal(info)
+	raw, _ := json.Marshal(probeFactsRecord{FactsVersion: core.ProbeFactsVersion, Info: info})
 	_, err = db.ExecContext(ctx, `INSERT INTO playback_resume(user_id,rating_key,release_id,release_json,nzb_hash,size,updated_at) VALUES(1,?,'r','{}','hash',500,?)`, key, now.UnixMilli())
 	if err != nil {
 		t.Fatal(err)

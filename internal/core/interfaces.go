@@ -482,6 +482,11 @@ type Chapter struct {
 	End   time.Duration `json:"end"`
 }
 
+// ProbeFactsVersion is the generation of facts a probe is expected to carry,
+// including H.264/HEVC reference frames and descriptive audio handler titles.
+// Persisted probes from an older generation are cache misses.
+const ProbeFactsVersion = 2
+
 type MediaInfo struct {
 	Chapters    []Chapter     `json:"chapters,omitempty"`
 	Container   string        `json:"container"` // mkv, mp4, avi, mpegts

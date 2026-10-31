@@ -360,8 +360,7 @@ func memoLabMedia(pending []labMediaPending) []labMediaFile {
 	labMediaMemo.once.Do(func() {
 		if cache := os.Getenv("LAB_MEDIA_CACHE"); cache != "" {
 			if b, err := os.ReadFile(cache); err == nil {
-				var files []labMediaFile
-				if json.Unmarshal(b, &files) == nil && len(files) > 0 {
+				if files, ok := decodeLabMedia(b); ok {
 					labMediaMemo.files = files
 					return
 				}
@@ -374,7 +373,7 @@ func memoLabMedia(pending []labMediaPending) []labMediaFile {
 			}
 		}
 		if cache := os.Getenv("LAB_MEDIA_CACHE"); cache != "" && len(labMediaMemo.files) > 0 {
-			if b, err := json.Marshal(labMediaMemo.files); err == nil {
+			if b, err := json.Marshal(labMediaDocument{Version: core.ProbeFactsVersion, Files: labMediaMemo.files}); err == nil {
 				_ = os.WriteFile(cache, b, 0600)
 			}
 		}
@@ -426,7 +425,63 @@ func probeLabFile(path string) (*core.MediaInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return transcode.ParseProbe(out)
+	info, err := transcode.ParseProbe(out)
+	if err != nil {
+		return nil, err
+	}
+	applyNativeProbeFacts(path, info)
+	return info, nil
+}
+
+// applyNativeProbeFacts fills reference frames and descriptive audio titles
+// from the container when ffprobe omitted them. Existing facts stay put.
+func applyNativeProbeFacts(path string, info *core.MediaInfo) {
+	if info == nil || !nativeProbeFactsMissing(info) {
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	native, err := transcode.ProbeSource(ctx, f, st.Size())
+	if err != nil || native == nil {
+		return
+	}
+	for i := range info.Streams {
+		stream := &info.Streams[i]
+		for j := range native.Streams {
+			if native.Streams[j].Index != stream.Index || native.Streams[j].Type != stream.Type {
+				continue
+			}
+			if stream.Type == "video" && stream.ReferenceFrames == nil && native.Streams[j].ReferenceFrames != nil {
+				refs := *native.Streams[j].ReferenceFrames
+				stream.ReferenceFrames = &refs
+			}
+			if stream.Type == "audio" && stream.Title == "" && native.Streams[j].Title != "" {
+				stream.Title = native.Streams[j].Title
+			}
+		}
+	}
+}
+
+func nativeProbeFactsMissing(info *core.MediaInfo) bool {
+	for i := range info.Streams {
+		stream := info.Streams[i]
+		if stream.Type == "video" && stream.ReferenceFrames == nil {
+			return true
+		}
+		if stream.Type == "audio" && stream.Title == "" {
+			return true
+		}
+	}
+	return false
 }
 
 // newAlignedLabFixture supplies an isolated real app with fake playback and artwork for opt-in lab tests.

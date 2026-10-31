@@ -28,12 +28,25 @@ type labMediaFile struct {
 
 func labMediaPath(dir string) string { return filepath.Join(dir, "lab-media.json") }
 
+type labMediaDocument struct {
+	Version int            `json:"version"`
+	Files   []labMediaFile `json:"files"`
+}
+
 func writeLabMedia(dir string, files []labMediaFile) error {
-	payload, err := json.Marshal(files)
+	payload, err := json.Marshal(labMediaDocument{Version: core.ProbeFactsVersion, Files: files})
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(labMediaPath(dir), payload, 0600)
+}
+
+func decodeLabMedia(raw []byte) ([]labMediaFile, bool) {
+	var doc labMediaDocument
+	if json.Unmarshal(raw, &doc) != nil || doc.Version != core.ProbeFactsVersion || len(doc.Files) == 0 {
+		return nil, false
+	}
+	return doc.Files, true
 }
 
 var labMediaReadCache = struct {
@@ -55,9 +68,9 @@ func readLabMedia(dir string) ([]labMediaFile, error) {
 		}
 		return nil, err
 	}
-	var files []labMediaFile
-	if err = json.Unmarshal(b, &files); err != nil {
-		return nil, err
+	files, ok := decodeLabMedia(b)
+	if !ok {
+		return nil, nil
 	}
 	labMediaReadCache.dir = dir
 	labMediaReadCache.files = files
