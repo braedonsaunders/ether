@@ -19,6 +19,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 // Options configure the spike library.
@@ -206,6 +207,42 @@ func (l *Library) Deps() plex.Deps {
 		},
 		Sections: []plex.Section{{ID: 1, Type: core.TypeMovie, Title: "Movies"}},
 	}
+}
+
+// OpenPlex serves this library through the Plex front end and the shared
+// session broker. Timeline progress and stops are recorded only by the broker.
+func (l *Library) OpenPlex() (*plex.Server, func(), error) {
+	srv := plex.NewServer(l.Deps())
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		if id <= 0 {
+			return nil, core.ErrUnauthorized
+		}
+		return &core.Viewer{ID: id, IsOwner: id == 1}, nil
+	}
+	events := sessions.NewEventBus(nil, active)
+	broker, err := sessions.NewBroker(sessions.BrokerDeps{
+		Lookup: func(ctx context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+			return l.Catalog().Get(ctx, key)
+		},
+		Playback:     l.Playback(),
+		Transcoder:   l.Transcoder(),
+		Progress:     l.State(),
+		ActiveViewer: active,
+		CanPlay:      func(*core.Viewer, bool, time.Time) bool { return true },
+		BitrateLimit: func(*core.Viewer) int { return 0 },
+		OnTimeline:   func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		Events:       events,
+	})
+	if err != nil {
+		events.Close()
+		srv.Close()
+		return nil, nil, err
+	}
+	srv.UsePlaybackBroker(broker)
+	return srv, func() {
+		broker.Close(context.Background())
+		events.Close()
+	}, nil
 }
 
 // Close stops the session janitor and closes open files.

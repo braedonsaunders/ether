@@ -98,8 +98,9 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 			}
 			return a.subtitles.TimelineAligner()
 		}(),
-		// Transcode sessions are keyed by the client's session id; the Plex
-		// front end (built below) maps playback sessions to them.
+		// Transcode sessions are keyed by the client session id. The broker
+		// owns published sessions; Live TV and the process transcoder cover
+		// sessions that were not published there.
 		HLSLookup: func(id string) (core.HLSSession, bool) {
 			if a.frontends != nil && a.frontends.broker != nil {
 				if hs, ok := a.frontends.broker.TranscodeFor(context.Background(), id); ok {

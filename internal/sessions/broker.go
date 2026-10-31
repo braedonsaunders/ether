@@ -116,9 +116,7 @@ type retiredSession struct {
 	until    time.Time
 }
 
-// Broker coordinates neutral sessions with the shared playback admission manager.
-// Plex's legacy timeline tracker is not yet included in Sessions; owner
-// Activity continues to use the shared playback manager until that move lands.
+// Broker coordinates playback admission for every protocol, including Plex.
 type Broker struct {
 	sampleLimit         int
 	deps                BrokerDeps
