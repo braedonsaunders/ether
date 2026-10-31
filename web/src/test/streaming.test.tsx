@@ -231,15 +231,14 @@ describe("Releases", () => {
 });
 
 describe("Source routing", () => {
-  it("shows measured startup per source and saves which source leads", async () => {
-    const { fake } = renderApp("/sources/yours");
+  it("shows measured startup per source on Releases and saves which source leads", async () => {
+    const { fake } = renderApp("/releases/quality");
     expect(await screen.findByText(/debrid 410 ms \(22 plays\)/, {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText(/Usenet 2\.1 s \(37 plays\)/)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Which source first when quality matches" }),
     );
     fireEvent.click(await screen.findByRole("option", { name: "Usenet" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/resolver")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/resolver")[0]!.body).toMatchObject({
       sourcePreference: "usenet",

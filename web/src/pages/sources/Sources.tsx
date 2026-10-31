@@ -11,7 +11,6 @@ import { HealthStrip } from "./form";
 import { IndexerList } from "./Indexers";
 import { UsenetProviders } from "./Usenet";
 import { Availability } from "./Availability";
-import { EqualQuality } from "./EqualQuality";
 import { SourceUsage } from "./Usage";
 import { AddSourceGallery, type GalleryChoice } from "./cards";
 import type { DebridKind } from "../../lib/types";
@@ -109,7 +108,6 @@ export default function Sources() {
           <p className="text-sm text-fg-muted">
             {t("Drag a card to choose which account Ether tries first.")}
           </p>
-          <EqualQuality />
           {sourceSub === "debrid" ? <DebridSources addKind={debridAdd} /> : null}
           {sourceSub === "usenet" ? <UsenetProviders addNonce={usenetAdd} /> : null}
           {sourceSub === "indexers" ? (

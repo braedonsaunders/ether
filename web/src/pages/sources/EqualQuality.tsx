@@ -1,7 +1,6 @@
 import { SearchSelect, SettingsSection } from "@braedonsaunders/appkit-ui";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
-import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
 import { localized, t, tn } from "../../i18n";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
@@ -43,29 +42,23 @@ function SourceStartupNote() {
 }
 
 /**
- * Which kind of source leads when two releases are the same quality.
- * Dragging cards still chooses which account of that kind is asked first.
+ * Which kind of source leads when two releases are the same quality. It saves
+ * on change, so it can sit beside other settings without a second save bar.
  * Quality is never traded for a faster start.
  */
 export function EqualQuality() {
   const { config, resolver, save } = useResolver();
-  const saved = useMemo(
-    () => (resolver ? { sourcePreference: resolver.sourcePreference || "auto" } : null),
-    [resolver],
-  );
-  const { draft, setDraft, dirty, reset } = useDraft(saved);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   if (config.error) return <ErrorPanel error={config.error} onRetry={() => void config.reload()} />;
-  if (!resolver || !draft) return <LoadingRows rows={1} />;
+  if (!resolver) return <LoadingRows rows={1} />;
 
-  async function submit() {
-    if (!draft) return;
+  async function choose(sourcePreference: string) {
     setSaving(true);
     setError(null);
     try {
-      await save(draft, t("Source order saved"));
+      await save({ sourcePreference }, t("Source order saved"));
     } catch (e) {
       setError(e);
     } finally {
@@ -74,47 +67,29 @@ export function EqualQuality() {
   }
 
   return (
-    <>
-      <SettingsSection
-        title={t("Which source first")}
-        description={t(
-          "Dragging a card chooses which account of that kind Ether asks first. This chooses Usenet or debrid when two releases are the same quality. Ether never picks a worse picture just to start sooner.",
-        )}
-      >
-        <SettingsRow
-          title={t("When quality matches")}
-          description={
-            <>
-              {t(
-                "Automatic puts the source that has been starting faster first, and cached debrid first for popular titles until both sources have measurements. The other source stays a fallback.",
-              )}{" "}
-              <SourceStartupNote />
-            </>
-          }
-          control={
-            <div className="w-52">
-              <SearchSelect
-                {...searchSelectLabels()}
-                value={draft.sourcePreference}
-                onChange={(v) => setDraft({ ...draft, sourcePreference: v })}
-                options={SOURCE_PREFERENCE}
-                ariaLabel={t("Which source first when quality matches")}
-                searchable={false}
-              />
-            </div>
-          }
-        />
-      </SettingsSection>
-      <SaveBar
-        dirty={dirty}
-        saving={saving}
-        error={error}
-        onSave={submit}
-        onDiscard={() => {
-          reset();
-          setError(null);
-        }}
+    <SettingsSection title={t("Usenet or debrid")}>
+      <SettingsRow
+        title={t("When quality matches")}
+        description={
+          <>
+            {t("Automatic starts whichever source has been faster.")} <SourceStartupNote />
+          </>
+        }
+        control={
+          <div className="w-52">
+            <SearchSelect
+              {...searchSelectLabels()}
+              value={resolver.sourcePreference || "auto"}
+              onChange={(v) => void choose(v)}
+              options={SOURCE_PREFERENCE}
+              ariaLabel={t("Which source first when quality matches")}
+              searchable={false}
+              disabled={saving}
+            />
+          </div>
+        }
       />
-    </>
+      {error ? <ErrorPanel error={error} /> : null}
+    </SettingsSection>
   );
 }

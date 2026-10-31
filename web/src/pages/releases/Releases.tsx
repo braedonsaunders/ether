@@ -7,6 +7,7 @@ import { ClientRulesTab } from "./ClientRules";
 import { HistoryTab } from "./History";
 import { PinnedTab } from "./Pinned";
 import { QualityTab } from "./Quality";
+import { EqualQuality } from "../sources/EqualQuality";
 
 const TABS = localized(
   () =>
@@ -27,6 +28,7 @@ export default function Releases() {
       {tab === "quality" ? (
         <>
           <QualityTab />
+          <EqualQuality />
           <ConfigSection
             configKey="resolver"
             endpoint="resolver"
