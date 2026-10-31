@@ -12,7 +12,7 @@ import (
 // These versions identify the announced candidate, not the frozen delivered
 // fixture. Keep the latter at 9503; every transition is applied by the binary.
 var prismCandidateMigrations = map[string]int{
-	"sessions":              8,
+	"sessions":              9,
 	"sessions_samples":      1,
 	"viewer_policy":         2,
 	"availability":          4,
