@@ -40,8 +40,15 @@ func (m *Manager) ReserveEncoderInput(ctx context.Context, id string, expected c
 	if !ok || responsibility == nil {
 		return nil, core.ErrNotAvailable
 	}
+	// Entropy and allocation precede the manager lock. A collision refuses
+	// admission before charging capacity; never overwrite another live scope
+	// or retry entropy while holding the manager-global lock.
+	scope := &encoderInputScope{manager: m, source: responsibility, id: randomID(32), done: make(chan struct{})}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s := m.sessions[id]
 	if m.closed || s == nil || s.sources != responsibility {
 		return nil, core.ErrNotAvailable
@@ -54,12 +61,15 @@ func (m *Manager) ReserveEncoderInput(ctx context.Context, id string, expected c
 	if sealed {
 		return nil, core.ErrNotAvailable
 	}
+	if _, exists := m.encoderInputs[scope.id]; exists {
+		return nil, core.ErrNotAvailable
+	}
 	select {
 	case encoderInputSlots <- struct{}{}:
 	default:
 		return nil, core.ErrNotAvailable
 	}
-	scope := &encoderInputScope{manager: m, session: s, source: responsibility, id: randomID(32), done: make(chan struct{})}
+	scope.session = s
 	if m.encoderInputs == nil {
 		m.encoderInputs = make(map[string]*encoderInputScope)
 	}
