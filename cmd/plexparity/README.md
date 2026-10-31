@@ -118,3 +118,9 @@ Scrobble: `PUT/GET /:/scrobble` and `/:/unscrobble` return an empty
 MediaContainer. Timeline entries set `metadataState` to `created`. A movie's
 `rootItemID` is its own rating key so the open detail refreshes; an episode
 still names its season and show. This note does not allowlist any response.
+
+Movie intros: a movie intro that starts at the head of the file and ends
+within 90 seconds is not offered. TheIntroDB's row for The Matrix is one
+submission from the start to 40 seconds, and Plex showed Skip Intro at 0:23.
+An intro that starts later, and episode intros, are unchanged. This note
+does not allowlist any response.

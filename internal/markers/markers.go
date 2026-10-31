@@ -119,6 +119,24 @@ func offer(in []Marker, intro, credits bool) []Marker {
 	}
 	return out
 }
+// dropMovieBumpers removes an intro that only covers the studio cards at
+// the head of a movie. TheIntroDB's row for The Matrix is one submission
+// from the start of the file to 40s; the film has no title sequence, and
+// Plex was offering Skip Intro at 0:23.
+func dropMovieBumpers(key core.RatingKey, in []Marker) []Marker {
+	if key.Kind() != core.KindMovie {
+		return in
+	}
+	out := make([]Marker, 0, len(in))
+	for _, m := range in {
+		if m.Type == "intro" && m.StartMS <= 1000 && m.EndMS-m.StartMS <= 90_000 {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 func valid(m Marker, d time.Duration) bool {
 	return (m.Type == "intro" || m.Type == "credits" || m.Type == "recap") && m.StartMS >= 0 && m.EndMS > m.StartMS && m.EndMS <= d.Milliseconds()
 }
@@ -204,7 +222,7 @@ func (s *Service) Put(ctx context.Context, key core.RatingKey, d time.Duration, 
 func (s *Service) Markers(ctx context.Context, key core.RatingKey, info core.MediaInfo) ([]Marker, error) {
 	out, err := s.rawMarkers(ctx, key, info)
 	_, _, intro, credits := s.lookup()
-	return offer(s.applyStingers(ctx, key, info, out), intro, credits), err
+	return offer(s.applyStingers(ctx, key, info, dropMovieBumpers(key, out)), intro, credits), err
 }
 
 // CachedMarkers uses chapters and locally cached ranges only. It never fetches
@@ -219,7 +237,7 @@ func (s *Service) CachedMarkers(ctx context.Context, key core.RatingKey, info co
 		out = merge(out, cached)
 	}
 	_, _, intro, credits := s.lookup()
-	return offer(s.applyStingers(ctx, key, info, out), intro, credits), err
+	return offer(s.applyStingers(ctx, key, info, dropMovieBumpers(key, out)), intro, credits), err
 }
 
 // applyStingers detects mid-/post-credits scenes (chapters first, then

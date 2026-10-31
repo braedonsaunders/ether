@@ -112,6 +112,54 @@ func (r blockingRunner) Run(ctx context.Context, _ string, _ []string, _ io.Writ
 	<-ctx.Done()
 	return ctx.Err()
 }
+func TestMatrixStudioCardIsNotAnIntro(t *testing.T) {
+	ctx := context.Background()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("tmdb_id") != "603" || r.URL.Query().Get("season") != "" {
+			t.Errorf("query %s", r.URL.RawQuery)
+		}
+		io.WriteString(w, `{"group_duration_ms":8180662,"intro":[{"start_ms":null,"end_ms":40000,"confidence":0.1,"submission_count":1}],"credits":[{"start_ms":7726802,"end_ms":null}]}`)
+	}))
+	defer srv.Close()
+	s := New(Options{Enabled: true, BaseURL: srv.URL})
+	info := core.MediaInfo{Duration: 8180662 * time.Millisecond}
+	got, err := s.Markers(ctx, core.MovieKey(603), info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range got {
+		if m.Type == "intro" {
+			t.Fatalf("studio card offered as an intro: %+v", m)
+		}
+	}
+	if len(got) != 1 || got[0].Type != "credits" || got[0].Source != "theintrodb" {
+		t.Fatalf("credits %+v", got)
+	}
+	// A title sequence that starts after the cards is still an intro.
+	later := []Marker{{Type: "intro", StartMS: 120_000, EndMS: 180_000, Source: "theintrodb"}}
+	if filtered := dropMovieBumpers(core.MovieKey(603), later); len(filtered) != 1 {
+		t.Fatalf("later movie intro dropped: %+v", filtered)
+	}
+	// The same head range stays on an episode.
+	episode := dropMovieBumpers(core.EpisodeKey(1, 1, 1), []Marker{{Type: "intro", StartMS: 0, EndMS: 40_000}})
+	if len(episode) != 1 {
+		t.Fatalf("episode intro dropped: %+v", episode)
+	}
+	chapters := core.MediaInfo{Duration: info.Duration, Chapters: []core.Chapter{
+		{Title: "Intro", Start: 0, End: 23 * time.Second},
+		{Title: "Credits", Start: 7726802 * time.Millisecond, End: info.Duration},
+	}}
+	got, err = s.CachedMarkers(ctx, core.MovieKey(603), chapters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range got {
+		if m.Type == "intro" {
+			t.Fatalf("chapter studio card offered as an intro: %+v", m)
+		}
+	}
+}
+
 func TestMergePreservesMultipleRemoteRanges(t *testing.T) {
 	remote := []Marker{{Type: "intro", StartMS: 1, EndMS: 2}, {Type: "intro", StartMS: 3, EndMS: 4}, {Type: "credits", StartMS: 5, EndMS: 6}}
 	if got := merge(nil, remote); len(got) != 3 {
