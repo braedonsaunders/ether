@@ -610,6 +610,18 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unregister()
+	sourceHeader := capability.Header{HeaderScope: capability.HeaderScope{Namespace: "lazy-stream", ViewerID: viewerID, Surface: string(s.protocol)}, Digest: hash, ExpiresMillis: expires}
+	targetHeader := capability.Header{HeaderScope: capability.HeaderScope{Namespace: brokerTransferNamespace, ViewerID: viewerID, Surface: string(s.protocol), DeviceID: req.Device.ID}, Digest: lazyHash(hash + "\x00" + id + "\x00" + rand.Text()), ExpiresMillis: s.broker.deps.Now().Add(2 * time.Hour).UnixMilli()}
+	endFlight, flightErr := s.broker.beginLazyFlight(ctx, id, s.db, sourceHeader, targetHeader)
+	if flightErr != nil {
+		cancelStream()
+		if !errors.Is(flightErr, errTransferCommitUnknown) && s.broker.deps.OnEventError != nil {
+			s.broker.deps.OnEventError(flightErr)
+		}
+		http.Error(w, "playback unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer endFlight()
 	done := make(chan struct{})
 	heartbeatOwned = false
 	go func() {

@@ -10,8 +10,7 @@ import (
 )
 
 // UsePlaybackBroker attaches the shared session broker. Mounted Plex playback
-// publishes through it; a server constructed without one keeps the renderer
-// used by package fixtures until they install a broker.
+// publishes through it. Timeline progress and stops are recorded only there.
 func (s *Server) UsePlaybackBroker(b frontend.Sessions) {
 	if s != nil {
 		s.playbackBroker = b

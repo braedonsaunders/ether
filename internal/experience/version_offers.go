@@ -29,6 +29,7 @@ type VersionObservationPort interface {
 type VersionOffer struct {
 	ID          string
 	Name        string
+	Edition     string
 	Media       core.MediaInfo
 	AddedAt     time.Time
 	Publication *time.Time
@@ -43,6 +44,7 @@ func VersionOfferFrom(title *core.Title, variant core.ReleaseVariant) VersionOff
 	offer := VersionOffer{
 		ID:      variant.ID,
 		Name:    variant.Label,
+		Edition: variant.Edition,
 		Media:   variant.Info,
 		AddedAt: title.DateAdded(time.Now()),
 	}

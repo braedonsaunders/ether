@@ -24,9 +24,12 @@ type HLSRequest struct {
 	// InputURL (e.g. for resolved trailer URLs). Transcoders that cannot
 	// send headers ignore them; most resolved URLs need none (additive).
 	InputHeaders map[string]string
-	Info         MediaInfo
-	Decision     Decision
-	StartOffset  time.Duration
+	// InputLease is trusted host composition only, never decoded from wire
+	// requests. A caller retains an unclaimed lease if admission fails early.
+	InputLease  EncoderInputLease `json:"-"`
+	Info        MediaInfo
+	Decision    Decision
+	StartOffset time.Duration
 	// SegmentDuration defaults to 4s when zero (5s for DASH).
 	SegmentDuration time.Duration
 	// Protocol is ProtocolHLS (default when empty) or ProtocolDASH. A DASH

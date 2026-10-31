@@ -10,6 +10,14 @@ import (
 
 // watch polls a run's output for finished segments until ffmpeg exits.
 func (s *Session) watch(r *run) {
+	defer func() {
+		s.mu.Lock()
+		unusedStop := r.stopWork
+		r.stopWork = nil
+		s.mu.Unlock()
+		unusedStop.finish()
+		r.watchWork.finish()
+	}()
 	defer s.watchers.Done()
 	t := time.NewTicker(s.m.opts.pollInterval)
 	defer t.Stop()
@@ -176,7 +184,7 @@ func (s *Session) progressedLocked(r *run) {
 // failure is retried once with a larger probe, and a mid-stream failure is
 // reported to the failure handler (playback fails over to another release).
 func (s *Session) finish(r *run) {
-	err := r.proc.Err()
+	err := redactScopedCommandError(r.proc.Err(), r.spec)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.finished = true

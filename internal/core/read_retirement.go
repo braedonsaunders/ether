@@ -7,7 +7,8 @@ import (
 
 // ReadRetirement tracks producer references belonging to one media request.
 // Seal returns a channel closed only after all registered producers release
-// their references. It does not wait or cancel those producers.
+// their references. It does not wait or cancel those producers and does not
+// prove that the underlying MediaSource.Close succeeded.
 type ReadRetirement struct {
 	mu      sync.Mutex
 	pending int

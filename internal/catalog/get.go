@@ -25,7 +25,7 @@ const (
 	refreshMissTTL = time.Minute
 )
 
-func showRefreshKey(id int64) string { return fmt.Sprintf("show:%d", id) }
+func showRefreshKey(id int64) string  { return fmt.Sprintf("show:%d", id) }
 func movieRefreshKey(id int64) string { return fmt.Sprintf("movie:%d", id) }
 func seasonRefreshKey(id int64, season int) string {
 	return fmt.Sprintf("season:%d:%d", id, season)
@@ -117,6 +117,15 @@ func (c *Catalog) StoredTitle(ctx context.Context, key core.RatingKey) (*core.Ti
 		return nil, err
 	}
 	return &st.t, nil
+}
+
+// RefreshStoredTitle drops the minute cache and reads the stored row again.
+// Portrait bytes use it when a credit changed inside the current cache minute.
+func (c *Catalog) RefreshStoredTitle(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+	c.cacheMu.Lock()
+	delete(c.titleCache, key)
+	c.cacheMu.Unlock()
+	return c.StoredTitle(ctx, key)
 }
 
 func (c *Catalog) get(ctx context.Context, key core.RatingKey) (*core.Title, error) {

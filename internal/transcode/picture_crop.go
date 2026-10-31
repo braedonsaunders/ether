@@ -63,8 +63,12 @@ func (s *Session) swapPictureCrop(ctx context.Context, input string, info core.M
 		sampleInput = u.String()
 	}
 	args = append(args, "-ss", secs(max(0, at)), "-i", sampleInput, "-map", fmt.Sprintf("0:%d", v.Index), "-an", "-sn", "-vf", fmt.Sprintf("fps=4,scale=%d:%d,format=gray", width, height), "-frames:v", strconv.Itoa(frames), "-threads", "1", "-f", "rawvideo", "-")
+	args, err := s.encoderSampleArgs(sampleInput, args)
+	if err != nil {
+		return nil, fmt.Errorf("%w: unverified replacement picture input", ErrIncompatibleSwap)
+	}
 	out := &pictureSample{limit: width * height * frames}
-	if err := s.m.runner.Run(ctx, Command{Path: s.m.ffmpeg, Args: args, Stdout: out, Stderr: io.Discard}); err != nil {
+	if err := s.encoderRun(ctx, Command{Path: s.m.ffmpeg, Args: args, Stdout: out, Stderr: io.Discard}); err != nil {
 		s.log.Warn("replacement picture sample failed", "at", at, "timedOut", ctx.Err() != nil)
 		return nil, fmt.Errorf("%w: replacement picture sample unavailable", ErrIncompatibleSwap)
 	}

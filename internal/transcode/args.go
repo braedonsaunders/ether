@@ -18,11 +18,12 @@ type runSpec struct {
 	LiveInput bool
 	// RTXTimeline preserves the native session's clock and rendition-local
 	// initialization paths when ordinary FFmpeg takes over.
-	RTXTimeline  bool
-	InputHeaders map[string]string
-	Input        string
-	Info         core.MediaInfo
-	Decision     core.Decision
+	RTXTimeline       bool
+	InputHeaders      map[string]string
+	InputScopeHeaders map[string]string
+	Input             string
+	Info              core.MediaInfo
+	Decision          core.Decision
 	// Start is the media timestamp of the run's first segment (StartSeg).
 	Start    time.Duration
 	SegDur   time.Duration
@@ -224,7 +225,7 @@ func buildCodecArgs(s runSpec) []string {
 	// ---- input
 	args = append(args, inputSafetyArgs(s.Input, s.LiveInput)...)
 	args = append(args, httpInputArgs(s.Input, true)...)
-	args = appendInputHeaders(args, s.InputHeaders)
+	args = appendInputHeaders(args, s.commandHeaders())
 	if s.BigProbe {
 		args = append(args, "-probesize", "50000000", "-analyzeduration", "10000000")
 	} else {

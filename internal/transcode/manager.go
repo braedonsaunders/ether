@@ -177,7 +177,12 @@ type Manager struct {
 	rtxSetup       *rtxSetupWorker
 	audioMatchBusy atomic.Bool
 	rtx            rtxBackendState
-	pendingEncodes int
+	encoders       map[*encoderLifetime]struct{}
+	encoderIDs     map[string]*encoderLifetime
+	encoderLimit   int
+	encoderTimeout time.Duration
+	encoderRemove  func(string) error
+	reaperDone     chan struct{}
 
 	log     *slog.Logger
 	opts    options
@@ -213,12 +218,13 @@ func New(cfg config.Transcode, logger *slog.Logger, opts ...Option) (*Manager, e
 		fn(&o)
 	}
 	m := &Manager{
-		log:      logger.With("component", "transcode"),
-		opts:     o,
-		runner:   o.runner,
-		cfg:      cfg,
-		sessions: map[string]*Session{},
-		stop:     make(chan struct{}),
+		log:        logger.With("component", "transcode"),
+		opts:       o,
+		runner:     o.runner,
+		cfg:        cfg,
+		sessions:   map[string]*Session{},
+		stop:       make(chan struct{}),
+		reaperDone: make(chan struct{}),
 	}
 	f := defaultFinder()
 	if o.finder != nil {
@@ -318,7 +324,10 @@ func (m *Manager) cleanStale() {
 	for _, e := range entries {
 		switch {
 		case e.IsDir() && strings.HasPrefix(e.Name(), "s-"):
-			_ = os.RemoveAll(filepath.Join(m.tempDir, e.Name()))
+			path := filepath.Join(m.tempDir, e.Name())
+			if _, protected := encoderCleanup.dirs.Load(path); !protected {
+				_ = os.RemoveAll(path)
+			}
 		case e.IsDir() && e.Name() == "downloads":
 			cleanStaleDownloads(filepath.Join(m.tempDir, e.Name()))
 		}
@@ -438,28 +447,49 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-// StartHLS implements core.Transcoder: it starts an HLS session, or a DASH
-// session when req.Protocol is core.ProtocolDASH. A session with the same
-// ID is replaced (Plex reuses session IDs when it restarts a transcode).
 // encodingLocked counts the sessions other than except that are running an
 // encoder: transcodes, and copy sessions while their fast-start ramp, a
 // governor clamp or a lower rung is being encoded. Caller holds m.mu.
 func (m *Manager) encodingLocked(except string) int {
-	n := m.pendingEncodes
-	for sid, s := range m.sessions {
-		if sid != except && s.encoding() {
+	n := 0
+	for life := range m.encoders {
+		if current := m.sessions[except]; except != "" && current != nil && current.encoder == life {
+			continue // planning a replacement; admission still requires old Close
+		}
+		if life.encoding.Load() || life.runs.Load() > 0 {
 			n++
 		}
 	}
 	return n
 }
 
+// StartHLS implements core.Transcoder. A replacement cannot begin until the
+// prior exact session has completed its process and directory cleanup.
 func (m *Manager) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSession, error) {
+	life, err := m.reserveEncoder()
+	if err != nil {
+		return nil, err
+	}
+	return m.startHLS(ctx, req, life)
+}
+
+func (m *Manager) startHLS(ctx context.Context, req core.HLSRequest, life *encoderLifetime) (result core.HLSSession, resultErr error) {
+	defer life.finishWork()
+	defer func() {
+		if result == nil {
+			life.seal()
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if req.InputURL == "" {
 		return nil, errors.New("transcode: StartHLS: empty input URL")
+	}
+	if req.InputLease != nil && req.LiveInput {
+		// Scoped VOD inputs cannot expand a playlist into provider requests
+		// carrying the private header. Ordinary live input remains unchanged.
+		return nil, core.ErrEncoderInputUnverified
 	}
 	inputHeaders, headerErr := validatedInputHeaders(req.InputHeaders)
 	if headerErr != nil {
@@ -615,37 +645,35 @@ func (m *Manager) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSe
 		id = randomHex(12)
 	}
 
+	if req.InputLease != nil {
+		if err := life.installInput(req.InputLease); err != nil {
+			return nil, err
+		}
+	}
+	if err := m.claimEncoderID(ctx, id, life); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
 		return nil, errors.New("transcode: manager closed")
 	}
-	old := m.sessions[id]
 	if !d.VideoCopy && m.cfg.MaxTranscodes > 0 {
-		if n := m.encodingLocked(id); n >= m.cfg.MaxTranscodes {
+		if n := m.encodingLocked(""); n >= m.cfg.MaxTranscodes {
 			m.mu.Unlock()
 			return nil, fmt.Errorf("%w (%d running)", ErrTooManyTranscodes, n)
 		}
 	}
-	if !d.VideoCopy {
-		m.pendingEncodes++
-		defer func() { m.mu.Lock(); m.pendingEncodes--; m.mu.Unlock() }()
-	}
-	delete(m.sessions, id)
+	life.encoding.Store(!d.VideoCopy)
 	m.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
 
 	safe := unsafeID.ReplaceAllString(id, "_")
 	if len(safe) > 48 {
 		safe = safe[:48]
 	}
 	dir := filepath.Join(m.tempDir, "s-"+safe+"-"+randomHex(4))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("transcode: session dir: %w", err)
-	}
 	s := &Session{
+		encoder:                 life,
 		id:                      id,
 		m:                       m,
 		dir:                     dir,
@@ -663,6 +691,7 @@ func (m *Manager) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSe
 			liveInput:    req.LiveInput,
 			input:        req.InputURL,
 			inputHeaders: inputHeaders,
+			inputLease:   req.InputLease,
 			info:         req.Info,
 			decision:     d,
 		},
@@ -685,6 +714,12 @@ func (m *Manager) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSe
 			governorOn:  adapt.Governor && proto == core.ProtocolHLS && d.VideoCopy && v != nil,
 		},
 	}
+	if !life.attach(s) {
+		return nil, errors.New("transcode: session closed")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("transcode: session dir: %w", err)
+	}
 	for t := range s.done {
 		s.done[t] = map[int]bool{}
 	}
@@ -706,22 +741,19 @@ func (m *Manager) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSe
 	err := s.startRunLocked(startSeg, false)
 	s.mu.Unlock()
 	if err != nil {
-		_ = os.RemoveAll(dir)
 		return nil, err
 	}
 
+	life.mu.Lock()
 	m.mu.Lock()
-	if m.closed {
+	if m.closed || ctx.Err() != nil || life.sealed || m.encoderIDs[id] != life {
 		m.mu.Unlock()
-		_ = s.Close()
-		return nil, errors.New("transcode: manager closed")
-	}
-	if prev := m.sessions[id]; prev != nil {
-		// A concurrent StartHLS for the same ID won the race: replace it.
-		defer prev.Close()
+		life.mu.Unlock()
+		return nil, errors.New("transcode: manager closed or start canceled")
 	}
 	m.sessions[id] = s
 	m.mu.Unlock()
+	life.mu.Unlock()
 	return s, nil
 }
 
@@ -768,6 +800,7 @@ func (m *Manager) forget(s *Session) {
 
 func (m *Manager) reaper() {
 	defer m.wg.Done()
+	defer close(m.reaperDone)
 	every := m.opts.idleTimeout / 4
 	if every > 30*time.Second {
 		every = 30 * time.Second
@@ -802,31 +835,50 @@ func (m *Manager) reapIdle(now time.Time) {
 // Close stops every session and the reaper.
 func (m *Manager) Close() error {
 	m.mu.Lock()
-	if m.closed {
-		m.mu.Unlock()
-		return nil
+	if !m.closed {
+		m.closed = true
+		if m.rtxSetup != nil {
+			m.rtxSetup.cancel()
+		}
+		close(m.stop)
 	}
-	m.closed = true
+	lives := make([]*encoderLifetime, 0, len(m.encoders))
+	for life := range m.encoders {
+		lives = append(lives, life)
+	}
+	reaperDone := m.reaperDone
+	var setupDone <-chan struct{}
 	if m.rtxSetup != nil {
-		m.rtxSetup.cancel()
-	}
-	sessions := make([]*Session, 0, len(m.sessions))
-	for _, s := range m.sessions {
-		sessions = append(sessions, s)
+		setupDone = m.rtxSetup.done
 	}
 	m.mu.Unlock()
-	close(m.stop)
-	var wg sync.WaitGroup
-	for _, s := range sessions {
-		wg.Add(1)
-		go func(s *Session) {
-			defer wg.Done()
-			_ = s.Close()
-		}(s)
+	for _, life := range lives {
+		life.seal()
 	}
-	wg.Wait()
-	m.wg.Wait()
-	return nil
+	timer := time.NewTimer(m.encoderWait())
+	defer timer.Stop()
+	var err error
+	wait := func(done <-chan struct{}) bool {
+		if done == nil {
+			return true
+		}
+		select {
+		case <-done:
+			return true
+		case <-timer.C:
+			return false
+		}
+	}
+	for _, life := range lives {
+		if !wait(life.done) {
+			return errors.Join(err, core.ErrEncoderPending)
+		}
+		err = errors.Join(err, life.legacyResult())
+	}
+	if !wait(reaperDone) || !wait(setupDone) {
+		return errors.Join(err, core.ErrEncoderPending)
+	}
+	return err
 }
 
 // ExtractSubtitle writes an embedded text subtitle stream as WebVTT. It

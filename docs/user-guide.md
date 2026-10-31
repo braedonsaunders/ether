@@ -69,14 +69,16 @@ Add that address in the Silo app and sign in with an Ether viewer account, or
 approve the device's code in the viewer portal. A dash means the feature has
 not yet been verified on the named client. Direct, remux, and transcode are
 separate results. The release check includes this table.
-
-Settings beyond revision 8 are not supported.
-PQ video variants with unknown HDR10+ metadata are not offered until the
-server can determine that metadata; SDR and HLG variants remain available.
-For media with an unknown transfer function, Silo's required HDR10+ boolean
-means HDR10+ has not been positively identified; the media remains playable.
-Watch details omit marker ranges until they can be bound to the selected file;
-this is an outstanding Silo schema and skip-intro compatibility gap.
+Settings follow the pinned contract through revision 24.
+A PQ video variant with unknown HDR10+ metadata stays available as HDR10 and
+does not claim HDR10+. SDR and HLG variants remain available. For media with
+an unknown transfer function, an omitted HDR10+ boolean means HDR10+ has not
+been positively identified; the media remains playable.
+Watch details include marker ranges only when the response has one probed file
+those ranges fit. Every other file reports an empty marker set.
+For an unresolved version, Silo's required size, duration and bitrate use zero
+and required codec, container and resolution strings are empty. Playback resolves
+the source and reports the known values when it starts.
 Last-played codec, resolution and HDR describe the last recorded playback
 sample and can briefly lag if storing a newer sample fails. The last-played
 file identifier is omitted until it can be matched to an authorized version.

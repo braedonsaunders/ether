@@ -2,6 +2,8 @@ package sessions
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"testing"
 	"time"
@@ -74,4 +76,36 @@ func TestVersionHandleBatchValidatesOnceAndIsAtomic(t *testing.T) {
 		t.Fatalf("mapping survived admission failure %d %v", count, err)
 	}
 
+}
+
+func TestVersionHeaderRequirementIsSiloOnly(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	b := &Broker{deps: BrokerDeps{DB: db, Now: time.Now, ActiveViewer: func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: key}, nil
+	}, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, Variants: func(context.Context, *core.Viewer, *core.Title, core.ClientCaps) ([]core.ReleaseVariant, error) {
+		return []core.ReleaseVariant{{ID: "offered"}}, nil
+	}}}
+	for _, surface := range []frontend.Protocol{"silo", "jellyfin", "emby", "plex"} {
+		api, err := NewVersionHandles(db, b, surface)
+		if err != nil {
+			t.Fatal(err)
+		}
+		scope := frontend.VersionScope{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "tv"}, Protocol: surface}
+		handle, err := api.Issue(ctx, scope, core.MovieKey(1), "offered")
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256([]byte(handle))
+		if _, err = db.Exec(`DELETE FROM capability_headers WHERE namespace='sessions.version' AND digest=?`, hex.EncodeToString(digest[:])); err != nil {
+			t.Fatal(err)
+		}
+		_, err = api.Resolve(ctx, scope, handle)
+		if surface == "silo" && err == nil {
+			t.Fatal("Silo accepted a headerless mapping")
+		}
+		if surface != "silo" && err != nil {
+			t.Fatalf("%s changed pre-header resolution: %v", surface, err)
+		}
+	}
 }

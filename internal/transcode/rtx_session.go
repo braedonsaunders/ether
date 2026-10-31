@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -30,30 +31,30 @@ func (s *Session) prepareRTXRunLocked(rp *runPlan, seg int) {
 	}
 }
 
-// startRTXRunLocked either returns a native backend process or records an
+// startRTXRun either returns a native backend process or records an
 // explicit fallback and lets the caller start ordinary FFmpeg. The permit is
 // released only after the OS process is reaped, including start failures.
-func (s *Session) startRTXRunLocked(spec runSpec, stdout, stderr *lineWriter) (Process, []string, error) {
-	if _, reason := normalizedRTX(s.rtxConfig); reason != "" {
+func (m *Manager) startRTXRun(spec runSpec, cfg config.RTXVideo, dir string, stdout, stderr *lineWriter) (Process, []string, error) {
+	if _, reason := normalizedRTX(cfg); reason != "" {
 		return nil, nil, fmt.Errorf("RTX Video: %s", reason)
 	}
-	if s.rtxConfig.Mode == "off" || s.rtxConfig.Mode == "" {
+	if cfg.Mode == "off" || cfg.Mode == "" {
 		return nil, nil, fmt.Errorf("RTX Video disabled by owner")
 	}
-	if v := spec.Info.Video(); v == nil || v.Height > s.rtxConfig.SourceMaxHeight || spec.Decision.Enhancement.Height > s.rtxConfig.TargetMaxHeight {
+	if v := spec.Info.Video(); v == nil || v.Height > cfg.SourceMaxHeight || spec.Decision.Enhancement.Height > cfg.TargetMaxHeight {
 		return nil, nil, fmt.Errorf("RTX Video source or target exceeds owner limits")
 	}
 	args, keys, err := buildRTXArgs(spec)
 	if err != nil {
 		return nil, nil, err
 	}
-	b := &s.m.rtx
+	b := &m.rtx
 	b.mu.Lock()
 	if !b.support.Available || b.path == "" {
 		b.mu.Unlock()
 		return nil, nil, fmt.Errorf("RTX Video backend unavailable")
 	}
-	if b.active >= s.rtxConfig.MaxConcurrent {
+	if b.active >= cfg.MaxConcurrent {
 		b.mu.Unlock()
 		return nil, nil, fmt.Errorf("RTX Video enhancement concurrency cap reached")
 	}
@@ -65,20 +66,20 @@ func (s *Session) startRTXRunLocked(spec runSpec, stdout, stderr *lineWriter) (P
 		release()
 		return nil, nil, fmt.Errorf("RTX Video keyframe plan: %w", err)
 	}
-	start := s.m.runner.Start
-	if owner, ok := s.m.runner.(RTXRunner); ok {
+	start := m.runner.Start
+	if owner, ok := m.runner.(RTXRunner); ok {
 		start = owner.StartRTX
 	}
-	p, err := start(Command{Path: path, Args: args, Dir: s.dir, Stdout: stdout, Stderr: stderr})
-	if err != nil {
+	p, err := start(Command{Path: path, Args: args, Dir: dir, Stdout: stdout, Stderr: stderr})
+	if p == nil {
 		release()
 		return nil, nil, fmt.Errorf("RTX Video executable failed to start")
 	}
 	held := &rtxPermitProcess{Process: p, done: make(chan struct{}), release: release}
 	go func() { <-p.Done(); held.once.Do(release); close(held.done) }()
-	s.decision.Enhancement = spec.Decision.Enhancement
-	s.decision.Enhancement.State = "starting"
-	s.decision.Enhancement.Reason = "waiting for enhanced segments from NVEncC/NGX"
+	if err != nil {
+		return held, args, fmt.Errorf("RTX Video executable failed to start")
+	}
 	return held, args, nil
 }
 

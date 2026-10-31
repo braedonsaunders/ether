@@ -23,75 +23,34 @@ type testVersionHandles struct {
 	issue func(frontend.VersionScope, frontend.RatingKey, string) (string, error)
 }
 
-type genericFileIDs struct{ fileIDs }
-
-func (genericFileIDs) Resolve(context.Context, string, string, int32) (string, error) {
-	return `{"key":1000000000000001}`, nil
-}
-
-func TestExactVersionFailureAndGenericDefault(t *testing.T) {
+func TestExactSourceOfferFailure(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 7}
-	identity := testDeviceIdentity(frontendtest.Identity{}, viewer)
 	planned := 0
-	sessions := frontendtest.Sessions{
-		PlanFunc: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
-			planned++
-			if req.Version != "" || req.Intent.ExactVersion {
-				t.Fatal("generic default was made exact")
-			}
-			return frontend.PlayPlan{ID: "plan", Media: frontend.MediaInfo{Container: "mp4"}, Decision: frontend.Decision{Kind: "directplay"}}, nil
-		},
-		OpenFunc: func(context.Context, frontend.OpenRequest) (frontend.Session, error) {
-			return frontend.Session{ID: "session"}, nil
-		},
-		StartStreamFunc: func(context.Context, frontend.SessionAccess, string, frontend.StreamRequest) (string, error) {
-			return "/sessions/media/session/grant/file", nil
-		},
-	}
-	reject := testVersionHandles{issue: func(scope frontend.VersionScope, key frontend.RatingKey, release string) (string, error) {
-		if scope.Viewer != viewer || scope.Device.ID != "tv" || scope.Protocol != "silo" || len(scope.Caps.VideoCodecs) != 1 || scope.Caps.VideoCodecs[0] != "h264" || key != 1000000000000001 || release != "cut" {
-			t.Fatal("wrong version scope")
-		}
-		return "", errors.New("not offered for actual capabilities")
+	sessions := frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+		planned++
+		return frontend.PlayPlan{}, nil
 	}}
-	start := func(allocator ids.CompactAllocator, handles frontend.VersionHandles) *httptest.ResponseRecorder {
-		capabilities := frontendtest.Capabilities{BuildFunc: func(_ context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
+	for _, offers := range []frontend.SourceOffers{nil, testSourceOffers{resolve: func(scope frontend.VersionScope, id string) (frontend.SourceOffer, error) {
+		if scope.Viewer != viewer || scope.Device.ID != "tv" || scope.Protocol != "silo" || len(scope.Caps.VideoCodecs) != 1 || id != "2147483648" {
+			t.Fatal("wrong offer scope")
+		}
+		return frontend.SourceOffer{}, frontend.ErrSourceGone
+	}}} {
+		inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(frontendtest.Identity{}, viewer), Sessions: sessions, SourceOffers: offers, Capabilities: frontendtest.Capabilities{BuildFunc: func(_ context.Context, req frontend.CapabilityRequest) (frontend.CapabilityResult, error) {
 			return frontend.CapabilityResult{Client: frontend.ClientCaps{VideoCodecs: req.Device.VideoCodecs}}, nil
-		}}
-		inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: identity, Sessions: sessions, Capabilities: capabilities, VersionHandles: handles, IDs: ids.Codecs{Allocator: allocator}})
+		}}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		body := `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt","client_capabilities":{"codecs_video":["h264"]}}`
+		body := `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"` + inst.(*instance).installationID() + `","playback_attempt_id":"attempt","client_capabilities":{"codecs_video":["h264"]}}`
 		r := httptest.NewRequest("POST", "/api/v2/playback/start", strings.NewReader(body))
 		r.Header.Set("Authorization", "Bearer grant")
 		r.Header.Set("X-Silo-Device-Id", "tv")
 		w := httptest.NewRecorder()
 		inst.Handler().ServeHTTP(w, r)
-		return w
-	}
-	w := start(fileIDs{}, reject)
-	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") || planned != 0 {
-		t.Fatalf("unservable exact version: %d %s, planned=%d", w.Code, w.Body.String(), planned)
-	}
-	if data, err := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", ""); err == nil {
-		doc, err := openapi.Parse(data)
-		if err != nil {
-			t.Fatal(err)
+		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") || planned != 0 {
+			t.Fatalf("expired or missing offer: %d %s planned=%d", w.Code, w.Body.String(), planned)
 		}
-		if err = doc.Validate("POST", "/api/v2/playback/start", w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
-			t.Fatal(err)
-		}
-	} else if !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	w = start(fileIDs{}, nil)
-	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") || planned != 0 {
-		t.Fatalf("missing version handles: %d %s", w.Code, w.Body.String())
-	}
-	w = start(genericFileIDs{}, nil)
-	if w.Code != http.StatusCreated || planned != 1 {
-		t.Fatalf("generic default: %d %s, planned=%d", w.Code, w.Body.String(), planned)
 	}
 }
 
@@ -297,7 +256,7 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	experience := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
 		return frontend.ItemDetail{Versions: []frontend.Version{{ID: "cut", Media: frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", Index: 0}, {Type: "audio", Index: 2}, {Type: "subtitle", Index: 5}}}}}}, nil
 	}}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, viewer), Experience: experience, Sessions: testScopedMedia{session}, Capabilities: frontendtest.Capabilities{}, VersionHandles: testVersionHandles{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(ident, viewer), Experience: experience, Sessions: testScopedMedia{session}, Capabilities: frontendtest.Capabilities{}, VersionHandles: testVersionHandles{}, SourceOffers: testSourceOffers{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,11 +272,11 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		inst.Handler().ServeHTTP(w, req)
 		return w
 	}
-	bad := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"stale","playback_attempt_id":"attempt"}`)
+	bad := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"stale","playback_attempt_id":"attempt"}`)
 	if bad.Code != 409 || !strings.Contains(bad.Body.String(), `"type":"/problems/installation_changed"`) {
 		t.Fatalf("stale installation: %d %s", bad.Code, bad.Body.String())
 	}
-	w := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","start_position":12}`)
+	w := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","start_position":12}`)
 	if w.Code != 201 || strings.Contains(w.Body.String(), "account-secret") || planned.Version != "handle" || !planned.Intent.ExactVersion || planned.Item != 1000000000000001 || streamed.Format != frontend.StreamHLS {
 		t.Fatalf("play %d %s %+v %+v", w.Code, w.Body.String(), planned, streamed)
 	}
@@ -326,6 +285,13 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `"hdr10_plus":true`) {
 		t.Fatalf("known HDR10+ not reported: %s", w.Body.String())
+	}
+	// No fixed transcode ladder exists, and the source is not a menu rung.
+	if !strings.Contains(w.Body.String(), `"available_qualities":[]`) {
+		t.Fatalf("invented quality rungs: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"color_range":"unknown"`) {
+		t.Fatalf("unknown color range missing: %s", w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), `"dynamic_range":"hdr10_plus"`) || strings.Contains(w.Body.String(), `"dynamic_range":"sdr"`) {
 		t.Fatalf("positive HDR10+ mislabeled as SDR: %s", w.Body.String())
@@ -348,11 +314,11 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"X-Silo-Device-Id":"tv"`) {
 		t.Fatal("media request missing device binding", w.Body.String())
 	}
-	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":0,"subtitle_track_index":5}`)
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":0,"subtitle_track_index":5}`)
 	if w.Code != 201 || planned.Intent.AudioOrdinal == nil || *planned.Intent.AudioOrdinal != 0 || planned.Intent.SubtitleStreamIndex == nil || *planned.Intent.SubtitleStreamIndex != 5 || planned.Intent.AudioSet || planned.Intent.SubtitleSet {
 		t.Fatalf("source-bound track selection: %d %+v", w.Code, planned.Intent)
 	}
-	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":-1}`)
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":-1}`)
 	if w.Code != 201 || planned.Intent.AudioOrdinal != nil || planned.Intent.SubtitleStreamIndex == nil || *planned.Intent.SubtitleStreamIndex != -1 {
 		t.Fatalf("subtitle off: %d %+v", w.Code, planned.Intent)
 	}
@@ -361,15 +327,15 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		status int
 	}{{frontend.ErrTrackNotFound, 422}, {frontend.ErrTrackSourceUnavailable, 503}} {
 		planErr = tc.err
-		failed := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":5}`)
+		failed := call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":5}`)
 		if failed.Code != tc.status {
 			t.Fatalf("track admission error %v: %d %s", tc.err, failed.Code, failed.Body.String())
 		}
 	}
 	planErr = nil
 	for _, body := range []string{
-		`{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":-1}`,
-		`{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":-2}`,
+		`{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","audio_track_index":-1}`,
+		`{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"attempt","subtitle_track_index":-2}`,
 	} {
 		if invalid := call("POST", "/api/v2/playback/start", body); invalid.Code != 400 {
 			t.Fatalf("invalid track: %d %s", invalid.Code, invalid.Body.String())
@@ -422,13 +388,13 @@ func TestPlaybackUsesScopedBroker(t *testing.T) {
 		t.Fatalf("partial final sample: %d %s", w.Code, w.Body.String())
 	}
 	openErr = &frontend.TranscodeCapacityError{RetryAfter: 1500 * time.Millisecond}
-	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"another"}`)
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"another"}`)
 	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "2" || !strings.Contains(w.Body.String(), "transcode_capacity") {
 		t.Fatalf("open capacity: %d %v %s", w.Code, w.Header(), w.Body.String())
 	}
 	openErr = nil
 	planErr = errors.New("exact release unavailable")
-	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"1","profile_id":"7","installation_id":"install","playback_attempt_id":"another"}`)
+	w = call("POST", "/api/v2/playback/start", `{"protocol_version":3,"file_id":"2147483648","profile_id":"7","installation_id":"install","playback_attempt_id":"another"}`)
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "version-unavailable") {
 		t.Fatalf("exact plan failure: %d %s", w.Code, w.Body.String())
 	}
@@ -442,16 +408,14 @@ func TestPlaybackCapacityProblem(t *testing.T) {
 	}
 }
 
-func TestUnknownTransferRemainsPlayableAndUnknownPQIsSuppressed(t *testing.T) {
-	positive, negative := true, false
-	for _, tc := range []struct {
-		transfer string
-		probe    *bool
-		want     bool
-	}{{"bt709", nil, true}, {"arib-std-b67", nil, true}, {"", nil, true}, {"smpte2084", nil, false}, {"smpte2084", &positive, true}, {"smpte2084", &negative, true}} {
-		media := frontend.MediaInfo{Streams: []frontend.StreamInfo{{Type: "video", ColorTransfer: tc.transfer, HDR10Plus: tc.probe}}}
-		if got := siloSourceHasKnownHDR10Plus(media); got != tc.want {
-			t.Errorf("transfer %q: got %v", tc.transfer, got)
-		}
+func TestUnknownPQStaysHDR10WithoutClaimingHDR10Plus(t *testing.T) {
+	stream := frontend.StreamInfo{Type: "video", ColorTransfer: "smpte2084"}
+	if got := siloDynamicRange(stream); got != "hdr10" {
+		t.Fatalf("unknown PQ classified as %q", got)
+	}
+	positive := true
+	stream.HDR10Plus = &positive
+	if got := siloDynamicRange(stream); got != "hdr10_plus" {
+		t.Fatalf("known HDR10+ classified as %q", got)
 	}
 }

@@ -15,7 +15,6 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/plex"
 )
 
 func TestParseFileName(t *testing.T) {
@@ -291,7 +290,11 @@ func TestDecide(t *testing.T) {
 // TestPlexIntegration runs the real Plex front end over the spike.
 func TestPlexIntegration(t *testing.T) {
 	lib, files := newTestLibrary(t, Options{})
-	srv := plex.NewServer(lib.Deps())
+	srv, closeBroker, err := lib.OpenPlex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeBroker()
 	defer srv.Close()
 	ts := httptest.NewServer(srv)
 	defer ts.Close()

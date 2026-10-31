@@ -35,17 +35,18 @@ type Validator interface {
 	VerifyFeedCandidate(context.Context, *core.Title, core.Release) error
 }
 type Deps struct {
-	DB         *sql.DB
-	Config     func() config.Config
-	Feeds      Feeds
-	Catalog    Catalog
-	Validator  Validator
-	Seal       func(string) (string, error)
-	Open       func(string) (string, error)
-	CacheCheck func(context.Context, []string) (map[string]bool, bool)
-	Active     func() bool
-	Now        func() time.Time
-	Logger     *slog.Logger
+	DB               *sql.DB
+	Config           func() config.Config
+	Feeds            Feeds
+	Catalog          Catalog
+	Validator        Validator
+	Seal             func(string) (string, error)
+	Open             func(string) (string, error)
+	CacheCheck       func(context.Context, []string) (map[string]bool, bool)
+	Active           func() bool
+	Now              func() time.Time
+	Logger           *slog.Logger
+	ConfigGeneration func() uint64
 }
 type Service struct {
 	visibilityMu       sync.Mutex
@@ -58,6 +59,17 @@ type Service struct {
 	log                *slog.Logger
 	runMu              sync.Mutex
 	cacheSeeded        bool
+	snapMu             sync.RWMutex
+	snap               discoverySnap
+}
+
+// discoverySnap is the policy hash and availability settings for one config
+// generation. Browse checks reuse it instead of cloning the whole config.
+type discoverySnap struct {
+	gen    uint64
+	policy string
+	avail  config.Availability
+	ready  bool
 }
 
 func New(d Deps) (*Service, error) {
@@ -95,7 +107,42 @@ func (s *Service) decode(raw string) (core.Release, error) {
 	return r, err
 }
 func (s *Service) policy() string {
+	stamp, _ := s.discoverySnap()
+	return stamp
+}
+
+// discoverySnap reads the config once per generation. A browse of many rows
+// used to clone it on every visibility check.
+func (s *Service) discoverySnap() (string, config.Availability) {
+	if s.d.ConfigGeneration == nil {
+		c := s.cfg()
+		return policyOf(c), c.Availability
+	}
+	gen := s.d.ConfigGeneration()
+	s.snapMu.RLock()
+	if s.snap.ready && s.snap.gen == gen {
+		stamp, avail := s.snap.policy, s.snap.avail
+		s.snapMu.RUnlock()
+		return stamp, avail
+	}
+	s.snapMu.RUnlock()
 	c := s.cfg()
+	if s.d.ConfigGeneration() != gen {
+		return policyOf(c), c.Availability
+	}
+	stamp := policyOf(c)
+	s.snapMu.Lock()
+	if !(s.snap.ready && s.snap.gen == gen) {
+		s.snap = discoverySnap{gen: gen, policy: stamp, avail: c.Availability, ready: true}
+	} else {
+		stamp = s.snap.policy
+		c.Availability = s.snap.avail
+	}
+	s.snapMu.Unlock()
+	return stamp, c.Availability
+}
+
+func policyOf(c config.Config) string {
 	b, _ := json.Marshal([]any{"source-suitability-v2", c.Quality, c.Resolver, c.Usenet, c.Debrid, c.Indexers})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])

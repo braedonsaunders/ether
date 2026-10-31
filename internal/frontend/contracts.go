@@ -245,6 +245,8 @@ const (
 
 type Version struct {
 	ID, Name string
+	// Edition is the release's named cut when the catalogue recorded one.
+	Edition string
 	// AddedAt follows date added. Movies and episodes use their own release
 	// or air date. Series and seasons use the latest aired episode, then
 	// the premiere. It is not a catalogue insertion, observation, or refresh.

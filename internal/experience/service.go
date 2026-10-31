@@ -28,6 +28,8 @@ type Library struct {
 
 // ServiceDeps contains trusted host dependencies, never provided by a frontend.
 type ServiceDeps struct {
+	// BeginPeopleRead supplies fresh, fenced policy facts for the optional People API.
+	BeginPeopleRead     func(context.Context, *core.User) (PeopleRead, error)
 	NotInterestedSource func(context.Context, *core.User) ([]frontend.NotInterestedEntry, error)
 	ByExternalID        func(context.Context, string, string) (*core.Title, error)
 	Active              func(context.Context, int64) (*core.User, error)
@@ -39,13 +41,17 @@ type ServiceDeps struct {
 	Get           func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	// CachedGet applies catalogue visibility without a network refresh.
 	CachedGet func(context.Context, core.RatingKey) (*core.Title, error)
+	// CachedGetMany reads current cached rows in bounded batches without refresh.
+	CachedGetMany func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
 	// ParentTitles resolves distinct parents using the same semantics as GetTitle.
 	ParentTitles func(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
 	// CachedVirtualSeason resolves a viewer's already-computed episode layout.
-	CachedVirtualSeason   func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
-	Children              func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Grandchildren         func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Browse                func(context.Context, core.BrowseQuery) (core.Page, error)
+	CachedVirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
+	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
+	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
+	// CreditItems enumerates cached credit-title keys without browsing or hydration.
+	CreditItems           func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
 	AiredEpisodes         func(context.Context, core.RatingKey, int, int) (core.Page, error)
 	AddedTimes            func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
 	SimilarSource         func(context.Context, core.RatingKey, int) ([]core.Title, error)
@@ -60,9 +66,11 @@ type ServiceDeps struct {
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
 	IsFavoriteMany          func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
+	FavoriteMembership      func(context.Context, *core.User, core.RatingKey) (frontend.Membership, error)
 	IsNotInterested         func(context.Context, *core.User, core.RatingKey) (bool, error)
 	SetNotInterestedSource  func(context.Context, *core.User, core.RatingKey, bool) error
 	IsWatchlisted           func(context.Context, *core.User, core.RatingKey) (bool, error)
+	WatchlistMembership     func(context.Context, *core.User, core.RatingKey) (frontend.Membership, error)
 	SetWatchlistSource      func(context.Context, *core.User, core.RatingKey, bool) error
 	RemoveContinue          func(context.Context, *core.User, core.RatingKey) error
 	CanFavoriteEntity       func(context.Context, *core.User, frontend.FavoriteRef) bool

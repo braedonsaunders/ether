@@ -61,23 +61,30 @@ func (b *Broker) finishSuperseded(ctx context.Context, entries []*brokerSession,
 		}
 		b.cleanupSampleReceipt(ctx, old)
 		if old.live {
+			retired := true
 			if old.playID != newSource && b.deps.Live != nil {
-				_ = b.deps.Live.Stop(ctx, &core.Viewer{ID: old.public.ViewerID}, old.playID)
+				if err := b.deps.Live.Stop(ctx, &core.Viewer{ID: old.public.ViewerID}, old.playID); err != nil {
+					retired = false
+					if b.deps.OnEventError != nil {
+						b.deps.OnEventError(err)
+					}
+				}
 			}
+			b.settleRetirement(context.WithoutCancel(ctx), old, retired)
 		} else {
 			if old.sourcePinned {
 				if pins, ok := b.deps.Playback.(core.PlaybackRevisionPin); ok {
 					pins.UnpinSourceRevision(old.playID)
 				}
 			}
-			if b.deps.Transcoder != nil {
-				b.deps.Transcoder.Stop(old.public.ID)
-			}
 			b.mu.Lock()
 			stopSource := b.releaseSessionSourceLocked(old.playID)
 			b.mu.Unlock()
-			if stopSource && old.playID != newSource {
-				b.deps.Playback.Stop(old.playID)
+			if old.playID == newSource {
+				stopSource = false
+			}
+			if err := b.retireBackends(ctx, old, stopSource); err != nil && b.deps.OnEventError != nil {
+				b.deps.OnEventError(err)
 			}
 		}
 		b.publish(ctx, sessionEvent("SessionStopped", old.public, nil))

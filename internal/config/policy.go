@@ -15,7 +15,7 @@ func (s *Store) SetPolicyEpoch(bump func() error) {
 }
 
 func samePolicy(a, b Config) bool {
-	return reflect.DeepEqual(a.Catalog, b.Catalog) && reflect.DeepEqual(a.Personalize, b.Personalize) && reflect.DeepEqual(a.Availability, b.Availability) && reflect.DeepEqual(a.Quality, b.Quality) && reflect.DeepEqual(a.Resolver, b.Resolver) && reflect.DeepEqual(a.Usenet, b.Usenet) && reflect.DeepEqual(a.Debrid, b.Debrid) && reflect.DeepEqual(a.Indexers, b.Indexers)
+	return a.Spike.Enabled == b.Spike.Enabled && reflect.DeepEqual(a.Catalog, b.Catalog) && reflect.DeepEqual(a.Personalize, b.Personalize) && reflect.DeepEqual(a.Availability, b.Availability) && reflect.DeepEqual(a.Quality, b.Quality) && reflect.DeepEqual(a.Resolver, b.Resolver) && reflect.DeepEqual(a.Usenet, b.Usenet) && reflect.DeepEqual(a.Debrid, b.Debrid) && reflect.DeepEqual(a.Indexers, b.Indexers)
 }
 
 func (s *Store) policyUpdate(update func() error) error {

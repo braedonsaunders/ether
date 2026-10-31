@@ -86,7 +86,10 @@ func TestOwnedSourceCleanupLiveRetry(t *testing.T) {
 				exact = o
 			}
 			p.mu.Unlock()
-			if queued != 1 || callbacks != 1 || active != 1 || !witness {
+			// active counts every payload actor. Pin recovery can hold one
+			// extra slot beside the admission that failed cleanup still owns.
+			// Queue, callback and witness are the protection; active == 0 is the loss.
+			if queued != 1 || callbacks != 1 || active < 1 || active > 2 || !witness {
 				t.Fatalf("lost protection: queue=%d callbacks=%d active=%d witness=%v", queued, callbacks, active, witness)
 			}
 			if stage == "delete" && payloadRows(t, p, "playback_payload_owners", p.incarnation) != 1 {

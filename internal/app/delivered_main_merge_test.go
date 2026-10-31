@@ -15,21 +15,22 @@ import (
 func TestDeliveredMainMigrationBoundary(t *testing.T) {
 	known := store.KnownMigrations()
 	want := map[string]int{
-		"auth":                  7,
-		"auth_sessions":         1,
-		"experience_receipts":   5,
-		"experience_row_views":  3,
-		"release_observations":  1,
-		"frontend_tickets":      3,
-		"frontend_image_grants": 7,
-		"capability_headers":    3,
-		"playback":              4,
-		"capability_tickets":    1,
-		"handle_reservations":   2,
-		"viewer_alerts":         2,
-		"viewer_push":           2,
-		"watchlist_episodes":    1,
-		"notify_once":           1,
+		"auth":                   7,
+		"auth_sessions":          1,
+		"experience_receipts":    5,
+		"experience_row_views":   3,
+		"release_observations":   1,
+		"frontend_tickets":       3,
+		"frontend_image_grants":  7,
+		"capability_headers":     3,
+		"playback":               4,
+		"capability_tickets":     1,
+		"sessions_source_offers": 1,
+		"handle_reservations":    2,
+		"viewer_alerts":          2,
+		"viewer_push":            2,
+		"watchlist_episodes":     1,
+		"notify_once":            1,
 	}
 	for component, version := range want {
 		if known[component] != version {
@@ -53,6 +54,8 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		{"frontend_image_grants", "identity_grants"},
 		{"capability_tickets", "identity_grants"},
 		{"capability_tickets", "capability_headers"},
+		{"sessions_source_offers", "capability_headers"},
+		{"sessions_source_offers", "sessions"},
 	} {
 		if !store.HasDependency(dep.component, dep.after) {
 			t.Errorf("%s missing RegisterAfter %s", dep.component, dep.after)

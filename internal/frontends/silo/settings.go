@@ -17,14 +17,27 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/language"
 )
 
-// settingDefinition records the revision-8 wire vocabulary, not an Ether
-// policy; authoritative playback limits remain enforced by the broker.
+// settingsManifestRevision is the pinned Silo settings contract revision.
+// Clients filter definitions against this number, so a lower advertisement
+// hides every key introduced after it.
+const settingsManifestRevision = 24
+
+// settingDefinition records one settings-contract key. since is the contract
+// revision that introduced it. numeric marks an enum whose choices are integers.
 type settingDefinition struct {
 	kind, defaultJSON      string
 	scopes, choices        []string
-	nullable               bool
+	nullable, numeric      bool
+	since                  int
 	minimum, maximum       float64
 	hasMinimum, hasMaximum bool
+}
+
+func (d settingDefinition) contractRevision() int64 {
+	if d.since > 0 {
+		return int64(d.since)
+	}
+	return 1
 }
 
 func (i *instance) settingsRoutes() error {
@@ -105,6 +118,19 @@ func (d settingDefinition) valid(raw json.RawMessage) bool {
 		}
 		return language.Valid(v)
 	case "enum":
+		if d.numeric {
+			v, ok := value.(float64)
+			if !ok || math.Trunc(v) != v {
+				return false
+			}
+			text := strconv.FormatInt(int64(v), 10)
+			for _, choice := range d.choices {
+				if choice == text {
+					return true
+				}
+			}
+			return false
+		}
 		v, ok := value.(string)
 		if !ok {
 			return false
@@ -138,7 +164,7 @@ func (i *instance) settingsCapabilities(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	_, etag := settingsContractDocument()
-	reply(w, 200, map[string]any{"revision": "ether-settings-8-" + strings.Trim(etag, `"`), "state": "available", "allowed": true, "api_version": 1, "manifest_revision": 8, "contract_etag": etag, "definition_count": len(settingDefinitions), "scopes": []string{"profile", "profile_client", "profile_device", "profile_library", "profile_series"}, "client_families": []string{"tv", "mobile", "tablet", "desktop", "web"}, "supports_batched_effective": true, "supports_idempotent_writes": false, "supports_atomic_shortcuts": false, "supports_device_rename": false})
+	reply(w, 200, map[string]any{"revision": "ether-settings-" + strconv.Itoa(settingsManifestRevision) + "-" + strings.Trim(etag, `"`), "state": "available", "allowed": true, "api_version": 1, "manifest_revision": settingsManifestRevision, "contract_etag": etag, "definition_count": len(settingDefinitions), "scopes": []string{"profile", "profile_client", "profile_device", "profile_library", "profile_series"}, "client_families": []string{"tv", "mobile", "tablet", "desktop", "web"}, "supports_batched_effective": true, "supports_idempotent_writes": false, "supports_atomic_shortcuts": false, "supports_device_rename": false})
 }
 
 func settingsContractDocument() (map[string]any, string) {
@@ -162,7 +188,15 @@ func settingsContractDocument() (map[string]any, string) {
 		if len(d.choices) > 0 {
 			values := make([]any, 0, len(d.choices))
 			for _, choice := range d.choices {
-				values = append(values, map[string]any{"value": choice})
+				var encoded any = choice
+				if d.numeric {
+					n, err := strconv.Atoi(choice)
+					if err != nil {
+						continue
+					}
+					encoded = n
+				}
+				values = append(values, map[string]any{"value": encoded})
 			}
 			schema["values"] = values
 		}
@@ -180,7 +214,7 @@ func settingsContractDocument() (map[string]any, string) {
 		}
 		defs = append(defs, map[string]any{"key": key, "persistence": persistence, "allowed_scopes": d.scopes, "resolution_order": order, "default_value": value, "value_schema": schema})
 	}
-	doc := map[string]any{"api_version": 1, "revision": 8, "definitions": defs, "option_sets": map[string]any{}}
+	doc := map[string]any{"api_version": 1, "revision": settingsManifestRevision, "definitions": defs, "option_sets": map[string]any{}}
 	raw, _ := json.Marshal(doc)
 	sum := sha256.Sum256(raw)
 	return doc, `"` + hex.EncodeToString(sum[:]) + `"`
@@ -414,7 +448,7 @@ func (i *instance) settingValues(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seen[key] = true
-		row := map[string]any{"key": key, "value": json.RawMessage(d.defaultJSON), "source": "default", "definition_revision": 8}
+		row := map[string]any{"key": key, "value": json.RawMessage(d.defaultJSON), "source": "default", "definition_revision": d.contractRevision()}
 		for _, scope := range []string{"profile_device", "profile_series", "profile_library", "profile_client", "profile", "account"} {
 			if !d.acceptsScope(scope) {
 				continue
@@ -543,7 +577,7 @@ func (i *instance) settingValues(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, row)
 	}
-	reply(w, 200, map[string]any{"items": items, "revision": 8})
+	reply(w, 200, map[string]any{"items": items, "revision": settingsManifestRevision})
 }
 
 func (i *instance) settingWrite(w http.ResponseWriter, r *http.Request) {

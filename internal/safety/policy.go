@@ -171,7 +171,18 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 	if u == nil {
 		return true
 	}
-	p := s.ForUser(u)
+	return AllowedWithPolicy(u, t, s.ForUser(u))
+}
+
+// AllowedWithPolicy evaluates caller-owned policy facts. The caller must
+// separately enforce the catalog visibility gate and durable policy fence.
+func AllowedWithPolicy(u *core.User, t *core.Title, p Policy) bool {
+	if t == nil || t.Adult {
+		return false
+	}
+	if u == nil {
+		return true
+	}
 	if catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, p.MaxContentRating) {
 		return false
 	}
@@ -188,13 +199,11 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 	return !blocked(t.Genres, p.BlockedGenres) && !blocked(t.Keywords, p.BlockedKeywords)
 }
 func (s *Service) CanPlay(u *core.User, remote bool, now time.Time) bool {
-	if u == nil {
-		return false
-	}
 	return CanPlayWithPolicy(u, s.ForUser(u), remote, now)
 }
 
-// CanPlayWithPolicy applies a policy snapshot the caller already loaded.
+// CanPlayWithPolicy evaluates the same playback rules against an owned policy
+// snapshot. It does not establish freshness or an authorization interval.
 func CanPlayWithPolicy(u *core.User, p Policy, remote bool, now time.Time) bool {
 	if u == nil {
 		return false
@@ -307,11 +316,15 @@ func (s *Service) ForUser(u *core.User) Policy {
 	return s.Get(u.ID)
 }
 func (s *Service) UserPolicy(u *core.User) *core.User {
+	return UserPolicyWithPolicy(u, s.ForUser(u))
+}
+
+// UserPolicyWithPolicy applies restrictions from a caller-owned policy copy.
+func UserPolicyWithPolicy(u *core.User, p Policy) *core.User {
 	if u == nil {
 		return nil
 	}
 	out := *u
-	p := s.ForUser(u)
 	if p.MaxContentRating != "" && (out.MaxContentRating == "" || catalog.RatingRank(p.MaxContentRating) < catalog.RatingRank(out.MaxContentRating)) {
 		out.MaxContentRating = p.MaxContentRating
 	}

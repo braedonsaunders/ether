@@ -24,6 +24,7 @@ import (
 // track per representation (video, audio); ffmpeg's dash muxer writes short
 // chunks that the session regroups into numbered segments by timestamp.
 type Session struct {
+	encoder                 *encoderLifetime
 	id                      string
 	m                       *Manager
 	dir                     string
@@ -61,6 +62,7 @@ type sessionInput struct {
 	rtxTimeline        bool
 	rtxDiscontinuities map[int]bool
 	liveInput          bool
+	inputLease         core.EncoderInputLease
 	inputHeaders       map[string]string
 	input              string
 	info               core.MediaInfo
@@ -78,6 +80,7 @@ type sessionInput struct {
 
 // sessionEncoding owns one aspect of the session. Fields are guarded by Session.mu.
 type sessionEncoding struct {
+	starting <-chan struct{}
 	reaping  <-chan struct{} // previous encoder exit barrier; waited without mu
 	resumeAt int             // segment to restart at after a throttle stop; -1 none
 	cur      *run
@@ -150,22 +153,24 @@ type run struct {
 	rtx          bool
 	rtxConfirmed atomic.Bool
 
-	seq      int
-	startSeg int
-	spec     runSpec
-	proc     Process
-	hw       bool
-	maxDone  int // last segment finished (DASH: on every track)
-	produced int // segments finished (DASH: on the slowest track)
-	finished bool
-	stopped  bool // stopped deliberately, not a failure
-	paused   bool
-	err      error
-	stderr   *tailBuffer
-	started  time.Time
-	mode     SegMode // plan mode this run produces
-	planEnd  int     // first segment NOT produced by this run (mode change); -1 none
-	track    int     // session track (HLS rung / DASH video rep) encoded
+	seq       int
+	startSeg  int
+	spec      runSpec
+	proc      Process
+	watchWork *encoderWork
+	stopWork  *encoderWork
+	hw        bool
+	maxDone   int // last segment finished (DASH: on every track)
+	produced  int // segments finished (DASH: on the slowest track)
+	finished  bool
+	stopped   bool // stopped deliberately, not a failure
+	paused    bool
+	err       error
+	stderr    *tailBuffer
+	started   time.Time
+	mode      SegMode // plan mode this run produces
+	planEnd   int     // first segment NOT produced by this run (mode change); -1 none
+	track     int     // session track (HLS rung / DASH video rep) encoded
 
 	progressMu sync.Mutex
 	progress   Progress
@@ -320,20 +325,15 @@ func (s *Session) broadcastLocked() {
 
 // Close implements core.HLSSession: kill ffmpeg and delete the segments.
 func (s *Session) Close() error {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil
+	if err := s.RetireEncoder(); err != nil {
+		return err
 	}
-	s.closed = true
-	s.stopRunLocked()
-	s.broadcastLocked()
-	s.mu.Unlock()
-	// The watcher may still be assembling segment files; on Windows open
-	// files can't be deleted and late writes would outlive RemoveAll.
-	waitTimeout(&s.watchers, 10*time.Second)
-	err := removeAllRetry(s.dir)
-	s.m.forget(s)
-	s.log.Info("session closed", "age", time.Since(s.created).Round(time.Second))
-	return err
+	timer := time.NewTimer(s.m.encoderWait())
+	defer timer.Stop()
+	select {
+	case <-s.encoder.done:
+		return s.encoder.legacyResult()
+	case <-timer.C:
+		return core.ErrEncoderPending
+	}
 }

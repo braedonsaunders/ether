@@ -195,6 +195,7 @@ func (s *Store) attachShared(ctx context.Context, b SharedBackend, o SharedOptio
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, doc.Version
+	s.generation++
 	s.shared, s.sharedOpts = b, o
 	saveErr := s.save()
 	subs := append([]func(Config){}, s.subs...)
@@ -335,6 +336,7 @@ func (s *Store) refreshShared(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, doc.Version
+	s.generation++
 	changed := !sameConfig(before, next)
 	var saveErr error
 	if changed {
@@ -405,6 +407,7 @@ func (s *Store) updateClustered(fn func(*Config) error) error {
 	}
 	s.mu.Lock()
 	s.cfg, s.sharedVer = next, ver
+	s.generation++
 	saveErr := s.save()
 	subs := append([]func(Config){}, s.subs...)
 	n := s.notifier

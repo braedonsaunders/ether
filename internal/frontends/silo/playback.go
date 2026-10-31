@@ -1,6 +1,7 @@
 package silo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"math"
@@ -13,11 +14,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 )
 
-type fileReference struct {
-	Key     int64  `json:"key"`
-	Version string `json:"version,omitempty"`
-}
-
 func (i *instance) installationID() string {
 	return i.id[:8] + "-" + i.id[8:12] + "-" + "4" + i.id[13:16] + "-" + "8" + i.id[17:20] + "-" + i.id[20:]
 }
@@ -26,17 +22,6 @@ func installationChanged(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(http.StatusConflict)
 	_ = json.NewEncoder(w).Encode(map[string]any{"type": "/problems/installation_changed", "title": "Playback installation changed", "status": http.StatusConflict, "detail": "Refresh playback capabilities before retrying."})
-}
-
-// A PQ stream can contain HDR10+ metadata; absent probe evidence is unknown.
-// Explicit positive metadata takes precedence over a conflicting transfer.
-func siloSourceHasKnownHDR10Plus(media frontend.MediaInfo) bool {
-	for _, stream := range media.Streams {
-		if stream.Type == "video" && stream.ColorTransfer == "smpte2084" && stream.HDR10Plus == nil {
-			return false
-		}
-	}
-	return true
 }
 
 type startRequest struct {
@@ -87,22 +72,6 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", 403)
 		return
 	}
-	n, err := strconv.ParseInt(b.FileID, 10, 32)
-	if err != nil || n <= 0 || strconv.FormatInt(n, 10) != b.FileID {
-		http.Error(w, "Bad Request", 400)
-		return
-	}
-	ref, err := i.host.IDs.Resolve(r.Context(), "silo", "file", int32(n))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	var target fileReference
-	if json.Unmarshal([]byte(ref), &target) != nil || target.Key <= 0 {
-		http.NotFound(w, r)
-		return
-	}
-	key := frontend.RatingKey(target.Key)
 	d := device(r)
 	height, _ := strconv.Atoi(strings.TrimSuffix(b.Capabilities.Resolution, "p"))
 	if h, e := strconv.Atoi(strings.TrimSuffix(b.Quality, "p")); e == nil && h > 0 && (height == 0 || h < height) {
@@ -113,23 +82,21 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unavailable", 503)
 		return
 	}
-	versionHandle := ""
-	if target.Version != "" {
-		if i.host.VersionHandles == nil || (b.Capabilities.Video == nil && b.Capabilities.Audio == nil && b.Capabilities.Containers == nil) {
-			versionUnavailable(w)
-			return
-		}
-		scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
-		versionHandle, err = i.host.VersionHandles.Issue(r.Context(), scope, key, target.Version)
-		if err != nil || versionHandle == "" {
-			versionUnavailable(w)
-			return
-		}
-		resolved, err := i.host.VersionHandles.Resolve(r.Context(), scope, versionHandle)
-		if err != nil || resolved.Item != key {
-			versionUnavailable(w)
-			return
-		}
+	scope := frontend.VersionScope{Viewer: v, Device: d, Protocol: "silo", Caps: cap.Client}
+	if i.host.SourceOffers == nil {
+		versionUnavailable(w)
+		return
+	}
+	offer, err := i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
+	if err != nil || offer.Target.Item == 0 || (offer.Target.VersionHandle == "") == (offer.Target.DetailSource == "") {
+		versionUnavailable(w)
+		return
+	}
+	key, versionHandle := offer.Target.Item, offer.Target.VersionHandle
+	planner, hasDetailPlanner := i.host.Sessions.(frontend.DetailPlanner)
+	if (versionHandle != "" && i.host.VersionHandles == nil) || (offer.Target.DetailSource != "" && (!hasDetailPlanner || offer.Target.ETag == "")) {
+		versionUnavailable(w)
+		return
 	}
 	direct, hls := true, true
 	if b.Context.Deliveries != nil {
@@ -148,22 +115,18 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pos := time.Duration(b.Position * float64(time.Second))
-	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
+	plan, err := i.host.Sessions.Plan(r.Context(), frontend.PlanRequest{Viewer: v, Device: d, Protocol: "silo", Item: key, Version: versionHandle, DetailSource: offer.Target.DetailSource, ExpectedSourceETag: offer.Target.ETag, Caps: cap.Client, Intent: frontend.PlayIntent{ExactVersion: versionHandle != "", Options: options, AllowTranscoding: &hls, AudioOrdinal: b.Audio, SubtitleStreamIndex: b.Subtitle, Position: pos, PlaybackID: b.Attempt, ClientSessionID: b.InstallationID}})
 	if err != nil {
-		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
+		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
 			versionUnavailable(w)
 			return
 		}
 		playbackError(w, err)
 		return
 	}
-	if !siloSourceHasKnownHDR10Plus(plan.Media) {
-		http.Error(w, "Source HDR metadata unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	session, err := i.host.Sessions.Open(r.Context(), frontend.OpenRequest{Protocol: "silo", PlanID: plan.ID, Viewer: v, Device: d})
 	if err != nil {
-		if versionHandle != "" && !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
+		if !errors.Is(err, frontend.ErrSessionBusy) && !errors.Is(err, frontend.ErrTranscodeCapacity) && !errors.Is(err, frontend.ErrTrackNotFound) && !errors.Is(err, frontend.ErrTrackSourceUnavailable) {
 			versionUnavailable(w)
 			return
 		}
@@ -171,6 +134,25 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	access := frontend.SessionAccess{Viewer: v, Device: d, Protocol: "silo"}
+	matchOffer := func() error {
+		current, err := i.host.SourceOffers.Resolve(r.Context(), scope, b.FileID)
+		if err != nil {
+			return err
+		}
+		if current.ID != offer.ID || current.Target != offer.Target {
+			return frontend.ErrSourceGone
+		}
+		if offer.Target.DetailSource != "" {
+			return planner.MatchDetailSession(r.Context(), scope, offer.Target.DetailSource, session.ID)
+		}
+		return i.host.VersionHandles.MatchSession(r.Context(), scope, versionHandle, session.ID)
+	}
+	if err = matchOffer(); err != nil {
+		i.stopFailedAdmission(r.Context(), access, session.ID)
+		versionUnavailable(w)
+		return
+	}
+
 	format := frontend.StreamDirect
 	delivery := "original_http"
 	proto := "http_progressive"
@@ -186,20 +168,42 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	}
 	media, err := i.host.Sessions.StartStream(r.Context(), access, session.ID, frontend.StreamRequest{Format: format, Position: pos})
 	if err != nil {
-		_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+		i.stopFailedAdmission(r.Context(), access, session.ID)
 		playbackError(w, err)
 		return
 	}
+	// Admission finishes only after stream preparation and one last exact
+	// selector check. Later expiry does not revoke the independent session.
+	if err = matchOffer(); err != nil {
+		i.stopFailedAdmission(r.Context(), access, session.ID)
+		versionUnavailable(w)
+		return
+	}
 	if !strings.HasPrefix(media, "/sessions/media/") {
-		_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+		i.stopFailedAdmission(r.Context(), access, session.ID)
 		http.Error(w, "Playback unavailable", 503)
 		return
 	}
 	media = "/api/v2/stream/" + strings.TrimPrefix(media, "/sessions/media/")
-	source := map[string]any{"media_file_id": b.FileID, "duration_seconds": plan.Media.Duration.Seconds(), "container": plan.Media.Container, "bitrate_kbps": plan.Media.BitrateKbps, "hdr10_plus": false, "dv_enhancement_layer": "unknown"}
+	source := map[string]any{"media_file_id": b.FileID, "hdr10_plus": false, "dv_enhancement_layer": "unknown"}
+	if !plan.Media.Estimated {
+		if plan.Media.Duration > 0 {
+			source["duration_seconds"] = plan.Media.Duration.Seconds()
+		}
+		if plan.Media.Container != "" {
+			source["container"] = plan.Media.Container
+		}
+		if plan.Media.BitrateKbps > 0 {
+			source["bitrate_kbps"] = plan.Media.BitrateKbps
+		}
+	}
 	recipe := map[string]any{"video_codec": plan.Decision.VideoCodec, "audio_codec": plan.Decision.AudioCodec, "bitrate_kbps": plan.Decision.BitrateKbps}
 	hdr10, hdr10Plus, hlg, dv := false, false, false, false
-	for _, s := range plan.Media.Streams {
+	streams := plan.Media.Streams
+	if plan.Media.Estimated {
+		streams = nil
+	}
+	for _, s := range streams {
 		if s.Type == "video" {
 			rangeName := siloObservedRange(plan.Media, s)
 			if !plan.Media.Estimated && s.HDR10Plus != nil {
@@ -221,6 +225,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 			source["video_profile"] = s.Profile
 			source["video_level"] = s.Level
 			source["frame_rate"] = s.FrameRate
+			source["color_range"] = "unknown"
 			if s.ColorRange != "" {
 				source["color_range"] = s.ColorRange
 			}
@@ -298,7 +303,7 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 				subtitle["track_id"] = trackID
 				subtitle["artifact"] = map[string]any{"url": url, "format": "vtt", "mime_type": "text/vtt", "timing_origin_seconds": 0}
 			} else {
-				_ = i.host.Sessions.Stop(r.Context(), access, session.ID)
+				i.stopFailedAdmission(r.Context(), access, session.ID)
 				http.Error(w, "Subtitle unavailable", 503)
 				return
 			}
@@ -323,8 +328,19 @@ func (i *instance) playbackStart(w http.ResponseWriter, r *http.Request) {
 	if plan.Decision.Reason != "" {
 		audioClaim["reason"] = plan.Decision.Reason
 	}
+	// Ether has no fixed transcode quality menu. The contract says the source
+	// itself is not a rung and quality_preference auto returns to it, so the
+	// list stays empty instead of inventing heights.
 	output := map[string]any{"protocol_version": 3, "plan_id": plan.ID, "session_id": session.ID, "delivery": delivery, "plan_attempt_key": plan.ID, "stream": stream, "timeline": timeline, "selected_tracks": selected, "effective_recipe": recipe, "claims": map[string]any{"video": map[string]any{"hdr10": hdr10, "hdr10_plus": hdr10Plus, "hlg": hlg, "dolby_vision": dv}, "audio": audioClaim, "subtitles": map[string]any{"ass_styling_preserved": false, "bitmap_overlay": false, "bitmap_sidecar": false}}, "subtitle": subtitle, "transformations": []any{}, "applied_quirks": []any{}, "runtime_corrections": []any{}, "degradation_warnings": []any{}, "decision_reason": plan.Decision.Reason, "requested_media_file_id": b.FileID, "effective_media_file_id": b.FileID, "source": source, "subtitle_fidelity_policy": "allow_simplified_rendering", "available_qualities": []any{}}
-	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "session_id": session.ID, "playback_plan": output})
+	reply(w, 201, map[string]any{"outcome": "playable", "protocol_version": 3, "server_features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "session_id": session.ID, "playback_plan": output})
+}
+
+func (i *instance) stopFailedAdmission(ctx context.Context, access frontend.SessionAccess, sessionID string) {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	if err := i.host.Sessions.Stop(cleanup, access, sessionID); err != nil && i.host.Log != nil {
+		i.host.Log.Error("failed playback admission cleanup", "session", sessionID, "err", err)
+	}
 }
 
 func versionUnavailable(w http.ResponseWriter) {
@@ -470,7 +486,7 @@ func (i *instance) playbackCapabilities(w http.ResponseWriter, r *http.Request) 
 	if !allowed {
 		state = "not_configured"
 	}
-	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": i.installationID(), "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
+	reply(w, 200, map[string]any{"revision": "ether-playback-v3", "state": state, "allowed": allowed, "installation_id": i.installationID(), "protocol_versions": []int{3}, "features": []string{"playback_plan_v3", "neutral_playback_v3_contract_v1", "header_authenticated_media_v1", "sequenced_progress_v1", "plan_source_duration_v1"}, "deliveries": []string{"original_http", "server_transcode_hls", "server_remux_hls"}})
 }
 
 func (i *instance) playbackControlCapabilities(w http.ResponseWriter, r *http.Request) {

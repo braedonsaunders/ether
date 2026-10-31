@@ -69,6 +69,7 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 	for _, t := range page.Items {
 		item := titleDTO(t, state[t.Key])
 		i.artwork(r, v, token, t.Key, item)
+		i.applyEditionOverlay(r, v, t.Key, item)
 		items = append(items, item)
 	}
 	var next any
@@ -134,6 +135,7 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 		item["is_specials"] = t.Season == 0
 		item["episode_count"] = t.LeafCount
 		i.artwork(r, v, token, t.Key, item)
+		i.applyEditionOverlay(r, v, t.Key, item)
 		items = append(items, item)
 	}
 	reply(w, 200, map[string]any{"items": items, "page": map[string]any{"has_more": false, "next_cursor": nil}})

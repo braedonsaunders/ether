@@ -22,6 +22,9 @@ func validatedInputHeaders(headers map[string]string) (map[string]string, error)
 			}
 		}
 		key := http.CanonicalHeaderKey(name)
+		if key == core.EncoderInputScopeHeader {
+			return nil, fmt.Errorf("reserved media input header")
+		}
 		if _, duplicate := out[key]; duplicate {
 			return nil, fmt.Errorf("duplicate media input header")
 		}
