@@ -424,31 +424,24 @@ describe("Settings", () => {
     expect(screen.queryByRole("tab", { name: "Shared Cache" })).not.toBeInTheDocument();
   });
 
-  it("gives config sections the UI has no page for their own General tab, and saves them whole", async () => {
-    const { fake } = renderApp("/server", {}, (f) => {
+  it("keeps unknown config off General and tucks power options under More options", async () => {
+    renderApp("/server", {}, (f) => {
       f.state.config = {
         ...f.state.config,
         experiments: { enabled: true, explore: 0.2 },
-        posters: {
-          enabled: false,
-          source: "postersplus",
-          baseUrl: "",
-          apiKey: "",
-          urlTemplate: "",
-        },
       } as never;
     });
-    fireEvent.click(await screen.findByRole("tab", { name: "Experiments" }, WAIT));
-    expect(screen.queryByRole("tab", { name: "Posters" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Experiments" }, WAIT)).toBeInTheDocument();
-    fireEvent.change(await screen.findByLabelText("Explore", {}, WAIT), {
-      target: { value: "0.4" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
-    await waitFor(() => expect(calls(fake, "PUT", "/config")).toHaveLength(1), WAIT);
-    expect(
-      (calls(fake, "PUT", "/config")[0]!.body as { experiments: unknown }).experiments,
-    ).toEqual({ enabled: true, explore: 0.4 });
+    expect(await screen.findByLabelText("Server name", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByLabelText("Port")).toBeInTheDocument();
+    expect(screen.getByText("Living Room Ether is ready for viewers.")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Experiments" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Listen address")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Streams per viewer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Advanced" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More options: How apps connect" }));
+    expect(screen.getByLabelText("Listen address")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More options: Who can watch at once" }));
+    expect(screen.getByLabelText("Streams per viewer")).toBeInTheDocument();
   });
 
   it("does not keep a General poster alias", async () => {

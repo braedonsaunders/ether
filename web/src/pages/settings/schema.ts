@@ -3,7 +3,9 @@ import type { FieldGroup } from "./SchemaForm";
 
 export const SERVER: FieldGroup[] = localized(() => [
   {
-    title: t("Server"),
+    id: "identity",
+    title: t("What viewers see"),
+    description: t("The names Plex apps show for this server and its libraries."),
     fields: [
       {
         key: "friendlyName",
@@ -27,6 +29,13 @@ export const SERVER: FieldGroup[] = localized(() => [
           "How the TV Shows library appears in Plex apps. Ether sets this; Plex's own rename does not stick.",
         ),
       },
+    ],
+  },
+  {
+    id: "connect",
+    title: t("How apps connect"),
+    description: t("The address Plex apps use to reach this computer."),
+    fields: [
       {
         key: "port",
         label: t("Port"),
@@ -36,6 +45,8 @@ export const SERVER: FieldGroup[] = localized(() => [
         step: 1,
         help: t("Plex apps expect 32400. A restart is needed after changing it."),
       },
+    ],
+    more: [
       {
         key: "bindAddress",
         label: t("Listen address"),
@@ -48,11 +59,41 @@ export const SERVER: FieldGroup[] = localized(() => [
         kind: "readonly",
         help: t("Generated on first run; never changes."),
       },
+      {
+        key: "webFrameOrigins",
+        label: t("Sites that may embed this page"),
+        kind: "list",
+        placeholder: "https://home.example.com",
+        help: t("Exact addresses allowed to frame the owner page. Empty means nowhere."),
+      },
+      {
+        key: "trustedProxyCIDRs",
+        label: t("Trusted proxy networks"),
+        kind: "list",
+        placeholder: "10.0.0.0/8",
+        help: t("Networks whose forwarding headers Ether trusts. Empty trusts none."),
+      },
+      {
+        key: "logLevel",
+        label: t("Log level"),
+        kind: "select",
+        options: [
+          { value: "debug", label: t("Debug") },
+          { value: "info", label: t("Info") },
+          { value: "warn", label: t("Warnings") },
+          { value: "error", label: t("Errors only") },
+        ],
+      },
     ],
   },
   {
-    title: t("Streams"),
-    fields: [
+    id: "streams",
+    title: t("Who can watch at once"),
+    description: t(
+      "Leave these at the defaults unless too many people are watching at the same time.",
+    ),
+    fields: [],
+    more: [
       {
         key: "defaultStreamLimit",
         label: t("Streams per viewer"),
@@ -69,44 +110,45 @@ export const SERVER: FieldGroup[] = localized(() => [
         step: 1,
         help: t("0 derives the limit from your Usenet connections."),
       },
-      {
-        key: "logLevel",
-        label: t("Log level"),
-        kind: "select",
-        options: [
-          { value: "debug", label: t("Debug") },
-          { value: "info", label: t("Info") },
-          { value: "warn", label: t("Warnings") },
-          { value: "error", label: t("Errors only") },
-        ],
-      },
     ],
   },
 ]);
 
-/** server.* keys each cluster node keeps for itself (internal/config/scope.go). */
-const NODE_LOCAL_SERVER_KEYS = new Set(["port", "bindAddress", "logLevel"]);
+/** server.* keys edited on the cluster "This computer" group. */
+const ON_THIS_COMPUTER = new Set([
+  "port",
+  "bindAddress",
+  "logLevel",
+  "machineIdentifier",
+  "trustedProxyCIDRs",
+]);
 
 /**
- * General's server groups on a cluster node: settings shared by every node
- * stay in their groups, and this node's own settings (listener, logging and
- * its weight) gather under "This node".
+ * General's server groups on a cluster node. Shared names and stream limits
+ * stay put. The listener, logging and this computer's weight gather together.
  */
 export function clusterServerGroups(): FieldGroup[] {
-  const shared = SERVER.map((g) => ({
-    ...g,
-    fields: g.fields.filter((f) => !NODE_LOCAL_SERVER_KEYS.has(f.key)),
-  }));
-  const local = SERVER.flatMap((g) => g.fields.filter((f) => NODE_LOCAL_SERVER_KEYS.has(f.key)));
+  const localFields: FieldGroup["fields"] = [];
+  const localMore: NonNullable<FieldGroup["more"]> = [];
+  const shared = SERVER.flatMap((g) => {
+    const fields = g.fields.filter((f) => !ON_THIS_COMPUTER.has(f.key));
+    const more = (g.more ?? []).filter((f) => !ON_THIS_COMPUTER.has(f.key));
+    localFields.push(...g.fields.filter((f) => ON_THIS_COMPUTER.has(f.key)));
+    localMore.push(...(g.more ?? []).filter((f) => ON_THIS_COMPUTER.has(f.key)));
+    if (!fields.length && !more.length) return [];
+    return [{ ...g, fields, more: more.length ? more : undefined }];
+  });
   return [
     ...shared,
     {
-      title: t("This node"),
+      id: "node",
+      title: t("This computer"),
       description: t(
-        "These apply only to this node; every other setting is shared by the cluster.",
+        "These apply only to this computer. Every other setting is shared by the cluster.",
       ),
-      fields: [
-        ...local,
+      fields: localFields,
+      more: [
+        ...localMore,
         {
           key: "clusterWeight",
           label: t("Node weight"),
@@ -115,7 +157,7 @@ export function clusterServerGroups(): FieldGroup[] {
           max: 100,
           step: 1,
           help: t(
-            "This node's share of each provider's connections and request limits, relative to the other nodes. 2 gets twice the share of a node at 1; 0 means 1.",
+            "This computer's share of each provider's connections and request limits, relative to the others. 2 gets twice the share of a computer at 1; 0 means 1.",
           ),
         },
       ],
@@ -782,6 +824,8 @@ export const DOWNLOADS: FieldGroup[] = localized(() => [
         kind: "bool",
         help: t("Off lets only you download. A viewer's access policy can still allow or deny it."),
       },
+    ],
+    more: [
       {
         key: "maxHeight",
         label: t("Highest resolution"),
@@ -791,11 +835,6 @@ export const DOWNLOADS: FieldGroup[] = localized(() => [
         unit: "p",
         help: t("Downloads are capped at this height. 0 uses 1080p."),
       },
-    ],
-  },
-  {
-    title: t("Limits"),
-    fields: [
       {
         key: "maxConcurrent",
         label: t("Downloads at once"),
@@ -861,6 +900,8 @@ export const PERSONALIZE: FieldGroup[] = localized(() => [
         kind: "bool",
         help: t("Titles a viewer opened but didn't play steer the rows they see next."),
       },
+    ],
+    more: [
       {
         key: "clockFormat",
         label: t("Finish time format"),
@@ -879,23 +920,23 @@ export const PERSONALIZE: FieldGroup[] = localized(() => [
 export const EXTRAS: FieldGroup[] = localized(() => [
   {
     title: t("Trailers & extras"),
-    description: t(
-      "TMDB only lists YouTube and Vimeo trailers, which Plex apps can't play. Point Ether at a yt-dlp-compatible tool you install to turn them into playable streams.",
-    ),
+    description: t("Play a trailer before a movie or episode."),
     fields: [
       {
         key: "enabled",
         label: t("Trailers and Cinema Trailers"),
         kind: "bool",
-        help: t("Without a working tool no extras are offered."),
+        help: t("Offer trailers and Cinema Trailers in Plex apps."),
       },
+    ],
+    more: [
       {
         key: "resolverCommand",
         label: t("Resolver command"),
         kind: "text",
         wide: true,
         placeholder: "yt-dlp",
-        help: t("Path or command name. Ether doesn't ship one."),
+        help: t("Command that turns a trailer page into a stream."),
       },
       {
         key: "resolverArgs",

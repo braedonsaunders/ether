@@ -151,11 +151,11 @@ export function SimklIntegration({
       )}
       {settings && (
         <div className="space-y-3">
-          <p className="text-sm text-fg-muted">
-            {t(
-              "Register your own Simkl AUTH V2 app. A device app needs a client ID; server app registrations also need a client secret.",
-            )}
-          </p>
+          {settings.enabled && !settings.clientId.trim() ? (
+            <p role="status" className="text-sm text-fg-muted">
+              {t("Simkl needs a client ID before it can connect.")}
+            </p>
+          ) : null}
           <label className="block">
             <input
               type="checkbox"
