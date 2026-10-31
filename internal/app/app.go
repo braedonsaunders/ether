@@ -427,6 +427,23 @@ func (a *App) prewarmBrowse(ctx context.Context) {
 	}
 }
 
+// warmFixtureEpisodes fills the show-episode cache after the scorecard import.
+// It runs only before the listener opens.
+func (a *App) warmFixtureEpisodes(ctx context.Context) {
+	if a == nil || a.catalog == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	shows, err := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortTitle, Limit: 16, Filter: core.Filter{Type: core.TypeShow}})
+	if err != nil {
+		return
+	}
+	for _, show := range shows.Items {
+		_, _ = a.catalog.Grandchildren(ctx, show.Key)
+	}
+}
+
 // applyConfig pushes an edited config into the running components.
 func (a *App) applyConfig(c config.Config) {
 	c.Cache = c.EffectiveCache()

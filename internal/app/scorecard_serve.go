@@ -368,6 +368,10 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 			}
 		}
 	}
+	// The first episode page otherwise expands every season while the viewer
+	// is waiting. The listener is not open yet, so that write cannot block a
+	// request. Later pages read the catalog cache.
+	a.warmFixtureEpisodes(ctx)
 	handlers := map[string]http.Handler{}
 	protocols := []core.Protocol{"jellyfin", "emby", "silo", "webdav", "stremio", "dlna", "m3u"}
 	if os.Getenv("SCORECARD_MOUNT_PLEX") == "1" {
