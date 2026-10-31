@@ -1219,7 +1219,8 @@ func (s *Server) applyListLeafCounts(ctx context.Context, pr *Request, items []m
 	if len(subset) == 0 {
 		return
 	}
-	s.applyLeafCounts(ctx, pr, items, subset, nil)
+	memo, states := s.prefetchListEpisodes(ctx, pr, subset)
+	s.applyLeafCountsWith(ctx, pr, items, subset, memo, states)
 	byKey := make(map[string]int, len(items))
 	for i := range items {
 		byKey[items[i].RatingKey] = i
@@ -1271,6 +1272,76 @@ func (s *Server) stateFor(ctx context.Context, pr *Request, ts []core.Title) map
 // their episodes' watch state. Used on detail and children pages only. memo
 // (may be nil) shares show episodes with the rest of the response.
 func (s *Server) applyLeafCounts(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title, memo showEpisodes) {
+	s.applyLeafCountsWith(ctx, pr, items, ts, memo, nil)
+}
+
+// listEpisodeStore answers many shows' episodes from the mirror at once,
+// exactly as Grandchildren would, for the shows it can (catalog).
+type listEpisodeStore interface {
+	StoredGrandchildren(context.Context, []core.RatingKey) (map[core.RatingKey][]core.Title, error)
+}
+
+// prefetchListEpisodes loads, in a few batched reads, the episodes and
+// watch state a list's shows need for their leaf counts, so the counts do
+// not load each show's episodes and state one show at a time. It covers
+// shows listed without their seasons whose episode order is the catalogue's
+// (an episode group changes the episode set); the rest keep the per-show
+// path. states holds every prefetched episode's watch state.
+func (s *Server) prefetchListEpisodes(ctx context.Context, pr *Request, ts []core.Title) (showEpisodes, map[core.RatingKey]core.WatchStatus) {
+	store, ok := s.d.Catalog.(listEpisodeStore)
+	if !ok || s.d.State == nil || pr.User == nil {
+		return nil, nil
+	}
+	withSeasons := map[core.RatingKey]bool{}
+	for i := range ts {
+		if ts[i].Type == core.TypeSeason {
+			withSeasons[core.ShowKey(ts[i].Key.TMDB())] = true
+		}
+	}
+	var shows []core.RatingKey
+	for i := range ts {
+		if ts[i].Type == core.TypeShow && !withSeasons[ts[i].Key] {
+			shows = append(shows, ts[i].Key)
+		}
+	}
+	if len(shows) == 0 {
+		return nil, nil
+	}
+	if s.d.EpisodeOrder != nil {
+		grouped, err := s.d.EpisodeOrder.Grouped(ctx, pr.User, shows)
+		if err != nil {
+			return nil, nil
+		}
+		kept := shows[:0]
+		for _, k := range shows {
+			if !grouped[k] {
+				kept = append(kept, k)
+			}
+		}
+		shows = kept
+	}
+	found, err := store.StoredGrandchildren(ctx, shows)
+	if err != nil || len(found) == 0 {
+		return nil, nil
+	}
+	memo := showEpisodes{}
+	var keys []core.RatingKey
+	for show, eps := range found {
+		memo[show] = showEpisodeList{eps: eps}
+		for _, e := range eps {
+			keys = append(keys, e.Key)
+		}
+	}
+	states, err := s.d.State.GetMany(ctx, pr.User.ID, keys)
+	if err != nil {
+		return memo, nil
+	}
+	return memo, states
+}
+
+// applyLeafCountsWith is applyLeafCounts with prefetched watch state for the
+// episodes of the shows memo already holds.
+func (s *Server) applyLeafCountsWith(ctx context.Context, pr *Request, items []model.Metadata, ts []core.Title, memo showEpisodes, states map[core.RatingKey]core.WatchStatus) {
 	if s.d.State == nil || pr.User == nil {
 		return
 	}
@@ -1335,7 +1406,12 @@ func (s *Server) applyLeafCounts(ctx context.Context, pr *Request, items []model
 				continue
 			}
 		}
-		st := s.stateFor(ctx, pr, eps)
+		var st map[core.RatingKey]core.WatchStatus
+		if _, prefetched := memo[title.Key]; prefetched && states != nil && title.Type == core.TypeShow {
+			st = states
+		} else {
+			st = s.stateFor(ctx, pr, eps)
+		}
 		viewed := 0
 		for _, e := range eps {
 			if st[e.Key].ViewCount > 0 {
