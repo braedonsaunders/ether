@@ -355,6 +355,11 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		if err != nil {
 			return fmt.Errorf("transcode: start ffmpeg: %w", err)
 		}
+		// A newer seek or swap owns the session. Match the wait above: this
+		// start is not a failure, and the caller keeps serving the new run.
+		if sequence != s.runSeq && !s.closed && (s.encoder == nil || !s.encoder.isSealed()) {
+			return nil
+		}
 		return errors.New("transcode: start superseded or returned no process")
 	}
 	if r.rtx {
