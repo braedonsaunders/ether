@@ -7,7 +7,7 @@ import (
 )
 
 func (a *App) buildAvailability() error {
-	s, err := availability.New(availability.Deps{DB: a.db, Config: a.cfg.Get, ConfigGeneration: a.cfg.Generation, Feeds: a.indexers, Catalog: a.catalog, Validator: a.resolver,
+	s, err := availability.New(availability.Deps{DB: a.db, Config: a.cfg.Read, ConfigGeneration: a.cfg.Generation, Feeds: a.indexers, Catalog: a.catalog, Validator: a.resolver,
 		CacheCheck: a.debrid.CheckCached, Active: func() bool { return len(a.playback.Sessions()) > 0 },
 		Seal: func(raw string) (string, error) { return a.cfg.Seal("availability-release", []byte(raw)) },
 		Open: func(raw string) (string, error) {

@@ -81,7 +81,8 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	order := browseOrder(q)
 	orderArgs := []any{}
 	asOf := c.now()
-	if q.Sort == core.SortAdded && q.Filter.Type != core.TypeMovie {
+	computedAdded := q.Sort == core.SortAdded && q.Filter.Type != core.TypeMovie
+	if computedAdded {
 		dir := "ASC"
 		if q.Desc {
 			dir = "DESC"
@@ -94,7 +95,22 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	// order from the (type, browsable, released_ts) index instead of a
 	// computed expression sorted over the whole library.
 	query := `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t WHERE ` + where + ` ORDER BY ` + order + `, t.key ASC LIMIT ? OFFSET ?`
+	if computedAdded {
+		// The computed date added has no index, so the whole filtered set is
+		// sorted. Sort narrow (key, date) rows from the covering index and
+		// read the full rows of the page only.
+		dir := "ASC"
+		if q.Desc {
+			dir = "DESC"
+		}
+		query = `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t JOIN (SELECT t.key AS page_key, ` + airAddedSQL + ` AS page_added FROM catalog_titles t WHERE ` + where +
+			` ORDER BY page_added ` + dir + `, t.key ASC LIMIT ? OFFSET ?) p ON t.key=p.page_key ORDER BY p.page_added ` + dir + `, p.page_key ASC`
+	}
 	queryArgs := append(append([]any{}, args...), orderArgs...)
+	if computedAdded {
+		// The date expression comes before the filter in the narrow subquery.
+		queryArgs = append(append([]any{}, orderArgs...), args...)
+	}
 	items, err := c.queryTitles(ctx, query, append(queryArgs, limit, offset)...)
 	if err != nil {
 		return core.Page{}, err
