@@ -268,10 +268,59 @@ func (c *Catalog) CachedDiscoveryEpisodes(ctx context.Context, shows []core.Rati
 
 // CachedGetMany applies CachedGet's visibility gates to bounded local reads.
 // Missing or hidden titles are omitted. It never refreshes or admits fallbacks.
+func (c *Catalog) cachedListVisible(t *core.Title) bool {
+	return !t.Adult && t.IsReleased(c.now()) && (!c.config().GateMoviesByHomeRelease || homeReleaseVisible(t, c.now())) && (t.Type != core.TypeSeason || listableSeason(t, c.now()))
+}
+
+func (c *Catalog) cachedStored(key core.RatingKey, gen uint64, minute int64) (core.Title, bool) {
+	if !cacheStoredTitle(key.Kind()) {
+		return core.Title{}, false
+	}
+	c.cacheMu.RLock()
+	ent, ok := c.titleCache[key]
+	c.cacheMu.RUnlock()
+	if !ok || ent.gen != gen || ent.minute != minute {
+		return core.Title{}, false
+	}
+	return cloneTitle(ent.st.t), true
+}
+
+func (c *Catalog) rememberTitles(gen uint64, minute int64, items []core.Title) {
+	if c.writeGen.Load() != gen {
+		return
+	}
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	if c.titleCache == nil {
+		c.titleCache = map[core.RatingKey]cachedStoredTitle{}
+	}
+	for i := range items {
+		if !cacheStoredTitle(items[i].Key.Kind()) {
+			continue
+		}
+		if len(c.titleCache) >= 8192 {
+			c.titleCache = map[core.RatingKey]cachedStoredTitle{}
+		}
+		c.titleCache[items[i].Key] = cachedStoredTitle{st: storedTitle{t: cloneTitle(items[i])}, gen: gen, minute: minute}
+	}
+}
+
 func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 	out := make(map[core.RatingKey]core.Title, len(keys))
-	for start := 0; start < len(keys); start += 200 {
-		part := keys[start:min(start+200, len(keys))]
+	gen := c.writeGen.Load()
+	minute := c.minuteBucket()
+	missing := make([]core.RatingKey, 0, len(keys))
+	for _, key := range keys {
+		if title, ok := c.cachedStored(key, gen, minute); ok {
+			if c.cachedListVisible(&title) {
+				out[key] = title
+			}
+			continue
+		}
+		missing = append(missing, key)
+	}
+	for start := 0; start < len(missing); start += 200 {
+		part := missing[start:min(start+200, len(missing))]
 		args := make([]any, len(part))
 		for i, key := range part {
 			args[i] = int64(key)
@@ -297,11 +346,14 @@ func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map
 		if err := c.hydrateSlice(ctx, items); err != nil {
 			return nil, err
 		}
+		visible := make([]core.Title, 0, len(items))
 		for i := range items {
-			if !items[i].Adult && items[i].IsReleased(c.now()) && (!c.config().GateMoviesByHomeRelease || homeReleaseVisible(&items[i], c.now())) && (items[i].Type != core.TypeSeason || listableSeason(&items[i], c.now())) {
+			if c.cachedListVisible(&items[i]) {
 				out[items[i].Key] = items[i]
+				visible = append(visible, items[i])
 			}
 		}
+		c.rememberTitles(gen, minute, visible)
 	}
 	return out, nil
 }
