@@ -6,6 +6,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 )
 
 // RowSource supplies neutral candidate rows for one viewer and device.
@@ -192,6 +193,11 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 	}
 	if len(subjects) > 0 {
 		tokens, e := s.d.Receipts.IssueBatch(ctx, req.Viewer, req.Device, protocol, subjects)
+		// IssueBatch already retries one overlapping policy write. A second
+		// catalog write can land between those attempts; read the epoch again.
+		if errors.Is(e, viewerpolicy.ErrChanged) {
+			tokens, e = s.d.Receipts.IssueBatch(ctx, req.Viewer, req.Device, protocol, subjects)
+		}
 		if e != nil {
 			return nil, e
 		}
