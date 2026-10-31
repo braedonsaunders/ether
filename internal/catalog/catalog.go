@@ -206,6 +206,7 @@ type Catalog struct {
 	titleCache  map[core.RatingKey]cachedStoredTitle
 	countCache  map[string]cachedCount
 	browseCache map[string]cachedBrowse
+	grandCache  map[core.RatingKey]cachedBrowse
 	facetCache  map[string]cachedFacet
 	statsCache  cachedStats
 
@@ -295,7 +296,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 		staleAfter: stale, listTTL: 15 * time.Minute,
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
-		browseCache: map[string]cachedBrowse{}, facetCache: map[string]cachedFacet{},
+		browseCache: map[string]cachedBrowse{}, grandCache: map[core.RatingKey]cachedBrowse{}, facetCache: map[string]cachedFacet{},
 		personHydrated: map[int64]time.Time{}}
 	c.SetTMDB(client)
 	for _, fn := range opts {

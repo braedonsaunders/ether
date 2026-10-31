@@ -485,6 +485,18 @@ func (c *Catalog) Grandchildren(ctx context.Context, key core.RatingKey) ([]core
 		}
 		return nil, fmt.Errorf("%w: key %s", core.ErrNotFound, key)
 	}
+	gen := c.writeGen.Load()
+	minute := c.minuteBucket()
+	c.cacheMu.RLock()
+	if ent, ok := c.grandCache[key]; ok && ent.gen == gen && ent.minute == minute {
+		items := make([]core.Title, len(ent.page.Items))
+		for i := range ent.page.Items {
+			items[i] = cloneTitle(ent.page.Items[i])
+		}
+		c.cacheMu.RUnlock()
+		return items, nil
+	}
+	c.cacheMu.RUnlock()
 	seasons, err := c.Children(ctx, key)
 	if err != nil {
 		return nil, err
@@ -511,6 +523,18 @@ func (c *Catalog) Grandchildren(ctx context.Context, key core.RatingKey) ([]core
 			return nil, err
 		}
 		out = append(out, chunk...)
+	}
+	if c.writeGen.Load() == gen {
+		stored := make([]core.Title, len(out))
+		for i := range out {
+			stored[i] = cloneTitle(out[i])
+		}
+		c.cacheMu.Lock()
+		if len(c.grandCache) >= 256 {
+			c.grandCache = map[core.RatingKey]cachedBrowse{}
+		}
+		c.grandCache[key] = cachedBrowse{page: core.Page{Items: stored, Total: len(stored)}, gen: gen, minute: minute}
+		c.cacheMu.Unlock()
 	}
 	return out, nil
 }

@@ -761,8 +761,25 @@ func (c *Catalog) queryTitles(ctx context.Context, q string, args ...any) ([]cor
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if err := c.hydrateSlice(ctx, out); err != nil {
-		return nil, err
+	needAt := make([]int, 0, len(out))
+	for i := range out {
+		if cached, ok := c.cachedStored(out[i].Key, gen, minute); ok {
+			out[i] = cached
+			continue
+		}
+		needAt = append(needAt, i)
+	}
+	if len(needAt) > 0 {
+		need := make([]core.Title, len(needAt))
+		for j, i := range needAt {
+			need[j] = out[i]
+		}
+		if err := c.hydrateSlice(ctx, need); err != nil {
+			return nil, err
+		}
+		for j, i := range needAt {
+			out[i] = need[j]
+		}
 	}
 	visible := out[:0]
 	for _, t := range out {
