@@ -120,10 +120,23 @@ func (a *App) experienceContinue(ctx context.Context, viewer *core.User, librari
 	}
 	visibility := experienceVisibility(a.safety, a.catalog.Get, filter, sessions, libraries)
 	getTitles := func(ctx context.Context, keys []core.RatingKey) []core.Title {
-		out := make([]core.Title, 0, len(keys))
+		if len(keys) == 0 {
+			return nil
+		}
+		got, err := a.catalog.CachedGetMany(ctx, keys)
+		if err != nil {
+			out := make([]core.Title, 0, len(keys))
+			for _, key := range keys {
+				if t, err := a.catalog.Get(ctx, key); err == nil && t != nil {
+					out = append(out, *t)
+				}
+			}
+			return out
+		}
+		out := make([]core.Title, 0, len(got))
 		for _, key := range keys {
-			if t, err := a.catalog.Get(ctx, key); err == nil && t != nil {
-				out = append(out, *t)
+			if t, ok := got[key]; ok && t.Key == key {
+				out = append(out, t)
 			}
 		}
 		return out

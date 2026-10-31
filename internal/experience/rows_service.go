@@ -75,6 +75,15 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 		if e != nil {
 			return nil, e
 		}
+		if req.Purpose != "" {
+			kept := make([]frontend.Row, 0, len(candidates))
+			for _, row := range candidates {
+				if row.Purpose == req.Purpose {
+					kept = append(kept, row)
+				}
+			}
+			candidates = kept
+		}
 		out = make([]frontend.Row, 0, len(candidates))
 		expand := false
 		for _, row := range candidates {
@@ -110,9 +119,11 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 		}
 		fetch = min(fetch*2, 1000)
 	}
-	out, err = s.appendHomeFallback(ctx, req, protocol, out, limit)
-	if err != nil {
-		return nil, err
+	if req.Purpose == "" {
+		out, err = s.appendHomeFallback(ctx, req, protocol, out, limit)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if s.d.Layout != nil {
 		candidates := make([]LayoutCandidate, len(out))

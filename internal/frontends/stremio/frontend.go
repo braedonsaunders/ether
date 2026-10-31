@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -69,6 +70,20 @@ func (i *instance) registerRoutes() error {
 type instance struct {
 	host   frontend.Host
 	router *route.Router
+	pages  catalogPages
+}
+
+// catalogPages keeps one encoded catalog body per viewer and page freshness.
+// A catalogue, policy, or grant change drops it. The body is the response
+// already authorized for that viewer.
+type catalogPages struct {
+	mu      sync.Mutex
+	entries map[string]catalogPage
+}
+
+type catalogPage struct {
+	fresh frontend.PageFreshness
+	body  []byte
 }
 
 func (i *instance) Handler() http.Handler {

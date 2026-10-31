@@ -55,6 +55,16 @@ func (c CandidateComposer) Rows(ctx context.Context, req frontend.RowRequest, si
 	}
 	switch req.Placement {
 	case frontend.PlacementHome:
+		if req.Purpose == frontend.RowContinue {
+			if c.Resume == nil {
+				return nil, core.ErrNotFound
+			}
+			resume, err := c.Resume.Continue(ctx, req.Viewer, req.Limit)
+			if err != nil {
+				return nil, err
+			}
+			return []RankedCandidate{{ID: "home.continue", Purpose: frontend.RowContinue, Title: "Continue Watching", Style: "hero", Promoted: true, Items: resume}}, nil
+		}
 		hubs, err := c.Ranker.Home(ctx, req.Viewer, sit, req.Limit, allow)
 		if err != nil {
 			return nil, err

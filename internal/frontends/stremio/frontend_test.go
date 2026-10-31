@@ -134,6 +134,104 @@ func TestMetaRejectsHiddenTitle(t *testing.T) {
 	}
 }
 
+func TestRecentCatalogPagesByReleaseDate(t *testing.T) {
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}
+	experience := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "movies", Type: "movie"}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, _ *frontend.Viewer, _ frontend.Device, view string, q frontend.ItemQuery) (frontend.Page, error) {
+			if view != "movies" || q.Sort != "released" || !q.Desc || q.Offset != 40 || q.Limit != 100 {
+				t.Fatalf("recent query view=%s %+v", view, q)
+			}
+			item := frontend.Title{Title: "New", Type: "movie"}
+			item.IDs.TMDB = 9
+			return frontend.Page{Items: []frontend.Title{item}, Total: 41}, nil
+		},
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			t.Fatal("recent catalog built the home")
+			return nil, nil
+		},
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/catalog/movie/ether-recent/skip=40.json", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"tmdb:9"`) {
+		t.Fatalf("recent: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSeriesRowUsesShowIdentityWithoutAnItemRead(t *testing.T) {
+	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}
+	episode := frontend.Title{Key: 99, Type: "episode", Title: "Pilot", ShowKey: 42, ShowTitle: "Visible", ShowYear: 2020}
+	episode.ShowIDs.TMDB = 42
+	experience := frontendtest.Experience{
+		RowsFunc: func(_ context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+			if req.Purpose != frontend.RowContinue {
+				t.Fatalf("purpose %q", req.Purpose)
+			}
+			return []frontend.Row{{Purpose: frontend.RowContinue, Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &episode}}}}, nil
+		},
+		ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+			t.Fatal("episode row read the show")
+			return frontend.ItemDetail{}, nil
+		},
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), frontend.Host{Identity: identity, Experience: experience, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/catalog/series/ether-continue.json", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"tmdb:42"`) || !strings.Contains(rec.Body.String(), "Visible") {
+		t.Fatalf("series row: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCatalogBodyIsCachedForTheSameFreshness(t *testing.T) {
+	calls := 0
+	fresh := frontend.PageFreshness{Catalog: 3}
+	host := frontend.Host{
+		Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }},
+		Experience: frontendtest.Experience{
+			ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+				return []frontend.View{{ID: "movies", Type: "movie"}}, nil
+			},
+			LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+				calls++
+				item := frontend.Title{Title: "Cached", Type: "movie"}
+				item.IDs.TMDB = 5
+				return frontend.Page{Items: []frontend.Title{item}, Total: 1}, nil
+			},
+		},
+		Sessions:      frontendtest.Sessions{},
+		PageFreshness: func() frontend.PageFreshness { return fresh },
+	}
+	inst, err := (Frontend{}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/catalog/movie/ether-movies.json", nil))
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Cached") {
+			t.Fatalf("cached catalog: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("library reads %d", calls)
+	}
+	fresh.Catalog++
+	rec := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/stremio/valid/catalog/movie/ether-movies.json", nil))
+	if rec.Code != 200 || calls != 2 {
+		t.Fatalf("stale cache served: code=%d calls=%d", rec.Code, calls)
+	}
+}
+
 func TestRowCatalogSkipsUnsupportedEntries(t *testing.T) {
 	identity := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return &frontend.Viewer{ID: 7}, nil }}
 	title := frontend.Title{Key: 42, Title: "Visible", Type: "movie"}

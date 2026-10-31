@@ -1,6 +1,8 @@
 package stremio
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
@@ -59,10 +62,19 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		q.Filter.Genres = []string{genre}
 	}
 	device := deviceFor(credential)
+	fresh, cacheKey := i.catalogCacheKey(viewer, typ, catalogID, extra, q)
+	if body, ok := i.cachedCatalog(cacheKey, fresh); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+		return
+	}
 	var titles []frontend.Title
-	if purpose != "" {
+	if purpose == frontend.RowRecentlyReleased {
+		q.Sort, q.Desc = core.SortReleased, true
+		titles, err = i.libraryPage(r, viewer, device, typ, q)
+	} else if purpose != "" {
 		var rows []frontend.Row
-		rows, err = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: viewer, Device: device, Placement: frontend.PlacementHome, Limit: 100})
+		rows, err = i.homeRows(r.Context(), frontend.RowRequest{Viewer: viewer, Device: device, Placement: frontend.PlacementHome, Purpose: purpose, Limit: 100})
 		if err == nil {
 			seen := map[frontend.RatingKey]bool{}
 			for _, row := range rows {
@@ -79,12 +91,17 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				for _, title := range items {
-					if typ == "series" && string(title.Type) == "episode" && title.ShowKey != 0 {
-						detail, e := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device, Key: title.ShowKey})
-						if e != nil {
-							continue
+					if typ == "series" {
+						promoted, ok := promoteSeries(title)
+						if !ok {
+							detail, e := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device, Key: title.ShowKey})
+							if e != nil {
+								continue
+							}
+							title = detail.Title
+						} else {
+							title = promoted
 						}
-						title = detail.Title
 					}
 					if string(title.Type) != map[string]string{"movie": "movie", "series": "show"}[typ] || seen[title.Key] {
 						continue
@@ -107,29 +124,7 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		page, e := i.host.Experience.Search(r.Context(), viewer, device, query, q)
 		err, titles = e, page.Page.Items
 	} else {
-		var views []frontend.View
-		views, err = i.host.Experience.Views(r.Context(), viewer)
-		if err == nil {
-			offset := q.Offset
-			for _, view := range views {
-				if string(view.Type) != map[string]string{"movie": "movie", "series": "show"}[typ] {
-					continue
-				}
-				query := q
-				query.Offset = offset
-				query.Limit = q.Limit - len(titles)
-				var page frontend.Page
-				page, err = i.host.Experience.LibraryItems(r.Context(), viewer, device, view.ID, query)
-				if err != nil {
-					break
-				}
-				titles = append(titles, page.Items...)
-				if len(titles) >= q.Limit {
-					break
-				}
-				offset = max(0, offset-page.Total)
-			}
-		}
+		titles, err = i.libraryPage(r, viewer, device, typ, q)
 	}
 	if err != nil {
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
@@ -151,6 +146,116 @@ func (i *instance) catalog(w http.ResponseWriter, r *http.Request) {
 		}
 		metas = append(metas, meta)
 	}
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(map[string]any{"metas": metas}); err != nil {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	i.storeCatalog(cacheKey, fresh, body.Bytes())
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"metas": metas})
+	_, _ = w.Write(body.Bytes())
+}
+
+func (i *instance) libraryPage(r *http.Request, viewer *frontend.Viewer, device frontend.Device, typ string, q frontend.ItemQuery) ([]frontend.Title, error) {
+	views, err := i.host.Experience.Views(r.Context(), viewer)
+	if err != nil {
+		return nil, err
+	}
+	var titles []frontend.Title
+	offset := q.Offset
+	want := map[string]string{"movie": "movie", "series": "show"}[typ]
+	for _, view := range views {
+		if string(view.Type) != want {
+			continue
+		}
+		query := q
+		query.Offset = offset
+		query.Limit = q.Limit - len(titles)
+		page, err := i.host.Experience.LibraryItems(r.Context(), viewer, device, view.ID, query)
+		if err != nil {
+			return nil, err
+		}
+		titles = append(titles, page.Items...)
+		if len(titles) >= q.Limit {
+			break
+		}
+		offset = max(0, offset-page.Total)
+	}
+	return titles, nil
+}
+
+type rowSnapshot interface {
+	SnapshotRows(context.Context, frontend.RowRequest) ([]frontend.Row, error)
+}
+
+func (i *instance) homeRows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
+	if snap, ok := i.host.Experience.(rowSnapshot); ok {
+		return snap.SnapshotRows(ctx, req)
+	}
+	return i.host.Experience.Rows(ctx, req)
+}
+
+// promoteSeries turns an episode row into its show when the row already
+// carries the show identity. Missing show facts fall back to an item read.
+func promoteSeries(title frontend.Title) (frontend.Title, bool) {
+	if string(title.Type) != "episode" || title.ShowKey == 0 {
+		return title, true
+	}
+	if title.ShowIDs.TMDB <= 0 {
+		return title, false
+	}
+	show := title
+	show.Key = title.ShowKey
+	show.Type = "show"
+	show.IDs = title.ShowIDs
+	if title.ShowTitle != "" {
+		show.Title = title.ShowTitle
+	}
+	if title.ShowYear > 0 {
+		show.Year = title.ShowYear
+	}
+	return show, true
+}
+
+func (i *instance) catalogCacheKey(viewer *frontend.Viewer, typ, catalogID string, extra url.Values, q frontend.ItemQuery) (frontend.PageFreshness, string) {
+	var fresh frontend.PageFreshness
+	if i.host.PageFreshness != nil {
+		fresh = i.host.PageFreshness()
+	}
+	genre := ""
+	if len(q.Filter.Genres) > 0 {
+		genre = q.Filter.Genres[0]
+	}
+	key := strings.Join([]string{
+		strconv.FormatInt(viewer.ID, 10), typ, catalogID, strconv.Itoa(q.Offset), genre, extra.Get("search"),
+	}, "|")
+	return fresh, key
+}
+
+func (i *instance) cachedCatalog(key string, fresh frontend.PageFreshness) ([]byte, bool) {
+	if i.host.PageFreshness == nil {
+		return nil, false
+	}
+	i.pages.mu.Lock()
+	defer i.pages.mu.Unlock()
+	ent, ok := i.pages.entries[key]
+	if !ok || ent.fresh != fresh {
+		return nil, false
+	}
+	return append([]byte(nil), ent.body...), true
+}
+
+func (i *instance) storeCatalog(key string, fresh frontend.PageFreshness, body []byte) {
+	if i.host.PageFreshness == nil {
+		return
+	}
+	i.pages.mu.Lock()
+	defer i.pages.mu.Unlock()
+	if i.pages.entries == nil {
+		i.pages.entries = map[string]catalogPage{}
+	}
+	if len(i.pages.entries) >= 128 {
+		i.pages.entries = map[string]catalogPage{}
+	}
+	i.pages.entries[key] = catalogPage{fresh: fresh, body: append([]byte(nil), body...)}
 }

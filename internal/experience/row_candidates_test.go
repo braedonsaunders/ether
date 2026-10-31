@@ -70,6 +70,16 @@ func TestCandidateComposerHomeVisitAndPolicy(t *testing.T) {
 	}
 }
 
+func TestCandidateComposerContinueSkipsHomeRanking(t *testing.T) {
+	rank := &candidateRankerFake{rows: []RankedCandidate{{ID: "other", Purpose: frontend.RowRecommendation}}}
+	resume := &resumeCandidatesFake{items: []core.Title{{Key: core.MovieKey(4), Type: core.TypeMovie}}}
+	composer := CandidateComposer{Ranker: rank, Resume: resume}
+	got, err := composer.Rows(context.Background(), frontend.RowRequest{Viewer: &core.User{ID: 1, IsOwner: true}, Placement: frontend.PlacementHome, Purpose: frontend.RowContinue, Limit: 5}, core.HomeSituation{})
+	if err != nil || rank.calls != 0 || resume.calls != 1 || len(got) != 1 || got[0].Purpose != frontend.RowContinue || got[0].Items[0].Key != core.MovieKey(4) {
+		t.Fatalf("continue rows=%+v rankCalls=%d err=%v", got, rank.calls, err)
+	}
+}
+
 func TestCandidateComposerLibraryAndErrors(t *testing.T) {
 	ctx := context.Background()
 	rank := &candidateRankerFake{}
