@@ -24,8 +24,17 @@ func (i *instance) mediaSegments(w http.ResponseWriter, r *http.Request) {
 	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("itemId"))
 	if err != nil {
-		http.NotFound(w, r)
-		return
+		scope, scopeErr := i.versionScope(r, v)
+		if scopeErr != nil || i.host.VersionHandles == nil {
+			http.NotFound(w, r)
+			return
+		}
+		target, resolveErr := i.host.VersionHandles.Resolve(i.identityContext(r), scope, r.PathValue("itemId"))
+		if resolveErr != nil || target.Item == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		key = target.Item
 	}
 	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: key})
 	if err != nil {

@@ -27,6 +27,8 @@ func TestRecursiveMovieQuerySkipsShowExpansion(t *testing.T) {
 		}
 		showCalls++
 		return core.Page{Items: []core.Title{show}, Total: 1}, nil
+	}, Children: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
+		return nil, nil
 	}, Grandchildren: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
 		expansions++
 		return []core.Title{episode}, nil

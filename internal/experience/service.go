@@ -206,12 +206,12 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	if library == nil || !SectionAllowed(v, id) || s.d.Browse == nil {
 		return core.Page{}, core.ErrNotFound
 	}
-	// Recursive show browsing can produce show roots and episodes only. Skip
-	// the entire library when neither type can satisfy the requested filter.
+	// Recursive show browsing can produce the show, its seasons, and its episodes.
+	// Skip the library when the requested types cannot appear in that tree.
 	if q.Recursive && library.Type == core.TypeShow && len(q.Types) > 0 {
 		possible := false
 		for _, typ := range q.Types {
-			if typ == core.TypeShow || typ == core.TypeEpisode {
+			if typ == core.TypeShow || typ == core.TypeSeason || typ == core.TypeEpisode {
 				possible = true
 				break
 			}
@@ -223,11 +223,16 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			return core.Page{Items: []core.Title{}, Total: 0}, nil
 		}
 	}
+	wantShowChildren := q.Recursive && (len(q.Types) == 0 || containsMediaType(q.Types, core.TypeSeason))
+	wantShowEpisodes := q.Recursive && (len(q.Types) == 0 || containsMediaType(q.Types, core.TypeEpisode))
 	var permitted []core.Title
 	totalMatched := 0
 	bounded := !q.Recursive && q.AdjacentTo == 0 && q.StartAt == 0 && q.Limit > 0
 	expand := q.Recursive && library.Type == core.TypeShow
-	if expand && s.d.Grandchildren == nil {
+	if expand && wantShowEpisodes && s.d.Grandchildren == nil {
+		return core.Page{}, errors.New("experience: recursive library unavailable")
+	}
+	if expand && wantShowChildren && s.d.Children == nil {
 		return core.Page{}, errors.New("experience: recursive library unavailable")
 	}
 	// Recursive episode queries keep at most one bounded batch of visible,
@@ -338,12 +343,19 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 				continue
 			}
 			var children []core.Title
-			if expand && parent.Type == core.TypeShow {
+			if expand && parent.Type == core.TypeShow && wantShowEpisodes {
 				var e error
 				children, e = s.d.Grandchildren(ctx, v, parent.Key)
 				if e != nil {
 					return core.Page{}, e
 				}
+			}
+			if expand && parent.Type == core.TypeShow && wantShowChildren {
+				seasons, e := s.d.Children(ctx, v, parent.Key)
+				if e != nil {
+					return core.Page{}, e
+				}
+				children = append(children, seasons...)
 			}
 			// Copy only accepted values into the bounded batch; do not duplicate
 			// or retain the catalogue's full per-show children slice.
@@ -1233,6 +1245,15 @@ func (s *Service) EntityFavorites(ctx context.Context, viewer *core.Viewer, refs
 		out[ref] = values[ref]
 	}
 	return out, nil
+}
+
+func containsMediaType(types []core.MediaType, want core.MediaType) bool {
+	for _, typ := range types {
+		if typ == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) matchesUserQuery(ctx context.Context, v *core.User, t core.Title, q frontend.ItemQuery) (bool, error) {

@@ -122,9 +122,7 @@ type retiredSession struct {
 	until    time.Time
 }
 
-// Broker coordinates neutral sessions with the shared playback admission manager.
-// Plex's legacy timeline tracker is not yet included in Sessions; owner
-// Activity continues to use the shared playback manager until that move lands.
+// Broker coordinates playback admission for every protocol, including Plex.
 type Broker struct {
 	sampleLimit         int
 	deps                BrokerDeps
@@ -764,7 +762,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		return frontend.Session{}, barrierErr
 	}
 	s.transferBarrier = barrier
-	if b.cluster != nil && session.Protocol != "plex" {
+	if b.cluster != nil {
 		if err := b.cluster.store.put(ctx, session, ps.ID, *v, b.deps.Now()); err != nil {
 			return frontend.Session{}, err
 		}
@@ -1043,6 +1041,23 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	b.ensureTrickplay(ctx, s, t.Position)
 	return nil
 }
+
+// ReportProgress records a Plex timeline that has no playback source.
+// It does not prepare or stop one.
+func (b *Broker) ReportProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
+	viewer, err := b.viewer(ctx, a.Viewer)
+	if err != nil || a.Protocol != "plex" || a.Device.ID == "" || item == 0 {
+		return core.ErrUnauthorized
+	}
+	ctx = state.WithOrigin(ctx, state.Origin{Surface: "plex", SessionID: t.PlaybackID, ClientID: a.Device.ID})
+	if err := RecordProgress(ctx, b.deps.Progress, viewer.ID, item, t.Position, t.Duration, t.State); err != nil {
+		return err
+	}
+	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
+		progress.PlaybackProgress(viewer.ID, a.Device.ID, item, t.Position, t.State)
+	}
+	return nil
+}
 func (b *Broker) Stop(ctx context.Context, a frontend.SessionAccess, id string) error {
 	s, _, err := b.accessSession(ctx, a, id, false)
 	if errors.Is(err, core.ErrNotFound) {
@@ -1116,7 +1131,9 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 	delete(b.lazyTransfers, s.public.ID)
 	b.mu.Unlock()
 	if hold != nil {
-		hold.Close(true)
+		// Plex applies its own idle rule after the stop, so other sources of
+		// the same release keep their thumbnails.
+		hold.Close(s.public.Protocol != "plex")
 	}
 	for _, cancel := range transfers {
 		cancel()

@@ -157,7 +157,9 @@ func parityDiagItems(items []candItem) string { s := ""; for _, x := range items
  data = data.replace(needle, '\t\tif a.user.ID == 1 { msg := ""; for _, row := range sel { msg += fmt.Sprintf(" %s=[%s]", row.hubID, parityDiagItems(picked[row])) }; fmt.Printf("PARITY_CROWD fill user=%d limit=%d previous=%v rows=%s\\n", a.user.ID, a.limit, a.previous, msg) }\n' + needle, 1)
  path.write_text(data)
 PYCODE
- cp "$root/harness/parity_runtime_default.go" "$root/harness/parity_runtime_fixture.go" "$root/harness/parity_source_default.go" "$root/harness/parity_source_fixture.go" "$root/$tree/internal/app/"
+ # lab_media.go supplies readLabMedia/labReleaseID for the source fixture.
+ # With no lab-media.json both trees keep the synthetic releases.
+ cp "$root/harness/parity_runtime_default.go" "$root/harness/parity_runtime_fixture.go" "$root/harness/parity_source_default.go" "$root/harness/parity_source_fixture.go" "$root/harness/lab_media.go" "$root/$tree/internal/app/"
  cp "$root/harness/parity_wait_fixture.go" "$root/$tree/internal/personalize/"
  cp "$root/harness/parity_session_fixture.go" "$root/$tree/internal/livetv/"
  cp "$root/harness/parity_clock_fixture.go" "$root/$tree/internal/transcode/"

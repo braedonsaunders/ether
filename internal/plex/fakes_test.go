@@ -763,6 +763,7 @@ type fixture struct {
 	cols     *fakeCollections
 	hooks    chan string
 	art      *fakeArtwork
+	broker   *sessions.Broker
 }
 
 func newFixture(opts ...func(*Deps)) *fixture {
@@ -939,6 +940,65 @@ func (t fixtureTranscoder) Session(id string) (core.HLSSession, bool) {
 func (t fixtureTranscoder) Stop(id string)        { t.current().Stop(id) }
 func (t fixtureTranscoder) HWAccel() core.HWAccel { return t.current().HWAccel() }
 
+type fixtureTrickplay struct{ f *fixture }
+
+func (t fixtureTrickplay) provider() core.TrickplayProvider {
+	if t.f.srv != nil && t.f.srv.d.Trickplay != nil {
+		return t.f.srv.d.Trickplay
+	}
+	return nil
+}
+func (t fixtureTrickplay) EnsureTrickplay(ctx context.Context, src core.TrickplaySource) {
+	if p := t.provider(); p != nil {
+		p.EnsureTrickplay(ctx, src)
+	}
+}
+func (t fixtureTrickplay) TrickplayAvailable(id string) bool {
+	if p := t.provider(); p != nil {
+		return p.TrickplayAvailable(id)
+	}
+	return false
+}
+func (t fixtureTrickplay) TrickplayBIF(id string) ([]byte, bool) {
+	if p := t.provider(); p != nil {
+		return p.TrickplayBIF(id)
+	}
+	return nil, false
+}
+func (t fixtureTrickplay) TrickplayFrame(id string, at time.Duration) ([]byte, bool) {
+	if p := t.provider(); p != nil {
+		return p.TrickplayFrame(id, at)
+	}
+	return nil, false
+}
+func (t fixtureTrickplay) SetTrickplayFallback(id string, jpeg []byte) {
+	if p := t.provider(); p != nil {
+		p.SetTrickplayFallback(id, jpeg)
+	}
+}
+func (t fixtureTrickplay) AcquireTrickplay(ctx context.Context, src core.TrickplaySource) (core.TrickplayLease, error) {
+	p := t.provider()
+	if p == nil {
+		return nil, core.ErrNotAvailable
+	}
+	if leaser, ok := p.(core.TrickplayLeaser); ok {
+		return leaser.AcquireTrickplay(ctx, src)
+	}
+	p.EnsureTrickplay(ctx, src)
+	return fixtureTrickplayLease{ensure: p.EnsureTrickplay}, nil
+}
+
+type fixtureTrickplayLease struct {
+	ensure func(context.Context, core.TrickplaySource)
+}
+
+func (l fixtureTrickplayLease) Ensure(ctx context.Context, src core.TrickplaySource) {
+	if l.ensure != nil {
+		l.ensure(ctx, src)
+	}
+}
+func (fixtureTrickplayLease) Release(bool) {}
+
 type fixtureProgress struct{ f *fixture }
 
 func (p fixtureProgress) Progress(ctx context.Context, viewer int64, key core.RatingKey, position, duration time.Duration, state string) error {
@@ -957,6 +1017,7 @@ func (f *fixture) attachPlaybackBroker(d Deps) {
 	}
 	events := sessions.NewEventBus(nil, active)
 	broker, err := sessions.NewBroker(sessions.BrokerDeps{
+		DB: d.DB, Cluster: d.Cluster,
 		Lookup: func(ctx context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
 			if f.srv != nil && f.srv.d.Catalog != nil {
 				return f.srv.d.Catalog.Get(ctx, key)
@@ -966,7 +1027,7 @@ func (f *fixture) attachPlaybackBroker(d Deps) {
 			}
 			return f.catalog.Get(ctx, key)
 		},
-		Playback: &fixturePlayback{f: f}, Transcoder: fixtureTranscoder{f: f}, Progress: fixtureProgress{f: f}, ActiveViewer: active,
+		Playback: &fixturePlayback{f: f}, Transcoder: fixtureTranscoder{f: f}, Progress: fixtureProgress{f: f}, Trickplay: fixtureTrickplay{f: f}, ActiveViewer: active,
 		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
 		OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
 		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {
@@ -980,6 +1041,7 @@ func (f *fixture) attachPlaybackBroker(d Deps) {
 	if err != nil {
 		panic(err)
 	}
+	f.broker = broker
 	f.srv.UsePlaybackBroker(sessions.BindSurface(broker, "plex"))
 	f.srv.UsePlexStreams(sessions.BindPlexStreams(broker))
 }

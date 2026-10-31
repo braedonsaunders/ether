@@ -8,5 +8,8 @@ import (
 )
 
 func scorecardVariants(ctx context.Context, a *App, v *core.Viewer, t *core.Title, caps core.ClientCaps) ([]core.ReleaseVariant, error) {
+	if vs, ok := labMediaVariants(a.opts.DataDir, t); ok {
+		return vs, nil
+	}
 	return a.resolver.Variants(ctx, core.ResolveRequest{Title: t, User: v, Client: caps}, 4)
 }

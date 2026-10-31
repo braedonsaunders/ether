@@ -1,0 +1,117 @@
+//go:build plexparity && !scorecard
+
+package app
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/braedonsaunders/ether/internal/core"
+)
+
+// labMediaFile is one probed file from the reference library. Paths stay in
+// the data directory and are never written into client responses.
+type labMediaFile struct {
+	TMDB    int64           `json:"tmdb"`
+	Season  int             `json:"season"`
+	Episode int             `json:"episode"`
+	Path    string          `json:"path"`
+	SHA256  string          `json:"sha256"`
+	Media   *core.MediaInfo `json:"media,omitempty"`
+}
+
+func labMediaPath(dir string) string { return filepath.Join(dir, "lab-media.json") }
+
+func writeLabMedia(dir string, files []labMediaFile) error {
+	payload, err := json.Marshal(files)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(labMediaPath(dir), payload, 0600)
+}
+
+var labMediaReadCache = struct {
+	mu    sync.Mutex
+	dir   string
+	files []labMediaFile
+}{}
+
+func readLabMedia(dir string) ([]labMediaFile, error) {
+	labMediaReadCache.mu.Lock()
+	defer labMediaReadCache.mu.Unlock()
+	if labMediaReadCache.dir == dir && labMediaReadCache.files != nil {
+		return labMediaReadCache.files, nil
+	}
+	b, err := os.ReadFile(labMediaPath(dir))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var files []labMediaFile
+	if err = json.Unmarshal(b, &files); err != nil {
+		return nil, err
+	}
+	labMediaReadCache.dir = dir
+	labMediaReadCache.files = files
+	return files, nil
+}
+
+func labReleaseID(f labMediaFile) string {
+	return fmt.Sprintf("lab-%d-%d-%d-%s", f.TMDB, f.Season, f.Episode, strings.ToLower(f.SHA256))
+}
+
+func labMediaVariants(dir string, t *core.Title) ([]core.ReleaseVariant, bool) {
+	if t == nil {
+		return nil, false
+	}
+	files, err := readLabMedia(dir)
+	if err != nil || len(files) == 0 {
+		return nil, false
+	}
+	tmdb, season, episode := t.IDs.TMDB, t.Season, t.Episode
+	if t.Type == core.TypeEpisode {
+		tmdb = t.ShowIDs.TMDB
+		if tmdb == 0 {
+			tmdb = t.ShowKey.TMDB()
+		}
+	}
+	var out []core.ReleaseVariant
+	for _, f := range files {
+		if f.TMDB != tmdb || f.Season != season || f.Episode != episode {
+			continue
+		}
+		if t.Type == core.TypeMovie && f.Episode != 0 {
+			continue
+		}
+		if t.Type == core.TypeEpisode && f.Episode == 0 {
+			continue
+		}
+		info := core.MediaInfo{Size: 0}
+		if f.Media != nil {
+			info = *f.Media
+		}
+		id := labReleaseID(f)
+		out = append(out, core.ReleaseVariant{
+			ID:      id,
+			Label:   filepath.Base(f.Path),
+			Release: core.Release{ID: id, GUID: id, Size: info.Size, TitleIDs: t.IDs, PubDate: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)},
+			Info:    info,
+		})
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
+}
+
+func localEditionVariants(dir string, t *core.Title) ([]core.ReleaseVariant, error) {
+	vs, _ := labMediaVariants(dir, t)
+	return vs, nil
+}

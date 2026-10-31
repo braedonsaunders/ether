@@ -222,16 +222,19 @@ type Host struct {
 	Sessions           Sessions
 	LastPlayedSource   LastPlayedSourceReader
 	VersionHandles     VersionHandles
-	LazyStreams        LazyStreams
-	LANStreams         LANLazyStreams
-	Identity           SurfaceIdentity
-	IDs                ids.Codecs
-	Events             Subscriber
-	Tickets            Tickets
-	Images             Images
-	ImageGrants        ImageGrants
-	Config             func() Settings
-	Log                *slog.Logger
+	// Editions lists locally probed copies of one title. It is empty when the
+	// process has no local media manifest, and it must not search the network.
+	Editions    Editions
+	LazyStreams LazyStreams
+	LANStreams  LANLazyStreams
+	Identity    SurfaceIdentity
+	IDs         ids.Codecs
+	Events      Subscriber
+	Tickets     Tickets
+	Images      Images
+	ImageGrants ImageGrants
+	Config      func() Settings
+	Log         *slog.Logger
 	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
 	ViewerPortalURL func(context.Context, *http.Request) (string, error)
 	// SecurePortalURL selects a verified reachable HTTPS portal address.

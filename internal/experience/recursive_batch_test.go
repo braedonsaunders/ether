@@ -173,3 +173,44 @@ func TestRecursiveBrowseCachedParentsFailClosed(t *testing.T) {
 		t.Fatal("revoked viewer accepted")
 	}
 }
+
+func TestRecursiveLibraryIncludesSeasons(t *testing.T) {
+	ctx := context.Background()
+	viewer := &core.User{ID: 7}
+	show := core.Title{Key: core.ShowKey(9), Type: core.TypeShow, Title: "Show"}
+	seasons := []core.Title{
+		{Key: core.SeasonKey(9, 1), Type: core.TypeSeason, ShowKey: show.Key, Season: 1, Title: "Season 1"},
+		{Key: core.SeasonKey(9, 2), Type: core.TypeSeason, ShowKey: show.Key, Season: 2, Title: "Season 2"},
+	}
+	episode := core.Title{Key: core.EpisodeKey(9, 1, 1), Type: core.TypeEpisode, ShowKey: show.Key, Season: 1, Episode: 1}
+	childCalls, grandchildCalls := 0, 0
+	svc := &Service{d: ServiceDeps{Active: func(context.Context, int64) (*core.User, error) { return viewer, nil }, Libraries: []Library{{ID: 2, Type: core.TypeShow}}, Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 2, true }, GetTitle: func(context.Context, core.RatingKey) (*core.Title, error) {
+		return &show, nil
+	}}, Browse: func(context.Context, core.BrowseQuery) (core.Page, error) {
+		return core.Page{Items: []core.Title{show}, Total: 1}, nil
+	}, Children: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
+		childCalls++
+		return seasons, nil
+	}, Grandchildren: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
+		grandchildCalls++
+		return []core.Title{episode}, nil
+	}}}
+	page, err := svc.LibraryItems(ctx, viewer, core.Device{}, "2", frontend.ItemQuery{Recursive: true, Types: []core.MediaType{core.TypeSeason}})
+	if err != nil || page.Total != 2 || len(page.Items) != 2 || page.Items[0].Type != core.TypeSeason || page.Items[1].Type != core.TypeSeason {
+		t.Fatalf("seasons %+v %v", page, err)
+	}
+	if childCalls != 1 || grandchildCalls != 0 {
+		t.Fatalf("season query expanded children=%d grandchildren=%d", childCalls, grandchildCalls)
+	}
+	page, err = svc.LibraryItems(ctx, viewer, core.Device{}, "2", frontend.ItemQuery{Recursive: true, Types: []core.MediaType{core.TypeShow, core.TypeSeason, core.TypeEpisode}})
+	if err != nil || page.Total != 4 {
+		t.Fatalf("mixed tree %+v %v", page, err)
+	}
+	got := map[core.MediaType]int{}
+	for _, item := range page.Items {
+		got[item.Type]++
+	}
+	if got[core.TypeShow] != 1 || got[core.TypeSeason] != 2 || got[core.TypeEpisode] != 1 {
+		t.Fatalf("mixed counts %v", got)
+	}
+}

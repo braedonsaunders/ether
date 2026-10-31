@@ -10,6 +10,8 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/clusterbus"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -25,7 +27,12 @@ func twoServers(t *testing.T) (*fixture, *fixture, *clusterbus.Hub) {
 			d.DisableEnrichment = true
 			d.SessionHeartbeat = 50 * time.Millisecond
 		})
-		t.Cleanup(func() { f.srv.Close() })
+		t.Cleanup(func() {
+			f.srv.Close()
+			if f.broker != nil {
+				f.broker.Close(context.Background())
+			}
+		})
 		return f
 	}
 	return mk("a"), mk("b"), hub
@@ -138,8 +145,27 @@ func TestClusterTerminateAppliedByServingNode(t *testing.T) {
 
 func TestClusterOwnerStopReachesServingNode(t *testing.T) {
 	a, b, _ := twoServers(t)
-	ps, _ := a.playback.Prepare(context.Background(), &friendUser, fightClub.Key, core.ClientCaps{ClientID: "c"})
-	b.srv.StopPlayback(ps.ID, "Maintenance")
+	ctx := context.Background()
+	ps, err := a.playback.Prepare(ctx, &friendUser, fightClub.Key, core.ClientCaps{ClientID: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted := sessions.PlexAdmission{Source: ps, Decision: core.Decision{Kind: core.DecisionDirectPlay}, Media: ps.Info}
+	plexCtx := sessions.WithPlexAdmission(ctx, func(context.Context) (sessions.PlexAdmission, error) {
+		return admitted, nil
+	})
+	viewer := &core.Viewer{ID: friendUser.ID}
+	device := core.Device{ID: "c"}
+	plan, err := a.broker.Plan(plexCtx, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "plex", Item: fightClub.Key, Caps: core.ClientCaps{ClientID: "c"}, Intent: frontend.PlayIntent{ClientSessionID: "plex-owner", Options: core.DecideOptions{DirectPlay: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.broker.Open(plexCtx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "plex", PlanID: plan.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if !b.broker.StopPlayback(ctx, ps.ID) {
+		t.Fatal("remote stop was not routed through the broker")
+	}
 	waitFor(t, "A stops it", func() bool {
 		_, live := a.playback.Session(ps.ID)
 		return !live

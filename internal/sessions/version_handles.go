@@ -156,8 +156,8 @@ func (v *versionHandles) Issue(ctx context.Context, scope frontend.VersionScope,
 }
 
 func (v *versionHandles) Resolve(ctx context.Context, scope frontend.VersionScope, handle string) (frontend.VersionTarget, error) {
-	item, _, err := v.resolveRecord(ctx, scope, handle)
-	return frontend.VersionTarget{Item: item}, err
+	item, release, err := v.resolveRecord(ctx, scope, handle)
+	return frontend.VersionTarget{Item: item, Release: release}, err
 }
 
 func (v *versionHandles) resolveRecord(ctx context.Context, scope frontend.VersionScope, handle string) (core.RatingKey, string, error) {

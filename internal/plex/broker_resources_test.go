@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -76,6 +77,21 @@ func TestUnmountReleasesPlaybackResources(t *testing.T) {
 	rec = f.get(t, "/video/:/transcode/universal/start.m3u8?path=%2Flibrary%2Fmetadata%2F"+key+"&session=hls-remount&protocol=hls&directPlay=0&directStream=1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("remount start %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBareTimelineRecordsProgressWithoutPreparing(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	rec := f.get(t, "/:/timeline?ratingKey=1000000000000550&state=playing&time=120000&duration=8340000")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("timeline %d", rec.Code)
+	}
+	if len(f.state.progress) != 1 || f.state.progress[0].offset != 2*time.Minute || f.state.progress[0].state != "playing" {
+		t.Fatalf("progress %+v", f.state.progress)
+	}
+	if len(f.playback.Sessions()) != 0 {
+		t.Fatal("timeline prepared a source")
 	}
 }
 

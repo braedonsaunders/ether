@@ -17,7 +17,12 @@ type VersionScope struct {
 
 // VersionTarget is the authorized parent associated with an opaque handle.
 // A caller must still open playback and revalidate the selected source.
-type VersionTarget struct{ Item core.RatingKey }
+type VersionTarget struct {
+	Item core.RatingKey
+	// Release is the candidate id stored with the handle. Empty when the
+	// handle was resolved by an older caller that only needed the parent.
+	Release string
+}
 
 type VersionHandles interface {
 	Issue(context.Context, VersionScope, core.RatingKey, string) (string, error)
@@ -25,6 +30,12 @@ type VersionHandles interface {
 	// MatchSession verifies that a scoped handle denotes the source bound to
 	// this authenticated local playback session.
 	MatchSession(context.Context, VersionScope, string, string) error
+}
+
+// Editions is an optional local-media catalogue. Implementations return
+// probed copies already on disk and do not search indexers.
+type Editions interface {
+	Editions(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]Version, error)
 }
 
 // VersionHandleBatch is an optional bounded batch capability. It validates the

@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
-	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/spike"
 )
 
@@ -74,7 +73,11 @@ func run() error {
 	if *anyToken {
 		log.Warn("accepting any token as the owner: do not expose this server")
 	}
-	srv := plex.NewServer(lib.Deps())
+	srv, closeBroker, err := lib.OpenPlex()
+	if err != nil {
+		return err
+	}
+	defer closeBroker()
 	defer srv.Close()
 
 	listen := *addr
