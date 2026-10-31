@@ -52,4 +52,19 @@ IF to_regclass('catalog_home_release') IS NOT NULL THEN
  EXECUTE 'CREATE TRIGGER viewer_policy_catalog_home_release AFTER INSERT OR DELETE ON catalog_home_release FOR EACH STATEMENT EXECUTE FUNCTION viewer_policy_bump()';
  EXECUTE 'CREATE TRIGGER viewer_policy_catalog_home_release_update AFTER UPDATE ON catalog_home_release FOR EACH ROW WHEN (OLD.checked IS DISTINCT FROM NEW.checked OR OLD.earliest_ts IS DISTINCT FROM NEW.earliest_ts OR OLD.fallback_admitted IS DISTINCT FROM NEW.fallback_admitted) EXECUTE FUNCTION viewer_policy_bump()';
 END IF; END $$;`)
+
+	// PostgreSQL fires statement triggers even when a statement changes no
+	// row, and INSERT ... ON CONFLICT DO UPDATE fires the INSERT one on every
+	// upsert. Only rows actually inserted or deleted are policy inputs.
+	store.Register("viewer_policy", 4, "SELECT 1;")
+	store.RegisterSQLiteApply("viewer_policy", 4, func(context.Context, *sql.Tx) error { return nil })
+	store.RegisterDialect("viewer_policy", 4, store.Postgres, `DO $$ BEGIN
+IF to_regclass('catalog_titles') IS NOT NULL THEN
+ EXECUTE 'DROP TRIGGER IF EXISTS viewer_policy_catalog_titles ON catalog_titles';
+ EXECUTE 'CREATE TRIGGER viewer_policy_catalog_titles AFTER INSERT OR DELETE ON catalog_titles FOR EACH ROW EXECUTE FUNCTION viewer_policy_bump()';
+END IF;
+IF to_regclass('catalog_home_release') IS NOT NULL THEN
+ EXECUTE 'DROP TRIGGER IF EXISTS viewer_policy_catalog_home_release ON catalog_home_release';
+ EXECUTE 'CREATE TRIGGER viewer_policy_catalog_home_release AFTER INSERT OR DELETE ON catalog_home_release FOR EACH ROW EXECUTE FUNCTION viewer_policy_bump()';
+END IF; END $$;`)
 }

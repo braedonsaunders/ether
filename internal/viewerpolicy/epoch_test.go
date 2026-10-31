@@ -68,7 +68,8 @@ func TestExistingStateMigration(t *testing.T) {
 		}
 	}
 	if store.DialectOf(db) == store.Postgres {
-		if _, err := db.Exec(`DROP FUNCTION viewer_policy_bump()`); err != nil {
+		// CASCADE also drops the row triggers later migrations add.
+		if _, err := db.Exec(`DROP FUNCTION viewer_policy_bump() CASCADE`); err != nil {
 			t.Fatal(err)
 		}
 	}
