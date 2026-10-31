@@ -483,11 +483,35 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 		if p.spec != nil {
 			for n := range report.Differences {
 				d := &report.Differences[n]
-				if d.Kind == conform.KindExtra && strings.HasPrefix(d.Path, "$") && p.spec.ValidExtra(req.Method, req.Path, target.Status, target.Headers.Get("Content-Type"), target.Body, d.Path) {
+				if d.Kind != conform.KindExtra || !strings.HasPrefix(d.Path, "$") {
+					continue
+				}
+				schemaPath := req.Path
+				if p.Dialect == "jellyfin" {
+					if alias := jellyfinItemSchemaPath(req.Path); alias != "" && !p.spec.ValidExtra(req.Method, req.Path, target.Status, target.Headers.Get("Content-Type"), target.Body, d.Path) {
+						// Jellyfin 12.4 still serves /Users/{userId}/Items/{itemId}
+						// with the BaseItemDto of GET /Items/{itemId}. The pinned
+						// spec only documents the shorter route.
+						schemaPath = alias
+					}
+				}
+				if p.spec.ValidExtra(req.Method, schemaPath, target.Status, target.Headers.Get("Content-Type"), target.Body, d.Path) {
 					d.Kind = conform.KindValue
 					d.Reference = "absent in reference; schema permits richer data"
 					d.Blocking = false
 				}
+			}
+		}
+	}
+	if p.Dialect == "jellyfin" {
+		for n := range report.Differences {
+			d := &report.Differences[n]
+			if (d.Kind == conform.KindExtra || d.Kind == conform.KindMissing) && jellyfinBlurHashKey.MatchString(d.Path) {
+				// ImageBlurHashes maps are keyed by the image tag. The tag is
+				// content, like an array index, not a field the schema names.
+				d.Kind = conform.KindValue
+				d.Blocking = false
+				d.Reason = "blurhash map keys are image tags"
 			}
 		}
 	}
@@ -520,6 +544,23 @@ func (p *Protocol) CompareRequest(req conform.Request, reference, target conform
 		}
 	}
 	return report
+}
+
+// Image tags under these image types are not schema fields.
+var jellyfinBlurHashKey = regexp.MustCompile(`^\$/(?:Items\[\]/)?ImageBlurHashes/(?:Primary|Backdrop|Logo|Thumb|Banner)/[^/]+$`)
+
+// jellyfinItemSchemaPath maps the legacy user-scoped item route onto the
+// documented item route. Other paths return empty and keep their own schema.
+func jellyfinItemSchemaPath(requestPath string) string {
+	u, err := url.Parse(requestPath)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) == 4 && strings.EqualFold(parts[0], "Users") && strings.EqualFold(parts[2], "Items") && parts[1] != "" && parts[3] != "" {
+		return "/Items/" + parts[3]
+	}
+	return ""
 }
 
 func emptyEmbyReferenceAddresses(a, b conform.Response) bool {

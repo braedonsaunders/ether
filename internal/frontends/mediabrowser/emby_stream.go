@@ -13,8 +13,9 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 	dto["AttachmentSize"] = 0
 	dto["Protocol"] = "File"
 	if stream.Type == "video" {
-		// Use only positive probe evidence. PQ alone does not prove HDR10,
-		// and missing metadata cannot establish SDR or absence of HDR.
+		// Use only positive probe evidence. PQ alone does not prove HDR10.
+		// An empty transfer is SDR only for 8-bit 4:2:0, which is what Emby
+		// 4.10.2 reports for that picture.
 		switch {
 		case stream.DolbyVisionConfigurationPresent != nil && *stream.DolbyVisionConfigurationPresent:
 			dto["ExtendedVideoType"] = "DolbyVision"
@@ -29,10 +30,7 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 			dto["ExtendedVideoType"] = "None"
 			dto["ExtendedVideoSubType"] = "None"
 			dto["ExtendedVideoSubTypeDescription"] = "None"
-			// Absence of Dolby Vision/PQ does not establish SDR. Only a
-			// supported, explicitly signalled SDR transfer curve does.
-			switch stream.ColorTransfer {
-			case "bt709", "bt470m", "bt470bg", "smpte170m", "smpte240m", "iec61966-2-1", "bt2020-10", "bt2020-12":
+			if embySDR(stream) {
 				dto["VideoRange"] = "SDR"
 			}
 		}
@@ -89,5 +87,32 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 		if errN == nil && errD == nil && n > 0 && d > 0 && n <= 100000 && d <= 100000 {
 			dto["IsAnamorphic"] = n != d
 		}
+	}
+}
+
+// embySDR matches Emby 4.10.2. An explicit SDR transfer curve is enough.
+// With no transfer at all, that server still reports SDR for 8-bit 4:2:0
+// once Dolby Vision is known absent. Other pixel formats and depths stay
+// unlabelled: an unrecognised curve is not rewritten as SDR.
+func embySDR(stream frontend.StreamInfo) bool {
+	switch stream.ColorTransfer {
+	case "bt709", "bt470m", "bt470bg", "smpte170m", "smpte240m", "iec61966-2-1", "bt2020-10", "bt2020-12":
+		return true
+	case "":
+	default:
+		return false
+	}
+	depth := stream.BitDepth
+	if stream.BitsPerRawSample != nil && *stream.BitsPerRawSample > 0 {
+		depth = *stream.BitsPerRawSample
+	}
+	if depth != 8 {
+		return false
+	}
+	switch stream.PixelFormat {
+	case "yuv420p", "yuvj420p":
+		return true
+	default:
+		return false
 	}
 }

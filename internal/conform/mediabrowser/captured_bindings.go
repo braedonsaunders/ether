@@ -21,11 +21,18 @@ type capturedMetadata struct {
 	user, client, version, device string
 	items                         map[string]capturedItem
 	ambiguous                     map[string]bool
+	// sizes holds a positive media-source byte size when every captured
+	// response for that item agrees. Item-level Size is often absent.
+	sizes map[string]int64
 }
 type capturedItem struct {
-	ID          string            `json:"Id"`
-	Type        string            `json:"Type"`
-	ProviderIDs map[string]string `json:"ProviderIds"`
+	ID           string            `json:"Id"`
+	Type         string            `json:"Type"`
+	ProviderIDs  map[string]string `json:"ProviderIds"`
+	Size         int64             `json:"Size,omitempty"`
+	MediaSources []struct {
+		Size int64 `json:"Size"`
+	} `json:"MediaSources,omitempty"`
 }
 type capturedRun struct {
 	user    string
@@ -51,7 +58,7 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 	if !p.profiles[profile].isCaptured() {
 		return nil
 	}
-	m := &capturedMetadata{items: map[string]capturedItem{}, ambiguous: map[string]bool{}}
+	m := &capturedMetadata{items: map[string]capturedItem{}, ambiguous: map[string]bool{}, sizes: map[string]int64{}}
 	for _, r := range p.Corpus(profile) {
 		resp, err := conform.LoadFixture(filepath.Join(dir, profile, p.FixtureName(profile, r, true)+".json"))
 		if err != nil {
@@ -89,6 +96,9 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 				b, _ := json.Marshal(x)
 				var item capturedItem
 				if json.Unmarshal(b, &item) == nil && capturedID.MatchString(item.ID) && item.Type != "" && len(item.ProviderIDs) > 0 {
+					size := editionSize(item)
+					item.Size = 0
+					item.MediaSources = nil
 					item.ProviderIDs = canonicalProviders(item.ProviderIDs)
 					if item.ProviderIDs == nil {
 						m.ambiguous[item.ID] = true
@@ -101,6 +111,14 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 						}
 					}
 					m.items[item.ID] = item
+					if size > 0 {
+						if prev, ok := m.sizes[item.ID]; ok && prev != size {
+							m.ambiguous[item.ID] = true
+							delete(m.sizes, item.ID)
+						} else if !m.ambiguous[item.ID] {
+							m.sizes[item.ID] = size
+						}
+					}
 				}
 				for _, v := range x {
 					walk(v)
@@ -114,12 +132,22 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 		walk(v)
 	}
 	// A provider identifier cannot distinguish multiple captured editions/copies.
+	// Distinct positive media-source sizes can: the lab's three Big Buck Bunny
+	// items share TMDB 10378 and are separated only by MediaSources[].Size.
 	for a, x := range m.items {
 		for b, y := range m.items {
-			if a != b && x.Type == y.Type && sharedProvider(x, y) {
+			if a != b && x.Type == y.Type && sharedProvider(x, y) && !distinctEditionSize(m, a, b) {
 				m.ambiguous[a] = true
 				m.ambiguous[b] = true
+				delete(m.sizes, a)
+				delete(m.sizes, b)
 			}
+		}
+	}
+	for id, item := range m.items {
+		if size, ok := m.sizes[id]; ok && !m.ambiguous[id] {
+			item.Size = size
+			m.items[id] = item
 		}
 	}
 	if p.captures == nil {
@@ -141,6 +169,41 @@ func canonicalProviders(in map[string]string) map[string]string {
 	}
 	return out
 }
+func editionSize(item capturedItem) int64 {
+	if item.Size > 0 {
+		return item.Size
+	}
+	var size int64
+	for _, source := range item.MediaSources {
+		if source.Size <= 0 {
+			continue
+		}
+		if size != 0 && size != source.Size {
+			return 0
+		}
+		size = source.Size
+	}
+	return size
+}
+
+func distinctEditionSize(m *capturedMetadata, a, b string) bool {
+	sa, sb := m.sizes[a], m.sizes[b]
+	return sa > 0 && sb > 0 && sa != sb
+}
+
+func editionSizeRequired(m *capturedMetadata, id string) bool {
+	item, ok := m.items[id]
+	if !ok || m.sizes[id] == 0 {
+		return false
+	}
+	for other, candidate := range m.items {
+		if other != id && candidate.Type == item.Type && sharedProvider(item, candidate) && distinctEditionSize(m, id, other) {
+			return true
+		}
+	}
+	return false
+}
+
 func sharedProvider(a, b capturedItem) bool {
 	for k, v := range a.ProviderIDs {
 		if b.ProviderIDs[k] == v {
@@ -151,6 +214,9 @@ func sharedProvider(a, b capturedItem) bool {
 }
 func matchingItem(a, b capturedItem) bool {
 	if a.Type != b.Type || !sharedProvider(a, b) {
+		return false
+	}
+	if a.Size > 0 && b.Size != a.Size {
 		return false
 	}
 	for k, v := range a.ProviderIDs {
@@ -249,12 +315,15 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 		run.values[strings.TrimSuffix(strings.TrimPrefix(m.user, "${"), "}")] = user.ID
 	}
 	var listing struct{ Items []capturedItem }
-	if !get("/Items?Recursive=true&Fields=ProviderIds", &listing) {
+	if !get("/Items?Recursive=true&Fields=ProviderIds,MediaSources", &listing) {
 		listing.Items = nil
 		out.Warnings = append(out.Warnings, "capture item discovery unavailable")
 	}
 	for i := range listing.Items {
+		size := editionSize(listing.Items[i])
 		listing.Items[i].ProviderIDs = canonicalProviders(listing.Items[i].ProviderIDs)
+		listing.Items[i].Size = size
+		listing.Items[i].MediaSources = nil
 	}
 	for alias, item := range m.items {
 		key := capturedID.FindStringSubmatch(alias)[1]
@@ -262,9 +331,15 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 			run.missing[key] = "ambiguous captured provider identity"
 			continue
 		}
+		wanted := item
+		if !editionSizeRequired(m, alias) {
+			// A unique provider identity does not need a byte size. Size is
+			// required only to keep sibling editions from collapsing.
+			wanted.Size = 0
+		}
 		matches := map[string]bool{}
 		for _, candidate := range listing.Items {
-			if safeObservedID(candidate.ID) && matchingItem(item, candidate) {
+			if safeObservedID(candidate.ID) && matchingItem(wanted, candidate) {
 				matches[candidate.ID] = true
 			}
 		}
