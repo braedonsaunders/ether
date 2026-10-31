@@ -122,9 +122,7 @@ export default function Sources() {
         open={importing}
         onClose={() => setImporting(false)}
         title={t("Import from Prowlarr")}
-        description={t(
-          "Optional: add the indexers a Prowlarr instance already manages, searched through Prowlarr's Newznab and Torznab endpoints.",
-        )}
+        description={t("Sync indexers from Prowlarr.")}
         size="lg"
       >
         <ProwlarrImport onImported={() => setVersion((v) => v + 1)} />

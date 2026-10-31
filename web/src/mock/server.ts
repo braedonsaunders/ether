@@ -2385,6 +2385,15 @@ export function createFakeServer(opts: FakeOptions = {}) {
             { protocol: "jellyfin", name: "Jellyfin TV", lastSeen: "2026-10-31T12:00:00Z" },
           ],
         });
+      case "GET /playback/prowlarr":
+        return json({ config: {}, status: "" });
+      case "POST /playback/prowlarr/tags":
+        return json({
+          tags: [
+            { id: 1, label: "ether" },
+            { id: 2, label: "anime" },
+          ],
+        });
       case "POST /playback/prowlarr": {
         const req = body as {
           config?: { dailyLimit?: number; dailyGrabs?: number };
