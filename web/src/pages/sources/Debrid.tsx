@@ -34,7 +34,7 @@ import type {
 } from "../../lib/types";
 import { SchemaField } from "../settings/SchemaForm";
 import { DEBRID } from "../settings/schema";
-import { DEBRID_KINDS, SourceCard, debridFix } from "./cards";
+import { DEBRID_KINDS, DEBRID_TOKEN_URL, SourceCard, debridFix } from "./cards";
 import { debridMark } from "./marks";
 
 export { DEBRID_KINDS };
@@ -491,7 +491,19 @@ export function DebridSources({
               title={t("API key")}
               description={
                 <>
-                  {t("From your debrid account's settings.")}
+                  {t("From your debrid account's settings.")}{" "}
+                  {DEBRID_TOKEN_URL[draft.kind] ? (
+                    <a
+                      className="text-primary underline"
+                      href={DEBRID_TOKEN_URL[draft.kind]}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t("Find your {service} API token", {
+                        service: debridKindLabel(draft.kind),
+                      })}
+                    </a>
+                  ) : null}
                   {errors.apiKey ? (
                     <span className="block text-xs text-danger" role="alert">
                       {errors.apiKey}

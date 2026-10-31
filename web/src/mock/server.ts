@@ -2016,11 +2016,11 @@ export function createFakeServer(opts: FakeOptions = {}) {
       { id: "plex", name: "Plex", defaultPort: 32400 },
       { id: "jellyfin", name: "Jellyfin", defaultPort: 8096 },
       { id: "emby", name: "Emby", defaultPort: 8097 },
-      { id: "silo", name: "Silo", defaultPort: 8090 },
       { id: "stremio", name: "Stremio" },
-      { id: "webdav", name: "Files" },
-      { id: "m3u", name: "M3U and XMLTV" },
+      { id: "silo", name: "Silo", defaultPort: 8090 },
       { id: "dlna", name: "DLNA" },
+      { id: "webdav", name: "Files (WebDAV)" },
+      { id: "m3u", name: "M3U & XMLTV" },
     ];
     if (seg[0] === "frontends" && seg.length === 1 && method === "GET") {
       return json(

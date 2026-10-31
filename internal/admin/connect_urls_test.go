@@ -48,6 +48,14 @@ func TestConsoleConnectURLsIgnoreUntrustedForwardedHost(t *testing.T) {
 	}
 }
 
+func TestConsoleConnectURLsPlexUsesTheBrowserHost(t *testing.T) {
+	r := httptestRequest("192.168.68.66:32803")
+	got := consoleConnectURLs(r, "plex", []string{"http://172.20.0.2:32400"}, config.Config{}, nil)
+	if len(got) != 1 || got[0] != "http://192.168.68.66:32803" {
+		t.Fatalf("connect URLs = %#v", got)
+	}
+}
+
 func TestConsoleConnectURLsTrustForwardedHostFromLoopback(t *testing.T) {
 	r := httptestRequest("127.0.0.1:32400")
 	r.RemoteAddr = "127.0.0.1:9"

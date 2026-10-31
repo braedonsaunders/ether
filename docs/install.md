@@ -4,10 +4,12 @@
 frontends, including Plex, run in. Install Ether as
 below; there is no separate installer or service for the shared server.
 
-Download a macOS DMG, Windows setup EXE, Linux DEB/RPM, or standalone
-archive from the [Releases page](https://github.com/braedonsaunders/ether/releases/latest).
-Docker images are available at `ghcr.io/braedonsaunders/ether`. Packaged
-installers and archives bundle FFmpeg and FFprobe.
+If you do not use a terminal, start with the macOS or Windows section below.
+Download a macOS DMG or a Windows setup EXE from the
+[Releases page](https://github.com/braedonsaunders/ether/releases/latest),
+open it, and follow the wizard in the browser. No terminal is needed.
+Linux packages and Docker are further down. Packaged installers bundle
+FFmpeg and FFprobe.
 
 The v0.2.4 macOS app is ad-hoc signed and **not notarised**; macOS may require
 **System Settings › Privacy & Security › Open Anyway** after you attempt to
@@ -118,6 +120,24 @@ with `-p 32400:32400` works for Plex Web and for claimed/remote
 connections, but LAN auto-discovery will not find the server. Do not publish
 port 8096. Jellyfin, Emby, and the other apps are reached at
 `http://HOST:PORT/jellyfin` (and `/emby`, `/silo`) on the console port.
+
+Already running Plex on 32400? Use bridge mode and `ETHER_PORT` so Ether does
+not take that port:
+
+```yaml
+services:
+  ether:
+    image: ghcr.io/braedonsaunders/ether:latest
+    environment:
+      ETHER_PORT: "32800"
+    ports:
+      - "32800:32800"
+    volumes:
+      - ./config:/config
+      - ./cache:/cache
+```
+
+Open `http://HOST:32800/ether/`. Jellyfin is `http://HOST:32800/jellyfin`.
 
 Volumes: `/config` (config, database, identity — back this up) and
 `/cache` for the segment cache. The cache defaults to `/config/cache`.

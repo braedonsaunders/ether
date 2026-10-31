@@ -359,7 +359,7 @@ function CatalogBrowser({
                   : page > 1
                     ? t("The catalog may have changed since your last visit.")
                     : t(
-                        "Add a TMDB key in Catalog settings. Released movies and shows will appear after the catalog syncs.",
+                        "The library is empty until the catalogue syncs. That needs a TMDB key. Playback also needs a debrid account or a Usenet provider.",
                       )
               }
               action={

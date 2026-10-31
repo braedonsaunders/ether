@@ -38,6 +38,8 @@ export interface HealthItem {
    * the row was checked and found healthy.
    */
   countsOverall?: boolean;
+  /** Expected on a new server: something to set up, not a failure. */
+  setupGap?: boolean;
 }
 
 const RANK: Record<HealthLevel, number> = { error: 4, warn: 3, unknown: 2, ok: 1, off: 0 };
@@ -72,6 +74,17 @@ function errorOf(v: unknown): string {
   return isPlainObject(v) && typeof v.error === "string" ? v.error : "";
 }
 
+/** A missing first-run choice. It stays visible and does not raise an alarm. */
+function toSetUp(item: HealthItem): HealthItem {
+  return {
+    ...item,
+    level: "unknown",
+    countsOverall: false,
+    setupGap: true,
+    statusLabel: t("To set up"),
+  };
+}
+
 export function usenetHealth(v: unknown, debrid?: unknown): HealthItem {
   const base = {
     id: "usenet" as const,
@@ -86,14 +99,14 @@ export function usenetHealth(v: unknown, debrid?: unknown): HealthItem {
   if (providers.length === 0)
     return debridOn(debrid)
       ? { ...base, level: "off", summary: t("Not used · streaming through debrid"), details: [] }
-      : {
+      : toSetUp({
           ...base,
           label: t("Sources"),
           href: "/sources",
           level: "error",
           summary: t("No debrid account or Usenet provider yet"),
           details: [],
-        };
+        });
   const primary = providers.filter((p) => !p.backfill);
   const bad = providers.filter((p) => str(p.state) && str(p.state) !== "ok");
   const primaryBad = primary.filter((p) => str(p.state) && str(p.state) !== "ok");
@@ -161,7 +174,7 @@ export function indexersHealth(v: unknown, debrid?: unknown): HealthItem {
     return { ...base, level: "unknown", summary: t("Not reported"), details: [] };
   const rows = v.filter(isPlainObject);
   if (rows.length === 0)
-    return { ...base, level: "error", summary: t("No indexers configured"), details: [] };
+    return toSetUp({ ...base, level: "error", summary: t("No indexers configured"), details: [] });
   const enabled = rows.filter((r) => r.enabled !== false);
   if (enabled.length === 0)
     return {
@@ -299,7 +312,8 @@ export function catalogHealth(v: unknown, now = new Date()): HealthItem {
       details,
     };
   }
-  if (!last) return { ...base, level: "warn", summary: t("Not synced yet"), details };
+  if (!last)
+    return toSetUp({ ...base, level: "warn", summary: t("Not synced yet"), details });
   const ageDays = (now.getTime() - last.getTime()) / 86400000;
   const level: HealthLevel =
     typeof sync.error === "string" && sync.error ? "warn" : ageDays > 3 ? "warn" : "ok";
@@ -617,6 +631,23 @@ export function databaseHealth(v: unknown, now = new Date()): HealthItem | null 
   };
 }
 
+/** One Plex row until the server is claimed. The certificate check is the same missing sign-in. */
+function plexConnectionHealth(remote: unknown, now: Date): HealthItem[] {
+  if (isPlainObject(remote) && remote.claimed === false) {
+    return [
+      toSetUp({
+        id: "remote",
+        label: t("Plex"),
+        href: "/apps/plex/account",
+        level: "error",
+        summary: t("Sign in to finish connecting"),
+        details: [t("Plex is on, and this server is not claimed yet.")],
+      }),
+    ];
+  }
+  return [remoteHealth(remote), plexDirectHealth(remote, now)];
+}
+
 export function computeHealth(
   sections: Record<string, unknown> | undefined,
   now = new Date(),
@@ -630,7 +661,7 @@ export function computeHealth(
     cacheHealth(s.cache),
     catalogHealth(s.catalog, now),
     databaseHealth(s.database, now),
-    ...(plexOn ? [remoteHealth(s.remote), plexDirectHealth(s.remote, now)] : []),
+    ...(plexOn ? plexConnectionHealth(s.remote, now) : []),
   ].filter((item): item is HealthItem => item !== null);
   const transcode = transcodeHealth(s.hwaccel);
   if (transcode) items.push(transcode);

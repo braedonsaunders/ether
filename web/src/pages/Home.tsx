@@ -77,17 +77,22 @@ export default function Home() {
   );
   const hw = dashboard?.sections.hwaccel as
     { hwaccel?: { name?: string }; ffmpeg?: string; error?: string } | undefined;
-  const problems = health.filter((h) => h.level === "error" || h.level === "warn");
+  const problems = health.filter(
+    (h) => !h.setupGap && (h.level === "error" || h.level === "warn"),
+  );
+  const setupGaps = health.filter((h) => h.setupGap);
 
   const status = !dashboard
     ? null
     : problems.length
       ? tn(problems.length, "{count} thing needs attention", "{count} things need attention")
-      : health.some((h) => h.level === "unknown" && countsOverall(h))
-        ? t("Status incomplete")
-        : hasExemptDiagnostic(health)
-          ? t("Operational")
-          : t("Everything is healthy");
+      : setupGaps.length
+        ? tn(setupGaps.length, "{count} thing to set up", "{count} things to set up")
+        : health.some((h) => h.level === "unknown" && countsOverall(h))
+          ? t("Status incomplete")
+          : hasExemptDiagnostic(health)
+            ? t("Operational")
+            : t("Everything is healthy");
 
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
@@ -294,8 +299,11 @@ function HealthPanel({
   items: HealthItem[];
   className?: string;
 }) {
-  const problems = items.filter((h) => h.level === "error" || h.level === "warn");
-  const rest = items.filter((h) => !problems.includes(h));
+  const problems = items.filter(
+    (h) => !h.setupGap && (h.level === "error" || h.level === "warn"),
+  );
+  const setupGaps = items.filter((h) => h.setupGap);
+  const rest = items.filter((h) => !problems.includes(h) && !h.setupGap);
   const severe = problems.some((h) => h.level === "error");
   return (
     <DashboardPanel
@@ -307,6 +315,10 @@ function HealthPanel({
         loading ? null : problems.length ? (
           <Badge variant={severe ? "destructive" : "warning"}>
             {tn(problems.length, "{count} to fix", "{count} to fix")}
+          </Badge>
+        ) : setupGaps.length ? (
+          <Badge variant="secondary">
+            {tn(setupGaps.length, "{count} thing to set up", "{count} things to set up")}
           </Badge>
         ) : items.some((h) => h.level === "unknown" && countsOverall(h)) ? (
           <LevelBadge level="unknown" label={t("Status incomplete")} />
@@ -336,6 +348,13 @@ function HealthPanel({
                 ))}
               </ul>
             </section>
+          ) : null}
+          {setupGaps.length ? (
+            <ul className="mb-2 space-y-0.5">
+              {setupGaps.map((h) => (
+                <HealthRow key={h.id} h={h} />
+              ))}
+            </ul>
           ) : null}
           <ul className="space-y-0.5">
             {rest.map((h) => (
@@ -598,7 +617,9 @@ function RowsPanel({
         <EmptyState
           icon={<Film />}
           title={t("No row data yet")}
-          description={t("Once viewers open Home, the rows that lead to plays rank here.")}
+          description={t(
+            "No plays yet. The library stays empty until a TMDB key syncs the catalogue, and a debrid account or a Usenet provider can play it.",
+          )}
           className="py-6"
         />
       ) : (

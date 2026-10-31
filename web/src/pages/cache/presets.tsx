@@ -157,8 +157,11 @@ export const CACHE_PRESETS: {
   },
 ]);
 
-/** Largest preset whose budget fits in the free space, leaving a little unused. */
+/** Everyday when the disk can hold it. A tight disk gets the largest preset that fits. */
 export function presetForFreeBytes(freeBytes: number): (typeof CACHE_PRESETS)[number] | null {
+  const everyday = CACHE_PRESETS.find((preset) => preset.key === "everyday");
+  const everydayBudget = everyday?.values.budgetBytes ?? 0;
+  if (everyday && everydayBudget > 0 && freeBytes * 0.8 >= everydayBudget) return everyday;
   const room = freeBytes * 0.8;
   let fit: (typeof CACHE_PRESETS)[number] | null = null;
   for (const preset of CACHE_PRESETS) {

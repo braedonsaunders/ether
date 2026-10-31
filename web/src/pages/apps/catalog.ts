@@ -4,15 +4,32 @@ import { t } from "../../i18n";
  * Household app ids and one-line purposes shared with the first-run chooser.
  * Brand marks live in `integration-brands`; this file does not draw logos.
  */
-export const SETUP_APP_IDS = ["plex", "jellyfin", "emby", "silo", "stremio", "webdav"] as const;
+/** Setup chooser and the Apps page use this order, not alphabetical registration. */
+export const APP_ORDER = [
+  "plex",
+  "jellyfin",
+  "emby",
+  "stremio",
+  "silo",
+  "dlna",
+  "webdav",
+  "m3u",
+] as const;
+
+export const SETUP_APP_IDS = APP_ORDER;
+
+export function appRank(id: string): number {
+  const rank = APP_ORDER.indexOf(id as (typeof APP_ORDER)[number]);
+  return rank === -1 ? APP_ORDER.length : rank;
+}
 
 export function appPath(id: string): string {
   return id === "webdav" ? "files" : id;
 }
 
 export function appLabel(id: string, fallbackName: string): string {
-  if (id === "webdav") return t("Files");
-  if (id === "m3u") return t("M3U and XMLTV");
+  if (id === "webdav") return t("Files (WebDAV)");
+  if (id === "m3u") return t("M3U & XMLTV");
   return fallbackName;
 }
 
@@ -22,9 +39,13 @@ export function appPurpose(id: string): string {
     case "plex":
       return t("At home and away, through plex.tv.");
     case "jellyfin":
-      return t("At home. Away from home, use a VPN such as Tailscale or an address you publish.");
+      return t(
+        "At home. Away from home, use a private network tool (Tailscale) or an address you publish.",
+      );
     case "emby":
-      return t("At home. Away from home, use a VPN such as Tailscale or an address you publish.");
+      return t(
+        "At home. Away from home, use a private network tool (Tailscale) or an address you publish.",
+      );
     case "silo":
       return t("At home on your network.");
     case "stremio":

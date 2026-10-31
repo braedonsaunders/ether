@@ -411,7 +411,7 @@ export function ReleaseSearch({ onPinsChanged }: { onPinsChanged?: () => void })
                     icon={<SearchX />}
                     title={t("No releases found")}
                     description={t(
-                      "The indexers returned nothing for this title. Try Search again later.",
+                      "Nothing came back. A TMDB key fills the catalogue, and a debrid account or a Usenet provider is what makes a result playable.",
                     )}
                   />
                 }

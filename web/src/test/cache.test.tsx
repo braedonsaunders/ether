@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { presetForFreeBytes } from "../pages/cache/presets";
 import { calls, renderApp } from "./harness";
 import { renderAppWith } from "./routes";
 
@@ -9,6 +10,13 @@ async function chooseProfile(name: RegExp) {
   fireEvent.click(await screen.findByRole("button", { name }, WAIT));
   fireEvent.click(screen.getByRole("button", { name: "Review profile" }));
 }
+describe("cache preset suggestion", () => {
+  it("picks Everyday when the disk can hold 32 GiB, and Feather when it cannot", () => {
+    expect(presetForFreeBytes(1.1 * 1024 ** 4)?.key).toBe("everyday");
+    expect(presetForFreeBytes(13 * 1024 ** 3)?.key).toBe("feather");
+  });
+});
+
 describe("Cache management", () => {
   afterEach(() => {
     vi.useRealTimers();

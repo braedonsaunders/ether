@@ -322,7 +322,8 @@
   .ether-approve-check,
   .ether-approve-glow,
   .ether-approve-ring,
-  .ether-approve-burst span {
+  .ether-approve-burst span,
+  .ether-settle {
     animation: none !important;
   }
   .ether-approve-check {
@@ -342,6 +343,17 @@
    read as one column. */
 .ether-setup aside {
   display: none;
+}
+.ether-settle {
+  animation: ether-settle-in 0.55s ease both;
+}
+@keyframes ether-settle-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .ether-shell aside > div:first-child {
   height: auto;

@@ -29,6 +29,11 @@ services:
     #         - driver: nvidia
     #           count: 1
     #           capabilities: [gpu]
+    # Already running Plex on 32400? Drop network_mode and use bridge:
+    # environment:
+    #   ETHER_PORT: "32800"
+    # ports:
+    #   - "32800:32800"
     # ports:                      # bridge-mode only; drop network_mode above
     #   - "32400:32400/tcp"
     #   - "32410-32414:32410-32414/udp"

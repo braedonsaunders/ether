@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"sort"
 	"sync"
 
 	"github.com/braedonsaunders/ether/internal/admin"
@@ -69,7 +70,34 @@ func (f *frontendControl) List(ctx context.Context) ([]admin.FrontendInfo, error
 		}
 		out = append(out, admin.FrontendInfo{Descriptor: d, Enabled: enabled, Status: status})
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return frontendRank(out[i].Descriptor.ID) < frontendRank(out[j].Descriptor.ID)
+	})
 	return out, nil
+}
+
+// Household order for the setup chooser and the Apps page.
+func frontendRank(id frontend.Protocol) int {
+	switch id {
+	case "plex":
+		return 0
+	case "jellyfin":
+		return 1
+	case "emby":
+		return 2
+	case "stremio":
+		return 3
+	case "silo":
+		return 4
+	case "dlna":
+		return 5
+	case "webdav":
+		return 6
+	case "m3u":
+		return 7
+	default:
+		return 8
+	}
 }
 func (f *frontendControl) Settings(_ context.Context, id frontend.Protocol) (frontend.Settings, error) {
 	if _, ok := f.descriptor(id); !ok {

@@ -61,7 +61,7 @@ import {
 } from "react-router-dom";
 import { AppProvider, useApp } from "./app-context";
 import { hasExemptDiagnostic } from "./lib/health";
-import { t } from "./i18n";
+import { t, tn } from "./i18n";
 import { I18nProvider, LanguagePicker } from "./i18n/react";
 import { Brand, BrandSplash, EtherMark } from "./components/brand";
 import { CommandSearch } from "./components/CommandSearch";
@@ -182,18 +182,23 @@ function HealthIndicator() {
   // Before setup finishes, unconfigured sources and an unclaimed server are
   // expected, not problems: show progress instead of a red verdict.
   const settingUp = !boot.setupComplete;
+  const setupGaps = health.filter((item) => item.setupGap);
+  const gettingStarted =
+    !settingUp && setupGaps.length > 0 && (overall === "ok" || overall === "off");
   // "Operational" means no participating failure. It does not mean TLS was verified.
   const label = settingUp
     ? t("Setting up")
-    : overall === "ok" || overall === "off"
-      ? hasExemptDiagnostic(health)
-        ? t("Operational")
-        : t("All systems normal")
-      : overall === "unknown"
-        ? dashboard
-          ? t("Status incomplete")
-          : t("Checking…")
-        : LEVEL_LABEL[overall];
+    : gettingStarted
+      ? t("Getting started")
+      : overall === "ok" || overall === "off"
+        ? hasExemptDiagnostic(health)
+          ? t("Operational")
+          : t("All systems normal")
+        : overall === "unknown"
+          ? dashboard
+            ? t("Status incomplete")
+            : t("Checking…")
+          : LEVEL_LABEL[overall];
   return (
     <Popover
       open={open}
@@ -205,7 +210,10 @@ function HealthIndicator() {
           aria-label={t("Server health: {status}", { status: label })}
           className="inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <StatusDot level={settingUp ? "unknown" : overall === "off" ? "ok" : overall} pulse />
+          <StatusDot
+            level={settingUp || gettingStarted ? "unknown" : overall === "off" ? "ok" : overall}
+            pulse
+          />
           <span className="hidden md:inline">{label}</span>
         </button>
       }
@@ -217,6 +225,14 @@ function HealthIndicator() {
         {settingUp ? (
           <p className="px-2 pb-2 text-sm text-fg-muted">
             {t("Finish setup to bring everything online. Items below fill in as you go.")}
+          </p>
+        ) : gettingStarted ? (
+          <p className="px-2 pb-2 text-sm text-fg-muted">
+            {tn(
+              setupGaps.length,
+              "{count} thing to set up",
+              "{count} things to set up",
+            )}
           </p>
         ) : null}
         {dashboardError && !dashboard ? (

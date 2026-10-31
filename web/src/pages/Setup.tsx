@@ -10,14 +10,15 @@ import {
   WizardLayout,
   cn,
 } from "@braedonsaunders/appkit-ui";
-import { Check, ExternalLink, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ExternalLink, KeyRound, Newspaper, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppOptional } from "../app-context";
 import { RestartButton } from "../components/RestartDrawer";
 import { EtherMark } from "../components/brand";
 import { IntegrationAppCard } from "../components/IntegrationAppCard";
-import { EmbyMark, JellyfinMark, PlexMark } from "../components/integration-brands";
+import { EmbyMark, JellyfinMark, PlexMark, SiloMark } from "../components/integration-brands";
+import { StremioMark } from "./sources/marks";
 import { ErrorPanel, MutationError } from "../components/feedback";
 import {
   Field,
@@ -28,12 +29,10 @@ import {
   type TestState,
 } from "../components/fields";
 import { loadLocale, localized, rememberLocale, t, tn, tx } from "../i18n";
-import { api, apiFetch, errorMessage, newId, setToken } from "../lib/api";
+import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
-import type { TitleCard } from "../lib/contract";
-import { releaseConsole } from "../lib/releases";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
-import { appLabel, appPurpose } from "./apps/catalog";
+import { appLabel, appPurpose, appRank } from "./apps/catalog";
 import { CachePresetCards, cachePresetKey, presetForFreeBytes } from "./cache/presets";
 import { ProwlarrImport } from "../components/ProwlarrImport";
 import { DEBRID_KINDS } from "./sources/Debrid";
@@ -77,9 +76,11 @@ const FALLBACK_APPS = [
   { id: "plex", name: "Plex" },
   { id: "jellyfin", name: "Jellyfin" },
   { id: "emby", name: "Emby" },
-  { id: "silo", name: "Silo" },
   { id: "stremio", name: "Stremio" },
-  { id: "webdav", name: "Files" },
+  { id: "silo", name: "Silo" },
+  { id: "dlna", name: "DLNA" },
+  { id: "webdav", name: "Files (WebDAV)" },
+  { id: "m3u", name: "M3U & XMLTV" },
 ];
 
 export interface SetupApp {
@@ -89,12 +90,12 @@ export interface SetupApp {
 }
 
 export function wizardSteps(
-  plexSelected: boolean,
+  plexClaimNow: boolean,
 ): { id: WizardStepId; title: string; heading: string }[] {
   return [
     { id: "language", title: STEP_COPY.languageTitle, heading: STEP_COPY.languageHeading },
     { id: "apps", title: STEP_COPY.appsTitle, heading: STEP_COPY.appsHeading },
-    plexSelected
+    plexClaimNow
       ? { id: "account", title: STEP_COPY.plexTitle, heading: STEP_COPY.plexHeading }
       : { id: "account", title: STEP_COPY.accountTitle, heading: STEP_COPY.accountHeading },
     { id: "sources", title: STEP_COPY.sourcesTitle, heading: STEP_COPY.sourcesHeading },
@@ -112,9 +113,10 @@ function storedStep(): number {
 export function appCatalog(
   list: { descriptor: { id: string; name: string } }[] | null,
 ): SetupApp[] {
-  const rows = list?.length
+  const rows = (list?.length
     ? list.map((item) => ({ id: item.descriptor.id, name: item.descriptor.name }))
-    : FALLBACK_APPS;
+    : FALLBACK_APPS
+  ).slice().sort((a, b) => appRank(a.id) - appRank(b.id));
   return rows.map((row) => {
     return {
       id: row.id,
@@ -170,7 +172,7 @@ function blankDebrid(): DebridProvider {
   return {
     id: newId("deb"),
     name: "",
-    kind: "" as DebridProvider["kind"],
+    kind: "realdebrid",
     apiKey: "",
     priority: 0,
     enabled: true,
@@ -205,94 +207,160 @@ function withIndexerType(ix: Indexer, type: IndexerType): Indexer {
   return { ...ix, kind: "", protocol: type === "torznab" ? "torrent" : "usenet" };
 }
 
+const TORRENTIO_URL = "https://torrentio.strem.fun/manifest.json";
+
+function SourceChoice({
+  pressed,
+  onClick,
+  logo,
+  title,
+  line,
+  children,
+}: {
+  pressed: boolean;
+  onClick: () => void;
+  logo: ReactNode;
+  title: string;
+  line: string;
+  children?: ReactNode;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-xl border bg-surface",
+        pressed ? "border-primary" : "border-border",
+      )}
+    >
+      <button
+        type="button"
+        aria-pressed={pressed}
+        onClick={onClick}
+        className="flex w-full items-center gap-3 p-4 text-left"
+      >
+        <span className="grid size-7 shrink-0 place-items-center text-fg">{logo}</span>
+        <span>
+          <span className="block text-sm font-medium text-fg">{title}</span>
+          <span className="block text-sm text-fg-muted">{line}</span>
+        </span>
+      </button>
+      {pressed && children ? <div className="space-y-4 px-4 pb-4">{children}</div> : null}
+    </section>
+  );
+}
+const READY_MS = 1700;
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+function setupAppLogo(id: string) {
+  switch (id) {
+    case "plex":
+      return <PlexMark />;
+    case "jellyfin":
+      return <JellyfinMark />;
+    case "emby":
+      return <EmbyMark />;
+    case "silo":
+      return <SiloMark />;
+    case "stremio":
+      return <StremioMark />;
+    default:
+      return undefined;
+  }
+}
+
 function SetupReady() {
   const navigate = useNavigate();
-  const [q, setQ] = useState("");
-  const [titles, setTitles] = useState<TitleCard[]>([]);
-  const [streams, setStreams] = useState<string[]>([]);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [cfg, setCfg] = useState<EtherConfig | null>(null);
+  const [settled, setSettled] = useState(prefersReducedMotion);
 
-  const search = async () => {
-    const query = q.trim();
-    if (!query) return;
-    setBusy(true);
-    setNote("");
-    setStreams([]);
-    try {
-      const items = await api.searchCatalog(query, undefined, 8);
-      setTitles(items);
-      if (items.length === 0) setNote(t("No titles matched."));
-    } catch (e) {
-      setNote(errorMessage(e));
-      setTitles([]);
-    } finally {
-      setBusy(false);
-    }
-  };
+  useEffect(() => {
+    void api
+      .getConfig()
+      .then(setCfg)
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (settled) return;
+    const timer = window.setTimeout(() => setSettled(true), READY_MS);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSettled(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [settled]);
 
-  const openTitle = async (item: TitleCard) => {
-    setBusy(true);
-    setNote("");
-    try {
-      const result = await releaseConsole.search(item.key);
-      const names = (result.releases ?? [])
-        .filter((row) => !row.rejected)
-        .map((row) => row.release.name)
-        .slice(0, 8);
-      setStreams(names);
-      if (names.length === 0) setNote(t("No streams for {title} yet.", { title: item.title }));
-    } catch (e) {
-      setNote(errorMessage(e));
-      setStreams([]);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const debridOn = (cfg?.debrid?.providers ?? []).some((row) => row.enabled && row.apiKey.trim());
+  const usenetOn = (cfg?.usenet.providers ?? []).some((row) => row.enabled && row.host.trim());
+  const plexOpen = Boolean(cfg?.frontends?.plex?.enabled) && !cfg?.plex.claimed;
+  const anyApp = cfg?.frontends
+    ? Object.values(cfg.frontends).some((row) => row?.enabled)
+    : false;
+  const go = (to: string) => navigate(to);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-4 p-6">
-      <h1 className="text-lg font-semibold text-fg">{t("Search a title")}</h1>
-      <form
-        className="flex flex-wrap items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void search();
-        }}
-      >
-        <Field label={t("Title")} htmlFor="setup-search">
-          <Input id="setup-search" value={q} onChange={(e) => setQ(e.currentTarget.value)} />
-        </Field>
-        <Button type="submit" disabled={busy || !q.trim()}>
-          {t("Search")}
-        </Button>
-      </form>
-      <ul className="space-y-1">
-        {titles.map((item) => (
-          <li key={item.key}>
-            <Button variant="ghost" onClick={() => void openTitle(item)}>
-              {item.title}
-              {item.year ? ` (${item.year})` : ""}
+    <div className="mx-auto flex w-full max-w-lg flex-col items-center px-6 py-16">
+      {settled ? (
+        <div className="ether-settle flex w-full flex-col items-center gap-5">
+          <Button size="lg" className="h-12 min-w-56 px-10 text-base" onClick={() => go("/")}>
+            {t("Get started")}
+          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            {anyApp ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => go("/apps")}
+              >
+                {t("Connect a device")}
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              onClick={() => go("/viewers")}
+            >
+              {t("Add viewers")}
             </Button>
-          </li>
-        ))}
-      </ul>
-      {streams.length > 0 ? (
-        <ul className="space-y-1 text-sm text-fg">
-          {streams.map((name) => (
-            <li key={name}>{name}</li>
-          ))}
-        </ul>
-      ) : null}
-      {note ? (
-        <p className="text-sm text-fg-muted" role="status">
-          {note}
-        </p>
-      ) : null}
-      <Button variant="outline" onClick={() => navigate("/")}>
-        {t("Go to Overview")}
-      </Button>
-    </main>
+            {!debridOn && !usenetOn ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => go("/sources")}
+              >
+                {t("Add a debrid account")}
+              </Button>
+            ) : null}
+            {plexOpen ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                onClick={() => go("/apps/plex/account")}
+              >
+                {t("Connect Plex")}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <div className="ether-settle flex flex-col items-center gap-3 text-primary" role="status">
+          <EtherMark size={72} />
+          <Button variant="link" onClick={() => setSettled(true)}>
+            {t("Skip")}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -545,7 +613,7 @@ export default function Setup() {
   }, []);
   const plexSelected = Boolean(frontends.plex);
   const showLocalOwner = !plexSelected || plexLater;
-  const steps = wizardSteps(plexSelected);
+  const steps = wizardSteps(plexSelected && !plexLater);
   const stepId = steps[step]?.id ?? "apps";
   useEffect(() => {
     sessionStorage.setItem("ether.setup.skipped", JSON.stringify(skipped));
@@ -685,7 +753,10 @@ export default function Setup() {
       cfg
         ? canAdvance(stepId, {
             accountReady: showLocalOwner
-              ? localDone
+              ? localDone ||
+                (localUsername.trim() !== "" &&
+                  localPassword !== "" &&
+                  localPassword === localPasswordAgain)
               : Boolean(cfg.plex.claimed && cfg.plex.token) && !plexRecovery && !claimFailed,
             providers: cfg.usenet.providers ?? [],
             indexers: cfg.indexers ?? [],
@@ -710,6 +781,10 @@ export default function Setup() {
       tmdbBundled,
       skipped,
       localDone,
+      localUsername,
+      localPassword,
+      localPasswordAgain,
+      plexLater,
       plexRecovery,
       claimFailed,
       readyMade,
@@ -790,6 +865,15 @@ export default function Setup() {
     setSaving(true);
     setError(null);
     try {
+      if (stepId === "account" && showLocalOwner && !localDone) {
+        const { token } = await api.localSetup(localUsername.trim(), localPassword);
+        setToken(token);
+        setLocalPassword("");
+        setLocalPasswordAgain("");
+        setLocalDone(true);
+        const status = await api.setupStatus();
+        setServerSteps(Object.fromEntries(status.steps.map((item) => [item.id, item.complete])));
+      }
       let draft = cfg;
       if (stepId === "language" && languageChoice) {
         const baseline = languageBaseline.current;
@@ -901,6 +985,7 @@ export default function Setup() {
                   />
                   <span className="mt-1.5 flex items-center gap-1 text-xs font-medium">
                     {i < step &&
+                    !(s.id === "account" && plexSelected && plexLater && !plexSigned) &&
                     (!((s.id === "account" ? "plex" : s.id) in serverSteps) ||
                       serverSteps[s.id === "account" ? "plex" : s.id]) ? (
                       <Check size={12} className="text-primary" />
@@ -908,6 +993,9 @@ export default function Setup() {
                       <span className="tabular-nums">{i + 1}.</span>
                     )}{" "}
                     {s.title}
+                    {s.id === "account" && plexSelected && plexLater && !plexSigned
+                      ? ` · ${t("Plex comes later")}`
+                      : ""}
                   </span>
                 </button>
               </li>
@@ -916,44 +1004,46 @@ export default function Setup() {
         </div>
       }
       footer={
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="ghost" disabled={step === 0 || saving} onClick={() => setStep(step - 1)}>
-            {t("Back")}
-          </Button>
-          {/* After setup, only the owner account can sign in. */}
-          {stepId === "sources" || stepId === "indexers" || stepId === "catalog" ? (
-            <label className="flex items-center gap-2 text-xs text-fg-muted">
-              <Checkbox
-                checked={Boolean(skipped[stepId])}
-                onChange={(e) => setSkipped({ ...skipped, [stepId]: e.currentTarget.checked })}
-              />
-              {t("Skip the connection test")}
-            </label>
-          ) : null}
-          <span className="flex-1" />
-          {!advanceOk && stepId !== "cache" ? (
-            <span className="hidden text-xs text-fg-muted sm:inline">
-              {stepId === "sources" || stepId === "indexers" || stepId === "catalog"
-                ? t("You can finish now and add this later.")
-                : t("Complete and test this step to continue.")}
-            </span>
-          ) : null}
-          {(stepId === "sources" || stepId === "indexers" || stepId === "catalog") && !advanceOk ? (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-3">
             <Button
-              variant="outline"
-              disabled={saving || (!localDone && !plexSigned)}
-              onClick={() => void next({ force: true })}
+              variant="ghost"
+              disabled={step === 0 || saving}
+              onClick={() => setStep(step - 1)}
             >
-              {t("Finish now, add sources later")}
+              {t("Back")}
             </Button>
+            {stepId === "sources" || stepId === "indexers" || stepId === "catalog" ? (
+              <label className="flex items-center gap-2 text-xs text-fg-muted">
+                <Checkbox
+                  checked={Boolean(skipped[stepId])}
+                  onChange={(e) => setSkipped({ ...skipped, [stepId]: e.currentTarget.checked })}
+                />
+                {t("Skip the connection test")}
+              </label>
+            ) : null}
+            <span className="flex-1" />
+            <Button className="shrink-0" disabled={!advanceOk || saving} onClick={() => void next()}>
+              {saving
+                ? t("Saving…")
+                : step === steps.length - 1
+                  ? t("Finish setup")
+                  : t("Save and continue")}
+            </Button>
+          </div>
+          {(stepId === "sources" || stepId === "indexers" || stepId === "catalog") && !advanceOk ? (
+            <div className="text-right">
+              <Button
+                variant="link"
+                disabled={saving || (!localDone && !plexSigned)}
+                onClick={() => void next({ force: true })}
+              >
+                {stepId === "catalog"
+                  ? t("Finish now, add the TMDB key later")
+                  : t("Finish now, add sources later")}
+              </Button>
+            </div>
           ) : null}
-          <Button disabled={!advanceOk || saving} onClick={() => void next()}>
-            {saving
-              ? t("Saving…")
-              : step === steps.length - 1
-                ? t("Finish setup")
-                : t("Save and continue")}
-          </Button>
         </div>
       }
     >
@@ -972,128 +1062,80 @@ export default function Setup() {
           </p>
           <p className="text-sm text-fg-muted">
             {t(
-              "People at home use the address on each app. People away from home use Plex, or a VPN such as Tailscale.",
+              "People at home use the address on each app. People away from home use Plex, or a private network tool (Tailscale).",
             )}
           </p>
           <div className="grid gap-4 md:grid-cols-2">
-            {apps
-              .filter((item) => item.id === "plex" || item.id === "jellyfin")
-              .map((item) => (
-                <IntegrationAppCard
-                  key={item.id}
-                  identity={{ id: item.id, name: item.name }}
-                  description={item.description}
-                  logo={
-                    item.id === "plex" ? (
-                      <PlexMark />
-                    ) : item.id === "jellyfin" ? (
-                      <JellyfinMark />
-                    ) : item.id === "emby" ? (
-                      <EmbyMark />
-                    ) : undefined
-                  }
-                  enabled={Boolean(frontends[item.id])}
-                  disabled={saving}
-                  busy={saving}
-                  onToggle={(enabled) => setFrontends({ ...frontends, [item.id]: enabled })}
-                />
-              ))}
+            {apps.map((item) => (
+              <IntegrationAppCard
+                key={item.id}
+                identity={{ id: item.id, name: item.name }}
+                description={item.description}
+                logo={setupAppLogo(item.id)}
+                enabled={Boolean(frontends[item.id])}
+                disabled={saving}
+                busy={saving}
+                onToggle={(enabled) => setFrontends({ ...frontends, [item.id]: enabled })}
+              />
+            ))}
           </div>
-          {apps.some((item) => item.id !== "plex" && item.id !== "jellyfin") ? (
-            <details>
-              <summary className="cursor-pointer text-sm font-medium text-fg">
-                {t("More apps")}
-              </summary>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                {apps
-                  .filter((item) => item.id !== "plex" && item.id !== "jellyfin")
-                  .map((item) => (
-                    <IntegrationAppCard
-                      key={item.id}
-                      identity={{ id: item.id, name: item.name }}
-                      description={item.description}
-                      logo={item.id === "emby" ? <EmbyMark /> : undefined}
-                      enabled={Boolean(frontends[item.id])}
-                      disabled={saving}
-                      busy={saving}
-                      onToggle={(enabled) => setFrontends({ ...frontends, [item.id]: enabled })}
-                    />
-                  ))}
-              </div>
-            </details>
-          ) : null}
         </div>
       ) : null}
       {stepId === "account" && showLocalOwner ? (
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setSaving(true);
-            setError(null);
-            void api
-              .localSetup(localUsername, localPassword)
-              .then(async ({ token }) => {
-                setToken(token);
-                setLocalPassword("");
-                setLocalPasswordAgain("");
-                setLocalDone(true);
-                const status = await api.setupStatus();
-                setServerSteps(
-                  Object.fromEntries(status.steps.map((item) => [item.id, item.complete])),
-                );
-                setStep(step + 1);
-              })
-              .catch(setError)
-              .finally(() => setSaving(false));
-          }}
-        >
-          <Field label={t("Username")} htmlFor="setup-owner-username">
-            <Input
-              id="setup-owner-username"
-              autoComplete="username"
-              value={localUsername}
-              onChange={(e) => setLocalUsername(e.currentTarget.value)}
-            />
-          </Field>
-          <Field label={t("Password")} htmlFor="setup-owner-password">
-            <PasswordInput
-              id="setup-owner-password"
-              autoComplete="new-password"
-              value={localPassword}
-              onChange={(e) => setLocalPassword(e.currentTarget.value)}
-            />
-          </Field>
-          <Field label={t("Password again")} htmlFor="setup-owner-password-again">
-            <PasswordInput
-              id="setup-owner-password-again"
-              autoComplete="new-password"
-              value={localPasswordAgain}
-              onChange={(e) => setLocalPasswordAgain(e.currentTarget.value)}
-            />
-          </Field>
-          <p className="text-sm text-fg-muted">
-            {tn(
-              3 -
-                [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(Boolean)
-                  .length,
-              "{n} required field left",
-              "{n} required fields left",
-              {
-                n:
+        <div className="space-y-4">
+          {plexSelected && plexLater ? (
+            <p className="text-sm text-fg-muted">
+              {t("Plex comes later. This login is only for Ether. You will connect Plex from Apps.")}
+            </p>
+          ) : null}
+          {localDone ? (
+            <p className="text-sm text-fg-muted">{t("Owner created")}</p>
+          ) : (
+            <>
+              <Field label={t("Username")} htmlFor="setup-owner-username">
+                <Input
+                  id="setup-owner-username"
+                  autoComplete="username"
+                  value={localUsername}
+                  onChange={(e) => setLocalUsername(e.currentTarget.value)}
+                />
+              </Field>
+              <Field label={t("Password")} htmlFor="setup-owner-password">
+                <PasswordInput
+                  id="setup-owner-password"
+                  autoComplete="new-password"
+                  value={localPassword}
+                  onChange={(e) => setLocalPassword(e.currentTarget.value)}
+                />
+              </Field>
+              <Field label={t("Password again")} htmlFor="setup-owner-password-again">
+                <PasswordInput
+                  id="setup-owner-password-again"
+                  autoComplete="new-password"
+                  value={localPasswordAgain}
+                  onChange={(e) => setLocalPasswordAgain(e.currentTarget.value)}
+                />
+              </Field>
+              <p className="text-sm text-fg-muted">
+                {tn(
                   3 -
-                  [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(Boolean)
-                    .length,
-              },
-            )}
-          </p>
-          <Button
-            type="submit"
-            disabled={saving || localDone || !localUsername.trim() || !passwordsMatch}
-          >
-            {localDone ? t("Owner created") : t("Create owner")}
-          </Button>
-        </form>
+                    [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(
+                      Boolean,
+                    ).length,
+                  "{n} required field left",
+                  "{n} required fields left",
+                  {
+                    n:
+                      3 -
+                      [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(
+                        Boolean,
+                      ).length,
+                  },
+                )}
+              </p>
+            </>
+          )}
+        </div>
       ) : null}
       {stepId === "account" && plexSelected && !plexLater ? (
         <div className="space-y-4">
@@ -1156,49 +1198,30 @@ export default function Setup() {
               {t("Claim server")}
             </Button>
           ) : null}
-          <Button variant="outline" disabled={saving} onClick={() => setPlexLater(true)}>
-            {t("Connect Plex later")}
-          </Button>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" disabled={saving} onClick={() => setPlexLater(true)}>
+              {t("Connect Plex later")}
+            </Button>
+          </div>
         </div>
       ) : null}
 
       {stepId === "sources" ? (
-        <div className="space-y-6">
-          {providers.length === 0 && debrid.length === 0 && !readyMade ? (
-            <div className="space-y-3">
-              <p className="text-sm text-fg-muted" role="status">
-                {debridSupported
-                  ? t("Add a debrid account, a Usenet provider, or both, and test each one.")
-                  : t("Add a Usenet provider and test it.")}
-              </p>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setReadyMade(true);
-                  if (!indexers.some((item) => isStremio(item))) {
-                    setIndexers([...indexers, blankIndexer("stremio")]);
-                  }
-                }}
-              >
-                {t("Use a ready-made setup")}
-              </Button>
-              <p className="text-sm text-fg-muted">
-                {t("A torrent addon needs no account. Paste its address on the next step.")}
-              </p>
-            </div>
-          ) : null}
+        <div className="space-y-3">
           {debridSupported ? (
-            <section className="space-y-4" aria-labelledby="setup-debrid">
-              <div>
-                <h3 id="setup-debrid" className="text-sm font-semibold text-fg">
-                  {t("Debrid accounts")}
-                </h3>
-                <p className="text-sm text-fg-muted">
-                  {t(
-                    "Torrents your service already holds stream over HTTPS. Use your account's API token.",
-                  )}
-                </p>
-              </div>
+            <SourceChoice
+              pressed={debrid.length > 0}
+              logo={<KeyRound size={18} />}
+              title={t("Debrid service")}
+              line={t("Real-Debrid, TorBox, AllDebrid… (fast, paid)")}
+              onClick={() => {
+                if (debrid.length === 0) {
+                  setDebrid([blankDebrid()]);
+                  return;
+                }
+                if (debrid.every((row) => row.apiKey.trim() === "")) setDebrid([]);
+              }}
+            >
               {debrid.map((d, i) => (
                 <fieldset
                   key={d.id || i}
@@ -1235,7 +1258,10 @@ export default function Setup() {
                             target="_blank"
                             rel="noreferrer"
                           >
-                            {t("Where do I find this?")}
+                            {t("Find your {service} API token", {
+                              service:
+                                DEBRID_KINDS.find((k) => k.value === d.kind)?.label ?? d.kind,
+                            })}
                           </a>
                         ) : null}
                       </Field>
@@ -1268,14 +1294,24 @@ export default function Setup() {
               <Button variant="outline" onClick={() => setDebrid([...debrid, blankDebrid()])}>
                 <Plus size={15} /> {t("Add debrid account")}
               </Button>
-            </section>
+            </SourceChoice>
           ) : null}
-          <section className="space-y-4" aria-labelledby="setup-usenet">
-            <div>
-              <h3 id="setup-usenet" className="text-sm font-semibold text-fg">
-                {t("Usenet providers")}
-              </h3>
-            </div>
+          <SourceChoice
+            pressed={providers.length > 0}
+            logo={<Newspaper size={18} />}
+            title={t("Usenet provider")}
+            line={t("NZB login from a provider you pay")}
+            onClick={() => {
+              if (providers.length === 0) {
+                setProviders([blankProvider()]);
+                return;
+              }
+              if (providers.every((row) => !row.host.trim() && !row.username.trim() && !row.name.trim())) {
+                setProviders([]);
+              }
+            }}
+          >
+            <h3 className="text-sm font-semibold text-fg">{t("Usenet providers")}</h3>
             {providers.map((p, i) => (
               <fieldset key={p.id || i} className="rounded-xl border border-border bg-surface p-4">
                 <legend className="px-1 text-sm font-medium text-fg">
@@ -1343,9 +1379,6 @@ export default function Setup() {
                     />{" "}
                     {t("Backfill only")}
                   </label>
-                  <span className="text-fg-muted">
-                    {t("Block accounts can be marked as backfill.")}
-                  </span>
                   <label className="flex items-center gap-2">
                     <Switch
                       checked={p.enabled}
@@ -1372,7 +1405,34 @@ export default function Setup() {
             <Button variant="outline" onClick={() => setProviders([...providers, blankProvider()])}>
               <Plus size={15} /> {t("Add provider")}
             </Button>
-          </section>
+          </SourceChoice>
+          <SourceChoice
+            pressed={readyMade || indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL)}
+            logo={<StremioMark />}
+            title="Torrentio"
+            line={t("finds releases; needs debrid to play")}
+            onClick={() => {
+              const chosen = indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL);
+              if (readyMade || chosen) {
+                const removed = indexers.filter(
+                  (item) => isStremio(item) && item.url.trim() === TORRENTIO_URL,
+                );
+                setIndexers(indexers.filter((item) => !removed.some((row) => row.id === item.id)));
+                setIndexerTests((current) => {
+                  const nextTests = { ...current };
+                  for (const row of removed) delete nextTests[row.id];
+                  return nextTests;
+                });
+                setReadyMade(false);
+                return;
+              }
+              const row = { ...blankIndexer("stremio"), name: "Torrentio", url: TORRENTIO_URL };
+              const rest = indexers.filter((item) => !(isStremio(item) && !item.url.trim()));
+              setIndexers([...rest, row]);
+              setReadyMade(true);
+              void runTest("indexer", row.id, () => api.testIndexer(normalizedIndexer(row)));
+            }}
+          />
         </div>
       ) : null}
 
@@ -1566,7 +1626,14 @@ export default function Setup() {
               {t("{free} free of {total} on this disk.", {
                 free: formatBytes(disk.freeBytes),
                 total: formatBytes(disk.totalBytes),
-              })}
+              })}{" "}
+              {cachePresetKey(cfg.cache) === "everyday"
+                ? t("Suggested because {free} is free. 32 GiB is enough to start.", {
+                    free: formatBytes(disk.freeBytes),
+                  })
+                : t("Suggested because only {free} is free on this disk.", {
+                    free: formatBytes(disk.freeBytes),
+                  })}
             </p>
           ) : null}
           <CachePresetCards
@@ -1620,32 +1687,6 @@ export default function Setup() {
               </div>
             </Field>
           </section>
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-semibold text-fg">
-              {t("Do you watch 4K at home?")}
-            </legend>
-            <p className="text-sm text-fg-muted">
-              {t("Home playback stays at 1080p unless you say yes. Away from home stays at 1080p.")}
-            </p>
-            <label className="flex items-center gap-2 text-sm text-fg">
-              <input
-                type="radio"
-                name="setup-4k"
-                checked={cfg.quality.default !== "4K"}
-                onChange={() => setCfg({ ...cfg, quality: { ...cfg.quality, default: "1080p" } })}
-              />
-              {t("No, 1080p is enough")}
-            </label>
-            <label className="flex items-center gap-2 text-sm text-fg">
-              <input
-                type="radio"
-                name="setup-4k"
-                checked={cfg.quality.default === "4K"}
-                onChange={() => setCfg({ ...cfg, quality: { ...cfg.quality, default: "4K" } })}
-              />
-              {t("Yes, use 4K at home")}
-            </label>
-          </fieldset>
           <p className="text-sm text-fg-muted">
             {tn(
               cfg.catalog.tmdbKey.trim() && cfg.catalog.tmdbKey !== "••••"
@@ -1674,11 +1715,13 @@ export default function Setup() {
           </Alert>
         </div>
       ) : null}
-      <p className="pt-2 text-center text-xs text-fg-muted">
-        <Button variant="link" onClick={() => navigate("/cluster")}>
-          {t("Join a cluster instead")}
-        </Button>
-      </p>
+      {stepId === "language" ? (
+        <p className="pt-2 text-center text-xs text-fg-muted">
+          <Button variant="link" onClick={() => navigate("/cluster")}>
+            {t("Join a cluster instead")}
+          </Button>
+        </p>
+      ) : null}
     </WizardLayout>
   );
 }

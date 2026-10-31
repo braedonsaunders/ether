@@ -224,4 +224,28 @@ describe("health reporting", () => {
     expect(screen.getByText("Certificate is not valid yet")).toBeInTheDocument();
     expect(screen.queryByText("Not verified")).toBeNull();
   });
+
+  it("treats a new server's missing sources and catalogue as setup, not a failure", async () => {
+    renderApp("/", {}, (fake) => {
+      const original = fake.fetch;
+      fake.fetch = async (input, init) => {
+        const response = await original(input, init);
+        if (!String(input).endsWith("/dashboard")) return response;
+        const body = await response.json();
+        body.plexEnabled = false;
+        body.sections.providers = [];
+        body.sections.debrid = { enabled: false };
+        body.sections.indexers = [{ indexer: "Torrentio", enabled: true, hitsLimit: 0 }];
+        body.sections.catalog = { movies: 0, shows: 0 };
+        body.sections.cache = { used: 0, budget: 32 * 1024 ** 3 };
+        return new Response(JSON.stringify(body), { status: 200 });
+      };
+    });
+    expect(
+      await screen.findByRole("button", { name: "Server health: Getting started" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Server health: Getting started" }));
+    expect(screen.getAllByText("2 things to set up").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Server health: Problem" })).toBeNull();
+  });
 });
