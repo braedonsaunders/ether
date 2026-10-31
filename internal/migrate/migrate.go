@@ -116,6 +116,7 @@ type media struct {
 	Key   string `xml:"ratingKey,attr"`
 	Type  string `xml:"type,attr"`
 	Title string `xml:"title,attr"`
+	Year  int    `xml:"year,attr"`
 	GUID  string `xml:"guid,attr"`
 	GUIDs []struct {
 		ID string `xml:"id,attr"`
@@ -147,6 +148,7 @@ type container struct {
 		} `xml:"Guid"`
 		Type  string `xml:"type,attr"`
 		Title string `xml:"title,attr"`
+		Year  int    `xml:"year,attr"`
 		GUID  string `xml:"guid,attr"`
 	} `xml:"Directory"`
 	Videos    []media `xml:"Video"`
@@ -246,15 +248,27 @@ func (s *Service) mapMedia(ctx context.Context, base, token string, m media) (co
 		}
 	}
 	if m.Type == "episode" && m.Grandparent != "" && base != "" {
-		c, e := s.get(ctx, base, token, "/library/metadata/"+url.PathEscape(m.Grandparent))
+		c, e := s.get(ctx, base, token, "/library/metadata/"+url.PathEscape(m.Grandparent)+"?includeGuids=1")
 		if e == nil {
 			for _, d := range c.Directories {
-				show := media{Type: "show", GUID: d.GUID, GUIDs: d.GUIDs}
+				show := media{Type: "show", Title: d.Title, Year: d.Year, GUID: d.GUID, GUIDs: d.GUIDs}
 				k, e := s.mapMedia(ctx, base, token, show)
 				if e == nil {
 					return core.EpisodeKey(k.TMDB(), m.Season, m.Episode), nil
 				}
 			}
+			for _, item := range append(c.Videos, c.Metadata...) {
+				item.Type = "show"
+				k, e := s.mapMedia(ctx, base, token, item)
+				if e == nil {
+					return core.EpisodeKey(k.TMDB(), m.Season, m.Episode), nil
+				}
+			}
+		}
+	}
+	if s.catalog != nil && m.Title != "" && m.Year > 0 && (m.Type == "movie" || m.Type == "show") {
+		if t, e := s.searchTitle(ctx, m.Type, m.Title, m.Year); e == nil && t != nil && t.Key != 0 {
+			return t.Key, nil
 		}
 	}
 	return 0, core.ErrNotFound
@@ -277,7 +291,7 @@ func (s *Service) pages(ctx context.Context, base, token, path string) ([]media,
 			if key == "" {
 				key = d.Key
 			}
-			items = append(items, media{Key: key, Title: d.Title, Type: d.Type, GUID: d.GUID, GUIDs: d.GUIDs})
+			items = append(items, media{Key: key, Title: d.Title, Year: d.Year, Type: d.Type, GUID: d.GUID, GUIDs: d.GUIDs})
 		}
 		out = append(out, items...)
 		addProgress(ctx, func(pr *PreviewProgress) { pr.Pages++ })
@@ -358,6 +372,9 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 				if q.HistoryOnly && m.Views == 0 {
 					return
 				}
+				if m.Views == 0 && m.Offset == 0 && m.Rating == 0 {
+					return
+				}
 				k, me := mapper.resolve(ctx, m, false)
 				if me != nil {
 					if errors.Is(me, context.Canceled) {
@@ -368,10 +385,8 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 					return
 				}
 				addProgress(ctx, func(pr *PreviewProgress) { pr.Matched++ })
-				if m.Views > 0 || m.Offset > 0 || m.Rating > 0 {
-					mapped[i].keep = true
-					mapped[i].item = Item{External: m.Key, Key: k, Title: m.Title, Viewer: v.LocalUserID, Views: m.Views, Offset: m.Offset, Duration: m.Duration, Rating: m.Rating, ViewedAt: m.ViewedAt}
-				}
+				mapped[i].keep = true
+				mapped[i].item = Item{External: m.Key, Key: k, Title: m.Title, Viewer: v.LocalUserID, Views: m.Views, Offset: m.Offset, Duration: m.Duration, Rating: m.Rating, ViewedAt: m.ViewedAt}
 			}); e != nil {
 				return p, e
 			}
@@ -392,7 +407,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 				p.Warnings = append(p.Warnings, "Collections unavailable for section "+section.Title)
 			} else {
 				for _, c := range cs {
-					list, e := s.readList(ctx, base, token, c, "collection", v.LocalUserID, keyMap)
+					list, e := s.readList(ctx, &mapper, c, "collection", v.LocalUserID)
 					if e != nil {
 						p.Warnings = append(p.Warnings, "Collection unavailable: "+c.Title)
 					} else {
@@ -459,7 +474,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 			p.Warnings = append(p.Warnings, "Playlists unavailable for "+v.Name)
 		} else {
 			for _, pl := range pls {
-				l, e := s.readList(ctx, base, token, pl, "playlist", v.LocalUserID, keyMap)
+				l, e := s.readList(ctx, &mapper, pl, "playlist", v.LocalUserID)
 				if e != nil {
 					p.Warnings = append(p.Warnings, "Playlist unavailable: "+pl.Title)
 				} else {
@@ -472,20 +487,20 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 	addProgress(ctx, func(pr *PreviewProgress) { pr.Phase = "saving" })
 	return s.savePlan(ctx, p)
 }
-func (s *Service) readList(ctx context.Context, base, token string, m media, kind string, viewer int64, keys map[string]core.RatingKey) (List, error) {
+func (s *Service) readList(ctx context.Context, mapper *sourceMapper, m media, kind string, viewer int64) (List, error) {
 	path := "/library/collections/" + url.PathEscape(m.Key) + "/children"
 	if kind == "playlist" {
 		path = "/playlists/" + url.PathEscape(m.Key) + "/items"
 	}
-	items, e := s.pages(ctx, base, token, path)
+	items, e := s.pages(ctx, mapper.base, mapper.token, path)
 	l := List{External: m.Key, Name: m.Title, Kind: kind, Viewer: viewer, Keys: []core.RatingKey{}}
 	if e != nil {
 		return l, e
 	}
 	for _, item := range items {
-		k := keys[item.Key]
+		k := mapper.cached(item.Key)
 		if k == 0 {
-			k, _ = s.mapMedia(ctx, base, token, item)
+			k, _ = mapper.resolve(ctx, item, false)
 		}
 		if k != 0 {
 			l.Keys = append(l.Keys, k)

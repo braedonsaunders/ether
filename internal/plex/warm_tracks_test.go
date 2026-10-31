@@ -69,3 +69,33 @@ func TestMetadataListsWarmProbedTracks(t *testing.T) {
 		}
 	}
 }
+
+// When Variants (the "Play Version" picker) is wired — as it always is in
+// production — a completed warm probe must also populate the Auto variant's
+// Stream list and Media attributes on the detail page, instead of being
+// overwritten by the variant resolver's one-audio estimate.
+func TestMetadataWithVariantsListsWarmProbedTracks(t *testing.T) {
+	probed := sampleInfo
+	probed.Streams = append([]core.StreamInfo(nil), sampleInfo.Streams...)
+	pb := &warmProbePlayback{
+		Playback: &fakeVariantPlayback{fakePlayback: newFakePlayback(sampleInfo)},
+		info:     probed,
+		ok:       true,
+	}
+	f := newVariantFixture(t, pb)
+	pr := &Request{User: &ownerUser, ClientID: "client-1", Product: "Plex for Android (TV)", Platform: "Android", Device: "SHIELD Android TV"}
+
+	md := f.srv.metadata(context.Background(), pr, &fightClub, renderOpts{detail: true, media: true})
+	if len(md.Media) != 3 {
+		t.Fatalf("media count = %d, want 3 variants", len(md.Media))
+	}
+	audio, subs, selAudio := countTracks(md.Media[0].Part[0].Stream)
+	if audio != 2 || subs != 2 || selAudio != 1 {
+		t.Fatalf("Auto variant warm streams: audio=%d subs=%d selAudio=%d, want 2/2/1", audio, subs, selAudio)
+	}
+	for i := 1; i < len(md.Media); i++ {
+		if len(md.Media[i].Part[0].Stream) != 0 {
+			t.Errorf("non-Auto variant %d should not carry warm streams before playback: %+v", i, md.Media[i].Part[0].Stream)
+		}
+	}
+}
