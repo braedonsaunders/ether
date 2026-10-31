@@ -58,7 +58,7 @@ func TestCurrentProgrammeDoesNotScanTheGuide(t *testing.T) {
 	if err != nil || len(channels) != sourcesN*channelsN {
 		t.Fatalf("channels %d %v", len(channels), err)
 	}
-	if elapsed := time.Since(start); elapsed > 400*time.Millisecond {
+	if elapsed := time.Since(start); elapsed > guideBound(400*time.Millisecond) {
 		t.Fatalf("allowed channels scanned the guide: %s", elapsed)
 	}
 	start = time.Now()
@@ -66,7 +66,7 @@ func TestCurrentProgrammeDoesNotScanTheGuide(t *testing.T) {
 	if err != nil || len(hub.Items) == 0 || hub.Items[0].Title != "On now" {
 		t.Fatalf("home hub %+v %v", hub.Items, err)
 	}
-	if elapsed := time.Since(start); elapsed > 400*time.Millisecond {
+	if elapsed := time.Since(start); elapsed > guideBound(400*time.Millisecond) {
 		t.Fatalf("plex on-now hub scanned the guide: %s", elapsed)
 	}
 	memo := WithChannelMemo(ctx)
@@ -77,7 +77,7 @@ func TestCurrentProgrammeDoesNotScanTheGuide(t *testing.T) {
 			t.Fatalf("channel permit %v %v", ok, err)
 		}
 	}
-	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+	if elapsed := time.Since(start); elapsed > guideBound(50*time.Millisecond) {
 		t.Fatalf("repeat channel checks scanned the guide: %s", elapsed)
 	}
 	before := s.policyReads.Load()
@@ -96,7 +96,7 @@ func TestCurrentProgrammeDoesNotScanTheGuide(t *testing.T) {
 			t.Fatalf("on now loaded %d programmes for %s", perChannel[programme.ChannelID], programme.ChannelID)
 		}
 	}
-	if elapsed := time.Since(start); elapsed > 400*time.Millisecond {
+	if elapsed := time.Since(start); elapsed > guideBound(400*time.Millisecond) {
 		t.Fatalf("on now scanned the guide: %s", elapsed)
 	}
 }
