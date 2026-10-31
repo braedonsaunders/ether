@@ -46,7 +46,7 @@ func TestQuickConnect(t *testing.T) {
 	if err = q.Approve(ctx, code, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err = q.Approve(ctx, code, 1); !errors.Is(err, core.ErrUnauthorized) {
+	if err = q.Approve(ctx, code, 1); !errors.Is(err, identity.ErrQuickConnectUsed) {
 		t.Fatalf("duplicate approval: %v", err)
 	}
 	var wg sync.WaitGroup
@@ -69,6 +69,12 @@ func TestQuickConnect(t *testing.T) {
 	}
 	if len(tokens) != 1 {
 		t.Fatalf("successful redemptions: %d", len(tokens))
+	}
+	if err = q.Approve(ctx, code, 1); !errors.Is(err, identity.ErrQuickConnectUsed) {
+		t.Fatalf("consumed approval: %v", err)
+	}
+	if err = q.Approve(ctx, "ZZZZZZ", 1); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("unknown code: %v", err)
 	}
 	grants, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
 	if err != nil {

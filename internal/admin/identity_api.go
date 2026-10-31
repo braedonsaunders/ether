@@ -144,14 +144,21 @@ func (h *Handler) handleApproveQuickConnect(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err = h.deps.QuickConnect.Approve(r.Context(), body.Code, u.ID); err != nil {
-		if errors.Is(err, identity.ErrQuickConnectExpired) {
-			writeError(w, 400, "expired", "code expired")
-			return
-		}
-		writeError(w, 400, "invalid", "invalid code")
+		writeQuickConnectApproveError(w, err)
 		return
 	}
 	writeJSON(w, 200, quickConnectApproval(r, h, body.Code, u.ID))
+}
+
+func writeQuickConnectApproveError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, identity.ErrQuickConnectExpired):
+		writeError(w, 400, "expired", "code expired")
+	case errors.Is(err, identity.ErrQuickConnectUsed):
+		writeError(w, 400, "used", "code already used")
+	default:
+		writeError(w, 400, "invalid", "invalid code")
+	}
 }
 
 func quickConnectApproval(r *http.Request, h *Handler, code string, viewerID int64) map[string]any {
@@ -321,11 +328,7 @@ func (h *Handler) handleOwnerQuickConnect(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err = h.deps.QuickConnect.Approve(r.Context(), body.Code, id); err != nil {
-		if errors.Is(err, identity.ErrQuickConnectExpired) {
-			writeError(w, 400, "expired", "code expired")
-			return
-		}
-		writeError(w, 400, "invalid", "invalid code")
+		writeQuickConnectApproveError(w, err)
 		return
 	}
 	writeJSON(w, 200, quickConnectApproval(r, h, body.Code, id))

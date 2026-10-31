@@ -181,9 +181,16 @@ func (q *QuickConnect) approve(ctx context.Context, surface, code string, viewer
 
 func (q *QuickConnect) rejectCode(ctx context.Context, code string) error {
 	var expires int64
-	err := q.db.QueryRowContext(ctx, `SELECT expires FROM identity_quickconnect WHERE code=?`, code).Scan(&expires)
+	var consumed int
+	var viewer sql.NullInt64
+	err := q.db.QueryRowContext(ctx, `SELECT expires, consumed, viewer_id FROM identity_quickconnect WHERE code=?`, code).Scan(&expires, &consumed, &viewer)
 	if err != nil {
 		return core.ErrUnauthorized
+	}
+	// A code that already signed a device in stays "used" after its window
+	// closes. Only a real code that was never approved is expired.
+	if consumed != 0 || viewer.Valid {
+		return ErrQuickConnectUsed
 	}
 	if expires <= q.now().UnixMilli() {
 		return ErrQuickConnectExpired
@@ -204,6 +211,9 @@ var ErrQuickConnectPending = errors.New("identity: quick connect pending")
 
 // ErrQuickConnectExpired means the code was real and its window has closed.
 var ErrQuickConnectExpired = errors.New("identity: quick connect expired")
+
+// ErrQuickConnectUsed means the code was already approved or redeemed.
+var ErrQuickConnectUsed = errors.New("identity: quick connect already used")
 
 // ApprovedTarget is the device a successful approval was bound to.
 type ApprovedTarget struct {
