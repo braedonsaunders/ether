@@ -38,6 +38,10 @@ func captureTestServer(t *testing.T, items []capturedItem, calls *int) *httptest
 		case "/Items":
 			_ = json.NewEncoder(w).Encode(map[string]any{"Items": items})
 		default:
+			if strings.HasSuffix(r.URL.Path, "/Views") {
+				_, _ = w.Write([]byte(`{"Items":[]}`))
+				return
+			}
 			*calls++
 			if !strings.Contains(r.Header.Get("Authorization"), `Version="8.5.9"`) || !strings.Contains(r.Header.Get("Authorization"), `DeviceId="run-device"`) || !strings.Contains(r.Header.Get("Authorization"), `Token="owned-token"`) {
 				t.Error("lost request identity")
@@ -70,8 +74,14 @@ func TestCapturedBindingsArchiveProvenance(t *testing.T) {
 	}
 	for _, key := range []string{"${id_2}", "${id_3}", "${id_8}"} {
 		if _, ok := m.items[key]; ok {
-			t.Fatalf("new metadata needs review: %s", key)
+			t.Fatalf("view or season stored as a provider item: %s", key)
 		}
+	}
+	if m.views["${id_2}"].CollectionType != "movies" || m.views["${id_3}"].CollectionType != "tvshows" {
+		t.Fatalf("captured views: movies=%q tv=%q", m.views["${id_2}"].CollectionType, m.views["${id_3}"].CollectionType)
+	}
+	if season := m.seasons["${id_8}"]; season.SeriesID != "${id_5}" || season.SeriesName != "The Scene" || season.Index != 1 || season.Year != 2004 {
+		t.Fatalf("captured season: %+v", season)
 	}
 	calls := 0
 	s := captureTestServer(t, nil, &calls)
@@ -89,6 +99,45 @@ func TestCapturedBindingsArchiveProvenance(t *testing.T) {
 		t.Fatal("binding mutated recorded request or caller variables")
 	}
 }
+func TestCapturedViewAndSeasonBindFromArchive(t *testing.T) {
+	p := captureTestProtocol(t)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/Users/Me":
+			_, _ = w.Write([]byte(`{"Id":"owned-user"}`))
+		case strings.HasSuffix(r.URL.Path, "/Views"):
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{
+				map[string]any{"Id": "movies-view", "Name": "Movies", "Type": "CollectionFolder", "CollectionType": "movies"},
+				map[string]any{"Id": "shows-view", "Name": "TV Shows", "Type": "CollectionFolder", "CollectionType": "tvshows"},
+			}})
+		case r.URL.Path == "/Items":
+			_ = json.NewEncoder(w).Encode(map[string]any{"Items": []any{
+				map[string]any{"Id": "scene-series", "Type": "Series", "ProviderIds": map[string]string{"Tmdb": "91461", "Imdb": "tt2201890", "Tvdb": "78927"}},
+				map[string]any{"Id": "scene-season-1", "Type": "Season", "SeriesId": "scene-series", "SeriesName": "The Scene", "IndexNumber": 1, "ProductionYear": 2004},
+				map[string]any{"Id": "scene-season-2", "Type": "Season", "SeriesId": "scene-series", "SeriesName": "The Scene", "IndexNumber": 2, "ProductionYear": 2004},
+			}})
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer s.Close()
+	p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+	vars := map[string]string{"user_id": "owned-user", "device_id": "run-device"}
+	if _, bound, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000005"), vars); err != nil || bound["id_2"] != "movies-view" {
+		t.Fatalf("movies view: %v bound=%v", err, bound)
+	}
+	if _, bound, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000006"), vars); err != nil || bound["id_3"] != "shows-view" {
+		t.Fatalf("shows view: %v bound=%v", err, bound)
+	}
+	if _, bound, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000143"), vars); err != nil || bound["id_8"] != "scene-season-1" {
+		t.Fatalf("season: %v bound=%v", err, bound)
+	}
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000145"), vars); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCapturedEditionSizeBindsOnlyTheMatchingCopy(t *testing.T) {
 	p := captureTestProtocol(t)
 	m := p.captures["infuse-jellyfin"]

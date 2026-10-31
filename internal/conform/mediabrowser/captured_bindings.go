@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -24,6 +25,30 @@ type capturedMetadata struct {
 	// sizes holds a positive media-source byte size when every captured
 	// response for that item agrees. Item-level Size is often absent.
 	sizes map[string]int64
+	// views are CollectionFolders. They have no provider identity. The
+	// captured Name is often the fixture redaction marker, so CollectionType
+	// is the identity that remains, checked against the name when the name
+	// was actually recorded.
+	views     map[string]capturedView
+	viewClash map[string]bool
+	// seasons are children of a captured series. The series alias must itself
+	// bind; the season is then the one IndexNumber of that series.
+	seasons     map[string]capturedSeason
+	seasonClash map[string]bool
+}
+type capturedView struct {
+	Name, CollectionType, SortName string
+}
+type capturedSeason struct {
+	SeriesID, SeriesName string
+	Index, Year          int
+}
+type discoveredItem struct {
+	capturedItem
+	SeriesID       string `json:"SeriesId"`
+	SeriesName     string `json:"SeriesName"`
+	IndexNumber    int    `json:"IndexNumber"`
+	ProductionYear int    `json:"ProductionYear"`
 }
 type capturedItem struct {
 	ID           string            `json:"Id"`
@@ -58,7 +83,7 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 	if !p.profiles[profile].isCaptured() {
 		return nil
 	}
-	m := &capturedMetadata{items: map[string]capturedItem{}, ambiguous: map[string]bool{}, sizes: map[string]int64{}}
+	m := &capturedMetadata{items: map[string]capturedItem{}, ambiguous: map[string]bool{}, sizes: map[string]int64{}, views: map[string]capturedView{}, viewClash: map[string]bool{}, seasons: map[string]capturedSeason{}, seasonClash: map[string]bool{}}
 	for _, r := range p.Corpus(profile) {
 		resp, err := conform.LoadFixture(filepath.Join(dir, profile, p.FixtureName(profile, r, true)+".json"))
 		if err != nil {
@@ -93,6 +118,8 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 		walk = func(v any) {
 			switch x := v.(type) {
 			case map[string]any:
+				recordCapturedFolder(m, x)
+				recordCapturedSeason(m, x)
 				b, _ := json.Marshal(x)
 				var item capturedItem
 				if json.Unmarshal(b, &item) == nil && capturedID.MatchString(item.ID) && item.Type != "" && len(item.ProviderIDs) > 0 {
@@ -156,6 +183,50 @@ func (p *Protocol) LoadCapturedBindings(dir, profile string) error {
 	p.captures[profile] = m
 	return nil
 }
+func recordCapturedFolder(m *capturedMetadata, raw map[string]any) {
+	id, _ := raw["Id"].(string)
+	kind, _ := raw["Type"].(string)
+	collection, _ := raw["CollectionType"].(string)
+	if !capturedID.MatchString(id) || kind != "CollectionFolder" || collection == "" {
+		return
+	}
+	view := capturedView{Name: stringField(raw["Name"]), CollectionType: collection, SortName: stringField(raw["SortName"])}
+	if old, ok := m.views[id]; ok && old != view {
+		m.viewClash[id] = true
+	}
+	m.views[id] = view
+}
+
+func recordCapturedSeason(m *capturedMetadata, raw map[string]any) {
+	id, _ := raw["Id"].(string)
+	kind, _ := raw["Type"].(string)
+	series, _ := raw["SeriesId"].(string)
+	index := jsonInt(raw["IndexNumber"])
+	if !capturedID.MatchString(id) || kind != "Season" || !capturedID.MatchString(series) || index <= 0 {
+		return
+	}
+	season := capturedSeason{SeriesID: series, SeriesName: stringField(raw["SeriesName"]), Index: index, Year: jsonInt(raw["ProductionYear"])}
+	if old, ok := m.seasons[id]; ok && old != season {
+		m.seasonClash[id] = true
+	}
+	m.seasons[id] = season
+}
+
+func stringField(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func jsonInt(v any) int {
+	n, ok := v.(float64)
+	if !ok || n != float64(int(n)) {
+		return 0
+	}
+	return int(n)
+}
+
+func redactedCapture(s string) bool { return strings.Contains(s, "[REDACTED]") }
+
 func canonicalProviders(in map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range in {
@@ -314,13 +385,15 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 	if m.user != "" {
 		run.values[strings.TrimSuffix(strings.TrimPrefix(m.user, "${"), "}")] = user.ID
 	}
-	var listing struct{ Items []capturedItem }
-	if !get("/Items?Recursive=true&Fields=ProviderIds,MediaSources", &listing) {
+	var listing struct {
+		Items []discoveredItem
+	}
+	if !get("/Items?Recursive=true&Fields=ProviderIds,MediaSources,SeriesName,ProductionYear", &listing) {
 		listing.Items = nil
 		out.Warnings = append(out.Warnings, "capture item discovery unavailable")
 	}
 	for i := range listing.Items {
-		size := editionSize(listing.Items[i])
+		size := editionSize(listing.Items[i].capturedItem)
 		listing.Items[i].ProviderIDs = canonicalProviders(listing.Items[i].ProviderIDs)
 		listing.Items[i].Size = size
 		listing.Items[i].MediaSources = nil
@@ -339,7 +412,7 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 		}
 		matches := map[string]bool{}
 		for _, candidate := range listing.Items {
-			if safeObservedID(candidate.ID) && matchingItem(wanted, candidate) {
+			if safeObservedID(candidate.ID) && matchingItem(wanted, candidate.capturedItem) {
 				matches[candidate.ID] = true
 			}
 		}
@@ -351,6 +424,10 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 			run.values[key] = id
 		}
 	}
+	bindCapturedViews(&run, m, func(v any) bool {
+		return get("/Users/"+url.PathEscape(run.user)+"/Views", v)
+	})
+	bindCapturedSeasons(&run, m, listing.Items)
 	keys := map[string]bool{}
 	for _, r := range p.Corpus(profile) {
 		if !r.FixtureOnly {
@@ -373,6 +450,91 @@ func (p *Protocol) discoverCaptured(ctx context.Context, c *http.Client, base, t
 	sort.Strings(diagnostics)
 	out.Warnings = append(out.Warnings, diagnostics...)
 	return out
+}
+
+func bindCapturedViews(run *capturedRun, m *capturedMetadata, get func(any) bool) {
+	var page struct {
+		Items []struct {
+			ID             string `json:"Id"`
+			Name           string `json:"Name"`
+			Type           string `json:"Type"`
+			CollectionType string `json:"CollectionType"`
+		}
+	}
+	loaded := run.user != "" && get(&page)
+	for alias, view := range m.views {
+		key := capturedID.FindStringSubmatch(alias)[1]
+		if m.viewClash[alias] || view.CollectionType == "" {
+			run.missing[key] = "ambiguous captured view"
+			continue
+		}
+		if !loaded {
+			run.missing[key] = "missing or ambiguous current view"
+			continue
+		}
+		matches := map[string]bool{}
+		for _, candidate := range page.Items {
+			if candidate.Type != "" && candidate.Type != "CollectionFolder" {
+				continue
+			}
+			if !safeObservedID(candidate.ID) || candidate.CollectionType != view.CollectionType {
+				continue
+			}
+			// The fixture redacts Name. A recorded name still has to match.
+			if view.Name != "" && !redactedCapture(view.Name) && candidate.Name != view.Name {
+				continue
+			}
+			matches[candidate.ID] = true
+		}
+		if len(matches) != 1 {
+			run.missing[key] = "missing or ambiguous current view"
+			continue
+		}
+		for id := range matches {
+			run.values[key] = id
+		}
+		delete(run.missing, key)
+	}
+}
+
+func bindCapturedSeasons(run *capturedRun, m *capturedMetadata, items []discoveredItem) {
+	for alias, season := range m.seasons {
+		key := capturedID.FindStringSubmatch(alias)[1]
+		series := capturedID.FindStringSubmatch(season.SeriesID)
+		if m.seasonClash[alias] || series == nil {
+			run.missing[key] = "ambiguous captured season"
+			continue
+		}
+		parent := run.values[series[1]]
+		if parent == "" {
+			run.missing[key] = "missing or ambiguous current typed provider identity"
+			continue
+		}
+		matches := map[string]bool{}
+		for _, candidate := range items {
+			if candidate.Type != "Season" || candidate.IndexNumber != season.Index || candidate.SeriesID != parent {
+				continue
+			}
+			if season.SeriesName != "" && !redactedCapture(season.SeriesName) && candidate.SeriesName != "" && candidate.SeriesName != season.SeriesName {
+				continue
+			}
+			if season.Year > 0 && candidate.ProductionYear > 0 && candidate.ProductionYear != season.Year {
+				continue
+			}
+			if !safeObservedID(candidate.ID) {
+				continue
+			}
+			matches[candidate.ID] = true
+		}
+		if len(matches) != 1 {
+			run.missing[key] = "missing or ambiguous current season"
+			continue
+		}
+		for id := range matches {
+			run.values[key] = id
+		}
+		delete(run.missing, key)
+	}
 }
 
 func (p *Protocol) bindCaptured(base, token, profile string, r conform.Request, vars map[string]string) (conform.Request, map[string]string, error) {
