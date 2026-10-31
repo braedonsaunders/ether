@@ -304,3 +304,183 @@ func TestTeardownGraceIsBoundedByCloses(t *testing.T) {
 		t.Fatalf("third refusal should be learned: %+v", st)
 	}
 }
+
+// widenTo steps p's cap once, as a success after the widen step would.
+func widenTo(t *testing.T, p *pool) {
+	t.Helper()
+	p.mu.Lock()
+	moved := p.widenLocked(p.limit.widenAt)
+	p.mu.Unlock()
+	if !moved {
+		t.Fatal("cap did not widen")
+	}
+	p.applySize()
+}
+
+func widenStep(p *pool) time.Duration {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.limit.widenStep
+}
+
+// A level the server keeps refusing is probed exponentially less often, up
+// to the cap; refusals with no widen in between keep the step.
+func TestRefusedWidenBacksOffExponentially(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{})
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 8)}, Options{limits: limitTiming{widen: 5 * time.Second, widenMax: 40 * time.Second}})
+	p := poolFor(t, f, "p")
+	tooMany := refusal("too many connections")
+	p.refused(tooMany, 4)
+	p.refused(tooMany, 4) // a second dial of the same burst
+	if got := widenStep(p); got != 5*time.Second {
+		t.Fatalf("first refusals: step %v", got)
+	}
+	for _, want := range []time.Duration{10, 20, 40, 40} {
+		widenTo(t, p)
+		if got := statsFor(f, "p").MaxConnections; got != 5 {
+			t.Fatalf("widened to %d, want 5", got)
+		}
+		p.refused(tooMany, 4)
+		if got := widenStep(p); got != want*time.Second {
+			t.Fatalf("after a refused widen: step %v, want %v", got, want*time.Second)
+		}
+		p.mu.Lock()
+		next := time.Until(p.limit.widenAt)
+		p.mu.Unlock()
+		if next < want*time.Second-time.Second {
+			t.Fatalf("next probe in %v, want about %v", next, want*time.Second)
+		}
+	}
+}
+
+// The backoff resets once a level holds: more established connections than
+// the refused level complete a command, or the server refuses only at a
+// higher level. A widened level nothing exercised does not reset it.
+func TestHeldLevelResetsWidenBackoff(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{})
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 8)}, Options{limits: limitTiming{widen: 5 * time.Second, widenMax: time.Minute}})
+	p := poolFor(t, f, "p")
+	tooMany := refusal("too many connections")
+	backedOff := func() {
+		t.Helper()
+		p.mu.Lock()
+		p.limit = connLimit{}
+		p.mu.Unlock()
+		p.refused(tooMany, 4)
+		widenTo(t, p)
+		p.refused(tooMany, 4)
+		widenTo(t, p)
+		p.refused(tooMany, 4)
+		widenTo(t, p)
+		p.refused(tooMany, 4)
+		if got := widenStep(p); got != 40*time.Second {
+			t.Fatalf("setup: step %v", got)
+		}
+	}
+
+	backedOff()
+	widenTo(t, p) // cap 5
+	p.mu.Lock()
+	live := p.live
+	p.live = 5 // five established connections, beyond the refused 4
+	p.heldLocked()
+	p.live = live
+	p.mu.Unlock()
+	if got := widenStep(p); got != 5*time.Second {
+		t.Fatalf("a connection beyond the refused level held: step %v", got)
+	}
+
+	backedOff()
+	widenTo(t, p) // cap 5
+	widenTo(t, p) // a whole step at 5 that no dial exercised
+	if got := widenStep(p); got != 40*time.Second {
+		t.Fatalf("an unexercised level reset the backoff: step %v", got)
+	}
+
+	backedOff()
+	widenTo(t, p)
+	p.refused(tooMany, 5)
+	if got := widenStep(p); got != 5*time.Second {
+		t.Fatalf("refused only at a higher level: step %v", got)
+	}
+
+	// While dials are in flight, live overstates what is established.
+	backedOff()
+	widenTo(t, p)
+	p.mu.Lock()
+	live, dialing := p.live, p.limit.dialing
+	p.live, p.limit.dialing = 5, 1
+	p.heldLocked()
+	p.live, p.limit.dialing = live, dialing
+	p.mu.Unlock()
+	if got := widenStep(p); got != 40*time.Second {
+		t.Fatalf("an in-flight dial counted as held: step %v", got)
+	}
+}
+
+// loadFor keeps n STAT requests in flight until d passes.
+func loadFor(t *testing.T, f *Fetcher, n int, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	var wg sync.WaitGroup
+	for g := 0; g < n; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; time.Now().Before(deadline); i++ {
+				// STAT holds one slot per command, so n requests keep n
+				// connections busy (BODY may coalesce or pipeline).
+				if _, err := f.Stat(context.Background(), fmt.Sprintf("s%d@x", (g+i)%8)); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// Sustained demand on an account at an unknown limit costs a handful of
+// refused handshakes, not one per widen step.
+func TestSustainedDemandAtUnknownLimitProbesRarely(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{MaxConns: 2, Latency: 2 * time.Millisecond})
+	for i := 0; i < 8; i++ {
+		addSeg(t, s, fmt.Sprintf("s%d@x", i), []byte("x"))
+	}
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 4)}, Options{BodyPipelineDepth: 1, limits: limitTiming{
+		widen: 20 * time.Millisecond, widenMax: 160 * time.Millisecond, refusalPause: time.Millisecond,
+	}})
+	loadFor(t, f, 6, 1200*time.Millisecond)
+	// Without backoff this is about one refusal per 20ms step (~60).
+	rejected := s.Stats().Rejected
+	if rejected < 2 || rejected > 16 {
+		t.Fatalf("%d refused handshakes under sustained demand", rejected)
+	}
+	if st := statsFor(f, "p"); st.State != StateOK || st.Errors != 0 || s.Stats().MaxActive > 2 {
+		t.Fatalf("stats %+v", st)
+	}
+}
+
+// A stated limit caps the pool below it for good: sustained demand never
+// probes past the ceiling.
+func TestStatedLimitNeverProbesAboveCeiling(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{MaxConns: 5, RefuseText: "connection limit (5) reached", Latency: 2 * time.Millisecond})
+	for i := 0; i < 8; i++ {
+		addSeg(t, s, fmt.Sprintf("s%d@x", i), []byte("x"))
+	}
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 8)}, Options{BodyPipelineDepth: 1, limits: limitTiming{
+		widen: 10 * time.Millisecond, refusalPause: time.Millisecond,
+	}})
+	loadFor(t, f, 10, 300*time.Millisecond) // learns 5 - 1
+	if st := statsFor(f, "p"); st.ServerLimit != 5 || st.MaxConnections != 4 {
+		t.Fatalf("limit not learned: %+v", st)
+	}
+	s.ResetStats()
+	loadFor(t, f, 10, 600*time.Millisecond)
+	if st := s.Stats(); st.Rejected != 0 || st.MaxActive > 4 {
+		t.Fatalf("probed above the ceiling: %d refused, %d open", st.Rejected, st.MaxActive)
+	}
+	if st := statsFor(f, "p"); st.MaxConnections != 4 {
+		t.Fatalf("cap moved: %+v", st)
+	}
+}

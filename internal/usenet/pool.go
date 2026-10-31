@@ -323,16 +323,25 @@ func (p *pool) dialNew(ctx context.Context, probe bool) (*Conn, error) {
 		return nil, ErrPoolClosed
 	}
 	p.live++
+	p.limit.dialing++
 	p.mu.Unlock()
 	// Re-check the breaker: another request may have tripped it while we
 	// waited for a slot.
 	if err := p.brk.allow(); err != nil {
-		p.dropLive()
+		p.mu.Lock()
+		p.live--
+		p.limit.dialing--
+		p.mu.Unlock()
 		return nil, err
 	}
 	c, err := Dial(ctx, p.dialOptions())
+	p.mu.Lock()
+	p.limit.dialing--
 	if err != nil {
-		p.dropLive()
+		p.live--
+	}
+	p.mu.Unlock()
+	if err != nil {
 		switch {
 		case ctxErr(ctx) != nil:
 			return nil, ctxErr(ctx)
@@ -387,6 +396,7 @@ func (p *pool) put(c *Conn, prio core.Priority) {
 	} else {
 		now := time.Now()
 		p.mu.Lock()
+		p.heldLocked()
 		widened = p.widenLocked(now)
 		if p.closed || p.live > p.effectiveLocked() {
 			// Closed, or above a size that shrank while c was in use.

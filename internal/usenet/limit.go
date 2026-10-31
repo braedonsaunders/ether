@@ -17,9 +17,17 @@ import (
 //     least one slot), leaving room for sockets the server is still tearing
 //     down. That ceiling only ever goes down for the life of the pool.
 //   - Whether or not N is stated, the pool is also capped at what the server
-//     was carrying when it refused, and widens by one connection per
-//     limitTiming.widen while requests succeed, until the next refusal or
-//     the configured count (or ceiling) is reached.
+//     was carrying when it refused, and widens by one connection per widen
+//     step while requests succeed, until the next refusal or the configured
+//     count (or ceiling) is reached.
+//   - A widened level the server refuses again backs the step off: 5s,
+//     10s, 20s, ... up to 5 minutes, so a pool held at its real limit by
+//     sustained demand does not spend a refused handshake every few seconds
+//     (some providers ban addresses that keep exceeding their limit). The
+//     step drops back to 5s once a level holds: more established connections
+//     than the refused level complete a command. Time alone does not reset
+//     it: a widened level no dial exercised proves nothing, and resetting on
+//     it would let the step oscillate instead of growing.
 //
 // A refusal shortly after Ether itself closed a socket (a cancelled fetch
 // closes its connection) is the server still counting that socket, not a
@@ -37,7 +45,8 @@ import (
 // limitTiming holds the learning and pacing intervals. Zero fields take the
 // defaults below; tests shorten them.
 type limitTiming struct {
-	widen         time.Duration // unknown limit: one more connection per step
+	widen         time.Duration // one more connection per step after a refusal
+	widenMax      time.Duration // longest step after repeated refusals at a level
 	teardownGrace time.Duration // refusals this soon after a local close are not limits
 	refusalPause  time.Duration // dial pause after a refusal
 	backoffMin    time.Duration // dial pause after a first failed handshake, doubling
@@ -46,6 +55,7 @@ type limitTiming struct {
 
 const (
 	defaultLimitWiden    = 5 * time.Second
+	defaultLimitWidenMax = 5 * time.Minute
 	defaultTeardownGrace = 2 * time.Second
 	defaultRefusalPause  = 500 * time.Millisecond
 	defaultDialBackoff   = 500 * time.Millisecond
@@ -55,6 +65,9 @@ const (
 func (t *limitTiming) withDefaults() {
 	if t.widen <= 0 {
 		t.widen = defaultLimitWiden
+	}
+	if t.widenMax < t.widen {
+		t.widenMax = max(defaultLimitWidenMax, t.widen)
 	}
 	if t.teardownGrace <= 0 {
 		t.teardownGrace = defaultTeardownGrace
@@ -76,6 +89,10 @@ type connLimit struct {
 	ceiling   int       // stated minus headroom, only ever lowered; 0 = none
 	cap       int       // throttle at what the server carried; 0 = none
 	widenAt   time.Time // next one-connection step of cap
+	widenStep time.Duration
+	refusedAt int       // connections the server carried at the last refusal
+	probed    bool      // cap widened since the last refusal
+	dialing   int       // handshakes in flight (counted in pool.live)
 	dialFails int       // consecutive failed handshakes (not refusals)
 	dialAfter time.Time // no new handshake starts before this
 
@@ -214,8 +231,20 @@ func (p *pool) refused(err error, live int) bool {
 		}
 	}
 	if live > 0 {
-		p.limit.cap = live
-		p.limit.widenAt = now.Add(t.widen)
+		l := &p.limit
+		switch {
+		case l.refusedAt == 0 || live > l.refusedAt || l.widenStep == 0:
+			// First refusal, or more connections than last time held.
+			l.widenStep = t.widen
+		case l.probed:
+			// The level just widened to was refused again.
+			l.widenStep = cappedDouble(l.widenStep, t.widen, t.widenMax)
+		}
+		// Refusals without a widen in between (a burst of dials hitting
+		// the limit together) keep the step.
+		l.refusedAt, l.probed = live, false
+		l.cap = live
+		l.widenAt = now.Add(l.widenStep)
 	}
 	p.limit.dialAfter = later(p.limit.dialAfter, now.Add(t.refusalPause))
 	configured := p.targetLocked()
@@ -234,8 +263,12 @@ func (p *pool) widenLocked(now time.Time) bool {
 	if p.limit.cap == 0 || now.Before(p.limit.widenAt) {
 		return false
 	}
+	if p.limit.widenStep == 0 {
+		p.limit.widenStep = p.o.limits.widen
+	}
 	p.limit.cap++
-	p.limit.widenAt = now.Add(p.o.limits.widen)
+	p.limit.probed = true
+	p.limit.widenAt = now.Add(p.limit.widenStep)
 	top := p.targetLocked()
 	if c := p.limit.ceiling; c > 0 {
 		top = min(top, c)
@@ -244,6 +277,16 @@ func (p *pool) widenLocked(now time.Time) bool {
 		p.limit.cap = 0
 	}
 	return true
+}
+
+// heldLocked notes a command completing while the pool has more established
+// connections than the server carried at its last refusal: that level holds,
+// so widening returns to its shortest step. p.mu must be held.
+func (p *pool) heldLocked() {
+	l := &p.limit
+	if l.refusedAt > 0 && p.live-l.dialing > l.refusedAt {
+		l.widenStep = p.o.limits.widen
+	}
 }
 
 // paceDial waits until a handshake may start on this pool. The circuit
