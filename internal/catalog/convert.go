@@ -196,6 +196,40 @@ func earliestDatedRelease(dates *tmdb.ReleaseDates, kinds ...int) time.Time {
 	return earliest
 }
 
+const (
+	yearSourcePrimary  = "primary"
+	yearSourcePremiere = "premiere"
+	yearSourceReleased = "released"
+	yearSourceNone     = "none"
+	yearSourceMissing  = "missing"
+)
+
+// applyMovieYear sets the title year from the primary release_date, then
+// the earliest premiere, then the date already chosen as date added. It
+// records that choice so a later summary cannot put the theatrical year
+// back, and so an upgrade does not fetch the movie again.
+func applyMovieYear(t *core.Title, primary time.Time, dates *tmdb.ReleaseDates) {
+	if !primary.IsZero() {
+		t.Year = primary.Year()
+		t.PrimaryReleased = primary
+		t.YearSource = yearSourcePrimary
+		return
+	}
+	t.PrimaryReleased = time.Time{}
+	if premiere := earliestDatedRelease(dates, 1); !premiere.IsZero() {
+		t.Year = premiere.Year()
+		t.YearSource = yearSourcePremiere
+		return
+	}
+	if !t.Released.IsZero() {
+		t.Year = t.Released.Year()
+		t.YearSource = yearSourceReleased
+		return
+	}
+	t.Year = 0
+	t.YearSource = yearSourceNone
+}
+
 func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails) core.Title {
 	t := c.movieToTitle(ctx, d.Movie)
 	// Date added is the earliest theatrical date. The title year is the
@@ -205,11 +239,7 @@ func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails)
 	if theatrical := earliestDatedRelease(d.ReleaseDates, 2, 3); !theatrical.IsZero() {
 		t.Released = theatrical
 	}
-	if t.Year == 0 {
-		if premiere := earliestDatedRelease(d.ReleaseDates, 1); !premiere.IsZero() {
-			t.Year = premiere.Year()
-		}
-	}
+	applyMovieYear(&t, tmdb.ParseDate(d.ReleaseDate), d.ReleaseDates)
 	t.Keywords = keywordNames(d.Keywords)
 	t.AlternativeTitles = altTitles(d.AlternativeTitles, t.Title, t.OriginalTitle)
 	t.Tagline = d.Tagline

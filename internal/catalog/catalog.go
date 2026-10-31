@@ -133,6 +133,18 @@ CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, sea
 CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
 `
 	store.Register("catalog", 20, releaseKnownSQLite)
+	// Catalog migration 21 is the recent-episodes index, owned elsewhere.
+	// primary_released_ts is TMDB's primary release_date. year_source says
+	// which date produced year (empty until this correction has seen the
+	// row). year_checked_at cools down a failed refresh. The pending index
+	// is the background queue: detailed movies whose primary date was never
+	// stored, browsable and most popular first.
+	store.Register("catalog", 22, `
+ALTER TABLE catalog_titles ADD COLUMN primary_released_ts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE catalog_titles ADD COLUMN year_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE catalog_titles ADD COLUMN year_checked_at INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX catalog_titles_movie_year_pending ON catalog_titles(browsable DESC, popularity DESC, key) WHERE type='movie' AND year_source='';
+`)
 	store.RegisterDialect("catalog", 20, store.Postgres, `
 ALTER TABLE catalog_titles ADD COLUMN release_known BIGINT GENERATED ALWAYS AS (CASE WHEN released_ts<>0 THEN 1 ELSE 0 END) STORED;
 DROP INDEX IF EXISTS catalog_titles_episode_aired;
@@ -238,7 +250,12 @@ type Catalog struct {
 	syncing    atomic.Bool
 	progress   SyncProgress
 	progressMu sync.RWMutex
-	syncYears  [2]int // 0,0 = 1900..now+2
+
+	yearMu      sync.RWMutex
+	yearRunning atomic.Bool
+	yearState   MovieYearProgress
+	yearGap     time.Duration
+	syncYears   [2]int // 0,0 = 1900..now+2
 
 	// High-speed in-memory read caches, invalidated atomically on writes.
 	writeGen    atomic.Uint64
@@ -361,7 +378,7 @@ func New(db *sql.DB, client TMDB, cfg config.Catalog, log *slog.Logger, opts ...
 		stale = 24 * time.Hour
 	}
 	c := &Catalog{visibility: visibility, db: db, cfg: cfg, cfgVersion: &configVersion{}, log: log, hydrateSlots: make(chan struct{}, hydrateLimit),
-		staleAfter: stale, listTTL: 15 * time.Minute,
+		staleAfter: stale, listTTL: 15 * time.Minute, yearGap: 2 * time.Second,
 		genres: map[string]map[int]string{}, listCache: map[string]listEntry{},
 		titleCache: map[core.RatingKey]cachedStoredTitle{}, countCache: map[string]cachedCount{},
 		browseCache: map[string]cachedBrowse{}, grandCache: map[core.RatingKey]cachedBrowse{}, facetCache: map[string]cachedFacet{},

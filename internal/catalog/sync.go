@@ -28,18 +28,19 @@ type SyncProgress struct {
 
 // Stats is the admin-UI snapshot of the mirror.
 type Stats struct {
-	Trending           []TrendStatus `json:"trending"`
-	Movies             int           `json:"movies"`
-	Shows              int           `json:"shows"`
-	Seasons            int           `json:"seasons"`
-	Episodes           int           `json:"episodes"`
-	HomeReleaseChecked int           `json:"homeReleaseChecked"`
-	HomeReleasePending int           `json:"homeReleasePending"`
-	BrowsableMovies    int           `json:"browsableMovies"`
-	BrowsableShows     int           `json:"browsableShows"`
-	Collections        int           `json:"collections"`
-	LastSync           time.Time     `json:"lastSync,omitempty"`
-	Sync               SyncProgress  `json:"sync"`
+	Trending           []TrendStatus     `json:"trending"`
+	Movies             int               `json:"movies"`
+	Shows              int               `json:"shows"`
+	Seasons            int               `json:"seasons"`
+	Episodes           int               `json:"episodes"`
+	HomeReleaseChecked int               `json:"homeReleaseChecked"`
+	HomeReleasePending int               `json:"homeReleasePending"`
+	BrowsableMovies    int               `json:"browsableMovies"`
+	BrowsableShows     int               `json:"browsableShows"`
+	Collections        int               `json:"collections"`
+	LastSync           time.Time         `json:"lastSync,omitempty"`
+	Sync               SyncProgress      `json:"sync"`
+	YearCorrection     MovieYearProgress `json:"yearCorrection"`
 }
 
 func cloneStats(s Stats) Stats {
@@ -64,8 +65,7 @@ func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
 
 	if cached.ready && ((cached.gen == gen && cached.minute == minBucket) || (syncing && !cached.fetchedAt.IsZero() && now.Sub(cached.fetchedAt) < 2*time.Second)) {
 		s := cloneStats(cached.stats)
-		s.Sync = c.SyncProgress()
-		return s, nil
+		return c.finishStats(ctx, s), nil
 	}
 
 	s, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
@@ -77,14 +77,17 @@ func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
 		c.cacheMu.RUnlock()
 		if fallback.ready {
 			out := cloneStats(fallback.stats)
-			out.Sync = c.SyncProgress()
-			return out, nil
+			return c.finishStats(ctx, out), nil
 		}
 		return s, err
 	}
-	out := cloneStats(s)
-	out.Sync = c.SyncProgress()
-	return out, nil
+	return c.finishStats(ctx, cloneStats(s)), nil
+}
+
+func (c *Catalog) finishStats(ctx context.Context, s Stats) Stats {
+	s.Sync = c.SyncProgress()
+	s.YearCorrection = c.movieYearProgress(ctx)
+	return s
 }
 
 func (c *Catalog) loadStats(ctx context.Context) (Stats, error) {
@@ -165,6 +168,7 @@ func (c *Catalog) Run(ctx context.Context) {
 		c.log.Error("catalog: re-rank content ratings", "err", err)
 	}
 	go c.refreshRatingsLoop(ctx)
+	go c.correctMovieYears(ctx)
 	full := schedule.New(c.now(), c.untilDue(ctx))
 	// Preserve the existing resume behavior while the gate is off. If the
 	// owner enables it during the wait, start background backfill promptly.

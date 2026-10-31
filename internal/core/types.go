@@ -56,12 +56,21 @@ type Title struct {
 	// regular seasons; 0 when an earlier season's size is unknown (additive).
 	AbsoluteEpisode int `json:"absoluteEpisode,omitempty"`
 
-	Title                       string        `json:"title"`
-	OriginalTitle               string        `json:"originalTitle,omitempty"`
-	SortTitle                   string        `json:"sortTitle,omitempty"`
-	Tagline                     string        `json:"tagline,omitempty"`
-	Summary                     string        `json:"summary,omitempty"`
-	Year                        int           `json:"year,omitempty"`
+	Title         string `json:"title"`
+	OriginalTitle string `json:"originalTitle,omitempty"`
+	SortTitle     string `json:"sortTitle,omitempty"`
+	Tagline       string `json:"tagline,omitempty"`
+	Summary       string `json:"summary,omitempty"`
+	Year          int    `json:"year,omitempty"`
+	// PrimaryReleased is TMDB's primary release_date for a movie. The title
+	// year comes from it. Released stays the date added (theatrical, when
+	// one exists). Empty when the year came from a premiere or the release
+	// itself. Not serialized.
+	PrimaryReleased time.Time `json:"-"`
+	// YearSource records which date produced Year: primary, premiere,
+	// released, none, or missing. Empty means a row stored before that
+	// date was kept. Not serialized.
+	YearSource                  string        `json:"-"`
 	Released                    time.Time     `json:"released,omitempty"`   // first air / release date
 	AddedAt                     time.Time     `json:"addedAt,omitzero"`     // series/season latest aired episode, or a derived air date; not a catalogue insertion time
 	LastAirDate                 time.Time     `json:"lastAirDate,omitzero"` // last aired episode date when known

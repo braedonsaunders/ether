@@ -246,6 +246,21 @@ export function cacheHealth(v: unknown): HealthItem {
   };
 }
 
+function yearCorrectionDetail(v: unknown): string {
+  if (!isPlainObject(v)) return "";
+  const pending = num(v.pending);
+  const done = num(v.stored) + num(v.refreshed);
+  if (v.running === true || pending > 0) {
+    return t("Correcting movie years · {done} done · {pending} left", {
+      done: formatNumber(done),
+      pending: formatNumber(pending),
+    });
+  }
+  if (v.finished === true && done > 0)
+    return t("Movie years corrected · {count} titles", { count: formatNumber(done) });
+  return "";
+}
+
 export function catalogHealth(v: unknown, now = new Date()): HealthItem {
   const base = {
     id: "catalog" as const,
@@ -267,6 +282,8 @@ export function catalogHealth(v: unknown, now = new Date()): HealthItem {
     }),
     t("Last sync {when}", { when: relativeTime(last, now) }),
   ];
+  const yearLine = yearCorrectionDetail(v.yearCorrection);
+  if (yearLine) details.push(yearLine);
   if (typeof sync.error === "string" && sync.error)
     details.push(t("Last sync error: {error}", { error: sync.error }));
   if (sync.running === true) {

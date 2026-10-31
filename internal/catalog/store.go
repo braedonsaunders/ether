@@ -629,6 +629,14 @@ func upsertOne(ctx context.Context, tx *sql.Tx, t core.Title, o upsertOpts, now 
 			t.Year = t.Released.Year()
 		}
 	}
+	// A movie summary's release_date is the primary date. Remember it so
+	// the year correction does not fetch the movie. A detailed row keeps
+	// its own source: the summary date must not close the queue while the
+	// stored year is still the theatrical year.
+	if t.Type == core.TypeMovie && !o.detail && t.YearSource == "" && !t.Released.IsZero() {
+		t.YearSource = yearSourcePrimary
+		t.PrimaryReleased = t.Released
+	}
 	browsableInt := 0
 	if o.browsable {
 		browsableInt = 1
@@ -711,6 +719,9 @@ ON CONFLICT(key) DO UPDATE SET
 		if _, err := tx.ExecContext(ctx, `UPDATE catalog_titles SET released_ts=?, year=? WHERE key=?`, releasedTS, t.Year, int64(t.Key)); err != nil {
 			return fmt.Errorf("catalog: upsert %d air date: %w", t.Key, err)
 		}
+	}
+	if err := saveMovieYearSource(ctx, tx, t, detailInt); err != nil {
+		return err
 	}
 	// Replace join rows only when the incoming title carries that facet, so
 	// summary upserts don't wipe detail-fetched genres/credits.

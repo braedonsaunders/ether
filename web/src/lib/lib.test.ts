@@ -435,6 +435,17 @@ describe("health", () => {
     expect(usenetHealth([]).level).toBe("error");
     expect(usenetHealth({ error: "boom" }).summary).toBe("boom");
     expect(catalogHealth({ lastSync: "2026-10-01T00:00:00Z" }, now).level).toBe("warn");
+    const correcting = catalogHealth(
+      {
+        lastSync: "2026-10-30T00:00:00Z",
+        yearCorrection: { running: true, pending: 12, stored: 3, refreshed: 1 },
+      },
+      now,
+    );
+    expect(correcting.level).toBe("ok");
+    expect(correcting.details.some((line) => line.includes("12") && line.includes("4"))).toBe(
+      true,
+    );
     expect(remoteHealth({ claimed: false }).level).toBe("error");
     expect(
       remoteHealth({ claimed: true, remoteAccess: true, presence: { connected: false } }).level,
