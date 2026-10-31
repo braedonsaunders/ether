@@ -67,7 +67,7 @@ func (c *Cache) RecordPlay(id, title string, size int64) {
 		err = os.MkdirAll(r.dir, 0755)
 	}
 	if err == nil {
-		err = writeFileAtomic(filepath.Join(r.dir, "experience.json"), b, true)
+		err = writeFileAtomic(filepath.Join(r.dir, "experience.json"), b, false)
 	}
 	if err != nil {
 		c.logger.Warn("save cache playback metadata", "err", err)

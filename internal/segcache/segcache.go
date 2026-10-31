@@ -816,7 +816,10 @@ func (c *Cache) savePins() error {
 	if err != nil {
 		return fmt.Errorf("segcache: encode pins: %w", err)
 	}
-	if err := writeFileAtomic(filepath.Join(c.dir, pinsFileName), b, true); err != nil {
+	// Rename publishes the new pin set. Fsyncing this small manifest on every
+	// play and stop dominated time-to-first-byte; a crash may observe the
+	// previous set, and the next playback re-pins from the live session.
+	if err := writeFileAtomic(filepath.Join(c.dir, pinsFileName), b, false); err != nil {
 		return fmt.Errorf("segcache: save pins: %w", err)
 	}
 	return nil
