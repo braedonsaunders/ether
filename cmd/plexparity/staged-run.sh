@@ -79,6 +79,8 @@ for name, changes in replacements.items():
   if old.startswith('a.closers = append(a.closers, a.personalize.Close)') and 'parityWarmPersonalization(ctx, a)' in text: continue
   if old == 'auth.Options{\n' and re.search(r'auth\.Options\{\s*Now:\s*parityClock\(\)', text): continue
   if old == 'personalize.Options{\n' and re.search(r'personalize\.Options\{\s*Now:\s*parityClock\(\)', text): continue
+  if old == 'resolver.New(a.sources, a.media,' and 'parityIndexer(a.sources, dataDir)' in text and 'parityHealth(a.media, dataDir)' in text: continue
+  if old == 'Engine:     a.media,' and 'playbackEngine(a)' in text: continue
   if text.count(old) != 1: raise SystemExit(f"cannot apply parity seam: {path}: expected exactly one {old!r}")
   text = text.replace(old, new, 1)
  path.write_text(text)
