@@ -475,6 +475,52 @@ func (c *Catalog) episodesOfSeason(ctx context.Context, showID int64, season int
 	return c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE type='episode' AND show_key=? AND season=? ORDER BY episode ASC`, int64(core.ShowKey(showID)), season)
 }
 
+// airedSeasonEpisodeWhere matches the rows queryTitles keeps for a season:
+// not adult, and an air date that is already known and not in the future.
+const airedSeasonEpisodeWhere = `type='episode' AND show_key=? AND season=? AND adult=0 AND released_ts>0 AND released_ts<=?`
+
+// SeasonEpisodePage returns one window of a single catalogue season. The
+// count and the page both use catalog_titles_show (show_key, season, episode),
+// so a season of thousands of episodes does not load the rest of the show.
+// limit is 1..100. An empty first page fetches that season once; later pages
+// do not.
+func (c *Catalog) SeasonEpisodePage(ctx context.Context, show core.RatingKey, season, offset, limit int) (core.Page, error) {
+	if show.Kind() != core.KindShow || season < 0 || season >= 1000 || offset < 0 || limit < 1 || limit > 100 {
+		return core.Page{}, fmt.Errorf("catalog: season page out of range")
+	}
+	page, err := c.seasonEpisodeQuery(ctx, show.TMDB(), season, offset, limit)
+	if err != nil || page.Total > 0 || offset > 0 {
+		return page, err
+	}
+	if _, ferr := c.fetchSeason(ctx, show.TMDB(), season); ferr != nil {
+		if errors.Is(ferr, core.ErrNotFound) {
+			return core.Page{Items: []core.Title{}}, nil
+		}
+		return core.Page{}, ferr
+	}
+	return c.seasonEpisodeQuery(ctx, show.TMDB(), season, offset, limit)
+}
+
+func (c *Catalog) seasonEpisodeQuery(ctx context.Context, showID int64, season, offset, limit int) (core.Page, error) {
+	showKey := int64(core.ShowKey(showID))
+	now := c.now().Unix()
+	var total int
+	if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles INDEXED BY catalog_titles_show WHERE `+airedSeasonEpisodeWhere, showKey, season, now).Scan(&total); err != nil {
+		return core.Page{}, err
+	}
+	if offset >= total {
+		return core.Page{Items: []core.Title{}, Total: total}, nil
+	}
+	items, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles INDEXED BY catalog_titles_show WHERE `+airedSeasonEpisodeWhere+` ORDER BY episode ASC LIMIT ? OFFSET ?`, showKey, season, now, limit, offset)
+	if err != nil {
+		return core.Page{}, err
+	}
+	if items == nil {
+		items = []core.Title{}
+	}
+	return core.Page{Items: items, Total: total}, nil
+}
+
 // seasonMirrored reports whether any of a season's episodes, aired or not,
 // are in the mirror.
 func (c *Catalog) seasonMirrored(ctx context.Context, showID int64, season int) (bool, error) {

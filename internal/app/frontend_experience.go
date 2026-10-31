@@ -186,6 +186,21 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			return a.episodeorder.Grandchildren(ctx, u, k)
 		}
 		return a.catalog.Grandchildren(ctx, k)
+	}, SeasonEpisodes: func(ctx context.Context, u *core.User, show core.RatingKey, season, offset, limit int) (core.Page, bool, error) {
+		if a.episodeorder != nil {
+			pref, err := a.episodeorder.Preference(ctx, u.ID, show)
+			if err != nil {
+				return core.Page{}, false, err
+			}
+			if pref.GroupID != "" {
+				return core.Page{}, false, nil
+			}
+			if season == 0 && pref.Specials == "hidden" {
+				return core.Page{Items: []core.Title{}}, true, nil
+			}
+		}
+		page, err := a.catalog.SeasonEpisodePage(ctx, show, season, offset, limit)
+		return page, true, err
 	}, Enrich: func(ctx context.Context, u *core.User, device core.Device, title *core.Title) (frontend.ItemDetail, error) {
 		result := frontend.ItemDetail{Title: *title}
 		if title.PosterPath != "" {
@@ -490,6 +505,28 @@ func (s *surfaceExperience) startCollage(viewID string, gen uint64, typ core.Med
 		s.collage[viewID] = collageSlot{gen: gen, img: img, ready: true}
 		s.collageMu.Unlock()
 	}()
+}
+
+func (s *surfaceExperience) ItemArtworkPage(ctx context.Context, viewer *core.Viewer, device core.Device, keys []core.RatingKey) (map[core.RatingKey][]frontend.Image, error) {
+	titles, err := s.PageArtworkTitles(ctx, viewer, keys)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[core.RatingKey][]frontend.Image, len(titles))
+	if s.artwork == nil {
+		return out, nil
+	}
+	if page, ok := s.artwork.(frontend.PageArtwork); ok {
+		return page.ListPage(ctx, viewer, device, titles)
+	}
+	for i := range titles {
+		images, _, err := s.artwork.List(frontend.WithArtworkTitle(ctx, &titles[i]), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: titles[i].Key})
+		if err != nil {
+			return nil, err
+		}
+		out[titles[i].Key] = images
+	}
+	return out, nil
 }
 
 func (s *surfaceExperience) ItemArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) ([]frontend.Image, bool, error) {

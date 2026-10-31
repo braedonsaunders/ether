@@ -118,6 +118,84 @@ func (s *Service) scheduledTitle(ctx context.Context, v *core.User, key core.Rat
 	return nil
 }
 
+// futureSeasonEpisodes is the metadata-only tail of one season. It does not
+// walk the show's other seasons.
+func (s *Service) futureSeasonEpisodes(ctx context.Context, v *core.User, show core.RatingKey, season int, q frontend.ItemQuery) ([]core.Title, error) {
+	if s.d.Scheduled == nil || season <= 0 {
+		return nil, nil
+	}
+	if s.scheduleBlocked(ctx, v, show) {
+		return nil, nil
+	}
+	seasonKey := core.SeasonKey(show.TMDB(), season)
+	episodes, err := s.d.Scheduled(ctx, seasonKey)
+	if errors.Is(err, core.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	extra := make([]core.Title, 0, len(episodes))
+	for _, episode := range episodes {
+		if episode.Type != core.TypeEpisode || episode.Key.Parent() != seasonKey || episode.Released.IsZero() || !episode.Released.After(now) {
+			continue
+		}
+		if !s.scheduledAllowed(ctx, v, &episode) {
+			continue
+		}
+		ok, err := s.matchesUserQuery(ctx, v, episode, q)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			extra = append(extra, episode)
+		}
+	}
+	sort.SliceStable(extra, func(i, j int) bool { return extra[i].Episode < extra[j].Episode })
+	return extra, nil
+}
+
+func (s *Service) pagedSeason(ctx context.Context, v *core.User, key core.RatingKey, q frontend.ItemQuery) (core.Page, bool, error) {
+	if s.d.SeasonEpisodes == nil || !q.Recursive || key.Kind() != core.KindShow || q.Season == nil || q.Limit < 1 || q.Limit > 100 || q.Offset < 0 || q.AdjacentTo != 0 || q.StartAt != 0 || q.Watched != nil || q.Favorite != nil || q.Desc || q.Sort != "" || !plainItemFilter(q.Filter) {
+		return core.Page{}, false, nil
+	}
+	if len(q.Types) > 0 && !containsMediaType(q.Types, core.TypeEpisode) {
+		return core.Page{Items: []core.Title{}}, true, nil
+	}
+	aired, ok, err := s.d.SeasonEpisodes(ctx, v, key, *q.Season, q.Offset, q.Limit)
+	if err != nil || !ok {
+		return core.Page{}, false, err
+	}
+	future, err := s.futureSeasonEpisodes(ctx, v, key, *q.Season, q)
+	if err != nil {
+		return core.Page{}, false, err
+	}
+	items := aired.Items
+	if items == nil {
+		items = []core.Title{}
+	}
+	if q.Offset >= aired.Total {
+		start := q.Offset - aired.Total
+		if start >= len(future) {
+			items = []core.Title{}
+		} else {
+			items = append([]core.Title{}, future[start:min(start+q.Limit, len(future))]...)
+		}
+	} else if q.Offset+len(items) >= aired.Total && len(future) > 0 {
+		if room := q.Limit - len(items); room > 0 {
+			items = append(items, future[:min(room, len(future))]...)
+		}
+	}
+	out := make([]core.Title, 0, len(items))
+	for i := range items {
+		if s.visible(ctx, v, &items[i]) {
+			out = append(out, items[i])
+		}
+	}
+	return core.Page{Items: out, Total: aired.Total + len(future)}, true, nil
+}
+
 func (s *Service) scheduleBlocked(ctx context.Context, v *core.User, show core.RatingKey) bool {
 	if show == 0 || s.d.Grouped == nil {
 		return false

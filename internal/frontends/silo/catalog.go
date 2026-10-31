@@ -1,6 +1,9 @@
 package silo
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -106,8 +109,26 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	query := frontend.ItemQuery{Limit: 1000}
 	episode := r.PathValue("season") != "" || r.PathValue("all") != ""
+	limit, offset := 0, 0
+	if episode {
+		limit = 50
+		if x := r.URL.Query().Get("limit"); x != "" {
+			n, e := strconv.Atoi(x)
+			if e != nil || n < 1 || n > 100 {
+				http.Error(w, "Bad Request", 400)
+				return
+			}
+			limit = n
+		}
+		n, e := decodeEpisodeCursor(r.URL.Query().Get("cursor"))
+		if e != nil {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		offset = n
+	}
+	query := frontend.ItemQuery{Limit: limit, Offset: offset}
 	if r.PathValue("season") != "" {
 		n, e := strconv.Atoi(r.PathValue("season"))
 		if e != nil || n < 0 {
@@ -125,10 +146,6 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 	page, err := i.host.Experience.Children(r.Context(), v, device(r), key, query)
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
-		return
-	}
-	if page.Total > len(page.Items) {
-		http.Error(w, "Result too large", 503)
 		return
 	}
 	keys := make([]frontend.RatingKey, 0, len(page.Items))
@@ -161,7 +178,48 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
-	reply(w, 200, map[string]any{"items": items, "page": map[string]any{"has_more": false, "next_cursor": nil}})
+	more := limit > 0 && page.Total > offset+limit
+	info := map[string]any{"has_more": more}
+	if more {
+		info["next_cursor"] = encodeEpisodeCursor(offset + limit)
+	}
+	reply(w, 200, map[string]any{"items": items, "page": info})
+}
+
+func decodeEpisodeCursor(s string) (int, error) {
+	if s == "" {
+		return 0, nil
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		if n < 0 {
+			return 0, errors.New("cursor")
+		}
+		return n, nil
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(s)
+	if err != nil {
+		raw, err = base64.StdEncoding.DecodeString(s)
+	}
+	if err != nil {
+		return 0, err
+	}
+	var c struct {
+		Offset int `json:"offset"`
+	}
+	if json.Unmarshal(raw, &c) != nil || c.Offset < 0 {
+		return 0, errors.New("cursor")
+	}
+	return c.Offset, nil
+}
+
+func encodeEpisodeCursor(offset int) string {
+	raw, err := json.Marshal(struct {
+		Offset int `json:"offset"`
+	}{Offset: offset})
+	if err != nil {
+		return ""
+	}
+	return base64.RawStdEncoding.EncodeToString(raw)
 }
 func (i *instance) catalogRoutes() error {
 	for _, e := range []struct {

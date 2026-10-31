@@ -77,6 +77,38 @@ type ItemArtwork interface {
 	ItemArtwork(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]Image, bool, error)
 }
 
+// PageArtwork lists artwork for titles the caller already loaded.
+type PageArtwork interface {
+	ListPage(context.Context, *core.Viewer, core.Device, []core.Title) (map[core.RatingKey][]Image, error)
+}
+
+// ItemArtworkPage authorizes and lists artwork for one grid in a batch.
+// SignPage uses it so a home page does not load each title on its own.
+type ItemArtworkPage interface {
+	ItemArtworkPage(context.Context, *core.Viewer, core.Device, []core.RatingKey) (map[core.RatingKey][]Image, error)
+}
+
+type artworkTitleKey struct{}
+
+// WithArtworkTitle carries a title the caller already loaded and authorized.
+// Artwork listing must not read that title again.
+func WithArtworkTitle(ctx context.Context, title *core.Title) context.Context {
+	if title == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, artworkTitleKey{}, title)
+}
+
+// ArtworkTitle returns the title stored by WithArtworkTitle when it is the
+// requested key.
+func ArtworkTitle(ctx context.Context, key core.RatingKey) (*core.Title, bool) {
+	title, _ := ctx.Value(artworkTitleKey{}).(*core.Title)
+	if title == nil || title.Key != key {
+		return nil, false
+	}
+	return title, true
+}
+
 // LibraryCollagePrefix marks a generated library-view collage. The remainder
 // is the hex identity of the view and the child posters it was built from.
 const LibraryCollagePrefix = "library-collage/"

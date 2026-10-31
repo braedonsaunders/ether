@@ -49,7 +49,10 @@ type ServiceDeps struct {
 	CachedVirtualSeason func(context.Context, *core.User, core.RatingKey) (*core.Title, error)
 	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
-	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
+	// SeasonEpisodes pages one catalogue season. ok is false when this viewer
+	// uses a custom episode group and the caller must use Grandchildren.
+	SeasonEpisodes func(context.Context, *core.User, core.RatingKey, int, int, int) (core.Page, bool, error)
+	Browse         func(context.Context, core.BrowseQuery) (core.Page, error)
 	// PageExclusions are viewer-specific SQL exclusions for an indexed library
 	// page: hidden titles, blocked genres, blocked keywords, and the policy
 	// content-rating cap. Nil keeps the catalogue scan, which still applies
@@ -768,6 +771,90 @@ func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.
 
 // AuthorizeArtwork applies the same active-viewer and item policy as Item,
 // without running playback or track enrichment for a grid of images.
+// allowTitles applies library, policy, availability and parent visibility to a
+// page. Availability is one batch, not one query per title.
+func (s *Service) allowTitles(ctx context.Context, v *core.User, titles []core.Title) ([]core.Title, error) {
+	if s.d.Visibility.SectionFor == nil {
+		return nil, nil
+	}
+	candidates := make([]core.Title, 0, len(titles))
+	for i := range titles {
+		title := titles[i]
+		section, ok := s.d.Visibility.SectionFor(title.Type)
+		if !ok || !SectionAllowed(v, section) || !TitleAllowed(s.d.Visibility.Policy, v, &title) {
+			continue
+		}
+		candidates = append(candidates, title)
+	}
+	available := s.d.Visibility.Available(ctx, v, candidates)
+	parents := make([]core.RatingKey, 0)
+	seenParent := map[core.RatingKey]bool{}
+	for _, title := range available {
+		if title.ShowKey != 0 && !seenParent[title.ShowKey] {
+			seenParent[title.ShowKey] = true
+			parents = append(parents, title.ShowKey)
+		}
+	}
+	shows := map[core.RatingKey]core.Title{}
+	if len(parents) > 0 {
+		var err error
+		switch {
+		case s.d.ParentTitles != nil:
+			shows, err = s.d.ParentTitles(ctx, parents)
+		case s.d.CachedGetMany != nil:
+			shows, err = s.d.CachedGetMany(ctx, parents)
+		default:
+			for _, key := range parents {
+				if s.d.Visibility.GetTitle == nil {
+					break
+				}
+				show, e := s.d.Visibility.GetTitle(ctx, key)
+				if e == nil && show != nil {
+					shows[key] = *show
+				}
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	out := make([]core.Title, 0, len(available))
+	for _, title := range available {
+		if title.ShowKey == 0 {
+			out = append(out, title)
+			continue
+		}
+		show, ok := shows[title.ShowKey]
+		if ok && TitleAllowed(s.d.Visibility.Policy, v, &show) {
+			out = append(out, title)
+		}
+	}
+	return out, nil
+}
+
+// PageArtworkTitles loads one grid and drops titles this viewer cannot see.
+func (s *Service) PageArtworkTitles(ctx context.Context, viewer *core.Viewer, keys []core.RatingKey) ([]core.Title, error) {
+	v, err := s.viewer(ctx, viewer)
+	if err != nil {
+		return nil, err
+	}
+	if s.d.CachedGetMany == nil {
+		return nil, core.ErrNotAvailable
+	}
+	titles, err := s.d.CachedGetMany(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+	loaded := make([]core.Title, 0, len(titles))
+	for _, key := range keys {
+		title, ok := titles[key]
+		if ok && title.Key == key {
+			loaded = append(loaded, title)
+		}
+	}
+	return s.allowTitles(ctx, v, loaded)
+}
+
 func (s *Service) AuthorizeArtwork(ctx context.Context, viewer *core.Viewer, device core.Device, key core.RatingKey) (*core.Viewer, error) {
 	v, err := s.viewer(ctx, viewer)
 	if err != nil {
@@ -929,6 +1016,9 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 	}
 	if _, err = s.item(ctx, v, key); err != nil {
 		return core.Page{}, err
+	}
+	if page, handled, err := s.pagedSeason(ctx, v, key, q); handled || err != nil {
+		return page, err
 	}
 
 	var items []core.Title
@@ -1100,12 +1190,19 @@ func (s *Service) UserData(ctx context.Context, viewer *core.Viewer, keys []core
 		if err != nil {
 			return nil, err
 		}
+		loaded := make([]core.Title, 0, len(keys))
 		for _, key := range keys {
 			title, ok := titles[key]
-			if !ok || title.Key != key || !s.visible(ctx, v, &title) {
-				continue
+			if ok && title.Key == key {
+				loaded = append(loaded, title)
 			}
-			allowed = append(allowed, key)
+		}
+		permitted, err := s.allowTitles(ctx, v, loaded)
+		if err != nil {
+			return nil, err
+		}
+		for _, title := range permitted {
+			allowed = append(allowed, title.Key)
 		}
 	} else {
 		for _, key := range keys {
