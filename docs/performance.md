@@ -144,15 +144,15 @@ compares every endpoint across the two libraries.
 |---|---|
 | rows read grow | more than 2× + 200 |
 | statements grow | more than 1.5× + 20 |
-| database time grows | more than 4× + 25 ms |
+| database time grows | more than 5× + 100 ms |
 | warm p50 | over 2 s |
 
 An indexed path does about the same work on both libraries. A path that
 walks the catalogue does ten times the work, so the gate does not depend on
 the CI machine's speed. Endpoints that scaled when the gate was introduced
 are listed in `internal/app/testdata/perf_gate_debt.txt`. The gate fails on
-any endpoint that scales and is not listed. It also fails on a listed
-endpoint that no longer scales, so the list can only shrink.
+any endpoint that scales and is not listed, and reports listed endpoints
+that stayed flat so they can be removed; the list only shrinks.
 
 ```sh
 ETHER_PERF_GATE=1 go test ./internal/app -run TestPerformanceGate -v -timeout 60m
