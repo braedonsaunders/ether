@@ -74,8 +74,12 @@ func TestPerformanceGate(t *testing.T) {
 		}
 		t.Errorf("%s: %s", f.key, f.why)
 	}
+	ran := map[string]bool{}
+	for _, row := range large {
+		ran[row.Client+" | "+row.Step] = true
+	}
 	for key := range debt {
-		if !failed[key] {
+		if ran[key] && !failed[key] {
 			// Logged, not failed: database time near the slack can pass on
 			// one run and not the next.
 			t.Logf("%s stayed flat this run: remove it from %s once it does so reliably", key, perfDebtFile)
@@ -231,7 +235,14 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	server := httptest.NewServer(a.Handler())
 	a.frontends.start(ctx, server.Listener.Addr())
 	port := server.Listener.Addr().(*net.TCPAddr).Port
-	cs := perfharness.Only(perfharness.Clients(), gateClients)
+	clients := gateClients
+	if only := os.Getenv("ETHER_PERF_GATE_CLIENTS"); only != "" {
+		clients = strings.Split(only, ",")
+	}
+	cs := perfharness.Only(perfharness.Clients(), clients)
+	if steps := os.Getenv("ETHER_PERF_GATE_STEPS"); steps != "" {
+		cs = perfharness.OnlySteps(cs, strings.Split(steps, ","))
+	}
 	var viewing []perfharness.Client
 	for _, c := range cs {
 		if c.Surface != "console" {
@@ -250,6 +261,15 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	r.Sequential(ctx, "warm", viewers[1:2], viewing)
 	server.Close()
 	a.Close()
+	if keep := os.Getenv("ETHER_PERF_GATE_KEEP"); keep != "" {
+		// Keep the trace and database for etherperf audit.
+		_ = os.MkdirAll(keep, 0o700)
+		_ = os.Rename(trace, filepath.Join(keep, name+"-trace.jsonl"))
+		trace = filepath.Join(keep, name+"-trace.jsonl")
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			_ = os.Rename(filepath.Join(dir, "ether.db"+suffix), filepath.Join(keep, name+".db"+suffix))
+		}
+	}
 	byTag, _, err := perfharness.ReadTrace(trace)
 	if err != nil {
 		t.Fatal(err)

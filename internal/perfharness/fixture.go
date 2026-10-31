@@ -217,8 +217,26 @@ func (g *generator) flush() error {
 
 const titleCols = `key,type,tmdb_id,imdb,show_key,show_tmdb,show_title,season_title,season,episode,title,original_title,sort_title,summary,year,released_ts,runtime_sec,status,language,content_rating,rating,vote_count,popularity,poster,backdrop,child_count,leaf_count,browsable,added_at,fetched_at,detail,detail_at`
 
+// fixtureSyllables build made-up words, so a substring search matches about
+// as sparsely as on a real catalogue; one title in fifty carries a common
+// English word.
+var fixtureSyllables = []string{"ka", "lo", "mi", "ren", "tas", "vo", "qui", "ber", "dan", "el", "fy", "gor", "hu", "ix", "jen", "kel", "mor", "nu", "ost", "pra", "ru", "sel", "tor", "ul", "vek", "wa", "xen", "yo", "zar", "bri"}
+
+func (g *generator) word() string {
+	var b strings.Builder
+	for range 2 + g.rng.IntN(2) {
+		b.WriteString(fixtureSyllables[g.rng.IntN(len(fixtureSyllables))])
+	}
+	w := b.String()
+	return strings.ToUpper(w[:1]) + w[1:]
+}
+
 func (g *generator) name(n int) string {
-	return fixtureWords[g.rng.IntN(len(fixtureWords))] + " " + fixtureWords[g.rng.IntN(len(fixtureWords))] + fmt.Sprintf(" %d", n)
+	first := g.word()
+	if g.rng.IntN(50) == 0 {
+		first = fixtureWords[g.rng.IntN(len(fixtureWords))]
+	}
+	return first + " " + g.word() + fmt.Sprintf(" %d", n)
 }
 
 func (g *generator) released() time.Time {
