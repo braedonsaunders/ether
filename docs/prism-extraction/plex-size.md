@@ -12,18 +12,19 @@ now live in `internal/experience` still exist; they are no longer Plex wire code
 
 | Bucket | Lines | What it is |
 | --- | ---: | --- |
-| `internal/plex` production | 17,238 | Whole adapter, including playback |
-| Broker-owned Plex files | 3,213 | Playback, transcode, sessions, decision and DASH files listed below. This slice does not edit them |
+| `internal/plex` production | 17,240 | Non-test Go files directly in `internal/plex` (not `model/`) |
+| Broker-owned Plex files | 3,215 | Playback, transcode, sessions, decision and DASH files listed below. This slice does not edit them |
 | Plex renderer remainder | 14,025 | Production lines minus the broker-owned files |
+| `internal/plex/model` | 1,602 | Plex XML/JSON types and encoding, counted separately because it is another package |
 | `internal/experience` production | 7,860 | Shared home, continue, search, policy and rows |
 | Named extracted experience files | 1,917 | The files that now own the old Plex continue, search, home, policy and cold-home decisions |
 
 The renderer remainder is 14,025, which is 4,625 above half of the 18.8k baseline.
-That gap is still wire rendering: hubs, metadata, library, Live TV and downloads.
-It is not a second continue, search or home-policy implementation. Closing it to
-9,400 depends on the Plex broker cutover deleting the playback orchestration
-that this slice is not allowed to touch, and on further renderer thinning after
-that cutover.
+That gap is Plex wire. Continue, search, home layout, visibility, cold home,
+playability, rating caps, downloads admission and discovery selection already
+call Experience. Halving the remainder means moving the files below, which are
+the Plex document, the Plex query vocabulary, or `convert.go`. This slice does
+not do that.
 
 ## Broker-owned files
 
@@ -35,14 +36,42 @@ the Home renderer.
 | --- | ---: |
 | `playback.go` | 1,387 |
 | `playqueue.go` | 881 |
-| `variants.go` | 405 |
+| `variants.go` | 407 |
 | `handlers_dash.go` | 213 |
 | `stream_auth.go` | 167 |
 | `stop.go` | 113 |
 | `playback_lifecycle.go` | 47 |
 
-`convert.go` is the release-date worker's file. It remains inside the renderer
-remainder and was not edited here.
+## Renderer remainder, largest files
+
+These are the lines that keep the remainder above 9,400. Each one is Plex wire
+or a Plex quirk. Decisions inside them already delegate; the bulk is encoding,
+queue state, or the Plex parameter vocabulary.
+
+| File | Lines | What remains |
+| --- | ---: | --- |
+| `convert.go` | 1,337 | Plex media and date mapping. Release-date worker owns it. Not edited here |
+| `handlers_downloads.go` | 941 | Sync queue, item state and decision URLs. Admission is `experience.DownloadsAllowed` |
+| `handlers_library.go` | 910 | Library XML and the Plex browse grammar (type codes, sort names, filters). Continue, recent and search call Experience |
+| `handlers_hubs.go` | 868 | Hub XML, identifiers and search scores. Row inclusion is `experience.HomeAssembly`; impressions look up the paint-time map |
+| `handlers_metadata.go` | 729 | Metadata, children and collection XML. Visibility and same-day unavailability call Experience |
+| `livetv_api.go` | 703 | Live TV, DVR and grid XML |
+| `handlers_extras.go` | 695 | Extras and related XML, plus client capability fields. Play and bitrate checks use the shared access-policy interfaces |
+| `handlers_state.go` | 564 | Timeline, scrobble and session XML. Left in place because it sits on the playback route |
+| `handlers_playlists.go` | 535 | Playlist XML. Membership uses Experience |
+| `server.go` | 530 | Process lifecycle and route mount |
+| `cluster.go` | 529 | Plex server identity and cluster protocol |
+| `caps.go` | 518 | Plex client-capability headers |
+| `subtitles.go` | 446 | Plex subtitle stream XML |
+| `middleware.go` | 442 | Plex request authentication and context |
+| `notify.go` | 403 | Plex notification payloads |
+| `handlers_server.go` | 400 | Server identity and preference XML |
+
+Those sixteen files are 10,550 lines. The rest of the remainder is smaller
+route, image, enrichment and adapter glue of the same kind. Moving any of them
+out of `internal/plex` would move wire code, which does not make the renderer
+smaller in the sense Phase 3 meant. `internal/plex/model` (1,602 lines) is the
+same kind of code in the child package.
 
 ## Named extracted files
 
