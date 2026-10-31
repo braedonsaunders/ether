@@ -1,7 +1,6 @@
 import { localized, t } from "../../i18n";
 import { Button, Input, Select, Switch } from "@braedonsaunders/appkit-ui";
 import { useEffect, useId, useState } from "react";
-import { MoreOptions } from "../../components/ConfigSection";
 import { Drawer } from "../../components/Drawer";
 import { Field, NumberInput, SecretInput } from "../../components/fields";
 import { MutationError } from "../../components/feedback";
@@ -181,33 +180,29 @@ export function ChannelDrawer({
                 </Field>
               ))
             : null}
+          <Field label={t("Most deliveries per minute")} htmlFor={`${id}-rate`}>
+            <NumberInput
+              id={`${id}-rate`}
+              min={1}
+              max={60}
+              value={channel.perMinute}
+              onChange={(n) => patch({ perMinute: n })}
+            />
+          </Field>
+          <Field
+            label={t("Digest delay (minutes)")}
+            hint={t("Collect alerts and send them together. 0 sends each one right away.")}
+            htmlFor={`${id}-digest`}
+          >
+            <NumberInput
+              id={`${id}-digest`}
+              min={0}
+              max={10080}
+              value={channel.digestMinutes}
+              onChange={(n) => patch({ digestMinutes: n })}
+            />
+          </Field>
         </div>
-        <MoreOptions label={t("More options: {title}", { title: t("Delivery") })}>
-          <div className="grid gap-4 px-4 pb-4 sm:grid-cols-2">
-            <Field label={t("Most deliveries per minute")} htmlFor={`${id}-rate`}>
-              <NumberInput
-                id={`${id}-rate`}
-                min={1}
-                max={60}
-                value={channel.perMinute}
-                onChange={(n) => patch({ perMinute: n })}
-              />
-            </Field>
-            <Field
-              label={t("Digest delay (minutes)")}
-              hint={t("Collect alerts and send them together. 0 sends each one right away.")}
-              htmlFor={`${id}-digest`}
-            >
-              <NumberInput
-                id={`${id}-digest`}
-                min={0}
-                max={10080}
-                value={channel.digestMinutes}
-                onChange={(n) => patch({ digestMinutes: n })}
-              />
-            </Field>
-          </div>
-        </MoreOptions>
 
         <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-4 py-3">
           <span>
