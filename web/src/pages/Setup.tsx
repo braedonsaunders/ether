@@ -18,7 +18,14 @@ import { EtherMark } from "../components/brand";
 import { IntegrationAppCard } from "../components/IntegrationAppCard";
 import { EmbyMark, JellyfinMark, PlexMark } from "../components/integration-brands";
 import { ErrorPanel, MutationError } from "../components/feedback";
-import { Field, NumberInput, SecretInput, TestButton, type TestState } from "../components/fields";
+import {
+  Field,
+  NumberInput,
+  PasswordInput,
+  SecretInput,
+  TestButton,
+  type TestState,
+} from "../components/fields";
 import { localized, t, tx } from "../i18n";
 import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
@@ -756,9 +763,8 @@ export default function Setup() {
             />
           </Field>
           <Field label={t("Password")} htmlFor="setup-owner-password">
-            <Input
+            <PasswordInput
               id="setup-owner-password"
-              type="password"
               autoComplete="new-password"
               value={localPassword}
               onChange={(e) => setLocalPassword(e.currentTarget.value)}

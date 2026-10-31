@@ -1627,6 +1627,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
           upnp: { active: true },
           cert: {
             present: true,
+            verified: true,
             subject: "*.abc.plex.direct",
             notBefore: new Date(Date.now() - 30 * 86400000).toISOString(),
             notAfter: new Date(Date.now() + 80 * 86400000).toISOString(),
@@ -2940,6 +2941,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       if (method === "POST" && sub === "quickconnect") {
         const code = String((body as { code?: string } | null)?.code ?? "");
         if (code === "EXPIRED") return err(400, "expired", "code expired");
+        if (code === "USEDUP") return err(400, "used", "code already used");
         if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return err(400, "invalid", "invalid code");
         return json({ ok: true, device: "Living Room Apple TV", app: "Jellyfin" });
       }

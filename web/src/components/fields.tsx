@@ -1,6 +1,6 @@
 import { Badge, Button, Input, Label, cn } from "@braedonsaunders/appkit-ui";
 import { CheckCircle2, Eye, EyeOff, PlugZap, XCircle } from "lucide-react";
-import { useId, useState, type ReactNode } from "react";
+import { forwardRef, useId, useState, type ComponentProps, type ReactNode } from "react";
 import { t } from "../i18n";
 import { REDACTED } from "../lib/types";
 
@@ -74,6 +74,36 @@ export function NumberInput({
   );
 }
 
+/** Password field with the show/hide control inside the right edge. */
+export const PasswordInput = forwardRef<
+  HTMLInputElement,
+  Omit<ComponentProps<typeof Input>, "type">
+>(function PasswordInput({ className, disabled, ...rest }, ref) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className={cn("relative", className)}>
+      <Input
+        ref={ref}
+        {...rest}
+        disabled={disabled}
+        type={shown ? "text" : "password"}
+        className="pr-10"
+      />
+      <button
+        type="button"
+        disabled={disabled}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setShown((s) => !s)}
+        aria-label={shown ? t("Hide password") : t("Show password")}
+        aria-pressed={shown}
+      >
+        {shown ? <EyeOff size={16} aria-hidden /> : <Eye size={16} aria-hidden />}
+      </button>
+    </div>
+  );
+});
+
 /**
  * Password input that understands the server's redaction placeholder: the
  * stored secret arrives as "••••" and sending it back unchanged keeps it.
@@ -93,38 +123,34 @@ export function SecretInput({
   ariaLabel?: string;
   invalid?: boolean;
 }) {
-  const [shown, setShown] = useState(false);
   const isStored = value === REDACTED;
   return (
     <div className="space-y-1">
-      <div className="flex gap-2">
+      {isStored ? (
         <Input
           id={id}
           aria-label={ariaLabel}
           aria-invalid={invalid || undefined}
-          type={shown || isStored ? "text" : "password"}
+          type="text"
           value={value}
           placeholder={placeholder}
           autoComplete="new-password"
           spellCheck={false}
-          onFocus={(e) => {
-            if (isStored) e.currentTarget.select();
-          }}
+          onFocus={(e) => e.currentTarget.select()}
           onChange={(e) => onChange(e.currentTarget.value)}
         />
-        {!isStored ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="shrink-0"
-            onClick={() => setShown((s) => !s)}
-            aria-label={shown ? t("Hide secret") : t("Show secret")}
-          >
-            {shown ? <EyeOff size={16} /> : <Eye size={16} />}
-          </Button>
-        ) : null}
-      </div>
+      ) : (
+        <PasswordInput
+          id={id}
+          aria-label={ariaLabel}
+          aria-invalid={invalid || undefined}
+          value={value}
+          placeholder={placeholder}
+          autoComplete="new-password"
+          spellCheck={false}
+          onChange={(e) => onChange(e.currentTarget.value)}
+        />
+      )}
       {isStored ? (
         <p className="text-xs text-fg-muted">
           {t("Saved. Leave as is to keep it, or type a new value to replace it.")}

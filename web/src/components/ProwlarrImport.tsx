@@ -11,6 +11,7 @@ import {
 import { useState } from "react";
 import { t, tn } from "../i18n";
 import { apiFetch, errorMessage } from "../lib/api";
+import { PasswordInput } from "./fields";
 import { SettingsRow } from "./SettingsRow";
 
 type Result = {
@@ -83,9 +84,8 @@ export function ProwlarrImport({ onImported }: { onImported?: () => void }) {
         <SettingsRow
           title={t("API key")}
           control={
-            <Input
+            <PasswordInput
               aria-label={t("Prowlarr API key")}
-              type="password"
               autoComplete="off"
               className="sm:w-72"
               value={key}

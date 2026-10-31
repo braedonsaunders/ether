@@ -91,13 +91,10 @@ export function EtherLogo({
   );
 }
 
-export function Brand({ serverName }: { serverName?: string }) {
+export function Brand() {
   return (
     <span className="flex min-w-0 flex-col gap-1">
       <EtherLogo className="w-[116px]" />
-      {serverName && serverName.toLowerCase() !== "ether" && (
-        <span className="block truncate text-[10px] leading-tight text-fg-muted">{serverName}</span>
-      )}
     </span>
   );
 }

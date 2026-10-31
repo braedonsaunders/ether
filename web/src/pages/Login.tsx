@@ -2,6 +2,7 @@ import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsau
 import { ChevronRight, KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EtherLogo } from "../components/brand";
+import { PasswordInput } from "../components/fields";
 import { t, tx } from "../i18n";
 import { LanguagePicker } from "../i18n/react";
 import { api, ApiError, errorMessage, setToken } from "../lib/api";
@@ -123,9 +124,8 @@ export default function Login({ boot, onReady }: { boot: Bootstrap; onReady: () 
               onChange={(e) => setUsername(e.currentTarget.value)}
             />
             <Label htmlFor="local-password">{t("Password")}</Label>
-            <Input
+            <PasswordInput
               id="local-password"
-              type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
@@ -234,9 +234,8 @@ function TokenFallback({ onReady }: { onReady: () => void }) {
           <Label htmlFor="owner-token" className="text-xs">
             {t("Owner token (X-Plex-Token)")}
           </Label>
-          <Input
+          <PasswordInput
             id="owner-token"
-            type="password"
             value={value}
             onChange={(e) => setValue(e.currentTarget.value)}
             autoComplete="off"

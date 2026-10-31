@@ -14,7 +14,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, MutationError } from "../../components/feedback";
-import { TestButton, type TestState } from "../../components/fields";
+import { PasswordInput, TestButton, type TestState } from "../../components/fields";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
 import { secretConfigured } from "../../components/IntegrationAccount";
 import { SimklMark, TraktMark } from "../../components/integration-brands";
@@ -795,23 +795,23 @@ export function ConnectedServices({
                     {sectionSetup.errors[`${setupService.configKey}.clientId`]}
                   </p>
                 ) : null}
-                <label className="block">
-                  {t("Client secret")}{" "}
-                  <input
-                    className="w-full rounded border border-border bg-surface px-2 py-1"
-                    type="password"
-                    value={String(sectionSetup.draft.clientSecret ?? "")}
-                    onChange={(e) =>
-                      setSectionSetup({
-                        ...sectionSetup,
-                        draft: {
-                          ...sectionSetup.draft,
-                          clientSecret: e.target.value,
-                        },
-                      })
-                    }
-                  />
+                <label className="block" htmlFor="setup-client-secret">
+                  {t("Client secret")}
                 </label>
+                <PasswordInput
+                  id="setup-client-secret"
+                  autoComplete="off"
+                  value={String(sectionSetup.draft.clientSecret ?? "")}
+                  onChange={(e) =>
+                    setSectionSetup({
+                      ...sectionSetup,
+                      draft: {
+                        ...sectionSetup.draft,
+                        clientSecret: e.target.value,
+                      },
+                    })
+                  }
+                />
               </div>
             ) : setupService.form ? (
               <setupService.form

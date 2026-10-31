@@ -442,46 +442,72 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
     return { ...base, level: "error", summary: t("Certificate expired"), details };
   if (starts && starts.getTime() > now.getTime())
     return { ...base, level: "warn", summary: t("Certificate is not valid yet"), details };
-  if (expires && (expires.getTime() - now.getTime()) / 86400000 < 14)
+  const trusted = t("Trusted by Plex apps");
+  if (expires && (expires.getTime() - now.getTime()) / 86400000 < 14) {
+    if (cert.verified === true) details.push(trusted);
     return {
       ...base,
       level: "warn",
       summary: t("Certificate renews {when}", { when: relativeTime(expires, now) }),
       details,
     };
+  }
   if (!expires || !starts) {
     details.push(t("Both a start and an expiry have to be reported."));
     return { ...base, level: "unknown", summary: t("Certificate dates are incomplete"), details };
   }
-  const note = t("Expiry alone does not verify certificate trust or device association.");
-  details.push(note);
-  return unverifiedCertificate(
-    base,
-    t("Expires {date}", { date: formatDate(expires) }),
-    details,
-    note,
-  );
-}
-
-/**
- * Installed, currently inside its dates, and not failing. Trust was not
- * checked. Shown as Not verified and kept out of the overall rank. Missing
- * dates do not use this path. Not a healthy or trusted result.
- */
-function unverifiedCertificate(
-  base: { id: "plexdirect"; label: string; href: string },
-  summary: string,
-  details: string[],
-  note: string,
-): HealthItem {
+  if (cert.verified === true) {
+    details.push(trusted);
+    return {
+      ...base,
+      level: "ok",
+      summary: t("Expires {date}", { date: formatDate(expires) }),
+      details,
+      statusLabel: t("Valid"),
+      note: trusted,
+    };
+  }
+  const reason = str(cert.verifyReason);
+  if (reason === "chain" || reason === "identity" || reason === "handshake") {
+    return certificateTrustProblem(base, reason, details);
+  }
   return {
     ...base,
     level: "unknown",
-    summary,
+    summary: t("Expires {date}", { date: formatDate(expires) }),
     details,
-    statusLabel: t("Not verified"),
-    note,
+    statusLabel: t("Checking certificate"),
     countsOverall: false,
+    note: t("Ether checks this certificate on a schedule, not on every refresh."),
+  };
+}
+
+function certificateTrustProblem(
+  base: { id: "plexdirect"; label: string; href: string },
+  reason: string,
+  details: string[],
+): HealthItem {
+  const summary =
+    reason === "identity"
+      ? t("Doesn't match this server")
+      : reason === "handshake"
+        ? t("This server did not accept a secure connection")
+        : t("Chain not trusted");
+  const hint =
+    reason === "identity"
+      ? t(
+          "The certificate names a different server. Let Ether request a new plex.direct certificate.",
+        )
+      : reason === "handshake"
+        ? t("Check that Ether is running, then look again after the next certificate check.")
+        : t("Let Ether request a new plex.direct certificate. Plex apps trust that one.");
+  return {
+    ...base,
+    level: "warn",
+    summary,
+    details: [...details, hint],
+    statusLabel: summary,
+    note: hint,
   };
 }
 

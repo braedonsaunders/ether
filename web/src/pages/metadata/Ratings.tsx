@@ -1,19 +1,11 @@
-import {
-  Badge,
-  Button,
-  Input,
-  SettingsSection,
-  Spinner,
-  Switch,
-  toast,
-} from "@braedonsaunders/appkit-ui";
+import { Badge, Button, SettingsSection, Spinner, Switch, toast } from "@braedonsaunders/appkit-ui";
 import { RefreshCw, X } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
 import { secretConfigured } from "../../components/IntegrationAccount";
 import { ErrorPanel } from "../../components/feedback";
-import { NumberInput } from "../../components/fields";
+import { NumberInput, PasswordInput } from "../../components/fields";
 import { Section } from "../../components/layout";
 import { TitleSearch } from "../../components/pickers";
 import { titleSubtitle } from "../../components/Poster";
@@ -128,8 +120,7 @@ export function RatingSources({
     return hold(<ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />);
   if (controlled && saved == null && doc.error)
     return hold(<ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />);
-  if (!draft)
-    return hold(<Spinner size={20} label={t("Loading rating settings")} />);
+  if (!draft) return hold(<Spinner size={20} label={t("Loading rating settings")} />);
 
   const set = (patch: Partial<RatingSettings>) => setDraft({ ...draft, ...patch });
   const save = async () => {
@@ -232,9 +223,8 @@ export function RatingSources({
                       : t("Your own key from the provider's website.")
                   }
                   control={
-                    <Input
+                    <PasswordInput
                       id="ratings-key"
-                      type="password"
                       autoComplete="new-password"
                       spellCheck={false}
                       className="sm:w-64"
