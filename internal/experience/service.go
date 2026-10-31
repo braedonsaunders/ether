@@ -13,6 +13,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/state"
 )
 
@@ -74,7 +75,7 @@ type ServiceDeps struct {
 	// episodes in key order. Optional; without it the listing walks the
 	// library.
 	StoredEpisodes StoredEpisodeDeps
-	AddedTimes    func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
+	AddedTimes     func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
 	// RecentAir is the indexed date-added window. Nil keeps the catalogue scan.
 	RecentAir func(context.Context, core.MediaType, int, int) ([]core.Title, bool, error)
 	// CountUnplayedAired counts aired episodes with no play. Nil keeps the episode list.
@@ -158,7 +159,11 @@ func (s *Service) viewer(ctx context.Context, v *core.User) (*core.User, error) 
 		}
 		memo.Mu.Unlock()
 	}
-	active, err := s.d.Active(ctx, v.ID)
+	// A surface without a request memo still resolves the viewer once per
+	// read request, not once per listed item.
+	active, err := reqmemo.Do(ctx, "experience:active:"+strconv.FormatInt(v.ID, 10), func() (*core.User, error) {
+		return s.d.Active(ctx, v.ID)
+	})
 	if err != nil || active == nil || active.ID != v.ID {
 		return nil, core.ErrNotFound
 	}

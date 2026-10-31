@@ -15,6 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/ratings"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/store"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font/gofont/gobold"
@@ -129,18 +130,27 @@ func (s *Service) Settings(ctx context.Context) (Settings, error) {
 		return snap.value, snap.err
 	}
 	var v Settings
-	var raw string
-	e := s.db.QueryRowContext(ctx, `SELECT value FROM overlays_settings WHERE id=1`).Scan(&raw)
-	if errors.Is(e, sql.ErrNoRows) {
-		return normalizeSettings(v), nil
-	}
+	// Artwork for each listed item asks: read the row once per request.
+	row, e := reqmemo.Do(ctx, "overlays:settings", func() (*string, error) {
+		var raw string
+		err := s.db.QueryRowContext(ctx, `SELECT value FROM overlays_settings WHERE id=1`).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return &raw, err
+	})
 	if e != nil {
 		return v, e
 	}
+	if row == nil {
+		return normalizeSettings(v), nil
+	}
+	raw := *row
 	e = json.Unmarshal([]byte(raw), &v)
 	return normalizeSettings(v), e
 }
 func (s *Service) SaveSettings(ctx context.Context, v Settings) error {
+	reqmemo.Forget(ctx, "overlays:settings")
 	v = normalizeSettings(v)
 	if err := validateSettings(v); err != nil {
 		return err
