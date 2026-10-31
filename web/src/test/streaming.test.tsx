@@ -388,8 +388,8 @@ describe("Release traces", () => {
 });
 
 describe("Playback", () => {
-  it("redirects the legacy cache URL to the new management page", async () => {
-    const { fake } = renderApp("/playback/cache");
+  it("edits cache policy from the cache page", async () => {
+    const { fake } = renderApp("/cache");
     expect(await screen.findByRole("heading", { name: "Cache" }, WAIT)).toBeInTheDocument();
     expect(await screen.findByRole("tab", { name: "Overview" }, WAIT)).toHaveAttribute(
       "aria-selected",

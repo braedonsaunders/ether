@@ -319,7 +319,7 @@ describe("Cluster details elsewhere", () => {
   });
 
   it("shows which node holds each backup and saves a shared folder", async () => {
-    const { fake } = renderApp("/backups", { cluster: true });
+    const { fake } = renderApp("/maintenance/backups", { cluster: true });
     const snaps = await screen.findByRole("region", { name: "Snapshots" }, WAIT);
     expect(await within(snaps).findByText("den (this node)", {}, WAIT)).toBeInTheDocument();
     expect(within(snaps).getByText("attic")).toBeInTheDocument();
@@ -340,7 +340,7 @@ describe("Cluster details elsewhere", () => {
   });
 
   it("has no shared folder or location column on a standalone server", async () => {
-    renderApp("/backups");
+    renderApp("/maintenance/backups");
     const snaps = await screen.findByRole("region", { name: "Snapshots" }, WAIT);
     await within(snaps).findByRole("button", { name: /^Download/ }, WAIT);
     expect(within(snaps).queryByText("Location")).toBeNull();

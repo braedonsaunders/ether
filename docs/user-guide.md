@@ -741,8 +741,8 @@ its artwork, overview, ratings, cast, directors, and catalog identity.
 **Find on TMDB** retains the broader title lookup for released titles outside
 the browsable library. **Catalog settings** contains the TMDB key and connection
 test, language, region, refresh interval, popularity and vote thresholds, adult
-content option, and catalog health. Settings apply without a restart. Existing
-links to **Metadata → Catalogue** redirect to Catalog.
+content option, and catalog health. Settings apply without a restart. Catalog
+is at **Catalog**; Metadata no longer keeps a catalogue alias.
 
 **Show scheduled episodes** in Catalog settings is off by default. When enabled,
 a season that has already started can list unaired episodes with known air dates.

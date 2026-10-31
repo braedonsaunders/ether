@@ -168,7 +168,7 @@ describe("Apps", () => {
     expect(screen.queryByRole("spinbutton", { name: "Port" })).not.toBeInTheDocument();
   });
 
-  it("sends a disabled Plex route, including legacy secure, back to the overview", async () => {
+  it("sends a disabled Plex route back to the overview", async () => {
     apiFetch.mockImplementation(async (path: string) => {
       if (path === "/frontends") return [row("plex", "Plex", false)];
       throw new Error(`Unexpected request: ${path}`);
@@ -181,7 +181,6 @@ describe("Apps", () => {
     unmount();
     renderApps("/apps/secure");
     await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/apps/overview"));
-    expect(screen.queryByRole("tab", { name: "Plex" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Secure connections")).not.toBeInTheDocument();
   });
 

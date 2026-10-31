@@ -309,8 +309,8 @@ describe("Metadata artwork studio", () => {
     );
   });
 
-  it("preserves the old Home URL and points navigation to /home", async () => {
-    renderAppWith("/home-screens", () => undefined);
+  it("opens Home at /home", async () => {
+    renderAppWith("/home", () => undefined);
     expect(await screen.findByRole("heading", { name: "Home" }, WAIT)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/home");
   });

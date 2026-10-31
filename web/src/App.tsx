@@ -54,7 +54,6 @@ import {
   useNavigate,
   useOutlet,
   useOutletContext,
-  useParams,
   useSearchParams,
 } from "react-router-dom";
 import { AppProvider, useApp } from "./app-context";
@@ -167,18 +166,6 @@ function navigation(): SidebarNavGroup[] {
       ],
     },
   ];
-}
-
-/** Old Connectivity URLs land on the Plex page. Remote and secure are sections, not app tabs. */
-export function legacyConnectivityTarget(tab?: string) {
-  if (tab === "remote") return "/apps/plex?section=remote";
-  if (tab === "secure") return "/apps/plex?section=secure";
-  return "/apps/plex";
-}
-
-function LegacyConnectivityRedirect() {
-  const { tab } = useParams();
-  return <Navigate to={legacyConnectivityTarget(tab)} replace />;
 }
 
 function HealthIndicator() {
@@ -310,14 +297,6 @@ function PageFallback() {
   );
 }
 
-/** Keep bookmarks and health links pointing at the corresponding maintenance tab. */
-function MaintenanceRedirect({ tab }: { tab: string }) {
-  const { backupTab } = useParams();
-  const { search, hash } = useLocation();
-  const suffix = tab === "backups" && backupTab === "import" ? "/import" : "";
-  return <Navigate to={`/maintenance/${tab}${suffix}${search}${hash}`} replace />;
-}
-
 function Shell() {
   const { boot } = useApp();
   const location = useLocation();
@@ -416,35 +395,23 @@ function Shell() {
             <Route path="/viewers/defaults" element={<ViewersList tab="defaults" />} />
             <Route path="/viewers/:id/:tab?" element={<ViewerProfile />} />
             <Route path="/home" element={<Designer />} />
-            <Route path="/home-screens" element={<Navigate to="/home" replace />} />
             <Route path="/collections" element={<CollectionsLayout />}>
               <Route path="new" element={<CollectionDrawer fresh />} />
               <Route path=":id" element={<CollectionDrawer />} />
             </Route>
             <Route path="/livetv/:tab?" element={<LiveTV />} />
             <Route path="/catalog/:tab?" element={<Catalog />} />
-            <Route path="/metadata/catalogue" element={<Navigate to="/catalog" replace />} />
             <Route path="/metadata/:tab?" element={<Metadata />} />
             <Route path="/sources/:tab?" element={<Sources />} />
             <Route path="/releases/:tab?" element={<Releases />} />
             <Route path="/cache/:tab?" element={<Cache />} />
-            <Route path="/playback/cache" element={<Navigate to="/cache" replace />} />
             <Route path="/playback/:tab?" element={<Playback />} />
             <Route path="/notifications/:tab?" element={<Notifications />} />
-            <Route path="/server/posters" element={<Navigate to="/metadata/artwork" replace />} />
             <Route path="/server/:tab?" element={<GeneralPage />} />
             <Route path="/apps/:tab?" element={<Apps />} />
-            <Route path="/remote-access/:tab?" element={<LegacyConnectivityRedirect />} />
             <Route path="/services/:tab?" element={<ServicesPage />} />
             <Route path="/cluster" element={<ClusterPage />} />
             <Route path="/maintenance/:tab?/:backupTab?" element={<MaintenancePage />} />
-            <Route path="/backups/:backupTab?" element={<MaintenanceRedirect tab="backups" />} />
-            <Route path="/updates" element={<MaintenanceRedirect tab="updates" />} />
-            <Route
-              path="/troubleshooting"
-              element={<MaintenanceRedirect tab="troubleshooting" />}
-            />
-            <Route path="/logs" element={<MaintenanceRedirect tab="logs" />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
