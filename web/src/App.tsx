@@ -23,6 +23,7 @@ import {
   Plug,
   Server,
   Bell,
+  CalendarDays,
   Gauge,
   LayoutTemplate,
   Layers,
@@ -90,6 +91,7 @@ const Setup = lazy(() => import("./pages/Setup"));
 const Activity = lazy(() => import("./pages/activity/Activity"));
 const Notifications = lazy(() => import("./pages/notifications/Notifications"));
 const LiveTV = lazy(() => import("./pages/livetv/LiveTV"));
+const Calendar = lazy(() => import("./pages/calendar/Calendar"));
 const Catalog = lazy(() => import("./pages/catalog/Catalog"));
 const Metadata = lazy(() => import("./pages/metadata/Metadata"));
 const Sources = lazy(() => import("./pages/sources/Sources"));
@@ -151,6 +153,7 @@ function navigation(): SidebarNavGroup[] {
     {
       label: t("Streaming"),
       items: [
+        { href: "/calendar", label: t("Calendar"), icon: <CalendarDays size={icon} /> },
         { href: "/sources", label: t("Sources"), icon: <Network size={icon} /> },
         { href: "/releases", label: t("Releases"), icon: <ListFilter size={icon} /> },
         { href: "/playback", label: t("Playback"), icon: <MonitorPlay size={icon} /> },
@@ -411,6 +414,7 @@ function Shell() {
               <Route path=":id" element={<CollectionDrawer />} />
             </Route>
             <Route path="/livetv/:tab?" element={<LiveTV />} />
+            <Route path="/calendar/:view?" element={<Calendar />} />
             <Route path="/catalog/:tab?" element={<Catalog />} />
             <Route path="/metadata/:tab?" element={<Metadata />} />
             <Route path="/sources/:tab?/:sub?" element={<Sources />} />
