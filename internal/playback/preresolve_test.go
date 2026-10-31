@@ -170,3 +170,58 @@ func TestPrewarmRejectsMissingOpeningButNotTransientFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestAwaitWarmProbeWaitsForTheInFlightProbe(t *testing.T) {
+	probed := core.MediaInfo{
+		Container: "mp4", Duration: 20 * time.Second, BitrateKbps: 17,
+		Streams: []core.StreamInfo{
+			{Type: "video", Codec: "h264", Width: 320, Height: 180},
+			{Type: "audio", Codec: "aac", Language: "fr"},
+			{Type: "audio", Codec: "aac", Language: "en"},
+			{Type: "subtitle", Codec: "mov_text", Language: "en"},
+		},
+	}
+	user := &core.User{ID: 9}
+	caps := core.ClientCaps{ClientID: "adult"}
+	key := core.MovieKey(10004)
+	done := make(chan struct{})
+	m := &Manager{
+		now:  time.Now,
+		warm: map[identity]*warmEntry{},
+	}
+	m.warm[identity{userID: user.ID, clientID: caps.ClientID, key: key}] = &warmEntry{
+		done:    done,
+		expires: time.Now().Add(time.Minute),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	got := make(chan core.MediaInfo, 1)
+	go func() {
+		info, ok := m.AwaitWarmProbe(ctx, user, caps, key)
+		if !ok {
+			got <- core.MediaInfo{Estimated: true}
+			return
+		}
+		got <- info
+	}()
+	select {
+	case info := <-got:
+		t.Fatalf("returned before the probe finished: %+v", info)
+	case <-time.After(30 * time.Millisecond):
+	}
+	m.mu.Lock()
+	m.warm[identity{userID: user.ID, clientID: caps.ClientID, key: key}].probe = &probeCache{info: probed}
+	m.mu.Unlock()
+	close(done)
+	select {
+	case info := <-got:
+		if info.Estimated || info.Container != "mp4" || info.Duration != 20*time.Second || len(info.Streams) != 4 {
+			t.Fatalf("probe = %+v", info)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the probe")
+	}
+	if _, ok := m.WarmProbeInfo(user, caps, key); !ok {
+		t.Fatal("completed probe was not readable")
+	}
+}

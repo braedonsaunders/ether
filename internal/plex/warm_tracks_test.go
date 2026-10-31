@@ -3,7 +3,9 @@ package plex
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex/model"
@@ -97,5 +99,76 @@ func TestMetadataWithVariantsListsWarmProbedTracks(t *testing.T) {
 		if len(md.Media[i].Part[0].Stream) != 0 {
 			t.Errorf("non-Auto variant %d should not carry warm streams before playback: %+v", i, md.Media[i].Part[0].Stream)
 		}
+	}
+}
+
+// A non-owner detail render starts the warm-up and then asks for media
+// before that warm-up has published. The render waits for the probe instead
+// of painting the 1080p estimate.
+type lateWarmPlayback struct {
+	core.Playback
+	info    core.MediaInfo
+	once    sync.Once
+	started chan struct{}
+	release chan struct{}
+}
+
+func (w *lateWarmPlayback) WarmProbeInfo(*core.User, core.ClientCaps, core.RatingKey) (core.MediaInfo, bool) {
+	return core.MediaInfo{}, false
+}
+
+func (w *lateWarmPlayback) AwaitWarmProbe(ctx context.Context, _ *core.User, _ core.ClientCaps, _ core.RatingKey) (core.MediaInfo, bool) {
+	w.once.Do(func() { close(w.started) })
+	select {
+	case <-w.release:
+		return w.info, true
+	case <-ctx.Done():
+		return core.MediaInfo{}, false
+	}
+}
+
+func TestMetadataWaitsForInFlightWarmProbe(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	probed := core.MediaInfo{
+		Container: "mp4", Duration: 20 * time.Second, BitrateKbps: 17,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 320, Height: 180},
+			{Index: 1, Type: "audio", Codec: "aac", Language: "fr", Channels: 2},
+			{Index: 2, Type: "audio", Codec: "aac", Language: "en", Channels: 2},
+			{Index: 3, Type: "subtitle", Codec: "mov_text", Language: "en"},
+		},
+	}
+	late := &lateWarmPlayback{
+		Playback: f.playback,
+		info:     probed,
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	f.srv.d.Playback = late
+	pr := &Request{User: &core.User{ID: 9, Username: "adult"}, ClientID: "adult-androidtv"}
+	got := make(chan core.MediaInfo, 1)
+	go func() {
+		info, _ := f.srv.mediaInfoFor(context.Background(), pr, &fightClub)
+		got <- info
+	}()
+	select {
+	case <-late.started:
+	case <-time.After(time.Second):
+		t.Fatal("detail render did not wait for the in-flight probe")
+	}
+	select {
+	case info := <-got:
+		t.Fatalf("render returned the estimate before the probe: estimated=%v container=%s", info.Estimated, info.Container)
+	case <-time.After(40 * time.Millisecond):
+	}
+	close(late.release)
+	select {
+	case info := <-got:
+		if info.Estimated || info.Container != "mp4" || info.Duration != 20*time.Second || len(info.Streams) != 4 || info.Streams[0].Width != 320 {
+			t.Fatalf("probed media = %+v", info)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out after the probe was published")
 	}
 }

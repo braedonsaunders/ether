@@ -392,7 +392,37 @@ func (m *Manager) WarmProbeInfo(user *core.User, caps core.ClientCaps, key core.
 	default:
 		return core.MediaInfo{}, false
 	}
-	if e.probe == nil || e.probe.info.Estimated || len(e.probe.info.Streams) == 0 {
+	return warmProbeResult(e)
+}
+
+// AwaitWarmProbe is WarmProbeInfo for a detail render that just started
+// the warm-up. It waits until that warm-up publishes its probe, or until
+// ctx ends. A finished miss still returns false so the caller can estimate.
+func (m *Manager) AwaitWarmProbe(ctx context.Context, user *core.User, caps core.ClientCaps, key core.RatingKey) (core.MediaInfo, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if user == nil || caps.ClientID == "" {
+		return core.MediaInfo{}, false
+	}
+	id := identity{userID: user.ID, clientID: caps.ClientID, key: key}
+	m.mu.Lock()
+	e := m.warm[id]
+	live := e != nil && m.now().Before(e.expires)
+	m.mu.Unlock()
+	if !live {
+		return core.MediaInfo{}, false
+	}
+	select {
+	case <-e.done:
+	case <-ctx.Done():
+		return core.MediaInfo{}, false
+	}
+	return warmProbeResult(e)
+}
+
+func warmProbeResult(e *warmEntry) (core.MediaInfo, bool) {
+	if e == nil || e.probe == nil || e.probe.info.Estimated || len(e.probe.info.Streams) == 0 {
 		return core.MediaInfo{}, false
 	}
 	return e.probe.info, true

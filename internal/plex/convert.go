@@ -473,8 +473,14 @@ func (s *Server) mediaInfoFor(ctx context.Context, pr *Request, t *core.Title) (
 		if info, _, ok := s.resumedTracks(ctx, pr, t); ok {
 			return info, nil
 		}
-		if wp, ok := s.d.Playback.(core.WarmProber); ok {
-			caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+		caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+		if wait, ok := s.d.Playback.(interface {
+			AwaitWarmProbe(context.Context, *core.User, core.ClientCaps, core.RatingKey) (core.MediaInfo, bool)
+		}); ok {
+			if info, warm := wait.AwaitWarmProbe(ctx, pr.User, caps, t.Key); warm {
+				return info, nil
+			}
+		} else if wp, ok := s.d.Playback.(core.WarmProber); ok {
 			if info, warm := wp.WarmProbeInfo(pr.User, caps, t.Key); warm {
 				return info, nil
 			}
