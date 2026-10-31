@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
@@ -288,7 +287,7 @@ func (i *instance) syncQueue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	items := make([]core.RatingKey, 0, len(body.PlayingQueue))
+	items := make([]frontend.RatingKey, 0, len(body.PlayingQueue))
 	for _, id := range body.PlayingQueue {
 		key, err := ids.ParseRatingKeyGUID(id)
 		if err != nil {
@@ -379,7 +378,7 @@ func (i *instance) syncAppend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	items := make([]core.RatingKey, 0, len(body.ItemIds))
+	items := make([]frontend.RatingKey, 0, len(body.ItemIds))
 	for _, id := range body.ItemIds {
 		key, err := ids.ParseRatingKeyGUID(id)
 		if err != nil {
@@ -485,7 +484,7 @@ func (i *instance) syncError(w http.ResponseWriter, err error) {
 		http.Error(w, "Not Found", http.StatusNotFound)
 	case errors.Is(err, frontend.ErrPartyConflict):
 		http.Error(w, "Conflict", http.StatusConflict)
-	case errors.Is(err, core.ErrStreamLimit), errors.Is(err, frontend.ErrPartyDenied), errors.Is(err, frontend.ErrPartyForbidden):
+	case errors.Is(err, frontend.ErrPartyDenied), errors.Is(err, frontend.ErrPartyForbidden):
 		http.Error(w, "Forbidden", http.StatusForbidden)
 	default:
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)

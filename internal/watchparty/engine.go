@@ -38,6 +38,7 @@ type Options struct {
 	// Streams reports whether this member may open another play of the title.
 	// core.ErrStreamLimit blocks that member without stopping the others,
 	// unless the member who asked for playback is the one over the limit.
+	// Callers receive frontend.ErrPartyForbidden for that refusal.
 	Streams func(context.Context, frontend.Protocol, *core.Viewer, core.Device, core.RatingKey) error
 	// ItemID and JellyfinUser render protocol ids. Nil uses a decimal form.
 	ItemID       func(core.RatingKey) string
@@ -498,7 +499,7 @@ func (e *Engine) Report(ctx context.Context, actor frontend.PartyActor, msg fron
 					m.blocked = true
 					e.emit(m, frontend.PartyEvent{Type: "error", ErrorCode: "stream_limit", ErrorMessage: "This profile is already using its available streams."})
 					e.snapshotsLocked(r)
-					return err
+					return frontend.ErrPartyForbidden
 				}
 				return err
 			}
@@ -811,7 +812,7 @@ func (e *Engine) streamsFor(ctx context.Context, actor frontend.PartyActor, item
 	}
 	err := e.opts.Streams(ctx, actor.Protocol, actor.Viewer, actor.Device, item)
 	if errors.Is(err, core.ErrStreamLimit) {
-		return err
+		return frontend.ErrPartyForbidden
 	}
 	return err
 }
@@ -822,7 +823,7 @@ func (e *Engine) streamsForLocked(ctx context.Context, m *member, item core.Rati
 	}
 	err := e.opts.Streams(ctx, m.protocol, m.viewer, m.device, item)
 	if errors.Is(err, core.ErrStreamLimit) {
-		return err
+		return frontend.ErrPartyForbidden
 	}
 	return err
 }

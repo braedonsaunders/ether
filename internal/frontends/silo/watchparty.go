@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/coder/websocket"
@@ -399,7 +398,7 @@ func (i *instance) partyError(w http.ResponseWriter, err error) {
 		http.Error(w, "Not Found", http.StatusNotFound)
 	case errors.Is(err, frontend.ErrPartyConflict):
 		http.Error(w, "Conflict", http.StatusConflict)
-	case errors.Is(err, core.ErrStreamLimit), errors.Is(err, frontend.ErrPartyDenied), errors.Is(err, frontend.ErrPartyForbidden):
+	case errors.Is(err, frontend.ErrPartyDenied), errors.Is(err, frontend.ErrPartyForbidden):
 		http.Error(w, "Forbidden", http.StatusForbidden)
 	default:
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
