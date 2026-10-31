@@ -215,8 +215,8 @@ Dial your storage footprint from **Pass-through (0 GiB)** to **Everyday (32 GiB)
 
 | Platform | Download / Image | Details |
 | :--- | :--- | :--- |
-| **macOS 13+** | [`Ether-<version>.dmg`](https://github.com/braedonsaunders/ether/releases/latest) | Universal menu-bar app (Apple Silicon & Intel) with bundled FFmpeg. *(Ad-hoc signed: right-click → Open on first launch.)* |
-| **Windows (x64)** | [`EtherSetup-<version>.exe`](https://github.com/braedonsaunders/ether/releases/latest) | Windows service + system tray app with bundled FFmpeg and automatic firewall rule. |
+| **macOS 13+** | [`Ether-<version>.dmg`](https://github.com/braedonsaunders/ether/releases/latest) | No terminal needed. Universal menu-bar app (Apple Silicon & Intel) with bundled FFmpeg. *(Ad-hoc signed: right-click → Open on first launch.)* |
+| **Windows (x64)** | [`EtherSetup-<version>.exe`](https://github.com/braedonsaunders/ether/releases/latest) | No terminal needed. Windows service + system tray app with bundled FFmpeg and automatic firewall rule. |
 | **Linux** | [`.deb` / `.rpm`](https://github.com/braedonsaunders/ether/releases/latest) (`amd64`, `arm64`) | Dedicated `ether` systemd service, hardware transcoding group setup (`render`/`video`), bundled FFmpeg. |
 | **Docker** | `ghcr.io/braedonsaunders/ether:latest` | Multi-arch (`amd64`, `arm64`). Ready-made templates for **Unraid, TrueNAS SCALE, Proxmox, and Synology** in [`packaging/community`](packaging/community/README.md). |
 
@@ -232,16 +232,21 @@ services:
       # ETHER_PORT: "32450"       # already running Plex on 32400 with host networking? pick another port
     volumes:
       - ./config:/config
-      - ./cache:/cache            # select /cache during the setup wizard
+      - ./cache:/cache            # used automatically on a fresh install
     # devices: ["/dev/dri:/dev/dri"]   # optional: Intel QuickSync / VAAPI hardware transcoding
 ```
 
-Open **`http://localhost:32400/ether/`** and finish the 4-step wizard:
+Docker Desktop on Mac and Windows does not give a container the same host network as Linux. Publish the console port there.
 
-1. **Choose your app integrations** and set up the owner account. If you select Plex, sign in with Plex and claim the server; otherwise, create a local Ether owner account. Check the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) for integration limits.
-2. **Add a source:** a Usenet provider + Newznab indexer, *or* a debrid account (**Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud**) + torrent indexer, Cardigann site or Stremio addon, *or* both.
-3. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start).
-4. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api)** and optional integrations (Trakt, OpenSubtitles, local Ollama/LM Studio).
+Open **`http://localhost:32400/ether/`** (or the `ETHER_PORT` you set) and finish the wizard:
+
+1. **Choose a language.**
+2. **Choose apps.** Most households pick Plex or Jellyfin. Check the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) for integration limits.
+3. **Create the owner account.** Plex sign-in is only required when Plex is on; otherwise create a local owner. People outside the house use Plex through plex.tv, or Tailscale / an address you publish for the other apps.
+4. **Add a source:** a debrid account (**Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud**) or a Usenet provider, or a ready-made torrent addon with no account.
+5. **Add an indexer** (a Stremio addon, Torznab, or Newznab).
+6. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start). A mounted `/cache` volume is used on its own.
+7. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api).** Optional integrations (Trakt, OpenSubtitles, local Ollama/LM Studio) can wait.
 
 **After setup:** [Understand Plex libraries](docs/user-guide.md#libraries-catalogue-and-home) · [Put your watchlist on Home](docs/user-guide.md#put-your-watchlist-on-home) · [Choose your Home rows](docs/user-guide.md#choose-home-rows) · [Check Stremio addon compatibility](docs/user-guide.md#stremio-addons-as-sources)
 

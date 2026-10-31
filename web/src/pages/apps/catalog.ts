@@ -20,13 +20,13 @@ export function appLabel(id: string, fallbackName: string): string {
 export function appPurpose(id: string): string {
   switch (id) {
     case "plex":
-      return t("Plex apps, libraries, and account access.");
+      return t("At home and away, through plex.tv.");
     case "jellyfin":
-      return t("Jellyfin apps on your network.");
+      return t("At home. Away from home, use a VPN such as Tailscale or an address you publish.");
     case "emby":
-      return t("Emby apps on your network.");
+      return t("At home. Away from home, use a VPN such as Tailscale or an address you publish.");
     case "silo":
-      return t("Silo apps on your network.");
+      return t("At home on your network.");
     case "stremio":
       return t("This library as a Stremio addon.");
     case "webdav":

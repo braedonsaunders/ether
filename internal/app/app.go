@@ -429,6 +429,7 @@ func New(ctx context.Context, opts Options) (_ *App, err error) {
 		cfg = a.cfg.Get()
 	}
 	a.tracker.Set(startup.PhaseStartingServices)
+	cfg = a.adoptMountedCache(cfg)
 	if err := a.build(ctx, cfg); err != nil {
 		a.Close()
 		return nil, err

@@ -74,7 +74,10 @@ export function AppProvider({
   );
 
   const { locale } = useLocale();
-  const health = useMemo(() => computeHealth(dashboard?.sections), [dashboard, locale]);
+  const health = useMemo(
+    () => computeHealth(dashboard?.sections, new Date(), { plexEnabled: dashboard?.plexEnabled }),
+    [dashboard, locale],
+  );
   const overall = useMemo<HealthLevel>(() => {
     if (dashboardError) return "error";
     if (!dashboard) return "unknown";

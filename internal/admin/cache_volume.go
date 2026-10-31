@@ -1,0 +1,37 @@
+package admin
+
+import (
+	"os"
+	"path/filepath"
+
+	"golang.org/x/sys/unix"
+)
+
+// CacheVolumeMounted reports whether /cache is a mount point. Docker installs
+// bind the segment-cache volume there; a plain directory on the root disk is
+// not the volume.
+func CacheVolumeMounted() bool {
+	const volume = "/cache"
+	info, err := os.Stat(volume)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	var here, parent unix.Stat_t
+	if unix.Stat(volume, &here) != nil || unix.Stat(filepath.Dir(volume), &parent) != nil {
+		return false
+	}
+	return here.Dev != parent.Dev
+}
+
+func cacheVolumeMounted() bool { return CacheVolumeMounted() }
+
+// ShouldAdoptCacheVolume is true on a fresh install whose cache folder is
+// still the default inside the config directory and a /cache volume is mounted.
+func ShouldAdoptCacheVolume(setupComplete bool, storage, dir, dataDir string, mounted bool) bool {
+	if setupComplete || storage == "shared" || !mounted {
+		return false
+	}
+	def := filepath.Join(dataDir, "cache")
+	clean := filepath.Clean(dir)
+	return clean == filepath.Clean(def) || clean == "." || dir == ""
+}

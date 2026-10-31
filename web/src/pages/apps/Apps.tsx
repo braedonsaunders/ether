@@ -182,7 +182,11 @@ function ConnectDevice({ info }: { info: FrontendInfo }) {
               ))}
             </>
           ) : (
-            <p>{t("No native apps have been certified yet.")}</p>
+            <p>
+              {t(
+                "Open the app, add the server address above, and sign in. Findroid, Swiftfin, and Jellyfin Media Player are the usual places to start.",
+              )}
+            </p>
           )}
         </div>
       )}
@@ -263,15 +267,13 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
         {id === "jellyfin" || id === "emby" ? (
           <SettingsSection
             title={t("Home")}
-            description={t("{app} apps show this viewer's For You rows, the same ones Plex uses.", {
+            description={t("{app} apps show this viewer's For You rows.", {
               app: protocolName(id),
             })}
           >
             <SettingsRow
               title={t("Personalized rows")}
-              description={t(
-                "Each viewer gets their own rows, filled and ordered by the same personalization Plex uses.",
-              )}
+              description={t("Each viewer gets their own rows, filled from what they watch.")}
               control={
                 <Switch
                   checked={draft.homeRows !== false}

@@ -86,7 +86,14 @@ export function usenetHealth(v: unknown, debrid?: unknown): HealthItem {
   if (providers.length === 0)
     return debridOn(debrid)
       ? { ...base, level: "off", summary: t("Not used · streaming through debrid"), details: [] }
-      : { ...base, level: "error", summary: t("No providers configured"), details: [] };
+      : {
+          ...base,
+          label: t("Sources"),
+          href: "/sources",
+          level: "error",
+          summary: t("No debrid account or Usenet provider yet"),
+          details: [],
+        };
   const primary = providers.filter((p) => !p.backfill);
   const bad = providers.filter((p) => str(p.state) && str(p.state) !== "ok");
   const primaryBad = primary.filter((p) => str(p.state) && str(p.state) !== "ok");
@@ -613,16 +620,17 @@ export function databaseHealth(v: unknown, now = new Date()): HealthItem | null 
 export function computeHealth(
   sections: Record<string, unknown> | undefined,
   now = new Date(),
+  opts?: { plexEnabled?: boolean },
 ): HealthItem[] {
   const s = sections ?? {};
+  const plexOn = opts?.plexEnabled !== false;
   const items: HealthItem[] = [
     usenetHealth(s.providers, s.debrid),
     indexersHealth(s.indexers, s.debrid),
     cacheHealth(s.cache),
     catalogHealth(s.catalog, now),
     databaseHealth(s.database, now),
-    remoteHealth(s.remote),
-    plexDirectHealth(s.remote, now),
+    ...(plexOn ? [remoteHealth(s.remote), plexDirectHealth(s.remote, now)] : []),
   ].filter((item): item is HealthItem => item !== null);
   const transcode = transcodeHealth(s.hwaccel);
   if (transcode) items.push(transcode);

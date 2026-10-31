@@ -340,6 +340,9 @@
 /* The desktop rail is its own full-height column. AppKit draws the top bar's
    rule under the logo; without that rule the logo, navigation and version
    read as one column. */
+.ether-setup aside {
+  display: none;
+}
 .ether-shell aside > div:first-child {
   height: auto;
   min-height: 3.5rem;

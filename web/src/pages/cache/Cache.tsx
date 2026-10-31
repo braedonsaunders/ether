@@ -1,6 +1,6 @@
 import { Badge, Button, Input, Spinner, SubtabNav, cn, toast } from "@braedonsaunders/appkit-ui";
 import { ArrowLeft, ArrowUpRight, HardDrive, Network, Settings2, Sparkles } from "lucide-react";
-import { CACHE_PRESETS, CachePresetCards } from "./presets";
+import { CACHE_PRESETS, CachePresetCards, cachePresetKey } from "./presets";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { localized, t, tn } from "../../i18n";
@@ -221,11 +221,12 @@ export default function Cache() {
   const snap = live.data;
   const used = snap?.used ?? 0;
   const saved = config.data!.cache;
-  const savedPreset = CACHE_PRESETS.find((p) =>
-    Object.entries(p.values).every(([k, v]) => saved[k as keyof Policy] === v),
-  );
+  const matched = cachePresetKey(saved);
+  const savedPreset = CACHE_PRESETS.find((p) => p.key === matched);
   const policyName =
-    saved.mode === "off" ? t("Pass-through") : savedPreset?.name || t("Custom policy");
+    saved.mode === "off" || matched === "pass-through"
+      ? t("Pass-through")
+      : savedPreset?.name || t("Custom policy");
   const enabled = draft.mode !== "off",
     speculate = enabled && !draft.disableSpeculation;
   return (
@@ -318,11 +319,8 @@ export default function Cache() {
                   snap?.policy
                     ? snap.policy.mode === "off"
                       ? t("Pass-through")
-                      : (CACHE_PRESETS.find((p) =>
-                          Object.entries(p.values).every(
-                            ([k, v]) => snap.policy?.[k as keyof Policy] === v,
-                          ),
-                        )?.name ?? t("Custom policy"))
+                      : (CACHE_PRESETS.find((p) => p.key === cachePresetKey(snap.policy!))?.name ??
+                        t("Custom policy"))
                     : policyName
                 }
                 freeBytes={disk.data?.freeBytes}

@@ -23,7 +23,7 @@ export const CACHE_PRESETS: {
     key: "feather",
     name: t("Feather"),
     space: "256 MiB",
-    description: t("A small cache for recent playback."),
+    description: t("Keeps only what you just played."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -43,7 +43,7 @@ export const CACHE_PRESETS: {
     key: "everyday",
     name: t("Everyday"),
     space: "32 GiB",
-    description: t("Quick starts and room for recent watches."),
+    description: t("The next episode starts quickly for a normal household."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -63,7 +63,7 @@ export const CACHE_PRESETS: {
     key: "encore",
     name: t("Encore"),
     space: "250 GiB",
-    description: t("Household favourites stay longer."),
+    description: t("Favourite films stay ready to play again."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -83,7 +83,7 @@ export const CACHE_PRESETS: {
     key: "deep-shelf",
     name: t("Deep shelf"),
     space: "750 GiB",
-    description: t("Keep more of what people rewatch."),
+    description: t("Holds more of what the household rewatches."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -156,6 +156,17 @@ export const CACHE_PRESETS: {
     },
   },
 ]);
+
+/** Largest preset whose budget fits in the free space, leaving a little unused. */
+export function presetForFreeBytes(freeBytes: number): (typeof CACHE_PRESETS)[number] | null {
+  const room = freeBytes * 0.8;
+  let fit: (typeof CACHE_PRESETS)[number] | null = null;
+  for (const preset of CACHE_PRESETS) {
+    const budget = preset.values.budgetBytes ?? 0;
+    if (budget > 0 && budget <= room) fit = preset;
+  }
+  return fit ?? CACHE_PRESETS.find((preset) => preset.key === "feather") ?? null;
+}
 
 export function cachePresetKey(cache: { mode?: string; budgetBytes?: number }): string | null {
   if (cache.mode === "off") return "pass-through";

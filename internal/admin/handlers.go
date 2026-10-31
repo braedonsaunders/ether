@@ -54,17 +54,23 @@ func SetupStatus(cfg config.Config) (steps []SetupStep, complete bool) {
 			enabledDebrid++
 		}
 	}
-	enabledIndexers := 0
+	enabledIndexers, keylessSources := 0, 0
 	for _, ix := range cfg.Indexers {
-		if ix.Enabled {
-			enabledIndexers++
+		if !ix.Enabled {
+			continue
+		}
+		enabledIndexers++
+		// A Stremio addon is a source on its own: it needs no debrid or Usenet account.
+		if ix.IsStremio() && strings.TrimSpace(ix.URL) != "" {
+			keylessSources++
 		}
 	}
 	cacheDone := strings.TrimSpace(cfg.Cache.Dir) != "" && cfg.Cache.BudgetBytes >= 0
+	sourcesDone := enabledProviders+enabledDebrid+keylessSources > 0
 	steps = []SetupStep{
 		{ID: "plex", Title: "Sign in to plex.tv and claim", Complete: plexDone, Required: true, Detail: plexDetail},
-		{ID: "sources", Title: "Debrid accounts or Usenet providers", Complete: enabledProviders+enabledDebrid > 0, Required: true,
-			Detail: fmt.Sprintf("%d debrid, %d Usenet enabled", enabledDebrid, enabledProviders)},
+		{ID: "sources", Title: "Debrid accounts or Usenet providers", Complete: sourcesDone, Required: true,
+			Detail: fmt.Sprintf("%d debrid, %d Usenet, %d addon", enabledDebrid, enabledProviders, keylessSources)},
 		{ID: "indexers", Title: "Indexers", Complete: enabledIndexers > 0, Required: true,
 			Detail: fmt.Sprintf("%d enabled", enabledIndexers)},
 		{ID: "cache", Title: "Cache folder and disk budget", Complete: cacheDone, Required: true, Detail: cfg.Cache.Dir},
@@ -79,23 +85,45 @@ func SetupStatus(cfg config.Config) (steps []SetupStep, complete bool) {
 
 // setupStatus uses the existing Plex requirement for legacy installs; once
 // front ends are selected, a Plex-free household instead needs a local owner.
+// A local owner also satisfies the step when Plex stays on but is connected later.
 func (h *Handler) setupStatus(r *http.Request) ([]SetupStep, bool) {
 	cfg := h.deps.Config.Get()
 	steps, complete := SetupStatus(cfg)
-	if cfg.Frontends != nil && !cfg.Frontends["plex"].Enabled {
-		for i := range steps {
-			if steps[i].ID == "plex" {
-				steps[i].Title = "Create local owner"
-				steps[i].Complete = h.deps.LocalOwnerConfigured != nil && h.deps.LocalOwnerConfigured(r.Context())
-				if steps[i].Complete {
-					steps[i].Detail = "created"
-				} else {
-					steps[i].Detail = "not created"
-				}
+	local := h.deps.LocalOwnerConfigured != nil && h.deps.LocalOwnerConfigured(r.Context())
+	plexOff := cfg.Frontends != nil && !cfg.Frontends["plex"].Enabled
+	for i := range steps {
+		if steps[i].ID != "plex" {
+			continue
+		}
+		if plexOff {
+			steps[i].Title = "Create local owner"
+			steps[i].Complete = local
+			if local {
+				steps[i].Detail = "created"
+			} else {
+				steps[i].Detail = "not created"
 			}
+		} else if local && !steps[i].Complete {
+			steps[i].Complete = true
+			steps[i].Detail = "connect Plex later"
 		}
 	}
 	return steps, complete
+}
+
+func plainSetupGap(id string) string {
+	switch id {
+	case "sources":
+		return "Add a debrid account, a Usenet provider, or a torrent addon before finishing, or finish now and add it later."
+	case "indexers":
+		return "Add an indexer before finishing, or finish now and add it later."
+	case "catalog":
+		return "Add a catalogue key before finishing, or finish now and add it later."
+	case "cache":
+		return "Choose a cache folder before finishing."
+	default:
+		return "Finish the remaining setup step, or finish now and add it later."
+	}
 }
 
 func (h *Handler) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
@@ -107,10 +135,14 @@ func (h *Handler) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	cacheRestartRequired := h.deps.CacheRestartRequired != nil && h.deps.CacheRestartRequired()
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"setupComplete": complete, "requiredComplete": requiredDone, "steps": steps,
 		"cacheRestartRequired": cacheRestartRequired,
-	})
+	}
+	if cacheVolumeMounted() {
+		body["cacheVolume"] = "/cache"
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *Handler) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
@@ -131,8 +163,7 @@ func (h *Handler) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	if !body.Force {
 		for _, s := range steps {
 			if s.Required && !s.Complete {
-				writeError(w, http.StatusConflict, "setup_incomplete",
-					"required step \""+s.ID+"\" is not complete (send {\"force\":true} to finish anyway)")
+				writeError(w, http.StatusConflict, "setup_incomplete", plainSetupGap(s.ID))
 				return
 			}
 		}
@@ -509,10 +540,23 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, n := range names {
 		sections[n] = h.safeStatus(r, providers[n])
 	}
-	steps, complete := SetupStatus(h.deps.Config.Get())
+	cfg := h.deps.Config.Get()
+	steps, complete := h.setupStatus(r)
+	plexEnabled := cfg.Frontends == nil || cfg.Frontends["plex"].Enabled
+	if !plexEnabled {
+		delete(sections, "remote")
+		kept := names[:0]
+		for _, n := range names {
+			if n != "remote" {
+				kept = append(kept, n)
+			}
+		}
+		names = kept
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sections": sections, "names": names,
 		"setupComplete": complete, "setupSteps": steps, "version": h.version,
+		"plexEnabled": plexEnabled,
 	})
 }
 

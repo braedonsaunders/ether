@@ -7,6 +7,16 @@ import { t } from "../../i18n";
 import type { DebridKind } from "../../lib/types";
 import { StremioMark, debridMark } from "./marks";
 
+/** Where each service shows the token Ether asks for. */
+export const DEBRID_TOKEN_URL: Record<DebridKind, string> = {
+  realdebrid: "https://real-debrid.com/apitoken",
+  torbox: "https://torbox.app/settings",
+  alldebrid: "https://alldebrid.com/apikeys",
+  premiumize: "https://www.premiumize.me/account",
+  debridlink: "https://debrid-link.com/webapp/apikey",
+  offcloud: "https://offcloud.com/#/account",
+};
+
 /** Services Ether can stream from. */
 export const DEBRID_KINDS: { value: DebridKind; label: string }[] = [
   { value: "realdebrid", label: "Real-Debrid" },

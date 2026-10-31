@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
+	"net"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -173,5 +175,52 @@ func webPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	c := translations[lang]
-	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ether</title><main><h1>%s</h1><p>%s</p></main></html>`, lang, c.heading, c.instruction)
+	address := webAddress(r)
+	addressHTML := ""
+	if address != "" {
+		addressHTML = fmt.Sprintf(`<p>%s</p><p><code>%s</code></p>`, html.EscapeString(addressLabels[lang]), html.EscapeString(address))
+	}
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="%s"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ether</title><style>body{margin:0;background:#0e1116;color:#e7e9ee;font:16px/1.45 system-ui,sans-serif}main{max-width:36rem;margin:4rem auto;padding:0 1.25rem}h1{font-size:1.5rem;font-weight:650}p,li{color:#b7bdc9}code{color:#e7e9ee}a{color:#8eb6ff}</style><main><h1>%s</h1><p>%s</p>%s<p>%s</p><ul><li><a href="https://github.com/jarnedemeulemeester/findroid">Findroid</a></li><li><a href="https://github.com/jellyfin/swiftfin">Swiftfin</a></li><li><a href="https://github.com/jellyfin/jellyfin-media-player">Jellyfin Media Player</a></li></ul></main></html>`, lang, html.EscapeString(c.heading), html.EscapeString(c.instruction), addressHTML, html.EscapeString(appLabels[lang]))
+}
+
+var addressLabels = map[string]string{
+	"en": "Server address", "fr": "Adresse du serveur", "es": "Dirección del servidor",
+	"de": "Serveradresse", "cs": "Adresa serveru", "da": "Serveradresse",
+	"fi": "Palvelimen osoite", "it": "Indirizzo del server", "ja": "サーバーアドレス",
+	"ko": "서버 주소", "nb": "Serveradresse", "nl": "Serveradres",
+	"pl": "Adres serwera", "pt-BR": "Endereço do servidor", "ru": "Адрес сервера",
+	"sv": "Serveradress", "tr": "Sunucu adresi", "uk": "Адреса сервера",
+	"zh-CN": "服务器地址", "zh-TW": "伺服器位址",
+}
+
+var appLabels = map[string]string{
+	"en": "Apps to try", "fr": "Applications à essayer", "es": "Aplicaciones para probar",
+	"de": "Apps zum Ausprobieren", "cs": "Aplikace k vyzkoušení", "da": "Apps du kan prøve",
+	"fi": "Kokeiltavia sovelluksia", "it": "App da provare", "ja": "試せるアプリ",
+	"ko": "써 볼 앱", "nb": "Apper du kan prøve", "nl": "Apps om te proberen",
+	"pl": "Aplikacje do wypróbowania", "pt-BR": "Apps para experimentar", "ru": "Приложения",
+	"sv": "Appar att prova", "tr": "Denenecek uygulamalar", "uk": "Застосунки",
+	"zh-CN": "可以试试的应用", "zh-TW": "可以試試的應用程式",
+}
+
+func webAddress(r *http.Request) string {
+	if r.Host == "" {
+		return ""
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if ip, err := netip.ParseAddr(strings.Trim(host, "[]")); err == nil && netip.MustParsePrefix("172.16.0.0/12").Contains(ip.Unmap()) {
+		return ""
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	path := ""
+	if prefix, ok := r.Context().Value(prefixKey{}).(string); ok {
+		path = prefix
+	}
+	return scheme + "://" + r.Host + path
 }

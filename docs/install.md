@@ -110,16 +110,20 @@ docker run -d --name ether --restart unless-stopped \
   ghcr.io/braedonsaunders/ether:latest
 ```
 
-**Host networking is recommended.** Plex apps discover servers on the
+**Host networking is recommended on Linux.** Plex apps discover servers on the
 LAN with GDM (UDP 32410–32414) and Ether's remote-access setup talks to
-your router over UPnP; both need the host network namespace. Bridge mode
+your router over UPnP; both need the host network namespace. Docker Desktop
+on Mac and Windows does not provide that namespace. Bridge mode
 with `-p 32400:32400` works for Plex Web and for claimed/remote
-connections, but LAN auto-discovery will not find the server.
+connections, but LAN auto-discovery will not find the server. Do not publish
+port 8096. Jellyfin, Emby, and the other apps are reached at
+`http://HOST:PORT/jellyfin` (and `/emby`, `/silo`) on the console port.
 
 Volumes: `/config` (config, database, identity — back this up) and
-`/cache` for the segment cache. The cache defaults to `/config/cache`
-until you select `/cache` as the cache directory in the setup wizard (or
-later on the Cache page), where its budget is set too.
+`/cache` for the segment cache. The cache defaults to `/config/cache`.
+On a fresh install, a mounted `/cache` volume is used automatically, so
+no restart is required for that path. The budget is set in the setup wizard
+or later on the Cache page.
 
 User and permissions: Ether runs as `PUID`:`PGID` (default 999:999, the
 image's `ether` account). Set them to the user that owns your folders, as

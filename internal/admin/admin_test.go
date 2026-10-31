@@ -277,8 +277,8 @@ func TestSetupStatusAndGating(t *testing.T) {
 	}
 
 	rec = serve(h, req(http.MethodPost, "/ether/api/setup/complete", `{}`))
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("complete with missing steps: got %d want 409 (%s)", rec.Code, rec.Body)
+	if rec.Code != http.StatusConflict || strings.Contains(rec.Body.String(), "force") {
+		t.Fatalf("complete with missing steps: got %d want 409 without API wording (%s)", rec.Code, rec.Body)
 	}
 	// Forcing never finishes an unclaimed server: nobody could sign in.
 	rec = serve(h, req(http.MethodPost, "/ether/api/setup/complete", `{"force":true}`))
@@ -300,6 +300,34 @@ func TestSetupStatusAndGating(t *testing.T) {
 	// intentionally locked out (fail closed), proving post-setup auth.
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("reopen without token after setup: got %d want 401", rec.Code)
+	}
+}
+
+func TestStremioAddonCountsAsSource(t *testing.T) {
+	store := newStore(t, func(c *config.Config) {
+		c.Plex.Token, c.Plex.Claimed = "owner-token", true
+		c.Indexers = []config.Indexer{{
+			ID: "addon", Name: "Torrentio", URL: "https://torrentio.strem.fun/manifest.json",
+			Kind: config.IndexerKindStremio, Protocol: "torrent", Enabled: true,
+		}}
+		c.Catalog.TMDBKey = "bundled-test-key"
+		c.Cache.Dir = t.TempDir()
+	})
+	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store)})
+	rec := serve(h, req(http.MethodGet, "/ether/api/setup/status", ""))
+	var st struct {
+		RequiredComplete bool              `json:"requiredComplete"`
+		Steps            []admin.SetupStep `json:"steps"`
+	}
+	decode(t, rec, &st)
+	var sources admin.SetupStep
+	for _, step := range st.Steps {
+		if step.ID == "sources" {
+			sources = step
+		}
+	}
+	if !sources.Complete || !st.RequiredComplete {
+		t.Fatalf("keyless addon did not satisfy sources: %+v required=%v", sources, st.RequiredComplete)
 	}
 }
 

@@ -27,13 +27,17 @@ import {
   TestButton,
   type TestState,
 } from "../components/fields";
-import { loadLocale, localized, rememberLocale, t, tx } from "../i18n";
-import { api, apiFetch, newId, setToken } from "../lib/api";
+import { loadLocale, localized, rememberLocale, t, tn, tx } from "../i18n";
+import { api, apiFetch, errorMessage, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
+import type { TitleCard } from "../lib/contract";
+import { releaseConsole } from "../lib/releases";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
 import { appLabel, appPurpose } from "./apps/catalog";
-import { CachePresetCards, cachePresetKey } from "./cache/presets";
+import { CachePresetCards, cachePresetKey, presetForFreeBytes } from "./cache/presets";
+import { ProwlarrImport } from "../components/ProwlarrImport";
 import { DEBRID_KINDS } from "./sources/Debrid";
+import { DEBRID_TOKEN_URL } from "./sources/cards";
 import { addonUrlHasDebridKey, isStremio, normalizeAddonUrl } from "./sources/Indexers";
 import { LanguageStep } from "./setup/LanguageStep";
 import {
@@ -124,7 +128,10 @@ export function selectionFrom(cfg: EtherConfig, ids: string[]): Record<string, b
   if (cfg.frontends) {
     return Object.fromEntries(ids.map((id) => [id, Boolean(cfg.frontends?.[id]?.enabled)]));
   }
-  return Object.fromEntries(ids.map((id) => [id, id === "plex"]));
+  // A finished or claimed server with no front-end map is the legacy Plex install.
+  // A fresh install starts with nothing selected.
+  const legacyPlex = cfg.setupComplete || cfg.plex.claimed;
+  return Object.fromEntries(ids.map((id) => [id, legacyPlex && id === "plex"]));
 }
 
 /** Enabled flags change without dropping settings or front ends the wizard did not list. */
@@ -160,15 +167,34 @@ function blankProvider(): UsenetProvider {
   };
 }
 function blankDebrid(): DebridProvider {
-  return { id: newId("deb"), name: "", kind: "realdebrid", apiKey: "", priority: 0, enabled: true };
+  return {
+    id: newId("deb"),
+    name: "",
+    kind: "" as DebridProvider["kind"],
+    apiKey: "",
+    priority: 0,
+    enabled: true,
+  };
 }
 
 /** How an indexer row is searched; maps onto Indexer.kind and protocol. */
 type IndexerType = "newznab" | "torznab" | "stremio";
-const INDEXER_TYPES: { value: IndexerType; label: string }[] = localized(() => [
-  { value: "stremio", label: t("Stremio addon (torrents)") },
-  { value: "torznab", label: t("Torznab (torrents)") },
-  { value: "newznab", label: t("Newznab (Usenet)") },
+const INDEXER_TYPES: { value: IndexerType; label: string; hint: string }[] = localized(() => [
+  {
+    value: "stremio",
+    label: t("Stremio addon (torrents)"),
+    hint: t("A link from a torrent addon, such as Torrentio. No account."),
+  },
+  {
+    value: "torznab",
+    label: t("Torznab (torrents)"),
+    hint: t("A torrent search from Prowlarr, Jackett, or another app."),
+  },
+  {
+    value: "newznab",
+    label: t("Newznab (Usenet)"),
+    hint: t("A Usenet search. Use this with a Usenet provider."),
+  },
 ]);
 function indexerType(ix: Indexer): IndexerType {
   if (isStremio(ix)) return "stremio";
@@ -177,6 +203,108 @@ function indexerType(ix: Indexer): IndexerType {
 function withIndexerType(ix: Indexer, type: IndexerType): Indexer {
   if (type === "stremio") return { ...ix, kind: "stremio", protocol: "torrent", apiKey: "" };
   return { ...ix, kind: "", protocol: type === "torznab" ? "torrent" : "usenet" };
+}
+
+function SetupReady() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  const [titles, setTitles] = useState<TitleCard[]>([]);
+  const [streams, setStreams] = useState<string[]>([]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const search = async () => {
+    const query = q.trim();
+    if (!query) return;
+    setBusy(true);
+    setNote("");
+    setStreams([]);
+    try {
+      const items = await api.searchCatalog(query, undefined, 8);
+      setTitles(items);
+      if (items.length === 0) setNote(t("No titles matched."));
+    } catch (e) {
+      setNote(errorMessage(e));
+      setTitles([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openTitle = async (item: TitleCard) => {
+    setBusy(true);
+    setNote("");
+    try {
+      const result = await releaseConsole.search(item.key);
+      const names = (result.releases ?? [])
+        .filter((row) => !row.rejected)
+        .map((row) => row.release.name)
+        .slice(0, 8);
+      setStreams(names);
+      if (names.length === 0) setNote(t("No streams for {title} yet.", { title: item.title }));
+    } catch (e) {
+      setNote(errorMessage(e));
+      setStreams([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-xl flex-col gap-4 p-6">
+      <h1 className="text-lg font-semibold text-fg">{t("Search a title")}</h1>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void search();
+        }}
+      >
+        <Field label={t("Title")} htmlFor="setup-search">
+          <Input id="setup-search" value={q} onChange={(e) => setQ(e.currentTarget.value)} />
+        </Field>
+        <Button type="submit" disabled={busy || !q.trim()}>
+          {t("Search")}
+        </Button>
+      </form>
+      <ul className="space-y-1">
+        {titles.map((item) => (
+          <li key={item.key}>
+            <Button variant="ghost" onClick={() => void openTitle(item)}>
+              {item.title}
+              {item.year ? ` (${item.year})` : ""}
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {streams.length > 0 ? (
+        <ul className="space-y-1 text-sm text-fg">
+          {streams.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+        </ul>
+      ) : null}
+      {note ? (
+        <p className="text-sm text-fg-muted" role="status">
+          {note}
+        </p>
+      ) : null}
+      <Button variant="outline" onClick={() => navigate("/")}>
+        {t("Go to Overview")}
+      </Button>
+    </main>
+  );
+}
+
+function indexerNameFromUrl(url: string): string {
+  try {
+    const host = new URL(url.includes("://") ? url : `https://${url}`).hostname;
+    const label = host.split(".").find((part) => part && part !== "www") ?? "";
+    if (!label) return "";
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  } catch {
+    return "";
+  }
 }
 
 function blankIndexer(type: IndexerType = "newznab"): Indexer {
@@ -244,35 +372,39 @@ export function canAdvance(
     debrid?: DebridProvider[];
     debridTests?: Record<string, TestState>;
     skipped: Record<string, boolean>;
+    /** The owner chose a torrent addon and will paste the link on the next step. */
+    readyMade?: boolean;
   },
 ): boolean {
-  if (opts.skipped[step]) return true;
   switch (step) {
     case "language":
     case "apps":
     case "cache":
       return true;
     case "account":
-      return opts.accountReady;
+      return opts.accountReady || Boolean(opts.skipped[step]);
     case "sources": {
-      // A debrid account, a Usenet provider, or both; every enabled one tested.
+      // A debrid account, a Usenet provider, or a torrent addon. Skip only skips the test.
       const usenet = opts.providers.filter((p) => p.enabled);
-      const debrid = (opts.debrid ?? []).filter((d) => d.enabled);
+      const debrid = (opts.debrid ?? []).filter((d) => d.enabled && d.kind && d.apiKey.trim());
+      const addons = opts.indexers.filter((i) => i.enabled && isStremio(i) && i.url.trim());
+      const present = usenet.length + debrid.length + addons.length > 0;
+      if (!present) return Boolean(opts.readyMade);
+      if (opts.skipped[step]) return true;
+      // Addon links are tested on the indexer step, where their fields are.
       return (
-        usenet.length + debrid.length > 0 &&
         usenet.every((p) => p.host.trim() && opts.providerTests[p.id]?.status === "ok") &&
-        debrid.every((d) => d.apiKey.trim() && opts.debridTests?.[d.id]?.status === "ok")
+        debrid.every((d) => opts.debridTests?.[d.id]?.status === "ok")
       );
     }
     case "indexers": {
       const enabled = opts.indexers.filter((i) => i.enabled);
-      return (
-        enabled.length > 0 &&
-        enabled.every((i) => i.url.trim() && opts.indexerTests[i.id]?.status === "ok")
-      );
+      if (enabled.length === 0) return false;
+      if (opts.skipped[step]) return true;
+      return enabled.every((i) => i.url.trim() && opts.indexerTests[i.id]?.status === "ok");
     }
     case "catalog":
-      // Without TMDB there is no catalogue to browse.
+      // Without TMDB there is no catalogue to browse. Finishing later is a separate button.
       return opts.tmdbReady !== false;
     default:
       return true;
@@ -293,7 +425,14 @@ export default function Setup() {
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
   const [cacheRestartRequired, setCacheRestartRequired] = useState(false);
-  const [skipped, setSkipped] = useState<Record<string, boolean>>({});
+  const [skipped, setSkipped] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = sessionStorage.getItem("ether.setup.skipped");
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
   const setStep = (n: number) => {
     const nextStep = Math.max(0, Math.min(n, wizardSteps(true).length - 1));
     sessionStorage.setItem(SETUP_STEP_KEY, String(nextStep));
@@ -314,6 +453,8 @@ export default function Setup() {
       .then((s) => {
         const catalog = s.steps.find((x) => x.id === "catalog");
         setTmdbBundled(Boolean(catalog?.complete));
+        setCacheVolume(s.cacheVolume ?? "");
+        setServerSteps(Object.fromEntries(s.steps.map((step) => [step.id, step.complete])));
         if (s.setupComplete && s.cacheRestartRequired) setCacheRestartRequired(true);
       })
       .catch(() => {});
@@ -324,6 +465,12 @@ export default function Setup() {
   const [localDone, setLocalDone] = useState(false);
   const [localUsername, setLocalUsername] = useState("");
   const [localPassword, setLocalPassword] = useState("");
+  const [localPasswordAgain, setLocalPasswordAgain] = useState("");
+  const [plexLater, setPlexLater] = useState(false);
+  const [readyMade, setReadyMade] = useState(false);
+  const [cacheVolume, setCacheVolume] = useState("");
+  const [serverSteps, setServerSteps] = useState<Record<string, boolean>>({});
+  const [finished, setFinished] = useState(false);
   const [claimMsg, setClaimMsg] = useState("");
   const [plexRecovery, setPlexRecovery] = useState(false);
   const [claimFailed, setClaimFailed] = useState(false);
@@ -397,8 +544,21 @@ export default function Setup() {
       });
   }, []);
   const plexSelected = Boolean(frontends.plex);
+  const showLocalOwner = !plexSelected || plexLater;
   const steps = wizardSteps(plexSelected);
   const stepId = steps[step]?.id ?? "apps";
+  useEffect(() => {
+    sessionStorage.setItem("ether.setup.skipped", JSON.stringify(skipped));
+  }, [skipped]);
+  useEffect(() => {
+    if (stepId !== "cache" || !cfg || !disk) return;
+    if (cachePresetKey(cfg.cache)) return;
+    const untouched = !cfg.cache.mode && cfg.cache.budgetBytes === 50 * 1024 ** 3;
+    if (!untouched) return;
+    const preset = presetForFreeBytes(disk.freeBytes);
+    if (!preset) return;
+    setCfg({ ...cfg, cache: { ...cfg.cache, ...preset.values } });
+  }, [stepId, disk, cfg]);
   useEffect(() => {
     if (stepId === "cache" && cfg) refreshDisk(cfg.cache.dir);
     return () => {
@@ -524,9 +684,9 @@ export default function Setup() {
     () =>
       cfg
         ? canAdvance(stepId, {
-            accountReady: plexSelected
-              ? Boolean(cfg.plex.claimed && cfg.plex.token) && !plexRecovery && !claimFailed
-              : localDone,
+            accountReady: showLocalOwner
+              ? localDone
+              : Boolean(cfg.plex.claimed && cfg.plex.token) && !plexRecovery && !claimFailed,
             providers: cfg.usenet.providers ?? [],
             indexers: cfg.indexers ?? [],
             providerTests,
@@ -536,6 +696,7 @@ export default function Setup() {
             tmdbReady:
               optTests.tmdb?.status === "ok" || cfg.catalog.tmdbKey === "••••" || tmdbBundled,
             skipped,
+            readyMade,
           })
         : false,
     [
@@ -551,6 +712,7 @@ export default function Setup() {
       localDone,
       plexRecovery,
       claimFailed,
+      readyMade,
     ],
   );
 
@@ -624,7 +786,7 @@ export default function Setup() {
   const hasUsenet = providers.some((p) => p.enabled);
   const newIndexerType: IndexerType = hasDebrid && !hasUsenet ? "stremio" : "newznab";
 
-  const next = async () => {
+  const next = async (opts?: { force?: boolean }) => {
     setSaving(true);
     setError(null);
     try {
@@ -666,25 +828,23 @@ export default function Setup() {
         rememberLocale(languageChoice.console);
         await loadLocale(languageChoice.console);
       }
-      setCfg(
-        await api.putConfig(
-          savedDraft(
-            mergeFrontendSelection(
-              draft,
-              apps.map((item) => item.id),
-              frontends,
-            ),
+      const saved = await api.putConfig(
+        savedDraft(
+          mergeFrontendSelection(
+            draft,
+            apps.map((item) => item.id),
+            frontends,
           ),
         ),
       );
-      if (step < steps.length - 1) setStep(step + 1);
-      else {
-        const status = await api.setupComplete(false);
-        sessionStorage.removeItem(SETUP_STEP_KEY);
-        await app?.reloadBoot();
-        if (status.cacheRestartRequired) setCacheRestartRequired(true);
-        else navigate("/");
+      // The empty addon is not stored until it has an address. Keep the row so the next step can take it.
+      if (readyMade && !(saved.indexers ?? []).some((item) => isStremio(item))) {
+        saved.indexers = [...(saved.indexers ?? []), blankIndexer("stremio")];
       }
+      setCfg(saved);
+      if (opts?.force) await finish(true);
+      else if (step < steps.length - 1) setStep(step + 1);
+      else await finish(false);
     } catch (e) {
       setError(e);
     } finally {
@@ -692,7 +852,20 @@ export default function Setup() {
     }
   };
 
+  const finish = async (force: boolean) => {
+    const status = await api.setupComplete(force);
+    setServerSteps(Object.fromEntries(status.steps.map((item) => [item.id, item.complete])));
+    sessionStorage.removeItem(SETUP_STEP_KEY);
+    sessionStorage.removeItem("ether.setup.skipped");
+    await app?.reloadBoot();
+    if (status.cacheRestartRequired) setCacheRestartRequired(true);
+    else setFinished(true);
+  };
+
   const plexSigned = pinDone || Boolean(cfg.plex.claimed && cfg.plex.token);
+  const passwordsMatch = localPassword !== "" && localPassword === localPasswordAgain;
+
+  if (finished) return <SetupReady />;
 
   return (
     <WizardLayout
@@ -727,7 +900,9 @@ export default function Setup() {
                     )}
                   />
                   <span className="mt-1.5 flex items-center gap-1 text-xs font-medium">
-                    {i < step ? (
+                    {i < step &&
+                    (!((s.id === "account" ? "plex" : s.id) in serverSteps) ||
+                      serverSteps[s.id === "account" ? "plex" : s.id]) ? (
                       <Check size={12} className="text-primary" />
                     ) : (
                       <span className="tabular-nums">{i + 1}.</span>
@@ -752,14 +927,25 @@ export default function Setup() {
                 checked={Boolean(skipped[stepId])}
                 onChange={(e) => setSkipped({ ...skipped, [stepId]: e.currentTarget.checked })}
               />
-              {t("Skip test for this step (advanced)")}
+              {t("Skip the connection test")}
             </label>
           ) : null}
           <span className="flex-1" />
           {!advanceOk && stepId !== "cache" ? (
             <span className="hidden text-xs text-fg-muted sm:inline">
-              {t("Complete and test this step to continue.")}
+              {stepId === "sources" || stepId === "indexers" || stepId === "catalog"
+                ? t("You can finish now and add this later.")
+                : t("Complete and test this step to continue.")}
             </span>
+          ) : null}
+          {(stepId === "sources" || stepId === "indexers" || stepId === "catalog") && !advanceOk ? (
+            <Button
+              variant="outline"
+              disabled={saving || (!localDone && !plexSigned)}
+              onClick={() => void next({ force: true })}
+            >
+              {t("Finish now, add sources later")}
+            </Button>
           ) : null}
           <Button disabled={!advanceOk || saving} onClick={() => void next()}>
             {saving
@@ -771,19 +957,6 @@ export default function Setup() {
         </div>
       }
     >
-      {stepId === "account" ? (
-        <Alert>
-          <AlertDescription>
-            {tx("Adding a node to an existing cluster? {join}", {
-              join: (
-                <Button variant="link" onClick={() => navigate("/cluster")}>
-                  {t("Join a cluster instead")}
-                </Button>
-              ),
-            })}
-          </AlertDescription>
-        </Alert>
-      ) : null}
       <h2 className="text-base font-semibold text-fg">{steps[step]?.heading}</h2>
       <MutationError error={error} />
 
@@ -791,30 +964,67 @@ export default function Setup() {
         <LanguageStep choice={languageChoice} onChange={setLanguageChoice} />
       ) : null}
       {stepId === "apps" ? (
-        <div className="grid gap-4 md:grid-cols-2">
-          {apps.map((item) => (
-            <IntegrationAppCard
-              key={item.id}
-              identity={{ id: item.id, name: item.name }}
-              description={item.description}
-              logo={
-                item.id === "plex" ? (
-                  <PlexMark />
-                ) : item.id === "jellyfin" ? (
-                  <JellyfinMark />
-                ) : item.id === "emby" ? (
-                  <EmbyMark />
-                ) : undefined
-              }
-              enabled={Boolean(frontends[item.id])}
-              disabled={saving}
-              busy={saving}
-              onToggle={(enabled) => setFrontends({ ...frontends, [item.id]: enabled })}
-            />
-          ))}
+        <div className="space-y-4">
+          <p className="text-sm text-fg-muted">
+            {t(
+              "Most households pick Plex or Jellyfin. You will need a debrid token or a Usenet login to play anything. A Plex account is only needed if Plex is on. You can finish and add sources later.",
+            )}
+          </p>
+          <p className="text-sm text-fg-muted">
+            {t(
+              "People at home use the address on each app. People away from home use Plex, or a VPN such as Tailscale.",
+            )}
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            {apps
+              .filter((item) => item.id === "plex" || item.id === "jellyfin")
+              .map((item) => (
+                <IntegrationAppCard
+                  key={item.id}
+                  identity={{ id: item.id, name: item.name }}
+                  description={item.description}
+                  logo={
+                    item.id === "plex" ? (
+                      <PlexMark />
+                    ) : item.id === "jellyfin" ? (
+                      <JellyfinMark />
+                    ) : item.id === "emby" ? (
+                      <EmbyMark />
+                    ) : undefined
+                  }
+                  enabled={Boolean(frontends[item.id])}
+                  disabled={saving}
+                  busy={saving}
+                  onToggle={(enabled) => setFrontends({ ...frontends, [item.id]: enabled })}
+                />
+              ))}
+          </div>
+          {apps.some((item) => item.id !== "plex" && item.id !== "jellyfin") ? (
+            <details>
+              <summary className="cursor-pointer text-sm font-medium text-fg">
+                {t("More apps")}
+              </summary>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {apps
+                  .filter((item) => item.id !== "plex" && item.id !== "jellyfin")
+                  .map((item) => (
+                    <IntegrationAppCard
+                      key={item.id}
+                      identity={{ id: item.id, name: item.name }}
+                      description={item.description}
+                      logo={item.id === "emby" ? <EmbyMark /> : undefined}
+                      enabled={Boolean(frontends[item.id])}
+                      disabled={saving}
+                      busy={saving}
+                      onToggle={(enabled) => setFrontends({ ...frontends, [item.id]: enabled })}
+                    />
+                  ))}
+              </div>
+            </details>
+          ) : null}
         </div>
       ) : null}
-      {stepId === "account" && !plexSelected ? (
+      {stepId === "account" && showLocalOwner ? (
         <form
           className="space-y-4"
           onSubmit={(e) => {
@@ -823,10 +1033,16 @@ export default function Setup() {
             setError(null);
             void api
               .localSetup(localUsername, localPassword)
-              .then(({ token }) => {
+              .then(async ({ token }) => {
                 setToken(token);
                 setLocalPassword("");
+                setLocalPasswordAgain("");
                 setLocalDone(true);
+                const status = await api.setupStatus();
+                setServerSteps(
+                  Object.fromEntries(status.steps.map((item) => [item.id, item.complete])),
+                );
+                setStep(step + 1);
               })
               .catch(setError)
               .finally(() => setSaving(false));
@@ -848,15 +1064,46 @@ export default function Setup() {
               onChange={(e) => setLocalPassword(e.currentTarget.value)}
             />
           </Field>
-          <Button type="submit" disabled={saving || localDone || !localUsername || !localPassword}>
+          <Field label={t("Password again")} htmlFor="setup-owner-password-again">
+            <PasswordInput
+              id="setup-owner-password-again"
+              autoComplete="new-password"
+              value={localPasswordAgain}
+              onChange={(e) => setLocalPasswordAgain(e.currentTarget.value)}
+            />
+          </Field>
+          <p className="text-sm text-fg-muted">
+            {tn(
+              3 -
+                [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(Boolean)
+                  .length,
+              "{n} required field left",
+              "{n} required fields left",
+              {
+                n:
+                  3 -
+                  [localUsername.trim(), localPassword, passwordsMatch ? "ok" : ""].filter(Boolean)
+                    .length,
+              },
+            )}
+          </p>
+          <Button
+            type="submit"
+            disabled={saving || localDone || !localUsername.trim() || !passwordsMatch}
+          >
             {localDone ? t("Owner created") : t("Create owner")}
           </Button>
         </form>
       ) : null}
-      {stepId === "account" && plexSelected ? (
+      {stepId === "account" && plexSelected && !plexLater ? (
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
             {t("Signs this server in to your Plex account so Plex apps can find it.")}
+          </p>
+          <p className="text-sm text-fg-muted">
+            {t(
+              "This is a separate server. It does not change an existing Plex Media Server or the people who share it.",
+            )}
           </p>
           {plexSigned && !plexRecovery && !claimFailed ? (
             <Alert variant="success">
@@ -909,17 +1156,36 @@ export default function Setup() {
               {t("Claim server")}
             </Button>
           ) : null}
+          <Button variant="outline" disabled={saving} onClick={() => setPlexLater(true)}>
+            {t("Connect Plex later")}
+          </Button>
         </div>
       ) : null}
 
       {stepId === "sources" ? (
         <div className="space-y-6">
-          {providers.length === 0 && debrid.length === 0 ? (
-            <p className="text-sm text-fg-muted" role="status">
-              {debridSupported
-                ? t("Add a debrid account, a Usenet provider, or both, and test each one.")
-                : t("Add a Usenet provider and test it.")}
-            </p>
+          {providers.length === 0 && debrid.length === 0 && !readyMade ? (
+            <div className="space-y-3">
+              <p className="text-sm text-fg-muted" role="status">
+                {debridSupported
+                  ? t("Add a debrid account, a Usenet provider, or both, and test each one.")
+                  : t("Add a Usenet provider and test it.")}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setReadyMade(true);
+                  if (!indexers.some((item) => isStremio(item))) {
+                    setIndexers([...indexers, blankIndexer("stremio")]);
+                  }
+                }}
+              >
+                {t("Use a ready-made setup")}
+              </Button>
+              <p className="text-sm text-fg-muted">
+                {t("A torrent addon needs no account. Paste its address on the next step.")}
+              </p>
+            </div>
           ) : null}
           {debridSupported ? (
             <section className="space-y-4" aria-labelledby="setup-debrid">
@@ -944,7 +1210,7 @@ export default function Setup() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label={t("Service")}>
                       <SearchSelect
-                        aria-label={t("Debrid service")}
+                        ariaLabel={t("Debrid service")}
                         placeholder={t("Select…")}
                         searchPlaceholder={t("Search…")}
                         noMatchesLabel={t("No matches")}
@@ -955,13 +1221,25 @@ export default function Setup() {
                         onChange={(v) => patchDebrid(i, { kind: v as DebridProvider["kind"] })}
                       />
                     </Field>
-                    <Field label={t("API token")}>
-                      <SecretInput
-                        ariaLabel={t("API token")}
-                        value={d.apiKey}
-                        onChange={(v) => patchDebrid(i, { apiKey: v })}
-                      />
-                    </Field>
+                    {d.kind ? (
+                      <Field label={t("API token")}>
+                        <SecretInput
+                          ariaLabel={t("API token")}
+                          value={d.apiKey}
+                          onChange={(v) => patchDebrid(i, { apiKey: v })}
+                        />
+                        {DEBRID_TOKEN_URL[d.kind] ? (
+                          <a
+                            className="text-sm text-primary underline"
+                            href={DEBRID_TOKEN_URL[d.kind]}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {t("Where do I find this?")}
+                          </a>
+                        ) : null}
+                      </Field>
+                    ) : null}
                   </div>
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                     <label className="flex items-center gap-2 text-sm text-fg">
@@ -997,9 +1275,6 @@ export default function Setup() {
               <h3 id="setup-usenet" className="text-sm font-semibold text-fg">
                 {t("Usenet providers")}
               </h3>
-              <p className="text-sm text-fg-muted">
-                {t("Block accounts can be marked as backfill.")}
-              </p>
             </div>
             {providers.map((p, i) => (
               <fieldset key={p.id || i} className="rounded-xl border border-border bg-surface p-4">
@@ -1068,6 +1343,9 @@ export default function Setup() {
                     />{" "}
                     {t("Backfill only")}
                   </label>
+                  <span className="text-fg-muted">
+                    {t("Block accounts can be marked as backfill.")}
+                  </span>
                   <label className="flex items-center gap-2">
                     <Switch
                       checked={p.enabled}
@@ -1137,6 +1415,9 @@ export default function Setup() {
                       }}
                     />
                   </Field>
+                  <p className="text-sm text-fg-muted sm:col-span-2">
+                    {INDEXER_TYPES.find((item) => item.value === type)?.hint}
+                  </p>
                   <Field label={t("Name")}>
                     <Input
                       value={ix.name}
@@ -1154,6 +1435,11 @@ export default function Setup() {
                         value={ix.url}
                         placeholder="https://addon.example/manifest.json"
                         onChange={(e) => patchIndexer(i, { url: e.currentTarget.value })}
+                        onBlur={() => {
+                          if (ix.name.trim()) return;
+                          const name = indexerNameFromUrl(ix.url);
+                          if (name) patchIndexer(i, { name });
+                        }}
                       />
                     </Field>
                   ) : (
@@ -1163,6 +1449,11 @@ export default function Setup() {
                           value={ix.url}
                           placeholder="https://indexer.example.com"
                           onChange={(e) => patchIndexer(i, { url: e.currentTarget.value })}
+                          onBlur={() => {
+                            if (ix.name.trim()) return;
+                            const name = indexerNameFromUrl(ix.url);
+                            if (name) patchIndexer(i, { name });
+                          }}
                         />
                       </Field>
                       <Field label={t("API key")}>
@@ -1217,6 +1508,18 @@ export default function Setup() {
           >
             <Plus size={15} /> {t("Add indexer")}
           </Button>
+          <details>
+            <summary className="cursor-pointer text-sm font-medium text-fg">
+              {t("Import from Prowlarr")}
+            </summary>
+            <div className="mt-4">
+              <ProwlarrImport
+                onImported={() => {
+                  void api.getConfig().then((next) => setIndexers(next.indexers ?? []));
+                }}
+              />
+            </div>
+          </details>
         </div>
       ) : null}
 
@@ -1225,7 +1528,7 @@ export default function Setup() {
           <Field
             label={t("Cache folder")}
             hint={t(
-              "Changing this folder requires restarting Ether after setup. Posters and artwork stay in the configuration folder's cache.",
+              "Posters and artwork stay in the configuration folder. A mounted /cache volume is already in use when this page shows it.",
             )}
           >
             <div className="flex gap-2">
@@ -1238,8 +1541,26 @@ export default function Setup() {
               <Button variant="outline" onClick={() => refreshDisk(cfg.cache.dir)}>
                 {t("Check space")}
               </Button>
+              {cacheVolume && cfg.cache.dir !== cacheVolume ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCfg({ ...cfg, cache: { ...cfg.cache, dir: cacheVolume } });
+                    refreshDisk(cacheVolume);
+                  }}
+                >
+                  {t("Use {path}", { path: cacheVolume })}
+                </Button>
+              ) : null}
             </div>
           </Field>
+          {disk && cfg.cache.budgetBytes > disk.freeBytes ? (
+            <Alert variant="warning">
+              <AlertDescription>
+                {t("This budget is larger than the free space on this disk.")}
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {disk ? (
             <p className="text-sm text-fg-muted">
               {t("{free} free of {total} on this disk.", {
@@ -1299,15 +1620,65 @@ export default function Setup() {
               </div>
             </Field>
           </section>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-semibold text-fg">
+              {t("Do you watch 4K at home?")}
+            </legend>
+            <p className="text-sm text-fg-muted">
+              {t("Home playback stays at 1080p unless you say yes. Away from home stays at 1080p.")}
+            </p>
+            <label className="flex items-center gap-2 text-sm text-fg">
+              <input
+                type="radio"
+                name="setup-4k"
+                checked={cfg.quality.default !== "4K"}
+                onChange={() => setCfg({ ...cfg, quality: { ...cfg.quality, default: "1080p" } })}
+              />
+              {t("No, 1080p is enough")}
+            </label>
+            <label className="flex items-center gap-2 text-sm text-fg">
+              <input
+                type="radio"
+                name="setup-4k"
+                checked={cfg.quality.default === "4K"}
+                onChange={() => setCfg({ ...cfg, quality: { ...cfg.quality, default: "4K" } })}
+              />
+              {t("Yes, use 4K at home")}
+            </label>
+          </fieldset>
+          <p className="text-sm text-fg-muted">
+            {tn(
+              cfg.catalog.tmdbKey.trim() && cfg.catalog.tmdbKey !== "••••"
+                ? 0
+                : tmdbBundled
+                  ? 0
+                  : 1,
+              "{n} required field left",
+              "{n} required fields left",
+              {
+                n:
+                  cfg.catalog.tmdbKey.trim() && cfg.catalog.tmdbKey !== "••••"
+                    ? 0
+                    : tmdbBundled
+                      ? 0
+                      : 1,
+              },
+            )}
+          </p>
           <Alert variant="info">
             <AlertDescription>
               {t(
-                "Finishing setup locks this admin page to your owner account. You can reopen setup later from Settings.",
+                "Finishing setup locks this admin page to your owner account. You can reopen setup later from General.",
               )}
             </AlertDescription>
           </Alert>
         </div>
       ) : null}
+      <p className="pt-2 text-center text-xs text-fg-muted">
+        <Button variant="link" onClick={() => navigate("/cluster")}>
+          {t("Join a cluster instead")}
+        </Button>
+      </p>
     </WizardLayout>
   );
 }

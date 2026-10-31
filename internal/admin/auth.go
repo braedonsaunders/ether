@@ -178,6 +178,7 @@ func (h *Handler) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		"authRequired":    authRequired,
 		"signInMethods":   signInMethods,
 		"serverName":      cfg.Server.FriendlyName,
+		"plexEnabled":     cfg.Frontends == nil || cfg.Frontends["plex"].Enabled,
 	})
 }
 

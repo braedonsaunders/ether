@@ -311,9 +311,13 @@ function Shell() {
   const version = versionLabel(boot.version);
   const serverName = boot.serverName?.trim() || "Ether";
   return (
-    <div className="ether-shell contents">
+    <div
+      className={
+        location.pathname === "/setup" ? "ether-shell ether-setup contents" : "ether-shell contents"
+      }
+    >
       <AppShell
-        groups={navigation()}
+        groups={location.pathname === "/setup" ? [] : navigation()}
         pathname={location.pathname}
         navigationMode="sidebar"
         linkRender={linkRender}

@@ -42,6 +42,49 @@ function regionSubtag(tag: string): string {
   return "";
 }
 
+const TIME_ZONE_REGION: Record<string, string> = {
+  "America/Toronto": "CA",
+  "America/Vancouver": "CA",
+  "America/Edmonton": "CA",
+  "America/Winnipeg": "CA",
+  "America/Halifax": "CA",
+  "America/St_Johns": "CA",
+  "America/Montreal": "CA",
+  "Europe/London": "GB",
+  "Europe/Dublin": "IE",
+  "Europe/Paris": "FR",
+  "Europe/Berlin": "DE",
+  "Europe/Madrid": "ES",
+  "Europe/Rome": "IT",
+  "Europe/Amsterdam": "NL",
+  "Europe/Brussels": "BE",
+  "Europe/Stockholm": "SE",
+  "Europe/Oslo": "NO",
+  "Europe/Copenhagen": "DK",
+  "Europe/Helsinki": "FI",
+  "Europe/Warsaw": "PL",
+  "Europe/Prague": "CZ",
+  "Europe/Lisbon": "PT",
+  "Europe/Vienna": "AT",
+  "Europe/Zurich": "CH",
+  "Australia/Sydney": "AU",
+  "Australia/Melbourne": "AU",
+  "Pacific/Auckland": "NZ",
+  "Asia/Tokyo": "JP",
+  "Asia/Seoul": "KR",
+  "Asia/Shanghai": "CN",
+  "Asia/Hong_Kong": "HK",
+  "Asia/Taipei": "TW",
+  "America/Sao_Paulo": "BR",
+  "America/Mexico_City": "MX",
+};
+
+/** Region for a time zone the catalogue knows, or empty. */
+export function regionFromTimeZone(timeZone: string): string {
+  const region = TIME_ZONE_REGION[timeZone] ?? "";
+  return region && REGION_CODES.includes(region) ? region : "";
+}
+
 /** First region subtag in the browser's language list that the catalogue knows. */
 export function regionFromLocales(languages: readonly string[], fallback = "US"): string {
   for (const tag of languages) {
@@ -68,7 +111,12 @@ export function metadataFor(locale: string, region: string): string {
 export function freshHouseholdLanguage(browserLanguages: readonly string[]): HouseholdLanguage {
   const list = browserLanguages.map((tag) => tag.trim()).filter(Boolean);
   const consoleLocale = negotiateLocale(list.length ? list : ["en"]);
-  const region = regionFromLocales(list);
+  const explicit = list.some((tag) => regionSubtag(tag));
+  const zone =
+    !explicit && typeof Intl !== "undefined"
+      ? regionFromTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone)
+      : "";
+  const region = zone || regionFromLocales(list);
   const audio = baseLanguage(consoleLocale);
   return {
     console: consoleLocale,

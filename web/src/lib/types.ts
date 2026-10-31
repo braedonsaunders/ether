@@ -452,6 +452,8 @@ export interface SetupStatus {
   requiredComplete: boolean;
   steps: SetupStep[];
   cacheRestartRequired?: boolean;
+  /** Set when a /cache volume is mounted. */
+  cacheVolume?: string;
 }
 export interface Bootstrap {
   ok: boolean;
@@ -462,6 +464,8 @@ export interface Bootstrap {
   authenticated: boolean;
   authRequired: boolean;
   serverName: string;
+  /** False when the Plex app is off. Omitted means Plex is on. */
+  plexEnabled?: boolean;
 }
 export interface TestResult {
   ok: boolean;
@@ -571,6 +575,8 @@ export interface DashboardData {
   setupComplete: boolean;
   setupSteps?: SetupStep[];
   version: string;
+  /** False when the Plex app is off. Omitted means Plex is on. */
+  plexEnabled?: boolean;
 }
 
 /** One resolver decision (internal/resolver.Trace). Durations are nanoseconds. */

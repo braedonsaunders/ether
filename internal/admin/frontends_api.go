@@ -7,6 +7,14 @@ import (
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
+func (h *Handler) presentConnectURLs(r *http.Request, info FrontendInfo) FrontendInfo {
+	if h.deps.Config == nil {
+		return info
+	}
+	info.Status.ConnectURLs = consoleConnectURLs(r, string(info.Descriptor.ID), info.Status.ConnectURLs, h.deps.Config.Get(), h.proxyPrefixes())
+	return info
+}
+
 // FrontendAdmin is supplied by the app's protocol lifecycle manager.
 type FrontendAdmin interface {
 	List(context.Context) ([]FrontendInfo, error)
@@ -36,6 +44,9 @@ func (h *Handler) frontendList(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "frontend_error", "Could not list front ends")
 		return
 	}
+	for i := range list {
+		list[i] = h.presentConnectURLs(r, list[i])
+	}
 	writeJSON(w, 200, list)
 }
 func (h *Handler) frontendStatus(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +60,7 @@ func (h *Handler) frontendStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, item := range list {
 		if string(item.Descriptor.ID) == r.PathValue("id") {
-			writeJSON(w, 200, item.Status)
+			writeJSON(w, 200, h.presentConnectURLs(r, item).Status)
 			return
 		}
 	}

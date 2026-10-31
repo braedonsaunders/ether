@@ -507,6 +507,10 @@ export function newId(prefix: string): string {
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 401) return t("Your session has expired. Sign in again.");
+    if (err.code === "setup_incomplete" || err.message.includes('{"force":true}'))
+      return t("You can finish now and add sources later.");
+    if (err.code === "plex_required")
+      return t("Create an owner account, or connect Plex, before finishing.");
     return err.message;
   }
   if (err instanceof Error) return err.message;

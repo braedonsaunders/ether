@@ -108,11 +108,11 @@ describe("canAdvance gating", () => {
     ).toBe(false);
     expect(canAdvance("sources", { ...none, debrid: [{ ...rd, enabled: false }] })).toBe(false);
   });
-  it("requires a working TMDB key on the catalogue step, or the explicit skip", () => {
+  it("requires a working TMDB key on the catalogue step", () => {
     expect(canAdvance("catalog", { ...base, tmdbReady: false })).toBe(false);
     expect(canAdvance("catalog", { ...base, tmdbReady: true })).toBe(true);
     expect(canAdvance("catalog", { ...base, tmdbReady: false, skipped: { catalog: true } })).toBe(
-      true,
+      false,
     );
   });
   it("app choice and cache never block", () => {
@@ -153,6 +153,7 @@ describe("savedDraft", () => {
 
 function renderWizard(configure?: (fake: ReturnType<typeof createFakeServer>) => void) {
   sessionStorage.removeItem(SETUP_STEP_KEY);
+  sessionStorage.removeItem("ether.setup.skipped");
   localStorage.removeItem("ether.locale");
   const fake = createFakeServer();
   fake.state.streamDefaults = {
@@ -212,6 +213,8 @@ async function selectPlex() {
   expect(
     await screen.findByRole("heading", { name: "Where will your household watch?" }),
   ).toBeInTheDocument();
+  const plex = screen.getByRole("switch", { name: "Plex enabled" }) as HTMLInputElement;
+  if (!plex.checked) fireEvent.click(plex);
   fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
 }
 
@@ -230,7 +233,7 @@ describe("setup wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     for (const heading of ["Usenet providers", "Indexers and addons"]) {
       await screen.findByRole("heading", { name: heading });
-      fireEvent.click(screen.getByLabelText(/Skip test for this step/));
+      fireEvent.click(screen.getByLabelText(/Skip the connection test/));
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     }
     await screen.findByRole("heading", { name: "Cache folder and disk budget" });
@@ -363,7 +366,7 @@ describe("setup wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     for (const heading of ["Usenet providers", "Indexers and addons"]) {
       await screen.findByRole("heading", { name: heading });
-      fireEvent.click(screen.getByLabelText(/Skip test for this step/));
+      fireEvent.click(screen.getByLabelText(/Skip the connection test/));
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     }
     await screen.findByRole("heading", { name: "Cache folder and disk budget" });
@@ -372,8 +375,8 @@ describe("setup wizard", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("button", { name: "Finish setup" });
-    fireEvent.click(screen.getByLabelText(/Skip test for this step/));
-    fireEvent.click(screen.getByRole("button", { name: "Finish setup" }));
+    const finishNow = screen.getByRole("button", { name: "Finish now, add sources later" });
+    fireEvent.click(finishNow);
     expect(
       await screen.findByRole("heading", { name: "Restart Ether to use your cache folder" }),
     ).toBeInTheDocument();
@@ -427,6 +430,9 @@ describe("setup wizard", () => {
     expect(
       screen.queryByText("Add a debrid account, a Usenet provider, or both, and test each one."),
     ).toBeNull();
+    expect(screen.queryByLabelText("API token")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Debrid service" }));
+    fireEvent.click(screen.getByRole("option", { name: "Real-Debrid" }));
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "rd-token" } });
     fireEvent.click(screen.getByRole("button", { name: /^Test$/ }));
     await waitFor(() =>
@@ -470,12 +476,10 @@ describe("setup wizard", () => {
     await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-    for (const heading of ["Usenet providers", "Indexers and addons"]) {
-      await screen.findByRole("heading", { name: heading });
-      fireEvent.click(screen.getByLabelText(/Skip test for this step/));
-      fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-    }
-    await screen.findByRole("heading", { name: "Cache folder and disk budget" });
+    await screen.findByRole("heading", { name: "Usenet providers" });
+    fireEvent.click(screen.getByLabelText(/Skip the connection test/));
+    expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Finish now, add sources later" })).toBeEnabled();
     expect(fake.state.config.usenet.providers).toEqual([]);
     expect(fake.state.config.indexers).toEqual([]);
   });
@@ -492,13 +496,13 @@ describe("setup wizard", () => {
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
       await screen.findByRole("heading", { name: "Usenet providers" });
       if (kind === "indexer") {
-        fireEvent.click(screen.getByLabelText(/Skip test for this step/));
+        fireEvent.click(screen.getByRole("button", { name: "Use a ready-made setup" }));
         fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
         await screen.findByRole("heading", { name: "Indexers and addons" });
       }
       fireEvent.click(screen.getByRole("button", { name: `Add ${kind}` }));
       fireEvent.change(screen.getAllByRole("textbox")[0]!, { target: { value: "Keep my draft" } });
-      fireEvent.click(screen.getByLabelText(/Skip test for this step/));
+      fireEvent.click(screen.getByLabelText(/Skip the connection test/));
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
       expect(await screen.findByText(/is required/)).toBeInTheDocument();
       expect(screen.getAllByRole("textbox")[0]!).toHaveValue("Keep my draft");
@@ -680,15 +684,17 @@ describe("setup wizard", () => {
     const create = vi.spyOn(api, "localSetup").mockResolvedValue({ token: "local-session" });
     await continueLanguage();
     await screen.findByRole("heading", { name: "Where will your household watch?" });
-    fireEvent.click(screen.getByRole("switch", { name: "Plex enabled" }));
     fireEvent.click(screen.getByRole("switch", { name: "Jellyfin enabled" }));
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Create your owner account" });
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+    fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Create owner" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith("owner", "secret"));
-    expect(await screen.findByRole("button", { name: "Owner created" })).toBeDisabled();
+    expect(
+      await screen.findByRole("heading", { name: "Where Ether streams from" }),
+    ).toBeInTheDocument();
   });
 
   it("walks from a claimed Plex step to providers and gates on the provider test", async () => {
@@ -718,7 +724,7 @@ describe("setup wizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Usenet providers" });
     expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
-    fireEvent.click(screen.getByLabelText(/Skip test for this step/));
+    fireEvent.click(screen.getByLabelText(/Skip the connection test/));
     expect(screen.getByRole("button", { name: "Save and continue" })).toBeEnabled();
   });
 
@@ -728,7 +734,7 @@ describe("setup wizard", () => {
     expect(await screen.findByRole("heading", { name: "Set up Ether" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Choose a language" })).toBeInTheDocument();
     expect(screen.queryAllByRole("link", { name: "Finish setup" })).toHaveLength(0);
-    expect(screen.getAllByRole("link", { name: "Overview" }).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole("link", { name: "Overview" })).toHaveLength(0);
   });
 
   it("sends an existing owner to Overview while setup is still incomplete", async () => {
