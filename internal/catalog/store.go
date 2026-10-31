@@ -739,7 +739,7 @@ ON CONFLICT(key) DO UPDATE SET
 			return err
 		}
 	}
-	if t.Cast != nil || t.Directors != nil || t.Writers != nil || t.Crew != nil {
+	if (t.Cast != nil || t.Directors != nil || t.Writers != nil || t.Crew != nil) && !creditsUnchanged(ctx, tx, t) {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM catalog_credits WHERE key=?`, int64(t.Key)); err != nil {
 			return err
 		}
@@ -773,6 +773,40 @@ ON CONFLICT(key) DO UPDATE SET
 	return nil
 }
 
+// creditsUnchanged reports whether t's credits are exactly the stored ones,
+// so a refresh that brings the same cast and crew writes nothing.
+func creditsUnchanged(ctx context.Context, tx *sql.Tx, t core.Title) bool {
+	type credit struct {
+		person            int64
+		name, role, kind  string
+		ord               int
+		thumb, providerID string
+	}
+	want := map[credit]bool{}
+	for _, group := range []struct {
+		people []core.Person
+		kind   string
+	}{{t.Cast, "cast"}, {t.Directors, "director"}, {t.Writers, "writer"}, {t.Crew, "crew"}} {
+		for i, p := range group.people {
+			want[credit{p.TMDB, p.Name, p.Role, group.kind, i, p.ThumbPath, p.ID}] = true
+		}
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT person_tmdb,name,role,kind,ord,thumb,provider_id FROM catalog_credits WHERE key=?`, int64(t.Key))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var c credit
+		if rows.Scan(&c.person, &c.name, &c.role, &c.kind, &c.ord, &c.thumb, &c.providerID) != nil || !want[c] {
+			return false
+		}
+		n++
+	}
+	return rows.Err() == nil && n == len(want)
+}
+
 func detailAtFor(detail int, now int64) int64 {
 	if detail != 0 {
 		return now
@@ -788,6 +822,17 @@ func addedAtFor(browsable int, now int64) int64 {
 }
 
 func replacePairs(ctx context.Context, tx *sql.Tx, table, col string, key int64, vals []string) error {
+	want := map[string]bool{}
+	for _, v := range vals {
+		if v != "" {
+			want[v] = true
+		}
+	}
+	// A refresh usually brings the same values. Leaving the rows alone keeps
+	// policy triggers (and the search index) from firing for nothing.
+	if same, err := pairsEqual(ctx, tx, table, col, key, want); err != nil || same {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE key=?`, key); err != nil {
 		return err
 	}
@@ -802,6 +847,27 @@ func replacePairs(ctx context.Context, tx *sql.Tx, table, col string, key int64,
 		}
 	}
 	return nil
+}
+
+// pairsEqual reports whether key's stored values in table are exactly want.
+func pairsEqual(ctx context.Context, tx *sql.Tx, table, col string, key int64, want map[string]bool) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT `+col+` FROM `+table+` WHERE key=?`, key)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return false, err
+		}
+		if !want[v] {
+			return false, rows.Err()
+		}
+		n++
+	}
+	return n == len(want), rows.Err()
 }
 
 func (c *Catalog) queryTitles(ctx context.Context, q string, args ...any) ([]core.Title, error) {
