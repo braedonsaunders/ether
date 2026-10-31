@@ -455,6 +455,14 @@ describe("health", () => {
     );
     expect(finished.details.some((line) => line.includes("movie years"))).toBe(false);
     expect(remoteHealth({ claimed: false }).level).toBe("error");
+    const unclaimed = computeHealth({ remote: { claimed: false } }, now);
+    expect(unclaimed.filter((item) => item.id === "remote" || item.id === "plexdirect")).toEqual([
+      expect.objectContaining({
+        id: "remote",
+        summary: "Sign in to finish connecting",
+        href: "/apps/plex/account",
+      }),
+    ]);
     expect(
       remoteHealth({ claimed: true, remoteAccess: true, presence: { connected: false } }).level,
     ).toBe("warn");

@@ -598,7 +598,9 @@ function RowsPanel({
         <EmptyState
           icon={<Film />}
           title={t("No row data yet")}
-          description={t("Once viewers open Home, the rows that lead to plays rank here.")}
+          description={t(
+            "No plays yet. The library stays empty until a TMDB key syncs the catalogue, and a debrid account or a Usenet provider can play it.",
+          )}
           className="py-6"
         />
       ) : (

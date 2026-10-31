@@ -617,6 +617,23 @@ export function databaseHealth(v: unknown, now = new Date()): HealthItem | null 
   };
 }
 
+/** One Plex row until the server is claimed. The certificate check is the same missing sign-in. */
+function plexConnectionHealth(remote: unknown, now: Date): HealthItem[] {
+  if (isPlainObject(remote) && remote.claimed === false) {
+    return [
+      {
+        id: "remote",
+        label: t("Plex"),
+        href: "/apps/plex/account",
+        level: "error",
+        summary: t("Sign in to finish connecting"),
+        details: [t("Plex is on, and this server is not claimed yet.")],
+      },
+    ];
+  }
+  return [remoteHealth(remote), plexDirectHealth(remote, now)];
+}
+
 export function computeHealth(
   sections: Record<string, unknown> | undefined,
   now = new Date(),
@@ -630,7 +647,7 @@ export function computeHealth(
     cacheHealth(s.cache),
     catalogHealth(s.catalog, now),
     databaseHealth(s.database, now),
-    ...(plexOn ? [remoteHealth(s.remote), plexDirectHealth(s.remote, now)] : []),
+    ...(plexOn ? plexConnectionHealth(s.remote, now) : []),
   ].filter((item): item is HealthItem => item !== null);
   const transcode = transcodeHealth(s.hwaccel);
   if (transcode) items.push(transcode);

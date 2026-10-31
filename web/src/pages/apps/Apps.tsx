@@ -19,6 +19,7 @@ import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
 import { t } from "../../i18n";
 import { API_BASE, api, apiBlob, apiFetch } from "../../lib/api";
+import { isPlainObject } from "../../lib/format";
 import { useAsync, useInterval } from "../../lib/hooks";
 import { viewerStatus } from "../viewers/ViewerStatus";
 import { PlexApp } from "./PlexApp";
@@ -434,11 +435,17 @@ function protocolName(id: string): string {
 function portHelp(id: string): string {
   switch (id) {
     case "jellyfin":
-      return t("Jellyfin apps expect 8096. Change it only if that port is already in use.");
+      return t(
+        "Use the address on this page. The port is part of that address. Leave this at 8096 unless another server already uses it.",
+      );
     case "emby":
-      return t("Emby apps expect 8097. Change it only if that port is already in use.");
+      return t(
+        "Use the address on this page. The port is part of that address. Leave this at 8097 unless another server already uses it.",
+      );
     case "silo":
-      return t("Silo apps expect 8090. Change it only if that port is already in use.");
+      return t(
+        "Use the address on this page. The port is part of that address. Leave this at 8090 unless another server already uses it.",
+      );
     default:
       return t("Change this only if the usual port is already in use.");
   }
@@ -534,6 +541,7 @@ function AppDetail({ info }: { info: FrontendInfo }) {
 }
 
 export default function Apps() {
+  const { dashboard } = useApp();
   const state = useAsync((signal) => apiFetch<FrontendInfo[]>("/frontends", { signal }), []);
   const { tab: routeTab, section: routeSection } = useParams();
   const [searchParams] = useSearchParams();
@@ -613,7 +621,17 @@ export default function Apps() {
         ) : !state.data ? (
           <LoadingRows />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="space-y-4">
+            {plexOn &&
+            isPlainObject(dashboard?.sections.remote) &&
+            dashboard.sections.remote.claimed === false ? (
+              <p className="text-sm text-fg">
+                <Link className="text-primary underline" to="/apps/plex/account">
+                  {t("Finish connecting Plex")}
+                </Link>
+              </p>
+            ) : null}
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {state.data.map((info) => (
               <IntegrationAppCard
                 key={info.descriptor.id}
@@ -630,6 +648,7 @@ export default function Apps() {
                 configureLabel={t("Settings")}
               />
             ))}
+            </div>
           </div>
         ))}
       {(visited.has("plex") || showPlex) && (

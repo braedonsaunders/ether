@@ -22,9 +22,13 @@ export function appPurpose(id: string): string {
     case "plex":
       return t("At home and away, through plex.tv.");
     case "jellyfin":
-      return t("At home. Away from home, use a VPN such as Tailscale or an address you publish.");
+      return t(
+        "At home. Away from home, use a private network tool (Tailscale) or an address you publish.",
+      );
     case "emby":
-      return t("At home. Away from home, use a VPN such as Tailscale or an address you publish.");
+      return t(
+        "At home. Away from home, use a private network tool (Tailscale) or an address you publish.",
+      );
     case "silo":
       return t("At home on your network.");
     case "stremio":

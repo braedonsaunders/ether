@@ -375,7 +375,7 @@ describe("setup wizard", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("button", { name: "Finish setup" });
-    const finishNow = screen.getByRole("button", { name: "Finish now, add sources later" });
+    const finishNow = screen.getByRole("button", { name: "Finish now, add the TMDB key later" });
     fireEvent.click(finishNow);
     expect(
       await screen.findByRole("heading", { name: "Restart Ether to use your cache folder" }),
@@ -430,9 +430,11 @@ describe("setup wizard", () => {
     expect(
       screen.queryByText("Add a debrid account, a Usenet provider, or both, and test each one."),
     ).toBeNull();
-    expect(screen.queryByLabelText("API token")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Debrid service" }));
-    fireEvent.click(screen.getByRole("option", { name: "Real-Debrid" }));
+    expect(screen.getByLabelText("API token")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Find your Real-Debrid API token" })).toHaveAttribute(
+      "href",
+      "https://real-debrid.com/apitoken",
+    );
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "rd-token" } });
     fireEvent.click(screen.getByRole("button", { name: /^Test$/ }));
     await waitFor(() =>
@@ -497,8 +499,15 @@ describe("setup wizard", () => {
       await screen.findByRole("heading", { name: "Usenet providers" });
       if (kind === "indexer") {
         fireEvent.click(screen.getByRole("button", { name: "Use a ready-made setup" }));
+        expect(await screen.findByText("Torrentio (no account needed)")).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Change" }));
+        expect(screen.getByRole("button", { name: "Use a ready-made setup" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Use a ready-made setup" }));
         fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
         await screen.findByRole("heading", { name: "Indexers and addons" });
+        fireEvent.change(screen.getByDisplayValue("https://torrentio.strem.fun/manifest.json"), {
+          target: { value: "" },
+        });
       }
       fireEvent.click(screen.getByRole("button", { name: `Add ${kind}` }));
       fireEvent.change(screen.getAllByRole("textbox")[0]!, { target: { value: "Keep my draft" } });
@@ -690,7 +699,7 @@ describe("setup wizard", () => {
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
     fireEvent.change(screen.getByLabelText("Password again"), { target: { value: "secret" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create owner" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith("owner", "secret"));
     expect(
       await screen.findByRole("heading", { name: "Where Ether streams from" }),
@@ -757,7 +766,13 @@ describe("setup wizard", () => {
       };
     });
     await continueLanguage();
-    expect(await screen.findByRole("switch", { name: "Jellyfin enabled" })).not.toBeChecked();
+    expect(
+      await screen.findByRole("heading", { name: "Where will your household watch?" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("More apps")).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Silo enabled" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Stremio enabled" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Jellyfin enabled" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("switch", { name: "Jellyfin enabled" }));
     fireEvent.click(screen.getByRole("switch", { name: "Plex enabled" }));
     const put = vi.spyOn(api, "putConfig").mockRejectedValueOnce(new Error("disk full"));

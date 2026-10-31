@@ -238,6 +238,21 @@ services:
 
 Docker Desktop on Mac and Windows does not give a container the same host network as Linux. Publish the console port there.
 
+Already running Plex on 32400? Use bridge mode and another port. Open `http://HOST:32800/ether/`. Other apps use that same port, for example `http://HOST:32800/jellyfin`.
+
+```yaml
+services:
+  ether:
+    image: ghcr.io/braedonsaunders/ether:latest
+    environment:
+      ETHER_PORT: "32800"
+    ports:
+      - "32800:32800"
+    volumes:
+      - ./config:/config
+      - ./cache:/cache
+```
+
 Open **`http://localhost:32400/ether/`** (or the `ETHER_PORT` you set) and finish the wizard:
 
 1. **Choose a language.**
@@ -245,7 +260,7 @@ Open **`http://localhost:32400/ether/`** (or the `ETHER_PORT` you set) and finis
 3. **Create the owner account.** Plex sign-in is only required when Plex is on; otherwise create a local owner. People outside the house use Plex through plex.tv, or Tailscale / an address you publish for the other apps.
 4. **Add a source:** a debrid account (**Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link, Offcloud**) or a Usenet provider, or a ready-made torrent addon with no account.
 5. **Add an indexer** (a Stremio addon, Torznab, or Newznab).
-6. **Choose a cache preset** (an SSD with 32–50 GiB is plenty to start). A mounted `/cache` volume is used on its own.
+6. **Choose a cache preset.** Ether suggests one from the free space on the disk. 32 GiB is enough to start. A mounted `/cache` volume is used on its own.
 7. **Paste a free [TMDB API key](https://www.themoviedb.org/settings/api).** Optional integrations (Trakt, OpenSubtitles, local Ollama/LM Studio) can wait.
 
 **After setup:** [Understand Plex libraries](docs/user-guide.md#libraries-catalogue-and-home) · [Put your watchlist on Home](docs/user-guide.md#put-your-watchlist-on-home) · [Choose your Home rows](docs/user-guide.md#choose-home-rows) · [Check Stremio addon compatibility](docs/user-guide.md#stremio-addons-as-sources)

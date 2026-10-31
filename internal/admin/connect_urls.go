@@ -42,6 +42,11 @@ func consoleConnectURLs(r *http.Request, id string, urls []string, cfg config.Co
 	if advScheme, advHost, advOK := advertisedOrigin(cfg); advOK && prefix != "" {
 		add(originURL(advScheme, advHost, prefix))
 	}
+	// Plex is the process the owner already opened. A bridge container's
+	// own address is not "this computer only".
+	if id == "plex" && ok {
+		add(originURL(scheme, host, ""))
+	}
 	if ok && prefix != "" {
 		add(originURL(scheme, host, prefix))
 	}
@@ -152,8 +157,12 @@ func containerHost(host string) bool {
 }
 
 func originURL(scheme, host, path string) string {
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+	u := &url.URL{Scheme: scheme, Host: host}
+	if path != "" {
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		u.Path = path
 	}
-	return (&url.URL{Scheme: scheme, Host: host, Path: path}).String()
+	return u.String()
 }
