@@ -70,7 +70,8 @@ func (pr *Request) ClientCapsWith(remoteMaxKbps int, overrides []core.ClientCapa
 		applyLegacyCapabilities(&c, pr.ClientCapabilities)
 	}
 	if pr.ProfileExtra != "" {
-		applyProfileExtra(&c, pr.ProfileExtra)
+		ev := applyProfileExtra(&c, pr.ProfileExtra)
+		promoteWebHDRFromProfile(&c, pr.Product, ev)
 	}
 	if c.Remote && remoteMaxKbps > 0 && (c.MaxBitrateKbps == 0 || c.MaxBitrateKbps > remoteMaxKbps) {
 		if c.MaxBitrateKbps == 0 {
@@ -93,6 +94,86 @@ func (s *Server) declaredCaps(pr *Request) core.ClientCaps {
 		return core.ClientCaps{}
 	}
 	return pr.ClientCapsWith(s.cfg().Transcode.RemoteMaxBitrateKbps, s.cfg().Clients.Overrides)
+}
+
+// profileExtraEvidence records affirmative codec/HDR claims and HDR denials
+// from X-Plex-Client-Profile-Extra. Omission is not support: listing hevc
+// alone never implies HDR10 (Braedon review of #136).
+type profileExtraEvidence struct {
+	affirmativeHEVC  bool
+	affirmativeHDR10 bool // bitDepth≥10 and/or colorTrc allow-list includes smpte2084
+	hdrDenied        bool
+}
+
+// promoteWebHDRFromProfile enables HDR10 remux for Plex Web when profile-extra
+// affirmatively listed hevc and also claimed 10-bit/PQ, with no HDR denial.
+// Matches the Profile-Extra Plex Web sends once it knows the title is HDR10
+// HEVC (bitDepth upperBound=10 and/or colorTrc allow-list including smpte2084).
+// HEVC alone never implies HDR10 (Braedon #136); browser name alone never
+// promotes. An early thin Profile-Extra may still tone-map; a later start with
+// the full report remuxes.
+func promoteWebHDRFromProfile(c *core.ClientCaps, product string, ev profileExtraEvidence) {
+	if !strings.Contains(strings.ToLower(product), "plex web") {
+		return
+	}
+	if ev.affirmativeHEVC {
+		c.VideoCodecs = addUnique(c.VideoCodecs, "hevc")
+	}
+	if !ev.affirmativeHEVC || !ev.affirmativeHDR10 || ev.hdrDenied {
+		return
+	}
+	c.HDR10 = true
+}
+
+// limitationDeniesHDR reports profile-extra limits that mean this client
+// cannot take HEVC HDR10 (8-bit cap or explicit PQ rejection).
+func limitationDeniesHDR(a map[string]string) bool {
+	sn := normalizeCodec(a["scopeName"])
+	if sn != "hevc" && sn != "av1" && sn != "*" && sn != "" {
+		return false
+	}
+	name, typ := a["name"], a["type"]
+	val := limitationValue(a)
+	switch a["scope"] {
+	case "videoCodec":
+		if name == "video.bitDepth" && typ == "upperBound" {
+			n, err := strconv.Atoi(val)
+			return err == nil && n < 10
+		}
+		if name == "video.colorTrc" && typ == "notMatch" {
+			return strings.Contains(val, "smpte2084")
+		}
+	}
+	return false
+}
+
+// limitationAffirmsHDR10 reports profile-extra limits that affirmatively claim
+// 10-bit and/or PQ (HDR10) support — the signals PMS Firefox sent when it
+// Direct Streamed an HDR10 HEVC remux.
+func limitationAffirmsHDR10(a map[string]string) bool {
+	sn := normalizeCodec(a["scopeName"])
+	if sn != "hevc" && sn != "av1" && sn != "*" && sn != "" {
+		return false
+	}
+	name, typ, scope := a["name"], a["type"], a["scope"]
+	val := limitationValue(a)
+	if name == "video.bitDepth" && typ == "upperBound" && scope == "videoCodec" {
+		n, err := strconv.Atoi(val)
+		return err == nil && n >= 10
+	}
+	// PMS: scope=videoTranscodeTarget&type=match&name=video.colorTrc&list=...|smpte2084
+	if name == "video.colorTrc" && typ == "match" && (scope == "videoCodec" || scope == "videoTranscodeTarget") {
+		return strings.Contains(val, "smpte2084")
+	}
+	return false
+}
+
+// limitationValue prefers list= (PMS colorTrc allow-lists) then value=.
+func limitationValue(a map[string]string) string {
+	if v := a["list"]; v != "" {
+		return v
+	}
+	return a["value"]
 }
 
 // clientCaps derives core.ClientCaps for the request and applies any
@@ -144,7 +225,11 @@ func ParseProfileExtra(s string) []Directive {
 			if !ok {
 				continue
 			}
-			args[strings.TrimSpace(k)] = strings.TrimSpace(v)
+			v = strings.TrimSpace(v)
+			if dec, err := url.QueryUnescape(v); err == nil {
+				v = dec
+			}
+			args[strings.TrimSpace(k)] = v
 		}
 		if verb != "" {
 			out = append(out, Directive{Verb: verb, Args: args})
@@ -198,7 +283,8 @@ func addUnique(xs []string, add ...string) []string {
 	return xs
 }
 
-func applyProfileExtra(c *core.ClientCaps, extra string) {
+func applyProfileExtra(c *core.ClientCaps, extra string) profileExtraEvidence {
+	var ev profileExtraEvidence
 	for _, d := range ParseProfileExtra(extra) {
 		a := d.Args
 		switch d.Verb {
@@ -206,7 +292,11 @@ func applyProfileExtra(c *core.ClientCaps, extra string) {
 			if t := a["type"]; t != "" && t != "videoProfile" {
 				continue
 			}
-			c.VideoCodecs = addUnique(c.VideoCodecs, splitList(a["videoCodec"])...)
+			codecs := splitList(a["videoCodec"])
+			if slices.Contains(codecs, "hevc") {
+				ev.affirmativeHEVC = true
+			}
+			c.VideoCodecs = addUnique(c.VideoCodecs, codecs...)
 			c.AudioCodecs = addUnique(c.AudioCodecs, splitList(a["audioCodec"])...)
 			if ct := a["container"]; ct != "" {
 				c.Containers = addUnique(c.Containers, splitList(ct)...)
@@ -218,13 +308,24 @@ func applyProfileExtra(c *core.ClientCaps, extra string) {
 			if t := a["type"]; t != "" && t != "videoProfile" {
 				continue
 			}
-			c.VideoCodecs = addUnique(c.VideoCodecs, splitList(a["videoCodec"])...)
+			codecs := splitList(a["videoCodec"])
+			if slices.Contains(codecs, "hevc") {
+				ev.affirmativeHEVC = true
+			}
+			c.VideoCodecs = addUnique(c.VideoCodecs, codecs...)
 			c.AudioCodecs = addUnique(c.AudioCodecs, splitList(a["audioCodec"])...)
 			c.Containers = addUnique(c.Containers, splitList(a["container"])...)
 		case "add-limitation":
+			if limitationDeniesHDR(a) {
+				ev.hdrDenied = true
+			}
+			if limitationAffirmsHDR10(a) {
+				ev.affirmativeHDR10 = true
+			}
 			applyLimitation(c, a)
 		}
 	}
+	return ev
 }
 
 // streamingAudioTarget keeps output capabilities separate from direct-play
@@ -260,7 +361,8 @@ func applyLimitation(c *core.ClientCaps, a map[string]string) {
 	}
 	name := a["name"]
 	typ := a["type"]
-	val := a["value"]
+	// PMS sends colorTrc denials as list=, the same shape as its allow-lists.
+	val := limitationValue(a)
 	n, numErr := strconv.Atoi(val)
 	switch {
 	case scope == "videoCodec" && name == "video.height" && typ == "upperBound" && numErr == nil && n > 0:
