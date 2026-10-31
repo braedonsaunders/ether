@@ -28,11 +28,13 @@ func (p peoplePolicy) Allowed(viewer *core.User, title *core.Title) bool {
 }
 
 // beginPeopleRead takes no joint locks while reading metadata. The final epoch
-// fence validates all durable facts read since the initial epoch, and checks the
+// fence validates epoch-covered membership and visibility inputs, and checks the
 // exact shared config version while the local config lease is still held.
 // Playback hours do not restrict metadata navigation: this uses Allowed's rule
 // body, not CanPlay. Release/home-release gates use one captured time and only
 // become more permissive as time advances; a backwards clock fails closed.
+// Optional catalog_people IMDb metadata is a joined cached observation, not an
+// epoch-protected visibility input or a promise of stable person metadata.
 func (a *App) beginPeopleRead(ctx context.Context, viewer *core.User) (experience.PeopleRead, error) {
 	if viewer == nil || viewer.ID <= 0 || a.cfg == nil || a.catalog == nil || a.db == nil || a.safety == nil || a.users == nil {
 		return experience.PeopleRead{}, core.ErrNotAvailable
