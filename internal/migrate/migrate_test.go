@@ -228,3 +228,56 @@ func TestHistoryOnlyScopesAccountPagesAndCachesShowIdentities(t *testing.T) {
 		t.Fatalf("history count=%d err=%v", count, err)
 	}
 }
+
+func TestPreviewSkipsUnwatchedAndMatchesPlexGUIDByTitleYear(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err = db.Exec(`INSERT INTO auth_users(id,plex_id,username,created_at,updated_at)VALUES(1,99,'viewer',0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		switch r.URL.Path {
+		case "/identity":
+			w.Write([]byte(`<MediaContainer machineIdentifier="guid-fallback"/>`))
+		case "/accounts":
+			w.Write([]byte(`<MediaContainer><Account id="1" name="viewer"/></MediaContainer>`))
+		case "/library/sections":
+			w.Write([]byte(`<MediaContainer><Directory key="1" type="movie" title="Movies"/></MediaContainer>`))
+		case "/library/sections/1/all":
+			w.Write([]byte(`<MediaContainer totalSize="3"><Video ratingKey="watched-plex" type="movie" title="Example" year="2024" guid="plex://movie/opaque" viewCount="1" lastViewedAt="1700000000"/><Video ratingKey="unwatched-opaque" type="movie" title="Never Watched" guid="plex://movie/unwatched" viewCount="0"/><Video ratingKey="collection-item" type="movie" title="Example" year="2024" guid="plex://movie/col" viewCount="0"/></MediaContainer>`))
+		case "/library/metadata/watched-plex", "/library/metadata/collection-item":
+			w.Write([]byte(`<MediaContainer><Video ratingKey="watched-plex" type="movie" title="Example" year="2024" guid="plex://movie/opaque"/></MediaContainer>`))
+		case "/library/sections/1/collections":
+			w.Write([]byte(`<MediaContainer><Directory key="5" title="Picks"/></MediaContainer>`))
+		case "/library/collections/5/children":
+			w.Write([]byte(`<MediaContainer><Video ratingKey="collection-item" type="movie" title="Example" year="2024" guid="plex://movie/col"/></MediaContainer>`))
+		case "/status/sessions/history/all", "/playlists":
+			w.Write([]byte(`<MediaContainer totalSize="0"/>`))
+		default:
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	svc := New(db, catalogFake{})
+	plan, err := svc.Preview(ctx, Request{URL: srv.URL, Token: "secret", Viewers: []Viewer{{LocalUserID: 1, Name: "viewer"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Items) != 1 || plan.Items[0].Key != core.MovieKey(11) {
+		t.Fatalf("items=%+v", plan.Items)
+	}
+	for _, warn := range plan.Warnings {
+		if strings.Contains(warn, "Unmatched") {
+			t.Fatalf("unexpected unmatched warning: %s", warn)
+		}
+	}
+	if len(plan.Lists) != 1 || len(plan.Lists[0].Keys) != 1 || plan.Lists[0].Keys[0] != core.MovieKey(11) {
+		t.Fatalf("lists=%+v", plan.Lists)
+	}
+}

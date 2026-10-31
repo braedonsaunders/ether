@@ -428,3 +428,50 @@ func TestBuildArgsVAAPIWithoutGPUScale(t *testing.T) {
 	mustContain(t, args, "-vaapi_device /dev/dri/renderD128", "hwupload", "-c:v h264_vaapi")
 	mustNotContain(t, args, "scale_vaapi", "tonemap_vaapi", "-hwaccel_output_format vaapi")
 }
+
+func TestBuildArgsVAAPIRCModesAndNoGPUTonemap(t *testing.T) {
+	info := mustParse(t, "mkv_hevc_hdr10.json")
+	d := Decide(info, plexWeb, allow(), Policy{})
+	d.BitrateKbps = 4192
+	d.MaxHeight = 720
+
+	// CQP-only driver: both VBV quality and explicit-bitrate runs use CQP with
+	// a bitrate-scaled QP instead of failing on -rc_mode QVBR / VBR.
+	s := baseSpec(info, d)
+	s.Accel = core.HWAccel{
+		Name:           AccelVAAPI,
+		Encoders:       []string{"h264_vaapi"},
+		Device:         "/dev/dri/renderD128",
+		NoGPUScale:     true,
+		VAAPIQualityRC: map[string]string{"h264_vaapi": "CQP"},
+		VAAPIBitrateRC: map[string]string{"h264_vaapi": "CQP"},
+	}
+	s.Rate = rateControl{Quality: true, MaxrateKbps: 4000, BufsizeKbps: 32000, TargetKbps: 3600}
+	qArgs := buildArgs(s)
+	mustContain(t, qArgs, "-c:v h264_vaapi", "-rc_mode CQP", "-global_quality 23")
+	mustNotContain(t, qArgs, "-rc_mode QVBR", "-rc_mode VBR", "-b:v", "-maxrate")
+
+	s.Rate = rateControl{}
+	bArgs := buildArgs(s)
+	mustContain(t, bArgs, "-c:v h264_vaapi", "-rc_mode CQP", "-global_quality 22")
+
+	// Tighter bitrate budget scales CQP upward so bandwidth-limited rungs stay bounded.
+	sLow := s
+	sLow.Decision.BitrateKbps = 1692 // 1500 kbps video
+	lowArgs := buildArgs(sLow)
+	mustContain(t, lowArgs, "-c:v h264_vaapi", "-rc_mode CQP", "-global_quality 30")
+	mustNotContain(t, bArgs, "-rc_mode QVBR", "-rc_mode VBR", "-b:v", "-maxrate")
+
+	// NoGPUTonemap: GPU scaler works, but HDR tone-mapping falls back to CPU
+	// zscale/tonemap + hwupload instead of failing in tonemap_vaapi.
+	sTonemap := baseSpec(info, d)
+	sTonemap.Accel = core.HWAccel{
+		Name:         AccelVAAPI,
+		Encoders:     []string{"h264_vaapi"},
+		Device:       "/dev/dri/renderD128",
+		NoGPUTonemap: true,
+	}
+	tmArgs := buildArgs(sTonemap)
+	mustContain(t, tmArgs, "-vaapi_device /dev/dri/renderD128", "tonemap=tonemap=hable", "hwupload", "-c:v h264_vaapi")
+	mustNotContain(t, tmArgs, "tonemap_vaapi", "scale_vaapi")
+}

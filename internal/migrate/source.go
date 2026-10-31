@@ -175,9 +175,18 @@ func (m *sourceMapper) showFor(ctx context.Context, grandparent string) (core.Ra
 	c, e := m.service.get(ctx, m.base, m.token, "/library/metadata/"+url.PathEscape(grandparent)+"?includeGuids=1")
 	if e == nil {
 		for _, d := range c.Directories {
-			show, _ = m.service.mapMedia(ctx, m.base, m.token, media{Type: "show", GUID: d.GUID, GUIDs: d.GUIDs})
+			show, _ = m.service.mapMedia(ctx, m.base, m.token, media{Type: "show", Title: d.Title, Year: d.Year, GUID: d.GUID, GUIDs: d.GUIDs})
 			if show != 0 {
 				break
+			}
+		}
+		if show == 0 {
+			for _, item := range append(c.Videos, c.Metadata...) {
+				item.Type = "show"
+				show, _ = m.service.mapMedia(ctx, m.base, m.token, item)
+				if show != 0 {
+					break
+				}
 			}
 		}
 	}

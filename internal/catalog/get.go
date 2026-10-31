@@ -19,7 +19,40 @@ const (
 	settledReleaseAge  = 90 * 24 * time.Hour
 	activeSeasonTTL    = time.Hour
 	caughtUpRefreshTTL = 15 * time.Minute
+	// refreshMissTTL is how long a failed metadata read is not retried.
+	// Library lists call Get per row; without this, one outage becomes one
+	// network wait per title.
+	refreshMissTTL = time.Minute
 )
+
+func showRefreshKey(id int64) string { return fmt.Sprintf("show:%d", id) }
+func movieRefreshKey(id int64) string { return fmt.Sprintf("movie:%d", id) }
+func seasonRefreshKey(id int64, season int) string {
+	return fmt.Sprintf("season:%d:%d", id, season)
+}
+
+func (c *Catalog) refreshMissed(key string) bool {
+	c.refreshMissMu.Lock()
+	defer c.refreshMissMu.Unlock()
+	at, ok := c.refreshMiss[key]
+	if !ok {
+		return false
+	}
+	if c.now().Sub(at) >= refreshMissTTL {
+		delete(c.refreshMiss, key)
+		return false
+	}
+	return true
+}
+
+func (c *Catalog) noteRefreshMiss(key string) {
+	c.refreshMissMu.Lock()
+	defer c.refreshMissMu.Unlock()
+	if c.refreshMiss == nil {
+		c.refreshMiss = map[string]time.Time{}
+	}
+	c.refreshMiss[key] = c.now()
+}
 
 func (c *Catalog) fresh(st *storedTitle) bool {
 	// detailAt, not fetchedAt: summary upserts from sync, lists and search
@@ -108,8 +141,17 @@ func (c *Catalog) getMovie(ctx context.Context, id int64) (*core.Title, error) {
 		return &st.t, nil
 	}
 	if c.client != nil {
+		if c.refreshMissed(movieRefreshKey(id)) {
+			if err == nil {
+				return &st.t, nil
+			}
+			return nil, core.ErrNotFound
+		}
 		d, ferr := c.client.MovieDetails(ctx, id)
 		if ferr != nil {
+			if ctx.Err() == nil {
+				c.noteRefreshMiss(movieRefreshKey(id))
+			}
 			if err == nil {
 				return &st.t, nil // serve stale on fetch failure
 			}
@@ -173,8 +215,17 @@ func (c *Catalog) getShow(ctx context.Context, id int64) (*core.Title, error) {
 		return &st.t, nil
 	}
 	if c.client != nil {
+		if c.refreshMissed(showRefreshKey(id)) {
+			if err == nil {
+				return &st.t, nil
+			}
+			return nil, core.ErrNotFound
+		}
 		d, ferr := c.client.TVDetails(ctx, id)
 		if ferr != nil {
+			if ctx.Err() == nil {
+				c.noteRefreshMiss(showRefreshKey(id))
+			}
 			if err == nil {
 				return &st.t, nil
 			}
@@ -261,8 +312,18 @@ func (c *Catalog) fetchSeasonOpts(ctx context.Context, showID int64, season int,
 		}
 		return &st.t, nil
 	}
+	if c.refreshMissed(seasonRefreshKey(showID, season)) {
+		st, lerr := c.loadByKey(ctx, key)
+		if lerr != nil {
+			return nil, core.ErrNotFound
+		}
+		return &st.t, nil
+	}
 	sd, err := c.client.SeasonDetails(ctx, showID, season)
 	if err != nil {
+		if ctx.Err() == nil {
+			c.noteRefreshMiss(seasonRefreshKey(showID, season))
+		}
 		if st, lerr := c.loadByKey(ctx, key); lerr == nil {
 			return &st.t, nil
 		}
@@ -319,7 +380,9 @@ func (c *Catalog) getEpisode(ctx context.Context, key core.RatingKey) (*core.Tit
 		return nil, core.ErrNotFound
 	}
 	// Best-effort episode external ids (its own IMDb id is useful to indexers).
-	if c.client != nil && st.t.IDs.IMDB == "" {
+	// A season refresh that just failed will fail these too; do not fan that
+	// wait out across every episode in a list.
+	if c.client != nil && st.t.IDs.IMDB == "" && !c.refreshMissed(seasonRefreshKey(key.TMDB(), key.Season())) {
 		if ext, ferr := c.client.EpisodeExternalIDs(ctx, key.TMDB(), key.Season(), key.Episode()); ferr == nil && ext != nil && (ext.IMDBID != "" || ext.TVDBID != 0) {
 			t := st.t
 			t.IDs.IMDB = ext.IMDBID

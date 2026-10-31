@@ -1,0 +1,77 @@
+diff --git a/internal/app/support.go b/internal/app/support.go
+index d2fe9a2fb..f988c0c88 100644
+--- a/internal/app/support.go
++++ b/internal/app/support.go
+@@ -17,6 +17,7 @@ import (
+ 
+ func (a *App) supportDeps() diagnostics.Deps {
+ 	return diagnostics.Deps{
++		Now:          parityClock(),
+ 		Version:      a.opts.Version,
+ 		Platform:     runtime.GOOS + "/" + runtime.GOARCH,
+ 		Container:    containerHint(),
+diff --git a/internal/diagnostics/recorder.go b/internal/diagnostics/recorder.go
+index 804fe1337..936a283d1 100644
+--- a/internal/diagnostics/recorder.go
++++ b/internal/diagnostics/recorder.go
+@@ -121,7 +121,7 @@ func (r *Recorder) Observe(e Event) {
+ 		r.rememberSessionLocked(e.SessionKey, e.DeviceKey)
+ 	}
+ 	if (e.Kind == KindEncoderStarted || e.Kind == KindEncoderFailed) && e.DeviceKey == "" && e.SessionKey != "" {
+-		if dev, ok := r.sessions[e.SessionKey]; ok {
++		if dev, ok := r.sessions[e.SessionKey]; ok && r.devices[dev] != nil {
+ 			e.DeviceKey = dev
+ 			e.Uncorrelated = false
+ 		}
+@@ -143,7 +143,7 @@ func (r *Recorder) touchDeviceLocked(e Event) {
+ 		if len(r.devices) >= maxDevices && len(r.devOrder) > 0 {
+ 			old := r.devOrder[0]
+ 			r.devOrder = r.devOrder[1:]
+-			delete(r.devices, old)
++			r.dropDeviceLocked(old)
+ 		}
+ 		d = &device{info: DeviceInfo{ID: devicePublicID(e.DeviceKey)}}
+ 		r.devices[e.DeviceKey] = d
+@@ -197,7 +197,11 @@ func (r *Recorder) noteDiscoveryLocked(e Event) {
+ 	if e.DeviceKey == "" {
+ 		return
+ 	}
+-	info := r.devices[e.DeviceKey].info
++	d := r.devices[e.DeviceKey]
++	if d == nil {
++		return
++	}
++	info := d.info
+ 	for _, c := range r.captures {
+ 		if c.state != "recording" || c.confirmed || e.Time.Before(c.started) {
+ 			continue
+@@ -455,12 +459,28 @@ func (r *Recorder) deviceKeyLocked(id string) (string, bool) {
+ 	return "", false
+ }
+ 
++// dropDeviceLocked removes a device and every session still attributed to it.
++// An encoder event carries no device of its own and must not follow a stale
++// session onto a missing device.
++func (r *Recorder) dropDeviceLocked(key string) {
++	delete(r.devices, key)
++	for i := 0; i < len(r.sesOrder); {
++		sid := r.sesOrder[i]
++		if r.sessions[sid] != key {
++			i++
++			continue
++		}
++		delete(r.sessions, sid)
++		r.sesOrder = append(r.sesOrder[:i], r.sesOrder[i+1:]...)
++	}
++}
++
+ func (r *Recorder) pruneDevicesLocked(now time.Time) {
+ 	for i := 0; i < len(r.devOrder); {
+ 		k := r.devOrder[i]
+ 		d := r.devices[k]
+ 		if d == nil || !d.info.LastSeen.Add(deviceRecent).After(now) {
+-			delete(r.devices, k)
++			r.dropDeviceLocked(k)
+ 			r.devOrder = append(r.devOrder[:i], r.devOrder[i+1:]...)
+ 			continue
+ 		}

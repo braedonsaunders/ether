@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
 func audioIDFromResponse(t *testing.T, body, language string) int64 {
@@ -81,7 +82,7 @@ func TestPreplayAudioIdentitySurvivesProbe(t *testing.T) {
 					}
 				}
 				// A deliberate French selection from the actual stream list still wins.
-				french := f.srv.streams.register(key, 1, actual.Streams[1])
+				french := f.bindStream(key, 1, actual.Streams[1])
 				f.request(t, http.MethodPut, fmt.Sprintf("/library/parts/%s?audioStreamID=%d", key, french), nil)
 				f.get(t, fmt.Sprintf("/video/:/transcode/universal/decision?path=/library/metadata/%s&session=french", key))
 				if f.trans.lastOpts.AudioStream != 1 {
@@ -121,24 +122,33 @@ func TestMissingSelectedAudioUsesViewerPreferences(t *testing.T) {
 }
 
 func TestStreamIDsKeepIssuedAudioAndSubtitleIdentity(t *testing.T) {
-	r := newStreamRegistry()
+	r := sessions.NewPlexStreamTable()
 	for _, kind := range []string{"audio", "subtitle"} {
 		en := core.StreamInfo{Index: 1, Type: kind, Language: "eng", Codec: "ac3", Channels: 6}
 		fr := en
 		fr.Language = "fre"
-		a := r.register(fightClub.Key, 1, en)
-		b := r.register(fightClub.Key, 1, fr)
+		a := bindTable(t, r, fightClub.Key, 1, en)
+		b := bindTable(t, r, fightClub.Key, 1, fr)
 		if a == b {
 			t.Fatalf("%s identity overwritten", kind)
 		}
-		old, ok := r.lookup(a)
-		if !ok || old.info.Language != "eng" {
+		old, ok := r.Lookup(a)
+		if !ok || old.Info.Language != "eng" {
 			t.Fatalf("old %s reference lost", kind)
 		}
-		if again := r.register(fightClub.Key, 1, en); again != a {
+		if again := bindTable(t, r, fightClub.Key, 1, en); again != a {
 			t.Fatal("repeated identity changed ID")
 		}
 	}
+}
+
+func bindTable(t *testing.T, r *sessions.PlexStreamTable, key core.RatingKey, index int, info core.StreamInfo) int64 {
+	t.Helper()
+	id, err := r.Bind(sessions.PlexStreamBinding{Key: key, Index: index, Info: info})
+	if err != nil || id == 0 {
+		t.Fatalf("bind %d %v", id, err)
+	}
+	return id
 }
 
 func TestAudioIdentityPrefersExplicitRegionBeforeCodec(t *testing.T) {
@@ -158,16 +168,16 @@ func TestStreamIdentityIDsSurviveRegistrationOrderChanges(t *testing.T) {
 		en := core.StreamInfo{Type: kind, Language: "eng", Codec: "aac", Channels: 2}
 		fr := en
 		fr.Language = "fre"
-		before := newStreamRegistry()
-		englishID := before.register(fightClub.Key, 1, en)
-		// A restart or registry eviction must not let a cached English ID select
+		before := sessions.NewPlexStreamTable()
+		englishID := bindTable(t, before, fightClub.Key, 1, en)
+		// A restart or table wipe must not let a cached English ID select
 		// French merely because French is now the first render at that position.
-		after := newStreamRegistry()
-		frenchID := after.register(fightClub.Key, 1, fr)
+		after := sessions.NewPlexStreamTable()
+		frenchID := bindTable(t, after, fightClub.Key, 1, fr)
 		if frenchID == englishID {
 			t.Fatalf("%s cached English ID aliases French after reset", kind)
 		}
-		if got := after.register(fightClub.Key, 1, en); got != englishID {
+		if got := bindTable(t, after, fightClub.Key, 1, en); got != englishID {
 			t.Fatalf("%s English ID changed with registration order", kind)
 		}
 	}

@@ -169,14 +169,16 @@ A durable claim/transfer barrier is required before broker ownership can safely
 cross a released owner gate. This API does not prove that barrier, last external
 owner release, encoder completion, payload cleanup, or persistent crash recovery.
 
-## Durable payload guard increment (playback/3)
+## Durable payload guard increment (playback/4)
 
 Released `playback/2` is the cluster live-session registry and remains immutable.
-Payload ownership uses `playback/3`; an earlier draft incorrectly reused2 and
+Released main owns `playback/3` (`original_language` on `playback_resume`).
+Payload ownership is `playback/4`. An earlier draft reused `playback/2` and
 was rejected by upgrade/cluster gates. The delivered9503 fixture caught it.
 Migration preflight refuses unversioned payload tables or reserved indexes on
 both dialects, including a same-name incompatible index; it does not adopt an
-unknown schema. Repair preserves existing delivered rows and then reruns3.
+unknown schema. Repair preserves existing delivered rows and then reruns the
+payload migration.
 
 A verified directory has a persisted opaque domain identity and at most128
 fixed witness-slot files. Each live store holds an exclusive kernel witness

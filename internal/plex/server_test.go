@@ -318,8 +318,8 @@ func TestDecisionOptions(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	// Select the French track and the embedded English subtitle by id.
-	frID := f.srv.streams.register(fightClub.Key, 2, sampleInfo.Streams[2])
-	subID := f.srv.streams.register(fightClub.Key, 3, sampleInfo.Streams[3])
+	frID := f.bindStream(fightClub.Key, 2, sampleInfo.Streams[2])
+	subID := f.bindStream(fightClub.Key, 3, sampleInfo.Streams[3])
 	f.get(t, "/library/metadata/1000000000000550") // registers stream ids
 	f.request(t, http.MethodPut, fmt.Sprintf("/library/parts/1000000000000550?audioStreamID=%d&subtitleStreamID=%d&allParts=1", frID, subID), nil)
 	f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/1000000000000550&directPlay=0&maxVideoBitrate=4000&videoResolution=1280x720&subtitles=burn&session=o1",

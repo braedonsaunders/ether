@@ -12,6 +12,7 @@ import (
 	"image/jpeg"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -113,6 +114,14 @@ func serve(args []string) error {
 			return e
 		}
 		go func(s *http.Server, ln net.Listener) { errc <- s.Serve(ln) }(s, ln)
+	}
+	if addr := os.Getenv("SCORECARD_PPROF"); addr != "" {
+		host, _, err := net.SplitHostPort(addr)
+		ip := net.ParseIP(host)
+		if err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("SCORECARD_PPROF must bind a loopback address")
+		}
+		go func() { _ = http.ListenAndServe(addr, nil) }()
 	}
 	fmt.Fprintln(os.Stderr, "scorecard fixture ready:", filepath.Base(*dir))
 	select {

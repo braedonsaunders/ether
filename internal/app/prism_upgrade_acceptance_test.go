@@ -844,12 +844,19 @@ func TestPrismPlaybackPayloadMigrationFailureRepair(t *testing.T) {
 				}
 			}
 			err = store.Migrate(ctx, db)
-			if err == nil || !strings.Contains(err.Error(), "playback/3") {
+			if err == nil || !strings.Contains(err.Error(), "playback/4") {
 				t.Fatalf("payload migration failure=%v", err)
 			}
 			assertUpgradeTables(t, db, before)
-			if got := maxMigration(t, db, "playback"); got != 2 {
-				t.Fatalf("failed payload version recorded=%d", got)
+			// SQLite commits playback/3 (released original_language) before
+			// playback/4 fails. PostgreSQL applies the pending set in one
+			// transaction, so the failure leaves the delivered playback head.
+			wantPlayback := 2
+			if store.DialectOf(db) != store.Postgres {
+				wantPlayback = 3
+			}
+			if got := maxMigration(t, db, "playback"); got != wantPlayback {
+				t.Fatalf("failed payload version recorded=%d want %d", got, wantPlayback)
 			}
 			if store.DialectOf(db) == store.Postgres {
 				rolledBack, err := store.AppliedMigrations(ctx, db)

@@ -179,6 +179,11 @@ type Catalog struct {
 	genreMu sync.Mutex
 	genres  map[string]map[int]string // mediaType -> id -> name
 
+	// refreshMiss remembers a failed metadata read so one library list does
+	// not repeat it for every row. A later read retries after refreshMissTTL.
+	refreshMissMu sync.Mutex
+	refreshMiss   map[string]time.Time
+
 	trendFlights flight.Group[string, trendSnapshot]
 	statsFlights flight.Group[string, Stats]
 	listMu       sync.Mutex

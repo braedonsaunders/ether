@@ -38,9 +38,21 @@ if [ "$both_models" = 1 ] && { [ "$train_ranker" != 0 ] || [ "$ranker_train_only
 if [ "$cluster_only" = 1 ] && { [ "$expiry_only" != 0 ] || [ "$both_models" != 0 ] || [ "$train_ranker" != 0 ]; }; then echo 'cluster-only mode requires the ordinary fixture' >&2; exit 1; fi
 if [ "$infuse_only" = 1 ] && { [ "$cluster_only" != 0 ] || [ "$expiry_only" != 0 ] || [ "$both_models" != 0 ] || [ "$train_ranker" != 0 ]; }; then echo 'Infuse-only mode requires the ordinary fixture' >&2; exit 1; fi
 if [ "$expect_early_resume" = 1 ] && [ "$infuse_only" != 1 ]; then echo 'early-resume assertion requires Infuse-only mode' >&2; exit 1; fi
+# Explicit baseline patches. Each is behaviour-neutral and applied only when
+# that checkout does not already contain it.
+#   baseline-seam.patch         determinism seams (clock, fixtures) for older trees
+#   baseline-diagnostics.patch  8862fd78d encoder nil-deref; removes the panic only
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")
+ fi
+ if [ "$tree" = baseline ]; then
+  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-diagnostics.patch" >/dev/null 2>&1); then
+   (cd "$root/$tree" && git apply "$root/harness/baseline-diagnostics.patch")
+  elif ! grep -q 'r.devices\[dev\] != nil' "$root/$tree/internal/diagnostics/recorder.go"; then
+   echo 'baseline diagnostics patch did not apply' >&2
+   exit 1
+  fi
  fi
  python3 - "$root/$tree" "$crowd_diag" <<'PYCODE'
 import pathlib, re, sys

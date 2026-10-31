@@ -373,6 +373,18 @@ func (m *Manager) FFprobePath() string { return m.ffprobe }
 func (m *Manager) HWAccel() core.HWAccel {
 	hw := m.hw
 	hw.Encoders = append([]string(nil), m.hw.Encoders...)
+	if len(m.hw.VAAPIQualityRC) > 0 {
+		hw.VAAPIQualityRC = make(map[string]string, len(m.hw.VAAPIQualityRC))
+		for k, v := range m.hw.VAAPIQualityRC {
+			hw.VAAPIQualityRC[k] = v
+		}
+	}
+	if len(m.hw.VAAPIBitrateRC) > 0 {
+		hw.VAAPIBitrateRC = make(map[string]string, len(m.hw.VAAPIBitrateRC))
+		for k, v := range m.hw.VAAPIBitrateRC {
+			hw.VAAPIBitrateRC[k] = v
+		}
+	}
 	return hw
 }
 

@@ -152,6 +152,7 @@ func newVariantFixture(t *testing.T, playback core.Playback) *variantFixture {
 		Now:      func() time.Time { return fixedNow },
 	})
 	t.Cleanup(func() { srv.Close() })
+	mountTestBroker(srv, func() time.Time { return fixedNow })
 	return &variantFixture{srv: srv, resolver: vr, playback: playback}
 }
 

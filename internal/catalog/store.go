@@ -46,6 +46,15 @@ func cloneTitle(t core.Title) core.Title {
 	return t
 }
 
+func cacheStoredTitle(kind core.KeyKind) bool {
+	switch kind {
+	case core.KindMovie, core.KindShow, core.KindSeason, core.KindEpisode:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *Catalog) minuteBucket() int64 {
 	return c.now().Unix() / 60
 }
@@ -53,7 +62,9 @@ func (c *Catalog) minuteBucket() int64 {
 func (c *Catalog) loadByKey(ctx context.Context, key core.RatingKey) (*storedTitle, error) {
 	gen := c.writeGen.Load()
 	minBucket := c.minuteBucket()
-	if key.Kind() == core.KindMovie {
+	// Movies, shows, seasons and episodes are read again while a list builds
+	// image grants and versions. The cache is generation-scoped, same as movies.
+	if cacheStoredTitle(key.Kind()) {
 		c.cacheMu.RLock()
 		ent, ok := c.titleCache[key]
 		c.cacheMu.RUnlock()
@@ -80,7 +91,7 @@ func (c *Catalog) loadByKey(ctx context.Context, key core.RatingKey) (*storedTit
 		return nil, err
 	}
 	st.t = items[0]
-	if key.Kind() == core.KindMovie && c.writeGen.Load() == gen {
+	if cacheStoredTitle(key.Kind()) && c.writeGen.Load() == gen {
 		c.cacheMu.Lock()
 		if len(c.titleCache) >= 8192 {
 			c.titleCache = map[core.RatingKey]cachedStoredTitle{}
@@ -447,8 +458,17 @@ type upsertOpts struct {
 
 // UpsertTitle stores a title (exported for tests/seeders and other components that
 // need to insert known titles). Browsable/added_at are preserved once set.
+// The row is not a fresh detail record, so a later Get may refresh it.
 func (c *Catalog) UpsertTitle(ctx context.Context, t core.Title, browsable bool) error {
 	return c.upsert(ctx, t, upsertOpts{browsable: browsable})
+}
+
+// UpsertDetailedTitle stores a title as a fresh detail record. A later Get
+// serves the row without a metadata refresh until it is stale. The scorecard
+// fixture uses this: its seed is the source of truth, and a failed refresh
+// must not be repeated for every library row.
+func (c *Catalog) UpsertDetailedTitle(ctx context.Context, t core.Title) error {
+	return c.upsert(ctx, t, upsertOpts{browsable: true, detail: true})
 }
 
 func (c *Catalog) upsert(ctx context.Context, t core.Title, o upsertOpts) error {

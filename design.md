@@ -77,6 +77,15 @@ only for the stale fallback that was actually taken. Synced server tokens are
 not limited by those TTLs. Delegation receipts die with the delegation row.
 A stream grant authorizes GET and HEAD media only.
 
+Plex visible stream ids are broker bindings. `BindPlexStream` assigns the
+existing positive id and does not authorize, so library metadata can bind
+before a viewer is known. `ResolvePlexStream` reads it back. `OpenPlexSidecar`
+returns an external sidecar reader only when the request acceptance, the
+fenced viewer policy, the title lookup, and the stream binding agree. A
+missing id is not found. A viewer who may not play is unauthorized. Subtitle
+search offer ids are not bindings. `ConfirmPlexAdmission` is the fenced check
+a Plex plan uses in place of the cached allow.
+
 Broker playback calls `safety.ConfirmPlayback` through `BrokerDeps.FreshPlay`
 before it plans, opens, or returns media bytes. That read holds
 `viewerpolicy.Fence` across the membership and safety rows. SQLite takes the

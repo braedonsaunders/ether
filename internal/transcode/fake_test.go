@@ -170,8 +170,13 @@ func (f *fakeRunner) Run(ctx context.Context, cmd Command) error {
 		return nil
 	case argValue(args, "-f") == "lavfi":
 		enc := argValue(args, "-c:v")
+		rc := argValue(args, "-rc_mode")
+		vf := argValue(args, "-vf")
 		f.mu.Lock()
-		fail := f.failEncode[enc] || (f.failEncode["scale_vaapi"] && strings.Contains(argValue(args, "-vf"), "scale_vaapi"))
+		fail := f.failEncode[enc] ||
+			(rc != "" && (f.failEncode["rc:"+rc] || f.failEncode[enc+":"+rc])) ||
+			(f.failEncode["scale_vaapi"] && strings.Contains(vf, "scale_vaapi")) ||
+			(f.failEncode["tonemap_vaapi"] && strings.Contains(vf, "tonemap_vaapi"))
 		f.mu.Unlock()
 		if fail {
 			w(cmd.Stderr, "Error while opening encoder - maybe incorrect parameters")

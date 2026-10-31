@@ -123,11 +123,11 @@ func TestDiscoveryPlexRatingNormalizationAndStickyDismissal(t *testing.T) {
 	if e := f.srv.discoveryRemoveContinue(ctx, pr, fightClub.Key); e != nil {
 		t.Fatal(e)
 	}
-	if got := f.srv.discoveryContinue(ctx, pr, []core.Title{fightClub}); len(got) != 0 {
+	if got := personal.FilterContinue(ctx, pr.User, []core.Title{fightClub}); len(got) != 0 {
 		t.Fatal("sticky dismissal ignored")
 	}
-	other := &Request{User: &core.User{ID: 2}}
-	if got := f.srv.discoveryContinue(ctx, other, []core.Title{fightClub}); len(got) != 1 {
+	other := &core.User{ID: 2}
+	if got := personal.FilterContinue(ctx, other, []core.Title{fightClub}); len(got) != 1 {
 		t.Fatal("dismissal crossed viewers")
 	}
 }

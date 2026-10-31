@@ -2,9 +2,11 @@ package sessions
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
@@ -12,6 +14,19 @@ import (
 // BindSurface prevents an adapter from submitting another surface's identity.
 func BindSurface(b frontend.Sessions, protocol frontend.Protocol) frontend.Sessions {
 	return surface{broker: b, protocol: protocol}
+}
+
+// PlexStreamAPI is the visible-id and sidecar surface Plex calls.
+type PlexStreamAPI interface {
+	BindPlexStream(context.Context, frontend.SessionAccess, PlexStreamBinding) (int64, error)
+	ResolvePlexStream(context.Context, frontend.SessionAccess, int64) (PlexStreamBinding, error)
+	OpenPlexSidecar(context.Context, frontend.SessionAccess, auth.Acceptance, int64) (io.ReadCloser, core.StreamInfo, error)
+}
+
+// BindPlexStreams is BindSurface for the Plex stream methods. The returned
+// value rejects any access whose protocol is not plex.
+func BindPlexStreams(b *Broker) PlexStreamAPI {
+	return surface{broker: b, protocol: "plex"}
 }
 
 type surface struct {
@@ -192,6 +207,45 @@ func (s surface) StopProtocol(ctx context.Context, protocol frontend.Protocol) e
 		return core.ErrNotAvailable
 	}
 	return b.StopProtocol(ctx, protocol)
+}
+
+func (s surface) BindPlexStream(ctx context.Context, a frontend.SessionAccess, binding PlexStreamBinding) (int64, error) {
+	if a.Protocol != s.protocol {
+		return 0, core.ErrUnauthorized
+	}
+	api, ok := s.broker.(interface {
+		BindPlexStream(context.Context, frontend.SessionAccess, PlexStreamBinding) (int64, error)
+	})
+	if !ok {
+		return 0, core.ErrNotAvailable
+	}
+	return api.BindPlexStream(ctx, a, binding)
+}
+
+func (s surface) ResolvePlexStream(ctx context.Context, a frontend.SessionAccess, wireID int64) (PlexStreamBinding, error) {
+	if a.Protocol != s.protocol {
+		return PlexStreamBinding{}, core.ErrUnauthorized
+	}
+	api, ok := s.broker.(interface {
+		ResolvePlexStream(context.Context, frontend.SessionAccess, int64) (PlexStreamBinding, error)
+	})
+	if !ok {
+		return PlexStreamBinding{}, core.ErrNotAvailable
+	}
+	return api.ResolvePlexStream(ctx, a, wireID)
+}
+
+func (s surface) OpenPlexSidecar(ctx context.Context, a frontend.SessionAccess, receipt auth.Acceptance, wireID int64) (io.ReadCloser, core.StreamInfo, error) {
+	if a.Protocol != s.protocol {
+		return nil, core.StreamInfo{}, core.ErrUnauthorized
+	}
+	api, ok := s.broker.(interface {
+		OpenPlexSidecar(context.Context, frontend.SessionAccess, auth.Acceptance, int64) (io.ReadCloser, core.StreamInfo, error)
+	})
+	if !ok {
+		return nil, core.StreamInfo{}, core.ErrNotAvailable
+	}
+	return api.OpenPlexSidecar(ctx, a, receipt, wireID)
 }
 
 func (s surface) ReportSample(ctx context.Context, a frontend.SessionAccess, id string, sample frontend.ProgressSample) (frontend.ReportOutcome, error) {

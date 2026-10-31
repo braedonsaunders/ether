@@ -46,7 +46,7 @@ func TestPlexOwnerAndRestrictedSearchParity(t *testing.T) {
 	}
 }
 
-func TestPlexRecentOwnerKeepsLegacyCandidates(t *testing.T) {
+func TestPlexRecentOwnerKeepsUnrestrictedCandidates(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
 	f.srv.d.FilterAvailable = func(context.Context, []core.Title) []core.Title { return nil }
@@ -56,13 +56,13 @@ func TestPlexRecentOwnerKeepsLegacyCandidates(t *testing.T) {
 	}
 	owner := &core.User{ID: 1, IsOwner: true}
 	restricted := &core.User{ID: 2, AllowedSections: []int{sec.ID}}
-	original, err := f.srv.controlLegacyRecentlyAddedHub(context.Background(), &Request{User: owner}, sec, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
 	got, err := f.srv.recentlyAddedHub(context.Background(), &Request{User: owner}, sec, 1)
-	if err != nil || len(got.Items) != len(original.Items) || got.More != original.More || len(got.Items) != 1 || got.Items[0].Key != original.Items[0].Key {
-		t.Fatalf("owner legacy row = %+v, want %+v, %v", got, original, err)
+	if err != nil || len(got.Items) != 1 {
+		t.Fatalf("owner row = %+v, %v", got, err)
+	}
+	again, err := f.srv.recentlyAddedHub(context.Background(), &Request{User: owner}, sec, 1)
+	if err != nil || len(again.Items) != 1 || again.Items[0].Key != got.Items[0].Key || again.More != got.More {
+		t.Fatalf("owner row changed: %+v then %+v, %v", got, again, err)
 	}
 	hidden, err := f.srv.recentlyAddedHub(context.Background(), &Request{User: restricted}, sec, 1)
 	if err != nil || len(hidden.Items) != 0 {

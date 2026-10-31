@@ -969,10 +969,72 @@ func (f *fixture) attachPlaybackBroker(d Deps) {
 		Playback: &fixturePlayback{f: f}, Transcoder: fixtureTranscoder{f: f}, Progress: fixtureProgress{f: f}, ActiveViewer: active,
 		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
 		OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
-		Events:     events, Now: d.Now,
+		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {
+			if f.srv == nil || f.srv.d.Subtitles == nil {
+				return nil, "", core.ErrNotAvailable
+			}
+			return f.srv.d.Subtitles.OpenFormat(id, format)
+		},
+		Events: events, Now: d.Now,
 	})
 	if err != nil {
 		panic(err)
 	}
 	f.srv.UsePlaybackBroker(sessions.BindSurface(broker, "plex"))
+	f.srv.UsePlexStreams(sessions.BindPlexStreams(broker))
+}
+
+func (f *fixture) bindStream(key core.RatingKey, index int, info core.StreamInfo) int64 {
+	return f.srv.assignStream(context.Background(), &ownerUser, key, index, info, "")
+}
+
+// mountTestBroker is the same broker the app mounts. A server that renders
+// stream ids uses it; there is no second id map.
+func mountTestBroker(s *Server, now func() time.Time) {
+	if s == nil {
+		return
+	}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) {
+		if id <= 0 {
+			return nil, core.ErrUnauthorized
+		}
+		return &core.Viewer{ID: id}, nil
+	}
+	events := sessions.NewEventBus(nil, active)
+	progress, _ := s.d.State.(sessions.ProgressWriter)
+	if progress == nil {
+		progress = discardProgress{}
+	}
+	if now == nil {
+		now = time.Now
+	}
+	broker, err := sessions.NewBroker(sessions.BrokerDeps{
+		Lookup: func(ctx context.Context, _ *core.Viewer, _ core.Device, key core.RatingKey) (*core.Title, error) {
+			if s.d.Catalog == nil {
+				return nil, core.ErrNotFound
+			}
+			return s.d.Catalog.Get(ctx, key)
+		},
+		Playback: s.d.Playback, Transcoder: s.d.Transcoder, Progress: progress, ActiveViewer: active,
+		CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 },
+		OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {},
+		OpenSubtitle: func(id, format string) (io.ReadCloser, string, error) {
+			if s.d.Subtitles == nil {
+				return nil, "", core.ErrNotAvailable
+			}
+			return s.d.Subtitles.OpenFormat(id, format)
+		},
+		Events: events, Now: now,
+	})
+	if err != nil {
+		panic(err)
+	}
+	s.UsePlaybackBroker(sessions.BindSurface(broker, "plex"))
+	s.UsePlexStreams(sessions.BindPlexStreams(broker))
+}
+
+type discardProgress struct{}
+
+func (discardProgress) Progress(context.Context, int64, core.RatingKey, time.Duration, time.Duration, string) error {
+	return nil
 }

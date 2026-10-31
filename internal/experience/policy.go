@@ -152,6 +152,35 @@ func (v Visibility) TitlesAllowed(viewer *core.User, titles []core.Title) []core
 	return out
 }
 
+// LibrarySection maps a title or episode to the configured library of that kind.
+// Seasons and episodes belong to the show library. Unknown kinds use the movie library.
+func LibrarySection(libraries []Library, kind core.MediaType) (int, bool) {
+	want := core.TypeMovie
+	switch kind {
+	case core.TypeShow, core.TypeSeason, core.TypeEpisode:
+		want = core.TypeShow
+	}
+	for _, library := range libraries {
+		if library.Type == want {
+			return library.ID, true
+		}
+	}
+	return 0, false
+}
+
+// BindVisibility is the shared library, policy and availability port.
+// Frontends supply sources; they do not decide which library a media type uses.
+func BindVisibility(policy AccessPolicy, get func(context.Context, core.RatingKey) (*core.Title, error), available func(context.Context, []core.Title) []core.Title, sessions func() []*core.PlaySession, libraries []Library) Visibility {
+	return Visibility{Policy: policy, GetTitle: get, FilterAvailable: available, Sessions: sessions,
+		SectionFor: func(kind core.MediaType) (int, bool) { return LibrarySection(libraries, kind) }}
+}
+
+// MaySetViewerRating is the owner-console rule for changing a household rating cap.
+// Delegated sessions and non-owners cannot write it.
+func MaySetViewerRating(actor *core.Viewer, active *core.User) bool {
+	return actor != nil && !actor.Delegated && active != nil && active.IsOwner
+}
+
 // ViewerRestricted chooses inherited visibility for limited or unknown policies.
 func ViewerRestricted(policy AccessPolicy, u *core.User) bool {
 	if u == nil {

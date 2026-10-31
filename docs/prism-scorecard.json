@@ -1,29 +1,26 @@
 {
-  "build": "",
-  "provisional": true,
-  "provisional_reason": "Existing tvdemo-ether fixture. It mounts the lab media and the full item listing, but it is not the matched-library target thr_zbvwd7ezjn is building and it is not origin/prism 0aaae04c8.",
-  "target": "tvdemo-ether",
+  "build": "e3792dab4 plus the library-refresh fix; measured before fast-forward to 1a25b7273",
+  "provisional": false,
+  "provisional_reason": "Matched 2 CPU and 6GB. Ether movies stay collapsed and seasons are still omitted. Playback and browse numbers are from that build, not a remeasure after 1a25b7273.",
+  "target": "prism-scorecard-h2h",
   "limits": {
-    "loadavg": "21.28 17.13 16.62 48/1977 3090239",
+    "loadavg": "14.84 13.08 13.00 7/1668 3658251",
     "meminfo_kb": {
       "MemTotal": 24025072,
-      "MemAvailable": 15902052
+      "MemAvailable": 17372212
     },
     "containers": {
       "prism-jellyfin": {
-        "nano_cpus": 0,
-        "memory_bytes": 0
+        "nano_cpus": 2000000000,
+        "memory_bytes": 6442450944
       },
       "prism-emby": {
-        "nano_cpus": 0,
-        "memory_bytes": 0
-      },
-      "tvdemo-ether": {
-        "nano_cpus": 0,
-        "memory_bytes": 0
+        "nano_cpus": 2000000000,
+        "memory_bytes": 6442450944
       }
     },
-    "matched_unlimited": true
+    "ether": "host process, no cpu or memory cap",
+    "matched_unlimited": false
   },
   "protocols": {
     "jellyfin": {
@@ -36,20 +33,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 2,
-            "p50_ms": 35.61883501242846,
-            "p95_ms": 54.4521420088131,
-            "ttfb_p50_ms": 35.585375007940456,
-            "ttfb_p95_ms": 54.39512198790908
+            "p50_ms": 31.532633991446346,
+            "p95_ms": 49.99564401805401,
+            "ttfb_p50_ms": 31.50810397346504,
+            "ttfb_p95_ms": 49.96676399605349
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 2,
-            "p50_ms": 1.3131560117471963,
-            "p95_ms": 1.9561089866328984,
-            "ttfb_p50_ms": 1.3005160144530237,
-            "ttfb_p95_ms": 1.939748995937407
+            "p50_ms": 6.1931599921081215,
+            "p95_ms": 11.472404992673546,
+            "ttfb_p50_ms": 6.1766100116074085,
+            "ttfb_p95_ms": 11.43566399696283
           },
           "p50_winner": "ether",
           "p95_winner": "ether",
@@ -63,20 +60,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 6,
-            "p50_ms": 40.43790799914859,
-            "p95_ms": 47.13063800591044,
-            "ttfb_p50_ms": 40.383826999459416,
-            "ttfb_p95_ms": 47.10491801961325
+            "p50_ms": 34.23514199675992,
+            "p95_ms": 45.44108401751146,
+            "ttfb_p50_ms": 34.20539098442532,
+            "ttfb_p95_ms": 45.41013401467353
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 4,
-            "p50_ms": 296.2506600015331,
-            "p95_ms": 305.76638400088996,
-            "ttfb_p50_ms": 296.1852390144486,
-            "ttfb_p95_ms": 305.739164003171
+            "p50_ms": 49.083276971941814,
+            "p95_ms": 315.14457799494267,
+            "ttfb_p50_ms": 48.87729597976431,
+            "ttfb_p95_ms": 315.10881800204515
           },
           "p50_winner": "inconclusive_cardinality",
           "p95_winner": "inconclusive_cardinality",
@@ -90,20 +87,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 40,
-            "p50_ms": 51.40558799030259,
-            "p95_ms": 79.93855999666266,
-            "ttfb_p50_ms": 50.92937601148151,
-            "ttfb_p95_ms": 79.76065899129026
+            "p50_ms": 35.99113301606849,
+            "p95_ms": 50.15287399874069,
+            "ttfb_p50_ms": 35.62803100794554,
+            "ttfb_p95_ms": 49.743522016797215
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 40,
-            "p50_ms": 13950.009942986071,
-            "p95_ms": 15023.802528972737,
-            "ttfb_p50_ms": 13949.865921982564,
-            "ttfb_p95_ms": 15023.741887998767
+            "p50_ms": 457.6980809797533,
+            "p95_ms": 1716.4124400005676,
+            "ttfb_p50_ms": 457.64073997270316,
+            "ttfb_p95_ms": 1716.3469399965834
           },
           "p50_winner": "reference",
           "p95_winner": "reference",
@@ -117,20 +114,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": null,
-            "p50_ms": 33.9904900174588,
-            "p95_ms": 46.275389002403244,
-            "ttfb_p50_ms": 33.94368902081624,
-            "ttfb_p95_ms": 46.22692900011316
+            "p50_ms": 27.68762901541777,
+            "p95_ms": 47.22100499202497,
+            "ttfb_p50_ms": 27.657349011860788,
+            "ttfb_p95_ms": 47.17474500648677
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": null,
-            "p50_ms": 224.18823899351992,
-            "p95_ms": 226.56145397922955,
-            "ttfb_p50_ms": 224.16262901970185,
-            "ttfb_p95_ms": 226.5044929808937
+            "p50_ms": 67.15211400296539,
+            "p95_ms": 3953.4022079897113,
+            "ttfb_p50_ms": 67.11372401332483,
+            "ttfb_p95_ms": 3953.363408014411
           },
           "p50_winner": "reference",
           "p95_winner": "reference",
@@ -144,20 +141,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 3,
-            "p50_ms": 42.5108989875298,
-            "p95_ms": 50.9779290005099,
-            "ttfb_p50_ms": 42.48333899886347,
-            "ttfb_p95_ms": 50.689355994109064
+            "p50_ms": 36.45544601022266,
+            "p95_ms": 49.544949986739084,
+            "ttfb_p50_ms": 36.425825994228944,
+            "ttfb_p95_ms": 49.52051999862306
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 1,
-            "p50_ms": 3.0937130213715136,
-            "p95_ms": 4.986641986761242,
-            "ttfb_p50_ms": 3.0810930184088647,
-            "ttfb_p95_ms": 4.969411995261908
+            "p50_ms": 4.083605977939442,
+            "p95_ms": 6.27022999105975,
+            "ttfb_p50_ms": 4.070795985171571,
+            "ttfb_p95_ms": 6.241949973627925
           },
           "p50_winner": "inconclusive_cardinality",
           "p95_winner": "inconclusive_cardinality",
@@ -171,23 +168,23 @@
             "concurrency": 1,
             "errors": 0,
             "total": 0,
-            "p50_ms": 20.013640983961523,
-            "p95_ms": 26.601511024637148,
-            "ttfb_p50_ms": 19.984810991445556,
-            "ttfb_p95_ms": 26.57511000870727
+            "p50_ms": 22.75148799526505,
+            "p95_ms": 27.294596016872674,
+            "ttfb_p50_ms": 22.714288003044203,
+            "ttfb_p95_ms": 27.270835998933762
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
-            "total": 1,
-            "p50_ms": 2599.5848790043965,
-            "p95_ms": 2776.547118992312,
-            "ttfb_p50_ms": 2599.5660590124317,
-            "ttfb_p95_ms": 2776.500337990001
+            "total": 0,
+            "p50_ms": 25.98869800567627,
+            "p95_ms": 37.69889401155524,
+            "ttfb_p50_ms": 25.97180800512433,
+            "ttfb_p95_ms": 37.682413996662945
           },
-          "p50_winner": "inconclusive_cardinality",
-          "p95_winner": "inconclusive_cardinality",
+          "p50_winner": "reference",
+          "p95_winner": "reference",
           "route": "/Shows/NextUp"
         },
         {
@@ -198,20 +195,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 1,
-            "p50_ms": 40.07495302357711,
-            "p95_ms": 49.53678298625164,
-            "ttfb_p50_ms": 40.05066302488558,
-            "ttfb_p95_ms": 49.50515300151892
+            "p50_ms": 46.81743201217614,
+            "p95_ms": 55.76557101448998,
+            "ttfb_p50_ms": 46.763752005063,
+            "ttfb_p95_ms": 55.6676700070966
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 0,
-            "p50_ms": 1.5567360096611083,
-            "p95_ms": 2.1690530120395124,
-            "ttfb_p50_ms": 1.5440470015164465,
-            "ttfb_p95_ms": 2.152983011910692
+            "p50_ms": 1.0744270111899823,
+            "p95_ms": 2.274344995385036,
+            "ttfb_p50_ms": 1.0672170028556138,
+            "ttfb_p95_ms": 2.25268499343656
           },
           "p50_winner": "inconclusive_cardinality",
           "p95_winner": "inconclusive_cardinality",
@@ -224,72 +221,72 @@
           "reference": {
             "errors": 0,
             "delivery": "direct",
-            "p50_ms": 46.31097899982706,
-            "p95_ms": 47.82332500326447,
+            "p50_ms": 62.7709049731493,
+            "p95_ms": 291.8190369964577,
             "samples": 3
           },
           "ether": {
-            "errors": 3,
-            "delivery": "",
-            "p50_ms": null,
-            "p95_ms": null,
-            "samples": 0
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 45.77305601560511,
+            "p95_ms": 105.31430100672878,
+            "samples": 3
           },
-          "p50_winner": "inconclusive",
-          "p95_winner": "inconclusive"
+          "p50_winner": "ether",
+          "p95_winner": "ether"
         },
         {
           "name": "seek",
           "reference": {
             "errors": 0,
             "delivery": "direct",
-            "p50_ms": 47.823114990023896,
-            "p95_ms": 52.48479501460679,
+            "p50_ms": 54.804324987344444,
+            "p95_ms": 55.64271999173798,
             "samples": 3
           },
           "ether": {
-            "errors": 3,
-            "delivery": "",
-            "p50_ms": null,
-            "p95_ms": null,
-            "samples": 0
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 1285.1600620197132,
+            "p95_ms": 3129.9107219965663,
+            "samples": 3
           },
-          "p50_winner": "inconclusive",
-          "p95_winner": "inconclusive"
+          "p50_winner": "reference",
+          "p95_winner": "reference"
         },
         {
           "name": "resume",
           "reference": {
             "errors": 0,
             "delivery": "direct",
-            "p50_ms": 57.22027501906268,
-            "p95_ms": 59.44708798779175,
+            "p50_ms": 46.72786200535484,
+            "p95_ms": 47.24454501410946,
             "samples": 3
           },
           "ether": {
-            "errors": 3,
-            "delivery": "",
-            "p50_ms": null,
-            "p95_ms": null,
-            "samples": 0
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 43.92905399436131,
+            "p95_ms": 47.6197479874827,
+            "samples": 3
           },
-          "p50_winner": "inconclusive",
-          "p95_winner": "inconclusive"
+          "p50_winner": "ether",
+          "p95_winner": "reference"
         },
         {
           "name": "transcode_ttff",
           "reference": {
             "errors": 0,
             "delivery": "hls",
-            "p50_ms": 1672.6408250106033,
-            "p95_ms": 2627.9254780092742,
+            "p50_ms": 4228.890379017685,
+            "p95_ms": 5087.9488560021855,
             "samples": 3
           },
           "ether": {
             "errors": 0,
             "delivery": "hls",
-            "p50_ms": 342.19521601335146,
-            "p95_ms": 541.9883059803396,
+            "p50_ms": 677.2147299780045,
+            "p95_ms": 971.3097719941288,
             "samples": 3
           },
           "p50_winner": "ether",
@@ -326,20 +323,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 2,
-            "p50_ms": 2.479335991665721,
-            "p95_ms": 4.634287994122133,
-            "ttfb_p50_ms": 2.4595159920863807,
-            "ttfb_p95_ms": 4.594117985107005
+            "p50_ms": 1.4928099990356714,
+            "p95_ms": 5.035052017774433,
+            "ttfb_p50_ms": 1.4829399879090488,
+            "ttfb_p95_ms": 5.021212011342868
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 2,
-            "p50_ms": 1.4749550027772784,
-            "p95_ms": 2.99776199972257,
-            "ttfb_p50_ms": 1.4623049937654287,
-            "ttfb_p95_ms": 2.980960998684168
+            "p50_ms": 1.1495180078782141,
+            "p95_ms": 3.0617100128438324,
+            "ttfb_p50_ms": 1.1411669838707894,
+            "ttfb_p95_ms": 3.0345800041686743
           },
           "p50_winner": "ether",
           "p95_winner": "ether",
@@ -353,20 +350,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 4,
-            "p50_ms": 2.694388007512316,
-            "p95_ms": 4.305584996473044,
-            "ttfb_p50_ms": 2.679837984032929,
-            "ttfb_p95_ms": 4.2733649897854775
+            "p50_ms": 2.168024017009884,
+            "p95_ms": 3.34847200429067,
+            "ttfb_p50_ms": 2.15219400706701,
+            "ttfb_p95_ms": 3.3357020001858473
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 4,
-            "p50_ms": 299.02853997191414,
-            "p95_ms": 306.6886910237372,
-            "ttfb_p50_ms": 298.92910897615366,
-            "ttfb_p95_ms": 306.66057000053115
+            "p50_ms": 55.63296002219431,
+            "p95_ms": 74.1706189874094,
+            "ttfb_p50_ms": 55.590269999811426,
+            "ttfb_p95_ms": 74.13421900128014
           },
           "p50_winner": "reference",
           "p95_winner": "reference",
@@ -380,20 +377,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 40,
-            "p50_ms": 5.601788987405598,
-            "p95_ms": 9.148335986537859,
-            "ttfb_p50_ms": 5.5804389994591475,
-            "ttfb_p95_ms": 9.108035999815911
+            "p50_ms": 4.919062019325793,
+            "p95_ms": 7.001265999861062,
+            "ttfb_p50_ms": 4.892021999694407,
+            "ttfb_p95_ms": 6.963104999158531
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 40,
-            "p50_ms": 13949.565118004102,
-            "p95_ms": 15028.683871001704,
-            "ttfb_p50_ms": 13949.513989005936,
-            "ttfb_p95_ms": 15028.637481009355
+            "p50_ms": 510.23938998696394,
+            "p95_ms": 2893.328032019781,
+            "ttfb_p50_ms": 510.11087899678387,
+            "ttfb_p95_ms": 2893.1889410014264
           },
           "p50_winner": "reference",
           "p95_winner": "reference",
@@ -417,10 +414,10 @@
             "concurrency": 1,
             "errors": 0,
             "total": null,
-            "p50_ms": 224.82456601574086,
-            "p95_ms": 226.67210499639623,
-            "ttfb_p50_ms": 224.77717499714345,
-            "ttfb_p95_ms": 226.59739397931844
+            "p50_ms": 64.85786999110132,
+            "p95_ms": 86.86649199808016,
+            "ttfb_p50_ms": 64.81203998555429,
+            "ttfb_p95_ms": 86.80638100486249
           },
           "p50_winner": "inconclusive",
           "p95_winner": "inconclusive",
@@ -434,20 +431,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": null,
-            "p50_ms": 1.955371000804007,
-            "p95_ms": 61.47414000588469,
-            "ttfb_p50_ms": 1.9411810208112001,
-            "ttfb_p95_ms": 61.45599001320079
+            "p50_ms": 0.7322349993046373,
+            "p95_ms": 1.0613259801175445,
+            "ttfb_p50_ms": 0.7267550099641085,
+            "ttfb_p95_ms": 1.0534260072745383
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 1,
-            "p50_ms": 10.005315998569131,
-            "p95_ms": 26.609570981236175,
-            "ttfb_p50_ms": 9.978135989513248,
-            "ttfb_p95_ms": 26.57692099455744
+            "p50_ms": 3.656683984445408,
+            "p95_ms": 6.828673998825252,
+            "ttfb_p50_ms": 3.6359039950184524,
+            "ttfb_p95_ms": 6.799884024076164
           },
           "p50_winner": "inconclusive_cardinality",
           "p95_winner": "inconclusive_cardinality",
@@ -461,23 +458,23 @@
             "concurrency": 1,
             "errors": 0,
             "total": 0,
-            "p50_ms": 2.0573319925460964,
-            "p95_ms": 5.711550998967141,
-            "ttfb_p50_ms": 2.039632003288716,
-            "ttfb_p95_ms": 5.6692599900998175
+            "p50_ms": 0.7418440072797239,
+            "p95_ms": 1.6926109965424985,
+            "ttfb_p50_ms": 0.7339839939959347,
+            "ttfb_p95_ms": 1.6858610033523291
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
-            "total": 1,
-            "p50_ms": 2599.6466189972125,
-            "p95_ms": 2601.2286160257645,
-            "ttfb_p50_ms": 2599.630618991796,
-            "ttfb_p95_ms": 2601.205225015292
+            "total": 0,
+            "p50_ms": 28.720746020553634,
+            "p95_ms": 68.66617398918606,
+            "ttfb_p50_ms": 28.7059260008391,
+            "ttfb_p95_ms": 68.65070399362594
           },
-          "p50_winner": "inconclusive_cardinality",
-          "p95_winner": "inconclusive_cardinality",
+          "p50_winner": "reference",
+          "p95_winner": "reference",
           "route": "/Shows/NextUp"
         },
         {
@@ -488,20 +485,20 @@
             "concurrency": 1,
             "errors": 0,
             "total": 0,
-            "p50_ms": 3.6621890030801296,
-            "p95_ms": 6.5717500110622495,
-            "ttfb_p50_ms": 3.6354989861138165,
-            "ttfb_p95_ms": 6.554899999173358
+            "p50_ms": 2.399816003162414,
+            "p95_ms": 4.609600000549108,
+            "ttfb_p50_ms": 2.379465993726626,
+            "ttfb_p95_ms": 4.589979012962431
           },
           "ether": {
             "samples": 21,
             "concurrency": 1,
             "errors": 0,
             "total": 0,
-            "p50_ms": 3.6318880156613886,
-            "p95_ms": 6.322145985905081,
-            "ttfb_p50_ms": 3.6111380031798035,
-            "ttfb_p95_ms": 6.295505998423323
+            "p50_ms": 1.0090559953823686,
+            "p95_ms": 1.1376469919923693,
+            "ttfb_p50_ms": 1.0032459977082908,
+            "ttfb_p95_ms": 1.1312369897495955
           },
           "p50_winner": "ether",
           "p95_winner": "ether",
@@ -514,76 +511,76 @@
           "reference": {
             "errors": 0,
             "delivery": "direct",
-            "p50_ms": 18.997189996298403,
-            "p95_ms": 259.56405300530605,
+            "p50_ms": 15.244169015204534,
+            "p95_ms": 246.2182129966095,
             "samples": 3
           },
           "ether": {
-            "errors": 3,
-            "delivery": "",
-            "p50_ms": null,
-            "p95_ms": null,
-            "samples": 0
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 1984.3815640197136,
+            "p95_ms": 3886.241363012232,
+            "samples": 3
           },
-          "p50_winner": "inconclusive",
-          "p95_winner": "inconclusive"
+          "p50_winner": "reference",
+          "p95_winner": "reference"
         },
         {
           "name": "seek",
           "reference": {
             "errors": 0,
             "delivery": "direct",
-            "p50_ms": 14.30065100430511,
-            "p95_ms": 18.879079987527803,
+            "p50_ms": 6.622393004363403,
+            "p95_ms": 6.864735012641177,
             "samples": 3
           },
           "ether": {
-            "errors": 3,
-            "delivery": "",
-            "p50_ms": null,
-            "p95_ms": null,
-            "samples": 0
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 58.98184099351056,
+            "p95_ms": 822.2201270109508,
+            "samples": 3
           },
-          "p50_winner": "inconclusive",
-          "p95_winner": "inconclusive"
+          "p50_winner": "reference",
+          "p95_winner": "reference"
         },
         {
           "name": "resume",
           "reference": {
             "errors": 0,
             "delivery": "direct",
-            "p50_ms": 11.151238024467602,
-            "p95_ms": 18.793809023918584,
+            "p50_ms": 7.4666890141088516,
+            "p95_ms": 10.9882710094098,
             "samples": 3
           },
           "ether": {
-            "errors": 3,
-            "delivery": "",
-            "p50_ms": null,
-            "p95_ms": null,
-            "samples": 0
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 86.44277899293229,
+            "p95_ms": 124.52748598298058,
+            "samples": 3
           },
-          "p50_winner": "inconclusive",
-          "p95_winner": "inconclusive"
+          "p50_winner": "reference",
+          "p95_winner": "reference"
         },
         {
           "name": "transcode_ttff",
           "reference": {
             "errors": 0,
             "delivery": "hls",
-            "p50_ms": 921.2206540105399,
-            "p95_ms": 2114.1556900111027,
+            "p50_ms": 1834.7958659869619,
+            "p95_ms": 2085.0255039986223,
             "samples": 3
           },
           "ether": {
-            "errors": 3,
-            "delivery": "",
-            "p50_ms": null,
-            "p95_ms": null,
-            "samples": 0
+            "errors": 0,
+            "delivery": "hls",
+            "p50_ms": 922.2749949840363,
+            "p95_ms": 1000.1052689913195,
+            "samples": 3
           },
-          "p50_winner": "inconclusive",
-          "p95_winner": "inconclusive"
+          "p50_winner": "ether",
+          "p95_winner": "ether"
         }
       ],
       "errors": [
@@ -608,5 +605,67 @@
       "source_sha256": "ae51005850b0ff757fe60c3dd7a12d754d3cd2397d87d939b55235e457f97658"
     }
   },
-  "losses": []
+  "losses": [
+    {
+      "protocol": "jellyfin",
+      "metric": "library_episodes",
+      "concurrency": 1,
+      "kind": "browse_p95"
+    },
+    {
+      "protocol": "jellyfin",
+      "metric": "item_detail",
+      "concurrency": 1,
+      "kind": "browse_p95"
+    },
+    {
+      "protocol": "jellyfin",
+      "metric": "next_up",
+      "concurrency": 1,
+      "kind": "browse_p95"
+    },
+    {
+      "protocol": "jellyfin",
+      "metric": "seek",
+      "kind": "playback_p95"
+    },
+    {
+      "protocol": "jellyfin",
+      "metric": "resume",
+      "kind": "playback_p95"
+    },
+    {
+      "protocol": "emby",
+      "metric": "library_movies",
+      "concurrency": 1,
+      "kind": "browse_p95"
+    },
+    {
+      "protocol": "emby",
+      "metric": "library_episodes",
+      "concurrency": 1,
+      "kind": "browse_p95"
+    },
+    {
+      "protocol": "emby",
+      "metric": "next_up",
+      "concurrency": 1,
+      "kind": "browse_p95"
+    },
+    {
+      "protocol": "emby",
+      "metric": "direct_ttff",
+      "kind": "playback_p95"
+    },
+    {
+      "protocol": "emby",
+      "metric": "seek",
+      "kind": "playback_p95"
+    },
+    {
+      "protocol": "emby",
+      "metric": "resume",
+      "kind": "playback_p95"
+    }
+  ]
 }

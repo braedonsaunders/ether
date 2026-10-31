@@ -58,7 +58,11 @@ func StartScorecard(ctx context.Context, dir, username, password string, items [
 		if !ok {
 			return nil, fmt.Errorf("scorecard source is not a local file")
 		}
-		out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "-show_data", "-i", local.File.Name()).Output()
+		probeBin := os.Getenv("SCORECARD_FFPROBE")
+		if probeBin == "" {
+			probeBin = "ffprobe"
+		}
+		out, err := exec.CommandContext(ctx, probeBin, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "-show_data", "-i", local.File.Name()).Output()
 		if err != nil {
 			return nil, fmt.Errorf("scorecard ffprobe: %w", err)
 		}
@@ -123,6 +127,9 @@ func prepareScorecardFiles(ctx context.Context, files []ScorecardFile, probe sco
 		}
 		if entry.Media == nil {
 			return fmt.Errorf("empty probe for scorecard source")
+		}
+		if entry.Media.Size <= 0 {
+			entry.Media.Size = st.Size()
 		}
 	}
 	return nil
@@ -329,7 +336,7 @@ func startScorecard(ctx context.Context, dir, username, password string, items [
 		default:
 			continue
 		}
-		if e = a.catalog.UpsertTitle(ctx, title, true); e != nil {
+		if e = a.catalog.UpsertDetailedTitle(ctx, title); e != nil {
 			return fail(e)
 		}
 		if x.UserData.Played {

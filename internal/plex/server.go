@@ -160,7 +160,7 @@ type Server struct {
 	sections []Section
 
 	images            *artworkservice.RemoteCache
-	streams           *streamRegistry
+	boundStreams      sessions.PlexStreamAPI
 	variantIDs        *variantIDRegistry
 	renderedVariants  *renderedVariants
 	downloads         *downloadStore
@@ -222,7 +222,6 @@ func NewServer(d Deps) *Server {
 		d:                 d,
 		log:               d.Logger.With("component", "plex"),
 		images:            artworkservice.NewRemoteCache(d.ImageCacheBytes, d.HTTPClient),
-		streams:           newStreamRegistry(),
 		variantIDs:        newVariantIDRegistry(d.DB),
 		renderedVariants:  newRenderedVariants(),
 		downloads:         newDownloadStore(),

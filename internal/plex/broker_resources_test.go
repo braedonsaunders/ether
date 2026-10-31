@@ -13,8 +13,8 @@ import (
 func TestBrokerPublishesSelectedTracksHLSAndDASH(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	audio := f.srv.streams.register(fightClub.Key, 2, sampleInfo.Streams[2])
-	sub := f.srv.streams.register(fightClub.Key, 4, sampleInfo.Streams[4])
+	audio := f.bindStream(fightClub.Key, 2, sampleInfo.Streams[2])
+	sub := f.bindStream(fightClub.Key, 4, sampleInfo.Streams[4])
 	f.srv.d.Transcoder = &dashTranscoder{fakeTranscoder: f.trans, dash: map[string]*fakeDASH{}}
 	key := strconv.FormatInt(int64(fightClub.Key), 10)
 	cases := []struct {

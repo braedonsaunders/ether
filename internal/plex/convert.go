@@ -530,10 +530,10 @@ func (s *Server) mediaFor(ctx context.Context, pr *Request, t *core.Title, withS
 	// playback quality controls remain independent of the version picker.
 	if withVariants && withStreams && ps == nil && !strings.EqualFold(strings.TrimSpace(pr.Product), "Plex for VIDAA") {
 		probed, probedRelease := core.MediaInfo{Estimated: true}, ""
-		if ps == nil {
-			if facts, rel, ok := s.resumedTracks(ctx, pr, t); ok {
-				probed, probedRelease, info = facts, rel, facts
-			}
+		if facts, rel, ok := s.resumedTracks(ctx, pr, t); ok {
+			probed, probedRelease, info = facts, rel, facts
+		} else if !info.Estimated && len(info.Streams) > 0 && info.Video() != nil {
+			probed = info
 		}
 		if media, edition := s.mediaForVariants(ctx, pr, t, stamp, probed, probedRelease); len(media) > 0 {
 			return media, edition
@@ -682,7 +682,7 @@ func (s *Server) buildStreams(key core.RatingKey, info core.MediaInfo, sel selec
 		subSelected = sel.subtitle
 	}
 	for i, st := range info.Streams {
-		id := s.streams.register(key, i, st)
+		id := s.assignStream(context.Background(), u, key, i, st, "")
 		ps := model.Stream{
 			ID:       id,
 			Codec:    plexCodec(st.Codec),

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -175,13 +174,8 @@ func (a *App) experienceAdditionalRows(ctx context.Context, req frontend.RowRequ
 	return composer.Rows(ctx, req)
 }
 
-// experienceHomeFallback fills a cold neutral Home with policy-filtered library
-// shelves. It does not run for Plex and never resolves playback sources.
-// Ordering follows date added: a movie or episode uses its own release or
-// air date, and a series or season uses its latest aired episode. A shelf
-// uses the request page, defaulting
-// to the same 50-item page as other Home rows, capped at 100 — a full library
-// shelf, not a six-item recommendation stub.
+// experienceHomeFallback loads the viewer's exclusions and asks Experience for
+// the cold Home shelves. Plex does not use this path.
 func (a *App) experienceHomeFallback(ctx context.Context, req frontend.RowRequest, libraries []experience.Library, visibility experience.Visibility) ([]frontend.Row, error) {
 	if req.Viewer == nil || a.catalog == nil || a.notInterested == nil {
 		return nil, core.ErrNotAvailable
@@ -194,33 +188,5 @@ func (a *App) experienceHomeFallback(ctx context.Context, req frontend.RowReques
 	for _, entry := range excluded {
 		keys = append(keys, entry.Key)
 	}
-	limit := req.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	limit = min(limit, 100)
-	browse := func(ctx context.Context, q core.BrowseQuery) (core.Page, error) {
-		q.Filter.ExcludeKeys = keys
-		return a.catalog.Browse(ctx, q)
-	}
-	var rows []frontend.Row
-	for _, library := range libraries {
-		if !experience.SectionAllowed(req.Viewer, library.ID) {
-			continue
-		}
-		items, more, err := experience.RecentlyAdded(ctx, req.Viewer, library.Type, limit, visibility, browse)
-		if err != nil {
-			return nil, err
-		}
-		if len(items) == 0 {
-			continue
-		}
-		row := frontend.Row{ID: "library.recent." + strconv.Itoa(library.ID), Kind: "recentlyAdded", Purpose: frontend.RowRecentlyAdded, Title: "Recently Added " + library.Name, More: more}
-		for i := range items {
-			item := items[i]
-			row.Entries = append(row.Entries, frontend.RowEntry{Kind: frontend.RowEntryTitle, Title: &item})
-		}
-		rows = append(rows, row)
-	}
-	return rows, nil
+	return experience.ColdHomeRows(ctx, req.Viewer, libraries, visibility, req.Limit, keys, a.catalog.Browse)
 }
