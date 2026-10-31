@@ -150,7 +150,8 @@ func TestTitleSearchIndexMatchesLike(t *testing.T) {
 		cond, args := c.titleMatch("", q)
 		indexed := keysWhere(t, db, cond, args)
 		like := "%" + escapeLike(q) + "%"
-		plain := keysWhere(t, db, `(title LIKE ? ESCAPE '\' OR original_title LIKE ? ESCAPE '\' OR EXISTS (SELECT 1 FROM catalog_alt_titles a WHERE a.key=catalog_titles.key AND a.title LIKE ? ESCAPE '\'))`, []any{like, like, like})
+		op := store.Like(store.DialectOf(db))
+		plain := keysWhere(t, db, `(title `+op+` ? ESCAPE '\' OR original_title `+op+` ? ESCAPE '\' OR EXISTS (SELECT 1 FROM catalog_alt_titles a WHERE a.key=catalog_titles.key AND a.title `+op+` ? ESCAPE '\'))`, []any{like, like, like})
 		if strings.Join(indexed, ",") != strings.Join(plain, ",") {
 			t.Errorf("%q: index %v, LIKE %v", q, indexed, plain)
 		}
@@ -202,6 +203,8 @@ func TestPeopleNameIndexFollowsCredits(t *testing.T) {
 	}
 	store1(core.MovieKey(1), core.Person{TMDB: 7, Name: "Ringo Starr"}, core.Person{TMDB: 8, Name: "Mustard Plant"})
 	store1(core.MovieKey(2), core.Person{TMDB: 7, Name: "Ringo Starr"})
+	// MatchPeople returns candidates (a substring match on PostgreSQL);
+	// callers keep the names with a word starting with every term.
 	names := func(terms ...string) []string {
 		t.Helper()
 		got, err := c.MatchPeople(ctx, terms, 10)
@@ -210,7 +213,18 @@ func TestPeopleNameIndexFollowsCredits(t *testing.T) {
 		}
 		var out []string
 		for _, m := range got {
-			out = append(out, m.Name)
+			words := strings.Fields(strings.ToLower(m.Name))
+			all := true
+			for _, term := range terms {
+				found := false
+				for _, w := range words {
+					found = found || strings.HasPrefix(w, term)
+				}
+				all = all && found
+			}
+			if all {
+				out = append(out, m.Name)
+			}
 		}
 		return out
 	}

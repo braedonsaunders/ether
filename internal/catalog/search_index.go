@@ -129,11 +129,17 @@ func init() {
 
 // titleMatch is the substring match of query against a title's name,
 // original name or one of its alternative titles (romanized and regional
-// names, so "Sousou no Frieren" finds Frieren). alias prefixes the columns
-// ("t." or ""). On SQLite a query of three or more characters with no LIKE metacharacters is answered from
+// names, so "Sousou no Frieren" finds Frieren). alias qualifies the
+// catalogue's columns ("t." or "", meaning catalog_titles itself). On SQLite
+// a query of three or more characters with no LIKE metacharacters is answered from
 // the trigram index (FTS5 uses the index only without an ESCAPE clause);
 // anything else keeps the plain LIKE.
 func (c *Catalog) titleMatch(alias, query string) (string, []any) {
+	if alias == "" {
+		// Qualified, so the alternative-title subquery's key never binds to
+		// its own table.
+		alias = "catalog_titles."
+	}
 	like := "%" + escapeLike(query) + "%"
 	d := store.DialectOf(c.db)
 	if d == store.SQLite && utf8.RuneCountInString(query) >= 3 && !strings.ContainsAny(query, `%_\`) {
