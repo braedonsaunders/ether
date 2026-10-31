@@ -264,7 +264,7 @@ export function HistoryTab() {
               <EmptyState
                 icon={<Route />}
                 title={t("No decisions yet")}
-                description={t("Play a title in Plex; the decision appears here.")}
+                description={t("Play a title. The decision appears here.")}
               />
             }
             columns={[

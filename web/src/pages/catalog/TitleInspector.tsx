@@ -136,9 +136,7 @@ export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClos
             <div className="catalog-detail-footer">
               <Film size={18} />
               <p>
-                {t(
-                  "Artwork and ratings shown here come from TMDB. Configure how they appear in Plex under Metadata.",
-                )}
+                {t("Artwork and ratings here come from TMDB. Change how they look under Metadata.")}
               </p>
               <Link to="/metadata" onClick={onClose} aria-label={t("Open Metadata")}>
                 {t("Metadata")}

@@ -81,9 +81,6 @@ export default function Sources() {
   return (
     <DomainPage
       title={t("Sources")}
-      description={t(
-        "Where video comes from, whether those accounts are working, and how they are doing.",
-      )}
       base="/sources"
       tabs={TABS}
       active={top}
@@ -110,9 +107,7 @@ export default function Sources() {
             tabs={SOURCE_SUBS.map((item) => ({ key: item.key, label: item.label }))}
           />
           <p className="text-sm text-fg-muted">
-            {t(
-              "Each card is an account or a search site. Drag a card, or use the arrows, to change which account of that kind Ether asks first. A problem on a card says what to fix.",
-            )}
+            {t("Drag a card to choose which account Ether tries first.")}
           </p>
           <EqualQuality />
           {sourceSub === "debrid" ? <DebridSources addKind={debridAdd} /> : null}

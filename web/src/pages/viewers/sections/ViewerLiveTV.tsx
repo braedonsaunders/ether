@@ -76,7 +76,7 @@ export function ViewerLiveTVAccess({ viewerId }: { viewerId: number }) {
           title={
             <label htmlFor={`livetv-off-${viewerId}`}>{t("Disable Live TV for this viewer")}</label>
           }
-          description={t("Hides Live TV and the guide in their Plex apps.")}
+          description={t("Hides Live TV and the guide in their apps.")}
           control={
             <Switch
               id={`livetv-off-${viewerId}`}

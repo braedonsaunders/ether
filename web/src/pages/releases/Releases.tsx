@@ -23,15 +23,7 @@ const TABS = localized(
 export default function Releases() {
   const tab = useRouteTab(TABS);
   return (
-    <DomainPage
-      title={t("Releases")}
-      description={t(
-        "Choose the quality you want. Ether ranks releases for the app playing them and fails over when one breaks; find a title to see why, pin a release or block one.",
-      )}
-      base="/releases"
-      tabs={TABS}
-      active={tab}
-    >
+    <DomainPage title={t("Releases")} base="/releases" tabs={TABS} active={tab}>
       {tab === "quality" ? (
         <>
           <QualityTab />

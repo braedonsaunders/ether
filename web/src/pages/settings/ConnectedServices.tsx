@@ -1167,7 +1167,7 @@ function ServiceOverview({
             {cards}
             <IntegrationAppCard
               identity={{ id: "ratings", name: t("OMDb and MDBList") }}
-              description={t("IMDb, Rotten Tomatoes and other rating badges in Plex.")}
+              description={t("IMDb, Rotten Tomatoes and other rating badges.")}
               status={ratingsStatus(ratings)}
               enabled={ratings?.enabled}
               busy={locked || busyId === "ratings"}

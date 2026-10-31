@@ -1,4 +1,4 @@
-import { t, tx } from "../../i18n";
+import { t } from "../../i18n";
 import { Badge, Button, Switch, toast } from "@braedonsaunders/appkit-ui";
 import { useId, useState } from "react";
 import { Link } from "react-router-dom";
@@ -42,17 +42,7 @@ export function Protection({ active }: { active?: boolean }) {
           <Badge variant={active ? "success" : "secondary"}>
             {active ? t("Watcher running on this node") : t("Watcher unavailable on this node")}
           </Badge>
-          <p>
-            {tx(
-              "The Ether executable starts an independent watcher. If Ether exits unexpectedly, including a fatal panic or process fault, the watcher sends directly to enabled channels with {event} selected. It keeps a private copy of those destinations in memory, so delivery does not depend on the failed process or its database. Digest delays and delivery caps do not delay crash alerts.",
-              { event: <strong>{t("Server crashed")}</strong> },
-            )}
-          </p>
-          <p>
-            {t(
-              "A normal stop or restart does not trigger a crash alert. Crash-watcher deliveries happen outside Delivery history. Delivery is best effort: the watcher must stay alive and have network access. A supervisor that kills the entire process group can stop it too.",
-            )}
-          </p>
+          <p>{t("Sends Server crashed if Ether exits unexpectedly. A normal stop does not.")}</p>
           <Link to="/notifications/channels" className="font-medium text-fg underline">
             {t("Choose crash alert destinations")}
           </Link>
@@ -64,9 +54,7 @@ export function Protection({ active }: { active?: boolean }) {
       >
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
-            {t(
-              "Power failure, a dead machine or lost internet cannot reliably send a last-second message. Configure a dead-man heartbeat in an external monitoring service. Ether posts to its secret HTTPS ping URL once a minute, after its local HTTP health check succeeds. Set the monitor to expect a one-minute interval with at least three minutes of grace, and configure its own email or phone alerts. In a cluster, this shared heartbeat continues while any node remains responsive; monitor each node externally to detect individual failures.",
-            )}
+            {t("Ether pings this URL once a minute while it is up.")}
           </p>
           {settings.error && !value ? (
             <ErrorPanel error={settings.error} onRetry={() => void settings.reload()} />

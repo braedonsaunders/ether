@@ -60,7 +60,7 @@ export function BuildPanel({
       <section className="space-y-4">
         <Field
           label={t("Description")}
-          hint={t("Shown in Plex under the collection title.")}
+          hint={t("Shown under the collection title.")}
           htmlFor="collection-description"
         >
           <Textarea

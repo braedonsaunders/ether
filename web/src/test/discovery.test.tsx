@@ -139,7 +139,7 @@ describe("Language model features (Integrations)", () => {
     const { fake } = renderAppWith("/services/llm", discoveryRoutes());
     const search = await screen.findByLabelText("Natural-language search", {}, WAIT);
     expect(search).not.toBeChecked();
-    expect(screen.getByText(/A viewer types that search in Plex/)).toBeInTheDocument();
+    expect(screen.getByText(/A viewer runs that search/)).toBeInTheDocument();
     expect(screen.getAllByText("Uses your language model — connected ✓").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Needs speech-to-text → Set up" })).toHaveAttribute(
       "href",

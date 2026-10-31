@@ -23,7 +23,7 @@ export const CACHE_PRESETS: {
     key: "feather",
     name: t("Feather"),
     space: "256 MiB",
-    description: t("A small footprint. Just the useful moments."),
+    description: t("A small cache for recent playback."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -63,7 +63,7 @@ export const CACHE_PRESETS: {
     key: "encore",
     name: t("Encore"),
     space: "250 GiB",
-    description: t("Give household favourites a longer stay."),
+    description: t("Household favourites stay longer."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -83,7 +83,7 @@ export const CACHE_PRESETS: {
     key: "deep-shelf",
     name: t("Deep shelf"),
     space: "750 GiB",
-    description: t("Keep more of what everyone comes back to."),
+    description: t("Keep more of what people rewatch."),
     values: {
       preloadEnabled: false,
       preloadBudgetBytes: 0,
@@ -103,7 +103,7 @@ export const CACHE_PRESETS: {
     key: "cinema-node",
     name: t("Cinema node"),
     space: "2 TiB",
-    description: t("A managed shelf of complete movies and TV episodes."),
+    description: t("Complete movies and episodes."),
     values: {
       mode: "adaptive",
       budgetBytes: 2048 * GiB,
@@ -131,7 +131,7 @@ export const CACHE_PRESETS: {
     key: "edge-library",
     name: t("Edge library"),
     space: "20 TiB",
-    description: t("Thousands of films. A shelf that fills itself."),
+    description: t("Thousands of films."),
     values: {
       mode: "adaptive",
       budgetBytes: 20480 * GiB,

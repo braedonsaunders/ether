@@ -1,6 +1,5 @@
 import { cn } from "@braedonsaunders/appkit-ui";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { t } from "../i18n";
 import art from "../lib/brand-art.json";
 
 type Motion = "static" | "intro" | "loop";
@@ -128,7 +127,6 @@ export function BrandSplash({ ready }: { ready: boolean }) {
     >
       <div className="ether-splash-center">
         <EtherLogo motion="intro" className="w-full" />
-        <p>{t("Your media. Beyond the static library.")}</p>
         <div className="ether-splash-progress" />
       </div>
     </div>

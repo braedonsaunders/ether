@@ -105,7 +105,7 @@ export default function ViewerProfile() {
     setRefreshing(true);
     try {
       await api.refreshViewer(id);
-      toast.success(t("Rows rebuilt"), { description: t("Their Plex Home is up to date.") });
+      toast.success(t("Rows rebuilt"), { description: t("Their Home is up to date.") });
     } catch (e) {
       toast.error(t("Couldn't rebuild rows"), { description: errorMessage(e) });
     } finally {

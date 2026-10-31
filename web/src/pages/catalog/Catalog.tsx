@@ -50,7 +50,6 @@ export default function Catalog() {
   return (
     <Workspace
       title={t("Catalog")}
-      subtitle={t("The movies and shows behind your Plex library.")}
       actions={
         <>
           {status ? (
@@ -285,12 +284,7 @@ function CatalogBrowser({
             <h4>{t("Ready for discovery")}</h4>
             <p>
               {t(
-                "Only released titles appear here. Popularity and vote thresholds are managed in Catalog settings.",
-              )}
-            </p>
-            <p>
-              {t(
-                "This is a metadata library. Playback sources are resolved when a viewer presses play.",
+                "Only released titles appear here. Popularity and vote thresholds are in Catalog settings.",
               )}
             </p>
           </div>

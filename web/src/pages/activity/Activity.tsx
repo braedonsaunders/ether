@@ -67,7 +67,6 @@ export default function Activity() {
   return (
     <DomainPage
       title={t("Activity")}
-      description={t("What's playing right now and what your viewers have watched.")}
       base="/activity"
       tabs={TABS.map((tab) => (tab.key === "now" && live ? { ...tab, count: live } : tab))}
       active={tab}

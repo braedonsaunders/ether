@@ -63,7 +63,7 @@ const SOURCES = localized(
         key: "plex",
         label: t("Plex watchlists"),
         hint: t(
-          "You and your Plex Home members. A friend's server access doesn't include their Plex watchlist.",
+          "Plex Home members only. A friend's server access does not include their watchlist.",
         ),
       },
       {
@@ -102,7 +102,7 @@ export function WatchlistDefaults() {
       <SettingsSection
         title={t("Watchlist alerts")}
         description={t(
-          "When a title on a viewer's watchlist can be streamed, it appears on their Plex Home. A release date alone isn't enough: Ether waits for a healthy release.",
+          "A streamable watchlist title shows on their Home. A release date alone is not enough.",
         )}
       >
         <SettingsRow

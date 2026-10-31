@@ -158,14 +158,12 @@ export function RatingSources({
           <>
             <SettingsSection
               title={t("Rating sources")}
-              description={t(
-                "Show IMDb and Rotten Tomatoes scores in Plex using your own OMDb or MDBList key. Scores a source doesn't have stay blank.",
-              )}
+              description={t("Show IMDb and Rotten Tomatoes scores. Missing scores stay blank.")}
             >
               <SettingsRow
                 stacked
                 title={<label htmlFor="ratings-enabled">{t("External ratings")}</label>}
-                description={t("Off: Plex shows the catalogue's own rating.")}
+                description={t("Off: apps show the catalogue rating.")}
                 control={
                   <Switch
                     id="ratings-enabled"

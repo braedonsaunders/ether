@@ -140,7 +140,7 @@ export function ViewerPlayback({ viewer }: { viewer: Viewer }) {
       <Section
         title={t("Show memory")}
         description={t(
-          "When this viewer changes tracks in Plex, Ether remembers the choice for later episodes of the same show.",
+          "When this viewer changes tracks, later episodes of that show use the same choice.",
         )}
       >
         {memory.length === 0 ? (

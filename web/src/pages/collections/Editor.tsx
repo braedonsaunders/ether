@@ -247,7 +247,7 @@ export default function CollectionEditor() {
           publish === true ? t("Published") : publish === false ? t("Unpublished") : t("Saved"),
           {
             description: saved.enabled
-              ? t("{name} is live in Plex.", { name: saved.name })
+              ? t("{name} is live.", { name: saved.name })
               : t("{name} is saved as a draft. Publish it when you're ready.", {
                   name: saved.name,
                 }),
@@ -616,7 +616,7 @@ export default function CollectionEditor() {
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-medium uppercase tracking-wider text-fg-subtle">
-                    {t("How it appears in Plex")}
+                    {t("How it appears")}
                   </p>
                   <p className="mt-1 truncate text-lg font-semibold text-fg">
                     {spec.name.trim() || t("Untitled collection")}
