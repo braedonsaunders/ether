@@ -514,7 +514,8 @@ func TestSiloPortraitDeniesMissingReaderAndGrantChangesDuringRead(t *testing.T) 
 				t.Fatalf("initial portrait %+v %v", person, err)
 			}
 			var current frontend.Experience = exp
-			images, err := identity.NewArtworkImageGrantService(db, "silo", grants, func() frontend.Experience { return current }, artwork, time.Minute, time.Now)
+			clock := time.Now()
+			images, err := identity.NewArtworkImageGrantService(db, "silo", grants, func() frontend.Experience { return current }, artwork, time.Minute, func() time.Time { return clock })
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -544,7 +545,9 @@ func TestSiloPortraitDeniesMissingReaderAndGrantChangesDuringRead(t *testing.T) 
 				case "header_delete":
 					_, err = db.ExecContext(ctx, `DELETE FROM capability_headers WHERE namespace='image'`)
 				case "image_expiry":
-					_, err = db.ExecContext(ctx, `UPDATE frontend_image_grants SET expires=1`)
+					// Issued image expiry is immutable. Advance the service clock
+					// past the one-minute grant instead of rewriting the row.
+					clock = clock.Add(2 * time.Minute)
 				case "source_expiry":
 					_, err = db.ExecContext(ctx, `UPDATE identity_grants SET expires=1 WHERE viewer_id=1`)
 				case "cancel":
