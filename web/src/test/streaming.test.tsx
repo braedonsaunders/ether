@@ -11,6 +11,13 @@ async function choose(label: string, option: string) {
   fireEvent.click(await screen.findByRole("option", { name: option }));
 }
 
+async function pick(scope: HTMLElement, label: string, ...options: string[]) {
+  fireEvent.click(within(scope).getByRole("button", { name: label }));
+  for (const option of options) {
+    fireEvent.click(await screen.findByRole("option", { name: option, hidden: true }));
+  }
+}
+
 describe("Sources", () => {
   it("enables bounded repair without changing provider credentials", async () => {
     const { fake } = renderApp("/sources/yours/usenet");
@@ -101,6 +108,10 @@ describe("Playback devices", () => {
     expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
     expect(screen.getByText("Swiftfin")).toBeInTheDocument();
     expect(screen.getByText(/Seen on this server/)).toBeInTheDocument();
+    expect(screen.getAllByText("Reports its own").length).toBeGreaterThan(0);
+    expect(screen.getByText("Stream link")).toBeInTheDocument();
+    expect(screen.queryByText(/tells Ether/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/plays that stream/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Protocol" }));
     fireEvent.click(
       within(await screen.findByRole("listbox", { hidden: true })).getByText("Jellyfin"),
@@ -124,8 +135,9 @@ describe("Playback devices", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Devices" }, WAIT));
     fireEvent.click(await screen.findByRole("button", { name: "Edit Apple TV" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "Edit Apple TV" });
-    const profiles = within(drawer).getByLabelText("Dolby Vision profiles");
-    fireEvent.change(profiles, { target: { value: "5, 7, 8" } });
+    expect(within(drawer).getByText("Built in: Profile 5, Profile 8")).toBeInTheDocument();
+    expect(within(drawer).getAllByText("Built in: 4K").length).toBeGreaterThan(0);
+    await pick(drawer, "Dolby Vision profiles", "Profile 5", "Profile 7", "Profile 8");
     fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/clients")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/clients")[0]!.body).toMatchObject({
@@ -138,7 +150,7 @@ describe("Playback devices", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add" }, WAIT));
     const drawer = await screen.findByRole("dialog", { name: "Add an app" });
     fireEvent.change(within(drawer).getByLabelText("Match"), { target: { value: "Infuse" } });
-    fireEvent.change(within(drawer).getByLabelText("Video codecs"), { target: { value: "hevc" } });
+    await pick(drawer, "Video codecs", "H.265/HEVC");
     fireEvent.click(within(drawer).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls(fake, "PUT", "/config/clients")).toHaveLength(1));
     expect(calls(fake, "PUT", "/config/clients")[0]!.body).toMatchObject({

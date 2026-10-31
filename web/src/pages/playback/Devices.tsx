@@ -4,8 +4,10 @@ import {
   EmptyState,
   FilterChips,
   ListNavProvider,
+  MultiSelect,
   PagedTable,
   SearchSelect,
+  Select,
   SubtabNav,
   type ListSearchParams,
 } from "@braedonsaunders/appkit-ui";
@@ -13,6 +15,8 @@ import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
+import { SettingsRow } from "../../components/SettingsRow";
+import { StatusDot } from "../../components/status";
 import { pagedTableLabels, searchSelectLabels } from "../../i18n/appkit-labels";
 import { t, tx } from "../../i18n";
 import { api, apiFetch } from "../../lib/api";
@@ -77,14 +81,18 @@ type Catalog = {
 type Draft = {
   pick: string;
   match: string;
-  profiles: string;
-  subtitles: string;
-  video: string;
+  profiles: string[];
+  subtitles: string[];
+  video: string[];
   height: string;
   hdr: boolean;
   dolby: boolean;
   product: string;
 };
+
+const VIDEO_CHOICES = ["h264", "hevc", "vp9", "av1", "vp8", "mpeg2video", "vc1", "mpeg4"];
+const SUBTITLE_CHOICES = ["srt", "ass", "ssa", "vtt", "ttml", "pgs", "vobsub"];
+const PROFILE_CHOICES = ["5", "7", "8", "4", "9"];
 
 type Editor =
   | { mode: "create"; view: "apps" | "devices" }
@@ -117,46 +125,6 @@ function protocolLabel(value: string) {
       return "DLNA";
     default:
       return value;
-  }
-}
-
-function plays(app: CompatApp) {
-  switch (app.directPlay) {
-    case "browser":
-      return t("The browser tells Ether which codecs it can play.");
-    case "reported":
-      return t("This app tells Ether what it can play when someone presses Play.");
-    case "stream":
-      return t("Ether returns a stream, and the app plays that stream.");
-    case "renderer":
-      return t("The TV or receiver tells Ether what it can play.");
-    case "player":
-      return t("The player on the device decides. Ether serves the file.");
-    case "findroid":
-      return t("Findroid asks to direct-play, with srt and ass subtitle sidecars.");
-    case "open":
-      return t("The app asks to direct-play and names a transcode fallback.");
-    case "listed":
-      return app.videoCodecs?.join(", ") || t("Not measured yet.");
-    default:
-      return t("Not measured yet.");
-  }
-}
-
-function appNote(note: string) {
-  switch (note) {
-    case "no-dv5":
-      return t("Dolby Vision profile 5 is not decoded.");
-    case "capture":
-      return t("Documented only. A real capture is still required.");
-    case "unsupported-shell":
-      return t("The 2.x Apple TV app is a web shell and is not supported.");
-    case "h264-ac3":
-      return t("Transcode fallback is H.264 and AC3.");
-    case "sdk":
-      return t("Reference client used to test the protocol, not a television app.");
-    default:
-      return "";
   }
 }
 
@@ -218,34 +186,56 @@ function isDeviceMatch(item: CapabilityOverride) {
   return !item.id && Boolean(item.device);
 }
 
-function listText(values: string[] | null | undefined) {
-  return values?.join(", ") ?? "";
+function sameList(a: string[], b: string[]) {
+  return a.length === b.length && a.every((item, i) => item === b[i]);
 }
 
-function parseList(value: string) {
-  return value
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
+function withChoices(base: string[], extra: Array<string | undefined>) {
+  const seen = new Set(base);
+  const out = [...base];
+  for (const value of extra) {
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }
 
-function parseProfiles(value: string) {
-  return parseList(value)
-    .map((part) => Number(part))
-    .filter((n) => Number.isInteger(n) && n >= 0);
+function builtIn(parts: string[]) {
+  const detail = parts.filter(Boolean).join(", ");
+  return detail ? t("Built in: {detail}", { detail }) : t("Built in");
+}
+
+function resolutionName(height: number) {
+  if (height >= 2160) return t("4K");
+  if (height >= 1080) return t("1080p");
+  if (height >= 720) return t("720p");
+  return t("{height}p", { height });
 }
 
 function blankDraft(): Draft {
   return {
     pick: "",
     match: "",
-    profiles: "",
-    subtitles: "",
-    video: "",
+    profiles: [],
+    subtitles: [],
+    video: [],
     height: "",
     hdr: false,
     dolby: false,
     product: "",
+  };
+}
+
+function listsFrom(saved?: CapabilityOverride, builtinHeight = 0) {
+  const height = saved?.maxHeight ?? 0;
+  return {
+    profiles: saved?.dolbyVisionProfiles?.map(String) ?? [],
+    subtitles: [...(saved?.subtitleCodecs ?? [])],
+    video: [...(saved?.videoCodecs ?? [])],
+    height: height > 0 && height !== builtinHeight ? String(height) : "",
+    hdr: Boolean(saved?.hdr10),
+    dolby: Boolean(saved?.dolbyVision),
   };
 }
 
@@ -283,6 +273,21 @@ function CapabilityBadges({ row }: { row: CompatDevice }) {
   );
 }
 
+function CertificationMark({ value }: { value: string }) {
+  if (value === "builtin") return <Badge variant="secondary">{t("Built in")}</Badge>;
+  const unsupported = value === "unsupported";
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
+      <StatusDot level={unsupported ? "warn" : "unknown"} />
+      {unsupported
+        ? t("Not supported")
+        : value === "pending"
+          ? t("Not certified yet")
+          : certificationLabel(value)}
+    </span>
+  );
+}
+
 function applyCapabilityDiff(
   override: CapabilityOverride,
   draft: Draft,
@@ -290,11 +295,21 @@ function applyCapabilityDiff(
   builtinHeight: number,
   keepProduct: boolean,
 ) {
-  if (draft.profiles !== baseline.profiles) {
-    override.dolbyVisionProfiles = parseProfiles(draft.profiles);
+  if (!sameList(draft.profiles, baseline.profiles)) {
+    const profiles = draft.profiles
+      .map((part) => Number(part))
+      .filter((n) => Number.isInteger(n) && n >= 0);
+    if (profiles.length) override.dolbyVisionProfiles = profiles;
+    else delete override.dolbyVisionProfiles;
   }
-  if (draft.subtitles !== baseline.subtitles) override.subtitleCodecs = parseList(draft.subtitles);
-  if (draft.video !== baseline.video) override.videoCodecs = parseList(draft.video);
+  if (!sameList(draft.subtitles, baseline.subtitles)) {
+    if (draft.subtitles.length) override.subtitleCodecs = draft.subtitles;
+    else delete override.subtitleCodecs;
+  }
+  if (!sameList(draft.video, baseline.video)) {
+    if (draft.video.length) override.videoCodecs = draft.video;
+    else delete override.videoCodecs;
+  }
   const height = Number(draft.height);
   if (draft.height !== baseline.height) {
     if (Number.isInteger(height) && height > 0 && height !== builtinHeight)
@@ -312,6 +327,43 @@ function applyCapabilityDiff(
 function capabilityChanged(override: CapabilityOverride) {
   return Object.keys(override).some(
     (key) => !["id", "product", "device", "platform"].includes(key),
+  );
+}
+
+function ChoiceRow({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  label: string;
+  value: string[];
+  onChange: (value: string[]) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+}) {
+  return (
+    <SettingsRow
+      title={label}
+      control={
+        <div className="w-full sm:w-80">
+          <MultiSelect
+            ariaLabel={label}
+            value={value}
+            onChange={onChange}
+            options={options}
+            placeholder={placeholder}
+            searchPlaceholder={t("Search…")}
+            noMatchesLabel={t("No matches")}
+            clearLabel={t("Clear")}
+            selectAllLabel={t("Select all")}
+            clearable
+            maxVisibleValues={4}
+          />
+        </div>
+      }
+    />
   );
 }
 
@@ -362,16 +414,7 @@ export function DeviceCapabilities() {
     const saved = appOverride(app.name);
     openDraft(
       { mode: "app", name: app.name, product: app.name, custom: false, saved },
-      {
-        ...blankDraft(),
-        pick: appKey(app),
-        profiles: listText(saved?.dolbyVisionProfiles?.map(String) ?? null),
-        subtitles: listText(saved?.subtitleCodecs ?? app.subtitles),
-        video: listText(saved?.videoCodecs ?? app.videoCodecs),
-        height: saved?.maxHeight ? String(saved.maxHeight) : "",
-        hdr: Boolean(saved?.hdr10),
-        dolby: Boolean(saved?.dolbyVision),
-      },
+      { ...blankDraft(), pick: appKey(app), ...listsFrom(saved) },
     );
   };
 
@@ -379,21 +422,21 @@ export function DeviceCapabilities() {
     const name = saved.product ?? "";
     openDraft(
       { mode: "app", name, product: name, custom: true, saved },
-      {
-        ...blankDraft(),
-        match: name,
-        profiles: listText(saved.dolbyVisionProfiles?.map(String) ?? null),
-        subtitles: listText(saved.subtitleCodecs),
-        video: listText(saved.videoCodecs),
-        height: saved.maxHeight ? String(saved.maxHeight) : "",
-        hdr: Boolean(saved.hdr10),
-        dolby: Boolean(saved.dolbyVision),
-      },
+      { ...blankDraft(), match: name, ...listsFrom(saved) },
     );
   };
 
   const openDevice = (row: CompatDevice) => {
     const saved = deviceOverride(row);
+    const lists = listsFrom(saved, row.builtinMaxHeight || 0);
+    if (
+      !lists.height &&
+      row.maxHeight &&
+      row.builtinMaxHeight &&
+      row.maxHeight !== row.builtinMaxHeight
+    ) {
+      lists.height = String(row.maxHeight);
+    }
     openDraft(
       {
         mode: "device",
@@ -407,10 +450,7 @@ export function DeviceCapabilities() {
       {
         pick: deviceKey(row),
         match: "",
-        profiles: listText(row.dolbyVisionProfiles?.map(String) ?? null),
-        subtitles: listText(row.subtitleCodecs),
-        video: listText(row.videoCodecs),
-        height: row.maxHeight ? String(row.maxHeight) : "",
+        ...lists,
         hdr: Boolean(row.hdr10),
         dolby: Boolean(row.dolbyVision),
         product: saved?.product ?? "",
@@ -425,12 +465,7 @@ export function DeviceCapabilities() {
       {
         ...blankDraft(),
         match: name,
-        profiles: listText(saved.dolbyVisionProfiles?.map(String) ?? null),
-        subtitles: listText(saved.subtitleCodecs),
-        video: listText(saved.videoCodecs),
-        height: saved.maxHeight ? String(saved.maxHeight) : "",
-        hdr: Boolean(saved.hdr10),
-        dolby: Boolean(saved.dolbyVision),
+        ...listsFrom(saved),
         product: saved.product ?? "",
       },
     );
@@ -590,6 +625,34 @@ export function DeviceCapabilities() {
   const showProduct =
     editing?.mode === "device" || (editing?.mode === "create" && editing.view === "devices");
   const showMatch = editing?.mode === "create" || editing?.custom === true;
+  const sourceApp =
+    editing?.mode === "app" && !editing.custom
+      ? apps.find((app) => sameText(app.name, editing.name))
+      : editing?.mode === "create" && editing.view === "apps" && !draft.match.trim()
+        ? knownApp(draft.pick)
+        : undefined;
+  const profileOptions = withChoices(PROFILE_CHOICES, [
+    ...(builtin?.dolbyVisionProfiles ?? []).map(String),
+    ...draft.profiles,
+  ]).map((value) => ({ value, label: t("Profile {profile}", { profile: value }) }));
+  const videoOptions = withChoices(VIDEO_CHOICES, [
+    ...(builtin?.videoCodecs ?? sourceApp?.videoCodecs ?? []),
+    ...draft.video,
+  ]).map((value) => ({ value, label: codecLabel(value) }));
+  const subtitleOptions = withChoices(SUBTITLE_CHOICES, [
+    ...(builtin?.subtitleCodecs ?? sourceApp?.subtitles ?? []),
+    ...draft.subtitles,
+  ]).map((value) => ({ value, label: value }));
+  const profilePlaceholder = builtIn(
+    (builtin?.dolbyVisionProfiles ?? []).map((profile) => t("Profile {profile}", { profile })),
+  );
+  const videoPlaceholder = builtIn(
+    (builtin?.videoCodecs ?? sourceApp?.videoCodecs ?? []).map((codec) => codecLabel(codec)),
+  );
+  const subtitlePlaceholder = builtIn(builtin?.subtitleCodecs ?? sourceApp?.subtitles ?? []);
+  const heightBuiltin = builtin?.builtinMaxHeight || builtin?.maxHeight || 0;
+  const heightPlaceholder = builtIn(heightBuiltin ? [resolutionName(heightBuiltin)] : []);
+  const heightOptions = withChoices(["720", "1080", "2160"], [draft.height]);
 
   return (
     <ListNavProvider value={listNav}>
@@ -724,13 +787,27 @@ export function DeviceCapabilities() {
                           />
                         );
                       }
-                      if (row.kind !== "known") return t("Not measured yet.");
-                      const note = appNote(row.app.note);
+                      if (
+                        row.kind === "known" &&
+                        row.app.directPlay === "listed" &&
+                        row.app.videoCodecs?.length
+                      ) {
+                        return (
+                          <span className="flex flex-wrap gap-1">
+                            {row.app.videoCodecs.map((codec) => (
+                              <Badge key={codec} variant="secondary">
+                                {codecLabel(codec)}
+                              </Badge>
+                            ))}
+                          </span>
+                        );
+                      }
                       return (
-                        <span>
-                          {plays(row.app)}
-                          {note ? <span className="mt-1 block text-fg-muted">{note}</span> : null}
-                        </span>
+                        <Badge variant="secondary" className="whitespace-nowrap">
+                          {row.kind === "known" && row.app.directPlay === "stream"
+                            ? t("Stream link")
+                            : t("Reports its own")}
+                        </Badge>
                       );
                     },
                   },
@@ -748,13 +825,7 @@ export function DeviceCapabilities() {
                     header: t("Certification"),
                     cell: (row) =>
                       row.kind === "known" ? (
-                        <Badge
-                          variant={
-                            row.app.certification === "unsupported" ? "warning" : "secondary"
-                          }
-                        >
-                          {certificationLabel(row.app.certification)}
-                        </Badge>
+                        <CertificationMark value={row.app.certification} />
                       ) : null,
                   },
                 ]}
@@ -908,33 +979,46 @@ export function DeviceCapabilities() {
               onChange={(match) => setDraft({ ...draft, match })}
             />
           ) : null}
-          <TextRow
+          <ChoiceRow
             label={t("Dolby Vision profiles")}
             value={draft.profiles}
-            placeholder={t("Comma-separated")}
+            options={profileOptions}
+            placeholder={profilePlaceholder}
             onChange={(profiles) => setDraft({ ...draft, profiles })}
           />
-          <TextRow
+          <ChoiceRow
             label={t("Subtitles")}
             value={draft.subtitles}
-            placeholder={t("Comma-separated")}
+            options={subtitleOptions}
+            placeholder={subtitlePlaceholder}
             onChange={(subtitles) => setDraft({ ...draft, subtitles })}
           />
-          <TextRow
+          <ChoiceRow
             label={t("Video codecs")}
             value={draft.video}
-            placeholder={t("Comma-separated")}
+            options={videoOptions}
+            placeholder={videoPlaceholder}
             onChange={(video) => setDraft({ ...draft, video })}
           />
-          <TextRow
-            label={t("Maximum resolution")}
-            help={
-              builtin?.builtinMaxHeight
-                ? t("Built in is {height}p.", { height: builtin.builtinMaxHeight })
-                : undefined
+          <SettingsRow
+            title={t("Maximum resolution")}
+            control={
+              <div className="w-full sm:w-80">
+                <Select
+                  aria-label={t("Maximum resolution")}
+                  value={draft.height}
+                  placeholder={heightPlaceholder}
+                  onChange={(e) => setDraft({ ...draft, height: e.target.value })}
+                >
+                  <option value="">{heightPlaceholder}</option>
+                  {heightOptions.map((value) => (
+                    <option key={value} value={value}>
+                      {resolutionName(Number(value))}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             }
-            value={draft.height}
-            onChange={(height) => setDraft({ ...draft, height })}
           />
           <BoolRow
             label={t("HDR")}
