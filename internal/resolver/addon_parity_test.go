@@ -65,26 +65,26 @@ func TestAbsoluteEpisodeIdentity(t *testing.T) {
 	title := &core.Title{Type: core.TypeEpisode, Title: "Episode 1071", ShowTitle: "One Piece"}
 	sreq := core.SearchRequest{Type: core.TypeEpisode, Title: "One Piece", Season: 21, Episode: 180, AbsoluteEpisode: 1071, Anime: true}
 	match := withParsed(rel("abs", "[SubsPlease] One Piece - 1071 (1080p) [ABCD1234].mkv", 1400))
-	if reason := rejectIdentity(match, title, sreq); reason != "" {
+	if reason := rejectIdentity(match, title, sreq, ""); reason != "" {
 		t.Fatalf("absolute 1071 rejected: %s", reason)
 	}
 	other := withParsed(rel("abs2", "[SubsPlease] One Piece - 1070 (1080p) [ABCD1234].mkv", 1400))
-	if reason := rejectIdentity(other, title, sreq); reason != "season/episode mismatch" {
+	if reason := rejectIdentity(other, title, sreq, ""); reason != "season/episode mismatch" {
 		t.Fatalf("absolute 1070 for 1071: %q", reason)
 	}
 	// Without a catalogue count, only the first season's numbers are known.
 	sreq.AbsoluteEpisode = 0
-	if reason := rejectIdentity(match, title, sreq); reason != "season/episode mismatch" {
+	if reason := rejectIdentity(match, title, sreq, ""); reason != "season/episode mismatch" {
 		t.Fatalf("unknown absolute number accepted: %q", reason)
 	}
 	first := core.SearchRequest{Type: core.TypeEpisode, Title: "One Piece", Season: 1, Episode: 7}
-	if reason := rejectIdentity(withParsed(rel("s1", "[G] One Piece - 07 (1080p)", 1400)), title, first); reason != "" {
+	if reason := rejectIdentity(withParsed(rel("s1", "[G] One Piece - 07 (1080p)", 1400)), title, first, ""); reason != "" {
 		t.Fatalf("season 1 absolute rejected: %s", reason)
 	}
 	// Numeric movie titles stay movies.
 	movie := &core.Title{Type: core.TypeMovie, Title: "300", Year: 2006}
 	mreq := core.SearchRequest{Type: core.TypeMovie, Title: "300", Year: 2006}
-	if reason := rejectIdentity(withParsed(rel("m", "300.2006.1080p.BluRay.x264-GRP", 8000)), movie, mreq); reason != "" {
+	if reason := rejectIdentity(withParsed(rel("m", "300.2006.1080p.BluRay.x264-GRP", 8000)), movie, mreq, ""); reason != "" {
 		t.Fatalf("numeric movie title rejected: %s", reason)
 	}
 }

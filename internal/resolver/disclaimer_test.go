@@ -28,7 +28,7 @@ func TestMovieDirectorDisclaimer(t *testing.T) {
 			copyTitle := *title
 			copyTitle.Directors = tc.directors
 			r := core.Release{Name: tc.name, Info: releaseparse.Parse(tc.name), TitleIDs: tc.ids}
-			if got := rejectIdentity(r, &copyTitle, req); got != tc.want {
+			if got := rejectIdentity(r, &copyTitle, req, ""); got != tc.want {
 				t.Fatalf("got %q want %q", got, tc.want)
 			}
 		})
@@ -40,14 +40,14 @@ func TestDisclaimerDoesNotChangeEpisodesOrMatchingAlternateTitles(t *testing.T) 
 	title := &core.Title{Type: core.TypeEpisode, Directors: []core.Person{{Name: "Chris Nolan"}}}
 	req := core.SearchRequest{Type: core.TypeEpisode, Title: "The Odyssey", Year: 2026, Season: 1, Episode: 2}
 	r := core.Release{Name: name, Info: releaseparse.Parse(name)}
-	if got := rejectIdentity(r, title, req); got != "" {
+	if got := rejectIdentity(r, title, req, ""); got != "" {
 		t.Fatalf("episode rejected: %s", got)
 	}
 	title = &core.Title{Type: core.TypeMovie, OriginalTitle: "The Odyssey", Directors: []core.Person{{Name: "Other Director"}}}
 	req = core.SearchRequest{Type: core.TypeMovie, Title: "Another Title", Year: 2026}
 	r.Name = "The Odyssey 2026 NOT The Chris Nolan FILM 1080p WEB-DL"
 	r.Info = releaseparse.Parse(r.Name)
-	if got := rejectIdentity(r, title, req); got != "" {
+	if got := rejectIdentity(r, title, req, ""); got != "" {
 		t.Fatalf("alternate title rejected: %s", got)
 	}
 }
@@ -57,12 +57,12 @@ func TestDirectorDisclaimerAppliesToAnyMovie(t *testing.T) {
 	req := core.SearchRequest{Type: core.TypeMovie, Title: title.Title, Year: title.Year}
 	name := "Dune.2021.NOT.The.Denis.Villeneuve.FILM.1080p.WEB-DL.x264-GRP"
 	r := core.Release{Name: name, Info: releaseparse.Parse(name)}
-	if got := rejectIdentity(r, title, req); got != "director disclaimer" {
+	if got := rejectIdentity(r, title, req, ""); got != "director disclaimer" {
 		t.Fatalf("got %q", got)
 	}
 	name = "Dune.2021.1080p.WEB-DL.x264-GRP"
 	r = core.Release{Name: name, Info: releaseparse.Parse(name)}
-	if got := rejectIdentity(r, title, req); got != "" {
+	if got := rejectIdentity(r, title, req, ""); got != "" {
 		t.Fatalf("plain release rejected: %q", got)
 	}
 }

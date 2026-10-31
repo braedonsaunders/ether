@@ -36,7 +36,7 @@ func TestAnimeBDPassesIdentityAndImportedQuality(t *testing.T) {
 			parsed := withParsed(r)
 			req := searchRequestFor(title)
 			req.Episode = 3
-			if reason := rejectIdentity(parsed, title, req); reason != "season/episode mismatch" {
+			if reason := rejectIdentity(parsed, title, req, ""); reason != "season/episode mismatch" {
 				t.Fatalf("wrong episode accepted: %q", reason)
 			}
 		})

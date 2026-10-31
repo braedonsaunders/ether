@@ -60,3 +60,24 @@ func audioAcceptable(info core.ReleaseInfo, accepted []string) bool {
 	}
 	return false
 }
+
+// localizedEpisodeTitle reports a release dubbed into a language that is
+// neither the catalogue's nor the title's original: its name carries the
+// episode title in that language ("S06E06.La.resa.dei.conti.ITA.ENG"), so
+// a different title there is a translation, not another episode.
+func localizedEpisodeTitle(info core.ReleaseInfo, t *core.Title, catalogLang string) bool {
+	base, _, _ := strings.Cut(strings.TrimSpace(catalogLang), "-")
+	for _, l := range info.Languages {
+		if l == releaseparse.LanguageMulti {
+			continue
+		}
+		if base != "" && releaseparse.LanguageMatch(l, base) != releaseparse.LanguageNoMatch {
+			continue
+		}
+		if orig := titleOriginalLanguage(t); orig != "" && releaseparse.LanguageMatch(l, orig) != releaseparse.LanguageNoMatch {
+			continue
+		}
+		return true
+	}
+	return false
+}

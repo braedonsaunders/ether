@@ -1302,14 +1302,15 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 			return "sample"
 		}
 	}
-	if reason := rejectIdentity(rel, t, sreq); reason != "" {
+	if reason := rejectIdentity(rel, t, sreq, s.catalogLanguage()); reason != "" {
 		return reason
 	}
 	return rejectPolicy(rel, t, profile, caps, preferred)
 }
 
 // rejectIdentity checks the result's reported identity without client policy.
-func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest) string {
+// catalogLang is the language catalogue episode titles are in ("en-US").
+func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest, catalogLang string) string {
 	isEpisode := sreq.Type == core.TypeEpisode
 	idMatch, idConflict := releaseparse.CompareTitleIDs(rel.TitleIDs, sreq.IDs)
 	if idConflict {
@@ -1357,7 +1358,7 @@ func rejectIdentity(rel core.Release, t *core.Title, sreq core.SearchRequest) st
 		if !releaseparse.SeriesYearMatches(releaseYear, sreq.Year) {
 			return "series year mismatch"
 		}
-		if releaseYear == 0 && !idMatch && !releaseparse.EpisodeTitleMatches(rel.Name, sreq.EpisodeTitle) {
+		if releaseYear == 0 && !idMatch && !localizedEpisodeTitle(rel.Info, t, catalogLang) && !releaseparse.EpisodeTitleMatches(rel.Name, sreq.EpisodeTitle) {
 			return "episode title mismatch"
 		}
 		if rel.Info.FullSeason {

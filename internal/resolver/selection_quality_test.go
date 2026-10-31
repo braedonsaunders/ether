@@ -262,3 +262,20 @@ func TestBelow4KIsExplained(t *testing.T) {
 		t.Fatalf("ceiling %q", got)
 	}
 }
+
+// An Italian dub names its episode in Italian; that is a translation of
+// "Judgment Day", not another episode. An English name with a different
+// title still is another episode.
+func TestLocalizedEpisodeTitleIsNotAMismatch(t *testing.T) {
+	title := &core.Title{Key: core.EpisodeKey(95480, 6, 6), Type: core.TypeEpisode, ShowIDs: core.IDs{TMDB: 95480},
+		ShowTitle: "Slow Horses", ShowYear: 2022, Title: "Judgment Day", Season: 6, Episode: 6, Runtime: 60 * time.Minute, Language: "en"}
+	sreq := searchRequestFor(title)
+	ita := withParsed(rel("ita", "Slow.Horses.S06E06.La.resa.dei.conti.ITA.ENG.2160p.ATVP.WEB-DL.DD5.1.DV.HDR.H.265-MeM.GP", 11<<10))
+	if got := rejectIdentity(ita, title, sreq, "en-US"); got != "" {
+		t.Fatalf("Italian episode title rejected: %q", got)
+	}
+	other := withParsed(rel("other", "Slow.Horses.S06E06.Hard.Lessons.2160p.ATVP.WEB-DL.DDP5.1.DV.H.265-GRP", 11<<10))
+	if got := rejectIdentity(other, title, sreq, "en-US"); got != "episode title mismatch" {
+		t.Fatalf("different English episode title: %q", got)
+	}
+}
