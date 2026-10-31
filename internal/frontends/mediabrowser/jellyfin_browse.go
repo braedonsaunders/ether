@@ -532,6 +532,47 @@ func (i *instance) jellyfinListFields(r *http.Request, item map[string]any, titl
 	delete(item, "CanDownload")
 }
 
+// jellyfinResumeFields drops keys a Jellyfin resume row does not carry unless
+// Fields asked for them. Parent artwork and series identity stay.
+func (i *instance) jellyfinResumeFields(r *http.Request, item map[string]any) {
+	if i == nil || i.protocol != "jellyfin" || item == nil {
+		return
+	}
+	fields := fieldSet(r)
+	if !fields["overview"] {
+		delete(item, "Overview")
+	}
+	if !fields["datecreated"] {
+		delete(item, "DateCreated")
+	}
+	if !fields["sortname"] {
+		delete(item, "SortName")
+	}
+	if !fields["providerids"] {
+		delete(item, "ProviderIds")
+	}
+	if !fields["genres"] {
+		delete(item, "Genres")
+		delete(item, "GenreItems")
+	}
+	if !fields["mediasources"] {
+		delete(item, "MediaSources")
+		delete(item, "HasSubtitles")
+	}
+	if !fields["path"] {
+		delete(item, "Path")
+	}
+	if !fields["tags"] {
+		delete(item, "Tags")
+	}
+	delete(item, "CanDelete")
+	delete(item, "CanDownload")
+	delete(item, "OriginalTitle")
+	delete(item, "ParentId")
+	delete(item, "SeriesStudio")
+	delete(item, "ProductionLocations")
+}
+
 // jellyfinSeasonListFields is the season row trim used by resume, next-up, and
 // ancestors. Those responses keep overview and genres that a folder listing omits.
 func (i *instance) jellyfinSeasonListFields(r *http.Request, item map[string]any, title frontend.Title) {

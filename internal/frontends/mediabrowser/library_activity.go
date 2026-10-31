@@ -156,6 +156,9 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		}
 		i.shapeJellyfinItem(r, viewer, item, title)
 		i.jellyfinSeasonListFields(r, item, title)
+		if !latest {
+			i.jellyfinResumeFields(r, item)
+		}
 		items = append(items, item)
 	}
 	if latest {

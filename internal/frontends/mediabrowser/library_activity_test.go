@@ -81,6 +81,9 @@ func TestSwiftfinLatestAndResumeIgnoreHomeRows(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), "Resume") || exp.resumeCalls != 1 || !exp.lastExact || len(exp.latestViews) != 2 {
 			t.Fatal(tc.name, w.Code, w.Body.String(), exp)
 		}
+		if tc.name == "jellyfin" && (strings.Contains(w.Body.String(), `"CanDelete"`) || strings.Contains(w.Body.String(), `"Overview"`) || strings.Contains(w.Body.String(), `"ProviderIds"`) || strings.Contains(w.Body.String(), `"OriginalTitle"`)) {
+			t.Fatal(w.Body.String())
+		}
 		exp.lowerBound = true
 		r = httptest.NewRequest("GET", "/UserItems/Resume?limit=20&mediaTypes=Video&startIndex=0&enableTotalRecordCount=false", nil)
 		r.Header.Set("Authorization", `MediaBrowser Token="grant", DeviceId="tv"`)
