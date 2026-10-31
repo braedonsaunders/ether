@@ -127,6 +127,16 @@ func init() {
 	store.Register("catalog", 18, `CREATE INDEX catalog_titles_type_browse_count ON catalog_titles(type, browsable, adult, released_ts);`)
 }
 
+// Every browse now filters on release_known=1 as well (pre-1970 dates are
+// known), and release_known is a generated column the count index did not
+// hold, so a library total read every title row again. The index now holds
+// it, and sort_title, so the Plex jump bar's per-letter counts read the
+// index alone too.
+func init() {
+	store.Register("catalog", 23, `DROP INDEX IF EXISTS catalog_titles_type_browse_count;
+CREATE INDEX catalog_titles_type_browse_count ON catalog_titles(type, browsable, adult, release_known, released_ts, sort_title);`)
+}
+
 // titleMatch is the substring match of query against a title's name,
 // original name or one of its alternative titles (romanized and regional
 // names, so "Sousou no Frieren" finds Frieren). alias qualifies the

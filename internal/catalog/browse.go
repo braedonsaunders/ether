@@ -490,6 +490,12 @@ func (c *Catalog) FacetFilter(ctx context.Context, f core.Filter, facet string) 
 	if cached && ent.gen == gen && ent.minute == minBucket {
 		return append([]core.FacetValue(nil), ent.vals...), nil
 	}
+	if cached && facet == "firstCharacter" && time.Since(ent.counted) < jumpBarRecountEvery {
+		// The jump bar's counts must match the listing, so they are not
+		// served stale while a recount runs; but a catalogue writing
+		// continuously would recount them on every read.
+		return append([]core.FacetValue(nil), ent.vals...), nil
+	}
 	if cached && facet != "firstCharacter" {
 		// Library-wide counts walk every title. Serve the last counts and
 		// recount behind the read, at most once per recountEvery.
@@ -522,6 +528,9 @@ func (c *Catalog) FacetFilter(ctx context.Context, f core.Filter, facet string) 
 	}
 	return c.countFacet(ctx, f, facet)
 }
+
+// jumpBarRecountEvery is the most a jump bar's counts lag the catalogue.
+const jumpBarRecountEvery = 2 * time.Second
 
 // prewarmFacets are counted together on a type's first facet read.
 var prewarmFacets = []string{"genre", "decade", "year", "language", "contentRatingLevel"}
@@ -591,14 +600,15 @@ func (c *Catalog) countFacet(ctx context.Context, f core.Filter, facet string) (
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if c.writeGen.Load() == gen {
-		c.cacheMu.Lock()
-		if len(c.facetCache) >= 512 {
-			c.facetCache = map[string]cachedFacet{}
-		}
-		c.facetCache[fkey] = cachedFacet{vals: append([]core.FacetValue(nil), out...), gen: gen, minute: minBucket, counted: time.Now()}
-		c.cacheMu.Unlock()
+	// Stamped with the generation it started at, as countBrowse does: a
+	// write during the count makes the next read recount, and storing it
+	// even then keeps a busy catalogue from counting on every read.
+	c.cacheMu.Lock()
+	if len(c.facetCache) >= 512 {
+		c.facetCache = map[string]cachedFacet{}
 	}
+	c.facetCache[fkey] = cachedFacet{vals: append([]core.FacetValue(nil), out...), gen: gen, minute: minBucket, counted: time.Now()}
+	c.cacheMu.Unlock()
 	return out, nil
 }
 

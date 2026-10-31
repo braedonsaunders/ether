@@ -129,6 +129,7 @@ func plexClient(name, product, platform, device string) Client {
 		{Name: "movies all addedAt", Class: classBrowse, Path: "/library/sections/{movieSection}/all?type=1&sort=addedAt:desc&X-Plex-Container-Start=0" + page},
 		{Name: "movies all rating", Class: classBrowse, Path: "/library/sections/{movieSection}/all?type=1&sort=rating:desc&X-Plex-Container-Start=0" + page},
 		{Name: "movies genre filter list", Class: classBrowse, Path: "/library/sections/{movieSection}/genre?type=1"},
+		{Name: "movies jump bar", Class: classBrowse, Path: "/library/sections/{movieSection}/firstCharacter?type=1"},
 		{Name: "shows all titleSort p1", Class: classBrowse, Path: "/library/sections/{showSection}/all?type=2&sort=titleSort&X-Plex-Container-Start=0" + page, Discover: discoverPlexItem("showKey", "show")},
 		{Name: "movie detail", Class: classDetail, Path: "/library/metadata/{movieKey}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1&includeMarkers=1&includeConcerts=1&includePreferences=1&includeReviews=1&asyncAugmentMetadata=1"},
 		{Name: "show detail", Class: classDetail, Path: "/library/metadata/{showKey}?includeExtras=1&includeRelated=1&includeOnDeck=1&includeChapters=1&includeGuids=1&asyncAugmentMetadata=1"},
