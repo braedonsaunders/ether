@@ -160,7 +160,6 @@ func TestParseProbeGolden(t *testing.T) {
 				v.ProbedDolbyVisionProfile = integer(8)
 				v.ProbedDolbyVisionLevel = integer(6)
 			case "mp4_h264_aac.json":
-				v.Language = "und"
 				v.ProbedLevel = integer(40)
 				v.PixelFormat = "yuv420p"
 				v.CodecTag = "avc1"

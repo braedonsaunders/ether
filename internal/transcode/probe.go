@@ -454,11 +454,10 @@ func tag(tags map[string]string, key string) string {
 // Matroska legacy Language element and the MP4 mdhd code.
 func normalizeLanguage(l string) string {
 	l = strings.ToLower(strings.TrimSpace(l))
-	// "und" is a real tag. Silo reports it; dropping it makes the track
-	// look like the probe never named a language.
-	if l == "und" {
-		return "und"
-	}
+	// "und" and any other tag langtag rejects stay empty. That is the
+	// form both the ffprobe tag parser and the native Matroska/MP4
+	// readers have always stored. Silo maps an absent audio language
+	// back to "und" at its own boundary.
 	if langtag.Normalize(l) == "" {
 		return ""
 	}
