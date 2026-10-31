@@ -151,6 +151,17 @@ func (t *BindingTable[R]) Expire(now time.Time, ttl time.Duration) {
 	}
 }
 
+// IDs lists every binding this table still holds.
+func (t *BindingTable[R]) IDs() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ids := make([]string, 0, len(t.m))
+	for id := range t.m {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // ByPlayID returns the transcode session ids fed by a playback session.
 func (t *BindingTable[R]) ByPlayID(PlayID string) []string {
 	t.mu.Lock()

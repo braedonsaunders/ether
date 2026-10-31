@@ -12,8 +12,9 @@ import (
 )
 
 // Frontend adapts the existing PMS handler to the frontend registry.
-// Unmount stops this mount's broker sessions and its watch subscription.
-// The process-owned server stays up so an in-flight request can finish.
+// Unmount stops this mount's broker sessions, encoders, trickplay, and
+// downloads, and drops its watch subscription. The process-owned server
+// stays up so an in-flight request can finish.
 type Frontend struct {
 	NewServer  func() (*Server, error)
 	Server     *Server
@@ -88,6 +89,9 @@ func (i *plexInstance) Close(ctx context.Context) error {
 		}
 		if stop, ok := i.sessions.(plexProtocolStop); ok {
 			_ = stop.StopProtocol(ctx, "plex")
+		}
+		if i.server != nil {
+			i.server.releaseMountedPlayback()
 		}
 	})
 	return nil
