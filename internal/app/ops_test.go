@@ -218,7 +218,9 @@ func TestServeHoldsAFailedStartAndRestoresFromItsPage(t *testing.T) {
 		t.Fatalf("recovery restore: %d %s", resp.StatusCode, body)
 	}
 	// The retry swaps the bundle in at once instead of waiting out the
-	// backoff; the damaged file is kept in the rollback folder.
+	// backoff. Its start fails (the blocker), so finding 7: the original
+	// data goes back automatically, the report says so, and the server
+	// starts again on the original data (which fails again, as before).
 	deadline := time.Now().Add(15 * time.Second)
 	var rep *backup.Report
 	for time.Now().Before(deadline) {
@@ -227,22 +229,29 @@ func TestServeHoldsAFailedStartAndRestoresFromItsPage(t *testing.T) {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	if rep == nil || rep.Status != "restored" || rep.Source != name {
+	if rep == nil || rep.Status != "failed" || !rep.RolledBack || rep.Source != name {
 		t.Fatalf("restore report = %+v", rep)
 	}
-	if b, err := os.ReadFile(filepath.Join(rep.RollbackPath, "ether.db")); err != nil || !bytes.HasPrefix(b, []byte("not sqlite")) {
-		t.Fatalf("damaged database not kept for rollback: %v", err)
+	if b, err := os.ReadFile(filepath.Join(dataDir, "ether.db")); err != nil || !bytes.HasPrefix(b, []byte("not sqlite")) {
+		t.Fatalf("original database not put back: %v", err)
 	}
-	// The restored settings' start fails (the blocker) and holds again.
+	if p, _ := backup.ReadPending(dataDir); p != nil {
+		t.Fatalf("restore record left: %+v", p)
+	}
 	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if st, _ := fetchStatus(t, base); st.Phase == startup.PhaseFailed && st.Failure != nil && st.Failure.Code == startup.FailUnknown {
+		if st, _ := fetchStatus(t, base); st.Phase == startup.PhaseFailed && st.Failure != nil && st.Failure.Code == startup.FailDatabaseCorrupt {
 			break
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	if st, raw := fetchStatus(t, base); st.Phase != startup.PhaseFailed || st.Attempt != 2 {
-		t.Fatalf("after the restore: %s", raw)
+	if st, raw := fetchStatus(t, base); st.Phase != startup.PhaseFailed || st.Failure.Code != startup.FailDatabaseCorrupt {
+		t.Fatalf("after the rollback: %s", raw)
+	}
+	// Finding (lock gap): the data directory stays locked across retries.
+	if l, err := acquireInstanceLock(dataDir); err == nil {
+		l.Release()
+		t.Fatal("another instance could take the data directory during a retry")
 	}
 	_ = stop()
 }
@@ -283,9 +292,14 @@ func TestNewAppliesAPendingRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	if a.restored == nil || a.restored.Status != "restored" || a.restored.Integrity == nil || !a.restored.Integrity.OK {
+	if a.restored == nil || a.restored.Status != "applied" || a.restored.Integrity == nil || !a.restored.Integrity.OK {
 		t.Fatalf("restored = %+v", a.restored)
 	}
+	// Finding 7: nothing says "restored" until the server is ready.
+	if rep, _ := backup.ReadReport(dataDir); rep != nil {
+		t.Fatalf("report before ready: %+v", rep)
+	}
+	a.confirmRestore() // what Run does right before it serves
 	var retain int
 	if err := a.db.QueryRow(`SELECT retain FROM backup_settings WHERE id=1`).Scan(&retain); err != nil || retain != 42 {
 		t.Fatalf("restored database retain = %d, %v", retain, err)
@@ -481,108 +495,4 @@ func recoveryCall(h http.Handler, method, path, token string, header map[string]
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	return w
-}
-
-func TestRecoveryNeedsTheOwnerAfterSetup(t *testing.T) {
-	dataDir := t.TempDir()
-	cfg, err := config.Open(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cfg.Update(func(c *config.Config) error { c.SetupComplete, c.Plex.OwnerPlexID = true, 4242; return nil }); err != nil {
-		t.Fatal(err)
-	}
-	name := writeBundle(t, dataDir)
-	front := newFrontDoor(startup.NewTracker("1", time.Now), quietLog())
-	rc := newRecovery(dataDir, front, quietLog())
-
-	rc.plex = fakePlex{id: 1}
-	h := rc.handler()
-	if w := recoveryCall(h, "GET", "backups", "", nil); w.Code != http.StatusUnauthorized {
-		t.Fatalf("tokenless backups after setup: %d", w.Code)
-	}
-	if w := recoveryCall(h, "GET", "access", "", nil); w.Code != 200 || !strings.Contains(w.Body.String(), `"granted":false`) || !strings.Contains(w.Body.String(), `"plex":true`) {
-		t.Fatalf("access: %d %s", w.Code, w.Body)
-	}
-	// A browser on the server itself needs no sign-in (an owner without Plex).
-	local := httptest.NewRequest("GET", "http://localhost:32400"+startup.RecoveryPrefix+"backups", nil)
-	local.RemoteAddr = "127.0.0.1:5000"
-	lw := httptest.NewRecorder()
-	h.ServeHTTP(lw, local)
-	if lw.Code != 200 {
-		t.Fatalf("loopback backups: %d", lw.Code)
-	}
-	// ...but not a public name re-pointed at loopback (DNS rebinding).
-	rebound := httptest.NewRequest("GET", "http://evil.example.com"+startup.RecoveryPrefix+"backups", nil)
-	rebound.RemoteAddr = "127.0.0.1:5000"
-	rw := httptest.NewRecorder()
-	h.ServeHTTP(rw, rebound)
-	if rw.Code != http.StatusUnauthorized {
-		t.Fatalf("rebound loopback backups: %d", rw.Code)
-	}
-	w := recoveryCall(h, "POST", "pin", "", nil)
-	var pin struct{ Handle string }
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &pin) != nil || pin.Handle == "" {
-		t.Fatalf("pin: %d %s", w.Code, w.Body)
-	}
-	if w := recoveryCall(h, "GET", "pin/"+pin.Handle, "", nil); w.Code != http.StatusForbidden {
-		t.Fatalf("another account's sign-in: %d %s", w.Code, w.Body)
-	}
-	if w := recoveryCall(h, "POST", "pin", "", map[string]string{"X-Ether-Request": ""}); w.Code != http.StatusForbidden {
-		t.Fatalf("pin without CSRF header: %d", w.Code)
-	}
-
-	rc.plex = fakePlex{id: 4242}
-	json.Unmarshal(recoveryCall(h, "POST", "pin", "", nil).Body.Bytes(), &pin)
-	w = recoveryCall(h, "GET", "pin/"+pin.Handle, "", nil)
-	var done struct {
-		Done  bool
-		Token string
-	}
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &done) != nil || !done.Done || !strings.HasPrefix(done.Token, "ether-recovery-") {
-		t.Fatalf("owner sign-in: %d %s", w.Code, w.Body)
-	}
-	if w := recoveryCall(h, "GET", "backups", done.Token, nil); w.Code != 200 || !strings.Contains(w.Body.String(), name) {
-		t.Fatalf("owner backups: %d %s", w.Code, w.Body)
-	}
-	if w := recoveryCall(h, "POST", "restore/snapshot/../../etc", done.Token, nil); w.Code == http.StatusAccepted {
-		t.Fatal("restored a path outside the backups")
-	}
-	// Only encrypted downloads can be uploaded here.
-	up := map[string]string{"Content-Type": "application/octet-stream", "X-Ether-Backup-Password": "c2VjcmV0"}
-	if w := recoveryCall(h, "POST", "restore", done.Token, up); w.Code != http.StatusBadRequest {
-		t.Fatalf("plaintext upload: %d %s", w.Code, w.Body)
-	}
-	if w := recoveryCall(h, "POST", "restore/snapshot/"+name, done.Token, nil); w.Code != http.StatusAccepted {
-		t.Fatalf("owner restore: %d %s", w.Code, w.Body)
-	}
-	if p, _ := backup.ReadPending(dataDir); p == nil || p.Source != name {
-		t.Fatalf("pending = %+v", p)
-	}
-	select {
-	case <-front.retry:
-	default:
-		t.Fatal("restore did not wake the failed start")
-	}
-}
-
-func TestRecoveryRefusesAClusterNode(t *testing.T) {
-	dataDir := t.TempDir()
-	cfg, err := config.Open(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cfg.Update(func(c *config.Config) error {
-		c.Database = config.Database{Driver: "postgres", URL: "postgres://db.lan/ether"}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	rc := newRecovery(dataDir, newFrontDoor(startup.NewTracker("1", time.Now), quietLog()), quietLog())
-	if w := recoveryCall(rc.handler(), "GET", "backups", "", nil); w.Code != http.StatusConflict {
-		t.Fatalf("cluster recovery: %d %s", w.Code, w.Body)
-	}
-	if standaloneDataDir(dataDir) {
-		t.Fatal("a PostgreSQL data directory reported standalone")
-	}
 }

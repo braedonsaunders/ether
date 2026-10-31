@@ -118,6 +118,9 @@ type Options struct {
 	// front is Serve's listener, bound before the database opens; nil
 	// when an App is run on its own (tests), which then binds in Run.
 	front *frontDoor
+	// lock is Serve's hold on the data directory, kept across starts; nil
+	// when an App is run on its own, which then takes it itself.
+	lock *instanceLock
 }
 
 // App is a running Ether server.
@@ -236,8 +239,10 @@ type App struct {
 	prewarmDone       chan struct{}
 	// tracker reports this start's progress on the startup status page.
 	tracker *startup.Tracker
-	// restored is the report of a restore applied at this start.
+	// restored is the report of a restore applied (or rolled back) at this
+	// start; boundNow is set when this start bound the front door.
 	restored *backup.Report
+	boundNow bool
 	// integrity is the database's last integrity check (SQLite).
 	integrity atomic.Pointer[store.Integrity]
 	// restart is an owner-requested restart (restart.go).
@@ -245,7 +250,7 @@ type App struct {
 }
 
 // New builds every component. Nothing listens until Run.
-func New(ctx context.Context, opts Options) (*App, error) {
+func New(ctx context.Context, opts Options) (_ *App, err error) {
 	if opts.DataDir == "" {
 		opts.DataDir = config.DefaultDataDir()
 	}
@@ -260,15 +265,23 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	// The in-memory buffer behind Logs gets the same scrubbing as the file.
 	a.log = slog.New(logredact.Handler(admin.TeeHandler(base.Handler(), a.logs)))
 	slog.SetDefault(a.log)
-	var err error
-	if a.instanceLock, err = acquireInstanceLock(opts.DataDir); err != nil {
-		return nil, err
+	// Serve holds the data directory's lock across starts, so a retried
+	// start never lets another instance in; an App run on its own takes it.
+	if opts.lock == nil {
+		if a.instanceLock, err = acquireInstanceLock(opts.DataDir); err != nil {
+			return nil, err
+		}
+		a.closers = append(a.closers, a.instanceLock.Release)
 	}
-	a.closers = append(a.closers, a.instanceLock.Release)
 	started := false
 	defer func() {
 		if !started {
 			a.Close()
+			// A restore applied at this start that cannot start puts the
+			// original files back now, with the reason.
+			if a.rollbackUnconfirmed(err) {
+				err = fmt.Errorf("%w: %w", errRestoreRolledBack, err)
+			}
 		}
 	}()
 	if err := a.confirmUpdateStartup(); err != nil {
@@ -378,7 +391,9 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		return nil, startFail(openFailure(err, dbCfg.IsPostgres()), fmt.Errorf("database: %w", err))
 	}
 	a.cfg.SetPolicyEpoch(func() error { return viewerpolicy.Bump(context.Background(), a.db) })
-	a.checkRestoredIntegrity(ctx)
+	if err := a.checkRestoredIntegrity(ctx); err != nil {
+		return nil, err
+	}
 	if dialect == store.Postgres {
 		a.log.Info("database: using PostgreSQL", "url", dbCfg.Redacted().URL)
 		a.warnNewerSchema(ctx)
@@ -411,6 +426,8 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	}
 	a.connectClusterHooks()
 	a.initUpdates()
+	// Keep the owner's recovery sign-in in step with the database.
+	a.syncOwnerRecovery(ctx)
 	started = true
 	return a, nil
 }
@@ -657,12 +674,12 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	front.setTLS(a.certs.TLSConfig)
 	front.setProxies(func() []string { return a.cfg.Get().Server.TrustedProxyCIDRs })
+	// A restore applied at this start counts from here: the server is
+	// about to serve on it.
+	a.confirmRestore()
 	front.gate.Open(a.handler)
 	a.log.Info("Ether listening", "addr", addr.String(), "ui", fmt.Sprintf("http://localhost:%d/ether/", cfg.Server.Port),
 		"version", a.opts.Version, "spike", cfg.Spike.Enabled)
-	if a.restored != nil {
-		a.log.Info("restore finished", "status", a.restored.Status, "source", a.restored.Source, "rollback", a.restored.RollbackPath)
-	}
 	background.start(func() { a.checkIntegrityLater(ctx) })
 	a.notifyLifecycle("server.started", "Ether is online", cfg.Server.FriendlyName+" is ready for connections.")
 	// Hang watchdog: restart via the supervisor if we stop answering.

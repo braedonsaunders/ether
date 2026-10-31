@@ -7,6 +7,7 @@
 package startup
 
 import (
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -185,6 +186,17 @@ func (t *Tracker) Fail(f Failure, attempt int, retry time.Duration) {
 	})
 }
 
+// Postpone moves a failed start's next retry to retry from now (the owner
+// is using the recovery page).
+func (t *Tracker) Postpone(retry time.Duration) {
+	t.update(func(s *Status) {
+		if s.Phase == PhaseFailed {
+			at := t.now().UTC().Add(retry)
+			s.RetryAt = &at
+		}
+	})
+}
+
 // Snapshot returns the current status.
 func (t *Tracker) Snapshot() Status {
 	t.mu.Lock()
@@ -220,10 +232,26 @@ const maxDetail = 400
 
 func scrub(err error) string { return scrubText(err.Error()) }
 
-// scrubText removes credentials (URL passwords, tokens) from an error message
-// and keeps it short.
+var (
+	// absPath matches an absolute file path (Unix, or Windows with a drive).
+	absPath = regexp.MustCompile(`(?:[A-Za-z]:)?(?:[/\\][^\s/\\:"'()\[\]{},;]+){2,}`)
+	// dbUser matches a PostgreSQL user name in a connection error.
+	dbUser = regexp.MustCompile(`(?i)(\buser[= ]+)"?[^\s"'),;]+"?`)
+)
+
+// scrubText trims an error message for the public status page: no
+// credentials (URL passwords, tokens), no database user names, file paths
+// reduced to the file name, and short.
 func scrubText(s string) string {
-	s = strings.TrimSpace(logredact.String(s))
+	s = logredact.String(s)
+	s = absPath.ReplaceAllStringFunc(s, func(p string) string {
+		if i := strings.LastIndexAny(p, `/\`); i >= 0 {
+			return p[i+1:]
+		}
+		return p
+	})
+	s = dbUser.ReplaceAllString(s, "${1}…")
+	s = strings.TrimSpace(s)
 	if len(s) > maxDetail {
 		s = s[:maxDetail] + "…"
 	}

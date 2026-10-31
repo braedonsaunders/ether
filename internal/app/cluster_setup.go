@@ -49,33 +49,52 @@ func Serve(ctx context.Context, opts Options) error {
 	if log == nil {
 		log = slog.Default()
 	}
+	if opts.DataDir == "" {
+		opts.DataDir = config.DefaultDataDir()
+	}
+	// The lock is held across every start, so a retried start never lets
+	// a second instance take the data directory (and the port) meanwhile.
+	lock, err := acquireInstanceLock(opts.DataDir)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	opts.lock = lock
 	front := newFrontDoor(startup.NewTracker(opts.Version, time.Now), log)
 	defer front.close()
 	opts.front = front
+	rc := newRecovery(opts.DataDir, front, log)
+	front.recovery.Store(ptr(rc.handler()))
 	failures := 0
 	for {
+		if rc.beginAttempt(ctx) != nil {
+			return nil
+		}
 		a, err := New(ctx, opts)
+		rc.endAttempt()
 		if err != nil {
 			if !front.bound() || ctx.Err() != nil || errors.Is(err, service.ErrRestartRequested) {
 				return err
 			}
+			if errors.Is(err, errRestoreRolledBack) {
+				// The original data is back in place: start on it now.
+				log.Error("the restored backup could not start; starting again on the original data", "err", err)
+				continue
+			}
 			failures++
 			wait := startRetryDelay(failures)
-			front.tracker.Fail(failureOf(err, standaloneDataDir(opts.DataDir)), failures, wait)
+			f := failureOf(err, readNodeFacts(opts.DataDir, os.Getenv).Standalone())
+			front.tracker.Fail(f, failures, wait)
 			log.Error("Ether could not start; the console at /ether/ explains why. Retrying", "err", err, "attempt", failures, "retry", wait)
-			front.recovery.Store(ptr(newRecovery(opts.DataDir, front, log).handler()))
-			t := time.NewTimer(wait)
-			select {
-			case <-ctx.Done():
-				t.Stop()
-				return nil
-			case <-t.C:
-			case <-front.retry:
-				t.Stop()
+			if f.Recoverable {
+				rc.prepare()
 			}
-			front.recovery.Store(nil)
+			if !rc.wait(ctx, wait) {
+				return nil
+			}
 			continue
 		}
+		rc.clear()
 		failures = 0
 		finish := func(bool) error { return nil }
 		if opts.NotificationExecutable != "" {
@@ -91,6 +110,11 @@ func Serve(ctx context.Context, opts Options) error {
 		// process. Close its watcher cleanly before starting the replacement.
 		_ = finish(err == nil || errors.Is(err, errClusterSetup) || errors.Is(err, service.ErrRestartRequested))
 		a.Close()
+		// A restore this start applied but never confirmed (Run stopped
+		// before serving) puts the original data back.
+		if a.rollbackUnconfirmed(err) && ctx.Err() == nil {
+			continue
+		}
 		if !errors.Is(err, errClusterSetup) {
 			return err
 		}

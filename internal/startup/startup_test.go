@@ -202,3 +202,20 @@ func TestGateOpenAndCloseDrains(t *testing.T) {
 	g.Close(short)
 	cancel()
 }
+
+func TestStatusDetailHidesPathsAndUsers(t *testing.T) {
+	g, _ := newGate(t)
+	g.Tracker.Fail(Failure{Code: FailDatabaseCorrupt, Detail: `database: open /home/alice/.config/ether/ether.db: file is not a database (26)`}, 1, time.Minute)
+	s := status(t, g)
+	if strings.Contains(s.Failure.Detail, "/home/alice") || !strings.Contains(s.Failure.Detail, "ether.db") {
+		t.Fatalf("path detail = %q", s.Failure.Detail)
+	}
+	g.Tracker.Fail(Failure{Code: FailDatabaseRejected, Detail: `failed to connect to user=ether_admin database=ether: password authentication failed for user "ether_admin"`}, 1, time.Minute)
+	if s := status(t, g); strings.Contains(s.Failure.Detail, "ether_admin") {
+		t.Fatalf("user detail = %q", s.Failure.Detail)
+	}
+	g.Tracker.Fail(Failure{Code: FailConfig, Detail: `config: open C:\ProgramData\Ether\config.json: access denied`}, 1, time.Minute)
+	if s := status(t, g); strings.Contains(s.Failure.Detail, "ProgramData") || !strings.Contains(s.Failure.Detail, "config.json") {
+		t.Fatalf("windows path detail = %q", s.Failure.Detail)
+	}
+}

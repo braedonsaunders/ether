@@ -28,15 +28,17 @@ func (e *startError) Unwrap() error { return e.err }
 
 func startFail(code string, err error) error { return &startError{code: code, err: err} }
 
-// failureOf describes a failed start for the status page. recoverable says
+// failureOf describes a failed start for the status page. standalone says
 // whether the page may restore a backup: only on a standalone server,
-// whose database is a file in its data directory.
-func failureOf(err error, recoverable bool) startup.Failure {
-	f := startup.Failure{Code: startup.FailUnknown, Detail: err.Error(), Recoverable: recoverable}
+// whose database is a file in its data directory, and not while a restore
+// that could not be undone holds the data directory.
+func failureOf(err error, standalone bool) startup.Failure {
+	f := startup.Failure{Code: startup.FailUnknown, Detail: err.Error()}
 	var se *startError
 	if errors.As(err, &se) {
 		f.Code = se.code
 	}
+	f.Recoverable = standalone && f.Code != startup.FailRestore
 	return f
 }
 
@@ -66,16 +68,6 @@ func isMigrationError(err error) bool {
 	return false
 }
 
-// standaloneDataDir reports whether dataDir belongs to a standalone
-// (SQLite) server, read without opening anything.
-func standaloneDataDir(dataDir string) bool {
-	cfg, err := config.Read(dataDir)
-	if err != nil {
-		cfg = config.Defaults(dataDir)
-	}
-	return !cfg.Database.Effective(os.Getenv).IsPostgres()
-}
-
 // trackedDatabase names the database for the status page: the host and
 // port of a PostgreSQL server, never its credentials.
 func trackedDatabase(db config.Database) startup.Database {
@@ -92,18 +84,20 @@ func trackedDatabase(db config.Database) startup.Database {
 	return out
 }
 
+// errRestoreRolledBack marks a failed start after which the original data
+// was put back: Serve starts again at once, on the original data.
+var errRestoreRolledBack = errors.New("the restored backup could not start, so the original data was put back")
+
 // openFrontDoor binds Serve's listener the first time a start gets here,
 // from the settings as they are on disk (opening them may rewrite them,
-// and a pending restore is about to replace them).
+// and a pending restore is about to replace them). Unreadable settings
+// bind loopback only.
 func (a *App) openFrontDoor() error {
 	f := a.opts.front
 	if f.bound() {
 		return nil
 	}
-	server := config.Defaults(a.opts.DataDir).Server
-	if cfg, err := config.Read(a.opts.DataDir); err == nil {
-		server = cfg.Server
-	}
+	server := readNodeFacts(a.opts.DataDir, os.Getenv).Server
 	port, err := envPort()
 	if err != nil {
 		return err
@@ -114,46 +108,106 @@ func (a *App) openFrontDoor() error {
 	if err := f.bind(server, port != 0); err != nil {
 		return err
 	}
+	a.boundNow = true
 	a.log.Info("Ether is starting; the console shows its progress", "ui", fmt.Sprintf("http://localhost:%d/ether/", f.port))
 	return nil
 }
 
 // keepListeningPort saves the port the front door listens on when the
-// settings name another: it moved off a busy default port, or a restore
-// brought settings from before a port change.
+// settings name another, but only where the settings are behind the
+// listener: it was just bound (and moved off a busy default port), or a
+// restore brought settings from before a port change. A listener kept from
+// an earlier start (a cluster transition) leaves a port the owner has just
+// saved for the next restart alone.
 func (a *App) keepListeningPort() error {
 	f := a.opts.front
 	if f == nil || !f.bound() || a.cfg.Get().Server.Port == f.port {
 		return nil
 	}
-	if f.moved {
+	if !a.boundNow && a.restored == nil {
+		return nil
+	}
+	if f.moved && a.boundNow {
 		return a.saveMovedPort(f.port)
 	}
 	return a.cfg.Update(func(c *config.Config) error { c.Server.Port = f.port; return nil })
 }
 
-// applyPendingRestore swaps in a restore requested before the restart.
+// applyPendingRestore swaps in a restore requested before the restart, or
+// puts the original files back after one that never got its server ready.
+// A node that shares a PostgreSQL database never applies one: the backup's
+// settings would point it at the shared database.
 func (a *App) applyPendingRestore() error {
-	p, err := backup.ReadPending(a.opts.DataDir)
+	dir := a.opts.DataDir
+	p, err := backup.ReadPending(dir)
 	if err == nil && p == nil {
-		backup.CleanStaged(a.opts.DataDir, 24*time.Hour)
+		backup.CleanStaged(dir, 24*time.Hour)
 		return nil
 	}
-	// An unreadable request is dropped and reported by ApplyPending.
-	if p != nil {
+	if p != nil && p.Rollback == "" && !readNodeFacts(dir, os.Getenv).Standalone() {
+		_ = backup.CancelPending(dir)
+		a.log.Error("restore not applied: a restore replaces the database of a standalone server only")
+		return nil
+	}
+	if p != nil && p.Rollback == "" {
 		a.tracker.Restoring(p.Source)
 		a.log.Info("restoring a backup", "source", p.Source, "kind", p.Kind)
 	}
-	rep, err := backup.ApplyPending(a.opts.DataDir, time.Now)
+	rep, err := backup.ApplyPending(dir, time.Now)
 	if err != nil {
 		return startFail(startup.FailRestore, err)
 	}
 	a.restored = rep
-	if rep != nil && rep.Status != "restored" {
+	switch {
+	case rep == nil:
+	case rep.Status == "applied":
+	case rep.RolledBack:
+		a.log.Error("a restored backup could not start; the original data was put back", "err", rep.Error)
+	default:
 		a.log.Error("restore failed; the original data was kept", "err", rep.Error)
 	}
-	backup.CleanStaged(a.opts.DataDir, 24*time.Hour)
+	backup.CleanStaged(dir, 24*time.Hour)
 	return nil
+}
+
+// restoreApplied reports whether this start runs on a restore it applied
+// and has not confirmed yet.
+func (a *App) restoreApplied() bool {
+	return a.restored != nil && a.restored.Status == "applied"
+}
+
+// confirmRestore records that the server is about to serve on the
+// restored backup: the report says "restored" from here on.
+func (a *App) confirmRestore() {
+	if !a.restoreApplied() {
+		return
+	}
+	if err := backup.ConfirmRestore(a.opts.DataDir, a.restored); err != nil {
+		a.log.Error("could not record the restore", "err", err)
+		return
+	}
+	a.log.Info("restore finished", "source", a.restored.Source, "rollback", a.restored.RollbackPath)
+}
+
+// rollbackUnconfirmed puts the original files back when a start on a
+// restore it applied fails before the server is ready (the settings and
+// database must be closed). It reports whether it did.
+func (a *App) rollbackUnconfirmed(cause error) bool {
+	if !a.restoreApplied() {
+		return false
+	}
+	reason := "the server stopped before it was ready"
+	if cause != nil {
+		reason = cause.Error()
+	}
+	rep, err := backup.RollbackApplied(a.opts.DataDir, time.Now, reason)
+	if err != nil {
+		a.log.Error("a restored backup could not start and the original data could not be put back", "err", err)
+		return false
+	}
+	a.restored = rep
+	a.log.Error("the restored backup could not start; the original data was put back", "err", reason)
+	return true
 }
 
 // storeProgress shows the database opening on the status page.
@@ -171,19 +225,22 @@ func (a *App) storeProgress(p store.Progress) {
 // anything uses it, for the restore report. Other starts check later, off
 // the startup path (checkIntegrityLater): a full read of a large database
 // takes seconds.
-func (a *App) checkRestoredIntegrity(ctx context.Context) {
-	if a.restored == nil || a.restored.Status != "restored" || store.DialectOf(a.db) == store.Postgres {
-		return
+func (a *App) checkRestoredIntegrity(ctx context.Context) error {
+	if !a.restoreApplied() || store.DialectOf(a.db) == store.Postgres {
+		return nil
 	}
 	a.tracker.Set(startup.PhaseCheckingIntegrity)
 	res, err := store.QuickCheck(ctx, a.db)
 	if err != nil {
 		a.log.Warn("database integrity check could not run", "err", err)
-		return
+		return nil
 	}
 	a.recordIntegrity(res)
 	a.restored.Integrity = &res
-	_ = backup.UpdateReport(a.opts.DataDir, func(r *backup.Report) { r.Integrity = &res })
+	if !res.OK {
+		return startFail(startup.FailRestore, fmt.Errorf("the restored database is damaged: %s", strings.Join(res.Findings, "; ")))
+	}
+	return nil
 }
 
 // importRestoredDump imports a restored PostgreSQL-style dump.
@@ -198,9 +255,8 @@ func (a *App) importRestoredDump(ctx context.Context) error {
 	}
 	if imported {
 		a.log.Info("database: imported restored backup")
-		if a.restored != nil {
+		if a.restoreApplied() {
 			a.restored.Imported = true
-			_ = backup.UpdateReport(a.opts.DataDir, func(r *backup.Report) { r.Imported = true })
 		}
 	}
 	return nil
