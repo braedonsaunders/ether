@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
@@ -14,7 +15,7 @@ import (
 const titleCols = `key,type,tmdb_id,imdb,tvdb,show_key,show_tmdb,show_title,season_title,season,episode,
 title,original_title,sort_title,tagline,summary,year,released_ts,runtime_sec,status,language,
 content_rating,rating,vote_count,popularity,poster,backdrop,still,logo,collection_id,collection_name,
-child_count,leaf_count,browsable,added_at,fetched_at,detail,adult`
+child_count,leaf_count,browsable,added_at,fetched_at,detail,adult,content_rating_source`
 
 type storedTitle struct {
 	t         core.Title
@@ -98,7 +99,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scanTitle(s scanner) (*storedTitle, error) {
 	var st storedTitle
 	var key, showKey int64
-	var typ, imdb, showTitle, seasonTitle, title, orig, sortT, tagline, summary, status, lang, crating string
+	var typ, imdb, showTitle, seasonTitle, title, orig, sortT, tagline, summary, status, lang, crating, csource string
 	var tmdbID, tvdb, showTMDB int64
 	var season, episode, year, voteCount, collID, child, leaf, browsable, detail, adult int
 	var releasedTS, runtimeSec, addedAt, fetchedAt int64
@@ -107,7 +108,7 @@ func scanTitle(s scanner) (*storedTitle, error) {
 	err := s.Scan(&key, &typ, &tmdbID, &imdb, &tvdb, &showKey, &showTMDB, &showTitle, &seasonTitle, &season, &episode,
 		&title, &orig, &sortT, &tagline, &summary, &year, &releasedTS, &runtimeSec, &status, &lang,
 		&crating, &rating, &voteCount, &pop, &poster, &backdrop, &still, &logo, &collID, &collName,
-		&child, &leaf, &browsable, &addedAt, &fetchedAt, &detail, &adult)
+		&child, &leaf, &browsable, &addedAt, &fetchedAt, &detail, &adult, &csource)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +118,7 @@ func scanTitle(s scanner) (*storedTitle, error) {
 		ShowKey: core.RatingKey(showKey), ShowTitle: showTitle, SeasonTitle: seasonTitle,
 		Season: season, Episode: episode, Title: title, OriginalTitle: orig, SortTitle: sortT,
 		Tagline: tagline, Summary: summary, Year: year, Runtime: time.Duration(runtimeSec) * time.Second,
-		Status: status, Language: lang, ContentRating: crating, Adult: adult != 0, Rating: rating, VoteCount: voteCount,
+		Status: status, Language: lang, ContentRating: crating, ContentRatingSource: csource, Adult: adult != 0, Rating: rating, VoteCount: voteCount,
 		Popularity: pop, PosterPath: poster, BackdropPath: backdrop, StillPath: still, LogoPath: logo,
 		CollectionID: int64(collID), CollectionName: collName, ChildCount: child, LeafCount: leaf,
 	}
@@ -437,6 +438,9 @@ type upsertOpts struct {
 	airDates     bool
 	releaseDates *tmdb.ReleaseDates
 	gateEnabled  bool
+	// region is the owner's catalogue region; upsertMany sets it. A TMDB
+	// rating from the region or the US outranks a provider rating.
+	region string
 }
 
 // UpsertTitle stores a title (exported for tests/seeders and other components that
@@ -459,6 +463,7 @@ func (c *Catalog) upsertMany(ctx context.Context, titles []core.Title, o upsertO
 	}
 	defer tx.Rollback()
 	now := c.now().Unix()
+	o.region = c.config().Region
 	for _, t := range titles {
 		if err := upsertOne(ctx, tx, t, o, now); err != nil {
 			return err
@@ -503,14 +508,18 @@ func upsertOne(ctx context.Context, tx *sql.Tx, t core.Title, o upsertOpts, now 
 			return err
 		}
 	}
+	homeInt := 0
+	if homeRating(t.ContentRating, t.ContentRatingSource, o.region) {
+		homeInt = 1
+	}
 	// Keep richer existing fields when a summary upsert would blank them:
 	// handled per-field with CASE in ON CONFLICT for a few detail-only fields.
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO catalog_titles (key,type,tmdb_id,imdb,tvdb,show_key,show_tmdb,show_title,season_title,season,episode,
  title,original_title,sort_title,tagline,summary,year,released_ts,runtime_sec,status,language,
- content_rating,content_rating_rank,rating,vote_count,popularity,poster,backdrop,still,logo,
+ content_rating,content_rating_rank,content_rating_source,rating,vote_count,popularity,poster,backdrop,still,logo,
  collection_id,collection_name,child_count,leaf_count,browsable,added_at,fetched_at,detail,adult,detail_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(key) DO UPDATE SET
  type=excluded.type, tmdb_id=excluded.tmdb_id, adult=excluded.adult,
  imdb=CASE WHEN excluded.imdb<>'' THEN excluded.imdb ELSE catalog_titles.imdb END,
@@ -527,8 +536,9 @@ ON CONFLICT(key) DO UPDATE SET
  runtime_sec=CASE WHEN excluded.runtime_sec<>0 THEN excluded.runtime_sec ELSE catalog_titles.runtime_sec END,
  status=CASE WHEN excluded.status<>'' THEN excluded.status ELSE catalog_titles.status END,
  language=CASE WHEN excluded.language<>'' THEN excluded.language ELSE catalog_titles.language END,
- content_rating=CASE WHEN excluded.content_rating<>'' THEN excluded.content_rating ELSE catalog_titles.content_rating END,
- content_rating_rank=CASE WHEN excluded.content_rating<>'' THEN excluded.content_rating_rank ELSE catalog_titles.content_rating_rank END,
+ content_rating=`+ratingPrecedence("content_rating")+`,
+ content_rating_rank=`+ratingPrecedence("content_rating_rank")+`,
+ content_rating_source=`+ratingPrecedence("content_rating_source")+`,
  rating=excluded.rating, vote_count=excluded.vote_count, popularity=excluded.popularity,
  poster=CASE WHEN excluded.poster<>'' THEN excluded.poster ELSE catalog_titles.poster END,
  backdrop=CASE WHEN excluded.backdrop<>'' THEN excluded.backdrop ELSE catalog_titles.backdrop END,
@@ -546,8 +556,9 @@ ON CONFLICT(key) DO UPDATE SET
  detail_at=CASE WHEN excluded.detail=1 THEN excluded.detail_at ELSE catalog_titles.detail_at END`,
 		int64(t.Key), string(t.Type), t.IDs.TMDB, t.IDs.IMDB, t.IDs.TVDB, int64(t.ShowKey), showTMDB, t.ShowTitle, t.SeasonTitle, t.Season, t.Episode,
 		t.Title, t.OriginalTitle, t.SortTitle, t.Tagline, t.Summary, t.Year, releasedTS, int64(t.Runtime.Seconds()), t.Status, t.Language,
-		t.ContentRating, RatingRank(t.ContentRating), t.Rating, t.VoteCount, t.Popularity, t.PosterPath, t.BackdropPath, t.StillPath, t.LogoPath,
-		t.CollectionID, t.CollectionName, t.ChildCount, t.LeafCount, browsableInt, addedAtFor(browsableInt, now), now, detailInt, t.Adult, detailAtFor(detailInt, now))
+		t.ContentRating, int(contentrating.LevelOf(t.ContentRating)), t.ContentRatingSource, t.Rating, t.VoteCount, t.Popularity, t.PosterPath, t.BackdropPath, t.StillPath, t.LogoPath,
+		t.CollectionID, t.CollectionName, t.ChildCount, t.LeafCount, browsableInt, addedAtFor(browsableInt, now), now, detailInt, t.Adult, detailAtFor(detailInt, now),
+		homeInt, homeInt, homeInt)
 	if err != nil {
 		return fmt.Errorf("catalog: upsert %d: %w", t.Key, err)
 	}

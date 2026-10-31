@@ -16,7 +16,7 @@ import (
 )
 
 func (a *App) buildDiscovery() {
-	a.ratings = ratings.New(a.db, ratings.Options{Sealer: a.cfg})
+	a.ratings = ratings.New(a.db, ratings.Options{Sealer: a.cfg, Certification: a.catalog.ApplyProviderCertification, Unrated: a.catalog.UnratedTitles})
 	a.watchlist = watchlist.New(a.db, watchlist.Options{Logger: a.log.With("component", "watchlist"), Catalog: a.catalog, Resolver: a.resolver, Engine: a.media, Trakt: a.trakt, Users: a.users.Users, Allowed: a.safety.Allowed, Notifier: a.notifications, Tokens: a.discoveryToken, PrewarmBytes: a.cfg.Get().Cache.PrefetchBytes, ResumeSchedule: a.clustered()}) // a new leader continues the schedule
 	a.discoveryPersonal = personalize.NewDiscovery(a.db, a.catalog, a.state, a.safety.Allowed)
 	a.overlays = overlays.New(a.db, overlays.Options{CacheDir: filepath.Join(a.opts.DataDir, "cache", "overlays"), Images: a.images, Allowed: a.safety.Allowed, Ratings: a.ratings, FactsFor: a.overlayFacts, Variants: a.artworkVariants, Taste: func(ctx context.Context, u *core.User) []string {

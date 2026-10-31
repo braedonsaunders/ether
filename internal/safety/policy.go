@@ -14,8 +14,8 @@ import (
 	"time"
 	_ "time/tzdata" // Owner time policies work on hosts without a zoneinfo database.
 
-	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/clusterbus"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -113,7 +113,7 @@ func (p Policy) Validate() error {
 	if p.MaxBitrateKbps < 0 || p.StreamLimit < 0 {
 		return fmt.Errorf("invalid viewer or bitrate")
 	}
-	if p.MaxContentRating != "" && catalog.RatingRank(p.MaxContentRating) == 0 {
+	if p.MaxContentRating != "" && contentrating.LevelOf(p.MaxContentRating) == contentrating.Unrated {
 		return fmt.Errorf("unrecognized rating limit")
 	}
 	for _, h := range p.AllowedHours {
@@ -171,7 +171,7 @@ func (s *Service) Allowed(u *core.User, t *core.Title) bool {
 		return true
 	}
 	p := s.ForUser(u)
-	if catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, p.MaxContentRating) {
+	if contentrating.Exceeds(t.ContentRating, u.MaxContentRating) || contentrating.Exceeds(t.ContentRating, p.MaxContentRating) {
 		return false
 	}
 	blocked := func(values, bans []string) bool {
@@ -281,7 +281,7 @@ func (s *Service) UserPolicy(u *core.User) *core.User {
 	}
 	out := *u
 	p := s.ForUser(u)
-	if p.MaxContentRating != "" && (out.MaxContentRating == "" || catalog.RatingRank(p.MaxContentRating) < catalog.RatingRank(out.MaxContentRating)) {
+	if p.MaxContentRating != "" && (out.MaxContentRating == "" || contentrating.LevelOf(p.MaxContentRating) < contentrating.LevelOf(out.MaxContentRating)) {
 		out.MaxContentRating = p.MaxContentRating
 	}
 	if p.StreamLimit > 0 && (out.StreamLimit <= 0 || p.StreamLimit < out.StreamLimit) {

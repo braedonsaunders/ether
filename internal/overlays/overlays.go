@@ -12,7 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/braedonsaunders/ether/internal/artwork"
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/ratings"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -387,7 +387,7 @@ func (s *Service) visible(u *core.User, t *core.Title) bool {
 		return false
 	}
 	if u != nil {
-		if catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
+		if contentrating.Exceeds(t.ContentRating, u.MaxContentRating) {
 			return false
 		}
 		if len(u.AllowedSections) > 0 {

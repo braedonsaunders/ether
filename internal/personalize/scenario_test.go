@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // familyViewer watches family and animation films on weekend afternoons.
@@ -165,7 +165,7 @@ func TestScenarioDifferentViewersGetDifferentHomes(t *testing.T) {
 	b := homes["bob"]
 	for _, r := range b {
 		for _, it := range r.Items {
-			if !recommend.ContentRatingAllowed(it.ContentRating, "PG") {
+			if !contentrating.Allowed(it.ContentRating, "PG") {
 				t.Fatalf("bob (PG) sees %s rated %s in %s", it.Title, it.ContentRating, r.HubID)
 			}
 		}

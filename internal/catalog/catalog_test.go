@@ -307,30 +307,6 @@ func TestListSimilarCollectionByExternal(t *testing.T) {
 	}
 }
 
-func TestRatingRankOrdering(t *testing.T) {
-	cases := []struct {
-		rating, max string
-		exceeds     bool
-	}{
-		{"G", "PG", false}, {"PG-13", "PG", true}, {"R", "PG-13", true}, {"NC-17", "R", true},
-		{"TV-MA", "TV-14", true}, {"TV-PG", "PG-13", false}, {"TV-14", "PG", true},
-		{"R", "TV-MA", false}, {"TV-MA", "R", false}, // R ~ TV-MA same rank
-		{"18", "R", true}, {"12", "PG", true}, {"U", "G", false},
-		{"", "G", true}, {"R", "", false}, {"NR", "G", true},
-	}
-	for _, tc := range cases {
-		if got := catalog.RatingExceeds(tc.rating, tc.max); got != tc.exceeds {
-			t.Errorf("RatingExceeds(%q,%q)=%v want %v (ranks %d vs %d)", tc.rating, tc.max, got, tc.exceeds, catalog.RatingRank(tc.rating), catalog.RatingRank(tc.max))
-		}
-	}
-	if !(catalog.RatingRank("G") < catalog.RatingRank("PG") && catalog.RatingRank("PG") < catalog.RatingRank("PG-13") && catalog.RatingRank("PG-13") < catalog.RatingRank("R") && catalog.RatingRank("R") < catalog.RatingRank("NC-17")) {
-		t.Fatal("MPAA ordering broken")
-	}
-	if !(catalog.RatingRank("TV-Y") <= catalog.RatingRank("TV-G") && catalog.RatingRank("TV-PG") < catalog.RatingRank("TV-14") && catalog.RatingRank("TV-14") < catalog.RatingRank("TV-MA")) {
-		t.Fatal("TV ordering broken")
-	}
-}
-
 func TestUnreleasedVisibility(t *testing.T) {
 	ctx := context.Background()
 	{
