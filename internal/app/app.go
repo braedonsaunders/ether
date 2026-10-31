@@ -16,6 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/availability"
 	"github.com/braedonsaunders/ether/internal/backup"
 	"github.com/braedonsaunders/ether/internal/cachefill"
+	"github.com/braedonsaunders/ether/internal/calendar"
 	"github.com/braedonsaunders/ether/internal/cardigann"
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/cluster"
@@ -207,6 +208,7 @@ type App struct {
 	stats             *stats.Service
 	notifications     *notify.Service
 	livetv            *livetv.Service
+	calendar          *calendar.Service
 	trackprefs        *trackprefs.Service
 	markers           *markers.Service
 	extras            *extras.Service
@@ -580,6 +582,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if parityRunCatalogueWorkers() {
 		background.start(func() { a.cluster.RunAsLeader(ctx, "watchlist sync", a.watchlist.Run) })
+		background.start(func() { a.cluster.RunAsLeader(ctx, "release calendar", a.calendar.Run) })
 	}
 	background.start(func() { a.ratings.Run(ctx) })
 	background.start(func() { a.discoveryFeatures.Run(ctx) })

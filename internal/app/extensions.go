@@ -34,6 +34,7 @@ func (a *App) extensionHandlers() map[string]http.Handler {
 	m["stats"] = a.stats.Handler()
 	m["notifications"] = a.notifications.Handler()
 	m["livetv"] = a.livetv.Handler()
+	m["calendar"] = a.calendar.Handler()
 	m["safety/diagnostics"] = a.diagnosticsHandler()
 	m["playback"] = a.playbackPolicyHandler()
 	m["indexer-sites"] = a.sites.Handler(cardigann.HandlerDeps{

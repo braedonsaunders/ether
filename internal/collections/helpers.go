@@ -2,6 +2,7 @@ package collections
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -176,7 +177,22 @@ func (s *Service) Lookup(ctx context.Context, kind, q, region string) ([]core.Lo
 }
 
 // TitleDetail returns a title with credits and keywords (fetching details
-// from TMDB when the mirror only has a summary).
+// from TMDB when the mirror only has a summary). The owner console also
+// inspects titles viewers cannot open yet, such as an upcoming movie on the
+// release calendar, so an unreleased title Get refuses is read from the
+// mirror instead. Adult titles stay hidden.
 func (s *Service) TitleDetail(ctx context.Context, key core.RatingKey) (*core.Title, error) {
-	return s.cat.Get(ctx, key)
+	t, err := s.cat.Get(ctx, key)
+	if !errors.Is(err, core.ErrNotFound) {
+		return t, err
+	}
+	stored, ok := s.cat.(core.StoredTitleLookup)
+	if !ok || (key.Kind() != core.KindMovie && key.Kind() != core.KindShow) {
+		return nil, err
+	}
+	t, serr := stored.StoredTitle(ctx, key)
+	if serr != nil || t == nil || t.Adult || t.Key != key {
+		return nil, err
+	}
+	return t, nil
 }
