@@ -231,6 +231,7 @@
       "match": {
         "any": [
           {"field": "product", "op": "contains", "value": "apple tv"},
+          {"field": "product", "op": "contains", "value": "swiftfin"},
           {"field": "platform", "op": "equals", "value": "tvos"},
           {"field": "device", "op": "contains", "value": "apple tv"}
         ]

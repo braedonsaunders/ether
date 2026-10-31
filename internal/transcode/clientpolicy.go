@@ -22,7 +22,9 @@ func identityOf(c core.ClientCaps) clientreg.Identity {
 }
 
 // PlaybackDefaults is the registry baseline for a client that sent no profile.
+// ID is the matched playback record. "generic" means nothing more specific matched.
 type PlaybackDefaults struct {
+	ID                               string
 	Video, Audio, Containers         []string
 	MaxHeight                        int
 	HDR10, DolbyVision, HeightLocked bool
@@ -33,7 +35,7 @@ type PlaybackDefaults struct {
 func PlaybackDefaultsFor(product, platform, device, model, version string, overrides []core.ClientCapabilityOverride) PlaybackDefaults {
 	got := clientreg.Playback(clientreg.Identity{Product: product, Platform: platform, Device: device, Model: model, Version: version}, overrides)
 	return PlaybackDefaults{
-		Video: got.Video, Audio: got.Audio, Containers: got.Containers,
+		ID: got.ID, Video: got.Video, Audio: got.Audio, Containers: got.Containers,
 		MaxHeight: got.MaxHeight, HDR10: got.HDR10, DolbyVision: got.DolbyVision, HeightLocked: got.HeightLocked,
 	}
 }

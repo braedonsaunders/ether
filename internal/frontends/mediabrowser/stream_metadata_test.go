@@ -180,6 +180,15 @@ func TestDisplayTitleMatchesLabJellyfin(t *testing.T) {
 	}
 }
 
+func TestBigBuckBunnyAudioDisplayTitles(t *testing.T) {
+	mp3 := mediaStreamDisplayTitle(frontend.StreamInfo{Type: "audio", Codec: "mp3", Channels: 2, ChannelLayout: "stereo", Default: true, Title: "GPAC ISO Audio Handler"})
+	ac3 := mediaStreamDisplayTitle(frontend.StreamInfo{Type: "audio", Codec: "ac3", Channels: 6, ChannelLayout: "5.1(side)", Default: true, Title: "GPAC ISO Audio Handler"})
+	aac := mediaStreamDisplayTitle(frontend.StreamInfo{Type: "audio", Codec: "aac", Channels: 6, ChannelLayout: "5.1", Default: true})
+	if mp3 != "GPAC ISO Audio Handler - MP3 - Stereo - Default" || ac3 != "GPAC ISO Audio Handler - Dolby Digital - 5.1(side) - Default" || aac != "AAC - 5.1 - Default" {
+		t.Fatalf("mp3=%q ac3=%q aac=%q", mp3, ac3, aac)
+	}
+}
+
 func TestStreamMetadataAspectEvidence(t *testing.T) {
 	for _, dialect := range []frontend.Protocol{"jellyfin", "emby"} {
 		for _, tc := range []struct {

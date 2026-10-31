@@ -98,6 +98,8 @@ func TestPlaybackMatchesHistoricalProducts(t *testing.T) {
 		{"Plex for Roku", "Roku", "Roku Ultra", "", true, true, false, 2160, true},
 		{"Infuse", "tvOS", "Apple TV", "", true, true, true, 2160, true},
 		{"Infuse", "", "", "", true, true, false, 2160, true},
+		{"Swiftfin tvOS", "", "", "", true, true, true, 2160, true},
+		{"Swiftfin", "tvOS", "Apple TV", "", true, true, true, 2160, true},
 		{"Fire TV", "", "", "", true, true, false, 2160, true},
 		{"Something", "Opera", "", "", false, false, false, 1080, false},
 		{"Something", "Chrome", "", "", true, false, false, 2160, true},
@@ -166,5 +168,12 @@ func TestVersionMatchAndQuirks(t *testing.T) {
 	}
 	if !HasQuirk(Identity{Platform: "iOS", Product: "Plex"}, "plex-native-live-tune") || HasQuirk(Identity{Product: "Plex Web", Platform: "Chrome"}, "plex-native-live-tune") {
 		t.Fatal("live tune quirk")
+	}
+}
+
+func TestSwiftfinPlaybackIncludesMP3AndAC3(t *testing.T) {
+	got := Playback(Identity{Product: "Swiftfin tvOS"}, nil)
+	if got.ID != "apple-tv" || !slices.Contains(got.Audio, "mp3") || !slices.Contains(got.Audio, "ac3") || got.MaxHeight != 2160 {
+		t.Fatalf("%+v", got)
 	}
 }

@@ -37,6 +37,12 @@ func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityR
 		return frontend.CapabilityResult{}, err
 	}
 	overrides := s.app.cfg.Read().Clients.Overrides
+	// Plex applies this baseline in its own cap builder. A Jellyfin or Emby
+	// client that sent no codec lists gets the same floor. A sent DeviceProfile
+	// already filled those lists, and that declaration wins.
+	if s.surface != "plex" {
+		declared = playbackFloor(declared, overrides)
+	}
 	policy := transcode.ResolvePolicy(declared, overrides)
 	if declared.SubtitleCodecs == nil {
 		declared.SubtitleCodecs = append([]string(nil), policy.SubtitleCodecs...)
@@ -83,6 +89,30 @@ func (a *App) recordFrontendFamily(ctx context.Context, surface frontend.Protoco
 	if _, err = a.db.ExecContext(ctx, `INSERT INTO frontend_client_families(surface,family,policy,last_seen) VALUES(?,?,?,?) ON CONFLICT(surface,family) DO UPDATE SET policy=excluded.policy,last_seen=excluded.last_seen`, string(surface), policy.Family, string(data), time.Now().Unix()); err == nil {
 		a.seenFamilies.Store(key, string(data))
 	}
+}
+
+// playbackFloor copies a recognized client's registry codecs onto empty
+// lists. The generic preset is not a declaration, so an unknown client stays
+// unrestricted. HDR flags stay with the profile: the preset does not certify
+// a display.
+func playbackFloor(declared core.ClientCaps, overrides []core.ClientCapabilityOverride) core.ClientCaps {
+	defaults := transcode.PlaybackDefaultsFor(declared.Product, declared.Platform, declared.Device, "", declared.Version, overrides)
+	if defaults.ID == "" || defaults.ID == "generic" {
+		return declared
+	}
+	if len(declared.VideoCodecs) == 0 {
+		declared.VideoCodecs = append([]string(nil), defaults.Video...)
+	}
+	if len(declared.AudioCodecs) == 0 {
+		declared.AudioCodecs = append([]string(nil), defaults.Audio...)
+	}
+	if len(declared.Containers) == 0 {
+		declared.Containers = append([]string(nil), defaults.Containers...)
+	}
+	if declared.MaxHeight == 0 && !declared.ExplicitMaxHeight && defaults.MaxHeight > 0 {
+		declared.MaxHeight = defaults.MaxHeight
+	}
+	return declared
 }
 
 var _ frontend.Capabilities = surfaceCapabilities{}

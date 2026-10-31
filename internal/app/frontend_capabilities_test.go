@@ -106,6 +106,26 @@ func TestSurfaceCapabilitiesApplyQuirksAndOwnerRules(t *testing.T) {
 	}
 }
 
+func TestSwiftfinWithoutProfileUsesAppleCodecs(t *testing.T) {
+	a := setupTestApp(t, true)
+	provider := surfaceCapabilities{app: a, surface: "jellyfin"}
+	lan := frontend.WithClientIP(context.Background(), netip.MustParseAddr("192.168.1.2"))
+	got, err := provider.Build(lan, frontend.CapabilityRequest{Viewer: &core.Viewer{ID: 1}, Device: caps.DeviceInfo{Product: "Swiftfin tvOS"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(got.Client.AudioCodecs, "mp3") || !slices.Contains(got.Client.AudioCodecs, "ac3") || got.Client.MaxHeight != 2160 {
+		t.Fatalf("%+v", got.Client)
+	}
+	limited, err := provider.Build(lan, frontend.CapabilityRequest{Viewer: &core.Viewer{ID: 1}, Device: caps.DeviceInfo{Product: "Swiftfin tvOS"}, Profile: caps.DeviceProfile{DirectPlayProfiles: []caps.DirectPlayProfile{{Container: "mp4", VideoCodec: "h264", AudioCodec: "aac"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(limited.Client.AudioCodecs, "ac3") || !slices.Contains(limited.Client.AudioCodecs, "aac") {
+		t.Fatalf("profile audio overwritten: %v", limited.Client.AudioCodecs)
+	}
+}
+
 func catalogHas(apps []compatApp, protocol, name string) bool {
 	for _, app := range apps {
 		if app.Protocol == protocol && app.Name == name {
