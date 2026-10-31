@@ -1708,6 +1708,10 @@
   "m_0abadbedf6894f": "Handlinger for {release}",
   "m_0abce084240d5f": "egendefinert",
   "m_0abd37a346cd74": "Start opptak",
+  "m_0abf41a4799823": {
+    "one": "bruker {using} av {count} tilkobling (servergrense oppdaget)",
+    "other": "bruker {using} av {count} tilkoblinger (servergrense oppdaget)"
+  },
   "m_0ac04023bddbe8": "Kun SDR",
   "m_0ac1652ab7b5f4": "Den offisielle franchiseplakaten hentes når du lagrer. Samlinger uten en TMDB-franchisekilde bruker automatisk omslag.",
   "m_0ac3c72484745e": "Resultater for «{query}»",
@@ -4340,6 +4344,10 @@
   "m_1b832c3fc2b5f7": "Blir kjent med dem: radene er personlige, men utforsker fortsatt.",
   "m_1b86404e2f0dd1": "Finn en utgivelse",
   "m_1b8797fbdae067": "Ether er oppdatert",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} forespørsel overtatt fra en travel leverandør",
+    "other": "{count} forespørsler overtatt fra travle leverandører"
+  },
   "m_1b8d369ae23df1": "Publiserer den offentlige adressen din til plex.tv.",
   "m_1b8ffcd7534fa9": "Velg seere for å begrense denne kanalen. Deres foreldrekontroll gjelder fortsatt; Direkte-TV-innstillinger per seer ligger på hver seers profil.",
   "m_1b90e44b07407d": "Kanalene og programoppføringene fjernes fra Direkte-TV.",

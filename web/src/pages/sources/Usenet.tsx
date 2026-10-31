@@ -65,13 +65,24 @@ function role(p: UsenetProvider, i: number) {
 /**
  * Connection use for a provider row. In a cluster the account's connections
  * are divided among the nodes (nodeShare), so busy counts are out of this
- * node's share.
+ * node's share. When the server refused connections, Ether learned a lower
+ * limit and runs at maxConnections until it widens back.
  */
 export function connectionText(stat: Record<string, unknown> | undefined, configured: number) {
   if (!stat) return [tn(configured, "{count} connection", "{count} connections")];
   const total = Number(stat.configuredConnections ?? configured);
   const share = Number(stat.nodeShare ?? 0);
   const active = Number(stat.activeConnections ?? 0);
+  const learned = stat.limitLearned
+    ? [
+        tn(
+          share > 0 ? share : total,
+          "using {using} of {count} connection (server limit learned)",
+          "using {using} of {count} connections (server limit learned)",
+          { using: Number(stat.maxConnections ?? 0) },
+        ),
+      ]
+    : [];
   if (share > 0)
     return [
       tn(share, "{active} of {count} connection busy", "{active} of {count} connections busy", {
@@ -85,11 +96,13 @@ export function connectionText(stat: Record<string, unknown> | undefined, config
           share,
         },
       ),
+      ...learned,
     ];
   return [
     tn(total, "{active} of {count} connection busy", "{active} of {count} connections busy", {
       active,
     }),
+    ...learned,
   ];
 }
 

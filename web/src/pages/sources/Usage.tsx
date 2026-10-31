@@ -50,6 +50,7 @@ type ProviderMonth = {
   backfillSaves: number;
   bodyMisses: number;
   bodyTakedowns: number;
+  spillovers?: number;
 };
 type ProviderDay = {
   id: string;
@@ -380,7 +381,16 @@ export function SourceUsage() {
                           "{count} takedowns (451)",
                         ),
                         tn(usage.backfillSaves, "{count} backfill save", "{count} backfill saves"),
-                      ].join(" · ")}
+                        usage.spillovers
+                          ? tn(
+                              usage.spillovers,
+                              "{count} request taken over from a busy provider",
+                              "{count} requests taken over from busy providers",
+                            )
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                     <DayBars
                       days={(data.providerDays ?? [])

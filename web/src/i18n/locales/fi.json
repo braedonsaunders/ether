@@ -1708,6 +1708,10 @@
   "m_0abadbedf6894f": "Toiminnot: {release}",
   "m_0abce084240d5f": "oma",
   "m_0abd37a346cd74": "Aloita tallennus",
+  "m_0abf41a4799823": {
+    "one": "käytössä {using}/{count} yhteys (palvelimen raja tunnistettu)",
+    "other": "käytössä {using}/{count} yhteyttä (palvelimen raja tunnistettu)"
+  },
   "m_0ac04023bddbe8": "Vain SDR",
   "m_0ac1652ab7b5f4": "Virallinen elokuvasarjan juliste haetaan tallennettaessa. Kokoelmat, joilla ei ole TMDB-elokuvasarjalähdettä, käyttävät automaattista kuvitusta.",
   "m_0ac3c72484745e": "Tulokset haulle ”{query}”",
@@ -4340,6 +4344,10 @@
   "m_1b832c3fc2b5f7": "Tutustutaan: rivit ovat henkilökohtaisia mutta vielä tutkivia.",
   "m_1b86404e2f0dd1": "Etsi julkaisu",
   "m_1b8797fbdae067": "Ether on ajan tasalla",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} pyyntö otettu kiireiseltä palveluntarjoajalta",
+    "other": "{count} pyyntöä otettu kiireisiltä palveluntarjoajilta"
+  },
   "m_1b8d369ae23df1": "Julkaisee julkisen osoitteesi plex.tv:hen.",
   "m_1b8ffcd7534fa9": "Valitse katselijat rajataksesi tämän kanavan. Heidän lapsilukkorajoituksensa ovat edelleen voimassa; katselijakohtaiset Live-TV-asetukset ovat kunkin katselijan profiilissa.",
   "m_1b90e44b07407d": "Sen kanavat ja niiden ohjelmatiedot poistetaan Live-TV:stä.",

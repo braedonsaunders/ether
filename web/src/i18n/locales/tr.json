@@ -1708,6 +1708,10 @@
   "m_0abadbedf6894f": "{release} için eylemler",
   "m_0abce084240d5f": "özel",
   "m_0abd37a346cd74": "Kaydı başlat",
+  "m_0abf41a4799823": {
+    "one": "{count} bağlantıdan {using} tanesi kullanılıyor (sunucu sınırı algılandı)",
+    "other": "{count} bağlantıdan {using} tanesi kullanılıyor (sunucu sınırı algılandı)"
+  },
   "m_0ac04023bddbe8": "Yalnızca SDR",
   "m_0ac1652ab7b5f4": "Resmi seri posteri kaydettiğinizde getirilir. TMDB seri kaynağı olmayan koleksiyonlar otomatik görsel kullanır.",
   "m_0ac3c72484745e": "“{query}” için sonuçlar",
@@ -4340,6 +4344,10 @@
   "m_1b832c3fc2b5f7": "Tanışıyor: satırlar kişisel ama hâlâ keşfediyor.",
   "m_1b86404e2f0dd1": "Sürüm bul",
   "m_1b8797fbdae067": "Ether güncel",
+  "m_1b8c1ed6acdf6e": {
+    "one": "Yoğun bir sağlayıcıdan devralınan {count} istek",
+    "other": "Yoğun sağlayıcılardan devralınan {count} istek"
+  },
   "m_1b8d369ae23df1": "Genel adresinizi plex.tv'de yayımlar.",
   "m_1b8ffcd7534fa9": "Bu kanalı kısıtlamak için izleyicileri seçin. Ebeveyn sınırları yine de geçerlidir; izleyici başına Canlı TV ayarları her izleyicinin profilinde bulunur.",
   "m_1b90e44b07407d": "Kanalları ve programları Canlı TV'den kaldırılır.",

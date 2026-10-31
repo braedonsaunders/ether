@@ -710,6 +710,22 @@ the viewer is inactive or the session ends.
 
 ## Source interruptions
 
+Usenet providers are tried in priority order. When every connection of a
+higher-priority provider is busy, a viewer's request goes to the next provider
+that has a free connection instead of waiting. Background work does this only
+when that provider is otherwise idle. Backfill (block) accounts are used only
+for articles the other providers lack, so a busy primary never spends block
+data. **Sources › Usage** shows how many requests each provider took over from
+a busy one this month.
+
+If a server refuses connections because the account is at its limit, Ether
+learns that limit by itself. The provider list then shows, for example,
+"using 47 of 50 connections (server limit learned)". When the server states its
+limit, Ether stays just below it. Otherwise Ether adds connections back one at a
+time while requests succeed. A refusal right after Ether closed a connection is
+not treated as a limit: the server is still releasing the old connection. There
+is nothing to configure.
+
 Ether tries other providers before changing a release. Copy-only HLS or DASH
 can restart on another release at the current media time. Direct-play MKV and MP4
 have stricter replacement limits because the player retains the original file's

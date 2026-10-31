@@ -1802,6 +1802,12 @@
   "m_0abadbedf6894f": "Akcje dla: {release}",
   "m_0abce084240d5f": "własna",
   "m_0abd37a346cd74": "Rozpocznij nagrywanie",
+  "m_0abf41a4799823": {
+    "one": "używane: {using} z {count} połączenia (wykryto limit serwera)",
+    "few": "używane: {using} z {count} połączeń (wykryto limit serwera)",
+    "many": "używane: {using} z {count} połączeń (wykryto limit serwera)",
+    "other": "używane: {using} z {count} połączenia (wykryto limit serwera)"
+  },
   "m_0ac04023bddbe8": "Tylko SDR",
   "m_0ac1652ab7b5f4": "Oficjalny plakat franczyzy jest pobierany przy zapisie. Kolekcje bez źródła franczyzy TMDB używają grafiki automatycznej.",
   "m_0ac3c72484745e": "Wyniki dla „{query}”",
@@ -4598,6 +4604,12 @@
   "m_1b832c3fc2b5f7": "Poznaje widza: wiersze są osobiste, ale nadal eksplorują.",
   "m_1b86404e2f0dd1": "Znajdź wydanie",
   "m_1b8797fbdae067": "Ether jest aktualny",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} żądanie przejęte od zajętego dostawcy",
+    "few": "{count} żądania przejęte od zajętych dostawców",
+    "many": "{count} żądań przejętych od zajętych dostawców",
+    "other": "{count} żądania przejętego od zajętych dostawców"
+  },
   "m_1b8d369ae23df1": "Publikuje Twój adres publiczny w plex.tv.",
   "m_1b8ffcd7534fa9": "Wybierz widzów, aby ograniczyć ten kanał. Ich ograniczenia rodzicielskie nadal obowiązują; ustawienia telewizji na żywo dla poszczególnych widzów znajdują się w profilu każdego z nich.",
   "m_1b90e44b07407d": "Jego kanały i ich wpisy programu zostaną usunięte z telewizji na żywo.",
