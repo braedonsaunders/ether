@@ -62,7 +62,7 @@ func TestOwnedSourceCleanupLiveRetry(t *testing.T) {
 			}
 			t.Cleanup(repair)
 			life := newSourceLifetime(1, "plex", "retry")
-			nzb := []byte("source retry " + stage)
+			nzb := []byte("nzb-A")
 			hash := nzbHash(nzb)
 			path := filepath.Join(p.dir, hash+".nzb")
 			if err := os.WriteFile(path, nzb, 0600); err != nil {
@@ -311,7 +311,7 @@ func TestOwnedSourceCleanupSharedAndNewerOwner(t *testing.T) {
 	h.m.deps.Engine = e
 	p := h.m.resume.payload
 	ctx := context.Background()
-	nzb := []byte("shared source")
+	nzb := []byte("nzb-A")
 	res := &core.Resolution{Release: core.Release{ID: "A"}, NZB: nzb}
 	first, second := newSourceLifetime(1, "plex", "one"), newSourceLifetime(1, "silo", "two")
 	a, finishA, err := h.m.openSource(ctx, first, res)
