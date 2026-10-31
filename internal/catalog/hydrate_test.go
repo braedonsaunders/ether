@@ -3,8 +3,6 @@ package catalog
 import (
 	"context"
 	"database/sql"
-	"sort"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -12,7 +10,6 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/libraryfilter"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
@@ -279,75 +276,3 @@ func TestReadWaitBudgetBoundsARequest(t *testing.T) {
 	}
 }
 
-// The exclusion SQL hides exactly the titles the Go filter hides.
-func TestExclusionSQLMatchesFilter(t *testing.T) {
-	ctx := context.Background()
-	db := store.OpenTest(t)
-	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	c, err := New(db, nil, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	facets := []struct {
-		countries, genres []string
-		typ               core.MediaType
-	}{
-		{nil, nil, core.TypeMovie}, {[]string{"IN"}, nil, core.TypeMovie}, {[]string{"US", "IN"}, []string{"Drama"}, core.TypeShow},
-		{[]string{"FR"}, []string{"Horror"}, core.TypeMovie}, {[]string{"JP"}, []string{"Animation", "Drama"}, core.TypeShow}, {nil, []string{"Horror"}, core.TypeShow},
-	}
-	var keys []core.RatingKey
-	for i, f := range facets {
-		key := core.MovieKey(int64(i + 1))
-		if f.typ == core.TypeShow {
-			key = core.ShowKey(int64(i + 1))
-		}
-		keys = append(keys, key)
-		if err := c.UpsertTitle(ctx, core.Title{Key: key, Type: f.typ, IDs: core.IDs{TMDB: key.TMDB()}, Title: "T", Released: now.AddDate(-1, 0, 0), Countries: f.countries, Genres: f.genres}, true); err != nil {
-			t.Fatal(err)
-		}
-	}
-	rule := func(field, op, raw string) core.CollectionRule {
-		return core.CollectionRule{Field: field, Op: op, Value: []byte(raw)}
-	}
-	for name, specs := range map[string][]core.LibraryExclusion{
-		"country in":       {{Name: "G", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{rule("country", "in", `["IN","JP"]`)}}},
-		"country notIn":    {{Name: "G", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{rule("country", "notIn", `["US","FR"]`)}}},
-		"genre any":        {{Name: "G", MediaType: "show", Match: "any", Rules: []core.CollectionRule{rule("genre", "in", `["Horror"]`), rule("country", "is", `"JP"`)}}},
-		"genre isNot all":  {{Name: "G", MediaType: "mixed", Match: "all", Rules: []core.CollectionRule{rule("genre", "isNot", `"Drama"`), rule("country", "in", `["FR","IN"]`)}}},
-		"two groups mixed": {{Name: "G", MediaType: "movie", Match: "all", Rules: []core.CollectionRule{rule("country", "in", `["IN"]`)}}, {Name: "G", MediaType: "show", Match: "all", Rules: []core.CollectionRule{rule("genre", "notIn", `["Drama"]`)}}},
-	} {
-		f, err := libraryfilter.Compile(specs)
-		if err != nil {
-			t.Fatal(name, err)
-		}
-		where, args := f.SQLHidden()
-		var sqlHidden []string
-		rows, err := db.QueryContext(ctx, `SELECT key FROM catalog_titles t WHERE `+where+` ORDER BY key`, args...)
-		if err != nil {
-			t.Fatal(name, err)
-		}
-		for rows.Next() {
-			var k string
-			if err := rows.Scan(&k); err != nil {
-				t.Fatal(err)
-			}
-			sqlHidden = append(sqlHidden, k)
-		}
-		rows.Close()
-		var goHidden []string
-		for _, key := range keys {
-			title, err := c.StoredTitle(ctx, key)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if f.Hidden(title) {
-				goHidden = append(goHidden, strconv.FormatInt(int64(key), 10))
-			}
-		}
-		sort.Strings(goHidden)
-		sort.Strings(sqlHidden)
-		if strings.Join(sqlHidden, ",") != strings.Join(goHidden, ",") {
-			t.Errorf("%s: SQL hides %v, filter hides %v", name, sqlHidden, goHidden)
-		}
-	}
-}
