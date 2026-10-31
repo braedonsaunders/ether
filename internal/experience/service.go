@@ -257,6 +257,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			q.Sort = core.SortPopularity
 			q.Desc = true
 		}
+		if q.AdjacentTo == 0 && q.StartAt == 0 && q.Limit > 0 {
+			return s.rootWindow(ctx, v, device, q)
+		}
 		all := make([]core.Title, 0)
 		inner := q
 		inner.Offset = 0
@@ -972,6 +975,50 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 		end = min(start+q.Limit, total)
 	}
 	return core.Page{Items: out[start:end], Total: total}, nil
+}
+
+// rootWindow answers a bounded page across every library (Swiftfin's and
+// Infuse's cross-library "Recently Added"): each library returns only its
+// own first offset+limit titles in the requested order, from its indexed
+// page, and the windows are merged. The old path listed every title of
+// every library and sorted them in memory.
+func (s *Service) rootWindow(ctx context.Context, v *core.User, device core.Device, q frontend.ItemQuery) (core.Page, error) {
+	inner := q
+	inner.Offset = 0
+	inner.Limit = max(q.Offset, 0) + q.Limit
+	all := make([]core.Title, 0, inner.Limit*2)
+	total := 0
+	for _, lib := range s.libraries() {
+		if !SectionAllowed(v, lib.ID) {
+			continue
+		}
+		// Ask each library only for the requested types it can hold, so its
+		// page is one indexed catalogue page.
+		libQuery := inner
+		if len(q.Types) > 0 {
+			libQuery.Types = nil
+			for _, typ := range q.Types {
+				if typ == lib.Type || (lib.Type == core.TypeShow && (typ == core.TypeSeason || typ == core.TypeEpisode)) {
+					libQuery.Types = append(libQuery.Types, typ)
+				}
+			}
+			if len(libQuery.Types) == 0 {
+				continue
+			}
+		}
+		page, err := s.LibraryItems(ctx, v, device, strconv.Itoa(lib.ID), libQuery)
+		if err != nil {
+			return core.Page{}, err
+		}
+		all = append(all, page.Items...)
+		total += page.Total
+	}
+	if err := s.sortTitles(ctx, all, q); err != nil {
+		return core.Page{}, err
+	}
+	start := min(max(q.Offset, 0), len(all))
+	end := min(start+q.Limit, len(all))
+	return core.Page{Items: all[start:end], Total: total}, nil
 }
 
 // searchWindowMin is the smallest candidate window a search reads.

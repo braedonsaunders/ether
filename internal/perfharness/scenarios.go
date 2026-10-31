@@ -315,6 +315,7 @@ func swiftfin() Client {
 		{Name: "/Users/{id}/Items/Resume", Class: classHome, Path: "/Users/{userId}/Items/Resume?enableUserData=true&fields=PrimaryImageAspectRatio%2COverview&limit=20&mediaTypes=Video"},
 		{Name: "/Shows/NextUp", Class: classHome, Path: "/Shows/NextUp?enableUserData=true&fields=PrimaryImageAspectRatio%2COverview&limit=20&userId={userId}"},
 		{Name: "/Users/{id}/Items/Latest", Class: classHome, Path: "/Users/{userId}/Items/Latest?enableUserData=true&fields=PrimaryImageAspectRatio%2COverview&limit=20&parentId={moviesView}"},
+		{Name: "recently added (cross-library)", Class: classHome, Path: "/Items?userId={userId}&recursive=true&sortBy=DateCreated&sortOrder=Descending&includeItemTypes=Movie&includeItemTypes=Series&fields=MediaStreams,Genres,Studios&limit=20&enableUserData=true"},
 		{Name: "movies p1", Class: classBrowse, Path: "/Users/{userId}/Items?enableUserData=true&fields=PrimaryImageAspectRatio%2COverview&includeItemTypes=Movie&limit=100&parentId={moviesView}&recursive=true&sortBy=SortName&sortOrder=Ascending&startIndex=0", Discover: discoverMBItem("movieId", "Movie")},
 		{Name: "movie detail", Class: classDetail, Path: "/Users/{userId}/Items/{movieId}"},
 	}}

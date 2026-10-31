@@ -886,7 +886,15 @@ func (i *instance) writePersonalItems(w http.ResponseWriter, r *http.Request, v 
 func (i *instance) writePersonalActivity(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, number int64, latest bool, offset, limit int) {
 	shelf, ok := i.personalByNumber(r, v, number)
 	if !ok {
-		http.NotFound(w, r)
+		// Personal shelves follow this viewer's rows, so a view id from an
+		// earlier /UserViews can be gone by the time a client asks for its
+		// latest items. Home screens (Swiftfin) block on a failed shelf; an
+		// empty one lets them render.
+		if latest {
+			i.replyItems(w, r, []any{})
+		} else {
+			i.replyItems(w, r, i.queryResult([]any{}, 0, offset))
+		}
 		return
 	}
 	q := frontend.ItemQuery{Offset: offset, Limit: limit}
