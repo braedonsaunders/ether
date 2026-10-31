@@ -17,7 +17,13 @@ case "$mode" in
     [[ ! -e "$candidate" ]] || { echo 'candidate directory must not exist; preserve previous recordings' >&2; exit 2; }
     mkdir -p "$candidate"
     # Credentials are read by conformdiff from the environment, not argv.
-    "$bin" record -protocol "$protocol" -reference "$CONFORM_REFERENCE_URL" -out "$candidate" -format json > "$candidate/record-report.json"
+    # CONFORM_REFERENCE_VARS is an optional JSON file path; its contents are not printed.
+    record_args=(-protocol "$protocol" -reference "$CONFORM_REFERENCE_URL" -out "$candidate" -format json)
+    if [[ -n "${CONFORM_REFERENCE_VARS:-}" ]]; then
+      [[ -f "$CONFORM_REFERENCE_VARS" ]] || { echo 'CONFORM_REFERENCE_VARS is not a file' >&2; exit 2; }
+      record_args+=(-reference-vars "$CONFORM_REFERENCE_VARS")
+    fi
+    "$bin" record "${record_args[@]}" > "$candidate/record-report.json"
     "$bin" drift -protocol "$protocol" -fixtures "testdata/conform/$protocol" -candidate "$candidate" > "$candidate/drift-report.json"
     ;;
   *) echo 'mode must be check or record' >&2; exit 2;;

@@ -26,5 +26,6 @@ node_modules/
 /scripts/lab/lab.env
 /scripts/lab/data/
 /scripts/lab/.conform/
+/drift-watch-out/
 
 /internal/conform/specs/.downloaded/

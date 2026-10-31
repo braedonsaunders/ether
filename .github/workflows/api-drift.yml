@@ -4,48 +4,50 @@ on:
     - cron: '19 6 * * *'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   issues: write
+concurrency:
+  group: drift-watch
+  cancel-in-progress: false
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build tools
-        run: |
-          go build -o "$RUNNER_TEMP/conformdiff" ./cmd/conformdiff
-          go build -o "$RUNNER_TEMP/api-drift" ./scripts/api-drift
-      - name: Check upstream APIs
-        id: drift
+      - name: Plan endpoint drift and reference image bumps
+        id: plan
         continue-on-error: true
-        run: |
-          set -o pipefail
-          "$RUNNER_TEMP/api-drift" -conformdiff "$RUNNER_TEMP/conformdiff" -out "$RUNNER_TEMP/api-drift.md" 2>&1 | tee "$RUNNER_TEMP/api-drift.log"
-      - name: Report drift or failed check
-        if: always() && steps.drift.outcome != 'skipped'
+        env:
+          DRIFT_WATCH_SKIP_RECORD: "1"
+        run: scripts/drift-watch.sh plan
+      - name: Open or update the drift pull request
+        if: steps.plan.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
-          DRIFT_OUTCOME: ${{ steps.drift.outcome }}
+          DRIFT_PR_BASE: prism
+          DRIFT_WATCH_OPEN_PR: "1"
+          DRIFT_WATCH_SKIP_RECORD: "1"
+        run: scripts/drift-watch.sh pr
+      - name: Report a failed check
+        if: steps.plan.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$DRIFT_OUTCOME" != success ]; then
-            title='API drift check failed'
-            { echo 'The scheduled API drift check failed. See the workflow run for details.'; echo; echo '```'; cat "$RUNNER_TEMP/api-drift.log"; echo '```'; } > "$RUNNER_TEMP/issue.md"
-          elif [ -s "$RUNNER_TEMP/api-drift.md" ]; then
-            title='API drift and reference defects'
-            cp "$RUNNER_TEMP/api-drift.md" "$RUNNER_TEMP/issue.md"
-          else
-            exit 0
-          fi
+          title='API drift check failed'
+          printf '%s\n' 'The scheduled API drift check failed before it could open a pull request. See the workflow run for details.' > "$RUNNER_TEMP/issue.md"
           number="$(gh issue list --state open --search "in:title \"$title\"" --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -n1)"
           if [ -n "$number" ]; then
             gh issue edit "$number" --body-file "$RUNNER_TEMP/issue.md"
           else
             gh issue create --title "$title" --body-file "$RUNNER_TEMP/issue.md"
           fi
-      - name: Fail when check failed
-        if: steps.drift.outcome == 'failure'
+      - name: Fail when the plan failed
+        if: steps.plan.outcome == 'failure'
         run: exit 1
