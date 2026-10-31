@@ -401,8 +401,8 @@ func TestPrismUpgradePostgresPreservesDeliveredRows(t *testing.T) {
 func assertUpgradeBoundary(t *testing.T) {
 	t.Helper()
 	known := store.KnownMigrations()
-	if known["playback"] != 3 {
-		t.Fatalf("playback version=%d want3", known["playback"])
+	if known["playback"] != 4 {
+		t.Fatalf("playback version=%d want 4", known["playback"])
 	}
 	if known["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
@@ -874,7 +874,7 @@ func TestPrismPlaybackPayloadMigrationFailureRepair(t *testing.T) {
 			}
 			assertUpgradeTables(t, db, before)
 			assertUpgradeInventory(t, db)
-			if got := maxMigration(t, db, "playback"); got != 3 {
+			if got := maxMigration(t, db, "playback"); got != 4 {
 				t.Fatalf("repaired payload version=%d", got)
 			}
 			assertPayloadWitnessUniqueness(t, db)
@@ -909,7 +909,7 @@ func assertPayloadWitnessUniqueness(t *testing.T, db *sql.DB) {
 }
 func TestPrismPlaybackPayloadFreshConstraints(t *testing.T) {
 	db := store.OpenTest(t)
-	if got := maxMigration(t, db, "playback"); got != 3 {
+	if got := maxMigration(t, db, "playback"); got != 4 {
 		t.Fatalf("fresh playback version=%d", got)
 	}
 	assertPayloadWitnessUniqueness(t, db)

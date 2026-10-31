@@ -70,8 +70,11 @@ func TestFinalLayoutReceivesRenderedAvailability(t *testing.T) {
 	if r.got[0].ItemCount != 0 || r.got[1].ItemCount != 10 {
 		t.Fatalf("availability: %+v", r.got)
 	}
-	if !reflect.DeepEqual(got, []model.Hub{rows[1]}) {
-		t.Fatal("layout changed original Plex metadata or kept an empty row")
+	if !reflect.DeepEqual(got, []model.Hub{rows[1], rows[0]}) {
+		t.Fatal("layout changed original Plex metadata")
+	}
+	if !reflect.DeepEqual(stableHomeHubs(got), []model.Hub{rows[1]}) {
+		t.Fatal("stable home rows kept an empty row")
 	}
 }
 
@@ -85,7 +88,8 @@ func TestHomeRowAssemblyStableForSameCandidates(t *testing.T) {
 	for _, path := range []string{"/hubs", "/hubs/promoted"} {
 		first := hubIDs(t, f.get(t, path, "Accept", "application/json").Body.Bytes())
 		second := hubIDs(t, f.get(t, path, "Accept", "application/json").Body.Bytes())
-		want := []string{"home.continue", "home.top10.today", "home.shortontime"}
+		// An empty Continue Watching row is omitted, same as main's stable home rows.
+		want := []string{"home.top10.today", "home.shortontime"}
 		if !reflect.DeepEqual(first, want) {
 			t.Fatalf("%s: unexpected row order: %v", path, first)
 		}

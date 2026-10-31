@@ -263,7 +263,7 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 		Layout: func(rows []model.Hub) []model.Hub { return s.finalizeHomeRows(ctx, pr, hc, "home", rows) },
 	}
 	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0, experience.HomePurpose)
-	mc.Hub = rows
+	mc.Hub = stableHomeHubs(rows)
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, hc, mc.Hub, served)

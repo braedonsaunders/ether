@@ -23,7 +23,7 @@ func TestDeliveredMainMigrationBoundary(t *testing.T) {
 		"frontend_tickets":      3,
 		"frontend_image_grants": 7,
 		"capability_headers":    3,
-		"playback":              3,
+		"playback":              4,
 		"capability_tickets":    1,
 		"handle_reservations":   2,
 		"viewer_alerts":         2,

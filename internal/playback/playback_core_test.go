@@ -575,9 +575,20 @@ func TestKeyframesPublishedInBackground(t *testing.T) {
 	if len(pts) != len(want) {
 		t.Fatalf("virtual points = %v", pts)
 	}
-	rp, err := h.m.ResumePoint(context.Background(), owner.ID, movieKey)
-	if err != nil || rp == nil || len(rp.Keyframes) != len(want) {
-		t.Fatalf("resume keyframe index = %+v, %v", rp, err)
+	// Persistence follows publication and can still be in flight, especially
+	// on PostgreSQL. Wait for the same index the session already published.
+	var rp *ResumePoint
+	var err error
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		rp, err = h.m.ResumePoint(context.Background(), owner.ID, movieKey)
+		if err == nil && rp != nil && len(rp.Keyframes) == len(want) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("resume keyframe index = %+v, %v", rp, err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	for i, p := range want {
 		if rp.Keyframes[i].Offset != p.Offset || rp.Keyframes[i].Time != p.Time {
