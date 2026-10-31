@@ -133,7 +133,7 @@ twice:
 
 - once over a library of 50k catalogue rows;
 - once over a library ten times larger: 250,000 movies, 10,000 shows,
-  40,000 seasons and 240,000 episodes, 540k rows in all. Twelve viewers each
+  40,000 seasons and 240,000 episodes, 540k rows in all. Three viewers each
   have 20,000 history rows.
 
 On each library it starts a real App and replays one client per protocol
@@ -171,6 +171,15 @@ ETHER_PERF_GATE=quick go test ./internal/app -run TestPerformanceGate -v   # a 5
   are cached per connection; preparing happens outside the cache lock, so one
   slow statement never serializes others. Idle connections are kept, so a
   request never re-reads the schema.
+- **One writer at a time, in Go.** SQLite has a single writer. Left to
+  SQLite, connections that want to write at once poll the lock with growing
+  sleeps; a short write behind a busy writer (a catalogue sync committing
+  back to back) could wait the full 10 s busy timeout and fail.
+  `internal/store/write_gate.go` makes this process's connections take turns
+  through a one-slot gate instead: a write transaction holds it from BEGIN
+  to COMMIT, an autocommit write for one statement, and the next writer runs
+  the moment it is released. Reads, read-only transactions and WAL
+  checkpoints never wait on it.
 - **PostgreSQL** (cluster) uses the same SQL, rebound to `$n` by the
   `ether-pgx` driver, with `ANALYZE` in daily maintenance. Both engines are
   first-class: request stats, the harness trace and the gate thresholds are
