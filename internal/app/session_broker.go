@@ -32,6 +32,11 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		live = sessionLive{service: a.livetv, cached: a.catalog.CachedGet}
 	}
 	visibility := experienceVisibility(a.safety, a.catalog.Get, nil, nil, serverLibraries(a.cfg.Get()))
+	// Section IDs are stable even when Spike does not expose a TV library.
+	// Missing a presented library must not exempt a known title from the
+	// viewer's section restriction. Preserve the existing fallback for other
+	// kinds, including virtual entries.
+	visibility.SectionFor = brokerSectionFor(visibility.SectionFor)
 
 	return sessions.NewBroker(sessions.BrokerDeps{
 		Trickplay:           a.trickplay.Borrow(),
@@ -107,6 +112,21 @@ func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, err
 		},
 		OnEventError: func(err error) { a.log.Warn("session event publication failed", "err", err) },
 	})
+}
+
+// brokerSectionFor uses the canonical authorization IDs for known catalog
+// types, even when a frontend does not expose the corresponding library.
+func brokerSectionFor(other func(core.MediaType) (int, bool)) func(core.MediaType) (int, bool) {
+	return func(kind core.MediaType) (int, bool) {
+		switch kind {
+		case core.TypeMovie:
+			return 1, true
+		case core.TypeShow, core.TypeSeason, core.TypeEpisode:
+			return 2, true
+		default:
+			return other(kind)
+		}
+	}
 }
 
 // cachedSessionTitle checks both the item and inherited show using only the
