@@ -43,6 +43,32 @@ positions. The earlier PMS threshold was not established: the Guest probe
 stopped at authorization. This note does not allowlist any response; exact
 reviewed before/after pairs are still required.
 
+v0.2.58 (`22c160aba`) against `14a6b0890`, both halves, 3081 unapproved
+pairs each. Nothing in that set was an unlabeled byte change. Counts are
+per half.
+
+- addedAt only: 1631 ordinary, 1256 active-ranker. The approved release-date
+  rule. Every other pair below also carries addedAt where the body has dates.
+- Subtitle stream identity: 1250 ordinary, 1625 active-ranker. Embedded
+  subtitle ids follow language, codec, and source (`14a6b0890`).
+- Subtitle sidecar location: 50 and 50 (`tracks:probe`, `tracks:selected`).
+  Direct play serves the embedded text track as a sidecar (`3654964cc`),
+  so `location` is `sidecar` and the stream key is `/library/streams/...`.
+- `/accounts` subtitleMode 0 to 2: 10 and 10. The parity seed stores
+  subtitle mode `always` (`feaa49f10`). Untouched accounts stay manual;
+  this fixture does not.
+- Live TV, IPTV playlist, and DASH bytes: 60 and 60. The media URL carries
+  `X-Ether-Stream-Token` instead of `X-Plex-Token`. Segment timing is unchanged.
+- Child and teen search and postplay: 80 and 80. Those viewers are capped at
+  PG and PG-13. The candidate fills the requested limit with titles that cap
+  allows (`a1044fcba`, `697db5ea2`, `4d01e1de6`). No shared title changed its
+  contentRating string.
+- Content-rating label text on the same title: 0.
+- Version labels (`ed2bc8916`, #188): 0 pairs in this corpus.
+- Timeout playback (`e7a3bf2dd`, #198): not in this candidate, 0 pairs.
+
+These notes do not allowlist a response. Exact reviewed pairs are still required.
+
 Intentional track selection: a viewer with no audio list no longer follows the
 file's default flag ahead of a language they can use. The order is the
 viewer's trackprefs audio languages (their row, otherwise user 0, which the
