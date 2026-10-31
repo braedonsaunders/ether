@@ -54,8 +54,8 @@ func (a *App) stopOwnerSession(id string) error {
 	if server := a.currentPlexServer(); server != nil {
 		server.NoteOwnerStop(id, "The server owner has ended this stream.")
 	}
-	if a.frontends != nil && a.frontends.broker != nil && a.frontends.broker.StopPlayback(context.Background(), id) {
-		return nil
+	if a.frontends != nil && a.frontends.broker != nil {
+		a.frontends.broker.StopPlayback(context.Background(), id)
 	}
 	if a.livetv != nil {
 		for _, s := range a.livetv.ViewingSessions() {
@@ -63,6 +63,11 @@ func (a *App) stopOwnerSession(id string) error {
 				return a.livetv.Stop(context.Background(), id, &core.User{IsOwner: true})
 			}
 		}
+	}
+	// Broker retirement can leave the source on the owner list. The named
+	// session still has to stop.
+	if a.playback != nil {
+		a.playback.Stop(id)
 	}
 	return nil
 }
