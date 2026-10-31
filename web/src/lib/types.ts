@@ -118,12 +118,7 @@ export interface SiteUpdateReport {
 }
 
 export type DebridKind =
-  | "realdebrid"
-  | "torbox"
-  | "alldebrid"
-  | "premiumize"
-  | "debridlink"
-  | "offcloud";
+  "realdebrid" | "torbox" | "alldebrid" | "premiumize" | "debridlink" | "offcloud";
 
 /** One owner-supplied debrid account. `apiKey` is redacted to "••••" when set. */
 export interface DebridProvider {
