@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	_ "time/tzdata" // Owner time policies work on hosts without a zoneinfo database.
 
@@ -45,6 +46,15 @@ type Service struct {
 
 	invalMu sync.Mutex
 	inval   *clusterbus.Invalidator // nil on a standalone server
+	gen     atomic.Uint64
+}
+
+// Generation changes when a viewer's safety policy is saved.
+func (s *Service) Generation() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.gen.Load()
 }
 
 func New(ctx context.Context, db *sql.DB) (*Service, error) {
@@ -150,6 +160,7 @@ func (s *Service) Put(ctx context.Context, id int64, p Policy) error {
 	}
 	s.mu.Lock()
 	s.policies[id] = p
+	s.gen.Add(1)
 	s.mu.Unlock()
 	s.invalMu.Lock()
 	iv := s.inval

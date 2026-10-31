@@ -1387,6 +1387,7 @@ func (s *Service) UpdateUser(ctx context.Context, u core.User) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return core.ErrNotFound
 	}
+	s.gen.Add(1)
 	err = s.reload(ctx)
 	s.notify("")
 	return err

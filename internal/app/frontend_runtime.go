@@ -517,5 +517,8 @@ func (a *App) browseFreshness() frontend.PageFreshness {
 	if a.users != nil {
 		f.Accounts = a.users.Generation()
 	}
+	if a.safety != nil {
+		f.Safety = a.safety.Generation()
+	}
 	return f
 }
