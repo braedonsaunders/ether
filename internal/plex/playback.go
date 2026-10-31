@@ -1297,17 +1297,39 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 	s.d.Playback.ServeRange(w, r, ps.ID)
 }
 
+// partSelectsTitle reports whether bindingKey is the title this part select
+// applies to, and rewrites id to that title when it is. A registry hit and
+// the Auto rating key already name the title. An unregistered id in the
+// variant block is not a different item: More Ways to Watch addresses the
+// part it was showing, and the stream id is what names the title.
+func (s *Server) partSelectsTitle(id *int64, rawID int64, viaRegistry bool, bindingKey core.RatingKey) bool {
+	if int64(bindingKey) == *id {
+		return true
+	}
+	if viaRegistry || !inVariantIDSpace(rawID) || !bindingKey.Valid() || !isPlayableKey(bindingKey) {
+		return false
+	}
+	*id = int64(bindingKey)
+	return true
+}
+
 // handlePartSelect is PUT /library/parts/{part}?audioStreamID=&subtitleStreamID=.
 func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 	pr := FromContext(r.Context())
-	id, err := strconv.ParseInt(chi.URLParam(r, "part"), 10, 64)
+	rawID, err := strconv.ParseInt(chi.URLParam(r, "part"), 10, 64)
 	if err != nil || pr.User == nil {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
-	// Stream selections are per title, even when addressed at a variant part.
-	if k, _, found := s.partTitle(id); found {
+	// Stream selections are per title. A registry hit (or the Auto rating
+	// key) names that title. A variant-block id the registry does not know
+	// — the 8*10^15 ids and any 9*10^15 id that parsed as KindLocal — does
+	// not, and the stream id names the title instead (allParts=1).
+	id := rawID
+	viaRegistry := false
+	if k, rel, found := s.partTitle(rawID); found {
 		id = int64(k)
+		viaRegistry = rel != ""
 	}
 	q := r.URL.Query()
 	ctx := sessions.WithPlexServe(r.Context(), pr.Remote, "")
@@ -1319,7 +1341,7 @@ func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 				writeHTTPError(w, http.StatusUnauthorized)
 				return
 			}
-			if rerr == nil && int64(binding.Key) == id && binding.Info.Type == "audio" {
+			if rerr == nil && binding.Info.Type == "audio" && s.partSelectsTitle(&id, rawID, viaRegistry, binding.Key) {
 				audio = &binding
 			}
 		}
@@ -1336,7 +1358,7 @@ func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 					writeHTTPError(w, http.StatusUnauthorized)
 					return
 				}
-				if rerr == nil && int64(binding.Key) == id && binding.Info.Type == "subtitle" {
+				if rerr == nil && binding.Info.Type == "subtitle" && s.partSelectsTitle(&id, rawID, viaRegistry, binding.Key) {
 					sub = &binding
 				}
 			}

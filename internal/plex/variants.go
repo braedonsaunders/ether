@@ -15,15 +15,18 @@ package plex
 //   - Movie editions use `editionTitle` on the <Video> item — Ether sets
 //     it to the Auto variant's cut when the default pick is a cut.
 //
-// Ids: rating keys already sit near 10^15 with kind digits 1-9 at 10^15,
-// so variant ids live in the free 8*10^15 block (Kind() == 8 is not a
-// RatingKey kind, so ParseRatingKey rejects them and nothing mistakes
-// them for items) and stay below 2^53 for JavaScript clients. The id is a
-// hash of (ratingKey, release ID) with linear collision probing; mappings
-// are persisted in the variants_ids table so old part keys keep working
-// across restarts (without a DB they are recomputed deterministically,
-// the same way a Plex stream id is). The Auto variant keeps
-// Media.ID == Part.ID == ratingKey, exactly as before variants existed.
+// Ids: rating keys already sit near 10^15 with kind digits 1-9 at 10^15.
+// Variant ids are issued from 9*10^15 and stay below 2^53 for JavaScript
+// clients (the block older notes called 8*10^15). That range overlaps
+// KindLocal rating keys. The registry is the authority for a variant;
+// a subtitle choice whose part id is in the block but not in the registry
+// follows the stream's title instead of that guessed key. The id is a
+// hash of (ratingKey, release ID) with
+// linear collision probing; mappings are persisted in the variants_ids
+// table so old part keys keep working across restarts (without a DB they
+// are recomputed deterministically, the same way a Plex stream id is).
+// The Auto variant keeps Media.ID == Part.ID == ratingKey, exactly as
+// before variants existed.
 
 import (
 	"context"
@@ -161,14 +164,27 @@ func (r *variantIDRegistry) lookup(id int64) (variantRef, bool) {
 	return ref, ok
 }
 
+// inVariantIDSpace reports ids that Play Version may have issued. The live
+// allocator starts at 9*10^15 and stops below 2^53; the 8*10^15 block is
+// the same namespace from before that move. Both overlap real rating-key
+// kinds, so callers must not treat a miss as a title.
+func inVariantIDSpace(id int64) bool {
+	return id >= 8_000_000_000_000_000 && id < 1<<53
+}
+
 // partTitle maps a Part id back to its title: the rating key itself for
 // the Auto part, or a registry id for a variant part (with its release).
+// releaseID is non-empty only when the registry resolved a variant.
 func (s *Server) partTitle(partID int64) (key core.RatingKey, releaseID string, ok bool) {
 	if s.variantIDs != nil {
 		if ref, found := s.variantIDs.lookup(partID); found {
 			return ref.key, ref.releaseID, true
 		}
 	}
+	// Local-file keys share this numeric range, so a miss stays a playable
+	// key when it is one. Subtitle selection does not trust that guess:
+	// handlePartSelect keeps the stream's own title when the part id is in
+	// the variant block and the registry did not claim it.
 	k := core.RatingKey(partID)
 	if k.Valid() && isPlayableKey(k) {
 		return k, "", true
