@@ -38,6 +38,11 @@ const (
 	personalIdentityTTL = 30 * time.Second
 )
 
+// personalHandleDelay waits out a Swiftfin home burst (Latest per view, then
+// Resume and Next Up) before minting row receipts. Issuing them on the shared
+// shelf load writes one receipt per title and held the first Latest for seconds.
+var personalHandleDelay = 750 * time.Millisecond
+
 // personalHomeConfig is the owner control for Jellyfin and Emby home rows.
 // Missing keys mean the feature is on, with about four rows of every kind.
 type personalHomeConfig struct {
@@ -135,11 +140,33 @@ type personalIdentitySlot struct {
 	shelves []personalShelf
 }
 
+type personalLoad struct {
+	done    chan struct{}
+	shelves []personalShelf
+}
+
+type personalCredit struct {
+	viewer frontend.Viewer
+	device frontend.Device
+	rowID  string
+	items  []string
+}
+
 type personalIdentityCache struct {
-	mu       sync.Mutex
-	items    map[string]personalIdentitySlot
-	saved    map[string][]personalShelf
-	inflight map[string]bool
+	mu         sync.Mutex
+	items      map[string]personalIdentitySlot
+	saved      map[string][]personalShelf
+	loaded     map[string]personalIdentitySlot
+	loading    map[string]*personalLoad
+	inflight   map[string]bool
+	pending    []personalCredit
+	issueTimer *time.Timer
+}
+
+// rowSnapshotter is the authorized home without minting receipts. Silo uses
+// the same split so a shelf read is not an impression.
+type rowSnapshotter interface {
+	SnapshotRows(context.Context, frontend.RowRequest) ([]frontend.Row, error)
 }
 
 const personalWarmDevice = "ether-personal-home"
@@ -242,6 +269,18 @@ func (i *instance) warmPersonalIdentities(key string, gen int64, v *frontend.Vie
 func cloneShelves(in []personalShelf) []personalShelf {
 	out := make([]personalShelf, len(in))
 	copy(out, in)
+	return out
+}
+
+func cloneLoaded(in []personalShelf) []personalShelf {
+	if in == nil {
+		return nil
+	}
+	out := make([]personalShelf, len(in))
+	for i, shelf := range in {
+		shelf.titles = append([]frontend.Title(nil), shelf.titles...)
+		out[i] = shelf
+	}
 	return out
 }
 
@@ -390,7 +429,7 @@ func (i *instance) loadPersonalShelves(ctx context.Context, v *frontend.Viewer, 
 	if !cfg.enabled || cfg.count == 0 || v == nil || i.host.Experience == nil || dev.ID == "" {
 		return nil
 	}
-	rows, err := i.host.Experience.Rows(ctx, frontend.RowRequest{Viewer: v, Device: dev, Placement: frontend.PlacementHome, Limit: personalRowFetch})
+	rows, err := i.personalHomeRows(ctx, v, dev)
 	if err != nil {
 		return nil
 	}
@@ -542,12 +581,80 @@ func personalCollectionType(titles []frontend.Title) string {
 }
 
 func (i *instance) personalByNumber(r *http.Request, v *frontend.Viewer, number int64) (personalShelf, bool) {
-	for _, shelf := range i.loadPersonalShelves(r.Context(), v, device(r)) {
+	for _, shelf := range i.loadedPersonalShelves(r.Context(), v, device(r)) {
 		if shelf.number == number {
 			return shelf, true
 		}
 	}
 	return personalShelf{}, false
+}
+
+// loadedPersonalShelves reads home once for a burst of Latest calls. Swiftfin
+// asks for every view at once; each call used to rebuild and authorize home.
+func (i *instance) loadedPersonalShelves(ctx context.Context, v *frontend.Viewer, dev frontend.Device) []personalShelf {
+	cfg := i.personalConfig()
+	if !cfg.enabled || cfg.count == 0 || v == nil || i.host.Experience == nil || dev.ID == "" {
+		return nil
+	}
+	key := personalCacheKey(string(i.protocol), v, dev, cfg)
+	gen := i.policyGeneration(ctx)
+	i.personal.mu.Lock()
+	if i.personal.loaded != nil {
+		if slot, ok := i.personal.loaded[key]; ok && slot.gen == gen && time.Since(slot.at) < personalIdentityTTL {
+			shelves := cloneLoaded(slot.shelves)
+			i.personal.mu.Unlock()
+			return shelves
+		}
+	}
+	if i.personal.loading != nil {
+		if call, ok := i.personal.loading[key]; ok {
+			i.personal.mu.Unlock()
+			select {
+			case <-call.done:
+				return cloneLoaded(call.shelves)
+			case <-ctx.Done():
+				return nil
+			}
+		}
+	}
+	call := &personalLoad{done: make(chan struct{})}
+	if i.personal.loading == nil {
+		i.personal.loading = map[string]*personalLoad{}
+	}
+	i.personal.loading[key] = call
+	i.personal.mu.Unlock()
+
+	loaded := i.loadPersonalShelves(ctx, v, dev)
+	if loaded != nil {
+		i.rememberLoaded(key, gen, v, loaded)
+	}
+	call.shelves = loaded
+	close(call.done)
+	i.personal.mu.Lock()
+	delete(i.personal.loading, key)
+	i.personal.mu.Unlock()
+	return cloneLoaded(loaded)
+}
+
+func (i *instance) rememberLoaded(key string, gen int64, v *frontend.Viewer, loaded []personalShelf) {
+	i.personal.mu.Lock()
+	if i.personal.loaded == nil {
+		i.personal.loaded = map[string]personalIdentitySlot{}
+	}
+	i.personal.loaded[key] = personalIdentitySlot{at: time.Now(), gen: gen, shelves: cloneLoaded(loaded)}
+	i.personal.mu.Unlock()
+	if len(loaded) == 0 {
+		return
+	}
+	identities := make([]personalShelf, len(loaded))
+	for n, shelf := range loaded {
+		shelf.titles = nil
+		shelf.row.Entries = nil
+		shelf.row.Items = nil
+		shelf.row.Handle = ""
+		identities[n] = shelf
+	}
+	i.storePersonalIdentities(key, gen, v, identities)
 }
 
 func (i *instance) personalFolder(r *http.Request, v *frontend.Viewer, shelf personalShelf) map[string]any {
@@ -638,23 +745,122 @@ func titleTypeMatches(typ frontend.MediaType, types []frontend.MediaType) bool {
 	return false
 }
 
+func (i *instance) personalHomeRows(ctx context.Context, v *frontend.Viewer, dev frontend.Device) ([]frontend.Row, error) {
+	req := frontend.RowRequest{Viewer: v, Device: dev, Placement: frontend.PlacementHome, Limit: personalRowFetch}
+	if snap, ok := i.host.Experience.(rowSnapshotter); ok {
+		return snap.SnapshotRows(ctx, req)
+	}
+	return i.host.Experience.Rows(ctx, req)
+}
+
 func (i *instance) notePersonalDelivery(r *http.Request, v *frontend.Viewer, shelf personalShelf, titles []frontend.Title) {
 	if len(titles) == 0 {
 		return
 	}
-	if reporter, ok := i.host.Experience.(frontend.RowInteractionReporter); ok && shelf.row.Handle != "" {
-		err := reporter.ReportRowInteraction(r.Context(), frontend.RowInteraction{Viewer: v, Device: device(r), Protocol: i.protocol, Handle: shelf.row.Handle, Kind: frontend.RowImpression})
-		if err != nil && i.host.Log != nil {
-			i.host.Log.Warn("row impression failed", "error", err)
-		}
-	}
+	dev := device(r)
 	if shelf.row.Handle == "" {
+		items := make([]string, 0, len(titles))
+		for _, title := range titles {
+			items = append(items, ids.RatingKeyGUID(title.Key))
+		}
+		i.queuePersonalCredit(v, dev, shelf.row.ID, items)
 		return
 	}
-	dev := device(r).ID
+	i.reportPersonalImpression(r.Context(), v, dev, shelf.row.Handle)
 	for _, title := range titles {
-		i.credits.remember(v.ID, dev, ids.RatingKeyGUID(title.Key), shelf.row.Handle)
+		i.credits.remember(v.ID, dev.ID, ids.RatingKeyGUID(title.Key), shelf.row.Handle)
 	}
+}
+
+func (i *instance) reportPersonalImpression(ctx context.Context, v *frontend.Viewer, dev frontend.Device, handle string) {
+	reporter, ok := i.host.Experience.(frontend.RowInteractionReporter)
+	if !ok || handle == "" {
+		return
+	}
+	err := reporter.ReportRowInteraction(ctx, frontend.RowInteraction{Viewer: v, Device: dev, Protocol: i.protocol, Handle: handle, Kind: frontend.RowImpression})
+	if err != nil && i.host.Log != nil {
+		i.host.Log.Warn("row impression failed", "error", err)
+	}
+}
+
+func (i *instance) queuePersonalCredit(v *frontend.Viewer, dev frontend.Device, rowID string, items []string) {
+	if v == nil || dev.ID == "" || rowID == "" || len(items) == 0 || i.host.Experience == nil {
+		return
+	}
+	credit := personalCredit{viewer: *v, device: dev, rowID: rowID, items: items}
+	i.personal.mu.Lock()
+	i.personal.pending = append(i.personal.pending, credit)
+	if i.personal.issueTimer != nil {
+		i.personal.issueTimer.Stop()
+	}
+	i.personal.issueTimer = time.AfterFunc(personalHandleDelay, func() { i.flushPersonalCredits() })
+	i.personal.mu.Unlock()
+}
+
+func (i *instance) flushPersonalCredits() {
+	i.personal.mu.Lock()
+	pending := i.personal.pending
+	i.personal.pending = nil
+	i.personal.mu.Unlock()
+	if len(pending) == 0 || i.life.Err() != nil {
+		return
+	}
+	groups := map[string][]personalCredit{}
+	for _, credit := range pending {
+		key := personalCacheKey(string(i.protocol), &credit.viewer, credit.device, i.personalConfig())
+		groups[key] = append(groups[key], credit)
+	}
+	for key, credits := range groups {
+		viewer := credits[0].viewer
+		ctx, cancel := context.WithTimeout(i.life, 15*time.Second)
+		rows, err := i.host.Experience.Rows(ctx, frontend.RowRequest{Viewer: &viewer, Device: credits[0].device, Placement: frontend.PlacementHome, Limit: personalRowFetch})
+		cancel()
+		if err != nil {
+			if i.host.Log != nil {
+				i.host.Log.Warn("personal home receipts", "err", err)
+			}
+			continue
+		}
+		handles := map[string]string{}
+		for _, row := range rows {
+			if row.ID != "" && row.Handle != "" {
+				handles[row.ID] = row.Handle
+			}
+		}
+		i.stampPersonalHandles(key, handles)
+		reported := map[string]bool{}
+		for _, credit := range credits {
+			handle := handles[credit.rowID]
+			if handle == "" {
+				continue
+			}
+			if !reported[credit.rowID] {
+				reported[credit.rowID] = true
+				i.reportPersonalImpression(i.life, &credit.viewer, credit.device, handle)
+			}
+			for _, item := range credit.items {
+				i.credits.remember(credit.viewer.ID, credit.device.ID, item, handle)
+			}
+		}
+	}
+}
+
+func (i *instance) stampPersonalHandles(key string, handles map[string]string) {
+	if len(handles) == 0 {
+		return
+	}
+	i.personal.mu.Lock()
+	defer i.personal.mu.Unlock()
+	slot, ok := i.personal.loaded[key]
+	if !ok {
+		return
+	}
+	for n := range slot.shelves {
+		if handle := handles[slot.shelves[n].row.ID]; handle != "" {
+			slot.shelves[n].row.Handle = handle
+		}
+	}
+	i.personal.loaded[key] = slot
 }
 
 func (i *instance) writePersonalItems(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, number int64) {

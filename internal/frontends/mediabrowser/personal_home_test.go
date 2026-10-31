@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -429,5 +431,126 @@ func TestPersonalHomeFirstFetchServesSavedShelves(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Your 2025 in Review") || !strings.Contains(w.Body.String(), "Movies") {
 		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestPersonalLatestSharesOneHomeLoad(t *testing.T) {
+	var calls atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	title := frontend.Title{Key: 3, Type: "movie", Title: "Apple"}
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+		},
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			calls.Add(1)
+			once.Do(func() { close(started) })
+			<-release
+			return []frontend.Row{{ID: "home.trending", Title: "Trending", Kind: "trending", Purpose: frontend.RowRecommendation, Handle: "trend", Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &title}}}}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		v := frontend.Viewer{ID: 1, Username: "ada"}
+		return &v, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := ids.GUID(ids.View, personalViewNumber(1, "home.trending"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+	wg.Add(2)
+	for n := 0; n < 2; n++ {
+		go func(n int) {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodGet, "/Items/Latest?ParentId="+parent+"&Limit=10", nil)
+			r.Header.Set("X-Emby-Token", "grant")
+			r.Header.Set("X-Emby-Device-Id", "living-room")
+			inst.Handler().ServeHTTP(w, r)
+			codes[n] = w.Code
+		}(n)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("home load did not start")
+	}
+	time.Sleep(30 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if codes[0] != 200 || codes[1] != 200 || calls.Load() != 1 {
+		t.Fatalf("codes %v rows %d", codes, calls.Load())
+	}
+}
+
+type snapshotHome struct {
+	frontendtest.Experience
+	snaps atomic.Int32
+}
+
+func (s *snapshotHome) SnapshotRows(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+	s.snaps.Add(1)
+	title := frontend.Title{Key: 3, Type: "movie", Title: "Apple"}
+	return []frontend.Row{{ID: "home.trending", Title: "Trending", Kind: "trending", Purpose: frontend.RowRecommendation, Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &title}}}}, nil
+}
+
+func TestPersonalLatestSnapshotsThenIssues(t *testing.T) {
+	previous := personalHandleDelay
+	personalHandleDelay = 30 * time.Millisecond
+	t.Cleanup(func() { personalHandleDelay = previous })
+	var issued atomic.Int32
+	var impressions atomic.Int32
+	title := frontend.Title{Key: 3, Type: "movie", Title: "Apple"}
+	exp := &snapshotHome{Experience: frontendtest.Experience{
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			issued.Add(1)
+			return []frontend.Row{{ID: "home.trending", Title: "Trending", Kind: "trending", Purpose: frontend.RowRecommendation, Handle: "trend", Entries: []frontend.RowEntry{{Kind: frontend.RowEntryTitle, Title: &title}}}}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+		ReportRowInteractionFunc: func(_ context.Context, interaction frontend.RowInteraction) error {
+			if interaction.Handle == "trend" && interaction.Kind == frontend.RowImpression {
+				impressions.Add(1)
+			}
+			return nil
+		},
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		v := frontend.Viewer{ID: 1, Username: "ada"}
+		return &v, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: frontendtest.Sessions{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent, err := ids.GUID(ids.View, personalViewNumber(1, "home.trending"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/Latest?ParentId="+parent+"&Limit=10", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	r.Header.Set("X-Emby-Device-Id", "living-room")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || exp.snaps.Load() != 1 || issued.Load() != 0 || !strings.Contains(w.Body.String(), "Apple") {
+		t.Fatalf("code %d snaps %d issued %d body %s", w.Code, exp.snaps.Load(), issued.Load(), w.Body.String())
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && (issued.Load() != 1 || impressions.Load() != 1) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if issued.Load() != 1 || impressions.Load() != 1 {
+		t.Fatalf("issued %d impressions %d", issued.Load(), impressions.Load())
 	}
 }

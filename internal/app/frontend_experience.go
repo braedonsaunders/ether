@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/availability"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/favorites"
@@ -659,7 +660,7 @@ func cloneRowEntries(in []frontend.RowEntry) []frontend.RowEntry {
 }
 
 func (s *surfaceExperience) loadRows(ctx context.Context, req frontend.RowRequest, issue bool) ([]frontend.Row, error) {
-	ctx = livetv.WithChannelMemo(context.WithValue(ctx, experienceSituationKey{}, situationFor(req)))
+	ctx = availability.WithDiscoveryMemo(livetv.WithChannelMemo(context.WithValue(ctx, experienceSituationKey{}, situationFor(req))))
 	var rows []frontend.Row
 	var err error
 	if issue {
