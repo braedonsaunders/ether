@@ -115,7 +115,10 @@ func (c *pgConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx,
 func (c *pgConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	if rec := recorderFrom(ctx); rec != nil {
 		start := time.Now()
-		defer func() { rec.record(query, 0, time.Since(start)) }()
+		defer func() {
+			rec.record(query, 0, time.Since(start))
+			rec.wrote()
+		}()
 	}
 	res, err := c.inner.ExecContext(ctx, sharedRebind.get(query), args)
 	if err != nil {

@@ -25,6 +25,7 @@ import (
 // whose statement or row count grows with the library is O(library).
 type QueryStats struct {
 	queries  atomic.Int64
+	writes   atomic.Int64
 	rows     atomic.Int64
 	dbNanos  atomic.Int64
 	lockWait atomic.Int64
@@ -71,6 +72,7 @@ func QueryStatsFrom(ctx context.Context) *QueryStats {
 // recorder is what a driver records into: a QueryStats, or a nested pair.
 type recorder interface {
 	record(query string, rows int64, d time.Duration)
+	wrote()
 	waited(d time.Duration)
 }
 
@@ -79,6 +81,11 @@ type chainedStats struct{ inner, outer *QueryStats }
 func (c *chainedStats) record(q string, rows int64, d time.Duration) {
 	c.inner.record(q, rows, d)
 	c.outer.record(q, rows, d)
+}
+
+func (c *chainedStats) wrote() {
+	c.inner.wrote()
+	c.outer.wrote()
 }
 
 func (c *chainedStats) waited(d time.Duration) {
@@ -163,6 +170,13 @@ func (s *QueryStats) record(query string, rows int64, d time.Duration) {
 
 func (s *QueryStats) waited(d time.Duration) { s.lockWait.Add(int64(d)) }
 
+func (s *QueryStats) wrote() { s.writes.Add(1) }
+
+// Writes is the number of statements executed for their effect (Exec):
+// inserts, updates and deletes. A read path should have none; each one
+// waits for SQLite's single writer.
+func (s *QueryStats) Writes() int64 { return s.writes.Load() }
+
 // Queries is the number of statements executed.
 func (s *QueryStats) Queries() int64 { return s.queries.Load() }
 
@@ -196,7 +210,7 @@ func (s *QueryStats) Statements() []StatementStat {
 // countedRows wraps driver rows to count the rows read and the time spent
 // stepping them, and records the statement when the rows are closed.
 type countedRows struct {
-	driver.Rows
+	rowsExtras
 	rec   recorder
 	query string
 	n     int64
@@ -232,25 +246,27 @@ func (r *countedRows) finish() {
 	r.rec.record(r.query, r.n, r.spent)
 }
 
-// The optional column and result-set interfaces are always implemented and
-// fall back to database/sql's own defaults when the wrapped rows lack them,
-// so wrapping never changes what ColumnTypes or NextResultSet report.
+// rowsExtras wraps driver rows keeping every optional column and result-set
+// interface: each falls back to database/sql's own default when the wrapped
+// rows lack it, so wrapping never changes what ColumnTypes, scanning or
+// NextResultSet see.
+type rowsExtras struct{ driver.Rows }
 
-func (r *countedRows) HasNextResultSet() bool {
+func (r rowsExtras) HasNextResultSet() bool {
 	if n, ok := r.Rows.(driver.RowsNextResultSet); ok {
 		return n.HasNextResultSet()
 	}
 	return false
 }
 
-func (r *countedRows) NextResultSet() error {
+func (r rowsExtras) NextResultSet() error {
 	if n, ok := r.Rows.(driver.RowsNextResultSet); ok {
 		return n.NextResultSet()
 	}
 	return io.EOF
 }
 
-func (r *countedRows) ColumnTypeDatabaseTypeName(i int) string {
+func (r rowsExtras) ColumnTypeDatabaseTypeName(i int) string {
 	if c, ok := r.Rows.(driver.RowsColumnTypeDatabaseTypeName); ok {
 		return c.ColumnTypeDatabaseTypeName(i)
 	}
@@ -259,28 +275,28 @@ func (r *countedRows) ColumnTypeDatabaseTypeName(i int) string {
 
 var anyType = reflect.TypeFor[any]()
 
-func (r *countedRows) ColumnTypeScanType(i int) reflect.Type {
+func (r rowsExtras) ColumnTypeScanType(i int) reflect.Type {
 	if c, ok := r.Rows.(driver.RowsColumnTypeScanType); ok {
 		return c.ColumnTypeScanType(i)
 	}
 	return anyType
 }
 
-func (r *countedRows) ColumnTypeNullable(i int) (nullable, ok bool) {
+func (r rowsExtras) ColumnTypeNullable(i int) (nullable, ok bool) {
 	if c, ok := r.Rows.(driver.RowsColumnTypeNullable); ok {
 		return c.ColumnTypeNullable(i)
 	}
 	return false, false
 }
 
-func (r *countedRows) ColumnTypeLength(i int) (length int64, ok bool) {
+func (r rowsExtras) ColumnTypeLength(i int) (length int64, ok bool) {
 	if c, ok := r.Rows.(driver.RowsColumnTypeLength); ok {
 		return c.ColumnTypeLength(i)
 	}
 	return 0, false
 }
 
-func (r *countedRows) ColumnTypePrecisionScale(i int) (precision, scale int64, ok bool) {
+func (r rowsExtras) ColumnTypePrecisionScale(i int) (precision, scale int64, ok bool) {
 	if c, ok := r.Rows.(driver.RowsColumnTypePrecisionScale); ok {
 		return c.ColumnTypePrecisionScale(i)
 	}
@@ -290,5 +306,5 @@ func (r *countedRows) ColumnTypePrecisionScale(i int) (precision, scale int64, o
 // countRows wraps rows for rec, starting from the time already spent
 // executing the query.
 func countRows(rows driver.Rows, rec recorder, query string, spent time.Duration) driver.Rows {
-	return &countedRows{Rows: rows, rec: rec, query: query, spent: spent}
+	return &countedRows{rowsExtras: rowsExtras{rows}, rec: rec, query: query, spent: spent}
 }

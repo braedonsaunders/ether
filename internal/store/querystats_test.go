@@ -60,6 +60,9 @@ func TestQueryStatsCountsStatementsRowsAndTransactions(t *testing.T) {
 	if stats.DBTime() <= 0 {
 		t.Fatal("no driver time recorded")
 	}
+	if got := stats.Writes(); got != 1 {
+		t.Fatalf("writes = %d, want 1", got)
+	}
 	st := stats.Statements()
 	if len(st) != 3 {
 		t.Fatalf("statements = %+v", st)
