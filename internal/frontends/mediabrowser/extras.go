@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -242,7 +241,7 @@ func (i *instance) serveExtra(w http.ResponseWriter, r *http.Request, viewer *fr
 		}
 		upstream.Header.Set(name, value)
 	}
-	response, err := extraHTTPClient.Do(upstream)
+	response, err := i.extraClient.Do(upstream)
 	if err != nil {
 		http.Error(w, "Playback unavailable", http.StatusBadGateway)
 		return
@@ -290,17 +289,22 @@ func publicExtraURL(raw string) bool {
 	return true
 }
 
-var extraHTTPClient = &http.Client{
-	Timeout: 0,
-	Transport: &http.Transport{
-		Proxy:                 egress.ProxyFunc(egress.CapDirect),
-		ResponseHeaderTimeout: 20 * time.Second,
-		IdleConnTimeout:       30 * time.Second,
-	},
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 3 || !publicExtraURL(req.URL.String()) {
-			return errors.New("refused trailer redirect")
-		}
-		return nil
-	},
+func newExtraHTTPClient(proxy func(*http.Request) (*url.URL, error)) *http.Client {
+	if proxy == nil {
+		proxy = http.ProxyFromEnvironment
+	}
+	return &http.Client{
+		Timeout: 0,
+		Transport: &http.Transport{
+			Proxy:                 proxy,
+			ResponseHeaderTimeout: 20 * time.Second,
+			IdleConnTimeout:       30 * time.Second,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 || !publicExtraURL(req.URL.String()) {
+				return errors.New("refused trailer redirect")
+			}
+			return nil
+		},
+	}
 }

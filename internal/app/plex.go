@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plextv"
@@ -104,6 +106,8 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	deps.Now = parityClock()
 	deps.Config = a.cfg.Get
 	deps.ApplyClientRules = resolver.ApplyClientRules
+	deps.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
+	deps.DirectHTTP = &http.Client{Transport: egress.Transport(egress.CapDirect)}
 	deps.Logger = a.log.With("component", "plex")
 	deps.Identity = identity
 	deps.OwnerSubscription = func() (bool, []string) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/compactids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -263,7 +264,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		if a.subtitles != nil {
 			subtitleCatalog = subtitleSurface{app: a, exp: experience}
 		}
-		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, Experience: experience, LastPlayedSource: surfaceLastPlayedSource{experience: experience, state: a.state}, VersionHandles: versionHandles, SourceOffers: sourceOffers, Editions: surfaceEditions{app: a}, VirtualPaths: surfaceVirtualPaths{experience: experience, index: &pathIndex{}, stamp: func(v *core.Viewer) string {
+		return frontend.Host{IDs: ids.Codecs{Allocator: compact}, DirectProxy: egress.ProxyFunc(egress.CapDirect), Experience: experience, LastPlayedSource: surfaceLastPlayedSource{experience: experience, state: a.state}, VersionHandles: versionHandles, SourceOffers: sourceOffers, Editions: surfaceEditions{app: a}, VirtualPaths: surfaceVirtualPaths{experience: experience, index: &pathIndex{}, stamp: func(v *core.Viewer) string {
 			if v == nil || a.catalog == nil || a.cfg == nil {
 				return ""
 			}

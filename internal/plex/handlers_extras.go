@@ -14,7 +14,6 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/extras"
 	"github.com/braedonsaunders/ether/internal/plex/model"
@@ -61,11 +60,14 @@ type extraPlayStore struct {
 	client   *http.Client // part proxy; no total timeout (trailers stream)
 }
 
-func newExtraPlayStore() *extraPlayStore {
+func newExtraPlayStore(client *http.Client) *extraPlayStore {
+	if client == nil {
+		client = &http.Client{Transport: http.DefaultTransport}
+	}
 	return &extraPlayStore{
 		sessions: map[string]*extraSession{},
 		warmed:   map[string]time.Time{},
-		client:   &http.Client{Transport: egress.Transport(egress.CapDirect)},
+		client:   client,
 	}
 }
 

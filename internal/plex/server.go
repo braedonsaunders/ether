@@ -23,7 +23,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/diagnostics"
-	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -129,8 +128,12 @@ type Deps struct {
 	// Sections overrides the default Movies (1) and TV Shows (2) sections.
 	Sections []Section
 	// HTTPClient fetches artwork for the image proxy; defaults to a client
-	// with a 20 s timeout.
+	// with a 20 s timeout. The app wires the metadata route so this package
+	// does not import the egress policy.
 	HTTPClient *http.Client
+	// DirectHTTP proxies trailer bytes. Nil uses the default transport.
+	// The app wires the direct route so this package does not import egress.
+	DirectHTTP *http.Client
 	// ImageCacheBytes bounds the in-memory artwork cache (default 128 MiB).
 	ImageCacheBytes int64
 	// DB persists derived artwork data (UltraBlurColors) in plex_* tables.
@@ -210,7 +213,7 @@ func NewServer(d Deps) *Server {
 		d.ImageURL = func(path, size string) string { return "https://image.tmdb.org/t/p/" + size + path }
 	}
 	if d.HTTPClient == nil {
-		d.HTTPClient = egress.Client(egress.CapMetadata, 20*time.Second)
+		d.HTTPClient = &http.Client{Timeout: 20 * time.Second}
 	}
 	if d.ImageCacheBytes <= 0 {
 		d.ImageCacheBytes = 128 << 20
@@ -235,7 +238,7 @@ func NewServer(d Deps) *Server {
 		playbackOwners:    coord.Owners,
 		playbackLifecycle: coord.Gates,
 		transcodes:        newTranscodeTable(),
-		extraPlay:         newExtraPlayStore(),
+		extraPlay:         newExtraPlayStore(d.DirectHTTP),
 		selections:        newSelectionStore(),
 		notifier:          newNotifier(),
 		facets:            newFacetCache(),

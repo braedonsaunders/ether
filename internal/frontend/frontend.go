@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -268,6 +269,10 @@ type Host struct {
 	// ExtraStreams opens a playable trailer or extra. Nil means extras are not
 	// configured; listing routes still authorize the parent and return nothing.
 	ExtraStreams ExtraStreams
+	// DirectProxy selects the proxy for trailer fetches. Nil follows the
+	// process environment. The app wires the direct route so frontends do
+	// not import the egress policy.
+	DirectProxy func(*http.Request) (*url.URL, error)
 	// Cinema lists preroll trailers of other movies. Nil means cinema intros
 	// are not wired; the intros route returns an empty page after authorization.
 	Cinema CinemaIntros
