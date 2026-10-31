@@ -238,6 +238,11 @@ func (m *Manager) RetireSource(id string, outcome core.SourceRetirement) error {
 		return core.ErrNotAvailable
 	}
 	g := m.detachSessionLocked(s)
+	// Detach returns before Close. Quarantine while this session is no longer
+	// visible so a plan that starts after RetireSource cannot reuse its bytes.
+	if g != nil {
+		m.quarantineShared(g.share)
+	}
 	m.mu.Unlock()
 	go func() { defer release(); m.finishSessionStop(s, g) }()
 	return nil

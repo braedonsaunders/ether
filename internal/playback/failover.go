@@ -221,9 +221,10 @@ func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Res
 	inner, closeShared := unwrapShared(src)
 	// Probes, revisions and optional source interfaces must see the backend,
 	// not the refcount wrapper. Close stays on the wrapper.
+	share := src
 	src = inner
 	openedRevision := core.SourceRevision(&core.PlaySession{Key: s.ident.key, Source: src})
-	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: src, sharedClose: closeShared, finishSource: finish, res: res, indexReady: make(chan struct{})}
+	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: src, share: share, sharedClose: closeShared, finishSource: finish, res: res, indexReady: make(chan struct{})}
 	g.ctx, g.cancel = context.WithCancel(m.ctx)
 	m.mu.Lock()
 	m.tokens[s.id+"/"+g.token] = g

@@ -36,6 +36,7 @@ type generation struct {
 	n            int
 	token        string // loopback path component; unguessable
 	src          core.MediaSource
+	share        core.MediaSource // refcount wrapper; nil when src is the backend
 	sharedClose  func() error
 	finishSource func(error)
 	res          *core.Resolution
