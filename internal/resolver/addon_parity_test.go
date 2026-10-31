@@ -53,10 +53,10 @@ func TestLanguagePreferencesAcceptISOCodesAndRegionalVariants(t *testing.T) {
 func TestDubSuitabilityMatchesRegionalPreference(t *testing.T) {
 	r := core.Release{Name: "Movie.2019.LATINO.DUBBED.1080p.WEB-DL-GRP"}
 	title := &core.Title{Language: "en"}
-	if reason := sourceSuitability(r, title, core.QualityProfile{PreferredLanguages: []string{"es-MX"}}, testCfg().Resolver, false); reason != "" {
+	if reason := sourceSuitability(r, title, core.QualityProfile{PreferredLanguages: []string{"es-MX"}}, false); reason != "" {
 		t.Fatalf("Latino dub rejected for an es-MX viewer: %s", reason)
 	}
-	if reason := sourceSuitability(r, title, core.QualityProfile{PreferredLanguages: []string{"de"}}, testCfg().Resolver, false); reason == "" {
+	if reason := sourceSuitability(r, title, core.QualityProfile{PreferredLanguages: []string{"de"}}, false); reason == "" {
 		t.Fatal("Latino dub accepted for a German-preferring profile")
 	}
 }

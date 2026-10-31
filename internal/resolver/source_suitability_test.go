@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -31,11 +30,22 @@ func TestExplicitDubAndMislabelledCamPolicy(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%s/%s/%v/%v", tt.name, tt.original, tt.prefs, tt.explicit), func(t *testing.T) {
 			r := core.Release{Name: tt.name, Info: core.ReleaseInfo{Source: core.SourceWEBDL}}
-			reason := sourceSuitability(r, &core.Title{Language: tt.original}, core.QualityProfile{PreferredLanguages: tt.prefs}, config.Resolver{}, tt.explicit)
+			reason := sourceSuitability(r, &core.Title{Language: tt.original}, core.QualityProfile{PreferredLanguages: tt.prefs}, tt.explicit)
 			if (reason != "") != tt.reject {
 				t.Fatalf("reason=%q reject=%v", reason, tt.reject)
 			}
 		})
+	}
+}
+
+func TestProfileAllowCamIsTheOnlyCamSwitch(t *testing.T) {
+	r := core.Release{Name: "Primetime.2026.1080p.WEB-DL.HDCAM", Info: core.ReleaseInfo{Source: core.SourceWEBDL}}
+	title := &core.Title{Language: "en"}
+	if reason := sourceSuitability(r, title, core.QualityProfile{}, false); reason != "cam not allowed" {
+		t.Fatalf("refusing profile reason=%q", reason)
+	}
+	if reason := sourceSuitability(r, title, core.QualityProfile{AllowCam: true}, false); reason != "" {
+		t.Fatalf("allowing profile reason=%q", reason)
 	}
 }
 

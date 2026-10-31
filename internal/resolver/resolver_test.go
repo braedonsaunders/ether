@@ -266,22 +266,43 @@ func TestResolveValidatesLeadingCandidatesConcurrentlyInRankOrder(t *testing.T) 
 func TestResolveCamGating(t *testing.T) {
 	ctx := context.Background()
 	cam := []core.Release{rel("cam1", "The.Signal.1999.CAM.x264-GRP", 1500)}
+	title := matrixTitle()
 	svc := New(&fakeIndexer{releases: cam}, fakeHealth{}, nil, testCfg(), Options{})
-	_, err := svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	_, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
 	if !errors.Is(err, core.ErrNotAvailable) {
 		t.Fatalf("cam default err=%v", err)
 	}
-	// Allow cams globally and in the profile.
+	// No profile allows cinema recordings, so the title is unavailable for everyone.
+	if known, avail := svc.Available(ctx, title.Key); !known || avail {
+		t.Fatalf("cam-only title known=%v avail=%v", known, avail)
+	}
+
+	// A profile that allows CAM plays it. There is no global switch.
 	cfg := testCfg()
-	cfg.Resolver.AllowCam = true
 	for i := range cfg.Quality.Profiles {
 		cfg.Quality.Profiles[i].AllowCam = true
 		cfg.Quality.Profiles[i].MinSizeMBPerMin = 1
 	}
 	svc = New(&fakeIndexer{releases: cam}, fakeHealth{}, nil, cfg, Options{})
-	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: matrixTitle(), Client: webCaps()})
+	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
 	if err != nil || res.Release.ID != "cam1" {
 		t.Fatalf("cam allowed res=%+v err=%v", res, err)
+	}
+
+	// One other profile still allows CAM, so a refusing profile does not
+	// hide the title from everyone.
+	cfg = testCfg()
+	cfg.Quality.Profiles[0].AllowCam = true
+	for i := range cfg.Quality.Profiles {
+		cfg.Quality.Profiles[i].MinSizeMBPerMin = 1
+	}
+	svc = New(&fakeIndexer{releases: cam}, fakeHealth{}, nil, cfg, Options{})
+	_, err = svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: webCaps()})
+	if !errors.Is(err, core.ErrNotAvailable) {
+		t.Fatalf("refusing profile err=%v", err)
+	}
+	if known, avail := svc.Available(ctx, title.Key); known && !avail {
+		t.Fatalf("cam hidden for everyone while another profile allows it: known=%v avail=%v", known, avail)
 	}
 }
 

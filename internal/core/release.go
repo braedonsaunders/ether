@@ -131,7 +131,7 @@ type QualityProfile struct {
 	MinSizeMBPerMin     float64  `json:"minSizeMbPerMin"` // size sanity, per minute of runtime
 	MaxSizeMBPerMin     float64  `json:"maxSizeMbPerMin"`
 	PreferredLanguages  []string `json:"preferredLanguages"`
-	AllowCam            bool     `json:"allowCam"` // also gated by the owner's global cam setting
+	AllowCam            bool     `json:"allowCam"` // the only CAM switch; cinema recordings play only for profiles that allow them
 	// SelectionKey is the canonical hash of this profile's configured
 	// definition, computed by resolver.SelectProfile from the pristine
 	// configured profile before download reshaping or client-cap

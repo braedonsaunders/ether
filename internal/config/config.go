@@ -279,7 +279,6 @@ type Resolver struct {
 	CustomFormats        []core.CustomFormat `json:"customFormats,omitempty"`
 	CustomFormatScores   map[string]int      `json:"customFormatScores,omitempty"`
 	MinCustomFormatScore *int                `json:"minCustomFormatScore,omitempty"`
-	AllowCam             bool                `json:"allowCam"` // owner setting, off by default
 	HealthSamples        int                 `json:"healthSamples"`
 	SearchCacheTTL       Duration            `json:"searchCacheTtl"`
 	UnavailableCooloff   Duration            `json:"unavailableCooloff"` // hide titles with no release this long

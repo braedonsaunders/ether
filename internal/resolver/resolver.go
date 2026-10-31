@@ -314,6 +314,16 @@ func (s *Service) qualityCfg() config.Quality {
 	return s.quality
 }
 
+// profileAllowsCam reports whether any quality profile plays cinema recordings.
+func (s *Service) profileAllowsCam() bool {
+	for _, p := range s.qualityCfg().Profiles {
+		if p.AllowCam {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) cachedOnly() bool {
 	s.cfgMu.RLock()
 	defer s.cfgMu.RUnlock()
@@ -1047,8 +1057,11 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 				"size too small for runtime", "size too large for runtime":
 				clientRejected = true
 			case "cam not allowed":
-				// Another profile may allow cams when the owner does.
-				clientRejected = clientRejected || rcfg.AllowCam
+				// Another profile may allow cinema recordings. When none
+				// do, the title is unavailable for everyone.
+				if s.profileAllowsCam() {
+					clientRejected = true
+				}
 			}
 			ct.Reason = reason
 			if trace != nil {
@@ -1198,7 +1211,7 @@ func (s *Service) rejectReason(rel core.Release, t *core.Title, sreq core.Search
 			return "blocked group: " + g
 		}
 	}
-	if reason := sourceSuitability(rel, t, profile, rcfg, preferred); reason != "" {
+	if reason := sourceSuitability(rel, t, profile, preferred); reason != "" {
 		return reason
 	}
 	// Samples ("...Sample.mkv", "-sample" parts).
