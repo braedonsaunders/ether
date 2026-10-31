@@ -37,3 +37,39 @@ func (m *Manager) ParitySettleWarm(ctx context.Context, user *core.User, key cor
 		return ctx.Err()
 	}
 }
+
+// ParitySettlePending waits until every recorded warm-up has finished or
+// failed. It does not start a probe. Disposable parity builds call it after
+// seeding and after each corpus mutation so the next read renders probed
+// facts instead of racing the 100ms detail bound. Production builds do not
+// include it.
+func (m *Manager) ParitySettlePending(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	now := m.now()
+	pending := make([]<-chan struct{}, 0, len(m.warm))
+	for _, e := range m.warm {
+		if e == nil || !now.Before(e.expires) {
+			continue
+		}
+		select {
+		case <-e.done:
+		default:
+			pending = append(pending, e.done)
+		}
+	}
+	m.mu.Unlock()
+	for _, done := range pending {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}

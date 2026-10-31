@@ -10,13 +10,29 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// handleParityWarmSettled is the harness hook before tracks:before. It waits
-// until this viewer's warm probe for the title has finished or failed, and it
-// does not render media. The parity build is the only build that mounts it.
+// handleParityWarmSettled is the harness hook. With no ratingKey it waits
+// until every pending warm probe has finished or failed. With a ratingKey it
+// starts that title's warm-up when none is recorded, then waits for it.
+// Neither form renders media. The parity build is the only build that mounts it.
 func (s *Server) handleParityWarmSettled(w http.ResponseWriter, r *http.Request) {
 	pr := FromContext(r.Context())
 	if pr == nil || pr.User == nil {
 		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	if r.URL.Query().Get("ratingKey") == "" {
+		settle, ok := s.d.Playback.(interface {
+			ParitySettlePending(context.Context) error
+		})
+		if !ok || s.d.Playback == nil {
+			writeHTTPError(w, http.StatusNotFound)
+			return
+		}
+		if err := settle.ParitySettlePending(r.Context()); err != nil {
+			writeHTTPError(w, http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	key, err := strconv.ParseInt(r.URL.Query().Get("ratingKey"), 10, 64)

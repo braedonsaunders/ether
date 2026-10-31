@@ -186,6 +186,12 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 			}
 		}
 	}
+	// Seeding's metadata reads start warm probes and only wait 100ms. Drain
+	// every pending probe before the corpus reads so both servers render the
+	// probed facts. This response is not part of the corpus.
+	if err := settleWarmProbes(ctx, client, base, profiles["web"].Headers); err != nil {
+		return result, err
+	}
 	viewerIDs := map[string]map[string]string{}
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 		h := profiles["web"].Headers.Clone()
@@ -235,6 +241,11 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				}
 			}
 		}
+	}
+	// Detail reads inside the corpus start more probes. Drain them before the
+	// next browse read.
+	if err := settleWarmProbes(ctx, client, base, profiles["web"].Headers); err != nil {
+		return result, err
 	}
 	// Cover further browse routes after the original probes, preserving their
 	// approved fixture signatures. Missing owner data is an invalid fixture.
@@ -409,6 +420,11 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 					return result, fmt.Errorf("response at corpus size limit: %s %s", viewer, path)
 				}
 				result.captures = append(result.captures, capture{viewer, name, "sequence:" + path, true, response})
+				if corpusMutation(path) {
+					if err := settleWarmProbes(ctx, client, base, h); err != nil {
+						return result, err
+					}
+				}
 			}
 		}
 	}
@@ -429,6 +445,9 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 				return result, fmt.Errorf("%s %s play queue fixture missing: status=%d error=%v body=%s", viewer, name, created.Status, err, created.Body)
 			}
 			result.captures = append(result.captures, capture{viewer, name, "queue:create", false, created})
+			if err := settleWarmProbes(ctx, client, base, h); err != nil {
+				return result, err
+			}
 			for _, jsonMode := range []bool{false, true} {
 				if jsonMode {
 					h.Set("Accept", "application/json")
@@ -810,4 +829,30 @@ func compareCorpus(ctx context.Context, baseline, candidate string, out io.Write
 		return 0, fmt.Errorf("candidate: %w", err)
 	}
 	return diffTranscripts(a, b, out)
+}
+
+// corpusMutation reports a corpus step that changes playback or library state.
+// The following read waits until warm probes that step started have settled.
+func corpusMutation(path string) bool {
+	return strings.HasPrefix(path, "/:/") || strings.HasPrefix(path, "/actions/")
+}
+
+// settleWarmProbes waits until every pending warm probe on this server has
+// finished or failed. The response is not captured.
+func settleWarmProbes(ctx context.Context, client *http.Client, base string, headers http.Header) error {
+	h := headers.Clone()
+	if h.Get("X-Plex-Client-Identifier") == "" {
+		h.Set("X-Plex-Client-Identifier", "parity-owner")
+	}
+	h.Set("Accept", "application/xml")
+	req := protocol.Request{Method: http.MethodGet, Path: "/parity/warm-settled", Headers: map[string]http.Header{"web": h}}
+	token := "parity-owner"
+	if id := h.Get("X-Plex-Client-Identifier"); strings.HasPrefix(id, "parity-") {
+		token = id
+	}
+	resp, err := strictFetch(ctx, client, base, token, req, "web", nil, false)
+	if err != nil || resp.Status != http.StatusNoContent {
+		return fmt.Errorf("warm settle: status=%d error=%v", resp.Status, err)
+	}
+	return nil
 }
