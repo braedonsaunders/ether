@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -256,7 +257,14 @@ func ProbeSource(ctx context.Context, src io.ReaderAt, size int64) (*core.MediaI
 	s.head = head
 	switch {
 	case len(head) >= 4 && binary.BigEndian.Uint32(head) == mkvEBML:
-		return s.matroska()
+		m, err := s.matroska()
+		if err != nil {
+			return nil, err
+		}
+		// Statistics tags often sit after the clusters. They add bitrates
+		// without pulling tail chapters onto the play-path probe.
+		applyMKVTagBitrates(ctx, src, size, m)
+		return m, nil
 	case isISOBMFF(head):
 		return s.mp4()
 	}
@@ -439,6 +447,9 @@ func (s *nativeSource) matroska() (*core.MediaInfo, error) {
 		if si.Type == "video" {
 			hasVideo = true
 		}
+		if si.TimeBase == "" && scale > 0 && 1_000_000_000%scale == 0 {
+			si.TimeBase = "1/" + strconv.FormatUint(1_000_000_000/scale, 10)
+		}
 		m.Streams = append(m.Streams, si)
 	}
 	if !hasVideo {
@@ -542,10 +553,93 @@ func ProbeTrailer(ctx context.Context, src io.ReaderAt, size int64, m *core.Medi
 	if err != nil {
 		return changed
 	}
-	bps := mkvTrackBitrates(element(mkvTags))
-	if len(bps) == 0 {
-		return changed
+	if applyParsedBitrates(m, parsed, mkvTrackBitrates(element(mkvTags))) {
+		changed = true
 	}
+	return changed
+}
+
+// applyMKVTagBitrates copies mkvmerge BPS tags onto streams that do not
+// already have a bitrate. Chapters stay untouched.
+func applyMKVTagBitrates(ctx context.Context, src io.ReaderAt, size int64, m *core.MediaInfo) bool {
+	if m == nil || m.Container != "mkv" || size <= 0 {
+		return false
+	}
+	s := &nativeSource{ctx: ctx, src: src, size: size, left: nativeReadBudget}
+	head, err := s.read(0, int(min(size, 64<<10)))
+	if err != nil || len(head) < 4 || binary.BigEndian.Uint32(head) != mkvEBML {
+		return false
+	}
+	s.head = head
+	_, _, end, err := s.header(0, size)
+	if err != nil {
+		return false
+	}
+	var segStart, segEnd int64
+	for off, n := end, 0; off < size && n < 16; n++ {
+		id, start, stop, err := s.header(off, size)
+		if err != nil {
+			return false
+		}
+		if id == mkvSegment {
+			segStart, segEnd = start, stop
+			break
+		}
+		off = stop
+	}
+	if segStart == 0 {
+		return false
+	}
+	targets := map[uint64]int64{}
+	var tracks []byte
+	for off, n := segStart, 0; off < segEnd && n < 64; n++ {
+		id, start, stop, err := s.header(off, segEnd)
+		if err != nil || id == mkvCluster || stop <= off {
+			break
+		}
+		if id == mkvSeekHead || id == mkvTracks {
+			if stop-start > nativeElementLimit {
+				break
+			}
+			b, err := s.read(start, int(stop-start))
+			if err != nil {
+				return false
+			}
+			if id == mkvSeekHead {
+				seekTargets(b, segStart, segEnd, targets)
+			} else {
+				tracks = b
+			}
+		}
+		off = stop
+	}
+	if tracks == nil {
+		return false
+	}
+	parsed, err := mkvTracksOf(tracks)
+	if err != nil {
+		return false
+	}
+	off, ok := targets[mkvTags]
+	if !ok {
+		return false
+	}
+	got, start, stop, err := s.header(off, segEnd)
+	if err != nil || got != mkvTags || stop-start > nativeElementLimit {
+		return false
+	}
+	b, err := s.read(start, int(stop-start))
+	if err != nil {
+		return false
+	}
+	return applyParsedBitrates(m, parsed, mkvTrackBitrates(b))
+}
+
+func applyParsedBitrates(m *core.MediaInfo, parsed []mkvTrack, bps map[uint64]int) bool {
+	if m == nil || len(bps) == 0 {
+		return false
+	}
+	changed := false
 	index := 0
 	for _, t := range parsed {
 		si, accepted, err := t.stream(index)
@@ -798,6 +892,9 @@ func (t mkvTrack) video(si *core.StreamInfo) error {
 	}
 	si.Width, si.Height = int(t.width), int(t.height)
 	si.FrameRate = math.Round(1e9/float64(t.defaultDur)*1000) / 1000
+	rate := si.FrameRate
+	si.AverageFrameRate = &rate
+	si.ReferenceFrameRate = &rate
 	codec := ""
 	switch {
 	case strings.HasPrefix(t.codecID, "V_MPEG4/ISO/AVC"):

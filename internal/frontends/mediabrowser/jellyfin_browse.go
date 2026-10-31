@@ -354,21 +354,25 @@ func (i *instance) attachCumulativeRuntime(r *http.Request, viewer *frontend.Vie
 }
 
 // jellyfinExternalURLs links the provider ids the title already carries.
+// Episode pages use the show id plus the season and episode numbers, which
+// is the TMDB URL Jellyfin builds.
 func jellyfinExternalURLs(t frontend.Title) []any {
 	urls := []any{}
 	if id := t.IDs.IMDB; len(id) > 2 && strings.HasPrefix(id, "tt") && strings.Trim(id[2:], "0123456789") == "" {
-		urls = append(urls, map[string]string{"Name": "IMDb", "Url": "https://www.imdb.com/title/" + id + "/"})
+		urls = append(urls, map[string]string{"Name": "IMDb", "Url": "https://www.imdb.com/title/" + id})
 	}
-	if t.IDs.TMDB > 0 {
-		kind := ""
-		switch t.Type {
-		case "movie":
-			kind = "movie"
-		case "show":
-			kind = "tv"
+	switch t.Type {
+	case "movie":
+		if t.IDs.TMDB > 0 {
+			urls = append(urls, map[string]string{"Name": "TMDB", "Url": "https://www.themoviedb.org/movie/" + strconv.FormatInt(t.IDs.TMDB, 10)})
 		}
-		if kind != "" {
-			urls = append(urls, map[string]string{"Name": "The Movie Database", "Url": "https://www.themoviedb.org/" + kind + "/" + strconv.FormatInt(t.IDs.TMDB, 10)})
+	case "show":
+		if t.IDs.TMDB > 0 {
+			urls = append(urls, map[string]string{"Name": "TMDB", "Url": "https://www.themoviedb.org/tv/" + strconv.FormatInt(t.IDs.TMDB, 10)})
+		}
+	case "episode":
+		if t.ShowIDs.TMDB > 0 && t.Episode > 0 {
+			urls = append(urls, map[string]string{"Name": "TMDB", "Url": "https://www.themoviedb.org/tv/" + strconv.FormatInt(t.ShowIDs.TMDB, 10) + "/season/" + strconv.Itoa(t.Season) + "/episode/" + strconv.Itoa(t.Episode)})
 		}
 	}
 	return urls
@@ -933,6 +937,8 @@ func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 		if i.protocol == "jellyfin" {
 			entry["LibraryOptions"] = jellyfinLibraryOptions()
 			entry["RefreshStatus"] = "Idle"
+			// The library view's collage is that folder, so its item id is the view GUID.
+			entry["PrimaryImageItemId"] = viewID
 		}
 		if i.protocol == "jellyfin" && view.Virtual {
 			entry["Locations"] = []string{}

@@ -108,7 +108,7 @@ func TestJellyfinDefaultStreamIndexesUseProbeEvidence(t *testing.T) {
 		{Type: "audio", Index: 1},
 		{Type: "audio", Index: 2},
 	}}, false)
-	if _, ok := ambiguous["DefaultAudioStreamIndex"]; ok {
+	if ambiguous["DefaultAudioStreamIndex"] != 1 {
 		t.Fatal(ambiguous)
 	}
 	estimated := map[string]any{}

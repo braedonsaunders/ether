@@ -617,7 +617,7 @@ func TestJellyfinVirtualFolders(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &folders); err != nil {
 		t.Fatal(err)
 	}
-	if len(folders) != 2 || folders[0]["CollectionType"] != "movies" || folders[1]["CollectionType"] != "tvshows" || folders[0]["ItemId"] == "" {
+	if len(folders) != 2 || folders[0]["CollectionType"] != "movies" || folders[1]["CollectionType"] != "tvshows" || folders[0]["ItemId"] == "" || folders[0]["PrimaryImageItemId"] != folders[0]["ItemId"] {
 		t.Fatal(folders)
 	}
 	if _, ok := folders[0]["Locations"]; ok {
@@ -634,6 +634,17 @@ func TestJellyfinVirtualFolders(t *testing.T) {
 		t.Fatal(folders[0]["RefreshStatus"])
 	}
 	requireJellyfinSpec(t, "GET", "/Library/VirtualFolders", w)
+}
+
+func TestJellyfinExternalURLsUseTheLiveTMDBShape(t *testing.T) {
+	movie := jellyfinExternalURLs(frontend.Title{Type: "movie", IDs: core.IDs{TMDB: 10378, IMDB: "tt1254207"}})
+	episode := jellyfinExternalURLs(frontend.Title{Type: "episode", Season: 1, Episode: 2, ShowIDs: core.IDs{TMDB: 91461}})
+	if len(movie) != 2 || movie[0].(map[string]string)["Url"] != "https://www.imdb.com/title/tt1254207" || movie[1].(map[string]string)["Name"] != "TMDB" || movie[1].(map[string]string)["Url"] != "https://www.themoviedb.org/movie/10378" {
+		t.Fatal(movie)
+	}
+	if len(episode) != 1 || episode[0].(map[string]string)["Url"] != "https://www.themoviedb.org/tv/91461/season/1/episode/2" {
+		t.Fatal(episode)
+	}
 }
 
 func TestJellyfinVirtualLibraryHasEmptyLocations(t *testing.T) {

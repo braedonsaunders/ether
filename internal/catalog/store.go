@@ -198,7 +198,39 @@ func (c *Catalog) hydrateSlice(ctx context.Context, items []core.Title) error {
 	if err := c.hydrateShows(ctx, items); err != nil {
 		return err
 	}
+	if err := c.hydrateTrailers(ctx, items, idx, keys); err != nil {
+		return err
+	}
 	return c.applyHydratedAdded(ctx, items)
+}
+
+func (c *Catalog) hydrateTrailers(ctx context.Context, items []core.Title, idx map[core.RatingKey][]int, keys []any) error {
+	const batch = 200
+	for start := 0; start < len(keys); start += batch {
+		args := keys[start:min(start+batch, len(keys))]
+		rows, err := c.db.QueryContext(ctx, `SELECT key, name, url FROM catalog_remote_trailers WHERE key IN (`+placeholders(len(args))+`)`, args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var key int64
+			var name, url string
+			if err := rows.Scan(&key, &name, &url); err != nil {
+				rows.Close()
+				return err
+			}
+			for _, i := range idx[core.RatingKey(key)] {
+				items[i].RemoteTrailerName = name
+				items[i].RemoteTrailerURL = url
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+	return nil
 }
 
 type seriesIdentity struct {
@@ -636,6 +668,11 @@ ON CONFLICT(key) DO UPDATE SET
 		t.CollectionID, t.CollectionName, t.ChildCount, t.LeafCount, browsableInt, addedAtFor(browsableInt, now), now, detailInt, t.Adult, detailAtFor(detailInt, now), lastAirTS)
 	if err != nil {
 		return fmt.Errorf("catalog: upsert %d: %w", t.Key, err)
+	}
+	if t.RemoteTrailerURL != "" {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_remote_trailers(key, name, url) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET name=excluded.name, url=excluded.url`, int64(t.Key), t.RemoteTrailerName, t.RemoteTrailerURL); err != nil {
+			return err
+		}
 	}
 	if o.releaseDates != nil && t.Type == core.TypeMovie {
 		if err := saveHomeReleases(ctx, tx, t, o.releaseDates, now); err != nil {
