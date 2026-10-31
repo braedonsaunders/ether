@@ -17,9 +17,19 @@ case "$name" in
 esac
 case "$profile" in shakedown|sustained|diagnose|heap) ;; *) echo "bad profile" >&2; exit 2;; esac
 seconds=3000
-if [[ "$profile" == sustained ]]; then seconds=9000; fi
+if [[ "$profile" == sustained ]]; then seconds=12600; fi
 if [[ "$profile" == diagnose ]]; then seconds=900; fi
 if [[ "$profile" == heap ]]; then seconds=1800; fi
+# SOAK_STEADY overrides the profile's steady phase (for example 30m) and
+# lengthens the outer timeout so faults, follow-up and cleanup still fit.
+steady=${SOAK_STEADY:-}
+if [[ -n "$steady" ]]; then
+  case "$steady" in
+    *m) seconds=$(( ${steady%m} * 60 + 1800 ));;
+    *h) seconds=$(( ${steady%h} * 3600 + 1800 ));;
+    *) echo "SOAK_STEADY must look like 30m or 1h" >&2; exit 2;;
+  esac
+fi
 diagnose=0
 if [[ "$profile" == diagnose ]]; then diagnose=1; profile=shakedown; fi
 slot_dir=/Users/braedonsaunders/.bb/thread-storage/prism-briefs/slots
@@ -80,9 +90,9 @@ cname=$(basename "$stage")
 flag=
 if [[ "$diagnose" == 1 ]]; then flag=-diagnose; fi
 set +e
-ssh -o BatchMode=yes "$host" "bash -s -- $(printf '%q ' "$stage" "$cname" "$media_src" "$ffmpeg_root" "$profile" "$build" "$seconds" "$flag")" <<'REMOTE'
+ssh -o BatchMode=yes "$host" "bash -s -- $(printf '%q ' "$stage" "$cname" "$media_src" "$ffmpeg_root" "$profile" "$build" "$seconds" "$flag" "$steady")" <<'REMOTE'
 set -euo pipefail
-run=$1; name=$2; media=$3; ffmpeg=$4; profile=$5; build=$6; seconds=$7; flag=$8
+run=$1; name=$2; media=$3; ffmpeg=$4; profile=$5; build=$6; seconds=$7; flag=$8; steady=$9
 case "$name" in prism-jellyfin|prism-emby|prism-silo|prism-jf-lab-zbv) exit 2;; esac
 if docker container inspect "$name" >/dev/null 2>&1; then echo "container name already reserved" >&2; exit 2; fi
 cleanup() {
@@ -115,11 +125,11 @@ docker run --pull=never --init --name "$name" --network=none \
     if [ "$1" = heap ]; then export SCORECARD_HEAP_DIR=/soak/heaps; fi
     if [ "${3:-}" != -diagnose ] && [ "$1" != heap ]; then
       go test -tags "scorecard" -count=1 -timeout 600s -run TestScorecardFaultOutageAndTelemetry ./internal/app/
-      go test -count=1 -timeout 120s -run "TestEvaluateSoak|TestRunSoak|TestSynthesize|TestProcessTree|TestNetDev" ./cmd/scorecard/ ./internal/hoststat/
+      go test -count=1 -timeout 120s -run "TestEvaluateSoak|TestRunSoak|TestSynthesize|TestProcessTree|TestNetDev|TestWriteFD" ./cmd/scorecard/ ./internal/hoststat/
     fi
     go build -tags "scorecard" -o /tmp/soakscore ./cmd/scorecard
-    exec /tmp/soakscore soak -profile "$1" -data /soak -manifest /manifest.json -out /soak/report.json -build "$2" $3
-  ' sh "$profile" "$build" "$flag"
+    exec /tmp/soakscore soak -profile "$1" -data /soak -manifest /manifest.json -out /soak/report.json -build "$2" $3 ${4:+-steady} ${4:+$4}
+  ' sh "$profile" "$build" "$flag" "$steady"
 status=$?
 set -e
 trap - EXIT

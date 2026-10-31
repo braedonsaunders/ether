@@ -32,6 +32,7 @@ func soak(args []string) error {
 	user := fs.String("user", "soak-viewer", "disposable viewer")
 	password := fs.String("password", "soak-viewer", "disposable viewer password")
 	diagnose := fs.Bool("diagnose", false, "play one of each kind and print the result")
+	steady := fs.Duration("steady", 0, "override the profile steady phase")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -44,6 +45,9 @@ func soak(args []string) error {
 	}
 	if *diagnose && err != nil {
 		timing = soakTiming{Sample: time.Second}
+	}
+	if *steady > 0 {
+		timing.Steady = *steady
 	}
 	raw, err := os.ReadFile(*manifestPath)
 	if err != nil {
@@ -102,7 +106,7 @@ func soak(args []string) error {
 	manifest, runErr := RunSoak(ctx, SoakConfig{
 		Profile: *profile, Build: *buildID, Plex: plexURL, Jellyfin: jellyfinURL, Emby: embyURL,
 		User: *user, Password: *password, PlexToken: "fixture-owner-token", Timing: timing, GPU: hoststat.GPU("/dev"),
-		Diagnose: *diagnose,
+		Diagnose: *diagnose, FDDir: filepath.Join(*data, "fd"),
 	})
 	if *diagnose {
 		return runErr

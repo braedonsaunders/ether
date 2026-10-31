@@ -52,6 +52,10 @@ type SoakConfig struct {
 	Workers   int
 	GPU       string
 	Diagnose  bool
+	// FDDir receives ls of /proc/<pid>/fd and /proc/<pid>/net/tcp at
+	// baseline, load stop and the end of cleanup, while the process is
+	// still alive. Empty skips the snapshots.
+	FDDir string
 }
 
 type soakRun struct {
@@ -127,6 +131,9 @@ func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 	run.mu.Lock()
 	run.manifest.Baseline = run.manifest.Samples[0]
 	run.mu.Unlock()
+	if err := writeFDSnapshot(cfg.FDDir, "baseline"); err != nil {
+		return run.manifest, err
+	}
 	sampleCtx, stopSamples := context.WithCancel(ctx)
 	defer stopSamples()
 	go run.sampleLoop(sampleCtx)
@@ -191,7 +198,13 @@ func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 	run.manifest.FollowupEnd = stopped
 	run.manifest.LoadStopped = stopped
 	run.mu.Unlock()
+	if err := writeFDSnapshot(run.cfg.FDDir, "load-stop"); err != nil {
+		return run.snapshot(), err
+	}
 	if err := sleep(ctx, cfg.Timing.Cleanup); err != nil {
+		return run.snapshot(), err
+	}
+	if err := writeFDSnapshot(run.cfg.FDDir, "cleanup"); err != nil {
 		return run.snapshot(), err
 	}
 	stopSamples()
