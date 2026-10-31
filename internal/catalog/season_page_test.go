@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestSeasonEpisodePageUsesTheShowIndex(t *testing.T) {
 	showKey := core.ShowKey(show)
 	past, future := now.Add(-24*time.Hour).Unix(), now.Add(24*time.Hour).Unix()
 	for ep := 1; ep <= 120; ep++ {
-		_, err := db.Exec(`INSERT INTO catalog_titles(key,type,show_key,show_tmdb,season,episode,title,released_ts,adult,detail,detail_at) VALUES(?,'episode',?,?,1,?,?,?,0,1,?)`, core.EpisodeKey(show, 1, ep), showKey, show, ep, ep, past, now.Unix())
+		_, err := db.Exec(`INSERT INTO catalog_titles(key,type,show_key,show_tmdb,season,episode,title,released_ts,adult,detail,detail_at) VALUES(?,'episode',?,?,1,?,?,?,0,1,?)`, core.EpisodeKey(show, 1, ep), showKey, show, ep, strconv.Itoa(ep), past, now.Unix())
 		if err != nil {
 			t.Fatal(err)
 		}

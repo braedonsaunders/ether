@@ -209,7 +209,7 @@ func ExportLogical(ctx context.Context, db *sql.DB, w io.Writer) error {
 	}
 	var total int64
 	for _, t := range tables {
-		n, err := exportTable(ctx, tx, enc, t)
+		n, err := exportTable(ctx, tx, enc, d, t)
 		if err != nil {
 			return fmt.Errorf("export %s: %w", t, err)
 		}
@@ -221,7 +221,31 @@ func ExportLogical(ctx context.Context, db *sql.DB, w io.Writer) error {
 	return bw.Flush()
 }
 
-func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, table string) (int64, error) {
+func generatedColumns(ctx context.Context, q queryer, d Dialect, table string) (map[string]bool, error) {
+	query := `SELECT name FROM pragma_table_xinfo(?) WHERE hidden IN (2, 3)`
+	if d == Postgres {
+		query = `SELECT a.attname FROM pg_attribute a
+			JOIN pg_class c ON c.oid=a.attrelid
+			JOIN pg_namespace n ON n.oid=c.relnamespace
+			WHERE n.nspname=current_schema() AND c.relname=? AND a.attgenerated<>'' AND a.attnum>0 AND NOT a.attisdropped`
+	}
+	rows, err := q.QueryContext(ctx, query, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
+}
+
+func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, d Dialect, table string) (int64, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT * FROM `+quoteIdent(table))
 	if err != nil {
 		return 0, err
@@ -235,9 +259,19 @@ func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, table strin
 	if err != nil {
 		return 0, err
 	}
-	head := logicalTable{Table: table, Columns: cols, Types: make([]string, len(cols))}
-	for i, ct := range cts {
-		head.Types[i] = columnKind(ct.DatabaseTypeName())
+	generated, err := generatedColumns(ctx, tx, d, table)
+	if err != nil {
+		return 0, err
+	}
+	keep := make([]int, 0, len(cols))
+	head := logicalTable{Table: table}
+	for i, name := range cols {
+		if generated[name] {
+			continue
+		}
+		keep = append(keep, i)
+		head.Columns = append(head.Columns, name)
+		head.Types = append(head.Types, columnKind(cts[i].DatabaseTypeName()))
 	}
 	if err := enc.Encode(head); err != nil {
 		return 0, err
@@ -247,14 +281,14 @@ func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, table strin
 	for i := range vals {
 		ptrs[i] = &vals[i]
 	}
-	out := make([]any, len(cols))
+	out := make([]any, len(head.Columns))
 	var n int64
 	for rows.Next() {
 		if err := rows.Scan(ptrs...); err != nil {
 			return n, err
 		}
-		for i, v := range vals {
-			out[i] = encodeValue(v, head.Types[i])
+		for i, src := range keep {
+			out[i] = encodeValue(vals[src], head.Types[i])
 		}
 		if err := enc.Encode(out); err != nil {
 			return n, err
@@ -358,11 +392,28 @@ func ImportLogical(ctx context.Context, db *sql.DB, r io.Reader) (err error) {
 		if err != nil {
 			return err
 		}
+		generated, err := generatedColumns(ctx, tx, d, head.Table)
+		if err != nil {
+			return err
+		}
+		keep := make([]int, 0, len(head.Columns))
+		keptCols := make([]string, 0, len(head.Columns))
+		keptKinds := make([]string, 0, len(kinds))
+		for i, name := range head.Columns {
+			if generated[name] {
+				continue
+			}
+			keep = append(keep, i)
+			keptCols = append(keptCols, name)
+			keptKinds = append(keptKinds, kinds[i])
+		}
+		width := len(head.Columns)
+		head.Columns = keptCols
 		// Seed rows written by migrations (singleton settings) are replaced.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+quoteIdent(head.Table)); err != nil {
 			return err
 		}
-		n, err := importRows(ctx, tx, dec, head, kinds)
+		n, err := importRows(ctx, tx, dec, head, keptKinds, width, keep)
 		if err != nil {
 			return fmt.Errorf("restore %s: %w", head.Table, err)
 		}
@@ -431,7 +482,7 @@ func targetKinds(ctx context.Context, tx *sql.Tx, table string, cols []string) (
 	return out, nil
 }
 
-func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logicalTable, kinds []string) (int64, error) {
+func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logicalTable, kinds []string, width int, keep []int) (int64, error) {
 	quoted := make([]string, len(head.Columns))
 	marks := make([]string, len(head.Columns))
 	for i, c := range head.Columns {
@@ -453,11 +504,11 @@ func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logi
 		if !ok {
 			return n, nil
 		}
-		if len(row) != len(head.Columns) {
-			return n, fmt.Errorf("row %d has %d values, want %d", n+1, len(row), len(head.Columns))
+		if len(row) != width {
+			return n, fmt.Errorf("row %d has %d values, want %d", n+1, len(row), width)
 		}
-		for i, raw := range row {
-			if args[i], err = decodeValue(raw, kinds[i]); err != nil {
+		for i, src := range keep {
+			if args[i], err = decodeValue(row[src], kinds[i]); err != nil {
 				return n, fmt.Errorf("row %d column %s: %w", n+1, head.Columns[i], err)
 			}
 		}

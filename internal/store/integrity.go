@@ -43,6 +43,10 @@ func (e *CorruptionError) Error() string {
 func QuickCheck(ctx context.Context, db *sql.DB) (Integrity, error) {
 	start := time.Now()
 	res := Integrity{OK: true, Checked: start.UTC()}
+	if err := db.PingContext(ctx); err != nil {
+		res.Took = time.Since(start).Seconds()
+		return res, err
+	}
 	if DialectOf(db) == Postgres {
 		res.Skipped = true
 		return res, nil
