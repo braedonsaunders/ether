@@ -233,6 +233,33 @@ func TestMaxConnsAndDrop(t *testing.T) {
 	}
 }
 
+func TestRefusalTextAndTeardownDelay(t *testing.T) {
+	s := Start(t, Options{MaxConns: 1, RefuseCode: 481, RefuseText: "connection limit (1) reached", TeardownDelay: 100 * time.Millisecond})
+	first := func() string {
+		nc, err := net.Dial("tcp", s.Addr())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer nc.Close()
+		line, _ := textproto.NewReader(bufio.NewReader(nc)).ReadLine()
+		return line
+	}
+	c := dial(t, s)
+	if line := first(); line != "481 connection limit (1) reached" {
+		t.Fatalf("refusal %q", line)
+	}
+	c.Close()
+	// The closed connection still counts until the teardown delay passes.
+	time.Sleep(20 * time.Millisecond)
+	if line := first(); !strings.HasPrefix(line, "481") {
+		t.Fatalf("redial during teardown got %q", line)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if line := first(); !strings.HasPrefix(line, "200") {
+		t.Fatalf("redial after teardown got %q", line)
+	}
+}
+
 func TestFaultsAndCorrupt(t *testing.T) {
 	s := Start(t, Options{})
 	data := bytes.Repeat([]byte("0123456789"), 1000)

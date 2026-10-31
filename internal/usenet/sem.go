@@ -289,13 +289,14 @@ func (s *prioSem) Close() {
 // semStats is a snapshot for statistics.
 type semStats struct {
 	InUse, Prefetching, Size int
+	Live                     int // slots held at PriorityLive
 	Waiting                  [numPriorities]int
 }
 
 func (s *prioSem) stats() semStats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := semStats{InUse: s.inUse, Prefetching: s.prefetching, Size: s.size}
+	st := semStats{InUse: s.inUse, Prefetching: s.prefetching, Size: s.size, Live: s.inUse - s.nonLive}
 	for p := range s.waiters {
 		st.Waiting[p] = s.waiters[p].Len()
 	}

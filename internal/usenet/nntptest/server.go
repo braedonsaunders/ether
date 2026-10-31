@@ -48,8 +48,17 @@ type Options struct {
 	// clients should use ClientTLSConfig.
 	TLS bool
 	// MaxConns rejects connections beyond this many with "502 too many
-	// connections". 0 = unlimited.
+	// connections" (see RefuseCode/RefuseText). 0 = unlimited.
 	MaxConns int
+	// RefuseCode and RefuseText replace the greeting sent to connections
+	// over MaxConns (default 502 "too many connections"), e.g. to state the
+	// limit: "connection limit (8) reached".
+	RefuseCode int
+	RefuseText string
+	// TeardownDelay keeps a closed client connection counted against
+	// MaxConns for this long, like a server that has not finished tearing
+	// the old socket down when the client redials.
+	TeardownDelay time.Duration
 	// Latency delays every reply.
 	Latency time.Duration
 	// LineLength for yEnc encoding (0 = 128).
@@ -213,6 +222,21 @@ func (s *Server) SetMaxConns(n int) {
 	s.mu.Lock()
 	s.opts.MaxConns = n
 	s.mu.Unlock()
+}
+
+// SetRefusal changes the greeting sent to connections over MaxConns
+// (code 0 restores 502 "too many connections").
+func (s *Server) SetRefusal(code int, text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opts.RefuseCode, s.opts.RefuseText = code, text
+}
+
+// SetTeardownDelay changes Options.TeardownDelay.
+func (s *Server) SetTeardownDelay(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opts.TeardownDelay = d
 }
 
 // SetCredentials changes the required login (empty username = no auth).
@@ -424,12 +448,19 @@ func (s *Server) serve() {
 		s.stats.Accepted++
 		if s.opts.MaxConns > 0 && s.stats.Active >= s.opts.MaxConns {
 			s.stats.Rejected++
+			code, text := s.opts.RefuseCode, s.opts.RefuseText
+			if code == 0 {
+				code = 502
+			}
+			if text == "" {
+				text = "too many connections"
+			}
 			s.mu.Unlock()
 			s.wg.Add(1)
 			go func() {
 				defer s.wg.Done()
 				_ = c.SetDeadline(time.Now().Add(2 * time.Second))
-				_, _ = io.WriteString(c, "502 too many connections\r\n")
+				_, _ = fmt.Fprintf(c, "%d %s\r\n", code, text)
 				c.Close()
 			}()
 			continue
@@ -455,8 +486,26 @@ func (s *Server) handle(c net.Conn) {
 		c.Close()
 		s.mu.Lock()
 		delete(s.conns, c)
-		s.stats.Active--
+		teardown := s.opts.TeardownDelay
+		if teardown <= 0 || s.closed {
+			s.stats.Active--
+			s.mu.Unlock()
+			return
+		}
+		s.wg.Add(1)
 		s.mu.Unlock()
+		go func() {
+			defer s.wg.Done()
+			t := time.NewTimer(teardown)
+			defer t.Stop()
+			select {
+			case <-t.C:
+			case <-s.stop:
+			}
+			s.mu.Lock()
+			s.stats.Active--
+			s.mu.Unlock()
+		}()
 	}()
 	r := bufio.NewReader(c)
 	w := bufio.NewWriterSize(c, 64<<10)
