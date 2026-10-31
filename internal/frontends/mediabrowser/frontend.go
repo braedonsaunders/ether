@@ -120,6 +120,7 @@ type instance struct {
 	itemJSON itemJSONCache
 	credits  playCredits
 	personal personalIdentityCache
+	views    viewFactCache
 }
 
 func (i *instance) Handler() http.Handler {

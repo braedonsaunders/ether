@@ -112,38 +112,6 @@ func jellyfinSeriesStatus(status string) string {
 	}
 }
 
-// attachViewMediaDates sets the library's earliest and latest real date-added
-// values. Both are redacted in conformance. An empty library leaves them absent.
-func (i *instance) attachViewMediaDates(r *http.Request, viewer *frontend.Viewer, viewID string, item map[string]any) {
-	if i == nil || i.host.Experience == nil || r == nil || item == nil {
-		return
-	}
-	page, err := i.host.Experience.LibraryItems(r.Context(), viewer, device(r), viewID, frontend.ItemQuery{})
-	if err != nil {
-		return
-	}
-	var earliest, latest time.Time
-	now := time.Now()
-	for _, title := range page.Items {
-		added := title.DateAdded(now)
-		if added.IsZero() {
-			continue
-		}
-		if earliest.IsZero() || added.Before(earliest) {
-			earliest = added
-		}
-		if latest.IsZero() || added.After(latest) {
-			latest = added
-		}
-	}
-	if !earliest.IsZero() {
-		item["DateCreated"] = wireTime(earliest)
-	}
-	if !latest.IsZero() {
-		item["DateLastMediaAdded"] = wireTime(latest)
-	}
-}
-
 // jellyfinCollectionFolder fills the CollectionFolder shell Jellyfin 12.4
 // returns for every user view. Dates and paths stay absent. Artwork is attached
 // separately when a library collage can be issued. ChildCount is the viewer's
@@ -1104,7 +1072,6 @@ func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonReply(w, result)
 }
-
 
 type listMediaEstimateKey struct{}
 

@@ -166,12 +166,10 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 		// ParentId does not change between responses.
 		item["ParentId"] = jellyfinRootID()
 		// ChildCount is the number of items this viewer can list in the view.
-		// A failed count stays absent rather than a fabricated zero.
-		page, err := i.host.Experience.LibraryItems(r.Context(), v, device(r), view.ID, frontend.ItemQuery{Limit: 1})
-		if err == nil {
-			item["ChildCount"] = page.Total
-		}
-		i.attachViewMediaDates(r, v, view.ID, item)
+		// A failed count stays absent rather than a fabricated zero. Counts and
+		// the two library dates are cached for the catalogue generation so a
+		// warm view list does not walk the library.
+		i.fillJellyfinViewFacts(r, v, view.ID, item)
 		i.attachLibraryCollage(r, v, viewNum, viewID, item)
 	}
 	return item, true

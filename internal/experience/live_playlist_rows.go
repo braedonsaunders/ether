@@ -58,11 +58,20 @@ func LiveEntries(ctx context.Context, viewer *core.User, source LiveGuideSource,
 	if viewer == nil || source == nil || !until.After(now) {
 		return nil, errors.New("experience: invalid live guide request")
 	}
-	channels, err := source.AllowedChannels(ctx, viewer)
-	if err != nil {
-		return nil, err
+	var channels []livetv.Channel
+	var programmes []livetv.Programme
+	var err error
+	if nowSource, ok := source.(interface {
+		OnNow(context.Context, *core.User, time.Time, time.Time) ([]livetv.Channel, []livetv.Programme, error)
+	}); ok {
+		channels, programmes, err = nowSource.OnNow(ctx, viewer, now, until)
+	} else {
+		channels, err = source.AllowedChannels(ctx, viewer)
+		if err != nil {
+			return nil, err
+		}
+		programmes, err = source.Guide(ctx, viewer, now, until)
 	}
-	programmes, err := source.Guide(ctx, viewer, now, until)
 	if err != nil {
 		return nil, err
 	}

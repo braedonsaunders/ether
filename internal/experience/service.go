@@ -285,6 +285,10 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 	totalMatched := 0
 	bounded := !q.Recursive && q.AdjacentTo == 0 && q.StartAt == 0 && q.Limit > 0
 	expand := q.Recursive && library.Type == core.TypeShow
+	// A plain library probe (the view list asks for one title) can use the
+	// catalogue total when this viewer has no extra visibility filter. The
+	// browse total already excludes adult and hidden titles.
+	plainTotal := bounded && !expand && q.Watched == nil && q.Favorite == nil && len(q.Types) == 0 && q.Season == nil && plainItemFilter(q.Filter) && v.MaxContentRating == "" && (v.IsOwner || len(v.AllowedSections) == 0) && s.d.Visibility.FilterAvailable == nil && s.d.Visibility.Policy == nil
 	if expand && wantShowEpisodes && s.d.Grandchildren == nil {
 		return core.Page{}, errors.New("experience: recursive library unavailable")
 	}
@@ -496,6 +500,9 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 				totalMatched++
 			}
 		}
+		if plainTotal && len(candidatesPage) == len(page.Items) && totalMatched == len(candidatesPage) && len(permitted) >= q.Limit {
+			return core.Page{Items: permitted[:q.Limit], Total: page.Total}, nil
+		}
 		offset += len(page.Items)
 		if offset >= page.Total {
 			break
@@ -533,6 +540,10 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		end = min(start+q.Limit, total)
 	}
 	return core.Page{Items: permitted[start:end], Total: total}, nil
+}
+
+func plainItemFilter(f core.Filter) bool {
+	return !f.KnownAddedDate && len(f.ExcludeKeys) == 0 && f.Type == "" && len(f.Genres) == 0 && f.YearFrom == 0 && f.YearTo == 0 && f.MinRating == 0 && f.MaxRuntime == 0 && f.MinRuntime == 0 && len(f.Languages) == 0 && len(f.Countries) == 0 && len(f.ContentRatings) == 0 && f.MaxContentRating == "" && f.Collection == 0 && f.Person == 0 && f.Studio == "" && f.FirstCharacter == "" && f.Query == ""
 }
 
 func (s *Service) Rows(ctx context.Context, req frontend.RowRequest) ([]frontend.Row, error) {
