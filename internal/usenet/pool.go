@@ -413,8 +413,10 @@ func (p *pool) put(c *Conn, prio core.Priority) {
 
 func (p *pool) discard(c *Conn) {
 	_ = c.Close()
-	p.noteClose(1)
-	p.dropLive()
+	p.mu.Lock()
+	p.live--
+	p.noteCloseLocked(1)
+	p.mu.Unlock()
 }
 
 // discardIdle closes every idle connection. Used when a reused connection
