@@ -84,6 +84,35 @@ func setup(t *testing.T) (*Service, *fakeResolver, *fakeEngine, *fakeNotifier, *
 	}
 	return s, res, eng, note, src, &now
 }
+
+func TestAvailableEventFiresOnceWhenATitleBecomesPlayable(t *testing.T) {
+	s, _, _, _, _, now := setup(t)
+	var got []core.RatingKey
+	s.o.OnAvailable = func(_ context.Context, userID int64, key core.RatingKey) {
+		if userID != 1 {
+			t.Fatalf("user %d", userID)
+		}
+		got = append(got, key)
+	}
+	ctx := context.Background()
+	u := &core.User{ID: 1, MaxContentRating: "PG"}
+	if err := s.Sync(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Check(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != core.MovieKey(1) {
+		t.Fatalf("available %v", got)
+	}
+	*now = now.Add(7 * time.Hour)
+	if err := s.Check(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("repeat %v", got)
+	}
+}
 func TestAvailabilityIsHealthyReleasedViewerScopedAndOnce(t *testing.T) {
 	s, res, eng, note, _, now := setup(t)
 	ctx := context.Background()

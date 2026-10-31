@@ -18,6 +18,9 @@ type scopedCollectionFake struct {
 	err     error
 }
 
+func (*scopedCollectionFake) Get(context.Context, *core.User, core.RatingKey) (*core.Collection, error) {
+	return nil, core.ErrNotFound
+}
 func (s *scopedCollectionFake) AllowsPlaceholders(_ context.Context, _ *core.User, _ core.RatingKey, device string) bool {
 	s.device = device
 	return s.allowed

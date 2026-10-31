@@ -104,11 +104,15 @@ func (i *instance) eventsSocket(w http.ResponseWriter, r *http.Request) {
 	allowed := []string{}
 	rejected := []any{}
 	userState := false
+	catalog := false
 	for _, channel := range req.Channels {
 		if channel == "user_state" || channel == "catalog" {
 			allowed = append(allowed, channel)
 			if channel == "user_state" {
 				userState = true
+			}
+			if channel == "catalog" {
+				catalog = true
 			}
 		} else {
 			rejected = append(rejected, map[string]any{"channel": channel, "code": "unsupported", "message": "Unsupported channel"})
@@ -143,6 +147,13 @@ func (i *instance) eventsSocket(w http.ResponseWriter, r *http.Request) {
 		case event, ok := <-events:
 			if !ok {
 				return
+			}
+			if catalog && event.Type == "LibraryChanged" && event.Item != 0 {
+				payload := map[string]any{"profile_id": strconv.FormatInt(ticket.Viewer.ID, 10), "content_id": ids.RatingKeyGUID(event.Item), "change": "available"}
+				if write(map[string]any{"type": "event", "channel": "catalog", "event": "catalog.changed", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "data": payload}) != nil {
+					return
+				}
+				continue
 			}
 			if !userState || (event.Type != "UserDataChanged" && event.Type != "WatchStateChanged") || event.Item == 0 {
 				continue

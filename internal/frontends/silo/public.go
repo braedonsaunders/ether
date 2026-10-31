@@ -72,7 +72,7 @@ func (i *instance) requestStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
-	reply(w, 200, map[string]any{"requests_enabled": false, "rating_restrictions_enforced": false, "follow_supported": false, "season_requests_supported": false, "missing_seasons_requestable": false, "download_progress_supported": false, "watchlist_titles_supported": false, "watchlist_requests": false, "discover_rows_supported": false, "revision": "ether-v1", "state": "unsupported", "allowed": false})
+	reply(w, 200, map[string]any{"requests_enabled": false, "rating_restrictions_enforced": false, "follow_supported": false, "season_requests_supported": false, "missing_seasons_requestable": false, "download_progress_supported": false, "watchlist_titles_supported": true, "watchlist_requests": false, "discover_rows_supported": false, "revision": "ether-v1", "state": "unsupported", "allowed": false})
 }
 
 func (i *instance) aiCapability(w http.ResponseWriter, r *http.Request) {

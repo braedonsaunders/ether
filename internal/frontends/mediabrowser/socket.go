@@ -197,6 +197,20 @@ func (i *instance) socket(w http.ResponseWriter, r *http.Request) {
 				}
 				continue
 			}
+			if event.Type == "LibraryChanged" && event.Item != 0 {
+				id := ids.RatingKeyGUID(event.Item)
+				data := map[string]any{"ItemsAdded": []string{id}, "ItemsUpdated": []string{}, "ItemsRemoved": []string{}, "FoldersAddedTo": []string{}, "FoldersRemovedFrom": []string{}, "CollectionFolders": []string{}}
+				if event.ViewerID > 0 {
+					if folder, err := ids.GUID(ids.View, personalViewNumber(event.ViewerID, "watchlist.available")); err == nil {
+						data["FoldersAddedTo"] = []string{folder}
+						data["CollectionFolders"] = []string{folder}
+					}
+				}
+				if write(map[string]any{"MessageType": "LibraryChanged", "Data": data}) != nil {
+					return
+				}
+				continue
+			}
 			if event.Type != "UserDataChanged" || i.host.Experience == nil {
 				continue
 			}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/discovery"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/overlays"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/ratings"
@@ -17,7 +18,14 @@ import (
 
 func (a *App) buildDiscovery() {
 	a.ratings = ratings.New(a.db, ratings.Options{Sealer: a.cfg})
-	a.watchlist = watchlist.New(a.db, watchlist.Options{Logger: a.log.With("component", "watchlist"), Catalog: a.catalog, Resolver: a.resolver, Engine: a.media, Trakt: a.trakt, Users: a.users.Users, Allowed: a.safety.Allowed, Notifier: a.notifications, Tokens: a.discoveryToken, PrewarmBytes: a.cfg.Get().Cache.PrefetchBytes, ResumeSchedule: a.clustered()}) // a new leader continues the schedule
+	a.watchlist = watchlist.New(a.db, watchlist.Options{Logger: a.log.With("component", "watchlist"), Catalog: a.catalog, Resolver: a.resolver, Engine: a.media, Trakt: a.trakt, Users: a.users.Users, Allowed: a.safety.Allowed, Notifier: a.notifications, Tokens: a.discoveryToken, PrewarmBytes: a.cfg.Get().Cache.PrefetchBytes, ResumeSchedule: a.clustered(), OnAvailable: func(ctx context.Context, userID int64, key core.RatingKey) {
+		if a.sessionEvents == nil {
+			return
+		}
+		if err := a.sessionEvents.Publish(ctx, frontend.Event{Type: "LibraryChanged", ViewerID: userID, Item: key}); err != nil && a.log != nil {
+			a.log.Warn("watchlist available event", "err", err)
+		}
+	}}) // a new leader continues the schedule
 	a.discoveryPersonal = personalize.NewDiscovery(a.db, a.catalog, a.state, a.safety.Allowed)
 	a.discoveryPersonal.NotInterested = a.notInterestedSignals
 	a.overlays = overlays.New(a.db, overlays.Options{CacheDir: filepath.Join(a.opts.DataDir, "cache", "overlays"), Images: a.images, Allowed: a.safety.Allowed, Ratings: a.ratings, FactsFor: a.overlayFacts, Variants: a.artworkVariants, Taste: func(ctx context.Context, u *core.User) []string {

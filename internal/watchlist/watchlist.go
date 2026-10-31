@@ -69,6 +69,9 @@ type Options struct {
 	// pass, instead of passing at once. A cluster sets it because Run
 	// restarts on every leader handoff.
 	ResumeSchedule bool
+	// OnAvailable runs when a watchlist title first becomes playable.
+	// The key is the movie, show, or newly released episode.
+	OnAvailable func(context.Context, int64, core.RatingKey)
 }
 type Service struct {
 	db  *sql.DB
@@ -422,6 +425,7 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 			}
 			continue
 		}
+		wasAvailable := !it.AvailableAt.IsZero()
 		res, e := s.resolve(ctx, u, resolveTitle)
 		now := s.o.Now().Unix()
 		if _, err = s.db.ExecContext(ctx, `UPDATE watchlist_items SET checked=? WHERE user_id=? AND item_key=?`, now, u.ID, t.Key); err != nil {
@@ -437,6 +441,9 @@ func (s *Service) Check(ctx context.Context, u *core.User) error {
 		}
 		if _, err = s.db.ExecContext(ctx, `UPDATE watchlist_items SET available=CASE WHEN available=0 THEN ? ELSE available END,title=? WHERE user_id=? AND item_key=?`, now, mustTitle(t), u.ID, t.Key); err != nil {
 			return err
+		}
+		if !wasAvailable && s.o.OnAvailable != nil {
+			s.o.OnAvailable(ctx, u.ID, t.Key)
 		}
 		if newest != nil {
 			// The show's episodes so far count as seen: only later ones are new.

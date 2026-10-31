@@ -61,10 +61,16 @@ type ServiceDeps struct {
 	FilterRecommendations func(context.Context, *core.User, []core.Title) ([]core.Title, error)
 	Collections           core.Collections
 	Playlists             core.Playlists
-	State                 core.State
-	Search                Search
-	Rows                  *RowsService
-	Protocol              core.Protocol
+	// Scheduled lists metadata-only future episodes for one season. Nil means
+	// the host has not opted in. Callers must not resolve a release from it.
+	Scheduled func(context.Context, core.RatingKey) ([]core.Title, error)
+	// Grouped reports shows whose episode order is not the canonical season
+	// tree. Future episodes stay off those shows.
+	Grouped  func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
+	State    core.State
+	Search   Search
+	Rows     *RowsService
+	Protocol core.Protocol
 	// Favorites manages the stable, per-viewer Favorites playlist mapping.
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
@@ -599,6 +605,10 @@ func (s *Service) Item(ctx context.Context, req frontend.ItemRequest) (frontend.
 	}
 	title, err := s.item(ctx, v, req.Key)
 	if err != nil {
+		if ep := s.scheduledTitle(ctx, v, req.Key); ep != nil {
+			playable := false
+			return frontend.ItemDetail{Title: *ep, CanPlay: &playable}, nil
+		}
 		return frontend.ItemDetail{}, err
 	}
 	// Older cached child records may omit their series label even though the
@@ -765,6 +775,10 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 				out = append(out, items[i])
 			}
 		}
+	}
+	out, err = s.appendScheduled(ctx, v, key, out, q)
+	if err != nil {
+		return core.Page{}, err
 	}
 	if err := s.sortTitles(ctx, out, q); err != nil {
 		return core.Page{}, err
@@ -1348,15 +1362,25 @@ func (s *Service) Facets(ctx context.Context, viewer *core.Viewer, device core.D
 }
 
 func (s *Service) collectionItems(ctx context.Context, v *core.User, key core.RatingKey) ([]core.Title, error) {
+	upcoming := false
+	if s.d.Collections != nil {
+		if collection, err := s.d.Collections.Get(ctx, v, key); err == nil && collection != nil && collection.Key == key && collection.Upcoming {
+			upcoming = true
+		}
+	}
 	var out []core.Title
 	for offset := 0; ; {
 		page, err := s.d.Collections.Items(ctx, v, key, offset, 500)
 		if err != nil {
 			return nil, err
 		}
-		for i := range page.Items {
-			if s.visible(ctx, v, &page.Items[i]) {
-				out = append(out, page.Items[i])
+		batch := page.Items
+		if upcoming {
+			batch = s.d.Visibility.UpcomingItems(ctx, v, batch, time.Now)
+		}
+		for i := range batch {
+			if upcoming || s.visible(ctx, v, &batch[i]) {
+				out = append(out, batch[i])
 			}
 		}
 		offset += len(page.Items)

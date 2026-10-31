@@ -17,6 +17,9 @@ type completeCollections struct {
 	err   error
 }
 
+func (completeCollections) Get(context.Context, *core.User, core.RatingKey) (*core.Collection, error) {
+	return nil, core.ErrNotFound
+}
 func (f completeCollections) ListComplete(_ context.Context, _ *core.User, typ core.MediaType) ([]core.Collection, error) {
 	return f.lists[typ], f.err
 }
