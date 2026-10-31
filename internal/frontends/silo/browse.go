@@ -112,6 +112,12 @@ func (i *instance) views(w http.ResponseWriter, r *http.Request) {
 	}
 	reply(w, 200, map[string]any{"items": items})
 }
+func (i *instance) logSectionError(stage string, placement frontend.Placement, view, row string, err error) {
+	if i.host.Log != nil {
+		i.host.Log.Warn("silo section unavailable", "stage", stage, "placement", placement, "view", view, "row", row, "err", err)
+	}
+}
+
 func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 	v, credential, err := i.viewer(r)
 	if err != nil || v == nil {
@@ -148,6 +154,7 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		rows, err = i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: placement, ViewID: view, Limit: limit})
 	}
 	if err != nil {
+		i.logSectionError("rows", placement, view, "", err)
 		http.Error(w, "Unavailable", 503)
 		return
 	}
@@ -157,11 +164,19 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 	sections := make([]any, 0, len(rows))
 	seen := map[string]int{}
 	used := map[string]bool{}
+	partial := false
 	for _, row := range rows {
 		items, e := i.sectionCards(r, v, credential, row)
 		if e != nil {
-			http.Error(w, "Unavailable", 503)
-			return
+			if r.Context().Err() != nil {
+				http.Error(w, "Unavailable", 503)
+				return
+			}
+			// One row that cannot be built must not take the whole page
+			// down: the home still opens with the rows that did build.
+			i.logSectionError("row", placement, view, row.ID, e)
+			partial = true
+			continue
 		}
 		kind := siloSectionType(row, strings.Contains(r.URL.Path, "/library/"))
 		id := row.ID
@@ -180,7 +195,9 @@ func (i *instance) sections(w http.ResponseWriter, r *http.Request) {
 		}
 		sections = append(sections, section)
 	}
-	i.storeSections(cacheKey, sections)
+	if !partial {
+		i.storeSections(cacheKey, sections)
+	}
 	reply(w, 200, map[string]any{"sections": sections})
 }
 
