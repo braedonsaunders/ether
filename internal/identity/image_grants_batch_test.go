@@ -415,3 +415,67 @@ func TestPageGrantTagStaysStableAndImageRevalidates(t *testing.T) {
 		t.Fatalf("revoke did not rotate the tag: %v", fresh)
 	}
 }
+
+type pageArtworkBatch struct{ *pageArtwork }
+
+func (p pageArtworkBatch) ItemArtworkPage(ctx context.Context, v *core.Viewer, d core.Device, keys []core.RatingKey) (map[core.RatingKey][]frontend.Image, error) {
+	out := map[core.RatingKey][]frontend.Image{}
+	for _, k := range keys {
+		images, _, err := p.ItemArtwork(ctx, v, d, k)
+		if err == nil {
+			out[k] = images
+		}
+	}
+	return out, nil
+}
+
+// A page listed in one batch reads its revoked tags in one query and still
+// rotates a revoked tag.
+func TestBatchListedPageRotatesARevokedTag(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_700_000_000, 0)
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := grants.Issue(ctx, 1, nil, "jellyfin", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed, calls := true, 0
+	service, err := identity.NewImageGrantService(db, "jellyfin", grants, func() frontend.Experience {
+		return pageArtworkBatch{&pageArtwork{allow: &allowed, calls: &calls}}
+	}, &imageFixture{}, 10*time.Minute, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetImageKey([]byte("test-image-page-key"))
+	titles := []core.Title{{Key: core.MovieKey(9), Type: core.TypeMovie}, {Key: core.MovieKey(10), Type: core.TypeMovie}}
+	req := frontend.ImagePageRequest{Credential: credential, Device: core.Device{ID: "tv"}, Titles: titles, Kinds: []string{frontend.ImagePoster}}
+	first, err := service.SignPage(ctx, req)
+	if err != nil || len(first) != 2 {
+		t.Fatalf("sign %v %v", first, err)
+	}
+	secret := first[0].Images[0].Secret
+	if err := service.Revoke(ctx, credential, secret); err != nil {
+		t.Fatal(err)
+	}
+	// Another node knows the revocation only from the database.
+	other, err := identity.NewImageGrantService(db, "jellyfin", grants, func() frontend.Experience {
+		return pageArtworkBatch{&pageArtwork{allow: &allowed, calls: &calls}}
+	}, &imageFixture{}, 10*time.Minute, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.SetImageKey([]byte("test-image-page-key"))
+	for _, s := range []*identity.ImageGrantService{service, other} {
+		fresh, err := s.SignPage(ctx, req)
+		if err != nil || fresh[0].Images[0].Secret == secret || fresh[1].Images[0].Secret != first[1].Images[0].Secret {
+			t.Fatalf("revoked tag not rotated, or a live one changed: %v", fresh)
+		}
+	}
+}

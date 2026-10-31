@@ -147,6 +147,7 @@ func (s *ImageGrantService) SignPage(ctx context.Context, req frontend.ImagePage
 		if err != nil {
 			return nil, err
 		}
+		ctx = s.withCheckedTags(ctx, master, listed, wanted)
 		out := make([]frontend.ImageBatchItem, 0, len(keys))
 		for _, key := range keys {
 			images, ok := listed[key]
@@ -481,10 +482,60 @@ func (s *ImageGrantService) publicImageTag(ctx context.Context, key []byte, item
 	return tag
 }
 
+type checkedTagsKey struct{}
+
+// withCheckedTags reads, in one query, which of a page's image tags were
+// revoked, so sealing the page does not ask once per image.
+func (s *ImageGrantService) withCheckedTags(ctx context.Context, master []byte, listed map[core.RatingKey][]frontend.Image, wanted map[string]bool) context.Context {
+	checked := map[string]bool{}
+	var digests []any
+	for key, images := range listed {
+		chosen := map[string]bool{}
+		for _, image := range images {
+			if !wanted[image.Kind] || chosen[image.Kind] || image.Path == "" {
+				continue
+			}
+			chosen[image.Kind] = true
+			digest := pageDigest(contentImageTag(master, int64(key), pageImage{Kind: image.Kind, Path: image.Path, Tag: image.Tag, Subject: image.Subject}, 0))
+			if _, ok := checked[digest]; !ok {
+				checked[digest] = false
+				digests = append(digests, digest)
+			}
+		}
+	}
+	for start := 0; start < len(digests); start += 400 {
+		part := digests[start:min(start+400, len(digests))]
+		rows, err := s.db.QueryContext(ctx, `SELECT hash FROM frontend_image_grants WHERE surface=? AND revoked<>0 AND hash IN (?`+strings.Repeat(",?", len(part)-1)+`)`, append([]any{string(s.surface)}, part...)...)
+		if err != nil {
+			return ctx
+		}
+		for rows.Next() {
+			var digest string
+			if rows.Scan(&digest) == nil {
+				checked[digest] = true
+			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return ctx
+		}
+	}
+	return context.WithValue(ctx, checkedTagsKey{}, checked)
+}
+
 func (s *ImageGrantService) tagDenied(ctx context.Context, tag string) bool {
 	digest := pageDigest(tag)
 	if _, ok := s.denied.Load(digest); ok {
 		return true
+	}
+	if checked, ok := ctx.Value(checkedTagsKey{}).(map[string]bool); ok {
+		if denied, ok := checked[digest]; ok {
+			if denied {
+				s.denied.Store(digest, true)
+			}
+			return denied
+		}
 	}
 	var revoked int
 	err := s.db.QueryRowContext(ctx, `SELECT revoked FROM frontend_image_grants WHERE hash=? AND surface=?`, digest, string(s.surface)).Scan(&revoked)
