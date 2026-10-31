@@ -35,7 +35,11 @@ func captureCorpus(ctx context.Context, base string) (transcript, error) {
 }
 
 func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (transcript, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	// Thirty seconds was enough for the 60-movie fixture. The ranker fixture
+	// probes every title first, and main then took longer than that to write
+	// headers for a friend metadata read. This budget is the harness client
+	// only; the servers' own deadlines are unchanged.
+	client := &http.Client{Timeout: 2 * time.Minute}
 	ids := protocol.Discover(ctx, client, base, "parity-owner", "web", nil)
 	if len(ids.Warnings) > 0 {
 		return transcript{}, fmt.Errorf("discovery incomplete: %s", strings.Join(ids.Warnings, "; "))
@@ -222,6 +226,11 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 	// then render those facts, and a later warm-up finds the entry already
 	// recorded. These responses are not part of the corpus.
 	if err := probeFixtureMedia(ctx, client, base, profiles["web"].Headers); err != nil {
+		return result, err
+	}
+	// The synchronous probe publishes facts before it returns. Drain anything
+	// still in flight so the first corpus read does not wait on that work.
+	if err := settleWarmProbes(ctx, client, base, profiles["web"].Headers); err != nil {
 		return result, err
 	}
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
