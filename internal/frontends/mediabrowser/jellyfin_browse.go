@@ -1179,6 +1179,15 @@ func (i *instance) fillSeriesStudio(r *http.Request, viewer *frontend.Viewer, it
 	if name == "" {
 		name = i.cachedSeriesStudio(r, title.ShowKey)
 	}
+	// A list that already shaped the show reuses that name. An episode detail
+	// has not, so load the show once and keep it for the rest of the request.
+	if name == "" && title.ShowKey != 0 && r != nil && viewer != nil && i.host.Experience != nil {
+		detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: title.ShowKey})
+		if err == nil && (detail.Title.Key == 0 || detail.Title.Key == title.ShowKey) {
+			i.rememberSeriesStudio(r, title.ShowKey, detail.Title.Studios)
+			name = i.cachedSeriesStudio(r, title.ShowKey)
+		}
+	}
 	if name != "" {
 		item["SeriesStudio"] = name
 	}

@@ -939,3 +939,25 @@ func TestJellyfinLibraryCollagePublishesPrimaryAndParentTag(t *testing.T) {
 		t.Fatalf("grants %d collages %d", grants.calls, exp.calls)
 	}
 }
+
+func TestJellyfinEpisodeDetailLoadsTheShowStudio(t *testing.T) {
+	show := core.ShowKey(42)
+	episode := core.EpisodeKey(42, 1, 5)
+	inst := mountJellyfin(t, frontendtest.Experience{ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if req.Key == show {
+			return frontend.ItemDetail{Title: frontend.Title{Key: show, Type: "show", Title: "Show", Studios: []string{"Jun Group Productions"}}}, nil
+		}
+		return frontend.ItemDetail{Title: frontend.Title{Key: episode, Type: "episode", Title: "Five", ShowKey: show, ShowTitle: "Show", Season: 1, Episode: 5}}, nil
+	}})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+ids.RatingKeyGUID(episode), nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var item map[string]any
+	if json.Unmarshal(w.Body.Bytes(), &item) != nil || item["SeriesStudio"] != "Jun Group Productions" {
+		t.Fatal(item["SeriesStudio"])
+	}
+}
