@@ -938,3 +938,110 @@ func TestPausedSessionSurvivesPhoneCallAndStillExpires(t *testing.T) {
 		})
 	}
 }
+
+// The encoder can be hundreds of segments past the segment the client is
+// still waiting on. A fetch of that leading edge must not become the
+// playhead: eviction would delete the waiting segment before it is served.
+func TestPrefetchDoesNotEvictTheWaitingSegment(t *testing.T) {
+	fr := newFakeRunner()
+	fr.segDelay = time.Millisecond
+	m := newTestManager(t, fr, config.Transcode{}, WithBuffering(24*time.Second, 10*time.Minute, 20*time.Second))
+	s := startSession(t, m, remuxRequest(t, "playhead", time.Hour))
+	waitFor(t, "segment 40", func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.cur != nil && s.cur.maxDone >= 40
+	})
+	hold := &holdResponse{got: make(chan struct{}), rel: make(chan struct{})}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		req := httptest.NewRequest(http.MethodGet, "/seg/0", nil)
+		s.ServeSegment(hold, req, 0)
+	}()
+	select {
+	case <-hold.got:
+	case <-time.After(30 * time.Second):
+		t.Fatal("timed out waiting for segment 0 to be served")
+	}
+	if r := get(t, s, 40); r.Code != 200 {
+		t.Fatalf("segment 40: %d %s", r.Code, r.Body.String())
+	}
+	if _, err := os.Stat(s.segPath(0)); err != nil {
+		t.Fatalf("segment 0 evicted while the client was still fetching it: %v", err)
+	}
+	s.mu.Lock()
+	playhead := s.lastReq
+	s.mu.Unlock()
+	if playhead > 5 {
+		t.Fatalf("playhead = %d, a leading-edge fetch moved it", playhead)
+	}
+	close(hold.rel)
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("segment 0 request did not finish")
+	}
+	if hold.code != 0 && hold.code != 200 {
+		t.Fatalf("segment 0: %d", hold.code)
+	}
+}
+
+// Reaching the forced-key cap starts the next run only when the client is
+// near it. Otherwise the cap is 400 segments ahead of a resume and the new
+// run's window replaces the one the client asked for.
+func TestForcedKeyCapDoesNotChainAheadOfPlayhead(t *testing.T) {
+	m := newTestManager(t, newFakeRunner(), config.Transcode{}, WithBuffering(24*time.Second, 2*time.Minute, 3*time.Minute))
+	done := make(chan struct{})
+	close(done)
+	p := &fakeProc{done: done, kill: make(chan struct{})}
+	s := &Session{
+		m:        m,
+		log:      slog.New(slog.DiscardHandler),
+		segDur:   4 * time.Second,
+		total:    1357,
+		endSeg:   -1,
+		info:     core.MediaInfo{Duration: 90 * time.Minute},
+		lastReq:  175,
+		resumeAt: -1,
+		changed:  make(chan struct{}),
+		cur: &run{
+			seq: 4, startSeg: 177, maxDone: 576, produced: 400,
+			planEnd: 577, proc: p, mode: ModeTranscode,
+		},
+	}
+	s.mu.Lock()
+	s.progressedLocked(s.cur)
+	resume, cur := s.resumeAt, s.cur
+	s.mu.Unlock()
+	s.watchers.Wait()
+	if cur != nil {
+		t.Fatal("encoder kept running at a segment cap the player has not reached")
+	}
+	if resume != 577 {
+		t.Fatalf("resumeAt = %d, want 577", resume)
+	}
+}
+
+type holdResponse struct {
+	hdr  http.Header
+	code int
+	got  chan struct{}
+	rel  chan struct{}
+	once sync.Once
+}
+
+func (h *holdResponse) Header() http.Header {
+	if h.hdr == nil {
+		h.hdr = make(http.Header)
+	}
+	return h.hdr
+}
+
+func (h *holdResponse) WriteHeader(code int) { h.code = code }
+
+func (h *holdResponse) Write(p []byte) (int, error) {
+	h.once.Do(func() { close(h.got) })
+	<-h.rel
+	return len(p), nil
+}

@@ -70,9 +70,12 @@ func (s *Session) aheadLimit() int {
 	return limit
 }
 
-// pruneLocked deletes finished segments well behind the play position (and,
-// when throttling bounds the encoder, stale ones far ahead of it) to bound
-// disk use.
+// pruneLocked deletes finished segments well behind the playhead (and, when
+// throttling bounds the encoder, stale ones far ahead of it) to bound disk
+// use. The playhead is the client's oldest outstanding fetch inside the
+// restart window, advanced as those segments are delivered. A prefetch of
+// the encoder's newest segment does not move it, so the segment the client
+// is still waiting on is not evicted to make room for the encoder head.
 func (s *Session) pruneLocked() {
 	if s.m.opts.keepBehind <= 0 {
 		return
@@ -228,6 +231,10 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		}
 		sl := newSlotter(s.base, s.segDur, s.total, seg)
 		plan, base := s.plan, s.base // boundaries never change after StartHLS
+		// Chunk times are title time. The Matroska muxer adds -ss plus the
+		// 10s origin, and mkvChunkStart removes only the origin, so the
+		// playlist index matches -ss and -segment_start_number. A run-relative
+		// clock would pile every chunk onto the run's first segment.
 		sl.index = func(t time.Duration) int { return plan.IndexAt(t - base) }
 		cr = &chunkRun{dir: spec.ChunkDir, container: s.container,
 			initPath: filepath.Join(spec.Dir, spec.InitName), startAt: spec.Start, sl: sl}

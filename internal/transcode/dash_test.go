@@ -195,6 +195,30 @@ func TestSlotterFirstChunkOfRun(t *testing.T) {
 	}
 }
 
+// A resume at 11:36 is playlist segment 175 (two 2s ramp segments, then 4s).
+// Chunk timestamps are that title clock, which is what -ss plus the Matroska
+// origin produces after the origin is removed. They must not be numbered as
+// if the run's output clock started at zero.
+func TestResumeChunkIndexMatchesSeek(t *testing.T) {
+	tl := buildTimeline(90*time.Minute+28*time.Second, 4*time.Second, timelineOptions{
+		fastStart: true, rampSegs: 2, rampDur: 2 * time.Second, steadyMode: ModeTranscode,
+	})
+	const seg = 175
+	at := tl.Start(seg)
+	if at != 11*time.Minute+36*time.Second {
+		t.Fatalf("segment %d starts at %s, want 11m36s", seg, at)
+	}
+	if tl.IndexAt(at) != seg || tl.IndexAt(at+4*time.Second) != seg+1 {
+		t.Fatalf("IndexAt(%s)=%d IndexAt(+4s)=%d", at, tl.IndexAt(at), tl.IndexAt(at+4*time.Second))
+	}
+	sl := newSlotter(0, 4*time.Second, tl.Total(), seg)
+	sl.index = func(ts time.Duration) int { return tl.IndexAt(ts) }
+	got := feed(sl, [2]float64{at.Seconds(), at.Seconds() + 4}, [2]float64{at.Seconds() + 4, at.Seconds() + 8})
+	if got != "175:[696.000] 176:[700.000]" {
+		t.Fatalf("slotted %s, want segments 175 and 176", got)
+	}
+}
+
 func TestSlotterFlush(t *testing.T) {
 	sl := newSlotter(0, 5*time.Second, 3, 0)
 	got := feed(sl, [2]float64{0, 4}, [2]float64{4, 8}, [2]float64{8, 9.5})

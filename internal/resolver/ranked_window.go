@@ -27,9 +27,12 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 	defer cancelBudget()
 	workCtx, cancelWork := context.WithCancel(ctx)
 	var wg sync.WaitGroup
+	var results chan validation
 	defer func() {
 		cancelWork()
 		wg.Wait()
+		// Checks cut off by the budget may have fetched their NZB.
+		drainValidations(ctx, cands, results)
 	}()
 	margin := s.resolverCfg().SourceScoreMargin
 	if margin <= 0 {
@@ -37,7 +40,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 	}
 	const width, wideWidth = 2, 4
 	limit := min(len(cands), maxHealthAttempts)
-	results := make(chan validation, limit)
+	results = make(chan validation, limit)
 	startedAt := make([]time.Time, limit)
 	done := make([]*validation, limit)
 	next, inflight, confirmed := 0, 0, 0
@@ -102,6 +105,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 	}
 	var transient error
 	record := func(v validation) {
+		noteValidation(ctx, cands[v.index].rel, v)
 		inflight--
 		done[v.index] = &v
 		ct := &tr.Candidates[cands[v.index].trace]
@@ -152,6 +156,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 			select {
 			case v := <-results:
 				if ctx.Err() != nil {
+					noteValidation(ctx, cands[v.index].rel, v)
 					return -1, nil, ctx.Err()
 				}
 				record(v)
@@ -206,6 +211,7 @@ func (s *Service) validateRanked(ctx context.Context, cands []candidate, tr *Tra
 		select {
 		case v := <-results:
 			if ctx.Err() != nil {
+				noteValidation(ctx, cands[v.index].rel, v)
 				return -1, nil, ctx.Err()
 			}
 			record(v)
