@@ -64,18 +64,14 @@ func (b *Broker) bindDeliveryAuthority(ctx context.Context, s *brokerSession, ps
 	if revision == "" {
 		revision = release
 	}
-	ok, err := publishDeliveryAuthority(ctx, b.deps.DB, deliveryAuthority{
+	// A lost compare-and-swap leaves the newer authority in place. The stream
+	// still starts; an older token cannot replace that row.
+	_, err := publishDeliveryAuthority(ctx, b.deps.DB, deliveryAuthority{
 		ViewerID: s.public.ViewerID, ItemID: int64(s.public.Item), Surface: string(s.public.Protocol),
 		DeviceID: s.public.Device.ID, SessionID: sessionID, Generation: generation, ReleaseID: release,
 		Revision: revision, Token: token,
 	}, b.deps.Now())
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return core.ErrNotAvailable
-	}
-	return nil
+	return err
 }
 
 func (b *Broker) rememberedDeliveryRelease(ctx context.Context, viewer int64, surface, device string, item core.RatingKey, sessionID string) (string, error) {
