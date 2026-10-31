@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -40,7 +41,7 @@ func (c *Catalog) CountUnplayedAired(ctx context.Context, userID int64, keys []c
 	restrict := strings.TrimSpace(maxRating) != ""
 	rank := 0
 	if restrict {
-		rank = RatingRank(maxRating)
+		rank = int(contentrating.LevelOf(maxRating))
 		if rank == 0 {
 			return out, nil
 		}
