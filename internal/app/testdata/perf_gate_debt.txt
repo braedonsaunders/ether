@@ -22,3 +22,7 @@ console | viewer home
 console | collections
 console | layout
 infuse-jellyfin | episodes recursive MediaSources # measured 2026-10-31, walks every series (270k statements at 540k rows)
+plex-appletv | movies all titleSort p1
+emby-sdk | movies deep
+silo-appletv | catalog movies title
+console | catalog facets decade
