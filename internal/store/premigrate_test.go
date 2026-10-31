@@ -24,7 +24,7 @@ func TestSnapshotBeforeMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := snapshotBeforeMigrate(ctx, fresh, path, registered(), nil); ok || err != nil {
+	if ok, err := snapshotBeforeMigrate(ctx, fresh, path, registered(), nil, nil); ok || err != nil {
 		t.Fatalf("fresh database: ok=%v err=%v", ok, err)
 	}
 	fresh.Close()
@@ -42,13 +42,13 @@ func TestSnapshotBeforeMigrate(t *testing.T) {
 	}
 
 	// Fully migrated: no snapshot.
-	if ok, err := snapshotBeforeMigrate(ctx, db, path, registered(), nil); ok || err != nil {
+	if ok, err := snapshotBeforeMigrate(ctx, db, path, registered(), nil, nil); ok || err != nil {
 		t.Fatalf("nothing pending: ok=%v err=%v", ok, err)
 	}
 
 	// A newer binary with one more migration snapshots the old state.
 	next := append(registered(), migration{component: "premig", version: 1, sql: `SELECT 1`})
-	if ok, err := snapshotBeforeMigrate(ctx, db, path, next, nil); !ok || err != nil {
+	if ok, err := snapshotBeforeMigrate(ctx, db, path, next, nil, nil); !ok || err != nil {
 		t.Fatalf("pending migration: ok=%v err=%v", ok, err)
 	}
 	if v := snapshotValue(t, snap); v != "before" {
@@ -65,7 +65,7 @@ func TestSnapshotBeforeMigrate(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE premig_t SET v='partly migrated'`); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := snapshotBeforeMigrate(ctx, db, path, next, nil); ok || err != nil {
+	if ok, err := snapshotBeforeMigrate(ctx, db, path, next, nil, nil); ok || err != nil {
 		t.Fatalf("retry after failure: ok=%v err=%v", ok, err)
 	}
 	if v := snapshotValue(t, snap); v != "before" {
@@ -75,7 +75,7 @@ func TestSnapshotBeforeMigrate(t *testing.T) {
 	// Once a run completes, the next upgrade replaces the snapshot; only
 	// one is kept.
 	finishPreMigrate(path)
-	if ok, err := snapshotBeforeMigrate(ctx, db, path, next, nil); !ok || err != nil {
+	if ok, err := snapshotBeforeMigrate(ctx, db, path, next, nil, nil); !ok || err != nil {
 		t.Fatalf("next upgrade: ok=%v err=%v", ok, err)
 	}
 	if v := snapshotValue(t, snap); v != "partly migrated" {
@@ -137,7 +137,7 @@ func TestPreMigrateSnapshotsRotateWithTheirFiles(t *testing.T) {
 	for i := 1; i <= PreMigrateKeep+1; i++ {
 		ms = append(ms, migration{component: "premig", version: i, sql: `SELECT 1`})
 		files := []SnapshotFile{{Name: "config.json", Data: []byte(fmt.Sprintf(`{"gen":%d}`, i))}, {Name: ".credentials-key", Data: []byte("key")}}
-		if ok, err := snapshotBeforeMigrate(ctx, db, path, ms, files); !ok || err != nil {
+		if ok, err := snapshotBeforeMigrate(ctx, db, path, ms, files, nil); !ok || err != nil {
 			t.Fatalf("upgrade %d: ok=%v err=%v", i, ok, err)
 		}
 		if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations(component,version) VALUES('premig',?)`, i); err != nil {
@@ -176,7 +176,7 @@ func TestPreMigrateSnapshotsRotateWithTheirFiles(t *testing.T) {
 	if _, err := os.Stat(preMigrateGen(dst, PreMigrateKeep) + PreMigrateFilesSuffix); !os.IsNotExist(err) {
 		t.Fatalf("kept more than %d file sets: %v", PreMigrateKeep, err)
 	}
-	if _, err := snapshotBeforeMigrate(ctx, db, path, append(ms, migration{component: "premig", version: 99, sql: `SELECT 1`}), []SnapshotFile{{Name: "../escape"}}); err == nil {
+	if _, err := snapshotBeforeMigrate(ctx, db, path, append(ms, migration{component: "premig", version: 99, sql: `SELECT 1`}), []SnapshotFile{{Name: "../escape"}}, nil); err == nil {
 		t.Fatal("snapshot file name with a path accepted")
 	}
 }

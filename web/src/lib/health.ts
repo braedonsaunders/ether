@@ -12,7 +12,15 @@ import {
 export type HealthLevel = "ok" | "warn" | "error" | "off" | "unknown";
 
 export interface HealthItem {
-  id: "usenet" | "indexers" | "cache" | "catalog" | "remote" | "plexdirect" | "transcode";
+  id:
+    | "usenet"
+    | "indexers"
+    | "cache"
+    | "catalog"
+    | "database"
+    | "remote"
+    | "plexdirect"
+    | "transcode";
   label: string;
   level: HealthLevel;
   summary: string;
@@ -529,6 +537,64 @@ export function transcodeHealth(v: unknown): HealthItem | null {
   };
 }
 
+/**
+ * The database from the "database" status section: a SQLite file's
+ * integrity (checked after start and daily) or, on a cluster, the shared
+ * database's reachability. Damage links to Backups to restore. Null until
+ * there is something to report.
+ */
+export function databaseHealth(v: unknown, now = new Date()): HealthItem | null {
+  const base = { id: "database" as const, label: t("Database"), href: "/maintenance/backups" };
+  if (!isPlainObject(v)) return null;
+  if (v.clustered === true) {
+    const held = num(v.held);
+    if (v.state === "degraded")
+      return {
+        ...base,
+        href: "/cluster",
+        level: "error",
+        summary: t("Shared database unreachable"),
+        details: [str(v.message), str(v.lastError)].filter(Boolean),
+      };
+    if (v.state === "recovering")
+      return {
+        ...base,
+        href: "/cluster",
+        level: "warn",
+        summary: tn(held, "Writing {count} held update", "Writing {count} held updates"),
+        details: [],
+      };
+    return {
+      ...base,
+      href: "/cluster",
+      level: "ok",
+      summary: t("Shared PostgreSQL database reachable"),
+      details: [],
+    };
+  }
+  // The first check runs a couple of minutes after start; until then there
+  // is nothing to report (and nothing to hold the overall status back).
+  const integrity = isPlainObject(v.integrity) ? v.integrity : null;
+  if (!integrity) return null;
+  const checked = parseTime(integrity.checked);
+  if (integrity.ok === true)
+    return {
+      ...base,
+      level: "ok",
+      summary: t("No damage found · checked {when}", { when: relativeTime(checked, now) }),
+      details: [],
+    };
+  const findings = Array.isArray(integrity.findings)
+    ? integrity.findings.filter((f): f is string => typeof f === "string").slice(0, 3)
+    : [];
+  return {
+    ...base,
+    level: "error",
+    summary: t("The database file is damaged"),
+    details: [t("Restore a backup to recover. Ether keeps running so you can."), ...findings],
+  };
+}
+
 export function computeHealth(
   sections: Record<string, unknown> | undefined,
   now = new Date(),
@@ -539,9 +605,10 @@ export function computeHealth(
     indexersHealth(s.indexers, s.debrid),
     cacheHealth(s.cache),
     catalogHealth(s.catalog, now),
+    databaseHealth(s.database, now),
     remoteHealth(s.remote),
     plexDirectHealth(s.remote, now),
-  ];
+  ].filter((item): item is HealthItem => item !== null);
   const transcode = transcodeHealth(s.hwaccel);
   if (transcode) items.push(transcode);
   return items;

@@ -1056,17 +1056,3 @@ func DirWritable(dir string) bool {
 	_ = os.Remove(name)
 	return true
 }
-
-// InContainer reports whether we are running inside a container image,
-// which must be updated by pulling a new image, never in place.
-func InContainer() bool {
-	if v := strings.TrimSpace(os.Getenv("ETHER_IN_CONTAINER")); v != "" && v != "0" && !strings.EqualFold(v, "false") {
-		return true
-	}
-	for _, p := range []string{"/.dockerenv", "/run/.containerenv"} {
-		if _, err := os.Stat(p); err == nil {
-			return true
-		}
-	}
-	return false
-}

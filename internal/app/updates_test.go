@@ -121,7 +121,7 @@ func TestUpdatesHandlerAndRestart(t *testing.T) {
 
 	// A restart request cancels Run and makes it report ErrRestartRequested.
 	ctx, cancel := context.WithCancel(context.Background())
-	a.updates.cancel = cancel
+	a.bindRestart(ctx, cancel)
 	a.requestRestart("updated 1.0.0 → 2.0.0")
 	if ctx.Err() == nil {
 		t.Fatal("Run context not cancelled")

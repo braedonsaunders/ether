@@ -225,6 +225,11 @@ func New(run RunFunc, opts Options) (*Service, error) {
 		return nil, err
 	}
 	prog := &program{run: run, log: opts2.Logger, stopTimeout: opts2.StopTimeout}
+	// Every Unix restarts in place (DetectRestart); Windows exits for the
+	// Service Control Manager.
+	if runtime.GOOS != "windows" {
+		prog.inPlace = RestartProcess
+	}
 	ks, err := ksvc.New(prog, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("service: %w", err)
@@ -417,6 +422,10 @@ type program struct {
 	stopTimeout time.Duration
 	// exit terminates the process; nil means os.Exit. Tests inject a fake.
 	exit func(code int)
+	// inPlace, when set, re-executes the process for a requested restart
+	// instead of exiting (every Unix: a service keeps its PID and restarts
+	// at once, a container keeps running). It returns only on failure.
+	inPlace func() error
 
 	mu       sync.Mutex
 	cancel   context.CancelFunc
@@ -473,6 +482,12 @@ func (p *program) serve(ctx context.Context, closeDone func()) {
 	}
 	switch {
 	case errors.Is(err, ErrRestartRequested):
+		if p.inPlace != nil {
+			p.logger().Info("ether requested a restart; starting a fresh process in place")
+			if err := p.inPlace(); err != nil {
+				p.logger().Error("ether could not restart in place; exiting instead", "err", err)
+			}
+		}
 		p.logger().Info("ether requested a restart; exiting so the service manager starts a fresh process",
 			"exit_code", ExitCodeRestart)
 		p.terminate(ExitCodeRestart)

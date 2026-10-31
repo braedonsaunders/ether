@@ -2,7 +2,7 @@ import type { CacheSnapshot } from "../pages/cache/Cache";
 import type { EtherConfig } from "../lib/types";
 
 /** Offline-only fixtures used by the preview and UI tests. */
-export function createCacheMock() {
+export function createCacheMock(restartRequired = false) {
   const GiB = 1024 ** 3;
   const releases: CacheSnapshot["releases"] = [
     {
@@ -57,6 +57,7 @@ export function createCacheMock() {
         status: 200,
         body: {
           clustered,
+          restartRequired,
           shared: cfg.cache.storage === "shared",
           used: releases.reduce((sum, r) => sum + r.Bytes, 0),
           budget: cfg.cache.budgetBytes,

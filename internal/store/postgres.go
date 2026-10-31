@@ -109,7 +109,7 @@ func parsePostgresConfig(raw string) (*pgx.ConnConfig, error) {
 // not issue CHECKPOINT and does not set synchronous_commit, checkpoint_timeout,
 // or max_wal_size, so a request commit waits for its own WAL record and not
 // for a checkpoint.
-func openPostgres(ctx context.Context, rawURL string, log *slog.Logger, gate MigrationGate) (*sql.DB, error) {
+func openPostgres(ctx context.Context, rawURL string, log *slog.Logger, gate MigrationGate, progress func(Progress)) (*sql.DB, error) {
 	cfg, err := parsePostgresConfig(rawURL)
 	if err != nil {
 		// pgx errors can echo the connection string; never surface it.
@@ -125,7 +125,7 @@ func openPostgres(ctx context.Context, rawURL string, log *slog.Logger, gate Mig
 	db.SetMaxOpenConns(16)
 	db.SetMaxIdleConns(8)
 	db.SetConnMaxIdleTime(5 * time.Minute)
-	if err := preparePostgres(ctx, db, log.With("database", RedactURL(rawURL)), gate); err != nil {
+	if err := preparePostgres(ctx, db, log.With("database", RedactURL(rawURL)), gate, progress); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func openPostgres(ctx context.Context, rawURL string, log *slog.Logger, gate Mig
 }
 
 // preparePostgres verifies the server and applies migrations.
-func preparePostgres(ctx context.Context, db *sql.DB, log *slog.Logger, gate MigrationGate) error {
+func preparePostgres(ctx context.Context, db *sql.DB, log *slog.Logger, gate MigrationGate, progress func(Progress)) error {
 	pingCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
@@ -142,7 +142,7 @@ func preparePostgres(ctx context.Context, db *sql.DB, log *slog.Logger, gate Mig
 	if err := checkPostgresServer(ctx, db, log); err != nil {
 		return err
 	}
-	if err := migratePostgres(ctx, db, gate); err != nil {
+	if err := migratePostgres(ctx, db, gate, progress); err != nil {
 		return err
 	}
 	warnSchemaAhead(ctx, db, log, "")
@@ -183,7 +183,7 @@ func byteOrderCollation(c string) bool {
 // a transaction-scoped advisory lock, so concurrently starting nodes
 // migrate exactly once and a failed migration leaves nothing half-applied.
 // gate, when set, is consulted under the lock before anything is applied.
-func migratePostgres(ctx context.Context, db *sql.DB, gate MigrationGate) error {
+func migratePostgres(ctx context.Context, db *sql.DB, gate MigrationGate, progress func(Progress)) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -227,11 +227,19 @@ func migratePostgres(ctx context.Context, db *sql.DB, gate MigrationGate) error 
 		}
 	}
 	seeded := map[string]bool{}
+	total, done := 0, 0
+	for _, m := range registered() {
+		if !applied[m.component+"/"+strconv.Itoa(m.version)] {
+			total++
+		}
+	}
 	for _, m := range registered() {
 		key := m.component + "/" + strconv.Itoa(m.version)
 		if applied[key] {
 			continue
 		}
+		report(progress, Progress{Stage: StageMigrate, Done: done, Total: total})
+		done++
 		for _, match := range reSeedInsert.FindAllStringSubmatch(m.sqlFor(Postgres), -1) {
 			seeded[match[1]] = true
 			seeded[strings.ToLower(match[1])] = true // PostgreSQL folds unquoted identifiers.

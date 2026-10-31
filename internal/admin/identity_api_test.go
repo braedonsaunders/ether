@@ -475,3 +475,36 @@ func TestPortalApproveDistinguishesUsedCodes(t *testing.T) {
 		t.Fatalf("unknown: %d %s", unknown.Code, unknown.Body)
 	}
 }
+
+// The owner's recovery sign-in is refreshed after setup, every owner local
+// sign-in and every local password change; a failed sign-in does nothing.
+func TestOwnerCredentialChangesAreReported(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	users, err := auth.New(ctx, db, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, _ := identity.NewLocal(db)
+	grants, _ := identity.NewGrants(db, users, time.Hour, nil)
+	limiter, _ := identity.NewLoginLimiter(db, time.Minute, 100, 20, nil)
+	calls := 0
+	cfg := newStore(t, nil)
+	h := admin.New(admin.Deps{Config: cfg, LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, RefreshViewers: users.RefreshViewers, Sessions: users,
+		OwnerCredentialChanged: func(context.Context) { calls++ }})
+	if res := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret"}`)); res.Code != 200 {
+		t.Fatalf("setup: %d %s", res.Code, res.Body)
+	}
+	if calls != 1 {
+		t.Fatalf("after setup: %d calls", calls)
+	}
+	if res := serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"wrong"}`)); res.Code != 401 {
+		t.Fatalf("wrong password: %d", res.Code)
+	}
+	if res := serve(h, req("POST", "/ether/api/auth/local", `{"username":"alice","password":"secret"}`)); res.Code != 200 {
+		t.Fatalf("owner login: %d", res.Code)
+	}
+	if calls != 2 {
+		t.Fatalf("after a failed and a good sign-in: %d calls", calls)
+	}
+}

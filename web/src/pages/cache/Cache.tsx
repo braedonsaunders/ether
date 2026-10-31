@@ -16,6 +16,7 @@ const CACHE_TABS = localized(
     ] as const,
 );
 import { Drawer } from "../../components/Drawer";
+import { RestartButton } from "../../components/RestartDrawer";
 import { ErrorPanel } from "../../components/feedback";
 import { Field, NumberInput } from "../../components/fields";
 import { useDraft, useUnsavedGuard } from "../../components/SaveBar";
@@ -250,11 +251,17 @@ export default function Cache() {
         {snap?.restartRequired && (
           <div
             role="status"
-            className="shrink-0 border-b border-warning/20 bg-warning/10 px-5 py-2 text-xs text-warning"
+            className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-warning/20 bg-warning/10 px-5 py-2 text-xs text-warning"
           >
-            {t(
-              "Storage change saved. Restart this node to use the new backend or folder. The overview shows the currently active cache.",
-            )}
+            <span>
+              {t(
+                "Storage change saved. Restart this node to use the new backend or folder. The overview shows the currently active cache.",
+              )}
+            </span>
+            <RestartButton
+              context={t("Restarting puts your new cache storage to work.")}
+              label={t("Restart now")}
+            />
           </div>
         )}
         {snap?.storageError && (

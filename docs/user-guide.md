@@ -586,12 +586,14 @@ characters, then choose **Download**. The downloaded `.etherbackup` file is
 encrypted. Ether does not keep this password; save it somewhere safe because
 it is needed to restore the file.
 
-To restore, enter the same password and select the `.etherbackup` file. Ether
-validates it and stages a new data folder; uploading a backup does not replace
-the running server. Follow the displayed instructions to stop Ether and start
-it with that folder. An older, unencrypted `.tar.gz` backup requires an owner
-sign-in and explicit confirmation. See [installation and restoration](install.md#backups)
-for service and database considerations.
+To restore, choose **Restore** next to a snapshot, or **Choose backup file**
+and enter the password a download was made with. Ether checks the backup,
+shows what will change and who is watching, then restores it and restarts by
+itself; the page follows along until your server is back. Your current data
+is kept, so the report on the Backups page offers **Undo restore**. An older,
+unencrypted `.tar.gz` backup requires an owner sign-in and explicit
+confirmation. See [installation and restoration](install.md#backups) for
+clusters and how restarts work.
 
 Keep server-side snapshots and shared backup folders private: scheduled and
 internal snapshots remain unencrypted on disk and include the credentials and

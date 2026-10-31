@@ -93,8 +93,14 @@ func main() {
 	}
 	if err := svc.Run(); err != nil {
 		if errors.Is(err, service.ErrRestartRequested) {
-			logger.Info("ether: restart requested", "exit_code", service.ExitCodeRestart)
-			os.Exit(service.ExitCodeRestart)
+			// No service manager restarts a terminal or container run:
+			// start a fresh process in its place.
+			logger.Info("ether: restarting", "how", service.DetectRestart().Method)
+			if err := service.RestartProcess(); err != nil {
+				logger.Error("ether: could not restart; exiting for a supervisor to restart", "err", err, "exit_code", service.ExitCodeRestart)
+				os.Exit(service.ExitCodeRestart)
+			}
+			os.Exit(0) // Windows: the new process is running
 		}
 		logger.Error("ether exited with error", "err", err)
 		os.Exit(1)

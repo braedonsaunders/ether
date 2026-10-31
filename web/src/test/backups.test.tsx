@@ -175,12 +175,17 @@ describe("Backups & import", () => {
       target: { value: "pässword horse battery" },
     });
     const file = new File(["ETHERBK1rest-of-file"], "ether-1.etherbackup");
-    fireEvent.change(screen.getByLabelText("Choose backup bundle"), { target: { files: [file] } });
-    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/backups/restore"))).toBe(true));
-    const headers = calls.find((c) => c.url.endsWith("/backups/restore"))!.init!.headers as Record<
-      string,
-      string
-    >;
+    // The password typed on the page carries into the restore drawer, which
+    // checks the backup at once.
+    fireEvent.change(screen.getByLabelText("Choose backup file"), { target: { files: [file] } });
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.endsWith("/backups/restore") && c.init?.method === "POST"),
+      ).toBe(true),
+    );
+    const headers = calls.find(
+      (c) => c.url.endsWith("/backups/restore") && c.init?.method === "POST",
+    )!.init!.headers as Record<string, string>;
     expect(headers["Content-Type"]).toBe("application/octet-stream");
     expect(headers["X-Ether-Request"]).toBe("1");
     // The upload authenticates with the console session, never a Plex token.
@@ -203,15 +208,22 @@ describe("Backups & import", () => {
       </>,
     );
     const file = new File(["\x1f\x8b-old-bundle"], "ether-1.tar.gz");
-    fireEvent.change(await screen.findByLabelText("Choose backup bundle"), {
+    fireEvent.change(await screen.findByLabelText("Choose backup file"), {
       target: { files: [file] },
     });
-    fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
-    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/backups/restore"))).toBe(true));
-    const headers = calls.find((c) => c.url.endsWith("/backups/restore"))!.init!.headers as Record<
-      string,
-      string
-    >;
+    expect(await screen.findByText("This backup isn't password protected")).toBeInTheDocument();
+    expect(calls.some((c) => c.url.endsWith("/backups/restore") && c.init?.method === "POST")).toBe(
+      false,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Check backup" }));
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.endsWith("/backups/restore") && c.init?.method === "POST"),
+      ).toBe(true),
+    );
+    const headers = calls.find(
+      (c) => c.url.endsWith("/backups/restore") && c.init?.method === "POST",
+    )!.init!.headers as Record<string, string>;
     expect(headers["X-Ether-Backup-Legacy"]).toBe("plaintext");
     expect(headers["X-Ether-Backup-Password"]).toBeUndefined();
   });

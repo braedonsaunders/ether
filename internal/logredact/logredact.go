@@ -29,6 +29,7 @@ const Mask = "[redacted]"
 var sensitive = map[string]bool{
 	"token": true, "xplextoken": true, "plextoken": true, "accesstoken": true, "refreshtoken": true,
 	"authtoken": true, "idtoken": true, "sessiontoken": true, "xetheradmintoken": true, "etheradmintoken": true,
+	"xetherrecoverytoken": true, "recoverytoken": true,
 	"password": true, "passwd": true, "pwd": true, "passkey": true,
 	"secret": true, "clientsecret": true, "apikey": true, "xapikey": true, "apitoken": true,
 	"authorization": true, "proxyauthorization": true, "cookie": true, "setcookie": true,
@@ -69,14 +70,14 @@ var (
 	// the line, token headers and Authorization (in its canonical spelling,
 	// so prose such as "authorization: failed" is left alone) one value.
 	cookie      = regexp.MustCompile(`(?i)\b(cookie|set-cookie)(\s*:\s*\[?|:\[)([^\]\r\n]+)`)
-	tokenHeader = regexp.MustCompile(`(?i)\b(x-plex-token|x-ether-admin-token|x-api-key)(\s*:\s*\[?|:\[)([^\s\],;"]+)`)
+	tokenHeader = regexp.MustCompile(`(?i)\b(x-plex-token|x-ether-admin-token|x-ether-recovery-token|x-api-key)(\s*:\s*\[?|:\[)([^\s\],;"]+)`)
 	authHeader  = regexp.MustCompile(`\b(Authorization|Proxy-Authorization)(: ?\[?|:\[)((?:[A-Za-z]+ )?[^\s\],;"]+)`)
 	// scheme://user:password@host
 	userinfo = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://[^/\s:@]*):([^@/\s]+)@`)
 	// Bearer/Basic credentials wherever they appear.
 	scheme = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}`)
 	// Ether's own credentials: console sessions and cast delegations.
-	own = regexp.MustCompile(`\bether-(admin|cast)-[A-Za-z0-9]+`)
+	own = regexp.MustCompile(`\bether-(admin|cast|recovery)-[A-Za-z0-9]+`)
 )
 
 // String returns s with credentials replaced by Mask.

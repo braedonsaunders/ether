@@ -32,11 +32,14 @@ type databaseHealth struct {
 	Outboxes []store.OutboxStatus `json:"outboxes,omitempty"`
 	// Message is a one-line summary for the owner.
 	Message string `json:"message,omitempty"`
+	// Integrity is the last check of a SQLite database for damage (at
+	// start and in daily maintenance); absent until the first one ran.
+	Integrity *store.Integrity `json:"integrity,omitempty"`
 }
 
 func (a *App) databaseHealth() databaseHealth {
 	if !a.clustered() {
-		return databaseHealth{State: "ok", Reachable: true}
+		return databaseHealth{State: "ok", Reachable: true, Integrity: a.integrity.Load()}
 	}
 	h := databaseHealth{Clustered: true}
 	av := a.dbAvail.State()

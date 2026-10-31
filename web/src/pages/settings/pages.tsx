@@ -10,6 +10,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { ConfigSection } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
+import { RestartButton } from "../../components/RestartDrawer";
 import { SettingsRow } from "../../components/SettingsRow";
 import { localized, t } from "../../i18n";
 import { api } from "../../lib/api";
@@ -208,7 +209,13 @@ const MAINTENANCE_TABS = localized(
 export function MaintenancePage() {
   const tab = useRouteTab(MAINTENANCE_TABS);
   return (
-    <DomainPage title={t("Maintenance")} base="/maintenance" tabs={MAINTENANCE_TABS} active={tab}>
+    <DomainPage
+      title={t("Maintenance")}
+      actions={<RestartButton />}
+      base="/maintenance"
+      tabs={MAINTENANCE_TABS}
+      active={tab}
+    >
       {tab === "backups" ? <BackupsSettings /> : null}
       {tab === "updates" ? (
         <ConfigSection
