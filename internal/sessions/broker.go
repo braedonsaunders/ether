@@ -131,6 +131,8 @@ type Broker struct {
 	mu                  sync.Mutex
 	plans               map[string]brokerPlan
 	sessions            map[string]*brokerSession
+	plexActivities      map[string]*PlexActivity
+	plexActivityNext    int
 	retired             map[string]retiredSession
 	lazySessions        map[string]lazySession
 	lazyCleanup         map[string]lazyCleanupEntry
@@ -183,7 +185,7 @@ func NewBroker(d BrokerDeps) (*Broker, error) {
 	if limit > 4096 {
 		return nil, errors.New("sessions: max pending starts exceeds 4096")
 	}
-	b := &Broker{sampleLimit: 100000, deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent](), plexStreams: NewPlexStreamTable()}
+	b := &Broker{sampleLimit: 100000, deps: d, startSlots: make(chan struct{}, limit), shutdownTimeout: 10 * time.Second, lazyCleanupWait: 5 * time.Second, planSweepEvery: 5 * time.Second, plans: make(map[string]brokerPlan), pendingByViewer: make(map[int64]int), sourceLeases: make(map[string]*sourceLease), sessions: make(map[string]*brokerSession), plexActivities: make(map[string]*PlexActivity), retired: make(map[string]retiredSession), devices: make(map[deviceKey]frontend.SessionCapabilities), owners: coord.Owners, gates: coord.Gates, bindings: NewBindingTable[frontend.PlayIntent](), plexStreams: NewPlexStreamTable()}
 	if d.DB != nil && d.Cluster != nil {
 		var err error
 		b.cluster, err = startBrokerCluster(b, d.DB, d.Cluster)

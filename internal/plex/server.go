@@ -165,7 +165,7 @@ type Server struct {
 	renderedVariants  *renderedVariants
 	downloads         *downloadStore
 	queues            *playQueueStore
-	sessions          *sessionTracker
+	sessions          *sessionActivities
 	playbackBroker    frontend.Sessions
 	playbackOwners    *sessions.PlaybackOwners
 	playbackLifecycle *sessions.Lifecycle
@@ -226,7 +226,7 @@ func NewServer(d Deps) *Server {
 		renderedVariants:  newRenderedVariants(),
 		downloads:         newDownloadStore(),
 		queues:            newPlayQueueStore(),
-		sessions:          newSessionTracker(),
+		sessions:          newSessionActivities(),
 		playbackOwners:    coord.Owners,
 		playbackLifecycle: coord.Gates,
 		transcodes:        newTranscodeTable(),

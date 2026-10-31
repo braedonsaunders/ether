@@ -1,6 +1,7 @@
 package plex
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"sort"
@@ -489,8 +490,15 @@ func (s *Server) terminateLocal(sid, reason string) bool {
 
 			s.setTermination(e.id, reason)
 			if s.d.Playback != nil {
-				if ps, ok := s.d.Playback.SessionFor(e.user.ID, e.client.ClientID, e.key); ok {
-					s.d.Playback.Stop(ps.ID)
+				if ps, ok := s.d.Playback.SessionFor(e.user.ID, e.client.ClientID, e.key); ok && ps != nil {
+					if stop, ok := s.playbackBroker.(interface {
+						StopPlayback(context.Context, string) bool
+					}); ok {
+						if !stop.StopPlayback(s.ctx, ps.ID) {
+							s.adoptBrokerTimeline(s.ctx, &Request{User: &e.user, ClientID: e.client.ClientID, SessionID: e.client.SessionID}, e.key)
+							stop.StopPlayback(s.ctx, ps.ID)
+						}
+					}
 				}
 			}
 			return true
