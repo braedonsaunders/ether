@@ -11,6 +11,33 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
+func TestPageReadsTheSpendRowAndAWideSpendCannotPassIt(t *testing.T) {
+	x := setup(t)
+	// 20:30 in a UTC-4 zone is 00:30 the next UTC day. The page must use that
+	// UTC day, the same key spend() writes, and must not add other days or meters.
+	x.now = time.Date(2026, 10, 31, 20, 30, 0, 0, time.FixedZone("EDT", -4*3600))
+	ctx := t.Context()
+	if _, err := x.s.db.ExecContext(ctx, `INSERT INTO availability_budget(day,resource,used,ceiling) VALUES('2026-10-31','feedRequests',428,400)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.s.db.ExecContext(ctx, `INSERT INTO availability_budget(day,resource,used,ceiling) VALUES('2026-11-01','checkRequests',50,100)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.s.spend(ctx, "feedRequests", 5, 400); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.s.spend(ctx, "feedRequests", 400, 400); !errors.Is(err, core.ErrBudgetExhausted) {
+		t.Fatal("a multi-page spend was admitted past the allowance")
+	}
+	st, err := x.s.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Day != "2026-11-01" || st.Usage["feedRequests"] != 5 || st.Usage["checkRequests"] != 50 || st.OverAllowance {
+		t.Fatalf("page counter = day %s usage %v over %v", st.Day, st.Usage, st.OverAllowance)
+	}
+}
+
 func TestLoweredAllowanceExplainsOverTheCap(t *testing.T) {
 	x := setup(t)
 	x.c.Availability.Effort = "custom"

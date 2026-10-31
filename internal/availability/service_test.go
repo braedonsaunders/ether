@@ -163,6 +163,33 @@ func TestFeedLifecycleAndNoEvidenceGate(t *testing.T) {
 		t.Fatal("stale evidence promoted")
 	}
 }
+func TestConcurrentPageSpendStaysInsideTheAllowance(t *testing.T) {
+	x := setup(t)
+	var wg sync.WaitGroup
+	var success atomic.Int32
+	for i := 0; i < 40; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := x.s.spend(t.Context(), "feedRequests", 3, 10)
+			if err == nil {
+				success.Add(1)
+			} else if !errors.Is(err, core.ErrBudgetExhausted) {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	st, err := x.s.Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := st.Usage["feedRequests"]
+	if used != int64(success.Load())*3 || used > 10 || used%3 != 0 {
+		t.Fatalf("overspent: admitted %d stored %d", success.Load(), used)
+	}
+}
+
 func TestAtomicBudgetAndUTCReset(t *testing.T) {
 	x := setup(t)
 	var wg sync.WaitGroup
