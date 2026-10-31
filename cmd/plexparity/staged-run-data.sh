@@ -212,6 +212,12 @@ done
 mkdir -p "$root/baseline/cmd/parityseed" "$root/candidate/cmd/plexparity"
 cp "$root/harness/seed.go" "$root/baseline/cmd/parityseed/seed.go"
 cp "$root/harness/ranker_fixture.go" "$root/baseline/cmd/parityseed/ranker_fixture.go"
+# The current seed imports packages the baseline tree may not have yet.
+# They are stdlib-only, so the baseline module can compile them.
+if [ ! -d "$root/baseline/internal/contentrating" ] && [ -d "$root/driver/internal/contentrating" ]; then
+  mkdir -p "$root/baseline/internal/contentrating"
+  cp "$root/driver/internal/contentrating/"*.go "$root/baseline/internal/contentrating/"
+fi
 cat > "$root/baseline/cmd/parityseed/main.go" <<'GO'
 package main
 import ("context"; "fmt"; "os")
