@@ -1,12 +1,15 @@
 import { Button, cn } from "@braedonsaunders/appkit-ui";
 import { HelpCircle } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "../../i18n";
 import { blockLabel, timeOfDay, type Block } from "./model";
 
-const ROW_DAYS = [1, 2, 3, 4, 5, 6, 0];
+/** -1 is the every-day shortcut. The rest are Monday-first, Sunday last. */
+const ROW_DAYS = [-1, 1, 2, 3, 4, 5, 6, 0];
+const WEEK = [0, 1, 2, 3, 4, 5, 6];
 
 function dayLabel(day: number): string {
+  if (day < 0) return t("Every day");
   return [
     t("Sunday"),
     t("Monday"),
@@ -18,15 +21,19 @@ function dayLabel(day: number): string {
   ][day]!;
 }
 
-function covers(block: Block, day: number, minute: number): boolean {
-  if (block.days?.length && !block.days.includes(day)) return false;
-  return minute >= block.start && minute < block.end;
+function blockDays(block: Block): number[] {
+  return block.days?.length ? block.days : WEEK;
+}
+
+function shownOn(block: Block, day: number): boolean {
+  if (day < 0) return !block.days?.length;
+  return !!block.days?.length && block.days.includes(day);
 }
 
 function overlaps(blocks: Block[], day: number, start: number, end: number, skip = -1): boolean {
   return blocks.some((block, index) => {
     if (index === skip) return false;
-    const days = block.days?.length ? block.days : [0, 1, 2, 3, 4, 5, 6];
+    const days = blockDays(block);
     if (!days.includes(day)) return false;
     return start < block.end && end > block.start;
   });
@@ -39,19 +46,39 @@ function overlaps(blocks: Block[], day: number, start: number, end: number, skip
 export function WeekGrid({
   blocks,
   onChange,
+  selected = null,
+  onSelect,
 }: {
   blocks: Block[];
   onChange: (blocks: Block[]) => void;
+  selected?: number | null;
+  onSelect?: (index: number | null) => void;
 }) {
   const drag = useRef<{ day: number; anchor: number; current: number } | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   const [ghost, setGhost] = useState<{ day: number; start: number; end: number } | null>(null);
   const [focus, setFocus] = useState<{ day: number; hour: number }>({ day: 1, hour: 8 });
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const now = new Date().getHours();
+    const target = now < 6 ? 6 : now;
+    const dayCol = el.querySelector("[role=rowheader]")?.getBoundingClientRect().width ?? 72;
+    const hourWidth = (el.scrollWidth - dayCol) / 24;
+    el.scrollLeft = Math.max(0, Math.min(el.scrollWidth - el.clientWidth, target * hourWidth));
+  }, []);
 
   const paint = (day: number, start: number, end: number) => {
     const s = Math.max(0, Math.min(start, end));
     const e = Math.min(1440, Math.max(start, end));
-    if (e - s < 30 || overlaps(blocks, day, s, e)) return;
-    onChange([...blocks, { start: s, end: e, days: [day], items: [], shuffle: false }]);
+    const check = day < 0 ? WEEK : [day];
+    if (e - s < 30 || check.some((d) => overlaps(blocks, d, s, e))) return;
+    onChange([
+      ...blocks,
+      { start: s, end: e, ...(day < 0 ? {} : { days: [day] }), items: [], shuffle: false },
+    ]);
+    onSelect?.(blocks.length);
   };
 
   const onKey = (event: React.KeyboardEvent) => {
@@ -72,7 +99,10 @@ export function WeekGrid({
       event.preventDefault();
       paint(day, hour * 60, (hour + 1) * 60);
     } else if (event.key === "Delete" || event.key === "Backspace") {
-      const hit = blocks.findIndex((block) => covers(block, day, hour * 60));
+      const minute = hour * 60;
+      const hit = blocks.findIndex(
+        (block) => shownOn(block, day) && minute >= block.start && minute < block.end,
+      );
       if (hit >= 0) {
         event.preventDefault();
         onChange(blocks.filter((_, index) => index !== hit));
@@ -97,6 +127,7 @@ export function WeekGrid({
       </div>
       <div
         role="grid"
+        ref={scroller}
         aria-label={t("Weekly schedule")}
         className="min-w-0 overflow-x-auto rounded-xl border border-border"
         onKeyDown={onKey}
@@ -106,7 +137,7 @@ export function WeekGrid({
             className="grid border-b border-border bg-bg-subtle text-[10px] tabular-nums text-fg-subtle"
             style={{ gridTemplateColumns: "4.5rem repeat(24, minmax(0, 1fr))" }}
           >
-            <div />
+            <div className="sticky left-0 z-10 border-r border-border bg-bg-subtle" />
             {Array.from({ length: 24 }, (_, hour) => (
               <div key={hour} className="px-0.5 py-1 text-center">
                 {hour % 3 === 0 ? timeOfDay(hour * 60) : ""}
@@ -137,9 +168,9 @@ export function WeekGrid({
             >
               <div
                 role="rowheader"
-                className="flex items-center px-2 text-xs font-medium text-fg-muted"
+                className="sticky left-0 z-10 flex items-center border-r border-border bg-bg px-1.5 text-[10px] font-medium leading-tight text-fg-muted"
               >
-                {dayLabel(day).slice(0, 3)}
+                {day < 0 ? dayLabel(day) : dayLabel(day).slice(0, 3)}
               </div>
               <div
                 className="relative grid"
@@ -162,6 +193,7 @@ export function WeekGrid({
                         on && "ring-2 ring-inset ring-primary",
                       )}
                       onFocus={() => setFocus({ day, hour })}
+                      onClick={() => paint(day, hour * 60, (hour + 1) * 60)}
                       onPointerDown={(event) => {
                         drag.current = { day, anchor: hour, current: hour };
                         setGhost({ day, start: hour * 60, end: (hour + 1) * 60 });
@@ -178,24 +210,30 @@ export function WeekGrid({
                   );
                 })}
                 {blocks.map((block, index) => {
-                  const days = block.days?.length ? block.days : ROW_DAYS;
-                  if (!days.includes(day)) return null;
+                  if (!shownOn(block, day)) return null;
                   const hue = (index * 67 + 200) % 360;
                   const label = blockLabel(block);
+                  const on = selected === index;
                   return (
-                    <div
+                    <button
                       key={index}
-                      className="pointer-events-none absolute inset-y-1 rounded-md px-1 text-[10px] font-medium leading-7 text-white"
+                      type="button"
+                      title={label}
+                      aria-label={label}
+                      aria-pressed={on}
+                      onClick={() => onSelect?.(index)}
+                      className={cn(
+                        "absolute inset-y-1 truncate rounded-md px-1 text-left text-[10px] font-medium leading-7 text-white",
+                        on && "ring-2 ring-white",
+                      )}
                       style={{
                         left: `${(block.start / 1440) * 100}%`,
                         width: `${((block.end - block.start) / 1440) * 100}%`,
                         background: `linear-gradient(135deg, hsl(${hue} 65% 48%), hsl(${(hue + 28) % 360} 65% 38%))`,
                       }}
                     >
-                      <span className="block truncate" title={label}>
-                        {label}
-                      </span>
-                    </div>
+                      {label}
+                    </button>
                   );
                 })}
                 {ghost?.day === day ? (
@@ -217,7 +255,7 @@ export function WeekGrid({
           type="button"
           size="sm"
           variant="outline"
-          onClick={() =>
+          onClick={() => {
             onChange([
               ...blocks,
               {
@@ -229,8 +267,9 @@ export function WeekGrid({
                 shuffle: false,
                 filter: { type: "show", genres: ["Animation"], maxContentRating: "PG" },
               },
-            ])
-          }
+            ]);
+            onSelect?.(blocks.length);
+          }}
         >
           {t("Saturday morning cartoons")}
         </Button>
@@ -238,7 +277,7 @@ export function WeekGrid({
           type="button"
           size="sm"
           variant="outline"
-          onClick={() =>
+          onClick={() => {
             onChange([
               ...blocks,
               {
@@ -251,8 +290,9 @@ export function WeekGrid({
                 mode: "shuffle",
                 filter: { type: "movie" },
               },
-            ])
-          }
+            ]);
+            onSelect?.(blocks.length);
+          }}
         >
           {t("Movie night")}
         </Button>
@@ -260,7 +300,10 @@ export function WeekGrid({
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => onChange(blocks.filter((block) => block.days?.length))}
+          onClick={() => {
+            onChange(blocks.filter((block) => block.days?.length));
+            onSelect?.(null);
+          }}
         >
           {t("Clear every-day blocks")}
         </Button>

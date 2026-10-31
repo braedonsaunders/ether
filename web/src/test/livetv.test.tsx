@@ -170,7 +170,7 @@ describe("Live TV studio", () => {
     renderLiveTV("/livetv?channel=new");
     fireEvent.click(await screen.findByRole("button", { name: "80s Action 24/7 template" }));
     fireEvent.click(screen.getByRole("tab", { name: /Schedule/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Add time block/ }));
+    fireEvent.click(screen.getByRole("gridcell", { name: "Monday at 00:00" }));
     expect(
       await screen.findByText(/Add at least one movie to each time block/),
     ).toBeInTheDocument();

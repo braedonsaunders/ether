@@ -1330,12 +1330,11 @@ function Schedule({
   onChange: (p: Partial<Channel>) => void;
 }) {
   const blocks = c.blocks ?? [];
-  const setBlocks = (b: Block[]) => onChange({ blocks: b });
-  const add = (start?: number) => {
-    const s = start ?? blocks.at(-1)?.end ?? 0;
-    setBlocks([...blocks, { start: s, end: Math.min(1440, s + 60), items: [], shuffle: false }]);
+  const [selected, setSelected] = useState<number | null>(null);
+  const setBlocks = (b: Block[]) => {
+    onChange({ blocks: b });
+    setSelected((cur) => (cur != null && cur < b.length ? cur : null));
   };
-  const offset = -new Date().getTimezoneOffset();
   const zone = c.timezone || "";
   const zones = useMemo(() => {
     const list = timeZones();
@@ -1344,7 +1343,7 @@ function Schedule({
   }, [zone]);
   return (
     <div className="space-y-5">
-      <WeekGrid blocks={blocks} onChange={setBlocks} />
+      <WeekGrid blocks={blocks} onChange={setBlocks} selected={selected} onSelect={setSelected} />
       <MoreOptions label={t("More options")}>
         <div className="px-4 pb-4">
           <Field label={t("Timezone")}>
@@ -1365,173 +1364,106 @@ function Schedule({
           </Field>
         </div>
       </MoreOptions>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-fg">{t("Daily time blocks")}</h3>
-          {zone ? null : (
-            <p className="text-xs text-fg-muted">
-              {offset
-                ? t(
-                    "Pin programming to times of day (in UTC; your time is UTC{offset}). The base programming fills the rest of the day.",
-                    { offset: `${offset > 0 ? "+" : ""}${offset / 60}` },
-                  )
-                : t(
-                    "Pin programming to times of day (in UTC). The base programming fills the rest of the day.",
-                  )}
-            </p>
-          )}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={blocks.some((b) => b.end === 1440)}
-          onClick={() => add()}
-        >
-          <Plus size={13} /> {t("Add time block")}
-        </Button>
-      </div>
-
-      {/* 24h day bar: click a free hour to add a block there */}
-      <div className="min-w-0 overflow-x-auto">
-        <div className="min-w-[52rem] space-y-1">
-          <div className="relative h-12 overflow-hidden rounded-xl border border-border bg-[repeating-linear-gradient(135deg,transparent,transparent_6px,rgb(var(--ch-border)/0.5)_6px,rgb(var(--ch-border)/0.5)_7px)]">
-            {Array.from({ length: 24 }, (_, h) => (
-              <button
-                key={h}
-                type="button"
-                aria-label={
-                  zone
-                    ? t("Add a block at {time}", { time: timeOfDay(h * 60) })
-                    : t("Add a block at {time} UTC", { time: timeOfDay(h * 60) })
-                }
-                onClick={() => {
-                  const s = h * 60;
-                  if (!blocks.some((b) => s < b.end && s + 60 > b.start)) add(s);
-                }}
-                className="absolute inset-y-0 border-r border-border/40 hover:bg-primary/10"
-                style={{ left: `${(h / 24) * 100}%`, width: `${100 / 24}%` }}
-              />
-            ))}
-            {blocks.map((b, i) => {
-              const hue = (i * 67 + 200) % 360;
-              return (
-                <div
-                  key={i}
-                  className="pointer-events-none absolute inset-y-1 overflow-hidden rounded-lg px-2 py-1 text-[11px] font-medium text-white shadow-sm"
-                  style={{
-                    left: `${(b.start / 1440) * 100}%`,
-                    width: `${((b.end - b.start) / 1440) * 100}%`,
-                    background: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${(hue + 30) % 360} 65% 40%))`,
-                  }}
-                >
-                  <span className="block truncate" title={blockLabel(b)}>
-                    {blockLabel(b)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="relative h-4 text-[10.5px] tabular-nums text-fg-subtle" aria-hidden>
-            {[0, 3, 6, 9, 12, 15, 18, 21].map((h) => (
-              <span key={h} className="absolute" style={{ left: `${(h / 24) * 100}%` }}>
-                {timeOfDay(h * 60)}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {blocks.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-fg-muted">
-          {t("No time blocks: the base programming plays all day. Click an hour above to add one.")}
-        </p>
-      ) : null}
-      {blocks.map((block, index) => {
-        const update = (patch: Partial<Block>) =>
-          setBlocks(blocks.map((b, n) => (n === index ? { ...b, ...patch } : b)));
-        return (
-          <section key={index} className="space-y-3 rounded-xl border border-border bg-surface p-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <span
-                className="mb-2 size-3 rounded-full"
-                style={{ background: `hsl(${(index * 67 + 200) % 360} 65% 50%)` }}
-                aria-hidden
-              />
-              <Field
-                label={zone ? t("Start time") : t("Start (UTC)")}
-                htmlFor={`blk-${index}-start`}
-                hint={
-                  zone ? undefined : t("{time} your time", { time: localBlockTime(block.start) })
-                }
-              >
-                <Input
-                  id={`blk-${index}-start`}
-                  type="time"
-                  value={timeOfDay(block.start)}
-                  onChange={(e) => update({ start: minutesOfDay(e.currentTarget.value) })}
-                />
-              </Field>
-              <Field
-                label={zone ? t("End") : t("End (UTC)")}
-                htmlFor={`blk-${index}-end`}
-                hint={
-                  zone
-                    ? undefined
-                    : block.end === 1440
-                      ? t("Midnight")
-                      : t("{time} your time", { time: localBlockTime(block.end) })
-                }
-              >
-                <div className="flex items-center gap-2">
-                  <Input
-                    id={`blk-${index}-end`}
-                    aria-label={t("Time block {number} end time", { number: index + 1 })}
-                    type="time"
-                    disabled={block.end === 1440}
-                    value={block.end === 1440 ? "00:00" : timeOfDay(block.end)}
-                    onChange={(e) => update({ end: minutesOfDay(e.currentTarget.value) })}
+      {selected == null || !blocks[selected]
+        ? null
+        : (() => {
+            const index = selected;
+            const block = blocks[index]!;
+            const update = (patch: Partial<Block>) =>
+              setBlocks(blocks.map((b, n) => (n === index ? { ...b, ...patch } : b)));
+            return (
+              <section className="space-y-3 rounded-xl border border-border bg-surface p-4">
+                <h3 className="text-sm font-semibold text-fg">{blockLabel(block)}</h3>
+                <div className="flex flex-wrap items-end gap-3">
+                  <span
+                    className="mb-2 size-3 rounded-full"
+                    style={{ background: `hsl(${(index * 67 + 200) % 360} 65% 50%)` }}
+                    aria-hidden
                   />
-                  <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
-                    <input
-                      type="checkbox"
-                      checked={block.end === 1440}
-                      aria-label={t("Time block {number} runs to midnight", { number: index + 1 })}
-                      onChange={(e) =>
-                        update({
-                          end: e.currentTarget.checked ? 1440 : Math.min(1439, block.start + 60),
-                        })
-                      }
+                  <Field
+                    label={zone ? t("Start time") : t("Start (UTC)")}
+                    htmlFor={`blk-${index}-start`}
+                    hint={
+                      zone
+                        ? undefined
+                        : t("{time} your time", { time: localBlockTime(block.start) })
+                    }
+                  >
+                    <Input
+                      id={`blk-${index}-start`}
+                      type="time"
+                      value={timeOfDay(block.start)}
+                      onChange={(e) => update({ start: minutesOfDay(e.currentTarget.value) })}
                     />
-                    {t("To midnight")}
+                  </Field>
+                  <Field
+                    label={zone ? t("End") : t("End (UTC)")}
+                    htmlFor={`blk-${index}-end`}
+                    hint={
+                      zone
+                        ? undefined
+                        : block.end === 1440
+                          ? t("Midnight")
+                          : t("{time} your time", { time: localBlockTime(block.end) })
+                    }
+                  >
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`blk-${index}-end`}
+                        aria-label={t("Time block {number} end time", { number: index + 1 })}
+                        type="time"
+                        disabled={block.end === 1440}
+                        value={block.end === 1440 ? "00:00" : timeOfDay(block.end)}
+                        onChange={(e) => update({ end: minutesOfDay(e.currentTarget.value) })}
+                      />
+                      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
+                        <input
+                          type="checkbox"
+                          checked={block.end === 1440}
+                          aria-label={t("Time block {number} runs to midnight", {
+                            number: index + 1,
+                          })}
+                          onChange={(e) =>
+                            update({
+                              end: e.currentTarget.checked
+                                ? 1440
+                                : Math.min(1439, block.start + 60),
+                            })
+                          }
+                        />
+                        {t("To midnight")}
+                      </label>
+                    </div>
+                  </Field>
+                  <label className="mb-2 flex items-center gap-2 text-sm">
+                    <Switch
+                      checked={block.shuffle}
+                      onChange={(e) => update({ shuffle: e.currentTarget.checked })}
+                      aria-label={t("Shuffle block {number}", { number: index + 1 })}
+                    />
+                    {t("Shuffle")}
                   </label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mb-1 ml-auto text-fg-subtle hover:text-danger"
+                    aria-label={t("Remove block {number}", { number: index + 1 })}
+                    onClick={() => {
+                      setBlocks(blocks.filter((_, n) => n !== index));
+                      setSelected(null);
+                    }}
+                  >
+                    <X size={14} /> {t("Remove")}
+                  </Button>
                 </div>
-              </Field>
-              <label className="mb-2 flex items-center gap-2 text-sm">
-                <Switch
-                  checked={block.shuffle}
-                  onChange={(e) => update({ shuffle: e.currentTarget.checked })}
-                  aria-label={t("Shuffle block {number}", { number: index + 1 })}
+                <ProgrammePicker
+                  label={t("Time block {number} programming", { number: index + 1 })}
+                  items={block.items}
+                  onChange={(items) => update({ items })}
                 />
-                {t("Shuffle")}
-              </label>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mb-1 ml-auto text-fg-subtle hover:text-danger"
-                aria-label={t("Remove block {number}", { number: index + 1 })}
-                onClick={() => setBlocks(blocks.filter((_, n) => n !== index))}
-              >
-                <X size={14} /> {t("Remove")}
-              </Button>
-            </div>
-            <ProgrammePicker
-              label={t("Time block {number} programming", { number: index + 1 })}
-              items={block.items}
-              onChange={(items) => update({ items })}
-            />
-          </section>
-        );
-      })}
+              </section>
+            );
+          })()}
     </div>
   );
 }
