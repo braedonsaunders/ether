@@ -173,8 +173,10 @@ func (b *Broker) ResolvePlexStream(ctx context.Context, access frontend.SessionA
 	if err != nil {
 		return PlexStreamBinding{}, err
 	}
+	// The wire id is shared by every viewer of the title. A session id
+	// attached after Open is returned only to the viewer who owns it.
 	if binding.SessionID != "" && !b.plexSessionOwned(binding.SessionID, viewer.ID) {
-		return PlexStreamBinding{}, core.ErrUnauthorized
+		binding.SessionID = ""
 	}
 	return binding, nil
 }
