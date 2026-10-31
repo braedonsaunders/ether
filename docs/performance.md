@@ -131,10 +131,15 @@ directory. Use `-strict` to exit 1 when a gated endpoint misses its budget.
 job. `internal/perfharness/fixture.go` builds the same synthetic household
 twice:
 
-- once over a library of 50k catalogue rows;
+- once over a library of 54k catalogue rows;
 - once over a library ten times larger: 250,000 movies, 10,000 shows,
-  40,000 seasons and 240,000 episodes, 540k rows in all. Three viewers each
-  have 20,000 history rows.
+  40,000 seasons and 240,000 episodes, 540k rows in all.
+
+Both carry the same household (three viewers with 20,000 history rows
+each), so only the library differs. Titles are made-up words, one in fifty
+with a common English word, so substring search matches about as sparsely
+as on a real catalogue. The App runs with the background WAL checkpointer,
+as `Run` does.
 
 On each library it starts a real App and replays one client per protocol
 (Plex, Infuse on Jellyfin, Emby, Silo, Stremio, the console). Then it
@@ -156,8 +161,18 @@ that stayed flat so they can be removed; the list only shrinks.
 
 ```sh
 ETHER_PERF_GATE=1 go test ./internal/app -run TestPerformanceGate -v -timeout 60m
-ETHER_PERF_GATE=quick go test ./internal/app -run TestPerformanceGate -v   # a 5k/50k pair, not ratcheted
+ETHER_PERF_GATE=quick go test ./internal/app -run TestPerformanceGate -v   # a 5k/54k pair, not ratcheted
 ```
+
+To work on one endpoint, narrow and keep the run:
+
+| variable | effect |
+|---|---|
+| `ETHER_PERF_GATE_CLIENTS=plex-appletv,console` | replay only these clients |
+| `ETHER_PERF_GATE_STEPS=/hubs,movies all` | replay only steps whose names contain these |
+| `ETHER_PERF_GATE_KEEP=/tmp/gate` | keep each scale's trace and database for `etherperf audit` |
+| `ETHER_PERF_TRACE_DEPTH=3` | record three callers per traced statement, to find an N+1's caller |
+| `ETHER_PERF_GATE_CPUPROFILE=/tmp/replay.out` | CPU profile of the large replay alone |
 
 ## Architecture
 
@@ -206,6 +221,17 @@ On the lab data, cold Plex home routes took 35–87 s before these two changes.
 Each page waited on TMDB retries title by title. After the changes they take
 0.1–5 s, and the remaining time is Ether's own work, which the audit ranks.
 
+### Keep the WAL checkpointed
+
+Every page a read fetches is first looked up in the WAL index, unless the
+WAL was fully checkpointed when its transaction began. On macOS and Windows,
+modernc's 16-bit atomic loads (which that lookup uses) take one global
+mutex, so a WAL the checkpointer cannot drain turns concurrent reads into a
+queue. The gate measured this: without a checkpointer its large replay took
+4 to 14 minutes, and with one about a minute. Long scans that pin an old
+snapshot (whole-catalogue counts, the collections index snapshot) keep a
+checkpoint from finishing, which is another reason they stay off requests.
+
 ### Search
 
 - **Titles.** An FTS5 trigram index (`catalog_titles_fts`, plus
@@ -238,11 +264,40 @@ subqueries per title. A covering index on
 one narrow index. With the owner's country exclusion on the lab data, the
 totals behind every listing fell from 0.4–2 s to 20–30 ms.
 
+### Series by date added
+
+A series' date added is its latest aired episode, so sorting series by it
+dated every series. Newest-first pages (Recently Added rows and addedAt
+listings) walk `catalog_titles_episode_recent` (aired episodes, newest
+first) instead, meeting each series at its date added; series with no
+aired episode are dated by their premiere, and only those that premiered
+on or after the page's last date can reach the page.
+
+### Recursive episode listings
+
+A recursive, episodes-only listing (Apple TV clients ask for every
+episode, 400 at a time, with MediaSources) reads stored, aired episodes in
+key order and checks each one's series with the same visibility rules as
+the library walk; a page end is remembered for the next page. It applies
+when that order is the sorted order and the episode set is the
+catalogue's. Before, it refreshed every series' seasons on the request.
+
 ### Caches
 
 - The catalogue keeps generation-stamped in-memory caches (titles, counts,
   browse pages, grandchildren, facets). Every catalogue write advances
   `writeGen`, so a cached page can never outlive the data it was built from.
+  Sync markers in `catalog_meta` do not advance it.
+- The catalogue writes continuously, so a total of 10k or more and a facet
+  are served from the last count while they recount, at most every 30 s.
+  Callers that use only a page's items (personalization) pass
+  `BrowseQuery.NoTotal` and skip the count.
+- The collections index snapshots the whole catalogue. Its freshness check
+  and rebuilds run behind the read, an unchanged write generation vouches
+  for it, and rebuilds are spaced by ten times the last one's duration.
+- An extracted embedded subtitle track is cached per release and track, so
+  a seek, a retry or the next session does not run ffmpeg over the file
+  again.
 - Identical concurrent work is collapsed with `internal/flight`, the
   singleflight used by TMDB reads, catalogue trends and stats.
 - Per-viewer caches must key on the viewer and on the viewer-policy
@@ -270,11 +325,19 @@ about ten other agents (load average 20–40), so warm numbers are noisy.
 | Movie and show browse totals behind every listing | 0.4–2 s (11 s under load) | 20–30 ms |
 | A short write behind a busy writer (store test) | waited the full 10 s busy timeout, then failed | at most one transaction |
 
-The gate's first full run (54k against 540k synthetic rows) lists the 50
-endpoints that still scale with the library in
-`internal/app/testdata/perf_gate_debt.txt`: home rows built from whole-library
-candidate sets, listings with per-item hydration, facets, collections and
-search over a dense synthetic catalogue. That list is the work queue.
+The gate's first full run (54k against 540k synthetic rows) listed 50
+endpoints that scaled with the library. Four remain in
+`internal/app/testdata/perf_gate_debt.txt`: the Plex show listing's
+per-series leaf counts, and three substring searches whose match counts
+grow with the library.
+
+| at 540k rows (gate) | before | after |
+|---|---:|---:|
+| Recursive episodes, 400 per page, with MediaSources | 270k statements, 10.3 s DB, 14.4 s | 600 statements, 14 ms DB, 54 ms |
+| Silo /api/v2/catalog page | about 2,500 statements | one stateless signing pass |
+| Series by date added, newest first | 0.6–0.9 s and a full count | bounded index walk |
+| Console collections, layout, viewer home | past 15 s | flat, under 2 ms |
+| Plex per-title section check (#203) | 60 µs, 205 allocations | 27 ns, 1 allocation |
 
 ## Rules for new code
 
