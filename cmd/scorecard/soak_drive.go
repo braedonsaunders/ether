@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -76,8 +77,19 @@ func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 		cfg.GPU = "no_device"
 	}
 	run := &soakRun{
-		cfg:      cfg,
-		client:   &http.Client{Timeout: 20 * time.Second},
+		cfg: cfg,
+		client: &http.Client{
+			Timeout: 20 * time.Second,
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          16,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   5 * time.Second,
+				ExpectContinueTimeout: time.Second,
+			},
+		},
 		manifest: SoakManifest{Profile: cfg.Profile, Build: cfg.Build, Started: time.Now(), GPU: cfg.GPU},
 	}
 	run.plex = &plexClient{base: strings.TrimRight(cfg.Plex, "/"), token: cfg.PlexToken, http: run.client}
@@ -100,6 +112,11 @@ func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 	}
 	if cfg.Diagnose {
 		return run.manifest, run.diagnose(ctx)
+	}
+	// Discover keeps idle connections that the cleanup window will drop.
+	// The baseline is the process after those connections are released.
+	if err := run.releaseIdle(ctx); err != nil {
+		return run.manifest, err
 	}
 	if err := run.sample(ctx); err != nil {
 		return run.manifest, err
@@ -161,6 +178,9 @@ func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 	}
 	stopFollow()
 	wg.Wait()
+	if err := run.releaseIdle(ctx); err != nil {
+		return run.snapshot(), err
+	}
 	stopped := time.Now()
 	run.mu.Lock()
 	run.manifest.FollowupEnd = stopped
@@ -171,6 +191,11 @@ func RunSoak(ctx context.Context, cfg SoakConfig) (SoakManifest, error) {
 	}
 	stopSamples()
 	return run.snapshot(), nil
+}
+
+func (run *soakRun) releaseIdle(ctx context.Context) error {
+	run.client.CloseIdleConnections()
+	return sleep(ctx, 200*time.Millisecond)
 }
 
 func (run *soakRun) snapshot() SoakManifest {

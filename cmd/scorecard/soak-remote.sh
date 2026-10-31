@@ -91,7 +91,9 @@ cleanup() {
 trap cleanup EXIT
 set +e
 timeout --signal=TERM --kill-after=20s "$seconds" \
-docker run --pull=never --name "$name" --network=none \
+# --init reaps the encoder after its guardian is SIGKILLed. Without it the
+# soak process is pid 1 and that zombie stays in the process tree.
+docker run --pull=never --init --name "$name" --network=none \
   --cpus=2 --memory=4g --pids-limit=256 --log-driver=none --read-only \
   --mount "type=bind,src=$run/src,dst=/src,readonly" -w /src \
   --mount "type=bind,src=$media,dst=/media,readonly" \
