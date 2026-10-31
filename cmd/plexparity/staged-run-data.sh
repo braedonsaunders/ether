@@ -89,7 +89,7 @@ replacements = {
  "build_playback.go": [('Engine:     a.media,', 'Engine:     parityEngine(a.media, dataDir),'), ('playback.Options{DataDir:', 'playback.Options{Now: parityClock(), DataDir:')],
  "livetv.go": [('livetv.Options{DB: a.db', 'livetv.Options{Now: parityClock(), DB: a.db')],
  "collections.go": [('return []collections.Option{', 'return append([]collections.Option{'), ('\n\t}\n}', '\n\t}, parityCollectionOptions()...)\n}')],
- "plex.go": [('deps.Config = a.cfg.Get', 'deps.Now = parityClock()\n\tdeps.Config = a.cfg.Get')],
+ "plex.go": [('deps.Config = a.cfg.Read', 'deps.Now = parityClock()\n\tdeps.Config = a.cfg.Read')],
 }
 for name, changes in replacements.items():
  path = root / name
