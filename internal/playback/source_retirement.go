@@ -148,7 +148,13 @@ func (m *Manager) openSource(ctx context.Context, s *sourceLifetime, res *core.R
 				return
 			}
 			if m.resume != nil {
-				if err := m.resume.payload.releaseLater(context.Background(), owner, m.opts.PayloadReplayGrace); err != nil {
+				// onGone settles only after the durable row is deleted. A resume
+				// share of that row is not settlement.
+				err := m.resume.payload.releaseSourceLater(context.Background(), owner, m.opts.PayloadReplayGrace, func() { ticket.settle(nil) })
+				if errors.Is(err, errPayloadRetained) {
+					return
+				}
+				if err != nil {
 					// The exact owner was admitted before Open; it has one bounded
 					// callback slot. Rejection/shutdown never settles this ticket.
 					m.resume.payload.queueReleaseAfter(owner, func() { ticket.settle(nil) })

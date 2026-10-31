@@ -28,13 +28,24 @@ var heldPayloadWitnesses sync.Map
 
 var errPayloadCommitUnknown = errors.New("playback: payload ownership commit outcome unknown")
 
+// errPayloadRetained means this source ref is gone, but a non-source holder
+// still has the only durable row. The source lifetime stays pending until
+// that row is deleted. Another source-open ref is not this case: it carries
+// its own lifetime.
+var errPayloadRetained = errors.New("playback: payload owner remains with a non-source holder")
+
 var errPayloadWitnessCapacity = errors.New("playback: all 128 payload ownership witness slots are held or unreconciled")
 var errPayloadFilesystem = errors.New("playback: payload ownership requires a verified local filesystem; network or unknown filesystems cannot authorize reclamation")
 
 type payloadAnchor struct {
-	owner    payloadOwner
-	refs     int
-	retiring bool
+	owner      payloadOwner
+	refs       int
+	sourceRefs int // source-open refs; a resume share does not count
+	purpose    string
+	retiring   bool
+	// afterGone runs once the durable row is deleted. The last source ref
+	// registers here when a resume holder still shares the row.
+	afterGone []func()
 }
 
 type payloadPark struct {
@@ -68,6 +79,7 @@ type payloadStore struct {
 type payloadOwnerState struct {
 	id       string
 	anchor   *payloadAnchor
+	purpose  string
 	mu       sync.Mutex
 	released bool
 	notified atomic.Bool
@@ -302,8 +314,11 @@ func (p *payloadStore) reserve(ctx context.Context, user int64, surface, device,
 			return payloadOwner{}, core.ErrNotAvailable
 		}
 		anchor.refs++
+		if purpose == "source-open" {
+			anchor.sourceRefs++
+		}
 		ref := anchor.owner
-		ref.state = &payloadOwnerState{id: randomID(32), anchor: anchor}
+		ref.state = &payloadOwnerState{id: randomID(32), anchor: anchor, purpose: purpose}
 		return ref, nil
 	}
 
@@ -354,8 +369,11 @@ func (p *payloadStore) reserve(ctx context.Context, user int64, surface, device,
 	}
 	release = false
 	owner := payloadOwner{header: h, domain: p.domain, incarnation: p.incarnation, hash: hash}
-	anchor := &payloadAnchor{owner: owner, refs: 1}
-	owner.state = &payloadOwnerState{id: randomID(32), anchor: anchor}
+	anchor := &payloadAnchor{owner: owner, refs: 1, purpose: purpose}
+	if purpose == "source-open" {
+		anchor.sourceRefs = 1
+	}
+	owner.state = &payloadOwnerState{id: randomID(32), anchor: anchor, purpose: purpose}
 	p.anchors[hash] = anchor
 	return owner, nil
 }
@@ -376,8 +394,11 @@ func (p *payloadStore) share(ctx context.Context, hash string) (payloadOwner, bo
 		return payloadOwner{}, false
 	}
 	anchor.refs++
+	if anchor.purpose == "source-open" {
+		anchor.sourceRefs++
+	}
 	ref := anchor.owner
-	ref.state = &payloadOwnerState{id: randomID(32), anchor: anchor}
+	ref.state = &payloadOwnerState{id: randomID(32), anchor: anchor, purpose: anchor.purpose}
 	return ref, true
 }
 
@@ -385,14 +406,25 @@ func (p *payloadStore) share(ctx context.Context, hash string) (payloadOwner, bo
 // replay can share the committed anchor instead of inserting another row.
 // A zero delay, or a hash that cannot be shared, retires o immediately.
 func (p *payloadStore) releaseLater(ctx context.Context, o payloadOwner, delay time.Duration) error {
+	return p.releaseOwnedLater(ctx, o, delay, false, nil)
+}
+
+// releaseSourceLater is releaseLater for a source lifetime. A resume holder
+// sharing the row does not settle that lifetime; onGone runs when the row
+// is actually deleted.
+func (p *payloadStore) releaseSourceLater(ctx context.Context, o payloadOwner, delay time.Duration, onGone func()) error {
+	return p.releaseOwnedLater(ctx, o, delay, true, onGone)
+}
+
+func (p *payloadStore) releaseOwnedLater(ctx context.Context, o payloadOwner, delay time.Duration, forSource bool, onGone func()) error {
 	if delay <= 0 || o.state == nil {
-		return p.release(ctx, o)
+		return p.releaseOwned(ctx, o, forSource, onGone)
 	}
 	hold, ok := p.share(ctx, o.hash)
 	if !ok {
-		return p.release(ctx, o)
+		return p.releaseOwned(ctx, o, forSource, onGone)
 	}
-	if err := p.release(ctx, o); err != nil {
+	if err := p.releaseOwned(ctx, o, forSource, onGone); err != nil {
 		_ = p.release(context.Background(), hold)
 		return err
 	}
@@ -473,6 +505,10 @@ func markPayloadDeletingTx(ctx context.Context, tx *sql.Tx, domain, hash, incarn
 }
 
 func (p *payloadStore) release(ctx context.Context, o payloadOwner) error {
+	return p.releaseOwned(ctx, o, false, nil)
+}
+
+func (p *payloadStore) releaseOwned(ctx context.Context, o payloadOwner, forSource bool, onGone func()) error {
 	if o.state == nil {
 		return core.ErrNotAvailable
 	}
@@ -483,6 +519,12 @@ func (p *payloadStore) release(ctx context.Context, o payloadOwner) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
+	var notify []func()
+	defer func() {
+		for _, fn := range notify {
+			fn()
+		}
+	}()
 	if err := p.enter(ctx); err != nil {
 		return err
 	}
@@ -493,8 +535,21 @@ func (p *payloadStore) release(ctx context.Context, o payloadOwner) error {
 	}
 	if anchor.refs > 1 {
 		anchor.refs--
+		if o.state.purpose == "source-open" && anchor.sourceRefs > 0 {
+			anchor.sourceRefs--
+		}
 		o.state.released = true
 		p.finish()
+		// A resume (or read) share is not another source lifetime. Dropping
+		// the last source ref must not report the row deleted. PostgreSQL
+		// lets that share land before RetireSource; SQLite's single writer
+		// usually lets the delete run first. Both have to wait for the row.
+		if forSource && o.state.purpose == "source-open" && anchor.sourceRefs == 0 {
+			if onGone != nil {
+				anchor.afterGone = append(anchor.afterGone, onGone)
+			}
+			return errPayloadRetained
+		}
 		return nil
 	}
 	anchor.retiring = true
@@ -524,6 +579,8 @@ func (p *payloadStore) release(ctx context.Context, o payloadOwner) error {
 	delete(p.anchors, o.hash)
 	anchor.refs = 0
 	o.state.released = true
+	notify = anchor.afterGone
+	anchor.afterGone = nil
 	p.finish()
 	return nil
 }

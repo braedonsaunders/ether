@@ -162,6 +162,52 @@ func TestOwnedSourceCleanupPublicRetirement(t *testing.T) {
 	}
 }
 
+// A resume writer shares the source row in memory and does not insert its
+// own. Retirement must stay pending until that row is deleted, including
+// when the share lands first. PostgreSQL does that reliably; SQLite's single
+// writer usually lets the delete win the race.
+func TestOwnedSourceCleanupStaysPendingWhileResumeShares(t *testing.T) {
+	h := newOwnedHarness(t, []*fakeRelease{mkv("A", 10000, time.Minute)}, []string{"A"})
+	e := &ownedTestEngine{Engine: h.engine}
+	h.m.deps.Engine = e
+	ps, outcome, err := h.m.PrepareSurfaceSource(context.Background(), owner, movieKey, defaultCaps("retry-share"), "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.m.waitResumeSaves()
+	p := h.m.resume.payload
+	p.mu.Lock()
+	var hash string
+	for key := range p.anchors {
+		hash = key
+	}
+	p.mu.Unlock()
+	if hash == "" {
+		t.Fatal("prepared source has no payload anchor")
+	}
+	shared, err := p.reserve(context.Background(), owner.ID, "resume", "", "resume-share", hash, "resume-write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repair := blockResumeOwnerCleanup(t, h.m.resume.db)
+	t.Cleanup(repair)
+	if err := h.m.RetireSource(ps.ID, outcome); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { a, _ := sourceResponsibilities(h.m); return a == 0 })
+	requireOwnedPending(t, outcome)
+	requireSourceResponsibilities(t, h.m, 0, 1)
+	repair()
+	if err := p.release(context.Background(), shared); err != nil {
+		t.Fatal(err)
+	}
+	waitRetirementTest(t, outcome.Done(), "resume share released the source row")
+	if err := outcome.Err(); err != nil {
+		t.Fatal(err)
+	}
+	requireSourceResponsibilities(t, h.m, 0, 0)
+}
+
 func TestOwnedSourceCleanupShutdownAndCloseFailure(t *testing.T) {
 	for _, backendFailure := range []bool{false, true} {
 		t.Run(map[bool]string{false: "pending-cleanup", true: "backend-failure"}[backendFailure], func(t *testing.T) {
