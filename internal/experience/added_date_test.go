@@ -12,7 +12,7 @@ func TestAddedDateIgnoresPublicationAndObservation(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	released := time.Unix(1072915200, 0).UTC() // 2004-01-01
 	observed := time.Unix(1704067200, 0).UTC() // 2024-01-01
-	for _, typ := range []core.MediaType{core.TypeMovie, core.TypeEpisode, core.TypeShow, core.TypeSeason} {
+	for _, typ := range []core.MediaType{core.TypeMovie, core.TypeEpisode} {
 		title := core.Title{Type: typ, Released: released, AddedAt: observed, UpdatedAt: now}
 		if got := title.DateAdded(now); !got.Equal(released) {
 			t.Fatalf("%s: catalogue date %s replaced release %s", typ, got, released)
@@ -26,6 +26,20 @@ func TestAddedDateIgnoresPublicationAndObservation(t *testing.T) {
 			t.Fatal("future date counted as added")
 		}
 	}
+	for _, typ := range []core.MediaType{core.TypeShow, core.TypeSeason} {
+		title := core.Title{Type: typ, Released: released, AddedAt: observed, UpdatedAt: now}
+		if got := title.DateAdded(now); !got.Equal(observed) {
+			t.Fatalf("%s: latest aired %s lost to premiere %s", typ, observed, got)
+		}
+		title.AddedAt = time.Time{}
+		if got := title.DateAdded(now); !got.Equal(released) {
+			t.Fatalf("%s: premiere fallback %s", typ, got)
+		}
+		title.AddedAt = now.Add(time.Hour)
+		if got := title.DateAdded(now); !got.Equal(released) {
+			t.Fatalf("%s: future episode replaced premiere %s", typ, got)
+		}
+	}
 }
 
 func TestDateAddedSortAcrossTypesAndChildren(t *testing.T) {
@@ -35,12 +49,12 @@ func TestDateAddedSortAcrossTypesAndChildren(t *testing.T) {
 	if err := s.sortTitles(context.Background(), items, frontend.ItemQuery{Sort: core.SortAdded, Desc: true}); err != nil {
 		t.Fatal(err)
 	}
-	if items[0].Key != 2 || items[1].Key != 1 || items[2].Key != 3 {
+	if items[0].Key != 3 || items[1].Key != 2 || items[2].Key != 1 {
 		t.Fatalf("order: %+v", items)
 	}
-	show := items[2]
-	if !show.DateAdded(time.Unix(1767225600, 0)).Equal(released) {
-		t.Fatalf("show sorted by catalogue date: %s", show.DateAdded(time.Unix(1767225600, 0)))
+	show := items[0]
+	if !show.DateAdded(time.Unix(1767225600, 0)).Equal(observed) {
+		t.Fatalf("show ignored its latest aired episode: %s", show.DateAdded(time.Unix(1767225600, 0)))
 	}
 }
 

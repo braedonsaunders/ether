@@ -24,7 +24,7 @@ func TestRecentlyAddedUsesAirDerivedDatesAcrossSections(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := body.MediaContainer.Metadata
-	if rec.Code != 200 || len(items) != 2 || items[0].RatingKey != movie.Key.String() || items[0].AddedAt != movie.Released.Unix() || items[0].UpdatedAt != movie.UpdatedAt.Unix() || items[1].RatingKey != show.Key.String() || items[1].AddedAt != show.Released.Unix() || items[1].UpdatedAt != show.UpdatedAt.Unix() {
+	if rec.Code != 200 || len(items) != 2 || items[0].RatingKey != show.Key.String() || items[0].AddedAt != show.AddedAt.Unix() || items[0].UpdatedAt != show.UpdatedAt.Unix() || items[1].RatingKey != movie.Key.String() || items[1].AddedAt != movie.Released.Unix() || items[1].UpdatedAt != movie.UpdatedAt.Unix() {
 		t.Fatalf("recent order or dates: %s", rec.Body.String())
 	}
 	if sort, _ := sortFor("updatedAt", "desc"); sort != core.SortUpdated {

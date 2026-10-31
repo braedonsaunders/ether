@@ -86,8 +86,8 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		if q.Desc {
 			dir = "DESC"
 		}
-		order = releaseAddedSQL + " " + dir
-		orderArgs = releaseAddedArgs(asOf)
+		order = airAddedSQL + " " + dir
+		orderArgs = airAddedArgs(asOf)
 	}
 	query := `SELECT ` + prefixedCols("t") + ` FROM catalog_titles t WHERE ` + where + ` ORDER BY ` + order + `, t.key ASC LIMIT ? OFFSET ?`
 	queryArgs := append(append([]any{}, args...), orderArgs...)
@@ -160,8 +160,8 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	var args []any
 	conds = append(conds, "t.browsable=1", "t.adult=0")
 	if f.KnownAddedDate {
-		conds = append(conds, releaseAddedSQL+">0")
-		args = append(args, releaseAddedArgs(c.now())...)
+		conds = append(conds, airAddedSQL+">0")
+		args = append(args, airAddedArgs(c.now())...)
 	}
 	if f := c.visibilityFilter(); f != nil {
 		q, a := f.SQLHidden()

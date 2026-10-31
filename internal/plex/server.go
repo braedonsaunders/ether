@@ -497,18 +497,34 @@ func (s *Server) goHook(name string, fn func()) {
 
 func trimSlash(p string) string { return strings.TrimSuffix(p, "/") }
 
-// TranscodeFor returns the running transcode session fed by a playback
-// session. Transcode sessions are keyed by the client's session id, so
-// playback needs this to move ffmpeg to a new input on mid-stream failover.
-func (s *Server) TranscodeFor(playSessionID string) (core.HLSSession, bool) {
-	if s.d.Transcoder == nil {
-		return nil, false
+// releaseMountedPlayback stops encoders, trickplay, and downloads this server
+// started. The HTTP server itself stays up so an in-flight request can finish
+// and a later mount can reuse it.
+func (s *Server) releaseMountedPlayback() {
+	if s == nil {
+		return
 	}
-	if hs, ok := sessions.TranscodeFor(s.transcodes.table, s.d.Transcoder, playSessionID); ok {
-		return hs, true
+	s.UsePlaybackBroker(nil)
+	var ids []string
+	if s.transcodes != nil {
+		ids = s.transcodes.ids()
 	}
-	if s.d.LiveTV != nil {
-		return s.d.LiveTV.TranscodeFor(playSessionID)
+	for _, id := range ids {
+		if s.d.Transcoder != nil {
+			s.d.Transcoder.Stop(id)
+		}
+		s.transcodes.remove(id)
 	}
-	return nil, false
+	s.releaseTrickplayHolders()
+	s.releaseAllDownloads()
+}
+
+func (s *Server) releaseTrickplayHolders() {
+	s.trickplayMu.Lock()
+	holds := s.trickplayHolders
+	s.trickplayHolders = nil
+	s.trickplayMu.Unlock()
+	for _, hold := range holds {
+		hold.Close(true)
+	}
 }

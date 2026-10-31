@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// LatestItem carries the title's own release or air date. Nil means unknown.
-// It is not a catalogue insertion time or a descendant episode date.
+// LatestItem carries date added. For a grouped series that is the latest
+// aired episode. Nil means unknown. It is not a catalogue insertion time.
 type LatestItem struct {
 	Title   Title
 	AddedAt *time.Time
