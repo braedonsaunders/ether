@@ -546,7 +546,9 @@ export function ChannelStudio({
             {!isNew ? (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/5 p-4">
                 <div>
-                  <p className="text-sm font-medium text-fg">{t("Delete channel")}</p>
+                  <p className="text-sm font-medium text-fg">
+                    {t("Delete {name}", { name: c.name || t("this channel") })}
+                  </p>
                   <p className="text-xs text-fg-muted">
                     {virtual
                       ? t("Removes it from every viewer's guide.")
@@ -556,7 +558,7 @@ export function ChannelStudio({
                   </p>
                 </div>
                 <Button variant="outline" className="text-danger" onClick={onDelete}>
-                  <Trash2 size={14} /> {t("Delete channel")}
+                  <Trash2 size={14} /> {t("Delete {name}", { name: c.name || t("this channel") })}
                 </Button>
               </div>
             ) : null}

@@ -547,3 +547,63 @@ func TestLiveGuideBadQueriesAreBadRequests(t *testing.T) {
 		t.Errorf("default grid: %d %s", r.Code, r.Body.String())
 	}
 }
+
+func TestChannelCreateAndDeleteRefreshThePlexLineup(t *testing.T) {
+	f, service, channel := liveFixture(t)
+	before := liveRefreshedAt(t, f)
+	sub, ok := f.srv.notifier.subscribe(nil, &core.User{ID: 1, IsOwner: true})
+	if !ok {
+		t.Fatal("subscribe")
+	}
+	defer f.srv.notifier.unsubscribe(sub)
+	service.SetOnChange(f.srv.NotifyLiveLineup)
+	added, err := service.SaveChannel(context.Background(), livetv.Channel{
+		ID: "added", Number: "8", Name: "Added channel", Kind: "virtual", Enabled: true,
+		Epoch: time.Unix(0, 0).UTC(),
+		Items: []livetv.Item{{Key: core.MovieKey(3), Title: "Added feature", DurationMS: 3600000}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterSave := liveRefreshedAt(t, f)
+	if afterSave <= before {
+		t.Fatalf("create left refreshedAt at %v", afterSave)
+	}
+	lineup := f.request(t, "GET", liveProviderPath+"/lineups/dvr/channels", map[string]string{"Accept": "application/json"})
+	if !strings.Contains(lineup.Body.String(), "Added channel") {
+		t.Fatalf("new channel missing from lineup: %s", lineup.Body.String())
+	}
+	if err = service.DeleteChannel(context.Background(), channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	afterDelete := liveRefreshedAt(t, f)
+	if afterDelete <= afterSave {
+		t.Fatalf("delete left refreshedAt at %v", afterDelete)
+	}
+	lineup = f.request(t, "GET", liveProviderPath+"/lineups/dvr/channels", map[string]string{"Accept": "application/json"})
+	if strings.Contains(lineup.Body.String(), channel.Name) || !strings.Contains(lineup.Body.String(), added.Name) {
+		t.Fatalf("lineup after delete: %s", lineup.Body.String())
+	}
+	deadline := time.After(2 * time.Second)
+	sawGuide := false
+	for !sawGuide {
+		select {
+		case msg := <-sub.ch:
+			if strings.Contains(string(msg.data), "livetv.guide") {
+				sawGuide = true
+			}
+		case <-deadline:
+			t.Fatal("clients were not told to reload the lineup")
+		}
+	}
+}
+
+func liveRefreshedAt(t *testing.T, f *fixture) float64 {
+	t.Helper()
+	rec := f.request(t, "GET", "/livetv/dvrs", map[string]string{"Accept": "application/json"})
+	if rec.Code != 200 {
+		t.Fatalf("dvr %d %s", rec.Code, rec.Body.String())
+	}
+	dvrs := decodeJSON(t, rec)["Dvr"].([]any)
+	return dvrs[0].(map[string]any)["refreshedAt"].(float64)
+}

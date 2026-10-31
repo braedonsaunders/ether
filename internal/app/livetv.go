@@ -12,7 +12,11 @@ func (a *App) buildLiveTV() error {
 	if a.transcoder != nil {
 		tc = a.transcoder
 	}
-	svc, err := livetv.New(livetv.Options{Now: parityClock(), DB: a.db, Sealer: a.cfg, Catalog: a.catalog, Collections: a.collections, Playback: a.playback, Transcoder: tc, Allowed: a.safety.Allowed, CanPlay: a.safety.CanPlay, StreamLimit: func(u *core.User) int { return playback.UserStreamLimit(a.cfg.Read(), a.safety.UserPolicy(u)) }, Warm: func(ctx context.Context, key core.RatingKey) error {
+	var avail core.AvailabilitySource
+	if a.resolver != nil {
+		avail = a.resolver
+	}
+	svc, err := livetv.New(livetv.Options{Now: parityClock(), DB: a.db, Sealer: a.cfg, Catalog: a.catalog, Collections: a.collections, Playback: a.playback, Transcoder: tc, Availability: avail, Allowed: a.safety.Allowed, CanPlay: a.safety.CanPlay, StreamLimit: func(u *core.User) int { return playback.UserStreamLimit(a.cfg.Read(), a.safety.UserPolicy(u)) }, Warm: func(ctx context.Context, key core.RatingKey) error {
 		if !a.registrar.Status().PlexPass {
 			return core.ErrUnauthorized
 		}

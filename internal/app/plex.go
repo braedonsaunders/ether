@@ -126,6 +126,9 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	}
 	srv := plex.NewServer(deps)
 	a.plexServer = srv
+	if a.livetv != nil {
+		a.livetv.SetOnChange(srv.NotifyLiveLineup)
+	}
 	a.publishLibrarySections()
 	// Frontend unmount closes the server and the GUID worker. Server.Close is
 	// idempotent, so the app closer may run as well. Watch refresh stays on

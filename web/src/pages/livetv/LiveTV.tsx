@@ -304,13 +304,17 @@ export default function LiveTV() {
     try {
       const saved = await tv.saveChannel(body);
       toast.success(body.id ? t("Channel saved") : t("Channel created"), {
-        description: t("Plex picks it up on the next guide refresh."),
+        description: t("Plex's lineup updates in a moment."),
       });
       await loadCore();
       void loadGuide();
       void loadCoverage();
-      if (!body.id && saved?.id) await go({ kind: "channel", id: saved.id }, { force: true });
-      else if (saved) {
+      if (!body.id && saved?.id) {
+        const d = studioDraft(saved);
+        setDraft(d);
+        setBaseline(JSON.stringify(d));
+        await go({ kind: "channel", id: saved.id }, { force: true });
+      } else if (saved) {
         const d = studioDraft(saved);
         setDraft(d);
         setBaseline(JSON.stringify(d));
@@ -336,15 +340,17 @@ export default function LiveTV() {
 
   const deleteChannel = async () => {
     if (!draft?.channel.id) return;
+    const id = draft.channel.id;
+    const name = draft.channel.name || t("this channel");
     const ok = await confirmDialog({
-      title: t("Delete {name}?", { name: draft.channel.name }),
+      title: t("Delete {name}?", { name }),
       message: t("It disappears from every viewer's guide."),
-      confirmLabel: t("Delete channel"),
+      confirmLabel: t("Delete {name}", { name }),
       tone: "danger",
     });
     if (!ok) return;
     try {
-      await tv.deleteChannel(draft.channel.id);
+      await tv.deleteChannel(id);
       toast.success(t("Channel deleted"));
       await go({ kind: "guide" }, { force: true });
       await reloadAll();
@@ -594,6 +600,7 @@ export default function LiveTV() {
         }
         actions={actions}
         asideLabel={t("Lineup")}
+        asideClassName={channelOpen ? "lg:relative lg:z-[60]" : undefined}
         mainLabel={t("Live TV workspace")}
         mainClassName={mainClassName}
         aside={aside}

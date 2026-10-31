@@ -55,11 +55,12 @@ type liveDevice struct {
 	ChannelMapping []liveMapping `plex:"ChannelMapping"`
 }
 type liveDVR struct {
-	Key      string       `plex:"key"`
-	Language string       `plex:"language"`
-	Lineup   string       `plex:"lineup"`
-	UUID     string       `plex:"uuid"`
-	Device   []liveDevice `plex:"Device"`
+	Key         string       `plex:"key"`
+	Language    string       `plex:"language"`
+	Lineup      string       `plex:"lineup"`
+	UUID        string       `plex:"uuid"`
+	RefreshedAt int64        `plex:"refreshedAt"`
+	Device      []liveDevice `plex:"Device"`
 }
 type liveGrabber struct {
 	Title      string `plex:"title"`
@@ -206,7 +207,50 @@ func (s *Server) handleLiveDVRs(w http.ResponseWriter, r *http.Request) {
 		s.writeErr(w, r, err)
 		return
 	}
-	s.write(w, r, &liveContainer{Size: 1, Identifier: livetv.Provider, DVR: []liveDVR{{Key: "1", Language: "eng", Lineup: "lineup://" + livetv.Provider + "/dvr", UUID: s.identity().MachineIdentifier + "-livetv", Device: devices}}})
+	s.write(w, r, &liveContainer{Size: 1, Identifier: livetv.Provider, DVR: []liveDVR{{Key: "1", Language: "eng", Lineup: "lineup://" + livetv.Provider + "/dvr", UUID: s.identity().MachineIdentifier + "-livetv", RefreshedAt: s.liveLineupRefreshedAt(), Device: devices}}})
+}
+
+// liveLineupRefreshedAt is the clock Apple TV compares to drop a cached lineup.
+func (s *Server) liveLineupRefreshedAt() int64 {
+	if s.d.LiveTV != nil {
+		if at := s.d.LiveTV.LineupChanged(); !at.IsZero() {
+			return at.Unix()
+		}
+	}
+	return s.now().Unix()
+}
+
+// NotifyLiveLineup tells connected Plex clients to reload the DVR lineup and
+// guide. Channel create and delete call it through LiveTV.SetOnChange.
+func (s *Server) NotifyLiveLineup() {
+	now := s.liveLineupRefreshedAt()
+	s.publishNotification(model.NotificationContainer{
+		Type: "activity",
+		Size: 1,
+		ActivityNotification: []model.ActivityNotification{{
+			Event: "ended",
+			UUID:  "ether-livetv-lineup",
+			Activity: &model.Activity{
+				UUID:     "ether-livetv-lineup",
+				Type:     "livetv.guide",
+				Title:    "Live TV lineup",
+				Progress: 100,
+			},
+		}},
+	}, 0)
+	s.publishNotification(model.NotificationContainer{
+		Type: "timeline",
+		Size: 1,
+		TimelineEntry: []model.TimelineEntry{{
+			Identifier: livetv.Provider,
+			SectionID:  "1",
+			ItemID:     "1",
+			Type:       1,
+			Title:      "Live TV",
+			State:      5,
+			UpdatedAt:  now,
+		}},
+	}, 0)
 }
 func (s *Server) handleLiveGrabbers(w http.ResponseWriter, r *http.Request) {
 	s.write(w, r, &liveContainer{Size: 1, Identifier: livetv.Provider, MediaGrabber: []liveGrabber{{Title: "Ether owner channels", Identifier: "tv.plex.grabbers.ether", Protocol: "livetv"}}})

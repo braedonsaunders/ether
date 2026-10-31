@@ -182,6 +182,9 @@ type Options struct {
 	Allowed func(*core.User, *core.Title) bool
 	// Warm resolves/primes a title without opening a viewer stream.
 	Warm func(context.Context, core.RatingKey) error
+	// Availability is the resolver's cached playability. Known-unavailable
+	// titles are left out of the guide; unknown titles stay in place.
+	Availability core.AvailabilitySource
 	// Sealer protects source credentials at rest (secrets.go); nil stores
 	// them as given.
 	Sealer config.FieldSealer

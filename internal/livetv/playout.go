@@ -290,7 +290,7 @@ func (s *Service) TuneWithSession(ctx context.Context, u *core.User, channelID s
 	// close can therefore cancel it through the session context instead of
 	// waiting behind up to ~10s of upstream work.
 	if c.Kind == "virtual" {
-		_, err = s.prepareTrack(ctx, ss, *p)
+		err = s.tuneVirtual(ctx, ss, *p)
 		if err != nil {
 			s.Stop(ctx, ss.info.ID, u)
 			return SessionInfo{}, err
@@ -900,6 +900,13 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	}
 	c := ss.info.Channel
 	c.StreamURL = ss.inputURL
+	analyze := len(ss.caps.VideoCodecs) > 0 || len(ss.caps.AudioCodecs) > 0 || clientreg.HasQuirk(clientreg.Identity{Product: ss.caps.Product, Platform: ss.caps.Platform, Device: ss.caps.Device, Version: ss.caps.Version}, "probe-hls-without-codecs")
+	// Codec analysis overlaps the playlist prefix read. The first tune of a
+	// channel still waits on the probe; a retune inside liveProbeTTL does not.
+	probeCh, probeCancel := s.startEarlyProbe(ctx, ss, analyze || c.Transcode)
+	if probeCancel != nil {
+		defer probeCancel()
+	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.StreamURL, nil)
 	res, err := s.upstreamWithHeaders(ctx, c.StreamURL, req, ss.inputHeaders)
 	if err != nil {
@@ -917,9 +924,8 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	isHLS := strings.HasPrefix(strings.TrimSpace(string(prefix[:n])), "#EXTM3U") || strings.Contains(strings.ToLower(res.Header.Get("Content-Type")), "mpegurl")
 	var info *core.MediaInfo
 	if isHLS && !c.Transcode {
-		analyze := len(ss.caps.VideoCodecs) > 0 || len(ss.caps.AudioCodecs) > 0 || clientreg.HasQuirk(clientreg.Identity{Product: ss.caps.Product, Platform: ss.caps.Platform, Device: ss.caps.Device, Version: ss.caps.Version}, "probe-hls-without-codecs")
 		if s.o.Transcoder != nil && analyze {
-			info, err = s.probeSessionInput(ctx, ss)
+			info, err = s.takeEarlyProbe(ctx, ss, probeCh)
 			if err != nil {
 				return err
 			}
@@ -943,7 +949,7 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	if s.o.Transcoder == nil {
 		return core.ErrNotAvailable
 	}
-	info, err = s.probeSessionInput(ctx, ss)
+	info, err = s.takeEarlyProbe(ctx, ss, probeCh)
 	if err != nil {
 		return err
 	}
@@ -954,6 +960,38 @@ func (s *Service) startIPTVSource(ctx context.Context, ss *session) error {
 	copy.Duration = 0
 	ss.info.MediaInfo = &copy
 	return s.startIPTVRelay(ctx, ss, copy)
+}
+
+type probeResult struct {
+	info *core.MediaInfo
+	err  error
+}
+
+// startEarlyProbe begins codec analysis before the prefix read when this
+// tune will need it. Direct HLS without a codec decision does not probe.
+func (s *Service) startEarlyProbe(ctx context.Context, ss *session, need bool) (<-chan probeResult, context.CancelFunc) {
+	if !need || s.o.Transcoder == nil {
+		return nil, nil
+	}
+	ch := make(chan probeResult, 1)
+	probeCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		info, err := s.probeSessionInput(probeCtx, ss)
+		ch <- probeResult{info, err}
+	}()
+	return ch, cancel
+}
+
+func (s *Service) takeEarlyProbe(ctx context.Context, ss *session, ch <-chan probeResult) (*core.MediaInfo, error) {
+	if ch == nil {
+		return s.probeSessionInput(ctx, ss)
+	}
+	select {
+	case r := <-ch:
+		return r.info, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 func (s *Service) serveRelayPlaylist(w http.ResponseWriter, r *http.Request, ss *session) {
 	ss.mu.Lock()

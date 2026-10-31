@@ -1,3 +1,4 @@
+import { ConfirmRoot } from "@braedonsaunders/appkit-ui";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
@@ -26,6 +27,7 @@ const WAIT = { timeout: 4000 };
 function renderLiveTV(path = "/livetv") {
   return render(
     <MemoryRouter initialEntries={[path]}>
+      <ConfirmRoot />
       <Routes>
         <Route path="/livetv/:tab?" element={<LiveTV />} />
       </Routes>
@@ -304,6 +306,42 @@ describe("Live TV studio", () => {
       { url: "https://iptv.example/news.m3u8", enabled: true, priority: 0 },
       { url: "https://backup.example/news.m3u8", enabled: true, priority: 1 },
     ]);
+  });
+
+  it("rebinds an open channel drawer from the lineup and names that channel on delete", async () => {
+    const channels: Record<string, unknown>[] = [iptv("news", { number: "2", name: "News 24" })];
+    const calls = backend(channels, (url, init) => {
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/livetv/channels") && method === "GET") return channels;
+      if (url.endsWith("/livetv/channels") && method === "POST") {
+        const saved = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        saved.id = "created";
+        channels.push(saved);
+        return saved;
+      }
+      return undefined;
+    });
+    renderLiveTV();
+    await newBlankChannel("Movie night");
+    fireEvent.change(screen.getByLabelText("Search titles"), { target: { value: "Adventure" } });
+    fireEvent.click(await screen.findByRole("button", { name: /Adventure/ }, WAIT));
+    fireEvent.click(screen.getByRole("button", { name: /Create channel/ }));
+    await waitFor(() => expect(sent(calls, "POST", /\/livetv\/channels$/)).toHaveLength(1));
+    expect(await screen.findByLabelText("Name")).toHaveValue("Movie night");
+    const lineup = screen.getByRole("complementary", { name: "Lineup" });
+    expect(lineup.className).toContain("lg:z-[60]");
+    fireEvent.click(within(lineup).getByRole("button", { name: "2 News 24" }));
+    expect(await screen.findByLabelText("Name")).toHaveValue("News 24");
+    fireEvent.click(screen.getByRole("tab", { name: "Details" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete News 24" }));
+    const heading = await screen.findByRole("heading", { name: "Delete News 24?" });
+    fireEvent.click(
+      within(heading.closest('[role="dialog"]') as HTMLElement).getByRole("button", {
+        name: "Delete News 24",
+      }),
+    );
+    await waitFor(() => expect(sent(calls, "DELETE", /\/livetv\/channels\/news$/)).toHaveLength(1));
+    expect(sent(calls, "DELETE", /\/livetv\/channels\/created$/)).toHaveLength(0);
   });
 });
 

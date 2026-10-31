@@ -34,6 +34,7 @@ type Service struct {
 	inputRelay       inputRelay // loopback ffmpeg input relay (input_relay.go)
 	probeMu          sync.Mutex
 	probeCache       map[string]liveProbeEntry
+	probeWait        map[string]*liveProbeFlight
 	sourceMu         sync.Mutex
 	sourceHealth     map[string]streamSourceHealth
 	transMu          sync.RWMutex
@@ -41,6 +42,8 @@ type Service struct {
 	o                Options
 	policyReads      atomic.Uint64
 	mu               sync.Mutex
+	lineupUnix       int64
+	onChange         func()
 	sessions         map[string]*session
 	nextSubscription int64 // guarded by mu
 	ctx              context.Context
@@ -59,7 +62,7 @@ func New(o Options) (*Service, error) {
 		o.HTTPClient = egress.Client(egress.CapDirect, 20*time.Second)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{o: o, sessions: map[string]*session{}, transcodes: map[string]core.HLSSession{}, ctx: ctx, cancel: cancel}
+	s := &Service{o: o, sessions: map[string]*session{}, transcodes: map[string]core.HLSSession{}, ctx: ctx, cancel: cancel, lineupUnix: o.Now().Unix()}
 	s.wg.Add(2)
 	go s.maintain()
 	go s.refreshLoop()
@@ -549,6 +552,7 @@ func (s *Service) SaveChannel(ctx context.Context, c Channel) (Channel, error) {
 	_, err = s.o.DB.ExecContext(ctx, `INSERT INTO livetv_channels(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, c.ID, b)
 	if err == nil {
 		s.invalidate(c.ID, "")
+		s.bumpLineup()
 	}
 	return c, err
 }
@@ -556,8 +560,42 @@ func (s *Service) DeleteChannel(ctx context.Context, id string) error {
 	_, err := s.o.DB.ExecContext(ctx, `DELETE FROM livetv_channels WHERE id=?`, id)
 	if err == nil {
 		s.invalidate(id, "")
+		s.bumpLineup()
 	}
 	return err
+}
+
+// SetOnChange registers the Plex lineup refresh. Save, delete and source
+// import call it after the database commit.
+func (s *Service) SetOnChange(fn func()) {
+	s.mu.Lock()
+	s.onChange = fn
+	s.mu.Unlock()
+}
+
+// LineupChanged is the DVR refreshedAt clients poll. It moves whenever the
+// channel set changes, including twice in the same wall-clock second.
+func (s *Service) LineupChanged() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lineupUnix == 0 {
+		return time.Time{}
+	}
+	return time.Unix(s.lineupUnix, 0).UTC()
+}
+
+func (s *Service) bumpLineup() {
+	s.mu.Lock()
+	now := s.o.Now().Unix()
+	if now <= s.lineupUnix {
+		now = s.lineupUnix + 1
+	}
+	s.lineupUnix = now
+	fn := s.onChange
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 func (s *Service) Policy(ctx context.Context, userID int64) (Policy, error) {
 	s.policyReads.Add(1)
@@ -807,9 +845,66 @@ func (s *Service) programmeAt(ctx context.Context, c Channel, at time.Time) (Pro
 	return p, true, nil
 }
 
+// guideChannel drops titles the resolver already knows cannot play. Unknown
+// titles keep their saved order, so a channel with no availability cache
+// schedules exactly as it did before.
+func (s *Service) guideChannel(ctx context.Context, c Channel) Channel {
+	src := s.o.Availability
+	if src == nil {
+		return c
+	}
+	items, itemsChanged := omitUnavailable(ctx, src, c.Items)
+	fallback, fallbackChanged := omitUnavailable(ctx, src, c.Fallback)
+	filler, fillerChanged := omitUnavailable(ctx, src, c.Filler)
+	blocks := c.Blocks
+	blocksChanged := false
+	if len(c.Blocks) > 0 {
+		next := make([]Block, len(c.Blocks))
+		copy(next, c.Blocks)
+		for i := range next {
+			bi, ch := omitUnavailable(ctx, src, next[i].Items)
+			bf, ch2 := omitUnavailable(ctx, src, next[i].Filler)
+			if ch || ch2 {
+				blocksChanged = true
+				next[i].Items = bi
+				next[i].Filler = bf
+			}
+		}
+		if blocksChanged {
+			blocks = next
+		}
+	}
+	if !itemsChanged && !fallbackChanged && !fillerChanged && !blocksChanged {
+		return c
+	}
+	c.Items, c.Fallback, c.Filler, c.Blocks = items, fallback, filler, blocks
+	return c
+}
+
+func omitUnavailable(ctx context.Context, src core.AvailabilitySource, items []Item) ([]Item, bool) {
+	if len(items) == 0 {
+		return items, false
+	}
+	out := make([]Item, 0, len(items))
+	dropped := false
+	for _, it := range items {
+		if it.Key != 0 && it.Slate == "" {
+			if known, ok := src.Available(ctx, it.Key); known && !ok {
+				dropped = true
+				continue
+			}
+		}
+		out = append(out, it)
+	}
+	if !dropped {
+		return items, false
+	}
+	return out, true
+}
+
 func (s *Service) programmes(ctx context.Context, c Channel, from, until time.Time) ([]Programme, error) {
 	if c.Kind == "virtual" {
-		return Schedule(c, from, until), nil
+		return Schedule(s.guideChannel(ctx, c), from, until), nil
 	}
 	if until.Sub(from) <= time.Second {
 		p, ok, err := s.programmeAt(ctx, c, from)
@@ -929,7 +1024,7 @@ func (s *Service) programmesLimit(ctx context.Context, c Channel, from, until ti
 		return nil, nil
 	}
 	if c.Kind == "virtual" {
-		ps := Schedule(c, from, until)
+		ps := Schedule(s.guideChannel(ctx, c), from, until)
 		if len(ps) > limit {
 			ps = ps[:limit]
 		}
@@ -1122,6 +1217,7 @@ func (s *Service) ImportSource(ctx context.Context, src Source) (Source, error) 
 	}
 	err = tx.Commit()
 	if err == nil {
+		s.bumpLineup()
 		// Only tunes whose stream changed or disappeared are interrupted, so
 		// a scheduled refresh does not cut off viewers.
 		for _, id := range changedStreams(oldByID, stored) {
@@ -1291,6 +1387,7 @@ func (s *Service) DeleteSource(ctx context.Context, id string) error {
 	err = tx.Commit()
 	if err == nil {
 		s.invalidate("", id)
+		s.bumpLineup()
 	}
 	return err
 }
