@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Drawer } from "../../components/Drawer";
 import { ErrorPanel } from "../../components/feedback";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { PanelHead, Workspace } from "../../components/workspace";
@@ -352,41 +353,16 @@ export default function LiveTV() {
 
   // ---- header actions ---------------------------------------------------------------
 
-  const editing = (selection.kind === "channel" || selection.kind === "new") && draft;
-  const actions = editing ? (
-    <>
-      {dirty ? <Badge variant="warning">{t("Unsaved changes")}</Badge> : null}
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={(!dirty && selection.kind !== "new") || saving}
-        onClick={() => {
-          if (selection.kind === "new") void go({ kind: "guide" }, { force: true });
-          else setDraft(JSON.parse(baseline) as StudioDraft);
-        }}
-      >
-        <Undo2 size={14} /> {selection.kind === "new" ? t("Cancel") : t("Discard")}
-      </Button>
-      <Button
-        size="sm"
-        disabled={(!dirty && selection.kind !== "new") || saving}
-        onClick={() => void saveDraft()}
-      >
-        <Save size={14} />{" "}
-        {saving ? t("Saving…") : selection.kind === "new" ? t("Create channel") : t("Save channel")}
-      </Button>
-    </>
-  ) : (
-    <>
-      <AddMenu
-        onChannel={() => void go({ kind: "new" })}
-        onSource={(k) => {
-          setNewKind(k);
-          setLeftTab("sources");
-          void go({ kind: "source", id: "new" });
-        }}
-      />
-    </>
+  const editing = (selection.kind === "channel" || selection.kind === "new") && !!draft;
+  const actions = (
+    <AddMenu
+      onChannel={() => void go({ kind: "new" })}
+      onSource={(k) => {
+        setNewKind(k);
+        setLeftTab("sources");
+        void go({ kind: "source", id: "new" });
+      }}
+    />
   );
 
   // ---- render -----------------------------------------------------------------------------
@@ -518,93 +494,19 @@ export default function LiveTV() {
     </>
   );
 
+  const channelOpen = selection.kind === "new" || selection.kind === "channel";
+  const sourceOpen = selection.kind === "source";
+  const sourceRecord =
+    selection.kind === "source" && selection.id !== "new"
+      ? (sources.find((s) => s.id === selection.id) ?? null)
+      : null;
+  const missingSource = selection.kind === "source" && selection.id !== "new" && !sourceRecord;
+  const missingChannel =
+    selection.kind === "channel" && channels !== null && !savedChannel && !draft;
+
   let main: React.ReactNode = null;
   let mainClassName = "";
-  if (selection.kind === "guide") {
-    mainClassName = "flex flex-col lg:overflow-hidden";
-    main = (
-      <>
-        <OnNowStrip
-          channels={filtered}
-          guide={guide}
-          now={now}
-          onSelect={(id) => void go({ kind: "channel", id })}
-        />
-        <div className="min-h-0 flex-1">
-          <GuideGrid
-            channels={filtered}
-            guide={guide}
-            from={from}
-            until={until}
-            now={now}
-            selected={null}
-            onSelect={(id) => void go({ kind: "channel", id })}
-            onShift={(h) => setShift((s) => s + h)}
-            onNow={() => {
-              setShift(0);
-              setNow(Date.now());
-            }}
-            loading={guideLoading}
-          />
-        </div>
-      </>
-    );
-  } else if (selection.kind === "new" && !draft) {
-    main = <TemplateGallery onPick={(k) => void startNew(k)} />;
-  } else if ((selection.kind === "channel" || selection.kind === "new") && draft) {
-    const id = draft.channel.id;
-    main = (
-      <ChannelStudio
-        draft={draft}
-        onChange={setDraft}
-        isNew={selection.kind === "new"}
-        dirty={dirty}
-        guide={(id && guide.get(id)) || []}
-        coverage={id ? coverage?.get(id) : undefined}
-        sources={sources}
-        users={users}
-        collections={collections}
-        now={now}
-        onDelete={() => void deleteChannel()}
-        onMapGuide={async (c) => {
-          await quickSave(
-            c,
-            t("{name} now takes listings from {guide}", { name: c.name, guide: c.guideId ?? "" }),
-          );
-          await loadCore();
-        }}
-      />
-    );
-  } else if (selection.kind === "channel") {
-    main = (
-      <p className="p-8 text-center text-sm text-fg-muted">
-        {channels === null ? t("Loading…") : t("That channel no longer exists.")}
-      </p>
-    );
-  } else if (selection.kind === "source") {
-    const src =
-      selection.id === "new" ? null : (sources.find((s) => s.id === selection.id) ?? null);
-    main =
-      selection.id !== "new" && !src ? (
-        <p className="p-8 text-center text-sm text-fg-muted">
-          {t("That source no longer exists.")}
-        </p>
-      ) : (
-        <SourceEditor
-          source={src}
-          kind={newKind}
-          onSaved={async (s) => {
-            await reloadAll();
-            if (selection.id === "new" && s?.id)
-              await go({ kind: "source", id: s.id }, { force: true });
-          }}
-          onDeleted={async () => {
-            await go({ kind: "guide" }, { force: true });
-            await reloadAll();
-          }}
-        />
-      );
-  } else if (selection.kind === "coverage") {
+  if (selection.kind === "coverage") {
     main = (
       <GuideCoverage
         channels={sorted}
@@ -621,37 +523,188 @@ export default function LiveTV() {
         onReload={reloadAll}
       />
     );
+  } else {
+    mainClassName = "flex flex-col lg:overflow-hidden";
+    main = (
+      <>
+        <OnNowStrip
+          channels={filtered}
+          guide={guide}
+          now={now}
+          onSelect={(id) => void go({ kind: "channel", id })}
+        />
+        <div className="min-h-0 flex-1">
+          <GuideGrid
+            channels={filtered}
+            guide={guide}
+            from={from}
+            until={until}
+            now={now}
+            selected={selection.kind === "channel" ? selection.id : null}
+            onSelect={(id) => void go({ kind: "channel", id })}
+            onShift={(h) => setShift((s) => s + h)}
+            onNow={() => {
+              setShift(0);
+              setNow(Date.now());
+            }}
+            loading={guideLoading}
+          />
+        </div>
+      </>
+    );
   }
+
+  const channelTitle =
+    selection.kind === "new"
+      ? t("New virtual channel")
+      : draft?.channel.kind === "iptv"
+        ? t("Edit channel")
+        : t("Virtual channel");
+  const sourceTitle =
+    newKind === "guide" || (sourceRecord && sourceRecord.hasPlaylist === false)
+      ? sourceRecord
+        ? t("Edit guide source")
+        : t("Guide source")
+      : sourceRecord
+        ? t("Edit IPTV source")
+        : t("IPTV source");
 
   const live = sorted.filter((c) => c.enabled).length;
   return (
-    <Workspace
-      title={t("Live TV")}
-      subtitle={
-        channels
-          ? missingCount
-            ? tn(
-                live,
-                "{count} channel on air · {missing} need a guide · Plex Pass required in Plex",
-                "{count} channels on air · {missing} need a guide · Plex Pass required in Plex",
-                { missing: formatNumber(missingCount) },
-              )
-            : tn(
-                live,
-                "{count} channel on air · Plex Pass required in Plex",
-                "{count} channels on air · Plex Pass required in Plex",
-              )
-          : undefined
-      }
-      actions={actions}
-      asideLabel={t("Lineup")}
-      mainLabel={t("Live TV workspace")}
-      mainClassName={mainClassName}
-      aside={aside}
-      main={main}
-    >
-      {state}
-    </Workspace>
+    <>
+      <Workspace
+        title={t("Live TV")}
+        subtitle={
+          channels
+            ? missingCount
+              ? tn(
+                  live,
+                  "{count} channel on air · {missing} need a guide · Plex Pass required in Plex",
+                  "{count} channels on air · {missing} need a guide · Plex Pass required in Plex",
+                  { missing: formatNumber(missingCount) },
+                )
+              : tn(
+                  live,
+                  "{count} channel on air · Plex Pass required in Plex",
+                  "{count} channels on air · Plex Pass required in Plex",
+                )
+            : undefined
+        }
+        actions={actions}
+        asideLabel={t("Lineup")}
+        mainLabel={t("Live TV workspace")}
+        mainClassName={mainClassName}
+        aside={aside}
+        main={main}
+      >
+        {state}
+      </Workspace>
+      <Drawer
+        open={channelOpen}
+        onClose={() => void go({ kind: "guide" })}
+        title={channelTitle}
+        description={
+          draft?.channel.kind === "iptv"
+            ? t("Stream, guide and who can watch.")
+            : t("What plays, when it plays, and what happens when it runs out.")
+        }
+        size="2xl"
+        initialFullscreen={draft?.channel.kind !== "iptv"}
+        footer={
+          editing ? (
+            <div className="flex w-full flex-wrap items-center gap-2">
+              {dirty ? <Badge variant="warning">{t("Unsaved changes")}</Badge> : null}
+              <div className="ml-auto flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={(!dirty && selection.kind !== "new") || saving}
+                  onClick={() => {
+                    if (selection.kind === "new") void go({ kind: "guide" }, { force: true });
+                    else setDraft(JSON.parse(baseline) as StudioDraft);
+                  }}
+                >
+                  <Undo2 size={14} /> {selection.kind === "new" ? t("Cancel") : t("Discard")}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={(!dirty && selection.kind !== "new") || saving}
+                  onClick={() => void saveDraft()}
+                >
+                  <Save size={14} />{" "}
+                  {saving
+                    ? t("Saving…")
+                    : selection.kind === "new"
+                      ? t("Create channel")
+                      : t("Save channel")}
+                </Button>
+              </div>
+            </div>
+          ) : null
+        }
+      >
+        {selection.kind === "new" && !draft ? (
+          <TemplateGallery onPick={(k) => void startNew(k)} />
+        ) : draft ? (
+          <ChannelStudio
+            draft={draft}
+            onChange={setDraft}
+            isNew={selection.kind === "new"}
+            dirty={dirty}
+            guide={(draft.channel.id && guide.get(draft.channel.id)) || []}
+            coverage={draft.channel.id ? coverage?.get(draft.channel.id) : undefined}
+            sources={sources}
+            users={users}
+            collections={collections}
+            now={now}
+            onDelete={() => void deleteChannel()}
+            onMapGuide={async (c) => {
+              await quickSave(
+                c,
+                t("{name} now takes listings from {guide}", {
+                  name: c.name,
+                  guide: c.guideId ?? "",
+                }),
+              );
+              await loadCore();
+            }}
+          />
+        ) : (
+          <p className="text-sm text-fg-muted">
+            {missingChannel ? t("That channel no longer exists.") : t("Loading…")}
+          </p>
+        )}
+      </Drawer>
+      <Drawer
+        open={sourceOpen}
+        onClose={() => void go({ kind: "guide" })}
+        title={sourceTitle}
+        description={
+          newKind === "guide"
+            ? t("XMLTV listings for any channel.")
+            : t("An M3U playlist, optionally with a guide.")
+        }
+        size="lg"
+      >
+        {missingSource ? (
+          <p className="text-sm text-fg-muted">{t("That source no longer exists.")}</p>
+        ) : (
+          <SourceEditor
+            source={selection.kind === "source" && selection.id !== "new" ? sourceRecord : null}
+            kind={newKind}
+            onSaved={async (s) => {
+              await reloadAll();
+              if (selection.kind === "source" && selection.id === "new" && s?.id)
+                await go({ kind: "source", id: s.id }, { force: true });
+            }}
+            onDeleted={async () => {
+              await go({ kind: "guide" }, { force: true });
+              await reloadAll();
+            }}
+          />
+        )}
+      </Drawer>
+    </>
   );
 }
 

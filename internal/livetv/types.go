@@ -21,13 +21,48 @@ type Item struct {
 	Summary    string         `json:"summary,omitempty"`
 	Rating     string         `json:"rating,omitempty"`
 	Thumb      string         `json:"thumb,omitempty"`
+	// Show metadata keeps episodes in season order inside a shuffle,
+	// marathon or newest-first playout. Zero values are movies and items
+	// saved before weekly scheduling, which stay in their stored order.
+	ShowKey    core.RatingKey `json:"showKey,omitempty"`
+	Season     int            `json:"season,omitempty"`
+	Episode    int            `json:"episode,omitempty"`
+	ReleasedMS int64          `json:"releasedMs,omitempty"`
+	// Slate is "offair" for a guide entry that fills a gap. It is not a
+	// catalogue title and is never stored on a channel.
+	Slate string `json:"slate,omitempty"`
+}
+
+// ProgramSource is one weighted part of a mix. Weight 0 means 1.
+// Watched is "", "watched" or "unwatched" for the whole household.
+type ProgramSource struct {
+	Name       string         `json:"name,omitempty"`
+	Weight     int            `json:"weight,omitempty"`
+	Items      []Item         `json:"items,omitempty"`
+	Collection core.RatingKey `json:"collection,omitempty"`
+	Filter     *core.Filter   `json:"filter,omitempty"`
+	Watched    string         `json:"watched,omitempty"`
 }
 type Block struct {
-	// Start and End are UTC minutes after midnight. End may be 1440.
-	Start   int    `json:"start"`
-	End     int    `json:"end"`
-	Items   []Item `json:"items"`
-	Shuffle bool   `json:"shuffle"`
+	// Start and End are minutes after midnight in Timezone, or UTC when
+	// the channel has no timezone. End may be 1440. Days empty means every
+	// day, which is how channels saved before the weekly grid behave.
+	// Days are Go weekdays: 0 Sunday … 6 Saturday, in that same zone.
+	Start       int             `json:"start"`
+	End         int             `json:"end"`
+	Days        []int           `json:"days,omitempty"`
+	Items       []Item          `json:"items"`
+	Shuffle     bool            `json:"shuffle"`
+	Mode        string          `json:"mode,omitempty"`  // order, shuffle, random, marathon, newest
+	Align       string          `json:"align,omitempty"` // hour, half
+	Fit         string          `json:"fit,omitempty"`   // cut, pad
+	RepeatDays  int             `json:"repeatDays,omitempty"`
+	Filler      []Item          `json:"filler,omitempty"`
+	MarathonKey core.RatingKey  `json:"marathonKey,omitempty"`
+	Collection  core.RatingKey  `json:"collection,omitempty"`
+	Filter      *core.Filter    `json:"filter,omitempty"`
+	Sources     []ProgramSource `json:"sources,omitempty"`
+	Watched     string          `json:"watched,omitempty"`
 }
 type Channel struct {
 	Transcode     bool           `json:"transcode"` // IPTV: normalize codecs through the transcoder
@@ -50,9 +85,24 @@ type Channel struct {
 	Shuffle       bool           `json:"shuffle"`
 	Items         []Item         `json:"items"`
 	Blocks        []Block        `json:"blocks,omitempty"`
-	// Collection/Filter are expanded into a stable item snapshot when saved.
-	Collection core.RatingKey `json:"collection,omitempty"`
-	Filter     *core.Filter   `json:"filter,omitempty"`
+	// Collection/Filter/Sources are expanded into a stable item snapshot when saved.
+	Collection core.RatingKey  `json:"collection,omitempty"`
+	Filter     *core.Filter    `json:"filter,omitempty"`
+	Sources    []ProgramSource `json:"sources,omitempty"`
+	Watched    string          `json:"watched,omitempty"` // household: watched, unwatched
+	// Mode, Align, Fit, RepeatDays and Filler are the base playout. Empty
+	// Mode keeps Shuffle as the original engine: false resumes in order from
+	// Epoch, true is one stable shuffle. Timezone empty means block minutes
+	// are UTC, every day.
+	Mode        string         `json:"mode,omitempty"`
+	Align       string         `json:"align,omitempty"`
+	Fit         string         `json:"fit,omitempty"`
+	RepeatDays  int            `json:"repeatDays,omitempty"`
+	Filler      []Item         `json:"filler,omitempty"`
+	Fallback    []Item         `json:"fallback,omitempty"`
+	OffAir      bool           `json:"offAir,omitempty"`
+	MarathonKey core.RatingKey `json:"marathonKey,omitempty"`
+	Timezone    string         `json:"timezone,omitempty"`
 
 	// GuideSourceID names the source whose XMLTV supplies GuideID's
 	// programmes. Empty means SourceID. Virtual channels ignore it.

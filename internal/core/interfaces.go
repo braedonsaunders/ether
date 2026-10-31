@@ -31,6 +31,7 @@ type Filter struct {
 	ExcludeKeywords  []string      `json:"-"`
 	Type             MediaType     `json:"type,omitempty"` // movie or show
 	Genres           []string      `json:"genres,omitempty"`
+	Keywords         []string      `json:"keywords,omitempty"` // every keyword must match (case-insensitive)
 	YearFrom         int           `json:"yearFrom,omitempty"`
 	YearTo           int           `json:"yearTo,omitempty"`
 	MinRating        float64       `json:"minRating,omitempty"`

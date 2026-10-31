@@ -181,7 +181,7 @@ describe("Live TV studio", () => {
     fireEvent.click(await within(block).findByRole("button", { name: /Adventure/ }, WAIT));
     await within(block).findByRole("button", { name: "Remove Adventure" });
     await waitFor(() => {
-      const previews = sent(calls, "POST", /\/livetv\/preview$/);
+      const previews = sent(calls, "POST", /\/livetv\/preview/);
       expect(previews.length).toBeGreaterThan(0);
       expect(body(previews.at(-1))).toMatchObject({
         filter: { yearFrom: 1980, yearTo: 1989, genres: ["Action"] },
@@ -190,7 +190,7 @@ describe("Live TV studio", () => {
     }, WAIT);
     // No preview was requested while the block was empty.
     expect(
-      sent(calls, "POST", /\/livetv\/preview$/).every((c) =>
+      sent(calls, "POST", /\/livetv\/preview/).every((c) =>
         (body(c).blocks ?? []).every((b: { items: unknown[] }) => b.items.length > 0),
       ),
     ).toBe(true);

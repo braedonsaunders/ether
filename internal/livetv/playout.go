@@ -562,6 +562,9 @@ func (s *Service) prepareTrackOnStage(ctx context.Context, ss *session, p Progra
 			return t, nil
 		}
 	}
+	if p.Item.Slate == offAirSlate {
+		return nil, fmt.Errorf("channel is off air")
+	}
 	if s.o.Playback == nil || s.o.Transcoder == nil {
 		return nil, core.ErrNotAvailable
 	}

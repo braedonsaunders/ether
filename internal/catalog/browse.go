@@ -276,6 +276,14 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 			args = append(args, g)
 		}
 	}
+	for _, k := range f.Keywords {
+		k = strings.ToLower(strings.TrimSpace(k))
+		if k == "" {
+			continue
+		}
+		conds = append(conds, `EXISTS (SELECT 1 FROM catalog_keywords kw WHERE kw.key=t.key AND LOWER(kw.keyword)=?)`)
+		args = append(args, k)
+	}
 	if len(f.ExcludeGenres) > 0 {
 		conds = append(conds, `NOT EXISTS (SELECT 1 FROM catalog_genres g WHERE g.key=t.key AND LOWER(g.genre) IN (`+placeholders(len(f.ExcludeGenres))+`))`)
 		for _, g := range f.ExcludeGenres {

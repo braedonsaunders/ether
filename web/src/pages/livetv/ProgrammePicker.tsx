@@ -14,10 +14,12 @@ export function ProgrammePicker({
   items,
   onChange,
   label,
+  searchLabel,
 }: {
   items: Item[];
   onChange: (items: Item[]) => void;
   label: string;
+  searchLabel?: string;
 }) {
   const [notice, setNotice] = useState("");
   const pending = useRef(false);
@@ -65,6 +67,7 @@ export function ProgrammePicker({
       <TitleSearch
         type="movie"
         placeholder={t("Find a movie to add…")}
+        label={searchLabel}
         excludeKeys={new Set(items.map((i) => String(i.key)))}
         onPick={(title) => void pick(title)}
       />

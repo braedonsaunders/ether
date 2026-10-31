@@ -240,27 +240,109 @@ func (s *Service) Channel(ctx context.Context, id string) (Channel, error) {
 	return c, err
 }
 func itemFromTitle(t core.Title) Item {
-	return Item{Key: t.Key, Title: t.Title, DurationMS: t.Runtime.Milliseconds(), Summary: t.Summary, Rating: t.ContentRating, Thumb: t.PosterPath}
+	var released int64
+	if !t.Released.IsZero() {
+		released = t.Released.UnixMilli()
+	}
+	return Item{Key: t.Key, Title: t.Title, DurationMS: t.Runtime.Milliseconds(), Summary: t.Summary, Rating: t.ContentRating, Thumb: t.PosterPath, ShowKey: t.ShowKey, Season: t.Season, Episode: t.Episode, ReleasedMS: released}
 }
 func (s *Service) expand(ctx context.Context, c *Channel) error {
-	if c.Collection == 0 && c.Filter == nil {
-		return nil
+	items, err := s.resolveProgramming(ctx, c.Items, c.Collection, c.Filter, c.Sources, c.Watched)
+	if err != nil {
+		return err
 	}
+	if c.Collection != 0 || c.Filter != nil || len(c.Sources) > 0 || c.Watched != "" {
+		c.Items = items
+	}
+	for i := range c.Blocks {
+		b := &c.Blocks[i]
+		if b.Collection == 0 && b.Filter == nil && len(b.Sources) == 0 && b.Watched == "" {
+			continue
+		}
+		blockItems, err := s.resolveProgramming(ctx, b.Items, b.Collection, b.Filter, b.Sources, b.Watched)
+		if err != nil {
+			return err
+		}
+		b.Items = blockItems
+	}
+	return nil
+}
+
+// resolveProgramming turns a collection, smart filter or weighted mix into
+// a stable item list. With none of those set, items pass through (watched
+// still applies when asked). Shows become their episodes, in catalogue order.
+func (s *Service) resolveProgramming(ctx context.Context, existing []Item, collection core.RatingKey, filter *core.Filter, sources []ProgramSource, watched string) ([]Item, error) {
+	var items []Item
+	var err error
+	switch {
+	case len(sources) > 0:
+		parts := make([][]Item, len(sources))
+		weights := make([]int, len(sources))
+		for i, src := range sources {
+			parts[i], err = s.resolveProgramming(ctx, src.Items, src.Collection, src.Filter, nil, src.Watched)
+			if err != nil {
+				return nil, err
+			}
+			weights[i] = src.Weight
+			if weights[i] <= 0 {
+				weights[i] = 1
+			}
+			if weights[i] > 20 {
+				weights[i] = 20
+			}
+		}
+		items = interleave(parts, weights)
+	case collection != 0 || filter != nil:
+		items, err = s.expandQuery(ctx, collection, filter)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		items = append([]Item(nil), existing...)
+	}
+	if watched == "" {
+		return items, nil
+	}
+	return s.filterWatched(ctx, items, watched)
+}
+
+func interleave(parts [][]Item, weights []int) []Item {
+	idx := make([]int, len(parts))
+	var out []Item
+	for len(out) < 10000 {
+		progressed := false
+		for i, p := range parts {
+			for n := 0; n < weights[i] && idx[i] < len(p); n++ {
+				out = append(out, p[idx[i]])
+				idx[i]++
+				progressed = true
+				if len(out) >= 10000 {
+					return out
+				}
+			}
+		}
+		if !progressed {
+			break
+		}
+	}
+	return out
+}
+
+func (s *Service) expandQuery(ctx context.Context, collection core.RatingKey, filter *core.Filter) ([]Item, error) {
 	var page core.Page
 	var err error
-	if c.Collection != 0 {
+	if collection != 0 {
 		if s.o.Collections == nil {
-			return fmt.Errorf("collections unavailable")
+			return nil, fmt.Errorf("collections unavailable")
 		}
-		page, err = s.o.Collections.Items(ctx, &core.User{IsOwner: true}, c.Collection, 0, 2000)
+		page, err = s.o.Collections.Items(ctx, &core.User{IsOwner: true}, collection, 0, 2000)
 	} else {
-		if s.o.Catalog == nil {
-			return fmt.Errorf("catalogue unavailable")
+		if s.o.Catalog == nil || filter == nil {
+			return nil, fmt.Errorf("catalogue unavailable")
 		}
-		// The catalogue caps one Browse page well below 2000; page through.
 		for len(page.Items) < 2000 {
 			var p core.Page
-			if p, err = s.o.Catalog.Browse(ctx, core.BrowseQuery{Filter: *c.Filter, Sort: core.SortTitle, Offset: len(page.Items), Limit: 2000 - len(page.Items)}); err != nil {
+			if p, err = s.o.Catalog.Browse(ctx, core.BrowseQuery{Filter: *filter, Sort: core.SortTitle, Offset: len(page.Items), Limit: 2000 - len(page.Items)}); err != nil {
 				break
 			}
 			page.Total = p.Total
@@ -271,31 +353,108 @@ func (s *Service) expand(ctx context.Context, c *Channel) error {
 		}
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	c.Items = nil
+	var items []Item
 	for _, t := range page.Items {
 		ts := []core.Title{t}
 		if t.Type == core.TypeShow {
 			if s.o.Catalog == nil {
-				return fmt.Errorf("catalogue unavailable")
+				return nil, fmt.Errorf("catalogue unavailable")
 			}
 			ts, err = s.o.Catalog.Grandchildren(ctx, t.Key)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 		for _, t := range ts {
 			if !t.Adult && t.Runtime > 0 && (t.Type == core.TypeMovie || t.Type == core.TypeEpisode) {
-				c.Items = append(c.Items, itemFromTitle(t))
+				items = append(items, itemFromTitle(t))
 			}
-			if len(c.Items) >= 10000 {
-				return fmt.Errorf("channel exceeds 10000 programmes")
+			if len(items) >= 10000 {
+				return nil, fmt.Errorf("channel exceeds 10000 programmes")
 			}
 		}
 	}
+	return items, nil
+}
+
+func (s *Service) filterWatched(ctx context.Context, items []Item, watched string) ([]Item, error) {
+	if watched != "watched" && watched != "unwatched" {
+		return nil, fmt.Errorf("watched must be watched or unwatched")
+	}
+	if s.o.DB == nil {
+		return nil, fmt.Errorf("watch history unavailable")
+	}
+	rows, err := s.o.DB.QueryContext(ctx, `SELECT DISTINCT rating_key FROM state_history WHERE completed=1`)
+	if err != nil {
+		return nil, fmt.Errorf("watch history unavailable")
+	}
+	defer rows.Close()
+	seen := map[core.RatingKey]struct{}{}
+	for rows.Next() {
+		var key int64
+		if err = rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		seen[core.RatingKey(key)] = struct{}{}
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	var out []Item
+	for _, it := range items {
+		_, hit := seen[it.Key]
+		if watched == "watched" && hit || watched == "unwatched" && !hit {
+			out = append(out, it)
+		}
+	}
+	return out, nil
+}
+func checkPlay(mode, align, fit string, repeat int, watched string) error {
+	switch mode {
+	case "", "order", "shuffle", "random", "marathon", "newest":
+	default:
+		return fmt.Errorf("unknown playout")
+	}
+	switch align {
+	case "", "hour", "half":
+	default:
+		return fmt.Errorf("alignment must be hour or half hour")
+	}
+	switch fit {
+	case "", "cut", "pad":
+	default:
+		return fmt.Errorf("fit must be cut or pad")
+	}
+	if repeat < 0 || repeat > 30 {
+		return fmt.Errorf("repeat window must be 0–30 days")
+	}
+	switch watched {
+	case "", "watched", "unwatched":
+	default:
+		return fmt.Errorf("watched must be watched or unwatched")
+	}
 	return nil
 }
+
+func blocksOverlap(a, b Block) bool {
+	if a.End <= b.Start || b.End <= a.Start {
+		return false
+	}
+	if len(a.Days) == 0 || len(b.Days) == 0 {
+		return true
+	}
+	for _, d := range a.Days {
+		for _, e := range b.Days {
+			if d == e {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func validateChannel(c *Channel) error {
 	c.Name = strings.TrimSpace(c.Name)
 	c.Number = strings.TrimSpace(c.Number)
@@ -310,8 +469,16 @@ func validateChannel(c *Channel) error {
 			return err
 		}
 	}
-	if c.Kind == "virtual" && len(c.Items) == 0 {
+	if c.Kind == "virtual" && len(c.Items) == 0 && !c.OffAir && len(c.Fallback) == 0 {
 		return fmt.Errorf("virtual channel needs base programming")
+	}
+	if err := checkPlay(c.Mode, c.Align, c.Fit, c.RepeatDays, c.Watched); err != nil {
+		return err
+	}
+	if c.Timezone != "" {
+		if _, err := time.LoadLocation(c.Timezone); err != nil {
+			return fmt.Errorf("unknown timezone")
+		}
 	}
 	check := func(items []Item) error {
 		if len(items) > 10000 {
@@ -327,17 +494,38 @@ func validateChannel(c *Channel) error {
 	if err := check(c.Items); err != nil {
 		return err
 	}
-	blocks := append([]Block(nil), c.Blocks...)
-	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Start < blocks[j].Start })
-	prev := 0
-	for _, b := range blocks {
-		if b.Start < prev || b.Start < 0 || b.End <= b.Start || b.End > 1440 || len(b.Items) == 0 {
+	for i, b := range c.Blocks {
+		if b.Start < 0 || b.End <= b.Start || b.End > 1440 {
+			return fmt.Errorf("time blocks must be within 00:00–24:00")
+		}
+		if len(b.Items) == 0 && len(c.Fallback) == 0 && !c.OffAir {
 			return fmt.Errorf("UTC time blocks must be nonoverlapping, within 00:00–24:00, and contain programming")
 		}
 		if err := check(b.Items); err != nil {
 			return err
 		}
-		prev = b.End
+		if err := check(b.Filler); err != nil {
+			return err
+		}
+		if err := checkPlay(b.Mode, b.Align, b.Fit, b.RepeatDays, b.Watched); err != nil {
+			return err
+		}
+		for _, d := range b.Days {
+			if d < 0 || d > 6 {
+				return fmt.Errorf("time block day must be 0–6")
+			}
+		}
+		for j := i + 1; j < len(c.Blocks); j++ {
+			if blocksOverlap(b, c.Blocks[j]) {
+				return fmt.Errorf("UTC time blocks must be nonoverlapping, within 00:00–24:00, and contain programming")
+			}
+		}
+	}
+	if err := check(c.Filler); err != nil {
+		return err
+	}
+	if err := check(c.Fallback); err != nil {
+		return err
 	}
 	if c.Epoch.IsZero() {
 		c.Epoch = time.Unix(0, 0).UTC()

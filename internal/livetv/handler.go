@@ -138,7 +138,27 @@ func (s *Service) Handler() http.Handler {
 			ownerResult(w, nil, e)
 			return
 		}
-		ownerResult(w, Schedule(c, s.o.Now(), s.o.Now().Add(6*time.Hour)), nil)
+		from, until := s.o.Now(), s.o.Now().Add(6*time.Hour)
+		if raw := r.URL.Query().Get("from"); raw != "" {
+			parsed, e := time.Parse(time.RFC3339, raw)
+			if e != nil {
+				ownerResult(w, nil, fmt.Errorf("from must be RFC3339"))
+				return
+			}
+			from = parsed
+		}
+		if raw := r.URL.Query().Get("until"); raw != "" {
+			parsed, e := time.Parse(time.RFC3339, raw)
+			if e != nil {
+				ownerResult(w, nil, fmt.Errorf("until must be RFC3339"))
+				return
+			}
+			until = parsed
+		}
+		if until.Sub(from) > 8*24*time.Hour {
+			until = from.Add(8 * 24 * time.Hour)
+		}
+		ownerResult(w, Schedule(c, from, until), nil)
 	})
 	return r
 }

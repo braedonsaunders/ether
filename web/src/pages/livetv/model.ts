@@ -9,8 +9,37 @@ export type Item = {
   summary?: string;
   rating?: string;
   thumb?: string;
+  showKey?: number;
+  season?: number;
+  episode?: number;
+  releasedMs?: number;
 };
-export type Block = { start: number; end: number; items: Item[]; shuffle: boolean };
+export type ProgramSource = {
+  name?: string;
+  weight?: number;
+  items?: Item[];
+  collection?: number;
+  filter?: Record<string, unknown>;
+  watched?: "" | "watched" | "unwatched";
+};
+export type Block = {
+  start: number;
+  end: number;
+  /** Weekdays in the channel timezone, 0 Sunday … 6 Saturday. Empty means every day. */
+  days?: number[];
+  items: Item[];
+  shuffle: boolean;
+  mode?: string;
+  align?: "" | "hour" | "half";
+  fit?: "" | "cut" | "pad";
+  repeatDays?: number;
+  filler?: Item[];
+  marathonKey?: number;
+  collection?: number;
+  filter?: Record<string, unknown>;
+  sources?: ProgramSource[];
+  watched?: "" | "watched" | "unwatched";
+};
 export type Channel = {
   id: string;
   number: string;
@@ -37,6 +66,18 @@ export type Channel = {
   blocks?: Block[];
   collection?: number;
   filter?: Record<string, unknown>;
+  sources?: ProgramSource[];
+  watched?: "" | "watched" | "unwatched";
+  mode?: string;
+  align?: "" | "hour" | "half";
+  fit?: "" | "cut" | "pad";
+  repeatDays?: number;
+  filler?: Item[];
+  fallback?: Item[];
+  offAir?: boolean;
+  marathonKey?: number;
+  /** IANA zone. Empty means block times are UTC, every day, as older channels stored them. */
+  timezone?: string;
 };
 export type StreamSource = {
   id: string;
@@ -164,8 +205,15 @@ export const tv = {
   stopPreview: (session: string) =>
     apiFetch(`/livetv/sessions/${enc(session)}`, { method: "DELETE" }),
   deleteChannel: (id: string) => apiFetch(`/livetv/channels/${enc(id)}`, { method: "DELETE" }),
-  preview: (c: Channel, signal?: AbortSignal) =>
-    apiFetch<Programme[]>("/livetv/preview", { ...json("POST", c), signal }),
+  preview: (c: Channel, signal?: AbortSignal, window?: { from: Date; until: Date }) => {
+    const q = new URLSearchParams();
+    if (window) {
+      q.set("from", window.from.toISOString());
+      q.set("until", window.until.toISOString());
+    }
+    const suffix = q.size ? `?${q}` : "";
+    return apiFetch<Programme[]>(`/livetv/preview${suffix}`, { ...json("POST", c), signal });
+  },
   saveSource: (s: SourceDraft, pending = false) =>
     apiFetch<Source>(
       `/livetv/sources${s.id ? `/${enc(s.id)}` : ""}${pending ? "?pending=1" : ""}`,
@@ -371,8 +419,61 @@ export function nextNumber(channels: Channel[]): string {
   return String(max + 1);
 }
 
-export function programmingMode(c: Channel): "movies" | "collection" | "genre" {
+export function programmingMode(c: Channel): "movies" | "collection" | "genre" | "mix" {
+  if (c.sources?.length) return "mix";
   return c.collection ? "collection" : c.filter ? "genre" : "movies";
+}
+
+/** The playout the owner sees. Order and shuffle stay on the original engine until a newer mode is chosen. */
+export function playoutValue(mode: string | undefined, shuffle: boolean): string {
+  if (mode === "random" || mode === "marathon" || mode === "newest") return mode;
+  return shuffle ? "shuffle" : "order";
+}
+
+export function playoutPatch(value: string): { mode?: string; shuffle: boolean } {
+  if (value === "shuffle") return { mode: undefined, shuffle: true };
+  if (value === "order") return { mode: undefined, shuffle: false };
+  return { mode: value, shuffle: false };
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Move UTC minute-of-day blocks onto today's offset in `timeZone`, splitting any block that crosses local midnight. */
+export function blocksInZone(blocks: Block[], timeZone: string): Block[] {
+  const probe = new Date();
+  probe.setSeconds(0, 0);
+  const utcMidnight = Date.UTC(probe.getUTCFullYear(), probe.getUTCMonth(), probe.getUTCDate());
+  const out: Block[] = [];
+  for (const block of blocks) {
+    const startAt = utcMidnight + block.start * MINUTE;
+    const endAt = utcMidnight + block.end * MINUTE;
+    const start = zonedMinutes(startAt, timeZone);
+    const end = zonedMinutes(endAt, timeZone);
+    const span = block.end - block.start;
+    if (end.day === start.day || span <= 0) {
+      const endMin = end.day === start.day ? end.minute : 1440;
+      out.push({ ...block, start: start.minute, end: Math.max(start.minute + 30, endMin) });
+      continue;
+    }
+    out.push({ ...block, start: start.minute, end: 1440 });
+    if (end.minute > 0) out.push({ ...block, start: 0, end: end.minute });
+  }
+  return out;
+}
+
+function zonedMinutes(ms: number, timeZone: string): { day: number; minute: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date(ms));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  const day = WEEKDAYS.indexOf(get("weekday"));
+  return { day: day < 0 ? 0 : day, minute: (hour % 24) * 60 + minute };
 }
 
 export function loopLength(items: Item[]): number {

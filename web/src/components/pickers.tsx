@@ -433,10 +433,13 @@ export function TitleSearch({
   type,
   excludeKeys,
   placeholder = t("Search the catalogue…"),
+  label,
 }: {
   onPick: (title: TitleCard) => void;
   type?: string;
   excludeKeys?: Set<string>;
+  /** Accessible name for the search box. Defaults to "Search titles". */
+  label?: string;
   placeholder?: string;
 }) {
   const [q, setQ] = useState("");
@@ -477,7 +480,7 @@ export function TitleSearch({
           value={q}
           onChange={(e) => setQ(e.currentTarget.value)}
           placeholder={placeholder}
-          aria-label={t("Search titles")}
+          aria-label={label ?? t("Search titles")}
         />
       </div>
       {loading ? <p className="text-xs text-fg-muted">{t("Searching…")}</p> : null}
