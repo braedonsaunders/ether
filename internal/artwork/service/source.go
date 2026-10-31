@@ -15,7 +15,6 @@ import (
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 	"net/url"
-	"strconv"
 	"time"
 )
 
@@ -229,18 +228,12 @@ func (a Source) entries(ctx context.Context, req frontend.ArtworkRequest) ([]fro
 				}
 			}
 		}
-		for _, group := range []struct {
-			kind   string
-			people []core.Person
-		}{{"actor", title.Cast}, {"director", title.Directors}, {"writer", title.Writers}} {
-			for _, person := range group.people {
-				if person.ThumbPath == "" || person.TMDB <= 0 {
-					continue
-				}
-				id := base64.RawURLEncoding.EncodeToString([]byte(person.ThumbPath))
-				subject := "tmdb:" + strconv.FormatInt(person.TMDB, 10)
-				add(frontend.ImagePerson, group.kind+"\x00"+subject+"\x00"+person.ThumbPath, frontendArtworkEntry{personKind: group.kind, personID: id, subject: subject})
-			}
+		for _, portrait := range creditedPortraits(*title) {
+			add(frontend.ImagePerson, portrait.source, frontendArtworkEntry{
+				personKind: portrait.role,
+				personID:   base64.RawURLEncoding.EncodeToString([]byte(portrait.thumb)),
+				subject:    portrait.subject,
+			})
 		}
 	}
 	return entries, complete, nil
