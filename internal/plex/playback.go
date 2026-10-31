@@ -627,6 +627,13 @@ func (s *Server) decisionMedia(t *core.Title, ps *core.PlaySession, dec core.Dec
 // response, so dropping the alternates leaves the menu empty. Other
 // clients keep the recorded PMS shape (video + selected tracks), which
 // TestDecisionConformsToPMS and the goldens pin.
+//
+// A selected embedded text subtitle is a sidecar, not location=direct.
+// Plex Web and Plex for Android do not paint SRT/ASS out of the file the
+// way mpv does, so a direct-play decision that only says the cue is in
+// the MKV leaves the screen blank. The stream URL is the extracted text.
+// An image subtitle only reaches direct play when the client can draw it;
+// otherwise Decide burns it and this function is not used.
 func directPlayMedia(m model.Media, streams []model.Stream, selectedOnly bool) model.Media {
 	part := &m.Part[0]
 	part.Decision = "directplay"
@@ -636,10 +643,31 @@ func directPlayMedia(m model.Media, streams []model.Stream, selectedOnly bool) m
 			continue
 		}
 		st.Location = "direct"
+		if embeddedTextSubtitle(st) && st.Selected != nil && *st.Selected {
+			st.Location = "sidecar"
+			if st.Key == "" {
+				st.Key = "/library/streams/" + strconv.FormatInt(st.ID, 10)
+			}
+			if st.Format == "" {
+				st.Format = "srt"
+			}
+		}
 		kept = append(kept, st)
 	}
 	part.Stream = kept
 	return m
+}
+
+func embeddedTextSubtitle(st model.Stream) bool {
+	if st.StreamType != 3 || (st.External != nil && *st.External) {
+		return false
+	}
+	switch strings.ToLower(st.Codec) {
+	case "srt", "ass", "ssa", "vtt", "mov_text", "text", "microdvd", "subviewer", "sami", "ttml", "stl":
+		return true
+	default:
+		return false
+	}
 }
 
 // applyTranscodeMedia describes the output container and media dimensions.
