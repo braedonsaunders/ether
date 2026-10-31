@@ -61,6 +61,7 @@ func RedactConfig(cfg config.Config) config.Config {
 
 func redactLLM(l config.LLM) config.LLM {
 	l.APIKey = redact(l.APIKey)
+	l.SpeechAPIKey = redact(l.SpeechAPIKey)
 	return l
 }
 
@@ -246,7 +247,12 @@ func (e *placeholderErrors) unredactOpenSubtitles(next, prev config.OpenSubtitle
 
 func (e *placeholderErrors) unredactLLM(next, prev config.LLM) config.LLM {
 	next.APIKey = e.restore("llm.apiKey", next.APIKey, prev.APIKey, llmIdentity(next) == llmIdentity(prev))
+	next.SpeechAPIKey = e.restore("llm.speechApiKey", next.SpeechAPIKey, prev.SpeechAPIKey, speechIdentity(next) == speechIdentity(prev))
 	return next
+}
+
+func speechIdentity(l config.LLM) string {
+	return normURL(l.SpeechBaseURL) + "\x00" + strings.TrimSpace(l.SpeechModel)
 }
 
 func (e *placeholderErrors) unredactProvider(field string, p config.UsenetProvider, prev []config.UsenetProvider) config.UsenetProvider {

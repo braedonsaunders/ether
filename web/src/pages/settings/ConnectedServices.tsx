@@ -14,7 +14,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, MutationError } from "../../components/feedback";
-import { TestButton, type TestState } from "../../components/fields";
+import { PasswordInput, TestButton, type TestState } from "../../components/fields";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
 import { secretConfigured } from "../../components/IntegrationAccount";
 import { SimklMark, TraktMark } from "../../components/integration-brands";
@@ -36,14 +36,7 @@ import * as S from "./schema";
 type Obj = Record<string, unknown>;
 
 export type ServiceTab =
-  | "overview"
-  | "tmdb"
-  | "trakt"
-  | "simkl"
-  | "llm"
-  | "opensubtitles"
-  | "ratings"
-  | "introdb";
+  "overview" | "tmdb" | "trakt" | "simkl" | "llm" | "opensubtitles" | "ratings" | "introdb";
 
 const TAB_ORDER: ServiceTab[] = [
   "overview",
@@ -252,6 +245,25 @@ function textField(section: Obj, key: string, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
 
+/** A saved language model can translate and answer search. */
+export function languageModelReady(section: Obj | undefined): boolean {
+  if (!section || section.enabled !== true) return false;
+  const model = textField(section, "model", "").trim();
+  if (!model) return false;
+  const provider = textField(section, "provider", "");
+  const base = textField(section, "baseUrl", "").trim();
+  return base !== "" || (provider !== "" && provider !== "custom");
+}
+
+/** Speech-to-text is a separate endpoint from the chat model. */
+export function speechToTextReady(section: Obj | undefined): boolean {
+  if (!section) return false;
+  return (
+    textField(section, "speechBaseUrl", "").trim() !== "" &&
+    textField(section, "speechModel", "").trim() !== ""
+  );
+}
+
 function boolField(section: Obj, key: string, fallback: boolean): boolean {
   const value = section[key];
   return typeof value === "boolean" ? value : fallback;
@@ -297,6 +309,9 @@ function mergeSection(
           baseUrl: textField(section, "baseUrl", base.llm.baseUrl),
           apiKey: textField(section, "apiKey", base.llm.apiKey),
           model: textField(section, "model", base.llm.model),
+          speechBaseUrl: textField(section, "speechBaseUrl", base.llm.speechBaseUrl ?? ""),
+          speechApiKey: textField(section, "speechApiKey", base.llm.speechApiKey ?? ""),
+          speechModel: textField(section, "speechModel", base.llm.speechModel ?? ""),
         },
       };
     case "openSubtitles":
@@ -504,8 +519,7 @@ export function ConnectedServices({
           !s.custom &&
           JSON.stringify(draftNow[s.configKey]) !== JSON.stringify(storedNow[s.configKey]),
       );
-      const catalogChanged =
-        JSON.stringify(draftNow.catalog) !== JSON.stringify(storedNow.catalog);
+      const catalogChanged = JSON.stringify(draftNow.catalog) !== JSON.stringify(storedNow.catalog);
       if (!changed.length && !catalogChanged) return;
       setSaving(true);
       setError(null);
@@ -781,23 +795,23 @@ export function ConnectedServices({
                     {sectionSetup.errors[`${setupService.configKey}.clientId`]}
                   </p>
                 ) : null}
-                <label className="block">
-                  {t("Client secret")}{" "}
-                  <input
-                    className="w-full rounded border border-border bg-surface px-2 py-1"
-                    type="password"
-                    value={String(sectionSetup.draft.clientSecret ?? "")}
-                    onChange={(e) =>
-                      setSectionSetup({
-                        ...sectionSetup,
-                        draft: {
-                          ...sectionSetup.draft,
-                          clientSecret: e.target.value,
-                        },
-                      })
-                    }
-                  />
+                <label className="block" htmlFor="setup-client-secret">
+                  {t("Client secret")}
                 </label>
+                <PasswordInput
+                  id="setup-client-secret"
+                  autoComplete="off"
+                  value={String(sectionSetup.draft.clientSecret ?? "")}
+                  onChange={(e) =>
+                    setSectionSetup({
+                      ...sectionSetup,
+                      draft: {
+                        ...sectionSetup.draft,
+                        clientSecret: e.target.value,
+                      },
+                    })
+                  }
+                />
               </div>
             ) : setupService.form ? (
               <setupService.form
@@ -909,9 +923,7 @@ export function ConnectedServices({
               value={draft.catalog?.tmdbKey}
               path="catalog.tmdbKey"
               error={errors["catalog.tmdbKey"]}
-              onChange={(v) =>
-                setDraft({ ...draft, catalog: { ...draft.catalog, tmdbKey: v } })
-              }
+              onChange={(v) => setDraft({ ...draft, catalog: { ...draft.catalog, tmdbKey: v } })}
             />
           </SettingsSection>
         </div>
@@ -958,7 +970,12 @@ export function ConnectedServices({
                 footer={testButton}
               />
             )}
-            {s.tab === "llm" ? <LanguageFeatures /> : null}
+            {s.tab === "llm" ? (
+              <LanguageFeatures
+                textModelReady={languageModelReady(stored?.llm)}
+                speechReady={speechToTextReady(stored?.llm)}
+              />
+            ) : null}
             {s.tab === "introdb" ? <MarkerCoverage /> : null}
           </div>
         );
@@ -1089,114 +1106,124 @@ function ServiceOverview({
 
   return (
     <>
-    <IntegrationGroup title={t("Required")}>
-      <IntegrationAppCard
-        identity={{ id: "tmdb", name: "TMDB" }}
-        description={t("Names titles, fetches artwork and fills the catalogue.")}
-        status={
-          secretConfigured(tmdbKey) ? (
-            catalogHealth ? (
-              <LevelBadge level={catalogHealth.level} />
+      <IntegrationGroup title={t("Required")}>
+        <IntegrationAppCard
+          identity={{ id: "tmdb", name: "TMDB" }}
+          description={t("Names titles, fetches artwork and fills the catalogue.")}
+          status={
+            secretConfigured(tmdbKey) ? (
+              catalogHealth ? (
+                <LevelBadge level={catalogHealth.level} />
+              ) : (
+                <Badge variant="success">{t("Key saved")}</Badge>
+              )
             ) : (
-              <Badge variant="success">{t("Key saved")}</Badge>
+              <Badge variant="warning">{t("Needs an API key")}</Badge>
             )
-          ) : (
-            <Badge variant="warning">{t("Needs an API key")}</Badge>
-          )
-        }
-        configureHref="/services/tmdb"
-        configureLabel={secretConfigured(tmdbKey) ? t("Manage TMDB") : t("Set up TMDB")}
-      />
-    </IntegrationGroup>
-    <IntegrationGroup title={t("Watch tracking")}>
-      <IntegrationAppCard
-        identity={{ id: "trakt", name: "Trakt" }}
-        logo={<TraktMark />}
-        description={t("Sync watch history and lists with Trakt.")}
-        status={switchStatus(on("trakt"), Boolean(saved("trakt").clientId), t("Needs a client ID"))}
-        enabled={on("trakt")}
-        busy={locked || busyId === "trakt"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("trakt"), next)}
-        configureHref="/services/trakt"
-        configureLabel={on("trakt") ? t("Manage Trakt") : t("Set up Trakt")}
-      />
-      <IntegrationAppCard
-        identity={{ id: "simkl", name: "Simkl" }}
-        logo={<SimklMark />}
-        description={t(
-          "Connect a viewer's Simkl account to import watched history and send completed playback.",
+          }
+          configureHref="/services/tmdb"
+          configureLabel={secretConfigured(tmdbKey) ? t("Manage TMDB") : t("Set up TMDB")}
+        />
+      </IntegrationGroup>
+      <IntegrationGroup title={t("Watch tracking")}>
+        <IntegrationAppCard
+          identity={{ id: "trakt", name: "Trakt" }}
+          logo={<TraktMark />}
+          description={t("Sync watch history and lists with Trakt.")}
+          status={switchStatus(
+            on("trakt"),
+            Boolean(saved("trakt").clientId),
+            t("Needs a client ID"),
+          )}
+          enabled={on("trakt")}
+          busy={locked || busyId === "trakt"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("trakt"), next)}
+          configureHref="/services/trakt"
+          configureLabel={on("trakt") ? t("Manage Trakt") : t("Set up Trakt")}
+        />
+        <IntegrationAppCard
+          identity={{ id: "simkl", name: "Simkl" }}
+          logo={<SimklMark />}
+          description={t(
+            "Connect a viewer's Simkl account to import watched history and send completed playback.",
+          )}
+          status={switchStatus(
+            on("simkl"),
+            Boolean(saved("simkl").clientId),
+            t("Needs a client ID"),
+          )}
+          enabled={on("simkl")}
+          busy={locked || busyId === "simkl"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("simkl"), next)}
+          configureHref="/services/simkl"
+          configureLabel={on("simkl") ? t("Manage Simkl") : t("Set up Simkl")}
+        />
+      </IntegrationGroup>
+      <PosterAccounts locked={switchesHeld}>
+        {(cards) => (
+          <IntegrationGroup title={t("Artwork and ratings")}>
+            {cards}
+            <IntegrationAppCard
+              identity={{ id: "ratings", name: t("OMDb and MDBList") }}
+              description={t("IMDb, Rotten Tomatoes and other rating badges in Plex.")}
+              status={ratingsStatus(ratings)}
+              enabled={ratings?.enabled}
+              busy={locked || busyId === "ratings"}
+              disabled={switchesHeld || !ratings}
+              onToggle={ratings ? onToggleRatings : undefined}
+              configureHref="/services/ratings"
+              configureLabel={t("Ratings")}
+            />
+          </IntegrationGroup>
         )}
-        status={switchStatus(on("simkl"), Boolean(saved("simkl").clientId), t("Needs a client ID"))}
-        enabled={on("simkl")}
-        busy={locked || busyId === "simkl"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("simkl"), next)}
-        configureHref="/services/simkl"
-        configureLabel={on("simkl") ? t("Manage Simkl") : t("Set up Simkl")}
-      />
-    </IntegrationGroup>
-    <PosterAccounts locked={switchesHeld}>
-      {(cards) => (
-        <IntegrationGroup title={t("Artwork and ratings")}>
-          {cards}
-          <IntegrationAppCard
-            identity={{ id: "ratings", name: t("OMDb and MDBList") }}
-            description={t("IMDb, Rotten Tomatoes and other rating badges in Plex.")}
-            status={ratingsStatus(ratings)}
-            enabled={ratings?.enabled}
-            busy={locked || busyId === "ratings"}
-            disabled={switchesHeld || !ratings}
-            onToggle={ratings ? onToggleRatings : undefined}
-            configureHref="/services/ratings"
-            configureLabel={t("Ratings")}
-          />
-        </IntegrationGroup>
-      )}
-    </PosterAccounts>
-    <IntegrationGroup title={t("Playback extras")}>
-      <IntegrationAppCard
-        identity={{ id: "opensubtitles", name: "OpenSubtitles" }}
-        description={t("Fetch subtitles when a release doesn't include them.")}
-        status={switchStatus(
-          on("opensubtitles"),
-          Boolean(saved("opensubtitles").apiKey),
-          t("Needs an API key"),
-        )}
-        enabled={on("opensubtitles")}
-        busy={locked || busyId === "opensubtitles"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("opensubtitles"), next)}
-        configureHref="/services/opensubtitles"
-        configureLabel={on("opensubtitles") ? t("Manage OpenSubtitles") : t("Set up OpenSubtitles")}
-      />
-      <IntegrationAppCard
-        identity={{ id: "introdb", name: "TheIntroDB" }}
-        description={t("Intro and credits markers so viewers can skip them.")}
-        status={introStatus(on("introdb"), saved("introdb").apiKey)}
-        enabled={on("introdb")}
-        busy={locked || busyId === "introdb"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("introdb"), next)}
-        configureHref="/services/introdb"
-        configureLabel={t("Markers")}
-      />
-    </IntegrationGroup>
-    <IntegrationGroup title={t("Smart features")}>
-      <IntegrationAppCard
-        identity={{ id: "llm", name: t("Language model") }}
-        description={t(
-          "Describe-it collections, themed Home rows, natural-language search and recaps.",
-        )}
-        status={switchStatus(on("llm"), Boolean(saved("llm").model), t("Needs a model"))}
-        enabled={on("llm")}
-        busy={locked || busyId === "llm"}
-        disabled={switchesHeld}
-        onToggle={(next) => onToggle(service("llm"), next)}
-        configureHref="/services/llm"
-        configureLabel={on("llm") ? t("Manage language model") : t("Set up a language model")}
-      />
-    </IntegrationGroup>
+      </PosterAccounts>
+      <IntegrationGroup title={t("Playback extras")}>
+        <IntegrationAppCard
+          identity={{ id: "opensubtitles", name: "OpenSubtitles" }}
+          description={t("Fetch subtitles when a release doesn't include them.")}
+          status={switchStatus(
+            on("opensubtitles"),
+            Boolean(saved("opensubtitles").apiKey),
+            t("Needs an API key"),
+          )}
+          enabled={on("opensubtitles")}
+          busy={locked || busyId === "opensubtitles"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("opensubtitles"), next)}
+          configureHref="/services/opensubtitles"
+          configureLabel={
+            on("opensubtitles") ? t("Manage OpenSubtitles") : t("Set up OpenSubtitles")
+          }
+        />
+        <IntegrationAppCard
+          identity={{ id: "introdb", name: "TheIntroDB" }}
+          description={t("Intro and credits markers so viewers can skip them.")}
+          status={introStatus(on("introdb"), saved("introdb").apiKey)}
+          enabled={on("introdb")}
+          busy={locked || busyId === "introdb"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("introdb"), next)}
+          configureHref="/services/introdb"
+          configureLabel={t("Markers")}
+        />
+      </IntegrationGroup>
+      <IntegrationGroup title={t("Smart features")}>
+        <IntegrationAppCard
+          identity={{ id: "llm", name: t("Language model") }}
+          description={t(
+            "Describe-it collections, themed Home rows, natural-language search and recaps.",
+          )}
+          status={switchStatus(on("llm"), Boolean(saved("llm").model), t("Needs a model"))}
+          enabled={on("llm")}
+          busy={locked || busyId === "llm"}
+          disabled={switchesHeld}
+          onToggle={(next) => onToggle(service("llm"), next)}
+          configureHref="/services/llm"
+          configureLabel={on("llm") ? t("Manage language model") : t("Set up a language model")}
+        />
+      </IntegrationGroup>
     </>
   );
 }

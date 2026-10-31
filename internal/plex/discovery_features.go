@@ -63,7 +63,7 @@ func (s *Server) discoveryRemoveContinue(ctx context.Context, pr *Request, key c
 	return s.d.Discovery.Personal.RemoveContinue(ctx, pr.User.ID, key)
 }
 
-func (s *Server) decorateDiscoveryMetadata(ctx context.Context, pr *Request, t *core.Title, m *model.Metadata) {
+func (s *Server) decorateDiscoveryMetadata(ctx context.Context, pr *Request, t *core.Title, m *model.Metadata, detail bool) {
 	d := s.d.Discovery
 	if d == nil || t == nil || pr.User == nil || !s.titleAllowed(pr.User, t) {
 		return
@@ -74,6 +74,16 @@ func (s *Server) decorateDiscoveryMetadata(ctx context.Context, pr *Request, t *
 		m.Title = localized.Title
 		m.Summary = localized.Summary
 		m.Tagline = localized.Tagline
+	}
+	if d.OverviewTranslate != nil && pr.Language != "" {
+		if summary, tagline, ok := d.OverviewTranslate(ctx, t, pr.Language, detail); ok {
+			if summary != "" {
+				m.Summary = summary
+			}
+			if tagline != "" {
+				m.Tagline = tagline
+			}
+		}
 	}
 	if selected.PosterVersion != "" {
 		m.Thumb = fmt.Sprintf("/library/metadata/%s/discoveryPoster/%s?lang=%s", t.Key.String(), selected.PosterVersion, url.QueryEscape(pr.Language))

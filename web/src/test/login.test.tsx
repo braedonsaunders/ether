@@ -46,7 +46,13 @@ describe("sign-in", () => {
     expect(screen.queryByText("Use a Plex token instead")).not.toBeInTheDocument();
     expect(config).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "owner" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "test-password" } });
+    const password = screen.getByLabelText("Password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveAttribute("autocomplete", "current-password");
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    expect(screen.getByRole("button", { name: "Hide password" })).toBeInTheDocument();
+    fireEvent.change(password, { target: { value: "test-password" } });
     fireEvent.click(screen.getByRole("button", { name: /^Sign in$/ }));
     await waitFor(() => expect(localSignIn).toHaveBeenCalledWith("owner", "test-password"));
     expect(await screen.findByRole("button", { name: /Sign out/ })).toBeInTheDocument();

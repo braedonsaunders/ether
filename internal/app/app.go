@@ -16,6 +16,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/availability"
 	"github.com/braedonsaunders/ether/internal/backup"
 	"github.com/braedonsaunders/ether/internal/cachefill"
+	"github.com/braedonsaunders/ether/internal/calendar"
 	"github.com/braedonsaunders/ether/internal/cardigann"
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/cluster"
@@ -31,6 +32,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/langfeat"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/logredact"
@@ -167,6 +169,7 @@ type App struct {
 	recommend     *recommend.Recommender
 	personalize   *personalize.Engine
 	subtitles     *subtitles.Service
+	lang          *langfeat.Service
 	fetcher       *usenet.Fetcher
 	cache         *segcache.Cache
 	cacheConfig   atomic.Pointer[config.Cache]
@@ -207,6 +210,7 @@ type App struct {
 	stats             *stats.Service
 	notifications     *notify.Service
 	livetv            *livetv.Service
+	calendar          *calendar.Service
 	trackprefs        *trackprefs.Service
 	markers           *markers.Service
 	extras            *extras.Service
@@ -580,6 +584,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	if parityRunCatalogueWorkers() {
 		background.start(func() { a.cluster.RunAsLeader(ctx, "watchlist sync", a.watchlist.Run) })
+		background.start(func() { a.cluster.RunAsLeader(ctx, "release calendar", a.calendar.Run) })
 	}
 	background.start(func() { a.ratings.Run(ctx) })
 	background.start(func() { a.discoveryFeatures.Run(ctx) })

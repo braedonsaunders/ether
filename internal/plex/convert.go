@@ -364,7 +364,7 @@ func (s *Server) metadata(ctx context.Context, pr *Request, t *core.Title, o ren
 			m.Duration = m.Media[0].Duration
 		}
 	}
-	s.decorateDiscoveryMetadata(ctx, pr, t, &m)
+	s.decorateDiscoveryMetadata(ctx, pr, t, &m, o.detail)
 	return m
 }
 

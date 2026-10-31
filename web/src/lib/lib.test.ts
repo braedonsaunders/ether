@@ -370,6 +370,7 @@ const LIVE = {
     presence: { connected: true },
     cert: {
       present: true,
+      verified: true,
       subject: "*.x.plex.direct",
       notBefore: "2026-01-17T04:36:33Z",
       notAfter: "2027-01-17T04:36:33Z",
@@ -387,13 +388,13 @@ describe("health", () => {
       ["cache", "ok"],
       ["catalog", "ok"],
       ["remote", "off"],
-      ["plexdirect", "unknown"],
+      ["plexdirect", "ok"],
     ]);
     expect(usenetHealth(LIVE.providers).fill).toBeCloseTo(4 / 32);
     expect(indexersHealth(LIVE.indexers).summary).toBe("1 of 2 indexers out of searches today");
     expect(cacheHealth(LIVE.cache).summary).toBe("925.4 MiB of 20.0 GiB");
     expect(worstLevel(h.map((x) => x.level))).toBe("warn");
-    expect(h.find((x) => x.id === "plexdirect")?.countsOverall).toBe(false);
+    expect(h.find((x) => x.id === "plexdirect")?.statusLabel).toBe("Valid");
     expect(overallLevel(h)).toBe("warn");
   });
   it("accepts debrid in place of Usenet", () => {
@@ -461,6 +462,7 @@ describe("health", () => {
       {
         cert: {
           present: true,
+          verified: true,
           notBefore: "2026-01-01T00:00:00Z",
           notAfter: "2028-01-01T00:00:00Z",
         },
@@ -468,12 +470,53 @@ describe("health", () => {
       now,
     );
     expect(installed.summary).toMatch(/^Expires /);
-    expect(installed.level).toBe("unknown");
-    expect(installed.statusLabel).toBe("Not verified");
-    expect(installed.note).toMatch(/does not verify/);
-    expect(installed.countsOverall).toBe(false);
-    expect(countsOverall(installed)).toBe(false);
-    expect(countsOverall({ ...installed, level: "error" })).toBe(true);
+    expect(installed.level).toBe("ok");
+    expect(installed.statusLabel).toBe("Valid");
+    expect(installed.note).toBe("Trusted by Plex apps");
+    expect(installed.details).toContain("Trusted by Plex apps");
+    expect(countsOverall(installed)).toBe(true);
+    const untrusted = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          verified: false,
+          verifyReason: "chain",
+          notBefore: "2026-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect(untrusted.summary).toBe("Chain not trusted");
+    expect(untrusted.level).toBe("warn");
+    expect(untrusted.note).toMatch(/plex.direct certificate/);
+    const mismatch = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          verified: false,
+          verifyReason: "identity",
+          notBefore: "2026-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect(mismatch.summary).toBe("Doesn't match this server");
+    const pending = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          notBefore: "2026-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect(pending.statusLabel).toBe("Checking certificate");
+    expect(pending.countsOverall).toBe(false);
+    expect(countsOverall(pending)).toBe(false);
+    expect(countsOverall({ ...pending, level: "error" })).toBe(true);
     const missingExpiry = plexDirectHealth(
       { cert: { present: true, notBefore: "2026-01-01T00:00:00Z" } },
       now,

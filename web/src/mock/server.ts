@@ -55,6 +55,7 @@ import { createReleaseConsoleMock } from "./releases";
 import { createSitesMock } from "./sites";
 import { createTrashMock } from "./trash";
 import { createCacheMock } from "./cache";
+import { createCalendarMock } from "./calendar";
 import { createLiveTVMock } from "./livetv";
 import { TEMPLATES } from "./templates";
 
@@ -410,6 +411,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
   const sites = createSitesMock();
   const cacheMock = createCacheMock();
   const liveTV = createLiveTVMock(catalog);
+  const calendar = createCalendarMock();
   const state = {
     boot: {
       ok: true,
@@ -1625,6 +1627,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
           upnp: { active: true },
           cert: {
             present: true,
+            verified: true,
             subject: "*.abc.plex.direct",
             notBefore: new Date(Date.now() - 30 * 86400000).toISOString(),
             notAfter: new Date(Date.now() + 80 * 86400000).toISOString(),
@@ -1857,6 +1860,9 @@ export function createFakeServer(opts: FakeOptions = {}) {
     const site = sites.handle(method, seg, body, state.config);
     if (site) return json(site.body, site.status);
 
+    const cal = calendar.handle(method, seg, q);
+    if (cal) return json(cal.body, cal.status);
+
     const tvr = liveTV.handle(method, seg, q, body);
     if (tvr) return json(tvr.body, tvr.status);
 
@@ -2078,11 +2084,32 @@ export function createFakeServer(opts: FakeOptions = {}) {
           failovers: 2,
           failedPlays: 1,
           providerDays: [
-            { id: "p1", day: "2026-10-18", bytes: 40 * 1073741824, articles: 6000, misses: 10, errors: 0 },
-            { id: "p1", day: "2026-10-19", bytes: 40 * 1073741824, articles: 6000, misses: 30, errors: 1 },
+            {
+              id: "p1",
+              day: "2026-10-18",
+              bytes: 40 * 1073741824,
+              articles: 6000,
+              misses: 10,
+              errors: 0,
+            },
+            {
+              id: "p1",
+              day: "2026-10-19",
+              bytes: 40 * 1073741824,
+              articles: 6000,
+              misses: 30,
+              errors: 1,
+            },
           ],
           indexerDays: [
-            { indexer: "Indexer One", day: "2026-10-19", searches: 400, successes: 360, grabs: 20, latencyMs: 72000 },
+            {
+              indexer: "Indexer One",
+              day: "2026-10-19",
+              searches: 400,
+              successes: 360,
+              grabs: 20,
+              latencyMs: 72000,
+            },
           ],
         });
       case "PUT /stats/costs":
@@ -2750,6 +2777,8 @@ export function createFakeServer(opts: FakeOptions = {}) {
     }
     if (seg[0] === "catalog" && seg[1] === "title" && seg[2]) {
       const t = byKey.get(decodeURIComponent(seg[2]));
+      const followed = t ? null : calendar.title(decodeURIComponent(seg[2]));
+      if (followed) return json(followed);
       if (!t) return err(404, "not_found", "no such title");
       return json({
         ...card(t),
@@ -2912,6 +2941,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       if (method === "POST" && sub === "quickconnect") {
         const code = String((body as { code?: string } | null)?.code ?? "");
         if (code === "EXPIRED") return err(400, "expired", "code expired");
+        if (code === "USEDUP") return err(400, "used", "code already used");
         if (!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return err(400, "invalid", "invalid code");
         return json({ ok: true, device: "Living Room Apple TV", app: "Jellyfin" });
       }

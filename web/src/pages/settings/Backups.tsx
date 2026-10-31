@@ -13,7 +13,7 @@ import { Download, FileUp, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { useClustered } from "./Cluster";
-import { NumberInput } from "../../components/fields";
+import { NumberInput, PasswordInput } from "../../components/fields";
 import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
@@ -399,14 +399,13 @@ export function BackupsAndImport({ tab = "backups" }: { tab?: "backups" | "impor
                   { min: MIN_BACKUP_PASSWORD },
                 )}
               >
-                <Input
+                <PasswordInput
                   id="backup-password"
                   ref={passwordInput}
                   aria-invalid={passwordPrompt && !passwordOK}
                   aria-describedby={
                     passwordPrompt && !passwordOK ? "backup-password-prompt" : undefined
                   }
-                  type="password"
                   autoComplete="new-password"
                   spellCheck={false}
                   value={password}
@@ -817,9 +816,8 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
             "That viewer's access token on the source server. It's used for the preview and not stored.",
           )}
         >
-          <Input
+          <PasswordInput
             id="plex-import-token"
-            type="password"
             autoComplete="off"
             value={token}
             onChange={(e) => edit(setToken)(e.currentTarget.value)}

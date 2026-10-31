@@ -80,6 +80,31 @@ it("uses a separate portal credential to approve a device", async () => {
   expect(screen.queryByRole("heading", { name: "Devices" })).not.toBeInTheDocument();
 });
 
+it("explains a code that was already used", async () => {
+  sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
+  vi.stubGlobal(
+    "fetch",
+    portalFetch((url) => {
+      if (url.endsWith("/quickconnect"))
+        return new Response(
+          JSON.stringify({ error: { code: "used", message: "code already used" } }),
+          { status: 400 },
+        );
+      return undefined;
+    }),
+  );
+  render(<Me />);
+  fireEvent.change(await screen.findByLabelText("Enter the code shown on your TV"), {
+    target: { value: "ABCDEF" },
+  });
+  expect(
+    await screen.findByText(
+      "This code has already been used to sign in a device. If the TV still isn't signed in, start again on the TV to get a new code.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/Check the code on your TV/)).not.toBeInTheDocument();
+});
+
 it("explains an expired code and lets the viewer approve another device", async () => {
   sessionStorage.setItem("ether.viewerPortal", "viewer-grant");
   vi.stubGlobal(
@@ -120,9 +145,7 @@ it("removes an invite from the address and redeems it only on acceptance", async
   expect(window.location.hash).toBe("");
   expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/invite/redeem"))).toBe(false);
   fireEvent.click(await screen.findByRole("button", { name: "Accept invite" }));
-  expect(
-    await screen.findByText("Invite accepted. You can approve a TV now."),
-  ).toBeInTheDocument();
+  expect(await screen.findByText("Invite accepted. You can approve a TV now.")).toBeInTheDocument();
   expect(sessionStorage.getItem("ether.viewerPortal")).toBe("viewer-grant");
   expect(await screen.findByLabelText("Enter the code shown on your TV")).toBeInTheDocument();
   window.history.replaceState(null, "", "/");

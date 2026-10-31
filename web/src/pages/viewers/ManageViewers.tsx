@@ -1,6 +1,7 @@
 import { t } from "../../i18n";
 import { useState, type FormEvent } from "react";
 import { Button, Input, Label } from "@braedonsaunders/appkit-ui";
+import { PasswordInput } from "../../components/fields";
 import { apiFetch, errorMessage } from "../../lib/api";
 
 export function CreateViewer({ onCreated }: { onCreated: () => void }) {
@@ -75,9 +76,8 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
             </div>
             <div>
               <Label htmlFor="new-viewer-password">{t("Password")}</Label>
-              <Input
+              <PasswordInput
                 id="new-viewer-password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.currentTarget.value)}
                 autoComplete="new-password"

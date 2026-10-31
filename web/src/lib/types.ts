@@ -357,6 +357,9 @@ export interface EtherConfig {
     baseUrl: string;
     apiKey: string;
     model: string;
+    speechBaseUrl?: string;
+    speechApiKey?: string;
+    speechModel?: string;
   };
   updates: {
     channel: string;

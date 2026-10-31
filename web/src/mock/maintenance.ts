@@ -73,6 +73,9 @@ export function createMaintenance() {
     checkHours: 6,
     naturalSearch: true,
     recaps: false,
+    subtitleTranslate: false,
+    speechToText: false,
+    overviewTranslate: false,
   };
   const diagnostics = {
     compatibilityVersion: "1.43.4",
@@ -132,6 +135,11 @@ export function createMaintenance() {
       case "PUT /discovery/settings":
         discovery = { ...discovery, ...(body as object) };
         return { status: 200, body: discovery };
+      case "POST /discovery/translate":
+        return {
+          status: 200,
+          body: { summary: "Un insomniaque.", tagline: "Les eaux calmes." },
+        };
       case "GET /discovery/ratings/settings":
         return { status: 200, body: { enabled: true, provider: "omdb" } };
     }

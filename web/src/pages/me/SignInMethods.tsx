@@ -10,6 +10,7 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { KeyRound, MonitorSmartphone } from "lucide-react";
 import { LoadingRows } from "../../components/feedback";
+import { PasswordInput } from "../../components/fields";
 import { SettingsRow } from "../../components/SettingsRow";
 
 type Method = { id: number; provider: string; display: string };
@@ -262,10 +263,9 @@ export default function SignInMethods({
             />
           </SettingsRow>
           <SettingsRow stacked title={t("New password")}>
-            <Input
+            <PasswordInput
               id={`${base}-password`}
               aria-label={t("New password")}
-              type="password"
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
               autoComplete="new-password"

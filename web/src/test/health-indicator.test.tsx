@@ -3,30 +3,30 @@ import { describe, expect, it } from "vitest";
 import { renderApp } from "./harness";
 
 describe("health reporting", () => {
-  it("leaves an installed certificate unverified without holding the server incomplete", async () => {
+  it("shows a verified plex.direct certificate as valid", async () => {
     renderApp("/");
     const trigger = await screen.findByRole("button", {
-      name: "Server health: Operational",
+      name: "Server health: All systems normal",
     });
     const health = screen.getByText("Health").closest("section")!;
-    expect(within(health).getByText("Not verified")).toBeInTheDocument();
+    expect(within(health).getByText("Valid")).toBeInTheDocument();
     expect(within(health).getByText("plex.direct")).toBeInTheDocument();
-    expect(within(health).getByText("Operational")).toBeInTheDocument();
+    expect(within(health).getByText("All healthy")).toBeInTheDocument();
+    expect(within(health).queryByText("Operational")).toBeNull();
     expect(screen.queryByText("Status incomplete")).toBeNull();
-    expect(screen.queryByText("All healthy")).toBeNull();
-    expect(screen.queryByText("Everything is healthy")).toBeNull();
-    expect(screen.queryByText("All systems normal")).toBeNull();
+    expect(screen.getByText(/Everything is healthy/)).toBeInTheDocument();
     fireEvent.click(trigger);
     const popover = screen.getByText("Server health").parentElement!;
     const certificate = within(popover).getByText("plex.direct").closest("a")!;
-    expect(within(certificate).getByText("Not verified")).toBeInTheDocument();
+    expect(within(certificate).getByText("Valid")).toBeInTheDocument();
+    expect(within(certificate).getByText("Trusted by Plex apps")).toBeInTheDocument();
     expect(within(certificate).queryByText("Healthy")).toBeNull();
     expect(within(certificate).getByText(/^Expires /)).toBeInTheDocument();
     expect(
-      within(certificate).getByText(
+      within(certificate).queryByText(
         "Expiry alone does not verify certificate trust or device association.",
       ),
-    ).toBeInTheDocument();
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: "Server health: Checking…" })).toBeNull();
   });
 
@@ -50,7 +50,7 @@ describe("health reporting", () => {
       release();
     }
     expect(
-      await screen.findByRole("button", { name: "Server health: Operational" }),
+      await screen.findByRole("button", { name: "Server health: All systems normal" }),
     ).toBeInTheDocument();
   });
 
@@ -101,10 +101,10 @@ describe("health reporting", () => {
       };
     });
     expect(
-      await screen.findByRole("button", { name: "Server health: Operational" }),
+      await screen.findByRole("button", { name: "Server health: All systems normal" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Custom connection published")).toBeInTheDocument();
-    expect(screen.getByText("Not verified")).toBeInTheDocument();
+    expect(screen.getByText("Valid")).toBeInTheDocument();
     expect(screen.queryByText("Local network only")).toBeNull();
     expect(screen.queryByText("Reachable outside your network")).toBeNull();
   });
@@ -125,7 +125,7 @@ describe("health reporting", () => {
       };
     });
     expect(
-      await screen.findByRole("button", { name: "Server health: Operational" }),
+      await screen.findByRole("button", { name: "Server health: All systems normal" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Local network only")).toBeInTheDocument();
     expect(screen.queryByText("Status incomplete")).toBeNull();
@@ -181,7 +181,7 @@ describe("health reporting", () => {
       };
     });
     expect(
-      await screen.findByRole("button", { name: "Server health: Operational" }),
+      await screen.findByRole("button", { name: "Server health: All systems normal" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Local network only")).toBeInTheDocument();
     expect(screen.queryByText("Custom connection published")).toBeNull();

@@ -23,11 +23,14 @@ type Features struct {
 	Personal  *personalize.Discovery
 	LLM       *llm.Service
 	Localize  func(context.Context, *core.Title, string) (*core.Title, error)
-	once      sync.Once
-	mu        sync.Mutex
-	queue     chan discoveryJob
-	cache     map[string]discoveryEntry
-	pending   map[string]bool
+	// OverviewTranslate is optional. detail is true only when a viewer opened
+	// the item. A library row passes false and must not call a model.
+	OverviewTranslate func(ctx context.Context, t *core.Title, lang string, detail bool) (summary, tagline string, ok bool)
+	once              sync.Once
+	mu                sync.Mutex
+	queue             chan discoveryJob
+	cache             map[string]discoveryEntry
+	pending           map[string]bool
 }
 type discoveryJob struct {
 	key   string

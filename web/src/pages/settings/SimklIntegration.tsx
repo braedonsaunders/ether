@@ -1,5 +1,6 @@
 import { Button, SettingsSection } from "@braedonsaunders/appkit-ui";
 import { useEffect, useRef, useState } from "react";
+import { PasswordInput } from "../../components/fields";
 import { getLocale, localized, t, tn, tx } from "../../i18n";
 import { api, apiFetch } from "../../lib/api";
 import { formatNumber } from "../../lib/format";
@@ -172,15 +173,15 @@ export function SimklIntegration({
               onChange={(e) => setSettings({ ...settings, clientId: e.target.value })}
             />
           </label>
-          <label className="block">
-            {t("Client secret")}{" "}
-            <input
-              className="w-full rounded border border-border bg-surface px-2 py-1"
-              type="password"
-              value={settings.clientSecret}
-              onChange={(e) => setSettings({ ...settings, clientSecret: e.target.value })}
-            />
+          <label className="block" htmlFor="simkl-client-secret">
+            {t("Client secret")}
           </label>
+          <PasswordInput
+            id="simkl-client-secret"
+            autoComplete="off"
+            value={settings.clientSecret}
+            onChange={(e) => setSettings({ ...settings, clientSecret: e.target.value })}
+          />
           <Button
             disabled={busy || disabled}
             onClick={() => {

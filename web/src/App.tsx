@@ -23,6 +23,7 @@ import {
   Plug,
   Server,
   Bell,
+  CalendarDays,
   Gauge,
   LayoutTemplate,
   Layers,
@@ -90,6 +91,7 @@ const Setup = lazy(() => import("./pages/Setup"));
 const Activity = lazy(() => import("./pages/activity/Activity"));
 const Notifications = lazy(() => import("./pages/notifications/Notifications"));
 const LiveTV = lazy(() => import("./pages/livetv/LiveTV"));
+const Calendar = lazy(() => import("./pages/calendar/Calendar"));
 const Catalog = lazy(() => import("./pages/catalog/Catalog"));
 const Metadata = lazy(() => import("./pages/metadata/Metadata"));
 const Sources = lazy(() => import("./pages/sources/Sources"));
@@ -151,6 +153,7 @@ function navigation(): SidebarNavGroup[] {
     {
       label: t("Streaming"),
       items: [
+        { href: "/calendar", label: t("Calendar"), icon: <CalendarDays size={icon} /> },
         { href: "/sources", label: t("Sources"), icon: <Network size={icon} /> },
         { href: "/releases", label: t("Releases"), icon: <ListFilter size={icon} /> },
         { href: "/playback", label: t("Playback"), icon: <MonitorPlay size={icon} /> },
@@ -304,131 +307,148 @@ function Shell() {
   const { boot } = useApp();
   const location = useLocation();
   const remoteSession = boot.authRequired && Boolean(getToken());
+  const version = versionLabel(boot.version);
+  const serverName = boot.serverName?.trim() || "Ether";
   return (
-    <AppShell
-      groups={navigation()}
-      pathname={location.pathname}
-      navigationMode="sidebar"
-      linkRender={linkRender}
-      brand={
-        <Link
-          to="/"
-          aria-label={t("Ether home")}
-          className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <Brand serverName={boot.serverName} />
-        </Link>
-      }
-      headerMiddle={<CommandSearch />}
-      header={
-        <>
-          <HealthIndicator />
-          <ThemeToggle
-            collapsed
-            labels={{
-              label: t("Theme"),
-              light: t("Light"),
-              dark: t("Dark"),
-              system: t("System"),
-              current: (mode) =>
-                t("Theme: {mode}", {
-                  mode: mode === "light" ? t("Light") : mode === "dark" ? t("Dark") : t("System"),
-                }),
-            }}
-          />
+    <div className="ether-shell contents">
+      <AppShell
+        groups={navigation()}
+        pathname={location.pathname}
+        navigationMode="sidebar"
+        linkRender={linkRender}
+        brand={
           <Link
-            to="/profile"
-            aria-label={t("Your account")}
-            className="inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            to="/"
+            aria-label={t("Ether home")}
+            className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
-            <UserRound size={15} />
-            <span className="hidden sm:inline">{t("Your account")}</span>
+            <Brand />
           </Link>
-          {remoteSession ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                // End the session on the server too, so a copy cannot outlive
-                // sign-out; leave the browser either way.
-                void api
-                  .signOut()
-                  .catch(() => undefined)
-                  .finally(() => {
-                    setToken("");
-                    window.location.reload();
-                  });
-              }}
+        }
+        headerMiddle={<CommandSearch />}
+        header={
+          <>
+            <span
+              className="inline-flex h-9 min-w-0 max-w-[9rem] items-center gap-1.5 rounded-md px-2.5 text-sm text-fg-muted sm:max-w-[14rem]"
+              title={serverName}
             >
-              <LogOut size={15} /> <span className="hidden sm:inline">{t("Sign out")}</span>
-            </Button>
-          ) : null}
-        </>
-      }
-      sidebarFooter={
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <p className="min-w-0 truncate px-1 text-xs text-fg-subtle" title={boot.serverName}>
-            {boot.serverName ? `${boot.serverName} · ` : "Ether "}
-            {versionLabel(boot.version)}
-          </p>
-          <LanguagePicker className="h-7 shrink-0 px-1.5 text-xs" />
-        </div>
-      }
-      sidebarCollapsedFooter={
-        <div className="flex flex-col items-center gap-2">
-          <LanguagePicker iconOnly className="h-7 px-1.5" />
-          <EtherMark size={20} />
-        </div>
-      }
-      moreLabel={t("More")}
-      menuLabel={t("Menu")}
-      openNavigationLabel={t("Open navigation")}
-      primaryNavigationLabel={t("Primary navigation")}
-      mobileTabCount={4}
-    >
-      <SaveBarHost>
-        <Suspense fallback={<PageFallback />}>
-          <Routes>
-            <Route
-              path="/"
-              element={
-                boot.setupComplete || boot.ownerConfigured ? (
-                  <Home />
-                ) : (
-                  <Navigate to="/setup" replace />
-                )
-              }
+              <Server size={15} className="shrink-0" aria-hidden />
+              <span className="hidden truncate sm:inline">{serverName}</span>
+            </span>
+            <HealthIndicator />
+            <ThemeToggle
+              collapsed
+              labels={{
+                label: t("Theme"),
+                light: t("Light"),
+                dark: t("Dark"),
+                system: t("System"),
+                current: (mode) =>
+                  t("Theme: {mode}", {
+                    mode: mode === "light" ? t("Light") : mode === "dark" ? t("Dark") : t("System"),
+                  }),
+              }}
             />
-            <Route path="/setup" element={<Setup />} />
-            <Route path="/activity/:tab?" element={<Activity />} />
-            <Route path="/viewers" element={<ViewersList />} />
-            <Route path="/viewers/people" element={<ViewersList tab="people" />} />
-            <Route path="/viewers/defaults" element={<ViewersList tab="defaults" />} />
-            <Route path="/viewers/:id/:tab?" element={<ViewerProfile />} />
-            <Route path="/home" element={<Designer />} />
-            <Route path="/collections" element={<CollectionsLayout />}>
-              <Route path="new" element={<CollectionDrawer fresh />} />
-              <Route path=":id" element={<CollectionDrawer />} />
-            </Route>
-            <Route path="/livetv/:tab?" element={<LiveTV />} />
-            <Route path="/catalog/:tab?" element={<Catalog />} />
-            <Route path="/metadata/:tab?" element={<Metadata />} />
-            <Route path="/sources/:tab?/:sub?" element={<Sources />} />
-            <Route path="/releases/:tab?" element={<Releases />} />
-            <Route path="/cache/:tab?" element={<Cache />} />
-            <Route path="/playback/:tab?" element={<Playback />} />
-            <Route path="/notifications/:tab?" element={<Notifications />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/server/:tab?" element={<GeneralPage />} />
-            <Route path="/apps/:tab?/:section?" element={<Apps />} />
-            <Route path="/services/:tab?" element={<ServicesPage />} />
-            <Route path="/cluster" element={<ClusterPage />} />
-            <Route path="/maintenance/:tab?/:backupTab?" element={<MaintenancePage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </SaveBarHost>
-    </AppShell>
+            <Link
+              to="/profile"
+              aria-label={t("Your account")}
+              className="inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <UserRound size={15} />
+              <span className="hidden sm:inline">{t("Your account")}</span>
+            </Link>
+            {remoteSession ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  // End the session on the server too, so a copy cannot outlive
+                  // sign-out; leave the browser either way.
+                  void api
+                    .signOut()
+                    .catch(() => undefined)
+                    .finally(() => {
+                      setToken("");
+                      window.location.reload();
+                    });
+                }}
+              >
+                <LogOut size={15} /> <span className="hidden sm:inline">{t("Sign out")}</span>
+              </Button>
+            ) : null}
+          </>
+        }
+        sidebarFooter={
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <p className="min-w-0 truncate px-1 text-xs text-fg-subtle" title={version}>
+              {version}
+            </p>
+            <LanguagePicker className="h-7 shrink-0 px-1.5 text-xs" />
+          </div>
+        }
+        sidebarCollapsedFooter={
+          <div className="flex flex-col items-center gap-2">
+            <LanguagePicker iconOnly className="h-7 px-1.5" />
+            <EtherMark size={20} />
+            <p
+              className="max-w-full truncate text-center text-[10px] leading-tight text-fg-subtle"
+              title={version}
+            >
+              {version}
+            </p>
+          </div>
+        }
+        moreLabel={t("More")}
+        menuLabel={t("Menu")}
+        openNavigationLabel={t("Open navigation")}
+        primaryNavigationLabel={t("Primary navigation")}
+        mobileTabCount={4}
+      >
+        <SaveBarHost>
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              <Route
+                path="/"
+                element={
+                  boot.setupComplete || boot.ownerConfigured ? (
+                    <Home />
+                  ) : (
+                    <Navigate to="/setup" replace />
+                  )
+                }
+              />
+              <Route path="/setup" element={<Setup />} />
+              <Route path="/activity/:tab?" element={<Activity />} />
+              <Route path="/viewers" element={<ViewersList />} />
+              <Route path="/viewers/people" element={<ViewersList tab="people" />} />
+              <Route path="/viewers/defaults" element={<ViewersList tab="defaults" />} />
+              <Route path="/viewers/:id/:tab?" element={<ViewerProfile />} />
+              <Route path="/home" element={<Designer />} />
+              <Route path="/collections" element={<CollectionsLayout />}>
+                <Route path="new" element={<CollectionDrawer fresh />} />
+                <Route path=":id" element={<CollectionDrawer />} />
+              </Route>
+              <Route path="/livetv/:tab?" element={<LiveTV />} />
+              <Route path="/calendar/:view?" element={<Calendar />} />
+              <Route path="/catalog/:tab?" element={<Catalog />} />
+              <Route path="/metadata/:tab?" element={<Metadata />} />
+              <Route path="/sources/:tab?/:sub?" element={<Sources />} />
+              <Route path="/releases/:tab?" element={<Releases />} />
+              <Route path="/cache/:tab?" element={<Cache />} />
+              <Route path="/playback/:tab?" element={<Playback />} />
+              <Route path="/notifications/:tab?" element={<Notifications />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/server/:tab?" element={<GeneralPage />} />
+              <Route path="/apps/:tab?/:section?" element={<Apps />} />
+              <Route path="/services/:tab?" element={<ServicesPage />} />
+              <Route path="/cluster" element={<ClusterPage />} />
+              <Route path="/maintenance/:tab?/:backupTab?" element={<MaintenancePage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </SaveBarHost>
+      </AppShell>
+    </div>
   );
 }
 

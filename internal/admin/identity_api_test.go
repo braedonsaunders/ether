@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/store"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -383,4 +384,94 @@ func TestLocalOwnerConsoleSessionSignOut(t *testing.T) {
 		t.Fatalf("revocation unavailable: %d", res.Code)
 	}
 
+}
+
+func TestPortalApproveDistinguishesUsedCodes(t *testing.T) {
+	db := store.OpenTest(t)
+	ctx := context.Background()
+	users, err := auth.New(ctx, db, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := identity.NewLocal(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grants, err := identity.NewGrants(db, users, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limiter, err := identity.NewLoginLimiter(db, time.Minute, 100, 20, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_700_000_000, 0)
+	quick, err := identity.NewQuickConnect(db, time.Minute, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := admin.New(admin.Deps{
+		Config: newStore(t, nil), LocalIdentity: local, IdentityGrants: grants, IdentityLimiter: limiter, QuickConnect: quick,
+		RefreshViewers: users.RefreshViewers,
+		LocalOwnerConfigured: func(ctx context.Context) bool {
+			owner, err := users.Owner(ctx)
+			return err == nil && owner.PlexID == 0
+		},
+	})
+	if setup := serve(h, req("POST", "/ether/api/setup/local", `{"username":"alice","password":"secret"}`)); setup.Code != 200 {
+		t.Fatalf("setup: %d %s", setup.Code, setup.Body)
+	}
+	login := serve(h, req("POST", "/ether/api/me/login", `{"username":"alice","password":"secret"}`))
+	if login.Code != 200 {
+		t.Fatalf("login: %d %s", login.Code, login.Body)
+	}
+	var session struct {
+		Token string `json:"token"`
+	}
+	decode(t, login, &session)
+	approve := func(code string) *httptest.ResponseRecorder {
+		r := req("POST", "/ether/api/me/quickconnect", `{"code":"`+code+`"}`)
+		r.Header.Set("Authorization", "Bearer "+session.Token)
+		return serve(h, r)
+	}
+	code, secret, err := quick.Initiate(ctx, "jellyfin", core.Device{ID: "tv", DeviceName: "Living Room"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := approve(code); res.Code != 200 {
+		t.Fatalf("approve: %d %s", res.Code, res.Body)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	used := approve(code)
+	decode(t, used, &body)
+	if used.Code != 400 || body.Error.Code != "used" {
+		t.Fatalf("approved again: %d %s", used.Code, used.Body)
+	}
+	if _, err = quick.Poll(ctx, secret); err != nil {
+		t.Fatal(err)
+	}
+	used = approve(code)
+	decode(t, used, &body)
+	if used.Code != 400 || body.Error.Code != "used" {
+		t.Fatalf("consumed: %d %s", used.Code, used.Body)
+	}
+	expiredCode, _, err := quick.Initiate(ctx, "jellyfin", core.Device{ID: "tv2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	expired := approve(expiredCode)
+	decode(t, expired, &body)
+	if expired.Code != 400 || body.Error.Code != "expired" {
+		t.Fatalf("expired: %d %s", expired.Code, expired.Body)
+	}
+	unknown := approve("NOPE")
+	decode(t, unknown, &body)
+	if unknown.Code != 400 || body.Error.Code != "invalid" {
+		t.Fatalf("unknown: %d %s", unknown.Code, unknown.Body)
+	}
 }

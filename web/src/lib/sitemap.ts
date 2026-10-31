@@ -107,6 +107,18 @@ export const PAGES = localized<PageDef[]>(() => [
     ],
   },
   {
+    href: "/calendar",
+    title: t("Calendar"),
+    sections: [
+      { key: "month", title: t("Month"), keywords: searchTerms(msg("schedule grid")) },
+      { key: "week", title: t("Week") },
+      { key: "agenda", title: t("Agenda"), keywords: searchTerms(msg("list upcoming")) },
+    ],
+    keywords: searchTerms(
+      msg("upcoming episodes premieres finales releases airing tonight sonarr radarr schedule"),
+    ),
+  },
+  {
     href: "/catalog",
     title: t("Catalog"),
     sections: [

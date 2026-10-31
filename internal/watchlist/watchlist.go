@@ -39,14 +39,17 @@ type Notifier interface {
 	TitleAvailable(context.Context, string) error
 }
 type Settings struct {
-	Enabled       bool `json:"enabled"`
-	Plex          bool `json:"plex"`
-	Trakt         bool `json:"trakt"`
-	Notify        bool `json:"notify"`
-	Prewarm       bool `json:"prewarm"`
-	CheckHours    int  `json:"checkHours"`
-	NaturalSearch bool `json:"naturalSearch"`
-	Recaps        bool `json:"recaps"`
+	Enabled           bool `json:"enabled"`
+	Plex              bool `json:"plex"`
+	Trakt             bool `json:"trakt"`
+	Notify            bool `json:"notify"`
+	Prewarm           bool `json:"prewarm"`
+	CheckHours        int  `json:"checkHours"`
+	NaturalSearch     bool `json:"naturalSearch"`
+	Recaps            bool `json:"recaps"`
+	SubtitleTranslate bool `json:"subtitleTranslate"`
+	SpeechToText      bool `json:"speechToText"`
+	OverviewTranslate bool `json:"overviewTranslate"`
 }
 type Options struct {
 	Logger       *slog.Logger

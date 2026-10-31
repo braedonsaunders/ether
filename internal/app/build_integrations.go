@@ -49,6 +49,7 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	if err := a.buildLiveTV(); err != nil {
 		return fmt.Errorf("live TV: %w", err)
 	}
+	a.buildCalendar()
 	a.cfg.Subscribe(a.applyConfig)
 
 	if err := a.buildAvailability(); err != nil {

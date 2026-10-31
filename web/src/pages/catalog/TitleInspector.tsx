@@ -8,6 +8,7 @@ import { t } from "../../i18n";
 import { api } from "../../lib/api";
 import { fixed } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
+import "./catalog.css";
 
 export function TitleInspector({ titleKey, onClose }: { titleKey: string; onClose: () => void }) {
   const state = useAsync(() => api.title(titleKey), [titleKey]);

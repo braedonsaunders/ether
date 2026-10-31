@@ -165,6 +165,8 @@ type Registrar struct {
 	pubGeneration uint64 // advances whenever fresh connections must be published
 	forcePub      bool
 	mappingOn     bool
+	trustAt       time.Time
+	trustFP       string
 	asyncID       string // outstanding connectivity request
 	libraries     []LibrarySection
 
@@ -506,6 +508,9 @@ func (r *Registrar) runDue(ctx context.Context) {
 	if r.o.Certs != nil && r.due(taskCert, r.o.CertInterval) {
 		_ = r.RenewCertificate(ctx, false)
 		r.scheduleCertCheck()
+	}
+	if r.o.Certs != nil {
+		r.refreshCertTrust(ctx)
 	}
 	claimed := cfg.Plex.Claimed && cfg.Plex.Token != ""
 	if !claimed {
@@ -1023,7 +1028,50 @@ func (r *Registrar) RenewCertificate(ctx context.Context, force bool) error {
 		r.requestPublishLocked()
 		r.mu.Unlock()
 	}
+	r.refreshCertTrust(ctx)
 	return err
+}
+
+// refreshCertTrust re-checks the installed plex.direct certificate on the
+// certificate schedule, sooner after a failed handshake, and again after a
+// reissue. Status polls only read the stored result.
+func (r *Registrar) refreshCertTrust(ctx context.Context) {
+	if r.o.Certs == nil || ctx.Err() != nil {
+		return
+	}
+	info := r.o.Certs.Info()
+	if !info.Present || info.SelfSigned || r.certTrustFresh(info) {
+		return
+	}
+	cfg := r.o.Config.Get()
+	identity := cfg.Plex.CertHash
+	if identity == "" {
+		identity = info.Hash
+	}
+	addr := localPlexDirectDial(r.connections(cfg))
+	vctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, _ = r.o.Certs.VerifyTrust(vctx, identity, addr)
+	r.mu.Lock()
+	r.trustAt = r.o.Now()
+	r.trustFP = info.Fingerprint
+	r.mu.Unlock()
+}
+
+func (r *Registrar) certTrustFresh(info CertInfo) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if info.Fingerprint == "" || info.Fingerprint != r.trustFP || r.trustAt.IsZero() {
+		return false
+	}
+	wait := r.o.CertInterval
+	if wait <= 0 {
+		wait = 7 * 24 * time.Hour
+	}
+	if !info.Verified && info.VerifyReason == CertReasonHandshake {
+		wait = time.Minute
+	}
+	return r.o.Now().Sub(r.trustAt) < wait
 }
 
 // scheduleCertCheck brings the next certificate check forward from

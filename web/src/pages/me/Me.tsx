@@ -1,7 +1,7 @@
 import { t } from "../../i18n";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Alert, AlertDescription, Button, Card, Input, Label } from "@braedonsaunders/appkit-ui";
-import { Segmented } from "../../components/fields";
+import { PasswordInput, Segmented } from "../../components/fields";
 import { EtherLogo } from "../../components/brand";
 
 const SESSION_KEY = "ether.viewerPortal";
@@ -49,6 +49,10 @@ async function request<T>(
 }
 
 function failureMessage(status: number, code: string | undefined): string {
+  if (code === "used")
+    return t(
+      "This code has already been used to sign in a device. If the TV still isn't signed in, start again on the TV to get a new code.",
+    );
   if (code === "expired")
     return t("That code has expired. Get a new one on your TV and try again.");
   if (code === "invalid")
@@ -359,9 +363,8 @@ export default function Me() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="me-password">{t("Password")}</Label>
-                    <Input
+                    <PasswordInput
                       id="me-password"
-                      type="password"
                       autoComplete="current-password"
                       value={password}
                       onChange={(e) => setPassword(e.currentTarget.value)}
