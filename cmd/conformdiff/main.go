@@ -588,6 +588,7 @@ func writeManifest(dir string, r pmsconform.Report, only string) error {
 		return e
 	}
 	trimmed, discovery := []string{}, []string{}
+	seenDiscovery := map[string]bool{}
 	if only != "" {
 		// Keep what the previous recording noted about the other requests.
 		var old struct {
@@ -600,13 +601,19 @@ func writeManifest(dir string, r pmsconform.Report, only string) error {
 					trimmed = append(trimmed, line)
 				}
 			}
-			discovery = append(discovery, old.Discovery...)
+			for _, line := range old.Discovery {
+				if !seenDiscovery[line] {
+					seenDiscovery[line] = true
+					discovery = append(discovery, line)
+				}
+			}
 		}
 	}
 	for _, line := range r.Discovery {
 		if strings.Contains(line, "trimmed to first 50") {
 			trimmed = append(trimmed, line)
-		} else {
+		} else if !seenDiscovery[line] {
+			seenDiscovery[line] = true
 			discovery = append(discovery, line)
 		}
 	}
@@ -644,11 +651,14 @@ func writeManifest(dir string, r pmsconform.Report, only string) error {
 	data["fixtureCounts"] = counts
 	data["discoveryWarnings"] = discovery
 	data["requestErrors"] = r.Differences
-	b, e := json.MarshalIndent(data, "", "  ")
-	if e != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if e := enc.Encode(data); e != nil {
 		return e
 	}
-	return os.WriteFile(filepath.Join(dir, "manifest.json"), append(b, '\n'), 0644)
+	return os.WriteFile(filepath.Join(dir, "manifest.json"), buf.Bytes(), 0644)
 }
 func saveDiscovery(dir, profile string, ids pmsconform.DiscoveredIDs) error {
 	if e := os.MkdirAll(filepath.Join(dir, profile), 0755); e != nil {
