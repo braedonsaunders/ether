@@ -256,13 +256,15 @@ func TestCapturedBindingsFiniteArchiveClassification(t *testing.T) {
 			resolved++
 		}
 	}
-	if total != 47 || resolved != 11 {
+	// The recorded non-admin VirtualFolders denial is fixture-only, so it is
+	// not one of the replayable templates or the identity bindings.
+	if total != 46 || resolved != 10 {
 		t.Fatalf("binding-only classification: total=%d resolved=%d unresolved=%d", total, resolved, total-resolved)
 	}
 	if calls != 0 {
 		t.Fatal("classification dispatched a corpus request")
 	}
-	t.Log("immutable archive: 47 replayable templates; 11 identity-only bindings; 36 explicitly unresolved against isolated one-movie seed; no playback evidence")
+	t.Log("immutable archive: 46 replayable templates; 10 identity-only bindings; 36 explicitly unresolved against isolated one-movie seed; no playback evidence")
 }
 
 func TestCapturedBindingsVersionProvenanceCannotBecomeToken(t *testing.T) {

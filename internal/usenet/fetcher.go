@@ -774,6 +774,14 @@ func (f *Fetcher) eachOnce(ctx context.Context, id, kind string, op func(context
 				if errors.As(err, &ne) && ne.Timeout() {
 					break attempts
 				}
+				// This failure may have just opened the breaker. Observe that
+				// here: the next attempt can outlive a short backoff and send
+				// another command whose error is not backoff, which ends the
+				// fixed recovery budget early.
+				if aerr := p.brk.allow(); errors.Is(aerr, ErrProviderBackoff) {
+					lastErr = fmt.Errorf("%s: %w", providerLabel(p.cfg), aerr)
+					break attempts
+				}
 				f.log.Debug("usenet: transient error; retrying", "provider", providerLabel(p.cfg), "msgid", id, "attempt", attempt+1, "err", err)
 			}
 		}
