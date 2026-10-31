@@ -219,8 +219,11 @@ func (m *Manager) openGeneration(ctx context.Context, s *session, res *core.Reso
 
 func (m *Manager) probeGeneration(ctx context.Context, s *session, res *core.Resolution, src core.MediaSource, finish func(error), fallback func(int64) core.MediaInfo, cached ...*probeCache) (*generation, error) {
 	inner, closeShared := unwrapShared(src)
-	openedRevision := core.SourceRevision(&core.PlaySession{Key: s.ident.key, Source: inner})
-	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: inner, sharedClose: closeShared, finishSource: finish, res: res, indexReady: make(chan struct{})}
+	// Probes, revisions and optional source interfaces must see the backend,
+	// not the refcount wrapper. Close stays on the wrapper.
+	src = inner
+	openedRevision := core.SourceRevision(&core.PlaySession{Key: s.ident.key, Source: src})
+	g := &generation{sess: s, n: s.nextGen(), token: randomID(16), src: src, sharedClose: closeShared, finishSource: finish, res: res, indexReady: make(chan struct{})}
 	g.ctx, g.cancel = context.WithCancel(m.ctx)
 	m.mu.Lock()
 	m.tokens[s.id+"/"+g.token] = g
