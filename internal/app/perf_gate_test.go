@@ -235,6 +235,11 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	}
 	server := httptest.NewServer(a.Handler())
 	a.frontends.start(ctx, server.Listener.Addr())
+	// Run serves with the background WAL checkpointer; without it every
+	// read searches an ever-growing WAL index, which is not the server.
+	cpCtx, stopCheckpoints := context.WithCancel(ctx)
+	defer stopCheckpoints()
+	go a.checkpointWAL(cpCtx)
 	port := server.Listener.Addr().(*net.TCPAddr).Port
 	clients := gateClients
 	if only := os.Getenv("ETHER_PERF_GATE_CLIENTS"); only != "" {
@@ -273,6 +278,7 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 		// restart slows every query.
 		t.Logf("%s: WAL at the end of the replay: %d MB", name, fi.Size()>>20)
 	}
+	stopCheckpoints()
 	server.Close()
 	a.Close()
 	if keep := os.Getenv("ETHER_PERF_GATE_KEEP"); keep != "" {
