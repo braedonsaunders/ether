@@ -11,7 +11,6 @@ import { RefreshCw, X } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
-import { MoreOptions } from "../../components/ConfigSection";
 import { secretConfigured } from "../../components/IntegrationAccount";
 import { ErrorPanel } from "../../components/feedback";
 import { NumberInput } from "../../components/fields";
@@ -275,28 +274,26 @@ export function RatingSources({
                   }
                 />
               ))}
-              <MoreOptions label={t("More options: {title}", { title: t("Rating sources") })}>
-                <SettingsRow
-                  stacked
-                  title={<label htmlFor="ratings-cache">{t("Keep scores for")}</label>}
-                  description={t("Hours before a title's scores are looked up again.")}
-                  control={
-                    <span className="flex items-center gap-2">
-                      <NumberInput
-                        id="ratings-cache"
-                        className="w-24"
-                        min={1}
-                        max={2160}
-                        value={draft.cacheHours}
-                        onChange={(n) => set({ cacheHours: n })}
-                      />
-                      <span className="text-sm text-fg-muted">
-                        {tn(draft.cacheHours, "hour", "hours")}
-                      </span>
+              <SettingsRow
+                stacked
+                title={<label htmlFor="ratings-cache">{t("Keep scores for")}</label>}
+                description={t("Hours before a title's scores are looked up again.")}
+                control={
+                  <span className="flex items-center gap-2">
+                    <NumberInput
+                      id="ratings-cache"
+                      className="w-24"
+                      min={1}
+                      max={2160}
+                      value={draft.cacheHours}
+                      onChange={(n) => set({ cacheHours: n })}
+                    />
+                    <span className="text-sm text-fg-muted">
+                      {tn(draft.cacheHours, "hour", "hours")}
                     </span>
-                  }
-                />
-              </MoreOptions>
+                  </span>
+                }
+              />
             </SettingsSection>
           </>
         }
