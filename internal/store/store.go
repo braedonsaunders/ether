@@ -289,7 +289,7 @@ func openSQLite(ctx context.Context, path string, files []SnapshotFile) (*sql.DB
 	} else if err := protectDBFiles(path); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite-cached", dsn)
 	if err != nil {
 		return nil, err
 	}
