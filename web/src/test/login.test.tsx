@@ -56,7 +56,7 @@ describe("sign-in", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Sign in$/ }));
     await waitFor(() => expect(localSignIn).toHaveBeenCalledWith("owner", "test-password"));
     expect(await screen.findByRole("button", { name: /Sign out/ })).toBeInTheDocument();
-    expect(screen.getByText("In App")).toBeInTheDocument();
+    expect(screen.getByText("Library")).toBeInTheDocument();
     expect(screen.queryByText("In Plex")).not.toBeInTheDocument();
     expect(getToken()).toBe("local-owner-token");
   });

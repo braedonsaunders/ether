@@ -538,7 +538,7 @@ describe("Playback", () => {
   });
 
   it("shows detected hardware above the transcoding settings", async () => {
-    renderApp("/playback");
+    renderApp("/playback/transcoding");
     expect(await screen.findByRole("tab", { name: "Transcoding" }, WAIT)).toHaveAttribute(
       "aria-selected",
       "true",
@@ -592,7 +592,7 @@ describe("Playback", () => {
   });
 
   it("saves nested server enhancement settings without losing transcoding preferences", async () => {
-    const { fake } = renderApp("/playback");
+    const { fake } = renderApp("/playback/transcoding");
     await screen.findByRole("button", { name: "RTX Video Super Resolution" }, WAIT);
     expect(screen.queryByLabelText("ffmpeg path")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Enhancement quality")).not.toBeInTheDocument();

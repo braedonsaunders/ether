@@ -1,10 +1,21 @@
 import { t } from "../../i18n";
 import { useState, type FormEvent } from "react";
-import { Button, Input, Label } from "@braedonsaunders/appkit-ui";
-import { PasswordInput } from "../../components/fields";
+import { Button, Input, Label, toast } from "@braedonsaunders/appkit-ui";
+import { Copy, KeyRound, Link2 } from "lucide-react";
+import { Drawer } from "../../components/Drawer";
+import { PasswordInput, Segmented } from "../../components/fields";
 import { apiFetch, errorMessage } from "../../lib/api";
 
-export function CreateViewer({ onCreated }: { onCreated: () => void }) {
+/** Add a viewer in a drawer: a local login, or an invite link to share. */
+export function AddViewerDrawer({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
   const [mode, setMode] = useState<"local" | "invite">("local");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -12,6 +23,14 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  function close() {
+    setUsername("");
+    setPassword("");
+    setDisplay("");
+    setLink("");
+    setError("");
+    onClose();
+  }
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -23,17 +42,17 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
           method: "POST",
           body: JSON.stringify({ username, password }),
         });
-        setUsername("");
-        setPassword("");
+        onCreated();
+        toast.success(t("Viewer added"));
+        close();
       } else {
         const result = await apiFetch<{ url: string }>("/users/invite", {
           method: "POST",
           body: JSON.stringify({ display }),
         });
-        setDisplay("");
         setLink(new URL(result.url, window.location.origin).href);
+        onCreated();
       }
-      onCreated();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -41,29 +60,23 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
     }
   }
   return (
-    <details className="rounded-lg border border-border bg-surface p-4">
-      <summary className="cursor-pointer font-medium">{t("Add viewer")}</summary>
-      <form className="mt-4 space-y-3" onSubmit={submit}>
-        <label className="block text-sm">
-          <input
-            type="radio"
-            name="viewer-method"
-            checked={mode === "local"}
-            onChange={() => setMode("local")}
-          />{" "}
-          {t("Username and password")}
-        </label>
-        <label className="block text-sm">
-          <input
-            type="radio"
-            name="viewer-method"
-            checked={mode === "invite"}
-            onChange={() => setMode("invite")}
-          />{" "}
-          {t("Invite link")}
-        </label>
+    <Drawer open={open} onClose={close} title={t("Add viewer")}>
+      <form className="space-y-5" onSubmit={submit}>
+        <Segmented
+          ariaLabel={t("How they sign in")}
+          value={mode}
+          onChange={(v) => {
+            setMode(v);
+            setError("");
+            setLink("");
+          }}
+          options={[
+            { value: "local", label: t("Username and password"), icon: <KeyRound size={14} /> },
+            { value: "invite", label: t("Invite link"), icon: <Link2 size={14} /> },
+          ]}
+        />
         {mode === "local" ? (
-          <>
+          <div className="space-y-3">
             <div>
               <Label htmlFor="new-viewer-username">{t("Username")}</Label>
               <Input
@@ -84,7 +97,7 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
                 required
               />
             </div>
-          </>
+          </div>
         ) : (
           <div>
             <Label htmlFor="new-viewer-display">{t("Display name")}</Label>
@@ -101,12 +114,35 @@ export function CreateViewer({ onCreated }: { onCreated: () => void }) {
             {error}
           </p>
         ) : null}
-        {link ? <p className="break-all text-sm">{link}</p> : null}
-        <Button type="submit" disabled={busy}>
-          {mode === "local" ? t("Create viewer") : t("Create invite")}
-        </Button>
+        {link ? (
+          <div className="space-y-2 rounded-lg border border-border bg-bg-subtle p-3">
+            <p className="text-sm font-medium">{t("Send them this link")}</p>
+            <p className="break-all text-sm text-fg-muted">{link}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard?.writeText(link);
+                toast.success(t("Link copied"));
+              }}
+            >
+              <Copy size={14} /> {t("Copy link")}
+            </Button>
+          </div>
+        ) : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={close}>
+            {link ? t("Done") : t("Cancel")}
+          </Button>
+          {link ? null : (
+            <Button type="submit" disabled={busy}>
+              {mode === "local" ? t("Create viewer") : t("Create invite")}
+            </Button>
+          )}
+        </div>
       </form>
-    </details>
+    </Drawer>
   );
 }
 

@@ -14,10 +14,10 @@ import { SubtitleTiming } from "./SubtitleTiming";
 const TABS = localized(
   () =>
     [
+      { key: "subtitles", label: t("Audio & subtitles") },
       { key: "transcoding", label: t("Transcoding") },
       { key: "devices", label: t("App compatibility") },
       { key: "markers", label: t("Skip buttons") },
-      { key: "subtitles", label: t("Audio & subtitles") },
     ] as const,
 );
 

@@ -1,6 +1,6 @@
-import { Avatar, EmptyState, PagedTable, Select, Skeleton } from "@braedonsaunders/appkit-ui";
+import { Avatar, Button, EmptyState, PagedTable, Select, Skeleton } from "@braedonsaunders/appkit-ui";
 import { useState } from "react";
-import { Users } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ErrorPanel } from "../../components/feedback";
 import { DomainPage } from "../../components/layout";
@@ -13,13 +13,28 @@ import { formatDateTime, formatNumber, parseTime, relativeTime } from "../../lib
 import { useAsync } from "../../lib/hooks";
 import type { EtherUser } from "../../lib/types";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
-import { CreateViewer } from "./ManageViewers";
+import { AddViewerDrawer } from "./ManageViewers";
 import { PlexAccessNote, ViewerStatus, viewerStatus } from "./ViewerStatus";
 
 export default function ViewersList() {
+  const [adding, setAdding] = useState(false);
+  const [version, setVersion] = useState(0);
   return (
-    <DomainPage title={t("Viewers")} base="/viewers">
-      <People />
+    <DomainPage
+      title={t("Viewers")}
+      base="/viewers"
+      actions={
+        <Button size="sm" onClick={() => setAdding(true)}>
+          <Plus size={14} /> {t("Add viewer")}
+        </Button>
+      }
+    >
+      <People key={version} />
+      <AddViewerDrawer
+        open={adding}
+        onClose={() => setAdding(false)}
+        onCreated={() => setVersion((v) => v + 1)}
+      />
     </DomainPage>
   );
 }
@@ -67,12 +82,6 @@ function People() {
     );
   return (
     <div className="space-y-4">
-      <CreateViewer
-        onCreated={() => {
-          void state.reload();
-          void users.reload();
-        }}
-      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PlexAccessNote />
         <Select
