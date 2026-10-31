@@ -4,6 +4,7 @@
 package transcode
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -179,6 +180,7 @@ func withFinder(f finder) Option { return func(o *options) { o.finder = &f } }
 
 // Manager runs ffmpeg for Ether. It implements core.Transcoder.
 type Manager struct {
+	subtitles      subtitleCache
 	rtxSetup       *rtxSetupWorker
 	audioMatchBusy atomic.Bool
 	rtx            rtxBackendState
@@ -995,6 +997,20 @@ func (m *Manager) ExtractSubtitle(ctx context.Context, inputURL string, streamIn
 	if codec != "" && IsImageSubtitle(codec) {
 		return ErrImageSubtitle
 	}
+	if source, _ := ctx.Value(subtitleSourceKey{}).(string); source != "" {
+		data, err := m.subtitles.extract(ctx, subtitleCacheKey(source, codec, streamIndex), func(ctx context.Context, buf *bytes.Buffer) error {
+			return m.extractSubtitle(ctx, inputURL, streamIndex, buf)
+		})
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	}
+	return m.extractSubtitle(ctx, inputURL, streamIndex, w)
+}
+
+func (m *Manager) extractSubtitle(ctx context.Context, inputURL string, streamIndex int, w io.Writer) error {
 	var stderr tailWriter
 	err := m.runner.Run(ctx, Command{Path: m.ffmpeg, Args: subtitleArgs(inputURL, streamIndex), Stdout: w, Stderr: &stderr})
 	if err != nil {

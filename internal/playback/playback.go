@@ -1060,6 +1060,17 @@ func (m *Manager) InputURL(id string) string {
 	return m.urlFor(s.current())
 }
 
+// SourceKey names the release the session currently reads, the same for
+// every session of that release, so work derived from the file (an
+// extracted subtitle track) can be shared; "" when there is none.
+func (m *Manager) SourceKey(id string) string {
+	s := m.lookup(id)
+	if s == nil {
+		return ""
+	}
+	return s.current().releaseID()
+}
+
 func (m *Manager) urlFor(g *generation) string {
 	return m.baseURL + "/src/" + g.sess.id + "/" + g.token
 }

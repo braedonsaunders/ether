@@ -476,6 +476,9 @@ func (s *Server) extractEmbeddedSubtitle(ctx context.Context, playID string, st 
 	if input == "" {
 		return nil, "", false
 	}
+	if keyer, ok := s.d.Playback.(interface{ SourceKey(string) string }); ok {
+		ctx = transcode.WithSubtitleSource(ctx, keyer.SourceKey(playID))
+	}
 	var buf bytes.Buffer
 	if err := ex.ExtractSubtitle(ctx, input, st.Index, st.Codec, &buf); err != nil || buf.Len() == 0 {
 		return nil, "", false

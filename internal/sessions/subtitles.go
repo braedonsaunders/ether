@@ -49,6 +49,14 @@ func (b *Broker) SubtitleURL(ctx context.Context, a frontend.SessionAccess, id s
 	}
 	return fmt.Sprintf("/sessions/media/%s/%s/subtitles/%d.%s", s.public.ID, s.grant, index, format), nil
 }
+// subtitleContext names the session's source for the extraction cache.
+func (b *Broker) subtitleContext(ctx context.Context, playID string) context.Context {
+	if keyer, ok := b.deps.Playback.(interface{ SourceKey(string) string }); ok {
+		return transcode.WithSubtitleSource(ctx, keyer.SourceKey(playID))
+	}
+	return ctx
+}
+
 func subtitleStream(info core.MediaInfo, index int) (core.StreamInfo, bool) {
 	for _, s := range info.Streams {
 		if s.Type == "subtitle" && s.Index == index {
@@ -103,7 +111,7 @@ func (b *Broker) serveSubtitle(w http.ResponseWriter, r *http.Request, s *broker
 		}
 		var buf limitedBuffer
 		buf.limit = maxSubtitle
-		if err := b.deps.ExtractSubtitle(r.Context(), b.deps.Playback.InputURL(s.playID), index, stream.Codec, &buf); err != nil {
+		if err := b.deps.ExtractSubtitle(b.subtitleContext(r.Context(), s.playID), b.deps.Playback.InputURL(s.playID), index, stream.Codec, &buf); err != nil {
 			http.Error(w, "subtitle unavailable", http.StatusBadGateway)
 			return
 		}
@@ -212,7 +220,7 @@ func (b *Broker) subtitleBytes(r *http.Request, s *brokerSession, stream core.St
 	}
 	var buf limitedBuffer
 	buf.limit = maxSubtitle
-	if err := b.deps.ExtractSubtitle(r.Context(), b.deps.Playback.InputURL(s.playID), stream.Index, stream.Codec, &buf); err != nil {
+	if err := b.deps.ExtractSubtitle(b.subtitleContext(r.Context(), s.playID), b.deps.Playback.InputURL(s.playID), stream.Index, stream.Codec, &buf); err != nil {
 		return nil, false
 	}
 	return buf.Bytes(), true
