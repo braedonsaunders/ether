@@ -200,9 +200,12 @@ func (g *Grants) Resolve(ctx context.Context, surface, credential string) (*core
 	viewer = &copyViewer
 	// The SELECT already rejected a revoked, expired, or inactive grant.
 	// Extending a grant that was touched moments ago is bookkeeping, and a
-	// play must not take a write lock to do it.
+	// play must not take a write lock to do it. Activity is still observed:
+	// a fresh grant is always inside this window, and that first resolve is
+	// the authenticated request the activity time records.
 	window := int64((30 * time.Second).Milliseconds())
 	if now-lastUsed < window && expires >= now+g.ttl.Milliseconds()-window {
+		_ = g.times.Observe(ctx, viewer.ID)
 		return viewer, nil
 	}
 	res, err := g.db.ExecContext(ctx, `UPDATE identity_grants SET last_used=?,expires=? WHERE hash=? AND surface=? AND revoked=0 AND expires>? AND EXISTS (SELECT 1 FROM auth_users WHERE id=? AND active=1 AND (origin<>'dlna_guest' OR ?='dlna'))`, now, now+g.ttl.Milliseconds(), hash, surface, now, id, surface)
