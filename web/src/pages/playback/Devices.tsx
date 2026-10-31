@@ -657,15 +657,17 @@ export function DeviceCapabilities() {
   return (
     <ListNavProvider value={listNav}>
       <div className="space-y-4">
-        <SubtabNav
-          ariaLabel={t("App compatibility sections")}
-          active={view}
-          onSelect={(key) => navigate(`/playback/devices/${key}`)}
-          tabs={[
-            { key: "apps", label: t("Apps") },
-            { key: "devices", label: t("Devices") },
-          ]}
-        />
+        <div className="pb-2">
+          <SubtabNav
+            ariaLabel={t("App compatibility sections")}
+            active={view}
+            onSelect={(key) => navigate(`/playback/devices/${key}`)}
+            tabs={[
+              { key: "apps", label: t("Apps") },
+              { key: "devices", label: t("Devices") },
+            ]}
+          />
+        </div>
         {matrix.error ? (
           <ErrorPanel error={matrix.error} onRetry={() => void matrix.reload()} />
         ) : !matrix.data ? (
