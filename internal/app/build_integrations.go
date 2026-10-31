@@ -83,7 +83,7 @@ func (a *App) buildIntegrations(ctx context.Context, cfg config.Config) error {
 	a.closers = append(a.closers, a.frontends.close)
 	a.cfg.Subscribe(a.frontends.reconcile)
 	mux := http.NewServeMux()
-	mux.Handle("/ether/", lanOnly(a.buildAdmin(), func() []string { return a.cfg.Get().Server.TrustedProxyCIDRs }))
+	mux.Handle("/ether/", a.perf.wrap("console", lanOnly(a.buildAdmin(), func() []string { return a.cfg.Get().Server.TrustedProxyCIDRs })))
 	mux.HandleFunc("/ether", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ether/", http.StatusFound)
 	})

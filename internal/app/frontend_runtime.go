@@ -284,6 +284,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.listeners.log = a.log
+	r.control.listeners.perf = a.perf
 	r.control.listeners.discovery = newSharedDiscovery(r.ctx)
 	r.control.listeners.discoveryEndpoint = r.discoveryEndpoint
 	r.control.clientCount = a.frontendClients.count
@@ -372,7 +373,7 @@ func (r *frontendRuntime) plexHandler() http.Handler {
 			http.NotFound(w, req)
 			return
 		}
-		inst.Handler().ServeHTTP(w, req)
+		r.control.listeners.observe("plex", inst.Handler()).ServeHTTP(w, req)
 	})
 }
 func (r *frontendRuntime) plexListeners() []frontend.ListenerSpec {
