@@ -210,3 +210,33 @@ func TestImageGrantBatchBindsPastHeaderStatementLimit(t *testing.T) {
 		t.Fatal("batched headers", headers, err)
 	}
 }
+
+// Issuing a page of images prunes this viewer's expired rows once, not in
+// every issue, and prunes again when admission runs out of room.
+func TestImageIssuePrunesOncePerWindow(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,123,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	service, credential := imageAdapterService(t, db, "jellyfin", nil)
+	prunes := 0
+	service.beforeImageCleanup = func(*sql.Tx) { prunes++ }
+	image := frontend.Image{Kind: frontend.ImagePoster, Path: "opaque-poster", Tag: "v1", Subject: "tmdb:1"}
+	for range 5 {
+		if _, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: core.MovieKey(1), Image: image}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if prunes != 1 {
+		t.Fatalf("pruned %d times for five issues, want once", prunes)
+	}
+	// Full admission prunes before giving up.
+	service.admission.perScope = 5
+	if _, err := service.Issue(ctx, frontend.ImageGrantRequest{Credential: credential, Device: core.Device{ID: "tv"}, Item: core.MovieKey(1), Image: image}); err == nil {
+		t.Fatal("a full scope admitted a sixth image")
+	}
+	if prunes != 2 {
+		t.Fatalf("a full scope did not prune before refusing: %d", prunes)
+	}
+}

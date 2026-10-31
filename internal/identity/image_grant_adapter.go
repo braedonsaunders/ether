@@ -70,17 +70,35 @@ func (s *ImageGrantService) insertAdmitted(ctx context.Context, tx *sql.Tx, view
 		}
 		return err
 	}
-	if s.beforeImageCleanup != nil {
-		s.beforeImageCleanup(tx)
+	cleanup := func() error {
+		if s.beforeImageCleanup != nil {
+			s.beforeImageCleanup(tx)
+		}
+		if err := s.deleteExpiredImages(ctx, tx, viewerID, now); err != nil {
+			return err
+		}
+		return s.deleteExpiredImageHeaders(ctx, tx, viewerID, now)
 	}
-	if err := s.deleteExpiredImages(ctx, tx, viewerID, now); err != nil {
-		return err
-	}
-	if err := s.deleteExpiredImageHeaders(ctx, tx, viewerID, now); err != nil {
-		return err
+	// A page issues hundreds of images, each in its own write transaction;
+	// pruning this viewer's expired rows in every one of them made the
+	// prune the hottest write on the server. Prune at most every
+	// imageCleanupEvery per viewer, and whenever admission runs out of room,
+	// which is when the pruned rows matter.
+	if s.imageCleanupDue(viewerID) {
+		if err := cleanup(); err != nil {
+			return err
+		}
 	}
 	expires := now + s.ttl.Milliseconds()
-	if err := s.admitHeaders(ctx, tx, viewerID, string(s.surface), deviceID, expires, rows); err != nil {
+	err := s.admitHeaders(ctx, tx, viewerID, string(s.surface), deviceID, expires, rows)
+	var full *ImageCapacityError
+	if errors.As(err, &full) {
+		if err = cleanup(); err != nil {
+			return err
+		}
+		err = s.admitHeaders(ctx, tx, viewerID, string(s.surface), deviceID, expires, rows)
+	}
+	if err != nil {
 		return err
 	}
 	for start := 0; start < len(rows); start += imageBatchInsertChunk {
@@ -134,6 +152,27 @@ func (s *ImageGrantService) admitHeaders(ctx context.Context, tx *sql.Tx, viewer
 		}
 	}
 	return nil
+}
+
+// imageCleanupEvery bounds how often one viewer's expired image rows are
+// pruned on the issue path; PruneImageGrants sweeps the rest.
+const imageCleanupEvery = 30 * time.Second
+
+func (s *ImageGrantService) imageCleanupDue(viewerID int64) bool {
+	now := time.Now()
+	s.cleanMu.Lock()
+	defer s.cleanMu.Unlock()
+	if s.cleaned == nil {
+		s.cleaned = map[int64]time.Time{}
+	}
+	if last, ok := s.cleaned[viewerID]; ok && now.Sub(last) < imageCleanupEvery {
+		return false
+	}
+	if len(s.cleaned) > 4096 {
+		clear(s.cleaned)
+	}
+	s.cleaned[viewerID] = now
+	return true
 }
 
 func (s *ImageGrantService) deleteExpiredImages(ctx context.Context, tx *sql.Tx, viewerID, now int64) error {

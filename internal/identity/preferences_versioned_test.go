@@ -52,6 +52,10 @@ func TestVersionedPreferencesConcurrentWrites(t *testing.T) {
 	if err != nil || rev != 20 || len(seen) != 20 {
 		t.Fatalf("revision %d (%d writes): %v", rev, len(seen), err)
 	}
-	if _, err = db.Exec(`UPDATE auth_users SET active=0 WHERE id=1`); err != nil { t.Fatal(err) }
-	if _, _, err = nodes[0].PutVersioned(ctx, viewer, "settings", "theme", json.RawMessage(`"light"`)); !errors.Is(err,core.ErrUnauthorized) { t.Fatalf("inactive write: %v",err) }
+	if _, err = db.Exec(`UPDATE auth_users SET active=0 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = nodes[0].PutVersioned(ctx, viewer, "settings", "theme", json.RawMessage(`"light"`)); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("inactive write: %v", err)
+	}
 }
