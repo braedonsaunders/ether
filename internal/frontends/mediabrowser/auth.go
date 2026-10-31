@@ -346,6 +346,11 @@ func (i *instance) result(w http.ResponseWriter, r *http.Request, token string) 
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	if warm, ok := i.host.VirtualPaths.(interface {
+		Warm(context.Context, *frontend.Viewer, frontend.Device)
+	}); ok {
+		warm.Warm(context.WithoutCancel(r.Context()), v, device(r))
+	}
 	jsonReply(w, map[string]any{"AccessToken": token, "ServerId": i.info.ID, "User": i.userDTOWithTimes(r, v, token), "SessionInfo": i.sessionDTO(r, v)})
 }
 func identityError(w http.ResponseWriter, err error) {

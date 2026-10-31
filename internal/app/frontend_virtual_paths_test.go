@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -144,6 +145,53 @@ func TestVirtualPathsMalformedLibraryAndDeniedSectionFailClosed(t *testing.T) {
 	}}
 	if got, err := (surfaceVirtualPaths{experience: denied}).Paths(context.Background(), viewer, core.Device{}, []core.RatingKey{core.MovieKey(1)}); got != nil || !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatalf("denied section: %+v %v", got, err)
+	}
+}
+
+func TestVirtualPathsPageDoesNotWaitForTheFullIndex(t *testing.T) {
+	movie := core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Film"}
+	show := core.Title{Key: core.ShowKey(2), Type: core.TypeShow, Title: "Show"}
+	release := make(chan struct{})
+	experience := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *core.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "movies", Type: core.TypeMovie}, {ID: "tv", Type: core.TypeShow}}, nil
+		},
+		LibraryItemsFunc: func(_ context.Context, _ *core.Viewer, _ core.Device, id string, _ frontend.ItemQuery) (core.Page, error) {
+			if id == "tv" {
+				return core.Page{Items: []core.Title{show}, Total: 1}, nil
+			}
+			return core.Page{Items: []core.Title{movie}, Total: 1}, nil
+		},
+		ChildrenFunc: func(context.Context, *core.Viewer, core.Device, core.RatingKey, frontend.ItemQuery) (core.Page, error) {
+			<-release
+			return core.Page{Items: []core.Title{}, Total: 0}, nil
+		},
+	}
+	s := surfaceVirtualPaths{experience: experience, index: &pathIndex{}, stamp: func(v *core.Viewer) string {
+		if v == nil {
+			return ""
+		}
+		return "viewer"
+	}, enabled: func() bool { return true }}
+	t.Cleanup(func() { close(release) })
+	done := make(chan struct {
+		paths map[core.RatingKey]string
+		err   error
+	}, 1)
+	go func() {
+		got, err := s.Paths(context.Background(), &core.Viewer{ID: 7}, core.Device{}, []core.RatingKey{movie.Key})
+		done <- struct {
+			paths map[core.RatingKey]string
+			err   error
+		}{got, err}
+	}()
+	select {
+	case got := <-done:
+		if got.err != nil || got.paths[movie.Key] == "" {
+			t.Fatalf("page waited for the show walk: %v %v", got.paths, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("page blocked on the full index")
 	}
 }
 

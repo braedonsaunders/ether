@@ -32,10 +32,31 @@ func validUsername(s string) bool {
 	return len(s) > 0 && len(s) <= 128 && strings.TrimSpace(s) == s && !strings.ContainsAny(s, "\x00\r\n")
 }
 
-const localPrefix = "$argon2id$v=19$m=65536,t=3,p=1$"
+// argonProfile is one accepted Argon2id parameter set. New passwords use the
+// OWASP minimum (19 MiB, two iterations, one lane). The older 64 MiB profile
+// still verifies so existing credentials keep working, and a successful check
+// rewrites them. Parameters outside these two sets are rejected: a stored
+// hash must not be able to demand unbounded memory.
+type argonProfile struct {
+	memory, time uint32
+	threads      uint8
+}
 
-// hashPassword uses a fresh salt and a fixed, bounded Argon2id profile.
+func (p argonProfile) prefix() string {
+	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$", p.memory, p.time, p.threads)
+}
+
+var (
+	argonCurrent = argonProfile{memory: 19 * 1024, time: 2, threads: 1}
+	argonLegacy  = argonProfile{memory: 64 * 1024, time: 3, threads: 1}
+)
+
+// hashPassword uses a fresh salt and the current Argon2id profile.
 func hashPassword(password string) (string, error) {
+	return hashPasswordWith(argonCurrent, password)
+}
+
+func hashPasswordWith(profile argonProfile, password string) (string, error) {
 	if len(password) == 0 || len(password) > 1024 {
 		return "", errors.New("identity: invalid password length")
 	}
@@ -43,15 +64,19 @@ func hashPassword(password string) (string, error) {
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	hash := argon2.IDKey([]byte(password), salt, 3, 65536, 1, 32)
-	return localPrefix + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(hash), nil
+	hash := argon2.IDKey([]byte(password), salt, profile.time, profile.memory, profile.threads, 32)
+	return profile.prefix() + base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(hash), nil
 }
 
 func verifyPassword(encoded, password string) bool {
-	if len(password) == 0 || len(password) > 1024 || !strings.HasPrefix(encoded, localPrefix) {
+	if len(password) == 0 || len(password) > 1024 {
 		return false
 	}
-	fields := strings.Split(strings.TrimPrefix(encoded, localPrefix), "$")
+	profile, rest, ok := argonProfileOf(encoded)
+	if !ok {
+		return false
+	}
+	fields := strings.Split(rest, "$")
 	if len(fields) != 2 || len(fields[0]) != 22 || len(fields[1]) != 43 {
 		return false
 	}
@@ -63,8 +88,18 @@ func verifyPassword(encoded, password string) bool {
 	if err != nil || len(want) != 32 {
 		return false
 	}
-	got := argon2.IDKey([]byte(password), salt, 3, 65536, 1, 32)
+	got := argon2.IDKey([]byte(password), salt, profile.time, profile.memory, profile.threads, 32)
 	return subtle.ConstantTimeCompare(got, want) == 1
+}
+
+func argonProfileOf(encoded string) (argonProfile, string, bool) {
+	for _, profile := range []argonProfile{argonCurrent, argonLegacy} {
+		prefix := profile.prefix()
+		if strings.HasPrefix(encoded, prefix) {
+			return profile, strings.TrimPrefix(encoded, prefix), true
+		}
+	}
+	return argonProfile{}, "", false
 }
 
 // Create links a username and password to an existing viewer. Database
@@ -126,7 +161,22 @@ func (l *Local) Authenticate(ctx context.Context, username, password string) (vi
 	if !verifyPassword(hash, password) {
 		return 0, 0, core.ErrUnauthorized
 	}
+	if strings.HasPrefix(hash, argonLegacy.prefix()) {
+		go l.rehash(viewerID, username, password)
+	}
 	return viewerID, identityID, nil
+}
+
+// rehash replaces a legacy Argon2id encoding after it has already verified.
+// A failed rewrite leaves the old hash in place for the next sign-in.
+func (l *Local) rehash(viewerID int64, username, password string) {
+	hash, err := hashPassword(password)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = l.db.ExecContext(ctx, `UPDATE identity_links SET password_hash=? WHERE viewer_id=? AND provider='local' AND subject=?`, hash, viewerID, username)
 }
 
 // HasPassword reports whether an active viewer has a local password identity.

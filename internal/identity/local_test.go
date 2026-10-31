@@ -3,7 +3,9 @@ package identity
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/core"
@@ -55,6 +57,46 @@ func TestLocal(t *testing.T) {
 	}
 	if _, _, err := l.Authenticate(ctx, "alice", "new secret"); !errors.Is(err, core.ErrUnauthorized) {
 		t.Fatal(err)
+	}
+}
+
+func TestLegacyArgon2idStillVerifiesAndRewrites(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users (id,plex_id,username,title,email,created_at,updated_at) VALUES (1, 42, 'alice', 'Alice', 'a@example.com', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := hashPasswordWith(argonLegacy, "secret")
+	if err != nil || !strings.HasPrefix(legacy, argonLegacy.prefix()) {
+		t.Fatal(legacy, err)
+	}
+	if _, err = db.ExecContext(ctx, `INSERT INTO identity_links (viewer_id,provider,subject,display,verified_at,password_hash) VALUES (1,'local','alice','alice',1,?)`, legacy); err != nil {
+		t.Fatal(err)
+	}
+	l, err := NewLocal(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = l.Authenticate(ctx, "alice", "secret"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var stored string
+		if err = db.QueryRowContext(ctx, `SELECT password_hash FROM identity_links WHERE subject='alice'`).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasPrefix(stored, argonCurrent.prefix()) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(stored)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	current, err := hashPassword("secret")
+	if err != nil || !strings.HasPrefix(current, argonCurrent.prefix()) || verifyPassword(current, "nope") {
+		t.Fatal(current, err)
 	}
 }
 
