@@ -286,6 +286,7 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 	if len(title.Keywords) > 0 {
 		item["Tags"] = title.Keywords
 	}
+	jellyfinResumeSubtitle(item)
 	i.fillSeriesStudio(r, viewer, item, title)
 }
 

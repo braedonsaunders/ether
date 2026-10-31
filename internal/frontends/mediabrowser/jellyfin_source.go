@@ -54,3 +54,35 @@ func jellyfinDefaultStreamIndexes(source map[string]any, media frontend.MediaInf
 		source["DefaultSubtitleStreamIndex"] = -1
 	}
 }
+
+// jellyfinResumeSubtitle records the lab viewer's in-progress choice. Jellyfin
+// stores -1 on a partially watched item when no subtitle stream is selected,
+// and omits the field once the item is unplayed or finished.
+func jellyfinResumeSubtitle(item map[string]any) {
+	data, _ := item["UserData"].(map[string]any)
+	if data == nil {
+		return
+	}
+	if played, _ := data["Played"].(bool); played {
+		return
+	}
+	ticks, ok := data["PlaybackPositionTicks"].(int64)
+	if !ok {
+		if wide, wideOK := data["PlaybackPositionTicks"].(float64); wideOK {
+			ticks, ok = int64(wide), wide != 0
+		}
+	}
+	if !ok || ticks <= 0 {
+		return
+	}
+	sources, _ := item["MediaSources"].([]any)
+	for _, source := range sources {
+		dto, ok := source.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := dto["DefaultSubtitleStreamIndex"]; !exists {
+			dto["DefaultSubtitleStreamIndex"] = -1
+		}
+	}
+}

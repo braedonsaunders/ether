@@ -117,3 +117,23 @@ func TestJellyfinDefaultStreamIndexesUseProbeEvidence(t *testing.T) {
 		t.Fatal(estimated)
 	}
 }
+
+func TestJellyfinResumeStoresNoSubtitle(t *testing.T) {
+	source := map[string]any{}
+	item := map[string]any{
+		"UserData":     map[string]any{"PlaybackPositionTicks": int64(50), "Played": false},
+		"MediaSources": []any{source},
+	}
+	jellyfinResumeSubtitle(item)
+	if source["DefaultSubtitleStreamIndex"] != -1 {
+		t.Fatal(source)
+	}
+	finished := map[string]any{}
+	jellyfinResumeSubtitle(map[string]any{
+		"UserData":     map[string]any{"PlaybackPositionTicks": int64(50), "Played": true},
+		"MediaSources": []any{finished},
+	})
+	if _, ok := finished["DefaultSubtitleStreamIndex"]; ok {
+		t.Fatal(finished)
+	}
+}
