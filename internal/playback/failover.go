@@ -373,8 +373,10 @@ func (m *Manager) startTrailerFill(g *generation) {
 	m.wg.Add(1)
 	m.mu.Unlock()
 	go func() {
-		defer m.wg.Done()
+		// Release can block in a backend Close. Leave the manager wait group
+		// first so shutdown is not pinned behind that Close.
 		defer g.release()
+		defer m.wg.Done()
 		// The trailer usually sits next to the Cues the index fill reads;
 		// waiting lets it share that fetch instead of competing with it.
 		select {
@@ -507,8 +509,10 @@ func (m *Manager) startIndexFill(g *generation) {
 	m.wg.Add(1)
 	m.mu.Unlock()
 	go func() {
-		defer m.wg.Done()
+		// Release can block in a backend Close. Leave the manager wait group
+		// first so shutdown is not pinned behind that Close.
 		defer g.release()
+		defer m.wg.Done()
 		defer g.markIndexReady()
 		ctx, cancel := context.WithTimeout(g.ctx, m.opts.IndexTimeout)
 		defer cancel()
