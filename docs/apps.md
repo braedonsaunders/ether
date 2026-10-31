@@ -70,6 +70,55 @@ and Silo schema/playback limits. Those holds remain in force regardless of the
 architecture name. Plex-specific setup and feature instructions continue to
 apply to Plex clients.
 
+## Personalized home in Jellyfin and Emby
+
+Ether publishes a viewer's top Home rows as extra libraries on the shared
+MediaBrowser engine (`internal/frontends/mediabrowser`). Plex still paints Home
+from Experience directly. These libraries use the same rows, ranker and bandit.
+Their ids are stable for a viewer and a row identity, and the items inside them
+are the real titles.
+
+Clients that prefix the library name should read a noun phrase. Jellyfin Web's
+English string is `Recently Added in {0}` (`LatestFromLibrary`). A row titled
+"Because you watched Dune" is published as "Dune and Similar", so the shelf
+reads "Recently Added in Dune and Similar". "Trending" stays "Trending".
+
+`/Items/Latest?ParentId=<view>` and `/Items?ParentId=<view>` return that row's
+ranked order. A `SortBy` on the folder is ignored, because the folder is the
+ranking. Played titles stay out of Latest when the viewer still has the default
+hide-played setting. Opening an item uses its real id, so detail and playback
+are the library title, not a copy. Showing the folder records a row impression.
+The next play of one of those items, on that device, records a row play.
+
+`/Movies/Recommendations` and `/Shows/Recommendations` return Jellyfin
+recommendation categories filled from the same rows. `because-you-watched` is
+`SimilarToRecentlyPlayed` ("Because you watched {name}" in Jellyfin Web). A
+person row is `HasDirectorFromRecentlyPlayed` or `HasActorFromRecentlyPlayed`.
+Other rows are `SimilarToLikedItem`.
+
+When the viewer has not saved `usersettings` home sections, Ether sets
+`homesection0` to `latestmedia`, then resume, next up and library tiles, so the
+new shelves lead. A saved `homesection*` key is left alone. When the viewer has
+not saved `OrderedViews`, personalized libraries come first.
+`POST /Users/{id}/Configuration` stores an explicit order and is not overwritten.
+
+The owner control is Apps → Jellyfin and Apps → Emby. Personalized rows are on
+until turned off. The count defaults to 4. Kinds left all on means every
+personalized row except Continue Watching and Up Next, which those apps already
+have. Date added on a real title remains its release date.
+
+| Client | How Home is built | Where Ether's rows appear | Order |
+| --- | --- | --- | --- |
+| jellyfin-web | `homesections.js` reads `usersettings` `homesection0`..`9`, else tiles, resume, audio, books, live TV, next up, latest. Latest Media walks every user view except playlists, live TV, box sets, channels and folders, and views in `LatestItemsExcludes`. | One shelf per view, titled "Recently Added in {name}", from `GET /Items/Latest` with no sort. Suggestions uses `GET /Movies/Recommendations`. | User-view order, which Ether leads with the personalized libraries. Server array order is what the cards use. |
+| jellyfin-androidtv | Home rows come from the same display preferences. `HomeFragmentLatestRow` adds "Latest in {library}" for each user view except playlists, live TV, box sets and books, via `GetLatestMedia`. Resume and Next Up are separate rows. | The virtual libraries become those Latest rows. | The view list order. No client sort on Latest. |
+| Swiftfin | The shipped profile loads `/Users/{id}/Views`, resume, Next Up, then `/Items?ParentId=&SortBy=SortName` for a library. It does not call Latest in that profile. | Personalized libraries show in the view list. Opening one returns ranked items even though the request asks for `SortName`. | Folder order is the ranking. |
+| Findroid | Same profile shape as Swiftfin: views, resume, Next Up, then a library query with `SortBy=SortName`. | Same as Swiftfin: the extra views, ranked when opened. | Folder order is the ranking. |
+| Streamyfin | Same profile shape as Swiftfin. | Same as Swiftfin. | Folder order is the ranking. |
+| JellyCon | Same profile shape as Swiftfin. | Same as Swiftfin. | Folder order is the ranking. |
+| Infuse (Jellyfin) | Captured traffic: resume, Next Up, `GET /Items/Latest?ParentId=` for each known library (no sort), then `/UserViews`, grouping options, and `GET /DisplayPreferences/usersettings?client=emby`. Opening a library uses `/Items?SortBy=SortName`. | After Infuse learns the new view ids, each one gets a Latest shelf in capture order. The closed client may still sort that shelf by `DateCreated`; the folder itself stays in rank order. | Latest is server order unless Infuse re-sorts by the date field. |
+| Emby SDK sample | Profile: `/Users/{id}/Views`, resume, Next Up, then `/Users/{id}/Items?ParentId=`. No Latest call. | Personalized views are in the view list. Browsing one returns ranked items. | Server item order. |
+| Infuse (Emby) | Uses the Emby profile's library browse, not Jellyfin Latest. | The extra Emby views, ranked on browse. | Server item order. |
+
 ## Candidate-3 first-pass acceptance notes
 
 This describes candidate-3 (`82daa1c7`), before final Plex broker adoption.
