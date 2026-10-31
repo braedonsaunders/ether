@@ -78,6 +78,60 @@ func TestResolveDeviceIsSurfaceBoundAndReadOnly(t *testing.T) {
 	}
 }
 
+func TestFreshGrantResolveDoesNotWrite(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,is_owner,created_at,updated_at) VALUES(1,1,1,0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10000, 0).UTC()
+	grants, err := identity.NewGrants(db, members{db}, time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := grants.Issue(ctx, 1, nil, "emby", core.Device{ID: "tv"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var used, expires int64
+	if err = db.QueryRowContext(ctx, `SELECT last_used,expires FROM identity_grants WHERE viewer_id=1`).Scan(&used, &expires); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = grants.Resolve(ctx, "emby", token); err != nil {
+		t.Fatal(err)
+	}
+	var againUsed, againExpires int64
+	if err = db.QueryRowContext(ctx, `SELECT last_used,expires FROM identity_grants WHERE viewer_id=1`).Scan(&againUsed, &againExpires); err != nil {
+		t.Fatal(err)
+	}
+	if againUsed != used || againExpires != expires {
+		t.Fatalf("fresh resolve wrote the grant: %d/%d -> %d/%d", used, expires, againUsed, againExpires)
+	}
+	now = now.Add(time.Minute)
+	if _, err = grants.Resolve(ctx, "emby", token); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT last_used,expires FROM identity_grants WHERE viewer_id=1`).Scan(&againUsed, &againExpires); err != nil {
+		t.Fatal(err)
+	}
+	if againUsed == used || againExpires == expires {
+		t.Fatal("stale grant was not extended")
+	}
+	used, expires = againUsed, againExpires
+	if _, err = grants.Resolve(ctx, "emby", token); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.QueryRowContext(ctx, `SELECT last_used,expires FROM identity_grants WHERE viewer_id=1`).Scan(&againUsed, &againExpires); err != nil || againUsed != used || againExpires != expires {
+		t.Fatalf("second fresh resolve wrote: %d/%d -> %d/%d %v", used, expires, againUsed, againExpires, err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE identity_grants SET revoked=1 WHERE viewer_id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = grants.Resolve(ctx, "emby", token); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("revoked grant: %v", err)
+	}
+}
+
 func TestResolveDeviceReportsCurrentSlidingExpiry(t *testing.T) {
 	ctx := context.Background()
 	db := store.OpenTest(t)

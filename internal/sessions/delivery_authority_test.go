@@ -91,7 +91,17 @@ func testDeliveryAuthority(t *testing.T, db *sql.DB) {
 	firstPlayback := &rememberingPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 4}}
 	first := newBroker(firstPlayback)
 	originalSession := openStream(first, "client-a")
-	original, ok, err := lookupDeliveryAuthority(ctx, db, viewer.ID, int64(item), "jellyfin", device.ID)
+	var original deliveryAuthority
+	var ok bool
+	var err error
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		original, ok, err = lookupDeliveryAuthority(ctx, db, viewer.ID, int64(item), "jellyfin", device.ID)
+		if err != nil || (ok && original.SessionID == "client-a" && original.ReleaseID != "" && original.Token > 0) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if err != nil || !ok || original.SessionID != "client-a" || original.ReleaseID == "" || original.Token <= 0 {
 		t.Fatalf("published authority %+v ok=%v err=%v", original, ok, err)
 	}
@@ -104,7 +114,15 @@ func testDeliveryAuthority(t *testing.T, db *sql.DB) {
 		t.Fatalf("restart prepared release %q exact %v, authority %q", restartedPlayback.release, restartedPlayback.exact, original.ReleaseID)
 	}
 	openStream(first, "client-b")
-	newer, ok, err := lookupDeliveryAuthority(ctx, db, viewer.ID, int64(item), "jellyfin", device.ID)
+	var newer deliveryAuthority
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		newer, ok, err = lookupDeliveryAuthority(ctx, db, viewer.ID, int64(item), "jellyfin", device.ID)
+		if err != nil || (ok && newer.SessionID == "client-b" && newer.Token > original.Token) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if err != nil || !ok || newer.SessionID != "client-b" || newer.Token <= original.Token {
 		t.Fatalf("newer authority %+v ok=%v err=%v", newer, ok, err)
 	}

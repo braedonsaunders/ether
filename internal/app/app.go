@@ -124,7 +124,10 @@ type App struct {
 	proxyGen      uint64
 	proxyReady    bool
 	proxyPrefixes []netip.Prefix
-	db            *sql.DB
+	// seenFamilies records a client family policy once per process. Playback
+	// does not take a write lock to refresh last_seen.
+	seenFamilies sync.Map
+	db           *sql.DB
 	// databaseURL is the cluster database, placed in join tokens
 	// (cluster_settings.go); empty on a standalone server.
 	databaseURL string

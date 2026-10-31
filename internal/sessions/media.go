@@ -104,9 +104,17 @@ func (b *Broker) StartStream(ctx context.Context, a frontend.SessionAccess, id s
 		b.mu.Unlock()
 		b.ensureTrickplay(ctx, s, req.Position)
 		ps, _ := b.deps.Playback.Session(s.playID)
-		if err := b.bindDeliveryAuthority(ctx, s, ps); err != nil {
-			return "", err
-		}
+		// The file URL is an in-memory grant. ServeMedia rechecks the viewer
+		// and the current policy on every byte. The durable delivery row is
+		// published beside that, not in front of the first byte.
+		sealed := *s
+		go func() {
+			c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			defer cancel()
+			if err := b.bindDeliveryAuthority(c, &sealed, ps); err != nil && b.deps.OnEventError != nil {
+				b.deps.OnEventError(err)
+			}
+		}()
 		return path + "file", nil
 	}
 	if b.deps.Transcoder == nil {

@@ -161,6 +161,19 @@ func (v *versionHandles) Resolve(ctx context.Context, scope frontend.VersionScop
 }
 
 func (v *versionHandles) resolveRecord(ctx context.Context, scope frontend.VersionScope, handle string) (core.RatingKey, string, error) {
+	item, release, err := v.lookupRow(ctx, scope, handle)
+	if err != nil {
+		return 0, "", err
+	}
+	if _, err = v.validate(ctx, scope, item, release); err != nil {
+		return 0, "", err
+	}
+	return item, release, nil
+}
+
+// lookupRow reads the handle's stored parent. It does not check that the
+// release is still offered; resolveRecord does that.
+func (v *versionHandles) lookupRow(ctx context.Context, scope frontend.VersionScope, handle string) (core.RatingKey, string, error) {
 	handle = normalizeVersionHandle(handle)
 	if scope.Protocol != v.protocol || scope.Device.ID == "" || scope.Viewer == nil || handle == "" {
 		return 0, "", core.ErrNotFound
@@ -181,9 +194,6 @@ func (v *versionHandles) resolveRecord(ctx context.Context, scope frontend.Versi
 		return 0, "", core.ErrNotFound
 	}
 	if err != nil {
-		return 0, "", err
-	}
-	if _, err = v.validate(ctx, scope, core.RatingKey(item), release); err != nil {
 		return 0, "", err
 	}
 	return core.RatingKey(item), release, nil

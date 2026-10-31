@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -45,9 +46,35 @@ type Selection struct {
 type Options struct {
 	ShowName func(context.Context, int64) string
 }
+type rulesCacheKey struct {
+	user                    int64
+	device, series, library string
+}
+
 type Service struct {
 	db      *sql.DB
 	options Options
+	mu      sync.Mutex
+	// rulesCache remembers merged rules until a preference write. Playback
+	// still applies the rules on every plan; it does not re-read them.
+	rulesCache map[rulesCacheKey]cachedRules
+}
+
+type cachedRules struct {
+	rules   Rules
+	sources map[string]string
+}
+
+func (s *Service) forgetRules() {
+	s.mu.Lock()
+	s.rulesCache = nil
+	s.mu.Unlock()
+}
+
+func cloneRules(r Rules) Rules {
+	r.AudioLanguages = append([]string(nil), r.AudioLanguages...)
+	r.SubtitleLanguages = append([]string(nil), r.SubtitleLanguages...)
+	return r
 }
 
 func New(db *sql.DB, opts ...Options) *Service {
@@ -102,6 +129,9 @@ func (s *Service) PutRules(ctx context.Context, user int64, r Rules) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO trackprefs_rules(user_id,rules) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET rules=excluded.rules`, user, string(b))
+	if err == nil {
+		s.forgetRules()
+	}
 	return err
 }
 func (s *Service) GetRules(ctx context.Context, user int64) (Rules, error) {
@@ -125,6 +155,9 @@ func (s *Service) GetRules(ctx context.Context, user int64) (Rules, error) {
 }
 func (s *Service) DeleteRules(ctx context.Context, user int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_rules WHERE user_id=?`, user)
+	if err == nil {
+		s.forgetRules()
+	}
 	return err
 }
 func (s *Service) Remember(ctx context.Context, user int64, key core.RatingKey, kind string, track *core.StreamInfo) error {
@@ -398,6 +431,7 @@ func (s *Service) updateViewerRules(ctx context.Context, user int64, update func
 			return err
 		}
 		if n == 1 {
+			s.forgetRules()
 			return nil
 		}
 		var active int

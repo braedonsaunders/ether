@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/store"
@@ -33,6 +34,9 @@ func (s *Service) DeleteScopedField(ctx context.Context, user int64, scope, id, 
 		return errors.New("invalid scoped track preference")
 	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_scoped WHERE user_id=? AND scope=? AND scope_id=? AND field=?`, user, scope, id, field)
+	if err == nil {
+		s.forgetRules()
+	}
 	return err
 }
 
@@ -67,6 +71,9 @@ func (s *Service) PutScoped(ctx context.Context, user int64, scope, id string, v
 	}
 	if value.AudioLanguages == nil && value.SubtitleLanguages == nil && value.SubtitleMode == nil && value.MaxBitrateKbps == nil && value.MaxHeight == nil {
 		_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_scoped WHERE user_id=? AND scope=? AND scope_id=?`, user, scope, id)
+		if err == nil {
+			s.forgetRules()
+		}
 		return err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -110,7 +117,11 @@ func (s *Service) PutScoped(ctx context.Context, user int64, scope, id string, v
 			return e
 		}
 	}
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	s.forgetRules()
+	return nil
 }
 
 // ScopedRules returns the effective rules and whether any override applied.
@@ -127,6 +138,13 @@ func (s *Service) ScopedRules(ctx context.Context, user int64, scope Scope) (Rul
 
 // ScopedRulesWithSources also identifies the winning scoped override for each field.
 func (s *Service) ScopedRulesWithSources(ctx context.Context, user int64, scope Scope) (Rules, map[string]string, error) {
+	key := rulesCacheKey{user: user, device: scope.Device, series: scope.Series, library: scope.Library}
+	s.mu.Lock()
+	if hit, ok := s.rulesCache[key]; ok {
+		s.mu.Unlock()
+		return cloneRules(hit.rules), maps.Clone(hit.sources), nil
+	}
+	s.mu.Unlock()
 	r, err := s.GetRules(ctx, user)
 	if err != nil {
 		return r, nil, err
@@ -187,6 +205,12 @@ func (s *Service) ScopedRulesWithSources(ctx context.Context, user int64, scope 
 		}
 		rows.Close()
 	}
+	s.mu.Lock()
+	if s.rulesCache == nil {
+		s.rulesCache = map[rulesCacheKey]cachedRules{}
+	}
+	s.rulesCache[key] = cachedRules{rules: cloneRules(r), sources: maps.Clone(sources)}
+	s.mu.Unlock()
 	return r, sources, nil
 }
 
