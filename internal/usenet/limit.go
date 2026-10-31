@@ -158,9 +158,14 @@ func (p *pool) applySize() (int, bool) {
 
 // noteClose records that Ether closed n of this pool's sockets.
 func (p *pool) noteClose(n int) {
-	now := time.Now()
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.noteCloseLocked(n)
+	p.mu.Unlock()
+}
+
+// noteCloseLocked is noteClose with p.mu held.
+func (p *pool) noteCloseLocked(n int) {
+	now := time.Now()
 	if now.Sub(p.limit.closeWindow) >= p.o.limits.teardownGrace {
 		p.limit.closeWindow, p.limit.closes, p.limit.excused = now, 0, 0
 	}
