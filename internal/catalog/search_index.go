@@ -201,8 +201,8 @@ func (c *Catalog) MatchPeople(ctx context.Context, terms []string, limit int) ([
 }
 
 // PersonCreditKeys returns up to limit titles of types that credit person,
-// most popular first. Movies and shows must be browsable; seasons and
-// episodes belong to a browsable show.
+// most popular first. Like the credit walk it replaces, it includes titles
+// opened on demand (not browsable); callers apply the viewer's visibility.
 func (c *Catalog) PersonCreditKeys(ctx context.Context, person int64, types []core.MediaType, limit int) ([]core.RatingKey, error) {
 	if person <= 0 || limit <= 0 || len(types) == 0 {
 		return nil, nil
@@ -216,7 +216,6 @@ func (c *Catalog) PersonCreditKeys(ctx context.Context, person int64, types []co
 	args = append(args, limit)
 	rows, err := c.db.QueryContext(ctx, `SELECT DISTINCT t.key, t.popularity FROM catalog_credits cr JOIN catalog_titles t ON t.key=cr.key
 		WHERE cr.person_tmdb=? AND t.adult=0 AND t.type IN (`+strings.Join(in, ",")+`)
-		AND (t.browsable=1 OR (t.type IN ('season','episode') AND EXISTS (SELECT 1 FROM catalog_titles s WHERE s.key=t.show_key AND s.browsable=1)))
 		ORDER BY t.popularity DESC, t.key LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
