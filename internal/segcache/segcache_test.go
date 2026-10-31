@@ -424,6 +424,25 @@ func TestCorruptPinsFileIgnored(t *testing.T) {
 	}
 }
 
+func TestTornPinsFileStartsEmpty(t *testing.T) {
+	for _, body := range []string{"", "{", "{\"Version\":1,\"Pins\":{", "\x00\x00"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, pinsFileName), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, pinsFileName+".torn"+tmpExt), []byte("partial"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		c := openT(t, dir, 0)
+		if len(c.Pins()) != 0 {
+			t.Fatalf("pins from %q: %v", body, c.Pins())
+		}
+		if _, err := os.Stat(filepath.Join(dir, pinsFileName+".torn"+tmpExt)); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("torn temp %q: %v", body, err)
+		}
+	}
+}
+
 func TestIndexRebuiltOnRestart(t *testing.T) {
 	dir := t.TempDir()
 	c := openT(t, dir, 0)
