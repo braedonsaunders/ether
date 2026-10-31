@@ -191,8 +191,9 @@ func (i *instance) patchProfile(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Bad Request", 400)
 				return
 			}
-			tracks.SubtitleLanguages = nil
-			if value != "" {
+			if value == "" {
+				tracks.SubtitleLanguages = nil
+			} else if len(tracks.SubtitleLanguages) == 0 || tracks.SubtitleLanguages[0] != value {
 				tracks.SubtitleLanguages = []string{value}
 			}
 			tracksChanged = true

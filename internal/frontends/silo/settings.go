@@ -299,7 +299,7 @@ func settingTrackScope(r *http.Request, i *instance, v *frontend.Viewer) fronten
 
 func trackField(key string) bool {
 	switch key {
-	case "playback.audio_language", "playback.subtitle_language", "playback.subtitle_mode", "playback.preferred_quality", "playback.max_bitrate_kbps":
+	case "playback.audio_language", "playback.subtitle_language", "playback.subtitle_mode", "playback.subtitle_appearance", "playback.preferred_quality", "playback.max_bitrate_kbps":
 		return true
 	}
 	return false
@@ -340,6 +340,13 @@ func (i *instance) setTrackValue(r *http.Request, v *frontend.Viewer, key, scope
 		}
 		patch.SubtitleMode = &mode
 		field = "subtitle_mode"
+	case "playback.subtitle_appearance":
+		if !validSubtitleAppearance(raw) {
+			return errors.New("unsupported subtitle appearance")
+		}
+		appearance := append(json.RawMessage(nil), raw...)
+		patch.SubtitleAppearance = &appearance
+		field = "appearance"
 	case "playback.max_bitrate_kbps":
 		var value *int
 		if err := json.Unmarshal(raw, &value); err != nil {
@@ -368,6 +375,12 @@ func (i *instance) setTrackValue(r *http.Request, v *frontend.Viewer, key, scope
 		patch.PreferredQuality = &value
 		field = "height"
 	}
+	if scope == "profile" && key == "playback.subtitle_language" && patch.SubtitleLanguages != nil && len(*patch.SubtitleLanguages) == 1 {
+		if current, err := i.host.TrackPreferences.Get(r.Context(), v); err == nil && len(current.SubtitleLanguages) > 1 && current.SubtitleLanguages[0] == (*patch.SubtitleLanguages)[0] {
+			kept := append([]string(nil), current.SubtitleLanguages...)
+			patch.SubtitleLanguages = &kept
+		}
+	}
 	if scope == "profile" {
 		switch field {
 		case "audio":
@@ -380,6 +393,8 @@ func (i *instance) setTrackValue(r *http.Request, v *frontend.Viewer, key, scope
 			return svc.SetSubtitleLanguage(r.Context(), v, *patch.SubtitleLanguages)
 		case "subtitle_mode":
 			return svc.SetSubtitleMode(r.Context(), v, *patch.SubtitleMode)
+		case "appearance":
+			return svc.SetAppearance(r.Context(), v, *patch.SubtitleAppearance)
 		}
 	}
 	target := map[string]string{"profile_device": "device", "profile_library": "library", "profile_series": "series"}[scope]
@@ -544,6 +559,10 @@ func (i *instance) settingValues(w http.ResponseWriter, r *http.Request) {
 				}
 			case "playback.subtitle_mode":
 				row["value"] = map[string]string{"off": "off", "always": "always", "foreign-only": "auto", "forced-only": "auto"}[tracks.SubtitleMode]
+			case "playback.subtitle_appearance":
+				if len(tracks.SubtitleAppearance) > 0 {
+					row["value"] = json.RawMessage(tracks.SubtitleAppearance)
+				}
 			case "playback.max_bitrate_kbps":
 				if bitrate > 0 {
 					row["value"] = bitrate
@@ -559,7 +578,7 @@ func (i *instance) settingValues(w http.ResponseWriter, r *http.Request) {
 					row["value"] = "auto"
 				}
 			}
-			field := map[string]string{"playback.audio_language": "audio", "playback.subtitle_language": "subtitle", "playback.subtitle_mode": "subtitle_mode", "playback.max_bitrate_kbps": "bitrate", "playback.preferred_quality": "height"}[key]
+			field := map[string]string{"playback.audio_language": "audio", "playback.subtitle_language": "subtitle", "playback.subtitle_mode": "subtitle_mode", "playback.subtitle_appearance": "appearance", "playback.max_bitrate_kbps": "bitrate", "playback.preferred_quality": "height"}[key]
 			scope := map[string]string{"device": "profile_device", "series": "profile_series", "library": "profile_library", "profile": "profile"}[sources[field]]
 			if scope != "" {
 				row["source"], row["scope"], row["profile_id"] = scope, scope, strconv.FormatInt(v.ID, 10)
@@ -613,7 +632,7 @@ func (i *instance) settingWrite(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				target := map[string]string{"profile_device": "device", "profile_library": "library", "profile_series": "series"}[scope]
-				field := map[string]string{"playback.audio_language": "audio", "playback.subtitle_language": "subtitle", "playback.subtitle_mode": "subtitle_mode", "playback.max_bitrate_kbps": "bitrate", "playback.preferred_quality": "height"}[key]
+				field := map[string]string{"playback.audio_language": "audio", "playback.subtitle_language": "subtitle", "playback.subtitle_mode": "subtitle_mode", "playback.subtitle_appearance": "appearance", "playback.max_bitrate_kbps": "bitrate", "playback.preferred_quality": "height"}[key]
 				if target == "series" {
 					k, e := ids.ParseRatingKeyGUID(id)
 					if e != nil {
@@ -670,7 +689,7 @@ func (i *instance) settingWrite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Value json.RawMessage `json:"value"`
 	}
-	if decode(r, &body) != nil || !d.valid(body.Value) {
+	if decode(r, &body) != nil || !d.valid(body.Value) || (key == "playback.subtitle_appearance" && !validSubtitleAppearance(body.Value)) {
 		http.Error(w, "Bad Request", 400)
 		return
 	}

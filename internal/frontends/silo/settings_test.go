@@ -101,6 +101,10 @@ func (s *settingsTracks) SetSubtitleMode(_ context.Context, _ *frontend.Viewer, 
 	s.tracks.SubtitleMode = mode
 	return nil
 }
+func (s *settingsTracks) SetAppearance(_ context.Context, _ *frontend.Viewer, raw json.RawMessage) error {
+	s.tracks.SubtitleAppearance = append(json.RawMessage(nil), raw...)
+	return nil
+}
 func (s *settingsTracks) SetBitrate(_ context.Context, _ *frontend.Viewer, n int) error {
 	s.bitrate = n
 	return nil
@@ -119,6 +123,9 @@ func (s *settingsTracks) SetScoped(_ context.Context, _ *frontend.Viewer, _, _ s
 	}
 	if p.SubtitleMode != nil {
 		s.tracks.SubtitleMode = *p.SubtitleMode
+	}
+	if p.SubtitleAppearance != nil {
+		s.tracks.SubtitleAppearance = append([]byte(nil), *p.SubtitleAppearance...)
 	}
 	if p.MaxBitrateKbps != nil {
 		s.bitrate = *p.MaxBitrateKbps
