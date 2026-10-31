@@ -3,6 +3,7 @@ package playback
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -85,6 +86,40 @@ func TestDirectFailoverFallbackRegressions(t *testing.T) {
 		}
 		if st, _ := h.m.Session(ps.ID); st.Resolution.Release.ID != "A" || st.RequiresRemux || st.DownFailovers != 0 || st.Failovers != 0 {
 			t.Fatalf("failed down-failover changed session: %+v", st)
+		}
+	})
+
+	t.Run("down: repeated misses stop the session", func(t *testing.T) {
+		h := newHarness(t, rels(), []string{"A", "UHD", "HIGH"}, func(h *harness, o *Options) {
+			o.MaxDownFailovers = 2
+		})
+		ps := h.prepare(owner, movieKey, "c1")
+		h.m.SetDecision(ps.ID, core.Decision{Kind: core.DecisionDirectPlay})
+		s := h.m.lookup(ps.ID)
+		var kinds []string
+		h.m.Subscribe(func(ev Event) { kinds = append(kinds, ev.Kind) })
+
+		if _, err := h.m.failoverWith(context.Background(), s, s.current(), 10*time.Second,
+			failoverOpts{reason: "source slower than playback", down: true}); err == nil || !errors.Is(err, core.ErrNotAvailable) {
+			t.Fatalf("first miss err = %v", err)
+		}
+		if _, ok := h.m.Session(ps.ID); !ok {
+			t.Fatal("session stopped after one missed down-failover")
+		}
+		st, _ := h.m.Session(ps.ID)
+		if st.Resolution.Release.ID != "A" || st.DownFailovers != 0 || st.Failovers != 0 {
+			t.Fatalf("first miss swapped the session: %+v", st)
+		}
+
+		if _, err := h.m.failoverWith(context.Background(), s, s.current(), 10*time.Second,
+			failoverOpts{reason: "source slower than playback", down: true}); err == nil || !errors.Is(err, core.ErrNotAvailable) {
+			t.Fatalf("second miss err = %v", err)
+		}
+		if _, ok := h.m.Session(ps.ID); ok {
+			t.Fatal("session kept playing after the down-failover cap")
+		}
+		if !slices.Contains(kinds, "error") || !slices.Contains(kinds, "stop") {
+			t.Fatalf("events = %v, want error and stop", kinds)
 		}
 	})
 

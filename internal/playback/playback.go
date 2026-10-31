@@ -128,7 +128,10 @@ type Options struct {
 	// failover is ignored (default 20s). A session whose fetch rate stays
 	// below SpeedThreshold (default 0.8) of its media bitrate for
 	// SpeedSlowChecks consecutive checks (default 3) down-fails over, at
-	// most MaxDownFailovers times (default 2; negative disables).
+	// most MaxDownFailovers times (default 2; negative disables). A try
+	// that finds no lower-bitrate release counts the same as a swap. When
+	// the cap is a run of misses, the session stops so the client stream
+	// ends instead of playing on forever at a crawl.
 	SpeedCheckInterval time.Duration
 	SpeedGrace         time.Duration
 	SpeedThreshold     float64

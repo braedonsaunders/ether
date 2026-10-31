@@ -811,6 +811,9 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 		if !fo.quietFailure {
 			m.emitEvent("error", s, lastErr)
 		}
+		if fo.down {
+			m.noteFailedDownFailover(s, tried)
+		}
 		return nil, fmt.Errorf("playback: failover: %w", lastErr)
 	}
 

@@ -219,16 +219,20 @@ type session struct {
 	bytes      atomic.Int64
 	rate       rateMeter
 
-	mu             sync.Mutex
-	preparedOnly   bool
-	sourcePins     int
-	cur            *generation
-	virtualGen     *generation // generation whose layout virtual mirrors
-	gens           int
-	tried          []string
-	alternates     []core.Release
-	failovers      int
-	downFailovers  int
+	mu            sync.Mutex
+	preparedOnly  bool
+	sourcePins    int
+	cur           *generation
+	virtualGen    *generation // generation whose layout virtual mirrors
+	gens          int
+	tried         []string
+	alternates    []core.Release
+	failovers     int
+	downFailovers int
+	// downMisses counts speed-driven down-failovers that found no
+	// lower-bitrate release. They count toward MaxDownFailovers so a
+	// source that stays too slow cannot retry forever.
+	downMisses     int
 	requiresRemux  bool
 	prefer         string // release ID the viewer picked (PrepareVariant); read-only after creation
 	exact          bool   // exact selection must never switch releases
