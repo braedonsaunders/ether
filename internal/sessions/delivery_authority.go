@@ -109,6 +109,13 @@ func (b *Broker) rememberedDeliveryRelease(ctx context.Context, viewer int64, su
 		return "", err
 	}
 	if err = renewDeliveryAuthority(ctx, b.deps.DB, row, b.deps.Now()); err != nil {
+		// The header is the grant. Once it has expired or been removed, this
+		// row is no longer authority. Silo reuses one installation id as the
+		// client session, so failing the plan here would block every later
+		// play of the title on that device. A new plan publishes a new grant.
+		if errors.Is(err, core.ErrNotAvailable) {
+			return "", nil
+		}
 		return "", err
 	}
 	return row.ReleaseID, nil
