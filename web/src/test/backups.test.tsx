@@ -28,13 +28,25 @@ function backend() {
           warning: "",
         };
       if (url.endsWith("/migration/preview"))
-        data = {
-          id: "plan-1",
-          imported: false,
-          items: [{ title: "A remembered film", key: 7, views: 1 }],
-          lists: [],
-          warnings: [],
-        };
+        data = { id: "job-1", status: "running", progress: { scanned: 0 } };
+      if (url.endsWith("/migration/preview/job-1")) {
+        const seen = calls.filter((c) => c.url.endsWith("/migration/preview/job-1")).length;
+        data =
+          seen < 2
+            ? { id: "job-1", status: "running", progress: { scanned: 1200 } }
+            : {
+                id: "job-1",
+                status: "done",
+                progress: { scanned: 1200 },
+                plan: {
+                  id: "plan-1",
+                  imported: false,
+                  items: [{ title: "A remembered film", key: 7, views: 1 }],
+                  lists: [],
+                  warnings: [],
+                },
+              };
+      }
       return new Response(JSON.stringify(data), { status: 200 });
     }),
   );
@@ -59,7 +71,8 @@ describe("Backups & import", () => {
       target: { value: "fixture-token" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Preview import" }));
-    const review = await screen.findByRole("region", { name: "Review import" });
+    expect(await screen.findByText(/1200/)).toBeInTheDocument();
+    const review = await screen.findByRole("region", { name: "Review import" }, { timeout: 3000 });
     expect(within(review).getByText(/A remembered film/)).toBeInTheDocument();
     expect(
       within(review).getByRole("button", { name: "Import reviewed records" }),

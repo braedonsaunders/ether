@@ -81,6 +81,7 @@ func TestHubsUseContextualRecommender(t *testing.T) {
 		section: map[core.MediaType][]core.Hub{core.TypeMovie: {{ID: "movie.top10", Title: "Top 10", Type: core.TypeMovie, Items: []core.Title{alien}}}},
 	}}
 	f := newContextualFixture(t, rec)
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: fightClub.Key, ViewOffset: 60_000, LastViewedAt: fixedNow})
 
 	resp := f.get(t, "/hubs", "Accept", "application/json", "X-Plex-Product", "Plex for Apple TV", "X-Plex-Platform", "tvOS")
 	got := hubIDs(t, resp.Body.Bytes())
@@ -127,9 +128,17 @@ func TestHubsContinueFirstWithoutPlaceholder(t *testing.T) {
 		home: []core.Hub{{ID: "home.trending", Title: "Trending", Promoted: true, Items: []core.Title{alien}}},
 	}}
 	f := newContextualFixture(t, rec)
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: fightClub.Key, ViewOffset: 60_000, LastViewedAt: fixedNow})
 	got := hubIDs(t, f.get(t, "/hubs", "Accept", "application/json").Body.Bytes())
 	if len(got) < 2 || got[0] != "home.continue" || got[1] != "home.trending" {
 		t.Fatalf("hubs = %v, want Continue Watching first", got)
+	}
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: fightClub.Key})
+	got = hubIDs(t, f.get(t, "/hubs/promoted", "Accept", "application/json").Body.Bytes())
+	for _, id := range got {
+		if id == "home.continue" {
+			t.Fatalf("empty Continue Watching stayed on promoted: %v", got)
+		}
 	}
 	got = hubIDs(t, f.get(t, "/hubs?excludeContinueWatching=1", "Accept", "application/json").Body.Bytes())
 	for _, id := range got {

@@ -10,6 +10,36 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
+// ResumedTracks is the probe a detail page may show for the release Prepare
+// would still open. The key is the viewer plus the profile selection key
+// ResumeFor already stores, not a client id and not a clock.
+//
+// A hit requires all of: this viewer's resume row, the same profile
+// selection key, the source preference still allowing that protocol, the
+// release not blocked, and a probe row for that same release whose NZB
+// hash and file size still match. Saving a different release deletes the
+// previous probe, so track ids from the old file cannot be served.
+// Another viewer's row is never read. External subtitle URLs are stripped
+// on save. There is no separate TTL; when the resume row stops being the
+// next Prepare, the tracks stop too.
+func (m *Manager) ResumedTracks(ctx context.Context, user *core.User, key core.RatingKey, caps core.ClientCaps) (core.MediaInfo, string, bool) {
+	if user == nil || user.ID <= 0 {
+		return core.MediaInfo{}, "", false
+	}
+	rp, err := m.ResumeFor(ctx, user, key, caps)
+	if err != nil || rp == nil || rp.Release.ID == "" || len(rp.NZB) == 0 {
+		return core.MediaInfo{}, "", false
+	}
+	facts := m.persistedProbe(ctx, user.ID, key, rp.Release.ID, rp.NZB)
+	if facts == nil || facts.releaseID != rp.Release.ID || facts.info.Estimated || facts.info.Video() == nil || len(facts.info.Streams) == 0 {
+		return core.MediaInfo{}, "", false
+	}
+	info := facts.info
+	info.Keyframes = nil
+	info.Chapters = nil
+	return info, rp.Release.ID, true
+}
+
 // ObservedMedia is historical evidence, not a promise about the next selected release.
 // No provider, probe, source opening or keyframe loading is performed by this lookup.
 type ObservedMedia struct {

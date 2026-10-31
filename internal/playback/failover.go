@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -30,11 +31,15 @@ var errRequireRemux = errors.New("playback: failover requires remux")
 func (m *Manager) openInitial(ctx context.Context, s *session, profile core.QualityProfile) (*generation, error) {
 	var res *core.Resolution
 	var cached *probeCache
-	if warm := m.takeWarmResolution(ctx, s.ident, profile, s.caps, s.prefer); warm != nil {
+	original := ""
+	if s.title != nil {
+		original = s.title.Language
+	}
+	if warm := m.takeWarmResolution(ctx, s.ident, profile, s.caps, s.prefer, original); warm != nil {
 		res, cached = warm.res, warm.probe
 	}
 	if res == nil {
-		res = m.resumeResolution(ctx, s.ident.userID, s.ident.key, profileKey(profile), s.caps)
+		res = m.resumeResolution(ctx, s.ident.userID, s.ident.key, profile, s.caps, original)
 		if res != nil && s.prefer != "" && res.Release.ID != s.prefer {
 			res = nil // a picked version wins over the remembered release
 		}
@@ -722,7 +727,21 @@ func (m *Manager) failoverWith(ctx context.Context, s *session, observed *genera
 		// direct source in place; a healthy mismatched candidate is kept
 		// as a remux-switch fallback instead of being spliced in.
 		if err == nil && direct && g.src.Size() != cur.src.Size() {
-			if fallbackGen == nil {
+			keep := fallbackGen == nil
+			if !keep && fo.down {
+				// A down-failover's remux fallback only helps at a lower
+				// bitrate, so a lower mismatch supersedes an earlier
+				// non-lower one instead of being dropped behind it. The
+				// existing veto below still rejects a fallback that is
+				// not lower when no lower mismatch was found.
+				bps := mediaBps(g.infoSnapshot(), g.src.Size())
+				fallbackBps := mediaBps(fallbackGen.infoSnapshot(), fallbackGen.src.Size())
+				if curBps > 0 && bps > 0 && bps < curBps && !(fallbackBps > 0 && fallbackBps < curBps) {
+					m.dropGeneration(fallbackGen)
+					fallbackGen, keep = nil, true
+				}
+			}
+			if keep {
 				fallbackGen = g
 			} else {
 				m.dropGeneration(g)
@@ -1000,9 +1019,12 @@ func containerFromName(name string) string {
 
 // resumeResolution rebuilds a Resolution from the stored resume record when
 // it was resolved for the same profile selection key (configured
-// definition, pre-clamp). Legacy records store a plain name, never
-// match, and are replaced by the fresh resolution's record.
-func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.RatingKey, profile string, caps core.ClientCaps) *core.Resolution {
+// definition, pre-clamp) and, when the profile compares original-language
+// audio, the same catalogue language. Legacy records store a plain name,
+// never match, and are replaced by the fresh resolution's record. A
+// language mismatch drops the memory for this new selection; it does not
+// change a stream that is already open.
+func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.RatingKey, profile core.QualityProfile, caps core.ClientCaps, originalLanguage string) *core.Resolution {
 	if m.resume == nil || m.deps.Availability.Down() {
 		return nil
 	}
@@ -1011,7 +1033,7 @@ func (m *Manager) resumeResolution(ctx context.Context, userID int64, key core.R
 		m.log.Warn("resume lookup failed", "err", err)
 		return nil
 	}
-	if rec == nil || m.releaseBlocked(ctx, rec.releaseID) || rec.profile != profile || !m.resumeSourceAllowed(rec.release) || !sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
+	if rec == nil || m.releaseBlocked(ctx, rec.releaseID) || rec.profile != profileKey(profile) || !rememberedOriginalAudioCurrent(profile, rec.originalLanguage, originalLanguage, rec.release) || !m.resumeSourceAllowed(rec.release) || !sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
 		return nil
 	}
 	nzb, err := m.resume.readResumeNZB(ctx, rec)
@@ -1032,13 +1054,14 @@ func (m *Manager) saveResume(ctx context.Context, s *session, g *generation) {
 	defer cancel()
 	info := g.infoSnapshot()
 	rec := resumeRecord{
-		userID:    s.ident.userID,
-		key:       s.ident.key,
-		release:   g.res.Release,
-		profile:   s.profileKey,
-		size:      g.src.Size(),
-		duration:  info.Duration,
-		updatedAt: m.now(),
+		userID:           s.ident.userID,
+		key:              s.ident.key,
+		release:          g.res.Release,
+		profile:          s.profileKey,
+		originalLanguage: s.originalLanguage,
+		size:             g.src.Size(),
+		duration:         info.Duration,
+		updatedAt:        m.now(),
 	}
 	// A clustered node holds the record through a database outage (put
 	// returns at once), so a start or failover never waits on it. The
@@ -1081,20 +1104,33 @@ func (m *Manager) Remember(ctx context.Context, user *core.User, key core.Rating
 	if m.resume == nil || user == nil || res == nil || len(res.NZB) == 0 {
 		return nil
 	}
-	profile := profileKey(m.deps.SelectProfile(caps, user))
+	prof := m.deps.SelectProfile(caps, user)
+	profile := profileKey(prof)
+	// Profiles that do not compare original-language audio keep the
+	// previous resume path: no catalogue read, and the language column
+	// stays blank.
+	current := ""
+	if releasepolicy.UsesOriginalAudio(prof.ReleaseRules) {
+		lang, err := m.catalogueLanguage(ctx, key)
+		if err != nil {
+			return err
+		}
+		current = lang
+	}
 	rec, err := m.resume.get(ctx, user.ID, key)
 	if err != nil {
 		return err
 	}
-	if rec != nil && rec.profile == profile && m.resumeSourceAllowed(rec.release) && sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
+	if rec != nil && rec.profile == profile && rememberedOriginalAudioCurrent(prof, rec.originalLanguage, current, rec.release) && m.resumeSourceAllowed(rec.release) && sourceFitsBitrate(rec.size, rec.duration, 0, caps.MaxBitrateKbps) {
 		return nil
 	}
 	return m.resume.save(ctx, resumeRecord{
-		userID:    user.ID,
-		key:       key,
-		release:   res.Release,
-		profile:   profile,
-		updatedAt: m.now(),
+		userID:           user.ID,
+		key:              key,
+		release:          res.Release,
+		profile:          profile,
+		originalLanguage: current,
+		updatedAt:        m.now(),
 	}, res.NZB)
 }
 
@@ -1110,11 +1146,65 @@ func (m *Manager) ResumeFor(ctx context.Context, user *core.User, key core.Ratin
 		return nil, err
 	}
 	prof := m.deps.SelectProfile(caps, user)
-	if rp.profileKey != profileKey(prof) || !m.resumeSourceAllowed(rp.Release) || !sourceFitsBitrate(rp.Size, rp.Duration, 0, caps.MaxBitrateKbps) {
+	current := ""
+	if releasepolicy.UsesOriginalAudio(prof.ReleaseRules) {
+		lang, err := m.catalogueLanguage(ctx, key)
+		if err != nil {
+			return nil, nil
+		}
+		current = lang
+	}
+	if rp.profileKey != profileKey(prof) || !rememberedOriginalAudioCurrent(prof, rp.originalLanguage, current, rp.Release) || !m.resumeSourceAllowed(rp.Release) || !sourceFitsBitrate(rp.Size, rp.Duration, 0, caps.MaxBitrateKbps) {
 		return nil, nil
 	}
 	rp.Profile = prof.Name // name from the profile object, not the stored column
 	return rp, nil
+}
+
+func titleLanguage(t *core.Title) string {
+	if t == nil {
+		return ""
+	}
+	return strings.TrimSpace(t.Language)
+}
+
+func (m *Manager) catalogueLanguage(ctx context.Context, key core.RatingKey) (string, error) {
+	if m.deps.Catalog == nil {
+		return "", fmt.Errorf("playback: catalogue unavailable: %w", core.ErrNotFound)
+	}
+	t, err := m.deps.Catalog.Get(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	if t == nil {
+		return "", fmt.Errorf("playback: title %s: %w", key, core.ErrNotFound)
+	}
+	return titleLanguage(t), nil
+}
+
+// rememberedOriginalAudioCurrent reports whether a remembered release may
+// open a new selection. Profiles that do not compare original-language
+// audio ignore catalogue language, including a blank column left by
+// migration. When they do, a blank language is the pre-migration row and
+// is not reused. A known language has to be the one this selection sees,
+// and the release has to still satisfy Require and Avoid. Prefer-only rows
+// are dropped when that language changed so the new selection can rank
+// again. An already open stream is not rewritten. The stored profile
+// column stays Name|<16 hex>.
+func rememberedOriginalAudioCurrent(profile core.QualityProfile, stored, current string, rel core.Release) bool {
+	if !releasepolicy.UsesOriginalAudio(profile.ReleaseRules) {
+		return true
+	}
+	current = strings.TrimSpace(current)
+	stored = strings.TrimSpace(stored)
+	if stored == "" || stored != current {
+		return false
+	}
+	pol, err := releasepolicy.Compile(profile.ReleaseRules)
+	if err != nil {
+		return false
+	}
+	return !pol.Evaluate(rel, releasepolicy.Context{OriginalLanguage: current}).Rejected
 }
 
 func permanentSourceFailure(err error) bool {

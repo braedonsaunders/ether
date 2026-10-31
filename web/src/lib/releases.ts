@@ -1,6 +1,6 @@
 import { localized, t } from "../i18n";
 import { apiFetch } from "./api";
-import type { QualityProfile, ResolverTrace } from "./types";
+import type { QualityProfile, ResolverTrace, ReleasePreferenceResult } from "./types";
 
 /** Release console API (/ether/api/releases): search, pins, blocklist, history. */
 
@@ -56,6 +56,7 @@ export interface HealthResult {
 }
 
 export interface ConsoleRelease {
+  preferences?: ReleasePreferenceResult;
   release: Release;
   score: number;
   formatScore: number;

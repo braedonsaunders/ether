@@ -300,6 +300,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		if cr != nil {
 			_ = os.RemoveAll(cr.dir)
 		}
+		s.noteEncoder(false, args)
 		return fmt.Errorf("transcode: start ffmpeg: %w", err)
 	}
 	r.proc = proc
@@ -314,6 +315,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 	runLog.Info("ffmpeg started", "segment", seg, "at", spec.Start, "kind", s.decision.Kind,
 		"videoCopy", s.decision.VideoCopy, "audioCopy", s.decision.AudioCopy, "hw", r.hw)
 	runLog.Debug("ffmpeg args", "args", strings.Join(redactedRTXArgs(args), " "))
+	s.noteEncoder(true, args)
 	s.watchers.Add(1)
 	go s.watch(r)
 	s.broadcastLocked()
@@ -368,4 +370,11 @@ func (s *Session) stopRunLocked() {
 			}
 		}()
 	}
+}
+
+func (s *Session) noteEncoder(started bool, args []string) {
+	if s == nil || s.m == nil || s.m.opts.onEncoder == nil {
+		return
+	}
+	s.m.opts.onEncoder(s.id, started, strings.Join(redactedRTXArgs(args), " "))
 }

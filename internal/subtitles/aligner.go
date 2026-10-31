@@ -44,7 +44,6 @@ var _ core.TimelineAligner = (*Aligner)(nil)
 
 const (
 	alignNegativeTTL = time.Hour
-	alignBuildBudget = 6 // subtitle downloads per alignment build, both sides
 	alignFastWindow  = 2 * time.Second
 )
 
@@ -225,12 +224,11 @@ func (t timeline) last() time.Duration {
 	return t.cues[len(t.cues)-1].End
 }
 
-// buildState shares one OpenSubtitles search between both sides of a pair
-// and caps total downloads, so a build costs at most one search per
-// language and alignBuildBudget downloads against the owner's quota.
+// buildState shares one OpenSubtitles search between both sides of a pair,
+// so a build costs at most one search per language. Search does not
+// download; only files already cached are used.
 type buildState struct {
-	searches  map[string][]Candidate
-	downloads int
+	searches map[string][]Candidate
 }
 
 func (a *Aligner) compute(ctx context.Context, req core.AlignRequest) *Piecewise {
@@ -294,9 +292,8 @@ func durationFit(cues []Cue, dur time.Duration) bool {
 
 // timelines returns up to three candidate dialogue timelines for one side
 // of a pair, best first: the remembered sidecar for this exact release,
-// other sidecars already cached for the title, then OpenSubtitles results
-// ranked for the release name (or, with no name, closest last cue to the
-// known runtime). Only subtitle files are fetched — never video.
+// other sidecars already cached for the title, then cached OpenSubtitles
+// results ranked for the release name. It searches, and it does not download.
 func (a *Aligner) timelines(ctx context.Context, bs *buildState, title *core.Title, lang, releaseName string, dur time.Duration) []timeline {
 	var out []timeline
 	seen := map[int64]bool{}
@@ -352,22 +349,10 @@ func (a *Aligner) timelines(ctx context.Context, bs *buildState, title *core.Tit
 			break
 		}
 		id := cacheID(title, lang, c.FileID)
+		// Alignment reuses a file the viewer already downloaded. It does
+		// not spend download quota on its own.
 		if !a.s.cached(id, "srt") {
-			if bs.downloads >= alignBuildBudget {
-				break
-			}
-			bs.downloads++
-			if _, err := a.s.fetchAndCache(ctx, id, c, title.Key); err != nil {
-				a.s.log.Debug("alignment subtitle download failed", "file", c.FileID, "err", err)
-				continue
-			}
-			release := c.Release
-			if release == "" {
-				release = c.FileName
-			}
-			if releaseName != "" {
-				a.s.saveSelection(title, lang, releaseName, selection{ID: id, FileID: c.FileID, Language: lang, Release: release, At: a.s.now().UTC(), Forced: c.Forced, SDH: c.HearingImp})
-			}
+			continue
 		}
 		add(id, c.FileID, c.Release)
 	}

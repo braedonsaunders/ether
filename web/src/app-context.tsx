@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "./lib/api";
-import { computeHealth, worstLevel, type HealthItem, type HealthLevel } from "./lib/health";
+import { computeHealth, overallLevel, type HealthItem, type HealthLevel } from "./lib/health";
 import type { Bootstrap, DashboardData } from "./lib/types";
 import { useLocale } from "./i18n/react";
 
@@ -78,7 +78,7 @@ export function AppProvider({
   const overall = useMemo<HealthLevel>(() => {
     if (dashboardError) return "error";
     if (!dashboard) return "unknown";
-    return worstLevel(health.map((h) => h.level));
+    return overallLevel(health);
   }, [health, dashboard, dashboardError]);
 
   const value = useMemo<AppState>(

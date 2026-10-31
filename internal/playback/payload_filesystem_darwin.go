@@ -8,5 +8,7 @@ func payloadFilesystemReliable(dir string) (bool, error) {
 		return false, err
 	}
 	// Local APFS/HFS only. A remote/unknown filesystem cannot witness retirement.
-	return (st.Type == 0x1a || st.Type == 0x11) && st.Flags&syscall.MNT_LOCAL != 0, nil
+	// Go 1.27 dropped syscall.MNT_LOCAL; Darwin still defines it as 0x1000.
+	const mntLocal = 0x1000
+	return (st.Type == 0x1a || st.Type == 0x11) && st.Flags&mntLocal != 0, nil
 }

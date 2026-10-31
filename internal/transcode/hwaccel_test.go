@@ -191,3 +191,39 @@ func TestParseVersion(t *testing.T) {
 		}
 	}
 }
+
+// Issue 13: an Intel HD 620 encodes with h264_vaapi but rejects
+// scale_vaapi ("the requested VAProfile is not supported"). Detection
+// keeps the hardware encoder and marks GPU scaling unavailable.
+func TestDetectVAAPIScaleProbe(t *testing.T) {
+	f := testFeatures()
+	f.filters = map[string]bool{"scale_vaapi": true}
+	for _, tc := range []struct {
+		name        string
+		scaleFails  bool
+		wantNoScale bool
+	}{
+		{"scaler works", false, false},
+		{"scaler unsupported", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fr := &fakeRunner{failEncode: map[string]bool{"h264_nvenc": true, "h264_qsv": true, "scale_vaapi": tc.scaleFails}}
+			got := detector(fr, "linux").detect(context.Background(), "auto", "/dev/dri/renderD128", f)
+			if got.Name != AccelVAAPI || len(got.Encoders) == 0 || got.Encoders[0] != "h264_vaapi" {
+				t.Fatalf("detected %+v", got)
+			}
+			if got.NoGPUScale != tc.wantNoScale {
+				t.Fatalf("NoGPUScale=%v want %v", got.NoGPUScale, tc.wantNoScale)
+			}
+			probed := false
+			for _, args := range fr.runCalls {
+				if strings.Contains(argValue(args, "-vf"), "scale_vaapi") && argValue(args, "-vaapi_device") == "/dev/dri/renderD128" {
+					probed = true
+				}
+			}
+			if !probed {
+				t.Fatal("scale_vaapi was not probed")
+			}
+		})
+	}
+}

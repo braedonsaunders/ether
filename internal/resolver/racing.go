@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
 
 type candidate struct {
+	policy     releasepolicy.Result
 	rel        core.Release
 	trace      int
 	verified   bool
@@ -107,6 +109,14 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 			// Reusing a known working release must not start speculative
 			// downloads and health checks for other releases alongside it.
 			count = 1
+		} else {
+			// A race stays inside one policy tier. A healthy fallback must
+			// not be selected while a primary in this window is still valid.
+			same := 1
+			for same < count && releasepolicy.Equivalent(cands[base].policy, cands[base+same].policy) {
+				same++
+			}
+			count = same
 		}
 		workCtx, cancel := context.WithCancel(ctx)
 		results := make(chan validation, count)

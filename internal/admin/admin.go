@@ -32,6 +32,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/identity"
 )
 
@@ -135,6 +136,9 @@ type Deps struct {
 	// LogDir holds the on-disk logs offered by GET /api/logs/download;
 	// empty offers the in-memory buffer instead.
 	LogDir string
+	// Support is the in-memory problem-capture recorder. Nil answers the
+	// support routes with the same not-found result as an unknown path.
+	Support *diagnostics.Recorder
 	// Version is reported by /ether/api/bootstrap ("dev" when empty).
 	Version string
 
@@ -384,6 +388,14 @@ func (h *Handler) routes() *http.ServeMux {
 	api("GET /api/logs", h.handleLogs)
 	api("GET /api/logs/download", h.handleLogsDownload)
 	api("DELETE /api/logs", h.handleClearLogs)
+
+	api("GET /api/support/devices", h.handleSupportDevices)
+	api("POST /api/support/captures", h.handleSupportCreate)
+	api("GET /api/support/captures/{id}", h.handleSupportGet)
+	api("POST /api/support/captures/{id}/device", h.handleSupportDevice)
+	api("POST /api/support/captures/{id}/finish", h.handleSupportFinish)
+	api("DELETE /api/support/captures/{id}", h.handleSupportDiscard)
+	api("GET /api/support/captures/{id}/archive", h.handleSupportArchive)
 
 	for path, handler := range h.deps.Extensions {
 		prefix := "/api/" + path

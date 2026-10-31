@@ -140,15 +140,8 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if len(keys) == 1 && isPlayable(t.Type) {
-				warmed := false
 				if warm, ok := s.d.Playback.(core.PlaybackPreparer); ok {
-					warmed = warm.PreResolve(ctx, pr.User, t.Key, pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps))
-				}
-				// The warm-up fetches subtitle sidecars for the release it
-				// resolves; without it, fetch them on their own so the play
-				// queue can list them (cached ones are listed already).
-				if !warmed {
-					s.prefetchSidecars(ctx, pr, t)
+					warm.PreResolve(ctx, pr.User, t.Key, pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps))
 				}
 			}
 			if len(keys) == 1 {
@@ -184,7 +177,7 @@ func (s *Server) detail(ctx context.Context, pr *Request, t *core.Title, childre
 	s.decorateDetail(ctx, pr, t, &md)
 	if children && (t.Type == core.TypeShow || t.Type == core.TypeSeason) {
 		if kids, err := s.metadataChildren(ctx, pr, t.Key); err == nil {
-			rendered := s.renderTitles(ctx, pr, kids, renderOpts{media: true})
+			rendered := s.renderTitles(ctx, pr, kids, renderOpts{media: true, skipLeafCounts: t.Type == core.TypeShow})
 			if t.Type == core.TypeShow {
 				s.applyLeafCounts(ctx, pr, rendered, kids, memo)
 			}
@@ -329,7 +322,7 @@ func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {
 	lo, hi := pr.window(len(kids))
 	page := kids[lo:hi]
 	if len(future) == 0 {
-		mc.Metadata = s.renderTitles(ctx, pr, page, renderOpts{media: true, inSection: true})
+		mc.Metadata = s.renderTitles(ctx, pr, page, renderOpts{media: true, inSection: true, skipLeafCounts: parent.Type == core.TypeShow})
 	} else {
 		// Batch ordinary rendering without ever passing placeholders to media
 		// generation, then restore the canonical episode order.
@@ -339,7 +332,7 @@ func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {
 				aired = append(aired, child)
 			}
 		}
-		rendered := s.renderTitles(ctx, pr, aired, renderOpts{media: true, inSection: true})
+		rendered := s.renderTitles(ctx, pr, aired, renderOpts{media: true, inSection: true, skipLeafCounts: parent.Type == core.TypeShow})
 		byKey := make(map[string]model.Metadata, len(rendered))
 		for _, md := range rendered {
 			byKey[md.RatingKey] = md

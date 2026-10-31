@@ -28,8 +28,13 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 	images := artworkservice.NewRemoteCache(128<<20, &http.Client{Timeout: 20 * time.Second})
 	var workers sync.WaitGroup
 	queue := artworkservice.NewQueue(ctx, &workers, 2, 512)
-	palettes := artworkservice.NewPaletteCache(paletteDB, queue.Submit, now, a.log, func(ctx context.Context, path string) (artworkservice.Palette, error) {
-		return artworkservice.ComputePalette(ctx, images, imageURL, path, now())
+	collections := a.discoveryPersonal.ReviewCollections(a.collections)
+	var collectionArt artworkservice.CollectionArt
+	if art, ok := collections.(artworkservice.CollectionArt); ok {
+		collectionArt = art
+	}
+	palettes := artworkservice.NewPaletteCache(paletteDB, queue.Submit, now, a.log, func(ctx context.Context, key core.RatingKey, path string) (artworkservice.Palette, error) {
+		return artworkservice.ComputeItemPalette(ctx, images, imageURL, key, path, now(), collectionArt)
 	})
 	visibility := experienceVisibility(a.safety, a.catalog.StoredTitle, func(ctx context.Context, titles []core.Title) []core.Title {
 		if a.availability == nil {
@@ -42,7 +47,7 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 		}
 		return a.playback.Sessions()
 	}, []experience.Library{{ID: 1, Type: core.TypeMovie}, {ID: 2, Type: core.TypeShow}})
-	source := &artworkservice.Source{Catalog: a.catalog, Collections: a.discoveryPersonal.ReviewCollections(a.collections), Playlists: a.playlists, Visibility: visibility, Discovery: a.discoveryFeatures, Images: images, ImageURL: imageURL, Palettes: palettes, Now: now, Raster: artwork.NewSVGRasterizer()}
+	source := &artworkservice.Source{Catalog: a.catalog, Collections: collections, Playlists: a.playlists, Visibility: visibility, Discovery: a.discoveryFeatures, Images: images, ImageURL: imageURL, Palettes: palettes, Now: now, Raster: artwork.NewSVGRasterizer()}
 	if a.livetv != nil {
 		source.LiveTV = a.livetv
 	}

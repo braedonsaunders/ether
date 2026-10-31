@@ -102,15 +102,23 @@ func TestSidecarsMissingOnly(t *testing.T) {
 	embedded := []core.StreamInfo{{Index: 0, Type: "video", Codec: "h264"}, {Index: 1, Type: "subtitle", Language: "eng"}}
 
 	out, err := svc.SidecarsForRelease(context.Background(), title, user, embedded, "My.Movie.2024.1080p.WEB-DL-GRP")
+	if err != nil || len(out) != 0 {
+		t.Fatalf("preferred languages must not download: %+v %v", out, err)
+	}
+	if _, err := svc.SearchOnDemand(context.Background(), title, "fr", "My.Movie.2024.1080p.WEB-DL-GRP"); err != nil {
+		t.Fatal(err)
+	}
+	out = []core.StreamInfo{}
+	picked, err := svc.DownloadOnDemand(context.Background(), title, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 1 || out[0].Language != "fr" || !out[0].External || !strings.HasPrefix(out[0].ExternalURL, URLPrefix) {
-		t.Fatalf("sidecars: %+v", out)
+	out = append(out, picked)
+	if picked.Language != "fr" || !picked.External || !strings.HasPrefix(picked.ExternalURL, URLPrefix) {
+		t.Fatalf("pick: %+v", picked)
 	}
-	// Best candidate (trusted, release match) must have won -> title says so.
-	if !strings.Contains(out[0].Title, "1080p") {
-		t.Fatalf("ranking picked %q", out[0].Title)
+	if !strings.Contains(picked.Title, "1080p") {
+		t.Fatalf("picked release %q", picked.Title)
 	}
 	rc, format, err := svc.Open(out[0].ExternalURL)
 	if err != nil {

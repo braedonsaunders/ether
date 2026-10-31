@@ -553,6 +553,10 @@ type HWAccel struct {
 	Name     string   `json:"name"` // "videotoolbox", "nvenc", "qsv", "vaapi", "none"
 	Encoders []string `json:"encoders"`
 	Device   string   `json:"device,omitempty"`
+	// NoGPUScale: the encoder works but the device's video processing
+	// (VAAPI scale_vaapi) does not, so frames are decoded and scaled in
+	// software and uploaded to the encoder.
+	NoGPUScale bool `json:"noGpuScale,omitempty"`
 }
 
 // DelegationAuth issues expiring, server-local casting credentials. Implementations

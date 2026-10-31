@@ -179,6 +179,16 @@ func testEncodeArgs(accel, encoder, device string) []string {
 	return append(args, "-c:v", encoder, "-f", "null", "-")
 }
 
+// vaapiScaleArgs is a 1-frame encode through scale_vaapi, the GPU scaler
+// real VAAPI sessions use. Some drivers encode but reject video
+// processing ("the requested VAProfile is not supported"), which the
+// encoder-only test cannot see.
+func vaapiScaleArgs(encoder, device string) []string {
+	return []string{"-hide_banner", "-nostdin", "-loglevel", "error", "-vaapi_device", device,
+		"-f", "lavfi", "-i", "testsrc=size=320x240:rate=1", "-frames:v", "1",
+		"-vf", "format=nv12,hwupload,scale_vaapi=w=160:h=120:format=nv12", "-c:v", encoder, "-f", "null", "-"}
+}
+
 // hwDetector confirms hardware encoders.
 type hwDetector struct {
 	runner Runner
@@ -190,10 +200,14 @@ type hwDetector struct {
 }
 
 func (d hwDetector) testEncode(ctx context.Context, accel, encoder, device string) error {
+	return d.testRun(ctx, testEncodeArgs(accel, encoder, device))
+}
+
+func (d hwDetector) testRun(ctx context.Context, args []string) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	var stderr bytes.Buffer
-	err := d.runner.Run(ctx, Command{Path: d.ffmpeg, Args: testEncodeArgs(accel, encoder, device), Stderr: &stderr})
+	err := d.runner.Run(ctx, Command{Path: d.ffmpeg, Args: args, Stderr: &stderr})
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if len(msg) > 300 {
@@ -251,6 +265,12 @@ func (d hwDetector) detect(ctx context.Context, mode, vaapiDevice string, f feat
 			continue
 		}
 		hw := core.HWAccel{Name: c.name, Encoders: []string{c.h264}, Device: device}
+		if c.name == AccelVAAPI && f.hasFilter("scale_vaapi") {
+			if err := d.testRun(ctx, vaapiScaleArgs(c.h264, device)); err != nil {
+				hw.NoGPUScale = true
+				d.log.Info("VAAPI video processing unavailable; scaling in software before the hardware encoder", "device", device, "err", err)
+			}
+		}
 		if f.hasEncoder(c.hevc) {
 			if err := d.testEncode(ctx, c.name, c.hevc, device); err == nil {
 				hw.Encoders = append(hw.Encoders, c.hevc)
@@ -258,7 +278,7 @@ func (d hwDetector) detect(ctx context.Context, mode, vaapiDevice string, f feat
 				d.log.Info("hardware HEVC encoder test failed", "hwaccel", c.name, "encoder", c.hevc, "err", err)
 			}
 		}
-		d.log.Info("hardware encoder detected", "hwaccel", hw.Name, "encoders", hw.Encoders, "device", hw.Device)
+		d.log.Info("hardware encoder detected", "hwaccel", hw.Name, "encoders", hw.Encoders, "device", hw.Device, "gpuScale", !hw.NoGPUScale)
 		return hw
 	}
 	if mode != "auto" {

@@ -104,6 +104,136 @@ interface Playable {
   year?: number;
 }
 
+interface RuleDraft {
+  id: string;
+  name: string;
+  action: string;
+  match?: string;
+  disabled?: boolean;
+  conditions?: { field: string; operator: string; value?: string }[];
+  unless?: { field: string; operator: string; value?: string }[];
+  fallback?: { field: string; operator: string; value?: string }[];
+}
+
+function draftFact(name: string, field: string): string[] {
+  const group = name.split("-").at(-1) ?? "";
+  switch (field) {
+    case "name":
+      return [name];
+    case "group":
+      return group ? [group] : [];
+    default:
+      return [];
+  }
+}
+
+function draftMatch(
+  name: string,
+  c: { field: string; operator: string; value?: string },
+): "match" | "miss" | "unknown" {
+  const values = draftFact(name, c.field);
+  if (!values.length) return "unknown";
+  const want = (c.value ?? "").toLowerCase();
+  const hit = values.some((value) => {
+    const got = value.toLowerCase();
+    if (c.operator === "equals") return got === want;
+    if (c.operator === "regex") return new RegExp(c.value ?? "", "i").test(value);
+    return got.includes(want);
+  });
+  return hit ? "match" : "miss";
+}
+
+function judgeDraft(name: string, index: number, rules: RuleDraft[]): ConsoleRelease {
+  const explanations = [];
+  let rejected = false;
+  let unknown = false;
+  let fallback = 0;
+  for (const rule of rules) {
+    if (rule.disabled) continue;
+    const conds = rule.conditions ?? [];
+    let state: "match" | "miss" | "unknown" = rule.match === "any" ? "miss" : "match";
+    for (const c of conds) {
+      const s = draftMatch(name, c);
+      if (rule.match === "any") {
+        if (s === "match") state = "match";
+        else if (state !== "match" && s === "unknown") state = "unknown";
+      } else if (s === "miss") state = "miss";
+      else if (state !== "miss" && s === "unknown") state = "unknown";
+    }
+    let outcome = "pass";
+    if ((rule.unless ?? []).some((c) => draftMatch(name, c) === "match")) outcome = "skip";
+    else if (rule.action === "require" && state !== "match") {
+      if ((rule.fallback ?? []).some((c) => draftMatch(name, c) === "match")) {
+        outcome = "fallback";
+        fallback++;
+      } else {
+        rejected = true;
+        unknown = unknown || state === "unknown";
+        outcome = state === "unknown" ? "unknown" : "exclude";
+      }
+    } else if (rule.action === "avoid" && state !== "miss") {
+      rejected = true;
+      unknown = unknown || state === "unknown";
+      outcome = state === "unknown" ? "unknown" : "exclude";
+    } else if (rule.action === "prefer" && state === "match") outcome = "prefer";
+    explanations.push({ id: rule.id, name: rule.name, action: rule.action, state, outcome });
+  }
+  return {
+    release: {
+      id: String(index),
+      indexer: "",
+      name,
+      size: 0,
+      pubDate: "",
+      info: {},
+      score: 0,
+    },
+    score: 0,
+    formatScore: 0,
+    rejected,
+    reason: rejected
+      ? explanations.find((e) => e.outcome === "exclude" || e.outcome === "unknown")?.name
+      : undefined,
+    rank: rejected ? 0 : 1,
+    preferences: { rejected, unknown, fallback, preferences: [], explanations },
+  };
+}
+
+function draftConflict(rules: RuleDraft[]): string {
+  const needs: { name: string; field: string; value: string }[] = [];
+  const single = new Set(["group", "source", "video", "audio", "indexer", "protocol", "edition"]);
+  for (const rule of rules) {
+    if (
+      rule.disabled ||
+      rule.action !== "require" ||
+      rule.match === "any" ||
+      rule.unless?.length ||
+      rule.fallback?.length
+    )
+      continue;
+    const seen = new Map<string, string>();
+    for (const c of rule.conditions ?? []) {
+      if (!single.has(c.field) || c.operator !== "equals") continue;
+      const prev = seen.get(c.field);
+      if (prev != null && prev.toLowerCase() !== (c.value ?? "").toLowerCase()) {
+        return `required preference ${JSON.stringify(rule.name)} cannot match: ${c.field} would have to equal both ${JSON.stringify(prev)} and ${JSON.stringify(c.value ?? "")}`;
+      }
+      seen.set(c.field, c.value ?? "");
+    }
+    for (const [field, value] of seen) needs.push({ name: rule.name, field, value });
+  }
+  for (let i = 0; i < needs.length; i++) {
+    for (let j = i + 1; j < needs.length; j++) {
+      const a = needs[i]!;
+      const b = needs[j]!;
+      if (a.field === b.field && a.value.toLowerCase() !== b.value.toLowerCase()) {
+        return `required preferences ${JSON.stringify(a.name)} and ${JSON.stringify(b.name)} cannot match the same release: ${a.field} would have to equal both ${JSON.stringify(a.value)} and ${JSON.stringify(b.value)}`;
+      }
+    }
+  }
+  return "";
+}
+
 export function createReleaseConsoleMock(catalog: FakeTitle[]) {
   const byKey = new Map(catalog.map((t) => [t.key, t]));
   const pins = new Map<string, Pin>();
@@ -355,6 +485,48 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
 
   seed();
 
+  function previewRules(body: unknown): Reply {
+    const input = (body ?? {}) as {
+      profile?: { releaseRules?: RuleDraft[] };
+      key?: string;
+      names?: string[];
+    };
+    const rules = input.profile?.releaseRules ?? [];
+    if (rules.length > 32)
+      return fail(400, "invalid", "at most 32 release preferences are allowed");
+    if ((input.names?.length ?? 0) > 0 && input.key)
+      return fail(400, "invalid", "choose a title or filenames, not both");
+    if ((input.names?.length ?? 0) > 100) return fail(400, "invalid", "at most 100 filenames");
+    for (const rule of rules) {
+      for (const c of [
+        ...(rule.conditions ?? []),
+        ...(rule.unless ?? []),
+        ...(rule.fallback ?? []),
+      ]) {
+        if (c.operator === "regex") {
+          try {
+            new RegExp(c.value ?? "");
+          } catch {
+            return fail(400, "invalid", "invalid expression");
+          }
+        }
+      }
+    }
+    const names = (input.names ?? []).map((n) => n.trim()).filter(Boolean);
+    const rows = names.map((name, i) => judgeDraft(name, i, rules));
+    if (input.key && names.length === 0) {
+      const p = playable(input.key);
+      if (!p) return fail(404, "not_found", "no such title");
+      for (const rel of releasesFor(p)) {
+        const row = judgeDraft(rel.name, rows.length, rules);
+        row.release = rel;
+        rows.push(row);
+      }
+    }
+    const warning = draftConflict(rules);
+    return ok({ releases: rows, warning });
+  }
+
   function handle(method: string, seg: string[], q: URLSearchParams, body: unknown): Reply | null {
     if (seg[0] !== "releases") return null;
     const route = `${method} /${seg.slice(1).join("/")}`;
@@ -362,6 +534,8 @@ export function createReleaseConsoleMock(catalog: FakeTitle[]) {
     switch (route) {
       case "GET /profiles":
         return ok({ default: "1080p", profiles: PROFILES, special: ["none", "download"] });
+      case "POST /rules/preview":
+        return previewRules(body);
       case "GET /search":
         return search(q.get("key") ?? "", q.get("profile") ?? "");
       case "POST /forget":

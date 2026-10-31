@@ -127,10 +127,10 @@ func TestZipSelectionCallsites(t *testing.T) {
 					}
 				} else {
 					out, err := svc.SidecarsForRelease(context.Background(), title, &core.User{SubtitleLanguages: []string{"en"}}, nil, "", tc.pref)
-					if err != nil || len(out) != 1 {
-						t.Fatalf("%+v %v", out, err)
+					if err != nil || len(out) != 0 {
+						t.Fatalf("preference must not download: %+v %v", out, err)
 					}
-					st = out[0]
+					return
 				}
 				if st.Forced != tc.forced || strings.Contains(st.Title, "SDH") != tc.sdh || !strings.Contains(openText(t, svc, st), tc.label) {
 					t.Fatalf("mismatched stream: %+v text %q", st, openText(t, svc, st))

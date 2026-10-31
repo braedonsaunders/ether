@@ -265,7 +265,7 @@ func TestMatchGuidesByIDAndNameWithDryRunAndOverwrite(t *testing.T) {
 		"=UK | Movies +1 HD",              // +1 must not match plain "Movies"
 		"=Nothing Like It",                // unmatched
 		"own.id=Own Covered",              // already covered by own guide
-		"=Shared Name",                    // name present in both sources: own wins
+		"=Shared Name",                    // no tvg-id: the playlist guide does not keep this channel
 		"NEWS.US.ALT=Different Name Here", // case-insensitive id
 	), Guide: xmltvFixture(30, "own.id=Own Covered", "shared.own=Shared Name")}
 	if _, err := s.ImportSource(ctx, own); err != nil {
@@ -295,7 +295,9 @@ func TestMatchGuidesByIDAndNameWithDryRunAndOverwrite(t *testing.T) {
 		"US: Sports Central FHD": {"b-epg", "sports", "EPG"},
 		"UK | Movies +1 HD":      {"b-epg", "movies1", "EPG"},
 		"Different Name Here":    {"b-epg", "news.us.alt", "EPG"},
-		"Shared Name":            {"a-own", "shared.own", "Own"}, // tie: own source wins
+		// The playlist source keeps only channels its M3U maps, so the
+		// unmapped "Shared Name" listing lives on the guide-only source.
+		"Shared Name": {"b-epg", "shared.epg", "EPG"},
 	}
 	for _, ch := range dry.Changes {
 		w, ok := want[ch.ChannelName]
@@ -325,9 +327,9 @@ func TestMatchGuidesByIDAndNameWithDryRunAndOverwrite(t *testing.T) {
 		t.Fatalf("matched channel has no guide: %+v", ps)
 	}
 
-	// A match in the channel's own source is stored as an empty guideSourceId.
-	if shared, _ := s.Channel(ctx, byName["Shared Name"].ID); shared.GuideSourceID != "" || shared.GuideID != "shared.own" {
-		t.Fatalf("tie did not prefer own source: %+v", shared)
+	// Shared Name was not in the playlist's tvg-ids, so the guide-only source supplies it.
+	if shared, _ := s.Channel(ctx, byName["Shared Name"].ID); shared.GuideSourceID != "b-epg" || shared.GuideID != "shared.epg" {
+		t.Fatalf("unmapped playlist guide channel was kept: %+v", shared)
 	}
 
 	// A covered channel mapped to another source keeps it unless overwrite

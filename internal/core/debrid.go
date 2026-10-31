@@ -11,6 +11,10 @@ import (
 const (
 	ProtocolUsenet  = ""        // the zero value: an NZB from a Newznab indexer
 	ProtocolTorrent = "torrent" // a Torznab result streamed through a debrid service
+	// ProtocolUnstated is a filename preview with no protocol fact.
+	// Live releases keep the empty-string Usenet default; this value
+	// exists so a preview cannot report that default as evidence.
+	ProtocolUnstated = "unstated"
 	// ProtocolHTTP is a stream URL a Stremio addon resolved itself (often
 	// through the addon owner's own debrid account), read with HTTP range
 	// requests. It needs no debrid account in Ether (additive).

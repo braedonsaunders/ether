@@ -132,10 +132,44 @@ func (c *Catalog) getMovie(ctx context.Context, id int64) (*core.Title, error) {
 	return &st.t, nil
 }
 
+// storeShowDetails mirrors a show's details and its season summaries, so a
+// season TMDB has added since the last fetch becomes listable.
+func (c *Catalog) storeShowDetails(ctx context.Context, t core.Title, d *tmdb.TVDetails) error {
+	var seasons []core.Title
+	for _, s := range d.Seasons {
+		if !episodeKeyFits(s.SeasonNumber, 0) {
+			continue // its episodes have no rating keys (year-numbered seasons)
+		}
+		seasons = append(seasons, seasonToTitle(t, s))
+	}
+	// Upsert show as detail; seasons as non-detail summaries in same call would
+	// mark them detail too, so split.
+	if err := c.upsert(ctx, t, upsertOpts{browsable: c.meetsThreshold(t), detail: true}); err != nil {
+		return err
+	}
+	if len(seasons) > 0 {
+		return c.upsertMany(ctx, seasons, upsertOpts{airDates: true})
+	}
+	return nil
+}
+
+// showFresh shortens a Returning Series' detail TTL to activeSeasonTTL, as
+// seasonFresh does for its latest season: the show details carry the season
+// list, so a premiere is listed within the hour rather than after staleAfter.
+func (c *Catalog) showFresh(st *storedTitle) bool {
+	if !c.fresh(st) {
+		return false
+	}
+	if strings.EqualFold(st.t.Status, "Returning Series") {
+		return c.now().Sub(st.detailAt) < min(c.staleAfter, activeSeasonTTL)
+	}
+	return true
+}
+
 func (c *Catalog) getShow(ctx context.Context, id int64) (*core.Title, error) {
 	key := core.ShowKey(id)
 	st, err := c.loadByKey(ctx, key)
-	if err == nil && c.fresh(st) {
+	if err == nil && c.showFresh(st) {
 		return &st.t, nil
 	}
 	if c.client != nil {
@@ -147,22 +181,8 @@ func (c *Catalog) getShow(ctx context.Context, id int64) (*core.Title, error) {
 			return nil, ferr
 		}
 		t := c.tvDetailsToTitle(ctx, d)
-		titles := []core.Title{t}
-		for _, s := range d.Seasons {
-			if !episodeKeyFits(s.SeasonNumber, 0) {
-				continue // its episodes have no rating keys (year-numbered seasons)
-			}
-			titles = append(titles, seasonToTitle(t, s))
-		}
-		// Upsert show as detail; seasons as non-detail summaries in same call would
-		// mark them detail too, so split.
-		if uerr := c.upsert(ctx, t, upsertOpts{browsable: c.meetsThreshold(t), detail: true}); uerr != nil {
+		if uerr := c.storeShowDetails(ctx, t, d); uerr != nil {
 			return nil, uerr
-		}
-		if len(titles) > 1 {
-			if uerr := c.upsertMany(ctx, titles[1:], upsertOpts{airDates: true}); uerr != nil {
-				return nil, uerr
-			}
 		}
 		c.harvestTVCrowd(ctx, key, d.Recommendations)
 		st2, lerr := c.loadByKey(ctx, key)
@@ -646,7 +666,7 @@ func (c *Catalog) RefreshTitle(ctx context.Context, key core.RatingKey, persist 
 		}
 		t = c.tvDetailsToTitle(ctx, d)
 		if persist {
-			if err := c.upsert(ctx, t, upsertOpts{browsable: c.meetsThreshold(t), detail: true}); err != nil {
+			if err := c.storeShowDetails(ctx, t, d); err != nil {
 				return nil, err
 			}
 		}

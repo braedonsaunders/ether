@@ -7,9 +7,10 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
-// Enrich is playback.Deps.AugmentMedia. The source is exclusively owned by the
+// Enrich is playback.Deps.AugmentMedia. It attaches sidecars already on
+// disk for this release. It does not search or download: a file is fetched
+// only when the viewer picks one. The source is exclusively owned by the
 // preparing generation, so local hashing cannot race disposal during failover.
-// Remote media uses release matching until a cache-only edge reader exists.
 func (s *Service) Enrich(ctx context.Context, title *core.Title, user *core.User, res *core.Resolution, src core.MediaSource, info *core.MediaInfo, prefs ...Preferences) {
 	if !s.Enabled() || info == nil || res == nil {
 		return
@@ -28,15 +29,4 @@ func (s *Service) Enrich(ctx context.Context, title *core.Title, user *core.User
 		s.log.Debug("subtitle enrichment unavailable", "error", err)
 	}
 	info.Streams = append(info.Streams, sidecars...)
-	// A session is opening with known failover alternates: warm dialogue
-	// alignments now so a later mid-stream failover (which only allows a
-	// sub-second AlignTime) can land on the exact moment in the new cut.
-	for i, alt := range res.Alternates {
-		if i >= 3 {
-			break
-		}
-		s.TimelineAligner().Prewarm(core.AlignRequest{
-			Key: title.Key, From: res.Release, To: alt, FromDuration: info.Duration,
-		})
-	}
 }

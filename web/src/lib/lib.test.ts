@@ -5,8 +5,10 @@ import {
   cacheHealth,
   catalogHealth,
   computeHealth,
+  countsOverall,
   indexersHealth,
   normalizeSessions,
+  overallLevel,
   plexDirectHealth,
   remoteHealth,
   usenetHealth,
@@ -366,7 +368,12 @@ const LIVE = {
     remoteAccess: false,
     listed: true,
     presence: { connected: true },
-    cert: { present: true, subject: "*.x.plex.direct", notAfter: "2027-01-17T04:36:33Z" },
+    cert: {
+      present: true,
+      subject: "*.x.plex.direct",
+      notBefore: "2026-01-17T04:36:33Z",
+      notAfter: "2027-01-17T04:36:33Z",
+    },
   },
 };
 
@@ -386,6 +393,8 @@ describe("health", () => {
     expect(indexersHealth(LIVE.indexers).summary).toBe("1 of 2 indexers out of searches today");
     expect(cacheHealth(LIVE.cache).summary).toBe("925.4 MiB of 20.0 GiB");
     expect(worstLevel(h.map((x) => x.level))).toBe("warn");
+    expect(h.find((x) => x.id === "plexdirect")?.countsOverall).toBe(false);
+    expect(overallLevel(h)).toBe("warn");
   });
   it("accepts debrid in place of Usenet", () => {
     expect(usenetHealth([], { enabled: true }).level).toBe("off");
@@ -434,12 +443,104 @@ describe("health", () => {
     expect(
       plexDirectHealth({ cert: { present: true }, certError: "check failed" }, now).level,
     ).toBe("warn");
+    const expired = plexDirectHealth(
+      { cert: { present: true, notAfter: "2020-01-01T00:00:00Z" } },
+      now,
+    );
+    expect([expired.level, expired.summary]).toEqual(["error", "Certificate expired"]);
+    const actionable = [
+      plexDirectHealth({ cert: { present: false } }, now),
+      plexDirectHealth({ cert: { present: true, notAfter: "2026-10-25T00:00:00Z" } }, now),
+      expired,
+      fallback,
+      plexDirectHealth({ cert: { present: true, reissueRequired: true } }, now),
+      plexDirectHealth({ cert: { present: true }, certError: "check failed" }, now),
+    ];
+    expect(actionable.every(countsOverall)).toBe(true);
+    const installed = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          notBefore: "2026-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect(installed.summary).toMatch(/^Expires /);
+    expect(installed.level).toBe("unknown");
+    expect(installed.statusLabel).toBe("Not verified");
+    expect(installed.note).toMatch(/does not verify/);
+    expect(installed.countsOverall).toBe(false);
+    expect(countsOverall(installed)).toBe(false);
+    expect(countsOverall({ ...installed, level: "error" })).toBe(true);
+    const missingExpiry = plexDirectHealth(
+      { cert: { present: true, notBefore: "2026-01-01T00:00:00Z" } },
+      now,
+    );
+    expect(missingExpiry.summary).toBe("Certificate dates are incomplete");
+    expect(missingExpiry.level).toBe("unknown");
+    expect(countsOverall(missingExpiry)).toBe(true);
+    expect(overallLevel([missingExpiry])).toBe("unknown");
+    const missingStart = plexDirectHealth(
+      { cert: { present: true, notAfter: "2028-01-01T00:00:00Z" } },
+      now,
+    );
+    expect(missingStart.summary).toBe("Certificate dates are incomplete");
+    expect(countsOverall(missingStart)).toBe(true);
+    const future = plexDirectHealth(
+      {
+        cert: {
+          present: true,
+          notBefore: "2027-01-01T00:00:00Z",
+          notAfter: "2028-01-01T00:00:00Z",
+        },
+      },
+      now,
+    );
+    expect([future.level, future.summary]).toEqual(["warn", "Certificate is not valid yet"]);
+    expect(countsOverall(future)).toBe(true);
+    const reported = computeHealth(undefined, now);
+    expect(reported.every((x) => x.level === "unknown" || x.level === "warn")).toBe(true);
     expect(
-      plexDirectHealth({ cert: { present: true, notAfter: "2028-01-01T00:00:00Z" } }, now).summary,
-    ).toMatch(/^Expires /);
-    expect(
-      computeHealth(undefined, now).every((x) => x.level === "unknown" || x.level === "warn"),
+      reported
+        .filter((x) => x.id === "remote" || x.id === "plexdirect")
+        .every((x) => x.level === "unknown" && countsOverall(x)),
     ).toBe(true);
+    expect(overallLevel(reported)).toBe("unknown");
+    const proxy = computeHealth(
+      {
+        providers: [{ name: "News", state: "ok", configuredConnections: 1, activeConnections: 0 }],
+        indexers: [{ indexer: "NZB", hitsLimit: 0, enabled: true }],
+        cache: { mode: "off" },
+        catalog: { movies: 1, shows: 1, lastSync: "2026-10-19T12:00:00Z" },
+        remote: {
+          claimed: true,
+          remoteAccess: false,
+          presence: { connected: true },
+          publishedUris: ["https://plex.example.com:443"],
+          connections: [{ uri: "https://plex.example.com:443", custom: true, protocol: "https" }],
+          cert: {
+            present: true,
+            selfSigned: false,
+            custom: true,
+            notBefore: "2026-01-01T00:00:00Z",
+            notAfter: "2028-01-01T00:00:00Z",
+          },
+        },
+      },
+      now,
+    );
+    expect(proxy.map((x) => [x.id, x.level])).toEqual([
+      ["usenet", "ok"],
+      ["indexers", "ok"],
+      ["cache", "off"],
+      ["catalog", "ok"],
+      ["remote", "off"],
+      ["plexdirect", "unknown"],
+    ]);
+    expect(proxy.find((x) => x.id === "remote")?.summary).toBe("Custom connection published");
+    expect(overallLevel(proxy)).toBe("ok");
   });
   it("uses the reported playhead, including zero, independently of transferred bytes", () => {
     const base = { BytesServed: 33, Info: { size: 100, duration: 60e9 } };

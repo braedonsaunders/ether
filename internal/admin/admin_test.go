@@ -197,6 +197,44 @@ func TestAuthMatrix(t *testing.T) {
 	}
 }
 
+func TestCSRFAllowsLiveTVFileUpload(t *testing.T) {
+	store := newStore(t, seededConfig)
+	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store)})
+	post := func(path, origin, contentType string, header bool) int {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader("payload"))
+		r.RemoteAddr = "192.168.1.50:49152"
+		r.Host = "192.168.1.10:32400"
+		r.Header.Set("Content-Type", contentType)
+		r.Header.Set("X-Plex-Token", ownerToken)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		if header {
+			r.Header.Set("X-Ether-Request", "1")
+		}
+		return serve(h, r).Code
+	}
+	same := "http://192.168.1.10:32400"
+	guide := "/ether/api/livetv/sources/abc/guide"
+	if code := post(guide, same, "application/octet-stream", true); code != http.StatusNotFound {
+		t.Fatalf("guide upload csrf: got %d want 404 after the check", code)
+	}
+	playlist := "/ether/api/livetv/sources/abc/playlist"
+	if code := post(playlist, same, "application/octet-stream", true); code != http.StatusNotFound {
+		t.Fatalf("playlist upload csrf: got %d want 404 after the check", code)
+	}
+	if code := post(guide, "http://evil.example", "application/octet-stream", true); code != http.StatusForbidden {
+		t.Fatalf("cross-origin upload: got %d want 403", code)
+	}
+	if code := post(guide, same, "application/octet-stream", false); code != http.StatusForbidden {
+		t.Fatalf("upload without csrf header: got %d want 403", code)
+	}
+	refresh := "/ether/api/livetv/sources/abc/refresh"
+	if code := post(refresh, same, "application/octet-stream", true); code != http.StatusForbidden {
+		t.Fatalf("octet-stream refresh: got %d want 403", code)
+	}
+}
+
 func TestCSRFHeaderRequiredForMutations(t *testing.T) {
 	store := newStore(t, seededConfig)
 	h := admin.New(admin.Deps{Config: store, IsOwnerToken: storedOwner(store)})

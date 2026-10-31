@@ -70,8 +70,8 @@ func TestFinalLayoutReceivesRenderedAvailability(t *testing.T) {
 	if r.got[0].ItemCount != 0 || r.got[1].ItemCount != 10 {
 		t.Fatalf("availability: %+v", r.got)
 	}
-	if !reflect.DeepEqual(got, []model.Hub{rows[1], rows[0]}) {
-		t.Fatal("layout changed original Plex metadata")
+	if !reflect.DeepEqual(got, []model.Hub{rows[1]}) {
+		t.Fatal("layout changed original Plex metadata or kept an empty row")
 	}
 }
 

@@ -26,6 +26,7 @@ import {
   type Errors,
 } from "../sources/form";
 import { searchSelectLabels } from "../../i18n/appkit-labels";
+import { ReleasePreferences, releaseRuleConflict } from "./ReleasePreferences";
 import { TrashImport } from "./TrashImport";
 import { useQuality, type Quality } from "./useQuality";
 
@@ -314,6 +315,11 @@ function ProfileList({
           rules: rules.map((r) => (r.profile === renamed ? { ...r, profile: draft.name } : r)),
         }
       : { ...quality, profiles: list };
+    const conflict = releaseRuleConflict(draft.releaseRules ?? []);
+    if (conflict) {
+      setErrors({ releaseRules: conflict });
+      return;
+    }
     setSaving(true);
     setError(null);
     setErrors({});
@@ -463,6 +469,11 @@ function ProfileList({
       >
         {draft ? (
           <>
+            <ReleasePreferences
+              profile={draft}
+              onChange={(releaseRules) => patch({ releaseRules })}
+              error={errors.releaseRules}
+            />
             <SettingsSection title={t("Picture")}>
               <TextRow
                 label={t("Name")}

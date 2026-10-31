@@ -419,3 +419,43 @@ func TestEstimateMonotonic(t *testing.T) {
 		t.Fatalf("zero thresholds estimate %d", got)
 	}
 }
+
+func TestStatsCacheAndTimeoutFallback(t *testing.T) {
+	ctx := context.Background()
+	c := newTestCatalog(t, fakeTMDB(t))
+	if err := c.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s1, err := c.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s1.BrowsableMovies != 3 || s1.HomeReleasePending != 3 {
+		t.Fatalf("initial stats: %+v", s1)
+	}
+	// Adding a browsable movie advances writeGen and invalidates cached counts;
+	// if the status call times out while SQLite is busy, Stats returns the last
+	// known snapshot instead of failing the health check.
+	if err := c.UpsertTitle(ctx, core.Title{
+		Key: core.MovieKey(9999), Type: core.TypeMovie, IDs: core.IDs{TMDB: 9999},
+		Title: "Extra", Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+	}, true); err != nil {
+		t.Fatal(err)
+	}
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	fallback, err := c.Stats(canceledCtx)
+	if err != nil {
+		t.Fatalf("Stats with canceled context failed instead of serving cached snapshot: %v", err)
+	}
+	if fallback.BrowsableMovies != 3 {
+		t.Fatalf("fallback stats = %+v, want cached BrowsableMovies=3", fallback)
+	}
+	s2, err := c.Stats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2.BrowsableMovies != 4 || s2.HomeReleasePending != 4 {
+		t.Fatalf("updated stats: %+v", s2)
+	}
+}

@@ -19,14 +19,37 @@ func (s *Service) Handler() http.Handler {
 		}
 		json.NewEncoder(w).Encode(v)
 	}
+	replyMissing := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "not_found", "message": "preview not found"}})
+	}
+	// Preview scans the whole library. A large one outlives this POST, so the
+	// handler starts a job and the owner polls it. Mount stays owner-only.
 	m.HandleFunc("POST /preview", func(w http.ResponseWriter, r *http.Request) {
 		var q Request
 		e := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&q)
-		var p Plan
+		var st PreviewStatus
 		if e == nil {
-			p, e = s.Preview(r.Context(), q)
+			st, e = s.StartPreview(q)
 		}
-		reply(w, p, e)
+		reply(w, st, e)
+	})
+	m.HandleFunc("GET /preview/{id}", func(w http.ResponseWriter, r *http.Request) {
+		st, ok := s.PreviewStatus(r.PathValue("id"))
+		if !ok {
+			replyMissing(w)
+			return
+		}
+		reply(w, st, nil)
+	})
+	m.HandleFunc("POST /preview/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		st, ok := s.CancelPreview(r.PathValue("id"))
+		if !ok {
+			replyMissing(w)
+			return
+		}
+		reply(w, st, nil)
 	})
 	m.HandleFunc("POST /import", func(w http.ResponseWriter, r *http.Request) {
 		var q struct {

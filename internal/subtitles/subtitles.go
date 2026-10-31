@@ -89,6 +89,11 @@ type Service struct {
 	negative  map[string]time.Time // title+lang -> when nothing was found
 	quotaTill time.Time            // downloads refused until then
 
+	// pickMu serialises writes of a title's picked subtitle: concurrent
+	// picks of one file rename onto the same path, which Windows refuses
+	// while another rename of it is in progress.
+	pickMu sync.Mutex
+
 	alignLanguages []string
 	aligner        *Aligner
 	alignOnce      sync.Once
@@ -96,12 +101,6 @@ type Service struct {
 	// Viewer-driven search results awaiting a pick (see ondemand.go).
 	offersMu sync.Mutex
 	offers   map[offerKey]offer
-
-	// Detail-page prefetch budget (see ondemand.go).
-	prefetchMu   sync.Mutex
-	prefetching  map[core.RatingKey]bool
-	prefetchRuns []time.Time
-	prefetchWG   sync.WaitGroup
 }
 
 // New builds a Service. A disabled service returns no sidecars.
@@ -532,7 +531,7 @@ func (s *Service) requestLink(ctx context.Context, c Candidate) (string, error) 
 			s.mu.Lock()
 			s.quotaTill = till
 			s.mu.Unlock()
-			s.log.Warn("opensubtitles download quota exhausted", "until", till)
+			s.log.Warn("opensubtitles download quota exhausted", "resets", till.UTC().Format(time.RFC3339))
 			return "", ErrQuota
 		case resp.StatusCode != http.StatusOK:
 			return "", fmt.Errorf("opensubtitles download: %s: %s", resp.Status, truncate(string(b), 200))
@@ -985,10 +984,11 @@ func candidatesForFetch(cands []Candidate, p Preferences) []Candidate {
 	return out
 }
 
-// Sidecars returns external subtitle streams for the user's preferred
-// languages missing from the embedded tracks. It returns (nil, nil) when
-// the service is disabled or nothing is missing; per-language failures are
-// logged and skipped, never failing playback.
+// Sidecars returns external subtitle streams already cached for the
+// user's preferred languages missing from the embedded tracks. It never
+// searches or downloads; a file is fetched only when the viewer picks
+// one (DownloadOnDemand). It returns (nil, nil) when the service is
+// disabled or nothing cached is missing.
 func (s *Service) Sidecars(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo, prefs ...Preferences) ([]core.StreamInfo, error) {
 	return s.SidecarsForRelease(ctx, title, user, embedded, "", prefs...)
 }
@@ -1098,15 +1098,9 @@ func sidecarTitle(lang, release string) string {
 	return strings.ToUpper(lang) + " (OpenSubtitles)"
 }
 
-// SidecarsForRelease is Sidecars with the chosen release's name, used to
-// rank candidates by release-name match (subtitle timing follows the
-// release, so the choice is remembered per release).
-//
-// Per language: a remembered selection with both files on disk is reused
-// without any network call; otherwise OpenSubtitles is searched, the best
-// three candidates are tried in order, and the winner is cached and
-// remembered. "Nothing found" is remembered for NegativeTTL. A quota error
-// stops downloads for the rest of the call.
+// SidecarsForRelease is Sidecars with the chosen release's name, so a
+// selection remembered for that release is the one listed. It does not
+// contact OpenSubtitles.
 func (s *Service) SidecarsForRelease(ctx context.Context, title *core.Title, user *core.User, embedded []core.StreamInfo, releaseName string, prefs ...Preferences) ([]core.StreamInfo, error) {
 	return s.SidecarsWithHash(ctx, title, user, embedded, releaseName, "", prefs...)
 }
@@ -1143,7 +1137,6 @@ func (s *Service) SidecarsWithHash(ctx context.Context, title *core.Title, user 
 		out = append(out, sidecarStream(nextIndex, lang, sel))
 		nextIndex++
 	}
-	quotaHit := false
 	for _, lang := range missing {
 		if ctx.Err() != nil {
 			return out, ctx.Err()
@@ -1153,68 +1146,10 @@ func (s *Service) SidecarsWithHash(ctx context.Context, title *core.Title, user 
 			delete(manual, lang)
 			continue
 		}
-		// Fast path only when the persisted selection satisfies the
-		// requested preferences. An isolated preference result may include
-		// a ranked fallback when no preferred style was available.
+		// A remembered selection for this release, when it still matches
+		// the requested preference. Nothing is downloaded to fill a gap.
 		if sel, ok := s.loadSelection(title, lang, cacheRelease, pref); ok && (sel.Preference == prefSig(pref) || selectionSatisfies(sel, pref)) {
 			add(lang, sel)
-			continue
-		}
-		if quotaHit {
-			continue
-		}
-		nk := negKey(title, lang, cacheRelease, pref)
-		s.mu.Lock()
-		negAt, neg := s.negative[nk]
-		s.mu.Unlock()
-		if neg && s.now().Sub(negAt) < s.negTTL {
-			continue
-		}
-		cands, err := s.SearchWithHash(ctx, title, lang, releaseName, movieHash)
-		if err != nil {
-			s.log.Debug("subtitle search failed", "lang", lang, "key", title.Key, "err", err)
-			continue
-		}
-		if pref.Mode != "" || pref.Style != "" {
-			cands = candidatesForFetch(cands, pref)
-		}
-		found := false
-		// Try the best few candidates; a dead link should not lose the language.
-		for i, c := range cands {
-			if i >= 3 {
-				break
-			}
-			id := cacheID(title, lang, c.FileID)
-			if _, err := s.fetchAndCache(ctx, id, c, title.Key); err != nil {
-				if errors.Is(err, ErrQuota) {
-					quotaHit = true
-					break
-				}
-				s.log.Debug("subtitle download failed", "lang", lang, "file", c.FileID, "err", err)
-				continue
-			}
-			release := c.Release
-			if release == "" {
-				release = c.FileName
-			}
-			sel := selection{ID: id, FileID: c.FileID, Language: lang, Release: release, At: s.now().UTC(), Forced: c.Forced, SDH: c.HearingImp}
-			sel.Preference = prefSig(pref)
-			s.saveSelection(title, lang, cacheRelease, sel, pref)
-			add(lang, sel)
-			found = true
-			break
-		}
-		if !found && !quotaHit && ctx.Err() == nil {
-			s.mu.Lock()
-			s.negative[nk] = s.now()
-			if len(s.negative) > 10000 {
-				for k, at := range s.negative {
-					if s.now().Sub(at) >= s.negTTL {
-						delete(s.negative, k)
-					}
-				}
-			}
-			s.mu.Unlock()
 		}
 	}
 	for _, lang := range sortedLanguages(manual) {

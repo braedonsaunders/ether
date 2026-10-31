@@ -465,7 +465,7 @@ func (s *Server) handleSectionHubs(w http.ResponseWriter, r *http.Request) {
 	if sec.Type == core.TypeShow {
 		sectionName = "shows"
 	}
-	mc.Hub = s.finalizeHomeRows(ctx, pr, pc, sectionName, mc.Hub)
+	mc.Hub = stableHomeHubs(s.finalizeHomeRows(ctx, pr, pc, sectionName, mc.Hub))
 	s.log.Debug("section hubs rendered", "section", sec.ID, "user", pr.User.ID, "count", count, "rows", len(mc.Hub))
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)

@@ -878,9 +878,11 @@ visibility subject to the normal release, availability and viewer restrictions.
 
 Country matches TMDB's origin/production country metadata, including
 co-productions, separately from original language. For example, a country rule
-for India also matches an English-language Indian production. Unknown metadata
-never matches an exclusion; the preview reports country coverage. Existing
-normal metadata refreshes fill gaps without a quota-consuming bulk lookup.
+for India also matches an English-language Indian production. Unknown country,
+genre, year and language never match an exclusion. A content rating rule set
+to "is none of" also hides titles with no rating, so a rating allowlist cannot
+be bypassed by a missing certification. The preview reports country coverage.
+Existing normal metadata refreshes fill gaps without a quota-consuming bulk lookup.
 
 Library collections and discovery rows are independent. Ether ships movie
 collections by genre and TV collections by locally known networks/studios.

@@ -116,174 +116,39 @@ func TestForcedDefinitionHIPlusForeignIsNotForced(t *testing.T) {
 	}
 }
 
-// Mutation: forced-only auto-fetch downloads the real forced track, never
-// a full (or HI+foreign) track; with no real forced candidate it downloads
-// nothing.
-func TestSidecarsForcedOnlyRequiresRealForced(t *testing.T) {
+// Preferences used to download a matching subtitle by themselves. They
+// list only what is already cached.
+func TestPreferencesDoNotDownload(t *testing.T) {
 	ctx := context.Background()
-	user := &core.User{SubtitleLanguages: []string{"en"}}
-	prefs := Preferences{Mode: "forced-only"}
-
 	f := newForcedFake(t, []forcedCand{
 		{id: 21, downloads: 9000},
 		{id: 22, downloads: 5000, hi: true, foreign: true},
 		{id: 23, downloads: 100, foreign: true},
+		{id: 24, downloads: 50, hi: true},
 	})
 	svc := New(Options{Config: config.OpenSubtitles{Enabled: true, APIKey: "k"}, CacheDir: t.TempDir(), BaseURL: f.srv.URL})
-	out, err := svc.SidecarsForRelease(ctx, forcedTitle(43), user, nil, "", prefs)
-	if err != nil || len(out) != 1 || !out[0].Forced {
-		t.Fatalf("forced-only sidecar: %+v %v", out, err)
+	user := &core.User{SubtitleLanguages: []string{"en"}}
+	title := forcedTitle(43)
+	for _, prefs := range []Preferences{{}, {Mode: "forced-only"}, {Mode: "always", Style: "sdh"}, {Mode: "always", Style: "normal"}} {
+		out, err := svc.SidecarsForRelease(ctx, title, user, nil, "Movie.2024.1080p.WEB-DL", prefs)
+		if err != nil || len(out) != 0 {
+			t.Fatalf("%+v: %+v %v", prefs, out, err)
+		}
 	}
-	if got := openText(t, svc, out[0]); !strings.Contains(got, "track-23") {
-		t.Fatalf("forced-only fetched wrong track: %q (downloads %v)", got, f.downloads())
+	if d := f.downloads(); len(d) != 0 {
+		t.Fatalf("preferences downloaded %v", d)
+	}
+	if _, err := svc.SearchOnDemand(ctx, title, "en", ""); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.DownloadOnDemand(ctx, title, 23)
+	if err != nil || !st.Forced {
+		t.Fatalf("explicit forced pick: %+v %v", st, err)
+	}
+	if got := openText(t, svc, st); !strings.Contains(got, "track-23") {
+		t.Fatalf("pick body: %q", got)
 	}
 	if d := f.downloads(); len(d) != 1 || d[0] != 23 {
-		t.Fatalf("forced-only downloads = %v, want only [23]", d)
-	}
-
-	// Only full / HI+foreign candidates: nothing is downloaded.
-	f2 := newForcedFake(t, []forcedCand{
-		{id: 21, downloads: 9000},
-		{id: 22, downloads: 5000, hi: true, foreign: true},
-	})
-	svc2 := New(Options{Config: config.OpenSubtitles{Enabled: true, APIKey: "k"}, CacheDir: t.TempDir(), BaseURL: f2.srv.URL})
-	out, err = svc2.SidecarsForRelease(ctx, forcedTitle(44), user, nil, "", prefs)
-	if err != nil || len(out) != 0 {
-		t.Fatalf("forced-only without forced candidate: %+v %v", out, err)
-	}
-	if d := f2.downloads(); len(d) != 0 {
-		t.Fatalf("forced-only downloaded full/HI tracks: %v", d)
-	}
-}
-
-// Mutation: style=sdh prefers an SDH candidate over a higher-ranked normal
-// one; without the style the normal (best-ranked) track wins.
-func TestSidecarsStyleSDHPrefersSDH(t *testing.T) {
-	ctx := context.Background()
-	user := &core.User{SubtitleLanguages: []string{"en"}}
-	cands := []forcedCand{
-		{id: 21, downloads: 9000},         // normal, best ranked
-		{id: 24, downloads: 50, hi: true}, // SDH
-	}
-
-	f := newForcedFake(t, cands)
-	svc := New(Options{Config: config.OpenSubtitles{Enabled: true, APIKey: "k"}, CacheDir: t.TempDir(), BaseURL: f.srv.URL})
-	out, err := svc.SidecarsForRelease(ctx, forcedTitle(45), user, nil, "", Preferences{Mode: "always", Style: "sdh"})
-	if err != nil || len(out) != 1 {
-		t.Fatalf("sdh sidecar: %+v %v", out, err)
-	}
-	if got := openText(t, svc, out[0]); !strings.Contains(got, "track-24") {
-		t.Fatalf("style=sdh fetched %q (downloads %v), want SDH track-24", got, f.downloads())
-	}
-	if !strings.Contains(out[0].Title, "SDH") {
-		t.Fatalf("SDH sidecar title should mark SDH for trackprefs: %q", out[0].Title)
-	}
-
-	f2 := newForcedFake(t, cands)
-	svc2 := New(Options{Config: config.OpenSubtitles{Enabled: true, APIKey: "k"}, CacheDir: t.TempDir(), BaseURL: f2.srv.URL})
-	out, err = svc2.SidecarsForRelease(ctx, forcedTitle(46), user, nil, "")
-	if err != nil || len(out) != 1 {
-		t.Fatalf("default sidecar: %+v %v", out, err)
-	}
-	if got := openText(t, svc2, out[0]); !strings.Contains(got, "track-21") {
-		t.Fatalf("default fetched %q, want best-ranked track-21", got)
-	}
-}
-
-// Owner repro (PR #47): a full track cached by a normal fetch must NOT
-// answer a later forced-only request for the same title/release — the
-// forced track (file 23) must be searched and downloaded.
-func TestForcedOnlyAfterFullCachedDownloadsForced(t *testing.T) {
-	ctx := context.Background()
-	user := &core.User{SubtitleLanguages: []string{"en"}}
-	const release = "Movie.2024.1080p.WEB-DL"
-	f := newForcedFake(t, []forcedCand{
-		{id: 21, downloads: 9000}, // full, best ranked
-		{id: 22, downloads: 5000, hi: true, foreign: true},
-		{id: 23, downloads: 100, foreign: true}, // real forced
-	})
-	svc := New(Options{Config: config.OpenSubtitles{Enabled: true, APIKey: "k"}, CacheDir: t.TempDir(), BaseURL: f.srv.URL})
-	title := forcedTitle(47)
-
-	out, err := svc.SidecarsForRelease(ctx, title, user, nil, release)
-	if err != nil || len(out) != 1 || out[0].Forced {
-		t.Fatalf("normal sidecar: %+v %v", out, err)
-	}
-	if got := openText(t, svc, out[0]); !strings.Contains(got, "track-21") {
-		t.Fatalf("normal fetched %q, want full track-21", got)
-	}
-	if d := f.downloads(); len(d) != 1 || d[0] != 21 {
-		t.Fatalf("downloads after normal = %v, want [21]", d)
-	}
-
-	out, err = svc.SidecarsForRelease(ctx, title, user, nil, release, Preferences{Mode: "forced-only"})
-	if err != nil || len(out) != 1 || !out[0].Forced {
-		t.Fatalf("forced-only after full cached: %+v %v", out, err)
-	}
-	if got := openText(t, svc, out[0]); !strings.Contains(got, "track-23") {
-		t.Fatalf("forced-only served %q, want forced track-23 (downloads %v)", got, f.downloads())
-	}
-	if d := f.downloads(); len(d) != 2 || d[1] != 23 {
-		t.Fatalf("downloads = %v, want [21 23]", d)
-	}
-}
-
-// Two viewers with different preferences on the same title/release each
-// get their own track, and one viewer's negative result does not block
-// another preference.
-func TestMultiPreferenceViewersSameTitle(t *testing.T) {
-	ctx := context.Background()
-	user := &core.User{SubtitleLanguages: []string{"en"}}
-	const release = "Movie.2024.1080p.WEB-DL"
-
-	f := newForcedFake(t, []forcedCand{
-		{id: 21, downloads: 9000},               // full
-		{id: 23, downloads: 100, foreign: true}, // forced
-		{id: 24, downloads: 50, hi: true},       // SDH
-	})
-	svc := New(Options{Config: config.OpenSubtitles{Enabled: true, APIKey: "k"}, CacheDir: t.TempDir(), BaseURL: f.srv.URL})
-	title := forcedTitle(48)
-
-	normal, err := svc.SidecarsForRelease(ctx, title, user, nil, release)
-	if err != nil || len(normal) != 1 || normal[0].Forced {
-		t.Fatalf("normal viewer: %+v %v", normal, err)
-	}
-	if got := openText(t, svc, normal[0]); !strings.Contains(got, "track-21") {
-		t.Fatalf("normal viewer got %q, want track-21", got)
-	}
-	forced, err := svc.SidecarsForRelease(ctx, title, user, nil, release, Preferences{Mode: "forced-only"})
-	if err != nil || len(forced) != 1 || !forced[0].Forced {
-		t.Fatalf("forced viewer: %+v %v", forced, err)
-	}
-	if got := openText(t, svc, forced[0]); !strings.Contains(got, "track-23") {
-		t.Fatalf("forced viewer got %q, want track-23", got)
-	}
-	sdh, err := svc.SidecarsForRelease(ctx, title, user, nil, release, Preferences{Mode: "always", Style: "sdh"})
-	if err != nil || len(sdh) != 1 {
-		t.Fatalf("sdh viewer: %+v %v", sdh, err)
-	}
-	if got := openText(t, svc, sdh[0]); !strings.Contains(got, "track-24") {
-		t.Fatalf("sdh viewer got %q, want track-24 (downloads %v)", got, f.downloads())
-	}
-	if !strings.Contains(sdh[0].Title, "SDH") {
-		t.Fatalf("sdh sidecar title should mark SDH: %q", sdh[0].Title)
-	}
-
-	// Negative isolation: forced-only finds nothing (only a full track
-	// exists), then a normal request for the same title/release must
-	// still search and download the full track.
-	f2 := newForcedFake(t, []forcedCand{{id: 21, downloads: 9000}})
-	svc2 := New(Options{Config: config.OpenSubtitles{Enabled: true, APIKey: "k"}, CacheDir: t.TempDir(), BaseURL: f2.srv.URL})
-	title2 := forcedTitle(49)
-	out, err := svc2.SidecarsForRelease(ctx, title2, user, nil, release, Preferences{Mode: "forced-only"})
-	if err != nil || len(out) != 0 {
-		t.Fatalf("forced-only without forced candidate: %+v %v", out, err)
-	}
-	out, err = svc2.SidecarsForRelease(ctx, title2, user, nil, release)
-	if err != nil || len(out) != 1 {
-		t.Fatalf("normal after forced-only negative: %+v %v", out, err)
-	}
-	if got := openText(t, svc2, out[0]); !strings.Contains(got, "track-21") {
-		t.Fatalf("normal after negative got %q, want track-21 (negative of another prefs blocked it?)", got)
+		t.Fatalf("downloads = %v, want [23]", d)
 	}
 }

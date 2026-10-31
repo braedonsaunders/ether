@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -603,7 +604,7 @@ func (s *Service) Sources(ctx context.Context) ([]Source, error) {
 	return out, s.fillSourceStats(ctx, out)
 }
 func (s *Service) readURL(ctx context.Context, raw string, max int64) (string, error) {
-	return s.readURLWith(ctx, raw, max, nil)
+	return s.readURLWith(ctx, raw, max, nil, "source")
 }
 
 // ImportSource atomically replaces source programming. Owner changes to mapping,
@@ -623,21 +624,12 @@ func (s *Service) ImportSource(ctx context.Context, src Source) (Source, error) 
 	}
 	var err error
 	if src.PlaylistURL != "" {
-		src.Playlist, err = s.readURLWith(ctx, src.PlaylistURL, 16<<20, src.Auth.header())
+		src.Playlist, err = s.readURLWith(ctx, src.PlaylistURL, maxPlaylistBytes, src.Auth.header(), "playlist")
 		if err != nil {
 			return src, err
 		}
 	}
-	if src.GuideURL != "" {
-		src.Guide, err = s.readURLWith(ctx, src.GuideURL, 64<<20, src.Auth.header())
-		if err != nil {
-			return src, err
-		}
-	}
-	if len(src.Playlist) > 16<<20 || len(src.Guide) > 64<<20 {
-		return src, fmt.Errorf("source upload exceeds size limit")
-	}
-	if strings.TrimSpace(src.Playlist) == "" && strings.TrimSpace(src.Guide) == "" {
+	if strings.TrimSpace(src.Playlist) == "" && strings.TrimSpace(src.Guide) == "" && src.GuideURL == "" {
 		return src, fmt.Errorf("source needs a playlist or an XMLTV guide")
 	}
 	var cs []Channel
@@ -647,11 +639,29 @@ func (s *Service) ImportSource(ctx context.Context, src Source) (Source, error) 
 			return src, err
 		}
 	}
+	allow, err := s.guideAllow(ctx, src, cs)
+	if err != nil {
+		return src, err
+	}
+	filter := guideFilter{From: s.o.Now().Add(-guideLookback), Until: s.o.Now().Add(guideLookahead), IDs: allow}
 	g := XMLGuide{}
-	if src.Guide != "" {
-		g, err = ParseXMLTV(strings.NewReader(src.Guide))
+	if src.GuideURL != "" {
+		g, err = s.readGuide(ctx, src.GuideURL, src.Auth.header(), filter)
 		if err != nil {
 			return src, err
+		}
+	} else if src.Guide != "" {
+		var dropped bool
+		g, dropped, err = parseXMLTV(strings.NewReader(src.Guide), filter)
+		if err != nil {
+			return src, err
+		}
+		if dropped {
+			trimmed, err := formatXMLTV(g)
+			if err != nil {
+				return src, err
+			}
+			src.Guide = trimmed
 		}
 	}
 	tx, err := s.o.DB.BeginTx(ctx, nil)
@@ -751,6 +761,137 @@ func (s *Service) ImportSource(ctx context.Context, src Source) (Source, error) 
 	}
 	return src, err
 }
+
+// guideAllow is the set of XMLTV channel ids a playlist source keeps.
+// Nil means every channel (a guide-only source). Stored guide ids are
+// included so an owner mapping survives the next refresh.
+func (s *Service) guideAllow(ctx context.Context, src Source, playlist []Channel) (map[string]struct{}, error) {
+	if strings.TrimSpace(src.Playlist) == "" && src.PlaylistURL == "" {
+		return nil, nil
+	}
+	ids := map[string]struct{}{}
+	add := func(id string) {
+		id = strings.ToLower(strings.TrimSpace(id))
+		if id != "" {
+			ids[id] = struct{}{}
+		}
+	}
+	for _, c := range playlist {
+		add(c.GuideID)
+	}
+	stored, err := channels(ctx, s.o.DB)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range stored {
+		if c.SourceID == src.ID || guideSource(c) == src.ID {
+			add(c.GuideID)
+		}
+	}
+	return ids, nil
+}
+
+// SavePendingSource stores a named source that will receive a file upload
+// next. A body that already has a playlist or guide is imported instead.
+func (s *Service) SavePendingSource(ctx context.Context, src Source) (Source, error) {
+	if src.ID == "" {
+		src.ID = randomID()
+	}
+	if strings.TrimSpace(src.Name) == "" {
+		return src, fmt.Errorf("source needs a name")
+	}
+	if err := s.prepareSourceAuth(ctx, &src); err != nil {
+		return src, err
+	}
+	if src.Playlist != "" || src.PlaylistURL != "" || src.Guide != "" || src.GuideURL != "" {
+		return s.ImportSource(ctx, src)
+	}
+	old, err := s.storedSourceByID(ctx, src.ID)
+	if err == nil {
+		src.Playlist, src.PlaylistURL = old.Playlist, old.PlaylistURL
+		src.Guide, src.GuideURL = old.Guide, old.GuideURL
+		if src.Auth == nil {
+			src.Auth = old.Auth
+		}
+		if src.Playlist != "" || src.PlaylistURL != "" || src.Guide != "" || src.GuideURL != "" {
+			return s.ImportSource(ctx, src)
+		}
+	} else if !errors.Is(err, core.ErrNotFound) {
+		return src, err
+	}
+	src.UpdatedAt = s.o.Now()
+	b, err := s.encodeSource(src)
+	if err != nil {
+		return src, err
+	}
+	if _, err = s.o.DB.ExecContext(ctx, `INSERT INTO livetv_sources(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, src.ID, b); err != nil {
+		return src, err
+	}
+	src.HasPlaylist = false
+	src.HasGuide = false
+	src.Playlist, src.Guide = "", ""
+	redactSourceAuth(&src)
+	one := []Source{src}
+	if e := s.fillSourceStats(ctx, one); e == nil {
+		src = one[0]
+	}
+	return src, nil
+}
+
+// ImportUpload streams a raw playlist or guide body (gzip is decompressed
+// while reading) into an existing source.
+func (s *Service) ImportUpload(ctx context.Context, id, part string, body io.Reader) (Source, error) {
+	src, err := s.storedSourceByID(ctx, id)
+	if err != nil {
+		return src, err
+	}
+	var max int64 = maxPlaylistBytes
+	kind := "playlist"
+	if part == "guide" {
+		max = maxGuideBytes
+		kind = "guide"
+	}
+	rd, err := maybeGunzip(body, max, kind)
+	if err != nil {
+		return src, err
+	}
+	defer closeReader(rd)
+	if part == "playlist" {
+		b, err := io.ReadAll(&hardLimit{r: rd, max: max, kind: kind})
+		if err != nil {
+			if lim := limitCause(err); lim != nil {
+				return src, lim
+			}
+			return src, err
+		}
+		src.Playlist = string(b)
+		src.PlaylistURL = ""
+		return s.ImportSource(ctx, src)
+	}
+	var cs []Channel
+	if strings.TrimSpace(src.Playlist) != "" {
+		cs, err = ParseM3U(strings.NewReader(src.Playlist), src.ID)
+		if err != nil {
+			return src, err
+		}
+	}
+	allow, err := s.guideAllow(ctx, src, cs)
+	if err != nil {
+		return src, err
+	}
+	g, _, err := parseXMLTV(rd, guideFilter{From: s.o.Now().Add(-guideLookback), Until: s.o.Now().Add(guideLookahead), IDs: allow})
+	if err != nil {
+		return src, err
+	}
+	trimmed, err := formatXMLTV(g)
+	if err != nil {
+		return src, err
+	}
+	src.Guide = trimmed
+	src.GuideURL = ""
+	return s.ImportSource(ctx, src)
+}
+
 func (s *Service) DeleteSource(ctx context.Context, id string) error {
 	defer s.forgetSourceAuth(id)
 	tx, err := s.o.DB.BeginTx(ctx, nil)

@@ -416,3 +416,15 @@ func TestRestartedTSMarksTransportCounterReset(t *testing.T) {
 		}
 	}
 }
+
+// Issue 13: with GPU scaling unavailable, VAAPI sessions decode, tone-map
+// and scale in software and upload frames to the hardware encoder.
+func TestBuildArgsVAAPIWithoutGPUScale(t *testing.T) {
+	info := mustParse(t, "mkv_hevc_hdr10.json")
+	d := Decide(info, plexWeb, allow(), Policy{})
+	s := baseSpec(info, d)
+	s.Accel = core.HWAccel{Name: AccelVAAPI, Encoders: []string{"h264_vaapi"}, Device: "/dev/dri/renderD128", NoGPUScale: true}
+	args := buildArgs(s)
+	mustContain(t, args, "-vaapi_device /dev/dri/renderD128", "hwupload", "-c:v h264_vaapi")
+	mustNotContain(t, args, "scale_vaapi", "tonemap_vaapi", "-hwaccel_output_format vaapi")
+}

@@ -38,7 +38,13 @@ import { getLocale, localized, t, tn, tx } from "../i18n";
 import { api } from "../lib/api";
 import type { ActivityDay, RowInsight } from "../lib/contract";
 import { formatNumber, formatPercent, formatRate, relativeTime } from "../lib/format";
-import { normalizeSessions, type HealthItem, type NowPlaying } from "../lib/health";
+import {
+  countsOverall,
+  hasExemptDiagnostic,
+  normalizeSessions,
+  type HealthItem,
+  type NowPlaying,
+} from "../lib/health";
 import { useAsync } from "../lib/hooks";
 import { useTitle } from "../lib/titles";
 import { useLocale } from "../i18n/react";
@@ -77,9 +83,11 @@ export default function Home() {
     ? null
     : problems.length
       ? tn(problems.length, "{count} thing needs attention", "{count} things need attention")
-      : health.some((h) => h.level === "unknown")
+      : health.some((h) => h.level === "unknown" && countsOverall(h))
         ? t("Status incomplete")
-        : t("Everything is healthy");
+        : hasExemptDiagnostic(health)
+          ? t("Operational")
+          : t("Everything is healthy");
 
   return (
     <div className="@container flex min-h-0 flex-1 flex-col">
@@ -300,8 +308,10 @@ function HealthPanel({
           <Badge variant={severe ? "destructive" : "warning"}>
             {tn(problems.length, "{count} to fix", "{count} to fix")}
           </Badge>
-        ) : items.some((h) => h.level === "unknown") ? (
+        ) : items.some((h) => h.level === "unknown" && countsOverall(h)) ? (
           <LevelBadge level="unknown" label={t("Status incomplete")} />
+        ) : hasExemptDiagnostic(items) ? (
+          <LevelBadge level="ok" label={t("Operational")} />
         ) : (
           <LevelBadge level="ok" label={t("All healthy")} />
         )

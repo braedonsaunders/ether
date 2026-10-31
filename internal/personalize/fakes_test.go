@@ -84,6 +84,12 @@ type fakeCatalog struct {
 	// title; crowdPages counts pages "fetched from TMDB".
 	crowdStored map[core.RatingKey]int
 	crowdPages  int
+	// holdSources, when set, pauses similar/list/browse before they are
+	// counted. sourcesHeld is closed once, when the first call reaches
+	// that pause. Both are nil unless a test is holding startup work.
+	holdSources <-chan struct{}
+	sourcesHeld chan struct{}
+	heldOnce    sync.Once
 }
 
 // movieKey / showKey address the synthetic titles: genre index gi, item j.
@@ -247,6 +253,21 @@ func (c *fakeCatalog) count(name string) {
 	c.mu.Unlock()
 }
 
+// awaitSources lets a test pause catalogue source calls. The pause is
+// before the call is counted, so a sample taken while startup work is
+// held does not yet include it.
+func (c *fakeCatalog) awaitSources() {
+	c.mu.Lock()
+	hold, held := c.holdSources, c.sourcesHeld
+	c.mu.Unlock()
+	if held != nil {
+		c.heldOnce.Do(func() { close(held) })
+	}
+	if hold != nil {
+		<-hold
+	}
+}
+
 func (c *fakeCatalog) callCount(name string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -349,6 +370,7 @@ func (c *fakeCatalog) Grandchildren(context.Context, core.RatingKey) ([]core.Tit
 }
 
 func (c *fakeCatalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, error) {
+	c.awaitSources()
 	c.count("browse")
 	c.dataMu.RLock()
 	defer c.dataMu.RUnlock()
@@ -423,6 +445,7 @@ func (c *fakeCatalog) Search(context.Context, string, []core.MediaType, int) ([]
 	return nil, nil
 }
 func (c *fakeCatalog) List(_ context.Context, name string, t core.MediaType, limit int) ([]core.Title, error) {
+	c.awaitSources()
 	c.count("list")
 	c.dataMu.RLock()
 	items := c.resolve(c.lists[name+":"+string(t)])
@@ -437,6 +460,7 @@ func (c *fakeCatalog) List(_ context.Context, name string, t core.MediaType, lim
 // first page is TMDB's recommendations), then the same primary genre by
 // popularity.
 func (c *fakeCatalog) Similar(_ context.Context, k core.RatingKey, limit int) ([]core.Title, error) {
+	c.awaitSources()
 	c.count("similar")
 	c.dataMu.RLock()
 	defer c.dataMu.RUnlock()

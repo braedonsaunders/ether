@@ -12,6 +12,11 @@ import { loadViewers, viewerName } from "./pickers";
 
 const ACTIONS = localized(() => [
   {
+    title: t("Record a problem"),
+    href: "/maintenance/logs?record=1",
+    keywords: searchTerms(msg("support zip diagnostic capture")),
+  },
+  {
     title: t("Add an indexer"),
     href: "/sources/indexers",
     keywords: searchTerms(msg("newznab prowlarr")),

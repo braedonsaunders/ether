@@ -83,7 +83,8 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 // statusRecorder captures the status code for logging.
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
+	status  int
+	written int64
 }
 
 func (sr *statusRecorder) WriteHeader(code int) {
@@ -97,7 +98,9 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 	if sr.status == 0 {
 		sr.status = http.StatusOK
 	}
-	return sr.ResponseWriter.Write(b)
+	n, err := sr.ResponseWriter.Write(b)
+	sr.written += int64(n)
+	return n, err
 }
 
 func (sr *statusRecorder) Flush() {
@@ -136,6 +139,7 @@ func (s *Server) requestLog(next http.Handler) http.Handler {
 			"range", r.Header.Get("Range"), "contentRange", sr.Header().Get("Content-Range"),
 			"pageStart", pr.Start, "pageSize", pr.Size, "paged", pr.HasPage, "format", pr.Format, "includeChildren", r.URL.Query().Get("includeChildren"),
 			"model", pr.Model, "device", pr.Device, "version", pr.Version, "platformVersion", pr.PlatformVersion, "peer", pr.RemoteIP.String())
+		s.observeRequest(r, sr)
 	})
 }
 

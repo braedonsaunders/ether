@@ -178,8 +178,11 @@ func (s *Server) handleDASHSegment(w http.ResponseWriter, r *http.Request) {
 }
 
 // dashDecisionMedia adjusts a transcode decision's Media for DASH the way
-// PMS reports it: an mp4 container over protocol dash, with video and
-// audio in separate segment streams.
+// PMS reports it: an mp4 container over protocol dash, with the video and
+// the selected audio in separate segment streams. Unselected audio keeps
+// the shape applyStreamDecision already returned: the source index, and no
+// decision or location. Marking every audio stream segments-audio makes
+// Plex Web request a representation that dashReps never builds.
 func dashDecisionMedia(m *model.Media) {
 	m.Container = "mp4"
 	m.Protocol = core.ProtocolDASH
@@ -193,7 +196,9 @@ func dashDecisionMedia(m *model.Media) {
 			case 1:
 				st.Location = "segments-video"
 			case 2:
-				st.Location = "segments-audio"
+				if st.Selected != nil && *st.Selected {
+					st.Location = "segments-audio"
+				}
 			}
 		}
 	}

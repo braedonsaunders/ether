@@ -37,6 +37,7 @@ func (r *fakeVariantResolver) Variants(_ context.Context, req core.ResolveReques
 type fakeVariantPlayback struct {
 	*fakePlayback
 	variantCalls []string
+	resumed      map[resumedFactKey]resumedFact
 }
 
 func (p *fakeVariantPlayback) PrepareVariant(_ context.Context, u *core.User, k core.RatingKey, caps core.ClientCaps, releaseID string) (*core.PlaySession, error) {
@@ -52,7 +53,41 @@ func (p *fakeVariantPlayback) PrepareVariant(_ context.Context, u *core.User, k 
 		Resolution: &core.Resolution{Title: k, Release: core.Release{ID: releaseID}},
 	}
 	p.sessions[id] = ps
+	if u != nil && u.ID > 0 && releaseID != "" && !p.info.Estimated && len(p.info.Streams) > 0 {
+		if p.resumed == nil {
+			p.resumed = map[resumedFactKey]resumedFact{}
+		}
+		cp := p.info
+		cp.Streams = append([]core.StreamInfo(nil), p.info.Streams...)
+		p.resumed[resumedFactKey{u.ID, k}] = resumedFact{info: cp, release: releaseID}
+	}
 	return ps, nil
+}
+
+// resumedFact is the test double for playback.Manager.ResumedTracks: one
+// probe per viewer and title. It does not apply profile, source, or block
+// policy; the playback package tests those gates.
+type resumedFactKey struct {
+	user int64
+	key  core.RatingKey
+}
+
+type resumedFact struct {
+	info    core.MediaInfo
+	release string
+}
+
+func (p *fakeVariantPlayback) ResumedTracks(_ context.Context, user *core.User, key core.RatingKey, _ core.ClientCaps) (core.MediaInfo, string, bool) {
+	if user == nil || user.ID <= 0 {
+		return core.MediaInfo{}, "", false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	e, ok := p.resumed[resumedFactKey{user.ID, key}]
+	if !ok || e.release == "" || e.info.Estimated || len(e.info.Streams) == 0 {
+		return core.MediaInfo{}, "", false
+	}
+	return e.info, e.release, true
 }
 
 func mkVariant(id, label, edition string, auto bool, height int, vcodec, acodec string, dv bool, kbps int) core.ReleaseVariant {

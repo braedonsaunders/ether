@@ -73,15 +73,32 @@ func TestAlignerEndToEndAndCache(t *testing.T) {
 	var searches, downloads atomic.Int32
 	srv := fakeAlignSubtitles(t, &searches, &downloads)
 	dir := t.TempDir()
-	a := newAlignSvc(dir, srv.URL).TimelineAligner()
+	svc := newAlignSvc(dir, srv.URL)
+	title := &core.Title{Key: core.MovieKey(42), Type: core.TypeMovie}
+	cands, err := svc.Search(context.Background(), title, "en", "")
+	if err != nil || len(cands) != 2 {
+		t.Fatalf("search: %+v %v", cands, err)
+	}
+	for _, c := range cands {
+		id := cacheID(title, "en", c.FileID)
+		if _, err := svc.fetchAndCache(context.Background(), id, c, title.Key); err != nil {
+			t.Fatal(err)
+		}
+		rel := c.Release
+		svc.saveSelection(title, "en", rel, selection{ID: id, FileID: c.FileID, Language: "en", Release: rel, At: svc.now()})
+	}
+	if downloads.Load() != 2 {
+		t.Fatalf("explicit downloads = %d", downloads.Load())
+	}
+	a := svc.TimelineAligner()
 
 	got, ok := a.AlignTime(context.Background(), alignReq(), 10*time.Minute)
 	if !ok || got < 10*time.Minute+11*time.Second || got > 10*time.Minute+13*time.Second {
 		t.Fatalf("AlignTime = %v,%v", got, ok)
 	}
 	s1, d1 := searches.Load(), downloads.Load()
-	if s1 != 1 {
-		t.Fatalf("searches = %d, want 1 (shared between sides)", s1)
+	if d1 != 2 {
+		t.Fatalf("alignment downloaded: downloads %d", d1)
 	}
 	// Second call: memory cache, no network at all.
 	if _, ok := a.AlignTime(context.Background(), alignReq(), 5*time.Minute); !ok {
@@ -109,7 +126,7 @@ func TestAlignerEndToEndAndCache(t *testing.T) {
 	}
 }
 
-func TestAlignerFastPathWarmsInBackground(t *testing.T) {
+func TestAlignerFastPathDoesNotDownload(t *testing.T) {
 	var searches, downloads atomic.Int32
 	srv := fakeAlignSubtitles(t, &searches, &downloads)
 	a := newAlignSvc(t.TempDir(), srv.URL).TimelineAligner()
@@ -123,21 +140,13 @@ func TestAlignerFastPathWarmsInBackground(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
 		t.Fatalf("fast path blocked for %v", elapsed)
 	}
-	// The background warm eventually makes the fast path hit.
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		ctx, c := context.WithTimeout(context.Background(), 300*time.Millisecond)
-		got, ok := a.AlignTime(ctx, alignReq(), 10*time.Minute)
-		c()
-		if ok {
-			if got < 10*time.Minute+11*time.Second || got > 10*time.Minute+13*time.Second {
-				t.Fatalf("warmed AlignTime = %v", got)
-			}
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+	if _, ok := a.AlignTime(context.Background(), alignReq(), 10*time.Minute); ok {
+		t.Fatal("background warm downloaded a subtitle and aligned")
 	}
-	t.Fatal("background warm never landed")
+	if downloads.Load() != 0 {
+		t.Fatalf("aligner downloads = %d, want 0", downloads.Load())
+	}
 }
 
 func TestAlignerDisabledAndUnknownTitle(t *testing.T) {

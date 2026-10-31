@@ -9,12 +9,12 @@ import (
 )
 
 // finalizeHomeRows preserves producer wire sidecars. A missing provider or a
-// layout error deliberately leaves the original rows in place, as Plex did
-// before extraction; errors are logged once at this domain boundary.
+// layout error leaves that order in place; empty and duplicate rows are still
+// dropped. Errors are logged once at this domain boundary.
 func (s *Server) finalizeHomeRows(ctx context.Context, pr *Request, hc core.HubContext, section string, rows []model.Hub) []model.Hub {
 	if _, neutral := s.d.Recommender.(core.NeutralHomeLayoutSource); !neutral {
 		if _, layout := s.d.Recommender.(core.HomeLayoutSource); !layout {
-			return rows
+			return stableHomeHubs(rows)
 		}
 	}
 	raw := make([]core.Hub, len(rows))
@@ -26,11 +26,32 @@ func (s *Server) finalizeHomeRows(ctx context.Context, pr *Request, hc core.HubC
 	indices, err := experience.ArrangeHome(ctx, s.d.Recommender, pr.User, hc, section, raw, candidates)
 	if err != nil {
 		s.log.Warn("Home layout unavailable", "error", err)
-		return rows
+		return stableHomeHubs(rows)
 	}
 	out := make([]model.Hub, 0, len(indices))
 	for _, i := range indices {
 		out = append(out, rows[i])
+	}
+	return stableHomeHubs(out)
+}
+
+// stableHomeHubs drops rows a client would draw empty, and keeps the first
+// copy when the same hub was produced twice (promoted and section builders,
+// or a recommender repeating a row the front end already built).
+func stableHomeHubs(rows []model.Hub) []model.Hub {
+	seen := map[string]bool{}
+	out := make([]model.Hub, 0, len(rows))
+	for _, h := range rows {
+		if len(h.Metadata) == 0 && len(h.Directory) == 0 {
+			continue
+		}
+		if h.HubIdentifier != "" {
+			if seen[h.HubIdentifier] {
+				continue
+			}
+			seen[h.HubIdentifier] = true
+		}
+		out = append(out, h)
 	}
 	return out
 }

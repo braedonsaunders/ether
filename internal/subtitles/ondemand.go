@@ -1,15 +1,14 @@
 package subtitles
 
-// Cache-only sidecar listing, viewer-driven subtitle search ("on-demand"
-// subtitles in Plex's terms) and the detail-page prefetch.
+// Cache-only sidecar listing and viewer-driven subtitle search ("on-demand"
+// subtitles in Plex's terms).
 //
 // Sidecars reach Plex clients as external Stream elements on the title's
 // Part. Before a play session exists the Plex front end only has an
 // estimated MediaInfo, so it lists the sidecars already on disk for the
-// title (CachedSidecars) rather than searching on the request path. The
-// files themselves are fetched by the detail-page warm-up (playback's
-// AugmentMedia on the warmed release), by PrefetchSidecars when that
-// warm-up does not run, at Play, or when the viewer picks a search result.
+// title (CachedSidecars). A file is downloaded only when the viewer picks
+// a search result (DownloadOnDemand). Detail pages, playback warm-up and
+// preference changes do not download.
 
 import (
 	"context"
@@ -34,10 +33,6 @@ const manualSig = "manual"
 const (
 	offerTTL  = time.Hour
 	maxOffers = 4096
-
-	prefetchConcurrency = 2
-	prefetchPerHour     = 20
-	prefetchTimeout     = 45 * time.Second
 )
 
 type offerKey struct {
@@ -254,7 +249,10 @@ func (s *Service) DownloadOnDemand(ctx context.Context, title *core.Title, fileI
 		return core.StreamInfo{}, err
 	}
 	b, _ := json.Marshal(sel)
-	if err := writeFileAtomic(p, b); err != nil {
+	s.pickMu.Lock()
+	err := writeFileAtomic(p, b)
+	s.pickMu.Unlock()
+	if err != nil {
 		return core.StreamInfo{}, err
 	}
 	return sidecarStream(0, o.lang, sel), nil
@@ -291,85 +289,4 @@ func (s *Service) OpenFormatAt(id, format string, offset time.Duration) (io.Read
 		format = "srt"
 	}
 	return io.NopCloser(strings.NewReader(text)), format, nil
-}
-
-// PrefetchSidecars fetches, in the background, the viewer's preferred
-// languages a title has no cached sidecar for. The Plex front end calls it
-// when a detail page opens and the playback warm-up (which fetches
-// sidecars for the release it resolves) did not run, so the next
-// metadata or play-queue request can list them. Without a release name
-// the best-ranked track is cached under the release-agnostic signature.
-//
-// Downloads count against the OpenSubtitles daily quota, so prefetches
-// are budgeted: one per title at a time, two server-wide, twenty an hour,
-// none while the quota is exhausted. False means nothing was started.
-func (s *Service) PrefetchSidecars(title *core.Title, user *core.User, prefs ...Preferences) bool {
-	if title == nil || user == nil || !s.Enabled() {
-		return false
-	}
-	switch title.Type {
-	case core.TypeMovie, core.TypeEpisode:
-	default:
-		return false
-	}
-	missing := MissingLanguages(user, nil)
-	if len(missing) == 0 {
-		return false
-	}
-	have := map[string]bool{}
-	for _, st := range s.CachedSidecars(title, user, nil, prefs...) {
-		have[st.Language] = true
-	}
-	need := false
-	for _, l := range missing {
-		if !have[l] {
-			need = true
-			break
-		}
-	}
-	if !need {
-		return false
-	}
-	now := s.now()
-	s.mu.Lock()
-	quota := s.quotaTill
-	s.mu.Unlock()
-	if now.Before(quota) {
-		return false
-	}
-	s.prefetchMu.Lock()
-	if s.prefetching == nil {
-		s.prefetching = map[core.RatingKey]bool{}
-	}
-	recent := s.prefetchRuns[:0]
-	for _, at := range s.prefetchRuns {
-		if now.Sub(at) < time.Hour {
-			recent = append(recent, at)
-		}
-	}
-	s.prefetchRuns = recent
-	if s.prefetching[title.Key] || len(s.prefetching) >= prefetchConcurrency || len(recent) >= prefetchPerHour {
-		s.prefetchMu.Unlock()
-		return false
-	}
-	s.prefetching[title.Key] = true
-	s.prefetchRuns = append(s.prefetchRuns, now)
-	s.prefetchWG.Add(1)
-	s.prefetchMu.Unlock()
-
-	t, u := *title, *user
-	go func() {
-		defer s.prefetchWG.Done()
-		defer func() {
-			s.prefetchMu.Lock()
-			delete(s.prefetching, t.Key)
-			s.prefetchMu.Unlock()
-		}()
-		ctx, cancel := context.WithTimeout(context.Background(), prefetchTimeout)
-		defer cancel()
-		if _, err := s.SidecarsForRelease(ctx, &t, &u, nil, "", prefs...); err != nil {
-			s.log.Debug("subtitle prefetch", "key", t.Key, "err", err)
-		}
-	}()
-	return true
 }

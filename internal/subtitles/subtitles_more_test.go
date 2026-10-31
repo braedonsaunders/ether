@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -125,19 +126,15 @@ func newSvc(t *testing.T, f *osFake, cfg config.OpenSubtitles, dir string) *Serv
 
 var episode = &core.Title{Key: core.EpisodeKey(95396, 1, 2), Type: core.TypeEpisode, ShowTitle: "Severance", Season: 1, Episode: 2}
 
-func TestSidecarsSelectionIndexAndNegativeCache(t *testing.T) {
+func TestExplicitPickIsRememberedWithoutAnotherDownload(t *testing.T) {
 	ctx := context.Background()
 	f := newOSFake(t)
 	dir := t.TempDir()
 	svc := newSvc(t, f, config.OpenSubtitles{}, dir)
-	user := &core.User{SubtitleLanguages: []string{"de", "ger", "DE"}} // duplicates collapse
+	user := &core.User{SubtitleLanguages: []string{"de", "ger", "DE"}}
 
-	out, err := svc.SidecarsForRelease(ctx, episode, user, nil, "Show.S01E02.1080p.WEB")
-	if err != nil || len(out) != 1 || out[0].Language != "de" || out[0].Index != 0 {
-		t.Fatalf("first: %+v %v", out, err)
-	}
-	if !strings.Contains(out[0].Title, "Show.S01E02.1080p.WEB") {
-		t.Fatalf("best candidate not chosen: %q", out[0].Title)
+	if _, err := svc.SearchOnDemand(ctx, episode, "de", "Show.S01E02.1080p.WEB"); err != nil {
+		t.Fatal(err)
 	}
 	f.mu.Lock()
 	q := f.lastQuery
@@ -145,56 +142,42 @@ func TestSidecarsSelectionIndexAndNegativeCache(t *testing.T) {
 	if q["parent_tmdb_id"] != "95396" || q["season_number"] != "1" || q["episode_number"] != "2" || q["type"] != "episode" || q["languages"] != "de" {
 		t.Fatalf("episode query from key: %v", q)
 	}
+	st, err := svc.DownloadOnDemand(ctx, episode, 11)
+	if err != nil || st.Language != "de" || !strings.Contains(st.Title, "Show.S01E02.1080p.WEB") {
+		t.Fatalf("pick: %+v %v", st, err)
+	}
 
-	// A fresh Service over the same dir reuses the remembered selection:
-	// no search, no download.
 	svc2 := newSvc(t, f, config.OpenSubtitles{}, dir)
 	s0, d0 := f.searches.Load(), f.downloads.Load()
-	out2, err := svc2.SidecarsForRelease(ctx, episode, user, nil, "Show.S01E02.1080p.WEB")
-	if err != nil || len(out2) != 1 || out2[0].ExternalURL != out[0].ExternalURL {
-		t.Fatalf("index reuse: %+v %v", out2, err)
+	out, err := svc2.SidecarsForRelease(ctx, episode, user, nil, "Show.S01E02.1080p.WEB")
+	if err != nil || len(out) != 1 || out[0].ExternalURL != st.ExternalURL {
+		t.Fatalf("remembered pick: %+v %v", out, err)
 	}
-	if f.searches.Load() != s0 || f.downloads.Load() != d0 {
-		t.Fatal("remembered selection still hit the network")
-	}
-	// A different release is ranked separately.
 	if _, err := svc2.SidecarsForRelease(ctx, episode, user, nil, "Show.S01E02.720p.HDTV"); err != nil {
 		t.Fatal(err)
 	}
-	if f.searches.Load() != s0+1 {
-		t.Fatal("different release should search again")
-	}
-
-	// Negative cache: nothing found is remembered.
-	f.empty = true
-	movie := &core.Title{Key: core.MovieKey(5), Type: core.TypeMovie}
-	for i := 0; i < 3; i++ {
-		if out, err := svc.Sidecars(ctx, movie, user, nil); err != nil || len(out) != 0 {
-			t.Fatalf("empty: %+v %v", out, err)
-		}
-	}
-	f.mu.Lock()
-	q = f.lastQuery
-	f.mu.Unlock()
-	if q["tmdb_id"] != "5" || q["type"] != "movie" {
-		t.Fatalf("movie query from key: %v", q)
-	}
-	if n := f.searches.Load(); n != s0+2 {
-		t.Fatalf("negative cache: %d searches", n-s0)
+	if f.searches.Load() != s0 || f.downloads.Load() != d0 {
+		t.Fatal("listing a remembered pick hit the network")
 	}
 }
 
 func TestDownloadQuotaReloginAndRateLimit(t *testing.T) {
 	ctx := context.Background()
 	f := newOSFake(t)
-	svc := newSvc(t, f, config.OpenSubtitles{Username: "u", Password: "p"}, t.TempDir())
+	var logs bytes.Buffer
+	svc := New(Options{
+		Config:   config.OpenSubtitles{Enabled: true, APIKey: "k", Username: "u", Password: "p"},
+		CacheDir: t.TempDir(), BaseURL: f.srv.URL, MaxRetryAfter: 10 * time.Millisecond,
+		Logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	})
 	f.rateLimitOnce.Store(true)
 	f.expireToken = "tok1"
-	user := &core.User{SubtitleLanguages: []string{"fr"}}
 	title := &core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, IDs: core.IDs{IMDB: "tt0000001"}}
-	out, err := svc.Sidecars(ctx, title, user, nil)
-	if err != nil || len(out) != 1 {
-		t.Fatalf("relogin path: %+v %v", out, err)
+	if _, err := svc.SearchOnDemand(ctx, title, "fr", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DownloadOnDemand(ctx, title, 11); err != nil {
+		t.Fatalf("relogin path: %v", err)
 	}
 	if f.logins.Load() != 2 {
 		t.Fatalf("expired token should trigger one re-login, got %d logins", f.logins.Load())
@@ -203,19 +186,26 @@ func TestDownloadQuotaReloginAndRateLimit(t *testing.T) {
 		t.Fatalf("429 should be retried once: %d searches", f.searches.Load())
 	}
 
-	// Quota: one download attempt, then no more for any language.
 	f.quota = true
 	d0 := f.downloads.Load()
-	user2 := &core.User{SubtitleLanguages: []string{"es", "it", "nl"}}
-	out, err = svc.Sidecars(ctx, &core.Title{Key: core.MovieKey(2), Type: core.TypeMovie}, user2, nil)
-	if err != nil || len(out) != 0 {
-		t.Fatalf("quota: %+v %v", out, err)
+	title2 := &core.Title{Key: core.MovieKey(2), Type: core.TypeMovie}
+	if _, err := svc.SearchOnDemand(ctx, title2, "es", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DownloadOnDemand(ctx, title2, 11); !errors.Is(err, ErrQuota) {
+		t.Fatalf("quota: %v", err)
+	}
+	if _, err := svc.DownloadOnDemand(ctx, title2, 12); !errors.Is(err, ErrQuota) {
+		t.Fatalf("second pick after quota: %v", err)
 	}
 	if n := f.downloads.Load() - d0; n != 1 {
 		t.Fatalf("quota should stop after first refusal, got %d downloads", n)
 	}
 	if _, err := svc.requestLink(ctx, Candidate{FileID: 1}); !errors.Is(err, ErrQuota) {
 		t.Fatalf("quota remembered until reset: %v", err)
+	}
+	if !strings.Contains(logs.String(), "opensubtitles download quota exhausted") || !strings.Contains(logs.String(), "2099-01-01T00:00:00Z") {
+		t.Fatalf("quota log: %s", logs.String())
 	}
 }
 
@@ -246,12 +236,15 @@ func TestLegacyEncodingsAndZip(t *testing.T) {
 		return zbuf.Bytes()
 	}
 	svc := newSvc(t, f, config.OpenSubtitles{}, t.TempDir())
-	out, err := svc.Sidecars(ctx, &core.Title{Key: core.MovieKey(3), Type: core.TypeMovie}, &core.User{SubtitleLanguages: []string{"ru"}},
-		[]core.StreamInfo{{Index: 0, Type: "video"}, {Index: 1, Type: "audio", Language: "rus"}, {Index: 2, Type: "subtitle", Language: "eng"}})
-	if err != nil || len(out) != 1 || out[0].Index != 3 {
-		t.Fatalf("ru sidecar: %+v %v", out, err)
+	title := &core.Title{Key: core.MovieKey(3), Type: core.TypeMovie}
+	if _, err := svc.SearchOnDemand(ctx, title, "ru", ""); err != nil {
+		t.Fatal(err)
 	}
-	rc, _, err := svc.Open(out[0].ExternalURL)
+	picked, err := svc.DownloadOnDemand(ctx, title, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, _, err := svc.Open(picked.ExternalURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,17 +275,19 @@ func TestConcurrentSidecarsSingleFlight(t *testing.T) {
 	ctx := context.Background()
 	f := newOSFake(t)
 	svc := newSvc(t, f, config.OpenSubtitles{}, t.TempDir())
-	user := &core.User{SubtitleLanguages: []string{"sv"}}
 	title := &core.Title{Key: core.MovieKey(4), Type: core.TypeMovie}
+	if _, err := svc.SearchOnDemand(ctx, title, "sv", ""); err != nil {
+		t.Fatal(err)
+	}
 	var wg sync.WaitGroup
 	urls := make([]string, 8)
 	for i := range urls {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			out, err := svc.Sidecars(ctx, title, user, nil)
-			if err == nil && len(out) == 1 {
-				urls[i] = out[0].ExternalURL
+			st, err := svc.DownloadOnDemand(ctx, title, 11)
+			if err == nil {
+				urls[i] = st.ExternalURL
 			}
 		}(i)
 	}

@@ -635,7 +635,7 @@ func planFilterChain(s runSpec, v *core.StreamInfo, pic picturePlan, accel strin
 		inputArgs = append(inputArgs, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
 		chain = append(chain, fmt.Sprintf("scale_vt=w=%d:h=%d:color_matrix=bt709:color_primaries=bt709:color_transfer=bt709", pic.w, pic.h))
 		hwFrames = true
-	case accel == AccelVAAPI && !burn && !gpuOff && (!pic.tonemap || s.Features.hasFilter("tonemap_vaapi")):
+	case accel == AccelVAAPI && !burn && !gpuOff && !s.Accel.NoGPUScale && (!pic.tonemap || s.Features.hasFilter("tonemap_vaapi")):
 		dev := s.Accel.Device
 		if dev == "" {
 			dev = DefaultVAAPIDevice

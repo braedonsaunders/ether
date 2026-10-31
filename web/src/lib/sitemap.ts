@@ -369,7 +369,7 @@ export const PAGES = localized<PageDef[]>(() => [
     href: "/maintenance/logs",
     title: t("Logs"),
     sections: [],
-    keywords: searchTerms(msg("errors debug")),
+    keywords: searchTerms(msg("errors debug support zip record a problem")),
   },
 ]);
 

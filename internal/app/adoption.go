@@ -17,7 +17,7 @@ func (a *App) buildAdoption() {
 		self := a.cluster.Self()
 		a.backups.SetCluster(backup.Node{ID: self.ID, Name: self.Name})
 	}
-	a.migration = migrate.New(a.db, a.catalog, migrate.Options{State: a.state})
+	a.migration = migrate.New(a.db, a.catalog, migrate.Options{State: a.state, Logger: a.log.With("component", "migrate")})
 }
 
 // backgroundGroup joins component loops before App.Close releases SQLite.

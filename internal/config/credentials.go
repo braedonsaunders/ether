@@ -70,6 +70,56 @@ func credentialKey(dir string, existing []byte) ([]byte, error) {
 	}
 	return key, nil
 }
+
+// ProtectedValues returns the plaintext config strings the credential walker
+// treats as secrets, including usernames, tokens, passwords, API keys,
+// URL templates, secret-settings values, and the database URL.
+// The result is for redaction. Callers must not write it into an archive.
+func ProtectedValues(cfg Config) []string {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil
+	}
+	var root any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil
+	}
+	var out []string
+	collectProtected(root, "", &out)
+	return out
+}
+
+func collectProtected(v any, parent string, out *[]string) {
+	switch x := v.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			value := x[k]
+			if inner, ok := value.(map[string]any); ok && k == "secretSettings" {
+				for _, sk := range sortedKeys(inner) {
+					if text, ok := inner[sk].(string); ok && text != "" {
+						*out = append(*out, text)
+					}
+				}
+				continue
+			}
+			if text, ok := value.(string); ok && text != "" && (secretField(k) || secretChild(parent, k)) {
+				*out = append(*out, text)
+				continue
+			}
+			collectProtected(value, k, out)
+		}
+	case []any:
+		for _, value := range x {
+			collectProtected(value, parent, out)
+		}
+	}
+}
+
 func secretField(k string) bool {
 	switch strings.ToLower(k) {
 	case "urltemplate", "token", "apikey", "password", "clientsecret", "username", "tmdbkey":

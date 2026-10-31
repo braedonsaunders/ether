@@ -12,6 +12,7 @@ import (
 func TestHomeHubsDropRecommenderDuplicates(t *testing.T) {
 	f := newFixture()
 	f.srv.Close()
+	f.state.set(ownerUser.ID, core.WatchStatus{Key: fightClub.Key, ViewOffset: 60_000, LastViewedAt: fixedNow})
 	d := f.srv.d
 	d.Recommender = &fakeRecommender{home: []core.Hub{
 		{ID: "home.continue", Title: "Continue Watching", Context: "hub.home.continue", Promoted: true, Items: []core.Title{fightClub}},
