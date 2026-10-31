@@ -12,8 +12,8 @@ now live in `internal/experience` still exist; they are no longer Plex wire code
 
 | Bucket | Lines | What it is |
 | --- | ---: | --- |
-| `internal/plex` production | 17,240 | Non-test Go files directly in `internal/plex` (not `model/`) |
-| Broker-owned Plex files | 3,215 | Playback, transcode, sessions, decision and DASH files listed below. This slice does not edit them |
+| `internal/plex` production | 17,228 | Non-test Go files directly in `internal/plex` (not `model/`) |
+| Broker-owned Plex files | 3,203 | Playback, transcode, sessions, decision and DASH files listed below. This slice does not edit them |
 | Plex renderer remainder | 14,025 | Production lines minus the broker-owned files |
 | `internal/plex/model` | 1,602 | Plex XML/JSON types and encoding, counted separately because it is another package |
 | `internal/experience` production | 7,860 | Shared home, continue, search, policy and rows |
@@ -34,12 +34,12 @@ the Home renderer.
 
 | File | Lines |
 | --- | ---: |
-| `playback.go` | 1,387 |
+| `playback.go` | 1,388 |
 | `playqueue.go` | 881 |
 | `variants.go` | 407 |
 | `handlers_dash.go` | 213 |
 | `stream_auth.go` | 167 |
-| `stop.go` | 113 |
+| `stop.go` | 100 |
 | `playback_lifecycle.go` | 47 |
 
 ## Renderer remainder, largest files
