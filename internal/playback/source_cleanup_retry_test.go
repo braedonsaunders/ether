@@ -358,7 +358,7 @@ func TestOwnedSourceCleanupSharedAndNewerOwner(t *testing.T) {
 		finishB(nil)
 	}
 	requireSourceResponsibilities(t, h.m, 0, 0)
-	if e.closes.Load() != 2 {
+	if e.closes.Load() != 1 {
 		t.Fatalf("backend closes=%d", e.closes.Load())
 	}
 	if err := newer.release(ctx, next); err != nil {

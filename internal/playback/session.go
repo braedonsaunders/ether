@@ -36,6 +36,7 @@ type generation struct {
 	n            int
 	token        string // loopback path component; unguessable
 	src          core.MediaSource
+	sharedClose  func() error
 	finishSource func(error)
 	res          *core.Resolution
 	info         core.MediaInfo
@@ -107,11 +108,17 @@ func (g *generation) retire() {
 }
 
 func (g *generation) closeSource() {
-	if g.src != nil {
-		err := g.src.Close()
-		if g.finishSource != nil {
-			g.finishSource(err)
-		}
+	if g.src == nil && g.sharedClose == nil {
+		return
+	}
+	var err error
+	if g.sharedClose != nil {
+		err = g.sharedClose()
+	} else if g.src != nil {
+		err = g.src.Close()
+	}
+	if g.finishSource != nil {
+		g.finishSource(err)
 	}
 }
 

@@ -99,6 +99,16 @@ type Options struct {
 	// DBRetryMin / DBRetryMax bound the backoff while a clustered node
 	// waits at startup for an unreachable PostgreSQL server (1s / 30s).
 	DBRetryMin, DBRetryMax time.Duration
+	// FixtureMedia, when set, is the resolver indexer, release health checker,
+	// and playback engine. Production leaves it nil.
+	FixtureMedia interface {
+		core.Indexer
+		core.HealthChecker
+		core.Engine
+	}
+	// FixtureTranscoder, when set, replaces the ffmpeg manager so every
+	// protocol shares one transcode budget without an encoder binary.
+	FixtureTranscoder core.Transcoder
 }
 
 // App is a running Ether server.

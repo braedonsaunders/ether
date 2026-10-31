@@ -157,7 +157,7 @@ func (m *Manager) openSource(ctx context.Context, s *sourceLifetime, res *core.R
 			ticket.settle(nil)
 		})
 	}
-	src, err := m.deps.Engine.Open(ctx, res.Release.ID, res.NZB)
+	src, err := m.openShared(ctx, res)
 	if err != nil || src == nil {
 		if src != nil {
 			finish(src.Close())

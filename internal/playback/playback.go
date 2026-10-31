@@ -233,6 +233,11 @@ type Manager struct {
 	pinsSwept    bool
 	pinKick      chan struct{}
 
+	// sharedMu guards one backend open per release payload. Distinct
+	// sessions keep their own ids and stop independently.
+	sharedMu sync.Mutex
+	shared   map[string]*sharedHold
+
 	ln      net.Listener
 	srv     *http.Server
 	baseURL string

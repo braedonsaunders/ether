@@ -10,6 +10,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/admin"
 	"github.com/braedonsaunders/ether/internal/cardigann"
 	"github.com/braedonsaunders/ether/internal/config"
+	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/debrid"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/resolver"
@@ -80,7 +81,12 @@ func (a *App) buildSources(ctx context.Context, cfg config.Config) error {
 		}
 		return false
 	})
-	a.resolver = resolver.New(parityIndexer(a.sources, dataDir), parityHealth(a.media, dataDir), a.db, cfg, resolver.Options{Now: parityClock(), SearchObserved: a.observeSearch, Discovered: a.discoveredReleases, Observed: a.observeRelease, Invalidated: a.invalidateRelease, Logger: log.With("component", "resolver")})
+	indexer := core.Indexer(parityIndexer(a.sources, dataDir))
+	health := core.HealthChecker(parityHealth(a.media, dataDir))
+	if a.opts.FixtureMedia != nil {
+		indexer, health = a.opts.FixtureMedia, a.opts.FixtureMedia
+	}
+	a.resolver = resolver.New(indexer, health, a.db, cfg, resolver.Options{Now: parityClock(), SearchObserved: a.observeSearch, Discovered: a.discoveredReleases, Observed: a.observeRelease, Invalidated: a.invalidateRelease, Logger: log.With("component", "resolver")})
 	a.resolver.SetSourceSignals(a.debrid)
 	a.closers = append(a.closers, func() { a.resolver.Close() })
 

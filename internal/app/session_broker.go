@@ -23,10 +23,7 @@ func (a *App) buildSessionEvents(context.Context, config.Config) error {
 }
 
 func (a *App) newSessionBroker(events *sessions.EventBus) (*sessions.Broker, error) {
-	var tc core.Transcoder
-	if a.transcoder != nil {
-		tc = a.transcoder
-	}
+	tc := a.activeTranscoder()
 	var live sessions.LiveBackend
 	if a.livetv != nil {
 		live = sessionLive{service: a.livetv, cached: a.catalog.CachedGet}
