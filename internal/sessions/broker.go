@@ -79,6 +79,8 @@ type brokerPlan struct {
 	versionHandle string
 	opening       bool
 	pinned        bool
+	// external is a Plex admission: the adapter already prepared the source.
+	external bool
 }
 type brokerSession struct {
 	trickplay        *trickplay.Holder
@@ -316,6 +318,11 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	}
 	if req.Protocol == "silo" && req.Intent.ClientSessionID != "" && !canonicalUUID(req.Intent.ClientSessionID) {
 		return frontend.PlayPlan{}, core.ErrUnauthorized
+	}
+	if req.Protocol == "plex" {
+		if admit, ok := plexAdmissionFrom(ctx); ok {
+			return b.planPlexAdmission(ctx, req, admit)
+		}
 	}
 	// Plex-specific version and stream identifiers remain on the existing Plex
 	// path until its adapter can translate them into neutral selections.
@@ -695,6 +702,18 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	if err != nil {
 		return frontend.Session{}, err
 	}
+	if req.Protocol == "plex" && p.external {
+		if !validPlexTranscodeID(p.request.Intent.ClientSessionID) {
+			return frontend.Session{}, core.ErrNotAvailable
+		}
+		id = p.request.Intent.ClientSessionID
+		if reused, ok, reuseErr := b.reusePlexSession(ctx, v, req, p, ps, id); ok || reuseErr != nil {
+			if ok {
+				transferred = true
+			}
+			return reused, reuseErr
+		}
+	}
 	grant := rand.Text()
 	playbackID := p.request.Intent.PlaybackID
 	if playbackID == "" && req.Protocol != "plex" {
@@ -729,7 +748,15 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		}
 		return frontend.Session{}, core.ErrNotAvailable
 	}
-	if scoped, ok := b.deps.Playback.(core.SurfaceScopedPlayback); !ok || !scoped.MarkSurfaceOpened(ps.ID) {
+	if !p.external {
+		if scoped, ok := b.deps.Playback.(core.SurfaceScopedPlayback); !ok || !scoped.MarkSurfaceOpened(ps.ID) {
+			b.mu.Unlock()
+			if b.cluster != nil {
+				_ = b.cluster.store.remove(ctx, session.ID)
+			}
+			return frontend.Session{}, core.ErrNotAvailable
+		}
+	} else if scoped, ok := b.deps.Playback.(core.SurfaceScopedPlayback); ok && !scoped.MarkSurfaceOpened(ps.ID) {
 		b.mu.Unlock()
 		if b.cluster != nil {
 			_ = b.cluster.store.remove(ctx, session.ID)
@@ -940,7 +967,11 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if !b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
 		b.owners.BindFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID, s.playID, false, b.deps.Now())
 	}
-	ctx = state.WithOrigin(ctx, state.Origin{Surface: s.public.Protocol, SessionID: s.public.ID, ClientID: s.public.Device.ID})
+	originSession := s.public.ID
+	if s.public.Protocol == "plex" && s.playbackID != "" {
+		originSession = s.playbackID
+	}
+	ctx = state.WithOrigin(ctx, state.Origin{Surface: s.public.Protocol, SessionID: originSession, ClientID: s.public.Device.ID})
 	if sequenced {
 		err = b.deps.Progress.(receiptProgress).ProgressWithReceipt(ctx, s.public.ViewerID, s.public.Item, t.Position, t.Duration, t.State, b.sampleReceipt(ctx, s, report))
 	} else {
@@ -966,7 +997,8 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
 		progress.PlaybackProgress(s.public.ViewerID, s.clientID, s.public.Item, t.Position, t.State)
 	}
-	if b.deps.OnTimeline != nil {
+	// Plex keeps its own timeline hook so a broker report does not prefetch twice.
+	if b.deps.OnTimeline != nil && s.public.Protocol != "plex" {
 		b.deps.OnTimeline(v, s.public.Item, t.Position, t.Duration, t.State)
 	}
 	b.publish(ctx, sessionEvent("SessionUpdated", s.public, &t))

@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/transcode"
@@ -440,6 +441,11 @@ func (s *Server) handleDecision(w http.ResponseWriter, r *http.Request) {
 		s.write(w, r, s.decisionError(ctx, pr, t, err, p))
 		return
 	}
+	if err := s.publishBrokerPlayback(ctx, pr, &p, ps, dec); err != nil {
+		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
+		writeHTTPError(w, http.StatusServiceUnavailable)
+		return
+	}
 	s.write(w, r, s.decisionContainer(ctx, pr, t, ps, dec, p))
 }
 
@@ -822,6 +828,11 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
+	if err := s.publishBrokerPlayback(ctx, pr, &p, ps, entry.decision); err != nil {
+		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
+		writeHTTPError(w, http.StatusServiceUnavailable)
+		return
+	}
 
 	dec := sessions.HLSDecision(entry.decision, p.opts.DirectPlay, func() core.Decision {
 		resolvePlaySelection(&p, ps.Info)
@@ -838,6 +849,7 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 	})
 	if existing, ok := s.d.Transcoder.Session(p.sessionID); ok && existing != nil {
 		if entry.started && entry.offset == p.offset {
+			s.notePlexEncoder(p.sessionID, frontend.StreamHLS, dec, p.offset)
 			unlockEncoder()
 			unlockOwner()
 			s.writeMasterPlaylist(w, r, p.sessionID, existing, ps.Info, dec)
@@ -859,6 +871,7 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.decision, entry.offset, entry.started, entry.updatedAt = dec, p.offset, true, s.now()
 	s.transcodes.put(entry)
+	s.notePlexEncoder(p.sessionID, frontend.StreamHLS, dec, p.offset)
 	unlockEncoder()
 	unlockOwner()
 	s.writeMasterPlaylist(w, r, p.sessionID, hs, ps.Info, dec)
@@ -1062,7 +1075,17 @@ func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {
 		// Retire a superseded encoder without releasing that prepared source,
 		// including stops that omit the external playback identifier.
 		superseded := s.playbackOwners.Stale(e.userID, e.clientID, e.key, e.playbackID)
-		if !superseded && !shared && e.playID != "" && s.d.Playback != nil {
+		brokerOwns := false
+		// Another encoder, or a replacement decision, still owns this source.
+		// Broker Stop would release it.
+		if !superseded && !shared {
+			if lookup, ok := s.playbackBroker.(plexPlaybackLookup); ok && pr.User != nil {
+				if sid, lookupErr := lookup.PlexSessionForPlayback(r.Context(), s.plexAccess(pr), e.key, pr.SessionID, id); lookupErr == nil && sid == id {
+					brokerOwns = s.playbackBroker.Stop(r.Context(), s.plexAccess(pr), id) == nil
+				}
+			}
+		}
+		if !brokerOwns && !superseded && !shared && e.playID != "" && s.d.Playback != nil {
 			s.d.Playback.Stop(e.playID)
 		}
 		if s.d.Transcoder != nil {
@@ -1191,6 +1214,31 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodHead && r.URL.Query().Get("download") != "1" {
 		s.playbackOwners.Bind(pr.User.ID, pr.ClientID, key, pr.SessionID, ps.ID, false, s.now())
+		sessionID := pr.SessionID
+		if sessionID == "" {
+			sessionID = sanitizeSessionID(pr.ClientID + "-" + key.String())
+		}
+		partPlay := playRequest{key: key, caps: pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps), sessionID: sanitizeSessionID(sessionID), audioSel: -1, subSel: -1}
+		if partPlay.caps.ClientID == "" {
+			partPlay.caps.ClientID = pr.ClientID
+		}
+		// A part range of a playback that is already on the broker must not
+		// open a second session. That open supersedes the live encoder.
+		already := false
+		if lookup, ok := s.playbackBroker.(plexPlaybackLookup); ok {
+			if sid, lookupErr := lookup.PlexSessionForPlayback(ctx, s.plexAccess(pr), key, "", ""); lookupErr == nil && sid != "" {
+				if playID, ok := lookup.PlexSessionSource(sid); ok && playID == ps.ID {
+					already = true
+				}
+			}
+		}
+		if !already {
+			if err := s.publishBrokerPlayback(ctx, pr, &partPlay, ps, core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true}); err != nil {
+				s.log.Info("direct play broker publish failed", "key", key, "err", err)
+				s.writeErr(w, r, err)
+				return
+			}
+		}
 	}
 	if r.URL.Query().Get("download") == "1" {
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+strings.ReplaceAll(chi.URLParam(r, "file"), "\"", "")+"\"")

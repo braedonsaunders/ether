@@ -11,9 +11,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/state"
 )
 
-// Frontend adapts the existing PMS handler to the frontend registry. The app
-// owns the server's lifetime because Plex-only integrations still reference it;
-// unmounting removes its handler without replacing its playback callbacks.
+// Frontend adapts the existing PMS handler to the frontend registry.
+// Unmount stops this mount's broker sessions and its watch subscription.
+// The process-owned server stays up so an in-flight request can finish.
 type Frontend struct {
 	NewServer  func() (*Server, error)
 	Server     *Server
@@ -44,6 +44,9 @@ func (f Frontend) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if f.Server != nil {
+		f.Server.UsePlaybackBroker(host.Sessions)
+	}
 	instance := &plexInstance{sessions: host.Sessions, server: f.Server, status: f.StatusFunc, listeners: f.ListenersFunc}
 	if f.WatchState != nil {
 		instance.unsubscribe = subscribeWatchRefresh(f.WatchState, f.Server.WatchStateChanged, f.ExplicitWatchOnly)
@@ -53,7 +56,8 @@ func (f Frontend) Mount(ctx context.Context, host frontend.Host) (frontend.Insta
 
 type plexInstance struct {
 	server *Server
-	// sessions is immutable per mount; never install it on the retained Server.
+	// sessions is this mount's broker. The retained server is updated on each
+	// mount so its playback handlers publish through the current broker.
 	sessions    frontend.Sessions
 	unsubscribe func()
 	closeOnce   sync.Once
@@ -77,10 +81,13 @@ func (i *plexInstance) Status(ctx context.Context) frontend.Status {
 	}
 	return frontend.Status{}
 }
-func (i *plexInstance) Close(context.Context) error {
+func (i *plexInstance) Close(ctx context.Context) error {
 	i.closeOnce.Do(func() {
 		if i.unsubscribe != nil {
 			i.unsubscribe()
+		}
+		if stop, ok := i.sessions.(plexProtocolStop); ok {
+			_ = stop.StopProtocol(ctx, "plex")
 		}
 	})
 	return nil
@@ -88,8 +95,8 @@ func (i *plexInstance) Close(context.Context) error {
 
 var _ frontend.Frontend = Frontend{}
 
-// sessionBroker is the fail-closed seam for future migrated handlers. Capturing
-// the host here does not route existing Plex traffic through the shared broker.
+// sessionBroker is the mounted shared broker. Playback handlers publish
+// through it; a missing broker fails closed for migrated calls.
 func (i *plexInstance) sessionBroker() (frontend.Sessions, error) {
 	if i.sessions == nil {
 		return nil, core.ErrNotAvailable

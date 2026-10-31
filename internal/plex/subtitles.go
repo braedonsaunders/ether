@@ -24,7 +24,6 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
-	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/subtitles"
 )
@@ -90,41 +89,10 @@ func resolveSubtitle(want *core.StreamInfo, pos int, info core.MediaInfo) int {
 // Within that language prefer the same codec, channel layout and track label;
 // position breaks ties but can never override a language mismatch.
 func resolveAudio(want *core.StreamInfo, pos int, info core.MediaInfo) int {
-	best, bestScore := -1, -1
-	for i, st := range info.Streams {
-		if st.Type != "audio" {
-			continue
-		}
-		if want.Language == "" {
-			// Without a language, only retain a fully matching track at its position.
-			if i == pos && sameStreamIdentity(*want, st) {
-				return i
-			}
-			continue
-		}
-		tier := langtag.MatchTier(want.Language, st.Language)
-		if tier == 0 {
-			continue
-		}
-		// Exact language/script/region outranks every codec/layout hint.
-		score := tier * 32
-		if st.Codec == want.Codec {
-			score += 8
-		}
-		if st.Channels == want.Channels {
-			score += 4
-		}
-		if st.Title == want.Title {
-			score += 2
-		}
-		if i == pos {
-			score++
-		}
-		if score > bestScore {
-			best, bestScore = i, score
-		}
+	if want == nil {
+		return -1
 	}
-	return best
+	return experience.ResolveAudio(want, pos, info)
 }
 
 // resolveSelection maps stored track identities onto the current positions. A
@@ -147,9 +115,15 @@ func resolveSelection(sel selection, info core.MediaInfo) selection {
 
 // resolvePlaySelection is resolveSelection for a play request.
 func resolvePlaySelection(p *playRequest, info core.MediaInfo) {
-	sel := resolveSelection(selection{audio: p.audioSel, audioSet: p.audioSel >= 0, audioStream: p.audioStream, subtitle: p.subSel, subtitleSet: p.subSet, subtitleStream: p.subStream}, info)
-	p.audioSel = sel.audio
-	p.subSel, p.subSet = sel.subtitle, sel.subtitleSet
+	out, err := experience.TranslatePlexTrackIdentity(experience.PlexIssuedIdentity{
+		Audio: p.audioStream, AudioPosition: p.audioSel, AudioSet: p.audioSel >= 0,
+		Subtitle: p.subStream, SubtitlePosition: p.subSel, SubtitleSet: p.subSet,
+	}, info)
+	if err != nil {
+		return
+	}
+	p.audioSel = out.Audio
+	p.subSel, p.subSet = out.Subtitle, out.SubtitleSet
 	if !p.subSet {
 		p.subSel = -1
 	}
