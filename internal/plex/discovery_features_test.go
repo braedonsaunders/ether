@@ -97,6 +97,29 @@ func TestDiscoveryLocalizedGridQueuesWithoutNetworkWait(t *testing.T) {
 		t.Fatalf("localized cache/canonical mutation %q %q", m.Title, fightClub.Title)
 	}
 }
+func TestOverviewTranslationRunsOnDetailNotOnAList(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	var calls atomic.Int32
+	f.srv.d.Discovery = &DiscoveryFeatures{OverviewTranslate: func(_ context.Context, _ *core.Title, lang string, detail bool) (string, string, bool) {
+		if lang != "fr" || !detail {
+			return "", "", false
+		}
+		calls.Add(1)
+		return "Bonjour", "Slogan", true
+	}}
+	pr := &Request{User: &core.User{ID: 1, IsOwner: true}, Language: "fr"}
+	title := fightClub
+	listed := f.srv.metadata(context.Background(), pr, &title, renderOpts{})
+	if calls.Load() != 0 || listed.Summary == "Bonjour" {
+		t.Fatalf("list row called translation %d %q", calls.Load(), listed.Summary)
+	}
+	opened := f.srv.metadata(context.Background(), pr, &title, renderOpts{detail: true})
+	if calls.Load() != 1 || opened.Summary != "Bonjour" || opened.Tagline != "Slogan" {
+		t.Fatalf("detail %d %q %q", calls.Load(), opened.Summary, opened.Tagline)
+	}
+}
+
 func TestDiscoveryPlexRatingNormalizationAndStickyDismissal(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()

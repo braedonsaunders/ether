@@ -399,6 +399,12 @@ type LLM struct {
 	BaseURL string `json:"baseUrl"`
 	APIKey  string `json:"apiKey"`
 	Model   string `json:"model"`
+	// Speech is an OpenAI-compatible transcription endpoint (Whisper).
+	// It is independent of Enabled: subtitle-from-audio uses it only when
+	// an owner turns that feature on and a viewer asks for the track.
+	SpeechBaseURL string `json:"speechBaseUrl,omitempty"`
+	SpeechAPIKey  string `json:"speechApiKey,omitempty"`
+	SpeechModel   string `json:"speechModel,omitempty"`
 }
 
 type Updates struct {

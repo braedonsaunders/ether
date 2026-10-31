@@ -126,6 +126,15 @@ func (s *Service) Enabled() bool {
 	return s != nil && s.client != nil && s.client.Enabled() && s.catalog != nil
 }
 
+// Chat is one completion. Language features use it for translations.
+// Home recommendations keep using the cached Service methods.
+func (s *Service) Chat(ctx context.Context, system, user string) (string, error) {
+	if s == nil || s.client == nil {
+		return "", fmt.Errorf("llm disabled")
+	}
+	return s.client.Chat(ctx, []Message{{Role: "system", Content: system}, {Role: "user", Content: user}}, false)
+}
+
 // Invalidate drops cached rows for a user (e.g. on an admin "refresh").
 func (s *Service) Invalidate(userID int64) {
 	s.mu.Lock()

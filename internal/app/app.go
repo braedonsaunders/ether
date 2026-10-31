@@ -32,6 +32,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/favorites"
 	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/identity"
+	"github.com/braedonsaunders/ether/internal/langfeat"
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/llm"
 	"github.com/braedonsaunders/ether/internal/logredact"
@@ -168,6 +169,7 @@ type App struct {
 	recommend     *recommend.Recommender
 	personalize   *personalize.Engine
 	subtitles     *subtitles.Service
+	lang          *langfeat.Service
 	fetcher       *usenet.Fetcher
 	cache         *segcache.Cache
 	cacheConfig   atomic.Pointer[config.Cache]

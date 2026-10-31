@@ -5,6 +5,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/discovery"
 	"github.com/braedonsaunders/ether/internal/frontend"
+	"github.com/braedonsaunders/ether/internal/langfeat"
 	"github.com/braedonsaunders/ether/internal/overlays"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/ratings"
@@ -52,6 +53,16 @@ func (a *App) buildDiscovery() {
 		return tags
 	}})
 	a.discoveryFeatures = &discovery.Features{Watchlist: a.watchlist, Ratings: a.ratings, Overlays: a.overlays, Personal: a.discoveryPersonal, LLM: a.llm, Localize: a.tmdb.Localized}
+	a.lang = langfeat.New(langfeat.Options{
+		Dir:        filepath.Join(a.opts.DataDir, "cache", "langfeat"),
+		Gates:      a.languageGates,
+		Translate:  a.languageChat,
+		Transcribe: a.languageTranscribe,
+		Subtitles:  a.subtitles,
+		Audio:      a.languageAudio,
+		SourceText: a.languageSourceText,
+	})
+	a.discoveryFeatures.OverviewTranslate = a.lang.Overview
 }
 func (a *App) overlayFacts(ctx context.Context, u *core.User, t *core.Title, status, quality bool) overlays.Facts {
 	f := overlays.Facts{}
@@ -90,7 +101,14 @@ func (a *App) overlayFacts(ctx context.Context, u *core.User, t *core.Title, sta
 	return f
 }
 func (a *App) discoveryHandlers(m map[string]http.Handler) {
-	m["discovery"] = a.watchlist.Router()
+	base := a.watchlist.Router()
+	m["discovery"] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/translate" {
+			a.translateOverview(w, r)
+			return
+		}
+		base.ServeHTTP(w, r)
+	})
 	m["discovery/ratings"] = a.ratings.Router(a.catalog)
 	m["discovery/overlays"] = a.overlays.Router(a.catalog, func(r *http.Request, id int64) (*core.User, error) {
 		u, err := a.users.User(r.Context(), id)

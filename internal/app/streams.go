@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"errors"
+
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/langfeat"
 	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/subtitles"
@@ -67,13 +70,18 @@ func (p plexSubtitles) OpenFormatAt(id, format string, offset time.Duration) (io
 }
 
 func (p plexSubtitles) CachedSidecars(ctx context.Context, t *core.Title, u *core.User, embedded []core.StreamInfo) []core.StreamInfo {
-	return p.a.subtitles.CachedSidecars(t, p.a.subtitleUser(ctx, u), embedded, p.a.subtitlePrefs(ctx, u))
+	out := p.a.subtitles.CachedSidecars(t, p.a.subtitleUser(ctx, u), embedded, p.a.subtitlePrefs(ctx, u))
+	if !p.a.subtitles.Enabled() {
+		out = append(out, p.a.subtitles.ManualSidecars(t, embedded)...)
+	}
+	return out
 }
 
 func (p plexSubtitles) SearchSubtitles(ctx context.Context, t *core.Title, _ *core.User, lang, release string) ([]plex.SubtitleOffer, error) {
-	cands, err := p.a.subtitles.SearchOnDemand(ctx, t, lang, release)
-	if err != nil {
-		return nil, err
+	asked := lang
+	cands, searchErr := p.a.subtitles.SearchOnDemand(ctx, t, lang, release)
+	if searchErr != nil {
+		cands = nil
 	}
 	out := make([]plex.SubtitleOffer, 0, len(cands))
 	for _, c := range cands {
@@ -90,10 +98,26 @@ func (p plexSubtitles) SearchSubtitles(ctx context.Context, t *core.Title, _ *co
 			PerfectMatch: c.HashMatch || (release != "" && strings.EqualFold(c.Release, release)),
 		})
 	}
+	if p.a.lang != nil {
+		for _, o := range p.a.lang.Offers(t, asked) {
+			out = append(out, plex.SubtitleOffer{
+				ID: o.ID, Language: o.Language, Title: o.Title, Provider: o.Provider,
+			})
+		}
+	}
+	if searchErr != nil && len(out) == 0 {
+		return nil, searchErr
+	}
 	return out, nil
 }
 
-func (p plexSubtitles) DownloadSubtitle(ctx context.Context, t *core.Title, _ *core.User, id int64) (core.StreamInfo, error) {
+func (p plexSubtitles) DownloadSubtitle(ctx context.Context, t *core.Title, user *core.User, id int64) (core.StreamInfo, error) {
+	if p.a.lang != nil && langfeat.IsReserved(id) {
+		st, err := p.a.lang.Fulfill(ctx, user, t, id)
+		if err == nil || !errors.Is(err, core.ErrNotFound) {
+			return st, err
+		}
+	}
 	return p.a.subtitles.DownloadOnDemand(ctx, t, id)
 }
 
