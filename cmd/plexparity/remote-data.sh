@@ -76,7 +76,7 @@ else
 fi
 rsync -az "${exclude[@]}" "$root/" "$host:$remote/driver/"
 rsync -az "$root/cmd/plexparity/" "$host:$remote/harness/"
-rsync -az "$root/internal/app/parity_runtime_default.go" "$root/internal/app/parity_runtime_fixture.go" "$root/internal/app/parity_source_default.go" "$root/internal/app/parity_source_fixture.go" "$host:$remote/harness/"
+rsync -az "$root/internal/app/parity_runtime_default.go" "$root/internal/app/parity_runtime_fixture.go" "$root/internal/app/parity_source_default.go" "$root/internal/app/parity_source_fixture.go" "$root/internal/app/lab_media.go" "$host:$remote/harness/"
 rsync -az "$root/internal/personalize/parity_wait_fixture.go" "$host:$remote/harness/"
 rsync -az "$root/internal/livetv/parity_session_fixture.go" "$host:$remote/harness/"
 rsync -az "$root/internal/transcode/parity_clock_fixture.go" "$host:$remote/harness/"
