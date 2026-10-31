@@ -861,8 +861,7 @@ func TestUnreadableRestoreRecordIsNotServed(t *testing.T) {
 			t.Skip("root ignores directory permissions")
 		}
 		a, dataDir, before := apply(t)
-		readPending = func(string) (*backup.Pending, error) { return nil, os.ErrPermission }
-		t.Cleanup(func() { readPending = backup.ReadPending })
+		a.readPending = func(string) (*backup.Pending, error) { return nil, os.ErrPermission }
 		if err := os.Chmod(dataDir, 0o500); err != nil {
 			t.Fatal(err)
 		}

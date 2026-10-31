@@ -176,9 +176,6 @@ func (a *App) restoreApplied() bool {
 	return a.restored != nil && a.restored.Status == "applied"
 }
 
-// readPending reads the restore record; tests replace it.
-var readPending = backup.ReadPending
-
 // confirmRestore records that the server is about to serve on the
 // restored backup: the report says "restored" from here on. An error
 // means the restore was not committed; the server must not serve on it
@@ -190,7 +187,11 @@ func (a *App) confirmRestore() error {
 	if err := backup.ConfirmRestore(a.opts.DataDir, a.restored); err != nil {
 		// Committed only when the record is known to be gone: a record
 		// that cannot be read (damaged since it was applied) is not.
-		if p, rerr := readPending(a.opts.DataDir); rerr == nil && p == nil {
+		read := a.readPending
+		if read == nil {
+			read = backup.ReadPending
+		}
+		if p, rerr := read(a.opts.DataDir); rerr == nil && p == nil {
 			// Committed; only the report could not be written.
 			a.restored.Status = "restored"
 			a.log.Warn("restore finished, but its report could not be saved", "err", err)

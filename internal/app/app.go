@@ -244,6 +244,8 @@ type App struct {
 	// start; boundNow is set when this start bound the front door.
 	restored *backup.Report
 	boundNow bool
+	// readPending reads the restore record (backup.ReadPending when nil).
+	readPending func(dataDir string) (*backup.Pending, error)
 	// integrity is the database's last integrity check (SQLite).
 	integrity atomic.Pointer[store.Integrity]
 	// restart is an owner-requested restart (restart.go).
