@@ -102,6 +102,10 @@ CREATE TABLE catalog_home_release (key INTEGER PRIMARY KEY, checked INTEGER NOT 
 CREATE INDEX catalog_home_release_pending ON catalog_home_release(checked,earliest_ts,fallback_admitted);
 CREATE TABLE catalog_home_release_dates (key INTEGER NOT NULL, country TEXT NOT NULL, kind INTEGER NOT NULL, released_ts INTEGER NOT NULL, PRIMARY KEY(key,country,kind,released_ts));
 `)
+	// content_rating_source records where content_rating came from; see
+	// rating.go. content_rating_rank now holds contentrating.Level, re-ranked
+	// once at startup (rankRatings).
+	store.Register("catalog", 15, `ALTER TABLE catalog_titles ADD COLUMN content_rating_source TEXT NOT NULL DEFAULT '';`)
 	store.Register("catalog", 7, `
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC);
 CREATE INDEX catalog_titles_browse_warm ON catalog_titles(browsable, detail, adult, popularity DESC, vote_count DESC);

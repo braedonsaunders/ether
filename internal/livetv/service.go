@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -426,12 +426,12 @@ func (s *Service) allowed(ctx context.Context, u *core.User, c Channel, p *Progr
 			rating = c.Rating
 		}
 	}
-	if catalog.RatingExceeds(rating, u.MaxContentRating) || catalog.RatingExceeds(rating, pol.MaxRating) {
+	if contentrating.Exceeds(rating, u.MaxContentRating) || contentrating.Exceeds(rating, pol.MaxRating) {
 		return false
 	}
 	if p != nil && p.Item.Key != 0 && s.o.Catalog != nil {
 		t, err := s.o.Catalog.Get(ctx, p.Item.Key)
-		if err != nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, pol.MaxRating) {
+		if err != nil || t.Adult || contentrating.Exceeds(t.ContentRating, u.MaxContentRating) || contentrating.Exceeds(t.ContentRating, pol.MaxRating) {
 			return false
 		}
 		if len(u.AllowedSections) > 0 {

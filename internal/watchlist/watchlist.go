@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/schedule"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -128,7 +128,7 @@ func (s *Service) SaveSettings(ctx context.Context, v Settings) error {
 	return err
 }
 func (s *Service) allowed(u *core.User, t *core.Title) bool {
-	if u == nil || t == nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
+	if u == nil || t == nil || t.Adult || contentrating.Exceeds(t.ContentRating, u.MaxContentRating) {
 		return false
 	}
 	section := 1

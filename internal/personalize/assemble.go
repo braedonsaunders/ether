@@ -5,8 +5,8 @@ import (
 	"math"
 	"sort"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // assembly turns a precomputed userModel into the rows one request
@@ -480,7 +480,7 @@ func (a *assembly) typeOK(t *core.Title) bool {
 			return false
 		}
 	}
-	return recommend.ContentRatingAllowed(t.ContentRating, a.user.MaxContentRating)
+	return contentrating.Allowed(t.ContentRating, a.user.MaxContentRating)
 }
 
 // contextItems filters a row's items for this screen and viewer, scores

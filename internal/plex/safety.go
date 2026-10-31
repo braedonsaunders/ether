@@ -2,7 +2,7 @@ package plex
 
 import (
 	"context"
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 )
 
@@ -25,7 +25,7 @@ func (s *Server) titleAllowed(u *core.User, t *core.Title) bool {
 	if t == nil || t.Adult {
 		return false
 	}
-	if u != nil && catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) {
+	if u != nil && contentrating.Exceeds(t.ContentRating, u.MaxContentRating) {
 		return false
 	}
 	return s.d.AccessPolicy == nil || s.d.AccessPolicy.Allowed(u, t)
