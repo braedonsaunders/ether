@@ -1,0 +1,612 @@
+{
+  "build": "",
+  "provisional": true,
+  "provisional_reason": "Existing tvdemo-ether fixture. It mounts the lab media and the full item listing, but it is not the matched-library target thr_zbvwd7ezjn is building and it is not origin/prism 0aaae04c8.",
+  "target": "tvdemo-ether",
+  "limits": {
+    "loadavg": "21.28 17.13 16.62 48/1977 3090239",
+    "meminfo_kb": {
+      "MemTotal": 24025072,
+      "MemAvailable": 15902052
+    },
+    "containers": {
+      "prism-jellyfin": {
+        "nano_cpus": 0,
+        "memory_bytes": 0
+      },
+      "prism-emby": {
+        "nano_cpus": 0,
+        "memory_bytes": 0
+      },
+      "tvdemo-ether": {
+        "nano_cpus": 0,
+        "memory_bytes": 0
+      }
+    },
+    "matched_unlimited": true
+  },
+  "protocols": {
+    "jellyfin": {
+      "browse": [
+        {
+          "name": "home_views",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 2,
+            "p50_ms": 35.61883501242846,
+            "p95_ms": 54.4521420088131,
+            "ttfb_p50_ms": 35.585375007940456,
+            "ttfb_p95_ms": 54.39512198790908
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 2,
+            "p50_ms": 1.3131560117471963,
+            "p95_ms": 1.9561089866328984,
+            "ttfb_p50_ms": 1.3005160144530237,
+            "ttfb_p95_ms": 1.939748995937407
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether",
+          "route": "/Users/{user}/Views"
+        },
+        {
+          "name": "library_movies",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 6,
+            "p50_ms": 40.43790799914859,
+            "p95_ms": 47.13063800591044,
+            "ttfb_p50_ms": 40.383826999459416,
+            "ttfb_p95_ms": 47.10491801961325
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 4,
+            "p50_ms": 296.2506600015331,
+            "p95_ms": 305.76638400088996,
+            "ttfb_p50_ms": 296.1852390144486,
+            "ttfb_p95_ms": 305.739164003171
+          },
+          "p50_winner": "inconclusive_cardinality",
+          "p95_winner": "inconclusive_cardinality",
+          "route": "/Users/{user}/Items"
+        },
+        {
+          "name": "library_episodes",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 40,
+            "p50_ms": 51.40558799030259,
+            "p95_ms": 79.93855999666266,
+            "ttfb_p50_ms": 50.92937601148151,
+            "ttfb_p95_ms": 79.76065899129026
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 40,
+            "p50_ms": 13950.009942986071,
+            "p95_ms": 15023.802528972737,
+            "ttfb_p50_ms": 13949.865921982564,
+            "ttfb_p95_ms": 15023.741887998767
+          },
+          "p50_winner": "reference",
+          "p95_winner": "reference",
+          "route": "/Users/{user}/Items"
+        },
+        {
+          "name": "item_detail",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": null,
+            "p50_ms": 33.9904900174588,
+            "p95_ms": 46.275389002403244,
+            "ttfb_p50_ms": 33.94368902081624,
+            "ttfb_p95_ms": 46.22692900011316
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": null,
+            "p50_ms": 224.18823899351992,
+            "p95_ms": 226.56145397922955,
+            "ttfb_p50_ms": 224.16262901970185,
+            "ttfb_p95_ms": 226.5044929808937
+          },
+          "p50_winner": "reference",
+          "p95_winner": "reference",
+          "route": "/Items/df1d197c61e16ff4a9caa4681edc52fb"
+        },
+        {
+          "name": "search",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 3,
+            "p50_ms": 42.5108989875298,
+            "p95_ms": 50.9779290005099,
+            "ttfb_p50_ms": 42.48333899886347,
+            "ttfb_p95_ms": 50.689355994109064
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 1,
+            "p50_ms": 3.0937130213715136,
+            "p95_ms": 4.986641986761242,
+            "ttfb_p50_ms": 3.0810930184088647,
+            "ttfb_p95_ms": 4.969411995261908
+          },
+          "p50_winner": "inconclusive_cardinality",
+          "p95_winner": "inconclusive_cardinality",
+          "route": "/Search/Hints"
+        },
+        {
+          "name": "next_up",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 0,
+            "p50_ms": 20.013640983961523,
+            "p95_ms": 26.601511024637148,
+            "ttfb_p50_ms": 19.984810991445556,
+            "ttfb_p95_ms": 26.57511000870727
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 1,
+            "p50_ms": 2599.5848790043965,
+            "p95_ms": 2776.547118992312,
+            "ttfb_p50_ms": 2599.5660590124317,
+            "ttfb_p95_ms": 2776.500337990001
+          },
+          "p50_winner": "inconclusive_cardinality",
+          "p95_winner": "inconclusive_cardinality",
+          "route": "/Shows/NextUp"
+        },
+        {
+          "name": "resume",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 1,
+            "p50_ms": 40.07495302357711,
+            "p95_ms": 49.53678298625164,
+            "ttfb_p50_ms": 40.05066302488558,
+            "ttfb_p95_ms": 49.50515300151892
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 0,
+            "p50_ms": 1.5567360096611083,
+            "p95_ms": 2.1690530120395124,
+            "ttfb_p50_ms": 1.5440470015164465,
+            "ttfb_p95_ms": 2.152983011910692
+          },
+          "p50_winner": "inconclusive_cardinality",
+          "p95_winner": "inconclusive_cardinality",
+          "route": "/Users/{user}/Items/Resume"
+        }
+      ],
+      "playback": [
+        {
+          "name": "direct_ttff",
+          "reference": {
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 46.31097899982706,
+            "p95_ms": 47.82332500326447,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 3,
+            "delivery": "",
+            "p50_ms": null,
+            "p95_ms": null,
+            "samples": 0
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive"
+        },
+        {
+          "name": "seek",
+          "reference": {
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 47.823114990023896,
+            "p95_ms": 52.48479501460679,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 3,
+            "delivery": "",
+            "p50_ms": null,
+            "p95_ms": null,
+            "samples": 0
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive"
+        },
+        {
+          "name": "resume",
+          "reference": {
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 57.22027501906268,
+            "p95_ms": 59.44708798779175,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 3,
+            "delivery": "",
+            "p50_ms": null,
+            "p95_ms": null,
+            "samples": 0
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive"
+        },
+        {
+          "name": "transcode_ttff",
+          "reference": {
+            "errors": 0,
+            "delivery": "hls",
+            "p50_ms": 1672.6408250106033,
+            "p95_ms": 2627.9254780092742,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 0,
+            "delivery": "hls",
+            "p50_ms": 342.19521601335146,
+            "p95_ms": 541.9883059803396,
+            "samples": 3
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether"
+        }
+      ],
+      "errors": [
+        "progress"
+      ],
+      "catalogue": {
+        "reference": {
+          "Movie": 6,
+          "Series": 1,
+          "Season": 2,
+          "Episode": 40
+        },
+        "ether": {
+          "Movie": 4,
+          "Series": 1,
+          "Season": 0,
+          "Episode": 40
+        }
+      },
+      "catalogue_matched": false,
+      "source_sha256": "ae51005850b0ff757fe60c3dd7a12d754d3cd2397d87d939b55235e457f97658"
+    },
+    "emby": {
+      "browse": [
+        {
+          "name": "home_views",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 2,
+            "p50_ms": 2.479335991665721,
+            "p95_ms": 4.634287994122133,
+            "ttfb_p50_ms": 2.4595159920863807,
+            "ttfb_p95_ms": 4.594117985107005
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 2,
+            "p50_ms": 1.4749550027772784,
+            "p95_ms": 2.99776199972257,
+            "ttfb_p50_ms": 1.4623049937654287,
+            "ttfb_p95_ms": 2.980960998684168
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether",
+          "route": "/Users/{user}/Views"
+        },
+        {
+          "name": "library_movies",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 4,
+            "p50_ms": 2.694388007512316,
+            "p95_ms": 4.305584996473044,
+            "ttfb_p50_ms": 2.679837984032929,
+            "ttfb_p95_ms": 4.2733649897854775
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 4,
+            "p50_ms": 299.02853997191414,
+            "p95_ms": 306.6886910237372,
+            "ttfb_p50_ms": 298.92910897615366,
+            "ttfb_p95_ms": 306.66057000053115
+          },
+          "p50_winner": "reference",
+          "p95_winner": "reference",
+          "route": "/Users/{user}/Items"
+        },
+        {
+          "name": "library_episodes",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 40,
+            "p50_ms": 5.601788987405598,
+            "p95_ms": 9.148335986537859,
+            "ttfb_p50_ms": 5.5804389994591475,
+            "ttfb_p95_ms": 9.108035999815911
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 40,
+            "p50_ms": 13949.565118004102,
+            "p95_ms": 15028.683871001704,
+            "ttfb_p50_ms": 13949.513989005936,
+            "ttfb_p95_ms": 15028.637481009355
+          },
+          "p50_winner": "reference",
+          "p95_winner": "reference",
+          "route": "/Users/{user}/Items"
+        },
+        {
+          "name": "item_detail",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 21,
+            "total": null,
+            "p50_ms": null,
+            "p95_ms": null,
+            "ttfb_p50_ms": null,
+            "ttfb_p95_ms": null
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": null,
+            "p50_ms": 224.82456601574086,
+            "p95_ms": 226.67210499639623,
+            "ttfb_p50_ms": 224.77717499714345,
+            "ttfb_p95_ms": 226.59739397931844
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive",
+          "route": "/Items/14"
+        },
+        {
+          "name": "search",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": null,
+            "p50_ms": 1.955371000804007,
+            "p95_ms": 61.47414000588469,
+            "ttfb_p50_ms": 1.9411810208112001,
+            "ttfb_p95_ms": 61.45599001320079
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 1,
+            "p50_ms": 10.005315998569131,
+            "p95_ms": 26.609570981236175,
+            "ttfb_p50_ms": 9.978135989513248,
+            "ttfb_p95_ms": 26.57692099455744
+          },
+          "p50_winner": "inconclusive_cardinality",
+          "p95_winner": "inconclusive_cardinality",
+          "route": "/Search/Hints"
+        },
+        {
+          "name": "next_up",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 0,
+            "p50_ms": 2.0573319925460964,
+            "p95_ms": 5.711550998967141,
+            "ttfb_p50_ms": 2.039632003288716,
+            "ttfb_p95_ms": 5.6692599900998175
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 1,
+            "p50_ms": 2599.6466189972125,
+            "p95_ms": 2601.2286160257645,
+            "ttfb_p50_ms": 2599.630618991796,
+            "ttfb_p95_ms": 2601.205225015292
+          },
+          "p50_winner": "inconclusive_cardinality",
+          "p95_winner": "inconclusive_cardinality",
+          "route": "/Shows/NextUp"
+        },
+        {
+          "name": "resume",
+          "concurrency": 1,
+          "reference": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 0,
+            "p50_ms": 3.6621890030801296,
+            "p95_ms": 6.5717500110622495,
+            "ttfb_p50_ms": 3.6354989861138165,
+            "ttfb_p95_ms": 6.554899999173358
+          },
+          "ether": {
+            "samples": 21,
+            "concurrency": 1,
+            "errors": 0,
+            "total": 0,
+            "p50_ms": 3.6318880156613886,
+            "p95_ms": 6.322145985905081,
+            "ttfb_p50_ms": 3.6111380031798035,
+            "ttfb_p95_ms": 6.295505998423323
+          },
+          "p50_winner": "ether",
+          "p95_winner": "ether",
+          "route": "/Users/{user}/Items/Resume"
+        }
+      ],
+      "playback": [
+        {
+          "name": "direct_ttff",
+          "reference": {
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 18.997189996298403,
+            "p95_ms": 259.56405300530605,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 3,
+            "delivery": "",
+            "p50_ms": null,
+            "p95_ms": null,
+            "samples": 0
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive"
+        },
+        {
+          "name": "seek",
+          "reference": {
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 14.30065100430511,
+            "p95_ms": 18.879079987527803,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 3,
+            "delivery": "",
+            "p50_ms": null,
+            "p95_ms": null,
+            "samples": 0
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive"
+        },
+        {
+          "name": "resume",
+          "reference": {
+            "errors": 0,
+            "delivery": "direct",
+            "p50_ms": 11.151238024467602,
+            "p95_ms": 18.793809023918584,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 3,
+            "delivery": "",
+            "p50_ms": null,
+            "p95_ms": null,
+            "samples": 0
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive"
+        },
+        {
+          "name": "transcode_ttff",
+          "reference": {
+            "errors": 0,
+            "delivery": "hls",
+            "p50_ms": 921.2206540105399,
+            "p95_ms": 2114.1556900111027,
+            "samples": 3
+          },
+          "ether": {
+            "errors": 3,
+            "delivery": "",
+            "p50_ms": null,
+            "p95_ms": null,
+            "samples": 0
+          },
+          "p50_winner": "inconclusive",
+          "p95_winner": "inconclusive"
+        }
+      ],
+      "errors": [
+        "progress",
+        "progress"
+      ],
+      "catalogue": {
+        "reference": {
+          "Movie": 4,
+          "Series": 1,
+          "Season": 2,
+          "Episode": 40
+        },
+        "ether": {
+          "Movie": 4,
+          "Series": 1,
+          "Season": 0,
+          "Episode": 40
+        }
+      },
+      "catalogue_matched": false,
+      "source_sha256": "ae51005850b0ff757fe60c3dd7a12d754d3cd2397d87d939b55235e457f97658"
+    }
+  },
+  "losses": []
+}

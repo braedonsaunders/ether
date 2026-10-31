@@ -20,6 +20,7 @@ node_modules/
 !/LEGAL.md
 !/THIRD_PARTY_NOTICES.md
 !/docs/install.md
+!/docs/prism-scorecard.md
 !/docs/user-guide.md
 !/packaging/community/README.md
 !/release-notes/*.md

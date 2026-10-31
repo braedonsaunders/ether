@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/admin"
+	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/resolver"
@@ -632,5 +633,24 @@ func TestScorecardDetailOfferMatchesFixtureAndScope(t *testing.T) {
 	}
 	if _, err = scorecardDetailOffer(ctx, db, dir, "jellyfin", handle, now.Add(2*time.Minute)); err == nil {
 		t.Fatal("expired offer accepted")
+	}
+}
+
+func TestScorecardLabBinariesAndExtraViewers(t *testing.T) {
+	t.Setenv("SCORECARD_FFMPEG", "/opt/lab/ffmpeg")
+	t.Setenv("SCORECARD_FFPROBE", "/opt/lab/ffprobe")
+	cfg := &config.Config{}
+	applyScorecardLabBinaries(cfg)
+	if cfg.Transcode.FFmpegPath != "/opt/lab/ffmpeg" || cfg.Transcode.FFprobePath != "/opt/lab/ffprobe" {
+		t.Fatalf("binaries: %+v", cfg.Transcode)
+	}
+	t.Setenv("SCORECARD_EXTRA_USERS", `[{"username":"adult","password":"secret-a"},{"username":"child","password":"secret-c"}]`)
+	viewers, err := scorecardExtraViewers()
+	if err != nil || len(viewers) != 2 || viewers[0][0] != "adult" || viewers[1][0] != "child" {
+		t.Fatalf("viewers: %+v %v", viewers, err)
+	}
+	t.Setenv("SCORECARD_EXTRA_USERS", `[{"username":"adult","password":""}]`)
+	if _, err = scorecardExtraViewers(); err == nil {
+		t.Fatal("blank extra password accepted")
 	}
 }
