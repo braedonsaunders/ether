@@ -54,6 +54,8 @@ type ImageGrantService struct {
 	artMu              sync.Mutex
 	artGen             uint64
 	art                map[pageArtKey][]frontend.Image
+	shortMu            sync.Mutex
+	short              map[string]pageClaims
 	denied             sync.Map
 	gen                atomic.Uint64
 }
@@ -225,7 +227,9 @@ func (s *ImageGrantService) Revoke(ctx context.Context, credential, secret strin
 	if !ok {
 		return core.ErrUnauthorized
 	}
-	if strings.HasPrefix(secret, pageGrantPrefix) {
+	if isShortImageTag(secret) {
+		err = s.revokeShortGrant(ctx, viewer.ID, source, secret)
+	} else if strings.HasPrefix(secret, pageGrantPrefix) {
 		err = s.revokePageGrant(ctx, viewer.ID, source, secret)
 	} else {
 		var hash string
@@ -244,6 +248,10 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if isShortImageTag(secret) {
+		s.serveShortTag(w, r, secret)
 		return
 	}
 	if strings.HasPrefix(secret, pageGrantPrefix) {

@@ -27,7 +27,17 @@ func (s *Service) NamedFacetIDs(ctx context.Context, viewer *core.Viewer, _ core
 	if err != nil {
 		return nil, err
 	}
-	title, err := s.item(ctx, active, key)
+	// A list row already carries the stored title. CachedGet keeps genre and
+	// studio ids off the refresh path that getSeason uses for an open detail.
+	var title *core.Title
+	if s.d.CachedGet != nil {
+		title, err = s.d.CachedGet(ctx, key)
+		if err == nil && (title == nil || title.Key != key || !s.visible(ctx, active, title)) {
+			err = core.ErrNotFound
+		}
+	} else {
+		title, err = s.item(ctx, active, key)
+	}
 	if err != nil {
 		return nil, err
 	}
