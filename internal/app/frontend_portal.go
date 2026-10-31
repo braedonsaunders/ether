@@ -115,6 +115,13 @@ func (r *frontendRuntime) viewerPortalURL(ctx context.Context, req *http.Request
 	if err != nil {
 		return "", err
 	}
+	// A loopback client talking to a loopback or wildcard listener already
+	// knows the answer. Enumerating interfaces is the slow first call.
+	if ip.IsLoopback() {
+		if bound := net.ParseIP(host); bound != nil && (bound.IsUnspecified() || bound.IsLoopback()) {
+			return (&url.URL{Scheme: "http", Host: net.JoinHostPort(ip.String(), port), Path: "/ether/me"}).String(), nil
+		}
+	}
 	if identity.LAN(ip) {
 		interfaces, err := remote.LANAddresses(remote.LANOptions{IncludeIPv6: true})
 		if err != nil {

@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"math/big"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -31,10 +30,16 @@ CREATE INDEX identity_quickconnect_expiry ON identity_quickconnect(expires);
 // QuickConnect is a shared, one-use approval broker. HTTP handlers must rate
 // limit code approval and secret polling; codes are intentionally short.
 type QuickConnect struct {
-	db            *sql.DB
-	ttl, grantTTL time.Duration
-	now           func() time.Time
+	db             *sql.DB
+	ttl, grantTTL  time.Duration
+	now            func() time.Time
+	expire, insert *sql.Stmt
 }
+
+const (
+	quickExpireSQL = `DELETE FROM identity_quickconnect WHERE expires<=?`
+	quickInsertSQL = `INSERT INTO identity_quickconnect(code,secret_hash,surface,device_id,client,product,version,device_name,created_at,expires) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(code) DO NOTHING`
+)
 
 func NewQuickConnect(db *sql.DB, ttl, grantTTL time.Duration, now func() time.Time) (*QuickConnect, error) {
 	if db == nil || ttl < time.Second || grantTTL < time.Second {
@@ -43,19 +48,33 @@ func NewQuickConnect(db *sql.DB, ttl, grantTTL time.Duration, now func() time.Ti
 	if now == nil {
 		now = time.Now
 	}
-	return &QuickConnect{db, ttl, grantTTL, now}, nil
+	expire, err := db.Prepare(quickExpireSQL)
+	if err != nil {
+		return nil, err
+	}
+	insert, err := db.Prepare(quickInsertSQL)
+	if err != nil {
+		return nil, err
+	}
+	q := &QuickConnect{db: db, ttl: ttl, grantTTL: grantTTL, now: now, expire: expire, insert: insert}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	// A committed cleanup parses the statement and flushes the journal before
+	// a viewer is waiting. Later browse traffic can evict an unpinned plan.
+	_, _ = expire.ExecContext(ctx, int64(0))
+	return q, nil
 }
 
 const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 func quickCode() (string, error) {
+	var raw [6]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
 	b := make([]byte, 6)
-	for i := range b {
-		n, e := rand.Int(rand.Reader, big.NewInt(int64(len(codeAlphabet))))
-		if e != nil {
-			return "", e
-		}
-		b[i] = codeAlphabet[n.Int64()]
+	for i, v := range raw {
+		b[i] = codeAlphabet[int(v)%len(codeAlphabet)]
 	}
 	return string(b), nil
 }
@@ -79,8 +98,16 @@ func (q *QuickConnect) Initiate(ctx context.Context, surface string, device core
 	}
 	secret = base64.RawURLEncoding.EncodeToString(raw[:])
 	hash, _ := secretHash(secret)
-	// Expired codes are removed before allocating so codes can eventually be reused.
-	if _, err = q.db.ExecContext(ctx, `DELETE FROM identity_quickconnect WHERE expires<=?`, q.now().UnixMilli()); err != nil {
+	// One transaction: the expired-code delete and the insert share a journal
+	// flush. Expired codes are removed so a short code can be reused.
+	tx, err := q.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", "", err
+	}
+	defer tx.Rollback()
+	expire := tx.StmtContext(ctx, q.expire)
+	insert := tx.StmtContext(ctx, q.insert)
+	if _, err = expire.ExecContext(ctx, q.now().UnixMilli()); err != nil {
 		return "", "", err
 	}
 	for i := 0; i < 10; i++ {
@@ -89,7 +116,7 @@ func (q *QuickConnect) Initiate(ctx context.Context, surface string, device core
 			return
 		}
 		now := q.now()
-		res, e := q.db.ExecContext(ctx, `INSERT INTO identity_quickconnect(code,secret_hash,surface,device_id,client,product,version,device_name,created_at,expires) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(code) DO NOTHING`, code, hash, surface, device.ID, device.Client, device.Product, device.Version, device.DeviceName, now.UnixMilli(), now.Add(q.ttl).UnixMilli())
+		res, e := insert.ExecContext(ctx, code, hash, surface, device.ID, device.Client, device.Product, device.Version, device.DeviceName, now.UnixMilli(), now.Add(q.ttl).UnixMilli())
 		if e != nil {
 			return "", "", e
 		}
@@ -98,6 +125,9 @@ func (q *QuickConnect) Initiate(ctx context.Context, surface string, device core
 			return "", "", e
 		}
 		if n == 1 {
+			if err = tx.Commit(); err != nil {
+				return "", "", err
+			}
 			return code, secret, nil
 		}
 	}
