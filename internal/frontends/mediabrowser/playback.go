@@ -474,7 +474,8 @@ func (i *instance) playbackRoutes() error {
 		stopped bool
 	}{{"/Sessions/Playing", false}, {"/Sessions/Playing/Progress", false}, {"/Sessions/Playing/Stopped", true}} {
 		stop := entry.stopped
-		if err := i.router.Handle("POST", entry.path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { i.timeline(w, r, stop) })); err != nil {
+		started := entry.path == "/Sessions/Playing"
+		if err := i.router.Handle("POST", entry.path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { i.timeline(w, r, stop, started) })); err != nil {
 			return err
 		}
 	}
@@ -507,7 +508,7 @@ type timelineRequest struct {
 	IsPaused              bool
 }
 
-func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool) {
+func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, started bool) {
 	v, _, err := i.viewer(r)
 	if err != nil || v == nil {
 		http.Error(w, "Unauthorized", 401)
@@ -542,6 +543,9 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped bool
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
 		return
+	}
+	if started {
+		i.creditPlay(r, v, body.ItemId)
 	}
 	if stopped {
 		if err = i.host.Sessions.Stop(r.Context(), access, body.PlaySessionId); err != nil {

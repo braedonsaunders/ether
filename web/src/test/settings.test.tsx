@@ -533,6 +533,28 @@ describe("Settings", () => {
     });
   });
 
+  it("turns personalized Jellyfin home rows off without forgetting the count", async () => {
+    const { fake } = renderApp("/apps/jellyfin", {}, (f) => {
+      f.state.config.frontends = { jellyfin: { enabled: true } };
+    });
+    const rows = await screen.findByRole("switch", { name: "Personalized rows" }, WAIT);
+    expect(rows).toBeChecked();
+    fireEvent.click(rows);
+    fireEvent.click(screen.getByRole("button", { name: "More options: Home" }));
+    fireEvent.change(await screen.findByRole("spinbutton", { name: "How many rows" }), {
+      target: { value: "2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(
+      () => expect(calls(fake, "PUT", "/frontends/jellyfin/settings")).toHaveLength(1),
+      WAIT,
+    );
+    expect(calls(fake, "PUT", "/frontends/jellyfin/settings")[0]!.body).toMatchObject({
+      homeRows: false,
+      homeRowCount: 2,
+    });
+  });
+
   it("does not keep the old Connectivity URL", async () => {
     renderApp("/remote-access/secure");
     expect(await screen.findByRole("link", { name: "Home" }, WAIT)).toBeInTheDocument();

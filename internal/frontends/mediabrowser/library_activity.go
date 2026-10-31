@@ -49,11 +49,6 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	service, ok := i.host.Experience.(frontend.LibraryActivity)
-	if !ok {
-		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
-		return
-	}
 	view, err := activityView(r)
 	if err != nil {
 		http.NotFound(w, r)
@@ -84,6 +79,17 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 			played = false
 		}
 		r = r.WithContext(frontend.WithLatestPlayed(r.Context(), played))
+	}
+	if view != "" {
+		if n, e := strconv.ParseInt(view, 10, 64); e == nil && ids.PersonalView(n) {
+			i.writePersonalActivity(w, r, viewer, n, latest, offset, limit)
+			return
+		}
+	}
+	service, ok := i.host.Experience.(frontend.LibraryActivity)
+	if !ok {
+		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
+		return
 	}
 	count := offset + limit
 	var titles []frontend.Title
@@ -167,6 +173,10 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		}
 		return
 	}
+	i.writeListedTitles(w, r, viewer, titles, added, total, totalExact, offset, latest)
+}
+
+func (i *instance) writeListedTitles(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, titles []frontend.Title, added map[frontend.RatingKey]any, total int, totalExact bool, offset int, latest bool) {
 	keys := make([]frontend.RatingKey, 0, len(titles))
 	for _, title := range titles {
 		keys = append(keys, title.Key)
