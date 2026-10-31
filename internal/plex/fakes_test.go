@@ -140,6 +140,9 @@ func (c *fakeCatalog) Browse(_ context.Context, q core.BrowseQuery) (core.Page, 
 		if q.Filter.Type != "" && t.Type != q.Filter.Type {
 			continue
 		}
+		if q.Filter.KnownAddedDate && t.DateAdded(fixedNow).IsZero() {
+			continue
+		}
 		if len(q.Filter.Genres) > 0 {
 			match := false
 			for _, g := range q.Filter.Genres {

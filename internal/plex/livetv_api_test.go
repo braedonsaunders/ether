@@ -3,15 +3,18 @@ package plex
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/livetv"
+	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/transcode"
 )
@@ -332,6 +335,113 @@ func TestNativeLiveSubscriptionOwnershipAndPlayback(t *testing.T) {
 	stop := f.request(t, "DELETE", "/media/subscriptions/"+next["key"].(string), headers)
 	if stop.Code != 200 || len(service.Sessions(context.Background(), &ownerUser)) != 0 {
 		t.Fatalf("owned numeric subscription stop: %d %s", stop.Code, stop.Body.String())
+	}
+}
+
+// tokenDASH writes a manifest whose media URLs use the Live TV session prefix
+// ServeDASH rewrites onto stream-token routes.
+type tokenDASH struct{ fakeDASH }
+
+func (d *tokenDASH) ServeManifest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/dash+xml")
+	fmt.Fprintf(w, `<MPD><SegmentTemplate initialization="session/%s/0/header" media="session/%s/0/$Number$.m4s"/></MPD>`, d.id, d.id)
+}
+
+type streamTokenTranscoder struct{ *fakeTranscoder }
+
+func (t *streamTokenTranscoder) Probe(context.Context, string) (*core.MediaInfo, error) {
+	info := sampleInfo
+	return &info, nil
+}
+
+func (t *streamTokenTranscoder) StartHLS(ctx context.Context, req core.HLSRequest) (core.HLSSession, error) {
+	if req.Protocol != core.ProtocolDASH {
+		return t.fakeTranscoder.StartHLS(ctx, req)
+	}
+	return &tokenDASH{fakeDASH{fakeHLS{id: req.SessionID, req: req}}}, nil
+}
+
+// A client that follows the playlist and DASH URLs the server just emitted
+// gets the media with the stream token alone. Those URLs carry no account token.
+func TestStreamTokenAloneFetchesPlaylistAndDASH(t *testing.T) {
+	f := newFixture()
+	t.Cleanup(func() { f.srv.Close() })
+	db, err := store.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".ts") {
+			w.Header().Set("Content-Type", "video/mp2t")
+			fmt.Fprint(w, "segment-bytes")
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		fmt.Fprint(w, "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nsegment.ts\n")
+	}))
+	t.Cleanup(up.Close)
+	tc := &streamTokenTranscoder{newFakeTranscoder(core.Decision{Kind: core.DecisionRemux, VideoCopy: true, AudioCopy: true, Container: "mpegts"})}
+	service, err := livetv.New(livetv.Options{Transcoder: tc, DB: db, Now: func() time.Time { return fixedNow }, HTTPClient: up.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { service.Close() })
+	src := livetv.Source{Name: "Owner IPTV", Playlist: fmt.Sprintf("#EXTM3U\n#EXTINF:-1 tvg-id=\"owner\" tvg-chno=\"7\",Owner channel\n%s/master.m3u8\n", up.URL)}
+	if _, err = service.ImportSource(context.Background(), src); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.d.LiveTV = service
+	f.srv.d.Identity.MyPlexSubscription = true
+
+	tune := f.request(t, "POST", "/livetv/dvrs/1/channels/7/tune", map[string]string{"Accept": "application/json"})
+	if tune.Code != 200 {
+		t.Fatalf("tune %d %s", tune.Code, tune.Body.String())
+	}
+	metadata := decodeJSON(t, tune)["Metadata"].([]any)[0].(map[string]any)
+	sessionPath := metadata["key"].(string)
+	playlist := f.request(t, "GET", sessionPath+"/0/index.m3u8", nil)
+	if playlist.Code != 200 {
+		t.Fatalf("playlist %d %s", playlist.Code, playlist.Body.String())
+	}
+	var mediaURL string
+	for _, line := range strings.Split(playlist.Body.String(), "\n") {
+		if strings.Contains(line, sessions.StreamGrantParam) && strings.Contains(line, "/resource/") {
+			mediaURL = strings.TrimSpace(line)
+			break
+		}
+	}
+	if mediaURL == "" || strings.Contains(playlist.Body.String(), "X-Plex-Token") {
+		t.Fatalf("playlist did not publish a stream-token media URL:\n%s", playlist.Body.String())
+	}
+	followed := f.request(t, "GET", mediaURL, map[string]string{"X-Plex-Token": ""})
+	if followed.Code != 200 || followed.Body.String() != "segment-bytes" {
+		t.Fatalf("playlist media with only the stream token: %d %q", followed.Code, followed.Body.String())
+	}
+
+	mpd := f.request(t, "GET", "/video/:/transcode/universal/start.mpd?path="+sessionPath, nil)
+	if mpd.Code != 200 {
+		t.Fatalf("dash %d %s", mpd.Code, mpd.Body.String())
+	}
+	manifest := html.UnescapeString(mpd.Body.String())
+	if strings.Contains(manifest, "X-Plex-Token") {
+		t.Fatalf("account token in DASH manifest:\n%s", manifest)
+	}
+	attr := regexp.MustCompile(`(?:initialization|media)="([^"]+)"`)
+	matches := attr.FindAllStringSubmatch(manifest, -1)
+	if len(matches) < 2 {
+		t.Fatalf("DASH manifest has no media URLs:\n%s", manifest)
+	}
+	initURL := matches[0][1]
+	segmentURL := strings.ReplaceAll(matches[1][1], "$Number$", "0")
+	for _, target := range []struct{ url, body string }{{initURL, "init-0"}, {segmentURL, "media-0-0"}} {
+		if !strings.Contains(target.url, sessions.StreamGrantParam) {
+			t.Fatalf("DASH URL has no stream token: %s", target.url)
+		}
+		got := f.request(t, "GET", target.url, map[string]string{"X-Plex-Token": ""})
+		if got.Code != 200 || got.Body.String() != target.body {
+			t.Fatalf("DASH %s with only the stream token: %d %q", target.url, got.Code, got.Body.String())
+		}
 	}
 }
 

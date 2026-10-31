@@ -272,11 +272,15 @@ timeout --signal=TERM --kill-after=10s "$seconds" docker run --rm --pull=never -
  printf "1\n00:00:00,000 --> 00:00:03,000\nFixture subtitle\n" > /work/seeddata/parity.srt
  ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=blue:s=320x180:r=24 -f lavfi -i anullsrc=r=48000:cl=stereo -f lavfi -i anullsrc=r=48000:cl=stereo -f srt -i /work/seeddata/parity.srt -t 20 -map 0:v -map 1:a -map 2:a -map 3:s -metadata:s:a:0 language=fra -metadata:s:a:1 language=eng -metadata:s:s:0 language=eng -c:v libx264 -pix_fmt yuv420p -c:a aac -c:s mov_text -movflags +faststart /work/seeddata/parity-tracks.mp4
  if [ "$ETHER_PARITY_BOTH_MODELS" = 1 ]; then cp /work/seeddata/parity.mp4 /work/seeddata/parity-tracks.mp4 /work/seeddata/parity.srt /work/seeddata/iptv.ts /work/rankerseed/; fi
- /work/parity run /work/baseline /work/candidate /work/seeddata
+ ordinary=0
+ /work/parity run /work/baseline /work/candidate /work/seeddata || ordinary=$?
+ ranker=0
  if [ "$ETHER_PARITY_BOTH_MODELS" = 1 ]; then
   echo "ACTIVE RANKER PARITY"
-  ETHER_PARITY_TRAIN_RANKER=1 /work/parity run /work/baseline /work/candidate /work/rankerseed
+  ETHER_PARITY_TRAIN_RANKER=1 /work/parity run /work/baseline /work/candidate /work/rankerseed || ranker=$?
  fi
+ if [ "$ordinary" -ne 0 ]; then exit "$ordinary"; fi
+ exit "$ranker"
  '
 status=$?
 set -e
