@@ -13,19 +13,20 @@ import (
 
 func (s *surfaceExperience) personArtwork(ctx context.Context, viewer *frontend.Viewer, device frontend.Device, person frontend.PersonDetail) (frontend.PersonDetail, error) {
 	var result frontend.PersonDetail
-	err := s.Service.WithPersonCredit(ctx, viewer, device, person.ArtworkItem, person.TMDB, func(current *core.User, credit frontend.PersonDetail) error {
+	err := s.Service.WithPersonCredit(ctx, viewer, device, person.ArtworkItem, person.TMDB, func(current *core.User, credit frontend.PersonDetail, title core.Title) error {
 		if credit.ID != person.ID {
 			return core.ErrNotFound
 		}
 		result = credit
-		if s.artwork == nil {
+		artwork, ok := s.artwork.(frontend.PersonArtwork)
+		if !ok {
 			return nil
 		}
-		images, complete, err := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: current, Device: device, Item: credit.ArtworkItem})
+		images, err := artwork.PersonImages(ctx, frontend.ArtworkRequest{Viewer: current, Device: device, Item: credit.ArtworkItem}, title)
 		if errors.Is(err, core.ErrUnauthorized) || errors.Is(err, core.ErrNotFound) {
 			return core.ErrNotFound
 		}
-		if err == nil && complete {
+		if err == nil {
 			subject := "tmdb:" + strconv.FormatInt(credit.TMDB, 10)
 			for _, image := range images {
 				if image.Kind == frontend.ImagePerson && image.Subject == subject && image.Path != "" {
@@ -42,25 +43,22 @@ func (s *surfaceExperience) personArtwork(ctx context.Context, viewer *frontend.
 	return result, nil
 }
 
-// The production artwork source enumerates the current StoredTitle's exact
-// portrait identity. Its DB reads and the credit/policy reads are enclosed by
-// the same epoch proof, without holding DB locks across descriptor I/O.
+// The artwork source receives the owned current title rather than loading a
+// node-cached movie. Descriptor identity and credit policy share one epoch proof.
 func (s *surfaceExperience) AuthorizePersonImage(ctx context.Context, viewer *frontend.Viewer, device frontend.Device, item frontend.RatingKey, image frontend.Image, admission func(context.Context) error) error {
 	raw, hasPrefix := strings.CutPrefix(image.Subject, "tmdb:")
 	id, err := strconv.ParseInt(raw, 10, 64)
 	if image.Kind != frontend.ImagePerson || !hasPrefix || err != nil || id <= 0 || strconv.FormatInt(id, 10) != raw {
 		return core.ErrUnauthorized
 	}
-	return s.Service.WithPersonCredit(ctx, viewer, device, item, id, func(current *core.User, _ frontend.PersonDetail) error {
-		if s.artwork == nil {
+	return s.Service.WithPersonCredit(ctx, viewer, device, item, id, func(current *core.User, _ frontend.PersonDetail, title core.Title) error {
+		artwork, ok := s.artwork.(frontend.PersonArtwork)
+		if !ok {
 			return core.ErrNotAvailable
 		}
-		images, complete, err := s.artwork.List(ctx, frontend.ArtworkRequest{Viewer: current, Device: device, Item: item})
+		images, err := artwork.PersonImages(ctx, frontend.ArtworkRequest{Viewer: current, Device: device, Item: item}, title)
 		if err != nil {
 			return err
-		}
-		if !complete {
-			return core.ErrNotAvailable
 		}
 		for _, candidate := range images {
 			if frontend.SameImage(candidate, image) {

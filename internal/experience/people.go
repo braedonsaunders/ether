@@ -463,7 +463,7 @@ var _ frontend.PeopleReader = (*Service)(nil)
 // WithPersonCredit keeps a host's cache-only descriptor read in the same
 // durable policy proof as the exact current credit. The callback must not
 // publish data; its output is valid only after this method returns success.
-func (s *Service) WithPersonCredit(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, tmdb int64, read func(*core.User, frontend.PersonDetail) error) error {
+func (s *Service) WithPersonCredit(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, tmdb int64, read func(*core.User, frontend.PersonDetail, core.Title) error) error {
 	ctx, cancel := context.WithTimeout(ctx, peopleReadBudget)
 	defer cancel()
 	if read == nil {
@@ -478,7 +478,11 @@ func (s *Service) WithPersonCredit(ctx context.Context, viewer *core.Viewer, dev
 		if err != nil {
 			return err
 		}
-		if err := read(current, person); err != nil {
+		title, err := snapshot.peopleTitle(ctx, current, item)
+		if err != nil {
+			return err
+		}
+		if err := read(current, person, *title); err != nil {
 			return err
 		}
 		_, err = snapshot.personCredit(ctx, current, device, item, tmdb)

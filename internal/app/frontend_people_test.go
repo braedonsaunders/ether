@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	artworkservice "github.com/braedonsaunders/ether/internal/artwork/service"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -80,6 +81,19 @@ func (a *peopleHTTPArtwork) List(ctx context.Context, req frontend.ArtworkReques
 	}
 	return images, true, nil
 }
+func (a *peopleHTTPArtwork) PersonImages(ctx context.Context, req frontend.ArtworkRequest, title core.Title) ([]frontend.Image, error) {
+	if a.beforeList != nil {
+		a.beforeList()
+	}
+	images := []frontend.Image{}
+	for _, person := range title.Cast {
+		if person.TMDB > 0 && person.ThumbPath != "" {
+			images = append(images, frontend.Image{Kind: frontend.ImagePerson, Subject: "tmdb:" + strconv.FormatInt(person.TMDB, 10), Path: "opaque-person-portrait", Tag: "v1", ThumbHash: "AQID"})
+		}
+	}
+	return images, nil
+}
+
 func (a *peopleHTTPArtwork) Read(ctx context.Context, req frontend.ArtworkRequest, image frontend.Image, _ frontend.ArtworkTransform) ([]byte, string, error) {
 	if a.beforeRead != nil {
 		a.beforeRead()
@@ -546,5 +560,57 @@ func TestSiloPortraitDeniesMissingReaderAndGrantChangesDuringRead(t *testing.T) 
 				t.Fatalf("losing %s returned bytes: %d %s", change, response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestSiloPortraitRejectsStaleMovieThumbBeforeEpochCapture(t *testing.T) {
+	a := setupTestApp(t, true)
+	ctx := context.Background()
+	if err := a.users.SetOwner(ctx, plextv.Account{ID: 42, Username: "owner"}, "owner-token"); err != nil {
+		t.Fatal(err)
+	}
+	viewer, err := a.users.Owner(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := core.MovieKey(781)
+	title := core.Title{Key: key, Type: core.TypeMovie, Released: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), Cast: []core.Person{{TMDB: 30, Name: "Person", ThumbPath: "/old.jpg"}}}
+	if err := a.catalog.UpsertTitle(ctx, title, false); err != nil {
+		t.Fatal(err)
+	}
+	if cached, err := a.catalog.CachedGet(ctx, key); err != nil || len(cached.Cast) != 1 {
+		t.Fatalf("warm movie cache %+v %v", cached, err)
+	}
+	availability := a.availability
+	a.availability = nil
+	t.Cleanup(func() { a.availability = availability })
+	source := artworkservice.Source{}
+	exp, err := a.newSurfaceExperience("silo", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := core.Device{ID: "tv"}
+	req := frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: key}
+	old, err := source.PersonImages(ctx, req, title)
+	if err != nil || len(old) != 1 {
+		t.Fatalf("old portrait %+v %v", old, err)
+	}
+	if _, err := a.db.ExecContext(ctx, `UPDATE catalog_credits SET thumb='/new.jpg' WHERE key=? AND person_tmdb=30`, int64(key)); err != nil {
+		t.Fatal(err)
+	}
+	if cached, err := a.catalog.StoredTitle(ctx, key); err != nil || len(cached.Cast) != 1 || cached.Cast[0].ThumbPath != "/old.jpg" {
+		t.Fatalf("fixture lost stale StoredTitle %+v %v", cached, err)
+	}
+	reader := exp.(frontend.PeopleImageReader)
+	if err := reader.AuthorizePersonImage(ctx, viewer, device, key, old[0], nil); !errors.Is(err, core.ErrUnauthorized) {
+		t.Fatalf("old cached portrait admitted: %v", err)
+	}
+	title.Cast[0].ThumbPath = "/new.jpg"
+	current, err := source.PersonImages(ctx, req, title)
+	if err != nil || len(current) != 1 {
+		t.Fatalf("new portrait %+v %v", current, err)
+	}
+	if err := reader.AuthorizePersonImage(ctx, viewer, device, key, current[0], nil); err != nil {
+		t.Fatalf("current exact portrait denied: %v", err)
 	}
 }

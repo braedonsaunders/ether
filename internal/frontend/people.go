@@ -52,3 +52,10 @@ type PeopleReader interface {
 type PeopleImageReader interface {
 	AuthorizePersonImage(context.Context, *Viewer, Device, RatingKey, Image, func(context.Context) error) error
 }
+
+// PersonArtwork constructs known portrait descriptors only from the detached
+// current title supplied by a host's authorized credit snapshot. It performs no
+// metadata lookup, refresh, scheduling, or independent title-cache read.
+type PersonArtwork interface {
+	PersonImages(context.Context, ArtworkRequest, Title) ([]Image, error)
+}
