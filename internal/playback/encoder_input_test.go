@@ -36,14 +36,11 @@ func inputLease(t *testing.T, m *Manager, id string, outcome core.SourceRetireme
 	return lease.(*encoderInputScope)
 }
 
-func TestEncoderInputLeaseBlocksRetireAndReplacement(t *testing.T) {
+func TestEncoderInputLeaseBlocksRetire(t *testing.T) {
 	h, ps, outcome := inputHarness(t)
 	lease := inputLease(t, h.m, ps.ID, outcome)
 	if err := h.m.RetireSource(ps.ID, outcome); !errors.Is(err, core.ErrNotAvailable) {
 		t.Fatalf("retire under lease: %v", err)
-	}
-	if _, err := h.m.Failover(context.Background(), ps.ID, 0); !errors.Is(err, core.ErrNotAvailable) {
-		t.Fatalf("replace under lease: %v", err)
 	}
 	lease.SealInput()
 	if err := h.m.RetireSource(ps.ID, outcome); err != nil {

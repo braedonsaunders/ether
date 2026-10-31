@@ -288,8 +288,8 @@ The optional `HLSRequest.InputLease` is excluded from JSON. Only trusted host
 composition can pass the opaque object minted by
 `PlaybackEncoderInputs.ReserveEncoderInput(ctx, id, exactSourceOutcome)`. The
 broker mints one lease before `StartHLS` when playback implements that seam and
-seals it if the encoder is not published. A live lease refuses `RetireSource`
-and generation replacement. A manager validates the actual
+seals it if the encoder is not published. A live lease refuses `RetireSource`.
+Generation failover stays on that same source lifetime. A manager validates the actual
 private Session and SourceLifetime together when minting. At most 128 scopes
 exist process-wide; no eviction or authority from a provider header is possible.
 Unclaimed leases remain caller-owned if admission/validation fails before claim;
@@ -370,6 +370,12 @@ Open records one `broker-transfer` header with the same claim. Stop, supersede,
 and live stop drop it only after the backend outcome is successful:
 `Live.Stop` returned nil, or `RetireSource` / `RetireEncoder` reached a nil
 error. `ErrEncoderInputUnverified` and a source Close error keep the claim.
-Read retirement still proves only that the request's producers exited.
-Stop does not wait on the database to drop the claim. There is no sessions
-migration in this increment.
+Read retirement proves that the request's producers exited. Stop waits for
+those producers and does not wait on the database to drop the claim.
+
+`sessions/9` stores one delivery authority per viewer, item, surface and device.
+Open reserves an admission token. A started stream publishes that token with a
+`sessions.delivery` header and a `retirement-owner` claim. The typed row is what
+a restarted process reads. A later token may replace it. An older token, or an
+older generation of another session, cannot. A plan whose client session id
+matches the row prepares that release again.
