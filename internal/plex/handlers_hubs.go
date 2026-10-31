@@ -231,9 +231,19 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 			s.log.Warn("home hubs", "err", err)
 		}
 	}
+	var selected map[string]bool
+	if ids := q["identifier"]; len(ids) > 0 {
+		selected = map[string]bool{}
+		for _, v := range ids {
+			for _, id := range strings.Split(v, ",") {
+				selected[id] = true
+			}
+		}
+	}
 	assembly := experience.HomeAssembly[model.Hub]{
 		Render:      func(hub core.Hub) model.Hub { return s.renderHub(ctx, pr, hubSpec{Hub: hub}, hubCtx{}) },
 		Identity:    func(row model.Hub) string { return row.HubIdentifier },
+		Report:      homeLayoutFacts,
 		InLibraries: func(hub core.Hub) bool { return s.hubInSections(hub, sections) },
 		Continue: func() (core.Hub, model.Hub) {
 			spec := s.continueHub(ctx, pr, cwHome, Section{}, count)
@@ -254,13 +264,10 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 			}
 			return *hub, true
 		},
-		Select: func(rows []model.Hub) []model.Hub {
-			if ids := q["identifier"]; len(ids) > 0 {
-				return filterHubs(rows, ids)
-			}
-			return rows
+		Keep: func(row model.Hub) bool { return selected == nil || selected[row.HubIdentifier] },
+		Layout: func(rows []model.Hub, hubs []core.Hub, neutral []core.NeutralHomeRow) []model.Hub {
+			return s.arrangeHomeRows(ctx, pr, hc, "home", rows, hubs, neutral)
 		},
-		Layout: func(rows []model.Hub) []model.Hub { return s.finalizeHomeRows(ctx, pr, hc, "home", rows) },
 	}
 	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0, experience.HomePurpose)
 	mc.Hub = stableHomeHubs(rows)
@@ -353,22 +360,6 @@ func (s *Server) playlistsHubProjection(ctx context.Context, pr *Request, count 
 	return h, row, true
 }
 
-func filterHubs(hs []model.Hub, ids []string) []model.Hub {
-	want := map[string]bool{}
-	for _, v := range ids {
-		for _, id := range strings.Split(v, ",") {
-			want[id] = true
-		}
-	}
-	var out []model.Hub
-	for _, h := range hs {
-		if want[h.HubIdentifier] {
-			out = append(out, h)
-		}
-	}
-	return out
-}
-
 func (s *Server) handleHubs(w http.ResponseWriter, r *http.Request)         { s.homeHubs(w, r, false) }
 func (s *Server) handlePromotedHubs(w http.ResponseWriter, r *http.Request) { s.homeHubs(w, r, true) }
 
@@ -433,9 +424,14 @@ func (s *Server) handleSectionHubs(w http.ResponseWriter, r *http.Request) {
 	hc := hubCtx{section: sec.ID}
 	pc := s.hubContext(pr, sec.ID)
 	served := map[string]core.Hub{}
+	var layoutHubs []core.Hub
+	var layoutNeutral []core.NeutralHomeRow
 	add := func(hs hubSpec) {
 		mh := s.renderHub(ctx, pr, hs, hc)
 		mc.Hub = append(mc.Hub, mh)
+		hub, neutral := homeLayoutFacts(mh)
+		layoutHubs = append(layoutHubs, hub)
+		layoutNeutral = append(layoutNeutral, neutral)
 		served[mh.HubIdentifier] = hs.Hub
 	}
 	add(s.continueHub(ctx, pr, cwSection, sec, count))
@@ -465,7 +461,7 @@ func (s *Server) handleSectionHubs(w http.ResponseWriter, r *http.Request) {
 	if sec.Type == core.TypeShow {
 		sectionName = "shows"
 	}
-	mc.Hub = stableHomeHubs(s.finalizeHomeRows(ctx, pr, pc, sectionName, mc.Hub))
+	mc.Hub = stableHomeHubs(s.arrangeHomeRows(ctx, pr, pc, sectionName, mc.Hub, layoutHubs, layoutNeutral))
 	s.log.Debug("section hubs rendered", "section", sec.ID, "user", pr.User.ID, "count", count, "rows", len(mc.Hub))
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)

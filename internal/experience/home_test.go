@@ -21,6 +21,34 @@ func TestAssembleHomePlacementAndDeduplication(t *testing.T) {
 	}
 }
 
+func TestHomeAssemblyKeepsPaintFactsWithFilteredRows(t *testing.T) {
+	var seen []string
+	assembly := HomeAssembly[string]{
+		Render:   func(h core.Hub) string { return h.ID },
+		Identity: func(row string) string { return row },
+		Report: func(row string) (core.Hub, core.NeutralHomeRow) {
+			return core.Hub{ID: row, ItemCount: 3}, core.NeutralHomeRow{ID: row, ItemCount: 3}
+		},
+		Continue:    func() (core.Hub, string) { return core.Hub{}, "" },
+		Playlists:   func() (string, bool) { return "", false },
+		Discovery:   func() []core.Hub { return nil },
+		Live:        func() (string, bool) { return "", false },
+		InLibraries: func(core.Hub) bool { return true },
+		Keep:        func(row string) bool { return row != "drop" },
+		Layout: func(rows []string, hubs []core.Hub, neutral []core.NeutralHomeRow) []string {
+			if len(rows) != 1 || rows[0] != "keep" || hubs[0].ID != "keep" || hubs[0].ItemCount != 3 || neutral[0].ItemCount != 3 {
+				t.Fatalf("facts rows=%v hubs=%+v neutral=%+v", rows, hubs, neutral)
+			}
+			seen = append(seen, rows...)
+			return rows
+		},
+	}
+	got, served := assembly.Rows([]core.Hub{{ID: "keep", Promoted: true}, {ID: "drop", Promoted: true}}, false, false, false, func(core.Hub) core.RowPurpose { return "recommendation" })
+	if !reflect.DeepEqual(got, []string{"keep"}) || served["keep"].ID != "keep" || served["drop"].ID != "drop" || len(seen) != 1 {
+		t.Fatalf("rows %v served %+v seen %v", got, served, seen)
+	}
+}
+
 func TestCompleteHomeProducerOrder(t *testing.T) {
 	var got []string
 	add := func(s string) func() { return func() { got = append(got, s) } }

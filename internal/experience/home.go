@@ -64,21 +64,39 @@ func CompleteHome(includePlaylists bool, playlists, discovery, live, selectRows,
 
 // HomeAssembly owns row inclusion, deduplication and ordering while adapters
 // supply rendered projections and preserve their exact producer sidecars.
+// Report records layout facts at paint time. Layout receives those facts and
+// must not read the wire value again.
 type HomeAssembly[P any] struct {
 	Render      func(core.Hub) P
 	Identity    func(P) string
+	Report      func(P) (core.Hub, core.NeutralHomeRow)
 	Continue    func() (core.Hub, P)
 	Playlists   func() (P, bool)
 	Discovery   func() []core.Hub
 	Live        func() (P, bool)
 	InLibraries func(core.Hub) bool
-	Select      func([]P) []P
-	Layout      func([]P) []P
+	Keep        func(P) bool
+	Layout      func([]P, []core.Hub, []core.NeutralHomeRow) []P
 }
 
 func (a HomeAssembly[P]) Rows(hubs []core.Hub, includeContinue, promotedOnly, includePlaylists bool, purpose func(core.Hub) core.RowPurpose) ([]P, map[string]core.Hub) {
 	var out []P
+	var layoutHubs []core.Hub
+	var neutral []core.NeutralHomeRow
 	served := map[string]core.Hub{}
+	appendRow := func(row P, source core.Hub, key string, record bool) {
+		out = append(out, row)
+		var hub core.Hub
+		var fact core.NeutralHomeRow
+		if a.Report != nil {
+			hub, fact = a.Report(row)
+		}
+		layoutHubs = append(layoutHubs, hub)
+		neutral = append(neutral, fact)
+		if record {
+			served[key] = source
+		}
+	}
 	candidates := make([]HomeCandidate, len(hubs))
 	for i, hub := range hubs {
 		candidates[i] = HomeCandidate{Index: i, Purpose: purpose(hub), Promoted: hub.Promoted, InLibraries: a.InLibraries(hub)}
@@ -86,28 +104,40 @@ func (a HomeAssembly[P]) Rows(hubs []core.Hub, includeContinue, promotedOnly, in
 	var projected P
 	AssembleHome(candidates, includeContinue, promotedOnly, "home.continue", func() {
 		hub, row := a.Continue()
-		out = append(out, row)
-		served[a.Identity(row)] = hub
+		appendRow(row, hub, a.Identity(row), true)
 	}, func(candidate HomeCandidate) string {
 		projected = a.Render(hubs[candidate.Index])
 		return a.Identity(projected)
 	}, func(candidate HomeCandidate) {
-		out = append(out, projected)
-		served[a.Identity(projected)] = hubs[candidate.Index]
+		appendRow(projected, hubs[candidate.Index], a.Identity(projected), true)
 	})
 	if includePlaylists {
 		if row, ok := a.Playlists(); ok {
-			out = append(out, row)
+			appendRow(row, core.Hub{}, "", false)
 		}
 	}
 	for _, hub := range a.Discovery() {
-		out = append(out, a.Render(hub))
-		served[hub.ID] = hub
+		appendRow(a.Render(hub), hub, hub.ID, true)
 	}
 	if row, ok := a.Live(); ok {
-		out = append(out, row)
+		appendRow(row, core.Hub{}, "", false)
 	}
-	out = a.Select(out)
-	out = a.Layout(out)
+	if a.Keep != nil {
+		kept := make([]P, 0, len(out))
+		keptHubs := make([]core.Hub, 0, len(out))
+		keptNeutral := make([]core.NeutralHomeRow, 0, len(out))
+		for i, row := range out {
+			if !a.Keep(row) {
+				continue
+			}
+			kept = append(kept, row)
+			keptHubs = append(keptHubs, layoutHubs[i])
+			keptNeutral = append(keptNeutral, neutral[i])
+		}
+		out, layoutHubs, neutral = kept, keptHubs, keptNeutral
+	}
+	if a.Layout != nil {
+		out = a.Layout(out, layoutHubs, neutral)
+	}
 	return out, served
 }
