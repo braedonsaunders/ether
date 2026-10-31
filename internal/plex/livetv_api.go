@@ -566,13 +566,44 @@ func (s *Server) handleLiveTVPlayback(w http.ResponseWriter, r *http.Request) bo
 		return true
 	}
 	if strings.HasSuffix(r.URL.Path, "/start.mpd") {
-		s.d.LiveTV.ServeDASH(w, r, id, pr.User)
+		if err := s.d.LiveTV.ServeDASH(w, r, id, pr.User); err != nil {
+			s.writeLiveDASHError(w, r, info, err)
+		}
 		return true
 	}
 	// Native players can retry this endpoint without following a redirect.
 	// The Live TV playlist already uses rooted, authenticated child URLs.
 	s.d.LiveTV.ServePlaylist(w, r, id, pr.User)
 	return true
+}
+
+// writeLiveDASHError is the Plex decision document for a virtual channel that
+// cannot produce DASH. Plex Web treats a bare 503 as s1001 (Network) and never
+// shows the reason. Decision codes at or above 2000 are the message it displays.
+func (s *Server) writeLiveDASHError(w http.ResponseWriter, r *http.Request, info livetv.SessionInfo, err error) {
+	var dashErr *livetv.VirtualDASHError
+	if !errors.As(err, &dashErr) {
+		s.writeErr(w, r, err)
+		return
+	}
+	msg := "This live channel cannot be played as DASH."
+	if dashErr.Message != "" {
+		msg = dashErr.Message
+	} else if dashErr.Err != nil && !errors.Is(dashErr.Err, core.ErrNotAvailable) {
+		msg = playbackMessage(dashErr.Err)
+	}
+	s.write(w, r, &model.MediaContainer{
+		Size: 1, Identifier: livetv.Provider,
+		Extra: []model.Attr{
+			model.A("directPlayDecisionCode", codeDirectPlayError),
+			model.A("directPlayDecisionText", msg),
+			model.A("generalDecisionCode", codeGeneralError),
+			model.A("generalDecisionText", msg),
+			model.A("transcodeDecisionCode", codeTranscodeError),
+			model.A("transcodeDecisionText", msg),
+		},
+		Metadata: []model.Metadata{s.liveSessionMetadata(info)},
+	})
 }
 func (s *Server) handleLiveLogo(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "channel")

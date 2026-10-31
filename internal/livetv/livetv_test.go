@@ -247,10 +247,30 @@ func (f *fakeHLS) SwapInput(_ context.Context, _ string, _ core.MediaInfo, at ti
 	return nil
 }
 
+type fakeDASH struct {
+	fakeHLS
+	media []string
+}
+
+func (f *fakeDASH) ServeManifest(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `<MPD><SegmentTemplate initialization="session/%s/$RepresentationID$/header" media="session/%s/$RepresentationID$/$Number$.m4s"/></MPD>`, f.id, f.id)
+}
+func (f *fakeDASH) ServeInit(w http.ResponseWriter, r *http.Request, rep int) {
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "init:%s:%d", f.id, rep)
+}
+func (f *fakeDASH) ServeMedia(w http.ResponseWriter, r *http.Request, rep, n int) {
+	f.media = append(f.media, fmt.Sprintf("%d:%d", rep, n))
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "media:%s:%d:%d", f.id, rep, n)
+}
+
 type fakeTranscoder struct {
 	core.Transcoder
 	requests []core.HLSRequest
 	hls      []*fakeHLS
+	dash     []*fakeDASH
 }
 
 func (f *fakeTranscoder) Decide(_ core.MediaInfo, _ core.ClientCaps, o core.DecideOptions) core.Decision {
@@ -262,6 +282,12 @@ func (f *fakeTranscoder) Decide(_ core.MediaInfo, _ core.ClientCaps, o core.Deci
 }
 func (f *fakeTranscoder) StartHLS(_ context.Context, r core.HLSRequest) (core.HLSSession, error) {
 	f.requests = append(f.requests, r)
+	if r.Protocol == core.ProtocolDASH {
+		h := &fakeDASH{fakeHLS: fakeHLS{id: r.SessionID}}
+		f.dash = append(f.dash, h)
+		f.hls = append(f.hls, &h.fakeHLS)
+		return h, nil
+	}
 	h := &fakeHLS{id: r.SessionID}
 	f.hls = append(f.hls, h)
 	return h, nil
