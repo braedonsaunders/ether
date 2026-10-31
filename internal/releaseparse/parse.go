@@ -4,6 +4,7 @@ package releaseparse
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,6 +56,13 @@ var languages = []struct{ token, name string }{
 	{"ITA", "italian"}, {"JAP", "japanese"}, {"JPN", "japanese"},
 	{"GER", "german"}, {"DEU", "german"}, {"FRE", "french"}, {"FRA", "french"},
 	{"SPA", "spanish"}, {"POR", "portuguese"}, {"KOR", "korean"},
+	// Scene audio codes of Spanish-language groups ("LAT.DDP5.1",
+	// "ESP.AC3") and the remaining ISO 639-2 codes groups write. NORDIC
+	// stays out: it marks Nordic subtitles over the original audio.
+	{"LAT", LanguageSpanishLatino}, {"ESP", LanguageSpanishSpain}, {"CAST", LanguageSpanishSpain},
+	{"POL", "polish"}, {"HUN", "hungarian"}, {"CZE", "czech"}, {"GRE", "greek"}, {"TUR", "turkish"},
+	{"HEB", "hebrew"}, {"ARA", "arabic"}, {"HIN", "hindi"}, {"TAM", "tamil"}, {"TEL", "telugu"},
+	{"SWE", "swedish"}, {"DAN", "danish"}, {"THA", "thai"}, {"VIE", "vietnamese"}, {"CHI", "chinese"},
 	// Explicit regional language tags are used by WEB release groups.
 	// Do not treat bare country codes (BR/US/GB) as audio languages.
 	{"PT-BR", LanguagePortugueseBrazil}, {"BRAZILIAN", LanguagePortugueseBrazil}, {"DUBLADO", LanguagePortugueseBrazil}, {"PT-PT", LanguagePortuguesePortugal},
@@ -141,15 +149,24 @@ func Parse(name string) core.ReleaseInfo {
 		seen[LanguageMulti] = true
 		info.Languages = append(info.Languages, LanguageMulti)
 	}
+	subs := subtitlePositions(spaced, floor)
+	var subOnly []string
 	for _, l := range languages {
-		if languageTagAfter(spaced, l.token, floor) {
-			if !seen[l.name] {
-				seen[l.name] = true
-				info.Languages = append(info.Languages, l.name)
-			}
+		audio, sub := languageTagRole(spaced, l.token, floor, subs)
+		switch {
+		case audio && !seen[l.name]:
+			seen[l.name] = true
+			info.Languages = append(info.Languages, l.name)
+		case sub && !audio:
+			subOnly = append(subOnly, l.name)
 		}
 	}
 	info.SubtitleLanguages = parseSubtitleLanguages(spaced, floor)
+	for _, name := range subOnly {
+		if !seen[name] && !slices.Contains(info.SubtitleLanguages, name) {
+			info.SubtitleLanguages = append(info.SubtitleLanguages, name)
+		}
+	}
 	info.Title = extractTitle(spaced, yearAt, markerAt, floor, &info)
 	return info
 }
@@ -610,6 +627,82 @@ func languageTagAfter(spaced, tag string, floor int) bool {
 	return false
 }
 
+// subtitlePositions marks the offsets in spaced (after floor) of language
+// tags that declare subtitles rather than audio: a tag right before a SUB,
+// SUBS or SUBTITLES token ("ENG.SUBS"), and each tag in the run of tags
+// right after one ("Sub.ITA.ENG").
+func subtitlePositions(spaced string, floor int) map[int]bool {
+	type token struct {
+		at   int
+		text string
+	}
+	var toks []token
+	for i := max(floor+1, 0); i < len(spaced); {
+		if spaced[i] == ' ' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(spaced) && spaced[j] != ' ' {
+			j++
+		}
+		toks = append(toks, token{i, spaced[i:j]})
+		i = j
+	}
+	isSub := func(s string) bool {
+		switch strings.ToUpper(s) {
+		case "SUB", "SUBS", "SUBTITLE", "SUBTITLES", "SUBBED":
+			return true
+		}
+		return false
+	}
+	isTag := func(s string) bool {
+		head, _, _ := strings.Cut(s, "-") // "FRE-GRP": the group follows the last tag
+		for _, l := range languages {
+			if strings.EqualFold(s, l.token) || strings.EqualFold(head, l.token) {
+				return true
+			}
+		}
+		return false
+	}
+	out := map[int]bool{}
+	for k, t := range toks {
+		if !isSub(t.text) {
+			continue
+		}
+		if k > 0 && isTag(toks[k-1].text) {
+			out[toks[k-1].at] = true
+		}
+		for n := k + 1; n < len(toks) && isTag(toks[n].text); n++ {
+			out[toks[n].at] = true
+		}
+	}
+	return out
+}
+
+// languageTagRole reports whether tag occurs after floor as an audio
+// declaration, and whether it occurs in a subtitle position (subs).
+func languageTagRole(spaced, tag string, floor int, subs map[int]bool) (audio, sub bool) {
+	for i := max(floor+1, 0); i+len(tag) <= len(spaced); i++ {
+		if i > 0 && spaced[i-1] != ' ' {
+			continue
+		}
+		end := i + len(tag)
+		if end < len(spaced) && spaced[end] != ' ' && spaced[end] != '-' {
+			continue
+		}
+		if !strings.EqualFold(spaced[i:end], tag) {
+			continue
+		}
+		if subs[i] {
+			sub = true
+		} else {
+			audio = true
+		}
+	}
+	return audio, sub
+}
+
 // tokenIndex returns the offset in s of the first case-insensitive match of
 // the ASCII keyword kw that is a whole token (bounded by the string ends,
 // spaces or hyphens), or -1.
@@ -651,9 +744,13 @@ func parseHeight(upper string) int {
 	return 0
 }
 
+// reRemux matches REMUX as a word of its own ("BluRay.REMUX", "BDRemux",
+// "Remux-2160p"), never inside another word ("~ RemuxDoc", an uploader).
+var reRemux = regexp.MustCompile(`(^|[ \-\[(])(BD|UHD|BR)?REMUX($|[ \-\])])`)
+
 func parseSource(upper string) core.Source {
 	switch {
-	case strings.Contains(upper, " REMUX") || strings.Contains(upper, "BDREMUX"):
+	case reRemux.MatchString(upper):
 		return core.SourceRemux
 	case containsAny(upper, "BLURAY", "BLU-RAY", "BDRIP", "BRRIP", "BD-RIP", "HDDVD", "HD-DVD"):
 		return core.SourceBluRay
