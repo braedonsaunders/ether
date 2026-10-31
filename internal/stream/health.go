@@ -461,16 +461,27 @@ func (e *Engine) statSample(parent context.Context, files []*postedFile, repairs
 			} else {
 				statReceived++
 			}
-			if (ev.missing || repairErasure(ev.err)) && len(repairs) > 0 && e.repairOptions().Enabled {
-				ref := ev.ref
-				if ref.pf == nil {
-					for _, r := range refs {
-						if r.pf.msgID(r.slot) == ev.id {
-							ref = r
-							break
-						}
+			ref := ev.ref
+			if ref.pf == nil && (ev.missing || repairErasure(ev.err)) {
+				for _, r := range refs {
+					if r.pf.msgID(r.slot) == ev.id {
+						ref = r
+						break
 					}
 				}
+			}
+			// A repost of the part (Segment.Alternates) serves it before
+			// PAR2 repair is needed: the sample is present after all.
+			if ev.missing && ref.pf != nil && len(ref.pf.alternates(ref.slot)) > 0 {
+				if e.alternatePresent(ctx, ref, ev.body) {
+					continue
+				}
+				if parent.Err() != nil {
+					out.err = parent.Err()
+					return out
+				}
+			}
+			if (ev.missing || repairErasure(ev.err)) && len(repairs) > 0 && e.repairOptions().Enabled {
 				if ref.pf != nil && repairs[0](ref) {
 					continue
 				}
@@ -511,6 +522,25 @@ func (e *Engine) statSample(parent context.Context, files []*postedFile, repairs
 		out.err = statErr
 	}
 	return out
+}
+
+// alternatePresent reports whether a repost of ref's part is available,
+// checked the same way the primary was: a BODY probe (whose yEnc header
+// must match the slot) or a STAT.
+func (e *Engine) alternatePresent(ctx context.Context, ref slotRef, body bool) bool {
+	for _, alt := range ref.pf.alternates(ref.slot) {
+		if body {
+			if e.probeBody(ctx, ref, alt) == nil {
+				return true
+			}
+		} else if present, err := e.fetcher.Stat(ctx, alt); err == nil && present {
+			return true
+		}
+		if ctx.Err() != nil {
+			return false
+		}
+	}
+	return false
 }
 
 // healthPriority leaves a pre-play check on the live lane and demotes a

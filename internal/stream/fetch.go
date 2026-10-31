@@ -331,18 +331,8 @@ func (e *Engine) load(ctx context.Context, pf *postedFile, i int, id string, glo
 			case <-t.C:
 			}
 		}
-		var data []byte
-		var part core.ArticlePart
-		var err error
-		if burst, ok := e.fetcher.(core.BurstArticleFetcher); ok && time.Now().Before(fo.burstUntil) {
-			data, part, err = burst.BodyPartBurst(ctx, id, pf.groups, prio, fo.burstUntil)
-		} else {
-			data, part, err = e.fetcher.BodyPart(ctx, id, pf.groups, prio)
-		}
+		data, part, err := e.bodyPart(ctx, pf, id, prio, fo)
 		if err == nil {
-			e.repairRate.add(int64(len(data)))
-			e.fetches.Add(1)
-			e.fetchedBytes.Add(int64(len(data)))
 			seg, err := e.normalize(pf, i, data, part)
 			return seg, false, err
 		}
@@ -350,6 +340,10 @@ func (e *Engine) load(ctx context.Context, pf *postedFile, i int, id string, glo
 			return nil, false, err
 		}
 		if errors.Is(err, core.ErrArticleMissing) {
+			// A repost of the part is tried before PAR2 repair or failover.
+			if seg, aerr := e.loadAlternate(ctx, pf, i, prio, fo); seg != nil || aerr != nil {
+				return seg, false, aerr
+			}
 			e.missing.Add(1)
 			return nil, false, fmt.Errorf("stream: %s part %d <%s>: %w", pf.Name(), i+1, id, err)
 		}
@@ -360,6 +354,52 @@ func (e *Engine) load(ctx context.Context, pf *postedFile, i int, id string, glo
 		e.log.Debug("article fetch failed", "file", pf.Name(), "part", i+1, "attempt", attempt+1, "err", err)
 	}
 	return nil, false, fmt.Errorf("stream: %s part %d: %w", pf.Name(), i+1, lastErr)
+}
+
+// bodyPart fetches and decodes one article, counting what it transferred.
+func (e *Engine) bodyPart(ctx context.Context, pf *postedFile, id string, prio core.Priority, fo fetchOpts) ([]byte, core.ArticlePart, error) {
+	var data []byte
+	var part core.ArticlePart
+	var err error
+	if burst, ok := e.fetcher.(core.BurstArticleFetcher); ok && time.Now().Before(fo.burstUntil) {
+		data, part, err = burst.BodyPartBurst(ctx, id, pf.groups, prio, fo.burstUntil)
+	} else {
+		data, part, err = e.fetcher.BodyPart(ctx, id, pf.groups, prio)
+	}
+	if err == nil {
+		e.repairRate.add(int64(len(data)))
+		e.fetches.Add(1)
+		e.fetchedBytes.Add(int64(len(data)))
+	}
+	return data, part, err
+}
+
+// loadAlternate fetches slot i from its repost message-IDs, in NZB order,
+// after the primary article is missing on every provider. A repost is used
+// only when its yEnc header places it exactly on the slot (fitsSlot). It
+// returns (nil, nil) when no repost served, leaving the miss to the caller;
+// an error only when ctx ended or the budget ran out.
+func (e *Engine) loadAlternate(ctx context.Context, pf *postedFile, i int, prio core.Priority, fo fetchOpts) (*segData, error) {
+	for _, alt := range pf.alternates(i) {
+		data, part, err := e.bodyPart(ctx, pf, alt, prio, fo)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if errors.Is(err, core.ErrBudgetExhausted) {
+				return nil, err
+			}
+			continue
+		}
+		seg, err := e.normalize(pf, i, data, part)
+		if err != nil || !pf.fitsSlot(i, seg) {
+			e.log.Debug("repost article does not match its part", "file", pf.Name(), "part", i+1, "id", alt, "err", err)
+			continue
+		}
+		e.log.Debug("served part from repost", "file", pf.Name(), "part", i+1, "id", alt)
+		return seg, nil
+	}
+	return nil, nil
 }
 
 // maxArticleBytes bounds plausible decoded article ranges.

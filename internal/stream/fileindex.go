@@ -38,8 +38,9 @@ type postedFile struct {
 const maxTailGrowth = 1024
 
 type slot struct {
-	msgID      string // "" when the NZB lacks this part
-	begin, end int64  // exact [begin,end) when known
+	msgID      string   // "" when the NZB lacks this part
+	alts       []string // repost message-IDs of this part, tried in order when msgID is missing
+	begin, end int64    // exact [begin,end) when known
 	known      bool
 }
 
@@ -50,6 +51,7 @@ func newPostedFile(idx int, f *nzb.File, segBase int, defPart func() int64) *pos
 	for _, s := range f.Segments {
 		if s.Number >= 1 && s.Number <= n {
 			pf.slots[s.Number-1].msgID = s.MessageID
+			pf.slots[s.Number-1].alts = s.Alternates
 		}
 	}
 	return pf
@@ -256,6 +258,46 @@ func (pf *postedFile) msgID(i int) string {
 		return ""
 	}
 	return pf.slots[i].msgID
+}
+
+// alternates returns the repost message-IDs of slot i (shared; do not
+// modify).
+func (pf *postedFile) alternates(i int) []string {
+	pf.mu.RLock()
+	defer pf.mu.RUnlock()
+	if i < 0 || i >= len(pf.slots) {
+		return nil
+	}
+	return pf.slots[i].alts
+}
+
+// fitsSlot reports whether a decoded repost article can stand in for slot
+// i: its yEnc header must name this part and agree with every range and
+// size the index already knows, so its bytes are cached and served exactly
+// as the original's would be. An article without a part header is only
+// accepted for a single-part file of matching size.
+func (pf *postedFile) fitsSlot(i int, seg *segData) bool {
+	pf.mu.RLock()
+	defer pf.mu.RUnlock()
+	if i < 0 || i >= len(pf.slots) {
+		return false
+	}
+	if !seg.rangeExact {
+		return len(pf.slots) == 1 && (!pf.known || int64(len(seg.data)) == pf.size)
+	}
+	if seg.total != len(pf.slots) || (pf.known && seg.fileSize != pf.size) {
+		return false
+	}
+	if s := pf.slots[i]; s.known && (s.begin != seg.begin || s.end != seg.end()) {
+		return false
+	}
+	if i > 0 && pf.slots[i-1].known && pf.slots[i-1].end != seg.begin {
+		return false
+	}
+	if i+1 < len(pf.slots) && pf.slots[i+1].known && pf.slots[i+1].begin != seg.end() {
+		return false
+	}
+	return true
 }
 
 func (pf *postedFile) learnedPartSize() int64 {
