@@ -170,24 +170,44 @@ func (c *Catalog) movieToTitle(ctx context.Context, m tmdb.Movie) core.Title {
 	return t
 }
 
-func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails) core.Title {
-	t := c.movieToTitle(ctx, d.Movie)
-	// Ignore festival premieres and home-video windows when theatrical dates exist.
-	if d.ReleaseDates != nil {
-		var theatrical time.Time
-		for _, country := range d.ReleaseDates.Results {
-			for _, release := range country.ReleaseDate {
-				if release.Type != 2 && release.Type != 3 {
-					continue
-				}
-				date := tmdb.ParseDate(strings.SplitN(release.ReleaseDate, "T", 2)[0])
-				if !date.IsZero() && (theatrical.IsZero() || date.Before(theatrical)) {
-					theatrical = date
-				}
+// earliestDatedRelease is the earliest calendar day among the given TMDB
+// release types. Type 1 is a premiere, 2 a limited theatrical release and 3
+// a theatrical release. Home-video types are not title years or date added.
+func earliestDatedRelease(dates *tmdb.ReleaseDates, kinds ...int) time.Time {
+	if dates == nil {
+		return time.Time{}
+	}
+	want := map[int]bool{}
+	for _, kind := range kinds {
+		want[kind] = true
+	}
+	var earliest time.Time
+	for _, country := range dates.Results {
+		for _, release := range country.ReleaseDate {
+			if !want[release.Type] {
+				continue
+			}
+			date := tmdb.ParseDate(strings.SplitN(release.ReleaseDate, "T", 2)[0])
+			if !date.IsZero() && (earliest.IsZero() || date.Before(earliest)) {
+				earliest = date
 			}
 		}
-		if !theatrical.IsZero() {
-			t.Released, t.Year = theatrical, theatrical.Year()
+	}
+	return earliest
+}
+
+func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails) core.Title {
+	t := c.movieToTitle(ctx, d.Movie)
+	// Date added is the earliest theatrical date. The title year is the
+	// primary release_date, which is what TMDB, IMDb and Plex match on.
+	// A later regional theatrical date must not move that year. With no
+	// primary date, the earliest premiere supplies the year.
+	if theatrical := earliestDatedRelease(d.ReleaseDates, 2, 3); !theatrical.IsZero() {
+		t.Released = theatrical
+	}
+	if t.Year == 0 {
+		if premiere := earliestDatedRelease(d.ReleaseDates, 1); !premiere.IsZero() {
+			t.Year = premiere.Year()
 		}
 	}
 	t.Keywords = keywordNames(d.Keywords)

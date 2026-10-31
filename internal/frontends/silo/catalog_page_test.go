@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
@@ -156,5 +157,15 @@ func TestSeasonEpisodeCountAndStills(t *testing.T) {
 	episodes := call("/api/v2/catalog/series/" + id + "/seasons/1/episodes")
 	if episodes.Code != 200 || !strings.Contains(episodes.Body.String(), `"still_url":"/api/v2/images/still-token"`) || !strings.Contains(episodes.Body.String(), `"poster_url":"/api/v2/images/still-token"`) || !strings.Contains(episodes.Body.String(), `"poster_is_episode_still":true`) {
 		t.Fatalf("episodes %d %s", episodes.Code, episodes.Body.String())
+	}
+}
+
+func TestSiloYearIsNotTheTheatricalDateAdded(t *testing.T) {
+	item := titleDTO(frontend.Title{
+		Key: core.MovieKey(289), Type: "movie", Title: "Casablanca", Year: 1942,
+		Released: time.Date(1943, 1, 15, 0, 0, 0, 0, time.UTC),
+	}, frontend.WatchStatus{})
+	if item["year"] != 1942 || item["release_date"] != "1943-01-15" {
+		t.Fatalf("year %v release %v", item["year"], item["release_date"])
 	}
 }

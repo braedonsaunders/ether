@@ -47,6 +47,11 @@ func TestPre1970ReleaseIsTheDateAdded(t *testing.T) {
 	if em.AddedAt != episode.Released.Unix() || em.OriginallyAvailableAt != "1960-12-09" {
 		t.Fatalf("episode added %d originally %q", em.AddedAt, em.OriginallyAvailableAt)
 	}
+	split := &core.Title{Key: core.MovieKey(289), Type: core.TypeMovie, Title: "Casablanca", Year: 1942, Released: time.Date(1943, 1, 15, 0, 0, 0, 0, time.UTC)}
+	sm := s.metadata(context.Background(), &Request{}, split, renderOpts{})
+	if sm.Year != 1942 || sm.OriginallyAvailableAt != "1943-01-15" || sm.AddedAt != split.Released.Unix() {
+		t.Fatalf("split year %d originally %q added %d", sm.Year, sm.OriginallyAvailableAt, sm.AddedAt)
+	}
 	unknown := s.metadata(context.Background(), &Request{}, &core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Undated"}, renderOpts{})
 	if unknown.AddedAt != 0 || unknown.OriginallyAvailableAt != "" {
 		t.Fatalf("unknown added %d originally %q", unknown.AddedAt, unknown.OriginallyAvailableAt)

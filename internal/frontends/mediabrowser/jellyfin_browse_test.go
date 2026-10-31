@@ -47,6 +47,11 @@ func TestPre1970PremiereAndDateAdded(t *testing.T) {
 	if _, ok := unknown["PremiereDate"]; ok || unknown["DateCreated"] != nil {
 		t.Fatalf("unknown dates %#v", unknown)
 	}
+	theatrical := time.Date(1943, 1, 15, 0, 0, 0, 0, time.UTC)
+	split := i.itemDTO(frontend.Title{Key: core.MovieKey(289), Type: "movie", Title: "Casablanca", Year: 1942, Released: theatrical}, frontend.WatchStatus{})
+	if split["ProductionYear"] != 1942 || split["PremiereDate"] != wireTime(theatrical) {
+		t.Fatalf("split year %v premiere %v", split["ProductionYear"], split["PremiereDate"])
+	}
 	future := time.Now().Add(48 * time.Hour).UTC()
 	later := i.itemDTO(frontend.Title{Key: core.MovieKey(2), Type: "movie", Title: "Later", Released: future}, frontend.WatchStatus{})
 	if later["PremiereDate"] != wireTime(future) || later["DateCreated"] != nil {
