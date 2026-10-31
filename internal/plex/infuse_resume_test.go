@@ -9,11 +9,11 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
-func TestInfuseDirectPartKeepsApprovedResume(t *testing.T) {
+func TestInfuseDirectPartStaysBelowFivePercent(t *testing.T) {
 	for _, tc := range []struct {
 		offset int
 		resume bool
-	}{{30000, false}, {61000, true}, {201274, true}} {
+	}{{30000, false}, {61000, false}, {120000, false}, {201274, false}} {
 		t.Run(fmt.Sprint(tc.offset), func(t *testing.T) {
 			f := newFixture()
 			defer f.srv.Close()

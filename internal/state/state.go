@@ -4,8 +4,8 @@
 // Semantics follow Plex:
 //   - Progress at >= 90% of duration marks the item watched (view count
 //     increments once per viewing, the resume offset clears).
-//   - Progress becomes resumable at 60 seconds or 5% of duration, whichever
-//     comes first. At 90% it is marked watched.
+//   - Progress below 5% is treated as "not really started": no resume point
+//     is kept. Between 5% and 90% the item is in progress.
 //   - Scrobble marks watched unconditionally; Unscrobble clears the view
 //     count and resume point (the user's rating is kept).
 package state
@@ -76,7 +76,6 @@ CREATE UNIQUE INDEX state_history_imported ON state_history(user_id, rating_key,
 const (
 	WatchedThreshold = 0.90
 	StartedThreshold = 0.05
-	ResumeAfter      = time.Minute
 )
 
 // EventKind identifies a state change subscribers may react to.
@@ -527,7 +526,7 @@ func loadTx(ctx context.Context, tx *sql.Tx, userID int64, key core.RatingKey) (
 
 // Progress records a timeline update. state is Plex's timeline state
 // ("playing", "paused", "stopped", "buffering"). See the package doc for the
-// 60-second/5% start and 90% completion rules. A duration of 0 keeps the previously known duration; with no
+// 5% start and 90% completion rules. A duration of 0 keeps the previously known duration; with no
 // known duration the offset is kept as a resume point and nothing is ever
 // marked watched by progress alone.
 //
@@ -572,7 +571,7 @@ func (s *State) progressAt(ctx context.Context, userID int64, key core.RatingKey
 			}
 			cur.counted = true
 			cur.ws.ViewOffset = 0
-		case cur.ws.Duration > 0 && offset < ResumeAfter && frac < StartedThreshold:
+		case cur.ws.Duration > 0 && frac < StartedThreshold:
 			// Not really started (or rewound to the beginning): no resume
 			// point. `counted` is left alone so scrubbing back and forth
 			// over the end of one viewing cannot inflate the view count.

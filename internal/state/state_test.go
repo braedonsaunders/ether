@@ -99,7 +99,7 @@ func TestProgressThresholds(t *testing.T) {
 	}
 }
 
-func TestResumeStartsAtEarlierOfMinuteOrFivePercent(t *testing.T) {
+func TestResumeStartsAtFivePercent(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		duration time.Duration
@@ -108,9 +108,9 @@ func TestResumeStartsAtEarlierOfMinuteOrFivePercent(t *testing.T) {
 		episode  bool
 	}{
 		{"movie-30s", 97 * time.Minute, 30 * time.Second, false, false},
-		{"movie-61s", 97 * time.Minute, 61 * time.Second, true, false},
-		{"movie-exact-minute", 97 * time.Minute, time.Minute, true, false},
-		{"infuse-actual-stop", 97 * time.Minute, 201274 * time.Millisecond, true, false},
+		{"movie-61s", 97 * time.Minute, 61 * time.Second, false, false},
+		{"movie-exact-minute", 97 * time.Minute, time.Minute, false, false},
+		{"infuse-actual-stop", 97 * time.Minute, 201274 * time.Millisecond, false, false},
 		{"episode-just-under-five-percent", 20 * time.Minute, 59 * time.Second, false, true},
 		{"short-item-existing-five-percent", 10 * time.Minute, 30 * time.Second, true, true},
 	} {
