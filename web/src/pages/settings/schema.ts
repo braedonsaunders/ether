@@ -320,14 +320,16 @@ export const CATALOG: FieldGroup[] = localized(() => [
         kind: "text",
         help: t("Two-letter region for release dates and streaming availability."),
       },
-      { key: "refreshInterval", label: t("Refresh every"), kind: "duration" },
     ],
+    more: [{ key: "refreshInterval", label: t("Refresh every"), kind: "duration" }],
   },
   {
     title: t("What's browsable"),
     description: t("Thresholds keep obscure titles out of Plex libraries; they remain searchable."),
     fields: [
       { key: "minPopularity", label: t("Minimum popularity"), kind: "number", min: 0, step: 1 },
+    ],
+    more: [
       { key: "minVotes", label: t("Minimum votes"), kind: "number", min: 0, step: 10 },
       { key: "includeAdult", label: t("Include adult titles"), kind: "bool" },
       {
