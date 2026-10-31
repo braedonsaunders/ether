@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/experience"
@@ -13,13 +14,56 @@ type surfaceVirtualPaths struct {
 	experience frontend.Experience
 	base       func(context.Context, *http.Request) (string, error)
 	enabled    func() bool
+	// stamp changes when the catalogue or the viewer's restrictions change.
+	// A nil stamp keeps every request on the live walk, which tests rely on.
+	stamp func(*core.Viewer) string
+	index *pathIndex
+}
+
+type pathIndex struct {
+	mu    sync.Mutex
+	stamp string
+	paths map[core.RatingKey]string
 }
 
 func (s surfaceVirtualPaths) Paths(ctx context.Context, viewer *core.Viewer, device core.Device, keys []core.RatingKey) (map[core.RatingKey]string, error) {
 	if s.experience == nil || (s.enabled != nil && !s.enabled()) {
 		return nil, core.ErrNotAvailable
 	}
+	if s.index != nil && s.stamp != nil && viewer != nil {
+		stamp := s.stamp(viewer)
+		if stamp == "" {
+			return experience.VirtualPaths(ctx, s.virtualPathCatalog(), viewer, device, keys)
+		}
+		s.index.mu.Lock()
+		if s.index.paths != nil && s.index.stamp == stamp {
+			out := pathLookup(s.index.paths, keys)
+			s.index.mu.Unlock()
+			return out, nil
+		}
+		s.index.mu.Unlock()
+		full, err := experience.IndexVirtualPaths(ctx, s.virtualPathCatalog(), viewer, device)
+		if err != nil {
+			return nil, err
+		}
+		s.index.mu.Lock()
+		s.index.stamp = stamp
+		s.index.paths = full
+		out := pathLookup(full, keys)
+		s.index.mu.Unlock()
+		return out, nil
+	}
 	return experience.VirtualPaths(ctx, s.virtualPathCatalog(), viewer, device, keys)
+}
+
+func pathLookup(paths map[core.RatingKey]string, keys []core.RatingKey) map[core.RatingKey]string {
+	out := make(map[core.RatingKey]string, len(keys))
+	for _, key := range keys {
+		if p, ok := paths[key]; ok {
+			out[key] = p
+		}
+	}
+	return out
 }
 
 func (s surfaceVirtualPaths) Base(ctx context.Context, req *http.Request) (string, error) {
