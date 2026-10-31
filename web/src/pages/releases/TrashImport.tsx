@@ -187,9 +187,7 @@ export function TrashImport({
     setProfileId(id);
     if (id) {
       void load(
-        mode === "dictionarry"
-          ? { app, source: "dictionarry", profile: id }
-          : { app, profile: id },
+        mode === "dictionarry" ? { app, source: "dictionarry", profile: id } : { app, profile: id },
       );
     } else {
       clearPreview();

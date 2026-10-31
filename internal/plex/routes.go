@@ -52,6 +52,7 @@ func (s *Server) routes() chi.Router {
 	get("/library/sections/all", s.handleSections)
 	get("/library/sections/{section}", s.handleSection)
 	get("/library/sections/{section}/{sub}", s.handleSectionSub)
+	get("/library/sections/{section}/{sub}/{key}", s.handleSectionSubKey)
 	any("/library/sections/{section}/refresh", s.ownerOnly(s.handleOK))
 	get("/library/onDeck", s.handleOnDeck)
 	get("/library/recentlyAdded", s.handleRecentlyAdded)

@@ -139,6 +139,9 @@ func newFacetCache() *facetCache { return &facetCache{m: map[string]facetEntry{}
 const facetTTL = 10 * time.Minute
 
 func (s *Server) facet(ctx context.Context, t core.MediaType, name string) ([]core.FacetValue, error) {
+	if name == "firstCharacter" {
+		return s.d.Catalog.Facet(ctx, t, name)
+	}
 	k := string(t) + "/" + name
 	s.facets.mu.Lock()
 	e, ok := s.facets.m[k]

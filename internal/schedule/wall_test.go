@@ -56,7 +56,7 @@ func TestWaitNoticesSleepWithinBoundAndCancels(t *testing.T) {
 
 func TestPersistedSchedulesRecoverWithoutBacklog(t *testing.T) {
 	now := time.Now()
-	for _, last := range []time.Time{time.Time{}, now.Add(-72 * time.Hour), now.Add(72 * time.Hour)} {
+	for _, last := range []time.Time{{}, now.Add(-72 * time.Hour), now.Add(72 * time.Hour)} {
 		if !Due(now, last, 24*time.Hour) {
 			t.Fatal("overdue or clock-corrected schedule stuck", last)
 		}

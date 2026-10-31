@@ -379,6 +379,8 @@ func (s *Server) parseBrowse(ctx context.Context, sec Section, t core.MediaType,
 			}
 		case "studio":
 			f.Studio = s.facetTitle(ctx, t, "studio", v)
+		case "firstCharacter":
+			f.FirstCharacter = v
 		case "language":
 			f.Languages = splitVals(v)
 		case "year":
@@ -599,6 +601,30 @@ func (s *Server) handleSectionSub(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleSectionSubKey dispatches /library/sections/{id}/{sub}/{key} when a
+// client traverses a secondary facet directory by relative key.
+func (s *Server) handleSectionSubKey(w http.ResponseWriter, r *http.Request) {
+	sec, ok := s.sectionParam(w, r)
+	if !ok {
+		return
+	}
+	sub := chi.URLParam(r, "sub")
+	val, err := url.PathUnescape(chi.URLParam(r, "key"))
+	if err != nil {
+		val = chi.URLParam(r, "key")
+	}
+	switch sub {
+	case "genre", "year", "decade", "contentRating", "country", "studio", "firstCharacter":
+		r2 := r.Clone(r.Context())
+		q := r2.URL.Query()
+		q.Set(sub, val)
+		r2.URL.RawQuery = q.Encode()
+		s.sectionList(w, r2, sec, "all")
+	default:
+		s.handleUnknown(w, r)
+	}
+}
+
 func (s *Server) sectionList(w http.ResponseWriter, r *http.Request, sec Section, sub string) {
 	if sub == "all" && r.URL.Query().Has("guid") {
 		s.libraryByGUID(w, r, &sec)
@@ -719,13 +745,20 @@ func (s *Server) sectionFacet(w http.ResponseWriter, r *http.Request, sec Sectio
 		var d model.Directory
 		switch sub {
 		case "firstCharacter":
-			d = model.Directory{Size: model.Ptr(v.Count), Key: url.PathEscape(v.Key), Title: v.Title}
+			d = model.Directory{FastKey: "/library/sections/" + id + "/all?firstCharacter=" + url.QueryEscape(v.Key), Size: model.Ptr(v.Count), Key: url.PathEscape(v.Key), Title: v.Title}
 		case "categories":
 			d = model.Directory{Type: "directory", Key: "/library/sections/" + id + "/all?genre=" + url.QueryEscape(v.Key), Title: v.Title}
 		default:
 			d = model.Directory{FastKey: "/library/sections/" + id + "/all?" + facet + "=" + url.QueryEscape(v.Key), Key: v.Key, Title: v.Title, Type: facet}
 		}
 		mc.Directory = append(mc.Directory, d)
+	}
+	if sub == "firstCharacter" {
+		if _, dir := parseSortParam(r.URL.Query().Get("sort")); dir == "desc" {
+			for i, j := 0, len(mc.Directory)-1; i < j; i, j = i+1, j-1 {
+				mc.Directory[i], mc.Directory[j] = mc.Directory[j], mc.Directory[i]
+			}
+		}
 	}
 	if sub == "categories" {
 		mc.Meta = &model.Meta{Type: []model.MetaType{{Key: "/library/sections/" + id + "/categories", Type: "directory", Title: "Categories", Active: true}}}

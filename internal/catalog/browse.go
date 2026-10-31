@@ -251,6 +251,19 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		conds = append(conds, `EXISTS (SELECT 1 FROM catalog_studios s WHERE s.key=t.key AND s.studio=?)`)
 		args = append(args, f.Studio)
 	}
+	if fc := strings.TrimSpace(f.FirstCharacter); fc != "" {
+		switch {
+		case fc == "#" || fc == "0":
+			conds = append(conds, "t.sort_title<>'' AND t.sort_title < 'a'")
+		case fc == "~" || fc == "…":
+			conds = append(conds, "t.sort_title >= '{'")
+		case len(fc) == 1 && ((fc[0] >= 'a' && fc[0] <= 'z') || (fc[0] >= 'A' && fc[0] <= 'Z')):
+			lo := strings.ToLower(fc)
+			hi := string(lo[0] + 1)
+			conds = append(conds, "t.sort_title >= ? AND t.sort_title < ?")
+			args = append(args, lo, hi)
+		}
+	}
 	if f.Query != "" {
 		op := store.Like(store.DialectOf(c.db))
 		conds = append(conds, "(t.title "+op+" ? ESCAPE '\\' OR t.original_title "+op+" ? ESCAPE '\\')")
@@ -283,17 +296,9 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 	}
 	c.cacheMu.RUnlock()
 
-	typeCond := "t.type IN ('movie','show')"
-	var args []any
-	if t == core.TypeMovie || t == core.TypeShow {
-		typeCond = "t.type=?"
-		args = append(args, string(t))
-	}
-	base := "t.browsable=1 AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=? AND " + typeCond
-	args = append([]any{c.now().Unix()}, args...)
-	if c.config().GateMoviesByHomeRelease {
-		base += " AND " + homeReleaseSQL("t")
-		args = append(args, c.now().Unix(), c.now().Unix()-int64(homeReleaseGrace.Seconds()))
+	base, args, err := c.browseWhere(core.Filter{Type: t})
+	if err != nil {
+		return nil, err
 	}
 	var q string
 	switch facet {
@@ -312,7 +317,7 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 	case "contentRating":
 		q = `SELECT t.content_rating, COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.content_rating<>'' GROUP BY t.content_rating ORDER BY MIN(t.content_rating_rank) ASC, t.content_rating ASC`
 	case "firstCharacter":
-		q = `SELECT CASE WHEN UPPER(SUBSTR(t.sort_title, 1, 1)) BETWEEN 'A' AND 'Z' THEN UPPER(SUBSTR(t.sort_title, 1, 1)) ELSE '#' END, COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.sort_title<>'' GROUP BY 1 ORDER BY 1 ASC`
+		q = `SELECT CASE WHEN t.sort_title < 'a' THEN '#' WHEN SUBSTR(t.sort_title, 1, 1) BETWEEN 'a' AND 'z' THEN UPPER(SUBSTR(t.sort_title, 1, 1)) ELSE '~' END, COUNT(*) FROM catalog_titles t WHERE ` + base + ` AND t.sort_title<>'' GROUP BY 1 ORDER BY 1 ASC`
 	default:
 		return nil, fmt.Errorf("catalog: unknown facet %q", facet)
 	}
@@ -328,8 +333,11 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 			return nil, err
 		}
 		v.Title = v.Key
-		if facet == "decade" {
+		switch {
+		case facet == "decade":
 			v.Title = v.Key + "s"
+		case facet == "firstCharacter" && v.Key == "~":
+			v.Title = "#"
 		}
 		out = append(out, v)
 	}

@@ -359,7 +359,7 @@ func TestDictionarryCompilesBaseSQLDataset(t *testing.T) {
 		t.Skip("local base.sql fixture not present")
 	}
 	files := map[string]string{
-		"pcd.json":           `{"dependencies":{"https://github.com/Dictionarry-Hub/schema":"1.1.0"}}`,
+		"pcd.json":            `{"dependencies":{"https://github.com/Dictionarry-Hub/schema":"1.1.0"}}`,
 		"ops/0.rosettarr.sql": string(baseBytes),
 	}
 	cat, err := compileDictionarryArchive(context.Background(), buildDictionarryTarGz(t, files))

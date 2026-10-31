@@ -39,6 +39,7 @@ type Filter struct {
 	Collection       int64         `json:"collection,omitempty"`
 	Person           int64         `json:"person,omitempty"` // cast or crew TMDB id
 	Studio           string        `json:"studio,omitempty"`
+	FirstCharacter   string        `json:"firstCharacter,omitempty"`
 	Query            string        `json:"query,omitempty"` // title substring
 }
 
