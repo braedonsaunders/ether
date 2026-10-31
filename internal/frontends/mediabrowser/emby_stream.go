@@ -29,7 +29,12 @@ func (i *instance) embyMediaStreamDTO(dto map[string]any, stream frontend.Stream
 			dto["ExtendedVideoType"] = "None"
 			dto["ExtendedVideoSubType"] = "None"
 			dto["ExtendedVideoSubTypeDescription"] = "None"
-			dto["VideoRange"] = "SDR"
+			// Absence of Dolby Vision/PQ does not establish SDR. Only a
+			// supported, explicitly signalled SDR transfer curve does.
+			switch stream.ColorTransfer {
+			case "bt709", "bt470m", "bt470bg", "smpte170m", "smpte240m", "iec61966-2-1", "bt2020-10", "bt2020-12":
+				dto["VideoRange"] = "SDR"
+			}
 		}
 	} else if _, set := dto["ExtendedVideoType"]; !set {
 		// Audio and subtitle streams have no extended video type. Emby still

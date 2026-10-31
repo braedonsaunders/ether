@@ -54,17 +54,25 @@ func TestEmbyStreamUsesOptionalProbeFacts(t *testing.T) {
 func TestEmbyExtendedVideoTypeUsesPositiveProbeEvidence(t *testing.T) {
 	yes, no := true, false
 	for _, tc := range []struct {
-		name   string
-		stream frontend.StreamInfo
-		want   string
+		name       string
+		stream     frontend.StreamInfo
+		want       string
+		rangeValue string
 	}{
-		{"Dolby Vision", frontend.StreamInfo{Type: "video", DolbyVisionConfigurationPresent: &yes, HDR10Plus: &yes, ColorTransfer: "arib-std-b67"}, "DolbyVision"},
-		{"HDR10+", frontend.StreamInfo{Type: "video", HDR10Plus: &yes}, "Hdr10Plus"},
-		{"HLG", frontend.StreamInfo{Type: "video", ColorTransfer: "arib-std-b67"}, "HyperLogGamma"},
-		{"PQ alone", frontend.StreamInfo{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &no, DolbyVisionConfigurationPresent: &no}, ""},
-		{"probed without extended type", frontend.StreamInfo{Type: "video", Codec: "h264", DolbyVisionConfigurationPresent: &no, HDR10Plus: &no}, "None"},
-		{"unknown", frontend.StreamInfo{Type: "video"}, ""},
-		{"audio", frontend.StreamInfo{Type: "audio", HDR10Plus: &yes}, "None"},
+		{"Dolby Vision", frontend.StreamInfo{Type: "video", DolbyVisionConfigurationPresent: &yes, HDR10Plus: &yes, ColorTransfer: "arib-std-b67"}, "DolbyVision", ""},
+		{"HDR10+", frontend.StreamInfo{Type: "video", HDR10Plus: &yes}, "Hdr10Plus", ""},
+		{"HLG", frontend.StreamInfo{Type: "video", ColorTransfer: "arib-std-b67"}, "HyperLogGamma", ""},
+		{"PQ alone", frontend.StreamInfo{Type: "video", ColorTransfer: "smpte2084", HDR10Plus: &no, DolbyVisionConfigurationPresent: &no}, "", ""},
+		{"probed without extended type", frontend.StreamInfo{Type: "video", Codec: "h264", DolbyVisionConfigurationPresent: &no, HDR10Plus: &no}, "None", ""},
+		{"unknown", frontend.StreamInfo{Type: "video"}, "", ""},
+		{"audio", frontend.StreamInfo{Type: "audio", HDR10Plus: &yes}, "None", ""},
+		{"unknown transfer DV false HDR nil", frontend.StreamInfo{Type: "video", DolbyVisionConfigurationPresent: &no}, "None", ""},
+		{"unknown transfer DV nil HDR false", frontend.StreamInfo{Type: "video", HDR10Plus: &no}, "", ""},
+		{"unknown transfer with bit depth", frontend.StreamInfo{Type: "video", BitDepth: 8, DolbyVisionConfigurationPresent: &no}, "None", ""},
+		{"unsupported transfer", frontend.StreamInfo{Type: "video", ColorTransfer: "unrecognised", DolbyVisionConfigurationPresent: &no}, "None", ""},
+		{"explicit SDR", frontend.StreamInfo{Type: "video", ColorTransfer: "bt709", DolbyVisionConfigurationPresent: &no, HDR10Plus: &no}, "None", "SDR"},
+		{"explicit SDR HDR unknown", frontend.StreamInfo{Type: "video", ColorTransfer: "smpte170m", DolbyVisionConfigurationPresent: &no}, "None", "SDR"},
+		{"DV overrides base SDR transfer", frontend.StreamInfo{Type: "video", ColorTransfer: "bt709", DolbyVisionConfigurationPresent: &yes}, "DolbyVision", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := (&instance{protocol: "emby"}).mediaStreams([]frontend.StreamInfo{tc.stream})[0].(map[string]any)
@@ -80,8 +88,12 @@ func TestEmbyExtendedVideoTypeUsesPositiveProbeEvidence(t *testing.T) {
 			if got["ExtendedVideoType"] != tc.want {
 				t.Fatalf("got %#v, want %s", got["ExtendedVideoType"], tc.want)
 			}
-			if tc.name == "probed without extended type" && got["VideoRange"] != "SDR" {
-				t.Fatalf("video range: %#v", got["VideoRange"])
+			if tc.rangeValue != "" {
+				if got["VideoRange"] != tc.rangeValue {
+					t.Fatalf("video range: got %#v, want %s", got["VideoRange"], tc.rangeValue)
+				}
+			} else if _, ok := got["VideoRange"]; ok {
+				t.Fatalf("unproven video range: %#v", got["VideoRange"])
 			}
 			if tc.name == "audio" && got["ExtendedVideoType"] != "None" {
 				t.Fatal(got)
