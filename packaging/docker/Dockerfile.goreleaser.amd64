@@ -6,16 +6,19 @@ FROM debian:trixie-slim
 
 # Hardware transcoding userspace, loaded by the bundled ffmpeg at runtime:
 # libva + libva-drm (VAAPI on /dev/dri), Mesa VA drivers (AMD), Intel's
-# iHD (Gen8+) and i965 (older) VA drivers and the oneVPL QuickSync runtime
-# (Debian ships the Intel packages for amd64 only), OpenCL loader.
+# non-free iHD (Gen8+: full EU kernel shaders for VBR/CBR/QVBR,
+# VAEntrypointEncSlice and VAEntrypointVideoProc) and i965 (older Gen) VA
+# drivers and the oneVPL QuickSync runtime (Debian ships the Intel packages
+# for amd64 only), OpenCL loader.
 #
 # The ether account (the default PUID/PGID) is fixed at 999: what --system allocation gave every
 # earlier image on this base, pinned so a future image can still read an
 # existing 0700 /config volume. Keep in sync with the repo-root Dockerfile.
-RUN apt-get update \
+RUN sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates tzdata libva2 libva-drm2 mesa-va-drivers ocl-icd-libopencl1 \
-      intel-media-va-driver i965-va-driver libmfx-gen1.2 \
+      ca-certificates tzdata libva2 libva-drm2 vainfo mesa-va-drivers ocl-icd-libopencl1 \
+      intel-media-va-driver-non-free i965-va-driver-shaders libmfx-gen1.2 \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --system --gid 999 ether \
  && useradd --system --uid 999 --gid ether --home-dir /config --shell /usr/sbin/nologin ether \

@@ -179,6 +179,27 @@ func testEncodeArgs(accel, encoder, device string) []string {
 	return append(args, "-c:v", encoder, "-f", "null", "-")
 }
 
+// vaapiRCProbeArgs is a 1-frame lavfi encode that probes a specific VAAPI
+// rate-control mode (QVBR, VBR, CBR, CQP). Some drivers (for example Debian's
+// free iHD driver or LP-only EncSliceLP entrypoints) support CQP only and
+// reject QVBR/VBR with "Driver does not support QVBR RC mode".
+func vaapiRCProbeArgs(encoder, device, rcMode string) []string {
+	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error", "-vaapi_device", device,
+		"-f", "lavfi", "-i", "testsrc=size=320x240:rate=1", "-frames:v", "1",
+		"-vf", "format=nv12,hwupload", "-c:v", encoder}
+	switch rcMode {
+	case "QVBR":
+		args = append(args, "-rc_mode", "QVBR", "-global_quality", "23", "-b:v", "1000k", "-maxrate", "1500k", "-bufsize", "2000k")
+	case "VBR":
+		args = append(args, "-rc_mode", "VBR", "-b:v", "1000k", "-maxrate", "1500k", "-bufsize", "2000k")
+	case "CBR":
+		args = append(args, "-rc_mode", "CBR", "-b:v", "1000k", "-maxrate", "1000k", "-bufsize", "2000k")
+	case "CQP":
+		args = append(args, "-rc_mode", "CQP", "-global_quality", "23")
+	}
+	return append(args, "-f", "null", "-")
+}
+
 // vaapiScaleArgs is a 1-frame encode through scale_vaapi, the GPU scaler
 // real VAAPI sessions use. Some drivers encode but reject video
 // processing ("the requested VAProfile is not supported"), which the
@@ -187,6 +208,16 @@ func vaapiScaleArgs(encoder, device string) []string {
 	return []string{"-hide_banner", "-nostdin", "-loglevel", "error", "-vaapi_device", device,
 		"-f", "lavfi", "-i", "testsrc=size=320x240:rate=1", "-frames:v", "1",
 		"-vf", "format=nv12,hwupload,scale_vaapi=w=160:h=120:format=nv12", "-c:v", encoder, "-f", "null", "-"}
+}
+
+// vaapiTonemapArgs is a 1-frame encode through tonemap_vaapi + scale_vaapi,
+// the GPU HDR tone-mapping pipeline. Some VAAPI drivers support scale_vaapi
+// but lack the HDR tone-mapping VPP kernel or OpenCL/Compute path.
+func vaapiTonemapArgs(encoder, device string) []string {
+	return []string{"-hide_banner", "-nostdin", "-loglevel", "error", "-vaapi_device", device,
+		"-f", "lavfi", "-i", "testsrc=size=320x240:rate=1", "-frames:v", "1",
+		"-vf", "format=p010le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc,hwupload,tonemap_vaapi=format=nv12:t=bt709:m=bt709:p=bt709,scale_vaapi=w=160:h=120:format=nv12",
+		"-c:v", encoder, "-f", "null", "-"}
 }
 
 // hwDetector confirms hardware encoders.
@@ -216,6 +247,31 @@ func (d hwDetector) testRun(ctx context.Context, args []string) error {
 		return fmt.Errorf("%w: %s", err, msg)
 	}
 	return nil
+}
+
+// probeVAAPIRCModes checks which rate-control modes (QVBR, VBR, CBR, CQP)
+// a VAAPI encoder supports on device, returning the best mode for quality
+// (VBV reservoir) runs and the best mode for explicit bitrate runs.
+func (d hwDetector) probeVAAPIRCModes(ctx context.Context, encoder, device string) (qualityRC, bitrateRC string) {
+	supported := map[string]bool{}
+	for _, rc := range []string{"QVBR", "VBR", "CBR", "CQP"} {
+		if err := d.testRun(ctx, vaapiRCProbeArgs(encoder, device, rc)); err == nil {
+			supported[rc] = true
+		}
+	}
+	for _, rc := range []string{"QVBR", "VBR", "CBR", "CQP"} {
+		if supported[rc] {
+			qualityRC = rc
+			break
+		}
+	}
+	for _, rc := range []string{"VBR", "CBR", "QVBR", "CQP"} {
+		if supported[rc] {
+			bitrateRC = rc
+			break
+		}
+	}
+	return qualityRC, bitrateRC
 }
 
 // detect picks the hardware accelerator per the configured mode ("auto",
@@ -265,15 +321,40 @@ func (d hwDetector) detect(ctx context.Context, mode, vaapiDevice string, f feat
 			continue
 		}
 		hw := core.HWAccel{Name: c.name, Encoders: []string{c.h264}, Device: device}
-		if c.name == AccelVAAPI && f.hasFilter("scale_vaapi") {
-			if err := d.testRun(ctx, vaapiScaleArgs(c.h264, device)); err != nil {
-				hw.NoGPUScale = true
-				d.log.Info("VAAPI video processing unavailable; scaling in software before the hardware encoder", "device", device, "err", err)
+		if c.name == AccelVAAPI {
+			if qRC, bRC := d.probeVAAPIRCModes(ctx, c.h264, device); qRC != "" && (qRC != "QVBR" || bRC != "VBR") {
+				hw.VAAPIQualityRC = map[string]string{c.h264: qRC}
+				hw.VAAPIBitrateRC = map[string]string{c.h264: bRC}
+				d.log.Info("VAAPI rate control mode selected", "encoder", c.h264, "qualityRC", qRC, "bitrateRC", bRC)
+			}
+			if f.hasFilter("scale_vaapi") {
+				if err := d.testRun(ctx, vaapiScaleArgs(c.h264, device)); err != nil {
+					hw.NoGPUScale = true
+					d.log.Info("VAAPI video processing unavailable; scaling in software before the hardware encoder", "device", device, "err", err)
+				} else if f.hasFilter("tonemap_vaapi") {
+					if err := d.testRun(ctx, vaapiTonemapArgs(c.h264, device)); err != nil {
+						hw.NoGPUTonemap = true
+						d.log.Info("VAAPI HDR tone-mapping unavailable; tone-mapping in software", "device", device, "err", err)
+					}
+				}
 			}
 		}
 		if f.hasEncoder(c.hevc) {
 			if err := d.testEncode(ctx, c.name, c.hevc, device); err == nil {
 				hw.Encoders = append(hw.Encoders, c.hevc)
+				if c.name == AccelVAAPI {
+					if qRC, bRC := d.probeVAAPIRCModes(ctx, c.hevc, device); qRC != "" && (qRC != "QVBR" || bRC != "VBR") {
+						if hw.VAAPIQualityRC == nil {
+							hw.VAAPIQualityRC = map[string]string{}
+						}
+						if hw.VAAPIBitrateRC == nil {
+							hw.VAAPIBitrateRC = map[string]string{}
+						}
+						hw.VAAPIQualityRC[c.hevc] = qRC
+						hw.VAAPIBitrateRC[c.hevc] = bRC
+						d.log.Info("VAAPI rate control mode selected", "encoder", c.hevc, "qualityRC", qRC, "bitrateRC", bRC)
+					}
+				}
 			} else {
 				d.log.Info("hardware HEVC encoder test failed", "hwaccel", c.name, "encoder", c.hevc, "err", err)
 			}

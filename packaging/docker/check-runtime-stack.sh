@@ -68,12 +68,12 @@ done
 
 require "$root_df" 'TARGETARCH'
 require "$root_df" '= amd64'
-require "$root_df" 'intel-media-va-driver'
-require "$root_df" 'i965-va-driver'
+require "$root_df" 'intel-media-va-driver-non-free'
+require "$root_df" 'i965-va-driver-shaders'
 require "$root_df" 'libmfx-gen1.2'
 
-require "$amd64_df" 'intel-media-va-driver'
-require "$amd64_df" 'i965-va-driver'
+require "$amd64_df" 'intel-media-va-driver-non-free'
+require "$amd64_df" 'i965-va-driver-shaders'
 require "$amd64_df" 'libmfx-gen1.2'
 
 forbid "$arm64_df" 'intel-media-va-driver'
@@ -191,12 +191,12 @@ echo "runtime check: dlopen path $libva"
 docker run --rm --entrypoint /bin/sh "$image" -c 'dpkg-query -W libva2 libva-drm2'
 image_arch=$(docker run --rm --entrypoint uname "$image" -m)
 if [ "$image_arch" = x86_64 ]; then
-	docker run --rm --entrypoint /bin/sh "$image" -c 'dpkg-query -W intel-media-va-driver i965-va-driver libmfx-gen1.2'
+	docker run --rm --entrypoint /bin/sh "$image" -c 'dpkg-query -W intel-media-va-driver-non-free i965-va-driver-shaders libmfx-gen1.2'
 fi
 
 echo "runtime check: packaged library dependencies"
 set +e
-dep_out=$(docker run --rm --entrypoint /bin/sh "$image" -c 'dpkg -L libva2 libva-drm2 intel-media-va-driver i965-va-driver libmfx-gen1.2 mesa-va-drivers ocl-icd-libopencl1 2>/dev/null | while read -r f; do
+dep_out=$(docker run --rm --entrypoint /bin/sh "$image" -c 'dpkg -L libva2 libva-drm2 intel-media-va-driver-non-free i965-va-driver-shaders libmfx-gen1.2 mesa-va-drivers ocl-icd-libopencl1 2>/dev/null | while read -r f; do
 	case $f in
 	*.so|*.so.*)
 		if [ -f "$f" ]; then

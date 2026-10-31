@@ -635,7 +635,7 @@ func planFilterChain(s runSpec, v *core.StreamInfo, pic picturePlan, accel strin
 		inputArgs = append(inputArgs, "-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld")
 		chain = append(chain, fmt.Sprintf("scale_vt=w=%d:h=%d:color_matrix=bt709:color_primaries=bt709:color_transfer=bt709", pic.w, pic.h))
 		hwFrames = true
-	case accel == AccelVAAPI && !burn && !gpuOff && !s.Accel.NoGPUScale && (!pic.tonemap || s.Features.hasFilter("tonemap_vaapi")):
+	case accel == AccelVAAPI && !burn && !gpuOff && !s.Accel.NoGPUScale && (!pic.tonemap || (s.Features.hasFilter("tonemap_vaapi") && !s.Accel.NoGPUTonemap)):
 		dev := s.Accel.Device
 		if dev == "" {
 			dev = DefaultVAAPIDevice
@@ -776,12 +776,26 @@ func planEncodeArgs(s runSpec, pic picturePlan, enc, codec string, hwFrames bool
 			e = append(e, "-profile:v", "main10")
 		}
 	case "h264_vaapi", "hevc_vaapi":
+		rcMode := "VBR"
 		if s.Rate.Quality {
+			rcMode = "QVBR"
+			if m := s.Accel.VAAPIQualityRC[enc]; m != "" {
+				rcMode = m
+			}
+		} else if m := s.Accel.VAAPIBitrateRC[enc]; m != "" {
+			rcMode = m
+		}
+		switch rcMode {
+		case "QVBR":
 			// FFmpeg VAAPI QVBR still requires a target bitrate (unlike QSV
 			// quality modes). Without -b:v, encode fails with "Bitrate must
 			// be set for QVBR RC mode" and falls back to CPU.
 			e = append(e, "-rc_mode", "QVBR", "-global_quality", "23", "-b:v", b, "-maxrate", maxr, "-bufsize", buf)
-		} else {
+		case "CBR":
+			e = append(e, "-rc_mode", "CBR", "-b:v", b, "-maxrate", b, "-bufsize", buf)
+		case "CQP":
+			e = append(e, "-rc_mode", "CQP", "-global_quality", strconv.Itoa(vaapiCQPForBitrate(pic.w, pic.h, videoKbps, codec)))
+		default:
 			e = append(e, "-rc_mode", "VBR", "-b:v", b, "-maxrate", maxr, "-bufsize", buf)
 		}
 		if enc == "h264_vaapi" {
@@ -979,4 +993,36 @@ func subtitleArgs(input string, streamIndex int) []string {
 	args = append(args, inputSafetyArgs(input, false)...)
 	args = append(args, httpInputArgs(input, true)...)
 	return append(args, "-i", input, "-map", fmt.Sprintf("0:%d", streamIndex), "-c:s", "webvtt", "-f", "webvtt", "pipe:1")
+}
+
+// vaapiCQPForBitrate derives a constant-quantizer value (18..36) when a VAAPI
+// driver only supports CQP (for example low-power EncSliceLP without EU rate-
+// control shaders), scaling QP to roughly match the requested bitrate budget
+// for the output resolution.
+func vaapiCQPForBitrate(w, h, kbps int, codec string) int {
+	if kbps <= 0 {
+		return 23
+	}
+	pixels := w * h
+	if pixels <= 0 {
+		pixels = 1920 * 1080
+	}
+	// Reference bitrate for QP 23 at 1080p: ~8000 kbps for H.264, ~5000 kbps for HEVC.
+	ref1080 := 8000.0
+	if codec == "hevc" {
+		ref1080 = 5000.0
+	}
+	refKbps := ref1080 * (float64(pixels) / float64(1920*1080))
+	if refKbps < 600 {
+		refKbps = 600
+	}
+	// Every ~6 QP steps halves/doubles bitrate: deltaQP ≈ 6 * log2(refKbps / kbps).
+	qp := int(math.Round(23.0 + 6.0*math.Log2(refKbps/float64(kbps))))
+	if qp < 18 {
+		qp = 18
+	}
+	if qp > 36 {
+		qp = 36
+	}
+	return qp
 }

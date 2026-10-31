@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -146,6 +148,33 @@ func (s *Service) externalTitle(ctx context.Context, source, id string) (*core.T
 	load := func() (*core.Title, error) { return s.catalog.ByExternalID(ctx, source, id) }
 	if m := memoFrom(ctx); m != nil {
 		return m.external(source+"\n"+id, load)
+	}
+	return load()
+}
+
+func (s *Service) searchTitle(ctx context.Context, typ, title string, year int) (*core.Title, error) {
+	load := func() (*core.Title, error) {
+		ts, err := s.catalog.Search(ctx, title, []core.MediaType{core.MediaType(typ)}, 20)
+		if err != nil {
+			return nil, err
+		}
+		var match *core.Title
+		for i := range ts {
+			t := &ts[i]
+			if string(t.Type) == typ && strings.EqualFold(t.Title, title) && t.Year == year {
+				if match != nil && match.Key != t.Key {
+					return nil, core.ErrNotFound
+				}
+				match = t
+			}
+		}
+		if match == nil {
+			return nil, core.ErrNotFound
+		}
+		return match, nil
+	}
+	if m := memoFrom(ctx); m != nil {
+		return m.external("search\n"+typ+"\n"+strings.ToLower(strings.TrimSpace(title))+"\n"+strconv.Itoa(year), load)
 	}
 	return load()
 }

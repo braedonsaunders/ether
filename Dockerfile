@@ -41,16 +41,22 @@ ARG TARGETARCH
 
 # Hardware-transcode userspace, loaded by the bundled ffmpeg at runtime:
 # libva + libva-drm (VAAPI on /dev/dri), Mesa VA drivers (AMD), and on amd64
-# Intel's iHD (Gen8+) and i965 (older) VA drivers plus the oneVPL QuickSync
-# runtime (Debian ships those for amd64 only). Keep in sync with
+# Intel's non-free iHD (Gen8+: full EU kernel shaders for VBR/CBR/QVBR,
+# VAEntrypointEncSlice and VAEntrypointVideoProc) and i965 (older Gen) VA
+# drivers plus the oneVPL QuickSync runtime (Debian ships those for amd64
+# only). Note: Debian's free `intel-media-va-driver` strips EU shader kernels,
+# leaving Gen9/Gen10 with only low-power CQP and no video processing;
+# `intel-media-va-driver-non-free` and `i965-va-driver-shaders` live in
+# non-free-firmware / non-free. Keep in sync with
 # packaging/docker/Dockerfile.goreleaser.*.
-RUN apt-get update \
+RUN sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates tzdata \
       libva2 libva-drm2 vainfo mesa-va-drivers \
       ocl-icd-libopencl1 \
  && if [ "$TARGETARCH" = amd64 ]; then \
-      apt-get install -y --no-install-recommends intel-media-va-driver i965-va-driver libmfx-gen1.2; \
+      apt-get install -y --no-install-recommends intel-media-va-driver-non-free i965-va-driver-shaders libmfx-gen1.2; \
     fi \
  && rm -rf /var/lib/apt/lists/*
 

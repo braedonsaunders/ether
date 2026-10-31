@@ -557,6 +557,14 @@ type HWAccel struct {
 	// (VAAPI scale_vaapi) does not, so frames are decoded and scaled in
 	// software and uploaded to the encoder.
 	NoGPUScale bool `json:"noGpuScale,omitempty"`
+	// NoGPUTonemap: the device's VAAPI VPP cannot run tonemap_vaapi, so HDR
+	// tone-mapping falls back to the software zscale/tonemap path.
+	NoGPUTonemap bool `json:"noGpuTonemap,omitempty"`
+	// VAAPIQualityRC / VAAPIBitrateRC record the probed VAAPI rate-control
+	// modes ("QVBR", "VBR", "CBR", "CQP") per encoder ("h264_vaapi",
+	// "hevc_vaapi"); nil/empty falls back to the default QVBR/VBR modes.
+	VAAPIQualityRC map[string]string `json:"vaapiQualityRc,omitempty"`
+	VAAPIBitrateRC map[string]string `json:"vaapiBitrateRc,omitempty"`
 }
 
 // DelegationAuth issues expiring, server-local casting credentials. Implementations

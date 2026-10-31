@@ -263,22 +263,24 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 
 	out := make([]model.Media, 0, len(vs))
 	for _, v := range vs {
-		m := buildMediaVariant(t, v, stamp, s.variantIDs)
+		// Until this viewer has a resumed release, only Auto carries the
+		// stream list (the completed detail warm-up probe when available,
+		// otherwise the estimate). A resumed probe is drawn on the matching
+		// version only, never on a different explicit pick, and that version
+		// is selected.
+		probedReady := !probed.Estimated && len(probed.Streams) > 0 && probed.Video() != nil
+		played := probedRelease != "" && probedReady && v.Release.ID == probedRelease
+		warmAuto := probedRelease == "" && probedReady && v.Auto
+		variant := v
+		if played || warmAuto {
+			variant.Info = probed
+		}
+		m := buildMediaVariant(t, variant, stamp, s.variantIDs)
 		if s.d.Trickplay != nil && s.d.Trickplay.TrickplayAvailable(v.Release.ID) {
 			m.Part[0].Indexes = "sd"
 		}
-		// Until this viewer has a resumed release, only Auto carries the
-		// estimate. A resumed probe is drawn on the matching version only,
-		// never on a different explicit pick, and that version is selected.
-		streamInfo := v.Info
-		attach := v.Auto
-		played := probedRelease != "" && !probed.Estimated && len(probed.Streams) > 0 && v.Release.ID == probedRelease
-		if played {
-			streamInfo = probed
-			attach = true
-		}
-		if attach {
-			info := s.withCachedSidecars(ctx, pr.User, t, streamInfo)
+		if v.Auto || played {
+			info := s.withCachedSidecars(ctx, pr.User, t, variant.Info)
 			sel := resolveSelection(s.selections.get(pr.User.ID, int64(t.Key)), info)
 			sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 			m.Part[0].Stream = s.buildStreams(t.Key, info, sel, pr.User)
