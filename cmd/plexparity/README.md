@@ -43,6 +43,15 @@ positions. The earlier PMS threshold was not established: the Guest probe
 stopped at authorization. This note does not allowlist any response; exact
 reviewed before/after pairs are still required.
 
+Intentional playback change `1d4dee05c` (PR #198, merge `e7a3bf2dd`): when
+every candidate's health check times out, playback starts the first pooled
+candidate in the resolver's own order (preferred release, then primary, then
+downgrades already sorted by quality) instead of returning an error. Failover
+stays armed: other candidates without a confirmed failure remain alternates.
+A provider that cannot answer, and any confirmed failure, still fails. The
+unverified winner is not cached as verified or available. This note does not
+allowlist any response.
+
 The complete v0.2.45 corpus covers every registered Plex GET route, including
 real offline IPTV resource, relay and DASH media. A zero-unapproved result with
 exit 2 means a future inventory route is uncovered and is not a parity verdict.
