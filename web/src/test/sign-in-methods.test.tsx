@@ -18,7 +18,8 @@ it("shows identities and revokes only the selected device", async () => {
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<SignInMethods base="/me" token="viewer" />);
-  expect(await screen.findByText("plex · alice")).toBeInTheDocument();
+  expect(await screen.findByText("alice")).toBeInTheDocument();
+  expect(screen.getAllByText("Plex").length).toBeGreaterThan(0);
   fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
   await waitFor(() =>
     expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/devices/revoke"))).toBe(true),

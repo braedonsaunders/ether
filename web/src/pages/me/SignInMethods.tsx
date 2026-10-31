@@ -1,6 +1,17 @@
 import { t } from "../../i18n";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Button, Input, Label } from "@braedonsaunders/appkit-ui";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Button,
+  EmptyState,
+  Input,
+  SettingsSection,
+} from "@braedonsaunders/appkit-ui";
+import { KeyRound, MonitorSmartphone } from "lucide-react";
+import { LoadingRows } from "../../components/feedback";
+import { SettingsRow } from "../../components/SettingsRow";
 
 type Method = { id: number; provider: string; display: string };
 type Device = {
@@ -11,6 +22,27 @@ type Device = {
   version: string;
   lastUsed: string | number;
 };
+
+function providerLabel(provider: string): string {
+  switch (provider.toLowerCase()) {
+    case "plex":
+      return t("Plex");
+    case "local":
+      return t("Username & password");
+    default:
+      return provider;
+  }
+}
+
+function deviceName(device: Device): string {
+  return device.client || device.product || device.surface || t("Device");
+}
+
+function lastUsedLabel(value: string | number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return t("Last used {when}", { when: date.toLocaleString() });
+}
 
 export default function SignInMethods({
   base,
@@ -26,6 +58,7 @@ export default function SignInMethods({
 }) {
   const [methods, setMethods] = useState<Method[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [invite, setInvite] = useState("");
@@ -67,9 +100,13 @@ export default function SignInMethods({
   }, [call]);
   useEffect(() => {
     let cancelled = false;
-    load().catch(() => {
-      if (!cancelled) setError(t("Sign-in methods and devices could not be loaded."));
-    });
+    load()
+      .catch(() => {
+        if (!cancelled) setError(t("Sign-in methods and devices could not be loaded."));
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -151,66 +188,99 @@ export default function SignInMethods({
   return (
     <div className="space-y-6">
       {error ? (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
       {message ? (
-        <p role="status" className="text-sm text-fg">
-          {message}
-        </p>
+        <Alert role="status">
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
       ) : null}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">{t("Sign-in methods")}</h2>
-        <ul>
-          {methods.map((m) => (
-            <li key={m.id} className="text-sm">
-              {m.provider} · {m.display}
-            </li>
-          ))}
-        </ul>
-        {!owner ? (
-          <div>
-            <Button variant="outline" type="button" disabled={busy} onClick={() => void linkPlex()}>
-              {t("Link Plex account")}
-            </Button>
-            {pinURL ? (
-              <p>
-                <a href={pinURL} target="_blank" rel="noreferrer">
+      <SettingsSection
+        title={t("Sign-in methods")}
+        description={t("Accounts that can sign in as you.")}
+        footer={
+          !owner ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {pinURL ? (
+                <a href={pinURL} target="_blank" rel="noreferrer" className="text-sm text-primary">
                   {t("Open Plex sign-in")}
                 </a>
-              </p>
-            ) : null}
+              ) : null}
+              <Button
+                variant="outline"
+                type="button"
+                disabled={busy}
+                onClick={() => void linkPlex()}
+              >
+                {t("Link Plex account")}
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        {!loaded ? (
+          <div className="px-5 py-4">
+            <LoadingRows rows={2} />
           </div>
-        ) : null}
-        <form className="space-y-3" onSubmit={update}>
-          <div>
-            <Label htmlFor={`${base}-username`}>{t("Username")}</Label>
+        ) : methods.length ? (
+          methods.map((method) => (
+            <SettingsRow
+              key={method.id}
+              title={method.display || providerLabel(method.provider)}
+              description={method.display ? providerLabel(method.provider) : undefined}
+              control={<Badge variant="secondary">{providerLabel(method.provider)}</Badge>}
+            />
+          ))
+        ) : (
+          <div className="px-5 py-6">
+            <EmptyState
+              icon={<KeyRound />}
+              title={t("No sign-in method yet")}
+              description={t("Add a username and password, or link Plex.")}
+            />
+          </div>
+        )}
+      </SettingsSection>
+      <form onSubmit={update}>
+        <SettingsSection
+          title={t("Password")}
+          description={t("Choose a username and password. Saving replaces the current password.")}
+          footer={
+            <Button type="submit" disabled={busy}>
+              {t("Set or reset password")}
+            </Button>
+          }
+        >
+          <SettingsRow stacked title={t("Username")}>
             <Input
               id={`${base}-username`}
+              aria-label={t("Username")}
               value={username}
               onChange={(e) => setUsername(e.currentTarget.value)}
               autoComplete="username"
               required
             />
-          </div>
-          <div>
-            <Label htmlFor={`${base}-password`}>{t("New password")}</Label>
+          </SettingsRow>
+          <SettingsRow stacked title={t("New password")}>
             <Input
               id={`${base}-password`}
+              aria-label={t("New password")}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
               autoComplete="new-password"
               required
             />
-          </div>
-          <Button type="submit" disabled={busy}>
-            {t("Set or reset password")}
-          </Button>
-        </form>
-        {showInvite ? (
-          <div>
+          </SettingsRow>
+        </SettingsSection>
+      </form>
+      {showInvite ? (
+        <SettingsSection
+          title={t("Invite")}
+          description={t("Send a link so someone can create their own viewer account.")}
+          footer={
             <Button
               variant="outline"
               type="button"
@@ -219,34 +289,61 @@ export default function SignInMethods({
             >
               {t("Create invite link")}
             </Button>
-            {invite ? <p className="break-all text-sm">{invite}</p> : null}
+          }
+        >
+          {invite ? (
+            <SettingsRow title={t("Invite link")} description={invite} />
+          ) : (
+            <div className="px-5 py-4 text-sm text-fg-muted">
+              {t("A new link is created when you ask for one. It is shown here once.")}
+            </div>
+          )}
+        </SettingsSection>
+      ) : null}
+      <SettingsSection
+        title={t("Devices")}
+        description={t("Phones, TVs and browsers that stay signed in.")}
+      >
+        {!loaded ? (
+          <div className="px-5 py-4">
+            <LoadingRows rows={2} />
           </div>
-        ) : null}
-      </section>
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">{t("Devices")}</h2>
-        {devices.length ? (
-          <ul className="space-y-2">
-            {devices.map((d) => (
-              <li key={d.hash} className="flex items-center justify-between gap-2">
-                <span className="text-sm">
-                  {d.surface} · {d.client || d.product} · {new Date(d.lastUsed).toLocaleString()}
-                </span>
-                <Button
-                  variant="outline"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void revoke(d.hash)}
-                >
-                  {t("Revoke")}
-                </Button>
-              </li>
-            ))}
-          </ul>
+        ) : devices.length ? (
+          devices.map((device) => {
+            const name = deviceName(device);
+            const used = lastUsedLabel(device.lastUsed);
+            const detail = [device.surface && device.surface !== name ? device.surface : "", used]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <SettingsRow
+                key={device.hash}
+                title={name}
+                description={detail || undefined}
+                control={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void revoke(device.hash)}
+                  >
+                    {t("Revoke")}
+                  </Button>
+                }
+              />
+            );
+          })
         ) : (
-          <p className="text-sm text-fg-muted">{t("No devices.")}</p>
+          <div className="px-5 py-6">
+            <EmptyState
+              icon={<MonitorSmartphone />}
+              title={t("No devices.")}
+              description={t("Nothing is signed in with this account yet.")}
+            />
+          </div>
         )}
-      </section>
+      </SettingsSection>
     </div>
   );
 }
