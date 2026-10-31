@@ -67,6 +67,20 @@ func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
 		s := cloneStats(cached.stats)
 		return c.finishStats(ctx, s), nil
 	}
+	if cached.ready && cached.stats.Movies+cached.stats.Shows+cached.stats.Seasons+cached.stats.Episodes >= staleCountMin {
+		// The counts walk the whole catalogue. Serve the last ones and
+		// recount behind the read, at most once per recountEvery, as browse
+		// totals and facets do.
+		if now.Sub(cached.fetchedAt) >= recountEvery {
+			_ = c.hydrate(ctx, "stats", 0, func(ctx context.Context) error {
+				_, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
+					return c.loadStats(ctx)
+				})
+				return err
+			})
+		}
+		return c.finishStats(ctx, cloneStats(cached.stats)), nil
+	}
 
 	s, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
 		return c.loadStats(ctx)

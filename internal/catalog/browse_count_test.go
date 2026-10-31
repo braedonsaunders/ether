@@ -64,3 +64,31 @@ func TestBrowseWithoutTotal(t *testing.T) {
 		t.Fatalf("a page without a total was cached for a counted read: %d", again.Total)
 	}
 }
+
+// A large catalogue's dashboard counts are served from the last count while
+// they recount behind the read.
+func TestLargeCatalogueStatsRecountBehindTheRead(t *testing.T) {
+	defer func(d time.Duration) { recountEvery = d }(recountEvery)
+	recountEvery = 0
+	ctx := context.Background()
+	c := newChunkTestCatalog(t)
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	c.SetNow(func() time.Time { return now })
+	if _, err := c.db.ExecContext(ctx, `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<?)
+		INSERT INTO catalog_titles(key,type,title,sort_title,released_ts,browsable,adult,detail) SELECT i,'movie','m','m',?,1,0,1 FROM n`, staleCountMin, now.Add(-time.Hour).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := c.Stats(ctx); err != nil || s.Movies != staleCountMin {
+		t.Fatalf("first %d %v", s.Movies, err)
+	}
+	if err := c.UpsertTitle(ctx, core.Title{Key: core.MovieKey(int64(staleCountMin + 1)), Type: core.TypeMovie, Title: "New", Released: now.Add(-time.Hour)}, true); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := c.Stats(ctx); s.Movies != staleCountMin {
+		t.Fatalf("after a write %d: want the last count while it recounts", s.Movies)
+	}
+	c.WaitRefreshes()
+	if s, _ := c.Stats(ctx); s.Movies != staleCountMin+1 {
+		t.Fatalf("recounted %d", s.Movies)
+	}
+}
