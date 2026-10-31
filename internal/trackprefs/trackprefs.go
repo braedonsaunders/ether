@@ -21,17 +21,18 @@ func init() {
 
 // User zero is the owner-configured fallback policy; positive IDs are overrides.
 type Rules struct {
-	AudioLanguages    []string `json:"audioLanguages"`
-	SubtitleLanguages []string `json:"subtitleLanguages"`
-	PreferOriginal    bool     `json:"preferOriginal"`
-	SubtitleMode      string   `json:"subtitleMode"`  // off, forced-only, foreign-only, always
-	SubtitleStyle     string   `json:"subtitleStyle"` // normal, sdh, forced
-	Loudness          bool     `json:"loudness"`
-	NightMode         bool     `json:"nightMode"`
-	DialogueBoost     bool     `json:"dialogueBoost"`
-	MaxBitrateKbps    int      `json:"maxBitrateKbps,omitempty"` // 0 means no viewer preference
-	MaxHeight         int      `json:"maxHeight,omitempty"`
-	PreferredQuality  string   `json:"preferredQuality,omitempty"`
+	AudioLanguages     []string        `json:"audioLanguages"`
+	SubtitleLanguages  []string        `json:"subtitleLanguages"`
+	PreferOriginal     bool            `json:"preferOriginal"`
+	SubtitleMode       string          `json:"subtitleMode"`  // off, forced-only, foreign-only, always
+	SubtitleStyle      string          `json:"subtitleStyle"` // normal, sdh, forced
+	SubtitleAppearance json.RawMessage `json:"subtitleAppearance,omitempty"`
+	Loudness           bool            `json:"loudness"`
+	NightMode          bool            `json:"nightMode"`
+	DialogueBoost      bool            `json:"dialogueBoost"`
+	MaxBitrateKbps     int             `json:"maxBitrateKbps,omitempty"` // 0 means no viewer preference
+	MaxHeight          int             `json:"maxHeight,omitempty"`
+	PreferredQuality   string          `json:"preferredQuality,omitempty"`
 }
 type Choice struct {
 	Language string `json:"language"`
@@ -45,6 +46,9 @@ type Selection struct {
 }
 type Options struct {
 	ShowName func(context.Context, int64) string
+	// SyncSubtitleLanguages mirrors the ordered list onto auth_users.subtitle_languages.
+	// User 0 is the shared default and is not an account row.
+	SyncSubtitleLanguages func(context.Context, int64, []string) error
 }
 type rulesCacheKey struct {
 	user                    int64
@@ -74,6 +78,7 @@ func (s *Service) forgetRules() {
 func cloneRules(r Rules) Rules {
 	r.AudioLanguages = append([]string(nil), r.AudioLanguages...)
 	r.SubtitleLanguages = append([]string(nil), r.SubtitleLanguages...)
+	r.SubtitleAppearance = append(json.RawMessage(nil), r.SubtitleAppearance...)
 	return r
 }
 
@@ -115,7 +120,7 @@ func (r Rules) Validate() error {
 			return errors.New("invalid language code")
 		}
 	}
-	return nil
+	return validateAppearance(r.SubtitleAppearance)
 }
 func (s *Service) PutRules(ctx context.Context, user int64, r Rules) error {
 	if user < 0 {
@@ -129,11 +134,25 @@ func (s *Service) PutRules(ctx context.Context, user int64, r Rules) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO trackprefs_rules(user_id,rules) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET rules=excluded.rules`, user, string(b))
-	if err == nil {
-		s.forgetRules()
+	if err != nil {
+		return err
 	}
-	return err
+	s.forgetRules()
+	return s.syncLanguages(ctx, user, r.SubtitleLanguages)
 }
+
+// HasViewerRules reports whether this viewer stored their own rules. GetRules
+// also falls back to user 0, the shared default, which is not a change this
+// viewer made.
+func (s *Service) HasViewerRules(ctx context.Context, user int64) (bool, error) {
+	if user <= 0 {
+		return false, nil
+	}
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM trackprefs_rules WHERE user_id=?`, user).Scan(&n)
+	return n > 0, err
+}
+
 func (s *Service) GetRules(ctx context.Context, user int64) (Rules, error) {
 	r := Default()
 	var raw string
@@ -297,8 +316,16 @@ func (s *Service) selectRules(ctx context.Context, user int64, key core.RatingKe
 	if !hasB && r.SubtitleMode == "off" {
 		return out, nil
 	}
-	if !hasB && r.SubtitleMode == "foreign-only" && out.Audio >= 0 && rankLanguage(info.Streams[out.Audio].Language, r.SubtitleLanguages) > 0 {
-		return out, nil
+	if !hasB && r.SubtitleMode == "foreign-only" {
+		understood := r.SubtitleLanguages
+		if len(understood) == 0 {
+			understood = r.AudioLanguages
+		}
+		// No language list means there is nothing to match, so leave subtitles
+		// off. Picking an arbitrary track would also be the wrong moment to fetch one.
+		if len(understood) == 0 || (out.Audio >= 0 && rankLanguage(info.Streams[out.Audio].Language, understood) > 0) {
+			return out, nil
+		}
 	}
 	var bm *Choice
 	if hasB {
@@ -383,6 +410,17 @@ func (s *Service) SetSubtitleMode(ctx context.Context, user int64, mode string) 
 	return s.updateViewerRules(ctx, user, func(r *Rules) { r.SubtitleMode = mode })
 }
 
+func (s *Service) SetAppearance(ctx context.Context, user int64, raw json.RawMessage) error {
+	if err := validateAppearance(raw); err != nil {
+		return err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		raw = nil
+	}
+	stored := append(json.RawMessage(nil), raw...)
+	return s.updateViewerRules(ctx, user, func(r *Rules) { r.SubtitleAppearance = stored })
+}
+
 func (s *Service) SetBitratePreference(ctx context.Context, user int64, kbps int) error {
 	return s.updateViewerRules(ctx, user, func(r *Rules) { r.MaxBitrateKbps = kbps })
 }
@@ -432,7 +470,7 @@ func (s *Service) updateViewerRules(ctx context.Context, user int64, update func
 		}
 		if n == 1 {
 			s.forgetRules()
-			return nil
+			return s.syncLanguages(ctx, user, rules.SubtitleLanguages)
 		}
 		var active int
 		if err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_users WHERE id=? AND active=1`, user).Scan(&active); err != nil {
@@ -443,4 +481,11 @@ func (s *Service) updateViewerRules(ctx context.Context, user int64, update func
 		}
 	}
 	return errors.New("trackprefs: concurrent update retry limit")
+}
+
+func (s *Service) syncLanguages(ctx context.Context, user int64, languages []string) error {
+	if user <= 0 || s.options.SyncSubtitleLanguages == nil {
+		return nil
+	}
+	return s.options.SyncSubtitleLanguages(ctx, user, append([]string(nil), languages...))
 }

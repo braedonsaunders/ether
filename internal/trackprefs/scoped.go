@@ -16,12 +16,13 @@ func init() {
 
 // ScopedRules only changes fields explicitly supplied; nil means inherit.
 type ScopedRules struct {
-	AudioLanguages    *[]string `json:"audioLanguages,omitempty"`
-	SubtitleLanguages *[]string `json:"subtitleLanguages,omitempty"`
-	SubtitleMode      *string   `json:"subtitleMode,omitempty"`
-	MaxBitrateKbps    *int      `json:"maxBitrateKbps,omitempty"`
-	MaxHeight         *int      `json:"maxHeight,omitempty"`
-	PreferredQuality  *string   `json:"preferredQuality,omitempty"`
+	AudioLanguages     *[]string        `json:"audioLanguages,omitempty"`
+	SubtitleLanguages  *[]string        `json:"subtitleLanguages,omitempty"`
+	SubtitleMode       *string          `json:"subtitleMode,omitempty"`
+	SubtitleAppearance *json.RawMessage `json:"subtitleAppearance,omitempty"`
+	MaxBitrateKbps     *int             `json:"maxBitrateKbps,omitempty"`
+	MaxHeight          *int             `json:"maxHeight,omitempty"`
+	PreferredQuality   *string          `json:"preferredQuality,omitempty"`
 }
 
 // Scope identifies the authenticated device and the title's series and library.
@@ -30,7 +31,7 @@ type Scope struct{ Device, Series, Library string }
 // DeleteScopedField clears one override without disturbing concurrent writes
 // to the other fields in the same scope.
 func (s *Service) DeleteScopedField(ctx context.Context, user int64, scope, id, field string) error {
-	if user <= 0 || (scope != "device" && scope != "series" && scope != "library") || id == "" || len(id) > 128 || strings.ContainsAny(id, "\x00\r\n") || (field != "audio" && field != "subtitle" && field != "subtitle_mode" && field != "bitrate" && field != "height") {
+	if user <= 0 || (scope != "device" && scope != "series" && scope != "library") || id == "" || len(id) > 128 || strings.ContainsAny(id, "\x00\r\n") || !scopedField(field) {
 		return errors.New("invalid scoped track preference")
 	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_scoped WHERE user_id=? AND scope=? AND scope_id=? AND field=?`, user, scope, id, field)
@@ -54,6 +55,9 @@ func (s *Service) PutScoped(ctx context.Context, user int64, scope, id string, v
 	if value.SubtitleMode != nil {
 		check.SubtitleMode = *value.SubtitleMode
 	}
+	if value.SubtitleAppearance != nil {
+		check.SubtitleAppearance = *value.SubtitleAppearance
+	}
 	if value.MaxBitrateKbps != nil {
 		check.MaxBitrateKbps = *value.MaxBitrateKbps
 	}
@@ -69,7 +73,7 @@ func (s *Service) PutScoped(ctx context.Context, user int64, scope, id string, v
 	if err := check.Validate(); err != nil {
 		return err
 	}
-	if value.AudioLanguages == nil && value.SubtitleLanguages == nil && value.SubtitleMode == nil && value.MaxBitrateKbps == nil && value.MaxHeight == nil {
+	if value.AudioLanguages == nil && value.SubtitleLanguages == nil && value.SubtitleMode == nil && value.SubtitleAppearance == nil && value.MaxBitrateKbps == nil && value.MaxHeight == nil {
 		_, err := s.db.ExecContext(ctx, `DELETE FROM trackprefs_scoped WHERE user_id=? AND scope=? AND scope_id=?`, user, scope, id)
 		if err == nil {
 			s.forgetRules()
@@ -91,6 +95,9 @@ func (s *Service) PutScoped(ctx context.Context, user int64, scope, id string, v
 	if value.SubtitleMode != nil {
 		fields["subtitle_mode"] = *value.SubtitleMode
 	}
+	if value.SubtitleAppearance != nil {
+		fields["appearance"] = json.RawMessage(*value.SubtitleAppearance)
+	}
 	if value.MaxBitrateKbps != nil {
 		fields["bitrate"] = *value.MaxBitrateKbps
 	}
@@ -104,7 +111,7 @@ func (s *Service) PutScoped(ctx context.Context, user int64, scope, id string, v
 			Quality string `json:"quality"`
 		}{*value.MaxHeight, quality}
 	}
-	for _, field := range []string{"audio", "subtitle", "subtitle_mode", "bitrate", "height"} {
+	for _, field := range scopedFields {
 		v, ok := fields[field]
 		if !ok {
 			continue
@@ -155,7 +162,10 @@ func (s *Service) ScopedRulesWithSources(ctx context.Context, user int64, scope 
 		return r, nil, err
 	}
 	if hasProfile != 0 {
-		for _, field := range []string{"audio", "subtitle", "subtitle_mode", "bitrate", "height"} {
+		for _, field := range scopedFields {
+			if field == "appearance" && len(r.SubtitleAppearance) == 0 {
+				continue
+			}
 			sources[field] = "profile"
 		}
 	}
@@ -181,6 +191,8 @@ func (s *Service) ScopedRulesWithSources(ctx context.Context, user int64, scope 
 				e = json.Unmarshal([]byte(raw), &r.SubtitleLanguages)
 			case "subtitle_mode":
 				e = json.Unmarshal([]byte(raw), &r.SubtitleMode)
+			case "appearance":
+				r.SubtitleAppearance = append(json.RawMessage(nil), raw...)
 			case "bitrate":
 				e = json.Unmarshal([]byte(raw), &r.MaxBitrateKbps)
 			case "height":
@@ -216,6 +228,17 @@ func (s *Service) ScopedRulesWithSources(ctx context.Context, user int64, scope 
 
 // LimitBitrate can only tighten an existing client cap; the transcoder still
 // applies the independent owner, safety, and remote limits.
+var scopedFields = []string{"audio", "subtitle", "subtitle_mode", "appearance", "bitrate", "height"}
+
+func scopedField(field string) bool {
+	for _, candidate := range scopedFields {
+		if candidate == field {
+			return true
+		}
+	}
+	return false
+}
+
 func LimitBitrate(existing, preference int) int {
 	if preference > 0 && (existing <= 0 || preference < existing) {
 		return preference
