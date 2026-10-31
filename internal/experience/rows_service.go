@@ -204,9 +204,11 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 	}
 	if len(subjects) > 0 {
 		tokens, e := s.d.Receipts.IssueBatch(ctx, req.Viewer, req.Device, protocol, subjects)
-		// IssueBatch already retries one overlapping policy write. A second
-		// catalog write can land between those attempts; read the epoch again.
-		if errors.Is(e, viewerpolicy.ErrChanged) {
+		// IssueBatch already retries one overlapping policy write. Further
+		// writes can land between attempts (a catalogue sync, background
+		// metadata refreshes); read the epoch again a bounded number of times
+		// rather than failing the page.
+		for attempt := 0; attempt < rowsFenceRetries && errors.Is(e, viewerpolicy.ErrChanged) && ctx.Err() == nil; attempt++ {
 			tokens, e = s.d.Receipts.IssueBatch(ctx, req.Viewer, req.Device, protocol, subjects)
 		}
 		if e != nil {
@@ -218,6 +220,10 @@ func (s *RowsService) rows(ctx context.Context, req frontend.RowRequest, protoco
 	}
 	return out, nil
 }
+
+// rowsFenceRetries bounds the extra receipt attempts after the policy epoch
+// moved under a page being built.
+const rowsFenceRetries = 4
 
 // appendHomeFallback adds policy-checked library shelves when Home is only
 // Continue Watching and Next Up. Plex Home is assembled by its own adapter

@@ -105,10 +105,13 @@ func (c *Catalog) hydrateHomeRelease(ctx context.Context, items []core.Title) er
 }
 
 func saveHomeReleases(ctx context.Context, tx *sql.Tx, t core.Title, dates *tmdb.ReleaseDates, now int64) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM catalog_home_release_dates WHERE key=?`, int64(t.Key)); err != nil {
-		return err
+	type homeDate struct {
+		country string
+		kind    int
+		ts      int64
 	}
 	var earliest time.Time
+	want := map[homeDate]bool{}
 	for _, country := range dates.Results {
 		for _, release := range country.ReleaseDate {
 			if release.Type != 4 && release.Type != 5 {
@@ -121,7 +124,33 @@ func saveHomeReleases(ctx context.Context, tx *sql.Tx, t core.Title, dates *tmdb
 			if earliest.IsZero() || date.Before(earliest) {
 				earliest = date
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_home_release_dates(key,country,kind,released_ts) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, int64(t.Key), strings.ToUpper(country.ISO3166), release.Type, date.Unix()); err != nil {
+			want[homeDate{strings.ToUpper(country.ISO3166), release.Type, date.Unix()}] = true
+		}
+	}
+	// A refresh usually brings the same dates; rewriting them would fire the
+	// viewer-policy triggers for nothing.
+	same := true
+	rows, err := tx.QueryContext(ctx, `SELECT country,kind,released_ts FROM catalog_home_release_dates WHERE key=?`, int64(t.Key))
+	if err != nil {
+		return err
+	}
+	n := 0
+	for rows.Next() {
+		var d homeDate
+		if err := rows.Scan(&d.country, &d.kind, &d.ts); err != nil {
+			rows.Close()
+			return err
+		}
+		same = same && want[d]
+		n++
+	}
+	rows.Close()
+	if !same || n != len(want) {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM catalog_home_release_dates WHERE key=?`, int64(t.Key)); err != nil {
+			return err
+		}
+		for d := range want {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO catalog_home_release_dates(key,country,kind,released_ts) VALUES(?,?,?,?) ON CONFLICT DO NOTHING`, int64(t.Key), d.country, d.kind, d.ts); err != nil {
 				return err
 			}
 		}
@@ -130,7 +159,7 @@ func saveHomeReleases(ctx context.Context, tx *sql.Tx, t core.Title, dates *tmdb
 	if !earliest.IsZero() {
 		ts = earliest.Unix()
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,attempted_at) VALUES(?,1,?,?) ON CONFLICT(key) DO UPDATE SET checked=1,earliest_ts=excluded.earliest_ts,attempted_at=excluded.attempted_at`, int64(t.Key), ts, now)
+	_, err = tx.ExecContext(ctx, `INSERT INTO catalog_home_release(key,checked,earliest_ts,attempted_at) VALUES(?,1,?,?) ON CONFLICT(key) DO UPDATE SET checked=1,earliest_ts=excluded.earliest_ts,attempted_at=excluded.attempted_at`, int64(t.Key), ts, now)
 	return err
 }
 
