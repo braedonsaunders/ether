@@ -180,6 +180,13 @@ type ownedTranscoder struct {
 func (o ownedTranscoder) Session(string) (core.HLSSession, bool) { return o.sess, true }
 func (o ownedTranscoder) Stop(string)                            {}
 
+type countingTranscoder struct {
+	ownedTranscoder
+	stops int
+}
+
+func (c *countingTranscoder) Stop(string) { c.stops++ }
+
 func TestBrokerTransferSurvivesUnverifiedInputAndFailedSource(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -276,5 +283,53 @@ func TestBrokerUnknownTransferCommitDoesNotStopSource(t *testing.T) {
 	playback.mu.Unlock()
 	if left != 1 {
 		t.Fatalf("source sessions=%d", left)
+	}
+}
+
+func TestStaleBindingRetiresEncoderAndKeepsSource(t *testing.T) {
+	ctx := context.Background()
+	playback := &ownedPlayback{fakePlayback: &fakePlayback{sessions: map[string]*core.PlaySession{}, limit: 2}, outcome: scriptOutcome{done: make(chan struct{})}}
+	enc := &countingTranscoder{ownedTranscoder: ownedTranscoder{sess: ownedSession{done: make(chan struct{})}}}
+	close(enc.sess.done)
+	viewer := &core.Viewer{ID: 8}
+	device := core.Device{ID: "tv"}
+	active := func(_ context.Context, id int64) (*core.Viewer, error) { return &core.Viewer{ID: id}, nil }
+	bus := NewEventBus(nil, active)
+	t.Cleanup(bus.Close)
+	b, err := NewBroker(BrokerDeps{Events: bus, Playback: playback, Transcoder: enc, Progress: &fakeProgress{}, ActiveViewer: active, CanPlay: func(*core.Viewer, bool, time.Time) bool { return true }, BitrateLimit: func(*core.Viewer) int { return 0 }, OnTimeline: func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string) {}, Lookup: func(_ context.Context, _ *core.Viewer, _ core.Device, k core.RatingKey) (*core.Title, error) {
+		return &core.Title{Key: k}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { b.Close(context.Background()) })
+	plan, err := b.Plan(ctx, frontend.PlanRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", Item: core.MovieKey(3), Intent: frontend.PlayIntent{Options: core.DecideOptions{DirectPlay: true, DirectStream: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, err := b.Open(ctx, frontend.OpenRequest{Viewer: viewer, Device: device, Protocol: "jellyfin", PlanID: plan.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	current := b.sessions[opened.ID]
+	if current == nil {
+		b.mu.Unlock()
+		t.Fatal("session missing")
+	}
+	playID, clientID, item, playbackID := current.playID, current.clientID, current.public.Item, current.playbackID
+	b.mu.Unlock()
+	if playbackID == "" || playID == "" {
+		t.Fatal("open did not record playback binding")
+	}
+	b.owners.BindFor("broker", viewer.ID, clientID, item, "newer-playback", playID, true, time.Now())
+	if err = b.Stop(ctx, frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: "jellyfin"}, opened.ID); err != nil {
+		t.Fatal(err)
+	}
+	if playback.retired != 0 || enc.stops != 1 {
+		t.Fatalf("retired=%d encoderStops=%d", playback.retired, enc.stops)
+	}
+	if _, ok := playback.Session(playID); !ok {
+		t.Fatal("stale stop removed the source the newer binding owns")
 	}
 }

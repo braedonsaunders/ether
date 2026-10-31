@@ -1131,6 +1131,12 @@ func (b *Broker) stopLocked(ctx context.Context, s *brokerSession) error {
 		b.publish(ctx, sessionEvent("SessionStopped", s.public, nil))
 		return err
 	}
+	// A newer binding owns this client and title. Stop the encoder for this
+	// session, and leave the source with that binding. This is the broker
+	// switch's stop rule; retirement must not drop it.
+	if stopSource && b.owners.StaleFor("broker", s.public.ViewerID, s.clientID, s.public.Item, s.playbackID) {
+		stopSource = false
+	}
 	if err := b.retireBackends(ctx, s, stopSource); err != nil && b.deps.OnEventError != nil {
 		b.deps.OnEventError(err)
 	}
