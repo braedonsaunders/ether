@@ -13,6 +13,13 @@ import (
 // offset skips that many titles in the same order. A show with no aired
 // episode is omitted. done is true when this window reached the end.
 func (c *Catalog) RecentAir(ctx context.Context, typ core.MediaType, offset, limit int) ([]core.Title, bool, error) {
+	return c.RecentAirExcluding(ctx, typ, nil, offset, limit)
+}
+
+// RecentAirExcluding is RecentAir without the titles in exclude: the
+// evidence window's hidden titles, which a viewer never sees, so a page of
+// them does not use up the bounded window.
+func (c *Catalog) RecentAirExcluding(ctx context.Context, typ core.MediaType, exclude []core.RatingKey, offset, limit int) ([]core.Title, bool, error) {
 	if c == nil || c.db == nil || limit <= 0 {
 		return nil, true, nil
 	}
@@ -31,9 +38,9 @@ func (c *Catalog) RecentAir(ctx context.Context, typ core.MediaType, offset, lim
 	var err error
 	switch typ {
 	case core.TypeMovie:
-		keys, added, err = c.recentMovieKeys(ctx, now, offset, limit)
+		keys, added, err = c.recentMovieKeys(ctx, now, exclude, offset, limit)
 	case core.TypeShow:
-		keys, added, err = c.recentShowKeys(ctx, now, offset, limit)
+		keys, added, err = c.recentShowKeys(ctx, now, exclude, offset, limit)
 	default:
 		return nil, true, nil
 	}
@@ -62,11 +69,21 @@ func (c *Catalog) RecentAir(ctx context.Context, typ core.MediaType, offset, lim
 	return out, done, nil
 }
 
-func (c *Catalog) recentMovieKeys(ctx context.Context, now int64, offset, limit int) ([]core.RatingKey, []int64, error) {
+func (c *Catalog) recentMovieKeys(ctx context.Context, now int64, exclude []core.RatingKey, offset, limit int) ([]core.RatingKey, []int64, error) {
+	args := []any{now}
+	notIn := ""
+	// A very long list would pass the statement's variable limit; the
+	// caller still filters, so the window only fills slower.
+	if len(exclude) > 0 && len(exclude) <= 4000 {
+		notIn = ` AND key NOT IN (` + placeholders(len(exclude)) + `)`
+		for _, k := range exclude {
+			args = append(args, int64(k))
+		}
+	}
 	rows, err := c.db.QueryContext(ctx, `SELECT key, released_ts FROM catalog_titles
-WHERE type='movie' AND browsable=1 AND adult=0 AND release_known=1 AND released_ts<=?
+WHERE type='movie' AND browsable=1 AND adult=0 AND release_known=1 AND released_ts<=?`+notIn+`
 ORDER BY released_ts DESC, key ASC
-LIMIT ? OFFSET ?`, now, limit, offset)
+LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -74,7 +91,11 @@ LIMIT ? OFFSET ?`, now, limit, offset)
 	return scanAirKeys(rows)
 }
 
-func (c *Catalog) recentShowKeys(ctx context.Context, now int64, offset, limit int) ([]core.RatingKey, []int64, error) {
+func (c *Catalog) recentShowKeys(ctx context.Context, now int64, exclude []core.RatingKey, offset, limit int) ([]core.RatingKey, []int64, error) {
+	skip := make(map[int64]bool, len(exclude))
+	for _, k := range exclude {
+		skip[int64(k)] = true
+	}
 	// Newest aired episodes, then the first time each show appears. The
 	// partial index is (released_ts DESC, key). The row cap keeps a show
 	// with a burst of new episodes from turning this into a catalogue walk.
@@ -100,7 +121,7 @@ LIMIT ?`, now, bound)
 		if err := rows.Scan(&show, &aired); err != nil {
 			return nil, nil, err
 		}
-		if show == 0 || seen[show] {
+		if show == 0 || seen[show] || skip[show] {
 			continue
 		}
 		seen[show] = true

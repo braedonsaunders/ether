@@ -66,3 +66,19 @@ func TestStoredEpisodesByKey(t *testing.T) {
 		t.Fatalf("a ranked episode: %v %v", ok, err)
 	}
 }
+
+func TestRecentAirSkipsExcludedTitles(t *testing.T) {
+	ctx := context.Background()
+	c := newChunkTestCatalog(t)
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	c.SetNow(func() time.Time { return now })
+	for i := 1; i <= 5; i++ {
+		if _, err := c.db.ExecContext(ctx, `INSERT INTO catalog_titles(key,type,title,sort_title,released_ts,browsable,adult,detail) VALUES(?,'movie','m','m',?,1,0,1)`, int64(core.MovieKey(int64(i))), now.Add(-time.Duration(i)*time.Hour).Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _, err := c.RecentAirExcluding(ctx, core.TypeMovie, []core.RatingKey{core.MovieKey(1), core.MovieKey(2)}, 0, 2)
+	if err != nil || len(got) != 2 || got[0].Key != core.MovieKey(3) || got[1].Key != core.MovieKey(4) {
+		t.Fatalf("window %v %v", got, err)
+	}
+}
