@@ -821,3 +821,61 @@ func TestPartialSettingsUseTheDefaults(t *testing.T) {
 		}
 	}
 }
+
+// Follow-up, item 3: a restore record that cannot be read at confirm time
+// is not taken for a committed restore; the server does not serve it.
+func TestUnreadableRestoreRecordIsNotServed(t *testing.T) {
+	apply := func(t *testing.T) (*App, string, []byte) {
+		dataDir, bundle, db := ownedDataDir(t)
+		db.Close()
+		st, err := backup.StageLocal(context.Background(), dataDir, bundle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := backup.RequestStaged(dataDir, st.ID); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := os.ReadFile(filepath.Join(dataDir, "config.json"))
+		a := &App{opts: Options{DataDir: dataDir}, log: quietLog(), tracker: startup.NewTracker("1", time.Now)}
+		if err := a.applyPendingRestore(); err != nil || !a.restoreApplied() {
+			t.Fatalf("apply: %v %+v", err, a.restored)
+		}
+		return a, dataDir, before
+	}
+
+	t.Run("damaged record", func(t *testing.T) {
+		a, dataDir, _ := apply(t)
+		if err := os.WriteFile(filepath.Join(dataDir, backup.PendingFile), []byte("{damaged"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.confirmRestore(); err == nil {
+			t.Fatal("confirmRestore served a restore whose record is damaged")
+		}
+		if rep, _ := backup.ReadReport(dataDir); rep != nil {
+			t.Fatalf("report for an uncommitted restore: %+v", rep)
+		}
+	})
+
+	t.Run("read error after a failed commit", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root ignores directory permissions")
+		}
+		a, dataDir, before := apply(t)
+		readPending = func(string) (*backup.Pending, error) { return nil, os.ErrPermission }
+		t.Cleanup(func() { readPending = backup.ReadPending })
+		if err := os.Chmod(dataDir, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		err := a.confirmRestore()
+		os.Chmod(dataDir, 0o700)
+		if err == nil {
+			t.Fatal("confirmRestore served a restore whose record could not be read")
+		}
+		if !a.rollbackUnconfirmed(err) {
+			t.Fatal("no rollback after the unconfirmed restore")
+		}
+		if after, _ := os.ReadFile(filepath.Join(dataDir, "config.json")); string(after) != string(before) {
+			t.Fatal("original settings not put back")
+		}
+	})
+}
