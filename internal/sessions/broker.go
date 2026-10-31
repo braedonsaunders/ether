@@ -1075,6 +1075,43 @@ func (b *Broker) Report(ctx context.Context, a frontend.SessionAccess, id string
 	return nil
 }
 
+// ReportItemProgress records a Jellyfin or Emby timeline that names an item
+// instead of a broker session. It does not prepare or stop playback.
+func (b *Broker) ReportItemProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
+	if a.Protocol != "jellyfin" && a.Protocol != "emby" {
+		return core.ErrUnauthorized
+	}
+	viewer, err := b.viewer(ctx, a.Viewer)
+	if err != nil || a.Device.ID == "" || item == 0 {
+		return core.ErrUnauthorized
+	}
+	lookup := b.deps.MediaLookup
+	if lookup == nil {
+		lookup = b.deps.Lookup
+	}
+	if lookup == nil {
+		return core.ErrNotAvailable
+	}
+	title, err := lookup(ctx, viewer, a.Device, item)
+	if err != nil || title == nil || title.Key != item {
+		if err != nil {
+			return err
+		}
+		return core.ErrNotFound
+	}
+	ctx = state.WithOrigin(ctx, state.Origin{Surface: a.Protocol, SessionID: t.PlaybackID, ClientID: a.Device.ID})
+	if err := RecordProgress(ctx, b.deps.Progress, viewer.ID, item, t.Position, t.Duration, t.State); err != nil {
+		return err
+	}
+	if progress, ok := b.deps.Playback.(core.PlaybackTimeline); ok {
+		progress.PlaybackProgress(viewer.ID, a.Device.ID, item, t.Position, t.State)
+	}
+	if b.deps.OnTimeline != nil {
+		b.deps.OnTimeline(viewer, item, t.Position, t.Duration, t.State)
+	}
+	return nil
+}
+
 // ReportProgress records a Plex timeline that has no playback source.
 // It does not prepare or stop one.
 func (b *Broker) ReportProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {

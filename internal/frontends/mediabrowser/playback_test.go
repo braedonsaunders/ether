@@ -179,6 +179,80 @@ func TestTimelineReportsAndStops(t *testing.T) {
 	}
 }
 
+func TestInfuseTimelineRecordsFileSourceWithoutBrokerSession(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	item := frontend.RatingKey(5)
+	guid := ids.RatingKeyGUID(item)
+	var reports []frontend.Timeline
+	sessions := frontendtest.Sessions{
+		ReportFunc: func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error {
+			return frontend.ErrNotFound
+		},
+		ReportItemFunc: func(_ context.Context, a frontend.SessionAccess, key frontend.RatingKey, timeline frontend.Timeline) error {
+			if a.Viewer != viewer || a.Device.ID != "appletv" || key != item {
+				t.Fatal(a, key)
+			}
+			reports = append(reports, timeline)
+			return nil
+		},
+	}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"PlaySessionId":"infuse-session","ItemId":"` + guid + `","MediaSourceId":"` + guid + `","PositionTicks":17450000000,"RunTimeTicks":36000000000,"IsPaused":true,"PlayMethod":"DirectStream"}`
+	for _, path := range []string{"/Sessions/Playing/Progress", "/Sessions/Playing/Stopped"} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", path, strings.NewReader(body))
+		r.Header.Set("X-Emby-Token", "grant")
+		r.Header.Set("X-Emby-Device-Id", "appletv")
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != 204 {
+			t.Fatal(path, w.Code, w.Body.String())
+		}
+	}
+	if len(reports) != 2 || reports[0].State != "paused" || reports[0].Position != 1745*time.Second || reports[0].Duration != time.Hour || reports[0].PlaybackID != "infuse-session" || reports[1].State != "stopped" {
+		t.Fatal(reports)
+	}
+	user, err := ids.GUID(ids.User, viewer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/Users/"+user+"/PlayingItems/"+guid, nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	r.Header.Set("X-Emby-Device-Id", "appletv")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 204 || len(reports) != 3 || reports[2].State != "stopped" || reports[2].PlaybackID != "" {
+		t.Fatal(w.Code, reports)
+	}
+}
+
+func TestPlaybackInfoWithoutSourceUsesJellyfinErrorCode(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	for _, planErr := range []error{nil, frontend.ErrNotFound, frontend.ErrNotAvailable} {
+		sessions := frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+			if planErr != nil {
+				return frontend.PlayPlan{}, planErr
+			}
+			return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Estimated: true}}, nil
+		}}
+		inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Sessions: sessions, Capabilities: frontendtest.Capabilities{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/Items/"+ids.RatingKeyGUID(5)+"/PlaybackInfo", strings.NewReader(`{"IsPlayback":true}`))
+		r.Header.Set("X-Emby-Token", "grant")
+		inst.Handler().ServeHTTP(w, r)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `"ErrorCode":"NoCompatibleStream"`) || !strings.Contains(w.Body.String(), `"MediaSources":[]`) || strings.Contains(w.Body.String(), "Playback unavailable") {
+			t.Fatal(planErr, w.Code, w.Body.String())
+		}
+	}
+}
+
 func TestStreamAliasChecksSessionItemAndOmitsCredential(t *testing.T) {
 	viewer := &frontend.Viewer{ID: 1}
 	calls := 0

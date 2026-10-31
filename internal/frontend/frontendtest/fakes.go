@@ -242,6 +242,7 @@ type Sessions struct {
 	ServeMediaFunc         func(http.ResponseWriter, *http.Request)
 	ReportSampleFunc       func(context.Context, frontend.SessionAccess, string, frontend.ProgressSample) (frontend.ReportOutcome, error)
 	ReportFunc             func(context.Context, frontend.SessionAccess, string, frontend.Timeline) error
+	ReportItemFunc         func(context.Context, frontend.SessionAccess, core.RatingKey, frontend.Timeline) error
 	StopFunc               func(context.Context, frontend.SessionAccess, string) error
 	CommandFunc            func(context.Context, *core.Viewer, string, frontend.Command) error
 	UpdateCapabilitiesFunc func(context.Context, frontend.SessionAccess, frontend.SessionCapabilities) error
@@ -294,6 +295,12 @@ func (f Sessions) Report(c context.Context, a frontend.SessionAccess, id string,
 		return f.ReportFunc(c, a, id, t)
 	}
 	return nil
+}
+func (f Sessions) ReportItemProgress(c context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
+	if f.ReportItemFunc != nil {
+		return f.ReportItemFunc(c, a, item, t)
+	}
+	return frontend.ErrNotAvailable
 }
 func (f Sessions) Stop(c context.Context, a frontend.SessionAccess, id string) error {
 	if f.StopFunc != nil {

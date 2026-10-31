@@ -731,3 +731,10 @@ type Sessions interface {
 	// Events includes events from all cluster nodes, filters by viewer unless owner access is authorized, and ends on cancellation.
 	Events(context.Context, EventScope) (<-chan Event, error)
 }
+
+// ItemProgress records a Jellyfin or Emby timeline when the client play
+// session is not one the broker opened. Infuse generates PlaySessionId and
+// still reports the item and its file-shaped MediaSourceId.
+type ItemProgress interface {
+	ReportItemProgress(context.Context, SessionAccess, core.RatingKey, Timeline) error
+}

@@ -155,6 +155,17 @@ func (s surface) StopPlayback(ctx context.Context, playID string) bool {
 	return b.StopPlayback(ctx, playID)
 }
 
+func (s surface) ReportItemProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
+	if a.Protocol != s.protocol {
+		return core.ErrUnauthorized
+	}
+	b, ok := s.broker.(*Broker)
+	if !ok {
+		return core.ErrNotAvailable
+	}
+	return b.ReportItemProgress(ctx, a, item, t)
+}
+
 func (s surface) ReportProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
 	if a.Protocol != s.protocol {
 		return core.ErrUnauthorized

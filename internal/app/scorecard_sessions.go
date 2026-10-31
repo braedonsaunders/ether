@@ -103,6 +103,15 @@ func (s scorecardSessionWrapper) NotePlexEncoder(id string, format frontend.Stre
 		note.NotePlexEncoder(id, format, decision, offset)
 	}
 }
+func (s scorecardSessionWrapper) ReportItemProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
+	progress, ok := s.embeddedScorecardSessions.(frontend.ItemProgress)
+	if !ok {
+		return core.ErrNotAvailable
+	}
+	err := progress.ReportItemProgress(ctx, a, item, t)
+	s.failure("item_progress", err)
+	return err
+}
 func (s scorecardSessionWrapper) ReportProgress(ctx context.Context, a frontend.SessionAccess, item core.RatingKey, t frontend.Timeline) error {
 	progress, ok := s.embeddedScorecardSessions.(interface {
 		ReportProgress(context.Context, frontend.SessionAccess, core.RatingKey, frontend.Timeline) error

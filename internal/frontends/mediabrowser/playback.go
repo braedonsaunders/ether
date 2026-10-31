@@ -3,6 +3,7 @@ package mediabrowser
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -217,11 +218,15 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 	planRequest := frontend.PlanRequest{Viewer: v, Device: dev, Protocol: i.protocol, Item: key, Channel: channel, Version: version, ResolvedRelease: resolvedRelease, DetailSource: detailSource, ExpectedSourceETag: expectedETag, Caps: capability.Client, Intent: intent}
 	plan, err := i.host.Sessions.Plan(r.Context(), planRequest)
 	if err != nil {
+		if playback && noCompatibleStream(err) {
+			i.writeNoCompatibleStream(w)
+			return
+		}
 		http.Error(w, "Playback unavailable", 503)
 		return
 	}
 	if playback && (plan.Estimated || (channel == "" && plan.Media.Estimated)) {
-		http.Error(w, "Playback unavailable", 503)
+		i.writeNoCompatibleStream(w)
 		return
 	}
 	if !allowed && plan.Decision.Kind == "transcode" {
@@ -488,6 +493,18 @@ func (i *instance) playbackRoutes() error {
 			return err
 		}
 	}
+	for _, path := range []string{"/Users/{userId}/PlayingItems/{itemId}", "/PlayingItems/{itemId}"} {
+		itemPath := path
+		if err := i.router.Handle("POST", itemPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { i.timeline(w, r, false, true) })); err != nil {
+			return err
+		}
+		if err := i.router.Handle("POST", itemPath+"/Progress", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { i.timeline(w, r, false, false) })); err != nil {
+			return err
+		}
+		if err := i.router.Handle("DELETE", itemPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { i.timeline(w, r, true, false) })); err != nil {
+			return err
+		}
+	}
 	if err := i.router.Handle("POST", "/Items/{id}/PlaybackInfo", http.HandlerFunc(i.playbackInfo)); err != nil {
 		return err
 	}
@@ -512,9 +529,9 @@ func (i *instance) playbackRoutes() error {
 }
 
 type timelineRequest struct {
-	PlaySessionId, ItemId string
-	PositionTicks         json.Number
-	IsPaused              bool
+	PlaySessionId, ItemId, MediaSourceId string
+	PositionTicks, RunTimeTicks          json.Number
+	IsPaused                             bool
 }
 
 func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, started bool) {
@@ -528,17 +545,24 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, sta
 		return
 	}
 	var body timelineRequest
-	if decode(r, &body) != nil || body.PlaySessionId == "" {
-		http.Error(w, "Bad Request", 400)
-		return
-	}
-	ticks := int64(0)
-	if body.PositionTicks != "" {
-		ticks, err = body.PositionTicks.Int64()
-		if err != nil || ticks < 0 || ticks > (1<<63-1)/100 {
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := decode(r, &body); err != nil && !errors.Is(err, io.EOF) {
 			http.Error(w, "Bad Request", 400)
 			return
 		}
+	}
+	if pathItem := r.PathValue("itemId"); pathItem != "" {
+		body.ItemId = pathItem
+	}
+	ticks, err := timelineTicks(body.PositionTicks)
+	if err != nil {
+		http.Error(w, "Bad Request", 400)
+		return
+	}
+	runtime, err := timelineTicks(body.RunTimeTicks)
+	if err != nil {
+		http.Error(w, "Bad Request", 400)
+		return
 	}
 	access := frontend.SessionAccess{Viewer: v, Device: device(r), Protocol: i.protocol}
 	state := "playing"
@@ -548,21 +572,85 @@ func (i *instance) timeline(w http.ResponseWriter, r *http.Request, stopped, sta
 	if stopped {
 		state = "stopped"
 	}
-	err = i.host.Sessions.Report(r.Context(), access, body.PlaySessionId, frontend.Timeline{PlaybackID: body.PlaySessionId, Position: time.Duration(ticks) * 100 * time.Nanosecond, State: state})
-	if err != nil {
-		http.Error(w, "Unavailable", 503)
-		return
-	}
-	if started {
-		i.creditPlay(r, v, body.ItemId)
-	}
-	if stopped {
-		if err = i.host.Sessions.Stop(r.Context(), access, body.PlaySessionId); err != nil {
+	report := frontend.Timeline{PlaybackID: body.PlaySessionId, Position: time.Duration(ticks) * 100 * time.Nanosecond, Duration: time.Duration(runtime) * 100 * time.Nanosecond, State: state}
+	recorded := false
+	if body.PlaySessionId != "" {
+		err = i.host.Sessions.Report(r.Context(), access, body.PlaySessionId, report)
+		if err == nil {
+			recorded = true
+			if stopped {
+				if err = i.host.Sessions.Stop(r.Context(), access, body.PlaySessionId); err != nil {
+					http.Error(w, "Unavailable", 503)
+					return
+				}
+			}
+		} else if !errors.Is(err, frontend.ErrNotFound) {
 			http.Error(w, "Unavailable", 503)
 			return
 		}
 	}
+	if !recorded {
+		item, ok := timelineItem(body)
+		if !ok {
+			http.Error(w, "Bad Request", 400)
+			return
+		}
+		progress, ok := i.host.Sessions.(frontend.ItemProgress)
+		if !ok {
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+		if err = progress.ReportItemProgress(r.Context(), access, item, report); err != nil {
+			if errors.Is(err, frontend.ErrNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			if errors.Is(err, frontend.ErrUnauthorized) {
+				http.Error(w, "Unauthorized", 401)
+				return
+			}
+			http.Error(w, "Unavailable", 503)
+			return
+		}
+	}
+	if started {
+		i.creditPlay(r, v, body.ItemId)
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func timelineTicks(value json.Number) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	ticks, err := value.Int64()
+	if err != nil || ticks < 0 || ticks > (1<<63-1)/100 {
+		return 0, frontend.ErrNotAvailable
+	}
+	return ticks, nil
+}
+
+// timelineItem prefers the item id. A file-shaped MediaSourceId is the same
+// rating-key GUID, which Infuse sends when it did not open a broker session.
+func timelineItem(body timelineRequest) (frontend.RatingKey, bool) {
+	for _, value := range []string{body.ItemId, body.MediaSourceId} {
+		if value == "" {
+			continue
+		}
+		key, err := ids.ParseRatingKeyGUID(value)
+		if err == nil && key != 0 {
+			return key, true
+		}
+	}
+	return 0, false
+}
+
+func noCompatibleStream(err error) bool {
+	return errors.Is(err, frontend.ErrNotFound) || errors.Is(err, frontend.ErrNotAvailable) || errors.Is(err, frontend.ErrSourceGone)
+}
+
+func (i *instance) writeNoCompatibleStream(w http.ResponseWriter) {
+	jsonReply(w, map[string]any{"MediaSources": []any{}, "PlaySessionId": "", "ErrorCode": "NoCompatibleStream"})
 }
 
 func directFilePath(path string) bool {
