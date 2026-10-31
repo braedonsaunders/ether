@@ -3,11 +3,17 @@ package mediabrowser
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/text/language"
 	"golang.org/x/text/language/display"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
+)
+
+var (
+	englishLanguages = sync.OnceValue(func() display.Namer { return display.English.Languages() })
+	languageNames    sync.Map
 )
 
 // jellyfinStreamDTO exposes only probed values, preserving unknowns as absent.
@@ -178,13 +184,16 @@ func jellyfinLanguageName(code string) string {
 	if code == "" || strings.EqualFold(code, "und") || strings.EqualFold(code, "undetermined") {
 		return "Undetermined"
 	}
+	if cached, ok := languageNames.Load(code); ok {
+		return cached.(string)
+	}
 	tag, err := language.Parse(code)
-	if err != nil {
-		return code
+	name := code
+	if err == nil {
+		if parsed := englishLanguages().Name(tag); parsed != "" {
+			name = parsed
+		}
 	}
-	name := display.English.Languages().Name(tag)
-	if name == "" || name == code {
-		return code
-	}
+	languageNames.Store(code, name)
 	return name
 }

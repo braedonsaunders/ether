@@ -535,6 +535,7 @@ func (i *instance) showTitle(r *http.Request, viewer *frontend.Viewer, show fron
 	if detail.Title.Key != 0 && detail.Title.Key != show {
 		return ""
 	}
+	i.rememberSeriesStudio(r, show, detail.Title.Studios)
 	return detail.Title.Title
 }
 
@@ -994,6 +995,16 @@ func mediaHasSubtitles(media frontend.MediaInfo) bool {
 
 type editionPageKey struct{}
 
+// pageEditions loads probed files only when the Jellyfin response will keep
+// MediaSources. Emby lists never embed them, and a Jellyfin list without
+// that field deletes the objects after they are built.
+func (i *instance) pageEditions(r *http.Request, viewer *frontend.Viewer, keys []frontend.RatingKey) *http.Request {
+	if i == nil || i.protocol != "jellyfin" || !fieldSet(r)["mediasources"] {
+		return r
+	}
+	return i.withPageEditions(r, viewer, keys)
+}
+
 func (i *instance) withPageEditions(r *http.Request, viewer *frontend.Viewer, keys []frontend.RatingKey) *http.Request {
 	batch, ok := i.host.Editions.(frontend.EditionBatch)
 	if !ok || viewer == nil || r == nil || len(keys) == 0 {
@@ -1017,6 +1028,9 @@ type jellyfinEdition struct {
 // library that stores each file as its own item.
 func (i *instance) jellyfinEditions(r *http.Request, viewer *frontend.Viewer, title frontend.Title) []jellyfinEdition {
 	if i == nil || i.protocol != "jellyfin" || i.host.Editions == nil || viewer == nil || r == nil {
+		return nil
+	}
+	if !fieldSet(r)["mediasources"] {
 		return nil
 	}
 	if title.Type != "movie" && title.Type != "episode" {
@@ -1099,8 +1113,8 @@ func (i *instance) fillSeriesStudio(r *http.Request, viewer *frontend.Viewer, it
 			break
 		}
 	}
-	if name == "" && title.ShowKey != 0 && r != nil && viewer != nil && i.host.Experience != nil {
-		name = i.cachedSeriesStudio(r, viewer, title.ShowKey)
+	if name == "" {
+		name = i.cachedSeriesStudio(r, title.ShowKey)
 	}
 	if name != "" {
 		item["SeriesStudio"] = name
@@ -1109,27 +1123,36 @@ func (i *instance) fillSeriesStudio(r *http.Request, viewer *frontend.Viewer, it
 
 type seriesStudioCacheKey struct{}
 
-func (i *instance) cachedSeriesStudio(r *http.Request, viewer *frontend.Viewer, show frontend.RatingKey) string {
+func (i *instance) cachedSeriesStudio(r *http.Request, show frontend.RatingKey) string {
+	if r == nil || show == 0 {
+		return ""
+	}
 	cache, _ := r.Context().Value(seriesStudioCacheKey{}).(map[frontend.RatingKey]string)
-	if cache != nil {
-		if name, ok := cache[show]; ok {
-			return name
-		}
+	if cache == nil {
+		return ""
 	}
-	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: show})
+	return cache[show]
+}
+
+func (i *instance) rememberSeriesStudio(r *http.Request, show frontend.RatingKey, studios []string) {
+	if r == nil || show == 0 {
+		return
+	}
+	cache, _ := r.Context().Value(seriesStudioCacheKey{}).(map[frontend.RatingKey]string)
+	if cache == nil {
+		return
+	}
+	if _, ok := cache[show]; ok {
+		return
+	}
 	name := ""
-	if err == nil {
-		for _, studio := range detail.Title.Studios {
-			if studio != "" {
-				name = studio
-				break
-			}
+	for _, studio := range studios {
+		if studio != "" {
+			name = studio
+			break
 		}
 	}
-	if cache != nil {
-		cache[show] = name
-	}
-	return name
+	cache[show] = name
 }
 
 func withSeriesStudioCache(r *http.Request) *http.Request {
@@ -1183,7 +1206,7 @@ func (i *instance) attachParentArtwork(r *http.Request, viewer *frontend.Viewer,
 	}
 }
 
-func (i *instance) cachedShowArtwork(r *http.Request, viewer *frontend.Viewer, show frontend.RatingKey) map[string]any {
+func (i *instance) cachedShowArtwork(r *http.Request, _ *frontend.Viewer, show frontend.RatingKey) map[string]any {
 	cache, _ := r.Context().Value(showArtworkCacheKey{}).(map[frontend.RatingKey]map[string]any)
 	if cache != nil {
 		if art, ok := cache[show]; ok {
@@ -1193,14 +1216,6 @@ func (i *instance) cachedShowArtwork(r *http.Request, viewer *frontend.Viewer, s
 	art := map[string]any{}
 	if row := i.gridImagesFor(r, []frontend.Title{{Key: show}})[show]; row != nil {
 		art = row
-	}
-	if len(art) == 0 && viewer != nil && i.host.Experience != nil {
-		detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: show})
-		if err == nil && detail.Title.Key == show {
-			if row := i.gridImagesFor(r, []frontend.Title{detail.Title})[show]; row != nil {
-				art = row
-			}
-		}
 	}
 	if cache != nil {
 		cache[show] = art

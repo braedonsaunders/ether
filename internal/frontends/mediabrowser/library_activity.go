@@ -172,7 +172,7 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 	images, paths := i.gridImagesFor(r, titles), i.virtualPaths(r, viewer, keys)
 	i.fillSeriesTitles(r, viewer, titles)
 	if fieldSet(r)["mediasources"] {
-		r = i.withPageEditions(r, viewer, keys)
+		r = i.pageEditions(r, viewer, keys)
 	}
 	items := make([]any, 0, len(titles))
 	for _, title := range titles {

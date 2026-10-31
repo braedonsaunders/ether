@@ -672,7 +672,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 	items := make([]any, 0, len(page.Items))
 	images := i.gridImagesFor(r, page.Items)
 	paths := i.virtualPaths(r, v, keys)
-	r = i.withPageEditions(r, v, keys)
+	r = i.pageEditions(r, v, keys)
 	i.fillSeriesTitles(r, v, page.Items)
 	for _, title := range page.Items {
 		editions := i.jellyfinEditions(r, v, title)
