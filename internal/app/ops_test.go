@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -358,8 +359,9 @@ func TestRestartAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	a.bindRestart(ctx, cancel)
-	viewers := 2
-	a.restart.active = func() int { return viewers }
+	var viewers atomic.Int32
+	viewers.Store(2)
+	a.restart.active = func() int { return int(viewers.Load()) }
 	restartPoll = 10 * time.Millisecond
 	defer func() { restartPoll = 5 * time.Second }()
 
@@ -399,7 +401,7 @@ func TestRestartAPI(t *testing.T) {
 	if w := consoleRequest(a, "POST", "/ether/api/server/restart/", `{"whenIdle":true}`); w.Code != http.StatusAccepted {
 		t.Fatalf("POST whenIdle again: %d", w.Code)
 	}
-	viewers = 0
+	viewers.Store(0)
 	select {
 	case <-ctx.Done():
 	case <-time.After(2 * time.Second):
