@@ -127,6 +127,9 @@ var (
 	ErrBudgetExhausted   = errors.New("indexer daily budget exhausted")
 	ErrStreamLimit       = errors.New("stream limit reached")
 	ErrUnauthorized      = errors.New("unauthorized")
+	// ErrPolicyUnconfirmed means the durable policy store could not be read.
+	// Callers may keep an unrestricted cached decision. Restricted viewers fail closed.
+	ErrPolicyUnconfirmed = errors.New("policy store unavailable")
 )
 
 // User is a Plex account with access to this server: the owner or a friend

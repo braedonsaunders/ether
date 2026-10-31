@@ -64,7 +64,7 @@ func TestValidationAdmissionIsAtomic(t *testing.T) {
 		for _, token := range []string{"audit-one", "audit-two"} {
 			go func() {
 				ctx := &admissionContext{Context: context.Background(), ready: ready, proceed: proceed}
-				_, err := s.validate(ctx, token, HashToken(token))
+				_, _, err := s.validate(ctx, token, HashToken(token))
 				results <- err
 			}()
 		}
@@ -116,20 +116,20 @@ func TestValidationAdmissionRetainsStaleFallback(t *testing.T) {
 		v := &admissionValidator{release: release}
 		s.o.Validator = v
 		done := make(chan error, 1)
-		go func() { _, err := s.validate(context.Background(), "occupied", HashToken("occupied")); done <- err }()
+		go func() { _, _, err := s.validate(context.Background(), "occupied", HashToken("occupied")); done <- err }()
 		synctest.Wait()
 		hash := HashToken("stale-device")
 		s.mu.Lock()
 		s.pos[hash] = cacheEntry{userID: owner.ID, expires: clock.now().Add(-time.Second)}
 		s.mu.Unlock()
-		u, err := s.validate(context.Background(), "stale-device", hash)
+		u, _, err := s.validate(context.Background(), "stale-device", hash)
 		if err != nil || u == nil || u.ID != owner.ID {
 			t.Errorf("capacity lost valid stale fallback: user=%v err=%v", u, err)
 		}
 		s.mu.Lock()
 		s.pos[hash] = cacheEntry{userID: owner.ID, expires: clock.now().Add(-2 * s.o.StaleTTL)}
 		s.mu.Unlock()
-		if u, err := s.validate(context.Background(), "stale-device", hash); u != nil || err == nil || errors.Is(err, core.ErrUnauthorized) {
+		if u, _, err := s.validate(context.Background(), "stale-device", hash); u != nil || err == nil || errors.Is(err, core.ErrUnauthorized) {
 			t.Errorf("expired stale should be temporary failure: user=%v err=%v", u, err)
 		}
 		if v.calls.Load() != 1 {

@@ -38,13 +38,17 @@ type BrokerDeps struct {
 	// MediaLookup checks current title policy using local facts only; it must
 	// never resolve a release or fetch remote metadata on a segment request.
 	// If nil, Lookup must satisfy the same requirement.
-	MediaLookup        func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
-	Playback           core.Playback
-	Transcoder         core.Transcoder
-	Progress           ProgressWriter
-	SourceHistory      SourceHistoryWriter
-	ActiveViewer       func(context.Context, int64) (*core.Viewer, error)
-	CanPlay            func(*core.Viewer, bool, time.Time) bool
+	MediaLookup   func(context.Context, *core.Viewer, core.Device, core.RatingKey) (*core.Title, error)
+	Playback      core.Playback
+	Transcoder    core.Transcoder
+	Progress      ProgressWriter
+	SourceHistory SourceHistoryWriter
+	ActiveViewer  func(context.Context, int64) (*core.Viewer, error)
+	CanPlay       func(*core.Viewer, bool, time.Time) bool
+	// FreshPlay re-reads fenced membership and safety policy. A returned viewer
+	// replaces the cached one for the rest of the call. ErrPolicyUnconfirmed
+	// keeps the cached CanPlay decision for an unrestricted viewer.
+	FreshPlay          func(context.Context, *core.Viewer, bool, time.Time) (*core.Viewer, error)
 	BitrateLimit       func(*core.Viewer) int
 	RemoteBitrateLimit func() int
 	OnTimeline         func(*core.Viewer, core.RatingKey, time.Duration, time.Duration, string)
@@ -197,6 +201,34 @@ func (b *Broker) viewer(ctx context.Context, v *core.Viewer) (*core.Viewer, erro
 func (b *Broker) permitted(v *core.Viewer, caps core.ClientCaps) bool {
 	return b.deps.CanPlay == nil || b.deps.CanPlay(v, caps.Remote, b.deps.Now())
 }
+
+// confirm applies a fenced playback policy when one is installed. The returned
+// viewer is the one later lookups must use.
+func (b *Broker) confirm(ctx context.Context, v *core.Viewer, caps core.ClientCaps) (*core.Viewer, error) {
+	if v == nil || v.ID <= 0 {
+		return nil, core.ErrUnauthorized
+	}
+	at := time.Now()
+	if b.deps.Now != nil {
+		at = b.deps.Now()
+	}
+	if b.deps.FreshPlay != nil {
+		fresh, err := b.deps.FreshPlay(ctx, v, caps.Remote, at)
+		if err == nil && fresh != nil && fresh.ID == v.ID {
+			return fresh, nil
+		}
+		if err != nil && !errors.Is(err, core.ErrPolicyUnconfirmed) {
+			if errors.Is(err, core.ErrUnauthorized) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, err
+			}
+			return nil, core.ErrUnauthorized
+		}
+	}
+	if !b.permitted(v, caps) {
+		return nil, core.ErrUnauthorized
+	}
+	return v, nil
+}
 func (b *Broker) publish(ctx context.Context, event frontend.Event) {
 	if err := b.deps.Events.Publish(ctx, event); err != nil && b.deps.OnEventError != nil {
 		b.deps.OnEventError(err)
@@ -296,6 +328,11 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 	if closed {
 		return frontend.PlayPlan{}, core.ErrNotAvailable
 	}
+	confirmed, err := b.confirm(ctx, v, req.Caps)
+	if err != nil {
+		return frontend.PlayPlan{}, err
+	}
+	v = confirmed
 	viewerCopy := *v
 	req.Viewer = &viewerCopy
 	req.Caps.Protocol = req.Protocol
@@ -305,9 +342,6 @@ func (b *Broker) Plan(ctx context.Context, req frontend.PlanRequest) (frontend.P
 		if limit := b.deps.RemoteBitrateLimit(); limit > 0 && (req.Caps.MaxBitrateKbps == 0 || limit < req.Caps.MaxBitrateKbps) {
 			req.Caps.MaxBitrateKbps = limit
 		}
-	}
-	if !b.permitted(v, req.Caps) {
-		return frontend.PlayPlan{}, core.ErrUnauthorized
 	}
 	if b.deps.BitrateLimit != nil {
 		if limit := b.deps.BitrateLimit(v); limit > 0 {
@@ -613,12 +647,16 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 			b.releasePlanSource(p.source.ID, p.pinned)
 		}
 	}()
-	if b.deps.Now().Sub(p.created) > planLifetime || !b.permitted(v, p.request.Caps) {
+	if b.deps.Now().Sub(p.created) > planLifetime {
 		return frontend.Session{}, core.ErrUnauthorized
 	}
 	v, err = b.viewer(ctx, req.Viewer)
-	if err != nil || !b.permitted(v, p.request.Caps) {
+	if err != nil {
 		return frontend.Session{}, core.ErrUnauthorized
+	}
+	v, err = b.confirm(ctx, v, p.request.Caps)
+	if err != nil {
+		return frontend.Session{}, err
 	}
 	if limit := b.deps.BitrateLimit(v); limit > 0 && (p.request.Caps.MaxBitrateKbps == 0 || p.request.Caps.MaxBitrateKbps > limit) {
 		return frontend.Session{}, core.ErrUnauthorized
@@ -742,8 +780,12 @@ func (b *Broker) accessSession(ctx context.Context, a frontend.SessionAccess, id
 	if a.Owner && !owner {
 		return nil, nil, core.ErrUnauthorized
 	}
-	if enforcePlaybackPolicy && !b.permitted(viewer, s.caps) && !owner {
-		return nil, nil, core.ErrUnauthorized
+	if enforcePlaybackPolicy && !owner {
+		confirmed, err := b.confirm(ctx, viewer, s.caps)
+		if err != nil {
+			return nil, nil, err
+		}
+		viewer = confirmed
 	}
 	return s, viewer, nil
 }

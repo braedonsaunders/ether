@@ -207,9 +207,11 @@ func (b *Broker) ServeMediaAccess(w http.ResponseWriter, r *http.Request, a fron
 }
 
 func (b *Broker) currentMediaPolicy(ctx context.Context, viewer *core.Viewer, s *brokerSession) bool {
-	if viewer == nil || viewer.ID != s.public.ViewerID || !b.permitted(viewer, s.caps) {
+	confirmed, err := b.confirm(ctx, viewer, s.caps)
+	if err != nil || confirmed.ID != s.public.ViewerID {
 		return false
 	}
+	viewer = confirmed
 	if s.live {
 		return b.deps.Live != nil && b.deps.Live.Allowed(ctx, viewer, s.public.Channel) == nil
 	}
@@ -268,7 +270,7 @@ func (b *Broker) serveMediaAt(protocol frontend.Protocol, access *frontend.Sessi
 		}
 		return v
 	})
-	if !ok || viewer.ID != s.public.ViewerID || !b.permitted(viewer, s.caps) {
+	if !ok || viewer.ID != s.public.ViewerID {
 		http.NotFound(w, r)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -190,7 +191,14 @@ func (s *Service) CanPlay(u *core.User, remote bool, now time.Time) bool {
 	if u == nil {
 		return false
 	}
-	p := s.ForUser(u)
+	return CanPlayWithPolicy(u, s.ForUser(u), remote, now)
+}
+
+// CanPlayWithPolicy applies a policy snapshot the caller already loaded.
+func CanPlayWithPolicy(u *core.User, p Policy, remote bool, now time.Time) bool {
+	if u == nil {
+		return false
+	}
 	if remote && p.RemoteDisabled {
 		return false
 	}
@@ -211,6 +219,29 @@ func (s *Service) CanPlay(u *core.User, remote bool, now time.Time) bool {
 		}
 	}
 	return false
+}
+
+// PolicyInTx reads the durable policy row. A missing row is unrestricted.
+func (s *Service) PolicyInTx(ctx context.Context, tx *sql.Tx, viewerID int64) (Policy, error) {
+	if s == nil || tx == nil || viewerID <= 0 {
+		return Policy{}, fmt.Errorf("safety: invalid viewer")
+	}
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT policy FROM safety_policies WHERE user_id=?`, viewerID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Policy{}, nil
+	}
+	if err != nil {
+		return Policy{}, err
+	}
+	var policy Policy
+	if err := json.Unmarshal([]byte(raw), &policy); err != nil {
+		return Policy{}, err
+	}
+	if err := policy.Validate(); err != nil {
+		return Policy{}, err
+	}
+	return policy, nil
 }
 func IsRemote(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)

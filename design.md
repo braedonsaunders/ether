@@ -66,6 +66,31 @@ protocol remote policy. Direct-peer-only gates for isolated diagnostic sockets
 are distinct from forwarded-client authorization. Reverse proxies must replace
 client-supplied forwarding headers, and trusted CIDRs must be narrowly scoped.
 
+### Playback authorization
+
+`auth.Service.Accept` returns the same user and error as `Authenticate` plus
+an acceptance receipt minted inside the branch that accepted the credential.
+Receipts are opaque: formatting and JSON do not reveal credential digests.
+`ReceiptCurrent` rechecks that receipt against local revocation. Personal-token
+positive entries still expire at CacheTTL and may be served until StaleTTL
+only for the stale fallback that was actually taken. Synced server tokens are
+not limited by those TTLs. Delegation receipts die with the delegation row.
+A stream grant authorizes GET and HEAD media only.
+
+Broker playback calls `safety.ConfirmPlayback` through `BrokerDeps.FreshPlay`
+before it plans, opens, or returns media bytes. That read holds
+`viewerpolicy.Fence` across the membership and safety rows. SQLite takes the
+write lock explicitly. Restricted viewers fail closed when the store cannot
+confirm the snapshot. Unrestricted viewers keep the cached decision if the
+store is unavailable. Plex wire responses stay the same except where a
+restricted viewer would otherwise see a stale allow.
+
+Live playlists and DASH manifests carry `X-Ether-Stream-Token`, never the
+account token that fetched the playlist. `sessions.GrantURL` strips account
+query credentials before it appends a stream grant. Resume reuse stays bound
+to the stored selection key, and a resume row, its keyframe index and its
+probe commit in one transaction after the payload owner receipt is held.
+
 ### Media URLs and manifests
 
 Never emit Plex account tokens, surface login grants, passwords or refresh

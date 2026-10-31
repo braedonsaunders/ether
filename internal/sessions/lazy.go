@@ -106,13 +106,16 @@ func (s *lazyStreams) issueOutput(ctx context.Context, credential string, req fr
 	// Validate policy and item without resolving a release or consuming a stream.
 	req.Viewer = viewer
 	if lineup {
-		if !s.broker.permitted(viewer, req.Caps) || s.broker.deps.Live == nil {
+		if _, err = s.broker.confirm(ctx, viewer, req.Caps); err != nil || s.broker.deps.Live == nil {
 			return "", core.ErrUnauthorized
 		}
 	} else if stable {
 		// Authenticated paths are requested for every range. Check only local
 		// policy facts here; resolving a release belongs to the first GET.
-		if s.broker.deps.MediaLookup == nil || !s.broker.permitted(viewer, req.Caps) {
+		if s.broker.deps.MediaLookup == nil {
+			return "", core.ErrUnauthorized
+		}
+		if viewer, err = s.broker.confirm(ctx, viewer, req.Caps); err != nil {
 			return "", core.ErrUnauthorized
 		}
 		title, err := s.broker.deps.MediaLookup(ctx, viewer, req.Device, req.Item)
@@ -379,12 +382,14 @@ func (s *lazyStreams) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	req.Viewer = viewer
 	req.Caps.Remote = req.Caps.Remote || s.remote(r)
-	if !s.broker.permitted(viewer, req.Caps) || (req.Item == 0) == (req.Channel == "") {
+	fresh, err := s.broker.confirm(ctx, viewer, req.Caps)
+	if err != nil || (req.Item == 0) == (req.Channel == "") {
 		http.NotFound(w, r)
 		return
 	}
+	viewer = fresh
+	req.Viewer = viewer
 	if req.Channel != "" {
 		if !strings.HasPrefix(tail, "live/") || s.broker.deps.Live == nil || s.broker.deps.Live.Allowed(ctx, viewer, req.Channel) != nil {
 			http.NotFound(w, r)
@@ -735,7 +740,7 @@ func (s *lazyStreams) heartbeatBinding(ctx context.Context, cancel context.Cance
 			return
 		case <-ticks:
 			viewer, err := s.broker.deps.ActiveViewer(ctx, viewerID)
-			if err != nil || viewer == nil || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil || !s.broker.permitted(viewer, req.Caps) {
+			if _, confirmErr := s.broker.confirm(ctx, viewer, req.Caps); err != nil || viewer == nil || s.grants.ValidateGrantReference(ctx, string(s.protocol), reference, viewerID) != nil || confirmErr != nil {
 				cancel()
 				return
 			}

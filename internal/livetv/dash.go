@@ -35,7 +35,7 @@ func (s *Service) ServeDASH(w http.ResponseWriter, r *http.Request, id string, u
 	body := dashURL.ReplaceAllStringFunc(rec.Body.String(), func(attr string) string {
 		parts := dashURL.FindStringSubmatch(attr)
 		target := strings.Replace(parts[2], prefix, "/livetv/sessions/"+id+"/0/dash/", 1)
-		return parts[1] + `="` + html.EscapeString(withAuth(target, r)) + `"`
+		return parts[1] + `="` + html.EscapeString(withAuth(target, ss.streamGrant)) + `"`
 	})
 	w.Header().Set("Content-Type", "application/dash+xml")
 	w.Header().Set("Cache-Control", "no-store")

@@ -1255,6 +1255,10 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		writeHTTPError(w, http.StatusNotFound)
 		return
 	}
+	if !s.acceptanceCurrent(r) {
+		writeHTTPError(w, http.StatusUnauthorized)
+		return
+	}
 	ref, ok := s.streams.lookup(id)
 	if !ok || !ref.info.External || ref.info.ExternalURL == "" {
 		writeHTTPError(w, http.StatusNotFound)
