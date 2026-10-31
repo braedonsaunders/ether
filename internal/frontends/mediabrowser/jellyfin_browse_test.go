@@ -418,8 +418,11 @@ func TestJellyfinSeasonListOmitsUnrequestedFields(t *testing.T) {
 		t.Fatal(err, w.Body.String())
 	}
 	item := page.Items[0]
-	if item["SeriesName"] != "Show" || item["ParentId"] != ids.RatingKeyGUID(core.ShowKey(42)) || item["SeasonName"] != "Season 1" || item["MediaType"] != "Unknown" {
-		t.Fatal(item["SeriesName"], item["ParentId"], item["SeasonName"], item["MediaType"])
+	if item["SeriesName"] != "Show" || item["ParentId"] != ids.RatingKeyGUID(core.ShowKey(42)) || item["Name"] != "Season 1" || item["MediaType"] != "Unknown" {
+		t.Fatal(item["SeriesName"], item["ParentId"], item["Name"], item["MediaType"])
+	}
+	if _, ok := item["SeasonName"]; ok {
+		t.Fatal(item["SeasonName"])
 	}
 	for _, key := range []string{"CanDelete", "CanDownload", "Overview", "SortName", "ProviderIds", "RunTimeTicks", "DateCreated"} {
 		if _, ok := item[key]; ok {
