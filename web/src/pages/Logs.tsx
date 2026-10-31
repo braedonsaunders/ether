@@ -8,14 +8,16 @@ import {
   toast,
   cn,
 } from "@braedonsaunders/appkit-ui";
-import { Download, RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
+import { CircleDot, Download, RefreshCw, ScrollText, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../components/feedback";
 import { Segmented } from "../components/fields";
 import { getLocale, localized, t, tn } from "../i18n";
 import { api, apiBlob, API_BASE, errorMessage } from "../lib/api";
 import { useDebouncedValue } from "../lib/hooks";
 import type { LogEntry } from "../lib/types";
+import { RecordProblem } from "./RecordProblem";
 
 const LEVELS = localized(() => [
   { value: "", label: t("All") },
@@ -44,6 +46,8 @@ export default function Logs() {
   const query = useDebouncedValue(q, 250);
   const [follow, setFollow] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [params] = useSearchParams();
+  const [record, setRecord] = useState(params.get("record") === "1");
 
   const load = useCallback(async () => {
     try {
@@ -116,6 +120,9 @@ export default function Logs() {
           )}
         </p>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setRecord(true)}>
+            <CircleDot size={14} /> {t("Record a problem")}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => void load()}>
             <RefreshCw size={14} /> {t("Reload")}
           </Button>
@@ -220,6 +227,7 @@ export default function Logs() {
           </div>
         </div>
       )}
+      <RecordProblem open={record} onClose={() => setRecord(false)} />
     </section>
   );
 }

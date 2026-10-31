@@ -98,6 +98,9 @@ func TestScheduledEpisodeHTTPIsMetadataOnlyAndRevocable(t *testing.T) {
 	if r := f.get(t, "/library/metadata/"+breakingBad.Key.String()+"/allLeaves"); strings.Contains(r.Body.String(), "Future episode") {
 		t.Fatal("future leaked into allLeaves/autoplay")
 	}
+	// Listing requests queue catalogue enrichment. Finish those reads before
+	// changing the fixture configuration or its deliberately unsynchronized map.
+	f.srv.waitBackground()
 	// Removing the opt-in immediately revokes metadata and image access.
 	enabled = false
 	for _, path := range []string{base, base + "/thumb"} {
@@ -105,6 +108,7 @@ func TestScheduledEpisodeHTTPIsMetadataOnlyAndRevocable(t *testing.T) {
 			t.Fatalf("disabled %s: %d", path, r.Code)
 		}
 	}
+	f.srv.waitBackground()
 	enabled = true
 	f.srv.d.AccessPolicy = denyTitlePolicy{}
 	parent := f.catalog.titles[bbS1.Key]

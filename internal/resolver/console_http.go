@@ -66,6 +66,7 @@ func (s *Service) ConsoleHandler(deps ConsoleDeps) http.Handler {
 	h := &consoleAPI{s: s, deps: deps}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /profiles", h.profiles)
+	mux.HandleFunc("POST /rules/preview", h.previewRules)
 	mux.HandleFunc("GET /search", h.search)
 	mux.HandleFunc("GET /titles/{key}/children", h.children)
 	mux.HandleFunc("POST /health", h.health)

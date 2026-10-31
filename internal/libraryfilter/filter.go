@@ -198,7 +198,12 @@ func (c condition) matches(t *core.Title) bool {
 		}
 	}
 	if len(values) == 0 {
-		return false
+		// A blank certification is not one of the listed ratings. Negative
+		// content-rating rules therefore match, so "none of" cannot be
+		// bypassed by a missing rating. Unknown country, genre, language
+		// and numbers still do not match. Known ratings compare as the
+		// listed text, case-insensitively; PG-13 and PG13 stay distinct.
+		return c.field == "contentRating" && (c.op == "notIn" || c.op == "isNot")
 	}
 	yes := false
 	for _, v := range values {
@@ -214,8 +219,9 @@ func (c condition) matches(t *core.Title) bool {
 	return yes
 }
 
-// SQLHidden returns a parameterized predicate for catalog_titles AS t. Its
-// fixed column/table whitelist has the same unknown-value semantics as Hidden.
+// SQLHidden returns a parameterized predicate for catalog_titles AS t.
+// Its fixed column whitelist matches Hidden, including blank content ratings
+// on negative rating rules and known-value guards for every other field.
 func (f *Filter) SQLHidden() (string, []any) {
 	var groups []string
 	var args []any
@@ -267,6 +273,10 @@ func (f *Filter) SQLHidden() (string, []any) {
 			}
 			if c.op == "notIn" || c.op == "isNot" {
 				q = "NOT (" + q + ")"
+			}
+			if c.field == "contentRating" && (c.op == "notIn" || c.op == "isNot") {
+				rules = append(rules, "("+q+")")
+				continue
 			}
 			rules = append(rules, "("+known+" AND "+q+")")
 		}

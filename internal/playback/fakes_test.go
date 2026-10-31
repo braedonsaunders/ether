@@ -437,9 +437,11 @@ func (t *fakeTranscoder) addHLS(id string) *fakeHLS {
 type fakeCatalog struct {
 	core.Catalog // unused methods panic
 	titles       map[core.RatingKey]*core.Title
+	gets         atomic.Int32
 }
 
 func (c *fakeCatalog) Get(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+	c.gets.Add(1)
 	if t, ok := c.titles[key]; ok {
 		cp := *t
 		return &cp, nil

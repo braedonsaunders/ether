@@ -120,12 +120,88 @@ func TestDASHDecisionMedia(t *testing.T) {
 		m.Part[0].Decision != "transcode" {
 		t.Fatalf("media %+v", m)
 	}
-	locations := map[int]string{}
+	var video, selectedAudio, otherAudio int
 	for _, st := range m.Part[0].Stream {
-		locations[st.StreamType] = st.Location
+		switch st.StreamType {
+		case 1:
+			video++
+			if st.Location != "segments-video" {
+				t.Errorf("video location %q", st.Location)
+			}
+		case 2:
+			if st.Location == "segments-audio" {
+				selectedAudio++
+			} else if st.Location == "" {
+				otherAudio++
+			} else {
+				t.Errorf("audio location %q", st.Location)
+			}
+		}
 	}
-	if locations[1] != "segments-video" || locations[2] != "segments-audio" {
-		t.Errorf("stream locations %v", locations)
+	if video != 1 || selectedAudio != 1 || otherAudio != 0 {
+		t.Fatalf("video=%d selected audio=%d other audio=%d", video, selectedAudio, otherAudio)
+	}
+}
+
+// An Android DASH decision lists both audio tracks, and only the selected
+// one is a segment representation. The other keeps the HLS shape (source
+// index, no decision, no location) so the client does not request
+// session/{id}/2/.
+func TestDASHDecisionUnselectedAudioIsNotASegment(t *testing.T) {
+	f, _ := dashFixture()
+	defer f.srv.Close()
+	f.playback.info = core.MediaInfo{
+		Container: "mkv", Duration: 90 * time.Minute,
+		Streams: []core.StreamInfo{
+			{Index: 0, Type: "video", Codec: "h264", Width: 1920, Height: 1080},
+			{Index: 1, Type: "audio", Codec: "eac3", Language: "en", Channels: 6, Default: true},
+			{Index: 4, Type: "audio", Codec: "aac", Language: "fr", Channels: 2},
+		},
+	}
+	rec := f.get(t, "/video/:/transcode/universal/decision?"+strings.Replace(dashQuery, "session=web-1", "session=dash-two", 1),
+		append(jsonAccept, "X-Plex-Product", "Plex for Android", "X-Plex-Platform", "Android")...)
+	if rec.Code != 200 {
+		t.Fatalf("decision: %d %s", rec.Code, rec.Body.String())
+	}
+	var v struct {
+		MediaContainer struct {
+			Metadata []struct {
+				Media []struct {
+					Part []struct {
+						Stream []struct {
+							StreamType int    `json:"streamType"`
+							Location   string `json:"location"`
+							Decision   string `json:"decision"`
+							Selected   bool   `json:"selected"`
+							Index      *int   `json:"index"`
+						} `json:"Stream"`
+					} `json:"Part"`
+				} `json:"Media"`
+			} `json:"Metadata"`
+		} `json:"MediaContainer"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
+		t.Fatal(err)
+	}
+	var selected, other int
+	for _, st := range v.MediaContainer.Metadata[0].Media[0].Part[0].Stream {
+		if st.StreamType != 2 {
+			continue
+		}
+		if st.Selected {
+			selected++
+			if st.Location != "segments-audio" || st.Decision == "" || st.Index != nil {
+				t.Fatalf("selected audio %+v", st)
+			}
+			continue
+		}
+		other++
+		if st.Location != "" || st.Decision != "" || st.Index == nil || *st.Index != 4 {
+			t.Fatalf("unselected audio %+v", st)
+		}
+	}
+	if selected != 1 || other != 1 {
+		t.Fatalf("selected=%d unselected=%d", selected, other)
 	}
 }
 

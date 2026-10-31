@@ -104,10 +104,25 @@ func csrfOK(r *http.Request) bool {
 		if strings.EqualFold(ct, "application/json") {
 			return true
 		}
-		return r.Method == http.MethodPost && binaryUploads[r.URL.Path] &&
+		return r.Method == http.MethodPost && binaryUpload(r.URL.Path) &&
 			strings.EqualFold(ct, "application/octet-stream") && sameOrigin(r)
 	}
 	return true
+}
+
+// binaryUpload reports whether path accepts a raw file body. Live TV
+// playlist and guide uploads carry the source id in the path, so they
+// cannot be listed as a single map key.
+func binaryUpload(path string) bool {
+	if binaryUploads[path] {
+		return true
+	}
+	rest, ok := strings.CutPrefix(path, "/api/livetv/sources/")
+	if !ok {
+		return false
+	}
+	id, part, ok := strings.Cut(rest, "/")
+	return ok && id != "" && !strings.Contains(part, "/") && (part == "playlist" || part == "guide")
 }
 
 // sameOrigin reports whether a browser request's Origin, when it sent

@@ -1,3 +1,4 @@
+import { Navigate, useLocation, useParams } from "react-router-dom";
 import { localized, t } from "../../i18n";
 import { ConfigSection } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
@@ -25,7 +26,12 @@ const TABS = localized(
 
 /** Which release Ether picks for each play, and why. */
 export default function Releases() {
+  const { tab: rawTab } = useParams();
+  const location = useLocation();
   const tab = useRouteTab(TABS);
+  if (rawTab === "search") {
+    return <Navigate to={{ pathname: "/releases/pinned", search: location.search }} replace />;
+  }
   return (
     <DomainPage
       title={t("Releases")}

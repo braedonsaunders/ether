@@ -9,6 +9,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/libraryfilter"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 )
 
 // FieldError is one validation problem, addressed by dotted field path.
@@ -323,6 +324,11 @@ func ValidateConfig(cfg config.Config) []FieldError {
 			v.add(f+".name", "duplicate profile name %q", p.Name)
 		}
 		profiles[p.Name] = true
+		if _, err := releasepolicy.Compile(p.ReleaseRules); err != nil {
+			v.add(f+".releaseRules", "%s", err)
+		} else if msg := releasepolicy.Conflict(p.ReleaseRules); msg != "" {
+			v.add(f+".releaseRules", "%s", msg)
+		}
 		if p.MinHeight < 0 || p.MaxHeight < 0 || (p.MaxHeight > 0 && p.MinHeight > p.MaxHeight) {
 			v.add(f+".minHeight", "must be <= maxHeight")
 		}

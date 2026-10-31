@@ -51,8 +51,56 @@ import type {
   UpdateStatus,
   UsenetProvider,
 } from "./types";
-
 import { t } from "../i18n";
+
+export interface SupportDevice {
+  id: string;
+  name?: string;
+  model?: string;
+  product?: string;
+  version?: string;
+  lastSeen: string;
+}
+
+export interface SupportCapture {
+  id: string;
+  state: string;
+  deviceConfirmed: boolean;
+  startedAt: string;
+  deadline: string;
+  finishedAt?: string;
+  category: string;
+  note?: string;
+  device?: SupportDevice;
+  discovery?: SupportDevice[];
+  observations: { at: string; kind: string; count?: number; status?: number; route?: string }[];
+  hypotheses: { code: string; text: string }[];
+  coverage: { collector: string; status: string; detail: string }[];
+  preview?: {
+    identity: {
+      usernamesIncluded: boolean;
+      addressesIncluded: boolean;
+      usernames?: string[];
+      addresses?: string[];
+      titlesIncluded: boolean;
+      explanation: string;
+    };
+    note?: string;
+    redaction: string;
+  };
+}
+
+export interface SupportStart {
+  deviceId?: string;
+  category?: string;
+  note?: string;
+}
+
+export interface SupportFinish {
+  includeTitles: boolean;
+  includeUsernames: boolean;
+  includeAddresses: boolean;
+}
 
 // The console keeps an Ether-issued session that only opens this API and can
 // be revoked, never the owner's plex.tv account token.
@@ -308,6 +356,18 @@ export const api = {
   logs: (params: { limit?: number; level?: string; q?: string }) =>
     apiFetch<{ entries: LogEntry[]; total: number }>(`/logs${qs(params)}`),
   clearLogs: () => apiFetch<{ ok: boolean }>("/logs", { method: "DELETE" }),
+  supportDevices: () => apiFetch<{ devices: SupportDevice[] }>("/support/devices"),
+  supportStart: (body: SupportStart) => post<SupportCapture>("/support/captures", body),
+  supportGet: (id: string) =>
+    apiFetch<SupportCapture>(`/support/captures/${encodeURIComponent(id)}`),
+  supportSelect: (id: string, deviceId: string) =>
+    post<SupportCapture>(`/support/captures/${encodeURIComponent(id)}/device`, { deviceId }),
+  supportFinish: (id: string, body: SupportFinish) =>
+    post<SupportCapture>(`/support/captures/${encodeURIComponent(id)}/finish`, body),
+  supportDiscard: (id: string) =>
+    apiFetch<{ ok: boolean }>(`/support/captures/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  supportArchive: (id: string) =>
+    apiBlob(`${API_BASE}/support/captures/${encodeURIComponent(id)}/archive`),
 
   // ---- Updates -----------------------------------------------------------------
   updateStatus: () => apiFetch<UpdateStatus>("/updates/"),

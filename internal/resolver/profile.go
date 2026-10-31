@@ -82,6 +82,21 @@ func SelectProfile(q config.Quality, caps core.ClientCaps, user *core.User) core
 		}
 		prof.CustomFormatScores = copyScores
 	}
+	if len(prof.ReleaseRules) > 0 {
+		rules := make([]core.ReleaseRule, len(prof.ReleaseRules))
+		for i, r := range prof.ReleaseRules {
+			rules[i] = r
+			rules[i].Conditions = append([]core.ReleaseCondition(nil), r.Conditions...)
+			rules[i].Unless = append([]core.ReleaseCondition(nil), r.Unless...)
+			rules[i].Fallback = append([]core.ReleaseCondition(nil), r.Fallback...)
+		}
+		prof.ReleaseRules = rules
+	}
+
+	// Key of the configured definition, taken from this pristine copy
+	// before download reshaping and the client-cap clamp below, so the
+	// same configured profile keys identically for every client.
+	prof.SelectionKey = prof.ComputeSelectionKey()
 
 	// Key of the configured definition, taken from this pristine copy
 	// before the configured-height snapshot, download reshaping, and

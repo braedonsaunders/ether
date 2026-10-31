@@ -104,7 +104,7 @@ export function PinnedTab() {
               title={t("No pinned releases")}
               description={t("Search a title and pin the release you want it to play.")}
               action={
-                <Link to="/releases/search" className="text-sm text-primary underline">
+                <Link to="/releases/pinned" className="text-sm text-primary underline">
                   {t("Search releases")}
                 </Link>
               }

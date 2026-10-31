@@ -61,9 +61,12 @@ func TestCapturedBindingsArchiveProvenance(t *testing.T) {
 		t.Fatal("archived login provenance changed")
 	}
 	for _, key := range []string{"${id_27}", "${id_49}", "${id_57}"} {
-		if !m.ambiguous[key] {
-			t.Fatalf("edition ambiguity lost: %s", key)
+		if m.ambiguous[key] || m.sizes[key] == 0 {
+			t.Fatalf("edition size evidence lost: %s ambiguous=%v size=%d", key, m.ambiguous[key], m.sizes[key])
 		}
+	}
+	if m.sizes["${id_27}"] == m.sizes["${id_49}"] || m.sizes["${id_49}"] == m.sizes["${id_57}"] || m.sizes["${id_27}"] == m.sizes["${id_57}"] {
+		t.Fatal("edition sizes were not distinct")
 	}
 	for _, key := range []string{"${id_2}", "${id_3}", "${id_8}"} {
 		if _, ok := m.items[key]; ok {
@@ -86,6 +89,27 @@ func TestCapturedBindingsArchiveProvenance(t *testing.T) {
 		t.Fatal("binding mutated recorded request or caller variables")
 	}
 }
+func TestCapturedEditionSizeBindsOnlyTheMatchingCopy(t *testing.T) {
+	p := captureTestProtocol(t)
+	m := p.captures["infuse-jellyfin"]
+	size := m.sizes["${id_49}"]
+	if size == 0 {
+		t.Fatal("missing archived edition size")
+	}
+	calls := 0
+	s := captureTestServer(t, []capturedItem{{ID: "four-k", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "10378", "Imdb": "tt1254207"}, MediaSources: []struct {
+		Size int64 `json:"Size"`
+	}{{Size: size}}}}, &calls)
+	defer s.Close()
+	p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000036"), map[string]string{"device_id": "run-device"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", captureRequest(p, "000038"), map[string]string{"device_id": "run-device"}); err == nil {
+		t.Fatal("a different edition size bound to the 4K copy")
+	}
+}
+
 func TestCapturedBindingsRejectUnprovenScope(t *testing.T) {
 	for _, tc := range []struct{ name, key, value, token, sequence string }{
 		{"other user", "user_id", "other-user", "owned-token", "000002"},
@@ -169,8 +193,8 @@ func TestCapturedBindingsFiniteArchiveClassification(t *testing.T) {
 	s := captureTestServer(t, []capturedItem{{ID: "seed-movie", Type: "Movie", ProviderIDs: map[string]string{"Tmdb": "10378", "Imdb": "tt1254207"}}}, &calls)
 	defer s.Close()
 	ids := p.Discover(context.Background(), s.Client(), s.URL, "owned-token", "infuse-jellyfin", nil)
-	if !strings.Contains(strings.Join(ids.Warnings, "\n"), "id_49: ambiguous captured") {
-		t.Fatal("missing explicit ambiguity diagnostic")
+	if !strings.Contains(strings.Join(ids.Warnings, "\n"), "id_49: missing or ambiguous current typed provider identity") {
+		t.Fatal("missing explicit size mismatch diagnostic")
 	}
 	total, resolved := 0, 0
 	for _, r := range p.Corpus("infuse-jellyfin") {
@@ -336,7 +360,7 @@ func TestCapturedUsersMeProvesRunCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	segments := captureRequest(p, "000036")
-	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", segments, map[string]string{"device_id": "run-device", "user_id": "server-user"}); err == nil || strings.Contains(err.Error(), "ownership unproven") || !strings.Contains(err.Error(), "ambiguous captured provider identity") {
+	if _, _, err := p.bindCaptured(s.URL, "owned-token", "infuse-jellyfin", segments, map[string]string{"device_id": "run-device", "user_id": "server-user"}); err == nil || strings.Contains(err.Error(), "ownership unproven") || !strings.Contains(err.Error(), "missing or ambiguous current typed provider identity") {
 		t.Fatal("MediaSegments did not get past ownership", err)
 	}
 	bare := captureTestProtocol(t)

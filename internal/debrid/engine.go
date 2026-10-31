@@ -88,6 +88,11 @@ type Engine struct {
 	block int64
 	stall time.Duration // bodyStallTimeout; tests shorten it
 
+	// limit caps connections per media host across both owned transports;
+	// backoff spaces requests to a host whose connections keep failing.
+	limit   *connCap
+	backoff *hostBackoff
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -128,14 +133,25 @@ var (
 )
 
 // NewStreamingTransport is an HTTP transport tuned for media streaming:
-// keep-alive, HTTP/2 when offered, many idle connections per host and short
-// connect/TLS timeouts.
+// keep-alive, HTTP/2 when offered, many idle connections per host and
+// connect/TLS timeouts that tolerate a busy CDN edge.
 func NewStreamingTransport() *http.Transport {
 	return newStreamingTransport(nil)
 }
 
+// Busy debrid CDN edges can take several seconds to accept a connection and
+// finish the TLS handshake (5.08s was observed). Failing at 5s threw away
+// a handshake about to complete and started another, which is slower again
+// on the same node. The generous connect and TLS limits only cover setting
+// up the connection; ResponseHeaderTimeout still bounds a server that
+// accepts and then never answers, and bodyStallTimeout a stalled body.
+const (
+	mediaDialTimeout = 10 * time.Second
+	mediaTLSTimeout  = 15 * time.Second
+)
+
 func newStreamingTransport(limit *connCap) *http.Transport {
-	d := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	d := &net.Dialer{Timeout: mediaDialTimeout, KeepAlive: 30 * time.Second}
 	dial := d.DialContext
 	if limit != nil {
 		dial = limit.wrap(dial)
@@ -147,7 +163,7 @@ func newStreamingTransport(limit *connCap) *http.Transport {
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   16,
 		IdleConnTimeout:       120 * time.Second,
-		TLSHandshakeTimeout:   5 * time.Second,
+		TLSHandshakeTimeout:   mediaTLSTimeout,
 		ResponseHeaderTimeout: 15 * time.Second,
 		ExpectContinueTimeout: time.Second,
 		ReadBufferSize:        64 << 10,
@@ -185,6 +201,8 @@ func NewEngine(svc *Service, opts EngineOptions) *Engine {
 		e.log = slog.Default()
 	}
 	limit.log = e.log
+	e.limit = limit
+	e.backoff = newHostBackoff(e.log)
 	if e.now == nil {
 		e.now = time.Now
 	}
@@ -772,6 +790,10 @@ func (f *remoteFile) fetchRun(ctx context.Context, first int64, fls []*blockFlig
 			// from its exact offset instead of replacing the whole release.
 			body.Close()
 			bodyRetries++
+			if isConnReset(err) {
+				p, _ := f.payload()
+				f.e.reduceHostCap(p.URL)
+			}
 			f.e.log.Warn("debrid body interrupted; retrying same file", "release", f.id,
 				"offset", idx*f.e.block, "attempt", bodyRetries, "err", sanitize(err))
 			if bodyRetries == 1 {
@@ -993,6 +1015,10 @@ func (f *remoteFile) rangeGet(ctx context.Context, start, end int64, urgent bool
 				// Error bodies can stall too. Headers establish the pause;
 				// do not wait to drain an unneeded body on the Play path.
 				resp.Body.Close()
+				if resp.StatusCode == http.StatusTooManyRequests {
+					// The host counts our connections: open fewer for a while.
+					f.e.reduceHostCap(resp.Request.URL.String())
+				}
 				// A rate-limited CDN cannot become a healthy candidate by
 				// retrying each block four times before Retry-After expires.
 				// Share its pause across this account's files, return promptly
@@ -1061,11 +1087,11 @@ func (e *Engine) get(ctx context.Context, u string, start, end int64, urgent boo
 			return false
 		}
 	}
-	send := func(c context.Context, hc *http.Client) (*http.Response, timing, error) {
+	send := func(c context.Context, hc *http.Client, w *connWatch) (*http.Response, timing, error) {
 		var once sync.Once
 		release := func() { once.Do(func() { <-slots }) }
 		c, stop := context.WithCancel(c)
-		resp, tm, err := e.send(c, hc, u, start, end)
+		resp, tm, err := e.send(c, hc, u, start, end, w)
 		if err != nil {
 			stop()
 			release()
@@ -1078,7 +1104,7 @@ func (e *Engine) get(ctx context.Context, u string, start, end int64, urgent boo
 		return nil, timing{}, ctx.Err()
 	}
 	if !urgent || e.delay < 0 {
-		return send(ctx, e.hc)
+		return send(ctx, e.hc, nil)
 	}
 	type result struct {
 		resp   *http.Response
@@ -1089,11 +1115,11 @@ func (e *Engine) get(ctx context.Context, u string, start, end int64, urgent boo
 	}
 	results := make(chan result, 2)
 	var cancels []context.CancelFunc
-	launch := func(hc *http.Client, hedge bool) {
+	launch := func(hc *http.Client, hedge bool, w *connWatch) {
 		rctx, cancel := context.WithCancel(ctx)
 		cancels = append(cancels, cancel)
 		go func() {
-			resp, tm, err := send(rctx, hc)
+			resp, tm, err := send(rctx, hc, w)
 			if err == nil && resp.StatusCode/100 == 2 {
 				br := newPeekBody(resp.Body)
 				if _, perr := br.peek(); perr != nil && perr != io.EOF {
@@ -1106,16 +1132,22 @@ func (e *Engine) get(ctx context.Context, u string, start, end int64, urgent boo
 			results <- result{resp: resp, tm: tm, err: err, cancel: cancel, hedge: hedge}
 		}()
 	}
-	launch(e.hc, false)
+	// The hedge covers a slow first byte on a live connection. While the
+	// primary is still dialing or handshaking, a duplicate would only add
+	// another handshake to the same slow edge: wait for the primary's
+	// connection, then give it the full hedge delay.
+	watch := newConnWatch()
+	launch(e.hc, false, watch)
 	timer := time.NewTimer(e.delay)
 	defer timer.Stop()
 	pending, hedged := 1, false
+	var connected <-chan struct{} // set while a hedge waits on the primary's connection
 	var firstErr *result
 	tryHedge := func() {
 		hedged = true
 		if ctx.Err() == nil && acquire(false) {
 			e.stats.hedges.Add(1)
-			launch(e.hedge, true)
+			launch(e.hedge, true, nil)
 			pending++
 		}
 	}
@@ -1158,8 +1190,18 @@ func (e *Engine) get(ctx context.Context, u string, start, end int64, urgent boo
 				tryHedge()
 			}
 		case <-timer.C:
+			if hedged {
+				break
+			}
+			if watch.connecting() {
+				connected = watch.ready
+				break
+			}
+			tryHedge()
+		case <-connected:
+			connected = nil
 			if !hedged {
-				tryHedge()
+				timer.Reset(e.delay)
 			}
 		case <-ctx.Done():
 			for _, cancel := range cancels {
@@ -1265,19 +1307,64 @@ func (p *peekBody) Read(b []byte) (int, error) {
 
 func (p *peekBody) Close() error { return p.rc.Close() }
 
-func (e *Engine) send(ctx context.Context, hc *http.Client, u string, start, end int64) (*http.Response, timing, error) {
+// connWatch reports whether a request is still setting up its connection
+// (DNS, dial, TLS) or has one it can send on.
+type connWatch struct {
+	dialing atomic.Bool
+	ready   chan struct{} // closed once the request has a connection
+	once    sync.Once
+}
+
+func newConnWatch() *connWatch { return &connWatch{ready: make(chan struct{})} }
+
+func (w *connWatch) setDialing() { w.dialing.Store(true) }
+func (w *connWatch) gotConn()    { w.once.Do(func() { close(w.ready) }) }
+
+// connecting is true while a dial or handshake is under way. A transport
+// that reports no connection events (tests' fake round trippers) never is.
+func (w *connWatch) connecting() bool {
+	select {
+	case <-w.ready:
+		return false
+	default:
+		return w.dialing.Load()
+	}
+}
+
+// reduceHostCap lowers the connection cap for raw's host for a cooldown
+// after it reset a connection or answered 429.
+func (e *Engine) reduceHostCap(raw string) {
+	if e.limit != nil {
+		e.limit.reduce(dialAddr(raw))
+	}
+}
+
+func (e *Engine) send(ctx context.Context, hc *http.Client, u string, start, end int64, w *connWatch) (*http.Response, timing, error) {
 	if err := core.SpendBackground(ctx, "bytes", "debrid", max(1, end-start+1)); err != nil {
 		return nil, timing{}, err
 	}
-	began := time.Now()
+	var began time.Time
 	var connStart, connect, ttfb, gotConn atomic.Int64
 	reused := false
+	dialing := func() {
+		if w != nil {
+			w.setDialing()
+		}
+	}
 	trace := &httptrace.ClientTrace{
 		GotConn: func(info httptrace.GotConnInfo) {
 			gotConn.Store(int64(time.Since(began)))
 			reused = info.Reused
+			if w != nil {
+				w.gotConn()
+			}
 		},
-		ConnectStart: func(string, string) { connStart.CompareAndSwap(0, int64(time.Since(began))) },
+		DNSStart:          func(httptrace.DNSStartInfo) { dialing() },
+		TLSHandshakeStart: dialing,
+		ConnectStart: func(string, string) {
+			dialing()
+			connStart.CompareAndSwap(0, int64(time.Since(began)))
+		},
 		ConnectDone: func(_, _ string, err error) {
 			if err == nil {
 				connect.Store(int64(time.Since(began)) - connStart.Load())
@@ -1304,7 +1391,23 @@ func (e *Engine) send(ctx context.Context, hc *http.Client, u string, start, end
 		}
 		req = prepareDirect(req, p)
 	}
+	host := req.URL.Host
+	if err := e.backoff.wait(ctx, host); err != nil {
+		return nil, timing{}, err
+	}
+	began = time.Now()
 	resp, err := hc.Do(req)
+	switch {
+	case err == nil:
+		e.backoff.success(host)
+	case ctx.Err() == nil:
+		// A connect, TLS or transport failure, not a cancelled request
+		// (hedge losers and seeks cancel theirs).
+		e.backoff.failure(host)
+		if isConnReset(err) {
+			e.reduceHostCap(u)
+		}
+	}
 	tm := timing{connect: time.Duration(connect.Load()), ttfb: time.Duration(ttfb.Load())}
 	if took := time.Since(began); took > time.Second {
 		// A slow first byte stalls ffmpeg at a start or seek; say whether

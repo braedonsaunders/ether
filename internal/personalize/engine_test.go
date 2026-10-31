@@ -3,6 +3,8 @@ package personalize
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -77,15 +79,10 @@ func TestEngineHubsServedFromCache(t *testing.T) {
 	// New queues the generic model independently of the viewer's synchronous
 	// rebuild. Finish that startup work before measuring catalogue calls, or
 	// its background reads are incorrectly attributed to cached Home requests.
-	h.e.mu.Lock()
-	startup := h.e.flights[genericID]
-	h.e.mu.Unlock()
-	if startup != nil {
-		select {
-		case <-startup.done:
-		case <-time.After(5 * time.Second):
-			t.Fatal("generic startup model never finished")
-		}
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := waitGenericReady(h.e, waitCtx); err != nil {
+		t.Fatal(err)
 	}
 	sciFiFan(h, 1)
 	u := core.User{ID: 1}
@@ -126,6 +123,82 @@ func TestEngineHubsServedFromCache(t *testing.T) {
 	if fresh == old || !fresh.builtAt.After(old.builtAt) {
 		t.Fatal("stale model was not rebuilt in the background")
 	}
+}
+
+// TestUnguardedHomeSampleCountsStartupBuild shows the cache measurement
+// counting catalogue work that was only paused, then shows the same Home
+// calls stay at zero once that startup build has been waited out.
+func TestUnguardedHomeSampleCountsStartupBuild(t *testing.T) {
+	hold := make(chan struct{})
+	reached := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(hold) }) }
+	defer release()
+	h := newHarness(t, func(o *Options) {
+		cat := o.Catalog.(*fakeCatalog)
+		cat.holdSources = hold
+		cat.sourcesHeld = reached
+	})
+	select {
+	case <-reached:
+	case <-time.After(10 * time.Second):
+		t.Fatal("startup generic build did not reach a catalogue source")
+	}
+	paused := catalogueSources(h.cat)
+	if paused != 0 {
+		t.Fatalf("startup source calls were counted while held: %d", paused)
+	}
+	release()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := waitGenericReady(h.e, ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := catalogueSources(h.cat); got <= paused {
+		t.Fatalf("paused startup build added no catalogue calls (%d -> %d); an unguarded sample would not have been contaminated", paused, got)
+	}
+	sciFiFan(h, 1)
+	u := core.User{ID: 1}
+	h.rebuild(u)
+	before := catalogueSources(h.cat)
+	for i := 0; i < 20; i++ {
+		if _, err := h.e.HomeHubsFor(ctx, &u, hubContext(testNow, core.DeviceTV), 12); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if after := catalogueSources(h.cat); after != before {
+		t.Fatalf("Home after waiting for startup hit the catalogue sources %d times", after-before)
+	}
+}
+
+func catalogueSources(c *fakeCatalog) int {
+	return c.callCount("similar") + c.callCount("list") + c.callCount("browse")
+}
+
+// waitGenericReady blocks until the startup generic model is installed and
+// its build flight is gone. The bound is ctx; it does not poll.
+func waitGenericReady(e *Engine, ctx context.Context) error {
+	e.mu.Lock()
+	f := e.flights[genericID]
+	ready := e.models[genericID] != nil && f == nil
+	e.mu.Unlock()
+	if ready {
+		return nil
+	}
+	if f == nil {
+		return errors.New("generic startup build is not running and no model is installed")
+	}
+	select {
+	case <-f.done:
+	case <-ctx.Done():
+		return fmt.Errorf("generic startup build did not finish: %w", ctx.Err())
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.models[genericID] == nil {
+		return errors.New("generic startup build finished without a model")
+	}
+	return nil
 }
 
 func TestEngineRebuildsAfterStateChanges(t *testing.T) {

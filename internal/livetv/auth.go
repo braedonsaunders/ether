@@ -247,36 +247,62 @@ func redactSourceAuth(src *Source) {
 }
 
 // readURLWith fetches a source document with the provider's headers.
-func (s *Service) readURLWith(ctx context.Context, raw string, max int64, h http.Header) (string, error) {
+// kind names the document in limit errors ("playlist" or "guide").
+func (s *Service) readURLWith(ctx context.Context, raw string, max int64, h http.Header, kind string) (string, error) {
+	rc, err := s.openURL(ctx, raw, h)
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+	b, err := readLimited(rc, max, kind)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// openURL fetches a source document and leaves the body to the caller.
+func (s *Service) openURL(ctx context.Context, raw string, h http.Header) (io.ReadCloser, error) {
 	if !validHTTP(raw) {
-		return "", fmt.Errorf("source must use HTTP(S)")
+		return nil, fmt.Errorf("source must use HTTP(S)")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	for k, v := range h {
 		req.Header[k] = v
 	}
 	res, err := s.o.HTTPClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("source fetch failed")
+		return nil, fmt.Errorf("source fetch failed")
 	}
-	defer res.Body.Close()
 	switch {
 	case res.StatusCode == 401 || res.StatusCode == 403:
-		return "", fmt.Errorf("source refused the credentials (HTTP %d)", res.StatusCode)
+		res.Body.Close()
+		return nil, fmt.Errorf("source refused the credentials (HTTP %d)", res.StatusCode)
 	case res.StatusCode != 200:
-		return "", fmt.Errorf("source returned HTTP %d", res.StatusCode)
+		res.Body.Close()
+		return nil, fmt.Errorf("source returned HTTP %d", res.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(res.Body, max+1))
-	if int64(len(b)) > max {
-		return "", fmt.Errorf("source exceeds size limit")
-	}
+	return res.Body, nil
+}
+
+// readGuide streams a guide URL, gunzipping when the body is gzip, and keeps
+// only the filtered channel and programme entries.
+func (s *Service) readGuide(ctx context.Context, raw string, h http.Header, f guideFilter) (XMLGuide, error) {
+	rc, err := s.openURL(ctx, raw, h)
 	if err != nil {
-		return "", err
+		return XMLGuide{}, err
 	}
-	return gunzipBounded(b, max)
+	defer rc.Close()
+	rd, err := maybeGunzip(rc, maxGuideBytes, "guide")
+	if err != nil {
+		return XMLGuide{}, err
+	}
+	defer closeReader(rd)
+	g, _, err := parseXMLTV(rd, f)
+	return g, err
 }
 
 // authCache keeps provider settings for the stream path, which asks for them

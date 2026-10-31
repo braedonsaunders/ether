@@ -41,7 +41,7 @@ import { PinStatusBadge } from "./Pinned";
 const pad = (n: number | undefined) => String(n ?? 0).padStart(2, "0");
 
 /** Pick a movie, or a show then a season then an episode. */
-function TitlePicker({ onPick }: { onPick: (key: string, name: string) => void }) {
+export function TitlePicker({ onPick }: { onPick: (key: string, name: string) => void }) {
   const id = useId();
   const [show, setShow] = useState<TitleCard | null>(null);
   const [season, setSeason] = useState("");

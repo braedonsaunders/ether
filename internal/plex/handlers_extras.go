@@ -262,7 +262,7 @@ func (s *Server) parseExtraPlayRequest(r *http.Request, key core.RatingKey) play
 	q := r.URL.Query()
 	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
 	applyDecisionQuery(&caps, q)
-	p := playRequest{key: key, caps: caps, audioSel: -1, subSel: -1, protocol: q.Get("protocol"), mde: q.Get("hasMDE") == "1"}
+	p := playRequest{key: key, caps: caps, audioSel: -1, subSel: -1, protocol: q.Get("protocol"), mde: q.Get("hasMDE") == "1", listAllTracks: androidFamilyClient(pr)}
 	if p.protocol == "" {
 		p.protocol = "hls"
 	}

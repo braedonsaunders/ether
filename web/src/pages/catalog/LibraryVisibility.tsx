@@ -270,7 +270,7 @@ export function LibraryVisibility() {
             <h3 className="mb-2 font-medium text-fg">{t("Country is not language")}</h3>
             <p>
               {t(
-                "Country matches TMDB origin or production countries, including co-productions. Language is a separate condition. Unknown metadata never matches an exclusion.",
+                "Country matches TMDB origin or production countries, including co-productions. Language is a separate condition. Unknown country, genre, year and language never match an exclusion. Content rating “is none of” also hides titles with no rating.",
               )}
             </p>
             <p className="mt-3">

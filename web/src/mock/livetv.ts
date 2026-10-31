@@ -364,7 +364,23 @@ export function createLiveTVMock(titles: FakeTitle[]) {
         ? { body: source(s) }
         : { body: { error: { code: "livetv", message: "not found" } }, status: 404 };
     }
-    if (route === "POST /sources" || (method === "PUT" && seg[1] === "sources" && seg[2])) {
+    if (
+      method === "POST" &&
+      seg[1] === "sources" &&
+      seg[2] &&
+      (seg[3] === "playlist" || seg[3] === "guide")
+    ) {
+      const s = sources.find((x) => x.id === seg[2]);
+      if (!s) return { body: { error: { code: "livetv", message: "not found" } }, status: 404 };
+      if (seg[3] === "playlist") s.hasPlaylist = true;
+      if (seg[3] === "guide") s.hasGuide = true;
+      s.updatedAt = new Date().toISOString();
+      return { body: source(s) };
+    }
+    if (
+      route === "POST /sources" ||
+      (method === "PUT" && seg[1] === "sources" && seg[2] && !seg[3])
+    ) {
       const b = body as Source & { playlist?: string; guide?: string; playlistUrl?: string };
       const s: Source = {
         ...b,

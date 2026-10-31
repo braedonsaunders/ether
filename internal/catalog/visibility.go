@@ -37,9 +37,13 @@ func (c *Catalog) FilterVisibility(ctx context.Context, ts []core.Title) []core.
 		}
 	}
 	ts = out
-	// These are the only summary facets which may be absent after remote search.
-	// ts is deduplicated above, so chunking it bounds the IN parameters
-	// without ever querying (or enriching) a key twice.
+	// Remote search summaries omit countries, and may omit genres. They also
+	// omit certification (movieToTitle / tvToTitle). ts is deduplicated above,
+	// so chunking bounds the IN parameters without querying a key twice.
+	// A stored content rating replaces a summary value so library SQL and this
+	// pass agree: a known allowed rating is not treated as missing, and a
+	// known blocked rating is not revealed by a summary that says otherwise.
+	// An empty local rating leaves the summary rating, if it has one.
 	const batch = 200
 	for _, p := range []struct {
 		table, col string
@@ -53,6 +57,14 @@ func (c *Catalog) FilterVisibility(ctx context.Context, ts []core.Title) []core.
 			if err := c.scanPairs(ctx, "SELECT key,"+p.col+" FROM "+p.table+" WHERE key IN ("+placeholders(len(part))+")", keyArgs(part), p.set, idx); err != nil {
 				return nil
 			}
+		}
+	}
+	for start := 0; start < len(ts); start += batch {
+		part := ts[start:min(start+batch, len(ts))]
+		if err := c.scanPairs(ctx, "SELECT key, content_rating FROM catalog_titles WHERE key IN ("+placeholders(len(part))+") AND content_rating<>''", keyArgs(part), func(i int, v string) {
+			out[i].ContentRating = v
+		}, idx); err != nil {
+			return nil
 		}
 	}
 	if c.config().GateMoviesByHomeRelease {

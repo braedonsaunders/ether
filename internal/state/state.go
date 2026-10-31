@@ -734,6 +734,30 @@ func (s *State) InProgressAny(ctx context.Context) ([]core.RatingKey, error) {
 	return out, rows.Err()
 }
 
+// WatchedEpisodes lists watched episode keys (view_count > 0) for userID.
+func (s *State) WatchedEpisodes(ctx context.Context, userID int64) ([]core.RatingKey, error) {
+	const (
+		minEp = int64(core.KindEpisode) * 1_000_000_000_000_000
+		maxEp = int64(core.KindEpisode+1)*1_000_000_000_000_000 - 1
+	)
+	rows, err := s.db.QueryContext(ctx, `SELECT rating_key FROM state_watch
+		WHERE user_id=? AND rating_key BETWEEN ? AND ? AND view_count>0 ORDER BY rating_key`,
+		userID, minEp, maxEp)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []core.RatingKey
+	for rows.Next() {
+		var k int64
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		out = append(out, core.RatingKey(k))
+	}
+	return out, rows.Err()
+}
+
 // Rollup summarises the watched state of a set of children (the episodes of
 // a season/show) for Plex's viewedLeafCount-style fields.
 type Rollup struct {

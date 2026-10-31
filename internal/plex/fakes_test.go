@@ -330,6 +330,19 @@ func (s *fakeState) History(context.Context, int64, time.Time, int) ([]core.Hist
 }
 func (s *fakeState) InProgressAny(context.Context) ([]core.RatingKey, error) { return nil, nil }
 
+func (s *fakeState) WatchedEpisodes(_ context.Context, u int64) ([]core.RatingKey, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []core.RatingKey
+	for k, ws := range s.st[u] {
+		if k.Kind() == core.KindEpisode && ws.ViewCount > 0 {
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out, nil
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 

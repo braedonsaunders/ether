@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "../lib/api";
 import Logs from "../pages/Logs";
@@ -24,7 +25,11 @@ describe("Logs download", () => {
     const createObjectURL = vi.fn(() => "blob:logs");
     Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    render(<Logs />);
+    render(
+      <MemoryRouter>
+        <Logs />
+      </MemoryRouter>,
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Download logs" }));
     await waitFor(() => expect(click).toHaveBeenCalledOnce());
     const req = calls.find((c) => c.url === "/ether/api/logs/download")!;

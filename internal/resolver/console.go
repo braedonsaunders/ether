@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/releasepolicy"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -297,6 +298,9 @@ type SearchOptions struct {
 func browserRelease(rel core.Release) core.Release {
 	rel.NZBURL, rel.MagnetURL = "", ""
 	rel.StreamURL, rel.StreamHeaders = "", nil
+	if rel.Protocol == core.ProtocolUnstated {
+		rel.Protocol = ""
+	}
 	return rel
 }
 
@@ -308,11 +312,12 @@ func browserPin(p Pin) Pin {
 
 // ConsoleRelease is one search result as Resolve would judge it.
 type ConsoleRelease struct {
-	Release       core.Release  `json:"release"`
-	Score         float64       `json:"score"`
-	FormatScore   int           `json:"formatScore"`
-	CustomFormats []FormatMatch `json:"customFormats,omitempty"`
-	Compatibility string        `json:"compatibility,omitempty"`
+	Preferences   *releasepolicy.Result `json:"preferences,omitempty"`
+	Release       core.Release          `json:"release"`
+	Score         float64               `json:"score"`
+	FormatScore   int                   `json:"formatScore"`
+	CustomFormats []FormatMatch         `json:"customFormats,omitempty"`
+	Compatibility string                `json:"compatibility,omitempty"`
 	// Rejected and Reason are Resolve's verdict for this profile.
 	Rejected bool   `json:"rejected"`
 	Reason   string `json:"reason,omitempty"`
@@ -407,7 +412,7 @@ func (s *Service) SearchReleases(ctx context.Context, t *core.Title, opts Search
 	// rankCandidates writes one trace row per result, in result order.
 	for i, ct := range trace.Candidates {
 		rel := results[i]
-		cr := ConsoleRelease{Release: browserRelease(rel), Score: ct.Score, CustomFormats: ct.CustomFormats,
+		cr := ConsoleRelease{Preferences: ct.Preferences, Release: browserRelease(rel), Score: ct.Score, CustomFormats: ct.CustomFormats,
 			Compatibility: ct.CompatibilityReason, Rejected: ct.Rejected, Reason: ct.Reason,
 			Rank: rank[rel.ID], Winner: rel.ID == out.Winner && !ct.Rejected, Pinned: ct.Pinned, Route: ct.Route}
 		// Rejected releases are scored too, so the owner can compare.

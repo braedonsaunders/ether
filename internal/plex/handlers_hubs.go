@@ -263,7 +263,7 @@ func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly b
 		Layout: func(rows []model.Hub) []model.Hub { return s.finalizeHomeRows(ctx, pr, hc, "home", rows) },
 	}
 	rows, served := assembly.Rows(hubs, q.Get("excludeContinueWatching") != "1", promotedOnly, len(sections) == 0, experience.HomePurpose)
-	mc.Hub = rows
+	mc.Hub = stableHomeHubs(rows)
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)
 	s.recordImpressions(pr, hc, mc.Hub, served)
@@ -465,7 +465,7 @@ func (s *Server) handleSectionHubs(w http.ResponseWriter, r *http.Request) {
 	if sec.Type == core.TypeShow {
 		sectionName = "shows"
 	}
-	mc.Hub = s.finalizeHomeRows(ctx, pr, pc, sectionName, mc.Hub)
+	mc.Hub = stableHomeHubs(s.finalizeHomeRows(ctx, pr, pc, sectionName, mc.Hub))
 	s.log.Debug("section hubs rendered", "section", sec.ID, "user", pr.User.ID, "count", count, "rows", len(mc.Hub))
 	mc.Size = len(mc.Hub)
 	s.write(w, r, mc)

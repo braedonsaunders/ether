@@ -240,7 +240,7 @@ func (r *renderedVariants) expire(now time.Time, ttl time.Duration) {
 // page. It returns (nil, "") to fall back to the single virtual Media:
 // no variant resolver wired, nothing cached yet, or only Auto exists.
 // The second value is the item's editionTitle, or "".
-func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Title, stamp int64) ([]model.Media, string) {
+func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Title, stamp int64, probed core.MediaInfo, probedRelease string) ([]model.Media, string) {
 	if s.d.Variants == nil || pr.User == nil {
 		return nil, ""
 	}
@@ -267,15 +267,25 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		if s.d.Trickplay != nil && s.d.Trickplay.TrickplayAvailable(v.Release.ID) {
 			m.Part[0].Indexes = "sd"
 		}
-		if v.Auto {
-			// Only the default version carries the stream list on a
-			// detail page (audio/subtitle pickers operate on it); the
-			// other versions' streams are still estimates. Cached
-			// sidecars join it as in mediaFor.
-			info := s.withCachedSidecars(ctx, pr.User, t, v.Info)
+		// Until this viewer has a resumed release, only Auto carries the
+		// estimate. A resumed probe is drawn on the matching version only,
+		// never on a different explicit pick, and that version is selected.
+		streamInfo := v.Info
+		attach := v.Auto
+		played := probedRelease != "" && !probed.Estimated && len(probed.Streams) > 0 && v.Release.ID == probedRelease
+		if played {
+			streamInfo = probed
+			attach = true
+		}
+		if attach {
+			info := s.withCachedSidecars(ctx, pr.User, t, streamInfo)
 			sel := resolveSelection(s.selections.get(pr.User.ID, int64(t.Key)), info)
 			sel = s.preferredSelection(ctx, pr.User, t.Key, info, t.Language, sel)
 			m.Part[0].Stream = s.buildStreams(t.Key, info, sel, pr.User)
+		}
+		if played {
+			m.Selected = model.Ptr(true)
+			m.Part[0].Selected = model.Ptr(true)
 		}
 		out = append(out, m)
 	}

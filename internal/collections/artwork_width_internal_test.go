@@ -35,3 +35,13 @@ func TestCollectionPosterWidthsShareRenders(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomCollectionArtworkAppliesToArtAndBackdrop(t *testing.T) {
+	c := (&Service{idx: &index{}}).collectionFor(context.Background(), &specRow{
+		id:   7,
+		spec: core.CollectionSpec{Name: "Custom", MediaType: MediaMovie, Artwork: core.CollectionArtwork{Mode: "custom", URL: "https://example.com/custom.jpg"}},
+	}, nil, core.TypeMovie, []core.RatingKey{core.MovieKey(11)})
+	if c.PosterPath != "https://example.com/custom.jpg" || c.BackdropPath != "https://example.com/custom.jpg" {
+		t.Fatalf("custom collection paths: poster=%q backdrop=%q", c.PosterPath, c.BackdropPath)
+	}
+}

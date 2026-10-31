@@ -28,6 +28,7 @@ import { releaseConsole, type HistoryRecord } from "../../lib/releases";
 import type { CandidateTrace, ResolverTrace } from "../../lib/types";
 import { pagedTableLabels } from "../../i18n/appkit-labels";
 import { useLocale } from "../../i18n/react";
+import { searchLink } from "./Pinned";
 
 /** A max-height ceiling from loose JSON: a positive number, else 0 ("Any"). */
 function ceiling(v: unknown): number {
@@ -473,10 +474,7 @@ export function TraceDetail({ trace, titleKey }: { trace: ResolverTrace; titleKe
       ) : null}
       {titleKey ? (
         <p className="text-sm">
-          <Link
-            className="text-primary underline"
-            to={`/releases/search?key=${encodeURIComponent(titleKey)}&title=${encodeURIComponent(trace.titleName)}`}
-          >
+          <Link className="text-primary underline" to={searchLink(titleKey, trace.titleName)}>
             {t("Search releases for this title")}
           </Link>
         </p>

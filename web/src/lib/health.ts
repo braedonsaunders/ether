@@ -24,6 +24,12 @@ export interface HealthItem {
   href: string;
   /** 0..1 gauge when the item has a natural fill level. */
   fill?: number;
+  /**
+   * Unverified diagnostics set this false. Failures still count, and an
+   * unreported "unknown" still keeps the server Incomplete. This never means
+   * the row was checked and found healthy.
+   */
+  countsOverall?: boolean;
 }
 
 const RANK: Record<HealthLevel, number> = { error: 4, warn: 3, unknown: 2, ok: 1, off: 0 };
@@ -32,6 +38,22 @@ export function worstLevel(levels: HealthLevel[]): HealthLevel {
   let worst: HealthLevel = "ok";
   for (const l of levels) if (RANK[l] > RANK[worst]) worst = l;
   return worst;
+}
+
+/** Warn and error always count. Only an explicit unverified unknown may opt out. */
+export function countsOverall(item: HealthItem): boolean {
+  if (item.level !== "unknown") return true;
+  return item.countsOverall !== false;
+}
+
+/** Overall rank after unverified diagnostics have opted out. */
+export function overallLevel(items: HealthItem[]): HealthLevel {
+  return worstLevel(items.filter(countsOverall).map((item) => item.level));
+}
+
+/** An installed certificate opted out because trust was not checked. */
+export function hasExemptDiagnostic(items: HealthItem[]): boolean {
+  return items.some((item) => item.countsOverall === false);
 }
 
 const num = (v: unknown): number =>
@@ -312,12 +334,72 @@ export function remoteHealth(v: unknown): HealthItem {
     };
   if (presence.connected === false)
     return { ...base, level: "warn", summary: t("plex.tv connection lost"), details };
+  // remoteAccess is the saved setting (registrar refreshConfigStatus), not a
+  // reachability result. plexReachable is only plex.tv's last notifyConnectivity
+  // verdict and is not tied to a particular published route.
+  const customPublished = publishedCustomURIs(v);
+  for (const address of customPublished) {
+    details.push(t("Published custom connection {address}", { address }));
+  }
+  const publicationNote = t(
+    "A published address is not proof that clients outside your network can connect.",
+  );
+  if (customPublished.length > 0) details.push(publicationNote);
+  const lastCheck =
+    v.plexReachable === true
+      ? t("plex.tv's last connectivity check reported the server reachable.")
+      : v.plexReachable === false
+        ? t("plex.tv's last connectivity check reported the server unreachable.")
+        : "";
   if (v.remoteAccess === true) {
     const upnp = isPlainObject(v.upnp) ? v.upnp : {};
     if (upnp.active === true) details.push(t("Port mapped with UPnP"));
-    return { ...base, level: "ok", summary: t("Reachable outside your network"), details };
+    if (v.plexReachable === false) {
+      return {
+        ...base,
+        level: "warn",
+        summary: lastCheck,
+        details: [t("Direct remote access enabled"), ...details],
+        note: customPublished.length > 0 ? publicationNote : undefined,
+      };
+    }
+    if (lastCheck) details.push(lastCheck);
+    return {
+      ...base,
+      level: "ok",
+      summary: t("Direct remote access enabled"),
+      details,
+      statusLabel: t("Configured"),
+      note: customPublished.length > 0 ? publicationNote : undefined,
+    };
+  }
+  if (lastCheck) details.push(lastCheck);
+  if (customPublished.length > 0) {
+    return {
+      ...base,
+      level: "off",
+      summary: t("Custom connection published"),
+      details,
+      statusLabel: t("Published"),
+      note: publicationNote,
+    };
   }
   return { ...base, level: "off", summary: t("Local network only"), details };
+}
+
+/** Custom routes plex.tv was actually given: Connection.Custom whose URI was published. */
+function publishedCustomURIs(v: Record<string, unknown>): string[] {
+  if (!Array.isArray(v.publishedUris) || !Array.isArray(v.connections)) return [];
+  const published = new Set(
+    v.publishedUris.filter((uri): uri is string => typeof uri === "string" && uri !== ""),
+  );
+  const out: string[] = [];
+  for (const connection of v.connections) {
+    if (!isPlainObject(connection) || connection.custom !== true) continue;
+    const uri = typeof connection.uri === "string" ? connection.uri : "";
+    if (uri && published.has(uri) && !out.includes(uri)) out.push(uri);
+  }
+  return out;
 }
 
 export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
@@ -339,6 +421,7 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
       ],
     };
   }
+  const starts = parseTime(cert.notBefore);
   const expires = parseTime(cert.notAfter);
   const details = [str(cert.subject)].filter(Boolean);
   if (cert.custom === true) details.push(t("Custom certificate"));
@@ -353,34 +436,51 @@ export function plexDirectHealth(v: unknown, now = new Date()): HealthItem {
     details.push(t("Plex apps do not normally trust a self-signed certificate."));
     return { ...base, level: "warn", summary: t("Self-signed certificate"), details };
   }
-  const note = t("Expiry alone does not verify certificate trust or device association.");
-  details.push(note);
-  if (!expires)
-    return {
-      ...base,
-      level: "unknown",
-      summary: t("Certificate installed"),
-      details,
-      statusLabel: t("Not verified"),
-      note,
-    };
-  const days = (expires.getTime() - now.getTime()) / 86400000;
-  details.push(t("Expires {date}", { date: formatDate(expires) }));
-  if (days < 0) return { ...base, level: "error", summary: t("Certificate expired"), details };
-  if (days < 14)
+  if (expires) details.push(t("Expires {date}", { date: formatDate(expires) }));
+  if (expires && (expires.getTime() - now.getTime()) / 86400000 < 0)
+    return { ...base, level: "error", summary: t("Certificate expired"), details };
+  if (starts && starts.getTime() > now.getTime())
+    return { ...base, level: "warn", summary: t("Certificate is not valid yet"), details };
+  if (expires && (expires.getTime() - now.getTime()) / 86400000 < 14)
     return {
       ...base,
       level: "warn",
       summary: t("Certificate renews {when}", { when: relativeTime(expires, now) }),
       details,
     };
+  if (!expires || !starts) {
+    details.push(t("Both a start and an expiry have to be reported."));
+    return { ...base, level: "unknown", summary: t("Certificate dates are incomplete"), details };
+  }
+  const note = t("Expiry alone does not verify certificate trust or device association.");
+  details.push(note);
+  return unverifiedCertificate(
+    base,
+    t("Expires {date}", { date: formatDate(expires) }),
+    details,
+    note,
+  );
+}
+
+/**
+ * Installed, currently inside its dates, and not failing. Trust was not
+ * checked. Shown as Not verified and kept out of the overall rank. Missing
+ * dates do not use this path. Not a healthy or trusted result.
+ */
+function unverifiedCertificate(
+  base: { id: "plexdirect"; label: string; href: string },
+  summary: string,
+  details: string[],
+  note: string,
+): HealthItem {
   return {
     ...base,
     level: "unknown",
-    summary: t("Expires {date}", { date: formatDate(expires) }),
+    summary,
     details,
     statusLabel: t("Not verified"),
     note,
+    countsOverall: false,
   };
 }
 

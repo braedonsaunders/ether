@@ -240,13 +240,17 @@ func (s *Service) CollectionArtwork(ctx context.Context, user *core.User, key co
 	if key.Kind() != core.KindSmart || s.art == nil {
 		return nil, "", false, nil
 	}
-	switch element {
-	case "thumb", "poster", "composite":
-	default:
-		return nil, "", false, nil
-	}
 	row, err := s.rowByKey(ctx, key)
 	if err != nil || !visible(row, user) {
+		return nil, "", false, nil
+	}
+	switch element {
+	case "thumb", "poster", "composite":
+	case "art", "background":
+		if row.spec.Artwork.Mode != "custom" || strings.TrimSpace(row.spec.Artwork.URL) == "" {
+			return nil, "", false, nil
+		}
+	default:
 		return nil, "", false, nil
 	}
 	keys, err := s.serve(ctx, row, user, true)

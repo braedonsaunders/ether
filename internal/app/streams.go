@@ -30,7 +30,8 @@ func (a *App) subtitleUser(ctx context.Context, u *core.User) *core.User {
 	return &copy
 }
 
-// subtitlePrefs is the viewer's subtitle mode/style for automatic fetching.
+// subtitlePrefs is the viewer's subtitle mode/style, used when listing
+// sidecars already on disk. It does not cause a download.
 func (a *App) subtitlePrefs(ctx context.Context, u *core.User) subtitles.Preferences {
 	if u == nil || a.trackprefs == nil {
 		return subtitles.Preferences{}
@@ -51,11 +52,10 @@ func (a *App) enrichSubtitles(ctx context.Context, t *core.Title, u *core.User, 
 type plexSubtitles struct{ a *App }
 
 var (
-	_ plex.SubtitleSource     = plexSubtitles{}
-	_ plex.SubtitleCatalog    = plexSubtitles{}
-	_ plex.SubtitlePrefetcher = plexSubtitles{}
-	_ plex.SubtitleSearch     = plexSubtitles{}
-	_ plex.SubtitleTimeline   = plexSubtitles{}
+	_ plex.SubtitleSource   = plexSubtitles{}
+	_ plex.SubtitleCatalog  = plexSubtitles{}
+	_ plex.SubtitleSearch   = plexSubtitles{}
+	_ plex.SubtitleTimeline = plexSubtitles{}
 )
 
 func (p plexSubtitles) OpenFormat(id, format string) (io.ReadCloser, string, error) {
@@ -68,10 +68,6 @@ func (p plexSubtitles) OpenFormatAt(id, format string, offset time.Duration) (io
 
 func (p plexSubtitles) CachedSidecars(ctx context.Context, t *core.Title, u *core.User, embedded []core.StreamInfo) []core.StreamInfo {
 	return p.a.subtitles.CachedSidecars(t, p.a.subtitleUser(ctx, u), embedded, p.a.subtitlePrefs(ctx, u))
-}
-
-func (p plexSubtitles) PrefetchSidecars(ctx context.Context, t *core.Title, u *core.User) bool {
-	return p.a.subtitles.PrefetchSidecars(t, p.a.subtitleUser(ctx, u), p.a.subtitlePrefs(ctx, u))
 }
 
 func (p plexSubtitles) SearchSubtitles(ctx context.Context, t *core.Title, _ *core.User, lang, release string) ([]plex.SubtitleOffer, error) {

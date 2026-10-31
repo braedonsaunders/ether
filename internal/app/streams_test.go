@@ -63,14 +63,13 @@ func TestPlexSubtitlesUsesStreamPreferenceLanguages(t *testing.T) {
 		t.Fatalf("pick: %+v %v", st, err)
 	}
 
-	// The automatic fetch follows the preference (French), not the
-	// account's English.
+	// A preference does not download a sidecar on its own.
 	other := &core.Title{Key: core.MovieKey(10332), Type: core.TypeMovie, IDs: core.IDs{TMDB: 10332}}
 	if _, err := a.subtitles.SidecarsForRelease(ctx, other, a.subtitleUser(ctx, viewer), nil, ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := p.CachedSidecars(ctx, other, viewer, nil); len(got) != 1 || got[0].Language != "fr" {
-		t.Fatalf("cached: %+v", got)
+	if got := p.CachedSidecars(ctx, other, viewer, nil); len(got) != 0 {
+		t.Fatalf("preferences downloaded: %+v", got)
 	}
 	rc, format, err := p.OpenFormat(st.ExternalURL, "vtt")
 	if err != nil || format != "vtt" {

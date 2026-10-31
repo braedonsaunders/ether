@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 )
@@ -83,6 +84,14 @@ type Transcoder interface {
 	Session(id string) (HLSSession, bool)
 	Stop(id string)
 	HWAccel() HWAccel
+}
+
+// SubtitleExtractor is optionally implemented by transcoders that can write
+// an embedded text subtitle stream as WebVTT, so a track picked mid-playback
+// can be served from the transcode session without a restart. Image
+// subtitles (PGS/VobSub) return an error.
+type SubtitleExtractor interface {
+	ExtractSubtitle(ctx context.Context, inputURL string, streamIndex int, codec string, w io.Writer) error
 }
 
 // DecideOptions are per-request choices from the Plex decision request.

@@ -105,8 +105,10 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	deps.TrackPreferences = a.trackprefs
 	deps.SessionCoordination = a.sessionCoordination
 	deps.Markers = a.markers
+	// The remuxer is built once in buildIntegrations and shared with every
+	// front end. Support is the device-scoped "Record a problem" recorder.
 	deps.Downloads = a.downloadRemuxer
-
+	deps.Support = a.support
 	deps.Extras = a.extras
 	deps.Trickplay = a.trickplay.Borrow()
 	a.wirePlexPolicy(&deps)

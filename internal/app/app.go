@@ -23,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/debrid"
+	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/discovery"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/experience"
@@ -106,6 +107,7 @@ type App struct {
 	opts         Options
 	log          *slog.Logger
 	logs         *admin.LogBuffer
+	support      *diagnostics.Recorder
 	cfg          *config.Store
 	db           *sql.DB
 	// databaseURL is the cluster database, placed in join tokens
@@ -355,6 +357,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 }
 
 func (a *App) build(ctx context.Context, cfg config.Config) error {
+	a.support = diagnostics.New(a.supportDeps())
 	cfg.Cache = cfg.EffectiveCache()
 	var err error
 	if a.safety, err = safety.New(ctx, a.db); err != nil {
@@ -619,6 +622,9 @@ func (a *App) housekeeping(ctx context.Context) {
 			}
 			_ = a.playback.ReconcilePins(ctx)
 			_ = a.users.FlushSeen(ctx)
+			if a.support != nil {
+				a.support.Expire()
+			}
 		}
 	}
 }

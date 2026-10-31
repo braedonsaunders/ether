@@ -144,6 +144,22 @@ func TestOnlyReviewedMissingFieldIsInformational(t *testing.T) {
 	}
 }
 
+func TestEmbyPublicDatesAreReviewedNonBlocking(t *testing.T) {
+	rules, err := loadNotApplicable("../../testdata/conform/emby")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := pmsconform.Report{}
+	for _, path := range []string{"$[]/LastLoginDate", "$[]/LastActivityDate"} {
+		report.Differences = append(report.Differences, pmsconform.Difference{Endpoint: "/Users/Public", Path: path, Kind: pmsconform.KindMissing, Blocking: true})
+	}
+	report.Differences = append(report.Differences, pmsconform.Difference{Endpoint: "/Users/Public", Path: "$[]/Name", Kind: pmsconform.KindMissing, Blocking: true})
+	applyNotApplicable(&report, "/Users/Public", rules)
+	if report.Differences[0].Blocking || report.Differences[1].Blocking || report.Differences[0].Reason == "" || report.Differences[1].Reason == "" || !report.Differences[2].Blocking {
+		t.Fatalf("public date review: %+v", report.Differences)
+	}
+}
+
 func TestCorpusFilter(t *testing.T) {
 	all := corpus(conformplex.Protocol{}, "web", "")
 	dec := corpus(conformplex.Protocol{}, "web", "/transcode/universal/decision")

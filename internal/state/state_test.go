@@ -415,6 +415,14 @@ func TestScrobbleManyRollup(t *testing.T) {
 	if empty := Summarize(nil, nil); empty.AllWatched || empty.Total != 0 {
 		t.Fatalf("empty rollup: %+v", empty)
 	}
+	_ = s.Scrobble(ctx, 1, core.MovieKey(99))
+	watchedEps, err := s.WatchedEpisodes(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(watchedEps) != 1 || watchedEps[0] != eps[2] {
+		t.Fatalf("WatchedEpisodes = %v, want [%v]", watchedEps, eps[2])
+	}
 }
 
 func TestPlaylistEdgeCases(t *testing.T) {

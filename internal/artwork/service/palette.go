@@ -57,13 +57,13 @@ type PaletteCache struct {
 	submit  func(string, func(context.Context)) bool
 	now     func() time.Time
 	log     *slog.Logger
-	compute func(ctx context.Context, path string) (Palette, error)
+	compute func(ctx context.Context, key core.RatingKey, path string) (Palette, error)
 
 	mu    sync.Mutex
 	items *lru.Cache[core.RatingKey, *ultraBlurEntry]
 }
 
-func NewPaletteCache(db *sql.DB, submit func(string, func(context.Context)) bool, now func() time.Time, log *slog.Logger, compute func(context.Context, string) (Palette, error)) *PaletteCache {
+func NewPaletteCache(db *sql.DB, submit func(string, func(context.Context)) bool, now func() time.Time, log *slog.Logger, compute func(context.Context, core.RatingKey, string) (Palette, error)) *PaletteCache {
 	return &PaletteCache{db: db, submit: submit, now: now, log: log, compute: compute, items: lru.New(lru.Options[core.RatingKey, *ultraBlurEntry]{MaxEntries: ultraBlurEntries})}
 }
 
@@ -101,7 +101,7 @@ func (c *PaletteCache) schedule(key core.RatingKey, path string) {
 		}
 		cctx, cancel := context.WithTimeout(ctx, ultraBlurTimeout)
 		defer cancel()
-		colors, err := c.compute(cctx, path)
+		colors, err := c.compute(cctx, key, path)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -227,7 +227,29 @@ func (c *PaletteCache) save(ctx context.Context, key core.RatingKey, path string
 	}
 }
 
-// computeUltraBlur fetches a backdrop's small variant through the artwork
+// CollectionArt is generated collection artwork. Smart-collection UltraBlur
+// colours come from that image when it exists.
+type CollectionArt interface {
+	CollectionArtwork(context.Context, *core.User, core.RatingKey, string, int) ([]byte, string, bool, error)
+}
+
+// ComputeItemPalette derives UltraBlur colours for one catalogue item.
+// A smart collection uses its generated art (custom collection art) when the
+// lookup returns bytes; every other item uses the backdrop path.
+func ComputeItemPalette(ctx context.Context, cache *RemoteCache, imageURL core.ImageURLFunc, key core.RatingKey, path string, now time.Time, art CollectionArt) (Palette, error) {
+	if key.Kind() == core.KindSmart && art != nil {
+		if data, _, ok, err := art.CollectionArtwork(ctx, &core.User{ID: 1, IsOwner: true}, key, "art", 300); err == nil && ok && len(data) > 0 {
+			decoded, _, decErr := image.Decode(bytes.NewReader(data))
+			if decErr != nil {
+				return Palette{}, fmt.Errorf("decode collection art %d: %w", key, decErr)
+			}
+			return PaletteFromImage(decoded)
+		}
+	}
+	return ComputePalette(ctx, cache, imageURL, path, now)
+}
+
+// ComputePalette fetches a backdrop's small variant through the artwork
 // cache and derives its corner colours.
 func ComputePalette(ctx context.Context, cache *RemoteCache, imageURL core.ImageURLFunc, path string, now time.Time) (Palette, error) {
 	// The artwork cache finishes a fetch even if its first caller goes

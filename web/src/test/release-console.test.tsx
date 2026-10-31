@@ -176,5 +176,25 @@ describe("Release history", () => {
     expect(within(drawer).getAllByText("Pinned").length).toBeGreaterThan(0);
     expect(calls(fake, "GET", "/releases/history/1")).toHaveLength(1);
     expect(screen.getAllByText("Failover").length).toBeGreaterThan(0);
+    const searchLink = within(drawer).getByRole("link", { name: "Search releases for this title" });
+    expect(searchLink).toHaveAttribute(
+      "href",
+      `/releases/pinned?key=${movies[0]!.key}&title=${encodeURIComponent(first)}`,
+    );
+    fireEvent.click(searchLink);
+    expect(
+      await screen.findByRole(
+        "region",
+        { name: new RegExp(`Releases for ${movies[0]!.title}`) },
+        WAIT,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("redirects legacy /releases/search deep links to /releases/pinned with query params", async () => {
+    const { fake } = renderApp("/releases/search?key=1000000000000550&title=Fight%20Club%20(1999)");
+    await waitFor(() =>
+      expect(calls(fake, "GET", "/releases/search?key=1000000000000550")).toHaveLength(1),
+    );
   });
 });

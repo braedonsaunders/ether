@@ -39,8 +39,21 @@ type searchPreparation struct {
 
 func newSearchPreparation(ctx context.Context, s *Service, req core.ResolveRequest, search core.SearchRequest, profile core.QualityProfile, pin string) *searchPreparation {
 	return &searchPreparation{ctx: ctx, svc: s, req: req, search: search, profile: profile,
-		disabled: pin != "" || req.Prefer != "" || s.resolverCfg().OptimisticStart,
+		disabled: pin != "" || req.Prefer != "" || s.resolverCfg().OptimisticStart || explicitReleasePolicy(profile),
 		byID:     map[string]*candidateCheck{}, identities: map[string]bool{}, releases: map[string]core.Release{}, seen: map[string]bool{}}
+}
+
+// explicitReleasePolicy waits for the whole search. An early healthy
+// fallback must not win while a primary match is still being discovered.
+// Disabled rules do not count. The wait is the indexer's existing budget,
+// not a new unbounded one.
+func explicitReleasePolicy(profile core.QualityProfile) bool {
+	for _, r := range profile.ReleaseRules {
+		if !r.Disabled && len(r.Conditions) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *searchPreparation) arrived(batch []core.Release) {

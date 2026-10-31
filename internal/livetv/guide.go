@@ -2,7 +2,6 @@ package livetv
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -40,29 +39,10 @@ const guideChannelsCTE = `WITH gc(source_id, guide_id, name, logo, names) AS (
 	WHERE NOT EXISTS (SELECT 1 FROM livetv_guide_channels x WHERE x.source_id=p.source_id))
 `
 
-// gunzipBounded transparently decompresses gzip bodies (detected by magic
-// bytes), refusing output larger than max so a gzip bomb cannot exhaust memory.
-func gunzipBounded(b []byte, max int64) (string, error) {
-	if len(b) < 2 || b[0] != 0x1f || b[1] != 0x8b {
-		return string(b), nil
-	}
-	zr, err := gzip.NewReader(bytes.NewReader(b))
-	if err != nil {
-		return "", fmt.Errorf("source is not valid gzip: %w", err)
-	}
-	defer zr.Close()
-	out, err := io.ReadAll(io.LimitReader(zr, max+1))
-	if err != nil {
-		return "", fmt.Errorf("source is not valid gzip: %w", err)
-	}
-	if int64(len(out)) > max {
-		return "", fmt.Errorf("source exceeds size limit after decompression")
-	}
-	return string(out), nil
-}
-
 const (
 	defaultRefreshInterval = 6 * time.Hour
+	guideLookback          = 24 * time.Hour
+	guideLookahead         = 14 * 24 * time.Hour
 	minRefreshInterval     = 30 * time.Minute
 	maxRefreshBackoff      = 6 * time.Hour
 	guideHorizonMargin     = time.Hour

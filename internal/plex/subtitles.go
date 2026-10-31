@@ -6,16 +6,12 @@ package plex
 // (GET/PUT /library/metadata/{key}/subtitles) and the transcode sidecar
 // endpoint (/video/:/transcode/universal/subtitles).
 //
-// When sidecars are fetched: the detail-page playback warm-up resolves a
-// release and runs playback's AugmentMedia, which downloads the viewer's
-// missing preferred languages; when that warm-up does not run the detail
-// request asks the subtitle service for a budgeted background prefetch
-// (SubtitlePrefetcher); Play does the same synchronously (Prepare). Metadata
-// and play queues rendered before a session list whatever is already
-// cached; a live session lists its enriched streams plus any track picked
-// since.
+// Sidecar files are downloaded only when the viewer picks a search result.
+// Detail pages and playback list whatever is already cached (SubtitleCatalog);
+// a live session lists its enriched streams plus any track picked since.
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -30,6 +26,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/plex/model"
+	"github.com/braedonsaunders/ether/internal/subtitles"
 )
 
 // SubtitleCatalog is optionally implemented by Deps.Subtitles: the sidecars
@@ -37,12 +34,6 @@ import (
 // streams embedded already lists (by ExternalURL) or covers (by language).
 type SubtitleCatalog interface {
 	CachedSidecars(ctx context.Context, t *core.Title, u *core.User, embedded []core.StreamInfo) []core.StreamInfo
-}
-
-// SubtitlePrefetcher is optionally implemented by Deps.Subtitles: start a
-// budgeted background fetch of the viewer's missing languages for a title.
-type SubtitlePrefetcher interface {
-	PrefetchSidecars(ctx context.Context, t *core.Title, u *core.User) bool
 }
 
 // SubtitleOffer is one subtitle search result.
@@ -86,17 +77,6 @@ func (s *Server) withCachedSidecars(ctx context.Context, u *core.User, t *core.T
 	out := info
 	out.Streams = append(append(make([]core.StreamInfo, 0, len(info.Streams)+len(extra)), info.Streams...), extra...)
 	return out
-}
-
-// prefetchSidecars asks for a background sidecar fetch for a detail page
-// whose playback warm-up did not run. Off with the owner's speculation
-// switch, like the warm-up itself.
-func (s *Server) prefetchSidecars(ctx context.Context, pr *Request, t *core.Title) {
-	p, ok := s.d.Subtitles.(SubtitlePrefetcher)
-	if !ok || pr.User == nil || s.cfg().Cache.DisableSpeculation {
-		return
-	}
-	p.PrefetchSidecars(context.WithoutCancel(ctx), t, pr.User)
 }
 
 // resolveSubtitle finds a chosen subtitle stream in info: the same sidecar
@@ -372,10 +352,12 @@ func (s *Server) handleSubtitlePick(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleTranscodeSubtitles is /video/:/transcode/universal/subtitles: the
-// selected sidecar of a transcode session, its cues moved back by the
-// session's start offset (the HLS timeline starts there), as SRT or, with
-// format=vtt|webvtt, WebVTT. Embedded tracks and sessions without a
-// sidecar get an empty container, as before.
+// selected subtitle of a transcode session. External sidecars are served
+// with their cues moved back by the session's start offset (the HLS
+// timeline starts there), as SRT or, with format=vtt|webvtt, WebVTT.
+// Embedded text tracks are extracted from the session's source as WebVTT
+// when the transcoder supports it; image subtitles and unknown sessions
+// get an empty container.
 func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request) {
 	pr := FromContext(r.Context())
 	q := r.URL.Query()
@@ -398,13 +380,79 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 	if perr == nil && q.Get("offset") != "" {
 		offset = p.offset
 	}
-	timeline, ok := s.d.Subtitles.(SubtitleTimeline)
-	if !ok || pos < 0 || pos >= len(entry.info.Streams) {
+	if pos < 0 || pos >= len(entry.info.Streams) {
 		s.writeEmpty(w, r)
 		return
 	}
 	st := entry.info.Streams[pos]
-	if st.Type != "subtitle" || !st.External || !strings.HasPrefix(st.ExternalURL, "ether-subtitle:") {
+	if st.Type != "subtitle" {
+		s.writeEmpty(w, r)
+		return
+	}
+	if !st.External {
+		// Embedded track: extract it from the playing source so a subtitle
+		// picked in-player renders without restarting the session.
+		ex, ok := s.d.Transcoder.(core.SubtitleExtractor)
+		if !ok || s.d.Playback == nil {
+			s.writeEmpty(w, r)
+			return
+		}
+		input := s.d.Playback.InputURL(entry.playID)
+		if input == "" {
+			s.writeEmpty(w, r)
+			return
+		}
+		var buf bytes.Buffer
+		if err := ex.ExtractSubtitle(r.Context(), input, st.Index, st.Codec, &buf); err != nil {
+			s.writeEmpty(w, r)
+			return
+		}
+		if buf.Len() == 0 {
+			s.writeEmpty(w, r)
+			return
+		}
+		body := buf.Bytes()
+		format := subtitleFormat(q.Get("format"))
+		if format != "vtt" {
+			// ExtractSubtitle always emits WebVTT; re-render as SRT.
+			cues, perr := subtitles.ParseCues(string(body))
+			if perr != nil {
+				s.writeEmpty(w, r)
+				return
+			}
+			if offset > 0 {
+				shifted, serr := subtitles.Shift(cues, -offset, 1)
+				if serr != nil {
+					s.writeEmpty(w, r)
+					return
+				}
+				cues = shifted
+			}
+			body = []byte(subtitles.RenderSRT(cues))
+			format = "srt"
+		} else if offset > 0 {
+			cues, perr := subtitles.ParseCues(string(body))
+			if perr != nil {
+				s.writeEmpty(w, r)
+				return
+			}
+			shifted, serr := subtitles.Shift(cues, -offset, 1)
+			if serr != nil {
+				s.writeEmpty(w, r)
+				return
+			}
+			body = []byte(subtitles.RenderVTT(shifted))
+		}
+		w.Header().Set("Content-Type", subtitleContentTypes[format])
+		_, _ = w.Write(body)
+		return
+	}
+	if !strings.HasPrefix(st.ExternalURL, "ether-subtitle:") {
+		s.writeEmpty(w, r)
+		return
+	}
+	timeline, ok := s.d.Subtitles.(SubtitleTimeline)
+	if !ok {
 		s.writeEmpty(w, r)
 		return
 	}

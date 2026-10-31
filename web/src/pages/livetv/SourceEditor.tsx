@@ -29,12 +29,16 @@ import {
 
 export type SourceKind = "playlist" | "guide";
 
-async function readUpload(file: File): Promise<string> {
-  if (/\.gz$/i.test(file.name) && typeof DecompressionStream !== "undefined") {
-    const stream = file.stream().pipeThrough(new DecompressionStream("gzip"));
-    return new Response(stream).text();
-  }
-  return file.text();
+const playlistCap = 64 * 1024 * 1024;
+const guideCap = 2 * 1024 * 1024 * 1024;
+
+/** Reject a file the server will not accept. Gzip stays compressed; the server streams it. */
+function uploadError(file: File, key: "playlist" | "guide"): string {
+  const gzip = /\.gz$/i.test(file.name);
+  if (key === "playlist" && file.size > playlistCap)
+    return t("This playlist is larger than 64 MB.");
+  if (key === "guide" && !gzip && file.size > guideCap) return t("This guide is larger than 2 GB.");
+  return "";
 }
 
 /** Create or edit an M3U playlist source or a guide-only XMLTV source, in place. */
@@ -53,6 +57,10 @@ export function SourceEditor({
   const [kind, setKind] = useState<SourceKind>(initialKind);
   const [busy, setBusy] = useState<"" | "save" | "refresh" | "delete">("");
   const [error, setError] = useState("");
+  const [files, setFiles] = useState<{ playlist: File | null; guide: File | null }>({
+    playlist: null,
+    guide: null,
+  });
   useEffect(() => {
     setDraft(
       source
@@ -75,24 +83,24 @@ export function SourceEditor({
           : "playlist"
         : initialKind,
     );
+    setFiles({ playlist: null, guide: null });
     setError("");
   }, [source, initialKind]);
 
-  const upload = async (file: File | undefined, key: "playlist" | "guide") => {
+  const upload = (file: File | undefined, key: "playlist" | "guide") => {
     if (!file) return;
-    const limit = key === "playlist" ? 16 * 1024 * 1024 : 64 * 1024 * 1024;
-    try {
-      const text = await readUpload(file);
-      if (text.length > limit)
-        throw new Error(t("The selected file exceeds the import size limit."));
-      setDraft((s) => ({
-        ...s,
-        [key]: text,
-        [key === "playlist" ? "playlistUrl" : "guideUrl"]: "",
-      }));
-    } catch (e) {
-      setError(errorMessage(e));
+    const message = uploadError(file, key);
+    if (message) {
+      setError(message);
+      return;
     }
+    setError("");
+    setFiles((current) => ({ ...current, [key]: file }));
+    setDraft((s) => ({
+      ...s,
+      [key]: "",
+      [key === "playlist" ? "playlistUrl" : "guideUrl"]: "",
+    }));
   };
 
   const auth = draft.auth ?? {};
@@ -103,8 +111,8 @@ export function SourceEditor({
     (xtream
       ? Boolean(auth.server?.trim() && auth.username?.trim() && auth.password)
       : kind === "playlist"
-        ? Boolean(draft.playlist || draft.playlistUrl)
-        : Boolean(draft.guide || draft.guideUrl));
+        ? Boolean(files.playlist || draft.playlist || draft.playlistUrl)
+        : Boolean(files.guide || draft.guide || draft.guideUrl));
 
   const save = async () => {
     setBusy("save");
@@ -113,7 +121,20 @@ export function SourceEditor({
       const body: SourceDraft =
         kind === "guide" || xtream ? { ...draft, playlist: "", playlistUrl: "" } : { ...draft };
       body.auth = cleanAuth(draft.auth, kind);
-      const saved = await tv.saveSource(body);
+      const playlistFile = kind === "playlist" && !xtream ? files.playlist : null;
+      const guideFile = files.guide;
+      if (playlistFile && source?.playlistUrl) body.playlistUrl = source.playlistUrl;
+      if (guideFile && source?.guideUrl) body.guideUrl = source.guideUrl;
+      const pending =
+        !body.id &&
+        !body.playlist &&
+        !body.playlistUrl &&
+        !body.guide &&
+        !body.guideUrl &&
+        Boolean(playlistFile || guideFile);
+      let saved = await tv.saveSource(body, pending);
+      if (playlistFile) saved = await tv.uploadSource(saved.id, "playlist", playlistFile);
+      if (guideFile) saved = await tv.uploadSource(saved.id, "guide", guideFile);
       toast.success(source ? t("Source re-imported") : t("Source imported"), {
         description: t("Channel numbers, mappings and access rules are kept."),
       });
@@ -363,7 +384,7 @@ export function SourceEditor({
             id="src-m3u"
             label={t("M3U playlist")}
             url={draft.playlistUrl}
-            fileReady={Boolean(draft.playlist)}
+            fileReady={Boolean(files.playlist)}
             accept=".m3u,.m3u8,text/plain"
             placeholder="https://…/playlist.m3u"
             onUrl={(v) => setDraft({ ...draft, playlistUrl: v, playlist: "" })}
@@ -380,7 +401,7 @@ export function SourceEditor({
                 : t("XMLTV guide")
           }
           url={draft.guideUrl}
-          fileReady={Boolean(draft.guide)}
+          fileReady={Boolean(files.guide)}
           accept=".xml,.gz,application/xml,text/xml,application/gzip"
           placeholder={
             xtream ? t("Leave blank to use the panel's guide") : t("https://…/guide.xml or .xml.gz")

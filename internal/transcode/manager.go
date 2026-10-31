@@ -50,6 +50,7 @@ type options struct {
 	onFailure      func(sessionID string, at time.Duration, err error)
 	onInputFailure func(sessionID, inputURL string, at time.Duration, err error)
 	onRunStart     func(inputURL string, from, to time.Duration)
+	onEncoder      func(sessionID string, started bool, excerpt string)
 	// rungDwell is how long a run keeps producing its rung before a
 	// request on another rung may replace it (see Session.rungDwellLocked).
 	rungDwell time.Duration
@@ -161,6 +162,12 @@ func WithInputFailureHandler(f func(sessionID, inputURL string, at time.Duration
 // while the encoder starts and locates it.
 func WithRunStartHandler(f func(inputURL string, from, to time.Duration)) Option {
 	return func(o *options) { o.onRunStart = f }
+}
+
+// WithEncoderObserver is told when ffmpeg starts or fails to start.
+// excerpt is already redacted argument text and must not be required for playback.
+func WithEncoderObserver(f func(sessionID string, started bool, excerpt string)) Option {
+	return func(o *options) { o.onEncoder = f }
 }
 
 func withFinder(f finder) Option { return func(o *options) { o.finder = &f } }

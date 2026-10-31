@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/langtag"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -21,7 +20,7 @@ import (
 )
 
 // fakeSubtitles is Deps.Subtitles: cached sidecars per title, viewer picks,
-// canned search offers, and a record of prefetch/timeline calls.
+// and canned search offers.
 type fakeSubtitles struct {
 	mu         sync.Mutex
 	cached     map[core.RatingKey][]core.StreamInfo // automatic, one per language
@@ -31,7 +30,6 @@ type fakeSubtitles struct {
 	searchErr  error
 	searchLang string
 	searchRel  string
-	prefetched []core.RatingKey
 	atOffset   time.Duration
 	atFormat   string
 }
@@ -109,13 +107,6 @@ func (f *fakeSubtitles) CachedSidecars(_ context.Context, t *core.Title, _ *core
 	return out
 }
 
-func (f *fakeSubtitles) PrefetchSidecars(_ context.Context, t *core.Title, _ *core.User) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.prefetched = append(f.prefetched, t.Key)
-	return true
-}
-
 func (f *fakeSubtitles) SearchSubtitles(_ context.Context, t *core.Title, _ *core.User, lang, release string) ([]SubtitleOffer, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -176,6 +167,15 @@ func newSubtitleFixture(t *testing.T) (*fixture, *fakeSubtitles) {
 var streamTagRe = regexp.MustCompile(`<Stream [^>]*>`)
 
 // subtitleTags returns the streamType="3" Stream elements of an XML body.
+func selectedTag(tags []string) string {
+	for _, tag := range tags {
+		if strings.Contains(tag, `selected="1"`) {
+			return tag
+		}
+	}
+	return ""
+}
+
 func subtitleTags(body string) []string {
 	var out []string
 	for _, tag := range streamTagRe.FindAllString(body, -1) {
@@ -246,12 +246,17 @@ func TestSidecarSelectionSurvivesProbeAndRemux(t *testing.T) {
 	// sidecar. The viewer's English choice follows it; text sidecars are
 	// served to the client, never passed into the remux.
 	f.playback.info = probedInfo
-	rec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+key+"&directPlay=0&directStream=1&session=remux1&protocol=hls")
+	android := []string{"X-Plex-Product", "Plex for Android (Mobile)", "X-Plex-Platform", "Android"}
+	rec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+key+"&directPlay=0&directStream=1&session=remux1&protocol=hls", android...)
 	releaseID := externalID(fightClub.Key, "ether-subtitle:release-en")
 	subs := subtitleTags(rec.Body.String())
-	if len(subs) != 1 || !strings.Contains(subs[0], fmt.Sprintf(`id="%d"`, releaseID)) || !strings.Contains(subs[0], `selected="1"`) ||
-		!strings.Contains(subs[0], fmt.Sprintf(`key="/library/streams/%d"`, releaseID)) || !strings.Contains(subs[0], `decision="copy" location="sidecar"`) {
+	selected := selectedTag(subs)
+	if selected == "" || !strings.Contains(selected, fmt.Sprintf(`id="%d"`, releaseID)) ||
+		!strings.Contains(selected, fmt.Sprintf(`key="/library/streams/%d"`, releaseID)) || !strings.Contains(selected, `decision="copy" location="sidecar"`) {
 		t.Fatalf("decision subtitle: %q\n%s", subs, rec.Body.String())
+	}
+	if len(subs) < 2 {
+		t.Fatalf("decision dropped alternate subtitles: %q", subs)
 	}
 	if f.trans.lastOpts.SubtitleStream != -1 {
 		t.Fatalf("sidecar reached the transcoder: %+v", f.trans.lastOpts)
@@ -272,11 +277,16 @@ func TestSubtitleStreamIDOnDecisionPicksSidecar(t *testing.T) {
 	key := fightClub.Key.String()
 	f.get(t, "/library/metadata/"+key)
 	releaseID := externalID(fightClub.Key, "ether-subtitle:release-en")
-	// Direct play lists only the selected streams, the sidecar among them.
-	rec := f.get(t, fmt.Sprintf("/video/:/transcode/universal/decision?path=/library/metadata/%s&subtitleStreamID=%d&session=dp1", key, releaseID))
+	// Direct play keeps every subtitle and marks the requested sidecar selected.
+	android := []string{"X-Plex-Product", "Plex for Android (Mobile)", "X-Plex-Platform", "Android"}
+	rec := f.get(t, fmt.Sprintf("/video/:/transcode/universal/decision?path=/library/metadata/%s&subtitleStreamID=%d&session=dp1", key, releaseID), android...)
 	subs := subtitleTags(rec.Body.String())
-	if len(subs) != 1 || !strings.Contains(subs[0], fmt.Sprintf(`key="/library/streams/%d"`, releaseID)) || !strings.Contains(subs[0], `selected="1"`) {
+	selected := selectedTag(subs)
+	if selected == "" || !strings.Contains(selected, fmt.Sprintf(`key="/library/streams/%d"`, releaseID)) {
 		t.Fatalf("direct play subtitle: %q\n%s", subs, rec.Body.String())
+	}
+	if len(subs) < 2 {
+		t.Fatalf("direct play dropped alternate subtitles: %q", subs)
 	}
 }
 
@@ -301,9 +311,15 @@ func TestTrackPreferenceAlwaysSelectsCachedSidecar(t *testing.T) {
 	}
 	// And at Play, without any explicit choice.
 	f.playback.info = probedInfo
-	rec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+fightClub.Key.String()+"&session=always1")
-	if got := subtitleTags(rec.Body.String()); len(got) != 1 || !strings.Contains(got[0], `external="1"`) || !strings.Contains(got[0], `selected="1"`) {
+	android := []string{"X-Plex-Product", "Plex for Android (Mobile)", "X-Plex-Platform", "Android"}
+	rec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+fightClub.Key.String()+"&session=always1", android...)
+	got := subtitleTags(rec.Body.String())
+	selected := selectedTag(got)
+	if selected == "" || !strings.Contains(selected, `external="1"`) {
 		t.Fatalf("always mode at play: %q", got)
+	}
+	if len(got) < 2 {
+		t.Fatalf("always mode dropped alternate subtitles: %q", got)
 	}
 }
 
@@ -415,26 +431,14 @@ func TestTranscodeSidecarSubtitlesFollowSessionOffset(t *testing.T) {
 	}
 }
 
-func TestDetailPrefetchesSidecarsWhenNotWarmed(t *testing.T) {
-	f, subs := newSubtitleFixture(t)
-	f.get(t, "/library/metadata/"+fightClub.Key.String())
-	if len(subs.prefetched) != 1 || subs.prefetched[0] != fightClub.Key {
-		t.Fatalf("prefetch: %v", subs.prefetched)
+func TestDetailDoesNotDownloadSidecars(t *testing.T) {
+	f, _ := newSubtitleFixture(t)
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail: %d %s", rec.Code, rec.Body.String())
 	}
-	// Lists and non-playable pages do not prefetch.
-	f.get(t, "/library/metadata/"+breakingBad.Key.String())
-	f.get(t, "/library/sections/1/all?type=1")
-	if len(subs.prefetched) != 1 {
-		t.Fatalf("unexpected prefetch: %v", subs.prefetched)
-	}
-	base := f.srv.d.Config
-	f.srv.d.Config = func() config.Config {
-		c := base()
-		c.Cache.DisableSpeculation = true
-		return c
-	}
-	f.get(t, "/library/metadata/"+alien.Key.String())
-	if len(subs.prefetched) != 1 {
-		t.Fatalf("prefetch with speculation off: %v", subs.prefetched)
+	rec = f.get(t, "/library/metadata/"+breakingBad.Key.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("show: %d", rec.Code)
 	}
 }

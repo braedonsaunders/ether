@@ -31,3 +31,17 @@ type PrewarmOptions struct {
 type Prewarmer interface {
 	Prewarm(ctx context.Context, user *User, key RatingKey, caps ClientCaps, opts PrewarmOptions) bool
 }
+
+// WarmProber is optionally implemented by playback managers that complete a
+// speculative probe (Prewarm/PreResolve) before Play. WarmProbeInfo returns
+// the probed media info a warm-up already produced for this user/client/key,
+// so metadata and play-queue renders can list the file's real audio and
+// subtitle tracks instead of the single invented audio track of the
+// estimate. ok=false when no warm probe has completed (or it has expired).
+// It never starts a probe or blocks on one in flight.
+//
+// It complements ResumedTracks, which only covers a viewer's later opens:
+// this covers the first open, once the detail-page warm-up has landed.
+type WarmProber interface {
+	WarmProbeInfo(user *User, caps ClientCaps, key RatingKey) (MediaInfo, bool)
+}

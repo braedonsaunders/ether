@@ -65,7 +65,7 @@ export function PlexStatus({
       <SettingsRow
         title={t("plex.direct certificate")}
         description={c.details.join(" · ") || c.summary}
-        control={<LevelBadge level={c.level} label={c.summary} />}
+        control={<LevelBadge level={c.level} label={c.statusLabel ?? c.summary} />}
       />
       <SecureAddresses remote={remote} />
       {conns.length ? (

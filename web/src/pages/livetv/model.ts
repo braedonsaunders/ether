@@ -166,11 +166,17 @@ export const tv = {
   deleteChannel: (id: string) => apiFetch(`/livetv/channels/${enc(id)}`, { method: "DELETE" }),
   preview: (c: Channel, signal?: AbortSignal) =>
     apiFetch<Programme[]>("/livetv/preview", { ...json("POST", c), signal }),
-  saveSource: (s: SourceDraft) =>
+  saveSource: (s: SourceDraft, pending = false) =>
     apiFetch<Source>(
-      `/livetv/sources${s.id ? `/${enc(s.id)}` : ""}`,
+      `/livetv/sources${s.id ? `/${enc(s.id)}` : ""}${pending ? "?pending=1" : ""}`,
       json(s.id ? "PUT" : "POST", s),
     ),
+  uploadSource: (id: string, part: "playlist" | "guide", file: File) =>
+    apiFetch<Source>(`/livetv/sources/${enc(id)}/${part}`, {
+      method: "POST",
+      body: file,
+      headers: { "Content-Type": "application/octet-stream" },
+    }),
   refreshSource: (id: string) =>
     apiFetch<Source>(`/livetv/sources/${enc(id)}/refresh`, { method: "POST" }),
   deleteSource: (id: string) => apiFetch(`/livetv/sources/${enc(id)}`, { method: "DELETE" }),

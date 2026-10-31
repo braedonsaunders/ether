@@ -22,6 +22,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/clusterbus"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/episodeorder"
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/livetv"
@@ -141,6 +142,8 @@ type Deps struct {
 	SessionHeartbeat time.Duration
 	// Now is the clock (tests).
 	Now func() time.Time
+	// Support records neutral request and playback facts. Nil leaves playback unchanged.
+	Support *diagnostics.Recorder
 }
 
 // Server is the PMS API handler. It is an http.Handler; call Close on
@@ -246,8 +249,12 @@ func NewServer(d Deps) *Server {
 		s.titleJobs = newBGQueue(ctx, &s.wg, titleFetchWorkers, titleFetchQueueLen)
 		s.blurJobs = newBGQueue(ctx, &s.wg, ultraBlurWorkers, ultraBlurQueueLen)
 		s.titles = newTitleCache(s.titleJobs, s.now, s.log, d.Catalog.Get)
-		s.ultra = artworkservice.NewPaletteCache(d.DB, s.blurJobs.submit, s.now, s.log, func(ctx context.Context, path string) (artworkservice.Palette, error) {
-			return artworkservice.ComputePalette(ctx, s.images, s.d.ImageURL, path, s.now())
+		s.ultra = artworkservice.NewPaletteCache(d.DB, s.blurJobs.submit, s.now, s.log, func(ctx context.Context, key core.RatingKey, path string) (artworkservice.Palette, error) {
+			var art artworkservice.CollectionArt
+			if c, ok := s.d.Collections.(artworkservice.CollectionArt); ok {
+				art = c
+			}
+			return artworkservice.ComputeItemPalette(ctx, s.images, s.d.ImageURL, key, path, s.now(), art)
 		})
 	}
 	if d.ArtworkPalettes != nil {

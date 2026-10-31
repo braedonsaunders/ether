@@ -21,8 +21,26 @@ func TestCachedSidecarsListWithoutNetwork(t *testing.T) {
 	if got := svc.CachedSidecars(episode, user, nil); got != nil {
 		t.Fatalf("empty cache: %+v", got)
 	}
-	if _, err := svc.SidecarsForRelease(ctx, episode, user, nil, "Show.S01E02.1080p.WEB"); err != nil {
-		t.Fatal(err)
+	for _, lang := range []string{"de", "fr"} {
+		cands, err := svc.Search(ctx, episode, lang, "Show.S01E02.1080p.WEB")
+		if err != nil || len(cands) == 0 {
+			t.Fatal(err)
+		}
+		c := cands[0]
+		for _, cand := range cands {
+			if cand.FileID == 11 {
+				c = cand
+			}
+		}
+		id := cacheID(episode, lang, c.FileID)
+		if _, err := svc.fetchAndCache(ctx, id, c, episode.Key); err != nil {
+			t.Fatal(err)
+		}
+		rel := c.Release
+		if rel == "" {
+			rel = "Show.S01E02.1080p.WEB"
+		}
+		svc.saveSelection(episode, lang, rel, selection{ID: id, FileID: c.FileID, Language: lang, Release: rel, At: svc.now()})
 	}
 	searches, downloads := f.searches.Load(), f.downloads.Load()
 
@@ -108,10 +126,14 @@ func TestOpenFormatAtShiftsToSessionTimeline(t *testing.T) {
 		return []byte("1\n00:00:10,000 --> 00:00:12,000\nEarly\n\n2\n00:01:40,500 --> 00:01:42,000\nLate\n\n")
 	}
 	svc := newSvc(t, f, config.OpenSubtitles{}, t.TempDir())
-	out, err := svc.SidecarsForRelease(ctx, episode, &core.User{SubtitleLanguages: []string{"de"}}, nil, "")
-	if err != nil || len(out) != 1 {
-		t.Fatalf("%+v %v", out, err)
+	if _, err := svc.SearchOnDemand(ctx, episode, "de", ""); err != nil {
+		t.Fatal(err)
 	}
+	picked, err := svc.DownloadOnDemand(ctx, episode, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := []core.StreamInfo{picked}
 	read := func(format string, offset time.Duration) (string, string) {
 		rc, actual, err := svc.OpenFormatAt(out[0].ExternalURL, format, offset)
 		if err != nil {
@@ -132,38 +154,49 @@ func TestOpenFormatAtShiftsToSessionTimeline(t *testing.T) {
 	}
 }
 
-func TestPrefetchSidecarsIsBudgeted(t *testing.T) {
+func TestNoAutomaticOpenSubtitlesDownload(t *testing.T) {
+	ctx := context.Background()
 	f := newOSFake(t)
 	svc := newSvc(t, f, config.OpenSubtitles{}, t.TempDir())
-	user := &core.User{SubtitleLanguages: []string{"de"}}
-	if svc.PrefetchSidecars(episode, &core.User{}) {
-		t.Fatal("prefetch without preferred languages")
+	user := &core.User{SubtitleLanguages: []string{"de", "fr"}}
+	prefs := Preferences{Mode: "always", Style: "normal"}
+
+	// Detail pages used to prefetch preferred languages.
+	if out, err := svc.SidecarsForRelease(ctx, episode, user, nil, "Show.S01E02.1080p.WEB", prefs); err != nil || len(out) != 0 {
+		t.Fatalf("detail listing: %+v %v", out, err)
 	}
-	if !svc.PrefetchSidecars(episode, user) {
-		t.Fatal("prefetch not started")
+	// Starting playback (AugmentMedia) and a preference change.
+	info := &core.MediaInfo{Duration: 40 * time.Minute, Streams: []core.StreamInfo{{Index: 0, Type: "video"}}}
+	res := &core.Resolution{
+		Release:    core.Release{ID: "rel-web", Name: "Show.S01E02.1080p.WEB"},
+		Alternates: []core.Release{{ID: "rel-blu", Name: "Show.S01E02.1080p.BluRay"}},
 	}
-	svc.prefetchWG.Wait()
+	svc.Enrich(ctx, episode, user, res, nil, info, prefs)
+	if out, err := svc.Sidecars(ctx, episode, user, nil, prefs); err != nil || len(out) != 0 {
+		t.Fatalf("preferences: %+v %v", out, err)
+	}
+	// Aligner warm-up used to download a budget of subtitle files.
+	req := core.AlignRequest{Key: episode.Key, From: res.Release, To: res.Alternates[0], FromDuration: info.Duration, ToDuration: info.Duration}
+	svc.TimelineAligner().Prewarm(req)
+	if _, ok := svc.TimelineAligner().AlignTime(ctx, req, time.Minute); ok {
+		t.Fatal("alignment without a picked subtitle")
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := f.downloads.Load(); n != 0 {
+		t.Fatalf("automatic downloads = %d, want 0", n)
+	}
+
+	// An explicit pick still downloads exactly that file.
+	if _, err := svc.SearchOnDemand(ctx, episode, "de", res.Release.Name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DownloadOnDemand(ctx, episode, 11); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.downloads.Load(); n != 1 {
+		t.Fatalf("explicit downloads = %d, want 1", n)
+	}
 	if got := svc.CachedSidecars(episode, user, nil); len(got) != 1 || got[0].Language != "de" {
-		t.Fatalf("prefetched: %+v", got)
-	}
-	// Cached: nothing to do.
-	if svc.PrefetchSidecars(episode, user) {
-		t.Fatal("prefetch of a cached title")
-	}
-	// Hourly budget.
-	for i := 0; i < prefetchPerHour; i++ {
-		svc.prefetchRuns = append(svc.prefetchRuns, svc.now())
-	}
-	movie := &core.Title{Key: core.MovieKey(99), Type: core.TypeMovie}
-	if svc.PrefetchSidecars(movie, user) {
-		t.Fatal("prefetch over the hourly budget")
-	}
-	svc.prefetchRuns = nil
-	// Quota exhausted.
-	svc.mu.Lock()
-	svc.quotaTill = svc.now().Add(time.Hour)
-	svc.mu.Unlock()
-	if svc.PrefetchSidecars(movie, user) {
-		t.Fatal("prefetch with the download quota exhausted")
+		t.Fatalf("cached pick: %+v", got)
 	}
 }

@@ -42,8 +42,54 @@ type Stats struct {
 	Sync               SyncProgress  `json:"sync"`
 }
 
+func cloneStats(s Stats) Stats {
+	if s.Trending != nil {
+		tr := make([]TrendStatus, len(s.Trending))
+		copy(tr, s.Trending)
+		s.Trending = tr
+	}
+	return s
+}
+
 // Stats returns mirror counts, last sync time and current sync progress.
 func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
+	gen := c.writeGen.Load()
+	minBucket := c.minuteBucket()
+	now := c.now()
+	syncing := c.syncing.Load()
+
+	c.cacheMu.RLock()
+	cached := c.statsCache
+	c.cacheMu.RUnlock()
+
+	if cached.ready && ((cached.gen == gen && cached.minute == minBucket) || (syncing && !cached.fetchedAt.IsZero() && now.Sub(cached.fetchedAt) < 2*time.Second)) {
+		s := cloneStats(cached.stats)
+		s.Sync = c.SyncProgress()
+		return s, nil
+	}
+
+	s, err := c.statsFlights.Do(ctx, "stats", func(ctx context.Context) (Stats, error) {
+		return c.loadStats(ctx)
+	})
+	if err != nil {
+		c.cacheMu.RLock()
+		fallback := c.statsCache
+		c.cacheMu.RUnlock()
+		if fallback.ready {
+			out := cloneStats(fallback.stats)
+			out.Sync = c.SyncProgress()
+			return out, nil
+		}
+		return s, err
+	}
+	out := cloneStats(s)
+	out.Sync = c.SyncProgress()
+	return out, nil
+}
+
+func (c *Catalog) loadStats(ctx context.Context) (Stats, error) {
+	gen := c.writeGen.Load()
+	minBucket := c.minuteBucket()
 	var s Stats
 	s.Trending = c.TrendStatus(ctx)
 	count := func(q string, dst *int, args ...any) error {
@@ -70,10 +116,12 @@ func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
 	if err := count(`SELECT COUNT(*) FROM catalog_collections`, &s.Collections); err != nil {
 		return s, err
 	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles t JOIN catalog_home_release h ON h.key=t.key WHERE t.type='movie' AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=? AND h.checked=1`, &s.HomeReleaseChecked, c.now().Unix()); err != nil {
-		return s, err
-	}
-	if err := count(`SELECT COUNT(*) FROM catalog_titles t LEFT JOIN catalog_home_release h ON h.key=t.key WHERE t.type='movie' AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=? AND (h.checked IS NULL OR h.checked=0)`, &s.HomeReleasePending, c.now().Unix()); err != nil {
+	if err := c.db.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(CASE WHEN h.checked=1 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN h.checked IS NULL OR h.checked=0 THEN 1 ELSE 0 END), 0)
+		FROM catalog_titles t
+		LEFT JOIN catalog_home_release h ON h.key=t.key
+		WHERE t.type='movie' AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=?`, c.now().Unix()).Scan(&s.HomeReleaseChecked, &s.HomeReleasePending); err != nil {
 		return s, err
 	}
 	if v := c.getMeta(ctx, "last_sync"); v != "" {
@@ -81,10 +129,15 @@ func (c *Catalog) Stats(ctx context.Context) (Stats, error) {
 			s.LastSync = time.Unix(n, 0).UTC()
 		}
 	}
-	c.progressMu.RLock()
-	s.Sync = c.progress
-	c.progressMu.RUnlock()
-	s.Sync.Running = c.syncing.Load()
+	c.cacheMu.Lock()
+	c.statsCache = cachedStats{
+		stats:     cloneStats(s),
+		gen:       gen,
+		minute:    minBucket,
+		fetchedAt: c.now(),
+		ready:     true,
+	}
+	c.cacheMu.Unlock()
 	return s, nil
 }
 
@@ -318,7 +371,7 @@ func (c *Catalog) syncSlice(ctx context.Context, tv bool, params tmdb.DiscoverPa
 				titles = append(titles, c.movieToTitle(ctx, m))
 			}
 		}
-		added := 0
+		var batch []core.Title
 		stop := false
 		for _, t := range titles {
 			if pass == "popularity" && cfg.MinPopularity > 0 && t.Popularity < cfg.MinPopularity && (cfg.MinVotes <= 0 || t.VoteCount < cfg.MinVotes) {
@@ -329,12 +382,15 @@ func (c *Catalog) syncSlice(ctx context.Context, tv bool, params tmdb.DiscoverPa
 				stop = true
 			}
 			if c.meetsThreshold(t) {
-				if err := c.upsert(ctx, t, upsertOpts{browsable: true}); err != nil {
-					return totalPages, err
-				}
-				added++
+				batch = append(batch, t)
 			}
 		}
+		if len(batch) > 0 {
+			if err := c.upsertMany(ctx, batch, upsertOpts{browsable: true}); err != nil {
+				return totalPages, err
+			}
+		}
+		added := len(batch)
 		c.setProgress(func(pr *SyncProgress) {
 			pr.PagesDone++
 			pr.TitlesSeen += len(titles)

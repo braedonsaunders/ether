@@ -18,10 +18,12 @@ import (
 	"github.com/braedonsaunders/ether/internal/store"
 	"github.com/braedonsaunders/ether/internal/watchlist"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,6 +39,9 @@ type Service struct {
 	users   interface {
 		User(context.Context, int64) (*core.User, error)
 	}
+	logger *slog.Logger
+	jobsMu sync.Mutex
+	jobs   map[string]*previewJob
 }
 
 type Options struct {
@@ -44,6 +49,7 @@ type Options struct {
 	Users interface {
 		User(context.Context, int64) (*core.User, error)
 	}
+	Logger *slog.Logger
 }
 
 func (s *Service) viewer(ctx context.Context, id int64) (*core.User, error) {
@@ -61,7 +67,7 @@ func New(db *sql.DB, catalog core.Catalog, opts ...Options) *Service {
 	if o.State == nil {
 		o.State = state.New(db, state.Options{})
 	}
-	return &Service{db: db, catalog: catalog, state: o.State, users: o.Users, client: &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}}
+	return &Service{db: db, catalog: catalog, state: o.State, users: o.Users, logger: o.Logger, client: &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 type Viewer struct {
@@ -149,6 +155,22 @@ type container struct {
 }
 
 func (s *Service) get(ctx context.Context, base, token, path string) (container, error) {
+	load := func() (container, error) { return s.getOnce(ctx, base, token, path) }
+	if m := memoFrom(ctx); m != nil {
+		// The key stays in memory only. It is never logged.
+		return m.httpGet(token+"\n"+path, load)
+	}
+	return load()
+}
+
+func pmsErr(err error, fallback string) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	return errors.New(fallback)
+}
+
+func (s *Service) getOnce(ctx context.Context, base, token, path string) (container, error) {
 	var c container
 	req, e := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if e != nil {
@@ -165,7 +187,7 @@ func (s *Service) get(ctx context.Context, base, token, path string) (container,
 	}
 	resp, e := s.client.Do(req)
 	if e != nil {
-		return c, errors.New("PMS connection failed")
+		return c, pmsErr(e, "PMS connection failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
@@ -173,7 +195,7 @@ func (s *Service) get(ctx context.Context, base, token, path string) (container,
 	}
 	b, e := io.ReadAll(io.LimitReader(resp.Body, 32<<20+1))
 	if e != nil {
-		return c, errors.New("PMS response read failed")
+		return c, pmsErr(e, "PMS response read failed")
 	}
 	if len(b) > 32<<20 {
 		return c, errors.New("PMS response too large")
@@ -205,7 +227,7 @@ func (s *Service) mapMedia(ctx context.Context, base, token string, m media) (co
 				}
 				if k != 0 {
 					if s.catalog != nil {
-						if _, e = s.catalog.Get(ctx, k); e != nil {
+						if _, e = s.catalogGet(ctx, k); e != nil {
 							continue
 						}
 					}
@@ -216,7 +238,7 @@ func (s *Service) mapMedia(ctx context.Context, base, token string, m media) (co
 				if strings.Contains(prefix, "tvdb") {
 					source = "tvdb"
 				}
-				t, e := s.catalog.ByExternalID(ctx, source, id)
+				t, e := s.externalTitle(ctx, source, id)
 				if e == nil && t != nil && string(t.Type) == m.Type {
 					return t.Key, nil
 				}
@@ -258,6 +280,7 @@ func (s *Service) pages(ctx context.Context, base, token, path string) ([]media,
 			items = append(items, media{Key: key, Title: d.Title, Type: d.Type, GUID: d.GUID, GUIDs: d.GUIDs})
 		}
 		out = append(out, items...)
+		addProgress(ctx, func(pr *PreviewProgress) { pr.Pages++ })
 		if len(items) == 0 || c.Total == 0 || start+len(items) >= c.Total {
 			return out, nil
 		}
@@ -266,11 +289,13 @@ func (s *Service) pages(ctx context.Context, base, token, path string) ([]media,
 	return nil, errors.New("PMS paging limit exceeded")
 }
 func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
+	ctx = withPreviewState(ctx)
+	addProgress(ctx, func(pr *PreviewProgress) { pr.Phase = "connecting" })
 	p := Plan{Items: []Item{}, Lists: []List{}, Warnings: []string{}, Viewers: []Viewer{}}
-	u, e := url.Parse(q.URL)
-	if e != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" {
-		return p, errors.New("PMS URL must be an http(s) origin without credentials")
+	if e := validatePreviewRequest(q); e != nil {
+		return p, e
 	}
+	u, _ := url.Parse(q.URL)
 	base := strings.TrimRight(u.String(), "/")
 	ident, e := s.get(ctx, base, q.Token, "/identity")
 	if e != nil {
@@ -280,9 +305,6 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 		return p, errors.New("PMS identity missing machine identifier")
 	}
 	p.Source = ident.Machine
-	if len(q.Viewers) == 0 {
-		return p, errors.New("choose at least one local viewer")
-	}
 	sections, e := s.get(ctx, base, q.Token, "/library/sections")
 	if e != nil {
 		return p, e
@@ -313,6 +335,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 		p.Viewers = append(p.Viewers, v)
 		keyMap := map[string]core.RatingKey{}
 		mapper := sourceMapper{service: s, base: base, token: token, keys: keyMap, parents: map[string]core.RatingKey{}, missing: map[string]bool{}}
+		addProgress(ctx, func(pr *PreviewProgress) { pr.Phase = "library" })
 		for _, section := range sections.Directories {
 			if section.Type != "movie" && section.Type != "show" {
 				continue
@@ -329,20 +352,38 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 			if e != nil {
 				return p, e
 			}
-			for _, m := range ms {
+			mapped := make([]mappedRow, len(ms))
+			if e = s.eachMedia(ctx, ms, func(i int, m media) {
+				addProgress(ctx, func(pr *PreviewProgress) { pr.Scanned++ })
 				if q.HistoryOnly && m.Views == 0 {
-					continue
+					return
 				}
 				k, me := mapper.resolve(ctx, m, false)
 				if me != nil {
-					p.Warnings = append(p.Warnings, "Unmatched: "+m.Title)
-					continue
+					if errors.Is(me, context.Canceled) {
+						return
+					}
+					mapped[i].warn = "Unmatched: " + m.Title
+					addProgress(ctx, func(pr *PreviewProgress) { pr.Unmatched++ })
+					return
 				}
-				keyMap[m.Key] = k
+				addProgress(ctx, func(pr *PreviewProgress) { pr.Matched++ })
 				if m.Views > 0 || m.Offset > 0 || m.Rating > 0 {
-					p.Items = append(p.Items, Item{External: m.Key, Key: k, Title: m.Title, Viewer: v.LocalUserID, Views: m.Views, Offset: m.Offset, Duration: m.Duration, Rating: m.Rating, ViewedAt: m.ViewedAt})
+					mapped[i].keep = true
+					mapped[i].item = Item{External: m.Key, Key: k, Title: m.Title, Viewer: v.LocalUserID, Views: m.Views, Offset: m.Offset, Duration: m.Duration, Rating: m.Rating, ViewedAt: m.ViewedAt}
+				}
+			}); e != nil {
+				return p, e
+			}
+			for _, row := range mapped {
+				if row.warn != "" {
+					p.Warnings = append(p.Warnings, row.warn)
+				}
+				if row.keep {
+					p.Items = append(p.Items, row.item)
 				}
 			}
+			s.logProgress(ctx, "plex preview progress")
 			if q.HistoryOnly {
 				continue
 			}
@@ -363,31 +404,52 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 		var history []media
 		he := accountErr
 		if he == nil {
+			addProgress(ctx, func(pr *PreviewProgress) { pr.Phase = "history" })
 			history, he = s.pages(ctx, base, q.Token, "/status/sessions/history/all?sort=viewedAt:asc&accountID="+strconv.FormatInt(accountID, 10))
 		}
 		if he != nil {
 			p.Warnings = append(p.Warnings, "Detailed watch history unavailable for "+v.Name+"; last-viewed summaries will be imported")
 		} else {
-			for _, h := range history {
+			mapped := make([]mappedRow, len(history))
+			if e = s.eachMedia(ctx, history, func(i int, h media) {
+				addProgress(ctx, func(pr *PreviewProgress) { pr.Scanned++ })
 				// Defend against a server ignoring the account filter.
 				if h.AccountID != accountID {
-					continue
+					return
 				}
-				k := keyMap[h.Key]
+				k := mapper.cached(h.Key)
+				var me error
 				if k == 0 {
-					k, _ = mapper.resolve(ctx, h, false)
+					k, me = mapper.resolve(ctx, h, false)
+				}
+				if errors.Is(me, context.Canceled) {
+					return
 				}
 				at := h.HistoryAt
 				if at == 0 {
 					at = h.ViewedAt
 				}
 				if k == 0 {
-					p.Warnings = append(p.Warnings, "Unmatched history: "+h.Title)
+					mapped[i].warn = "Unmatched history: " + h.Title
+					addProgress(ctx, func(pr *PreviewProgress) { pr.Unmatched++ })
 				}
 				if k != 0 && at > 0 {
-					p.History = append(p.History, Item{Key: k, Viewer: v.LocalUserID, ViewedAt: at, Views: 1, Title: h.Title})
+					mapped[i].keep = true
+					mapped[i].item = Item{Key: k, Viewer: v.LocalUserID, ViewedAt: at, Views: 1, Title: h.Title}
+					addProgress(ctx, func(pr *PreviewProgress) { pr.Matched++ })
+				}
+			}); e != nil {
+				return p, e
+			}
+			for _, row := range mapped {
+				if row.warn != "" {
+					p.Warnings = append(p.Warnings, row.warn)
+				}
+				if row.keep {
+					p.History = append(p.History, row.item)
 				}
 			}
+			s.logProgress(ctx, "plex preview progress")
 		}
 		if q.HistoryOnly {
 			continue
@@ -407,6 +469,7 @@ func (s *Service) Preview(ctx context.Context, q Request) (Plan, error) {
 		}
 	}
 	p.Warnings = append(p.Warnings, "PMS exposes state only for supplied viewer access tokens. Existing Ether users are mapped; sharing must be granted through plex.tv.")
+	addProgress(ctx, func(pr *PreviewProgress) { pr.Phase = "saving" })
 	return s.savePlan(ctx, p)
 }
 func (s *Service) readList(ctx context.Context, base, token string, m media, kind string, viewer int64, keys map[string]core.RatingKey) (List, error) {

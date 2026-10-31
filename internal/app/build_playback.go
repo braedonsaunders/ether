@@ -9,6 +9,7 @@ import (
 
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/diagnostics"
 	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/playback"
 	"github.com/braedonsaunders/ether/internal/resolver"
@@ -21,7 +22,16 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 	dataDir := a.opts.DataDir
 	var err error
 	// Transcoder. A missing ffmpeg is not fatal: direct play still works.
-	a.transcoder, err = transcode.New(cfg.Transcode, log, transcode.WithRuntimeDir(filepath.Join(dataDir, "tools")), transcode.WithRunStartHandler(func(input string, from, to time.Duration) {
+	a.transcoder, err = transcode.New(cfg.Transcode, log, transcode.WithRuntimeDir(filepath.Join(dataDir, "tools")), transcode.WithEncoderObserver(func(sessionID string, started bool, excerpt string) {
+		if a.support == nil {
+			return
+		}
+		kind := diagnostics.KindEncoderFailed
+		if started {
+			kind = diagnostics.KindEncoderStarted
+		}
+		a.support.Observe(diagnostics.Event{Kind: kind, SessionKey: sessionID, FFmpegExcerpt: excerpt})
+	}), transcode.WithRunStartHandler(func(input string, from, to time.Duration) {
 		if a.playback != nil {
 			a.playback.WarmInput(input, from, to)
 		}

@@ -49,11 +49,41 @@ func (s *Service) Handler() http.Handler {
 		if id := chi.URLParam(r, "id"); id != "" {
 			src.ID = id
 		}
-		v, e := s.ImportSource(r.Context(), src)
+		pending := r.URL.Query().Get("pending") == "1" && src.Playlist == "" && src.PlaylistURL == "" && src.Guide == "" && src.GuideURL == ""
+		var v Source
+		var e error
+		if pending {
+			v, e = s.SavePendingSource(r.Context(), src)
+		} else {
+			v, e = s.ImportSource(r.Context(), src)
+		}
 		ownerResult(w, v, e)
 	}
 	r.Post("/sources", importSource)
 	r.Put("/sources/{id}", importSource)
+	upload := func(part string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			max := int64(maxPlaylistBytes)
+			if part == "guide" {
+				max = maxGuideBytes
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, max)
+			v, err := s.ImportUpload(r.Context(), chi.URLParam(r, "id"), part, r.Body)
+			if err != nil {
+				var maxed *http.MaxBytesError
+				if errors.As(err, &maxed) {
+					kind := "playlist"
+					if part == "guide" {
+						kind = "guide"
+					}
+					err = limitf(kind, max, false)
+				}
+			}
+			ownerResult(w, v, err)
+		}
+	}
+	r.Post("/sources/{id}/playlist", upload("playlist"))
+	r.Post("/sources/{id}/guide", upload("guide"))
 	r.Post("/sources/{id}/refresh", func(w http.ResponseWriter, r *http.Request) {
 		v, e := s.RefreshSource(r.Context(), chi.URLParam(r, "id"))
 		ownerResult(w, v, e)

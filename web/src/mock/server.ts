@@ -1625,6 +1625,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
           cert: {
             present: true,
             subject: "*.abc.plex.direct",
+            notBefore: new Date(Date.now() - 30 * 86400000).toISOString(),
             notAfter: new Date(Date.now() + 80 * 86400000).toISOString(),
           },
         },

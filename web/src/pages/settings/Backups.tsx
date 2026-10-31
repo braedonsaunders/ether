@@ -38,6 +38,13 @@ type Plan = {
   lists: { name: string; kind: string; keys: number[] }[];
   warnings: string[];
 };
+type PreviewStatus = {
+  id: string;
+  status: "running" | "done" | "error" | "cancelled";
+  progress?: { scanned?: number };
+  error?: string;
+  plan?: Plan;
+};
 type Schedule = { intervalHours: number; retain: number; sharedDir?: string };
 type Snapshot = {
   name: string;
@@ -672,10 +679,27 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
   const [viewer, setViewer] = useViewerChoice(users);
   const [url, setURL] = useState("");
   const [token, setToken] = useState("");
+  const [scanned, setScanned] = useState<number | null>(null);
+  const [previewError, setPreviewError] = useState("");
   const { setPlan, busy, run, review } = useImportPlan("plex-import-review");
+  const generation = useRef(0);
+  const jobID = useRef("");
+  const cancelJob = (id: string) => {
+    if (!id) return;
+    void post(`/migration/preview/${id}/cancel`).catch(() => {});
+  };
+  const stopPreview = () => {
+    generation.current += 1;
+    const id = jobID.current;
+    jobID.current = "";
+    cancelJob(id);
+    setScanned(null);
+  };
   const edit = (fn: (v: string) => void) => (v: string) => {
     fn(v);
     setPlan(null);
+    setPreviewError("");
+    stopPreview();
   };
   return (
     <>
@@ -685,29 +709,79 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
           "Bring one viewer's watch history, ratings and playlists across from another Plex server. That server is only read, and you review everything before it's imported.",
         )}
         footer={
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || !url || !token || !viewer}
-            onClick={() =>
-              void run(async () => {
-                const p = await post<Plan>("/migration/preview", {
-                  url,
-                  token,
-                  viewers: [
-                    {
-                      localUserId: Number(viewer),
-                      name: users?.find((u) => String(u.id) === viewer)?.username,
-                    },
-                  ],
-                });
-                setPlan(p);
-                setToken("");
-              })
-            }
-          >
-            {busy ? t("Working…") : t("Preview import")}
-          </Button>
+          busy ? (
+            <Button size="sm" variant="outline" onClick={stopPreview}>
+              {t("Cancel preview")}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!url || !token || !viewer}
+              onClick={() =>
+                void run(async () => {
+                  setPreviewError("");
+                  setPlan(null);
+                  setScanned(0);
+                  const mine = ++generation.current;
+                  const started = await post<PreviewStatus>("/migration/preview", {
+                    url,
+                    token,
+                    viewers: [
+                      {
+                        localUserId: Number(viewer),
+                        name: users?.find((u) => String(u.id) === viewer)?.username,
+                      },
+                    ],
+                  });
+                  if (generation.current !== mine) {
+                    cancelJob(started.id);
+                    return;
+                  }
+                  jobID.current = started.id;
+                  try {
+                    for (;;) {
+                      if (generation.current !== mine) return;
+                      const st = await apiFetch<PreviewStatus>(
+                        `${base}/migration/preview/${started.id}`,
+                      );
+                      if (generation.current !== mine) return;
+                      setScanned(st.progress?.scanned ?? 0);
+                      if (st.status === "done") {
+                        if (!st.plan?.id) throw new Error(t("Plex preview failed"));
+                        setPlan(st.plan);
+                        setToken("");
+                        setScanned(null);
+                        jobID.current = "";
+                        return;
+                      }
+                      if (st.status === "error") {
+                        throw new Error(
+                          t("The Plex preview stopped: {error}", {
+                            error: st.error || t("Plex preview failed"),
+                          }),
+                        );
+                      }
+                      if (st.status === "cancelled") {
+                        setScanned(null);
+                        jobID.current = "";
+                        return;
+                      }
+                      await new Promise((resolve) => setTimeout(resolve, 400));
+                    }
+                  } catch (e) {
+                    if (generation.current !== mine) return;
+                    setPreviewError(errorMessage(e));
+                    setScanned(null);
+                    jobID.current = "";
+                    throw e;
+                  }
+                })
+              }
+            >
+              {t("Preview import")}
+            </Button>
+          )
         }
       >
         <SettingsRow
@@ -751,6 +825,18 @@ function PlexImport({ users }: { users: EtherUser[] | null }) {
             onChange={(e) => edit(setToken)(e.currentTarget.value)}
           />
         </SettingsRow>
+        {scanned !== null && (
+          <Alert variant="info" role="status">
+            <AlertDescription>
+              {t("Reading the Plex server… {count} scanned", { count: scanned })}
+            </AlertDescription>
+          </Alert>
+        )}
+        {previewError && (
+          <Alert variant="destructive" role="alert">
+            <AlertDescription>{previewError}</AlertDescription>
+          </Alert>
+        )}
       </SettingsSection>
       {review}
     </>

@@ -109,6 +109,7 @@ type Resolution struct {
 // QualityProfile is an owner-editable rule set ranking releases for a class
 // of client.
 type QualityProfile struct {
+	ReleaseRules         []ReleaseRule  `json:"releaseRules,omitempty"`
 	AllowedQualities     []string       `json:"allowedQualities,omitempty"` // imported source-resolution gates
 	CustomFormatScores   map[string]int `json:"customFormatScores,omitempty"`
 	MinCustomFormatScore *int           `json:"minCustomFormatScore,omitempty"`
@@ -134,7 +135,9 @@ type QualityProfile struct {
 	// SelectionKey is the canonical hash of this profile's configured
 	// definition, computed by resolver.SelectProfile from the pristine
 	// configured profile before download reshaping or client-cap
-	// clamping. Runtime-only, never persisted with the profile.
+	// clamping. Release rules are part of that definition. The catalogue
+	// original language is not: it is per-title evaluation context, not a
+	// profile fact. Runtime-only, never persisted with the profile.
 	SelectionKey string `json:"-"`
 }
 
@@ -142,7 +145,7 @@ type QualityProfile struct {
 // definition in p: sha256 of its JSON (runtime-only fields tagged
 // json:"-" are excluded) truncated to 16 hex chars. Any selection-field
 // edit (heights, HDR/DV, codecs, sources, audio, languages, sizes,
-// qualities, scores) changes it; client caps never enter it.
+// qualities, scores, release rules) changes it; client caps never enter it.
 func (p QualityProfile) ComputeSelectionKey() string {
 	p.SelectionKey = ""
 	b, err := json.Marshal(p)
