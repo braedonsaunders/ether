@@ -313,6 +313,16 @@ func openSQLite(ctx context.Context, path string, files []SnapshotFile) (*sql.DB
 	// Recommended at open by the SQLite docs: analyse tables whose stats are
 	// missing or stale, bounded by the 0x10000 analysis limit so it is cheap.
 	_, _ = db.ExecContext(ctx, `PRAGMA optimize=0x10002`)
+	if path != ":memory:" {
+		// Opening SQLite re-reads the whole schema. The default idle pool
+		// drops every connection past the second, so a play paid that cost
+		// again. Keep the connections a server actually uses.
+		db.SetMaxIdleConns(8)
+		if err := db.PingContext(ctx); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	return db, nil
 }
 
