@@ -187,6 +187,35 @@ func (c *Catalog) CountBrowsable(ctx context.Context, typ core.MediaType) (int, 
 	return total, nil
 }
 
+// LibraryPosters returns the first poster paths for a library collage. It
+// reads the popularity index and does not hydrate title rows.
+func (c *Catalog) LibraryPosters(ctx context.Context, typ core.MediaType, limit int) ([]core.Title, error) {
+	if c == nil || c.db == nil {
+		return nil, fmt.Errorf("catalog: posters unavailable")
+	}
+	if typ != core.TypeMovie && typ != core.TypeShow {
+		return nil, fmt.Errorf("catalog: posters: unsupported type %q", typ)
+	}
+	if limit <= 0 || limit > 16 {
+		limit = 16
+	}
+	rows, err := c.db.QueryContext(ctx, `SELECT key, poster FROM catalog_titles WHERE type=? AND browsable=1 AND adult=0 AND poster<>'' ORDER BY popularity DESC LIMIT ?`, string(typ), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]core.Title, 0, limit)
+	for rows.Next() {
+		var key int64
+		var poster string
+		if err = rows.Scan(&key, &poster); err != nil {
+			return nil, err
+		}
+		out = append(out, core.Title{Key: core.RatingKey(key), Type: typ, PosterPath: poster})
+	}
+	return out, rows.Err()
+}
+
 // Browse filters share one SQL statement; their combined parameters remain subject
 // to the database's statement-wide variable limit.
 func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
