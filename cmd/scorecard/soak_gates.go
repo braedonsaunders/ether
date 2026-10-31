@@ -331,11 +331,31 @@ func gateLeak(m SoakManifest) SoakGate {
 	if !ok {
 		return SoakGate{Name: "rss_leak", Status: "inconclusive", Reason: "RSS slope is undefined"}
 	}
-	limit := math.Max(32*1024*1024, 0.05*float64(window[0].RSSBytes))
+	limit := math.Max(32*1024*1024, 0.05*float64(window[0].SelfRSS))
 	if drift > limit || slope > 1024*1024 {
 		return SoakGate{Name: "rss_leak", Status: "fail", Reason: "follow-up RSS growth exceeds the declared bound"}
 	}
+	if child := encoderChildRSS(window); child > encoderRSSCap {
+		return SoakGate{Name: "rss_leak", Status: "fail", Reason: "encoder RSS exceeded the 256 MiB cap for 2 transcode slots"}
+	}
 	return SoakGate{Name: "rss_leak", Status: "pass"}
+}
+
+// encoderRSSCap is the plateau of ffmpeg plus its guardian, measured on the
+// lab file: about 105 MiB for one live transcode and about 210 MiB for the
+// two slots the manager allows. Tree RSS swings with those processes and is
+// not the leak signal. 128 MiB per slot is that plateau plus headroom; a
+// third encoder does not fit.
+const encoderRSSCap = 2 * 128 * 1024 * 1024
+
+func encoderChildRSS(window []SoakSample) uint64 {
+	var child uint64
+	for _, sample := range window {
+		if sample.RSSBytes > sample.SelfRSS && sample.RSSBytes-sample.SelfRSS > child {
+			child = sample.RSSBytes - sample.SelfRSS
+		}
+	}
+	return child
 }
 
 func gateSustained(m SoakManifest) SoakGate {
@@ -348,15 +368,15 @@ func gateSustained(m SoakManifest) SoakGate {
 		if sample.At.Before(start) || !sample.At.Before(m.FaultEnd) || !sample.Valid {
 			continue
 		}
-		rows = append(rows, resourceSample{Time: sample.At, RSSSum: sample.RSSBytes, ProcessCount: 1})
+		rows = append(rows, resourceSample{Time: sample.At, RSSSum: sample.SelfRSS, ProcessCount: 1})
 	}
 	result := evaluateGrowth(rows)
 	return SoakGate{Name: "rss_sustained", Status: result.Status, Reason: result.Reason}
 }
 
 func rssSlope(window []SoakSample) (drift, slope float64, ok bool) {
-	base := window[0].RSSBytes
-	last := window[len(window)-1].RSSBytes
+	base := window[0].SelfRSS
+	last := window[len(window)-1].SelfRSS
 	if base > math.MaxInt64 || last > math.MaxInt64 {
 		return 0, 0, false
 	}
@@ -364,7 +384,7 @@ func rssSlope(window []SoakSample) (drift, slope float64, ok bool) {
 	var sx, sy, sxx, sxy float64
 	for _, sample := range window {
 		x := sample.At.Sub(window[0].At).Minutes()
-		y := float64(sample.RSSBytes)
+		y := float64(sample.SelfRSS)
 		sx += x
 		sy += y
 		sxx += x * x

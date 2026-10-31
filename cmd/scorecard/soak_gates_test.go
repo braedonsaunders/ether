@@ -14,7 +14,7 @@ func passManifest(t *testing.T) SoakManifest {
 	m := SoakManifest{
 		Profile: "shakedown", Build: "abc", Started: start, FaultEnd: faultEnd, FollowupEnd: followEnd, LoadStopped: followEnd,
 		GPU:      "no_device",
-		Baseline: SoakSample{At: start, RSSBytes: 100 << 20, FDs: 10, Goroutines: 8, GPU: "no_device", Valid: true},
+		Baseline: SoakSample{At: start, RSSBytes: 100 << 20, SelfRSS: 100 << 20, FDs: 10, Goroutines: 8, GPU: "no_device", Valid: true},
 		Faults: []SoakFault{
 			{Action: "source_outage", At: start, OK: true},
 			{Action: "slow_upstream", At: start, OK: true},
@@ -44,7 +44,7 @@ func passManifest(t *testing.T) SoakManifest {
 		m.Ops = append(m.Ops, SoakOp{At: at, Protocol: "plex", Kind: "browse", Delivery: "browse", Client: "follow", Success: true, Verified: true})
 	}
 	for at := start; !at.After(followEnd.Add(5*time.Minute + 10*time.Second)); at = at.Add(20 * time.Second) {
-		m.Samples = append(m.Samples, SoakSample{At: at, RSSBytes: 100 << 20, FDs: 10, Goroutines: 8, GPU: "no_device", Valid: true, NetRx: uint64(at.Sub(start) / time.Second)})
+		m.Samples = append(m.Samples, SoakSample{At: at, RSSBytes: 100 << 20, SelfRSS: 100 << 20, FDs: 10, Goroutines: 8, GPU: "no_device", Valid: true, NetRx: uint64(at.Sub(start) / time.Second)})
 	}
 	return m
 }
@@ -77,7 +77,8 @@ func TestEvaluateSoakLeak(t *testing.T) {
 	m := passManifest(t)
 	for i := range m.Samples {
 		if !m.Samples[i].At.Before(m.FaultEnd) {
-			m.Samples[i].RSSBytes += uint64(m.Samples[i].At.Sub(m.FaultEnd)/time.Minute) * 2 << 20
+			m.Samples[i].SelfRSS += uint64(m.Samples[i].At.Sub(m.FaultEnd)/time.Minute) * 2 << 20
+			m.Samples[i].RSSBytes = m.Samples[i].SelfRSS
 		}
 	}
 	report := EvaluateSoak(m)
@@ -89,5 +90,47 @@ func TestEvaluateSoakLeak(t *testing.T) {
 	}
 	if report.Status != "fail" || !found {
 		t.Fatalf("leak not failed: %+v", report.Gates)
+	}
+}
+
+func TestEvaluateSoakEncoderWorkingSetIsNotALeak(t *testing.T) {
+	m := passManifest(t)
+	for i := range m.Samples {
+		if m.Samples[i].At.Before(m.FaultEnd) || !m.Samples[i].At.Before(m.FollowupEnd) {
+			continue
+		}
+		if i%2 == 0 {
+			m.Samples[i].FFmpeg = 2
+			m.Samples[i].RSSBytes = m.Samples[i].SelfRSS + 200<<20
+		}
+	}
+	report := EvaluateSoak(m)
+	for _, gate := range report.Gates {
+		if gate.Name == "rss_leak" && gate.Status != "pass" {
+			t.Fatalf("encoder swing: %+v", gate)
+		}
+	}
+	if report.Status != "pass" {
+		t.Fatalf("status %s %+v", report.Status, report.Gates)
+	}
+}
+
+func TestEvaluateSoakEncoderRSSCap(t *testing.T) {
+	m := passManifest(t)
+	for i := range m.Samples {
+		if !m.Samples[i].At.Before(m.FaultEnd) {
+			m.Samples[i].FFmpeg = 3
+			m.Samples[i].RSSBytes = m.Samples[i].SelfRSS + encoderRSSCap + 1
+		}
+	}
+	report := EvaluateSoak(m)
+	found := false
+	for _, gate := range report.Gates {
+		if gate.Name == "rss_leak" && gate.Status == "fail" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("cap not failed: %+v", report.Gates)
 	}
 }
