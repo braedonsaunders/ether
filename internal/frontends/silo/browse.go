@@ -732,7 +732,7 @@ func (i *instance) browseRoutes() error {
 	for _, entry := range []struct {
 		path string
 		h    http.HandlerFunc
-	}{{"/api/v2/home/capabilities", i.homeCapabilities}, {"/api/v2/user/libraries", i.views}, {"/api/v2/home/sections", i.sections}, {"/api/v2/library/{library}/sections", i.sections}, {"/api/v2/recommendations/discover", i.discover}, {"/api/v2/watch/{id}", i.detail}, {"/api/v2/catalog/items/{id}/versions", i.detail}, {"/api/v2/catalog/items/{id}", i.detail}} {
+	}{{"/api/v2/home/capabilities", i.homeCapabilities}, {"/api/v2/user/libraries", i.views}, {"/api/v2/home/sections", i.sections}, {"/api/v2/library/{library}/sections", i.sections}, {"/api/v2/recommendations/discover", i.discover}, {"/api/v2/recommendations/similar/{id}", i.similar}, {"/api/v2/watch/{id}", i.detail}, {"/api/v2/catalog/items/{id}/versions", i.detail}, {"/api/v2/catalog/items/{id}", i.detail}} {
 		if err := i.router.Handle("GET", entry.path, entry.h); err != nil {
 			return err
 		}

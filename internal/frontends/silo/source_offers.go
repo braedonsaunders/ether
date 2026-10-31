@@ -8,7 +8,8 @@ import (
 )
 
 // Browse lists authorized version selectors only. Opening a leaf source
-// belongs to playback, so a detail page never plans or probes.
+// belongs to playback. A catalog item never plans or probes; watch and the
+// versions list do when the catalogue has no probed copy.
 func (i *instance) sourceVersions(r *http.Request, scope frontend.VersionScope, detail frontend.ItemDetail) ([]frontend.Version, []frontend.SourceOffer, error) {
 	if i.host.SourceOffers == nil {
 		return nil, nil, frontend.ErrSourceGone
@@ -68,11 +69,18 @@ func (i *instance) sourceVersions(r *http.Request, scope frontend.VersionScope, 
 	return versions, offers, nil
 }
 
-// probedVersion opens one source only for the versions list. Item browse stays
-// on catalogue data; a leaf open belongs to an explicit file request.
+// detailOpensSource is an explicit file request. Catalog item browse stays on
+// catalogue editions. Watch and the versions list each open one leaf, because
+// playback needs that file id before the client can start.
+func detailOpensSource(path string) bool {
+	return strings.HasSuffix(path, "/versions") || strings.HasPrefix(path, "/api/v2/watch/")
+}
+
+// probedVersion opens one source for watch and the versions list. Item browse
+// stays on catalogue data; a leaf open belongs to an explicit file request.
 func (i *instance) probedVersion(r *http.Request, scope frontend.VersionScope, detail frontend.ItemDetail) ([]frontend.Version, []frontend.SourceOffer, error) {
 	planner, ok := i.host.Sessions.(frontend.DetailPlanner)
-	if !ok || i.host.SourceOffers == nil || !strings.HasSuffix(r.URL.Path, "/versions") {
+	if !ok || i.host.SourceOffers == nil || !detailOpensSource(r.URL.Path) {
 		return nil, nil, nil
 	}
 	plan, err := planner.DetailPlan(r.Context(), frontend.PlanRequest{

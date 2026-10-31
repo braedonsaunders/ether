@@ -48,6 +48,16 @@ func (i *instance) openAPI(w http.ResponseWriter, r *http.Request) {
 func (i *instance) systemIdentity(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"server_id": i.id})
 }
+
+// health is Silo's ConnectionMonitor probe. It is unauthenticated and reports
+// the same server identity as /api/v2/system/identity.
+func (i *instance) health(w http.ResponseWriter, _ *http.Request) {
+	var settings frontend.Settings
+	if i.host.Config != nil {
+		settings = i.host.Config()
+	}
+	reply(w, http.StatusOK, map[string]any{"status": "ok", "server_name": frontend.AdvertisedName(settings), "server_id": i.id})
+}
 func (i *instance) branding(w http.ResponseWriter, _ *http.Request) {
 	var settings frontend.Settings
 	if i.host.Config != nil {
@@ -137,7 +147,7 @@ func (i *instance) publicRoutes() error {
 	for _, e := range []struct {
 		path string
 		h    http.HandlerFunc
-	}{{"/api/v2/openapi.json", i.openAPI}, {"/api/v2/theme/branding", i.branding}, {"/api/v2/system/identity", i.systemIdentity}, {"/api/v2/requests/status", i.requestStatus}, {"/api/v2/system/info", i.systemInfo}, {"/api/v2/system/setup", i.setup}, {"/api/v2/account/me", i.account}, {"/api/v2/profiles", i.profiles}} {
+	}{{"/api/v1/health", i.health}, {"/api/v2/openapi.json", i.openAPI}, {"/api/v2/theme/branding", i.branding}, {"/api/v2/system/identity", i.systemIdentity}, {"/api/v2/requests/status", i.requestStatus}, {"/api/v2/system/info", i.systemInfo}, {"/api/v2/system/setup", i.setup}, {"/api/v2/account/me", i.account}, {"/api/v2/profiles", i.profiles}} {
 		if err := i.router.Handle("GET", e.path, e.h); err != nil {
 			return err
 		}

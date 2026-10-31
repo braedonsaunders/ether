@@ -214,7 +214,7 @@ func TestVersionsRouteProbesOneSource(t *testing.T) {
 	key := frontend.RatingKey(1000000000000001)
 	calls := 0
 	known, progressive := true, false
-	media := frontend.MediaInfo{Container: "mp4", Duration: time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Height: 1080, Width: 1920, ProbedInterlaced: &progressive, DolbyVisionConfigurationPresent: &known, DolbyVisionBLCompatibilityIDPresent: &known, ColorTransfer: "bt709", HDR10Plus: &progressive}}}
+	media := frontend.MediaInfo{Container: "mp4", Duration: time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Height: 1080, Width: 1920, ProbedInterlaced: &progressive, DolbyVisionConfigurationPresent: &known, DolbyVisionBLCompatibilityIDPresent: &known, ColorTransfer: "bt709", HDR10Plus: &progressive}, {Type: "audio", Codec: "aac", Language: "eng", Channels: 2, Default: true}}}
 	sessions := testDetailSessions{embeddedDetailSessions: frontendtest.Sessions{}, detail: func(_ context.Context, req frontend.PlanRequest) (frontend.PlayPlan, error) {
 		calls++
 		if req.Intent.Estimate || req.Item != key {
@@ -242,7 +242,11 @@ func TestVersionsRouteProbesOneSource(t *testing.T) {
 		t.Fatalf("item browse probed: %d calls=%d %s", item.Code, calls, item.Body.String())
 	}
 	versions := call("/api/v2/catalog/items/" + ids.RatingKeyGUID(key) + "/versions")
-	if versions.Code != 200 || calls != 1 || !strings.Contains(versions.Body.String(), `"file_id"`) || !strings.Contains(versions.Body.String(), `"interlaced":false`) || strings.Contains(versions.Body.String(), `"file_name"`) {
+	if versions.Code != 200 || calls != 1 || !strings.Contains(versions.Body.String(), `"file_id"`) || !strings.Contains(versions.Body.String(), `"interlaced":false`) || !strings.Contains(versions.Body.String(), `"audio_tracks"`) || strings.Contains(versions.Body.String(), `"file_name"`) {
 		t.Fatalf("versions probe: %d calls=%d %s", versions.Code, calls, versions.Body.String())
+	}
+	watch := call("/api/v2/watch/" + ids.RatingKeyGUID(key))
+	if watch.Code != 200 || calls != 2 || !strings.Contains(watch.Body.String(), `"file_id"`) || !strings.Contains(watch.Body.String(), `"audio_tracks"`) || !strings.Contains(watch.Body.String(), `"duration_seconds"`) || strings.Contains(watch.Body.String(), `"versions":[]`) {
+		t.Fatalf("watch probe: %d calls=%d %s", watch.Code, calls, watch.Body.String())
 	}
 }
