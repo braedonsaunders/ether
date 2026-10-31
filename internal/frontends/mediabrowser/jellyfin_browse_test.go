@@ -143,6 +143,44 @@ func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 	requireJellyfinSpec(t, http.MethodGet, "/UserViews", w)
 }
 
+func TestJellyfinItemDetailServesCollectionFolder(t *testing.T) {
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+		},
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			return frontend.Page{Total: 6}, nil
+		},
+	}
+	inst := mountJellyfin(t, exp)
+	viewID, err := ids.GUID(ids.View, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items/"+viewID, nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var item map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &item) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if item["Id"] != viewID || item["Type"] != "CollectionFolder" || item["CollectionType"] != "movies" || item["Name"] != "Movies" || item["ChildCount"] != float64(6) {
+		t.Fatal(item["Id"], item["Type"], item["CollectionType"], item["Name"], item["ChildCount"])
+	}
+	missing := httptest.NewRecorder()
+	other, err := ids.GUID(ids.View, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/Items/"+other, nil)
+	req.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(missing, req)
+	if missing.Code != http.StatusNotFound {
+		t.Fatal(missing.Code, missing.Body.String())
+	}
+}
+
 func TestJellyfinBoxSetsAndPlaylists(t *testing.T) {
 	var got frontend.CollectionQuery
 	exp := frontendtest.Experience{CollectionsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, q frontend.CollectionQuery) (frontend.CollectionPage, error) {

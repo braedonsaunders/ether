@@ -125,6 +125,62 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 	}
 	return m
 }
+
+// collectionFolder is one library view. The id is the view GUID, not a title.
+func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view frontend.View) (map[string]any, bool) {
+	viewNum, e := ids.ParseDecimal(view.ID)
+	if e != nil {
+		return nil, false
+	}
+	viewID, e := ids.GUID(ids.View, viewNum)
+	if e != nil {
+		return nil, false
+	}
+	kind := "movies"
+	if view.Type == "show" {
+		kind = "tvshows"
+	}
+	item := map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true, "ServerId": i.info.ID, "SortName": view.Name, "DisplayPreferencesId": viewID, "CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}}
+	if i.protocol == "emby" {
+		i.embyViewDTO(item)
+	}
+	if i.protocol == "jellyfin" {
+		i.jellyfinCollectionFolder(item, viewID)
+		// ChildCount is the number of items this viewer can list in the view.
+		// A failed count stays absent rather than a fabricated zero.
+		page, err := i.host.Experience.LibraryItems(r.Context(), v, device(r), view.ID, frontend.ItemQuery{Limit: 1})
+		if err == nil {
+			item["ChildCount"] = page.Total
+		}
+	}
+	return item, true
+}
+
+func (i *instance) writeCollectionFolder(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, viewNum int64) {
+	if i.host.Experience == nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	vs, err := i.host.Experience.Views(r.Context(), v)
+	if err != nil {
+		http.Error(w, "Unavailable", 503)
+		return
+	}
+	want := ids.Decimal(viewNum)
+	for _, view := range vs {
+		if view.ID != want {
+			continue
+		}
+		item, ok := i.collectionFolder(r, v, view)
+		if !ok {
+			break
+		}
+		jsonReply(w, item)
+		return
+	}
+	http.NotFound(w, r)
+}
+
 func (i *instance) queryResult(items []any, total, offset int) map[string]any {
 	result := map[string]any{"Items": items, "TotalRecordCount": total}
 	if i.protocol == "jellyfin" {
@@ -151,30 +207,9 @@ func (i *instance) browseRoutes() error {
 		}
 		items := make([]any, 0, len(vs))
 		for _, view := range vs {
-			viewNum, e := ids.ParseDecimal(view.ID)
-			if e != nil {
+			item, ok := i.collectionFolder(r, v, view)
+			if !ok {
 				continue
-			}
-			viewID, e := ids.GUID(ids.View, viewNum)
-			if e != nil {
-				continue
-			}
-			kind := "movies"
-			if view.Type == "show" {
-				kind = "tvshows"
-			}
-			item := map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true, "ServerId": i.info.ID, "SortName": view.Name, "DisplayPreferencesId": viewID, "CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}}
-			if i.protocol == "emby" {
-				i.embyViewDTO(item)
-			}
-			if i.protocol == "jellyfin" {
-				i.jellyfinCollectionFolder(item, viewID)
-				// ChildCount is the number of items this viewer can list in the view.
-				// A failed count stays absent rather than a fabricated zero.
-				page, err := i.host.Experience.LibraryItems(r.Context(), v, device(r), view.ID, frontend.ItemQuery{Limit: 1})
-				if err == nil {
-					item["ChildCount"] = page.Total
-				}
 			}
 			items = append(items, item)
 		}
@@ -274,6 +309,10 @@ func (i *instance) browseRoutes() error {
 			return
 		}
 		wireID := r.PathValue("id")
+		if viewNum, e := ids.ParseGUID(ids.View, wireID); e == nil {
+			i.writeCollectionFolder(w, r, v, viewNum)
+			return
+		}
 		key, err := ids.ParseRatingKeyGUID(wireID)
 		versionID := ""
 		releaseID := ""
