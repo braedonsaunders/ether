@@ -388,6 +388,13 @@ func TestOwnedSourceCleanupUnknownAdmissionStaysProtected(t *testing.T) {
 	if h.engine.openCount() != before {
 		t.Fatal("uncertain payload admission called backend")
 	}
+	// Startup pin reconcile runs a recovery actor that shares this counter.
+	// Wait until that actor has finished so the count is only the admission.
+	waitFor(t, func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return !p.recoveryRunning && p.active == 1
+	})
 	p.mu.Lock()
 	queued, active := len(p.retired), p.active
 	p.mu.Unlock()
