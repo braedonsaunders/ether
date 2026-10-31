@@ -68,3 +68,48 @@ func TestPostgresLogicalRestoreDoesNotRewindIdentity(t *testing.T) {
 		t.Fatalf("restored identity rewound: %d %v", id, err)
 	}
 }
+
+func TestPostgresLogicalRestoreOverridesAlwaysIdentity(t *testing.T) {
+	u := pgURL(t)
+	ctx := context.Background()
+	regMu.Lock()
+	saved := migrations
+	migrations = append(append([]migration(nil), saved...), migration{
+		component: "zz_always_identity",
+		version:   1,
+		sql:       `CREATE TABLE always_identity(id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL)`,
+		overrides: map[Dialect]string{Postgres: `CREATE TABLE always_identity(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, label TEXT NOT NULL)`},
+	})
+	regMu.Unlock()
+	defer func() { regMu.Lock(); migrations = saved; regMu.Unlock() }()
+	src, err := OpenTestPostgres(ctx, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst, err := OpenTestPostgres(ctx, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	var id int64
+	if err := src.QueryRowContext(ctx, `INSERT INTO always_identity(label) VALUES('kept') RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	var dump bytes.Buffer
+	if err := ExportLogical(ctx, src, &dump); err != nil {
+		t.Fatal(err)
+	}
+	if err := ImportLogical(ctx, dst, bytes.NewReader(dump.Bytes())); err != nil {
+		t.Fatal(err)
+	}
+	var label string
+	var restored int64
+	if err := dst.QueryRowContext(ctx, `SELECT id, label FROM always_identity`).Scan(&restored, &label); err != nil || restored != id || label != "kept" {
+		t.Fatalf("restored always identity id=%d label=%q: %v", restored, label, err)
+	}
+	var next int64
+	if err := dst.QueryRowContext(ctx, `INSERT INTO always_identity(label) VALUES('next') RETURNING id`).Scan(&next); err != nil || next != id+1 {
+		t.Fatalf("identity after restore: %d %v", next, err)
+	}
+}

@@ -413,7 +413,7 @@ func ImportLogical(ctx context.Context, db *sql.DB, r io.Reader) (err error) {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+quoteIdent(head.Table)); err != nil {
 			return err
 		}
-		n, err := importRows(ctx, tx, dec, head, keptKinds, width, keep)
+		n, err := importRows(ctx, tx, dec, head, keptKinds, width, keep, d)
 		if err != nil {
 			return fmt.Errorf("restore %s: %w", head.Table, err)
 		}
@@ -482,14 +482,23 @@ func targetKinds(ctx context.Context, tx *sql.Tx, table string, cols []string) (
 	return out, nil
 }
 
-func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logicalTable, kinds []string, width int, keep []int) (int64, error) {
+func importRows(ctx context.Context, tx *sql.Tx, dec *logicalDecoder, head *logicalTable, kinds []string, width int, keep []int, d Dialect) (int64, error) {
 	quoted := make([]string, len(head.Columns))
 	marks := make([]string, len(head.Columns))
 	for i, c := range head.Columns {
 		quoted[i] = quoteIdent(c)
 		marks[i] = "?"
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO `+quoteIdent(head.Table)+`(`+strings.Join(quoted, ",")+`) VALUES(`+strings.Join(marks, ",")+`)`)
+	// A GENERATED ALWAYS identity column rejects an explicit id (428C9).
+	// The dump carries the ids the rest of the backup points at, so the
+	// restore supplies them. OVERRIDING SYSTEM VALUE is a no-op for columns
+	// that are not generated that way.
+	insert := `INSERT INTO ` + quoteIdent(head.Table) + `(` + strings.Join(quoted, ",") + `) `
+	if d == Postgres {
+		insert += `OVERRIDING SYSTEM VALUE `
+	}
+	insert += `VALUES(` + strings.Join(marks, ",") + `)`
+	stmt, err := tx.PrepareContext(ctx, insert)
 	if err != nil {
 		return 0, err
 	}
