@@ -35,8 +35,8 @@ func TestStreamMetadataMountedSourceFacts(t *testing.T) {
 			estimated            bool
 			titles, tags, ratios []string
 		}{
-			{"measured target facts", target, false, []string{"H264 - 320x180", "AAC - 1 ch - 48000 Hz"}, []string{"", ""}, []string{"", ""}},
-			{"multiple resolved tracks", multiple, false, []string{"H264 - 720x480", "AAC - 1 ch - 48000 Hz", "Commentary - OPUS - 2 ch", "English captions - SUBRIP"}, []string{"avc1", "mp4a", "", ""}, []string{"4:3", "", "", ""}},
+			{"measured target facts", target, false, []string{"H264 - 320x180", "AAC - 1 ch"}, []string{"", ""}, []string{"", ""}},
+			{"multiple resolved tracks", multiple, false, []string{"H264 - 720x480", "AAC - 1 ch", "Commentary - Opus - 2 ch", "English captions - Undefined - SUBRIP"}, []string{"avc1", "mp4a", "", ""}, []string{"4:3", "", "", ""}},
 			{"unknown", []frontend.StreamInfo{{Index: 3, Type: "video"}}, false, []string{""}, []string{""}, []string{""}},
 			{"estimated", multiple, true, nil, nil, nil},
 		} {
@@ -140,6 +140,40 @@ func TestStreamMetadataMountedSourceFacts(t *testing.T) {
 				after, _ := json.Marshal(media)
 				if !reflect.DeepEqual(before, after) {
 					t.Fatal("source facts mutated")
+				}
+			})
+		}
+	}
+}
+
+func TestDisplayTitleMatchesLabJellyfin(t *testing.T) {
+	yes := true
+	// Shapes read from the lab Jellyfin 12.4.0 library, plus the titled
+	// subtitle Swiftfin was showing as "full - SUBRIP".
+	cases := []struct {
+		name   string
+		stream frontend.StreamInfo
+		want   string
+	}{
+		{"sintel english subtitle", frontend.StreamInfo{Type: "subtitle", Codec: "subrip", Language: "eng"}, "English - SUBRIP"},
+		{"sintel german subtitle", frontend.StreamInfo{Type: "subtitle", Codec: "subrip", Language: "deu"}, "German - SUBRIP"},
+		{"titled subtitle keeps the language", frontend.StreamInfo{Type: "subtitle", Codec: "subrip", Language: "eng", Title: "full"}, "full - English - SUBRIP"},
+		{"forced titled subtitle", frontend.StreamInfo{Type: "subtitle", Codec: "subrip", Language: "eng", Title: "full", Forced: true}, "full - English - Forced - SUBRIP"},
+		{"default external subtitle", frontend.StreamInfo{Type: "subtitle", Codec: "subrip", Language: "eng", Default: true, External: true}, "English - Default - SUBRIP - External"},
+		{"hearing impaired", frontend.StreamInfo{Type: "subtitle", Codec: "ass", Language: "eng", HearingImpaired: &yes}, "English - Hearing Impaired - ASS"},
+		{"missing subtitle language", frontend.StreamInfo{Type: "subtitle", Codec: "subrip"}, "Undefined - SUBRIP"},
+		{"tears of steel audio", frontend.StreamInfo{Type: "audio", Codec: "mp3", Language: "eng", Channels: 2, ChannelLayout: "stereo", Default: true}, "English - MP3 - Stereo - Default"},
+		{"elephants dream titled audio", frontend.StreamInfo{Type: "audio", Codec: "aac", Profile: "LC", Language: "eng", Title: "Apple Sound Media Handler", Channels: 2, ChannelLayout: "stereo", Default: true}, "Apple Sound Media Handler - English - AAC - Stereo - Default"},
+		{"buck bunny undetermined audio", frontend.StreamInfo{Type: "audio", Codec: "mp3", Language: "und", Title: "GPAC ISO Audio Handler", Channels: 2, ChannelLayout: "stereo", Default: true}, "GPAC ISO Audio Handler - MP3 - Stereo - Default"},
+		{"sintel ac3 drops a repeated layout", frontend.StreamInfo{Type: "audio", Codec: "ac3", Language: "eng", Title: "AC3 5.1 @ 640 Kbps", Channels: 6, ChannelLayout: "5.1"}, "AC3 5.1 @ 640 Kbps - English - Dolby Digital"},
+		{"aac without a language", frontend.StreamInfo{Type: "audio", Codec: "aac", Channels: 2, ChannelLayout: "stereo", Default: true}, "AAC - Stereo - Default"},
+	}
+	for _, protocol := range []frontend.Protocol{"jellyfin", "emby"} {
+		for _, tc := range cases {
+			t.Run(string(protocol)+"/"+tc.name, func(t *testing.T) {
+				dto := (&instance{protocol: protocol}).mediaStreams([]frontend.StreamInfo{tc.stream})[0].(map[string]any)
+				if dto["DisplayTitle"] != tc.want {
+					t.Fatalf("DisplayTitle=%#v, want %q", dto["DisplayTitle"], tc.want)
 				}
 			})
 		}
