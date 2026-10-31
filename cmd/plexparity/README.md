@@ -54,6 +54,14 @@ per half.
 - Subtitle sidecar location: 50 and 50 (`tracks:probe`, `tracks:selected`).
   Direct play serves the embedded text track as a sidecar (`3654964cc`),
   so `location` is `sidecar` and the stream key is `/library/streams/...`.
+  Segmented Matroska text is different (`f8f762a7b`): the decision is
+  `copy` with `location="segments-av"` and no sidecar key, because Plex
+  tvOS reads that track from the segments. MPEG-TS stays a sidecar.
+  The `14a6b0890`..`f8f762a7b` corpus (one model, exit 0) did not select
+  a Matroska text track, so there is no response pair.
+  `TestMatroskaTextSubtitleIsInBand` and
+  `TestIntegrationMatroskaSubtitleSeekMatchesVideo` cover the shape and
+  the seek clock.
 - `/accounts` subtitleMode 0 to 2: 10 and 10. The parity seed stores
   subtitle mode `always` (`feaa49f10`). Untouched accounts stay manual;
   this fixture does not.
