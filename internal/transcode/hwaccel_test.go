@@ -227,3 +227,52 @@ func TestDetectVAAPIScaleProbe(t *testing.T) {
 		})
 	}
 }
+
+// Issue 13: Intel HD 620 with LP-only VAAPI encoding (or Debian's free iHD
+// driver) supports CQP only and rejects QVBR/VBR with "Driver does not
+// support QVBR RC mode (supported modes: CQP)". Startup probes the supported
+// rate-control modes and records the best working mode for quality and
+// explicit-bitrate runs.
+func TestDetectVAAPIRCModeProbeAndTonemapProbe(t *testing.T) {
+	f := testFeatures()
+	f.filters = map[string]bool{"scale_vaapi": true, "tonemap_vaapi": true}
+
+	t.Run("CQP-only driver selects CQP and disables unsupported tonemap_vaapi", func(t *testing.T) {
+		fr := &fakeRunner{failEncode: map[string]bool{
+			"h264_nvenc":    true,
+			"h264_qsv":      true,
+			"rc:QVBR":       true,
+			"rc:VBR":        true,
+			"rc:CBR":        true,
+			"tonemap_vaapi": true,
+		}}
+		got := detector(fr, "linux").detect(context.Background(), "auto", "/dev/dri/renderD128", f)
+		if got.Name != AccelVAAPI {
+			t.Fatalf("got %+v", got)
+		}
+		if got.VAAPIQualityRC["h264_vaapi"] != "CQP" || got.VAAPIBitrateRC["h264_vaapi"] != "CQP" {
+			t.Fatalf("VAAPI RC modes = quality:%v bitrate:%v, want CQP/CQP", got.VAAPIQualityRC, got.VAAPIBitrateRC)
+		}
+		if got.NoGPUScale {
+			t.Fatalf("NoGPUScale = true, want false")
+		}
+		if !got.NoGPUTonemap {
+			t.Fatalf("NoGPUTonemap = false, want true when tonemap_vaapi fails")
+		}
+	})
+
+	t.Run("VBR-capable driver without QVBR selects VBR for quality and bitrate", func(t *testing.T) {
+		fr := &fakeRunner{failEncode: map[string]bool{
+			"h264_nvenc": true,
+			"h264_qsv":   true,
+			"rc:QVBR":    true,
+		}}
+		got := detector(fr, "linux").detect(context.Background(), "auto", "/dev/dri/renderD128", f)
+		if got.VAAPIQualityRC["h264_vaapi"] != "VBR" || got.VAAPIBitrateRC["h264_vaapi"] != "VBR" {
+			t.Fatalf("VAAPI RC modes = quality:%v bitrate:%v, want VBR/VBR", got.VAAPIQualityRC, got.VAAPIBitrateRC)
+		}
+		if got.NoGPUTonemap {
+			t.Fatalf("NoGPUTonemap = true, want false")
+		}
+	})
+}
