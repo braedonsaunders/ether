@@ -58,7 +58,6 @@ export function CatalogSettings() {
             groups={[...CATALOG, HomeReleaseSettings, UpcomingEpisodeSettings]}
             label={t("Catalog")}
             omit={["tmdbKey"]}
-            showAdvanced={false}
             before={(draft) => <TmdbAccount apiKey={draft.tmdbKey} />}
           />
         </div>

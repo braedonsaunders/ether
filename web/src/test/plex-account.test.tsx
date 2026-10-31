@@ -27,7 +27,9 @@ describe("plex claim actions", () => {
     expect(await screen.findByText("WXYZ", {}, WAIT)).toBeInTheDocument();
     await waitFor(() => expect(calls(fake, "POST", "/plex/claim")).toHaveLength(1), WAIT);
     expect(calls(fake, "POST", "/plex/pin")).toHaveLength(1);
-    expect(await screen.findByText("Claimed by owner.", {}, WAIT)).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText("Claimed by the Plex account owner.", {}, WAIT)).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByRole("switch", { name: "Claimed" })).toBeNull();
     expect(screen.queryByLabelText("Owner token")).toBeNull();
     open.mockRestore();
@@ -39,7 +41,7 @@ describe("plex claim actions", () => {
     const dialog = await screen.findByRole("dialog", {}, WAIT);
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(calls(fake, "PUT", "/config/plex")).toHaveLength(0);
-    expect(screen.getByText("Claimed by owner.")).toBeInTheDocument();
+    expect(screen.getAllByText("Claimed by the Plex account owner.").length).toBeGreaterThan(0);
   });
 
   it("signs the server out after confirmation", async () => {

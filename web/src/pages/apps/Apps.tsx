@@ -1,17 +1,27 @@
-import { Badge, Button, Input, confirmDialog } from "@braedonsaunders/appkit-ui";
+import {
+  Badge,
+  Button,
+  Input,
+  SettingsSection,
+  Switch,
+  confirmDialog,
+} from "@braedonsaunders/appkit-ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
 import { EmbyMark, JellyfinMark, PlexMark } from "../../components/integration-brands";
-import { DomainPage, Section, useRouteTab } from "../../components/layout";
+import { MoreOptions } from "../../components/ConfigSection";
+import { DomainPage, useRouteTab } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
+import { SettingsRow } from "../../components/SettingsRow";
 import { t } from "../../i18n";
 import { API_BASE, api, apiBlob, apiFetch } from "../../lib/api";
 import { useAsync, useInterval } from "../../lib/hooks";
 import { viewerStatus } from "../viewers/ViewerStatus";
 import { PlexApp } from "./PlexApp";
 import { appLabel, appPath, appPurpose } from "./catalog";
+import { awaySummary, homeSummary } from "./reachability";
 
 type FrontendInfo = {
   descriptor: {
@@ -63,16 +73,6 @@ function appLogo(id: string): ReactNode | undefined {
   }
 }
 
-function reachability(value: string) {
-  switch (value) {
-    case "reachable":
-      return t("Reachable");
-    case "unreachable":
-      return t("Unreachable");
-    default:
-      return t("Unknown");
-  }
-}
 function connectionStep(code: string) {
   switch (code) {
     case "openApp":
@@ -191,77 +191,155 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
   if (state.error)
     return hidden ? null : <ErrorPanel error={state.error} onRetry={() => void state.reload()} />;
   if (!draft) return hidden ? null : <LoadingRows />;
+  const named = ["jellyfin", "emby", "silo", "dlna"].includes(id);
+  const more: {
+    key: "discovery" | "quickConnect" | "publicViewerPicker";
+    label: string;
+    help: string;
+  }[] = [];
+  if (named) {
+    more.push({
+      key: "discovery",
+      label: t("Let apps find this server"),
+      help: t("Apps on your network can find this server without typing an address."),
+    });
+  }
+  if (id === "jellyfin") {
+    more.push({
+      key: "quickConnect",
+      label: t("Quick Connect"),
+      help: t("A viewer approves a short code in the Jellyfin app instead of typing a password."),
+    });
+  }
+  if (id === "jellyfin" || id === "emby") {
+    more.push({
+      key: "publicViewerPicker",
+      label: t("Show local viewer names on the sign-in screen"),
+      help: t("Leave this off on a network you do not trust."),
+    });
+  }
+  const shared =
+    id === "stremio"
+      ? t("Stremio uses an addon address from your account page. It does not have its own port.")
+      : id === "webdav"
+        ? t("Other apps open this library as files. The address is on your account page.")
+        : id === "m3u"
+          ? t("Live TV apps use a playlist from your account page.")
+          : "";
   return (
     <>
       <div hidden={hidden}>
-        <Section title={t("Settings")} description={t("Changes apply to this app.")}>
-          {["jellyfin", "emby", "silo", "dlna"].includes(id) && (
-            <label className="flex flex-col gap-1 text-sm">
-              {t("Server name")}
-              <Input
-                value={draft.serverName ?? ""}
-                onChange={(e) => setDraft({ ...draft, serverName: e.currentTarget.value })}
-              />
-            </label>
-          )}
-          {draft.port !== undefined && (
-            <label className="flex flex-col gap-1 text-sm">
-              {t("Port")}
-              <Input
-                type="number"
-                min={1}
-                max={65535}
-                value={draft.port}
-                onChange={(e) => setDraft({ ...draft, port: Number(e.currentTarget.value) })}
-              />
-            </label>
-          )}
-          {["jellyfin", "emby", "silo", "dlna"].includes(id) && (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={draft.discovery ?? false}
-                onChange={(e) => setDraft({ ...draft, discovery: e.currentTarget.checked })}
-              />
-              {t("Discovery")}
-            </label>
-          )}
-          {(id === "stremio" || id === "webdav") && draft.port === undefined && (
-            <p>{t("This app uses the main server address.")}</p>
-          )}
-          {id === "jellyfin" && (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={draft.quickConnect ?? false}
-                onChange={(e) => setDraft({ ...draft, quickConnect: e.currentTarget.checked })}
-              />
-              {t("Quick Connect")}
-            </label>
-          )}
-          {(id === "jellyfin" || id === "emby") && (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={draft.publicViewerPicker ?? false}
-                onChange={(e) =>
-                  setDraft({ ...draft, publicViewerPicker: e.currentTarget.checked })
+        {shared ? (
+          <SettingsSection title={t("Connect")} description={shared}>
+            <div className="px-5 py-3">
+              <Link className="text-primary underline" to="/me">
+                {t("Open your account")}
+              </Link>
+            </div>
+          </SettingsSection>
+        ) : null}
+        {named || draft.port !== undefined ? (
+          <SettingsSection
+            title={id === "dlna" ? t("What the TV shows") : t("Find this server")}
+            description={
+              id === "dlna"
+                ? t("DLNA players browse the library as one viewer.")
+                : t("How {app} apps find this server.", { app: protocolName(id) })
+            }
+          >
+            {named && id !== "dlna" ? (
+              <SettingsRow
+                title={<label htmlFor={`${id}-name`}>{t("Server name")}</label>}
+                description={t("The name apps show for this server.")}
+                control={
+                  <Input
+                    id={`${id}-name`}
+                    aria-label={t("Server name")}
+                    value={draft.serverName ?? ""}
+                    onChange={(e) => setDraft({ ...draft, serverName: e.currentTarget.value })}
+                  />
                 }
               />
-              {t("Show local viewer names on the sign-in screen")}
-            </label>
-          )}
-          {id === "dlna" && (
-            <DLNAViewer
-              value={draft.viewerId}
-              onChange={(viewerId) => setDraft((old) => (old ? { ...old, viewerId } : old))}
-            />
-          )}
-        </Section>
+            ) : null}
+            {draft.port !== undefined ? (
+              <SettingsRow
+                title={<label htmlFor={`${id}-port`}>{t("Port")}</label>}
+                description={portHelp(id)}
+                control={
+                  <Input
+                    id={`${id}-port`}
+                    aria-label={t("Port")}
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={draft.port}
+                    onChange={(e) => setDraft({ ...draft, port: Number(e.currentTarget.value) })}
+                  />
+                }
+              />
+            ) : null}
+            {id === "dlna" ? (
+              <DLNAViewer
+                value={draft.viewerId}
+                onChange={(viewerId) => setDraft((old) => (old ? { ...old, viewerId } : old))}
+              />
+            ) : null}
+            {more.length ? (
+              <MoreOptions
+                label={t("More options: {title}", {
+                  title: id === "dlna" ? t("What the TV shows") : t("Find this server"),
+                })}
+              >
+                {more.map((field) => (
+                  <SettingsRow
+                    key={field.key}
+                    title={field.label}
+                    description={field.help}
+                    control={
+                      <Switch
+                        checked={Boolean(draft[field.key])}
+                        aria-label={field.label}
+                        onChange={(e) =>
+                          setDraft({ ...draft, [field.key]: e.currentTarget.checked })
+                        }
+                      />
+                    }
+                  />
+                ))}
+              </MoreOptions>
+            ) : null}
+          </SettingsSection>
+        ) : null}
       </div>
       <SaveBar dirty={dirty} saving={saving} onSave={save} onDiscard={reset} error={error} />
     </>
   );
+}
+
+function protocolName(id: string): string {
+  switch (id) {
+    case "jellyfin":
+      return "Jellyfin";
+    case "emby":
+      return "Emby";
+    case "silo":
+      return "Silo";
+    default:
+      return id;
+  }
+}
+
+function portHelp(id: string): string {
+  switch (id) {
+    case "jellyfin":
+      return t("Jellyfin apps expect 8096. Change it only if that port is already in use.");
+    case "emby":
+      return t("Emby apps expect 8097. Change it only if that port is already in use.");
+    case "silo":
+      return t("Silo apps expect 8090. Change it only if that port is already in use.");
+    default:
+      return t("Change this only if the usual port is already in use.");
+  }
 }
 
 function DLNAViewer({ value, onChange }: { value?: number; onChange: (id?: number) => void }) {
@@ -332,21 +410,24 @@ function AppStatus({ info }: { info: FrontendInfo }) {
 }
 
 function AppDetail({ info }: { info: FrontendInfo }) {
+  const home = homeSummary(info.status);
+  const away = awaySummary(info.status, { homeNetwork: true });
   return (
-    <Section title={t("Status")}>
-      {info.status.addresses?.length ? <p>{info.status.addresses.join(", ")}</p> : null}
-      <p>
-        {t("LAN: {lan} · WAN: {wan}", {
-          lan: reachability(info.status.lan),
-          wan: reachability(info.status.wan),
-        })}
-      </p>
-      {info.status.error ? <p className="text-danger">{info.status.error}</p> : null}
+    <SettingsSection title={t("Status")}>
+      <SettingsRow title={home.title} description={home.detail} />
+      <SettingsRow title={away.title} description={away.detail} />
+      {info.status.error ? (
+        <p className="px-5 py-3 text-sm text-danger">{info.status.error}</p>
+      ) : null}
       {info.status.warnings?.map((warning) => (
-        <p key={warning}>{warning}</p>
+        <p key={warning} className="px-5 py-3 text-sm text-fg-muted">
+          {warning}
+        </p>
       ))}
-      <ConnectDevice info={info} />
-    </Section>
+      <div className="px-5 py-3">
+        <ConnectDevice info={info} />
+      </div>
+    </SettingsSection>
   );
 }
 
@@ -455,9 +536,8 @@ export default function Apps() {
             ))}
           </div>
         ))}
-      {tab === "plex" && plexInfo ? <AppDetail info={plexInfo} /> : null}
       {(visited.has("plex") || showPlex) && (
-        <PlexApp hidden={tab !== "plex"} section={routeSection} />
+        <PlexApp hidden={tab !== "plex"} section={routeSection} status={plexInfo?.status} />
       )}
       {tabs
         .filter((item) => !["overview", "plex"].includes(item.key) && visited.has(item.key))

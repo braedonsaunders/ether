@@ -10,7 +10,9 @@ describe("Apps Plex placement", () => {
     expect(
       await screen.findByRole("button", { name: "Sign out of Plex" }, WAIT),
     ).toBeInTheDocument();
-    expect(screen.getByText("127.0.0.1:32400")).toBeInTheDocument();
+    expect(screen.getByText(/192\.168\.1\.20:32400/)).toBeInTheDocument();
+    expect(screen.queryByText(/127\.0\.0\.1/)).not.toBeInTheDocument();
+    expect(screen.getAllByText("Claimed by the Plex account owner.").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Owner token")).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "Claimed" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Remote access" }));
@@ -24,7 +26,7 @@ describe("Apps Plex placement", () => {
       expect(screen.queryByLabelText("Allow remote access")).not.toBeInTheDocument(),
     );
     expect(screen.queryByRole("spinbutton", { name: "Port" })).not.toBeInTheDocument();
-    expect(screen.queryByText("127.0.0.1:32400")).not.toBeInTheDocument();
+    expect(screen.queryByText(/192\.168\.1\.20:32400/)).not.toBeInTheDocument();
     expect(screen.queryByText(/LAN:/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Connect a device" })).not.toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Plex enabled" })).toBeInTheDocument();
