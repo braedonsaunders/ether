@@ -42,7 +42,7 @@ if [ "$expect_early_resume" = 1 ] && [ "$infuse_only" != 1 ]; then echo 'early-r
 # that checkout does not already contain it.
 #   baseline-seam.patch         determinism seams (clock, fixtures) for older trees
 #   baseline-diagnostics.patch  8862fd78d encoder nil-deref; removes the panic only
-#   baseline-warm-retain.patch  nil hook so fixture probes survive the 32-entry cap
+#   baseline-warm-retain.patch  nil hook so fixture probes survive the 128-entry cap
 for tree in baseline candidate; do
  if (cd "$root/$tree" && git apply --check "$root/harness/baseline-seam.patch" >/dev/null 2>&1); then
   (cd "$root/$tree" && git apply "$root/harness/baseline-seam.patch")

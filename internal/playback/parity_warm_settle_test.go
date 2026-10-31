@@ -164,7 +164,7 @@ func TestParityProbeNowSurvivesTheWarmCap(t *testing.T) {
 	}
 	done := make(chan struct{})
 	close(done)
-	for i := 0; i < 40; i++ {
+	for i := 0; i < 128; i++ {
 		k := core.MovieKey(20000 + int64(i))
 		m.warm[identity{userID: 1, clientID: "parity-owner", key: k}] = &warmEntry{done: done, expires: time.Now().Add(time.Minute)}
 	}
