@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 	"testing"
 	"time"
@@ -254,11 +255,24 @@ func runPerfScale(t *testing.T, name string, scale perfharness.Scale) []*perfhar
 	r := perfharness.NewRunner(port, true, viewers)
 	// A request this slow has already failed the ceiling; do not wait longer.
 	r.SetTimeout(15 * time.Second)
+	if path := os.Getenv("ETHER_PERF_GATE_CPUPROFILE"); path != "" && name == "large" {
+		// The large replay alone, without the fixture's generation.
+		if f, err := os.Create(path); err == nil {
+			if pprof.StartCPUProfile(f) == nil {
+				defer func() { pprof.StopCPUProfile(); f.Close() }()
+			}
+		}
+	}
 	r.Sequential(ctx, "cold", viewers[:1], cs)
 	for range 2 {
 		r.Sequential(ctx, "warm", viewers[:1], cs)
 	}
 	r.Sequential(ctx, "warm", viewers[1:2], viewing)
+	if fi, err := os.Stat(filepath.Join(dir, "ether.db-wal")); err == nil {
+		// Every page read searches the WAL index, so a WAL that cannot
+		// restart slows every query.
+		t.Logf("%s: WAL at the end of the replay: %d MB", name, fi.Size()>>20)
+	}
 	server.Close()
 	a.Close()
 	if keep := os.Getenv("ETHER_PERF_GATE_KEEP"); keep != "" {

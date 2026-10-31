@@ -21,6 +21,10 @@ import (
 // sets it; production leaves it unset.
 const PerfTraceEnv = "ETHER_PERF_TRACE"
 
+// PerfTraceDepthEnv sets how many callers each traced statement's site
+// records (default 1).
+const PerfTraceDepthEnv = "ETHER_PERF_TRACE_DEPTH"
+
 // PerfTagHeader is copied into the trace record of the request carrying it.
 const PerfTagHeader = "X-Ether-Perf-Tag"
 
@@ -56,6 +60,9 @@ func newPerfObserver(log *slog.Logger) *perfObserver {
 		} else {
 			p.trace, p.encoder = f, json.NewEncoder(f)
 			store.CaptureCallSites(true)
+			if depth, err := strconv.Atoi(os.Getenv(PerfTraceDepthEnv)); err == nil {
+				store.SetCallSiteDepth(depth)
+			}
 		}
 	}
 	return p

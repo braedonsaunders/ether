@@ -295,6 +295,7 @@ func infuseJellyfin() Client {
 		{Name: "movies deep SortName", Class: classBrowse, Path: "/Items?excludeLocationTypes=Virtual&fields=" + f + "&includeItemTypes=Movie&limit=50&parentId={moviesView}&recursive=true&sortBy=SortName&sortOrder=Ascending&startIndex=6000&userId={userId}"},
 		{Name: "movies p1 DateCreated", Class: classBrowse, Path: "/Items?excludeLocationTypes=Virtual&fields=" + f + "&includeItemTypes=Movie&limit=50&parentId={moviesView}&recursive=true&sortBy=DateCreated%2CSortName&sortOrder=Descending&startIndex=0&userId={userId}"},
 		{Name: "series p1 SortName", Class: classBrowse, Path: "/Items?excludeLocationTypes=Virtual&fields=" + f + "&includeItemTypes=Series&limit=50&parentId={showsView}&recursive=true&sortBy=SortName&sortOrder=Ascending&startIndex=0&userId={userId}", Discover: discoverMBItem("seriesId", "Series")},
+		{Name: "episodes recursive MediaSources", Class: classBrowse, Path: "/Users/{userId}/Items?IncludeItemTypes=Episode&Recursive=true&Fields=MediaSources&Limit=400"},
 		{Name: "personal library p1", Class: classBrowse, Path: "/Items?excludeLocationTypes=Virtual&fields=" + f + "&limit=50&parentId={personalView}&recursive=true&sortBy=SortName&sortOrder=Ascending&startIndex=0&userId={userId}"},
 		{Name: "movie detail", Class: classDetail, Path: "/Items/{movieId}?fields=" + f + "&userId={userId}"},
 		{Name: "movie LocalTrailers", Class: classDetail, Path: "/Items/{movieId}/LocalTrailers?fields=DateCreated%2CEtag%2CMediaSources%2CAlternateMediaSources%2CParentId%2CPath%2CSortName&userId={userId}"},

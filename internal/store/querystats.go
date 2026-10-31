@@ -108,33 +108,46 @@ func recorderFrom(ctx context.Context) recorder {
 
 var captureSites atomic.Bool
 
+var siteDepth atomic.Int32
+
 // CaptureCallSites makes every statement's first execution in a QueryStats
 // record where it was issued. It costs a stack walk per new statement, so
 // only the performance harness turns it on.
 func CaptureCallSites(on bool) { captureSites.Store(on) }
 
+// SetCallSiteDepth records up to depth callers per site (default 1), to
+// find which caller issues a statement once per item.
+func SetCallSiteDepth(depth int) { siteDepth.Store(int32(max(depth, 1))) }
+
 // callSite returns "file:line" of the first frame outside the runtime,
-// database/sql and this package.
+// database/sql and this package, followed by its callers up to the site
+// depth, each after " < ".
 func callSite() string {
-	pcs := make([]uintptr, 32)
+	pcs := make([]uintptr, 48)
 	n := runtime.Callers(3, pcs)
 	frames := runtime.CallersFrames(pcs[:n])
+	depth := max(int(siteDepth.Load()), 1)
+	var out []string
 	for {
 		f, more := frames.Next()
 		fn := f.Function
-		if !strings.HasPrefix(fn, "runtime.") && !strings.HasPrefix(fn, "database/sql.") && !strings.HasPrefix(fn, storePackage) {
+		if len(out) > 0 || (!strings.HasPrefix(fn, "runtime.") && !strings.HasPrefix(fn, "database/sql.") && !strings.HasPrefix(fn, storePackage)) {
 			file := f.File
 			if i := strings.Index(file, "/internal/"); i >= 0 {
 				file = file[i+1:]
 			} else if i := strings.Index(file, "/cmd/"); i >= 0 {
 				file = file[i+1:]
 			}
-			return file + ":" + strconv.Itoa(f.Line)
+			out = append(out, file+":"+strconv.Itoa(f.Line))
+			if len(out) == depth {
+				break
+			}
 		}
 		if !more {
-			return ""
+			break
 		}
 	}
+	return strings.Join(out, " < ")
 }
 
 const storePackage = "github.com/braedonsaunders/ether/internal/store."
