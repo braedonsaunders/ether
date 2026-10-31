@@ -38,6 +38,11 @@ type Editions interface {
 	Editions(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]Version, error)
 }
 
+// EditionBatch resolves local copies for a page in one lookup.
+type EditionBatch interface {
+	EditionsMany(context.Context, *core.Viewer, core.Device, []core.RatingKey) (map[core.RatingKey][]Version, error)
+}
+
 // VersionHandleBatch is an optional bounded batch capability. It validates the
 // whole requested offer set once and issues all handles atomically.
 type VersionHandleBatch interface {

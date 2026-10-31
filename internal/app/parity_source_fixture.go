@@ -164,6 +164,6 @@ func (p *parityMedia) Size() int64                               { return p.size
 func (p *parityMedia) Name() string                              { return "fixture.mp4" }
 func (p *parityMedia) ReleaseID() string                         { return p.id }
 func (p *parityMedia) LocalFile() *os.File                       { return p.File }
-func parityIndexer(core.Indexer, string) core.Indexer            { return paritySource{} }
+func parityIndexer(_ core.Indexer, dir string) core.Indexer      { return paritySource{dir: dir} }
 func parityHealth(core.HealthChecker, string) core.HealthChecker { return paritySource{} }
 func parityEngine(_ core.Engine, dir string) core.Engine         { return paritySource{dir: dir} }

@@ -39,12 +39,20 @@ type scorecardSource struct{ dir string }
 // list looks up every title, and re-reading the manifest each time is wasted
 // work even when the file itself is small. The cache reloads when the file
 // changes.
+type scorecardLoc struct {
+	tmdb    int64
+	season  int
+	episode int
+}
+
 var scorecardFileCache = struct {
 	mu    sync.Mutex
 	dir   string
 	mod   time.Time
 	size  int64
 	files []ScorecardFile
+	byID  map[string]ScorecardFile
+	byLoc map[scorecardLoc][]ScorecardFile
 }{}
 
 func (s scorecardSource) files() ([]ScorecardFile, error) {
@@ -66,15 +74,24 @@ func (s scorecardSource) files() ([]ScorecardFile, error) {
 	if err = json.Unmarshal(b, &files); err != nil {
 		return nil, err
 	}
+	byID := make(map[string]ScorecardFile, len(files))
+	byLoc := make(map[scorecardLoc][]ScorecardFile, len(files))
+	for _, file := range files {
+		byID[scorecardReleaseID(file)] = file
+		loc := scorecardLoc{tmdb: file.TMDB, season: file.Season, episode: file.Episode}
+		byLoc[loc] = append(byLoc[loc], file)
+	}
 	scorecardFileCache.dir = s.dir
 	scorecardFileCache.mod = st.ModTime()
 	scorecardFileCache.size = st.Size()
 	scorecardFileCache.files = files
+	scorecardFileCache.byID = byID
+	scorecardFileCache.byLoc = byLoc
 	return files, nil
 }
 func (s scorecardSource) Name() string { return "scorecard local files" }
 func (s scorecardSource) Search(_ context.Context, q core.SearchRequest) ([]core.Release, error) {
-	files, e := s.files()
+	files, e := s.located(q.IDs.TMDB, q.Season, q.Episode)
 	if e != nil {
 		return nil, e
 	}
@@ -116,17 +133,101 @@ func (s scorecardSource) Check(_ context.Context, b []byte) (bool, error) {
 	_, e := s.lookup(string(b))
 	return e == nil, e
 }
-func (s scorecardSource) lookup(id string) (ScorecardFile, error) {
-	files, e := s.files()
-	if e != nil {
-		return ScorecardFile{}, e
+func (s scorecardSource) located(tmdb int64, season, episode int) ([]ScorecardFile, error) {
+	if _, err := s.files(); err != nil {
+		return nil, err
 	}
-	for _, f := range files {
-		if scorecardReleaseID(f) == id {
-			return f, nil
+	scorecardFileCache.mu.Lock()
+	defer scorecardFileCache.mu.Unlock()
+	if scorecardFileCache.dir != s.dir {
+		return nil, fmt.Errorf("scorecard manifest changed")
+	}
+	return append([]ScorecardFile(nil), scorecardFileCache.byLoc[scorecardLoc{tmdb: tmdb, season: season, episode: episode}]...), nil
+}
+
+func scorecardEditionVariants(dir string, titles []core.Title) (map[core.RatingKey][]core.ReleaseVariant, error) {
+	out := map[core.RatingKey][]core.ReleaseVariant{}
+	if len(titles) == 0 {
+		return out, nil
+	}
+	src := scorecardSource{dir}
+	if _, err := src.files(); err != nil {
+		return nil, err
+	}
+	type match struct {
+		title core.Title
+		file  ScorecardFile
+	}
+	var matches []match
+	scorecardFileCache.mu.Lock()
+	if scorecardFileCache.dir != dir {
+		scorecardFileCache.mu.Unlock()
+		return nil, fmt.Errorf("scorecard manifest changed")
+	}
+	for _, title := range titles {
+		if title.Type != core.TypeMovie && title.Type != core.TypeEpisode {
+			continue
+		}
+		ids := title.IDs
+		if title.Type == core.TypeEpisode {
+			ids = title.ShowIDs
+		}
+		loc := scorecardLoc{tmdb: ids.TMDB, season: title.Season, episode: title.Episode}
+		for _, file := range scorecardFileCache.byLoc[loc] {
+			if file.TMDB != ids.TMDB || file.Season != title.Season || file.Episode != title.Episode || (title.Type == core.TypeMovie && file.Episode != 0) || (title.Type == core.TypeEpisode && file.Episode == 0) {
+				continue
+			}
+			matches = append(matches, match{title: title, file: file})
 		}
 	}
-	return ScorecardFile{}, fmt.Errorf("unknown scorecard release")
+	scorecardFileCache.mu.Unlock()
+	for _, item := range matches {
+		size := int64(0)
+		if item.file.Media != nil && item.file.Media.Size > 0 {
+			size = item.file.Media.Size
+		} else {
+			stat, err := os.Stat(item.file.Path)
+			if err != nil {
+				return nil, err
+			}
+			size = stat.Size()
+		}
+		info := item.file.Info
+		info.Title = item.title.Title
+		info.Year = item.title.Year
+		if item.title.Type == core.TypeEpisode {
+			info.Seasons = []int{item.title.Season}
+			info.Episodes = []int{item.title.Episode}
+		}
+		id := scorecardReleaseID(item.file)
+		name := fmt.Sprintf("%s %d %dp WEB-DL %s %s", item.title.Title, item.title.Year, info.Height, info.VideoCodec, info.AudioCodec)
+		if item.title.Type == core.TypeEpisode {
+			name = fmt.Sprintf("%s S%02dE%02d %dp WEB-DL %s %s", item.title.Title, item.title.Season, item.title.Episode, info.Height, info.VideoCodec, info.AudioCodec)
+		}
+		rel := core.Release{ID: id, GUID: id, Indexer: src.Name(), Name: name, Size: size, TitleIDs: item.title.IDs, Info: info, PubDate: time.Now()}
+		if item.title.Type == core.TypeEpisode {
+			rel.TitleIDs = item.title.ShowIDs
+		}
+		media := core.MediaInfo{Size: size}
+		if item.file.Media != nil {
+			media = *item.file.Media
+		}
+		out[item.title.Key] = append(out[item.title.Key], core.ReleaseVariant{ID: id, Label: name, Release: rel, Info: media})
+	}
+	return out, nil
+}
+
+func (s scorecardSource) lookup(id string) (ScorecardFile, error) {
+	if _, err := s.files(); err != nil {
+		return ScorecardFile{}, err
+	}
+	scorecardFileCache.mu.Lock()
+	defer scorecardFileCache.mu.Unlock()
+	file, ok := scorecardFileCache.byID[id]
+	if !ok || scorecardFileCache.dir != s.dir {
+		return ScorecardFile{}, fmt.Errorf("unknown scorecard release")
+	}
+	return file, nil
 }
 func (s scorecardSource) Open(_ context.Context, id string, b []byte) (core.MediaSource, error) {
 	if string(b) != id {

@@ -182,7 +182,7 @@ func (i *instance) browseRoutes() error {
 	}
 	rowHandler := func(purpose frontend.RowPurpose, asArray bool) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			r = withListMediaEstimate(withSeriesStudioCache(r))
+			r = withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r)))
 			v, _, err := i.viewer(r)
 			if err != nil || v == nil {
 				http.Error(w, "Unauthorized", 401)
@@ -234,7 +234,7 @@ func (i *instance) browseRoutes() error {
 				return
 			}
 			items := make([]any, 0, len(page))
-			images := i.gridImages(r, keys)
+			images := i.gridImagesFor(r, page)
 			paths := i.virtualPaths(r, v, keys)
 			for _, title := range page {
 				item := i.itemDTO(title, state[title.Key])
@@ -528,8 +528,15 @@ func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.View
 	i.pageWithVersion(w, r, v, page, offset, 0, "")
 }
 
+func withBrowseMemo(r *http.Request) *http.Request {
+	if r == nil {
+		return r
+	}
+	return r.WithContext(frontend.WithRequestMemo(r.Context()))
+}
+
 func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, page frontend.Page, offset int, anchor frontend.RatingKey, version string) {
-	r = withListMediaEstimate(withSeriesStudioCache(r))
+	r = withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r)))
 	keys := make([]frontend.RatingKey, 0, len(page.Items))
 	for _, title := range page.Items {
 		keys = append(keys, title.Key)
@@ -540,8 +547,9 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 		return
 	}
 	items := make([]any, 0, len(page.Items))
-	images := i.gridImages(r, keys)
+	images := i.gridImagesFor(r, page.Items)
 	paths := i.virtualPaths(r, v, keys)
+	r = i.withPageEditions(r, v, keys)
 	for _, title := range page.Items {
 		editions := i.jellyfinEditions(r, v, title)
 		if len(editions) > 1 {

@@ -65,7 +65,7 @@ func siloOverlay(version frontend.Version) (map[string]any, int) {
 				languages[stream.Language] = struct{}{}
 			}
 			if _, ok := summary["audio"]; !ok && stream.Codec != "" {
-				summary["audio"] = stream.Codec
+				summary["audio"] = codecBadge(stream.Codec)
 			}
 			if _, ok := summary["audio_channels"]; !ok {
 				if badge := channelBadge(stream.Channels, stream.ChannelLayout); badge != "" {
@@ -84,7 +84,7 @@ func siloOverlay(version frontend.Version) (map[string]any, int) {
 			}
 		}
 		if video.Codec != "" {
-			summary["video_codec"] = video.Codec
+			summary["video_codec"] = codecBadge(video.Codec)
 		}
 		if video.DisplayAspectRatio != "" {
 			summary["aspect_ratio"] = video.DisplayAspectRatio
@@ -100,11 +100,11 @@ func siloOverlay(version frontend.Version) (map[string]any, int) {
 			summary["hdr"] = "HLG"
 		}
 	}
-	if audioStreams > 0 && len(languages) == audioStreams {
-		summary["multi_audio"] = len(languages) >= 2
+	if audioStreams > 1 && len(languages) == audioStreams && len(languages) >= 2 {
+		summary["multi_audio"] = true
 	}
-	if len(version.Media.Streams) > 0 {
-		summary["multi_sub"] = subtitles > 0
+	if subtitles > 0 {
+		summary["multi_sub"] = true
 	}
 	if len(summary) == 0 {
 		return nil, -1
@@ -113,33 +113,47 @@ func siloOverlay(version frontend.Version) (map[string]any, int) {
 }
 
 func resolutionLabel(height int) string {
-	switch {
-	case height >= 2000:
-		return "4K"
-	case height >= 1400:
-		return "1440p"
-	case height >= 1000:
-		return "1080p"
-	case height >= 700:
-		return "720p"
-	case height >= 480:
-		return "480p"
-	case height > 0:
-		return strconv.Itoa(height) + "p"
-	default:
+	if height <= 0 {
 		return ""
+	}
+	return strconv.Itoa(height) + "p"
+}
+
+func codecBadge(codec string) string {
+	switch strings.ToLower(codec) {
+	case "h264":
+		return "H.264"
+	case "hevc", "h265":
+		return "HEVC"
+	case "aac":
+		return "AAC"
+	case "ac3":
+		return "AC3"
+	case "eac3":
+		return "EAC3"
+	case "mp3":
+		return "MP3"
+	default:
+		return codec
 	}
 }
 
 func channelBadge(channels int, layout string) string {
-	if layout != "" {
-		return layout
+	switch strings.ToLower(layout) {
+	case "mono":
+		return "Mono"
+	case "stereo":
+		return "Stereo"
+	case "5.1", "5.1(side)":
+		return "5.1"
+	case "7.1":
+		return "7.1"
 	}
 	switch channels {
 	case 1:
 		return "1.0"
 	case 2:
-		return "2.0"
+		return "Stereo"
 	case 6:
 		return "5.1"
 	case 8:

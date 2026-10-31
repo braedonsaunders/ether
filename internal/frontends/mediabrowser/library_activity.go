@@ -28,7 +28,7 @@ func activityView(r *http.Request) (string, error) {
 }
 
 func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, latest bool) {
-	r = withListMediaEstimate(withSeriesStudioCache(r))
+	r = withBrowseMemo(withListMediaEstimate(withSeriesStudioCache(r)))
 	viewer, _, err := i.viewer(r)
 	if err != nil || viewer == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -141,7 +141,7 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		http.Error(w, "Unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	images, paths := i.gridImages(r, keys), i.virtualPaths(r, viewer, keys)
+	images, paths := i.gridImagesFor(r, titles), i.virtualPaths(r, viewer, keys)
 	items := make([]any, 0, len(titles))
 	for _, title := range titles {
 		item := i.itemDTO(title, states[title.Key])

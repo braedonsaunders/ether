@@ -66,6 +66,8 @@ type ServiceDeps struct {
 	Favorites               func(context.Context, *core.User, core.RatingKey, bool) (bool, error)
 	IsFavorite              func(context.Context, *core.User, core.RatingKey) (bool, error)
 	IsFavoriteMany          func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
+	IsNotInterestedMany     func(context.Context, *core.User, []core.RatingKey) (map[core.RatingKey]bool, error)
+	IsWatchlistedMany       func(context.Context, int64, []core.RatingKey) (map[core.RatingKey]bool, error)
 	FavoriteMembership      func(context.Context, *core.User, core.RatingKey) (frontend.Membership, error)
 	IsNotInterested         func(context.Context, *core.User, core.RatingKey) (bool, error)
 	SetNotInterestedSource  func(context.Context, *core.User, core.RatingKey, bool) error
@@ -104,9 +106,23 @@ func (s *Service) viewer(ctx context.Context, v *core.User) (*core.User, error) 
 	if v == nil || v.ID <= 0 {
 		return nil, core.ErrNotFound
 	}
+	if memo := frontend.RequestMemoFrom(ctx); memo != nil {
+		memo.Mu.Lock()
+		if memo.Viewer != nil && memo.Viewer.ID == v.ID {
+			active := memo.Viewer
+			memo.Mu.Unlock()
+			return active, nil
+		}
+		memo.Mu.Unlock()
+	}
 	active, err := s.d.Active(ctx, v.ID)
 	if err != nil || active == nil || active.ID != v.ID {
 		return nil, core.ErrNotFound
+	}
+	if memo := frontend.RequestMemoFrom(ctx); memo != nil {
+		memo.Mu.Lock()
+		memo.Viewer = active
+		memo.Mu.Unlock()
 	}
 	return active, nil
 }
@@ -114,8 +130,25 @@ func (s *Service) visible(ctx context.Context, v *core.User, title *core.Title) 
 	if title == nil || s.d.Visibility.SectionFor == nil {
 		return false
 	}
+	if memo := frontend.RequestMemoFrom(ctx); memo != nil {
+		memo.Mu.Lock()
+		if seen, ok := memo.Visible[title.Key]; ok {
+			memo.Mu.Unlock()
+			return seen
+		}
+		memo.Mu.Unlock()
+	}
 	id, ok := s.d.Visibility.SectionFor(title.Type)
-	return ok && SectionAllowed(v, id) && s.d.Visibility.Visible(ctx, v, title)
+	seen := ok && SectionAllowed(v, id) && s.d.Visibility.Visible(ctx, v, title)
+	if memo := frontend.RequestMemoFrom(ctx); memo != nil {
+		memo.Mu.Lock()
+		if memo.Visible == nil {
+			memo.Visible = map[core.RatingKey]bool{}
+		}
+		memo.Visible[title.Key] = seen
+		memo.Mu.Unlock()
+	}
+	return seen
 }
 func (s *Service) playable(ctx context.Context, v *core.User, key core.RatingKey) (*core.Title, error) {
 	t, err := s.d.Get(ctx, v, key)
@@ -783,9 +816,23 @@ func (s *Service) UserData(ctx context.Context, viewer *core.Viewer, keys []core
 		return nil, err
 	}
 	allowed := make([]core.RatingKey, 0, len(keys))
-	for _, key := range keys {
-		if _, err := s.item(ctx, v, key); err == nil {
+	if s.d.CachedGetMany != nil {
+		titles, err := s.d.CachedGetMany(ctx, keys)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range keys {
+			title, ok := titles[key]
+			if !ok || title.Key != key || !s.visible(ctx, v, &title) {
+				continue
+			}
 			allowed = append(allowed, key)
+		}
+	} else {
+		for _, key := range keys {
+			if _, err := s.item(ctx, v, key); err == nil {
+				allowed = append(allowed, key)
+			}
 		}
 	}
 	data, err := s.d.State.GetMany(ctx, v.ID, allowed)
@@ -799,41 +846,102 @@ func (s *Service) UserData(ctx context.Context, viewer *core.Viewer, keys []core
 		filtered[key] = status
 	}
 	data = filtered
-	if s.d.IsFavorite != nil {
-		for _, key := range allowed {
-			favorite, err := s.d.IsFavorite(ctx, v, key)
-			if err != nil {
-				return nil, err
-			}
-			status := data[key]
-			status.Key = key
-			status.IsFavorite = favorite
-			data[key] = status
-		}
+	if err := s.fillFavorites(ctx, v, allowed, data); err != nil {
+		return nil, err
 	}
-	if s.d.IsNotInterested != nil {
-		for _, key := range allowed {
-			value, e := s.d.IsNotInterested(ctx, v, key)
-			if e != nil {
-				return nil, e
-			}
-			status := data[key]
-			status.IsNotInterested = value
-			data[key] = status
-		}
+	if err := s.fillNotInterested(ctx, v, allowed, data); err != nil {
+		return nil, err
 	}
-	if s.d.IsWatchlisted != nil {
-		for _, key := range allowed {
-			value, e := s.d.IsWatchlisted(ctx, v, key)
-			if e != nil {
-				return nil, e
-			}
-			status := data[key]
-			status.InWatchlist = value
-			data[key] = status
-		}
+	if err := s.fillWatchlist(ctx, v, allowed, data); err != nil {
+		return nil, err
 	}
 	return data, nil
+}
+
+func (s *Service) fillFavorites(ctx context.Context, v *core.User, keys []core.RatingKey, data map[core.RatingKey]core.WatchStatus) error {
+	if s.d.IsFavoriteMany != nil {
+		flags, err := s.d.IsFavoriteMany(ctx, v, keys)
+		if err != nil {
+			return err
+		}
+		for _, key := range keys {
+			status := data[key]
+			status.Key = key
+			status.IsFavorite = flags[key]
+			data[key] = status
+		}
+		return nil
+	}
+	if s.d.IsFavorite == nil {
+		return nil
+	}
+	for _, key := range keys {
+		favorite, err := s.d.IsFavorite(ctx, v, key)
+		if err != nil {
+			return err
+		}
+		status := data[key]
+		status.Key = key
+		status.IsFavorite = favorite
+		data[key] = status
+	}
+	return nil
+}
+
+func (s *Service) fillNotInterested(ctx context.Context, v *core.User, keys []core.RatingKey, data map[core.RatingKey]core.WatchStatus) error {
+	if s.d.IsNotInterestedMany != nil {
+		flags, err := s.d.IsNotInterestedMany(ctx, v, keys)
+		if err != nil {
+			return err
+		}
+		for _, key := range keys {
+			status := data[key]
+			status.IsNotInterested = flags[key]
+			data[key] = status
+		}
+		return nil
+	}
+	if s.d.IsNotInterested == nil {
+		return nil
+	}
+	for _, key := range keys {
+		value, err := s.d.IsNotInterested(ctx, v, key)
+		if err != nil {
+			return err
+		}
+		status := data[key]
+		status.IsNotInterested = value
+		data[key] = status
+	}
+	return nil
+}
+
+func (s *Service) fillWatchlist(ctx context.Context, v *core.User, keys []core.RatingKey, data map[core.RatingKey]core.WatchStatus) error {
+	if s.d.IsWatchlistedMany != nil {
+		flags, err := s.d.IsWatchlistedMany(ctx, v.ID, keys)
+		if err != nil {
+			return err
+		}
+		for _, key := range keys {
+			status := data[key]
+			status.InWatchlist = flags[key]
+			data[key] = status
+		}
+		return nil
+	}
+	if s.d.IsWatchlisted == nil {
+		return nil
+	}
+	for _, key := range keys {
+		value, err := s.d.IsWatchlisted(ctx, v, key)
+		if err != nil {
+			return err
+		}
+		status := data[key]
+		status.InWatchlist = value
+		data[key] = status
+	}
+	return nil
 }
 
 var _ frontend.Experience = (*Service)(nil)

@@ -135,6 +135,9 @@ func TestParseProbeGolden(t *testing.T) {
 			v := &tt.want.Streams[0]
 			if !v.DolbyVision && (tt.want.Container == "mp4" || tt.want.Container == "mkv") {
 				v.DolbyVisionConfigurationPresent = boolean(false)
+				if v.DolbyVisionBLCompatibilityIDPresent == nil {
+					v.DolbyVisionBLCompatibilityIDPresent = boolean(false)
+				}
 			}
 			switch tt.file {
 			case "mkv_hevc_hdr10.json":

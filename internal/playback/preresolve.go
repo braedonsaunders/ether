@@ -13,6 +13,12 @@ import (
 
 const preResolveTTL = 10 * time.Minute
 
+// detailWarmWait is the longest a detail render spends on a probe this
+// request already started. The probe is published before its prefetch, and
+// main does not hold the detail request open for either. A probe still
+// running after this bound is treated as not ready.
+const detailWarmWait = 100 * time.Millisecond
+
 const (
 	detailPrefetchBytes  = 2 << 20
 	bigWarmPrefetchBytes = 48 << 20
@@ -396,8 +402,9 @@ func (m *Manager) WarmProbeInfo(user *core.User, caps core.ClientCaps, key core.
 }
 
 // AwaitWarmProbe is WarmProbeInfo for a detail render that just started
-// the warm-up. It waits until that warm-up publishes its probe, or until
-// ctx ends. A finished miss still returns false so the caller can estimate.
+// the warm-up. It returns a probe that is already published, and otherwise
+// waits at most detailWarmWait. A finished miss or a late probe returns
+// false so the caller can estimate without holding the detail request.
 func (m *Manager) AwaitWarmProbe(ctx context.Context, user *core.User, caps core.ClientCaps, key core.RatingKey) (core.MediaInfo, bool) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -413,9 +420,13 @@ func (m *Manager) AwaitWarmProbe(ctx context.Context, user *core.User, caps core
 	if !live {
 		return core.MediaInfo{}, false
 	}
+	timer := time.NewTimer(detailWarmWait)
+	defer timer.Stop()
 	select {
 	case <-e.done:
 	case <-ctx.Done():
+		return core.MediaInfo{}, false
+	case <-timer.C:
 		return core.MediaInfo{}, false
 	}
 	return warmProbeResult(e)

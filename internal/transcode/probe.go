@@ -233,6 +233,12 @@ func ParseProbe(b []byte) (*core.MediaInfo, error) {
 				present := false
 				si.DolbyVisionConfigurationPresent = &present
 			}
+			// A complete container probe that has no Dolby Vision configuration
+			// also has no base-layer compatibility id.
+			if si.Type == "video" && si.DolbyVisionConfigurationPresent != nil && !*si.DolbyVisionConfigurationPresent && si.DolbyVisionBLCompatibilityIDPresent == nil {
+				present := false
+				si.DolbyVisionBLCompatibilityIDPresent = &present
+			}
 		}
 	}
 	return m, nil

@@ -51,23 +51,39 @@ func VirtualPaths(ctx context.Context, catalog VirtualPathCatalog, viewer *core.
 		return nil, core.ErrNotAvailable
 	}
 	requested := make(map[core.RatingKey]bool, len(keys))
-	var needMovies, needShows bool
-	wantedShows := map[core.RatingKey]bool{}
 	for _, key := range keys {
 		requested[key] = true
-		switch key.Kind() {
-		case core.KindMovie:
-			needMovies = true
-		case core.KindShow:
-			needShows = true
-			wantedShows[key] = true
-		case core.KindSeason, core.KindEpisode:
-			needShows = true
-			wantedShows[core.ShowKey(key.TMDB())] = true
-		}
 	}
 	if len(requested) > virtualPathMaxDistinct {
 		return nil, core.ErrNotAvailable
+	}
+	return assembleVirtualPaths(ctx, catalog, viewer, device, requested, false)
+}
+
+// IndexVirtualPaths walks each authorized library once and returns every path.
+// Callers cache the map and look up pages in it.
+func IndexVirtualPaths(ctx context.Context, catalog VirtualPathCatalog, viewer *core.Viewer, device core.Device) (map[core.RatingKey]string, error) {
+	return assembleVirtualPaths(ctx, catalog, viewer, device, map[core.RatingKey]bool{}, true)
+}
+
+func assembleVirtualPaths(ctx context.Context, catalog VirtualPathCatalog, viewer *core.Viewer, device core.Device, requested map[core.RatingKey]bool, all bool) (map[core.RatingKey]string, error) {
+	var needMovies, needShows bool
+	wantedShows := map[core.RatingKey]bool{}
+	if all {
+		needMovies, needShows = true, true
+	} else {
+		for key := range requested {
+			switch key.Kind() {
+			case core.KindMovie:
+				needMovies = true
+			case core.KindShow:
+				needShows = true
+				wantedShows[key] = true
+			case core.KindSeason, core.KindEpisode:
+				needShows = true
+				wantedShows[core.ShowKey(key.TMDB())] = true
+			}
+		}
 	}
 	result := make(map[core.RatingKey]string)
 	if needMovies {
@@ -77,7 +93,7 @@ func VirtualPaths(ctx context.Context, catalog VirtualPathCatalog, viewer *core.
 		}
 		names := virtualPathSiblingNames(titles, libpath.MovieName)
 		for _, title := range titles {
-			if requested[title.Key] {
+			if all || requested[title.Key] {
 				name := names[title.Key]
 				result[title.Key] = path.Join("Movies", name, name+".mkv")
 			}
@@ -90,22 +106,24 @@ func VirtualPaths(ctx context.Context, catalog VirtualPathCatalog, viewer *core.
 		}
 		names := virtualPathSiblingNames(shows, func(t core.Title) string { return libpath.Safe(t.Title) })
 		for _, show := range shows {
-			if !wantedShows[show.Key] {
+			if !all && !wantedShows[show.Key] {
 				continue
 			}
 			base := path.Join("TV", names[show.Key])
-			if requested[show.Key] {
+			if all || requested[show.Key] {
 				result[show.Key] = base
 			}
 			var wantsChildren bool
-			for key := range requested {
-				if key.Kind() != core.KindShow && key.TMDB() == show.Key.TMDB() && (key.Kind() == core.KindSeason || key.Kind() == core.KindEpisode) {
-					wantsChildren = true
-					break
+			if !all {
+				for key := range requested {
+					if key.Kind() != core.KindShow && key.TMDB() == show.Key.TMDB() && (key.Kind() == core.KindSeason || key.Kind() == core.KindEpisode) {
+						wantsChildren = true
+						break
+					}
 				}
-			}
-			if !wantsChildren {
-				continue
+				if !wantsChildren {
+					continue
+				}
 			}
 			seasonItems, err := virtualPathChildren(ctx, catalog, viewer, device, show.Key)
 			if err != nil {
@@ -120,18 +138,20 @@ func VirtualPaths(ctx context.Context, catalog VirtualPathCatalog, viewer *core.
 			seasonNames := virtualPathSiblingNames(filtered, func(t core.Title) string { return fmt.Sprintf("Season %02d", t.Season) })
 			for _, season := range filtered {
 				seasonBase := path.Join(base, seasonNames[season.Key])
-				if requested[season.Key] {
+				if all || requested[season.Key] {
 					result[season.Key] = seasonBase
 				}
 				var wantsEpisodes bool
-				for key := range requested {
-					if key.Kind() == core.KindEpisode && key.TMDB() == show.Key.TMDB() {
-						wantsEpisodes = true
-						break
+				if !all {
+					for key := range requested {
+						if key.Kind() == core.KindEpisode && key.TMDB() == show.Key.TMDB() {
+							wantsEpisodes = true
+							break
+						}
 					}
-				}
-				if !wantsEpisodes {
-					continue
+					if !wantsEpisodes {
+						continue
+					}
 				}
 				episodeItems, err := virtualPathChildren(ctx, catalog, viewer, device, season.Key)
 				if err != nil {
@@ -145,7 +165,7 @@ func VirtualPaths(ctx context.Context, catalog VirtualPathCatalog, viewer *core.
 				}
 				episodeNames := virtualPathSiblingNames(filteredEpisodes, func(t core.Title) string { return strings.TrimSuffix(path.Base(libpath.Episode(t)), ".mkv") })
 				for _, episode := range filteredEpisodes {
-					if requested[episode.Key] {
+					if all || requested[episode.Key] {
 						result[episode.Key] = path.Join(seasonBase, episodeNames[episode.Key]+".mkv")
 					}
 				}

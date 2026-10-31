@@ -369,10 +369,10 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	if strings.Contains(w.Body.String(), `"file_name":"release label"`) {
 		t.Error("release label exposed as a filename")
 	}
-	// Theme songs need an owned audio file (id, duration, container). Ether
-	// stores no theme-song assets, so the field stays absent.
-	if strings.Contains(w.Body.String(), `"themes"`) {
-		t.Error("invented a theme song")
+	// Plex has a theme attribute and Ether never stores theme audio, so the
+	// set is present and empty.
+	if !strings.Contains(w.Body.String(), `"themes":{"items":[],"owner_id":"`) {
+		t.Errorf("theme set: %s", w.Body.String())
 	}
 	knownPresent = false
 	negative := httptest.NewRecorder()

@@ -368,3 +368,11 @@ func MeetsThreshold(cfg config.Catalog, t core.Title, now time.Time) bool {
 func (c *Catalog) meetsThreshold(t core.Title) bool {
 	return MeetsThreshold(c.config(), t, c.now())
 }
+
+// WriteGeneration changes when a catalogue write drops the read caches.
+func (c *Catalog) WriteGeneration() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.writeGen.Load()
+}

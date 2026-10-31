@@ -714,6 +714,20 @@ func mediaHasSubtitles(media frontend.MediaInfo) bool {
 	return false
 }
 
+type editionPageKey struct{}
+
+func (i *instance) withPageEditions(r *http.Request, viewer *frontend.Viewer, keys []frontend.RatingKey) *http.Request {
+	batch, ok := i.host.Editions.(frontend.EditionBatch)
+	if !ok || viewer == nil || r == nil || len(keys) == 0 {
+		return r
+	}
+	versions, err := batch.EditionsMany(r.Context(), viewer, device(r), keys)
+	if err != nil {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), editionPageKey{}, versions))
+}
+
 type jellyfinEdition struct {
 	handle string
 	source map[string]any
@@ -730,7 +744,13 @@ func (i *instance) jellyfinEditions(r *http.Request, viewer *frontend.Viewer, ti
 	if title.Type != "movie" && title.Type != "episode" {
 		return nil
 	}
-	versions, err := i.host.Editions.Editions(r.Context(), viewer, device(r), title.Key)
+	var versions []frontend.Version
+	var err error
+	if cached, ok := r.Context().Value(editionPageKey{}).(map[frontend.RatingKey][]frontend.Version); ok {
+		versions = cached[title.Key]
+	} else {
+		versions, err = i.host.Editions.Editions(r.Context(), viewer, device(r), title.Key)
+	}
 	if err != nil || len(versions) == 0 {
 		return nil
 	}

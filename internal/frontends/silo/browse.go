@@ -1,6 +1,8 @@
 package silo
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,12 +36,8 @@ func titleDTO(t frontend.Title, state frontend.WatchStatus) map[string]any {
 	if t.Type == "movie" || t.Type == "episode" {
 		out["play_content_id"] = id
 	}
-	if state.ViewOffset > 0 {
-		out["position_seconds"] = state.ViewOffset.Seconds()
-	}
-	if state.Duration > 0 {
-		out["duration_seconds"] = state.Duration.Seconds()
-	}
+	// Captured silo-apple and silo-android home cards carry progress only in
+	// user_state. Position and duration belong on the item user_data rollup.
 	if t.ShowKey != 0 {
 		out["series_id"] = ids.RatingKeyGUID(t.ShowKey)
 		out["series_title"] = t.ShowTitle
@@ -291,6 +289,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 	}
 	out["cast"] = cast
 	out["crew"] = crew
+	// Plex metadata has a theme attribute, and nothing in Ether fills or
+	// serves that audio. The set stays empty until a theme file exists.
+	out["themes"] = map[string]any{"owner_id": out["content_id"], "items": []any{}}
 	if len(d.Extras) > 0 {
 		videos := make([]any, 0, len(d.Extras))
 		for _, extra := range d.Extras {
@@ -315,6 +316,7 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		}
 		out["rating_sources"] = []any{source}
 	}
+	var playedSource *frontend.PlaybackSourceHistory
 	if d.Title.Type == "movie" || d.Title.Type == "episode" {
 		played := d.UserData.ViewCount > 0
 		watched, unplayed, inProgress := 0, 1, 0
@@ -328,11 +330,15 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 		if d.UserData.ViewOffset > 0 {
 			rollup["position_seconds"] = d.UserData.ViewOffset.Seconds()
 		}
-		if d.UserData.Duration > 0 {
+		switch {
+		case d.UserData.Duration > 0:
 			rollup["duration_seconds"] = d.UserData.Duration.Seconds()
+		case d.Title.Runtime > 0:
+			rollup["duration_seconds"] = d.Title.Runtime.Seconds()
 		}
 		if i.host.LastPlayedSource != nil {
 			if source, err := i.host.LastPlayedSource.LastPlayedSource(r.Context(), v, device(r), key); err == nil && source != nil {
+				playedSource = source
 				addLastPlayedFacts(rollup, source)
 			}
 		}
@@ -357,6 +363,9 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				hdr := false
 				audioTracks := []any{}
 				videoTracks := []any{}
+				audioOrdinal, chosenAudio := 0, -1
+				chosenLanguage := ""
+				choseDefault := false
 				// An unresolved estimate is not a probed source. Required Silo
 				// numbers stay zero and strings stay empty until playback resolves it.
 				estimated := version.Media.Estimated
@@ -480,6 +489,12 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 						audio = stream.Codec
 					}
 					if stream.Type == "audio" {
+						if chosenAudio < 0 || (stream.Default && !choseDefault) {
+							chosenAudio = audioOrdinal
+							chosenLanguage = stream.Language
+							choseDefault = stream.Default
+						}
+						audioOrdinal++
 						track := map[string]any{"default": stream.Default}
 						if stream.Codec != "" {
 							track["codec"] = stream.Codec
@@ -521,6 +536,20 @@ func (i *instance) detail(w http.ResponseWriter, r *http.Request) {
 				}
 				if version.FileName != "" {
 					item["file_name"] = version.FileName
+				}
+				if playedSource != nil && playedSource.ReleaseDigest != "" {
+					sum := sha256.Sum256([]byte(version.ID))
+					if hex.EncodeToString(sum[:]) == playedSource.ReleaseDigest {
+						if facts, ok := out["user_data"].(map[string]any); ok {
+							facts["last_file_id"] = id
+						}
+					}
+				}
+				if chosenAudio >= 0 {
+					item["effective_audio_track_index"] = chosenAudio
+					if chosenLanguage != "" {
+						item["effective_audio_language"] = chosenLanguage
+					}
 				}
 				if len(audioTracks) > 0 {
 					item["audio_tracks"] = audioTracks

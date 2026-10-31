@@ -359,25 +359,29 @@ func (s *Server) prepare(ctx context.Context, pr *Request, p *playRequest) (*cor
 	if !s.transcodes.claim(p.sessionID, pr.User.ID, pr.ClientID, s.now()) {
 		return t, nil, core.Decision{}, core.ErrUnauthorized
 	}
-	ps, err := s.preparePlayback(ctx, pr, p)
-	if err != nil {
-		return t, nil, core.Decision{}, err
-	}
-	// Tracks cached or picked since the session's media was enriched (a
-	// subtitle search pick mid-playback) join its streams for this
-	// decision; text sidecars never enter the transcoder's input.
-	if info := s.withCachedSidecars(ctx, pr.User, t, ps.Info); len(info.Streams) != len(ps.Info.Streams) {
-		cp := *ps
-		cp.Info = info
-		ps = &cp
-	}
-	resolvePlaySelection(p, ps.Info)
-	s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
-	applySelections(p, ps.Info, s.audioLanguages(pr.User))
-	p.caps.TranscodeAudioCodecs = streamingAudioTarget(pr.ProfileExtra, p.protocol)
-	dec, err := sessions.Decide(s.d.Playback, s.d.Transcoder, sessions.DecisionRequest{
-		Session: ps, Caps: p.caps, Options: p.opts, PreferRemux: p.mde,
-		Protocol: p.protocol, RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,
+	var ps *core.PlaySession
+	dec, err := s.openPlexPlan(ctx, pr, p, func(ctx context.Context) (sessions.PlexAdmission, error) {
+		var prepErr error
+		ps, prepErr = s.preparePlayback(ctx, pr, p)
+		if prepErr != nil {
+			return sessions.PlexAdmission{}, prepErr
+		}
+		// Tracks cached or picked since the session's media was enriched (a
+		// subtitle search pick mid-playback) join its streams for this
+		// decision; text sidecars never enter the transcoder's input.
+		if info := s.withCachedSidecars(ctx, pr.User, t, ps.Info); len(info.Streams) != len(ps.Info.Streams) {
+			cp := *ps
+			cp.Info = info
+			ps = &cp
+		}
+		resolvePlaySelection(p, ps.Info)
+		s.applyStreamPreferences(ctx, pr, p, t, ps.Info)
+		applySelections(p, ps.Info, s.audioLanguages(pr.User))
+		p.caps.TranscodeAudioCodecs = streamingAudioTarget(pr.ProfileExtra, p.protocol)
+		return sessions.PlexAdmission{
+			Source: ps, Media: ps.Info, Caps: p.caps, Options: p.opts, PreferRemux: p.mde, Protocol: p.protocol,
+			RemoteMaxBitrateKbps: s.cfg().Transcode.RemoteMaxBitrateKbps,
+		}, nil
 	})
 	if err != nil {
 		return t, nil, core.Decision{}, err
@@ -448,11 +452,6 @@ func (s *Server) handleDecision(w http.ResponseWriter, r *http.Request) {
 		// full resolve that fails the same way.
 		s.transcodes.fail(p.sessionID, pr.User.ID, pr.ClientID, p.key, err, s.now())
 		s.write(w, r, s.decisionError(ctx, pr, t, err, p))
-		return
-	}
-	if err := s.publishBrokerPlayback(ctx, pr, &p, ps, dec); err != nil {
-		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
-		writeHTTPError(w, http.StatusServiceUnavailable)
 		return
 	}
 	s.write(w, r, s.decisionContainer(ctx, pr, t, ps, dec, p))
@@ -836,15 +835,16 @@ func (s *Server) handleStartHLS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		entry, _ = s.transcodes.get(p.sessionID)
+	} else if dec, err := s.publishBrokerPlayback(ctx, pr, replayPlay(p, entry), ps); err != nil {
+		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
+		writeHTTPError(w, http.StatusServiceUnavailable)
+		return
+	} else {
+		entry.decision = dec
 	}
 	s.playbackOwners.Bind(pr.User.ID, pr.ClientID, p.key, pr.SessionID, ps.ID, true, s.now())
 	entry.playbackID = pr.SessionID
 	s.transcodes.put(entry)
-	if err := s.publishBrokerPlayback(ctx, pr, &p, ps, entry.decision); err != nil {
-		s.log.Info("playback broker publish failed", "key", p.key, "err", err)
-		writeHTTPError(w, http.StatusServiceUnavailable)
-		return
-	}
 
 	dec := sessions.HLSDecision(entry.decision, p.opts.DirectPlay, func() core.Decision {
 		resolvePlaySelection(&p, ps.Info)
@@ -1235,6 +1235,8 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		if partPlay.caps.ClientID == "" {
 			partPlay.caps.ClientID = pr.ClientID
 		}
+		partPlay.opts.DirectPlay = true
+		partPlay.opts.DirectStream = true
 		// A part range of a playback that is already on the broker must not
 		// open a second session. That open supersedes the live encoder.
 		already := false
@@ -1246,7 +1248,7 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !already {
-			if err := s.publishBrokerPlayback(ctx, pr, &partPlay, ps, core.Decision{Kind: core.DecisionDirectPlay, VideoCopy: true, AudioCopy: true}); err != nil {
+			if _, err := s.publishBrokerPlayback(ctx, pr, &partPlay, ps); err != nil {
 				s.log.Info("direct play broker publish failed", "key", key, "err", err)
 				s.writeErr(w, r, err)
 				return

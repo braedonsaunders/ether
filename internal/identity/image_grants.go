@@ -11,6 +11,8 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -45,6 +47,13 @@ type ImageGrantService struct {
 	// beforeImageCleanup is test-only. It runs after the shard lock and the
 	// source recheck, and before expired-row deletion.
 	beforeImageCleanup func(*sql.Tx)
+	pageMu             sync.Mutex
+	pageKeyBytes       []byte
+	imageGen           func() uint64
+	artMu              sync.Mutex
+	artGen             uint64
+	art                map[pageArtKey][]frontend.Image
+	denied             sync.Map
 }
 
 // NewArtworkImageGrantService serves descriptors through the authorized
@@ -187,6 +196,9 @@ func (s *ImageGrantService) Revoke(ctx context.Context, credential, secret strin
 	if !ok {
 		return core.ErrUnauthorized
 	}
+	if strings.HasPrefix(secret, pageGrantPrefix) {
+		return s.revokePageGrant(ctx, viewer.ID, source, secret)
+	}
 	hash, ok := validImageSecret(secret)
 	if !ok {
 		return core.ErrUnauthorized
@@ -197,6 +209,10 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if strings.HasPrefix(secret, pageGrantPrefix) {
+		s.servePageGrant(w, r, secret)
 		return
 	}
 	hash, ok := validImageSecret(secret)
@@ -227,6 +243,10 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 		http.NotFound(w, r)
 		return
 	}
+	s.writeGrantedImage(w, r, viewer, device, core.RatingKey(item), channel, img, hash, sourceHash, deviceJSON)
+}
+
+func (s *ImageGrantService) writeGrantedImage(w http.ResponseWriter, r *http.Request, viewer *core.Viewer, device core.Device, item core.RatingKey, channel string, img frontend.Image, hash, sourceHash, deviceJSON string) {
 	width, _ := strconv.Atoi(r.URL.Query().Get("w"))
 	if width < 0 || width > 4000 {
 		width = 500
@@ -236,6 +256,7 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	}
 	var data []byte
 	var contentType string
+	var err error
 	if s.artwork != nil {
 		height, _ := strconv.Atoi(r.URL.Query().Get("h"))
 		if height < 0 || height > 4000 {
@@ -252,7 +273,7 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 			http.Error(w, "invalid image blur", http.StatusBadRequest)
 			return
 		}
-		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: core.RatingKey(item), Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur == "1"})
+		data, contentType, err = s.artwork.Read(r.Context(), frontend.ArtworkRequest{Viewer: viewer, Device: device, Item: item, Channel: channel}, img, frontend.ArtworkTransform{Width: width, Height: height, Format: format, Blur: blur == "1"})
 	} else {
 		data, contentType, err = s.images.Get(r.Context(), img.Path, width)
 	}
@@ -263,7 +284,7 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	// A Silo portrait fetch may cross I/O after its first authorization. Check
 	// current credited membership and fresh policy again before publishing bytes.
 	if s.surface == "silo" && img.Kind == frontend.ImagePerson {
-		if err := s.authorizePersonGrant(r.Context(), viewer, device, core.RatingKey(item), channel, img, hash, sourceHash, deviceJSON); err != nil {
+		if err := s.authorizePersonGrant(r.Context(), viewer, device, item, channel, img, hash, sourceHash, deviceJSON); err != nil {
 			http.NotFound(w, r)
 			return
 		}

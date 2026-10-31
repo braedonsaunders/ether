@@ -91,6 +91,11 @@ func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential 
 	if detail.Title.Type != "episode" {
 		return
 	}
+	if detail.Title.PosterPath != "" || detail.Title.BackdropPath != "" || detail.Title.StillPath != "" {
+		still := detail.Title.StillPath
+		out["poster_is_episode_still"] = still != "" && detail.Title.PosterPath == still
+		out["backdrop_is_episode_still"] = still != "" && detail.Title.BackdropPath == still
+	}
 	provider, ok := i.host.Experience.(frontend.RelatedArtworkProvider)
 	if !ok {
 		return
