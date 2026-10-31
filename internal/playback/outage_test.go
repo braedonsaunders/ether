@@ -99,7 +99,11 @@ func runOutage(t *testing.T, raw, mode string) {
 	var last time.Duration
 	var off int64
 	var started bool
-	for i := 2; time.Since(outageStart) < 3*time.Second; i++ {
+	// One report has to clear the 5% start threshold (5 minutes of this
+	// 100 minute item). A paused database can consume the whole window on
+	// the first write, and a 2 minute report would correctly be stored as
+	// no resume point.
+	for i := 6; time.Since(outageStart) < 3*time.Second; i++ {
 		last = time.Duration(i) * time.Minute
 		t0 := time.Now()
 		if err := ws.Progress(ctx, owner.ID, movieKey, last, dur, "playing"); err != nil {
