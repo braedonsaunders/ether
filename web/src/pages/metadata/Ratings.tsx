@@ -8,7 +8,7 @@ import {
   toast,
 } from "@braedonsaunders/appkit-ui";
 import { RefreshCw, X } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Artwork } from "../../components/Artwork";
 import { secretConfigured } from "../../components/IntegrationAccount";
@@ -120,16 +120,16 @@ export function RatingSources({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  // The metadata page shares its workspace with Artwork and Episode order.
+  // A bare spinner here unmounts that chrome and the tab switch flickers.
+  const hold = (node: ReactNode) =>
+    accountOnIntegrations ? <MetadataWorkspace aside={node} main={null} /> : node;
   if (!controlled && doc.error)
-    return <ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />;
+    return hold(<ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />);
   if (controlled && saved == null && doc.error)
-    return <ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />;
+    return hold(<ErrorPanel error={doc.error} onRetry={() => void doc.reload()} />);
   if (!draft)
-    return (
-      <div className="py-10 text-center">
-        <Spinner size={20} label={t("Loading rating settings")} />
-      </div>
-    );
+    return hold(<Spinner size={20} label={t("Loading rating settings")} />);
 
   const set = (patch: Partial<RatingSettings>) => setDraft({ ...draft, ...patch });
   const save = async () => {
