@@ -27,6 +27,9 @@ type mediaServer struct {
 	data    []byte
 	latency time.Duration // per request, before headers
 	pace    time.Duration // gap between 64 KiB body chunks, after the first
+	// sleep replaces time.Sleep for latency. Tests that assert a startup
+	// shape record the delay instead of waiting on the wall clock.
+	sleep func(time.Duration)
 
 	mu     sync.Mutex
 	valid  map[string]bool
@@ -77,9 +80,7 @@ func (m *mediaServer) serve(w http.ResponseWriter, r *http.Request) {
 	if n := m.stallEvery.Load(); n > 0 && !stallOnce {
 		stallAfter, stallOnce = n, true
 	}
-	if m.latency > 0 {
-		time.Sleep(m.latency)
-	}
+	m.wait(m.latency)
 	if stall > 0 {
 		select {
 		case <-time.After(stall):
@@ -154,6 +155,17 @@ func (p *pacedReader) Seek(offset int64, whence int) (int64, error) {
 	return p.r.Seek(offset, whence)
 }
 
+func (m *mediaServer) wait(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	if m.sleep != nil {
+		m.sleep(d)
+		return
+	}
+	time.Sleep(d)
+}
+
 func (m *mediaServer) issue(token string) string {
 	m.mu.Lock()
 	m.valid[token] = true
@@ -171,6 +183,8 @@ func (m *mediaServer) revokeAll() {
 type fakeProvider struct {
 	kind  string
 	delay time.Duration // API latency for Link
+	// sleep replaces time.Sleep for delay and acqDelay.
+	sleep func(time.Duration)
 	media *mediaServer
 	files []File
 	ttl   time.Duration
@@ -195,6 +209,17 @@ type fakeProvider struct {
 func newFakeProvider(kind string, media *mediaServer, files []File) *fakeProvider {
 	return &fakeProvider{kind: kind, media: media, files: files, ttl: time.Hour, now: time.Now,
 		cached: map[string]bool{}, torrents: map[string]string{}, calls: map[string]int{}}
+}
+
+func (p *fakeProvider) wait(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	if p.sleep != nil {
+		p.sleep(d)
+		return
+	}
+	time.Sleep(d)
 }
 
 func (p *fakeProvider) count(op string) {
@@ -244,9 +269,7 @@ func (p *fakeProvider) Find(_ context.Context, hash string) (string, error) {
 
 func (p *fakeProvider) Acquire(_ context.Context, req AcquireRequest) (*Acquired, error) {
 	p.count("acquire")
-	if p.acqDelay > 0 {
-		time.Sleep(p.acqDelay)
-	}
+	p.wait(p.acqDelay)
 	p.mu.Lock()
 	if p.authFail {
 		p.mu.Unlock()
@@ -283,9 +306,7 @@ func (p *fakeProvider) Acquire(_ context.Context, req AcquireRequest) (*Acquired
 
 func (p *fakeProvider) Link(_ context.Context, h Handle) (DirectLink, error) {
 	p.count("link")
-	if p.delay > 0 {
-		time.Sleep(p.delay)
-	}
+	p.wait(p.delay)
 	p.mu.Lock()
 	if p.authFail {
 		p.mu.Unlock()
