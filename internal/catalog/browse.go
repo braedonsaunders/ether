@@ -369,13 +369,29 @@ func (c *Catalog) Facet(ctx context.Context, t core.MediaType, facet string) ([]
 	minBucket := c.minuteBucket()
 	fkey := string(t) + "|" + facet
 	c.cacheMu.RLock()
-	if ent, ok := c.facetCache[fkey]; ok && ent.gen == gen && ent.minute == minBucket {
-		out := append([]core.FacetValue(nil), ent.vals...)
-		c.cacheMu.RUnlock()
-		return out, nil
-	}
+	ent, cached := c.facetCache[fkey]
 	c.cacheMu.RUnlock()
+	if cached && ent.gen == gen && ent.minute == minBucket {
+		return append([]core.FacetValue(nil), ent.vals...), nil
+	}
+	if cached {
+		// Library-wide counts walk every title. Serve the last counts and
+		// recount behind the read; the next read has the new ones.
+		_ = c.hydrate(ctx, "facet:"+fkey, 0, func(ctx context.Context) error {
+			_, err := c.countFacet(ctx, t, facet)
+			return err
+		})
+		return append([]core.FacetValue(nil), ent.vals...), nil
+	}
+	return c.countFacet(ctx, t, facet)
+}
 
+// countFacet computes a facet's value counts over the browsable set and
+// caches them.
+func (c *Catalog) countFacet(ctx context.Context, t core.MediaType, facet string) ([]core.FacetValue, error) {
+	gen := c.writeGen.Load()
+	minBucket := c.minuteBucket()
+	fkey := string(t) + "|" + facet
 	base, args, err := c.browseWhere(core.Filter{Type: t})
 	if err != nil {
 		return nil, err

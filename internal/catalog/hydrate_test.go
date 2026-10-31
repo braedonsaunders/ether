@@ -310,3 +310,49 @@ func TestMovieAddedSortIsReleaseOrder(t *testing.T) {
 		t.Fatalf("added order = %v (total %d), want %v", got, page.Total, want)
 	}
 }
+
+// Library-wide facet counts are served from the last count while a write
+// triggers a recount behind the read.
+func TestFacetServesLastCountWhileRecounting(t *testing.T) {
+	ctx := context.Background()
+	db := store.OpenTest(t)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	c, err := New(db, nil, config.Catalog{}, nil, WithNow(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(id int64, genre string) {
+		t.Helper()
+		key := core.MovieKey(id)
+		if err := c.UpsertTitle(ctx, core.Title{Key: key, Type: core.TypeMovie, IDs: core.IDs{TMDB: id}, Title: "M", Released: now.AddDate(-1, 0, 0), Genres: []string{genre}}, true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE catalog_titles SET browsable=1 WHERE key=?`, int64(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func() map[string]int {
+		t.Helper()
+		vals, err := c.Facet(ctx, core.TypeMovie, "genre")
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]int{}
+		for _, v := range vals {
+			out[v.Key] = v.Count
+		}
+		return out
+	}
+	add(1, "Drama")
+	if got := count(); got["Drama"] != 1 {
+		t.Fatalf("first count %v", got)
+	}
+	add(2, "Drama")
+	if got := count(); got["Drama"] != 1 {
+		t.Fatalf("stale read recounted inline: %v", got)
+	}
+	c.WaitRefreshes()
+	if got := count(); got["Drama"] != 2 {
+		t.Fatalf("recount behind the read missing: %v", got)
+	}
+}
