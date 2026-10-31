@@ -42,10 +42,7 @@ func (p *pool) body(ctx context.Context, id string, groups []string, prio core.P
 		return nil, err
 	}
 	prio = clampPriority(prio)
-	key := bodyKey{id: id, prio: prio}
-	if p.o.UseGroup && len(groups) > 0 {
-		key.group = groups[0]
-	}
+	key := p.bodyKeyFor(id, groups, prio)
 	// Joining transmitted work does not need another admission slot. In
 	// particular, a speculative queue cannot delay this inexpensive join.
 	p.bodyMu.Lock()
@@ -88,9 +85,39 @@ func (p *pool) body(ctx context.Context, id string, groups []string, prio core.P
 	return p.waitBody(ctx, key, f)
 }
 
+func (p *pool) bodyKeyFor(id string, groups []string, prio core.Priority) bodyKey {
+	key := bodyKey{id: id, prio: clampPriority(prio)}
+	if p.o.UseGroup && len(groups) > 0 {
+		key.group = groups[0]
+	}
+	return key
+}
+
+// joinable reports whether a BODY request would join work already in flight
+// here rather than start its own.
+func (p *pool) joinable(id string, groups []string, prio core.Priority) bool {
+	key := p.bodyKeyFor(id, groups, prio)
+	p.bodyMu.Lock()
+	defer p.bodyMu.Unlock()
+	return p.findBodyLocked(key) != nil
+}
+
 // joinBodyLocked never joins another priority until its commands are on the
 // socket. A live join is retained if the speculative caller abandons its read.
 func (p *pool) joinBodyLocked(key bodyKey) *bodyFlight {
+	f := p.findBodyLocked(key)
+	if f != nil {
+		f.waiters++
+		f.shared = true
+		if key.prio == core.PriorityLive && f.key.prio != core.PriorityLive {
+			f.liveWaiters++
+		}
+	}
+	return f
+}
+
+// findBodyLocked is the flight key would join, if any. bodyMu must be held.
+func (p *pool) findBodyLocked(key bodyKey) *bodyFlight {
 	f := p.bodyFlights[key]
 	if f == nil || f.ctx.Err() != nil {
 		f = nil
@@ -102,13 +129,6 @@ func (p *pool) joinBodyLocked(key bodyKey) *bodyFlight {
 					break
 				}
 			}
-		}
-	}
-	if f != nil {
-		f.waiters++
-		f.shared = true
-		if key.prio == core.PriorityLive && f.key.prio != core.PriorityLive {
-			f.liveWaiters++
 		}
 	}
 	return f

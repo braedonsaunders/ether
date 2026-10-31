@@ -1755,6 +1755,11 @@
   "m_0abadbedf6894f": "Actions pour {release}",
   "m_0abce084240d5f": "personnalisée",
   "m_0abd37a346cd74": "Commencer l'enregistrement",
+  "m_0abf41a4799823": {
+    "one": "{using} connexion utilisée sur {count} (limite du serveur détectée)",
+    "many": "{using} connexions utilisées sur {count} (limite du serveur détectée)",
+    "other": "{using} connexions utilisées sur {count} (limite du serveur détectée)"
+  },
   "m_0ac04023bddbe8": "SDR uniquement",
   "m_0ac1652ab7b5f4": "L’affiche officielle de la franchise est récupérée à l’enregistrement. Les collections sans source de franchise TMDB utilisent une illustration automatique.",
   "m_0ac3c72484745e": "Résultats pour « {query} »",
@@ -4469,6 +4474,11 @@
   "m_1b832c3fc2b5f7": "Premières observations : les rangées sont personnelles mais explorent encore.",
   "m_1b86404e2f0dd1": "Rechercher une release",
   "m_1b8797fbdae067": "Ether est à jour",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} requête reprise d’un fournisseur occupé",
+    "many": "{count} requêtes reprises de fournisseurs occupés",
+    "other": "{count} requêtes reprises de fournisseurs occupés"
+  },
   "m_1b8d369ae23df1": "Publie votre adresse publique sur plex.tv.",
   "m_1b8ffcd7534fa9": "Choisissez des spectateurs pour restreindre cette chaîne. Leurs limites parentales s’appliquent toujours ; les paramètres de télévision en direct par spectateur se trouvent dans le profil de chacun.",
   "m_1b90e44b07407d": "Ses chaînes et leurs programmes sont retirés de la télévision en direct.",

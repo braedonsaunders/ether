@@ -1802,6 +1802,12 @@
   "m_0abadbedf6894f": "Akce pro {release}",
   "m_0abce084240d5f": "vlastní",
   "m_0abd37a346cd74": "Spustit nahrávání",
+  "m_0abf41a4799823": {
+    "one": "používá se {using} z {count} připojení (zjištěn limit serveru)",
+    "few": "používá se {using} z {count} připojení (zjištěn limit serveru)",
+    "many": "používá se {using} z {count} připojení (zjištěn limit serveru)",
+    "other": "používá se {using} z {count} připojení (zjištěn limit serveru)"
+  },
   "m_0ac04023bddbe8": "Pouze SDR",
   "m_0ac1652ab7b5f4": "Oficiální plakát filmové série se stáhne při uložení. Kolekce bez zdroje filmové série z TMDB používají automatický artwork.",
   "m_0ac3c72484745e": "Výsledky pro „{query}“",
@@ -4598,6 +4604,12 @@
   "m_1b832c3fc2b5f7": "Poznává je: řádky jsou osobní, ale stále zkoumají.",
   "m_1b86404e2f0dd1": "Najít vydání",
   "m_1b8797fbdae067": "Ether je aktuální",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} požadavek převzat od vytíženého poskytovatele",
+    "few": "{count} požadavky převzaty od vytížených poskytovatelů",
+    "many": "{count} požadavku převzato od vytížených poskytovatelů",
+    "other": "{count} požadavků převzato od vytížených poskytovatelů"
+  },
   "m_1b8d369ae23df1": "Publikuje vaši veřejnou adresu na plex.tv.",
   "m_1b8ffcd7534fa9": "Vyberte diváky, jimž chcete tento kanál omezit. Jejich rodičovská omezení se nadále uplatňují; nastavení Živé TV pro jednotlivé diváky najdete v profilu každého diváka.",
   "m_1b90e44b07407d": "Jeho kanály a jejich pořady se odstraní ze Živé TV.",

@@ -44,10 +44,13 @@ type pool struct {
 	idle   []*Conn // LIFO: the most recently used connection is reused first
 	live   int     // idle + in use + being dialled
 	closed bool
-	// size is the configured connection count; limitedUntil is set while
-	// the semaphore runs smaller because the server refused connections.
-	size         int
-	limitedUntil time.Time
+	// size is the configured connection count; limit is what the server
+	// was learned to allow (see limit.go), which can hold the semaphore
+	// below it.
+	size  int
+	limit connLimit
+	// resizeMu serializes computing and applying the semaphore size.
+	resizeMu sync.Mutex
 	// Warm-floor background redial state (guarded by mu): at most one
 	// warmLoop runs at a time, and after a failed dial it waits until
 	// warmNext (exponential backoff) before trying again.
@@ -71,6 +74,7 @@ type pool struct {
 	articles      atomic.Int64
 	misses        atomic.Int64
 	backfillSaves atomic.Int64
+	spillovers    atomic.Int64 // requests served here because higher tiers were saturated
 	bodyMisses    atomic.Int64
 	bodyTakedowns atomic.Int64
 	errs          atomic.Int64
@@ -84,6 +88,10 @@ type pool struct {
 	statBatchTime atomic.Int64
 	bgRedials     atomic.Int64 // connections dialled by the floor janitor
 	redialFails   atomic.Int64 // failed background redials
+	limitRefusals atomic.Int64 // dials refused as over the server's connection limit
+	// teardownRefusals are refusals inside the teardown grace, retried
+	// rather than learned.
+	teardownRefusals atomic.Int64
 
 	latMu    sync.Mutex
 	latency  ewma // command round trip
@@ -245,7 +253,7 @@ func (p *pool) get(ctx context.Context, prio core.Priority) (*Conn, error) {
 			p.sem.Release(prio)
 			return nil, err
 		}
-		c, err = p.dialNew(ctx)
+		c, err = p.dialNew(ctx, probe)
 		if err == nil {
 			c.recoveryProbe = probe
 			return c, nil
@@ -257,26 +265,16 @@ func (p *pool) get(ctx context.Context, prio core.Priority) (*Conn, error) {
 		if !errors.Is(err, errAtLimit) || try >= 3 {
 			return nil, err
 		}
-		// The pool just shrank to what the server allows: wait for one of
-		// the connections that do exist instead of failing.
+		// The pool just shrank to what the server allows, or the server is
+		// still tearing down a socket we closed: wait for a slot (and the
+		// dial pause) instead of failing.
 	}
 }
 
 // errAtLimit marks a dial refused because the account is at its server-side
-// connection limit while other connections of this pool are working.
+// connection limit while other connections of this pool are working, or
+// because the server had not yet released a socket Ether just closed.
 var errAtLimit = errors.New("usenet: provider connection limit reached")
-
-// shrinkTo lowers the pool's effective size to what the server accepted,
-// for LimitCooloff, after which the configured size is tried again.
-func (p *pool) shrinkTo(n int) {
-	n = max(n, 1)
-	p.mu.Lock()
-	p.limitedUntil = time.Now().Add(p.o.LimitCooloff)
-	p.mu.Unlock()
-	if p.sem.setSize(n, p.o.PrefetchFraction) {
-		p.log.Info("usenet: server allows fewer connections than configured; adapting", "configured", p.target(), "using", n, "retry_after", p.o.LimitCooloff)
-	}
-}
 
 // takeIdle returns a live idle connection, or (nil, nil) when the caller
 // must dial. The caller already holds a semaphore slot.
@@ -308,24 +306,42 @@ func (p *pool) takeIdle() (*Conn, error) {
 }
 
 // dialNew dials, negotiates TLS and authenticates one fresh connection,
-// accounting it in live. The caller must hold a semaphore slot.
-func (p *pool) dialNew(ctx context.Context) (*Conn, error) {
+// accounting it in live. The caller must hold a semaphore slot. probe marks
+// the circuit breaker's half-open recovery dial, which the breaker already
+// paced.
+func (p *pool) dialNew(ctx context.Context, probe bool) (*Conn, error) {
+	// Only a pool whose last handshake failed waits here; cold dials start
+	// at once and in parallel.
+	if !probe {
+		if err := p.paceDial(ctx); err != nil {
+			return nil, err
+		}
+	}
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
 		return nil, ErrPoolClosed
 	}
 	p.live++
+	p.limit.dialing++
 	p.mu.Unlock()
 	// Re-check the breaker: another request may have tripped it while we
 	// waited for a slot.
 	if err := p.brk.allow(); err != nil {
-		p.dropLive()
+		p.mu.Lock()
+		p.live--
+		p.limit.dialing--
+		p.mu.Unlock()
 		return nil, err
 	}
 	c, err := Dial(ctx, p.dialOptions())
+	p.mu.Lock()
+	p.limit.dialing--
 	if err != nil {
-		p.dropLive()
+		p.live--
+	}
+	p.mu.Unlock()
+	if err != nil {
 		switch {
 		case ctxErr(ctx) != nil:
 			return nil, ctxErr(ctx)
@@ -333,15 +349,18 @@ func (p *pool) dialNew(ctx context.Context) (*Conn, error) {
 			p.errs.Add(1)
 			d := p.brk.authFailure(err)
 			p.log.Error("usenet: provider rejected credentials; disabled until a login probe succeeds or its settings change", "err", err, "retry_in", d)
-		case errors.Is(err, ErrServiceUnavailable) && p.liveCount() > 0:
-			// The server is up and serving our other connections; the
-			// account is just at its real connection limit. Shrink to it
-			// rather than taking the provider out of rotation.
+		case errors.Is(err, ErrServiceUnavailable) && p.refused(err, p.liveCount()):
+			// The server is up and serving our other connections (the
+			// account is at its real connection limit, now learned), or it
+			// is still tearing down a socket we closed. Either way keep the
+			// provider in rotation.
 			p.brk.noteError(err)
-			p.shrinkTo(p.liveCount())
 			return nil, fmt.Errorf("%w: %w", errAtLimit, err)
 		default:
 			p.errs.Add(1)
+			if !errors.Is(err, ErrServiceUnavailable) {
+				p.dialFailed()
+			}
 			if d := p.brk.connFailure(err); d > 0 {
 				p.log.Warn("usenet: connect failed; backing off", "err", err, "backoff", d)
 			} else {
@@ -351,6 +370,7 @@ func (p *pool) dialNew(ctx context.Context) (*Conn, error) {
 		return nil, err
 	}
 	p.dials.Add(1)
+	p.dialSucceeded()
 	return c, nil
 }
 
@@ -370,17 +390,22 @@ func (p *pool) dropLive() {
 func (p *pool) put(c *Conn, prio core.Priority) {
 	probe := c.recoveryProbe
 	c.recoveryProbe = false
+	widened := false
 	if c.Broken() {
 		p.discard(c)
 	} else {
+		now := time.Now()
 		p.mu.Lock()
-		if p.closed || p.live > p.targetLocked() {
-			// Closed, or above a target that shrank while c was in use.
+		p.heldLocked()
+		widened = p.widenLocked(now)
+		if p.closed || p.live > p.effectiveLocked() {
+			// Closed, or above a size that shrank while c was in use.
 			p.live--
 			p.mu.Unlock()
+			p.noteClose(1)
 			go c.Quit()
 		} else {
-			c.idleSince = time.Now()
+			c.idleSince = now
 			p.idle = append(p.idle, c)
 			p.mu.Unlock()
 		}
@@ -389,11 +414,19 @@ func (p *pool) put(c *Conn, prio core.Priority) {
 		p.brk.releaseProbe()
 	}
 	p.sem.Release(prio)
+	if widened {
+		if n, changed := p.applySize(); changed {
+			p.log.Debug("usenet: widening connection cap after refusals", "using", n, "configured", p.target())
+		}
+	}
 }
 
 func (p *pool) discard(c *Conn) {
 	_ = c.Close()
-	p.dropLive()
+	p.mu.Lock()
+	p.live--
+	p.noteCloseLocked(1)
+	p.mu.Unlock()
 }
 
 // discardIdle closes every idle connection. Used when a reused connection
@@ -409,6 +442,7 @@ func (p *pool) discardIdle() {
 		_ = c.Close()
 	}
 	if len(idle) > 0 {
+		p.noteClose(len(idle))
 		p.maintainFloor()
 	}
 }
@@ -445,16 +479,6 @@ func (p *pool) sweep() {
 		go p.authProbe()
 	}
 	now := time.Now()
-	p.mu.Lock()
-	restore := !p.limitedUntil.IsZero() && now.After(p.limitedUntil)
-	if restore {
-		p.limitedUntil = time.Time{}
-	}
-	target := p.targetLocked()
-	p.mu.Unlock()
-	if restore && p.sem.setSize(target, p.o.PrefetchFraction) {
-		p.log.Info("usenet: trying the configured connection count again", "connections", target)
-	}
 	floor := p.idleFloor()
 	var expired []*Conn
 	p.mu.Lock()
@@ -470,6 +494,9 @@ func (p *pool) sweep() {
 	p.idle = keep
 	p.live -= len(expired)
 	p.mu.Unlock()
+	if len(expired) > 0 {
+		p.noteClose(len(expired))
+	}
 	for _, c := range expired {
 		_ = c.Quit()
 	}
@@ -536,7 +563,7 @@ func (p *pool) warmLoop() {
 		if !p.sem.TryAcquire(core.PriorityPrefetch) {
 			return
 		}
-		c, err := p.dialNew(p.ctx)
+		c, err := p.dialNew(p.ctx, false)
 		if err != nil {
 			p.sem.Release(core.PriorityPrefetch)
 			if p.ctx.Err() != nil {
@@ -616,6 +643,7 @@ func (p *pool) keepAliveOne(now time.Time) bool {
 		p.live--
 		p.mu.Unlock()
 		_ = c.Close()
+		p.noteClose(1)
 		return true
 	}
 	// Just pinged, but still the least recently used for requests: keep it
@@ -893,7 +921,7 @@ type ProviderStats struct {
 	LastErrorAt  time.Time `json:"lastErrorAt,omitempty"`
 
 	// MaxConnections is the effective limit; it drops below
-	// ConfiguredConnections for a while when the server refuses more.
+	// ConfiguredConnections (or NodeShare) when the server refuses more.
 	MaxConnections        int `json:"maxConnections"`
 	ConfiguredConnections int `json:"configuredConnections"`
 	LiveConnections       int `json:"liveConnections"`   // open sockets
@@ -912,6 +940,14 @@ type ProviderStats struct {
 	// NodeShare is this node's part of ConfiguredConnections when the
 	// account's connections are divided among cluster nodes (0 otherwise).
 	NodeShare int `json:"nodeShare,omitempty"`
+	// LimitLearned reports that the server's own connection limit holds
+	// MaxConnections below the configured count (or NodeShare). ServerLimit
+	// is the limit the server stated, when it did; without one the pool
+	// widens back one connection at a time while requests succeed.
+	LimitLearned     bool  `json:"limitLearned,omitempty"`
+	ServerLimit      int   `json:"serverLimit,omitempty"`
+	LimitRefusals    int64 `json:"limitRefusals"`    // dials refused as over the limit
+	TeardownRefusals int64 `json:"teardownRefusals"` // refusals retried as server teardown
 
 	Bytes         int64 `json:"bytes"` // received off the wire
 	Articles      int64 `json:"articles"`
@@ -919,8 +955,11 @@ type ProviderStats struct {
 	BodyMisses    int64 `json:"bodyMisses"`    // BODY responses unavailable on this provider
 	BodyTakedowns int64 `json:"bodyTakedowns"` // subset of BodyMisses with status 451
 	BackfillSaves int64 `json:"backfillSaves"` // body fetches saved after earlier provider misses
-	Errors        int64 `json:"errors"`
-	Dials         int64 `json:"dials"`
+	// Spillovers are requests served by this provider because every
+	// higher-priority provider was saturated (never counted on backfill).
+	Spillovers int64 `json:"spillovers"`
+	Errors     int64 `json:"errors"`
+	Dials      int64 `json:"dials"`
 
 	AvgLatency       time.Duration `json:"avgLatency"`   // command round trip (EWMA)
 	AvgFetchTime     time.Duration `json:"avgFetchTime"` // whole article (EWMA)
@@ -976,6 +1015,8 @@ func (p *pool) stats() ProviderStats {
 	if p.share > 0 {
 		st.NodeShare = p.targetLocked()
 	}
+	st.LimitLearned = p.limitedLocked()
+	st.ServerLimit = p.limit.stated
 	st.LiveConnections = p.live
 	st.IdleConnections = len(p.idle)
 	if p.closed {
@@ -989,6 +1030,9 @@ func (p *pool) stats() ProviderStats {
 	st.Articles = p.articles.Load()
 	st.Misses = p.misses.Load()
 	st.BackfillSaves = p.backfillSaves.Load()
+	st.Spillovers = p.spillovers.Load()
+	st.LimitRefusals = p.limitRefusals.Load()
+	st.TeardownRefusals = p.teardownRefusals.Load()
 	st.BodyMisses = p.bodyMisses.Load()
 	st.BodyTakedowns = p.bodyTakedowns.Load()
 	st.Errors = p.errs.Load()
@@ -1011,6 +1055,13 @@ func (p *pool) stats() ProviderStats {
 	st.HedgeLosses = p.hedgeLosses.Load()
 	st.HedgeWastedBytes = p.hedgeWaste.Load()
 	return st
+}
+
+// avgFetch is the whole-article fetch time EWMA (0 until measured).
+func (p *pool) avgFetch() time.Duration {
+	p.latMu.Lock()
+	defer p.latMu.Unlock()
+	return time.Duration(p.fetching.v)
 }
 
 // idleFloor is how many live connections the janitor keeps warm for this
@@ -1056,26 +1107,26 @@ func (p *pool) setShare(n int) bool {
 	before := p.targetLocked()
 	p.share = n
 	target := p.targetLocked()
-	limited := !p.limitedUntil.IsZero()
+	keep := p.effectiveLocked()
 	var drop []*Conn
-	for p.live > target && len(p.idle) > 0 {
+	for p.live > keep && len(p.idle) > 0 {
 		drop = append(drop, p.idle[0]) // least recently used first
 		p.idle[0] = nil
 		p.idle = p.idle[1:]
 		p.live--
 	}
 	p.mu.Unlock()
+	if len(drop) > 0 {
+		p.noteClose(len(drop))
+	}
 	for _, c := range drop {
 		go c.Quit()
 	}
 	if before == target {
 		return false
 	}
-	// While the server limits us below the configured count, keep the
-	// smaller of the two; the cool-off restore uses the new target.
-	if !limited || p.sem.stats().Size > target {
-		p.sem.setSize(target, p.o.PrefetchFraction)
-	}
+	// A learned server limit still applies under the new target.
+	p.applySize()
 	p.wakeBodyWorkers()
 	p.log.Info("usenet: connection share changed", "configured", p.size, "from", before, "to", target, "closed_idle", len(drop))
 	return true
