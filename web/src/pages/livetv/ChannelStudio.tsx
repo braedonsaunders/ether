@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Artwork } from "../../components/Artwork";
-import { MoreOptions } from "../../components/ConfigSection";
 import { ToolbarPicker } from "../../components/ToolbarPicker";
 import { DragHandle, SortableList } from "../../components/Sortable";
 import { Field, Segmented } from "../../components/fields";
@@ -468,8 +467,11 @@ export function ChannelStudio({
               </div>
             </Field>
             {virtual ? (
-              <MoreOptions label={t("More options: {title}", { title: t("Schedule") })}>
-                <div className="grid gap-4 sm:grid-cols-2">
+              <details className="rounded-xl border border-border bg-surface p-4">
+                <summary className="cursor-pointer text-sm font-medium text-fg">
+                  {t("Advanced schedule settings")}
+                </summary>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field
                     label={t("Schedule anchor (UTC)")}
                     htmlFor="ch-epoch"
@@ -491,7 +493,7 @@ export function ChannelStudio({
                     />
                   </Field>
                 </div>
-              </MoreOptions>
+              </details>
             ) : null}
             {!isNew ? (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/30 bg-danger/5 p-4">
