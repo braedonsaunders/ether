@@ -113,3 +113,8 @@ disagrees with Auto's estimate, Auto's media title follows the probe
 (`Auto · SD · AAC`). A known 1080p candidate is still tried before a known
 SD file; the downgrade trace is unchanged. This note does not allowlist any
 response.
+
+Scrobble: `PUT/GET /:/scrobble` and `/:/unscrobble` return an empty
+MediaContainer. Timeline entries set `metadataState` to `created`. A movie's
+`rootItemID` is its own rating key so the open detail refreshes; an episode
+still names its season and show. This note does not allowlist any response.

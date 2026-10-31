@@ -256,8 +256,12 @@ func TestTimelineUpdatesState(t *testing.T) {
 func TestScrobbleRate(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()
-	if rec := f.get(t, "/:/scrobble?key=1000000000000550&identifier=com.plexapp.plugins.library"); rec.Code != http.StatusOK {
+	rec := f.get(t, "/:/scrobble?key=1000000000000550&identifier=com.plexapp.plugins.library")
+	if rec.Code != http.StatusOK {
 		t.Fatalf("scrobble %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "MediaContainer") {
+		t.Fatalf("scrobble body %q", rec.Body.String())
 	}
 	if st, _ := f.state.Get(context.Background(), ownerUser.ID, fightClub.Key); st.ViewCount != 1 {
 		t.Fatal("not scrobbled")
@@ -682,11 +686,42 @@ func TestEventSource(t *testing.T) {
 			}
 			e := v.TimelineEntry
 			if e.ItemID != bbE1.Key.String() || e.ParentItemID != bbE1.Key.Parent().String() ||
-				e.RootItemID != breakingBad.Key.String() || e.Type != 4 || e.State != 5 || e.Identifier != model.LibraryIdentifier {
+				e.RootItemID != breakingBad.Key.String() || e.Type != 4 || e.State != 5 ||
+				e.MetadataState != "created" || e.Identifier != model.LibraryIdentifier {
 				t.Fatalf("timeline entry %+v", e)
 			}
 			return
 		}
+	}
+}
+
+func TestMovieScrobbleTimelineNamesItself(t *testing.T) {
+	f := newFixture()
+	defer f.srv.Close()
+	sub, _ := f.srv.notifier.subscribe([]string{"timeline"}, &ownerUser)
+	defer f.srv.notifier.unsubscribe(sub)
+	f.get(t, "/:/scrobble?key="+fightClub.Key.String()+"&identifier=com.plexapp.plugins.library")
+	select {
+	case msg := <-sub.ch:
+		var body struct {
+			NotificationContainer struct {
+				TimelineEntry []model.TimelineEntry
+			}
+		}
+		if err := json.Unmarshal(msg.data, &body); err != nil {
+			t.Fatal(err)
+		}
+		entries := body.NotificationContainer.TimelineEntry
+		if len(entries) != 1 {
+			t.Fatalf("timeline %s", msg.data)
+		}
+		e := entries[0]
+		if e.ItemID != fightClub.Key.String() || e.RootItemID != fightClub.Key.String() ||
+			e.Type != 1 || e.State != 5 || e.MetadataState != "created" {
+			t.Fatalf("movie timeline %+v", e)
+		}
+	default:
+		t.Fatal("movie scrobble published no timeline entry")
 	}
 }
 

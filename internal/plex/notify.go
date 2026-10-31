@@ -519,20 +519,26 @@ func (s *Server) notifyTimeline(key core.RatingKey, t core.MediaType, title stri
 		parent, root = key.Parent().String(), core.ShowKey(key.TMDB()).String()
 	case core.KindSeason:
 		parent = key.Parent().String()
+	case core.KindMovie:
+		// An open movie detail is the item itself. Episodes refresh because
+		// the season and show ids are on the entry; a movie with only itemID
+		// leaves the toolbar on "Mark as Watched" until the page is reopened.
+		root = key.String()
 	}
 	s.publishNotification(model.NotificationContainer{
 		Type: "timeline",
 		Size: 1,
 		TimelineEntry: []model.TimelineEntry{{
-			Identifier:   model.LibraryIdentifier,
-			SectionID:    fmt.Sprint(sec.ID),
-			ItemID:       key.String(),
-			ParentItemID: parent,
-			RootItemID:   root,
-			Type:         typeNum,
-			Title:        title,
-			State:        5,
-			UpdatedAt:    s.now().Unix(),
+			Identifier:    model.LibraryIdentifier,
+			SectionID:     fmt.Sprint(sec.ID),
+			ItemID:        key.String(),
+			ParentItemID:  parent,
+			RootItemID:    root,
+			Type:          typeNum,
+			Title:         title,
+			State:         5,
+			MetadataState: "created",
+			UpdatedAt:     s.now().Unix(),
 		}},
 	}, userID)
 }

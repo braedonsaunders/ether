@@ -230,7 +230,9 @@ func (s *Server) scrobble(w http.ResponseWriter, r *http.Request, watched bool) 
 			s.goHook("OnScrobble", func() { hook(&u, key) })
 		}
 	}
-	w.WriteHeader(http.StatusOK)
+	// An empty body has no Content-Type. tvOS treats that PUT as a failure
+	// and leaves the button on the label it had when the detail opened.
+	s.writeEmpty(w, r)
 }
 
 // handleRate is /:/rate?key=&rating= (0-10, -1 clears).
