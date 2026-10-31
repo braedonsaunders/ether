@@ -17,4 +17,6 @@ Sanitized on retrieval: XML declaration, titles, roles, and every element other 
 | `debridlink.svg`       | `debridlink`       | 16.36.0 |
 | `stremio.svg`          | `stremio`          | 16.36.0 |
 
-No vendored mark exists for Silo, WebDAV, OpenSubtitles, Prowlarr, OMDb, MDBList, Real-Debrid, TorBox, AllDebrid, Premiumize, or Offcloud. Do not invent those logos. Usenet providers and tracker sites keep a monogram of their name.
+`silo.png` is Silo's own app icon, the `web-app-icon-512.png` its server publishes in `site.webmanifest`, retrieved 2026-10-31 from the reference Silo server and scaled to 112×112. It is shown only on the Silo app card, to identify the app Ether serves.
+
+No vendored mark exists for WebDAV, OpenSubtitles, Prowlarr, OMDb, MDBList, Real-Debrid, TorBox, AllDebrid, Premiumize, or Offcloud. Do not invent those logos. Usenet providers and tracker sites keep a monogram of their name.

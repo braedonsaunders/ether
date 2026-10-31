@@ -11,7 +11,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useApp } from "../../app-context";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
-import { EmbyMark, JellyfinMark, PlexMark } from "../../components/integration-brands";
+import { EmbyMark, JellyfinMark, PlexMark, SiloMark } from "../../components/integration-brands";
+import { StremioMark } from "../sources/marks";
 import { MoreOptions } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
@@ -74,7 +75,7 @@ const pathFor = appPath;
 const protocolFor = (tab: string) => (tab === "files" ? "webdav" : tab);
 const nameFor = (info: FrontendInfo) => appLabel(info.descriptor.id, info.descriptor.name);
 
-/** Vendored marks only. Silo, Stremio, Files, DLNA, and M3U have none. */
+/** Vendored marks only. Files, DLNA, and M3U have none. */
 function appLogo(id: string): ReactNode | undefined {
   switch (id) {
     case "plex":
@@ -83,6 +84,10 @@ function appLogo(id: string): ReactNode | undefined {
       return <JellyfinMark />;
     case "emby":
       return <EmbyMark />;
+    case "silo":
+      return <SiloMark />;
+    case "stremio":
+      return <StremioMark />;
     default:
       return undefined;
   }

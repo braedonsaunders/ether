@@ -1,6 +1,7 @@
 import emby from "../assets/brands/emby.svg?no-inline";
 import jellyfin from "../assets/brands/jellyfin.svg?no-inline";
 import plex from "../assets/brands/plex.svg?no-inline";
+import silo from "../assets/brands/silo.png?no-inline";
 import simkl from "../assets/brands/simkl.svg?no-inline";
 import tmdb from "../assets/brands/themoviedatabase.svg?no-inline";
 import trakt from "../assets/brands/trakt.svg?no-inline";
@@ -38,6 +39,10 @@ export function JellyfinMark() {
 }
 export function EmbyMark() {
   return <BrandMark src={emby} color="#52b54b" />;
+}
+/** Silo's own full-colour app icon, so it is an image rather than a mask. */
+export function SiloMark() {
+  return <img src={silo} alt="" aria-hidden className="block size-7 rounded-md" />;
 }
 export function SimklMark() {
   return <BrandMark src={simkl} color="currentColor" />;
