@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -191,8 +192,8 @@ func TestMixedProtocolOperability(t *testing.T) {
 		c.SetupComplete = true
 		c.Plex.Token = "test-owner"
 		c.Transcode.FFmpegPath = "/not-installed/ffmpeg"
-		c.Server.MaxStreams = 3
-		c.Server.DefaultStreamLimit = 3
+		c.Server.MaxStreams = 8
+		c.Server.DefaultStreamLimit = 8
 		c.Frontends = map[string]config.Frontend{
 			"plex":     {Enabled: true},
 			"jellyfin": {Enabled: true, Settings: map[string]any{"port": float64(18096), "discovery": false}},
@@ -379,7 +380,17 @@ func TestMixedProtocolOperability(t *testing.T) {
 		if strings.Contains(string(lbody), secret) || strings.Contains(logs.String(), secret) {
 			t.Fatal("failure log kept the client credential")
 		}
-		if strings.Count(logs.String(), `frontend=jellyfin`) != 1 {
+		embySecret := "noisy-emby-secret"
+		for n := 0; n < 40; n++ {
+			code, _ := call(http.MethodGet, "/emby/System/Info?api_key="+embySecret, "", nil)
+			if code != 401 {
+				t.Fatal(code)
+			}
+		}
+		if strings.Contains(logs.String(), secret) || strings.Contains(logs.String(), embySecret) {
+			t.Fatal("failure log kept a client credential")
+		}
+		if strings.Count(logs.String(), `frontend=jellyfin`) != 1 || strings.Count(logs.String(), `frontend=emby`) != 1 {
 			t.Fatal(logs.String())
 		}
 	})
@@ -399,8 +410,11 @@ func TestMixedProtocolOperability(t *testing.T) {
 			{http.MethodGet, "/jellyfin/Users/" + userGUID + "/Views", "", jf},
 			{http.MethodGet, "/jellyfin/Users/" + userGUID + "/Items", "", jf},
 			{http.MethodPost, "/jellyfin/Items/" + guid + "/PlaybackInfo", `{"IsPlayback":false,"EnableDirectPlay":true}`, jf},
+			{http.MethodGet, "/jellyfin/Items/" + guid, "", jf},
 			{http.MethodGet, "/emby/Users/" + userGUID + "/Views", "", em},
 			{http.MethodPost, "/emby/Items/" + guid + "/PlaybackInfo", `{"IsPlayback":false,"EnableDirectPlay":true}`, em},
+			{http.MethodGet, "/emby/Users/" + userGUID + "/Items/" + guid, "", em},
+			{http.MethodGet, "/silo/api/v2/catalog/items/" + guid, "", silo},
 			{http.MethodGet, "/silo/api/v2/user/libraries", "", silo},
 			{http.MethodGet, "/silo/api/v2/home/sections", "", silo},
 			{http.MethodGet, "/stremio/" + tokens["stremio"] + "/catalog/movie/ether-movies.json", "", nil},
@@ -422,15 +436,6 @@ func TestMixedProtocolOperability(t *testing.T) {
 		}
 		if got := len(a.resolver.Traces()); got != before || media.opensOf(media.relID) != opens {
 			t.Fatalf("browse resolved: traces %d -> %d opens %d -> %d", before, got, opens, media.opensOf(media.relID))
-		}
-		// A single opened item may resolve so the client can show the real file.
-		// Listings and estimate playback above must not.
-		for _, r := range []route{
-			{http.MethodGet, "/jellyfin/Items/" + guid, "", jf},
-			{http.MethodGet, "/emby/Items/" + guid, "", em},
-			{http.MethodGet, "/silo/api/v2/catalog/items/" + guid, "", silo},
-		} {
-			check(r)
 		}
 	})
 
@@ -455,6 +460,26 @@ func TestMixedProtocolOperability(t *testing.T) {
 		}
 		if !strings.Contains(string(msg), "UserDataChanged") || !strings.Contains(string(msg), guid) {
 			t.Fatal(string(msg))
+		}
+		code, body = call(http.MethodGet, "/emby/Users/"+userGUID+"/Items/"+guid, "", em)
+		if code != 200 || !strings.Contains(string(body), `"Played":true`) {
+			t.Fatalf("emby missed jellyfin watched state %d %s", code, body)
+		}
+		code, body = call(http.MethodGet, "/silo/api/v2/catalog/items/"+guid, "", silo)
+		if code != 200 || !strings.Contains(string(body), `"played":true`) {
+			t.Fatalf("silo missed jellyfin watched state %d %s", code, body)
+		}
+		code, body = call(http.MethodDelete, "/emby/Users/"+userGUID+"/PlayedItems/"+guid, "", em)
+		if code >= 300 {
+			t.Fatalf("emby unplayed %d %s", code, body)
+		}
+		code, body = call(http.MethodGet, "/jellyfin/Items/"+guid, "", jf)
+		if code != 200 || strings.Contains(string(body), `"Played":true`) {
+			t.Fatalf("jellyfin missed emby unplayed %d %s", code, body)
+		}
+		code, body = call(http.MethodGet, "/silo/api/v2/catalog/items/"+guid, "", silo)
+		if code != 200 || strings.Contains(string(body), `"played":true`) {
+			t.Fatalf("silo missed emby unplayed %d %s", code, body)
 		}
 	})
 
@@ -541,6 +566,149 @@ func TestMixedProtocolOperability(t *testing.T) {
 		if code != 200 || strings.Contains(string(body), protocols["plex"]) || strings.Contains(string(body), protocols["jellyfin"]) {
 			t.Fatalf("sessions remain %d %s", code, body)
 		}
+
+		code, body = call(http.MethodPost, "/emby/Items/"+guid+"/PlaybackInfo", `{"IsPlayback":true,"EnableDirectPlay":true,"EnableDirectStream":true}`, em)
+		if code != 200 {
+			t.Fatalf("emby play %d %s", code, body)
+		}
+		var embyPlay struct {
+			PlaySessionId string
+		}
+		if json.Unmarshal(body, &embyPlay) != nil || embyPlay.PlaySessionId == "" {
+			t.Fatal(string(body))
+		}
+		code, body = call(http.MethodPost, "/emby/Sessions/Playing/Progress", `{"PlaySessionId":"`+embyPlay.PlaySessionId+`","PositionTicks":600000000}`, em)
+		if code != 204 {
+			t.Fatalf("emby progress %d %s", code, body)
+		}
+		code, body = call(http.MethodGet, "/jellyfin/Users/"+userGUID+"/Items/"+guid, "", jf)
+		if code != 200 || !strings.Contains(string(body), `"PlaybackPositionTicks":600000000`) {
+			t.Fatalf("jellyfin missed emby progress %d %s", code, body)
+		}
+
+		code, body = call(http.MethodGet, "/silo/api/v2/playback/capabilities", "", silo)
+		var capsDoc struct {
+			Installation string `json:"installation_id"`
+		}
+		if code != 200 || json.Unmarshal(body, &capsDoc) != nil || capsDoc.Installation == "" {
+			t.Fatalf("silo capabilities %d %s", code, body)
+		}
+		code, body = call(http.MethodGet, "/silo/api/v2/catalog/items/"+guid, "", silo)
+		var catalog struct {
+			Versions []struct {
+				FileID string `json:"file_id"`
+			} `json:"versions"`
+		}
+		if code != 200 || json.Unmarshal(body, &catalog) != nil || len(catalog.Versions) == 0 || catalog.Versions[0].FileID == "" {
+			t.Fatalf("silo file %d %s", code, body)
+		}
+		code, body = call(http.MethodPost, "/silo/api/v2/playback/start", `{"protocol_version":3,"file_id":"`+catalog.Versions[0].FileID+`","profile_id":"`+strconv.FormatInt(owner.ID, 10)+`","installation_id":"`+capsDoc.Installation+`","playback_attempt_id":"operability","client_capabilities":{"codecs_video":["h264"],"codecs_audio":["aac"],"containers":["mp4"]}}`, silo)
+		if code >= 300 {
+			t.Fatalf("silo play %d %s", code, body)
+		}
+
+		code, body = call(http.MethodGet, "/stremio/"+tokens["stremio"]+"/stream/movie/tmdb:999.json", "", nil)
+		var streams struct {
+			Streams []struct {
+				URL string `json:"url"`
+			} `json:"streams"`
+		}
+		if code != 200 || json.Unmarshal(body, &streams) != nil || len(streams.Streams) == 0 {
+			t.Fatalf("stremio stream %d %s", code, body)
+		}
+		streamURL, err := url.Parse(streams.Streams[0].URL)
+		if err != nil || streamURL.Path == "" {
+			t.Fatal(streams.Streams[0].URL)
+		}
+		code, body = call(http.MethodGet, streamURL.RequestURI(), "", nil)
+		if code >= 400 {
+			t.Fatalf("stremio media %d %s", code, body)
+		}
+
+		movie := url.PathEscape("Shared Release (2000)")
+		davAuth := map[string]string{"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(strconv.FormatInt(owner.ID, 10)+":"+tokens["webdav"]))}
+		code, body = call(http.MethodGet, "/webdav/Movies/"+movie+"/"+movie+".mkv", "", davAuth)
+		if code >= 400 {
+			t.Fatalf("webdav media %d %s", code, body)
+		}
+
+		dlnaKey := strconv.FormatInt(int64(title.Key), 10)
+		dlna := `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1"><ObjectID>item:` + dlnaKey + `</ObjectID><BrowseFlag>BrowseMetadata</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>1</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>`
+		code, body = call(http.MethodPost, "/dlna/ContentDirectory/control", dlna, map[string]string{"SOAPACTION": `"urn:schemas-upnp-org:service:ContentDirectory:1#Browse"`, "Content-Type": "text/xml"})
+		if code != 200 {
+			t.Fatalf("dlna item %d %s", code, body)
+		}
+		raw := string(body)
+		marker := "/dlna/sessions/lazy/"
+		start := strings.Index(raw, marker)
+		if start < 0 {
+			t.Fatal(raw)
+		}
+		end := strings.IndexAny(raw[start:], `<"&`)
+		if end < 0 {
+			t.Fatal(raw)
+		}
+		code, body = call(http.MethodGet, raw[start:start+end], "", nil)
+		if code >= 400 {
+			t.Fatalf("dlna media %d %s", code, body)
+		}
+
+		code, body = call(http.MethodGet, "/ether/api/status/sessions", "", ownerHeader)
+		if code != 200 {
+			t.Fatal(code, string(body))
+		}
+		listed := map[string]string{}
+		var rows []struct {
+			ID     string `json:"ID"`
+			Client struct {
+				Protocol string `json:"Protocol"`
+			} `json:"Client"`
+		}
+		var wrappedRows struct {
+			Value []struct {
+				ID     string `json:"ID"`
+				Client struct {
+					Protocol string `json:"Protocol"`
+				} `json:"Client"`
+			} `json:"value"`
+		}
+		if strings.Contains(string(body), `"value"`) {
+			if err = json.Unmarshal(body, &wrappedRows); err != nil {
+				t.Fatal(err, string(body))
+			}
+			for _, row := range wrappedRows.Value {
+				if row.Client.Protocol != "" {
+					listed[row.Client.Protocol] = row.ID
+				}
+			}
+		} else if err = json.Unmarshal(body, &rows); err != nil {
+			t.Fatal(err, string(body))
+		} else {
+			for _, row := range rows {
+				if row.Client.Protocol != "" {
+					listed[row.Client.Protocol] = row.ID
+				}
+			}
+		}
+		for _, protocol := range []string{"emby", "silo", "stremio", "webdav", "dlna"} {
+			id := listed[protocol]
+			if id == "" {
+				t.Fatalf("activity missing %s in %+v body %s", protocol, listed, body)
+			}
+			code, body = call(http.MethodPost, "/ether/api/stats/sessions/"+id+"/stop", "{}", ownerHeader)
+			if code != 200 {
+				t.Fatalf("stop %s %d %s", protocol, code, body)
+			}
+		}
+		code, body = call(http.MethodGet, "/ether/api/status/sessions", "", ownerHeader)
+		if code != 200 {
+			t.Fatal(code, string(body))
+		}
+		for _, id := range listed {
+			if strings.Contains(string(body), id) {
+				t.Fatalf("session %s remains %s", id, body)
+			}
+		}
 	})
 
 	t.Run("hot-toggle-and-cluster", func(t *testing.T) {
@@ -588,10 +756,13 @@ func TestMixedProtocolOperability(t *testing.T) {
 		if err = peer.AttachShared(ctx, backend, config.SharedOptions{PollInterval: -1, NoSeed: true}); err != nil {
 			t.Fatal(err)
 		}
+		frontends := []string{"jellyfin", "emby", "silo", "stremio", "webdav", "m3u", "dlna", "plex"}
 		if err = peer.Update(func(c *config.Config) error {
-			v := c.Frontends["jellyfin"]
-			v.Enabled = false
-			c.Frontends["jellyfin"] = v
+			for _, id := range frontends {
+				v := c.Frontends[id]
+				v.Enabled = false
+				c.Frontends[id] = v
+			}
 			return nil
 		}); err != nil {
 			t.Fatal(err)
@@ -599,17 +770,21 @@ func TestMixedProtocolOperability(t *testing.T) {
 		if err = a.cfg.RefreshShared(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if _, mounted := a.frontends.registry.Instance("jellyfin"); mounted {
-			t.Fatal("cluster disable left jellyfin mounted")
-		}
-		hcode, _ := call(http.MethodGet, "/ether/api/frontends/jellyfin/health", "", ownerHeader)
-		if hcode != 503 {
-			t.Fatal(hcode)
+		for _, id := range frontends {
+			if _, mounted := a.frontends.registry.Instance(frontend.Protocol(id)); mounted {
+				t.Fatalf("cluster disable left %s mounted", id)
+			}
+			hcode, _ := call(http.MethodGet, "/ether/api/frontends/"+id+"/health", "", ownerHeader)
+			if hcode != 503 {
+				t.Fatalf("cluster %s health %d", id, hcode)
+			}
 		}
 		if err = peer.Update(func(c *config.Config) error {
-			v := c.Frontends["jellyfin"]
-			v.Enabled = true
-			c.Frontends["jellyfin"] = v
+			for _, id := range frontends {
+				v := c.Frontends[id]
+				v.Enabled = true
+				c.Frontends[id] = v
+			}
 			return nil
 		}); err != nil {
 			t.Fatal(err)
@@ -617,8 +792,10 @@ func TestMixedProtocolOperability(t *testing.T) {
 		if err = a.cfg.RefreshShared(ctx); err != nil {
 			t.Fatal(err)
 		}
-		if _, mounted := a.frontends.registry.Instance("jellyfin"); !mounted {
-			t.Fatal("cluster enable did not mount jellyfin")
+		for _, id := range frontends {
+			if _, mounted := a.frontends.registry.Instance(frontend.Protocol(id)); !mounted {
+				t.Fatalf("cluster enable did not mount %s", id)
+			}
 		}
 	})
 }

@@ -3,7 +3,6 @@ package sessions
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,24 +122,24 @@ func TestMediaBrowserResolvedLazyHLSBroker(t *testing.T) {
 					inst.Handler().ServeHTTP(w, r)
 					return w
 				}
-				detail := call("GET", "/Items/"+ids.RatingKeyGUID(5))
-				var dto struct {
-					MediaSources []struct{ Id, TranscodingUrl, TranscodingContainer string }
+				detailPage := call("GET", "/Items/"+ids.RatingKeyGUID(5))
+				if detailPage.Code != 200 || strings.Contains(detailPage.Body.String(), "TranscodingUrl") || strings.Contains(detailPage.Body.String(), "account-secret") || strings.Contains(detailPage.Body.String(), "private-release") || len(b.sessions) != 0 || len(tc.sessions) != 0 {
+					t.Fatal("item page resolved a source", detailPage.Code, detailPage.Body.String())
 				}
-				if detail.Code != 200 || json.Unmarshal(detail.Body.Bytes(), &dto) != nil || len(dto.MediaSources) != 1 || dto.MediaSources[0].TranscodingUrl == "" {
-					t.Fatal(detail.Code, detail.Body.String())
+				req := frontend.PlanRequest{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "device"}, Protocol: frontend.Protocol(protocol), Item: 5, Intent: frontend.PlayIntent{Options: frontend.DecideOptions{DirectPlay: true, DirectStream: true}}}
+				plan, err := b.DetailPlan(ctx, req)
+				if err != nil || plan.DetailSource == "" || plan.ETag == "" || !plan.HLS {
+					t.Fatal(plan, err)
 				}
-				if strings.Contains(detail.Body.String(), "account-secret") || strings.Contains(detail.Body.String(), "private-release") || len(b.sessions) != 0 || len(tc.sessions) != 0 {
-					t.Fatal("detail opened encoder or leaked authority", detail.Body.String())
+				req.DetailSource, req.ExpectedSourceETag = plan.DetailSource, plan.ETag
+				issuer, ok := lazy.(frontend.LazyHLSStreams)
+				if !ok {
+					t.Fatal("lazy issuer has no HLS capability")
 				}
-				wantContainer := "ts"
-				if container == "fmp4" {
-					wantContainer = "mp4"
+				path, err := issuer.IssueHLS(ctx, "account-secret", req, frontend.StreamRequest{Format: frontend.StreamHLS})
+				if err != nil || !strings.HasPrefix(path, "/sessions/lazy/") {
+					t.Fatal(path, err)
 				}
-				if dto.MediaSources[0].TranscodingContainer != wantContainer {
-					t.Fatal("container metadata", dto)
-				}
-				path := strings.TrimPrefix(dto.MediaSources[0].TranscodingUrl, "https://ether.example")
 				if w := call("HEAD", path); w.Code != 200 || len(b.sessions) != 0 {
 					t.Fatal("HEAD opened", w.Code)
 				}
@@ -155,7 +154,7 @@ func TestMediaBrowserResolvedLazyHLSBroker(t *testing.T) {
 					t.Fatal("advertised container differs from encoder", tc.started.Decision)
 				}
 				for _, s := range b.sessions {
-					if err := b.MatchDetailSession(ctx, frontend.VersionScope{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "device"}, Protocol: frontend.Protocol(protocol)}, dto.MediaSources[0].Id, s.public.ID); err != nil {
+					if err := b.MatchDetailSession(ctx, frontend.VersionScope{Viewer: &core.Viewer{ID: 1}, Device: core.Device{ID: "device"}, Protocol: frontend.Protocol(protocol)}, plan.DetailSource, s.public.ID); err != nil {
 						t.Fatal("source binding", err)
 					}
 				}
