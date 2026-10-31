@@ -24,7 +24,7 @@ func assertInputSafety(t *testing.T, args []string, live, network bool) {
 			t.Errorf("supported VOD container %s missing: %v", name, args)
 		}
 	}
-	for _, name := range []string{"hls", "dash"} {
+	for _, name := range []string{"hls", "dash", "webvtt"} {
 		if slices.Contains(formats, name) != live {
 			t.Errorf("format %s allowed=%v, live=%v", name, slices.Contains(formats, name), live)
 		}

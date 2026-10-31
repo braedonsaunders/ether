@@ -13,7 +13,10 @@ const vodInputFormats = "matroska,webm,mov,mp4,m4a,3gp,3g2,mj2,avi,mpegts,asf,mp
 func inputSafetyArgs(input string, live bool) []string {
 	formats := vodInputFormats
 	if live {
-		formats += ",hls,dash,aac,mp3,ac3,eac3"
+		// HLS masters often carry a WebVTT subtitle rendition. ffprobe opens
+		// that demuxer while probing the playlist; leaving it off the list
+		// rejects the whole channel.
+		formats += ",hls,dash,aac,mp3,ac3,eac3,webvtt"
 	}
 	protocols := "http,https,tcp,tls,crypto"
 	if !isNetworkURL(input) {
