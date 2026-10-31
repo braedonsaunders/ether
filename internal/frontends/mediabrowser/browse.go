@@ -299,10 +299,27 @@ func (i *instance) browseRoutes() error {
 			items := make([]any, 0, len(page))
 			images := i.gridImagesFor(r, page)
 			paths := i.virtualPaths(r, v, keys)
+			if fieldSet(r)["mediasources"] {
+				r = i.withPageEditions(r, v, keys)
+			}
 			for _, title := range page {
+				if purpose == frontend.RowNextUp && title.Type == "episode" && i.host.Experience != nil {
+					detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: title.Key})
+					if err == nil && detail.Title.Key == title.Key && detail.Title.Type == "episode" {
+						title = detail.Title
+					}
+				}
 				item := i.itemDTO(title, state[title.Key])
 				if p := paths[title.Key]; p != "" {
 					item["Path"] = p
+				}
+				if fieldSet(r)["mediasources"] {
+					editions := i.jellyfinEditions(r, v, title)
+					if len(editions) == 1 {
+						setSourcePath(editions[0].source, paths[title.Key])
+						item["MediaSources"] = []any{editions[0].source}
+						applyJellyfinEditionFacts(item, editions[0].media)
+					}
 				}
 				for key, value := range images[title.Key] {
 					item[key] = value

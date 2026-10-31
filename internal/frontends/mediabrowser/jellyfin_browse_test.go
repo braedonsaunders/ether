@@ -226,10 +226,17 @@ func TestJellyfinBrowseFiltersReachTheLibrary(t *testing.T) {
 }
 
 func TestJellyfinNextUpUsesContinueEpisodes(t *testing.T) {
-	episode := frontend.Title{Key: 8, Type: "episode", Title: "Two", ShowTitle: "Show"}
+	episode := frontend.Title{Key: core.EpisodeKey(5, 1, 2), Type: "episode", Title: "Two", Season: 1, Episode: 2}
 	movie := frontend.Title{Key: 3, Type: "movie", Title: "Film"}
 	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
 		return []frontend.Row{{Purpose: frontend.RowContinue, Items: []frontend.Title{movie, episode}}}, nil
+	}, ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if req.Key != episode.Key {
+			t.Fatalf("next up item %v", req.Key)
+		}
+		full := episode
+		full.ShowTitle = "The Scene"
+		return frontend.ItemDetail{Title: full}, nil
 	}, UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
 		return map[frontend.RatingKey]frontend.WatchStatus{}, nil
 	}}
@@ -239,7 +246,7 @@ func TestJellyfinNextUpUsesContinueEpisodes(t *testing.T) {
 	r.Header.Set("X-Emby-Token", "grant")
 	inst.Handler().ServeHTTP(w, r)
 	var body struct{ Items []map[string]any }
-	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 || body.Items[0]["Name"] != "Two" {
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 || body.Items[0]["Name"] != "Two" || body.Items[0]["SeriesName"] != "The Scene" {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
