@@ -234,9 +234,7 @@ func listenGDM(port int) (*net.UDPConn, error) {
 	// Reuse lets rejoin open the replacement while the current socket is still
 	// answering. The old socket is closed only after the new one is installed.
 	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
-		return c.Control(func(fd uintptr) {
-			_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
-		})
+		return c.Control(setGDMReuseAddr)
 	}}
 	pc, err := lc.ListenPacket(context.Background(), "udp4", net.JoinHostPort("0.0.0.0", strconv.Itoa(port)))
 	if err != nil {
