@@ -15,7 +15,7 @@ import (
 // with no air date or a future air date do not count. Catalogue insertion
 // (added_at), metadata refresh (fetched_at), publication and observation
 // times are not date added. All five placeholders bind the same Unix time.
-const airAddedSQL = `COALESCE(CASE WHEN t.type='show' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.key AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type='season' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.show_key AND e.season=t.season AND e.released_ts>0 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type IN ('movie','episode') AND t.released_ts>0 AND t.released_ts<=? THEN t.released_ts END,0)`
+const airAddedSQL = `COALESCE(CASE WHEN t.type='show' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.key AND e.release_known=1 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.release_known=1 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type='season' THEN COALESCE((SELECT e.released_ts FROM catalog_titles e WHERE e.type='episode' AND e.show_key=t.show_key AND e.season=t.season AND e.release_known=1 AND e.released_ts<=? ORDER BY e.released_ts DESC LIMIT 1), CASE WHEN t.release_known=1 AND t.released_ts<=? THEN t.released_ts END) WHEN t.type IN ('movie','episode') AND t.release_known=1 AND t.released_ts<=? THEN t.released_ts END,0)`
 
 func airAddedArgs(now time.Time) []any {
 	unix := now.Unix()

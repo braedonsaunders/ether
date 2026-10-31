@@ -477,7 +477,7 @@ func (c *Catalog) episodesOfSeason(ctx context.Context, showID int64, season int
 
 // airedSeasonEpisodeWhere matches the rows queryTitles keeps for a season:
 // not adult, and an air date that is already known and not in the future.
-const airedSeasonEpisodeWhere = `type='episode' AND show_key=? AND season=? AND adult=0 AND released_ts>0 AND released_ts<=?`
+const airedSeasonEpisodeWhere = `type='episode' AND show_key=? AND season=? AND adult=0 AND ` + knownReleaseSQL + ` AND released_ts<=?`
 
 // SeasonEpisodePage returns one window of a single catalogue season. The
 // count and the page both use catalog_titles_show (show_key, season, episode),
@@ -505,13 +505,14 @@ func (c *Catalog) seasonEpisodeQuery(ctx context.Context, showID int64, season, 
 	showKey := int64(core.ShowKey(showID))
 	now := c.now().Unix()
 	var total int
-	if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles INDEXED BY catalog_titles_show WHERE `+airedSeasonEpisodeWhere, showKey, season, now).Scan(&total); err != nil {
+	from := `catalog_titles ` + sqliteIndexedBy(c.db, "catalog_titles_show")
+	if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+from+`WHERE `+airedSeasonEpisodeWhere, showKey, season, now).Scan(&total); err != nil {
 		return core.Page{}, err
 	}
 	if offset >= total {
 		return core.Page{Items: []core.Title{}, Total: total}, nil
 	}
-	items, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles INDEXED BY catalog_titles_show WHERE `+airedSeasonEpisodeWhere+` ORDER BY episode ASC LIMIT ? OFFSET ?`, showKey, season, now, limit, offset)
+	items, err := c.queryTitles(ctx, `SELECT `+titleCols+` FROM `+from+`WHERE `+airedSeasonEpisodeWhere+` ORDER BY episode ASC LIMIT ? OFFSET ?`, showKey, season, now, limit, offset)
 	if err != nil {
 		return core.Page{}, err
 	}
@@ -637,7 +638,7 @@ const seasonLoads = 6
 func (c *Catalog) loadSeasons(ctx context.Context, showID int64, seasons []core.Title) error {
 	type mirrored struct{ episodes, pending int }
 	have := map[int]mirrored{}
-	rows, err := c.db.QueryContext(ctx, `SELECT season,COUNT(*),COUNT(CASE WHEN released_ts=0 OR released_ts>? THEN 1 END)
+	rows, err := c.db.QueryContext(ctx, `SELECT season,COUNT(*),COUNT(CASE WHEN release_known=0 OR released_ts>? THEN 1 END)
 		FROM catalog_titles WHERE type='episode' AND show_key=? GROUP BY season`, c.now().Unix(), int64(core.ShowKey(showID)))
 	if err != nil {
 		return err

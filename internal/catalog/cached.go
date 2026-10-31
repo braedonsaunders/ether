@@ -98,7 +98,7 @@ func (c *Catalog) ShowTrajectories(ctx context.Context, shows []core.RatingKey) 
 
 		rows, err := c.db.QueryContext(ctx, `
 			SELECT show_key, season, rating FROM catalog_titles
-			WHERE type='season' AND season>0 AND rating>0 AND released_ts<>0 AND released_ts<=? AND show_key IN (`+ph+`)
+			WHERE type='season' AND season>0 AND rating>0 AND release_known=1 AND released_ts<=? AND show_key IN (`+ph+`)
 			ORDER BY show_key ASC, season ASC`, append([]any{nowTS}, part...)...)
 		if err != nil {
 			return nil, err
@@ -122,7 +122,7 @@ func (c *Catalog) ShowTrajectories(ctx context.Context, shows []core.RatingKey) 
 		// Fallback/augmentation from mirrored episode ratings when season ratings are 0.
 		erows, err := c.db.QueryContext(ctx, `
 			SELECT show_key, season, AVG(rating) FROM catalog_titles
-			WHERE type='episode' AND season>0 AND rating>0 AND released_ts<>0 AND released_ts<=? AND show_key IN (`+ph+`)
+			WHERE type='episode' AND season>0 AND rating>0 AND release_known=1 AND released_ts<=? AND show_key IN (`+ph+`)
 			GROUP BY show_key, season
 			ORDER BY show_key ASC, season ASC`, append([]any{nowTS}, part...)...)
 		if err == nil {
@@ -211,7 +211,7 @@ func (c *Catalog) StandaloneEpisodes(ctx context.Context, minRating float64, lim
 	q := `SELECT ` + prefixedCols("e") + ` FROM catalog_titles e
 		JOIN catalog_titles s ON s.key = e.show_key
 		WHERE e.type='episode' AND e.season>0 AND e.adult=0
-		  AND e.released_ts<>0 AND e.released_ts<=?
+		  AND e.release_known=1 AND e.released_ts<=?
 		  AND e.rating>=?
 		  AND s.browsable=1 AND s.adult=0
 		  AND (

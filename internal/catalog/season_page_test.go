@@ -30,25 +30,27 @@ func TestSeasonEpisodePageUsesTheShowIndex(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO catalog_titles(key,type,show_key,show_tmdb,season,episode,title,released_ts,adult,detail,detail_at) VALUES(?,'episode',?,?,1,999,'adult',?,1,1,?)`, core.EpisodeKey(show, 1, 999), showKey, show, past, now.Unix()); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := db.Query(`EXPLAIN QUERY PLAN SELECT key FROM catalog_titles INDEXED BY catalog_titles_show WHERE type='episode' AND show_key=? AND season=? AND adult=0 AND released_ts>0 AND released_ts<=? ORDER BY episode ASC LIMIT ? OFFSET ?`, int64(showKey), 1, now.Unix(), 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var plan string
-	for rows.Next() {
-		var id, parent, unused int
-		var detail string
-		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+	if store.DialectOf(db) != store.Postgres {
+		rows, err := db.Query(`EXPLAIN QUERY PLAN SELECT key FROM catalog_titles INDEXED BY catalog_titles_show WHERE type='episode' AND show_key=? AND season=? AND adult=0 AND release_known=1 AND released_ts<=? ORDER BY episode ASC LIMIT ? OFFSET ?`, int64(showKey), 1, now.Unix(), 50, 0)
+		if err != nil {
 			t.Fatal(err)
 		}
-		plan += detail + "\n"
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(plan, "catalog_titles_show") || strings.Contains(plan, "TEMP B-TREE") || strings.Contains(plan, "SCAN catalog_titles") {
-		t.Fatalf("plan %s", plan)
+		var plan string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			plan += detail + "\n"
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(plan, "catalog_titles_show") || strings.Contains(plan, "TEMP B-TREE") || strings.Contains(plan, "SCAN catalog_titles") {
+			t.Fatalf("plan %s", plan)
+		}
 	}
 	c, err := New(db, nil, config.Catalog{}, slog.New(slog.DiscardHandler), WithNow(func() time.Time { return now }))
 	if err != nil {

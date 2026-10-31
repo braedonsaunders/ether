@@ -34,6 +34,25 @@ func TestRecentlyAddedUsesAirDerivedDatesAcrossSections(t *testing.T) {
 
 // Owner-approved delta: movie/episode catalogue date 2024 is replaced by the
 // actual 2004 release/air date; original availability and refresh bytes stay.
+func TestPre1970ReleaseIsTheDateAdded(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	s := &Server{d: Deps{Now: func() time.Time { return now }}}
+	movie := &core.Title{Key: core.MovieKey(289), Type: core.TypeMovie, Title: "Casablanca", Released: time.Date(1942, 11, 26, 0, 0, 0, 0, time.UTC)}
+	md := s.metadata(context.Background(), &Request{}, movie, renderOpts{})
+	if md.AddedAt != movie.Released.Unix() || md.AddedAt >= 0 || md.OriginallyAvailableAt != "1942-11-26" {
+		t.Fatalf("movie added %d originally %q", md.AddedAt, md.OriginallyAvailableAt)
+	}
+	episode := &core.Title{Key: core.EpisodeKey(91759, 1, 1), Type: core.TypeEpisode, Season: 1, Episode: 1, Released: time.Date(1960, 12, 9, 0, 0, 0, 0, time.UTC)}
+	em := s.metadata(context.Background(), &Request{}, episode, renderOpts{})
+	if em.AddedAt != episode.Released.Unix() || em.OriginallyAvailableAt != "1960-12-09" {
+		t.Fatalf("episode added %d originally %q", em.AddedAt, em.OriginallyAvailableAt)
+	}
+	unknown := s.metadata(context.Background(), &Request{}, &core.Title{Key: core.MovieKey(1), Type: core.TypeMovie, Title: "Undated"}, renderOpts{})
+	if unknown.AddedAt != 0 || unknown.OriginallyAvailableAt != "" {
+		t.Fatalf("unknown added %d originally %q", unknown.AddedAt, unknown.OriginallyAvailableAt)
+	}
+}
+
 func TestApprovedReleaseDateAddedAtDelta(t *testing.T) {
 	f := newFixture()
 	defer f.srv.Close()

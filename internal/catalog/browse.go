@@ -243,8 +243,13 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 	var args []any
 	conds = append(conds, "t.browsable=1", "t.adult=0")
 	if f.KnownAddedDate {
-		conds = append(conds, airAddedSQL+">0")
-		args = append(args, airAddedArgs(c.now())...)
+		// Same membership as airAddedSQL<>0. Browse already requires the
+		// title's own premiere to be known and not in the future, and that
+		// premiere is the date-added fallback, so the filter does not walk
+		// episodes. The sort still uses airAddedSQL. released_ts>0 would drop
+		// a pre-1970 premiere.
+		conds = append(conds, "t.release_known=1 AND t.released_ts<=?")
+		args = append(args, c.now().Unix())
 	}
 	if f := c.visibilityFilter(); f != nil {
 		q, a := f.SQLHidden()
@@ -374,7 +379,7 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 		conds = append(conds, match)
 		args = append(args, matchArgs...)
 	}
-	conds = append(conds, "t.released_ts<>0 AND t.released_ts<=?")
+	conds = append(conds, "t.release_known=1 AND t.released_ts<=?")
 	args = append(args, c.now().Unix())
 	return strings.Join(conds, " AND "), args, nil
 }

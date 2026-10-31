@@ -145,8 +145,27 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 	}
 	page, err := i.host.Experience.Children(r.Context(), v, device(r), key, query)
 	if err != nil {
+		if r.PathValue("season") != "" {
+			reply(w, 200, map[string]any{"items": []any{}, "page": map[string]any{"has_more": false}})
+			return
+		}
 		http.Error(w, "Unavailable", 503)
 		return
+	}
+	if raw := r.PathValue("season"); raw != "" {
+		n, _ := strconv.Atoi(raw)
+		kept := make([]frontend.Title, 0, len(page.Items))
+		for _, t := range page.Items {
+			if t.Type == frontend.MediaType("episode") && t.Season == n {
+				kept = append(kept, t)
+			}
+		}
+		if len(kept) != len(page.Items) {
+			page.Items = kept
+			if len(kept) == 0 {
+				page.Total = 0
+			}
+		}
 	}
 	keys := make([]frontend.RatingKey, 0, len(page.Items))
 	for _, t := range page.Items {
@@ -165,11 +184,23 @@ func (i *instance) childItems(w http.ResponseWriter, r *http.Request) {
 		item["season_number"] = t.Season
 		item["episode_number"] = t.Episode
 		item["is_specials"] = t.Season == 0
-		item["episode_count"] = t.LeafCount
+		if t.Type == "season" {
+			item["episode_count"] = t.ChildCount
+		} else {
+			item["episode_count"] = t.LeafCount
+		}
 		i.paintCardArtwork(r, artwork[t.Key], item)
 		if t.Type == "episode" && (t.StillPath != "" || t.PosterPath != "" || t.BackdropPath != "") {
 			item["poster_is_episode_still"] = t.StillPath != "" && t.PosterPath == t.StillPath
 			item["backdrop_is_episode_still"] = t.StillPath != "" && t.BackdropPath == t.StillPath
+		}
+		if t.Type == "episode" {
+			if still, ok := item["still_url"].(string); ok && still != "" {
+				if _, hasPoster := item["poster_url"]; !hasPoster {
+					item["poster_url"] = still
+					item["poster_is_episode_still"] = true
+				}
+			}
 		}
 		if summary := overlays[t.Key]; len(summary) > 0 {
 			item["overlay_summary"] = summary

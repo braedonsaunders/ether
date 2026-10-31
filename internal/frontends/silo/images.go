@@ -54,7 +54,7 @@ func (i *instance) sectionArtwork(r *http.Request, v *frontend.Viewer, credentia
 	if i.host.ImageGrants == nil || len(titles) == 0 {
 		return out
 	}
-	kinds := []string{frontend.ImagePoster, frontend.ImageBackdrop, frontend.ImageLogo}
+	kinds := []string{frontend.ImagePoster, frontend.ImageBackdrop, frontend.ImageLogo, frontend.ImageStill}
 	if signer, ok := i.host.ImageGrants.(frontend.ImagePageSigner); ok {
 		const batch = 50
 		for start := 0; start < len(titles); start += batch {
@@ -84,7 +84,7 @@ func (i *instance) paintCardArtwork(r *http.Request, granted []frontend.GrantedI
 	if r.Context().Value(sharedPrefix{}) != nil {
 		prefix = "/silo"
 	}
-	fields := map[string]string{frontend.ImagePoster: "poster_url", frontend.ImageBackdrop: "backdrop_url", frontend.ImageLogo: "logo_url"}
+	fields := map[string]string{frontend.ImagePoster: "poster_url", frontend.ImageBackdrop: "backdrop_url", frontend.ImageLogo: "logo_url", frontend.ImageStill: "still_url"}
 	seen := map[string]bool{}
 	for _, grant := range granted {
 		field := fields[grant.Image.Kind]
@@ -116,7 +116,7 @@ func (i *instance) storedCardGrants(r *http.Request, v *frontend.Viewer, credent
 	var out []frontend.GrantedImage
 	seen := map[string]bool{}
 	for _, img := range images {
-		if img.Path == "" || seen[img.Kind] || (img.Kind != frontend.ImagePoster && img.Kind != frontend.ImageBackdrop && img.Kind != frontend.ImageLogo) {
+		if img.Path == "" || seen[img.Kind] || (img.Kind != frontend.ImagePoster && img.Kind != frontend.ImageBackdrop && img.Kind != frontend.ImageLogo && img.Kind != frontend.ImageStill) {
 			continue
 		}
 		seen[img.Kind] = true

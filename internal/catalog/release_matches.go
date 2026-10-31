@@ -79,7 +79,7 @@ func (c *Catalog) ReleaseMatches(ctx context.Context, releases []core.Release) (
 			}
 			continue
 		}
-		eps, e := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE show_key=? AND type='episode' AND adult=0 AND released_ts<>0 AND released_ts<=? ORDER BY season,episode LIMIT 2000`, int64(keys[0]), c.now().Unix())
+		eps, e := c.queryTitles(ctx, `SELECT `+titleCols+` FROM catalog_titles WHERE show_key=? AND type='episode' AND adult=0 AND release_known=1 AND released_ts<=? ORDER BY season,episode LIMIT 2000`, int64(keys[0]), c.now().Unix())
 		if e != nil {
 			return nil, e
 		}

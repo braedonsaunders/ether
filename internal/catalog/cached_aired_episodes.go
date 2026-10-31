@@ -20,7 +20,7 @@ func (c *Catalog) CachedAiredEpisodes(ctx context.Context, show core.RatingKey, 
 	}
 	limit = min(limit, 500)
 	asOf := c.now()
-	where := `t.type='episode' AND t.adult=0 AND t.released_ts>0 AND t.released_ts<=?`
+	where := `t.type='episode' AND t.adult=0 AND t.release_known=1 AND t.released_ts<=?`
 	args := []any{asOf.Unix()}
 	if show != 0 {
 		where += ` AND t.show_key=?`

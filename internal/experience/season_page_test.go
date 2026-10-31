@@ -2,6 +2,7 @@ package experience
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -88,6 +89,57 @@ func TestSeasonPageKeepsTheScheduledTail(t *testing.T) {
 	page, err := s.Children(context.Background(), &core.User{ID: 1}, core.Device{}, show, frontend.ItemQuery{Recursive: true, Season: &season, Limit: 50, Types: []core.MediaType{core.TypeEpisode}})
 	if err != nil || page.Total != 3 || len(page.Items) != 3 || page.Items[2].Episode != 3 {
 		t.Fatalf("tail %+v %v", page, err)
+	}
+}
+
+func TestFailedSeasonPageDoesNotSubstituteAnotherSeason(t *testing.T) {
+	show := core.ShowKey(7)
+	season := 1
+	loaded := false
+	s := &Service{d: ServiceDeps{
+		Active: func(context.Context, int64) (*core.User, error) {
+			return &core.User{ID: 1, IsOwner: true}, nil
+		},
+		Get: func(context.Context, *core.User, core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: show, Type: core.TypeShow}, nil
+		},
+		Grandchildren: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
+			loaded = true
+			return []core.Title{{Key: core.EpisodeKey(7, 11, 1), Type: core.TypeEpisode, Season: 11, Episode: 1}}, nil
+		},
+		SeasonEpisodes: func(context.Context, *core.User, core.RatingKey, int, int, int) (core.Page, bool, error) {
+			return core.Page{}, false, errors.New("season unavailable")
+		},
+		Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }},
+	}}
+	page, err := s.Children(context.Background(), &core.User{ID: 1}, core.Device{}, show, frontend.ItemQuery{Recursive: true, Season: &season, Limit: 50, Types: []core.MediaType{core.TypeEpisode}})
+	if err != nil || loaded || page.Total != 0 || len(page.Items) != 0 {
+		t.Fatalf("failed page %+v loaded %v %v", page, loaded, err)
+	}
+}
+
+func TestSeasonPageDropsEpisodesFromAnotherSeason(t *testing.T) {
+	show := core.ShowKey(7)
+	season := 1
+	s := &Service{d: ServiceDeps{
+		Active: func(context.Context, int64) (*core.User, error) {
+			return &core.User{ID: 1, IsOwner: true}, nil
+		},
+		Get: func(context.Context, *core.User, core.RatingKey) (*core.Title, error) {
+			return &core.Title{Key: show, Type: core.TypeShow}, nil
+		},
+		Grandchildren: func(context.Context, *core.User, core.RatingKey) ([]core.Title, error) {
+			t.Fatal("loaded every episode")
+			return nil, nil
+		},
+		SeasonEpisodes: func(context.Context, *core.User, core.RatingKey, int, int, int) (core.Page, bool, error) {
+			return core.Page{Items: []core.Title{{Key: core.EpisodeKey(7, 11, 1), Type: core.TypeEpisode, Season: 11, Episode: 1}}, Total: 102}, true, nil
+		},
+		Visibility: Visibility{SectionFor: func(core.MediaType) (int, bool) { return 1, true }},
+	}}
+	page, err := s.Children(context.Background(), &core.User{ID: 1}, core.Device{}, show, frontend.ItemQuery{Recursive: true, Season: &season, Limit: 50, Types: []core.MediaType{core.TypeEpisode}})
+	if err != nil || page.Total != 0 || len(page.Items) != 0 {
+		t.Fatalf("foreign season %+v %v", page, err)
 	}
 }
 

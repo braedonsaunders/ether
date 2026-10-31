@@ -164,12 +164,17 @@ func (s *Service) pagedSeason(ctx context.Context, v *core.User, key core.Rating
 		return core.Page{Items: []core.Title{}}, true, nil
 	}
 	aired, ok, err := s.d.SeasonEpisodes(ctx, v, key, *q.Season, q.Offset, q.Limit)
-	if err != nil || !ok {
-		return core.Page{}, false, err
+	if err != nil {
+		// A failed season page stays empty. Falling through would list the
+		// show and can paint another season under this one.
+		return core.Page{Items: []core.Title{}}, true, nil
+	}
+	if !ok {
+		return core.Page{}, false, nil
 	}
 	future, err := s.futureSeasonEpisodes(ctx, v, key, *q.Season, q)
 	if err != nil {
-		return core.Page{}, false, err
+		future = nil
 	}
 	items := aired.Items
 	if items == nil {
@@ -187,10 +192,20 @@ func (s *Service) pagedSeason(ctx context.Context, v *core.User, key core.Rating
 			items = append(items, future[:min(room, len(future))]...)
 		}
 	}
-	out := make([]core.Title, 0, len(items))
-	for i := range items {
-		if s.visible(ctx, v, &items[i]) {
-			out = append(out, items[i])
+	season := *q.Season
+	matched := make([]core.Title, 0, len(items))
+	for _, item := range items {
+		if item.Type == core.TypeEpisode && item.Season == season {
+			matched = append(matched, item)
+		}
+	}
+	if len(items) > 0 && len(matched) == 0 {
+		return core.Page{Items: []core.Title{}}, true, nil
+	}
+	out := make([]core.Title, 0, len(matched))
+	for i := range matched {
+		if s.visible(ctx, v, &matched[i]) {
+			out = append(out, matched[i])
 		}
 	}
 	return core.Page{Items: out, Total: aired.Total + len(future)}, true, nil

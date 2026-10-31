@@ -47,7 +47,7 @@ func (c *Catalog) homeVisible(t *core.Title) bool {
 }
 
 func homeReleaseSQL(alias string) string {
-	return "(" + alias + ".type<>'movie' OR EXISTS (SELECT 1 FROM catalog_home_release hr WHERE hr.key=" + alias + ".key AND (hr.fallback_admitted=1 OR (hr.checked=1 AND ((hr.earliest_ts<>0 AND hr.earliest_ts<=?) OR (hr.earliest_ts=0 AND " + alias + ".released_ts<>0 AND " + alias + ".released_ts<=?))))))"
+	return "(" + alias + ".type<>'movie' OR EXISTS (SELECT 1 FROM catalog_home_release hr WHERE hr.key=" + alias + ".key AND (hr.fallback_admitted=1 OR (hr.checked=1 AND ((hr.earliest_ts<>0 AND hr.earliest_ts<=?) OR (hr.earliest_ts=0 AND " + alias + ".release_known=1 AND " + alias + ".released_ts<=?))))))"
 }
 
 func (c *Catalog) hydrateHomeRelease(ctx context.Context, items []core.Title) error {
@@ -176,7 +176,7 @@ func (c *Catalog) admitFallbacks(ctx context.Context) error {
 	if c.admitReady && c.admitGen == gen && c.admitMinute == minute {
 		return nil
 	}
-	result, err := c.db.ExecContext(ctx, `UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND fallback_admitted=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.released_ts<>0 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds()))
+	result, err := c.db.ExecContext(ctx, `UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND fallback_admitted=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.release_known=1 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds()))
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (c *Catalog) BackfillHomeReleases(ctx context.Context, limit int) (int, err
 		return 0, nil
 	}
 	now := c.now().Unix()
-	rows, err := c.db.QueryContext(ctx, `SELECT t.key FROM catalog_titles t LEFT JOIN catalog_home_release h ON h.key=t.key WHERE t.type='movie' AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=? AND (h.key IS NULL OR (h.attempted_at<=? AND (h.checked=0 OR h.earliest_ts=0 OR h.earliest_ts>? OR h.attempted_at<=?))) ORDER BY COALESCE(h.attempted_at,0), t.browsable DESC, t.popularity DESC,t.key LIMIT ?`, now, now-int64((24*time.Hour).Seconds()), now-int64((30*24*time.Hour).Seconds()), now-int64((90*24*time.Hour).Seconds()), limit)
+	rows, err := c.db.QueryContext(ctx, `SELECT t.key FROM catalog_titles t LEFT JOIN catalog_home_release h ON h.key=t.key WHERE t.type='movie' AND t.adult=0 AND t.release_known=1 AND t.released_ts<=? AND (h.key IS NULL OR (h.attempted_at<=? AND (h.checked=0 OR h.earliest_ts=0 OR h.earliest_ts>? OR h.attempted_at<=?))) ORDER BY COALESCE(h.attempted_at,0), t.browsable DESC, t.popularity DESC,t.key LIMIT ?`, now, now-int64((24*time.Hour).Seconds()), now-int64((30*24*time.Hour).Seconds()), now-int64((90*24*time.Hour).Seconds()), limit)
 	if err != nil {
 		return 0, err
 	}

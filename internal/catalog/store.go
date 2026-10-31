@@ -638,7 +638,7 @@ func upsertOne(ctx context.Context, tx *sql.Tx, t core.Title, o upsertOpts, now 
 		detailInt = 1
 	}
 	if o.releaseDates != nil && o.gateEnabled && t.Type == core.TypeMovie {
-		if _, err := tx.ExecContext(ctx, `UPDATE catalog_home_release SET fallback_admitted=1 WHERE key=? AND checked=1 AND earliest_ts=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.released_ts<>0 AND t.released_ts<=?)`, int64(t.Key), now-int64(homeReleaseGrace.Seconds())); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE catalog_home_release SET fallback_admitted=1 WHERE key=? AND checked=1 AND earliest_ts=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.release_known=1 AND t.released_ts<=?)`, int64(t.Key), now-int64(homeReleaseGrace.Seconds())); err != nil {
 			return err
 		}
 	}

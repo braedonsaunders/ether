@@ -64,7 +64,7 @@ func (c *Catalog) CountUnplayedAired(ctx context.Context, userID int64, keys []c
 		}
 		rows, err := c.db.QueryContext(ctx, `SELECT e.show_key, e.season, COUNT(*)
 FROM catalog_titles e
-WHERE e.type='episode' AND e.adult=0 AND e.released_ts>0 AND e.released_ts<=?
+WHERE e.type='episode' AND e.adult=0 AND e.release_known=1 AND e.released_ts<=?
 AND e.show_key IN (`+placeholders(len(part))+`)
 AND NOT EXISTS (SELECT 1 FROM state_watch w WHERE w.user_id=? AND w.rating_key=e.key AND w.view_count>0)`+ratingSQL+`
 GROUP BY e.show_key, e.season`, args...)

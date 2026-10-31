@@ -31,6 +31,29 @@ func TestJellyfinUserDataKeyIsDashed(t *testing.T) {
 	}
 }
 
+func TestPre1970PremiereAndDateAdded(t *testing.T) {
+	i := &instance{protocol: "jellyfin"}
+	released := time.Date(1942, 11, 26, 0, 0, 0, 0, time.UTC)
+	item := i.itemDTO(frontend.Title{Key: core.MovieKey(289), Type: "movie", Title: "Casablanca", Released: released}, frontend.WatchStatus{})
+	if item["PremiereDate"] != wireTime(released) || item["DateCreated"] != wireTime(released) {
+		t.Fatalf("movie premiere %v created %v", item["PremiereDate"], item["DateCreated"])
+	}
+	aired := time.Date(1960, 12, 9, 0, 0, 0, 0, time.UTC)
+	episode := i.itemDTO(frontend.Title{Key: core.EpisodeKey(91759, 1, 1), Type: "episode", Season: 1, Episode: 1, Released: aired}, frontend.WatchStatus{})
+	if episode["PremiereDate"] != wireTime(aired) || episode["DateCreated"] != wireTime(aired) {
+		t.Fatalf("episode premiere %v created %v", episode["PremiereDate"], episode["DateCreated"])
+	}
+	unknown := i.itemDTO(frontend.Title{Key: core.MovieKey(1), Type: "movie", Title: "Undated"}, frontend.WatchStatus{})
+	if _, ok := unknown["PremiereDate"]; ok || unknown["DateCreated"] != nil {
+		t.Fatalf("unknown dates %#v", unknown)
+	}
+	future := time.Now().Add(48 * time.Hour).UTC()
+	later := i.itemDTO(frontend.Title{Key: core.MovieKey(2), Type: "movie", Title: "Later", Released: future}, frontend.WatchStatus{})
+	if later["PremiereDate"] != wireTime(future) || later["DateCreated"] != nil {
+		t.Fatalf("future premiere %v created %v", later["PremiereDate"], later["DateCreated"])
+	}
+}
+
 func TestJellyfinListShellMatchesRecordedMovieShape(t *testing.T) {
 	released := time.Date(2020, 5, 1, 0, 0, 0, 0, time.UTC)
 	title := frontend.Title{Key: 5, Type: "movie", Title: "Arrival", Year: 2016, Released: released, Summary: "A linguist.", Runtime: time.Hour, Genres: []string{"Drama"}, Rating: 8, Language: "en", ContentRating: "PG-13", Status: "Released"}

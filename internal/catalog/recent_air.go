@@ -54,7 +54,7 @@ func (c *Catalog) RecentAir(ctx context.Context, typ core.MediaType, offset, lim
 		if !ok || title.Key != key {
 			continue
 		}
-		if added[i] > 0 {
+		if added[i] != 0 {
 			title.AddedAt = time.Unix(added[i], 0).UTC()
 		}
 		out = append(out, title)
@@ -64,7 +64,7 @@ func (c *Catalog) RecentAir(ctx context.Context, typ core.MediaType, offset, lim
 
 func (c *Catalog) recentMovieKeys(ctx context.Context, now int64, offset, limit int) ([]core.RatingKey, []int64, error) {
 	rows, err := c.db.QueryContext(ctx, `SELECT key, released_ts FROM catalog_titles
-WHERE type='movie' AND browsable=1 AND adult=0 AND released_ts>0 AND released_ts<=?
+WHERE type='movie' AND browsable=1 AND adult=0 AND release_known=1 AND released_ts<=?
 ORDER BY released_ts DESC, key ASC
 LIMIT ? OFFSET ?`, now, limit, offset)
 	if err != nil {
@@ -83,7 +83,7 @@ func (c *Catalog) recentShowKeys(ctx context.Context, now int64, offset, limit i
 		bound = 4000
 	}
 	rows, err := c.db.QueryContext(ctx, `SELECT e.show_key, e.released_ts FROM catalog_titles e
-WHERE e.type='episode' AND e.adult=0 AND e.released_ts>0 AND e.released_ts<=?
+WHERE e.type='episode' AND e.adult=0 AND e.release_known=1 AND e.released_ts<=?
 AND EXISTS (SELECT 1 FROM catalog_titles s WHERE s.key=e.show_key AND s.browsable=1 AND s.adult=0)
 ORDER BY e.released_ts DESC, e.key ASC
 LIMIT ?`, now, bound)

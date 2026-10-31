@@ -116,6 +116,32 @@ CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts D
 	// rating.go. content_rating_rank now holds contentrating.Level, re-ranked
 	// once at startup (rankRatings).
 	store.Register("catalog", 19, `ALTER TABLE catalog_titles ADD COLUMN content_rating_source TEXT NOT NULL DEFAULT '';`)
+	// release_known is 1 when released_ts is a real Unix instant and 0 when
+	// the date is unknown. Zero stays the unknown sentinel: a date before
+	// 1970 is negative, so "released_ts>0" is not "has a date". The column
+	// is generated so every writer of released_ts keeps the flag, including
+	// rows already stored. SQLite cannot ALTER in a STORED generated column,
+	// so the flag is VIRTUAL there. PostgreSQL stores it. The aired indexes
+	// use the flag and therefore include those historical instants.
+	const releaseKnownSQLite = `
+ALTER TABLE catalog_titles ADD COLUMN release_known INTEGER GENERATED ALWAYS AS (CASE WHEN released_ts<>0 THEN 1 ELSE 0 END) VIRTUAL;
+DROP INDEX IF EXISTS catalog_titles_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_season_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_episode_global_aired;
+CREATE INDEX catalog_titles_episode_aired ON catalog_titles(show_key, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, season, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
+`
+	store.Register("catalog", 20, releaseKnownSQLite)
+	store.RegisterDialect("catalog", 20, store.Postgres, `
+ALTER TABLE catalog_titles ADD COLUMN release_known BIGINT GENERATED ALWAYS AS (CASE WHEN released_ts<>0 THEN 1 ELSE 0 END) STORED;
+DROP INDEX IF EXISTS catalog_titles_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_season_episode_aired;
+DROP INDEX IF EXISTS catalog_titles_episode_global_aired;
+CREATE INDEX catalog_titles_episode_aired ON catalog_titles(show_key, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_season_episode_aired ON catalog_titles(show_key, season, released_ts DESC) WHERE type='episode' AND release_known=1;
+CREATE INDEX catalog_titles_episode_global_aired ON catalog_titles(released_ts DESC, key ASC) WHERE type='episode' AND release_known=1 AND adult=0;
+`)
 	store.Register("catalog", 7, `
 CREATE INDEX catalog_titles_type_browse_sort ON catalog_titles(type, browsable, adult, sort_title ASC, key ASC);
 CREATE INDEX catalog_titles_browse_warm ON catalog_titles(browsable, detail, adult, popularity DESC, vote_count DESC);
@@ -364,7 +390,7 @@ func (c *Catalog) UpdateConfig(cfg config.Catalog) {
 	defer c.configUpdateMu.Unlock()
 	previous := c.config()
 	if c.admissionsPending || (previous.GateMoviesByHomeRelease && !cfg.GateMoviesByHomeRelease) {
-		if _, err := c.db.Exec(`UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.released_ts<>0 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds())); err != nil {
+		if _, err := c.db.Exec(`UPDATE catalog_home_release SET fallback_admitted=1 WHERE checked=1 AND earliest_ts=0 AND EXISTS (SELECT 1 FROM catalog_titles t WHERE t.key=catalog_home_release.key AND t.release_known=1 AND t.released_ts<=?)`, c.now().Unix()-int64(homeReleaseGrace.Seconds())); err != nil {
 			c.log.Error("catalog: preserve fallback admissions", "err", err)
 			c.admissionsPending = true
 		} else {

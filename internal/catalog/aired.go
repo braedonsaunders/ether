@@ -100,8 +100,8 @@ func applyAiredCounts(ctx context.Context, db *sql.DB, now time.Time, items []*c
 		part := showArgs[start:min(start+batch, len(showArgs))]
 		// COUNT(CASE ...) rather than SUM so both SQLite and PostgreSQL return
 		// an integer.
-		rows, err := db.QueryContext(ctx, `SELECT show_key,season,COUNT(*),COUNT(CASE WHEN released_ts<>0 AND released_ts<=? AND adult=0 THEN 1 END),
-			COALESCE(MIN(CASE WHEN released_ts<>0 AND released_ts<=? AND adult=0 THEN released_ts END),0)
+		rows, err := db.QueryContext(ctx, `SELECT show_key,season,COUNT(*),COUNT(CASE WHEN release_known=1 AND released_ts<=? AND adult=0 THEN 1 END),
+			COALESCE(MIN(CASE WHEN release_known=1 AND released_ts<=? AND adult=0 THEN released_ts END),0)
 			FROM catalog_titles WHERE type='episode' AND show_key IN (`+placeholders(len(part))+`) GROUP BY show_key,season`, append([]any{nowTS, nowTS}, part...)...)
 		if err != nil {
 			return err

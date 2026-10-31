@@ -121,7 +121,7 @@ func (c *Catalog) loadStats(ctx context.Context) (Stats, error) {
 		       COALESCE(SUM(CASE WHEN h.checked IS NULL OR h.checked=0 THEN 1 ELSE 0 END), 0)
 		FROM catalog_titles t
 		LEFT JOIN catalog_home_release h ON h.key=t.key
-		WHERE t.type='movie' AND t.adult=0 AND t.released_ts<>0 AND t.released_ts<=?`, c.now().Unix()).Scan(&s.HomeReleaseChecked, &s.HomeReleasePending); err != nil {
+		WHERE t.type='movie' AND t.adult=0 AND t.release_known=1 AND t.released_ts<=?`, c.now().Unix()).Scan(&s.HomeReleaseChecked, &s.HomeReleasePending); err != nil {
 		return s, err
 	}
 	if v := c.getMeta(ctx, "last_sync"); v != "" {
@@ -478,7 +478,7 @@ func (c *Catalog) WarmDetails(ctx context.Context, limit int) (int, error) {
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT key FROM catalog_titles
 		WHERE browsable=1 AND adult=0 AND type IN ('movie','show')
-		  AND released_ts<>0 AND released_ts<=?
+		  AND release_known=1 AND released_ts<=?
 		  AND (detail=0 OR (type='show' AND status='Returning Series' AND detail_at>0 AND detail_at<?))
 		ORDER BY CASE WHEN detail=0 AND released_ts>=? THEN 0 WHEN detail=0 THEN 1 ELSE 2 END ASC,
 		         popularity DESC, vote_count DESC, key ASC
