@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -106,6 +107,9 @@ func (p *perfObserver) wrap(surface string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, stats := store.WithQueryStats(r.Context())
 		ctx = catalog.WithReadWaitBudget(ctx, requestProviderWait)
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			ctx = reqmemo.With(ctx)
+		}
 		start := time.Now()
 		var recorder middleware.WrapResponseWriter
 		p.mu.Lock()

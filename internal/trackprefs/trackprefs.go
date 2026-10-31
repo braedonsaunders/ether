@@ -6,12 +6,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/langtag"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -156,16 +159,32 @@ func (s *Service) HasViewerRules(ctx context.Context, user int64) (bool, error) 
 	return n > 0, err
 }
 
+// storedValue is one memoized row read: its raw value, and whether it exists.
+type storedValue struct {
+	raw   string
+	found bool
+}
+
 func (s *Service) GetRules(ctx context.Context, user int64) (Rules, error) {
 	r := Default()
-	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT rules FROM trackprefs_rules WHERE user_id IN(0,?) ORDER BY user_id DESC LIMIT 1`, user).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return r, nil
-	}
+	// A list builds every item's streams with these rules: read them once
+	// per request.
+	row, err := reqmemo.Do(ctx, "trackprefs:rules:"+strconv.FormatInt(user, 10), func() (storedValue, error) {
+		var v storedValue
+		err := s.db.QueryRowContext(ctx, `SELECT rules FROM trackprefs_rules WHERE user_id IN(0,?) ORDER BY user_id DESC LIMIT 1`, user).Scan(&v.raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return v, nil
+		}
+		v.found = err == nil
+		return v, err
+	})
 	if err != nil {
 		return r, err
 	}
+	if !row.found {
+		return r, nil
+	}
+	raw := row.raw
 	err = json.Unmarshal([]byte(raw), &r)
 	if r.AudioLanguages == nil {
 		r.AudioLanguages = []string{}
@@ -232,15 +251,22 @@ func (s *Service) choice(ctx context.Context, user int64, key core.RatingKey, ki
 	if !ok {
 		return c, false, nil
 	}
-	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT choice FROM trackprefs_memory WHERE user_id=? AND show_id=? AND kind=?`, user, target, kind).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return c, false, nil
-	}
+	row, err := reqmemo.Do(ctx, fmt.Sprintf("trackprefs:memory:%d:%v:%s", user, target, kind), func() (storedValue, error) {
+		var v storedValue
+		err := s.db.QueryRowContext(ctx, `SELECT choice FROM trackprefs_memory WHERE user_id=? AND show_id=? AND kind=?`, user, target, kind).Scan(&v.raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return v, nil
+		}
+		v.found = err == nil
+		return v, err
+	})
 	if err != nil {
 		return c, false, err
 	}
-	err = json.Unmarshal([]byte(raw), &c)
+	if !row.found {
+		return c, false, nil
+	}
+	err = json.Unmarshal([]byte(row.raw), &c)
 	return c, err == nil, err
 }
 func sdh(t core.StreamInfo) bool {

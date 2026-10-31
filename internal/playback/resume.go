@@ -11,11 +11,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/store"
 )
 
@@ -244,6 +246,7 @@ func (s *resumeStore) put(ctx context.Context, rec resumeRecord, nzb []byte, poi
 // putWithProbe is put plus the probed facts of the serving generation,
 // persisted in the same (possibly held) write as the resume row.
 func (s *resumeStore) putWithProbe(ctx context.Context, rec resumeRecord, nzb []byte, points []core.KeyframePoint, probe core.MediaInfo) error {
+	reqmemo.Forget(ctx, resumeMemoKey(rec.userID, rec.key))
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
@@ -601,6 +604,7 @@ func (s *resumeStore) readResumeNZB(ctx context.Context, rec *resumeRecord) ([]b
 }
 
 func (s *resumeStore) save(ctx context.Context, rec resumeRecord, nzb []byte) error {
+	reqmemo.Forget(ctx, resumeMemoKey(rec.userID, rec.key))
 	if len(nzb) == 0 {
 		return errors.New("playback: empty nzb")
 	}
@@ -683,17 +687,30 @@ func scanResume(sc interface{ Scan(...any) error }) (resumeRecord, error) {
 }
 
 // get returns the record for a user and title, or nil when there is none.
+func resumeMemoKey(userID int64, key core.RatingKey) string {
+	return "playback:resume:" + strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(int64(key), 10)
+}
+
+// A list builds several stream views per item, each asking for its resume
+// record, so a read request reads each record once.
 func (s *resumeStore) get(ctx context.Context, userID int64, key core.RatingKey) (*resumeRecord, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+resumeColumns+` FROM playback_resume WHERE user_id=? AND rating_key=?`,
-		userID, int64(key))
-	rec, err := scanResume(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	rec, err := reqmemo.Do(ctx, resumeMemoKey(userID, key), func() (*resumeRecord, error) {
+		row := s.db.QueryRowContext(ctx, `SELECT `+resumeColumns+` FROM playback_resume WHERE user_id=? AND rating_key=?`,
+			userID, int64(key))
+		rec, err := scanResume(row)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &rec, nil
+	})
+	if err != nil || rec == nil {
 		return nil, err
 	}
-	return &rec, nil
+	cp := *rec
+	return &cp, nil
 }
 
 func (s *resumeStore) all(ctx context.Context) ([]resumeRecord, error) {
@@ -714,6 +731,7 @@ func (s *resumeStore) all(ctx context.Context) ([]resumeRecord, error) {
 }
 
 func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingKey) error {
+	reqmemo.Forget(ctx, resumeMemoKey(userID, key))
 	var hash string
 	err := s.db.QueryRowContext(ctx, `SELECT nzb_hash FROM playback_resume WHERE user_id=? AND rating_key=?`,
 		userID, int64(key)).Scan(&hash)
@@ -744,6 +762,7 @@ func (s *resumeStore) delete(ctx context.Context, userID int64, key core.RatingK
 // release policy. This table contains source identities, not watch progress.
 // Keep the content-addressed payload and index caches for ordinary pruning.
 func (s *resumeStore) invalidateTitle(ctx context.Context, key core.RatingKey) error {
+	reqmemo.ForgetPrefix(ctx, "playback:resume:")
 	if key.Kind() != core.KindShow && key.Kind() != core.KindSeason {
 		_, err := s.db.ExecContext(ctx, `DELETE FROM playback_resume WHERE rating_key=?`, int64(key))
 		if err == nil {

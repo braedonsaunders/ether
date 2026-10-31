@@ -18,6 +18,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/egress"
+	"github.com/braedonsaunders/ether/internal/reqmemo"
 	"github.com/braedonsaunders/ether/internal/schedule"
 	"github.com/braedonsaunders/ether/internal/store"
 )
@@ -123,19 +124,28 @@ func New(db *sql.DB, o Options) *Service {
 	return &Service{db: db, o: o}
 }
 func (s *Service) Settings(ctx context.Context) (Settings, error) {
-	var raw string
 	v := Settings{Plex: true, Trakt: true, CheckHours: 6}
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM watchlist_settings WHERE id=1`).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) {
-		return v, nil
-	}
+	// Every item of a list asks: read the row once per request.
+	row, err := reqmemo.Do(ctx, "watchlist:settings", func() (*string, error) {
+		var raw string
+		err := s.db.QueryRowContext(ctx, `SELECT value FROM watchlist_settings WHERE id=1`).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return &raw, err
+	})
 	if err != nil {
 		return v, err
 	}
+	if row == nil {
+		return v, nil
+	}
+	raw := *row
 	err = json.Unmarshal([]byte(raw), &v)
 	return v, err
 }
 func (s *Service) SaveSettings(ctx context.Context, v Settings) error {
+	reqmemo.Forget(ctx, "watchlist:settings")
 	if v.CheckHours < 1 || v.CheckHours > 168 {
 		return errors.New("check interval must be between 1 and 168 hours")
 	}
