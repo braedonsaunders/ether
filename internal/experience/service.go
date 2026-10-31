@@ -842,6 +842,12 @@ func (s *Service) Search(ctx context.Context, viewer *core.Viewer, device core.D
 			items = append(items, title)
 		}
 	}
+	if len(items) == 0 {
+		items, err = s.vibeMembers(ctx, v, query, q)
+		if err != nil {
+			return frontend.SearchPage{}, err
+		}
+	}
 	if err = s.sortTitles(ctx, items, q); err != nil {
 		return frontend.SearchPage{}, err
 	}
