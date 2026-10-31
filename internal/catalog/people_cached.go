@@ -41,7 +41,9 @@ func (c *Catalog) CachedCreditTitles(ctx context.Context, keys []core.RatingKey,
 	if err != nil {
 		return nil, err
 	}
-	titles, err := c.CachedGetMany(ctx, keys)
+	// Credit proofs must see a credit written by another process during this
+	// cache minute. The minute snapshot stays in place for ordinary reads.
+	titles, err := c.cachedGetMany(ctx, keys, false)
 	if err != nil {
 		return nil, err
 	}

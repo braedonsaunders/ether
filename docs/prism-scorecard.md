@@ -52,15 +52,22 @@ about half a second. That is still a loss. Home views are faster on Ether.
 Jellyfin movie cardinality does not match, so that route has no latency
 winner. Emby movies match at 4 and Ether is slower (56/74 ms versus 2.2/3.3 ms).
 
-Direct, seek, resume, and HLS all returned media bytes on both protocols.
-Jellyfin direct p50 was 46 ms on Ether and 63 ms on the reference. Jellyfin
-HLS p50 was 677 ms on Ether and 4229 ms on the reference. Emby HLS p50 was
-922 ms on Ether and 1835 ms on the reference. Jellyfin seek p50 was 1285 ms
-on Ether and 55 ms on the reference. Emby direct p50 was 1984 ms on Ether
-and 15 ms on the reference. Those seek and Emby direct gaps are still losses.
-The harness follows Ether's same-host playback redirect and does not apply
-the Emby prefix twice; the earlier all-error playback result was that
-measurement bug.
+## Playback
+
+Matched run from the playback-latency worker at `bdd06c108`. Ether and each
+lab container had 2 CPU. Each figure is nearest-rank p50/p95 over 20 samples.
+The span is PlaybackInfo plus the first media byte.
+
+| Route | Ether Jellyfin | Lab Jellyfin | Ether Emby | Lab Emby |
+| --- | ---: | ---: | ---: | ---: |
+| Direct | 7.68 / 23.39 | 38.63 / 57.66 | 4.28 / 9.69 | 5.28 / 7.21 |
+| Seek | 4.78 / 6.22 | 40.57 / 56.71 | 4.34 / 6.77 | 5.42 / 7.14 |
+| Resume | 4.84 / 8.36 | 42.18 / 57.30 | 4.13 / 13.83 | 5.47 / 7.33 |
+
+Ether's median beats both labs on direct, seek, and resume. Ether's p95
+beats lab Jellyfin on all three and beats lab Emby on seek. On the shared
+host, Ether's Emby p95 still trails lab Emby on direct (9.69 ms versus
+7.21 ms) and on resume (13.83 ms versus 7.33 ms).
 
 An earlier `tvdemo-ether` run showed the same episode list near 14s and
 direct, seek, and resume failing. That was a defect in the fixture's

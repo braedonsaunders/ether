@@ -12,11 +12,12 @@ import (
 // refs counts holders that have not called Close. The backend closes when the
 // last holder leaves, so stopping one protocol does not stop another.
 type sharedHold struct {
-	src   core.MediaSource
-	refs  int
-	ready bool
-	err   error
-	wait  chan struct{}
+	src      core.MediaSource
+	refs     int
+	ready    bool
+	draining bool // last holder has detached; new opens must see the backend again
+	err      error
+	wait     chan struct{}
 }
 
 type sharedSource struct {
@@ -69,6 +70,11 @@ func (m *Manager) openShared(ctx context.Context, res *core.Resolution) (core.Me
 			m.shared = map[string]*sharedHold{}
 		}
 		h := m.shared[key]
+		// A detached holder has not closed yet. Joining it would keep the
+		// previous bytes after the backend release changed.
+		if h != nil && h.draining {
+			h = nil
+		}
 		if h != nil && h.ready && h.err == nil && h.src != nil {
 			h.refs++
 			m.sharedMu.Unlock()
@@ -108,6 +114,20 @@ func (m *Manager) openShared(ctx context.Context, res *core.Resolution) (core.Me
 		close(h.wait)
 		m.sharedMu.Unlock()
 		return &sharedSource{inner: src, hold: h, m: m, key: key}, nil
+	}
+}
+
+// quarantineShared stops a new open from joining src once its last holder has
+// detached. The holder still closes src. Another live session keeps sharing.
+func (m *Manager) quarantineShared(src core.MediaSource) {
+	shared, ok := src.(*sharedSource)
+	if !ok || shared == nil || shared.hold == nil {
+		return
+	}
+	m.sharedMu.Lock()
+	defer m.sharedMu.Unlock()
+	if shared.hold.refs <= 1 {
+		shared.hold.draining = true
 	}
 }
 

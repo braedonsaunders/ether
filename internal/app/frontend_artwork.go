@@ -68,6 +68,7 @@ func (a *App) newSharedArtwork(ctx context.Context) (*artworkservice.Source, fun
 	source.Variants = variants.Get
 	metadata := artworkservice.NewMetadataQueue(ctx, a.db, a.users.ActiveUser, source.Read)
 	source.Metadata = metadata.Get
+	source.BindMetadata(metadata)
 	source.Collages = &artworkservice.LibraryCollageCache{Dir: filepath.Join(a.opts.DataDir, "cache", "library-collages")}
 	return source, func() { variants.Wait(); metadata.Wait(); workers.Wait() }
 }

@@ -440,10 +440,23 @@ func (m *Manager) Close() error {
 	// and it must not wait for a backend Close that is still blocked.
 	m.wg.Wait()
 	cleanupCtx, cleanupCancel := m.sourceCleanupContext()
-	if cleanupErr := m.drainSourceCleanup(cleanupCtx); cleanupErr != nil {
+	cleanupErr := m.drainSourceCleanup(cleanupCtx)
+	// Canceling the budget makes Err return Canceled even when the deadline
+	// has not fired. An expired budget is the error from before that cancel.
+	expired := cleanupCtx.Err()
+	cleanupCancel()
+	if cleanupErr != nil {
 		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", cleanupErr))
 	}
-	cleanupCancel()
+	// A background fill can drop its generation ref, and therefore enter
+	// Close, after the retirement goroutine has already released the cleanup
+	// counter. An expired budget still has to report that blocked Close.
+	// A live budget lets the fast drop finish before ownership is judged.
+	if expired == nil {
+		m.waitUntilSourcesSettled(sourceCleanupShutdownWait)
+	} else if !m.sourcesSettled() && !errors.Is(err, expired) {
+		err = errors.Join(err, fmt.Errorf("playback: source cleanup unfinished: %w", expired))
+	}
 	if m.reg != nil {
 		m.reg.close()
 	}
@@ -464,6 +477,30 @@ func (m *Manager) Close() error {
 		err = errors.Join(err, fmt.Errorf("playback: %d source responsibilities remain protected", pending))
 	}
 	return err
+}
+
+// waitUntilSourcesSettled polls until payload ownership and source
+// responsibilities have drained, or d elapses. A blocked backend Close still
+// reports as protected after the budget; a close that already left the wait
+// group is not reported as lost.
+func (m *Manager) waitUntilSourcesSettled(d time.Duration) {
+	deadline := time.Now().Add(d)
+	for {
+		if m.sourcesSettled() || !time.Now().Before(deadline) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (m *Manager) sourcesSettled() bool {
+	m.sourceAccounting.mu.Lock()
+	owners := m.sourceAccounting.owners
+	m.sourceAccounting.mu.Unlock()
+	if owners != 0 {
+		return false
+	}
+	return m.resume == nil || m.resume.payload.pendingError() == nil
 }
 
 // SetDraining stops (true) or resumes (false) admitting new playback

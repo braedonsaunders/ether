@@ -693,6 +693,9 @@ func (h *harness) prepare(user *core.User, key core.RatingKey, client string) *c
 	if err != nil {
 		h.t.Fatalf("Prepare(%s, %s): %v", user.Username, key, err)
 	}
+	// The durable resume row is written after Prepare returns. Tests that
+	// read it, or restart from it, wait for that save.
+	h.m.waitResumeSaves()
 	return ps
 }
 

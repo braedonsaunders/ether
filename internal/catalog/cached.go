@@ -306,16 +306,25 @@ func (c *Catalog) rememberTitles(gen uint64, minute int64, items []core.Title) {
 }
 
 func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	return c.cachedGetMany(ctx, keys, true)
+}
+
+// cachedGetMany reads local titles. reuse serves the minute snapshot, which a
+// foreign credit write does not invalidate. People credit proofs pass reuse
+// false so they hydrate the current credit rows and leave that snapshot alone.
+func (c *Catalog) cachedGetMany(ctx context.Context, keys []core.RatingKey, reuse bool) (map[core.RatingKey]core.Title, error) {
 	out := make(map[core.RatingKey]core.Title, len(keys))
 	gen := c.writeGen.Load()
 	minute := c.minuteBucket()
 	missing := make([]core.RatingKey, 0, len(keys))
 	for _, key := range keys {
-		if title, ok := c.cachedStored(key, gen, minute); ok {
-			if c.cachedListVisible(&title) {
-				out[key] = title
+		if reuse {
+			if title, ok := c.cachedStored(key, gen, minute); ok {
+				if c.cachedListVisible(&title) {
+					out[key] = title
+				}
+				continue
 			}
-			continue
 		}
 		missing = append(missing, key)
 	}
@@ -353,7 +362,9 @@ func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map
 				visible = append(visible, items[i])
 			}
 		}
-		c.rememberTitles(gen, minute, visible)
+		if reuse {
+			c.rememberTitles(gen, minute, visible)
+		}
 	}
 	return out, nil
 }

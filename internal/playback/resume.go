@@ -563,6 +563,11 @@ func (s *resumeStore) save(ctx context.Context, rec resumeRecord, nzb []byte) er
 	if !errors.Is(err, errResumeCommitUnknown) {
 		s.releaseNZB(lease)
 	}
+	if err == nil {
+		// The in-process copy is what ResumeFor reads first. A later
+		// Remember has to replace the copy left by the play that just ended.
+		s.noteLive(rec, nzb)
+	}
 	return err
 }
 

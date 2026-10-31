@@ -6,6 +6,13 @@
       "date": "2026-10-31T05:29:12Z",
       "blocking": 0,
       "certifiedClients": []
+    },
+    "jellyfin": {
+      "protocolVersion": "12.4.0",
+      "date": "2026-10-31T07:51:38Z",
+      "blocking": 0,
+      "certifiedClients": [],
+      "measured": "offline fixture compare and spec-mounted live for findroid, jellycon, jellyfin-androidtv, streamyfin, swiftfin, and infuse-jellyfin"
     }
   }
 }

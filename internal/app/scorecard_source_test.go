@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -338,11 +337,12 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 			ETag string `json:"ETag"`
 		} `json:"MediaSources"`
 	}
-	if e = json.Unmarshal(detailBody, &detail); e != nil || len(detail.MediaSources) != 3 {
+	// Item GET lists each verified file. It does not DetailPlan, so there is
+	// no browse-time bound source beside the two versions.
+	if e = json.Unmarshal(detailBody, &detail); e != nil || len(detail.MediaSources) != 2 {
 		t.Fatalf("item detail offers %d sources: %v", len(detail.MediaSources), e)
 	}
 	handle, otherHandle := "", ""
-	var detailSourceID, detailPath, detailRevision, detailSHA string
 	for _, offered := range detail.MediaSources {
 		if offered.ID == "" || offered.ID == sourceID {
 			t.Fatal("version is not opaque")
@@ -357,18 +357,6 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 			ReleaseID      string `json:"release_id"`
 			ExpectedSHA256 string `json:"expected_sha256"`
 		}
-		if rr.Code == http.StatusNotFound {
-			req = httptest.NewRequest("GET", "/__scorecard/detail-offer?handle="+offered.ID, nil)
-			req.RemoteAddr = "127.0.0.1:1"
-			rr = httptest.NewRecorder()
-			h.ServeHTTP(rr, req)
-			var bound scorecardDetailOfferRow
-			if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &bound) != nil || bound.Handle != offered.ID || bound.ItemID != itemID || bound.Revision != offered.ETag || bound.ExpectedSHA256 == "" || offered.Path == "" || detailSourceID != "" {
-				t.Fatalf("invalid bound detail offer: HTTP %d id=%v item=%v revision=%v digest=%v path=%v duplicate=%v", rr.Code, bound.Handle == offered.ID, bound.ItemID == itemID, bound.Revision == offered.ETag, bound.ExpectedSHA256 != "", offered.Path != "", detailSourceID != "")
-			}
-			detailSourceID, detailPath, detailRevision, detailSHA = bound.ReleaseID, offered.Path, bound.Revision, bound.ExpectedSHA256
-			continue
-		}
 		if rr.Code != 200 || json.Unmarshal(rr.Body.Bytes(), &mapped) != nil {
 			t.Fatalf("offer mapping HTTP %d", rr.Code)
 		}
@@ -377,15 +365,14 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 		}
 		if mapped.ReleaseID == sourceID && mapped.ExpectedSHA256 == second.SHA256 {
 			handle = offered.ID
+		} else if otherHandle != "" {
+			t.Fatal("unexpected extra version")
 		} else {
 			otherHandle = offered.ID
 		}
 	}
 	if handle == "" {
 		t.Fatal("matching version not offered")
-	}
-	if detailSourceID == "" || detailRevision == "" {
-		t.Fatal("missing bound detail offer")
 	}
 	for _, tc := range []struct {
 		handler http.Handler
@@ -482,72 +469,6 @@ func TestScorecardVariantSelectionUsesVerifiedBytes(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("different handle matched session: HTTP %d", rr.Code)
-	}
-
-	// The source-bound default must be an authenticated offer. Following its
-	// lazy grant opens the same source, independently verified by actual bytes.
-	parsed, err := url.Parse(detailPath)
-	if err != nil || parsed.Host == "" || !strings.HasPrefix(parsed.Path, "/sessions/lazy/") {
-		t.Fatal("invalid detail path")
-	}
-	if parsed.Scheme+"://"+parsed.Host != server.URL {
-		t.Fatal("detail path uses an unexpected origin")
-	}
-	req, err = http.NewRequest("GET", detailPath, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Range", "bytes=0-127")
-	resp, err = server.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	readBytes, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil || resp.StatusCode != http.StatusPartialContent || len(readBytes) != 128 {
-		t.Fatalf("bound source direct read: HTTP %d, %d bytes, %v", resp.StatusCode, len(readBytes), err)
-	}
-	req = httptest.NewRequest("GET", "/__scorecard/sessions", nil)
-	req.RemoteAddr = "127.0.0.1:1"
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	sessions = nil
-	if json.Unmarshal(rr.Body.Bytes(), &sessions) != nil {
-		t.Fatal("invalid sessions")
-	}
-	req = httptest.NewRequest("GET", "/__scorecard/broker", nil)
-	req.RemoteAddr = "127.0.0.1:1"
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	broker = nil
-	if json.Unmarshal(rr.Body.Bytes(), &broker) != nil {
-		t.Fatal("invalid broker sessions after lazy read")
-	}
-	lazyPlaybackIDs := map[string]bool{}
-	for _, row := range broker {
-		if row.ID != plan.PlaySessionId && row.ClientID == "8:jellyfintest" {
-			lazyPlaybackIDs[row.PlaybackID] = true
-		}
-	}
-	verified := false
-	for _, session := range sessions {
-		if !lazyPlaybackIDs[session.ID] || session.ReleaseID != detailSourceID || session.SourceID != detailSourceID || session.ClientID != "8:jellyfintest" || session.ItemID != itemID {
-			continue
-		}
-		req = httptest.NewRequest("GET", "/__scorecard/verify?id="+session.ID, nil)
-		req.RemoteAddr = "127.0.0.1:1"
-		rr = httptest.NewRecorder()
-		h.ServeHTTP(rr, req)
-		var actual struct {
-			Match  bool   `json:"match"`
-			Actual string `json:"actual_sha256"`
-		}
-		if rr.Code == http.StatusOK && json.Unmarshal(rr.Body.Bytes(), &actual) == nil && actual.Match && actual.Actual == session.ExpectedSHA256 && actual.Actual == detailSHA {
-			verified = true
-		}
-	}
-	if !verified {
-		t.Fatal("detail source opened without verified matching bytes")
 	}
 }
 

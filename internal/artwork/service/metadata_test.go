@@ -257,20 +257,24 @@ func TestArtworkMetadataKeepsExistingBlurHashWhenUpgradeFails(t *testing.T) {
 		calls.Add(1)
 		return nil, "", core.ErrNotAvailable
 	})
+	got := q.Get(ctx, req, ref)
+	if got.BlurHash != "existing-blur" || got.Width != 8 || got.Height != 6 || got.ThumbHash != "" {
+		t.Fatalf("stored BlurHash was not joined: %+v", got)
+	}
 	deadline := time.After(2 * time.Second)
-	for {
-		got := q.Get(ctx, req, ref)
-		if got.BlurHash == "existing-blur" {
-			if got.Width != 8 || got.Height != 6 || got.ThumbHash != "" || calls.Load() != 1 {
-				t.Fatalf("partial cached metadata: %+v, calls=%d", got, calls.Load())
-			}
-			break
-		}
+	for calls.Load() == 0 {
 		select {
 		case <-deadline:
-			t.Fatal("existing BlurHash was not restored")
+			t.Fatal("thumbhash upgrade was not attempted")
 		case <-time.After(5 * time.Millisecond):
 		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("upgrade fetched more than once: %d", calls.Load())
+	}
+	again := q.Get(ctx, req, ref)
+	if again.BlurHash != "existing-blur" || calls.Load() != 1 {
+		t.Fatalf("failed upgrade changed the stored row: %+v calls=%d", again, calls.Load())
 	}
 }
 
