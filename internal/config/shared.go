@@ -3,6 +3,8 @@ package config
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -117,6 +119,20 @@ func (s *Store) KeyFingerprint() string { return KeyFingerprint(s.credentialKey)
 // CredentialKey returns a copy of this node's credential key. Only the
 // cluster join-token issuer needs it; never log or store it.
 func (s *Store) CredentialKey() []byte { return append([]byte(nil), s.credentialKey...) }
+
+// DerivedKey is an HMAC of the unexported credential key. Callers use it as a
+// node-shared secret without receiving the credential key itself.
+func (s *Store) DerivedKey(label string) []byte {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	key := append([]byte(nil), s.credentialKey...)
+	s.mu.RUnlock()
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte(label))
+	return mac.Sum(nil)
+}
 
 // Seal encrypts plain with the credential key, bound to name.
 func (s *Store) Seal(name string, plain []byte) (string, error) {

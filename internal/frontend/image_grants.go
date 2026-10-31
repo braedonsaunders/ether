@@ -56,6 +56,21 @@ type ImageGrantBatch interface {
 	IssueBatch(context.Context, ImageBatchRequest) ([]ImageBatchItem, error)
 }
 
+// ImagePageRequest signs artwork for titles the caller has already authorized
+// for this page. The signer does not write a grant row.
+type ImagePageRequest struct {
+	Credential string
+	Device     core.Device
+	Titles     []core.Title
+	Kinds      []string
+}
+
+// ImagePageSigner is the list path for image URLs. Serve still rechecks the
+// credential, expiry, revocation and current artwork policy.
+type ImagePageSigner interface {
+	SignPage(context.Context, ImagePageRequest) ([]ImageBatchItem, error)
+}
+
 // ItemArtwork is an optional cache-only authorization path for issuing grid
 // artwork without computing playback versions or tracks.
 type ItemArtwork interface {
