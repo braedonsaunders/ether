@@ -53,14 +53,15 @@ func TestExistingStateMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Reconstruct the schema before the epoch migration, retaining policy data.
-	for _, table := range []string{"favorites_items", "favorites_mirror"} {
+	// Every registered component may have received a trigger; drop those too.
+	for _, table := range tables {
 		if store.DialectOf(db) == store.Postgres {
-			if _, err := db.Exec("DROP TRIGGER viewer_policy_" + table + " ON " + table); err != nil {
+			if _, err := db.Exec("DROP TRIGGER IF EXISTS viewer_policy_" + table + " ON " + table); err != nil {
 				t.Fatal(err)
 			}
 		} else {
 			for _, event := range []string{"insert", "update", "delete"} {
-				if _, err := db.Exec("DROP TRIGGER viewer_policy_" + table + "_" + event); err != nil {
+				if _, err := db.Exec("DROP TRIGGER IF EXISTS viewer_policy_" + table + "_" + event); err != nil {
 					t.Fatal(err)
 				}
 			}
