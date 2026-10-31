@@ -7,6 +7,13 @@
       "blocking": 0,
       "certifiedClients": []
     },
+    "emby": {
+      "protocolVersion": "4.10.2.0",
+      "date": "2026-10-31T08:11:39Z",
+      "blocking": 0,
+      "certifiedClients": [],
+      "measured": "offline fixture compare and spec-mounted live for emby-sdk"
+    },
     "jellyfin": {
       "protocolVersion": "12.4.0",
       "date": "2026-10-31T07:51:38Z",

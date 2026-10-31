@@ -113,7 +113,9 @@
           "Authorization": "MediaBrowser Client=\"Infuse-Direct\", Device=\"${device}\", DeviceId=\"${device_id}\", Version=\"${access_token}\"",
           "Connection": "keep-alive",
           "User-Agent": "Infuse-Direct/8.5.9"
-        }
+        },
+        "fixture_only": true,
+        "expected_status": 403
       },
       {
         "name": "captured-000012",

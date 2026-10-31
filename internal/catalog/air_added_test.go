@@ -12,7 +12,7 @@ func TestAirAddedAndAiredEpisodeBrowse(t *testing.T) {
 	ctx := context.Background()
 	c := newChunkTestCatalog(t)
 	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
-	c.now = func() time.Time { return now }
+	c.SetNow(func() time.Time { return now })
 	show, other := core.ShowKey(11), core.ShowKey(12)
 	old := now.Add(-48 * time.Hour)
 	future := now.Add(24 * time.Hour)
@@ -89,7 +89,7 @@ func TestSeasonAirAddedFallbacks(t *testing.T) {
 	ctx := context.Background()
 	c := newChunkTestCatalog(t)
 	now := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
-	c.now = func() time.Time { return now }
+	c.SetNow(func() time.Time { return now })
 	show, emptyShow, unknownShow := core.ShowKey(20), core.ShowKey(21), core.ShowKey(22)
 	first := now.Add(-100 * 24 * time.Hour)
 	seasonAir := now.Add(-20 * 24 * time.Hour)
@@ -130,7 +130,7 @@ func TestNewEpisodeLiftsShowInRecentlyAdded(t *testing.T) {
 	ctx := context.Background()
 	c := newChunkTestCatalog(t)
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
-	c.now = func() time.Time { return now }
+	c.SetNow(func() time.Time { return now })
 	veteran := core.ShowKey(41)
 	quiet := core.ShowKey(42)
 	items := []core.Title{
@@ -158,7 +158,7 @@ func TestNewEpisodeLiftsShowInRecentlyAdded(t *testing.T) {
 func TestMovieAddedSortIgnoresCatalogueInsertion(t *testing.T) {
 	ctx := context.Background()
 	c := newChunkTestCatalog(t)
-	c.now = func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) }
+	c.SetNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
 	old := core.Title{Key: core.MovieKey(7001), Type: core.TypeMovie, Title: "Old", Released: time.Unix(1072915200, 0).UTC()}
 	newer := core.Title{Key: core.MovieKey(7002), Type: core.TypeMovie, Title: "Newer", Released: time.Unix(1262304000, 0).UTC()}
 	unknown := core.Title{Key: core.MovieKey(7003), Type: core.TypeMovie, Title: "Unknown"}

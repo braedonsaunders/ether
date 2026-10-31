@@ -320,7 +320,11 @@ func (c *clusterState) remoteEntries(ctx context.Context) []playEntry {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 	live := c.liveNodes(ctx)
-	rows, err := c.db.QueryContext(ctx, `SELECT node_id, data FROM plex_sessions WHERE node_id<>? AND protocol='plex' AND updated_at>=?`,
+	// Broker rows share this table but carry a surface. A timeline stop has
+	// to find the tracker row, whose id is the user/client/session key.
+	// The broker row's id is the client session alone, so treating it as
+	// the play session drops the forwarded stop whenever it is visible first.
+	rows, err := c.db.QueryContext(ctx, `SELECT node_id, data FROM plex_sessions WHERE node_id<>? AND protocol='plex' AND surface IS NULL AND updated_at>=?`,
 		c.self, c.s.now().Add(-c.ttl).UnixMilli())
 	if err != nil {
 		c.warn("read other nodes' sessions", err)

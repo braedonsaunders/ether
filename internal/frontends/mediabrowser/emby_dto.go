@@ -75,24 +75,17 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 		m["Etag"] = embyETag(id)
 	}
 	if container, ok := m["Container"].(string); ok {
-		switch strings.ToLower(container) {
-		case "mp4", "m4v":
-			m["MimeType"] = "video/mp4"
-		case "mkv", "matroska":
-			m["MimeType"] = "video/x-matroska"
-		case "webm":
-			m["MimeType"] = "video/webm"
+		if mime, ok := embyVideoMime(container); ok {
+			m["MimeType"] = mime
 		}
 	}
-	if len(d.Versions) == 1 && d.Versions[0].DateModified != nil && !d.Versions[0].DateModified.IsZero() {
-		m["DateModified"] = wireTime(*d.Versions[0].DateModified)
-	}
-	// The Host does not identify a selected version. Multiple alternatives do
-	// not establish which one supplies the top-level media properties.
-	if len(d.Versions) != 1 {
+	v, ok := embyDetailVersion(d.Versions)
+	if !ok {
 		return
 	}
-	v := d.Versions[0]
+	if v.DateModified != nil && !v.DateModified.IsZero() && len(d.Versions) == 1 {
+		m["DateModified"] = wireTime(*v.DateModified)
+	}
 	if v.FileName != "" && v.FileName != "." && v.FileName != ".." && !strings.ContainsAny(v.FileName, "/\\\x00\r\n") {
 		m["FileName"] = v.FileName
 	}
@@ -115,6 +108,9 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 	}
 	if v.Media.Container != "" {
 		m["Container"] = v.Media.Container
+		if mime, ok := embyVideoMime(v.Media.Container); ok && v.Media.Video() != nil {
+			m["MimeType"] = mime
+		}
 	}
 	if v.Media.Size > 0 {
 		m["Size"] = v.Media.Size
@@ -130,4 +126,60 @@ func (i *instance) embyItemDetailDTO(m map[string]any, d frontend.ItemDetail) {
 			m["Height"] = video.Height
 		}
 	}
+	if len(v.Media.Streams) > 0 {
+		m["MediaStreams"] = i.mediaStreams(v.Media.Streams)
+	}
+}
+
+func embyVideoMime(container string) (string, bool) {
+	switch strings.ToLower(container) {
+	case "mp4", "m4v":
+		return "video/mp4", true
+	case "mkv", "matroska":
+		return "video/x-matroska", true
+	case "webm":
+		return "video/webm", true
+	default:
+		return "", false
+	}
+}
+
+// embyDetailVersion is the one version when the item has a single candidate.
+// Several probed pictures still have one Emby item body: the highest-bitrate
+// video, then the taller picture, then the larger file. That is the file Emby
+// 4.10.2 puts on the movie the library lists first. A size without a video
+// stream is not a selection.
+func embyDetailVersion(versions []frontend.Version) (frontend.Version, bool) {
+	if len(versions) == 1 {
+		return versions[0], true
+	}
+	found := false
+	var best frontend.Version
+	for _, version := range versions {
+		if version.Media.Estimated || version.Media.Video() == nil {
+			continue
+		}
+		if !found || embyRicherVersion(version, best) {
+			best = version
+			found = true
+		}
+	}
+	return best, found
+}
+
+func embyRicherVersion(a, b frontend.Version) bool {
+	if a.Media.BitrateKbps != b.Media.BitrateKbps {
+		return a.Media.BitrateKbps > b.Media.BitrateKbps
+	}
+	ah, bh := 0, 0
+	if video := a.Media.Video(); video != nil {
+		ah = video.Height
+	}
+	if video := b.Media.Video(); video != nil {
+		bh = video.Height
+	}
+	if ah != bh {
+		return ah > bh
+	}
+	return a.Media.Size > b.Media.Size
 }

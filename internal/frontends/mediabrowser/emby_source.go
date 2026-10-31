@@ -31,11 +31,11 @@ func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, medi
 			}
 		}
 	}
-	// The common PlaybackInfo path may have populated this from a legacy
-	// default bit; replace it only with an unambiguous authoritative source.
+	// Emby 4.10.2 publishes the earliest audio stream marked default, including
+	// when the container marks more than one. An estimate is not a selection.
 	delete(source, "DefaultAudioStreamIndex")
 	if !media.Estimated {
-		defaultIndex, defaults := 0, 0
+		defaultIndex, found := 0, false
 		for _, stream := range media.Streams {
 			if stream.Type != "audio" {
 				continue
@@ -44,11 +44,11 @@ func (i *instance) embyMediaSourceDTO(source map[string]any, itemID string, medi
 			if stream.DefaultDisposition != nil {
 				isDefault = *stream.DefaultDisposition
 			}
-			if isDefault {
-				defaultIndex, defaults = stream.Index, defaults+1
+			if isDefault && (!found || stream.Index < defaultIndex) {
+				defaultIndex, found = stream.Index, true
 			}
 		}
-		if defaults == 1 {
+		if found {
 			source["DefaultAudioStreamIndex"] = defaultIndex
 		}
 	}

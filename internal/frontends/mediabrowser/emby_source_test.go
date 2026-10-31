@@ -57,7 +57,7 @@ func TestEmbySourceDefaultAudioUsesAuthoritativeDisposition(t *testing.T) {
 		{"explicit default", false, []core.StreamInfo{{Type: "video", Index: 0}, {Type: "audio", Index: 1, DefaultDisposition: &yes}}, 1, true},
 		{"legacy default", false, []core.StreamInfo{{Type: "audio", Index: 0, Default: true}}, 0, true},
 		{"explicit false overrides", false, []core.StreamInfo{{Type: "audio", Index: 1, Default: true, DefaultDisposition: &no}}, 0, false},
-		{"multiple defaults", false, []core.StreamInfo{{Type: "audio", Index: 1, DefaultDisposition: &yes}, {Type: "audio", Index: 2, DefaultDisposition: &yes}}, 0, false},
+		{"multiple defaults", false, []core.StreamInfo{{Type: "audio", Index: 2, DefaultDisposition: &yes}, {Type: "audio", Index: 1, DefaultDisposition: &yes}}, 1, true},
 		{"unknown", false, []core.StreamInfo{{Type: "audio", Index: 1}}, 0, false},
 		{"estimated", true, []core.StreamInfo{{Type: "audio", Index: 1, DefaultDisposition: &yes}}, 0, false},
 	} {

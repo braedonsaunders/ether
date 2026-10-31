@@ -9,8 +9,12 @@ import "github.com/braedonsaunders/ether/internal/catalog"
 // refresh already schedules from each collection's recorded build time.
 
 func (a *App) catalogOptions() []catalog.Option {
-	if !a.clustered() {
-		return nil
+	var opts []catalog.Option
+	if a.opts.CatalogNow != nil {
+		opts = append(opts, catalog.WithNow(a.opts.CatalogNow))
 	}
-	return []catalog.Option{catalog.WithResumeSchedule()}
+	if a.clustered() {
+		opts = append(opts, catalog.WithResumeSchedule())
+	}
+	return opts
 }

@@ -95,12 +95,9 @@ func (c *Catalog) loadByKey(ctx context.Context, key core.RatingKey) (*storedTit
 	st.t = items[0]
 	if cacheStoredTitle(key.Kind()) && c.writeGen.Load() == gen {
 		c.cacheMu.Lock()
-		if len(c.titleCache) >= 8192 {
-			c.titleCache = map[core.RatingKey]cachedStoredTitle{}
-		}
 		cp := *st
 		cp.t = cloneTitle(st.t)
-		c.titleCache[key] = cachedStoredTitle{st: cp, gen: gen, minute: minBucket}
+		c.putSnapshotLocked(key, gen, minBucket, cp)
 		c.cacheMu.Unlock()
 	}
 	return st, nil

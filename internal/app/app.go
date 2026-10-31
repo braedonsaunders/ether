@@ -110,6 +110,9 @@ type Options struct {
 	// FixtureTranscoder, when set, replaces the ffmpeg manager so every
 	// protocol shares one transcode budget without an encoder binary.
 	FixtureTranscoder core.Transcoder
+	// CatalogNow, when set, is the catalog clock from construction. Tests
+	// pin it so a minute snapshot cannot expire while a background browse runs.
+	CatalogNow func() time.Time
 }
 
 // App is a running Ether server.

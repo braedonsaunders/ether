@@ -295,14 +295,27 @@ func (c *Catalog) rememberTitles(gen uint64, minute int64, items []core.Title) {
 		c.titleCache = map[core.RatingKey]cachedStoredTitle{}
 	}
 	for i := range items {
-		if !cacheStoredTitle(items[i].Key.Kind()) {
-			continue
-		}
-		if len(c.titleCache) >= 8192 {
-			c.titleCache = map[core.RatingKey]cachedStoredTitle{}
-		}
-		c.titleCache[items[i].Key] = cachedStoredTitle{st: storedTitle{t: cloneTitle(items[i])}, gen: gen, minute: minute}
+		c.putSnapshotLocked(items[i].Key, gen, minute, storedTitle{t: cloneTitle(items[i])})
 	}
+}
+
+// putSnapshotLocked records the first title seen for this generation and
+// minute. The caller holds cacheMu. A later hydrate must not replace it:
+// a background browse can read a credit row another writer just changed.
+func (c *Catalog) putSnapshotLocked(key core.RatingKey, gen uint64, minute int64, st storedTitle) {
+	if !cacheStoredTitle(key.Kind()) {
+		return
+	}
+	if c.titleCache == nil {
+		c.titleCache = map[core.RatingKey]cachedStoredTitle{}
+	}
+	if ent, ok := c.titleCache[key]; ok && ent.gen == gen && ent.minute == minute {
+		return
+	}
+	if len(c.titleCache) >= 8192 {
+		c.titleCache = map[core.RatingKey]cachedStoredTitle{}
+	}
+	c.titleCache[key] = cachedStoredTitle{st: st, gen: gen, minute: minute}
 }
 
 func (c *Catalog) CachedGetMany(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {

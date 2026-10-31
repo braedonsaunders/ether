@@ -19,6 +19,11 @@ import (
 
 func setupTestApp(t *testing.T, complete bool) *App {
 	t.Helper()
+	return setupTestAppWith(t, complete, Options{})
+}
+
+func setupTestAppWith(t *testing.T, complete bool, opts Options) *App {
+	t.Helper()
 	dir := t.TempDir()
 	cfg, err := config.Open(dir)
 	if err != nil {
@@ -33,7 +38,10 @@ func setupTestApp(t *testing.T, complete bool) *App {
 		t.Fatal(err)
 	}
 	s := &clusterSetup{state: "idle", stop: make(chan struct{}, 1), check: func(context.Context, clusterconfig.SetupRequest) error { return nil }}
-	a, err := New(context.Background(), Options{DataDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), clusterSetup: s})
+	opts.DataDir = dir
+	opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	opts.clusterSetup = s
+	a, err := New(context.Background(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
