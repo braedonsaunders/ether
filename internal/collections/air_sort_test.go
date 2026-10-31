@@ -16,7 +16,7 @@ func TestAirDateSorts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	_, err = db.Exec(`CREATE TABLE catalog_titles (show_key INTEGER, type TEXT, season INTEGER, episode INTEGER, released_ts INTEGER)`)
+	_, err = db.Exec(`CREATE TABLE catalog_titles (show_key INTEGER, type TEXT, season INTEGER, episode INTEGER, released_ts INTEGER, release_known INTEGER GENERATED ALWAYS AS (CASE WHEN released_ts<>0 THEN 1 ELSE 0 END) VIRTUAL)`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestAirDateSorts(t *testing.T) {
 		show, season, ep int
 		date             int64
 	}{{1, 1, 1, day(-30)}, {1, 1, 2, day(-1)}, {1, 2, 1, day(1)}, {1, 0, 1, day(0)}, {2, 1, 1, day(-10)}, {2, 2, 1, day(-5)}, {2, 2, 2, 0}, {3, 1, 1, day(-40)}, {3, 2, 1, 0}, {3, 2, 2, day(-2)}} {
-		if _, err := db.Exec(`INSERT INTO catalog_titles VALUES (?, 'episode', ?, ?, ?)`, row.show, row.season, row.ep, row.date); err != nil {
+		if _, err := db.Exec(`INSERT INTO catalog_titles(show_key,type,season,episode,released_ts) VALUES (?, 'episode', ?, ?, ?)`, row.show, row.season, row.ep, row.date); err != nil {
 			t.Fatal(err)
 		}
 	}

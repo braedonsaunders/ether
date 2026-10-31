@@ -246,6 +246,10 @@ func generatedColumns(ctx context.Context, q queryer, d Dialect, table string) (
 }
 
 func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, d Dialect, table string) (int64, error) {
+	generated, err := generatedColumns(ctx, tx, d, table)
+	if err != nil {
+		return 0, err
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT * FROM `+quoteIdent(table))
 	if err != nil {
 		return 0, err
@@ -256,10 +260,6 @@ func exportTable(ctx context.Context, tx *sql.Tx, enc *json.Encoder, d Dialect, 
 		return 0, err
 	}
 	cts, err := rows.ColumnTypes()
-	if err != nil {
-		return 0, err
-	}
-	generated, err := generatedColumns(ctx, tx, d, table)
 	if err != nil {
 		return 0, err
 	}
