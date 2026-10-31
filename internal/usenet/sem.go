@@ -164,6 +164,23 @@ func (s *prioSem) TryAcquire(prio core.Priority) bool {
 	return true
 }
 
+// tryAcquireSpare takes a live slot for opportunistic work only when nobody
+// waits and another slot stays free for the next viewer (a one-connection
+// pool qualifies only when entirely idle), so that work never makes a
+// viewer queue.
+func (s *prioSem) tryAcquireSpare() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.mustQueueLocked(core.PriorityLive) || !s.grantableLocked(core.PriorityLive) {
+		return false
+	}
+	if s.size > 1 && s.size-s.inUse < 2 {
+		return false
+	}
+	s.takeLocked(core.PriorityLive)
+	return true
+}
+
 // Acquire waits for a slot. It returns ctx.Err() if ctx ends first (no slot
 // is held in that case) and ErrPoolClosed if the semaphore is closed.
 func (s *prioSem) Acquire(ctx context.Context, prio core.Priority) error {

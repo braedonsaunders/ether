@@ -46,3 +46,21 @@ func TestOptimisticOutageDoesNotBlacklistRelease(t *testing.T) {
 	}
 	s.Close()
 }
+
+type backgroundHealth struct{ background atomic.Bool }
+
+func (h *backgroundHealth) Check(ctx context.Context, _ []byte) (bool, error) {
+	h.background.Store(core.IsBackgroundCheck(ctx))
+	return true, nil
+}
+
+func TestOptimisticCheckRunsInBackground(t *testing.T) {
+	h := &backgroundHealth{}
+	s := New(&fakeIndexer{}, h, nil, testCfg(), Options{})
+	s.optimisticCheck(core.Release{ID: "test"}, []byte("nzb"))
+	s.bgWG.Wait()
+	s.Close()
+	if !h.background.Load() {
+		t.Fatal("optimistic health check competed at live priority")
+	}
+}

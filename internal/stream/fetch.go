@@ -136,7 +136,9 @@ func (e *Engine) segmentOnce(ctx context.Context, rel *release, pf *postedFile, 
 		fl.waiters++
 		e.coalesced.Add(1)
 	} else {
-		fctx, cancel := context.WithCancel(core.InheritBackground(e.ctx, ctx))
+		// The owner's stream key lets the fetcher tell this stream's stalls
+		// from other viewers' variance.
+		fctx, cancel := context.WithCancel(core.WithStreamKey(core.InheritBackground(e.ctx, ctx), core.StreamKey(ctx)))
 		fl = &flight{decoded: make(chan struct{}), stored: make(chan struct{}), done: make(chan struct{}), cacheID: fo.cacheID, waiters: 1, cancel: cancel}
 		e.flights[fkey] = fl
 		e.wg.Add(1)

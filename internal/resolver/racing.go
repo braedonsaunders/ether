@@ -66,6 +66,10 @@ func (s *Service) optimisticCheck(r core.Release, nzb []byte) {
 		defer s.bgWG.Done()
 		ctx, cancel := context.WithTimeout(s.bgCtx, 30*time.Second)
 		defer cancel()
+		// Post-start validation must not compete with the viewer it already
+		// released. A no-op budget marks the check background without charging
+		// the availability ledger.
+		ctx = core.WithBackgroundBudget(ctx, func(context.Context, string, string, int64) error { return nil })
 		ok, err := s.checkHealth(ctx, r.ID, nzb)
 		if ctx.Err() != nil {
 			return

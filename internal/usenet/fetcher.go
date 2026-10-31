@@ -174,7 +174,8 @@ func (o *Options) withDefaults() {
 // sharing a Priority form a tier and share load (the least busy is tried
 // first). Only when every non-backfill provider answered 430 are backfill
 // (block) providers tried, in the same way. Transient errors are retried on
-// fresh connections and then on the next provider.
+// fresh connections and then on the next provider. A live fetch that stalls
+// is raced by one duplicate on spare capacity (see hedge.go).
 type Fetcher struct {
 	o   Options
 	log *slog.Logger
@@ -195,6 +196,8 @@ type Fetcher struct {
 	minIdle atomic.Int32
 
 	misses *missCache
+	// live tracks live BODY fetches for head-of-line hedging (hedge.go).
+	live *liveHedger
 }
 
 var _ core.ArticleFetcher = (*Fetcher)(nil)
@@ -208,6 +211,7 @@ func New(providers []config.UsenetProvider, opts Options) *Fetcher {
 		o:      opts,
 		log:    opts.Logger,
 		misses: newMissCache(opts.MissTTL, opts.MissCacheSize, time.Now),
+		live:   newLiveHedger(),
 	}
 	f.minIdle.Store(int32(opts.MinIdle))
 	f.Update(providers)
@@ -395,17 +399,11 @@ func (f *Fetcher) BodyPart(ctx context.Context, messageID string, groups []strin
 		return nil, ap, err
 	}
 	var part *yenc.Part
-	err = f.each(ctx, id, "fetch-body", func(ctx context.Context, p *pool) error {
-		var e error
-		if core.IsBackgroundCheck(ctx) {
-			prio = core.PriorityPrefetch
-			if e = core.SpendBackground(ctx, "bytes", "usenet", 2*p.o.MaxArticleSize+(64<<10)); e != nil {
-				return e
-			}
-		}
-		part, e = p.body(ctx, id, groups, prio)
-		return e
-	})
+	if clampPriority(prio) == core.PriorityLive && !core.IsBackgroundCheck(ctx) {
+		part, err = f.bodyLive(ctx, id, groups)
+	} else {
+		part, err = f.bodyChain(ctx, id, groups, prio, nil)
+	}
 	if err != nil {
 		return nil, ap, err
 	}
@@ -417,8 +415,34 @@ func (f *Fetcher) BodyPart(ctx context.Context, messageID string, groups []strin
 	return part.Data, ap, nil
 }
 
-// Stat reports whether any provider has the article (STAT, at live
-// priority since health checks gate playback). It returns (false, nil) when
+// bodyChain fetches one article through the ordinary coalesced provider
+// chain. serving, when set, tracks the provider currently being asked.
+func (f *Fetcher) bodyChain(ctx context.Context, id string, groups []string, prio core.Priority, serving *atomic.Pointer[pool]) (*yenc.Part, error) {
+	var part *yenc.Part
+	err := f.each(ctx, id, "fetch-body", func(ctx context.Context, p *pool) error {
+		var e error
+		if core.IsBackgroundCheck(ctx) {
+			prio = core.PriorityPrefetch
+			if e = core.SpendBackground(ctx, "bytes", "usenet", 2*p.o.MaxArticleSize+(64<<10)); e != nil {
+				return e
+			}
+		}
+		if serving != nil {
+			serving.Store(p)
+		}
+		start := time.Now()
+		part, e = p.body(ctx, id, groups, prio)
+		if e == nil && prio == core.PriorityLive {
+			p.noteLiveFetch(time.Since(start))
+		}
+		return e
+	})
+	return part, err
+}
+
+// Stat reports whether any provider has the article. A foreground health
+// check runs at live priority; a background check (availability, optimistic
+// post-start) runs at prefetch. It returns (false, nil) when
 // every provider able to answer said 430, and an error when that could not
 // be established.
 func (f *Fetcher) Stat(ctx context.Context, messageID string) (bool, error) {
@@ -936,24 +960,16 @@ func (f *Fetcher) CheckBodyPart(ctx context.Context, messageID string, groups []
 				return err
 			}
 		}
-		c, err := p.get(ctx, prio)
-		if err != nil {
-			return err
-		}
-		reused := c.uses > 0 || !c.idleSince.IsZero()
-		c.uses++
-		if p.o.UseGroup && len(groups) > 0 && !slices.Contains(groups, c.CurrentGroup()) {
-			if err = c.Group(ctx, groups[0]); err != nil && !errors.Is(err, ErrNoSuchGroup) {
-				p.put(c, prio)
-				return p.failed(err, reused, ctx)
+		err := p.withConn(ctx, prio, func(c *Conn) error {
+			if p.o.UseGroup && len(groups) > 0 && !slices.Contains(groups, c.CurrentGroup()) {
+				if err := c.Group(ctx, groups[0]); err != nil && !errors.Is(err, ErrNoSuchGroup) {
+					return err
+				}
 			}
-		}
-		reader, err := c.Body(ctx, id)
-		if err == nil {
-			err = probeBodyHeader(c, reader, p.o.MaxArticleSize, want)
-		}
-		p.put(c, prio)
-		if err != nil {
+			reader, err := c.Body(ctx, id)
+			if err == nil {
+				err = probeBodyHeader(c, reader, p.o.MaxArticleSize, want)
+			}
 			if errors.Is(err, ErrNoSuchArticle) {
 				p.bodyMisses.Add(1)
 				var pe *ProtocolError
@@ -961,7 +977,10 @@ func (f *Fetcher) CheckBodyPart(ctx context.Context, messageID string, groups []
 					p.bodyTakedowns.Add(1)
 				}
 			}
-			return p.failed(err, reused, ctx)
+			return err
+		})
+		if err != nil {
+			return err
 		}
 		p.brk.success()
 		return nil

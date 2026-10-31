@@ -303,7 +303,8 @@ func (e *Engine) Open(ctx context.Context, releaseID string, nzbData []byte) (co
 	if err != nil {
 		return nil, err
 	}
-	p, err := rel.ensurePlan(ctx, core.PriorityLive, releaseID)
+	// The plan probe is the cold-start head of line: its reads are one stream.
+	p, err := rel.ensurePlan(core.WithStreamKey(ctx, rel), core.PriorityLive, releaseID)
 	if err != nil {
 		e.release(rel)
 		if IsRejection(err) {
