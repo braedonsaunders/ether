@@ -118,6 +118,24 @@ func TestJellyfinDefaultStreamIndexesUseProbeEvidence(t *testing.T) {
 	}
 }
 
+func TestPlannedAudioReplacesTheFileDefault(t *testing.T) {
+	source := map[string]any{"DefaultAudioStreamIndex": 1, "DefaultSubtitleStreamIndex": 3}
+	media := frontend.MediaInfo{Streams: []frontend.StreamInfo{
+		{Type: "audio", Index: 1, Language: "tur", Default: true},
+		{Type: "audio", Index: 2, Language: "eng"},
+		{Type: "subtitle", Index: 3, Language: "tur", Default: true},
+		{Type: "subtitle", Index: 4, Language: "eng", Forced: true},
+	}}
+	applyPlannedStreamIndexes(source, media, frontend.Decision{AudioStream: 2, SubtitleStream: 4})
+	if source["DefaultAudioStreamIndex"] != 2 || source["DefaultSubtitleStreamIndex"] != 4 {
+		t.Fatal(source)
+	}
+	applyPlannedStreamIndexes(source, media, frontend.Decision{AudioStream: 2, SubtitleStream: -1})
+	if source["DefaultAudioStreamIndex"] != 2 || source["DefaultSubtitleStreamIndex"] != -1 {
+		t.Fatal(source)
+	}
+}
+
 func TestJellyfinResumeStoresNoSubtitle(t *testing.T) {
 	source := map[string]any{}
 	item := map[string]any{

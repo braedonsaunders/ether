@@ -27,7 +27,7 @@ func (s surfaceTrackPreferences) GetScoped(ctx context.Context, v *frontend.View
 		return frontend.TrackPreferences{}, 0, 0, "", nil, err
 	}
 	r, sources, err := s.app.trackprefs.ScopedRulesWithSources(ctx, v.ID, trackprefs.Scope{Device: scope.Device, Series: scope.Series, Library: scope.Library})
-	return frontend.TrackPreferences{AudioLanguages: r.AudioLanguages, SubtitleLanguages: r.SubtitleLanguages, SubtitleMode: r.SubtitleMode, SubtitleAppearance: append(json.RawMessage(nil), r.SubtitleAppearance...)}, r.MaxBitrateKbps, r.MaxHeight, r.PreferredQuality, sources, err
+	return frontend.TrackPreferences{AudioLanguages: r.AudioLanguages, SubtitleLanguages: r.SubtitleLanguages, SubtitleMode: r.SubtitleMode, PreferOriginal: r.PreferOriginal, SubtitleAppearance: append(json.RawMessage(nil), r.SubtitleAppearance...)}, r.MaxBitrateKbps, r.MaxHeight, r.PreferredQuality, sources, err
 }
 func (s surfaceTrackPreferences) SetScoped(ctx context.Context, v *frontend.Viewer, scope, id string, patch frontend.TrackPreferencePatch) error {
 	if err := s.active(ctx, v); err != nil {
@@ -85,7 +85,7 @@ func (s surfaceTrackPreferences) Get(ctx context.Context, v *frontend.Viewer) (f
 	if err != nil {
 		return frontend.TrackPreferences{}, err
 	}
-	return frontend.TrackPreferences{AudioLanguages: rules.AudioLanguages, SubtitleLanguages: rules.SubtitleLanguages, SubtitleMode: rules.SubtitleMode, SubtitleAppearance: append(json.RawMessage(nil), rules.SubtitleAppearance...)}, nil
+	return frontend.TrackPreferences{AudioLanguages: rules.AudioLanguages, SubtitleLanguages: rules.SubtitleLanguages, SubtitleMode: rules.SubtitleMode, PreferOriginal: rules.PreferOriginal, SubtitleAppearance: append(json.RawMessage(nil), rules.SubtitleAppearance...)}, nil
 }
 func (s surfaceTrackPreferences) SetSubtitle(ctx context.Context, v *frontend.Viewer, languages []string, mode string) error {
 	if err := s.active(ctx, v); err != nil {

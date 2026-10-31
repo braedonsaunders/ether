@@ -280,7 +280,10 @@ type Host struct {
 	// Nil or Enabled false tells clients the server will not fetch one.
 	Subtitles SubtitleCatalog
 	Config    func() Settings
-	Log       *slog.Logger
+	// MetadataLanguage is the catalog language (config catalog.language).
+	// Empty skips that step of the no-list audio chain.
+	MetadataLanguage func() string
+	Log              *slog.Logger
 	// ViewerPortalURL returns a reachable owner-selected viewer portal URL for this client.
 	ViewerPortalURL func(context.Context, *http.Request) (string, error)
 	// SecurePortalURL selects a verified reachable HTTPS portal address.

@@ -8,6 +8,7 @@ import (
 type TrackPreferences struct {
 	AudioLanguages, SubtitleLanguages []string
 	SubtitleMode                      string
+	PreferOriginal                    bool
 	SubtitleAppearance                json.RawMessage
 }
 type TrackPreferenceService interface {

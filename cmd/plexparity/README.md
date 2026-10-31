@@ -43,6 +43,16 @@ positions. The earlier PMS threshold was not established: the Guest probe
 stopped at authorization. This note does not allowlist any response; exact
 reviewed before/after pairs are still required.
 
+Intentional track selection: a viewer with no audio list no longer follows the
+file's default flag ahead of a language they can use. The order is the
+viewer's trackprefs audio languages (their row, otherwise user 0, which the
+setup wizard writes), then the catalog language (`en-US` matches English),
+then the title's original language, then the default flag. PreferOriginal
+still ranks the original language first and is separate from that chain.
+The same order picks subtitles. With subtitle mode left off, a forced
+subtitle in the viewer's language is selected only when the chosen audio
+is not one of those languages. This note does not allowlist any response.
+
 Intentional playback change `1d4dee05c` (PR #198, merge `e7a3bf2dd`): when
 every candidate's health check times out, playback starts the first pooled
 candidate in the resolver's own order (preferred release, then primary, then

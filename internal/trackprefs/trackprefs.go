@@ -49,6 +49,9 @@ type Options struct {
 	// SyncSubtitleLanguages mirrors the ordered list onto auth_users.subtitle_languages.
 	// User 0 is the shared default and is not an account row.
 	SyncSubtitleLanguages func(context.Context, int64, []string) error
+	// ServerLanguage is the catalog metadata language (config catalog.language,
+	// for example en-US). It is not the console locale.
+	ServerLanguage func() string
 }
 type rulesCacheKey struct {
 	user                    int64
@@ -319,10 +322,9 @@ func (s *Service) selectRules(ctx context.Context, user int64, key core.RatingKe
 	if err != nil {
 		return out, err
 	}
-	want := append([]string{}, r.AudioLanguages...)
-	if r.PreferOriginal && original != "" {
-		want = append([]string{original}, want...)
-	}
+	r = s.sharedLanguages(ctx, user, r)
+	server := s.serverLanguage()
+	want := AudioOrder(r.AudioLanguages, server, original, r.PreferOriginal)
 	var am *Choice
 	if hasA {
 		am = &a
@@ -331,17 +333,20 @@ func (s *Service) selectRules(ctx context.Context, user int64, key core.RatingKe
 	if hasB && b.Off {
 		return out, nil
 	}
-	if !hasB && r.SubtitleMode == "off" {
+	understood := viewerLanguages(r.AudioLanguages, server)
+	foreign := out.Audio >= 0 && len(understood) > 0 && rankLanguage(info.Streams[out.Audio].Language, understood) == 0
+	if !hasB && r.SubtitleMode == "off" && !foreign {
 		return out, nil
 	}
 	if !hasB && r.SubtitleMode == "foreign-only" {
-		understood := r.SubtitleLanguages
-		if len(understood) == 0 {
-			understood = r.AudioLanguages
+		known := r.SubtitleLanguages
+		if len(known) == 0 {
+			known = r.AudioLanguages
 		}
-		// No language list means there is nothing to match, so leave subtitles
-		// off. Picking an arbitrary track would also be the wrong moment to fetch one.
-		if len(understood) == 0 || (out.Audio >= 0 && rankLanguage(info.Streams[out.Audio].Language, understood) > 0) {
+		if len(known) == 0 {
+			known = viewerLanguages(nil, server)
+		}
+		if len(known) == 0 || (out.Audio >= 0 && rankLanguage(info.Streams[out.Audio].Language, known) > 0) {
 			return out, nil
 		}
 	}
@@ -349,8 +354,96 @@ func (s *Service) selectRules(ctx context.Context, user int64, key core.RatingKe
 	if hasB {
 		bm = &b
 	}
-	out.Subtitle = pick(info.Streams, "subtitle", r.SubtitleLanguages, r.SubtitleStyle, !hasB && r.SubtitleMode == "forced-only", bm)
+	style := r.SubtitleStyle
+	if !hasB && r.SubtitleMode == "off" && foreign {
+		style = "forced"
+	}
+	out.Subtitle = pick(info.Streams, "subtitle", subtitleOrder(r, server, original), style, !hasB && r.SubtitleMode == "forced-only", bm)
 	return out, nil
+}
+
+// sharedLanguages fills an empty viewer list from user 0. GetRules already
+// returns user 0 when the viewer has no row; a viewer row with a blank list
+// would otherwise hide that shared language. PreferOriginal is left alone:
+// it ranks the title original first and is not this chain.
+func (s *Service) sharedLanguages(ctx context.Context, user int64, r Rules) Rules {
+	if user <= 0 || (len(r.AudioLanguages) > 0 && len(r.SubtitleLanguages) > 0) {
+		return r
+	}
+	shared, err := s.GetRules(ctx, 0)
+	if err != nil {
+		return r
+	}
+	if len(r.AudioLanguages) == 0 {
+		r.AudioLanguages = append([]string(nil), shared.AudioLanguages...)
+	}
+	if len(r.SubtitleLanguages) == 0 {
+		r.SubtitleLanguages = append([]string(nil), shared.SubtitleLanguages...)
+	}
+	return r
+}
+
+func (s *Service) serverLanguage() string {
+	if s == nil || s.options.ServerLanguage == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.options.ServerLanguage())
+}
+
+// AudioOrder is the audio preference for one playback. audio is the viewer's
+// list, or user 0's list when the viewer saved none. PreferOriginal ranks the
+// title original first. Otherwise the order is that list, the catalog
+// language, then the title original. pick uses the file default flag only
+// when none of these match.
+func AudioOrder(audio []string, server, original string, preferOriginal bool) []string {
+	var want []string
+	if preferOriginal {
+		want = appendLanguage(want, original)
+	}
+	for _, lang := range audio {
+		want = appendLanguage(want, lang)
+	}
+	want = appendLanguage(want, server)
+	if !preferOriginal {
+		want = appendLanguage(want, original)
+	}
+	return want
+}
+
+func subtitleOrder(r Rules, server, original string) []string {
+	if len(r.SubtitleLanguages) > 0 {
+		return AudioOrder(r.SubtitleLanguages, server, original, false)
+	}
+	return AudioOrder(r.AudioLanguages, server, original, r.PreferOriginal)
+}
+
+// viewerLanguages is the language the viewer is assumed to understand.
+// The title's original language is not one of them.
+func viewerLanguages(audio []string, server string) []string {
+	if len(audio) > 0 {
+		return append([]string(nil), audio...)
+	}
+	if server != "" {
+		return []string{server}
+	}
+	return nil
+}
+
+func appendLanguage(have []string, lang string) []string {
+	lang = strings.TrimSpace(lang)
+	if lang == "" {
+		return have
+	}
+	key := langtag.Normalize(lang)
+	for _, v := range have {
+		if key != "" && langtag.Normalize(v) == key {
+			return have
+		}
+		if key == "" && strings.EqualFold(strings.TrimSpace(v), lang) {
+			return have
+		}
+	}
+	return append(have, lang)
 }
 
 // AudioFilters returns only known ffmpeg filters; arbitrary client strings never enter the command.

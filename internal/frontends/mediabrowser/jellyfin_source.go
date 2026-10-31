@@ -55,6 +55,25 @@ func jellyfinDefaultStreamIndexes(source map[string]any, media frontend.MediaInf
 	}
 }
 
+// applyPlannedStreamIndexes publishes the stream playback actually selected.
+// The container default flag is not that choice: a default-flagged dub must
+// not stay selected after the language chain picked another track.
+func applyPlannedStreamIndexes(source map[string]any, media frontend.MediaInfo, decision frontend.Decision) {
+	if decision.AudioStream >= 0 {
+		source["DefaultAudioStreamIndex"] = decision.AudioStream
+	}
+	if decision.SubtitleStream >= 0 {
+		source["DefaultSubtitleStreamIndex"] = decision.SubtitleStream
+		return
+	}
+	for _, stream := range media.Streams {
+		if stream.Type == "subtitle" {
+			source["DefaultSubtitleStreamIndex"] = -1
+			return
+		}
+	}
+}
+
 // jellyfinResumeSubtitle records the lab viewer's in-progress choice. Jellyfin
 // stores -1 on a partially watched item when no subtitle stream is selected,
 // and omits the field once the item is unplayed or finished.

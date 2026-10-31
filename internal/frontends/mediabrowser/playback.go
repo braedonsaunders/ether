@@ -360,6 +360,9 @@ func (i *instance) playbackInfo(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if i.protocol == "emby" || i.protocol == "jellyfin" {
+		applyPlannedStreamIndexes(source, media, plan.Decision)
+	}
 	jsonReply(w, map[string]any{"MediaSources": []any{source}, "PlaySessionId": playID})
 }
 

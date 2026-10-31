@@ -1355,8 +1355,10 @@ func (s *Server) applyLeafCounts(ctx context.Context, pr *Request, items []model
 	}
 }
 
-// audioLanguages is the user's audio preference, falling back to the
-// server's catalogue language (e.g. "en-US" -> "en").
+// audioLanguages is the access-limit audio list, then the catalog language.
+// Playback selection does not read it. That chain is trackprefs: the viewer's
+// audioLanguages, otherwise user 0, then catalog.language, then the title
+// original, then the file default flag.
 func (s *Server) audioLanguages(u *core.User) []string {
 	var langs []string
 	if u != nil {

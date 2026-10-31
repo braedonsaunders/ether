@@ -166,3 +166,126 @@ func TestAppearanceRoundTrip(t *testing.T) {
 		t.Fatalf("%s %v %v", rules.SubtitleAppearance, sources, err)
 	}
 }
+
+func matrixAudio() core.MediaInfo {
+	return core.MediaInfo{Streams: []core.StreamInfo{
+		{Type: "audio", Language: "tur", Codec: "eac3", Channels: 2, Default: true},
+		{Type: "audio", Language: "eng", Codec: "eac3", Channels: 6},
+	}}
+}
+
+func TestSharedViewerLanguageBeatsDefaultDub(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := New(db, Options{ServerLanguage: func() string { return "en-US" }})
+	shared := Default()
+	shared.AudioLanguages = []string{"en"}
+	shared.SubtitleLanguages = []string{"en"}
+	if err = s.PutRules(ctx, 0, shared); err != nil {
+		t.Fatal(err)
+	}
+	sel, err := s.Select(ctx, 7, core.MovieKey(603), matrixAudio(), "en")
+	if err != nil || sel.Audio != 1 || sel.Subtitle != -1 {
+		t.Fatalf("user 0 english: %+v %v", sel, err)
+	}
+	if err = s.PutRules(ctx, 7, Default()); err != nil {
+		t.Fatal(err)
+	}
+	sel, err = s.Select(ctx, 7, core.MovieKey(603), matrixAudio(), "en")
+	if err != nil || sel.Audio != 1 || sel.Subtitle != -1 {
+		t.Fatalf("blank viewer row: %+v %v", sel, err)
+	}
+}
+
+func TestCatalogThenOriginalThenDefault(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := New(db, Options{ServerLanguage: func() string { return "en-US" }})
+	info := core.MediaInfo{Streams: []core.StreamInfo{
+		{Type: "audio", Language: "tur", Default: true},
+		{Type: "audio", Language: "jpn"},
+		{Type: "audio", Language: "eng"},
+	}}
+	sel, err := s.Select(ctx, 7, core.MovieKey(1), info, "ja")
+	if err != nil || sel.Audio != 2 {
+		t.Fatalf("catalog: %+v %v", sel, err)
+	}
+	s.options.ServerLanguage = func() string { return "" }
+	sel, err = s.Select(ctx, 7, core.MovieKey(1), matrixAudio(), "en")
+	if err != nil || sel.Audio != 1 {
+		t.Fatalf("original: %+v %v", sel, err)
+	}
+	s.options.ServerLanguage = func() string { return "de" }
+	sel, err = s.Select(ctx, 7, core.MovieKey(1), core.MediaInfo{Streams: []core.StreamInfo{
+		{Type: "audio", Language: "tur", Default: true},
+		{Type: "audio", Language: "fra"},
+	}}, "de")
+	if err != nil || sel.Audio != 0 {
+		t.Fatalf("default: %+v %v", sel, err)
+	}
+}
+
+func TestPreferOriginalRanksTheTitleFirst(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := New(db, Options{ServerLanguage: func() string { return "en-US" }})
+	shared := Default()
+	shared.AudioLanguages = []string{"en"}
+	shared.PreferOriginal = true
+	if err = s.PutRules(ctx, 0, shared); err != nil {
+		t.Fatal(err)
+	}
+	info := core.MediaInfo{Streams: []core.StreamInfo{
+		{Type: "audio", Language: "tur", Default: true},
+		{Type: "audio", Language: "eng"},
+		{Type: "audio", Language: "jpn"},
+	}}
+	sel, err := s.Select(ctx, 7, core.MovieKey(1), info, "ja")
+	if err != nil || sel.Audio != 2 {
+		t.Fatalf("original first: %+v %v", sel, err)
+	}
+}
+
+func TestForeignAudioSelectsForcedViewerSubtitle(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := New(db, Options{ServerLanguage: func() string { return "en-US" }})
+	shared := Default()
+	shared.AudioLanguages = []string{"en"}
+	shared.SubtitleLanguages = []string{"en"}
+	if err = s.PutRules(ctx, 0, shared); err != nil {
+		t.Fatal(err)
+	}
+	info := core.MediaInfo{Streams: []core.StreamInfo{
+		{Type: "audio", Language: "jpn"},
+		{Type: "subtitle", Language: "tur", Default: true},
+		{Type: "subtitle", Language: "eng", Forced: true},
+		{Type: "subtitle", Language: "eng"},
+	}}
+	sel, err := s.Select(ctx, 7, core.MovieKey(1), info, "ja")
+	if err != nil || sel.Audio != 0 || sel.Subtitle != 2 {
+		t.Fatalf("forced english: %+v %v", sel, err)
+	}
+	same := matrixAudio()
+	same.Streams = append(same.Streams, core.StreamInfo{Type: "subtitle", Language: "eng", Forced: true})
+	sel, err = s.Select(ctx, 7, core.MovieKey(1), same, "en")
+	if err != nil || sel.Audio != 1 || sel.Subtitle != -1 {
+		t.Fatalf("english audio stays off: %+v %v", sel, err)
+	}
+}

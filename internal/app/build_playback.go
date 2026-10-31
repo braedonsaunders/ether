@@ -75,6 +75,12 @@ func (a *App) buildPlayback(ctx context.Context, cfg config.Config) error {
 			return ""
 		},
 		SyncSubtitleLanguages: a.syncSubtitleLanguages,
+		ServerLanguage: func() string {
+			if a.cfg == nil {
+				return ""
+			}
+			return a.cfg.Get().Catalog.Language
+		},
 	})
 	a.markers = markers.New(markers.Options{DB: a.db, Logger: log.With("component", "markers"), Config: func() (bool, string) { c := a.cfg.Get().Markers; return c.TheIntroDB, c.APIKey }, Aligner: a.subtitles.TimelineAligner(), Dialogue: a.markerDialogue})
 	a.buildAdoption()

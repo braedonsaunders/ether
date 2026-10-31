@@ -280,7 +280,12 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				f.Grants = grants.Generation()
 			}
 			return f
-		}, Config: settings, PersonalHomes: a.personalHomeDisk()}
+		}, Config: settings, MetadataLanguage: func() string {
+			if a.cfg == nil {
+				return ""
+			}
+			return a.cfg.Get().Catalog.Language
+		}, PersonalHomes: a.personalHomeDisk()}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.listeners.log = a.log
