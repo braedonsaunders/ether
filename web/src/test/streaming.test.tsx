@@ -471,7 +471,7 @@ describe("Release traces", () => {
     ]);
     expect(choiceLabel(chosen[0]!.chooser, chosen[0]!.chosenVersion)).toBe("Auto");
     expect(choiceLabel(chosen[1]!.chooser, chosen[1]!.chosenVersion)).toBe(
-      "Viewer picked version Movie.2160p",
+      "Viewer/client picked version Movie.2160p",
     );
     expect(choiceLabel(chosen[2]!.chooser, chosen[2]!.chosenVersion)).toBeNull();
   });

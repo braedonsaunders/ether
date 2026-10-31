@@ -323,13 +323,15 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 		out = append(out, m)
 	}
 	// A recorded PMS movie has one Media and does not set Media@selected
-	// (testdata/conform/plex/web movie metadata). Ether's decision golden
-	// marks the Media that plays with selected="1"
-	// (internal/plex/testdata/golden/decision_directplay.xml). With several
-	// versions and nothing resumed, mark Auto so a client that honors
-	// selected starts there. Clients that ignore selected and play the
-	// tallest Media stay inside the profile because taller versions are
-	// not listed unless the owner opts in.
+	// (testdata/conform/plex/web movie metadata). A recorded Plex Web
+	// decision (hasMDE=1) is the one Media the client already chose, marked
+	// selected="1". Search and library rows show the first Media, which is
+	// Auto, so a 720p profile reads as 720p there. Plex Web then walks the
+	// Play Version list itself and requests that part. With several versions
+	// and nothing resumed, mark Auto so a client that honors selected starts
+	// there. Clients that ignore it and take the tallest Media stay inside
+	// the profile because taller versions are not listed unless the owner
+	// opts in.
 	if !anyMediaSelected(out) && len(out) > 0 {
 		out[0].Selected = model.Ptr(true)
 		if len(out[0].Part) > 0 {

@@ -159,8 +159,8 @@ function chooserOf(v: unknown): "auto" | "viewer" | undefined {
 export function choiceLabel(chooser?: string, version?: string): string | null {
   if (chooser === "viewer") {
     return version
-      ? t("Viewer picked version {version}", { version })
-      : t("Viewer picked a version");
+      ? t("Viewer/client picked version {version}", { version })
+      : t("Viewer/client picked a version");
   }
   if (chooser === "auto") return t("Auto");
   return null;

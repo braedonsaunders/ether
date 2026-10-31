@@ -109,6 +109,50 @@ func TestProfileCeilingBlocksTallerVariants(t *testing.T) {
 	}
 }
 
+// Search can show Auto at 720p while Plex Web still asks for a taller
+// Play Version. A 720p profile must not offer that taller version, and an
+// explicit request for it falls back to Auto.
+func Test720pProfileDoesNotOfferTallerPlayback(t *testing.T) {
+	releases := []core.Release{
+		rel("fourk", "The.Signal.1999.2160p.NF.WEB-DL.DDP5.1.H.265-HHWEB", 8000),
+		rel("hd", "The.Signal.1999.1080p.WEB-DL.DDP5.1.H.264-GRP", 5000),
+		rel("sd", "The.Signal.1999.720p.WEB-DL.H.264-GRP", 2500),
+	}
+	cfg := testCfg()
+	cfg.Quality.Rules = nil
+	cfg.Quality.Default = "720p"
+	cfg.Quality.Remote = "720p"
+	caps := core.ClientCaps{
+		Product: "Plex Web", MaxHeight: 2160,
+		VideoCodecs: []string{"h264", "hevc"}, AudioCodecs: []string{"aac", "ac3", "eac3"},
+	}
+	svc := New(&fakeIndexer{releases: releases}, fakeHealth{}, nil, cfg, Options{})
+	defer svc.Close()
+	ctx := context.Background()
+	title := matrixTitle()
+	res, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: caps})
+	if err != nil || res.Release.ID != "sd" || res.Release.Info.Height != 720 {
+		t.Fatalf("auto res=%+v err=%v", res, err)
+	}
+	vs, err := svc.Variants(ctx, core.ResolveRequest{Title: title, Client: caps}, maxVariants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range vs {
+		if v.Release.Info.Height > 720 {
+			t.Fatalf("offered above 720p: %s", v.Release.Name)
+		}
+	}
+	prefer, err := svc.Resolve(ctx, core.ResolveRequest{Title: title, Client: caps, Prefer: "fourk"})
+	if err != nil || prefer.Release.Info.Height > 720 {
+		t.Fatalf("4K request on a 720p profile res=%+v err=%v", prefer, err)
+	}
+	rows, _, err := svc.History(ctx, HistoryFilter{Limit: 1})
+	if err != nil || len(rows) != 1 || rows[0].Chooser != chooserAuto {
+		t.Fatalf("history %+v err=%v", rows, err)
+	}
+}
+
 func ceilingPool() []core.Release {
 	var out []core.Release
 	add := func(id, name string, sizeMB int64) {
