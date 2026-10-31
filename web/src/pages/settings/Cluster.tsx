@@ -15,6 +15,7 @@ import {
 import { Copy, KeyRound, Plus } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { MoreOptions } from "../../components/ConfigSection";
 import { Drawer } from "../../components/Drawer";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { Field, Segmented } from "../../components/fields";
@@ -441,7 +442,7 @@ function NodeDrawer({
           label={t("Node weight")}
           htmlFor="cluster-weight"
           hint={t(
-            "Relative share of account-wide provider connections and request budgets. A weight of 2 gets twice the share of a node with weight 1.",
+            "This computer's share of each provider's connections and request limits, relative to the others. 2 gets twice the share of a computer at 1; 0 means 1.",
           )}
         >
           <Input
@@ -517,24 +518,26 @@ function SharedSettings({ status, settings }: { status: ClusterStatus; settings:
         }
         control={<Badge variant="info">{nodeName(self)}</Badge>}
       />
-      <SettingsRow
-        title={t("Settings version")}
-        description={t(
-          "Settings are stored in the database. A change on any node reaches the others within 30 seconds.",
-        )}
-        control={
-          st?.sharedVersion !== undefined ? (
-            <span className="tabular-nums text-sm text-fg">v{st.sharedVersion}</span>
-          ) : null
-        }
-      />
-      <SettingsRow
-        title={t("Credential key")}
-        description={t(
-          "Fingerprint of the key that encrypts stored credentials. It's the same on every node.",
-        )}
-        control={st?.keyFingerprint ? <code className="text-xs">{st.keyFingerprint}</code> : null}
-      />
+      <MoreOptions label={t("More options: {title}", { title: t("Shared settings") })}>
+        <SettingsRow
+          title={t("Settings version")}
+          description={t(
+            "Settings are stored in the database. A change on any node reaches the others within 30 seconds.",
+          )}
+          control={
+            st?.sharedVersion !== undefined ? (
+              <span className="tabular-nums text-sm text-fg">v{st.sharedVersion}</span>
+            ) : null
+          }
+        />
+        <SettingsRow
+          title={t("Credential key")}
+          description={t(
+            "Fingerprint of the key that encrypts stored credentials. It's the same on every node.",
+          )}
+          control={st?.keyFingerprint ? <code className="text-xs">{st.keyFingerprint}</code> : null}
+        />
+      </MoreOptions>
       <SettingsRow
         title={t("Settings each node keeps")}
         description={tx(

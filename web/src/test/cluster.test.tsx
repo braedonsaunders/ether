@@ -155,6 +155,8 @@ describe("Server › Cluster", () => {
     expect(screen.getByText(/different public addresses/)).toBeInTheDocument();
 
     expect(screen.getByRole("heading", { name: "Shared settings" })).toBeInTheDocument();
+    expect(screen.queryByText("v42")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "More options: Shared settings" }));
     expect(await screen.findByText("v42", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("3f9c2a71d04be6a8")).toBeInTheDocument();
   });

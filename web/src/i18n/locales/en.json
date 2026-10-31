@@ -3230,7 +3230,6 @@
   "m_162f23c47f9b6e": "This account is off, so Ether skips it. Turn it on to use it.",
   "m_162f785e862815": "Per-viewer overrides",
   "m_16323f3a81dec1": "Refresh failed",
-  "m_1634083b2d0994": "Relative share of account-wide provider connections and request budgets. A weight of 2 gets twice the share of a node with weight 1.",
   "m_1634b0e73a75c4": "Preview source",
   "m_1635e9d2cb063a": "Save profile",
   "m_1635efc754058b": "Find a title on TMDB",
