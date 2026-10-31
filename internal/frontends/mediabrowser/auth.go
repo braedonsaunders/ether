@@ -111,6 +111,13 @@ func (i *instance) viewer(r *http.Request) (*frontend.Viewer, string, error) {
 	}
 	return v, token, err
 }
+func (i *instance) syncPlayAccess() string {
+	if i.protocol == "jellyfin" && i.host.WatchParty != nil {
+		return "CreateAndJoinGroups"
+	}
+	return "None"
+}
+
 func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 	id, _ := ids.GUID(ids.User, v.ID)
 	// Jellyfin's Kotlin SDK requires these keys even where its OpenAPI schema
@@ -129,7 +136,7 @@ func (i *instance) userDTO(r *http.Request, v *frontend.Viewer) map[string]any {
 		"EnabledDevices": []string{}, "EnabledChannels": []string{}, "EnableContentDeletionFromFolders": []string{}, "AllowedTags": []string{}, "BlockedTags": []string{},
 		"EnableAllFolders": len(v.AllowedSections) == 0, "InvalidLoginAttemptCount": 0, "LoginAttemptsBeforeLockout": -1,
 		"MaxActiveSessions": v.StreamLimit, "EnablePublicSharing": false, "RemoteClientBitrateLimit": 0,
-		"AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "SyncPlayAccess": "None",
+		"AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "SyncPlayAccess": i.syncPlayAccess(),
 	}
 	if i.protocol == "jellyfin" {
 		policy["PasswordResetProviderId"] = "Ether"
@@ -408,7 +415,7 @@ func (i *instance) authUserDTO(v *frontend.Viewer) map[string]any {
 		"EnabledDevices": []string{}, "EnabledChannels": []string{}, "EnableContentDeletionFromFolders": []string{}, "AllowedTags": []string{}, "BlockedTags": []string{},
 		"EnableAllFolders": len(v.AllowedSections) == 0, "InvalidLoginAttemptCount": 0, "LoginAttemptsBeforeLockout": -1,
 		"MaxActiveSessions": v.StreamLimit, "EnablePublicSharing": false, "RemoteClientBitrateLimit": 0,
-		"AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "SyncPlayAccess": "None",
+		"AuthenticationProviderId": "Ether", "PasswordResetProviderId": "Ether", "SyncPlayAccess": i.syncPlayAccess(),
 	}
 	configuration := map[string]any{"PlayDefaultAudioTrack": true, "DisplayMissingEpisodes": false, "GroupedFolders": []string{}, "SubtitleMode": "Default", "DisplayCollectionsView": false, "EnableLocalPassword": false, "OrderedViews": []string{}, "LatestItemsExcludes": []string{}, "MyMediaExcludes": []string{}, "HidePlayedInLatest": true, "RememberAudioSelections": true, "RememberSubtitleSelections": true, "EnableNextEpisodeAutoPlay": true}
 	if i.protocol == "emby" {

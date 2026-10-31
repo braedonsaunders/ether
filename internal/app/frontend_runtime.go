@@ -27,6 +27,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/sessions"
+	"github.com/braedonsaunders/ether/internal/watchparty"
 )
 
 type plexDiscovery interface {
@@ -123,6 +124,42 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 		}
 		experiences[protocol] = experience
 	}
+	parties := watchparty.New(watchparty.Options{
+		Allow: func(ctx context.Context, protocol frontend.Protocol, viewer *core.Viewer, item core.RatingKey) error {
+			exp := experiences[protocol]
+			if exp == nil || viewer == nil {
+				return core.ErrNotFound
+			}
+			_, err := exp.Item(ctx, frontend.ItemRequest{Viewer: viewer, Key: item})
+			return err
+		},
+		Streams: func(ctx context.Context, protocol frontend.Protocol, viewer *core.Viewer, device core.Device, item core.RatingKey) error {
+			if r.broker == nil || viewer == nil || viewer.StreamLimit <= 0 {
+				return nil
+			}
+			rows, err := sessions.BindSurface(r.broker, protocol).Sessions(ctx, frontend.SessionAccess{Viewer: viewer, Device: device, Protocol: protocol})
+			if err != nil {
+				return err
+			}
+			for _, row := range rows {
+				if row.Item == item && row.ViewerID == viewer.ID {
+					return nil
+				}
+			}
+			if len(rows) >= viewer.StreamLimit {
+				return core.ErrStreamLimit
+			}
+			return nil
+		},
+		ItemID: ids.RatingKeyGUID,
+		JellyfinUser: func(id int64) string {
+			value, err := ids.GUID(ids.User, id)
+			if err != nil {
+				return ""
+			}
+			return value
+		},
+	})
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
 		settings := func() frontend.Settings {
 			value, err := r.control.Settings(r.ctx, id)
@@ -231,7 +268,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				return ""
 			}
 			return fmt.Sprintf("%d|%d|%d|%s|%v", a.catalog.WriteGeneration(), a.cfg.Generation(), v.ID, v.MaxContentRating, v.AllowedSections)
-		}, enabled: func() bool { _, ok := r.registry.Instance("webdav"); return ok }, base: func(ctx context.Context, req *http.Request) (string, error) { return r.surfaceURL(ctx, "webdav", req) }}, ViewerCapabilities: a.viewerCapabilities(local, experience), ViewerPolicy: surfaceViewerPolicy{app: a}, ImageGrants: imageGrants, Artwork: artwork, ExtraStreams: extraPlay, Cinema: cinema, Subtitles: subtitleCatalog, Preferences: identity.NewPreferences(a.db, id), TrackPreferences: surfaceTrackPreferences{app: a}, LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: scorecardSessions(a, sessions.BindSurface(r.broker, id)), LazyStreams: lazy, LANStreams: lanStreams, Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll, times: times}, Events: sessions.BindEvents(r.events, id), Tickets: tickets, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
+		}, enabled: func() bool { _, ok := r.registry.Instance("webdav"); return ok }, base: func(ctx context.Context, req *http.Request) (string, error) { return r.surfaceURL(ctx, "webdav", req) }}, ViewerCapabilities: a.viewerCapabilities(local, experience), ViewerPolicy: surfaceViewerPolicy{app: a}, ImageGrants: imageGrants, Artwork: artwork, ExtraStreams: extraPlay, Cinema: cinema, Subtitles: subtitleCatalog, Preferences: identity.NewPreferences(a.db, id), TrackPreferences: surfaceTrackPreferences{app: a}, LiveTV: surfaceLiveTV{app: a, channelArtwork: channelArtwork, artwork: artwork}, Sessions: scorecardSessions(a, sessions.BindSurface(r.broker, id)), LazyStreams: lazy, LANStreams: lanStreams, Capabilities: surfaceCapabilities{app: a, surface: id}, Identity: surfaceIdentity{settings: settings, surface: id, resolver: resolver, local: local, grants: grants, quick: quick, login: login, poll: poll, times: times}, Events: sessions.BindEvents(r.events, id), Tickets: tickets, WatchParty: parties, Images: frontendImages{source: a.images}, Log: a.log.With("frontend", id), ClientSeen: func(deviceID string) { a.frontendClients.observe(id, deviceID) }, ClientIP: a.frontendClientIP, ViewerPortalURL: r.viewerPortalURL, SecurePortalURL: r.viewerPortalSecureURL, SurfaceURL: func(ctx context.Context, req *http.Request) (string, error) {
 			return scorecardSurfaceURL(ctx, r, id, req)
 		}, LANViewer: lanViewer, PageFreshness: func() frontend.PageFreshness {
 			f := a.browseFreshness()

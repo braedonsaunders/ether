@@ -176,3 +176,43 @@ The first upgrade onto multi-app support is a maintenance transition, including 
 Follow the [upgrade runbook](acceptance/upgrade.md) before serving traffic.
 Reference recording and offline drift checks are described in
 [the reference workflow](acceptance/reference-drift.md).
+
+## Watch Party and SyncPlay
+
+One room engine (`internal/watchparty`) keeps a shared title and timeline.
+Silo and Jellyfin are two dialects of that room, so a Silo viewer and a
+Jellyfin viewer can be in the same party. Each member opens their own playback
+session through the broker, so each device keeps its own transcode decision and
+its own stream limit. A member who is already at their limit is left out of
+playback; the host is refused if they themselves are at the limit. A member who
+is not allowed to see the title cannot join, and the response does not include
+that title. Selecting a title is refused when any current member cannot see it.
+
+The room schedules play, pause, and seek a short time ahead (`When` on
+Jellyfin, `execute_at` on Silo) so slower clients land on the same playhead.
+Jellyfin Web measures that clock with `GET /GetUtcTime`. Silo measures it with
+the room socket's ping and pong. The shared clock can run above 1x only when
+every member is a Silo client, because Jellyfin SyncPlay has no playback-rate
+command. A mixed room stays at 1x so a Jellyfin player does not drift away from
+the couches that changed speed.
+
+The party pins the title, not a file. Silo may record the host's file id on the
+room, and each member's own session still chooses the file it can play.
+
+| Client | Watch party | What Ether serves |
+| --- | --- | --- |
+| Silo (Apple, API v2) | Yes. Create, join by code or `/rooms/join?token=`, membership, play, pause, seek, leave, and end. | `GET /api/v2/watch-together/capabilities` reports `silo.room.v2`. Playback capabilities include `watch_party_coordinator_v1` and `fixed_media_file_v1`. Suggestions, the picker, and vote mode stay off. |
+| jellyfin-web 10.10.7 | Yes. `src/plugins/syncPlay` creates a group, edits the queue, and follows `SyncPlayGroupUpdate` and `SyncPlayCommand`. | `SyncPlayAccess` is `CreateAndJoinGroups`. `POST /SyncPlay/New`, join, leave, list, pause, unpause, seek, stop, buffering, ready, ping, queue, repeat, and shuffle. |
+| jellyfin-androidtv | No SyncPlay source files in current master. | The server API is there if a later build calls it. The app does not show it today. |
+| Findroid | No SyncPlay source in current main. | Same as above. |
+| Streamyfin | No SyncPlay source in current main. | Same as above. |
+| Swiftfin | Admin permission only (`SyncPlaySection`). No player. | The user policy tells the app SyncPlay exists. Playback is not in this client. |
+| Emby | No. The pinned Emby SDK contract (`internal/conform/profiles/emby/emby-sdk.json`) has no SyncPlay and no Parties path. | Emby responses omit `SyncPlayAccess`. `/SyncPlay/*` is not registered. Emby Parties is a different API and is not part of that contract. |
+| Plex | Unchanged. | Plex clients are not given a watch-party route. |
+
+In a Jellyfin-only room any member can change the queue, which is how Jellyfin
+Web behaves. As soon as a Silo member is in the room, only the host changes the
+title or ends the party. Guests can still play, pause, and seek unless the host
+sets the room to host-only. The host is the member who created the room. If
+that Jellyfin member leaves, the next member becomes host. A Silo guest who
+drops the socket stays a member and can rejoin with the same code.
