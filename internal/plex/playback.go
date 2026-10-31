@@ -662,8 +662,12 @@ func embeddedTextSubtitle(st model.Stream) bool {
 	if st.StreamType != 3 || (st.External != nil && *st.External) {
 		return false
 	}
-	switch strings.ToLower(st.Codec) {
-	case "srt", "ass", "ssa", "vtt", "mov_text", "text", "microdvd", "subviewer", "sami", "ttml", "stl":
+	return textSidecarCodec(st.Codec)
+}
+
+func textSidecarCodec(codec string) bool {
+	switch strings.ToLower(codec) {
+	case "srt", "subrip", "ass", "ssa", "vtt", "webvtt", "mov_text", "text", "microdvd", "subviewer", "sami", "ttml", "stl":
 		return true
 	default:
 		return false
@@ -805,6 +809,16 @@ func applyStreamDecision(st model.Stream, src core.StreamInfo, dec core.Decision
 			if st.Format == "" {
 				st.Format = st.Codec
 			}
+		}
+		// Segmented Matroska timestamps start 10s ahead of the title clock.
+		// A plain SRT makes AVPlayer sync cues against that media clock and
+		// hold the last presented frame across a seek. WebVTT can carry
+		// X-TIMESTAMP-MAP so LOCAL title time meets the cluster clock.
+		if st.Location == "sidecar" && dec.Container == transcode.ContainerMatroska && textSidecarCodec(st.Codec) {
+			if st.Key != "" && !strings.HasSuffix(st.Key, ".vtt") {
+				st.Key += ".vtt"
+			}
+			st.Format = "vtt"
 		}
 	}
 	return st, true

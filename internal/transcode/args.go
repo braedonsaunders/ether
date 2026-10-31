@@ -953,6 +953,19 @@ func planVideo(s runSpec, v *core.StreamInfo) videoPlan {
 		if subW > 0 && subH > 0 {
 			subScale = fmt.Sprintf("scale=%d:%d", subW, subH)
 		}
+		// -ss puts this run's frames at PTS 0 while a bitmap subtitle packet
+		// can keep its title timestamp. Reset both before overlay so the
+		// filter does not hold the picture waiting for a clock that never
+		// meets, and so the segment muxer's output_ts_offset is what places
+		// the run on the title timeline.
+		if s.Start > 0 {
+			pre += ",setpts=PTS-STARTPTS"
+			if subScale == "null" {
+				subScale = "setpts=PTS-STARTPTS"
+			} else {
+				subScale = "setpts=PTS-STARTPTS," + subScale
+			}
+		}
 		graph = fmt.Sprintf("%s%s[base];[0:%d]%s[sub];[base][sub]overlay=eof_action=pass,%s[vout]",
 			in, pre, sub.Index, subScale, strings.Join(post, ","))
 	case burn && s.Features.hasFilter("subtitles"):
@@ -963,7 +976,19 @@ func planVideo(s runSpec, v *core.StreamInfo) videoPlan {
 		} else {
 			opt = fmt.Sprintf(":si=%d", subtitleOrdinal(s.Info, sub.Index))
 		}
+		// The subtitles filter looks up cues by frame PTS. Input -ss resets
+		// that to 0, so a seeked run would burn the opening cues (or stall
+		// if the filter then emits the file's own timeline). Shift onto the
+		// title clock for the lookup, then back to the run-relative clock
+		// the muxer offsets. The filter's own offset option saturates at
+		// ten minutes, which is shorter than a resume.
+		if s.Start > 0 {
+			chain = append(chain, "setpts=PTS+"+secs(s.Start)+"/TB")
+		}
 		chain = append(chain, fmt.Sprintf("subtitles=filename=%s%s", escapeFilterValue(src), opt))
+		if s.Start > 0 {
+			chain = append(chain, "setpts=PTS-STARTPTS")
+		}
 		chain = finish(chain)
 		graph = in + strings.Join(chain, ",") + "[vout]"
 	default:

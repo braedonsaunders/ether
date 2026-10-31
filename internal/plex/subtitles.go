@@ -26,6 +26,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/experience"
 	"github.com/braedonsaunders/ether/internal/plex/model"
 	"github.com/braedonsaunders/ether/internal/subtitles"
+	"github.com/braedonsaunders/ether/internal/transcode"
 )
 
 // SubtitleCatalog is optionally implemented by Deps.Subtitles: the sidecars
@@ -166,6 +167,24 @@ func resolvePlaySelection(p *playRequest, info core.MediaInfo) {
 	if !p.subSet {
 		p.subSel = -1
 	}
+}
+
+// stampMatroskaVTT maps WebVTT cue times onto segmented Matroska.
+// Cluster timestamps begin at the 10s mux origin (900000 in the 90 kHz
+// clock X-TIMESTAMP-MAP uses). Cue times stay on the title clock, so
+// LOCAL 00:00:00.000 is the first frame of the title, not PTS 0.
+func stampMatroskaVTT(body []byte) []byte {
+	const magic = "WEBVTT"
+	s := string(body)
+	if !strings.HasPrefix(s, magic) {
+		s = magic + "\n\n" + s
+	}
+	if strings.Contains(s, "X-TIMESTAMP-MAP=") {
+		return []byte(s)
+	}
+	rest := strings.TrimPrefix(s[len(magic):], "\r\n")
+	rest = strings.TrimPrefix(rest, "\n")
+	return []byte(magic + "\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:900000\n" + rest)
 }
 
 // subtitleFormat maps a requested subtitle format to one Ether serves.
@@ -410,6 +429,9 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 			s.writeEmpty(w, r)
 			return
 		}
+		if actual == "vtt" && entry.decision.Container == transcode.ContainerMatroska {
+			body = stampMatroskaVTT(body)
+		}
 		w.Header().Set("Content-Type", subtitleContentTypes[actual])
 		_, _ = w.Write(body)
 		return
@@ -434,8 +456,16 @@ func (s *Server) handleTranscodeSubtitles(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer reader.Close()
+	body, err := io.ReadAll(io.LimitReader(reader, 32<<20))
+	if err != nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	if actual == "vtt" && entry.decision.Container == transcode.ContainerMatroska {
+		body = stampMatroskaVTT(body)
+	}
 	w.Header().Set("Content-Type", subtitleContentTypes[actual])
-	_, _ = io.Copy(w, io.LimitReader(reader, 32<<20))
+	_, _ = w.Write(body)
 }
 
 func (s *Server) extractEmbeddedSubtitle(ctx context.Context, playID string, st core.StreamInfo, format string, offset time.Duration) ([]byte, string, bool) {
@@ -490,6 +520,7 @@ func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, key
 	var playID string
 	var offset time.Duration
 	var bestAt time.Time
+	matroska := false
 	for _, id := range s.transcodes.ids() {
 		e, ok := s.transcodes.get(id)
 		if !ok || e.userID != pr.User.ID || e.key != key || e.playID == "" {
@@ -500,6 +531,7 @@ func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, key
 		}
 		if playID == "" || e.updatedAt.After(bestAt) {
 			playID, offset, bestAt = e.playID, e.offset, e.updatedAt
+			matroska = e.decision.Container == transcode.ContainerMatroska
 		}
 	}
 	if playID == "" && pr.ClientID != "" {
@@ -529,6 +561,9 @@ func (s *Server) serveEmbeddedStream(w http.ResponseWriter, r *http.Request, key
 	if !ok {
 		writeHTTPError(w, http.StatusNotFound)
 		return
+	}
+	if actual == "vtt" && matroska {
+		body = stampMatroskaVTT(body)
 	}
 	w.Header().Set("Content-Type", subtitleContentTypes[actual])
 	_, _ = w.Write(body)

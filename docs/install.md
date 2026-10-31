@@ -20,6 +20,12 @@ owner-account setup,
 provider and indexer configuration, and cache settings. A standalone executable
 needs access to FFmpeg and FFprobe for media processing.
 
+FFmpeg built with zscale (libzimg) gives the best HDR-to-SDR tone mapping.
+Without zscale, Ether uses libplacebo, then an OpenCL or hardware tone map
+when the binary has one. If none of those are available it does not guess a
+picture: playback reports that this FFmpeg cannot tone-map and tries another
+release.
+
 After any install, open the web UI and finish the setup wizard. Choose your
 app integrations, sign in with Plex if selected or create a local Ether owner
 account, add your sources and indexers, and pick a cache folder. Jellyfin,

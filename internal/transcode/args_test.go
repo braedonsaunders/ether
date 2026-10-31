@@ -321,9 +321,27 @@ func TestBuildArgsBurnPGS(t *testing.T) {
 	o.SubtitleStream = 2
 	d := Decide(pgs, appleTV, o, Policy{})
 	graph := argValue(buildArgs(baseSpec(pgs, d)), "-filter_complex")
-	want := "[0:0]null[base];[0:2]scale=1920:800[sub];[base][sub]overlay=eof_action=pass,format=yuv420p[vout]"
+	// baseSpec seeks to 200s, so both overlay inputs drop the title clock
+	// before the muxer adds it back.
+	want := "[0:0]null,setpts=PTS-STARTPTS[base];[0:2]setpts=PTS-STARTPTS,scale=1920:800[sub];[base][sub]overlay=eof_action=pass,format=yuv420p[vout]"
 	if graph != want {
 		t.Errorf("graph\n got %s\nwant %s", graph, want)
+	}
+}
+
+func TestBuildArgsTextBurnKeepsSeekClock(t *testing.T) {
+	pgs := mustParse(t, "mkv_pgs.json")
+	d := core.Decision{Kind: core.DecisionTranscode, Container: ContainerMatroska, VideoCodec: "h264", MaxHeight: 1080, BitrateKbps: 4000, AudioStream: 1, AudioCopy: true, SubtitleStream: 5, BurnSubtitles: true}
+	s := baseSpec(pgs, d)
+	s.Start = 0
+	graph := argValue(buildArgs(s), "-filter_complex")
+	if !strings.Contains(graph, "subtitles=filename=") || strings.Contains(graph, "setpts=") {
+		t.Fatalf("start-at-0 graph should burn without shifting PTS: %s", graph)
+	}
+	s.Start = 420 * time.Second
+	graph = argValue(buildArgs(s), "-filter_complex")
+	if !strings.Contains(graph, "setpts=PTS+420.000/TB,subtitles=filename=") || !strings.Contains(graph, ",setpts=PTS-STARTPTS,") {
+		t.Fatalf("seeked burn graph: %s", graph)
 	}
 }
 
