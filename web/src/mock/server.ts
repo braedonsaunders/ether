@@ -2075,6 +2075,15 @@ export function createFakeServer(opts: FakeOptions = {}) {
             },
           ],
           costs: [{ kind: "provider", id: "p1", monthly: 10, currency: "USD" }],
+          failovers: 2,
+          failedPlays: 1,
+          providerDays: [
+            { id: "p1", day: "2026-10-18", bytes: 40 * 1073741824, articles: 6000, misses: 10, errors: 0 },
+            { id: "p1", day: "2026-10-19", bytes: 40 * 1073741824, articles: 6000, misses: 30, errors: 1 },
+          ],
+          indexerDays: [
+            { indexer: "Indexer One", day: "2026-10-19", searches: 400, successes: 360, grabs: 20, latencyMs: 72000 },
+          ],
         });
       case "PUT /stats/costs":
         return json({ ok: true });

@@ -5,8 +5,9 @@ import { DragHandle, type DragHandleProps } from "../../components/Sortable";
 import { Drawer } from "../../components/Drawer";
 import { t } from "../../i18n";
 import type { DebridKind } from "../../lib/types";
+import { StremioMark, debridMark } from "./marks";
 
-/** Services Ether can stream from. Owners bring their own API key. */
+/** Services Ether can stream from. */
 export const DEBRID_KINDS: { value: DebridKind; label: string }[] = [
   { value: "realdebrid", label: "Real-Debrid" },
   { value: "torbox", label: "TorBox" },
@@ -17,10 +18,9 @@ export const DEBRID_KINDS: { value: DebridKind; label: string }[] = [
 ];
 
 /**
- * Brand marks for debrid services, Usenet providers and indexers.
- * IntegrationAppCard's vendored logos are only the marks recorded in
- * THIRD_PARTY_NOTICES (Plex, Jellyfin, Emby, Simkl, TMDB, Trakt). These
- * sources are not in that set, so the card shows a monogram. Never hotlink.
+ * Fallback letters when no vendored mark exists.
+ * Real logos are local Simple Icons copies (see assets/brands/PROVENANCE.md).
+ * Never hotlink, and never draw a logo that Simple Icons does not publish.
  */
 export function sourceMonogram(name: string): string {
   const letters = name
@@ -33,13 +33,13 @@ export function sourceMonogram(name: string): string {
   return letters || "?";
 }
 
-export function SourceMark({ name }: { name: string }) {
+export function SourceMark({ name, logo }: { name: string; logo?: ReactNode }) {
   return (
     <span
       aria-hidden
-      className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-bg-subtle text-sm font-semibold text-fg-muted"
+      className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg-subtle text-sm font-semibold text-fg-muted"
     >
-      {sourceMonogram(name)}
+      {logo ?? sourceMonogram(name)}
     </span>
   );
 }
@@ -80,6 +80,7 @@ export function SourceCard({
   onEdit,
   order,
   handle,
+  logo,
 }: {
   name: string;
   /** 1-based place in the try order. */
@@ -91,11 +92,13 @@ export function SourceCard({
   onEdit: () => void;
   order?: ReactNode;
   handle?: DragHandleProps;
+  /** Vendored brand mark. Omitted brands keep the monogram. */
+  logo?: ReactNode;
 }) {
   return (
     <article className="flex items-start gap-3 rounded-xl border border-border bg-surface p-4">
       {handle ? <DragHandle handle={handle} label={t("Drag to reorder {name}", { name })} /> : null}
-      <SourceMark name={name} />
+      <SourceMark name={name} logo={logo} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium tabular-nums text-fg-subtle">{position}</span>
@@ -130,19 +133,19 @@ export type GalleryChoice =
 function debridBlurb(kind: DebridKind): string {
   switch (kind) {
     case "realdebrid":
-      return t("Stream torrents Real-Debrid already has. You bring the API key.");
+      return t("Stream torrents Real-Debrid already has.");
     case "torbox":
-      return t("Stream torrents TorBox already has. You bring the API key.");
+      return t("Stream torrents TorBox already has.");
     case "alldebrid":
-      return t("Stream torrents AllDebrid already has. You bring the API key.");
+      return t("Stream torrents AllDebrid already has.");
     case "premiumize":
-      return t("Stream torrents Premiumize already has. You bring the API key.");
+      return t("Stream torrents Premiumize already has.");
     case "debridlink":
-      return t("Stream torrents Debrid-Link already has. You bring the API key.");
+      return t("Stream torrents Debrid-Link already has.");
     case "offcloud":
-      return t("Stream torrents Offcloud already has. You bring the API key.");
+      return t("Stream torrents Offcloud already has.");
     default:
-      return t("Stream torrents this service already has. You bring the API key.");
+      return t("Stream torrents this service already has.");
   }
 }
 
@@ -150,10 +153,12 @@ function GalleryButton({
   name,
   description,
   onClick,
+  logo,
 }: {
   name: string;
   description: string;
   onClick: () => void;
+  logo?: ReactNode;
 }) {
   return (
     <button
@@ -162,7 +167,7 @@ function GalleryButton({
       className="flex h-full flex-col rounded-xl border border-border bg-surface p-5 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <span className="flex items-start gap-3">
-        <SourceMark name={name} />
+        <SourceMark name={name} logo={logo} />
         <span className="font-semibold text-fg">{name}</span>
       </span>
       <span className="mt-3 text-sm text-fg-muted">{description}</span>
@@ -220,6 +225,7 @@ export function AddSourceGallery({
               key={kind.value}
               name={kind.label}
               description={debridBlurb(kind.value)}
+              logo={debridMark(kind.value) ?? undefined}
               onClick={() => onPick({ type: "debrid", kind: kind.value })}
             />
           ))}
@@ -263,6 +269,7 @@ export function AddSourceGallery({
             description={t(
               "An addon install link that returns torrents. Ether streams them through your debrid accounts.",
             )}
+            logo={<StremioMark />}
             onClick={() => onPick({ type: "stremio" })}
           />
           <GalleryButton

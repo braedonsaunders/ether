@@ -842,11 +842,13 @@ export default function Setup() {
 
       {stepId === "sources" ? (
         <div className="space-y-6">
-          <p className="text-sm text-fg-muted">
-            {t(
-              "Add a debrid account, a Usenet provider, or both, and test each one. Ether streams from your own accounts; it ships none.",
-            )}
-          </p>
+          {providers.length === 0 && debrid.length === 0 ? (
+            <p className="text-sm text-fg-muted" role="status">
+              {debridSupported
+                ? t("Add a debrid account, a Usenet provider, or both, and test each one.")
+                : t("Add a Usenet provider and test it.")}
+            </p>
+          ) : null}
           {debridSupported ? (
             <section className="space-y-4" aria-labelledby="setup-debrid">
               <div>

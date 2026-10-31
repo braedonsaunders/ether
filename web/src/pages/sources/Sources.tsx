@@ -1,10 +1,10 @@
 import { localized, t } from "../../i18n";
-import { Button } from "@braedonsaunders/appkit-ui";
+import { Button, SubtabNav } from "@braedonsaunders/appkit-ui";
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Drawer } from "../../components/Drawer";
-import { DomainPage, useRouteTab } from "../../components/layout";
+import { DomainPage } from "../../components/layout";
 import { ProwlarrImport } from "../../components/ProwlarrImport";
 import { DebridSources } from "./Debrid";
 import { HealthStrip } from "./form";
@@ -18,23 +18,46 @@ import type { DebridKind } from "../../lib/types";
 const TABS = localized(
   () =>
     [
-      { key: "overview", label: t("Your sources") },
+      { key: "yours", label: t("Your sources") },
       { key: "availability", label: t("Will it play") },
-      { key: "usage", label: t("Cost") },
+      { key: "stats", label: t("Stats") },
     ] as const,
 );
+
+const SOURCE_SUBS = localized(
+  () =>
+    [
+      { key: "debrid", label: t("Debrid") },
+      { key: "usenet", label: t("Usenet") },
+      { key: "indexers", label: t("Indexers") },
+    ] as const,
+);
+
+type SourceSub = (typeof SOURCE_SUBS)[number]["key"];
 
 type AddDebrid = { nonce: number; kind: DebridKind };
 type AddIndexer = { nonce: number; type: "site" | "newznab" | "stremio" };
 
+function isSourceSub(value: string | undefined): value is SourceSub {
+  return value === "debrid" || value === "usenet" || value === "indexers";
+}
+
 /**
- * Where playback comes from. Configured accounts are cards in try order.
- * Adding one starts from a gallery, then a drawer for that record.
- * Old /sources/usenet, /debrid and /indexers addresses still open this page.
+ * Where playback comes from. Each source type has its own sub-tab.
+ * Old /sources/usenet, /debrid, /indexers and /usage addresses still open
+ * the matching tab. Adding one starts from a gallery, then a drawer.
  */
 export default function Sources() {
-  const tab = useRouteTab(TABS);
-  const { tab: raw } = useParams();
+  const { tab: raw, sub: rawSub } = useParams();
+  const navigate = useNavigate();
+  const legacySource = isSourceSub(raw) ? raw : undefined;
+  const top =
+    raw === "usage" || raw === "cost"
+      ? "stats"
+      : raw === "overview" || legacySource
+        ? "yours"
+        : TABS.find((item) => item.key === raw)?.key ?? "yours";
+  const sourceSub: SourceSub = legacySource ?? (isSourceSub(rawSub) ? rawSub : "debrid");
   const [importing, setImporting] = useState(false);
   const [gallery, setGallery] = useState(false);
   const [version, setVersion] = useState(0);
@@ -42,32 +65,36 @@ export default function Sources() {
   const [usenetAdd, setUsenetAdd] = useState<number | null>(null);
   const [indexerAdd, setIndexerAdd] = useState<AddIndexer | null>(null);
 
-  useEffect(() => {
-    if (raw !== "usenet" && raw !== "debrid" && raw !== "indexers") return;
-    document.getElementById(`sources-${raw}`)?.scrollIntoView({ block: "start" });
-  }, [raw, tab]);
-
   function pick(choice: GalleryChoice) {
     const nonce = Date.now();
     setGallery(false);
-    if (choice.type === "debrid") setDebridAdd({ nonce, kind: choice.kind });
-    else if (choice.type === "usenet") setUsenetAdd(nonce);
-    else if (choice.type === "prowlarr") setImporting(true);
-    else setIndexerAdd({ nonce, type: choice.type });
+    if (choice.type === "debrid") {
+      navigate("/sources/yours/debrid");
+      setDebridAdd({ nonce, kind: choice.kind });
+    } else if (choice.type === "usenet") {
+      navigate("/sources/yours/usenet");
+      setUsenetAdd(nonce);
+    } else if (choice.type === "prowlarr") {
+      navigate("/sources/yours/indexers");
+      setImporting(true);
+    } else {
+      navigate("/sources/yours/indexers");
+      setIndexerAdd({ nonce, type: choice.type });
+    }
   }
 
   return (
     <DomainPage
       title={t("Sources")}
       description={t(
-        "Where video comes from, whether those accounts are working, and what they cost.",
+        "Where video comes from, whether those accounts are working, and how they are doing.",
       )}
       base="/sources"
       tabs={TABS}
-      active={tab}
+      active={top}
       status={<HealthStrip ids={["usenet", "indexers"]} />}
       actions={
-        tab === "overview" ? (
+        top === "yours" ? (
           <>
             <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
               {t("Import from Prowlarr")}
@@ -79,20 +106,28 @@ export default function Sources() {
         ) : null
       }
     >
-      {tab === "overview" ? (
+      {top === "yours" ? (
         <>
+          <SubtabNav
+            ariaLabel={t("Source types")}
+            active={sourceSub}
+            onSelect={(key) => navigate(`/sources/yours/${key}`)}
+            tabs={SOURCE_SUBS.map((item) => ({ key: item.key, label: item.label }))}
+          />
           <p className="text-sm text-fg-muted">
             {t(
               "Each card is an account or a search site. Drag a card, or use the arrows, to change what Ether tries first. A problem on a card says what to fix.",
             )}
           </p>
-          <DebridSources addKind={debridAdd} />
-          <UsenetProviders addNonce={usenetAdd} />
-          <IndexerList version={version} addRequest={indexerAdd} />
+          {sourceSub === "debrid" ? <DebridSources addKind={debridAdd} /> : null}
+          {sourceSub === "usenet" ? <UsenetProviders addNonce={usenetAdd} /> : null}
+          {sourceSub === "indexers" ? (
+            <IndexerList version={version} addRequest={indexerAdd} />
+          ) : null}
         </>
       ) : null}
-      {tab === "availability" ? <Availability /> : null}
-      {tab === "usage" ? <SourceUsage /> : null}
+      {top === "availability" ? <Availability /> : null}
+      {top === "stats" ? <SourceUsage /> : null}
       <AddSourceGallery open={gallery} onClose={() => setGallery(false)} onPick={pick} />
       <Drawer
         open={importing}

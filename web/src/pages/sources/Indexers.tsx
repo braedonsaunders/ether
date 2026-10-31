@@ -45,6 +45,7 @@ import {
   type Errors,
 } from "./form";
 import { SourceCard } from "./cards";
+import { StremioMark } from "./marks";
 import {
   MissingDefinition,
   SiteDefinitionRow,
@@ -458,6 +459,7 @@ export function IndexerList({
                 <SourceCard
                   name={label}
                   position={i + 1}
+                  logo={isStremio(ix) ? <StremioMark /> : undefined}
                   description={[
                     i === 0 ? t("Searched first") : t("Priority {number}", { number: i + 1 }),
                     site && ix.url ? hostOf(ix.url) : "",

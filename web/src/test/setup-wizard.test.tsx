@@ -388,7 +388,14 @@ describe("setup wizard", () => {
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await screen.findByRole("heading", { name: "Debrid accounts" });
+    expect(screen.queryByText(/ships none/)).toBeNull();
+    expect(
+      screen.getByText("Add a debrid account, a Usenet provider, or both, and test each one."),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add debrid account" }));
+    expect(
+      screen.queryByText("Add a debrid account, a Usenet provider, or both, and test each one."),
+    ).toBeNull();
     fireEvent.change(screen.getByLabelText("API token"), { target: { value: "rd-token" } });
     fireEvent.click(screen.getByRole("button", { name: /^Test$/ }));
     await waitFor(() =>

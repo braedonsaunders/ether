@@ -6,9 +6,10 @@ import { destinations } from "../lib/sitemap";
 describe("Sources availability", () => {
   it("is discoverable and does not start checks just by viewing", async () => {
     const { fake } = renderApp("/sources/availability");
-    expect(await screen.findByText("Availability intelligence")).toBeVisible();
+    expect(await screen.findByText("Watch release feeds")).toBeVisible();
     expect(destinations().some((d) => d.href === "/sources/availability")).toBe(true);
     expect(screen.getByRole("button", { name: "Sync feeds" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("tab", { name: "Recent source evidence" }));
     expect(screen.getByText("Evidence will appear here")).toBeVisible();
     expect(calls(fake, "POST", "/availability")).toHaveLength(0);
   });

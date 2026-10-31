@@ -51,6 +51,22 @@ type ProviderMonth = {
   bodyMisses: number;
   bodyTakedowns: number;
 };
+type ProviderDay = {
+  id: string;
+  day: string;
+  bytes: number;
+  articles: number;
+  misses: number;
+  errors: number;
+};
+type IndexerDay = {
+  indexer: string;
+  day: string;
+  searches: number;
+  successes: number;
+  grabs: number;
+  latencyMs: number;
+};
 type Kind = "provider" | "indexer";
 type Cost = { kind: string; id: string; monthly: number; currency: string };
 type Infrastructure = {
@@ -60,10 +76,14 @@ type Infrastructure = {
     indexers?: { data: Budget[] | null; at: number };
   };
   providerMonth: ProviderMonth[] | null;
+  providerDays?: ProviderDay[] | null;
+  indexerDays?: IndexerDay[] | null;
   indexerMonth: IndexerUsage[] | null;
   costs: Cost[] | null;
   month: string;
   notes: string[] | null;
+  failovers?: number;
+  failedPlays?: number;
 };
 
 type Price = { monthly: number; currency: string };
@@ -72,6 +92,24 @@ type Prices = Record<string, Price>;
 const GB = 1073741824;
 const priceKey = (kind: Kind, id: string) => `${kind}:${id}`;
 const pct = (n: number, d: number) => (d ? formatPercent(n / d, 0) : "—");
+
+function DayBars({ days }: { days: { day: string; value: number }[] }) {
+  const recent = days.slice(-14);
+  const max = Math.max(1, ...recent.map((d) => d.value));
+  if (!recent.length) return null;
+  return (
+    <div className="flex h-8 items-end gap-0.5" aria-label={t("Downloaded each day")}>
+      {recent.map((d) => (
+        <div
+          key={d.day}
+          title={d.day}
+          className="w-1.5 rounded-sm bg-primary/70"
+          style={{ height: `${Math.max(12, (d.value / max) * 100)}%` }}
+        />
+      ))}
+    </div>
+  );
+}
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -234,10 +272,30 @@ export function SourceUsage() {
   return (
     <>
       <p className="text-sm text-fg-muted">
-        {t(
-          "What your providers and search sites used this month, and what that costs once you enter a plan price. Each currency stays separate.",
-        )}
+        {t("How each source did this month. Plan prices are the last section.")}
       </p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          [t("Plays this month"), formatNumber(data.monthPlays, 0)],
+          [t("Failovers"), formatNumber(data.failovers ?? 0, 0)],
+          [t("Failed plays"), formatNumber(data.failedPlays ?? 0, 0)],
+          [
+            t("Article success"),
+            pct(
+              (data.providerMonth ?? []).reduce((n, p) => n + p.articles, 0),
+              (data.providerMonth ?? []).reduce(
+                (n, p) => n + p.articles + p.misses + p.errors,
+                0,
+              ),
+            ),
+          ],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-border bg-surface px-5 py-4">
+            <p className="text-xs text-fg-muted">{label}</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums">{value}</p>
+          </div>
+        ))}
+      </div>
       <Section
         title={t("Monthly costs")}
         description={t(
@@ -324,6 +382,15 @@ export function SourceUsage() {
                         tn(usage.backfillSaves, "{count} backfill save", "{count} backfill saves"),
                       ].join(" · ")}
                     </p>
+                    <DayBars
+                      days={(data.providerDays ?? [])
+                        .filter((d) => d.id === id)
+                        .map((d) => ({ day: d.day, value: d.bytes }))}
+                    />
+                    <p className="text-xs text-fg-muted">
+                      {t("Article success")}{" "}
+                      {pct(usage.articles, usage.articles + usage.misses + usage.errors)}
+                    </p>
                   </>
                 ) : (
                   <p className="text-xs text-fg-muted">
@@ -397,6 +464,11 @@ export function SourceUsage() {
                         total: formatNumber(v.grabs, 0),
                       })}
                     </Stat>
+                    <Stat label={t("Search speed")}>
+                      {v.searches
+                        ? t("{ms} ms", { ms: fixed(v.latencyMs / v.searches, 0) })
+                        : "—"}
+                    </Stat>
                     <Stat label={t("Average release age")}>
                       {v.ageSamples
                         ? t("{days} days", { days: fixed(v.ageSeconds / v.ageSamples / 86400, 1) })
@@ -432,8 +504,6 @@ export function SourceUsage() {
           <p className="px-5 py-4 text-sm text-fg-muted">{t("No configured indexers.")}</p>
         ) : null}
       </Section>
-
-      {data.notes?.length ? <p className="text-xs text-fg-muted">{data.notes.join(" ")}</p> : null}
 
       <SaveBar
         dirty={dirty}

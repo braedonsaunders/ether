@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { destinations } from "../lib/sitemap";
 import { engineSummary, latencySummary } from "../pages/sources/Debrid";
 import { debridFix, sourceMonogram } from "../pages/sources/cards";
+import { debridMark } from "../pages/sources/marks";
 import type { DebridConfig, Indexer } from "../lib/types";
 import { calls, renderApp } from "./harness";
 
@@ -181,9 +182,12 @@ describe("Sources › Indexers protocol", () => {
 });
 
 describe("source cards", () => {
-  it("uses a monogram and says how to fix a rejected key", () => {
+  it("uses a monogram unless Simple Icons publishes the mark", () => {
     expect(sourceMonogram("Real-Debrid")).toBe("RD");
     expect(sourceMonogram("TorBox")).toBe("T");
+    expect(debridMark("realdebrid")).toBeNull();
+    expect(debridMark("torbox")).toBeNull();
+    expect(debridMark("debridlink")).not.toBeNull();
     expect(debridFix(true, "auth_failed")).toMatch(/API key was rejected/);
     expect(debridFix(true, "ok")).toBeNull();
     expect(debridFix(false, "ok")).toMatch(/off/);

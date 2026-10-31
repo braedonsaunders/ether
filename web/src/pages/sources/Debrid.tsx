@@ -35,6 +35,7 @@ import type {
 import { SchemaField } from "../settings/SchemaForm";
 import { DEBRID } from "../settings/schema";
 import { DEBRID_KINDS, SourceCard, debridFix } from "./cards";
+import { debridMark } from "./marks";
 
 export { DEBRID_KINDS };
 import {
@@ -413,6 +414,7 @@ export function DebridSources({
                   handle={handle}
                   editLabel={t("Edit {name}", { name: label })}
                   onEdit={() => open(i, p)}
+                  logo={debridMark(p.kind) ?? undefined}
                 />
               );
             }}

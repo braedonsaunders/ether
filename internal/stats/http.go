@@ -185,13 +185,76 @@ func (s *Service) infrastructure(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "Indexer metrics unavailable")
 		return
 	}
-	var monthPlays int64
+	var monthPlays, failovers, failedPlays int64
 	monthStart, _ := time.Parse("2006-01-02", month)
-	if err := s.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM stats_plays WHERE started>=?`, monthStart.Unix()).Scan(&monthPlays); err != nil {
+	if err := s.db.QueryRowContext(r.Context(), `SELECT COUNT(*), CAST(COALESCE(SUM(failovers),0) AS BIGINT), CAST(COALESCE(SUM(CASE WHEN error<>'' THEN 1 ELSE 0 END),0) AS BIGINT) FROM stats_plays WHERE started>=?`, monthStart.Unix()).Scan(&monthPlays, &failovers, &failedPlays); err != nil {
 		fail(w, 500, "Monthly play count unavailable")
 		return
 	}
-	reply(w, 200, map[string]any{"monthPlays": monthPlays, "snapshots": snapshots, "providerMonth": usage, "costs": costs, "indexerMonth": indexerMonth, "month": month, "notes": []string{"Provider totals accumulate observed counters; daily boundaries use sample time.", "Latency is the provider's live EWMA. Article success is not title completion.", "Backfill attribution to individual plays and indexer health-check success are not collected."}})
+	type ProviderDay struct {
+		ID       string `json:"id"`
+		Day      string `json:"day"`
+		Bytes    int64  `json:"bytes"`
+		Articles int64  `json:"articles"`
+		Misses   int64  `json:"misses"`
+		Errors   int64  `json:"errors"`
+	}
+	providerDays := []ProviderDay{}
+	rows, err = s.db.QueryContext(r.Context(), `SELECT provider,day,bytes,articles,misses,errors FROM stats_provider_days WHERE day>=? ORDER BY day,provider`, month)
+	if err != nil {
+		fail(w, 500, "Provider history unavailable")
+		return
+	}
+	for rows.Next() {
+		var d ProviderDay
+		if rows.Scan(&d.ID, &d.Day, &d.Bytes, &d.Articles, &d.Misses, &d.Errors) != nil {
+			rows.Close()
+			fail(w, 500, "Provider history unavailable")
+			return
+		}
+		providerDays = append(providerDays, d)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		fail(w, 500, "Provider history unavailable")
+		return
+	}
+	type IndexerDay struct {
+		Indexer   string `json:"indexer"`
+		Day       string `json:"day"`
+		Searches  int64  `json:"searches"`
+		Successes int64  `json:"successes"`
+		Grabs     int64  `json:"grabs"`
+		LatencyMs int64  `json:"latencyMs"`
+	}
+	indexerDays := []IndexerDay{}
+	rows, err = s.db.QueryContext(r.Context(), `SELECT indexer,day,searches,successes,grabs,latency_ms FROM stats_indexer_days WHERE day>=? ORDER BY day,indexer`, month)
+	if err != nil {
+		fail(w, 500, "Indexer history unavailable")
+		return
+	}
+	for rows.Next() {
+		var d IndexerDay
+		if rows.Scan(&d.Indexer, &d.Day, &d.Searches, &d.Successes, &d.Grabs, &d.LatencyMs) != nil {
+			rows.Close()
+			fail(w, 500, "Indexer history unavailable")
+			return
+		}
+		indexerDays = append(indexerDays, d)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		fail(w, 500, "Indexer history unavailable")
+		return
+	}
+	reply(w, 200, map[string]any{
+		"monthPlays": monthPlays, "failovers": failovers, "failedPlays": failedPlays,
+		"snapshots": snapshots, "providerMonth": usage, "providerDays": providerDays,
+		"indexerDays": indexerDays, "costs": costs, "indexerMonth": indexerMonth, "month": month,
+		"notes": []string{"Provider totals accumulate observed counters; daily boundaries use sample time.", "Latency is the provider's live EWMA. Article success is not title completion.", "Plays are counted for the server, not split by source. Cache hits are not stored here."},
+	})
 }
 
 var newsletterTemplate = template.Must(template.New("newsletter").Parse(`<!doctype html><html><head><meta charset="utf-8"><title>Ether viewing report</title></head><body style="font:16px system-ui;max-width:640px;margin:32px auto;color:#222"><h1>Your Ether week</h1><p>{{.Since.Format "Jan 2, 2006"}} – {{.Until.Format "Jan 2, 2006"}} · UTC</p><p>{{.Plays}} plays · {{.Completed}} completed · {{.Hours}} hours of reported playback</p><h2>Popular on your server</h2>{{if .Titles}}<ol>{{range .Titles}}<li>{{.Label}} — {{.Plays}} plays</li>{{end}}</ol>{{else}}<p>No recorded plays this week.</p>{{end}}<p style="color:#666">Playback time comes from client timeline updates; gaps and ambiguous simultaneous sessions are excluded.</p></body></html>`))

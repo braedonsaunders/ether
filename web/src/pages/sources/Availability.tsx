@@ -1,7 +1,8 @@
-import { getLocale, localized, t, tn } from "../../i18n";
-import { Badge, Button, SettingsSection, Spinner, toast } from "@braedonsaunders/appkit-ui";
+import { getLocale, localized, t } from "../../i18n";
+import { Badge, Button, SettingsSection, Spinner, SubtabNav, Switch, toast } from "@braedonsaunders/appkit-ui";
 import { Activity, Radio, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { MoreOptions } from "../../components/ConfigSection";
 import { ErrorPanel, MutationError } from "../../components/feedback";
 import { Section } from "../../components/layout";
@@ -42,6 +43,7 @@ interface Status {
   recent: Observation[];
   day: string;
 }
+const EVIDENCE_PAGE = 25;
 const stamp = (n: number) =>
   n ? new Date(n * 1000).toLocaleString(getLocale()) : t("Not yet synced");
 const labels: Record<string, string> = localized(() => ({
@@ -54,11 +56,16 @@ const labels: Record<string, string> = localized(() => ({
 }));
 
 export function Availability() {
+  const { sub } = useParams();
+  const navigate = useNavigate();
+  const playTab = sub === "evidence" ? "evidence" : "feeds";
   const status = useAsync((signal) => apiFetch<Status>("/availability/", { signal }), []);
   const config = useAsync(() => api.getConfig(), []);
   const [draft, setDraft] = useState<AvailabilityConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [evidencePage, setEvidencePage] = useState(0);
   const [error, setError] = useState<unknown>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
   useInterval(() => void status.reload(), 30000);
@@ -117,42 +124,36 @@ export function Availability() {
   };
   const activeFeeds = s.feeds.filter((f) => f.supported && f.selected).length;
   const dailyRequests = Math.ceil(1440 / Math.max(5, cfg.pollMinutes)) * activeFeeds;
+  const evidencePages = Math.max(1, Math.ceil(s.recent.length / EVIDENCE_PAGE));
+  const evidenceAt = Math.min(evidencePage, evidencePages - 1);
+  const evidenceRows = s.recent.slice(
+    evidenceAt * EVIDENCE_PAGE,
+    evidenceAt * EVIDENCE_PAGE + EVIDENCE_PAGE,
+  );
+  const setMonitor = async (on: boolean) => {
+    setToggling(true);
+    setSaveError(null);
+    try {
+      await api.putSection("availability", { ...cfg, monitor: on });
+      await config.reload();
+      await status.reload();
+    } catch (e) {
+      setSaveError(e);
+    } finally {
+      setToggling(false);
+    }
+  };
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-2xl">
-          <div className="mb-2 flex items-center gap-2">
-            <Radio size={19} className="text-accent" />
-            <h2 className="text-lg font-semibold">{t("Availability intelligence")}</h2>
-            <Badge>
-              {s.mode === "off"
-                ? t("Off")
-                : s.mode === "checking"
-                  ? cfg.monitor
-                    ? t("Monitoring & checking")
-                    : t("Checking")
-                  : t("Monitoring")}
-            </Badge>
-          </div>
-          <p className="text-sm text-fg-muted">
-            {t(
-              "This watches your search sites for new releases and can spot-check that a file is really there before someone presses Play. It does not change which account Ether streams from.",
-            )}
-          </p>
-          <p className="mt-2 text-sm text-fg-muted">{s.message}</p>
-          <p className="mt-2 text-xs text-fg-muted">
-            {cfg.disableMovieEvidenceGate
-              ? t("Movie evidence requirement is off.")
-              : tn(
-                  cfg.movieEvidenceDays || 60,
-                  "Movies need evidence for {count} day after release.",
-                  "Movies need evidence for {count} days after release.",
-                )}{" "}
-            {t(
-              "Episodes need evidence for 24 hours. Eligible observed releases unlock immediately, without a mandatory delay; evidence does not guarantee quality or playback.",
-            )}
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <label className="flex items-center gap-3 text-sm font-medium text-fg">
+          <Switch
+            checked={cfg.monitor}
+            disabled={toggling}
+            onChange={(e) => void setMonitor(e.currentTarget.checked)}
+          />
+          {t("Watch release feeds")}
+        </label>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -177,18 +178,12 @@ export function Availability() {
         </div>
       </div>
       {error ? <MutationError error={error} /> : null}
-      <p className="text-xs text-fg-muted">
-        {tn(
-          activeFeeds,
-          "At this interval, {count} feed needs approximately {requests} requests per day for fresh arrivals.",
-          "At this interval, {count} feeds need approximately {requests} requests per day for fresh arrivals.",
-          { requests: formatNumber(dailyRequests) },
-        )}{" "}
-        {t("Catch-up uses only the remaining allowance and saves its progress across restarts.")}{" "}
-        {cfg.feedRequests < dailyRequests
-          ? t("The current allowance cannot sustain this polling interval for every feed.")
-          : t("Allow additional requests for busy feeds and downtime.")}
-      </p>
+      {saveError ? <MutationError error={saveError} /> : null}
+      {cfg.monitor && cfg.feedRequests < dailyRequests ? (
+        <p className="text-sm text-danger" role="status">
+          {t("The current allowance cannot sustain this polling interval for every feed.")}
+        </p>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-3">
         {[
           [Radio, t("Feed requests"), s.usage.feedRequests ?? 0, cfg.feedRequests],
@@ -227,12 +222,17 @@ export function Availability() {
           );
         })}
       </div>
-      <Section
-        title={t("Release feeds")}
-        description={t(
-          "One request discovers many releases. Ether matches them against local catalogue metadata without searching every title.",
-        )}
-      >
+      <SubtabNav
+        ariaLabel={t("Will it play sections")}
+        active={playTab}
+        onSelect={(key) => navigate(`/sources/availability/${key}`)}
+        tabs={[
+          { key: "feeds", label: t("Release feeds") },
+          { key: "evidence", label: t("Recent source evidence") },
+        ]}
+      />
+      {playTab === "feeds" ? (
+      <Section title={t("Release feeds")}>
         {s.feeds.length ? (
           <ul className="divide-y divide-border">
             {s.feeds.map((f) => (
@@ -263,21 +263,16 @@ export function Availability() {
           </ul>
         ) : (
           <p className="py-4 text-sm text-fg-muted">
-            {t(
-              "Add a Newznab or Torznab indexer to discover recent releases. A debrid account alone does not provide a global release feed.",
-            )}
+            {t("Add a Newznab or Torznab indexer to discover recent releases.")}
           </p>
         )}
       </Section>
-      <Section
-        title={t("Recent source evidence")}
-        description={t(
-          "Health checks apply to a specific source and the owner's quality policy. They expire after six hours; they cannot guarantee every byte or every device.",
-        )}
-      >
+      ) : (
+      <Section title={t("Recent source evidence")}>
         {s.recent.length ? (
+          <>
           <ul className="divide-y divide-border">
-            {s.recent.map((r, i) => (
+            {evidenceRows.map((r, i) => (
               <li key={`${r.key}-${i}`} className="flex flex-wrap items-start gap-3 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">{r.title}</p>
@@ -291,30 +286,49 @@ export function Availability() {
               </li>
             ))}
           </ul>
+          {s.recent.length > EVIDENCE_PAGE ? (
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-xs text-fg-muted">
+                {t("{start}–{end} of {count}", {
+                  start: evidenceAt * EVIDENCE_PAGE + 1,
+                  end: Math.min(s.recent.length, evidenceAt * EVIDENCE_PAGE + EVIDENCE_PAGE),
+                  count: s.recent.length,
+                })}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={evidenceAt === 0}
+                  onClick={() => setEvidencePage(evidenceAt - 1)}
+                >
+                  {t("Previous")}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={evidenceAt >= evidencePages - 1}
+                  onClick={() => setEvidencePage(evidenceAt + 1)}
+                >
+                  {t("Next")}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          </>
         ) : (
           <div className="py-8 text-center">
             <ShieldCheck className="mx-auto mb-3 text-fg-muted" size={28} />
             <p className="text-sm font-medium">{t("Evidence will appear here")}</p>
             <p className="mx-auto mt-2 max-w-lg text-sm text-fg-muted">
-              {t(
-                "Enable release monitoring to follow new arrivals. Successful playback health checks also contribute, without extra indexer searches.",
-              )}
+              {cfg.monitor
+                ? t("Checked releases show up here after Ether watches a feed.")
+                : t("Turn on Watch release feeds to start collecting this.")}
             </p>
           </div>
         )}
       </Section>
-      <p className="text-xs text-fg-muted">
-        {t(
-          "Today: {grabs} / {grabCap} Descriptor grabs · {used} / {cap} MiB reserved for source validation.",
-          {
-            grabs: formatNumber(s.usage.grabs ?? 0),
-            grabCap: formatNumber(cfg.grabs),
-            used: formatNumber(Math.ceil((s.usage.bytes ?? 0) / 1048576)),
-            cap: formatNumber(Math.ceil(cfg.checkBytes / 1048576)),
-          },
-        )}{" "}
-        {t("Reservations are conservative; actual transfers can be smaller.")}
-      </p>
+      )}
       <RecordDrawer
         open={draft !== null}
         title={t("Availability settings")}
