@@ -21,11 +21,24 @@ const (
 // whose auth service has a transient outage heals by itself while bad
 // credentials cost one login attempt per backoff. A new pool (created when
 // settings change) starts closed.
-// Connection failures open it for an exponentially growing backoff once
-// failThreshold consecutive connections or commands have failed. Only a
-// successful BODY resets that ladder: STAT (including a 430) proves the
-// socket can talk, not that articles can be read. A successful login alone
-// does not reset it either. The first open stays at minBackoff (1s).
+// Two ladders share one reported backoff. Connect failures (dial, TLS,
+// greeting, transport-level handshake) pause new dials only: sockets that
+// already authenticated stay usable. Command failures on those sockets
+// (BODY 502, resets, timeouts) pause the provider entirely, idle sockets
+// included. A successful dial followed by any completed command — STAT, or
+// even a 430 — resets the connect ladder, so a health check can dial
+// concurrently again. Only a BODY success resets the command ladder, so a
+// provider whose STAT works and whose BODY does not stays tripped. The
+// first open of either ladder stays at minBackoff (1s). A successful login
+// alone does not reset either ladder.
+type tripCause uint8
+
+const (
+	tripNone tripCause = iota
+	tripConnect
+	tripCommand
+)
+
 type breaker struct {
 	mu            sync.Mutex
 	now           func() time.Time
@@ -36,15 +49,20 @@ type breaker struct {
 	authMin, authMax time.Duration
 
 	changed      chan struct{}
-	networkProbe bool // at most one command tests an expired network backoff
-	failures     int
-	until        time.Time
-	authErr      error
-	authFails    int       // consecutive failed logins (initial failure + probes)
-	authUntil    time.Time // next auth probe is due
-	probing      bool      // an auth probe is in flight
-	lastErr      error
-	lastAt       time.Time
+	networkProbe bool // at most one dial tests an expired connect backoff
+	cause        tripCause
+
+	connectFailures int
+	connectUntil    time.Time
+	commandFailures int
+	commandUntil    time.Time
+
+	authErr   error
+	authFails int       // consecutive failed logins (initial failure + probes)
+	authUntil time.Time // next auth probe is due
+	probing   bool      // an auth probe is in flight
+	lastErr   error
+	lastAt    time.Time
 }
 
 func newBreaker(minB, maxB time.Duration, threshold int, now func() time.Time) *breaker {
@@ -55,8 +73,7 @@ func newBreaker(minB, maxB time.Duration, threshold int, now func() time.Time) *
 		authMin: DefaultAuthRetryMin, authMax: DefaultAuthRetryMax, changed: make(chan struct{})}
 }
 
-// authDisabled reports a credential lockout. Connect backoff does not: idle
-// sockets authenticated before the backoff may still serve.
+// authDisabled reports a credential lockout. That refuses every socket.
 func (b *breaker) authDisabled() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -66,31 +83,47 @@ func (b *breaker) authDisabled() error {
 	return nil
 }
 
-// allow returns nil if the provider may be used now.
+// idleAllowed reports whether an already-authenticated socket may be used.
+// Command backoff means those sockets are the failing ones. Connect backoff
+// does not: only new dials wait.
+func (b *breaker) idleAllowed() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.authErr != nil {
+		return fmt.Errorf("%w: %v", ErrProviderDisabled, b.authErr)
+	}
+	if now := b.now(); now.Before(b.commandUntil) {
+		return fmt.Errorf("%w for %s: %v", ErrProviderBackoff, b.commandUntil.Sub(now).Round(time.Millisecond), b.lastErr)
+	}
+	return nil
+}
+
+// allow returns nil if a new dial may be attempted now.
 func (b *breaker) allow() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.authErr != nil {
 		return fmt.Errorf("%w: %v", ErrProviderDisabled, b.authErr)
 	}
-	if now := b.now(); now.Before(b.until) {
-		return fmt.Errorf("%w for %s: %v", ErrProviderBackoff, b.until.Sub(now).Round(time.Millisecond), b.lastErr)
+	if until := b.blockedUntil(); b.now().Before(until) {
+		return fmt.Errorf("%w for %s: %v", ErrProviderBackoff, until.Sub(b.now()).Round(time.Millisecond), b.lastErr)
 	}
 	return nil
 }
 
-// admit reserves a single half-open recovery attempt after a network backoff.
-// allow remains a read-only check for health/status/warming paths.
+// admit reserves a single half-open dial after a connect backoff. Command
+// failures do not serialize dials once their window has passed: a STAT
+// health check must be able to fan out. allow remains a read-only check.
 func (b *breaker) admit() (bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.authErr != nil {
 		return false, fmt.Errorf("%w: %v", ErrProviderDisabled, b.authErr)
 	}
-	if b.now().Before(b.until) || b.networkProbe {
+	if b.now().Before(b.blockedUntil()) || b.networkProbe {
 		return false, ErrProviderBackoff
 	}
-	if b.failures >= b.failThreshold {
+	if b.connectFailures >= b.failThreshold {
 		b.networkProbe = true
 		return true, nil
 	}
@@ -104,10 +137,32 @@ func (b *breaker) releaseProbe() {
 	b.mu.Unlock()
 }
 
+// connectOK resets the connect ladder. A completed command (STAT, including
+// 430, or BODY) proves the path that a probe dial just opened. It does not
+// forgive command failures on sockets that were already up.
+func (b *breaker) connectOK() {
+	b.mu.Lock()
+	b.connectFailures = 0
+	b.connectUntil = time.Time{}
+	b.networkProbe = false
+	if b.cause == tripConnect {
+		b.cause = tripNone
+	}
+	b.signalLocked()
+	b.mu.Unlock()
+}
+
+// success resets the command ladder after a BODY that actually returned an
+// article. The exchange also proves the provider is reachable, so the
+// connect ladder clears with it.
 func (b *breaker) success() {
 	b.mu.Lock()
-	b.failures = 0
-	b.until = time.Time{}
+	b.commandFailures = 0
+	b.commandUntil = time.Time{}
+	b.connectFailures = 0
+	b.connectUntil = time.Time{}
+	b.networkProbe = false
+	b.cause = tripNone
 	b.signalLocked()
 	b.mu.Unlock()
 }
@@ -121,23 +176,33 @@ func cappedDouble(d, lo, hi time.Duration) time.Duration {
 	return min(max(d*2, lo), hi)
 }
 
-// connFailure records a failed dial and returns the backoff now in force.
+// connFailure records a failed dial, TLS handshake, greeting, or transport
+// setup. Established sockets are not at fault.
 func (b *breaker) connFailure(err error) time.Duration {
+	return b.open(&b.connectFailures, &b.connectUntil, tripConnect, err)
+}
+
+// commandFailure records a failure of a command on a socket that was
+// already up: BODY 502, a reset, or a timeout.
+func (b *breaker) commandFailure(err error) time.Duration {
+	return b.open(&b.commandFailures, &b.commandUntil, tripCommand, err)
+}
+
+func (b *breaker) open(failures *int, until *time.Time, cause tripCause, err error) time.Duration {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.failures++
+	*failures++
 	b.lastErr, b.lastAt = err, b.now()
-	if b.failures < b.failThreshold {
+	if *failures < b.failThreshold {
 		return 0
 	}
 	d := b.minBackoff
-	for i := b.failThreshold; i < b.failures && d < b.maxBackoff; i++ {
+	for i := b.failThreshold; i < *failures && d < b.maxBackoff; i++ {
 		d = cappedDouble(d, b.minBackoff, b.maxBackoff)
 	}
-	if d > b.maxBackoff {
-		d = b.maxBackoff
-	}
-	b.until = b.now().Add(d)
+	d = min(d, b.maxBackoff)
+	*until = b.now().Add(d)
+	b.cause = cause
 	b.signalLocked()
 	return d
 }
@@ -209,12 +274,20 @@ func (b *breaker) state() (state string, until time.Time, lastErr error, lastAt 
 	switch {
 	case b.authErr != nil:
 		return StateAuthFail, b.authUntil, b.lastErr, b.lastAt
-	case b.now().Before(b.until):
+	case b.now().Before(b.blockedUntil()):
 		state = StateBackoff
 	default:
 		state = StateOK
 	}
-	return state, b.until, b.lastErr, b.lastAt
+	return state, b.blockedUntil(), b.lastErr, b.lastAt
+}
+
+func (b *breaker) blockedUntil() time.Time {
+	until := b.connectUntil
+	if b.commandUntil.After(until) {
+		until = b.commandUntil
+	}
+	return until
 }
 
 // signalLocked wakes requests whose last usable provider is recovering.
@@ -226,10 +299,10 @@ func (b *breaker) signalLocked() {
 func (b *breaker) recoveryDelay() (time.Duration, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.authErr != nil || (b.failures >= b.failThreshold && isTimeoutError(b.lastErr)) {
+	if b.authErr != nil || ((b.commandFailures >= b.failThreshold || b.connectFailures >= b.failThreshold) && isTimeoutError(b.lastErr)) {
 		return 0, false
 	}
-	return max(0, b.until.Sub(b.now())), true
+	return max(0, b.blockedUntil().Sub(b.now())), true
 }
 
 // waitReady does not claim a probe. The connection admission path still grants
@@ -241,7 +314,7 @@ func (b *breaker) waitReady(ctx context.Context) error {
 			b.mu.Unlock()
 			return ErrProviderDisabled
 		}
-		delay := b.until.Sub(b.now())
+		delay := b.blockedUntil().Sub(b.now())
 		if delay <= 0 && !b.networkProbe {
 			b.mu.Unlock()
 			return nil

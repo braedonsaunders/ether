@@ -27,39 +27,37 @@ func TestSTATDoesNotResetBreaker(t *testing.T) {
 	s := nntptest.Start(t, nntptest.Options{})
 	addSeg(t, s, "a@x", []byte("alpha"))
 	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 2)}, Options{
-		BackoffMin: time.Hour, FailThreshold: 2, MinIdle: -1,
+		BackoffMin: 20 * time.Millisecond, BackoffMax: 20 * time.Millisecond,
+		FailThreshold: 2, MinIdle: -1, Retries: -1,
 	})
 	if err := f.Warm(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	dials := statsFor(f, "p").Dials
 	p := f.pools[0]
-	p.brk.connFailure(errors.New("connect failed"))
-	p.brk.connFailure(errors.New("connect failed"))
-	if st := statsFor(f, "p"); st.State != StateBackoff {
-		t.Fatalf("state %q, want backoff", st.State)
+	p.brk.commandFailure(errors.New("502"))
+	p.brk.commandFailure(errors.New("502"))
+	if st := statsFor(f, "p"); st.State != StateBackoff || p.brk.cause != tripCommand {
+		t.Fatalf("state %q cause %d", st.State, p.brk.cause)
 	}
-	until := statsFor(f, "p").BackoffUntil
-
+	// The command window is still open: STAT must not run, and must not clear it.
+	if _, err := f.Stat(context.Background(), "a@x"); !errors.Is(err, ErrProviderBackoff) {
+		t.Fatalf("STAT during command backoff: %v", err)
+	}
+	if st := statsFor(f, "p"); st.State != StateBackoff {
+		t.Fatalf("STAT cleared command backoff: %+v", st)
+	}
+	time.Sleep(40 * time.Millisecond)
 	ok, err := f.Stat(context.Background(), "a@x")
 	if err != nil || !ok {
-		t.Fatalf("STAT success during backoff: ok=%v err=%v", ok, err)
+		t.Fatalf("STAT after the window: ok=%v err=%v", ok, err)
 	}
-	ok, err = f.Stat(context.Background(), "missing@x")
-	if err != nil || ok {
-		t.Fatalf("STAT 430 during backoff: ok=%v err=%v", ok, err)
+	// One more command failure must reopen immediately. A cleared ladder
+	// would still be under the threshold.
+	if d := p.brk.commandFailure(errors.New("502")); d == 0 {
+		t.Fatal("STAT success cleared the command ladder")
 	}
-	st := statsFor(f, "p")
-	if st.State != StateBackoff || !st.BackoffUntil.Equal(until) || st.Dials != dials {
-		t.Fatalf("STAT reset or redialed the breaker: %+v (dials was %d, until %v)", st, dials, until)
-	}
-
-	got, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive)
-	if err != nil || string(got) != "alpha" {
-		t.Fatalf("BODY during backoff: %q %v", got, err)
-	}
-	if st := statsFor(f, "p"); st.State != StateOK || st.Dials != dials {
-		t.Fatalf("BODY success should clear the cooldown without a new dial: %+v", st)
+	if st := statsFor(f, "p"); st.State != StateBackoff {
+		t.Fatalf("state %q after the ladder stepped", st.State)
 	}
 }
 
@@ -84,8 +82,84 @@ func TestIdleSocketUsableDuringConnectBackoff(t *testing.T) {
 		t.Fatalf("idle STAT: ok=%v err=%v", ok, err)
 	}
 	after := statsFor(f, "p")
-	if after.State != StateBackoff || after.Dials != before.Dials {
-		t.Fatalf("connect backoff dialed or cleared: before %+v after %+v", before, after)
+	if after.Dials != before.Dials {
+		t.Fatalf("connect backoff dialed: before %+v after %+v", before, after)
+	}
+	if after.State != StateOK {
+		t.Fatalf("successful STAT should clear the connect ladder: %+v", after)
+	}
+}
+
+func TestCommandBackoffSkipsIdleSockets(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{})
+	addSeg(t, s, "a@x", []byte("alpha"))
+	s.SetFault(func(cmd, _ string) nntptest.Fault {
+		if cmd == "BODY" {
+			return nntptest.Fault{Code: 502, Text: "unavailable"}
+		}
+		return nntptest.Fault{}
+	})
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 2)}, Options{
+		BackoffMin: time.Hour, FailThreshold: 2, MinIdle: -1, Retries: -1,
+	})
+	if err := f.Warm(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive); err == nil {
+		t.Fatal("first 502 succeeded")
+	}
+	if _, err := f.Body(context.Background(), "a@x", nil, core.PriorityLive); err == nil {
+		t.Fatal("second 502 succeeded")
+	}
+	st := statsFor(f, "p")
+	if st.State != StateBackoff || st.IdleConnections == 0 || f.pools[0].brk.cause != tripCommand {
+		t.Fatalf("setup %+v cause %d", st, f.pools[0].brk.cause)
+	}
+	stats := s.Stats().Commands["STAT"]
+	if _, err := f.Stat(context.Background(), "a@x"); !errors.Is(err, ErrProviderBackoff) {
+		t.Fatalf("idle socket used during command backoff: %v", err)
+	}
+	if got := s.Stats().Commands["STAT"]; got != stats || statsFor(f, "p").Dials != st.Dials {
+		t.Fatalf("provider contacted during command backoff: STAT %d->%d dials %+v", stats, got, statsFor(f, "p"))
+	}
+}
+
+func TestProbeSTATReopensConcurrentDials(t *testing.T) {
+	s := nntptest.Start(t, nntptest.Options{})
+	for _, id := range []string{"a@x", "b@x", "c@x", "d@x"} {
+		addSeg(t, s, id, []byte(id))
+	}
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 4)}, Options{
+		BackoffMin: 20 * time.Millisecond, BackoffMax: 20 * time.Millisecond,
+		FailThreshold: 2, MinIdle: -1, Retries: -1,
+	})
+	p := f.pools[0]
+	p.brk.connFailure(errors.New("dial"))
+	p.brk.connFailure(errors.New("dial"))
+	time.Sleep(40 * time.Millisecond)
+	if ok, err := f.Stat(context.Background(), "a@x"); err != nil || !ok {
+		t.Fatalf("probe STAT: ok=%v err=%v", ok, err)
+	}
+	p.discardIdle()
+	var wg sync.WaitGroup
+	errCh := make(chan error, 3)
+	for _, id := range []string{"b@x", "c@x", "d@x"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ok, err := f.Stat(context.Background(), id)
+			if err != nil || !ok {
+				errCh <- errors.New(id)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Error(err)
+	}
+	if st := statsFor(f, "p"); st.State != StateOK {
+		t.Fatalf("dials still serialized: %+v", st)
 	}
 }
 
