@@ -81,13 +81,19 @@ func (s *Service) optimisticCheck(r core.Release, nzb []byte) {
 }
 
 func (s *Service) resolution(key core.RatingKey, cands []candidate, winner int, nzb []byte, tr *Trace) *core.Resolution {
+	return s.resolutionSkipping(key, cands, winner, nzb, func(c candidate) bool { return tr.Candidates[c.trace].Rejected })
+}
+
+// resolutionSkipping is resolution with the caller deciding which
+// candidates cannot serve as failover alternates.
+func (s *Service) resolutionSkipping(key core.RatingKey, cands []candidate, winner int, nzb []byte, skip func(candidate) bool) *core.Resolution {
 	res := &core.Resolution{Title: key, Release: cands[winner].rel, NZB: nzb, ResolvedAt: s.now()}
 	// Failover stays on the same cut first: alternates of the winner's
 	// edition come before other cuts (ranked order within each group).
 	edition := cands[winner].rel.Info.Edition
 	for _, same := range []bool{true, false} {
 		for i, c := range cands {
-			if i == winner || tr.Candidates[c.trace].Rejected || len(res.Alternates) >= s.maxCandidates() {
+			if i == winner || skip(c) || len(res.Alternates) >= s.maxCandidates() {
 				continue
 			}
 			if (c.rel.Info.Edition == edition) == same {
@@ -137,6 +143,7 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 		var nzb []byte
 		for j := 0; j < count; j++ {
 			v := <-results
+			noteValidation(ctx, cands[v.index].rel, v)
 			ct := &tr.Candidates[cands[v.index].trace]
 			ct.Attempted = true
 			ct.FetchDuration = v.fetchDuration
@@ -146,6 +153,7 @@ func (s *Service) validateCandidates(ctx context.Context, cands []candidate, tr 
 			if ctx.Err() != nil {
 				cancel()
 				wg.Wait()
+				drainValidations(ctx, cands, results)
 				return -1, nil, ctx.Err()
 			}
 			if ct.Healthy {

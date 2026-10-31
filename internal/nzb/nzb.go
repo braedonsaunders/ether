@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,10 @@ var ErrInvalid = errors.New("nzb: invalid document")
 // maxDocumentSize bounds what Parse will read (NZBs for 100 GB posts are
 // tens of megabytes; anything far larger is not an NZB).
 const maxDocumentSize = 256 << 20
+
+// maxSegmentAlternates bounds the repost message-IDs kept per segment, so
+// a hostile NZB repeating one number cannot make a miss try thousands.
+const maxSegmentAlternates = 4
 
 // maxSegmentNumber bounds a segment's part number. Consumers size per-part
 // tables by the highest number (File.SegmentCount), so a hostile
@@ -47,8 +52,8 @@ type File struct {
 	Date    time.Time
 	Subject string
 	Groups  []string
-	// Segments sorted by Number, de-duplicated (the first occurrence of a
-	// number wins).
+	// Segments sorted by Number, de-duplicated: the first occurrence of a
+	// number wins, later message-IDs for it become its Alternates.
 	Segments []Segment
 
 	// Name is the file name derived from the subject (may be obfuscated).
@@ -64,7 +69,8 @@ type File struct {
 	SubjectCount int
 	// ExpectedSegments is the "(1/N)" segment count in the subject, or 0.
 	ExpectedSegments int
-	// Duplicates counts dropped repeated segment numbers.
+	// Duplicates counts repeated segment numbers folded into an earlier
+	// segment (as Alternates when the message-ID differs).
 	Duplicates int
 }
 
@@ -73,6 +79,10 @@ type Segment struct {
 	Number    int    // 1-based part number
 	Bytes     int64  // article size as listed in the NZB (encoded, approximate)
 	MessageID string // without angle brackets
+	// Alternates are message-IDs of reposts ("fills") of this same part,
+	// in NZB order, to try when MessageID is missing everywhere. A repost
+	// carries the same yEnc part, so its bytes must land on the same range.
+	Alternates []string
 }
 
 // Bytes is the sum of the listed segment sizes. It is the encoded article
@@ -208,6 +218,7 @@ func ParseReader(r io.Reader) (*NZB, error) {
 	if len(out.Files) == 0 {
 		return nil, fmt.Errorf("%w: no files with segments", ErrInvalid)
 	}
+	mergeReposts(out.Files)
 	return out, nil
 }
 
@@ -267,6 +278,7 @@ func buildFile(xf xmlFile) *File {
 		}
 		if len(dedup) > 0 && dedup[len(dedup)-1].Number == s.Number {
 			f.Duplicates++
+			dedup[len(dedup)-1].addAlternate(s.MessageID)
 			continue
 		}
 		dedup = append(dedup, s)
@@ -279,6 +291,57 @@ func buildFile(xf xmlFile) *File {
 	f.Info = Classify(f.Name)
 	f.Obfuscated = IsObfuscated(f.Name)
 	return f
+}
+
+// addAlternate keeps id as a fallback for s unless it is already known.
+func (s *Segment) addAlternate(id string) {
+	if id == s.MessageID || len(s.Alternates) >= maxSegmentAlternates || slices.Contains(s.Alternates, id) {
+		return
+	}
+	s.Alternates = append(s.Alternates, id)
+}
+
+// mergeReposts folds a reposted copy of a whole file into the first copy:
+// when two files carry the same (non-obfuscated) name and exactly the same
+// segment layout, every part of the later copy becomes an alternate of the
+// same part of the first. Both files stay listed (Sets reports the copy in
+// Duplicates). Layouts that differ in any part number or listed size are
+// left alone: their parts need not cover the same bytes. Obfuscated names
+// say nothing about identity, so those copies are not matched.
+func mergeReposts(files []*File) {
+	first := map[string]*File{}
+	for _, f := range files {
+		if f.Name == "" || f.Obfuscated {
+			continue
+		}
+		key := strings.ToLower(f.Name)
+		orig, ok := first[key]
+		if !ok {
+			first[key] = f
+			continue
+		}
+		if !sameLayout(orig, f) {
+			continue
+		}
+		for i := range orig.Segments {
+			orig.Segments[i].addAlternate(f.Segments[i].MessageID)
+			for _, id := range f.Segments[i].Alternates {
+				orig.Segments[i].addAlternate(id)
+			}
+		}
+	}
+}
+
+func sameLayout(a, b *File) bool {
+	if len(a.Segments) != len(b.Segments) || a.SegmentCount() != b.SegmentCount() {
+		return false
+	}
+	for i := range a.Segments {
+		if a.Segments[i].Number != b.Segments[i].Number || a.Segments[i].Bytes != b.Segments[i].Bytes || a.Segments[i].Bytes <= 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // charsetReader handles the encodings NZBs declare in practice.
