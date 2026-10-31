@@ -17,10 +17,12 @@ func TestDetectRestart(t *testing.T) {
 		platform    string
 		want        Restart
 	}{
-		{"systemd", false, false, "linux", "linux-systemd", Restart{RestartSupervisor, "systemd"}},
-		{"launchd", false, false, "darwin", "darwin-launchd", Restart{RestartSupervisor, "launchd"}},
+		// Finding 8: systemd (RestartSec=120 in kardianos units) and launchd
+		// restart in place, with no supervisor delay.
+		{"systemd", false, false, "linux", "linux-systemd", Restart{RestartInPlace, "systemd"}},
+		{"launchd", false, false, "darwin", "darwin-launchd", Restart{RestartInPlace, "launchd"}},
 		{"windows service", false, false, "windows", "windows-service", Restart{RestartSupervisor, "windows-service"}},
-		{"other manager", false, false, "linux", "linux-upstart", Restart{RestartSupervisor, "service"}},
+		{"other manager", false, false, "linux", "linux-upstart", Restart{RestartInPlace, "service"}},
 		// Docker runs Ether as PID 1, which kardianos sees as interactive,
 		// or under tini, which it sees as supervised: both restart in place.
 		{"container pid 1", true, true, "linux", "linux-systemd", Restart{RestartInPlace, "container"}},

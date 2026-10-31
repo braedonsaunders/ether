@@ -225,7 +225,9 @@ func New(run RunFunc, opts Options) (*Service, error) {
 		return nil, err
 	}
 	prog := &program{run: run, log: opts2.Logger, stopTimeout: opts2.StopTimeout}
-	if InContainer() {
+	// Every Unix restarts in place (DetectRestart); Windows exits for the
+	// Service Control Manager.
+	if runtime.GOOS != "windows" {
 		prog.inPlace = RestartProcess
 	}
 	ks, err := ksvc.New(prog, cfg)
@@ -421,8 +423,8 @@ type program struct {
 	// exit terminates the process; nil means os.Exit. Tests inject a fake.
 	exit func(code int)
 	// inPlace, when set, re-executes the process for a requested restart
-	// instead of exiting (a container's PID 1 under an init such as tini,
-	// where exiting would stop the container). It returns only on failure.
+	// instead of exiting (every Unix: a service keeps its PID and restarts
+	// at once, a container keeps running). It returns only on failure.
 	inPlace func() error
 
 	mu       sync.Mutex

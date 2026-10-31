@@ -23,13 +23,14 @@ const ExitCodeRestart = 3
 type RestartMethod string
 
 const (
-	// RestartSupervisor exits and lets the service manager (systemd,
-	// launchd, the Windows Service Control Manager) start a new process;
-	// every Ether service registration restarts after any exit.
+	// RestartSupervisor exits and lets the Windows Service Control
+	// Manager start a new process (its recovery actions: after 5s, then
+	// 15s and 60s for repeated restarts within a day).
 	RestartSupervisor RestartMethod = "supervisor"
 	// RestartInPlace replaces this process with a fresh copy of itself
-	// (exec, same PID): in a container that keeps the container running
-	// whatever its restart policy, and in a terminal it keeps the session.
+	// (exec, same PID) on every Unix: systemd and launchd keep tracking
+	// the same process (no RestartSec wait), a container keeps running
+	// whatever its restart policy, and a terminal keeps its session.
 	RestartInPlace RestartMethod = "in-place"
 	// RestartSpawn starts a new process and exits: Windows has no exec.
 	RestartSpawn RestartMethod = "spawn"
@@ -54,6 +55,8 @@ func detectRestart(interactive, container bool, goos, platform string) Restart {
 		// Ether is PID 1 (or tini's child): exiting would stop the
 		// container unless a restart policy happens to be set.
 		return Restart{Method: RestartInPlace, Manager: "container"}
+	case !interactive && goos == "windows":
+		return Restart{Method: RestartSupervisor, Manager: "windows-service"}
 	case !interactive:
 		manager := "service"
 		switch {
@@ -61,16 +64,19 @@ func detectRestart(interactive, container bool, goos, platform string) Restart {
 			manager = "systemd"
 		case strings.Contains(platform, "launchd"):
 			manager = "launchd"
-		case goos == "windows":
-			manager = "windows-service"
 		}
-		return Restart{Method: RestartSupervisor, Manager: manager}
+		return Restart{Method: RestartInPlace, Manager: manager}
 	case goos == "windows":
 		return Restart{Method: RestartSpawn, Manager: "terminal"}
 	default:
 		return Restart{Method: RestartInPlace, Manager: "terminal"}
 	}
 }
+
+// startExecutable is this program's path as it started: after a
+// self-update replaced the file, /proc/self/exe names the deleted old one,
+// while this path holds the new binary.
+var startExecutable, _ = os.Executable()
 
 // InContainer reports whether we are running inside a container image
 // (which is also updated by pulling a new image, never in place).
@@ -92,9 +98,12 @@ func InContainer() bool {
 // Windows it starts the new process and returns, and the caller exits. The
 // caller must have stopped serving and released the data directory first.
 func RestartProcess() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+	exe := startExecutable
+	if exe == "" {
+		var err error
+		if exe, err = os.Executable(); err != nil {
+			return err
+		}
 	}
 	return restartProcess(exe, os.Args, os.Environ())
 }
