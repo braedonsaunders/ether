@@ -119,6 +119,14 @@ END
 $$;`)
 }
 
+// Browse totals count from an index alone: every browse filters on type,
+// browsable, adult and a released date, and the visibility rules probe key
+// sets by rowid, so a library-wide count reads one narrow index instead of
+// every title row.
+func init() {
+	store.Register("catalog", 18, `CREATE INDEX catalog_titles_type_browse_count ON catalog_titles(type, browsable, adult, released_ts);`)
+}
+
 // titleMatch is the substring match of query against a title's name,
 // original name or one of its alternative titles (romanized and regional
 // names, so "Sousou no Frieren" finds Frieren). alias prefixes the columns
