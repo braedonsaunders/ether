@@ -169,6 +169,7 @@ type Service struct {
 	cfgMu            sync.RWMutex
 	rcfg             config.Resolver
 	quality          config.Quality
+	catalogLang      string // catalogue metadata language ("en-US"): the server's language
 	debridCachedOnly bool
 	scorer           *FormatScorer
 	scorerErr        error
@@ -254,6 +255,7 @@ func (s *Service) UpdateConfig(cfg config.Config) {
 	s.cfgMu.Lock()
 	s.rcfg = cfg.Resolver
 	s.quality = cfg.Quality
+	s.catalogLang = cfg.Catalog.Language
 	s.debridCachedOnly = cfg.Debrid.CachedOnly
 	s.scorer, s.scorerErr = NewFormatScorer(cfg.Resolver.CustomFormats, cfg.Resolver.CustomFormatScores)
 	changed := s.sources != "" && s.sources != key
@@ -516,7 +518,13 @@ func flightKey(req core.ResolveRequest, profile core.QualityProfile) string {
 	sort.Strings(ex)
 	capsJSON, _ := json.Marshal(req.Client)
 	profileJSON, _ := json.Marshal(profile)
-	return fmt.Sprintf("%d|%s|%s|%s|%s|%s|%t", req.Title.Key, profile.Name, strings.Join(ex, ","), capsJSON, profileJSON, req.Prefer, req.ExactHEVCTranscode)
+	// Without profile languages the viewer's own audio languages decide
+	// which releases are acceptable (acceptedAudio), so they key the flight.
+	var audio []string
+	if len(profile.PreferredLanguages) == 0 && req.User != nil {
+		audio = req.User.AudioLanguages
+	}
+	return fmt.Sprintf("%d|%s|%s|%s|%s|%s|%t|%s", req.Title.Key, profile.Name, strings.Join(ex, ","), capsJSON, profileJSON, req.Prefer, req.ExactHEVCTranscode, strings.Join(audio, ","))
 }
 
 // Resolve implements core.Resolver. Concurrent calls for the same
@@ -1016,9 +1024,11 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 		exclude[id] = true
 	}
 	rcfg := s.resolverCfg()
+	accepted := acceptedAudio(profile, req.User, s.catalogLanguage(), t)
+	upscales := presumedUpscales(results, isAnime(t))
 	var cands []candidate
 	clientRejected := false
-	for _, rel := range results {
+	for ri, rel := range results {
 		rel = withTarget(rel, sreq)
 		ct := CandidateTrace{ReleaseID: rel.ID, Name: rel.Name, Indexer: rel.Indexer, Size: rel.Size}
 		pinned := pinID != "" && rel.ID == pinID
@@ -1108,21 +1118,40 @@ func (s *Service) rankCandidates(ctx context.Context, req core.ResolveRequest, s
 			trace.Candidates = append(trace.Candidates, ct)
 			tr = len(trace.Candidates) - 1
 		}
-		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, bandwidth: s.deliveryFit(sizedForEpisode(rel), req.Client, t)})
+		langOK := audioAcceptable(rel.Info, accepted)
+		starved := bitrateScore(sizedForEpisode(rel), t) < 0 || upscales[ri]
+		if upscales[ri] && trace != nil {
+			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; presumed upscale: ranked as 1080p", "; ")
+		}
+		if !langOK && trace != nil {
+			trace.Candidates[tr].CompatibilityReason = strings.TrimPrefix(trace.Candidates[tr].CompatibilityReason+"; ranked after releases in an accepted audio language", "; ")
+		}
+		cands = append(cands, candidate{policy: policyResult, rel: rel, trace: tr, verified: verified, langOK: langOK, starved: starved, quality: rankQuality(rel.Info, profile, starved), bandwidth: s.deliveryFit(sizedForEpisode(rel), req.Client, t)})
 	}
 	return s.orderCandidates(cands, req.Title, trace), clientRejected, nil
 }
 
 func (s *Service) orderCandidates(cands []candidate, title *core.Title, trace *Trace) []candidate {
 	sort.SliceStable(cands, func(i, j int) bool {
+		// A release whose declared audio is only in languages nobody
+		// asked for is a last resort, whatever its quality or fit.
+		if cands[i].langOK != cands[j].langOK {
+			return cands[i].langOK
+		}
 		// A previously working LAN remux must not outrank a source that
 		// fits this client's slower connection. Unknown sizes remain usable
 		// and an oversized source can still be transcoded as a fallback.
 		if cands[i].bandwidth != cands[j].bandwidth {
 			return cands[i].bandwidth > cands[j].bandwidth
 		}
-		// Availability wins over soft quality preferences, after all hard
-		// profile/client gates above. Keep ranking within each group.
+		// Quality the profile ranks (resolution, then the owner's source
+		// order) comes before the soft score, as in the Starr apps: age,
+		// grabs or an audio codec never lift an encode over a remux, nor a
+		// 1080p over a 4K.
+		if cands[i].quality != cands[j].quality {
+			return cands[i].quality.better(cands[j].quality)
+		}
+		// Within one quality, a source that recently played wins.
 		if cands[i].verified != cands[j].verified {
 			return cands[i].verified
 		}
@@ -1377,7 +1406,7 @@ func rejectPolicy(rel core.Release, t *core.Title, profile core.QualityProfile, 
 		if minMBPerMin > 0 && mbPerMin < minMBPerMin {
 			return "size too small for runtime"
 		}
-		if cfgMax > 0 && mbPerMin > cfgMax {
+		if maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, rel.Info); maxMBPerMin > 0 && mbPerMin > maxMBPerMin {
 			return "size too large for runtime"
 		}
 	}
@@ -1638,8 +1667,9 @@ func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.T
 	cfgMin, cfgMax := profile.SizeBoundsFor(t)
 	if rel.Size > 0 && t.Runtime > 0 {
 		mbPerMin := float64(rel.Size) / (1 << 20) / t.Runtime.Minutes()
+		maxMBPerMin := effectiveMaxSizeMBPerMin(cfgMax, info)
 		if (cfgMin == 0 || mbPerMin >= cfgMin) &&
-			(cfgMax == 0 || mbPerMin <= cfgMax) {
+			(maxMBPerMin == 0 || mbPerMin <= maxMBPerMin) {
 			sc += 5
 		}
 	}
@@ -1665,6 +1695,7 @@ func (s *Service) score(rel core.Release, profile core.QualityProfile, t *core.T
 			sc += 100 * min(gb/80, 1)
 		}
 	}
+	sc += bitrateScore(rel, t)
 	// Age penalty.
 	if !rel.PubDate.IsZero() {
 		ageDays := s.now().Sub(rel.PubDate).Hours() / 24

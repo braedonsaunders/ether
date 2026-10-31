@@ -17,6 +17,9 @@ type candidate struct {
 	rel        core.Release
 	trace      int
 	verified   bool
+	langOK     bool            // declares no audio, or an accepted audio language (acceptedAudio)
+	starved    bool            // below its resolution's bitrate floor (bitrateScore)
+	quality    qualityRank     // the profile's quality order, ahead of the score
 	bandwidth  int             // fits client cap (+1), unknown (0), or exceeds it (-1)
 	prepared   *candidateCheck // validation overlapped with descriptor discovery
 	graceStart time.Time       // discovery start, set only when preparation overran the grace

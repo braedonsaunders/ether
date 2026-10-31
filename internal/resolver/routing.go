@@ -13,8 +13,9 @@ import (
 // starts playback fastest goes first.
 //
 // Quality is never traded for speed. Routing only reorders candidates in
-// the leader's quality tier (height plus HDR kind) whose score is within a
-// margin of the leader's. Within that group:
+// the leader's quality class (sameQuality: height, HDR kind, source class,
+// bitrate floor and audio language) whose score is within a margin of the
+// leader's. Within that group:
 //
 //   - "auto" (the default) prefers the source with the lower measured
 //     startup time once both have enough samples and differ by a clear
@@ -177,7 +178,6 @@ func (s *Service) routeSources(cands []candidate, t *core.Title, trace *Trace) [
 		margin = defaultSourceScoreMargin
 	}
 	lead := cands[0]
-	tier := qualityTier(lead.rel.Info)
 	// Verified candidates are promoted ahead of the score order, so equal-tier
 	// alternatives need not be adjacent to the leader. Explicit source choices
 	// must consider the whole eligible tier instead of stopping at a verified
@@ -185,7 +185,7 @@ func (s *Service) routeSources(cands []candidate, t *core.Title, trace *Trace) [
 	var group []candidate
 	var indexes []int
 	for i, c := range cands {
-		eligible := c.bandwidth >= lead.bandwidth && (!c.verified || explicit) && qualityTier(c.rel.Info) == tier && c.rel.Score >= lead.rel.Score-margin
+		eligible := c.bandwidth >= lead.bandwidth && (!c.verified || explicit) && sameQuality(c, lead) && c.rel.Score >= lead.rel.Score-margin
 		if !eligible {
 			if !explicit {
 				break

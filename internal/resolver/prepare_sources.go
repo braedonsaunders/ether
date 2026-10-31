@@ -49,7 +49,7 @@ func (s *Service) prepareSources(ctx context.Context, cands []candidate, title *
 	// Discovery can only promote an eligible peer of the leading tier.
 	// Lower tiers remain fallbacks and resolve on demand if reached.
 	eligible := func(c candidate) bool {
-		return c.bandwidth >= lead.bandwidth && qualityTier(c.rel.Info) == qualityTier(lead.rel.Info) && c.rel.Score >= lead.rel.Score-margin
+		return c.bandwidth >= lead.bandwidth && sameQuality(c, lead) && c.rel.Score >= lead.rel.Score-margin
 	}
 	var releases []core.Release
 	var torrents []int // indexes preparation could promote
