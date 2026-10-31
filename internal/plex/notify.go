@@ -58,16 +58,27 @@ func trackID(userID int64, clientID, sessionID string) string {
 	return fmt.Sprintf("%d/%s/%s", userID, clientID, sessionID)
 }
 func (t *sessionActivities) bind(b *sessions.Broker) {
-	if t != nil {
-		t.broker = b
+	if t == nil {
+		return
 	}
+	t.mu.Lock()
+	t.broker = b
+	t.mu.Unlock()
+}
+func (t *sessionActivities) mounted() *sessions.Broker {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.broker
 }
 func (t *sessionActivities) has(id string) bool {
 	if t == nil {
 		return false
 	}
-	if t.broker != nil {
-		return t.broker.HasPlexActivity(id)
+	if b := t.mounted(); b != nil {
+		return b.HasPlexActivity(id)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -78,8 +89,8 @@ func (t *sessionActivities) ensure(id string, key int) {
 	if t == nil {
 		return
 	}
-	if t.broker != nil {
-		t.broker.EnsurePlexActivity(id, key)
+	if b := t.mounted(); b != nil {
+		b.EnsurePlexActivity(id, key)
 		return
 	}
 	t.mu.Lock()
@@ -96,8 +107,8 @@ func (t *sessionActivities) update(id string, fn func(*playEntry)) playEntry {
 		}
 		return zero
 	}
-	if t.broker != nil {
-		act := t.broker.UpsertPlexActivity(id, func(a *sessions.PlexActivity) {
+	if b := t.mounted(); b != nil {
+		act := b.UpsertPlexActivity(id, func(a *sessions.PlexActivity) {
 			e := activityEntry(*a)
 			fn(&e)
 			*a = entryActivity(e)
@@ -119,8 +130,8 @@ func (t *sessionActivities) remove(id string) (playEntry, bool) {
 	if t == nil {
 		return playEntry{}, false
 	}
-	if t.broker != nil {
-		act, ok := t.broker.RemovePlexActivity(id)
+	if b := t.mounted(); b != nil {
+		act, ok := b.RemovePlexActivity(id)
 		if !ok {
 			return playEntry{}, false
 		}
@@ -139,8 +150,8 @@ func (t *sessionActivities) list() []playEntry {
 	if t == nil {
 		return nil
 	}
-	if t.broker != nil {
-		acts := t.broker.ListPlexActivities()
+	if b := t.mounted(); b != nil {
+		acts := b.ListPlexActivities()
 		out := make([]playEntry, 0, len(acts))
 		for _, a := range acts {
 			out = append(out, activityEntry(a))
@@ -159,8 +170,8 @@ func (t *sessionActivities) expire(now time.Time, ttl time.Duration) []playEntry
 	if t == nil {
 		return nil
 	}
-	if t.broker != nil {
-		acts := t.broker.ExpirePlexActivities(now, ttl)
+	if b := t.mounted(); b != nil {
+		acts := b.ExpirePlexActivities(now, ttl)
 		out := make([]playEntry, 0, len(acts))
 		for _, a := range acts {
 			out = append(out, activityEntry(a))
