@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -107,11 +106,11 @@ func (i *instance) intros(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	var clips []frontend.Extra
-	if i.host.Cinema != nil && limit > 0 && detail.Title.Type == core.TypeMovie {
+	if i.host.Cinema != nil && limit > 0 && detail.Title.Type == "movie" {
 		var err error
 		clips, err = i.host.Cinema.Trailers(r.Context(), detailViewer(r, i), device(r), detail.Title.Key, limit)
 		if err != nil {
-			if errors.Is(err, core.ErrNotFound) || errors.Is(err, frontend.ErrNotFound) {
+			if errors.Is(err, frontend.ErrNotFound) {
 				http.NotFound(w, r)
 				return
 			}
@@ -166,8 +165,8 @@ func (i *instance) authorizedItem(w http.ResponseWriter, r *http.Request) (front
 	return detail, true
 }
 
-func (i *instance) extraPlayback(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, key core.RatingKey, playback bool) bool {
-	if key.Kind() != core.KindExtra || i.host.ExtraStreams == nil {
+func (i *instance) extraPlayback(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, key frontend.RatingKey, playback bool) bool {
+	if key.Kind() != frontend.KindExtra || i.host.ExtraStreams == nil {
 		return false
 	}
 	clip, ok := i.host.ExtraStreams.Lookup(key)
@@ -206,7 +205,7 @@ func (i *instance) extraPlayback(w http.ResponseWriter, r *http.Request, viewer 
 	return true
 }
 
-func (i *instance) serveExtra(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, key core.RatingKey) {
+func (i *instance) serveExtra(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, key frontend.RatingKey) {
 	if i.host.ExtraStreams == nil {
 		http.NotFound(w, r)
 		return

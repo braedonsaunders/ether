@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
@@ -581,7 +580,7 @@ func (i *instance) streamAlias(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", 401)
 		return
 	}
-	if key, keyErr := ids.ParseRatingKeyGUID(r.PathValue("id")); keyErr == nil && key.Kind() == core.KindExtra {
+	if key, keyErr := ids.ParseRatingKeyGUID(r.PathValue("id")); keyErr == nil && key.Kind() == frontend.KindExtra {
 		streamName := strings.ToLower(r.PathValue("name"))
 		if streamName == "stream" || strings.HasPrefix(streamName, "stream.") {
 			i.serveExtra(w, r, viewer, key)

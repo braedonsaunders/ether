@@ -6,11 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
-	"github.com/braedonsaunders/ether/internal/langtag"
 )
 
 func (i *instance) remoteSubtitles(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +23,7 @@ func (i *instance) remoteSubtitles(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	language := langtag.Normalize(r.PathValue("language"))
+	language := frontend.NormalizeLanguage(r.PathValue("language"))
 	if language == "" {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
@@ -40,7 +38,7 @@ func (i *instance) remoteSubtitles(w http.ResponseWriter, r *http.Request) {
 	}
 	offers, err := i.host.Subtitles.Search(r.Context(), viewer, device(r), key, language)
 	if err != nil {
-		if errors.Is(err, core.ErrNotFound) || errors.Is(err, frontend.ErrNotFound) {
+		if errors.Is(err, frontend.ErrNotFound) {
 			http.NotFound(w, r)
 			return
 		}
@@ -96,7 +94,7 @@ func (i *instance) downloadSubtitle(w http.ResponseWriter, r *http.Request) {
 	}
 	index, err := i.host.Subtitles.Download(r.Context(), viewer, device(r), key, offerID)
 	if err != nil {
-		if errors.Is(err, core.ErrNotFound) || errors.Is(err, frontend.ErrNotFound) {
+		if errors.Is(err, frontend.ErrNotFound) {
 			http.NotFound(w, r)
 			return
 		}
@@ -110,7 +108,7 @@ func (i *instance) downloadSubtitle(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, map[string]any{"NewIndex": index})
 }
 
-func (i *instance) subtitleItem(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer) (core.RatingKey, bool) {
+func (i *instance) subtitleItem(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer) (frontend.RatingKey, bool) {
 	if i.host.Experience == nil {
 		http.NotFound(w, r)
 		return 0, false

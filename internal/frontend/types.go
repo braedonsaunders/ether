@@ -28,9 +28,12 @@ const (
 	KindShow    = core.KindShow
 	KindSeason  = core.KindSeason
 	KindEpisode = core.KindEpisode
+	KindExtra   = core.KindExtra
 )
 
-func ShowKey(tmdb int64) RatingKey { return core.ShowKey(tmdb) }
+func ShowKey(tmdb int64) RatingKey  { return core.ShowKey(tmdb) }
+func MovieKey(tmdb int64) RatingKey { return core.MovieKey(tmdb) }
+func ExtraKey(id int64) RatingKey   { return core.ExtraKey(id) }
 func SeasonKey(show int64, season int) RatingKey {
 	return core.SeasonKey(show, season)
 }

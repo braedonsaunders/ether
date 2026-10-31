@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
@@ -132,7 +131,7 @@ func attachWatchMarkers(item map[string]any, segments []any) {
 	}
 }
 
-func (i *instance) skipIntroAtStart(r *http.Request, viewer *frontend.Viewer, scope frontend.VersionScope, key core.RatingKey, versionHandle string, position time.Duration) time.Duration {
+func (i *instance) skipIntroAtStart(r *http.Request, viewer *frontend.Viewer, scope frontend.VersionScope, key frontend.RatingKey, versionHandle string, position time.Duration) time.Duration {
 	settings := i.skipSettings(r, viewer)
 	if !settings.seekIntro() || i.host.Experience == nil {
 		return position

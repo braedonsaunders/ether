@@ -7,10 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/caps"
-	"github.com/braedonsaunders/ether/internal/langtag"
 )
 
 func (i *instance) subtitleRoutes() error {
@@ -64,14 +62,14 @@ func (i *instance) searchSubtitles(w http.ResponseWriter, r *http.Request) {
 	}
 	seen := map[string]bool{}
 	for _, requested := range languages {
-		language := langtag.Normalize(requested)
+		language := frontend.NormalizeLanguage(requested)
 		if !subtitleLanguage.MatchString(language) {
 			warnings = append(warnings, "Skipped an unrecognized language")
 			continue
 		}
 		offers, err := i.host.Subtitles.Search(r.Context(), viewer, device(r), key, language)
 		if err != nil {
-			if errors.Is(err, core.ErrNotFound) || errors.Is(err, frontend.ErrNotFound) {
+			if errors.Is(err, frontend.ErrNotFound) {
 				http.NotFound(w, r)
 				return
 			}
@@ -79,7 +77,7 @@ func (i *instance) searchSubtitles(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, offer := range offers {
-			language := langtag.Normalize(offer.Language)
+			language := frontend.NormalizeLanguage(offer.Language)
 			if !subtitleLanguage.MatchString(language) || offer.ID == "" || seen[offer.ID] {
 				continue
 			}
@@ -112,7 +110,7 @@ func (i *instance) downloadSubtitle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
-	if !strings.EqualFold(body.Provider, "opensubtitles") || !subtitleLanguage.MatchString(langtag.Normalize(body.Language)) {
+	if !strings.EqualFold(body.Provider, "opensubtitles") || !subtitleLanguage.MatchString(frontend.NormalizeLanguage(body.Language)) {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -125,7 +123,7 @@ func (i *instance) downloadSubtitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := i.host.Subtitles.Download(r.Context(), viewer, device(r), key, body.SubtitleID); err != nil {
-		if errors.Is(err, core.ErrNotFound) || errors.Is(err, frontend.ErrNotFound) {
+		if errors.Is(err, frontend.ErrNotFound) {
 			http.NotFound(w, r)
 			return
 		}
@@ -134,19 +132,19 @@ func (i *instance) downloadSubtitle(w http.ResponseWriter, r *http.Request) {
 	}
 	reply(w, http.StatusOK, map[string]any{"subtitle": map[string]any{
 		"id": body.SubtitleID, "media_file_id": body.FileID, "provider": "opensubtitles",
-		"language": langtag.Normalize(body.Language), "format": "srt", "release_name": body.ReleaseName,
+		"language": frontend.NormalizeLanguage(body.Language), "format": "srt", "release_name": body.ReleaseName,
 		"score": body.Score, "hearing_impaired": body.HearingImpaired,
 		"created_at": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 		"timing":     map[string]any{"offset_ms": 0, "scale": 1.0},
 	}})
 }
 
-func (i *instance) authorizedFile(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, fileID string) (core.RatingKey, bool) {
+func (i *instance) authorizedFile(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, fileID string) (frontend.RatingKey, bool) {
 	if i.host.SourceOffers == nil || i.host.Experience == nil {
 		http.NotFound(w, r)
 		return 0, false
 	}
-	var client core.ClientCaps
+	var client frontend.ClientCaps
 	if i.host.Capabilities != nil {
 		built, err := i.host.Capabilities.Build(i.identityContext(r), frontend.CapabilityRequest{Viewer: viewer, Device: caps.DeviceInfo{Protocol: "silo", ClientID: device(r).ID, Product: device(r).Client, Version: device(r).Version, DeviceName: device(r).DeviceName}, UserAgent: r.UserAgent()})
 		if err != nil {
