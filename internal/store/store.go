@@ -150,6 +150,30 @@ type Options struct {
 	// SnapshotFiles are stored with a SQLite pre-migrate snapshot (the
 	// settings and credential key matching the database), if one is taken.
 	SnapshotFiles []SnapshotFile
+	// Progress, when set, hears what opening is doing: the pre-migrate
+	// snapshot and each pending migration (for a startup status page).
+	Progress func(Progress)
+}
+
+// Progress is reported while a database opens. Stage is StageSnapshot
+// (copying a SQLite database before migrating it) or StageMigrate, where
+// Done of Total pending migrations have been applied.
+type Progress struct {
+	Stage       string
+	Done, Total int
+}
+
+// Progress stages.
+const (
+	StageSnapshot = "snapshot"
+	StageMigrate  = "migrate"
+)
+
+// report calls fn when it is set.
+func report(fn func(Progress), p Progress) {
+	if fn != nil {
+		fn(p)
+	}
 }
 
 // Querier is the read side of *sql.DB and *sql.Tx.
@@ -251,20 +275,20 @@ func OpenWith(ctx context.Context, o Options) (*sql.DB, Dialect, error) {
 		if o.URL == "" {
 			return nil, d, errors.New("store: postgres requires a database URL")
 		}
-		db, err := openPostgres(ctx, o.URL, log, o.MigrationGate)
+		db, err := openPostgres(ctx, o.URL, log, o.MigrationGate, o.Progress)
 		return db, d, err
 	default:
 		if o.DataDir == "" {
 			return nil, d, errors.New("store: sqlite requires a data directory")
 		}
-		db, err := openSQLite(ctx, filepath.Join(o.DataDir, "ether.db"), o.SnapshotFiles)
+		db, err := openSQLite(ctx, filepath.Join(o.DataDir, "ether.db"), o.SnapshotFiles, o.Progress)
 		return db, d, err
 	}
 }
 
 // Open opens (creating if needed) ether.db in dataDir and migrates it.
 func Open(ctx context.Context, dataDir string) (*sql.DB, error) {
-	return openSQLite(ctx, filepath.Join(dataDir, "ether.db"), nil)
+	return openSQLite(ctx, filepath.Join(dataDir, "ether.db"), nil, nil)
 }
 
 // OpenPath opens a database file; ":memory:" works for tests (single conn).
@@ -276,10 +300,10 @@ func OpenPath(ctx context.Context, path string) (*sql.DB, error) {
 			return OpenTestPostgres(ctx, u)
 		}
 	}
-	return openSQLite(ctx, path, nil)
+	return openSQLite(ctx, path, nil, nil)
 }
 
-func openSQLite(ctx context.Context, path string, files []SnapshotFile) (*sql.DB, error) {
+func openSQLite(ctx context.Context, path string, files []SnapshotFile, progress func(Progress)) (*sql.DB, error) {
 	// journal_size_limit caps the WAL left on disk after a checkpoint; without
 	// it one large transaction leaves a WAL file that never shrinks.
 	// wal_autocheckpoint=0 keeps a commit from running a checkpoint. Under
@@ -298,14 +322,14 @@ func openSQLite(ctx context.Context, path string, files []SnapshotFile) (*sql.DB
 	}
 	if path == ":memory:" {
 		db.SetMaxOpenConns(1)
-	} else if ok, err := snapshotBeforeMigrate(ctx, db, path, registered(), files); err != nil {
+	} else if ok, err := snapshotBeforeMigrate(ctx, db, path, registered(), files, progress); err != nil {
 		// Best effort: a full disk or read-only directory must not stop
 		// the server from starting.
 		slog.Warn("store: could not snapshot the database before migrating", "path", path+PreMigrateSuffix, "err", err)
 	} else if ok {
 		slog.Info("store: snapshot taken before applying database migrations", "path", path+PreMigrateSuffix)
 	}
-	if err := Migrate(ctx, db); err != nil {
+	if err := migrateSQLite(ctx, db, progress); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -422,20 +446,40 @@ const createMigrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
 // Migrate applies every registered migration db has not yet recorded.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	if DialectOf(db) == Postgres {
-		return migratePostgres(ctx, db, nil)
+		return migratePostgres(ctx, db, nil, nil)
 	}
+	return migrateSQLite(ctx, db, nil)
+}
+
+func migrateSQLite(ctx context.Context, db *sql.DB, progress func(Progress)) error {
 	if _, err := db.ExecContext(ctx, createMigrationsTable); err != nil {
 		return err
 	}
-	for _, m := range registered() {
+	applied := func(m migration) (bool, error) {
 		var n int
-		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE component=? AND version=?`,
-			m.component, m.version).Scan(&n); err != nil {
+		err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE component=? AND version=?`,
+			m.component, m.version).Scan(&n)
+		return n > 0, err
+	}
+	// Counted up front for progress; each is checked again right before it
+	// runs, because a migration may record another as applied.
+	var pending []migration
+	for _, m := range registered() {
+		done, err := applied(m)
+		if err != nil {
 			return err
 		}
-		if n > 0 {
+		if !done {
+			pending = append(pending, m)
+		}
+	}
+	for i, m := range pending {
+		if done, err := applied(m); err != nil {
+			return err
+		} else if done {
 			continue
 		}
+		report(progress, Progress{Stage: StageMigrate, Done: i, Total: len(pending)})
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err

@@ -94,7 +94,7 @@ func roundTrip(t *testing.T, src, dst *sql.DB) {
 
 func openSQLiteMemory(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := openSQLite(context.Background(), ":memory:", nil)
+	db, err := openSQLite(context.Background(), ":memory:", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -31,5 +31,12 @@ func Maintain(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `PRAGMA optimize`); err != nil {
 		return fmt.Errorf("optimize: %w", err)
 	}
+	res, err := QuickCheck(ctx, db)
+	if err != nil {
+		return fmt.Errorf("integrity check: %w", err)
+	}
+	if !res.OK {
+		return &CorruptionError{Integrity: res}
+	}
 	return nil
 }
