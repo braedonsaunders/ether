@@ -172,11 +172,21 @@ func (c *Catalog) searchTitlesOpts(ctx context.Context, query string, types []co
 	localSQL := `SELECT ` + titleCols + ` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
 		AND ` + match + ` ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
 	localArgs = append(localArgs, year, year, limit*2)
-	if unfiltered {
+	walked := false
+	if year == 0 {
+		// A dense term: the same candidates from the popularity index.
+		if keys, ok, err := c.searchByPopularity(ctx, query, limit*2, unfiltered); err == nil && ok {
+			walked = true
+			local, localErr = c.searchCandidates(ctx, keys, unfiltered)
+		}
+	}
+	switch {
+	case walked:
+	case unfiltered:
 		localSQL = `SELECT ` + titleCols + ` FROM catalog_titles WHERE type IN ('movie','show','season','episode')
 			AND adult=0 AND ` + match + ` ORDER BY CASE WHEN ?>0 AND year=? THEN 0 ELSE 1 END, popularity DESC LIMIT ?`
 		local, localErr = c.queryTitlesUnfiltered(ctx, localSQL, localArgs...)
-	} else {
+	default:
 		local, localErr = c.queryTitles(ctx, localSQL, localArgs...)
 	}
 	if localErr == nil {
@@ -784,4 +794,31 @@ func (c *Catalog) releasedTitles(items []core.Title) []core.Title {
 		}
 	}
 	return out
+}
+
+// searchCandidates reads the titles of keys in their order, as the sorted
+// search query returns them.
+func (c *Catalog) searchCandidates(ctx context.Context, keys []core.RatingKey, unfiltered bool) ([]core.Title, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(keys))
+	at := make(map[core.RatingKey]int, len(keys))
+	for i, k := range keys {
+		args[i] = int64(k)
+		at[k] = i
+	}
+	q := `SELECT ` + titleCols + ` FROM catalog_titles WHERE key IN (` + placeholders(len(keys)) + `)`
+	var titles []core.Title
+	var err error
+	if unfiltered {
+		titles, err = c.queryTitlesUnfiltered(ctx, q, args...)
+	} else {
+		titles, err = c.queryTitles(ctx, q, args...)
+	}
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(titles, func(i, j int) bool { return at[titles[i].Key] < at[titles[j].Key] })
+	return titles, nil
 }
