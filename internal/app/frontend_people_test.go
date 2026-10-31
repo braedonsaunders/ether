@@ -367,6 +367,11 @@ func TestProductionPeopleIgnoresStaleMovieCreditCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The movie cache is also minute-scoped. Refresh it immediately before the
+	// out-of-process delete so the stale snapshot is the current minute.
+	if warm, err := a.catalog.CachedGet(ctx, key); err != nil || len(warm.Cast) != 1 {
+		t.Fatalf("current-minute cache %+v %v", warm, err)
+	}
 	if _, err = a.db.Exec(`DELETE FROM catalog_credits WHERE key=? AND person_tmdb=30`, int64(key)); err != nil {
 		t.Fatal(err)
 	}
