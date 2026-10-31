@@ -220,6 +220,22 @@ describe("Release selection", () => {
       sameQualityAlternatives: 3,
     });
   });
+
+  it("keeps everyday choices up front and tucks health and memory behind more options", async () => {
+    renderApp("/releases/selection");
+    expect(
+      await screen.findByLabelText("Allow CAM and telesync releases", {}, WAIT),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Releases to keep ready")).toBeInTheDocument();
+    expect(screen.getByLabelText("Same-quality versions to offer")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Health check samples")).toBeNull();
+    expect(screen.queryByLabelText("Remember searches for")).toBeNull();
+    expect(screen.getByLabelText("Blocked release groups")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More options: Release selection" }));
+    expect(await screen.findByLabelText("Health check samples", {}, WAIT)).toHaveValue(12);
+    expect(screen.getByLabelText("Remember searches for")).toHaveValue("6h0m0s");
+    expect(screen.getByLabelText("Retry unavailable titles after")).toHaveValue("24h0m0s");
+  });
 });
 
 describe("Release traces", () => {

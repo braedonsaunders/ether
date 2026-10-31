@@ -413,6 +413,8 @@ export const RESOLVER: FieldGroup[] = localized(() => [
           "Other releases with the same cut, resolution and HDR type, listed after Auto in Plex's Play Version menu so you can switch if one fails.",
         ),
       },
+    ],
+    more: [
       {
         key: "healthSamples",
         label: t("Health check samples"),
