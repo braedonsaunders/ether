@@ -18,7 +18,7 @@ func TestCreditsUseParentAuthorizedFacetAndPortrait(t *testing.T) {
 	personID, _ := ids.GUID(ids.User, 12)
 	grants := &imageGrantsFake{}
 	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie", Cast: []core.Person{{TMDB: 12, Name: "Actor", Role: "Hero"}, {TMDB: 13, Name: "Hidden"}}, Directors: []core.Person{{TMDB: 12, Name: "Actor"}}}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/poster", BlurHash: "LGF5"}, {Kind: frontend.ImagePerson, Subject: "tmdb:13", Path: "/hidden"}}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: 5, Type: "movie", Cast: []core.Person{{TMDB: 12, Name: "Actor", Role: "Hero"}, {TMDB: 13, Name: "Hidden"}}, Directors: []core.Person{{TMDB: 12, Name: "Actor"}}}, ImagesAuthoritative: true, Images: []frontend.Image{{Kind: frontend.ImagePerson, Subject: "tmdb:12", Path: "/poster", Width: 400, Height: 200, BlurHash: "LGF5"}, {Kind: frontend.ImagePerson, Subject: "tmdb:13", Path: "/hidden"}}}, nil
 	}, PersonFacetIDsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, key frontend.RatingKey, requested []int64) (map[int64]string, error) {
 		if v != viewer || key != 5 || len(requested) != 2 {
 			t.Fatal(v, key, requested)
@@ -40,7 +40,7 @@ func TestCreditsUseParentAuthorizedFacetAndPortrait(t *testing.T) {
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got.People) != 2 || got.People[0].Id != personID || got.People[0].PrimaryImageTag != "scoped-image/poster" || got.People[1].Type != "Director" || grants.issued != 1 {
 		t.Fatal(w.Code, w.Body.String(), grants.issued)
 	}
-	if !strings.Contains(w.Body.String(), `"ImageBlurHashes":{"Primary":{"scoped-image/poster":"LGF5"}}`) {
+	if !strings.Contains(w.Body.String(), `"ImageBlurHashes":{"Primary":{"scoped-image/poster":"LGF5"}}`) || strings.Contains(w.Body.String(), "PrimaryImageAspectRatio") {
 		t.Fatal(w.Body.String())
 	}
 }

@@ -88,6 +88,8 @@ func (i *instance) peopleDTO(r *http.Request, viewer *frontend.Viewer, token str
 		if grant := granted[c.id]; grant != "" {
 			dto["PrimaryImageTag"] = grant
 			i.addImageMetadata(dto, "Primary", grant, grants[c.id])
+			// A person record carries the portrait hash, not the item aspect ratio.
+			delete(dto, "PrimaryImageAspectRatio")
 		}
 		result = append(result, dto)
 	}
