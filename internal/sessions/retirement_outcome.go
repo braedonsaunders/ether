@@ -25,12 +25,11 @@ func (b *Broker) retireBackends(ctx context.Context, s *brokerSession, stopSourc
 					failed = err
 					enc = nil
 				}
-			} else {
-				b.deps.Transcoder.Stop(s.public.ID)
 			}
-		} else {
-			b.deps.Transcoder.Stop(s.public.ID)
 		}
+		// Stop still removes the session before Stop returns. RetireEncoder
+		// only seals the outcome the barrier waits on.
+		b.deps.Transcoder.Stop(s.public.ID)
 	}
 	if stopSource {
 		if owned, isOwned := b.deps.Playback.(core.OwnedSourcePlayback); isOwned {
