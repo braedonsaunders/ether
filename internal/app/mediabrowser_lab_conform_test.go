@@ -606,7 +606,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	for _, x := range listing.Items {
 		tmdbID, _ := strconv.ParseInt(x.ProviderIds["Tmdb"], 10, 64)
 		tvdb, _ := strconv.ParseInt(x.ProviderIds["Tvdb"], 10, 64)
-		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
+		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg", LogoPath: "/fixture.jpg"}
 		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
 		title.Genres, title.Countries, title.Status, title.Keywords = x.Genres, x.ProductionLocations, x.Status, x.Tags
 		if parsed, err := time.Parse(time.RFC3339Nano, x.EndDate); err == nil {

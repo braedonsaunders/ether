@@ -681,3 +681,40 @@ func mountJellyfin(t *testing.T, exp frontendtest.Experience) frontend.Instance 
 	}
 	return inst
 }
+
+type showArtFake struct {
+	imageGrantsFake
+	calls int
+}
+
+func (f *showArtFake) IssueBatch(context.Context, frontend.ImageBatchRequest) ([]frontend.ImageBatchItem, error) {
+	f.calls++
+	return []frontend.ImageBatchItem{{
+		Item:          core.ShowKey(42),
+		Authoritative: true,
+		Images: []frontend.GrantedImage{
+			{Image: frontend.Image{Kind: frontend.ImagePoster}, Secret: "show-primary"},
+			{Image: frontend.Image{Kind: frontend.ImageLogo}, Secret: "show-logo"},
+			{Image: frontend.Image{Kind: frontend.ImageBackdrop}, Secret: "show-backdrop"},
+		},
+	}}, nil
+}
+
+func TestJellyfinEpisodeInheritsShowArtwork(t *testing.T) {
+	grants := &showArtFake{}
+	i := &instance{protocol: "jellyfin", host: frontend.Host{ImageGrants: grants}}
+	show := core.ShowKey(42)
+	r := withSeriesStudioCache(httptest.NewRequest(http.MethodGet, "/Items", nil))
+	r.Header.Set("X-Emby-Token", "grant")
+	item := map[string]any{}
+	i.shapeJellyfinItem(r, &frontend.Viewer{ID: 1}, item, frontend.Title{Key: core.EpisodeKey(42, 1, 3), Type: "episode", Season: 1, Episode: 3})
+	seriesID := ids.RatingKeyGUID(show)
+	backs, _ := item["ParentBackdropImageTags"].([]string)
+	if item["ParentLogoImageTag"] != "show-logo" || item["ParentLogoItemId"] != seriesID || item["ParentPrimaryImageTag"] != "show-primary" || item["SeriesPrimaryImageTag"] != "show-primary" || len(backs) != 1 || backs[0] != "show-backdrop" || item["ParentBackdropItemId"] != seriesID {
+		t.Fatal(item)
+	}
+	i.shapeJellyfinItem(r, &frontend.Viewer{ID: 1}, map[string]any{}, frontend.Title{Key: core.EpisodeKey(42, 1, 4), Type: "episode", Season: 1, Episode: 4})
+	if grants.calls != 1 {
+		t.Fatal(grants.calls)
+	}
+}

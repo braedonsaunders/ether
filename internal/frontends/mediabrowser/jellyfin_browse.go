@@ -187,6 +187,7 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 		for _, key := range []string{"ParentBackdropItemId", "ParentLogoImageTag", "ParentLogoItemId", "ParentPrimaryImageItemId", "ParentPrimaryImageTag", "SeriesPrimaryImageTag"} {
 			setMissing(item, key, nil)
 		}
+		i.attachParentArtwork(r, item, title)
 	}
 	if title.ChildCount > 0 {
 		setMissing(item, "ChildCount", title.ChildCount)
@@ -846,8 +847,63 @@ func withSeriesStudioCache(r *http.Request) *http.Request {
 	if r == nil {
 		return r
 	}
-	if _, ok := r.Context().Value(seriesStudioCacheKey{}).(map[frontend.RatingKey]string); ok {
+	if _, ok := r.Context().Value(seriesStudioCacheKey{}).(map[frontend.RatingKey]string); !ok {
+		r = r.WithContext(context.WithValue(r.Context(), seriesStudioCacheKey{}, map[frontend.RatingKey]string{}))
+	}
+	if _, ok := r.Context().Value(showArtworkCacheKey{}).(map[frontend.RatingKey]map[string]any); ok {
 		return r
 	}
-	return r.WithContext(context.WithValue(r.Context(), seriesStudioCacheKey{}, map[frontend.RatingKey]string{}))
+	return r.WithContext(context.WithValue(r.Context(), showArtworkCacheKey{}, map[frontend.RatingKey]map[string]any{}))
+}
+
+type showArtworkCacheKey struct{}
+
+// attachParentArtwork copies the show's issued image tags onto an episode or
+// season. The tags are grants for the parent item, not copies of the tag text
+// from another server.
+func (i *instance) attachParentArtwork(r *http.Request, item map[string]any, title frontend.Title) {
+	if i == nil || r == nil || item == nil {
+		return
+	}
+	show := title.ShowKey
+	if show == 0 && (title.Key.Kind() == frontend.KindEpisode || title.Key.Kind() == frontend.KindSeason) {
+		show = frontend.ShowKey(title.Key.TMDB())
+	}
+	if show == 0 {
+		return
+	}
+	images := i.cachedShowArtwork(r, show)
+	seriesID := ids.RatingKeyGUID(show)
+	if tags, _ := images["ImageTags"].(map[string]string); len(tags) > 0 {
+		if logo := tags["Logo"]; logo != "" {
+			item["ParentLogoImageTag"] = logo
+			item["ParentLogoItemId"] = seriesID
+		}
+		if primary := tags["Primary"]; primary != "" {
+			item["ParentPrimaryImageTag"] = primary
+			item["ParentPrimaryImageItemId"] = seriesID
+			item["SeriesPrimaryImageTag"] = primary
+		}
+	}
+	if backs, _ := images["BackdropImageTags"].([]string); len(backs) > 0 {
+		item["ParentBackdropImageTags"] = backs
+		item["ParentBackdropItemId"] = seriesID
+	}
+}
+
+func (i *instance) cachedShowArtwork(r *http.Request, show frontend.RatingKey) map[string]any {
+	cache, _ := r.Context().Value(showArtworkCacheKey{}).(map[frontend.RatingKey]map[string]any)
+	if cache != nil {
+		if art, ok := cache[show]; ok {
+			return art
+		}
+	}
+	art := map[string]any{}
+	if row := i.gridImages(r, []frontend.RatingKey{show})[show]; row != nil {
+		art = row
+	}
+	if cache != nil {
+		cache[show] = art
+	}
+	return art
 }
