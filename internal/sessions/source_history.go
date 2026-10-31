@@ -47,15 +47,15 @@ func (b *Broker) publishOpenedSource(s *brokerSession) {
 	}
 	live.historyEpoch = epoch
 	b.mu.Unlock()
-	s.historyEpoch = epoch
-	b.recordOpenedSource(ctx, s)
+	b.recordOpenedSource(ctx, s, epoch)
 }
 
 // recordOpenedSource stores the started file's probe facts. Later progress
 // samples still advance the same history. An unknown source identity is left
-// untouched.
-func (b *Broker) recordOpenedSource(ctx context.Context, s *brokerSession) {
-	if s == nil || s.historyEpoch <= 0 || b.deps.SourceHistory == nil {
+// untouched. epoch is the value stored on the live session; it is not written
+// back onto s, which other requests copy without this goroutine's lock.
+func (b *Broker) recordOpenedSource(ctx context.Context, s *brokerSession, epoch int64) {
+	if s == nil || epoch <= 0 || b.deps.SourceHistory == nil {
 		return
 	}
 	snapshotter, ok := b.deps.Playback.(core.PlaybackSourceSnapshot)
@@ -68,14 +68,14 @@ func (b *Broker) recordOpenedSource(ctx context.Context, s *brokerSession) {
 	}
 	b.mu.Lock()
 	current := b.sessions[s.public.ID]
-	if current == nil || current.playID != s.playID || current.historyEpoch != s.historyEpoch {
+	if current == nil || current.playID != s.playID || current.historyEpoch != epoch {
 		b.mu.Unlock()
 		return
 	}
 	current.historySequence++
 	sequence := current.historySequence
 	b.mu.Unlock()
-	if err = b.deps.SourceHistory.RecordLastSource(ctx, s.public.ViewerID, s.public.Item, s.historyEpoch, sequence, source); err != nil && b.deps.OnEventError != nil {
+	if err = b.deps.SourceHistory.RecordLastSource(ctx, s.public.ViewerID, s.public.Item, epoch, sequence, source); err != nil && b.deps.OnEventError != nil {
 		b.deps.OnEventError(err)
 	}
 }

@@ -42,18 +42,44 @@ func reserveDeliveryToken(ctx context.Context, db *sql.DB) (int64, error) {
 }
 
 func (b *Broker) bindDeliveryAuthority(ctx context.Context, s *brokerSession, ps *core.PlaySession) error {
-	if b == nil || b.deps.DB == nil || s == nil || s.deliveryToken <= 0 {
+	if b == nil || b.deps.DB == nil || s == nil {
 		return nil
 	}
 	b.mu.Lock()
 	live := b.sessions[s.public.ID]
-	if live == nil {
+	if live == nil || live.playID != s.playID {
+		b.mu.Unlock()
+		return core.ErrNotAvailable
+	}
+	token := live.deliveryToken
+	b.mu.Unlock()
+	if token <= 0 {
+		var err error
+		token, err = reserveDeliveryToken(ctx, b.deps.DB)
+		if err != nil {
+			return err
+		}
+		b.mu.Lock()
+		live = b.sessions[s.public.ID]
+		if live == nil || live.playID != s.playID {
+			b.mu.Unlock()
+			return core.ErrNotAvailable
+		}
+		if live.deliveryToken <= 0 {
+			live.deliveryToken = token
+		} else {
+			token = live.deliveryToken
+		}
+		b.mu.Unlock()
+	}
+	b.mu.Lock()
+	live = b.sessions[s.public.ID]
+	if live == nil || live.playID != s.playID || live.deliveryToken != token {
 		b.mu.Unlock()
 		return core.ErrNotAvailable
 	}
 	live.deliveryGeneration++
 	generation := live.deliveryGeneration
-	token := live.deliveryToken
 	sessionID := live.deliverySession
 	b.mu.Unlock()
 	release := s.playID

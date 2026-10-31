@@ -781,18 +781,6 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		deliverySession = id
 	}
 	s := &brokerSession{public: copySession(session), grant: grant, playID: ps.ID, clientID: p.request.Caps.ClientID, playbackID: playbackID, caps: p.request.Caps, opts: p.request.Intent.Options, decision: p.decision, allowTranscoding: p.request.Intent.AllowTranscoding, versionHandle: p.versionHandle, exactRelease: p.exactRelease, sourcePinned: p.pinned, sourceETag: p.etag, deliverySession: deliverySession}
-	if b.deps.DB != nil {
-		token, tokenErr := reserveDeliveryToken(ctx, b.deps.DB)
-		if tokenErr != nil {
-			return frontend.Session{}, tokenErr
-		}
-		s.deliveryToken = token
-	}
-	if b.deps.SourceHistory != nil && session.Protocol != "plex" {
-		// The epoch and the opened-file facts are durable bookkeeping. The
-		// session URL does not wait for that write.
-		go b.publishOpenedSource(s)
-	}
 	barrier, barrierErr := b.admitSessionBarrier(ctx, v.ID, string(req.Protocol), p.request.Device.ID, p.request.Item, ps.ID, id)
 	if barrierErr != nil {
 		if errors.Is(barrierErr, errTransferCommitUnknown) {
@@ -843,6 +831,12 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 	b.transferPlanSourceLocked(ps.ID)
 	transferred = true
 	b.mu.Unlock()
+	if b.deps.SourceHistory != nil && session.Protocol != "plex" {
+		// The epoch and the opened-file facts are durable bookkeeping. The
+		// session URL does not wait for that write. Start after the session
+		// is visible so the writer can find the row it updates.
+		go b.publishOpenedSource(s)
+	}
 	b.finishSuperseded(ctx, superseded, ps.ID)
 	if b.cluster != nil {
 		b.cluster.ownershipChanged(ctx)
