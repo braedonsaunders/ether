@@ -50,11 +50,6 @@ func (s surfaceCapabilities) Build(ctx context.Context, req frontend.CapabilityR
 	return result, nil
 }
 
-type protocolClientPolicy struct {
-	transcode.ClientPolicy
-	Protocol frontend.Protocol `json:"protocol"`
-}
-
 func (a *App) recordFrontendFamily(ctx context.Context, surface frontend.Protocol, caps core.ClientCaps) {
 	// Store only the static family policy, not per-device declarations or viewer IDs.
 	product := strings.TrimSpace(caps.Product)
@@ -87,30 +82,6 @@ func (a *App) recordFrontendFamily(ctx context.Context, surface frontend.Protoco
 	if _, err = a.db.ExecContext(ctx, `INSERT INTO frontend_client_families(surface,family,policy,last_seen) VALUES(?,?,?,?) ON CONFLICT(surface,family) DO UPDATE SET policy=excluded.policy,last_seen=excluded.last_seen`, string(surface), policy.Family, string(data), time.Now().Unix()); err == nil {
 		a.seenFamilies.Store(key, string(data))
 	}
-}
-func (a *App) clientPolicies(ctx context.Context) ([]protocolClientPolicy, error) {
-	defaults := transcode.ClientPolicies()
-	rows := make([]protocolClientPolicy, 0, len(defaults))
-	for _, p := range defaults {
-		rows = append(rows, protocolClientPolicy{ClientPolicy: p, Protocol: "plex"})
-	}
-	result, err := a.db.QueryContext(ctx, `SELECT surface,policy FROM frontend_client_families WHERE surface<>? ORDER BY surface,family`, "plex")
-	if err != nil {
-		return nil, err
-	}
-	defer result.Close()
-	for result.Next() {
-		var surface, data string
-		if err := result.Scan(&surface, &data); err != nil {
-			return nil, err
-		}
-		var policy transcode.ClientPolicy
-		if err := json.Unmarshal([]byte(data), &policy); err != nil {
-			return nil, err
-		}
-		rows = append(rows, protocolClientPolicy{ClientPolicy: policy, Protocol: frontend.Protocol(surface)})
-	}
-	return rows, result.Err()
 }
 
 var _ frontend.Capabilities = surfaceCapabilities{}

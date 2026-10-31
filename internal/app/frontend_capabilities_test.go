@@ -63,19 +63,38 @@ func TestSurfaceCapabilitiesApplyQuirksAndOwnerRules(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	var payload struct {
-		Policies []protocolClientPolicy `json:"policies"`
-	}
+	var payload compatCatalog
 	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	found := map[frontend.Protocol]bool{}
+	if !catalogHas(payload.Apps, "jellyfin", "Streamyfin") || !catalogHas(payload.Apps, "emby", "Emby for TV") || !catalogHas(payload.Apps, "silo", "Silo Android") || !catalogHas(payload.Apps, "dlna", "DLNA renderer") || !catalogHas(payload.Apps, "webdav", "Files and media players") {
+		t.Fatalf("builtin apps missing: %+v", payload.Apps)
+	}
+	appleTVApp := false
+	for _, app := range payload.Apps {
+		if app.Name == "Apple TV" && app.Protocol == "plex" {
+			appleTVApp = true
+		}
+	}
+	if appleTVApp {
+		t.Fatal("Apple TV is a device, not a Plex app")
+	}
+	var apple *compatDevice
+	for i := range payload.Devices {
+		if payload.Devices[i].Name == "Apple TV" {
+			apple = &payload.Devices[i]
+		}
+	}
+	if apple == nil || !slices.Equal(apple.DolbyVisionProfiles, []int{5, 8}) {
+		t.Fatalf("Apple TV device: %+v", apple)
+	}
+	found := map[string]bool{}
 	webFamily := false
-	for _, row := range payload.Policies {
-		if row.Family == "Apple TV" {
+	for _, row := range payload.Observed {
+		if row.Name == "Apple TV" {
 			found[row.Protocol] = true
 		}
-		if row.Protocol == "jellyfin" && row.Family == "Jellyfin Chrome" {
+		if row.Protocol == "jellyfin" && row.Name == "Jellyfin Chrome" && !row.LastSeen.IsZero() {
 			webFamily = true
 		}
 	}
@@ -85,4 +104,13 @@ func TestSurfaceCapabilitiesApplyQuirksAndOwnerRules(t *testing.T) {
 	if !webFamily {
 		t.Fatal("non-Plex browser labelled as Plex Web")
 	}
+}
+
+func catalogHas(apps []compatApp, protocol, name string) bool {
+	for _, app := range apps {
+		if app.Protocol == protocol && app.Name == name {
+			return true
+		}
+	}
+	return false
 }

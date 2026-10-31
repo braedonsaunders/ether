@@ -17,13 +17,13 @@ import (
 func (a *App) playbackPolicyHandler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /policy", func(w http.ResponseWriter, r *http.Request) {
-		policies, err := a.clientPolicies(r.Context())
+		catalog, err := a.compatibilityCatalog(r.Context())
 		if err != nil {
 			http.Error(w, "device policy unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"policies": policies})
+		_ = json.NewEncoder(w).Encode(catalog)
 	})
 	m.HandleFunc("POST /prowlarr", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {

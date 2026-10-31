@@ -95,13 +95,19 @@ describe("Sources", () => {
 });
 
 describe("Playback devices", () => {
-  it("filters device capabilities by protocol", async () => {
+  it("filters app compatibility by protocol and device", async () => {
     renderApp("/playback/devices");
     expect(await screen.findByText("Plex Web", {}, WAIT)).toBeInTheDocument();
     expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
+    expect(screen.getByText("Swiftfin")).toBeInTheDocument();
+    expect(screen.getByText(/Seen on this server/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Protocol"), { target: { value: "jellyfin" } });
     expect(screen.queryByText("Plex Web")).not.toBeInTheDocument();
     expect(screen.getByText("Jellyfin TV")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Device"), { target: { value: "Apple TV" } });
+    expect(screen.queryByText("Jellyfin TV")).not.toBeInTheDocument();
+    expect(screen.getByText("Swiftfin")).toBeInTheDocument();
+    expect(screen.getByText("5, 8")).toBeInTheDocument();
   });
 });
 

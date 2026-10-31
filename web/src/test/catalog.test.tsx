@@ -64,7 +64,7 @@ describe("Catalog workspace", () => {
       screen
         .getAllByRole("link", { name: "Integrations" })
         .map((link) => link.getAttribute("href")),
-    ).toContain("/services");
+    ).toContain("/services/tmdb");
     expect(screen.queryByLabelText("Your TMDB API key")).not.toBeInTheDocument();
     const gate = screen.getByLabelText("Wait for digital or physical release");
     expect(gate).not.toBeChecked();

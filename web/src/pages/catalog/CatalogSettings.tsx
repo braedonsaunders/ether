@@ -19,7 +19,7 @@ function TmdbAccount({ apiKey }: { apiKey: unknown }) {
   if (secretConfigured(apiKey)) {
     return (
       <p className="text-sm">
-        <Link to="/services" className="text-primary underline">
+        <Link to="/services/tmdb" className="text-primary underline">
           {t("TMDB connected")}
         </Link>
       </p>
@@ -29,7 +29,7 @@ function TmdbAccount({ apiKey }: { apiKey: unknown }) {
     <p className="text-sm text-fg-muted">
       {tx("Connect TMDB in {link}.", {
         link: (
-          <Link to="/services" className="text-primary underline">
+          <Link to="/services/tmdb" className="text-primary underline">
             {t("Integrations")}
           </Link>
         ),

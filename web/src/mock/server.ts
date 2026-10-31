@@ -2059,29 +2059,69 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return json({ ok: true, durationMs: 40 + (hash(route) % 200) });
       case "GET /playback/policy":
         return json({
-          policies: [
+          apps: [
             {
               protocol: "plex",
-              family: "Plex Web",
-              dolbyVisionProfiles: [],
-              subtitleCodecs: ["srt"],
-              notes: "Browser capabilities",
+              name: "Plex Web",
+              devices: ["Browser"],
+              videoCodecs: [],
+              subtitles: ["srt"],
+              directPlay: "browser",
+              note: "",
+              certification: "builtin",
             },
             {
               protocol: "jellyfin",
-              family: "Jellyfin TV",
-              dolbyVisionProfiles: [5],
-              subtitleCodecs: ["srt"],
-              notes: "Reported by the app",
+              name: "Jellyfin TV",
+              devices: ["Android TV"],
+              videoCodecs: [],
+              subtitles: ["srt"],
+              directPlay: "reported",
+              note: "",
+              certification: "pending",
+            },
+            {
+              protocol: "jellyfin",
+              name: "Swiftfin",
+              devices: ["Apple TV"],
+              videoCodecs: [],
+              subtitles: [],
+              directPlay: "reported",
+              note: "",
+              certification: "pending",
             },
             {
               protocol: "stremio",
-              family: "Stremio TV",
-              dolbyVisionProfiles: [],
-              subtitleCodecs: ["srt"],
-              notes: "Reported by the app",
+              name: "Stremio TV",
+              devices: ["Android TV"],
+              videoCodecs: [],
+              subtitles: ["srt"],
+              directPlay: "stream",
+              note: "",
+              certification: "builtin",
             },
           ],
+          devices: [
+            {
+              name: "Apple TV",
+              dolbyVisionProfiles: [5, 8],
+              subtitleCodecs: ["srt"],
+              notes: "Dolby Vision profile 7 uses a compatible HDR base layer; TrueHD requires an audio transcode unless declared supported.",
+            },
+            {
+              name: "Android TV",
+              dolbyVisionProfiles: [],
+              subtitleCodecs: ["srt"],
+              notes: "Text is served separately; image subtitles require explicit client support.",
+            },
+            {
+              name: "Browser",
+              dolbyVisionProfiles: [],
+              subtitleCodecs: ["srt"],
+              notes: "Browser codec declarations govern playback; text subtitles remain sidecars.",
+            },
+          ],
+          observed: [{ protocol: "jellyfin", name: "Jellyfin TV", lastSeen: "2026-10-31T12:00:00Z" }],
         });
       case "POST /playback/prowlarr": {
         const req = body as {
