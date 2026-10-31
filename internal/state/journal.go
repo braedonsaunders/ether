@@ -126,8 +126,8 @@ func (s *State) journalEvents(ctx context.Context, tx *sql.Tx, events []Event, f
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO state_sync_journal(user_id,rating_key,aspect,kind,rating,occurred_at,bulk,consent_generation)
-			VALUES(?,?,?,?,?,?,?,?)`, ev.UserID, int64(ev.Key), string(aspect), kind, ev.Rating, at.UnixNano(), b, gen); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO state_sync_journal(user_id,rating_key,aspect,kind,rating,occurred_at,bulk,consent_generation,never_sent)
+			VALUES(?,?,?,?,?,?,?,?,1)`, ev.UserID, int64(ev.Key), string(aspect), kind, ev.Rating, at.UnixNano(), b, gen); err != nil {
 			return err
 		}
 	}

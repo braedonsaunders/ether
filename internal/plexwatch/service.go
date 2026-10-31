@@ -75,6 +75,30 @@ CREATE TABLE plexwatch_permit (
   until_at INTEGER NOT NULL
 );
 CREATE INDEX plexwatch_permit_live ON plexwatch_permit(user_id, until_at);`)
+	// Applies after state_plexwatch; standalone state need not import account sync.
+	store.Register("watchsend", 1, `CREATE TABLE plexwatch_attempt (
+  attempt_id TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  rating_key INTEGER NOT NULL,
+  plex_id INTEGER NOT NULL,
+  generation INTEGER NOT NULL,
+  guid TEXT NOT NULL,
+  aspect TEXT NOT NULL,
+  occurred_at INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  admitted_at INTEGER NOT NULL,
+  receipt_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX plexwatch_attempt_conflict ON plexwatch_attempt(plex_id,guid,aspect)
+  WHERE receipt_at=0 AND guid<>'';
+CREATE INDEX plexwatch_attempt_local ON plexwatch_attempt(user_id,rating_key,aspect,receipt_at);
+INSERT INTO plexwatch_attempt(attempt_id,seq,user_id,rating_key,plex_id,generation,guid,aspect,occurred_at,payload,admitted_at)
+ SELECT 'legacy:' || CAST(seq AS TEXT), seq, user_id, rating_key,
+ COALESCE((SELECT plex_id FROM plexwatch_account a WHERE a.user_id=state_sync_journal.user_id),0),
+ consent_generation, '', aspect, occurred_at, '', 0 FROM state_sync_journal WHERE delivered_at=0;
+UPDATE state_sync_journal SET dead=1, last_error='uncertain_legacy', claimed_by='', claimed_at=0 WHERE delivered_at=0;`)
+
 }
 
 // GUIDMap resolves a local title to a verified plex:// GUID and the reverse
@@ -125,6 +149,12 @@ type Service struct {
 	// afterFenceRead, when set by a test, runs after the fence row is locked
 	// and the intent is eligible, and before the permit insert.
 	afterFenceRead func()
+	// Fault hooks exercise crash boundaries; production leaves them unset.
+	afterAdmission  func() error
+	receiptFault    func(string) error
+	admissionCommit func(*sql.Tx) error
+	receiptCommit   func(*sql.Tx) error
+	afterPost       func() error
 }
 
 // New starts nothing. Call Run to deliver, or DeliverOnce from tests.
@@ -178,6 +208,9 @@ type Status struct {
 	Eligibility  string `json:"eligibility"`
 	Revoked      bool   `json:"revoked"`
 	Pending      int    `json:"pending"`
+	Held         int    `json:"held"`
+	HeldReason   string `json:"heldReason,omitempty"`
+	HeldLegacy   int    `json:"heldLegacy"`
 	Dead         int    `json:"dead"`
 	InFlight     bool   `json:"inFlight"`
 	Skipped      int    `json:"skipped"`
@@ -227,6 +260,19 @@ func (s *Service) Status(ctx context.Context, userID, plexID int64) (Status, err
 		return Status{}, err
 	}
 	st.Pending, st.Dead = pending, dead
+
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_attempt WHERE user_id=? AND receipt_at=0`, userID).Scan(&st.Held); err != nil {
+		return Status{}, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_attempt WHERE user_id=? AND receipt_at=0 AND guid=''`, userID).Scan(&st.HeldLegacy); err != nil {
+		return Status{}, err
+	}
+	if st.Held > 0 {
+		st.HeldReason = "An earlier send may have changed Plex. Conflicting changes are held; retry and reconnect do not release them."
+		if st.HeldLegacy > 0 {
+			st.HeldReason = "Legacy undelivered changes lack a recorded target. This account’s affected watch or rating sends are held, even after retry or reconnect."
+		}
+	}
 	var inflight int
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plexwatch_permit WHERE user_id=? AND until_at>?`, userID, s.now().UnixNano()).Scan(&inflight); err != nil {
 		return Status{}, err

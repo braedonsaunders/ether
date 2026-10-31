@@ -67,6 +67,34 @@
 // generation leaves the intent retryable. A confirmed missing or stale
 // generation does not send.
 //
+// Admission also commits an immutable plexwatch_attempt containing the exact
+// account id, consent generation, resolved GUID, aspect, original timestamp
+// and wire payload. It contains no plaintext credential. Failure or uncertainty
+// committing admission means no network send. Once admission is durable, even
+// a crash before transmission leaves an unknown-effect hold. Expiring worker
+// claims or permits never expires that hold. The remote account/GUID/aspect
+// conflict index and a local user/key/aspect check prevent aliases and remaps
+// from bypassing it. Unrelated known targets and other aspects remain usable.
+//
+// A successful response commits the attempt's receipt, import echo and original
+// journal acknowledgement together. A failed or uncertain local commit cannot
+// reopen the network path. Transport/read errors, server failures, ambiguous
+// statuses and Retry-After do not prove no effect; delivery stops. Authentication,
+// eligibility and validation refusals stop rather than blindly replaying.
+//
+// Legacy undelivered rows, including attempts=0 and superseded/dead rows, lack
+// durable proof of never transmitting. Migration snapshots these independently
+// of the compactable journal. The old journal stored only a mutable local key,
+// not the sent GUID or wire body. Today's replaceable plexguid_mappings entry
+// and prior successful echoes cannot establish the original uncertain target.
+// The draft therefore conservatively fences the affected account's entire
+// watch or rating aspect when the legacy GUID is unknown. This availability
+// limit requires explicit draft review; it is broader than per-title holds.
+// Playback and the other aspect continue. There is no automatic hold release,
+// reconciliation write, or Retry/consent/reconnect bypass. Read-only remote
+// state, if separately authorized later, cannot attribute one request or prove
+// that a possibly in-flight request will not finish. Absence is not retry proof.
+//
 // A permit already inserted is in flight. Turning sync off does not delete
 // it, and a request already handed to Plex cannot be recalled. An intent
 // that has not been admitted is not sent after the fence moves, including

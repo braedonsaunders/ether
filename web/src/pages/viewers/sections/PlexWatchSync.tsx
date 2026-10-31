@@ -14,6 +14,9 @@ type PlexWatchStatus = {
   eligibility: string;
   revoked: boolean;
   pending: number;
+  held: number;
+  heldReason?: string;
+  heldLegacy: number;
   dead: number;
   inFlight: boolean;
   skipped: number;
@@ -178,6 +181,20 @@ export function PlexWatchSync({ viewerId, plexId }: { viewerId: number; plexId: 
           )}
         </p>
       ) : null}
+      {st.held > 0 ? (
+        <SettingsRow
+          title={t("Held sends: {count}", { count: st.held })}
+          description={
+            st.heldLegacy > 0
+              ? t(
+                  "Old undelivered changes have no recorded target. Ether holds this account’s affected watch or rating sends. Playback continues. Retry and reconnect do not release holds.",
+                )
+              : t(
+                  "An earlier send may have changed Plex. Ether holds conflicting changes, even after retry, reconnect, or restart. Other titles and playback continue. Held sends are not released automatically.",
+                )
+          }
+        />
+      ) : null}
       {st.skipped > 0 ? (
         <p className="text-sm">
           {t(
@@ -188,7 +205,9 @@ export function PlexWatchSync({ viewerId, plexId }: { viewerId: number; plexId: 
       {(st.pending > 0 || st.dead > 0 || st.skipped > 0) && (
         <SettingsRow
           title={t("Delivery")}
-          description={t("Failed items stay queued until you retry them or disconnect.")}
+          description={t(
+            "Retry checks eligible failed items. It never releases an uncertain-send hold.",
+          )}
           control={
             <Button disabled={busy || !st.connected} onClick={() => void run("/retry", "POST")}>
               {t("Retry failed items")}

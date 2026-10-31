@@ -58,4 +58,10 @@ UPDATE state_watch SET rating_at=updated_at WHERE rating_at=0 AND user_rating<>0
 	// intent was admitted. A later generation must not deliver it.
 	store.Register("state_plexwatch", 3, `
 ALTER TABLE state_sync_journal ADD COLUMN consent_generation INTEGER NOT NULL DEFAULT 0;`)
+	// Legacy undelivered intents have no durable evidence that a request was
+	// never transmitted. Retain their holds separately from compactable work.
+	store.Register("state_plexwatch", 4, `
+ALTER TABLE state_sync_journal ADD COLUMN never_sent INTEGER NOT NULL DEFAULT 0;
+`)
+
 }
