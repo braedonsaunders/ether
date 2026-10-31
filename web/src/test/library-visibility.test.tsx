@@ -1,7 +1,11 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderAppWith } from "./routes";
-import { calls } from "./harness";
+import { calls, settleUi } from "./harness";
+
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+});
 
 describe("Library visibility", () => {
   it.each([null, undefined])("keeps empty previews usable when items is %s", async (items) => {
@@ -10,13 +14,17 @@ describe("Library visibility", () => {
       if (path === "/catalog/visibility/preview")
         return { total: 63996, hidden: 0, movies: 0, shows: 0, unknownCountry: 16721, items };
     });
-    await screen.findByText(
-      "63,996 catalogue titles remain before release, availability and viewer restrictions.",
-    );
+    await settleUi(() => {
+      expect(
+        screen.getByText(
+          "63,996 catalogue titles remain before release, availability and viewer restrictions.",
+        ),
+      ).toBeInTheDocument();
+    });
     expect(screen.getByText("No custom exclusions")).toBeInTheDocument();
     expect(screen.queryByText("Example matches")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add exclusion group" }));
-    await screen.findByLabelText("Group 1 name");
+    expect(screen.getByLabelText("Group 1 name")).toBeInTheDocument();
     expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(0);
   });
   it("previews country rules locally and saves only the exclusions patch", async () => {
@@ -40,15 +48,19 @@ describe("Library visibility", () => {
           items: [],
         };
     });
-    await screen.findByText("Your catalogue. Your boundaries.");
-    await screen.findByText("1,200");
+    await settleUi(() => {
+      expect(screen.getByText("Your catalogue. Your boundaries.")).toBeInTheDocument();
+      expect(screen.getByText("1,200")).toBeInTheDocument();
+    });
     expect(screen.getByText("Country is not language")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Delete group 1" }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save visibility" })).toBeEnabled(),
-    );
+    await settleUi(() => {
+      expect(screen.getByRole("button", { name: "Save visibility" })).toBeEnabled();
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save visibility" }));
-    await waitFor(() => expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(1));
+    await settleUi(() => {
+      expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(1);
+    });
     expect(calls(fake, "PUT", "/config/catalog")[0]?.body).toEqual({ exclusions: [] });
     expect(calls(fake, "GET", "/catalog/search")).toHaveLength(0);
   });
@@ -71,7 +83,9 @@ describe("Library visibility", () => {
       if (path === "/catalog/visibility/preview")
         return { total: 500, hidden: 1, movies: 1, shows: 0, unknownCountry: 0, items: [] };
     });
-    expect(await screen.findByDisplayValue("Stored group")).toBeInTheDocument();
+    await settleUi(() => {
+      expect(screen.getByDisplayValue("Stored group")).toBeInTheDocument();
+    });
     observer.disconnect();
     expect(flashedEmpty).toBe(false);
   });
@@ -81,9 +95,11 @@ describe("Library visibility", () => {
       if (path === "/catalog/visibility/preview")
         return { total: 500, hidden: 0, movies: 0, shows: 0, unknownCountry: 1, items: [] };
     });
-    await screen.findByText("No custom exclusions");
+    await settleUi(() => {
+      expect(screen.getByText("No custom exclusions")).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByRole("button", { name: "Add exclusion group" }));
-    await screen.findByLabelText("Group 1 name");
+    expect(screen.getByLabelText("Group 1 name")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save visibility" })).toBeDisabled();
     expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(0);
   });
