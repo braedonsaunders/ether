@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/personalize"
 	"github.com/braedonsaunders/ether/internal/state"
@@ -49,7 +49,7 @@ func trainRankerFixture(ctx context.Context, dir string, db *sql.DB, engine *per
 					if pos >= 12 {
 						break
 					}
-					if item.Type != core.TypeMovie || item.Key <= core.MovieKey(10012) || item.Adult || catalog.RatingExceeds(item.ContentRating, viewer.MaxContentRating) {
+					if item.Type != core.TypeMovie || item.Key <= core.MovieKey(10012) || item.Adult || contentrating.Exceeds(item.ContentRating, viewer.MaxContentRating) {
 						continue
 					}
 					if chosen == nil || item.Popularity < chosen.Popularity || (item.Popularity == chosen.Popularity && item.Key < chosen.Key) {

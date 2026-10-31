@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 )
@@ -208,50 +209,9 @@ func (c *Catalog) movieDetailsToTitle(ctx context.Context, d *tmdb.MovieDetails)
 		t.CollectionID = d.BelongsTo.ID
 		t.CollectionName = d.BelongsTo.Name
 	}
-	t.ContentRating = c.movieCertification(d)
+	sel := contentrating.Select(movieCertifications(d.ReleaseDates), c.config().Region)
+	t.ContentRating, t.ContentRatingSource = sel.Value, sel.Source
 	return t
-}
-
-func (c *Catalog) movieCertification(d *tmdb.MovieDetails) string {
-	if d.ReleaseDates == nil {
-		return ""
-	}
-	region := strings.ToUpper(c.config().Region)
-	pick := func(want string) string {
-		for _, r := range d.ReleaseDates.Results {
-			if strings.ToUpper(r.ISO3166) != want {
-				continue
-			}
-			// Prefer theatrical (type 3), then any non-empty.
-			for _, e := range r.ReleaseDate {
-				if e.Type == 3 && e.Certification != "" {
-					return e.Certification
-				}
-			}
-			for _, e := range r.ReleaseDate {
-				if e.Certification != "" {
-					return e.Certification
-				}
-			}
-		}
-		return ""
-	}
-	if region != "" {
-		if v := pick(region); v != "" {
-			return v
-		}
-	}
-	if v := pick("US"); v != "" {
-		return v
-	}
-	for _, r := range d.ReleaseDates.Results {
-		for _, e := range r.ReleaseDate {
-			if e.Certification != "" {
-				return e.Certification
-			}
-		}
-	}
-	return ""
 }
 
 func (c *Catalog) tvToTitle(ctx context.Context, s tmdb.TVShow) core.Title {
@@ -330,31 +290,9 @@ func (c *Catalog) tvDetailsToTitle(ctx context.Context, d *tmdb.TVDetails) core.
 	t.LogoPath = logoPath(d.Images)
 	t.ChildCount = d.NumberOfSeasons
 	t.LeafCount = d.NumberOfEpisodes
-	t.ContentRating = c.tvContentRating(d)
+	sel := contentrating.Select(tvCertifications(d.ContentRatings), c.config().Region)
+	t.ContentRating, t.ContentRatingSource = sel.Value, sel.Source
 	return t
-}
-
-func (c *Catalog) tvContentRating(d *tmdb.TVDetails) string {
-	if d.ContentRatings == nil {
-		return ""
-	}
-	region := strings.ToUpper(c.config().Region)
-	for _, want := range []string{region, "US"} {
-		if want == "" {
-			continue
-		}
-		for _, r := range d.ContentRatings.Results {
-			if strings.ToUpper(r.ISO3166) == want && r.Rating != "" {
-				return r.Rating
-			}
-		}
-	}
-	for _, r := range d.ContentRatings.Results {
-		if r.Rating != "" {
-			return r.Rating
-		}
-	}
-	return ""
 }
 
 func seasonToTitle(show core.Title, s tmdb.SeasonSummary) core.Title {
@@ -373,7 +311,7 @@ func seasonToTitle(show core.Title, s tmdb.SeasonSummary) core.Title {
 		SeasonTitle: name, Season: s.SeasonNumber, Title: name, SortTitle: sortTitle(name),
 		Summary: s.Overview, Released: rel, PosterPath: s.PosterPath, BackdropPath: show.BackdropPath,
 		ChildCount: s.EpisodeCount, Rating: s.VoteAverage,
-		Genres: show.Genres, ContentRating: show.ContentRating, Language: show.Language, Adult: show.Adult,
+		Genres: show.Genres, ContentRating: show.ContentRating, ContentRatingSource: show.ContentRatingSource, Language: show.Language, Adult: show.Adult,
 	}
 	if t.PosterPath == "" {
 		t.PosterPath = show.PosterPath
@@ -397,7 +335,7 @@ func episodeToTitle(show core.Title, seasonName string, e tmdb.Episode) core.Tit
 		Title: title, SortTitle: sortTitle(title), Summary: e.Overview, Released: rel,
 		StillPath: e.StillPath, PosterPath: e.StillPath, BackdropPath: show.BackdropPath,
 		Rating: e.VoteAverage, VoteCount: e.VoteCount,
-		Genres: show.Genres, ContentRating: show.ContentRating, Language: show.Language, Adult: show.Adult,
+		Genres: show.Genres, ContentRating: show.ContentRating, ContentRatingSource: show.ContentRatingSource, Language: show.Language, Adult: show.Adult,
 	}
 	if e.Runtime != nil && *e.Runtime > 0 {
 		t.Runtime = time.Duration(*e.Runtime) * time.Minute

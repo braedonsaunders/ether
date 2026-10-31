@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/state"
@@ -406,7 +406,7 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 			filter = core.Filter{}
 		}
 		filter.Type = library.Type
-		if v.MaxContentRating != "" && (filter.MaxContentRating == "" || catalog.RatingRank(v.MaxContentRating) < catalog.RatingRank(filter.MaxContentRating)) {
+		if v.MaxContentRating != "" && (filter.MaxContentRating == "" || int(contentrating.LevelOf(v.MaxContentRating)) < int(contentrating.LevelOf(filter.MaxContentRating))) {
 			filter.MaxContentRating = v.MaxContentRating
 		}
 		page, err := s.d.Browse(ctx, core.BrowseQuery{Filter: filter, Sort: q.Sort, Desc: q.Desc, Offset: offset, Limit: 500})
@@ -1644,7 +1644,7 @@ func (s *Service) matchesUserQuery(ctx context.Context, v *core.User, t core.Tit
 }
 
 func matchesFilter(t core.Title, f core.Filter) bool {
-	if f.MaxContentRating != "" && catalog.RatingExceeds(t.ContentRating, f.MaxContentRating) {
+	if f.MaxContentRating != "" && contentrating.Exceeds(t.ContentRating, f.MaxContentRating) {
 		return false
 	}
 	for _, key := range f.ExcludeKeys {

@@ -7,6 +7,7 @@ import { DomainPage, type PageTab } from "../../components/layout";
 import { loadViewers, viewerName } from "../../components/pickers";
 import { localized, t, tn } from "../../i18n";
 import { api } from "../../lib/api";
+import { ratingLevelLabel } from "../../lib/contentRatings";
 import type { Viewer } from "../../lib/contract";
 import { formatDateTime, formatNumber, parseTime, relativeTime } from "../../lib/format";
 import { useAsync } from "../../lib/hooks";
@@ -43,7 +44,11 @@ function limitsSummary(u: EtherUser | undefined): string {
   const parts: string[] = [];
   if (u.streamLimit > 0) parts.push(tn(u.streamLimit, "{count} stream", "{count} streams"));
   if (u.maxContentRating && !u.isOwner)
-    parts.push(t("Up to {rating}", { rating: u.maxContentRating }));
+    parts.push(
+      t("Up to {rating}", {
+        rating: ratingLevelLabel(u.maxContentRating).split(" · ").join("/"),
+      }),
+    );
   return parts.length ? parts.join(" · ") : t("Server defaults");
 }
 

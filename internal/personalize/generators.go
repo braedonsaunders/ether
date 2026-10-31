@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // generator proposes candidate rows of one kind.
@@ -190,7 +190,7 @@ func (b *builder) genUpNext() []*candRow {
 		if ws, err := b.e.state.Get(b.ctx, b.user.ID, next.Key); err == nil && (ws.ViewCount > 0 || ws.ViewOffset > 0) {
 			continue
 		}
-		if !recommend.ContentRatingAllowed(next.ContentRating, b.user.MaxContentRating) {
+		if !contentrating.Allowed(next.ContentRating, b.user.MaxContentRating) {
 			continue
 		}
 		show := next.ShowTitle
@@ -816,7 +816,7 @@ func (b *builder) genComfort() []*candRow {
 		if b.now.Sub(e.At) < 45*24*time.Hour {
 			continue // still fresh in memory
 		}
-		if !recommend.ContentRatingAllowed(e.Title.ContentRating, b.user.MaxContentRating) {
+		if !contentrating.Allowed(e.Title.ContentRating, b.user.MaxContentRating) {
 			continue
 		}
 		reason := "One of your favourites"
@@ -987,7 +987,7 @@ func (b *builder) genFranchise() []*candRow {
 				watched++
 				continue
 			}
-			if !recommend.ContentRatingAllowed(m.ContentRating, b.user.MaxContentRating) {
+			if !contentrating.Allowed(m.ContentRating, b.user.MaxContentRating) {
 				continue
 			}
 			fit, _ := b.fit(&m)
@@ -1104,7 +1104,7 @@ func (b *builder) genTrakt() []*candRow {
 		var items []candItem
 		for _, t := range wl {
 			ws := b.statuses[t.Key]
-			if ws.ViewCount > 0 || !recommend.ContentRatingAllowed(t.ContentRating, b.user.MaxContentRating) {
+			if ws.ViewCount > 0 || !contentrating.Allowed(t.ContentRating, b.user.MaxContentRating) {
 				continue
 			}
 			items = append(items, candItem{t: t, base: rankScore(len(items), len(wl)), qual: quality(&t), reason: "On your Trakt watchlist"})

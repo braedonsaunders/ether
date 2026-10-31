@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // candItem is one title in a candidate row with its context-free score.
@@ -217,7 +217,7 @@ func (b *builder) fresh(t *core.Title) bool {
 	if !t.Released.IsZero() && t.Released.After(b.now) {
 		return false
 	}
-	if !recommend.ContentRatingAllowed(t.ContentRating, b.user.MaxContentRating) {
+	if !contentrating.Allowed(t.ContentRating, b.user.MaxContentRating) {
 		return false
 	}
 	if b.touched[tasteKey(t.Key)] {

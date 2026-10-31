@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/recommend"
 )
 
 // Personalized post-play "hook queue" (roadmap item #30). Instead of
@@ -181,7 +181,7 @@ func (e *Engine) rankPostPlay(ctx context.Context, user *core.User, justWatched,
 		if !t.Released.IsZero() && t.Released.After(now) {
 			continue
 		}
-		if !recommend.ContentRatingAllowed(t.ContentRating, user.MaxContentRating) {
+		if !contentrating.Allowed(t.ContentRating, user.MaxContentRating) {
 			continue
 		}
 		if allowed != nil && !allowed(t.Type) {

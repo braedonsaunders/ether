@@ -161,6 +161,10 @@ func (c *Catalog) SyncProgress() SyncProgress {
 // WithResumeSchedule the initial sync waits until the interval has passed
 // since the last recorded sync.
 func (c *Catalog) Run(ctx context.Context) {
+	if err := c.rankRatings(ctx); err != nil && ctx.Err() == nil {
+		c.log.Error("catalog: re-rank content ratings", "err", err)
+	}
+	go c.refreshRatingsLoop(ctx)
 	full := schedule.New(c.now(), c.untilDue(ctx))
 	// Preserve the existing resume behavior while the gate is off. If the
 	// owner enables it during the wait, start background backfill promptly.

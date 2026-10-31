@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/braedonsaunders/ether/internal/catalog"
+	"github.com/braedonsaunders/ether/internal/contentrating"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/egress"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -460,7 +460,7 @@ func (s *Service) allowedWithLookup(ctx context.Context, u *core.User, c Channel
 			rating = c.Rating
 		}
 	}
-	if catalog.RatingExceeds(rating, u.MaxContentRating) || catalog.RatingExceeds(rating, pol.MaxRating) {
+	if contentrating.Exceeds(rating, u.MaxContentRating) || contentrating.Exceeds(rating, pol.MaxRating) {
 		return false
 	}
 	if p != nil && p.Item.Key != 0 && (lookup != nil || strict) {
@@ -468,7 +468,7 @@ func (s *Service) allowedWithLookup(ctx context.Context, u *core.User, c Channel
 			return false
 		}
 		checkTitle := func(t *core.Title) bool {
-			if t == nil || t.Adult || catalog.RatingExceeds(t.ContentRating, u.MaxContentRating) || catalog.RatingExceeds(t.ContentRating, pol.MaxRating) {
+			if t == nil || t.Adult || contentrating.Exceeds(t.ContentRating, u.MaxContentRating) || contentrating.Exceeds(t.ContentRating, pol.MaxRating) {
 				return false
 			}
 			if len(u.AllowedSections) > 0 {
