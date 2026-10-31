@@ -2042,6 +2042,7 @@ export function createFakeServer(opts: FakeOptions = {}) {
       case "POST /test/indexer":
       case "POST /test/debrid":
       case "POST /test/tmdb":
+      case "POST /test/introdb":
       case "POST /test/llm":
       case "POST /test/trakt":
       case "POST /test/opensubtitles":

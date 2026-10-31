@@ -306,6 +306,7 @@ export const api = {
   testIndexer: (ix: Indexer) => post<TestResult>("/test/indexer", ix),
   testDebrid: (p: DebridProvider) => post<TestResult>("/test/debrid", p),
   testTMDB: (key: string) => post<TestResult>("/test/tmdb", { key }),
+  testIntroDB: (apiKey: string) => post<TestResult>("/test/introdb", { apiKey }),
   testOpenSubtitles: (cfg: EtherConfig["openSubtitles"]) =>
     post<TestResult>("/test/opensubtitles", cfg),
   testLLM: (cfg: EtherConfig["llm"]) => post<TestResult>("/test/llm", cfg),

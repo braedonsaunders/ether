@@ -165,6 +165,9 @@ type Deps struct {
 	// LLMModels lists the models the provider in cfg offers.
 	LLMModels func(ctx context.Context, cfg config.LLM) ([]LLMModel, error)
 	TestTrakt func(ctx context.Context, cfg config.Trakt) error
+	// TestIntroDB probes TheIntroDB with the posted key, or the stored key
+	// when the post is empty or still redacted.
+	TestIntroDB func(ctx context.Context, apiKey string) error
 
 	// Dashboard status providers. Each non-nil provider appears on the
 	// dashboard and at /ether/api/status/{name}.
@@ -369,6 +372,7 @@ func (h *Handler) routes() *http.ServeMux {
 	api("GET /api/llm/providers", h.handleLLMProviders)
 	api("POST /api/llm/models", h.handleLLMModels)
 	api("POST /api/test/trakt", h.handleTestTrakt)
+	api("POST /api/test/introdb", h.handleTestIntroDB)
 
 	api("GET /api/dashboard", h.handleDashboard)
 	api("GET /api/system/load", h.handleSystemLoad)

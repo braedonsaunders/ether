@@ -15,6 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/identity"
 	"github.com/braedonsaunders/ether/internal/llm"
+	"github.com/braedonsaunders/ether/internal/markers"
 	"github.com/braedonsaunders/ether/internal/newznab"
 	"github.com/braedonsaunders/ether/internal/notify"
 	"github.com/braedonsaunders/ether/internal/plextv"
@@ -105,6 +106,9 @@ func (a *App) buildAdmin() http.Handler {
 		},
 		TestOpenSubtitles: subtitles.Test,
 		TestTrakt:         trakt.Test,
+		TestIntroDB: func(ctx context.Context, apiKey string) error {
+			return markers.Probe(ctx, "", apiKey)
+		},
 		TestLLM: func(ctx context.Context, c config.LLM) error {
 			c.Enabled = true // test the settings before the owner switches them on
 			_, err := llm.NewClient(llm.ClientOptions{Config: c, Logger: a.log}).Chat(ctx,

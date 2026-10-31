@@ -79,11 +79,13 @@ describe("Settings", () => {
     );
   });
 
-  it("lists optional integrations without catalog or source cards", async () => {
+  it("lists integrations without source cards and keeps TMDB on this page", async () => {
     renderApp("/services");
-    const optional = await screen.findByRole("region", { name: "Optional" }, WAIT);
+    const required = await screen.findByRole("region", { name: "Required" }, WAIT);
     expect(screen.queryByRole("region", { name: "Essentials" })).toBeNull();
-    for (const name of ["TMDB", "Debrid", "Prowlarr", "Plex"])
+    expect(within(required).getByRole("listitem", { name: "TMDB" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Set up TMDB" })).toHaveAttribute("href", "/services/tmdb");
+    for (const name of ["Debrid", "Prowlarr", "Plex"])
       expect(screen.queryByRole("listitem", { name })).toBeNull();
     for (const name of [/Catalog settings/, /Sources › Debrid/, /Sources › Indexers/])
       expect(screen.queryByRole("link", { name })).toBeNull();
@@ -94,12 +96,41 @@ describe("Settings", () => {
       [/^Ratings$/, "/services/ratings"],
       [/^Markers$/, "/services/introdb"],
     ] as const)
-      expect(within(optional).getByRole("link", { name })).toHaveAttribute("href", href);
+      expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
     expect(within(screen.getByRole("listitem", { name: "Language model" })).getByText("On"));
     expect(screen.queryByRole("button", { name: "Test Trakt" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "TheIntroDB" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save Simkl settings" })).toBeNull();
     expect(screen.queryByRole("switch", { name: "Prowlarr enabled" })).toBeNull();
     expect(screen.queryByRole("switch", { name: "TMDB enabled" })).toBeNull();
+  });
+
+  it("keeps the TheIntroDB key, health and test on its integration tab", async () => {
+    const { fake } = renderApp("/services/introdb", {}, (f) => {
+      f.state.config.markers = { theIntroDb: true, apiKey: "" };
+    });
+    expect(await screen.findByLabelText("Optional TheIntroDB key", {}, WAIT)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test TheIntroDB" })).toBeInTheDocument();
+    expect(screen.getAllByText("Public lookup").length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("Optional TheIntroDB key"), {
+      target: { value: "intro-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test TheIntroDB" }));
+    await waitFor(() => expect(calls(fake, "POST", "/test/introdb")).toHaveLength(1), WAIT);
+    expect(calls(fake, "POST", "/test/introdb")[0]!.body).toEqual({ apiKey: "intro-key" });
+  });
+
+  it("saves and tests the TMDB key from Integrations", async () => {
+    const { fake } = renderApp("/services/tmdb");
+    fireEvent.change(await screen.findByLabelText("TMDB API key", {}, WAIT), {
+      target: { value: "tmdb-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Test TMDB key" }));
+    await waitFor(() => expect(calls(fake, "POST", "/test/tmdb")).toHaveLength(1), WAIT);
+    expect(calls(fake, "POST", "/test/tmdb")[0]!.body).toEqual({ key: "tmdb-key" });
+    fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(calls(fake, "PUT", "/config/catalog")).toHaveLength(1), WAIT);
+    expect(calls(fake, "PUT", "/config/catalog")[0]!.body).toMatchObject({ tmdbKey: "tmdb-key" });
   });
 
   it("keeps a Trakt draft when another integration is toggled", async () => {
@@ -329,7 +360,7 @@ describe("Settings", () => {
       target: { value: "bad id" },
     });
     fireEvent.click(screen.getByRole("tab", { name: "Overview" }));
-    await screen.findByRole("region", { name: "Optional" }, WAIT);
+    await screen.findByRole("region", { name: "Watch tracking" }, WAIT);
     fireEvent.click(screen.getByRole("button", { name: /Save changes/ }));
     await waitFor(
       () =>
