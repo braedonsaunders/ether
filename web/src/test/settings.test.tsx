@@ -259,7 +259,7 @@ describe("Settings", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Language model" }, WAIT));
     expect(await screen.findByRole("button", { name: "Test endpoint" }, WAIT)).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "Language model features" }, WAIT),
+      await screen.findByRole("heading", { name: "Language features" }, WAIT),
     ).toBeVisible();
   });
 

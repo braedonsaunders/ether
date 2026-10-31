@@ -18,6 +18,9 @@ export type DiscoverySettings = {
   checkHours: number;
   naturalSearch: boolean;
   recaps: boolean;
+  subtitleTranslate?: boolean;
+  speechToText?: boolean;
+  overviewTranslate?: boolean;
 };
 
 /**

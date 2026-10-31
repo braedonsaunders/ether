@@ -16,6 +16,9 @@ function discoveryRoutes(opts: { enabled?: boolean; items?: unknown[] } = {}) {
     checkHours: 6,
     naturalSearch: false,
     recaps: false,
+    subtitleTranslate: false,
+    speechToText: false,
+    overviewTranslate: false,
   };
   let items = opts.items ?? [];
   return (method: string, path: string, body: unknown) => {
@@ -136,11 +139,26 @@ describe("Language model features (Integrations)", () => {
     const { fake } = renderAppWith("/services/llm", discoveryRoutes());
     const search = await screen.findByLabelText("Natural-language search", {}, WAIT);
     expect(search).not.toBeChecked();
+    expect(screen.getByText(/A viewer types that search in Plex/)).toBeInTheDocument();
+    expect(screen.getAllByText("Uses your language model — connected ✓").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Needs speech-to-text → Set up" })).toHaveAttribute(
+      "href",
+      "/services/llm#speech-to-text",
+    );
+    expect(screen.queryByText(/Nothing here runs on a schedule/)).toBeNull();
     fireEvent.click(search);
+    fireEvent.click(screen.getByLabelText("Translate subtitles"));
     fireEvent.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(puts(fake, "/discovery/settings")).toContainEqual(
-        expect.objectContaining({ naturalSearch: true, recaps: false, enabled: false }),
+        expect.objectContaining({
+          naturalSearch: true,
+          recaps: false,
+          subtitleTranslate: true,
+          speechToText: false,
+          overviewTranslate: false,
+          enabled: false,
+        }),
       ),
     );
   });
