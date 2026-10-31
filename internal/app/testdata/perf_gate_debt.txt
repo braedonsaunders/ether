@@ -2,27 +2,7 @@
 # when the gate was introduced (54k vs 540k synthetic rows). One
 # "client | step" per line. Remove a line when its endpoint is fixed; never
 # add one for new code: a new path must stay flat as the library grows.
-plex-appletv | /library/onDeck
-plex-appletv | /hubs/sections/movies
-plex-appletv | /hubs/sections/shows
-plex-appletv | movies all titleSort deep
 plex-appletv | shows all titleSort p1
 plex-appletv | /hubs/search star
-infuse-jellyfin | /UserItems/Resume
-infuse-jellyfin | personal library p1
 infuse-jellyfin | search items star
-silo-appletv | home/sections
-silo-appletv | catalog series title
-stremio | catalog movies genre
 stremio | catalog search
-console | dashboard
-console | catalog browse deep
-console | catalog search
-console | viewer home
-console | collections
-console | layout
-infuse-jellyfin | episodes recursive MediaSources # measured 2026-10-31, walks every series (270k statements at 540k rows)
-plex-appletv | movies all titleSort p1
-emby-sdk | movies deep
-silo-appletv | catalog movies title
-console | catalog facets decade
