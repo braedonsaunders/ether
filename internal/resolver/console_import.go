@@ -200,7 +200,7 @@ func (h *consoleAPI) plan(w http.ResponseWriter, r *http.Request, in importReque
 		}
 		if missing > 0 {
 			h.deps.Logger.Warn("quality profile import: custom formats unavailable", "err", ferr)
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("Couldn't look up every custom format (%s). Paste the missing ones under Custom scoring, then import again.", trashReason(ferr)))
+			plan.Warnings = append(plan.Warnings, fmt.Sprintf("Couldn't look up every custom format (%s). Paste the missing ones under a quality profile's More options, then import again.", trashReason(ferr)))
 			for i := range plan.Formats {
 				if plan.Formats[i].Status == FormatMissing {
 					plan.Formats[i].Reason = "Couldn't reach TRaSH Guides"

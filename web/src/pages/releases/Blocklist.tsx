@@ -10,7 +10,9 @@ import {
 import { Ban, RefreshCw, Undo2 } from "lucide-react";
 import { useId, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { ConfigSection } from "../../components/ConfigSection";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
+import { RELEASE_BLOCKS } from "../settings/schema";
 import { Field } from "../../components/fields";
 import { t, tn, tx } from "../../i18n";
 import { errorMessage } from "../../lib/api";
@@ -53,6 +55,12 @@ export function BlocklistTab() {
 
   return (
     <>
+      <ConfigSection
+        configKey="resolver"
+        endpoint="resolver"
+        groups={RELEASE_BLOCKS}
+        label={t("Words and groups")}
+      />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3" role="group" aria-label={t("Filters")}>
           <Field label={t("Search")} htmlFor={`${id}-q`} className="w-72">

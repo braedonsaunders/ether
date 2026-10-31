@@ -248,7 +248,6 @@ function defaultConfig(): EtherConfig {
       refreshInterval: "24h0m0s",
     },
     resolver: {
-      allowCam: false,
       healthSamples: 12,
       searchCacheTtl: "6h0m0s",
       unavailableCooloff: "24h0m0s",
@@ -269,7 +268,7 @@ function defaultConfig(): EtherConfig {
           preferredCodecs: ["hevc", "av1"],
           preferredAudio: ["truehd", "eac3"],
           minSizeMbPerMin: 15,
-          maxSizeMbPerMin: 600,
+          maxSizeMbPerMin: 1000,
           preferredLanguages: null,
           allowCam: false,
         },

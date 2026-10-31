@@ -3,7 +3,8 @@ import { Badge, Button, SettingsSection, Spinner, SubtabNav, Switch, toast } fro
 import { Activity, Radio, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { MoreOptions } from "../../components/ConfigSection";
+import { ConfigSection, MoreOptions } from "../../components/ConfigSection";
+import { RELEASE_SEARCH } from "../settings/schema";
 import { ErrorPanel, MutationError } from "../../components/feedback";
 import { Section } from "../../components/layout";
 import type { AvailabilityConfig } from "../../lib/types";
@@ -329,6 +330,12 @@ export function Availability() {
         )}
       </Section>
       )}
+      <ConfigSection
+        configKey="resolver"
+        endpoint="resolver"
+        groups={RELEASE_SEARCH}
+        label={t("How Ether searches")}
+      />
       <RecordDrawer
         open={draft !== null}
         title={t("Availability settings")}

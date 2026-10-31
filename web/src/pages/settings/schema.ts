@@ -384,24 +384,14 @@ export const CATALOG: FieldGroup[] = localized(() => [
   },
 ]);
 
-export const RESOLVER: FieldGroup[] = localized(() => [
+/** How many same-quality copies Plex lists after Auto. Edited on Quality profiles. */
+export const PLAY_VERSIONS: FieldGroup[] = localized(() => [
   {
-    title: t("Release selection"),
+    title: t("Versions in the app"),
+    description: t(
+      "When several releases are the same cut and picture, Plex can list the extras after Auto so a viewer can switch if one fails.",
+    ),
     fields: [
-      {
-        key: "allowCam",
-        label: t("Allow CAM and telesync releases"),
-        kind: "bool",
-        help: t("Off by default: these are recorded in cinemas."),
-      },
-      {
-        key: "maxCandidates",
-        label: t("Releases to keep ready"),
-        kind: "number",
-        min: 0,
-        step: 1,
-        help: t("Fallback releases kept for instant failover."),
-      },
       {
         key: "sameQualityAlternatives",
         label: t("Same-quality versions to offer"),
@@ -414,7 +404,26 @@ export const RESOLVER: FieldGroup[] = localized(() => [
         ),
       },
     ],
+  },
+]);
+
+/** Engine search memory. Edited under More options on Sources → Will it play. */
+export const RELEASE_SEARCH: FieldGroup[] = localized(() => [
+  {
+    title: t("How Ether searches"),
+    description: t(
+      "How many releases Ether keeps ready, and how long it remembers a search. The defaults are enough for a household.",
+    ),
+    fields: [],
     more: [
+      {
+        key: "maxCandidates",
+        label: t("Releases to keep ready"),
+        kind: "number",
+        min: 0,
+        step: 1,
+        help: t("Fallback releases kept for instant failover."),
+      },
       {
         key: "healthSamples",
         label: t("Health check samples"),
@@ -427,8 +436,15 @@ export const RESOLVER: FieldGroup[] = localized(() => [
       { key: "unavailableCooloff", label: t("Retry unavailable titles after"), kind: "duration" },
     ],
   },
+]);
+
+/** Name and group blocks. Edited on Releases → Blocklist, above the blocked-release list. */
+export const RELEASE_BLOCKS: FieldGroup[] = localized(() => [
   {
-    title: t("Blocklists"),
+    title: t("Words and groups"),
+    description: t(
+      "A release whose name contains one of these words, or whose release group matches, is never played.",
+    ),
     fields: [
       {
         key: "blockedGroups",

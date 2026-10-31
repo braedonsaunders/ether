@@ -70,7 +70,7 @@ function ruleSummary(r: QualityRule, viewers: Viewer[] | null) {
     .join(" · ");
 }
 
-/** Client rules: the first rule matching an app picks its quality profile. */
+/** Device rules: the first rule matching an app picks its quality profile. */
 export function ClientRulesTab() {
   const { config, quality, commit } = useQuality();
   const { viewers } = useViewers();
@@ -155,9 +155,9 @@ export function ClientRulesTab() {
   return (
     <>
       <Section
-        title={t("Client rules")}
+        title={t("Device rules")}
         description={t(
-          "Checked from the top. The first rule that matches an app picks its quality profile; apps no rule matches use the defaults.",
+          "Checked from the top. The first rule that matches an app on a device picks its quality profile; apps no rule matches use the defaults.",
         )}
         actions={
           <Button
@@ -337,7 +337,9 @@ export function ClientRulesTab() {
               description={
                 errors.maxHeight ? (
                   <span className="text-danger">{errors.maxHeight}</span>
-                ) : undefined
+                ) : (
+                  t("Caps this device below its quality profile. Any uses the profile's ceiling.")
+                )
               }
               control={
                 <div className="w-56">

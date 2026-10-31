@@ -148,7 +148,7 @@ func TestPlanQualityImportResolvesFormats(t *testing.T) {
 		}
 	}
 	joined := strings.Join(plan.Warnings, "\n")
-	if !strings.Contains(joined, "2 custom formats can't be imported") || !strings.Contains(joined, "1 custom format already in Custom scoring isn't part") {
+	if !strings.Contains(joined, "2 custom formats can't be imported") || !strings.Contains(joined, "1 custom format already saved isn't part") {
 		t.Fatalf("warnings:\n%s", joined)
 	}
 }

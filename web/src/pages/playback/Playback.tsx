@@ -5,6 +5,7 @@ import { DomainPage, useRouteTab } from "../../components/layout";
 import { localized, t, tx } from "../../i18n";
 import * as S from "../settings/schema";
 import { DeviceCapabilities } from "./Devices";
+import { StartSpeed } from "./StartSpeed";
 import { HardwareStatus } from "./Hardware";
 import { MarkerCoverage } from "./Markers";
 import { SubtitleTiming } from "./SubtitleTiming";
@@ -82,6 +83,7 @@ export default function Playback() {
         label={t("Transcoding")}
         before={() => <HardwareStatus />}
       />
+      {tab === "transcoding" ? <StartSpeed /> : null}
       {tab === "devices" ? <DeviceCapabilities /> : null}
       <ConfigSection
         hidden={tab !== "markers"}

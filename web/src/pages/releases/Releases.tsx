@@ -1,37 +1,27 @@
-import { Navigate, useLocation, useParams } from "react-router-dom";
 import { localized, t } from "../../i18n";
 import { ConfigSection } from "../../components/ConfigSection";
 import { DomainPage, useRouteTab } from "../../components/layout";
-import * as S from "../settings/schema";
+import { PLAY_VERSIONS } from "../settings/schema";
 import { BlocklistTab } from "./Blocklist";
 import { ClientRulesTab } from "./ClientRules";
 import { HistoryTab } from "./History";
 import { PinnedTab } from "./Pinned";
 import { QualityTab } from "./Quality";
-import { ScoringTab, StartupTab } from "./Scoring";
 
 const TABS = localized(
   () =>
     [
       { key: "quality", label: t("Quality profiles") },
-      { key: "rules", label: t("Client rules") },
-      { key: "selection", label: t("Selection rules") },
-      { key: "scoring", label: t("Custom scoring") },
-      { key: "startup", label: t("Playback start") },
-      { key: "pinned", label: t("Pinned") },
+      { key: "devices", label: t("Device rules") },
       { key: "blocklist", label: t("Blocklist") },
+      { key: "pinned", label: t("Pinned") },
       { key: "history", label: t("History") },
     ] as const,
 );
 
 /** Which release Ether picks for each play, and why. */
 export default function Releases() {
-  const { tab: rawTab } = useParams();
-  const location = useLocation();
   const tab = useRouteTab(TABS);
-  if (rawTab === "search") {
-    return <Navigate to={{ pathname: "/releases/pinned", search: location.search }} replace />;
-  }
   return (
     <DomainPage
       title={t("Releases")}
@@ -42,26 +32,18 @@ export default function Releases() {
       tabs={TABS}
       active={tab}
     >
-      {tab === "quality" ? <QualityTab /> : null}
-      {tab === "rules" ? <ClientRulesTab /> : null}
-      {tab === "selection" ? (
-        <ConfigSection
-          configKey="resolver"
-          endpoint="resolver"
-          groups={S.RESOLVER}
-          label={t("Release selection")}
-          omit={[
-            "optimisticStart",
-            "healthRace",
-            "sourcePreference",
-            "sourceScoreMargin",
-            "customFormats",
-            "customFormatScores",
-          ]}
-        />
+      {tab === "quality" ? (
+        <>
+          <QualityTab />
+          <ConfigSection
+            configKey="resolver"
+            endpoint="resolver"
+            groups={PLAY_VERSIONS}
+            label={t("Versions in the app")}
+          />
+        </>
       ) : null}
-      {tab === "scoring" ? <ScoringTab /> : null}
-      {tab === "startup" ? <StartupTab /> : null}
+      {tab === "devices" ? <ClientRulesTab /> : null}
       {tab === "pinned" ? <PinnedTab /> : null}
       {tab === "blocklist" ? <BlocklistTab /> : null}
       {tab === "history" ? <HistoryTab /> : null}

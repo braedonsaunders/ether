@@ -306,7 +306,6 @@ export interface EtherConfig {
     refreshInterval: string;
   };
   resolver: {
-    allowCam: boolean;
     healthSamples: number;
     searchCacheTtl: string;
     unavailableCooloff: string;
@@ -314,6 +313,11 @@ export interface EtherConfig {
     sameQualityAlternatives: number;
     blockedGroups: string[] | null;
     blockedTerms: string[] | null;
+    optimisticStart?: boolean;
+    healthRace?: number;
+    sourcePreference?: string;
+    customFormats?: unknown[];
+    customFormatScores?: Record<string, number>;
   };
   quality: {
     profiles: QualityProfile[] | null;
@@ -419,6 +423,7 @@ export interface QualityRule {
   platform?: string;
   userId?: number;
   profile: string;
+  /** Caps this device below the profile. 0 or absent means the profile's ceiling. */
   maxHeight?: number;
 }
 

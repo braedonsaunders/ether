@@ -4,18 +4,23 @@ import {
   EmptyState,
   SearchSelect,
   SettingsSection,
+  Textarea,
   confirmDialog,
 } from "@braedonsaunders/appkit-ui";
 import { Download, Plus, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { MoreOptions } from "../../components/ConfigSection";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { ChipGroup, ListInput, NumberInput } from "../../components/fields";
 import { Section } from "../../components/layout";
 import { SaveBar, useDraft } from "../../components/SaveBar";
 import { SettingsRow } from "../../components/SettingsRow";
-import { localized, t, tn } from "../../i18n";
+import { localized, t, tn, tx } from "../../i18n";
+import { api } from "../../lib/api";
 import { qualityGateLabel } from "../../lib/releases";
 import type { QualityProfile } from "../../lib/types";
+import { parseScoring, scoringText, type ResolverPolicy } from "./resolverDraft";
 import { QUALITY_AUDIO, QUALITY_CODECS, QUALITY_SOURCES } from "../settings/schema";
 import {
   BoolRow,
@@ -176,7 +181,12 @@ export function QualityTab() {
   return (
     <>
       <QualityDefaults quality={quality} commit={commit} />
-      <ProfileList quality={quality} commit={commit} refresh={refresh} />
+      <ProfileList
+        quality={quality}
+        resolver={config.data?.resolver ?? null}
+        commit={commit}
+        refresh={refresh}
+      />
     </>
   );
 }
@@ -214,7 +224,7 @@ function QualityDefaults({ quality, commit }: { quality: Quality; commit: Commit
     <>
       <SettingsSection
         title={t("Defaults")}
-        description={t("The profile a Plex app gets when no client rule matches it.")}
+        description={t("The profile an app gets when no device rule matches it.")}
       >
         <SettingsRow
           title={t("On your network")}
@@ -278,10 +288,12 @@ function QualityDefaults({ quality, commit }: { quality: Quality; commit: Commit
 
 function ProfileList({
   quality,
+  resolver,
   commit,
   refresh,
 }: {
   quality: Quality;
+  resolver: ResolverPolicy | null;
   commit: Commit;
   refresh: () => Promise<void>;
 }) {
@@ -289,6 +301,7 @@ function ProfileList({
   const [importing, setImporting] = useState(false);
   const rules = quality.rules ?? [];
   const [editing, setEditing] = useState<{ index: number; draft: QualityProfile } | null>(null);
+  const [scoring, setScoring] = useState<{ formats: string; scores: string } | null>(null);
   const [errors, setErrors] = useState<Errors>({});
   const [error, setError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
@@ -297,11 +310,21 @@ function ProfileList({
     setErrors({});
     setError(null);
     setEditing({ index, draft: structuredClone(draft) });
+    setScoring(scoringText(resolver, draft));
   };
 
   async function save() {
     if (!editing) return;
-    const { index, draft } = editing;
+    const { index, draft: profileDraft } = editing;
+    if (!scoring) return;
+    let parsed: ReturnType<typeof parseScoring>;
+    try {
+      parsed = parseScoring(scoring.formats, scoring.scores);
+    } catch (e) {
+      setError(e);
+      return;
+    }
+    const draft = { ...profileDraft, customFormatScores: parsed.customFormatScores };
     const old = profiles[index];
     const list =
       index < profiles.length
@@ -328,7 +351,17 @@ function ProfileList({
     setErrors({});
     try {
       await commit(next, index < profiles.length ? t("Profile saved") : t("Profile added"));
+      const previous = JSON.stringify(resolver?.customFormats ?? []);
+      if (previous !== JSON.stringify(parsed.customFormats)) {
+        await api.putSection("resolver", {
+          ...(resolver ?? {}),
+          customFormats: parsed.customFormats,
+          customFormatScores: resolver?.customFormatScores ?? {},
+        });
+        await refresh();
+      }
       setEditing(null);
+      setScoring(null);
     } catch (e) {
       setError(e);
       setErrors(recordErrors(e, `quality.profiles[${index}].`));
@@ -353,8 +386,8 @@ function ProfileList({
       usedBy
         ? tn(
             usedBy,
-            "The client rule using it will be removed.",
-            "{count} client rules using it will be removed.",
+            "The device rule using it will be removed.",
+            "{count} device rules using it will be removed.",
           )
         : "",
       moves && fallback
@@ -577,22 +610,25 @@ function ProfileList({
                 />
               </SettingsRow>
             </SettingsSection>
-            <SettingsSection title={t("Size")}>
-              <SettingsRow
-                title={t("Size per minute")}
-                description={
-                  errors.minSizeMbPerMin || errors.maxSizeMbPerMin ? (
-                    <span className="text-danger">
+            <SettingsSection
+              title={t("File size")}
+              description={t(
+                "Megabytes per minute of runtime. This filters out fakes and bloated files. 0 means no limit.",
+              )}
+            >
+              <div className="grid gap-6 px-4 py-3 sm:grid-cols-2">
+                <fieldset className="min-w-0 space-y-2">
+                  <legend className="text-sm font-medium text-fg">{t("Movies")}</legend>
+                  {errors.minSizeMbPerMin || errors.maxSizeMbPerMin ? (
+                    <p className="text-xs text-danger">
                       {errors.minSizeMbPerMin || errors.maxSizeMbPerMin}
-                    </span>
+                    </p>
                   ) : (
-                    t(
-                      "MB per minute of runtime. Filters out fakes and bloated files. 0 means no limit.",
-                    )
-                  )
-                }
-                control={
-                  <span className="flex items-center gap-2">
+                    <p className="text-xs text-fg-muted">
+                      {t("Lowest and highest size for a film.")}
+                    </p>
+                  )}
+                  <span className="flex flex-wrap items-center gap-2">
                     <NumberInput
                       aria-label={t("Minimum MB per minute")}
                       value={draft.minSizeMbPerMin}
@@ -610,21 +646,19 @@ function ProfileList({
                     />
                     <span className="text-sm text-fg-muted">MB</span>
                   </span>
-                }
-              />
-              <SettingsRow
-                title={t("TV episodes")}
-                description={
-                  errors.episodeMinSizeMbPerMin || errors.episodeMaxSizeMbPerMin ? (
-                    <span className="text-danger">
+                </fieldset>
+                <fieldset className="min-w-0 space-y-2">
+                  <legend className="text-sm font-medium text-fg">{t("TV episodes")}</legend>
+                  {errors.episodeMinSizeMbPerMin || errors.episodeMaxSizeMbPerMin ? (
+                    <p className="text-xs text-danger">
                       {errors.episodeMinSizeMbPerMin || errors.episodeMaxSizeMbPerMin}
-                    </span>
+                    </p>
                   ) : (
-                    t("Optional override for TV episodes. 0 uses the movie limits above.")
-                  )
-                }
-                control={
-                  <span className="flex items-center gap-2">
+                    <p className="text-xs text-fg-muted">
+                      {t("Optional override for TV episodes. 0 uses the movie limits.")}
+                    </p>
+                  )}
+                  <span className="flex flex-wrap items-center gap-2">
                     <NumberInput
                       aria-label={t("Episode minimum MB per minute")}
                       value={draft.episodeMinSizeMbPerMin ?? 0}
@@ -642,8 +676,8 @@ function ProfileList({
                     />
                     <span className="text-sm text-fg-muted">MB</span>
                   </span>
-                }
-              />
+                </fieldset>
+              </div>
               <BoolRow
                 label={t("Prefer largest file")}
                 value={draft.preferLargest ?? false}
@@ -651,6 +685,55 @@ function ProfileList({
                 onChange={(v) => patch({ preferLargest: v })}
               />
             </SettingsSection>
+            <MoreOptions label={t("More options: Custom scoring")}>
+              <SettingsSection
+                title={t("Custom scoring")}
+                description={t(
+                  "Formats describe what to match. They are shared by every profile. The scores below apply only when this profile ranks a release.",
+                )}
+              >
+                <p className="text-sm text-fg-muted">
+                  {tx("Scores are whole numbers, for example {example}.", {
+                    example: <code>{'{ "x265-hd": -500 }'}</code>,
+                  })}
+                </p>
+                <label className="block space-y-2 px-4 text-sm font-medium text-fg">
+                  {t("Custom format definitions")}
+                  <Textarea
+                    className="min-h-40 w-full font-mono text-xs"
+                    spellCheck={false}
+                    value={scoring?.formats ?? "[]"}
+                    onChange={(e) =>
+                      setScoring((s) =>
+                        s
+                          ? { ...s, formats: e.target.value }
+                          : { formats: e.target.value, scores: "{}" },
+                      )
+                    }
+                  />
+                </label>
+                <label className="block space-y-2 px-4 pb-4 text-sm font-medium text-fg">
+                  {t("Score overrides for this profile")}
+                  <Textarea
+                    className="min-h-28 w-full font-mono text-xs"
+                    spellCheck={false}
+                    value={scoring?.scores ?? "{}"}
+                    onChange={(e) =>
+                      setScoring((s) =>
+                        s
+                          ? { ...s, scores: e.target.value }
+                          : { formats: "[]", scores: e.target.value },
+                      )
+                    }
+                  />
+                </label>
+                <p className="px-4 pb-4 text-sm">
+                  <Link to="/releases/history" className="text-primary underline">
+                    {t("Inspect release scores and rejection reasons")}
+                  </Link>
+                </p>
+              </SettingsSection>
+            </MoreOptions>
             <ImportedRules draft={draft} patch={patch} />
           </>
         ) : null}

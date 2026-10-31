@@ -172,8 +172,8 @@ export function DeviceCapabilities() {
           "Apps are separate from the devices they run on. The same Apple TV is an Apple TV in Plex, Infuse, Swiftfin, and Silo. To limit quality for one of them, use {link}.",
           {
             link: (
-              <Link to="/releases/rules" className="text-primary underline">
-                {t("Client rules")}
+              <Link to="/releases/devices" className="text-primary underline">
+                {t("Device rules")}
               </Link>
             ),
           },

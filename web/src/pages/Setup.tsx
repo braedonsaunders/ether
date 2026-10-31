@@ -1217,18 +1217,6 @@ export default function Setup() {
               </div>
             </Field>
           </section>
-          <label className="flex items-center gap-2 text-sm text-fg">
-            <Switch
-              checked={cfg.resolver.allowCam}
-              onChange={(e) =>
-                setCfg({
-                  ...cfg,
-                  resolver: { ...cfg.resolver, allowCam: e.currentTarget.checked },
-                })
-              }
-            />{" "}
-            {t("Allow CAM / telesync releases")}
-          </label>
           <Alert variant="info">
             <AlertDescription>
               {t(

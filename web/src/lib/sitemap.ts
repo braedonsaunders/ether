@@ -147,7 +147,9 @@ export const PAGES = localized<PageDef[]>(() => [
         key: "yours",
         title: t("Your sources"),
         keywords: searchTerms(
-          msg("debrid usenet indexer health order real-debrid torbox newznab prowlarr"),
+          msg(
+            "debrid usenet indexer health order real-debrid torbox newznab prowlarr fastest equal quality",
+          ),
         ),
       },
       {
@@ -176,7 +178,9 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "availability",
         title: t("Will it play"),
-        keywords: searchTerms(msg("release feeds rss source evidence checks budget")),
+        keywords: searchTerms(
+          msg("release feeds rss source evidence checks budget search memory candidates"),
+        ),
       },
       {
         key: "stats",
@@ -192,23 +196,14 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "quality",
         title: t("Quality profiles"),
-        keywords: searchTerms(msg("resolution 4k 1080p remote")),
-      },
-      { key: "rules", title: t("Client rules"), keywords: searchTerms(msg("device profile")) },
-      {
-        key: "selection",
-        title: t("Selection rules"),
-        keywords: searchTerms(msg("cam health blocked terms groups")),
+        keywords: searchTerms(
+          msg("resolution 4k 1080p remote cam scoring trash custom formats versions"),
+        ),
       },
       {
-        key: "scoring",
-        title: t("Custom scoring"),
-        keywords: searchTerms(msg("trash custom formats")),
-      },
-      {
-        key: "startup",
-        title: t("Playback start"),
-        keywords: searchTerms(msg("startup race warm")),
+        key: "devices",
+        title: t("Device rules"),
+        keywords: searchTerms(msg("device client profile")),
       },
       {
         key: "pinned",
@@ -218,7 +213,7 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "blocklist",
         title: t("Blocklist"),
-        keywords: searchTerms(msg("blocked bad release unblock")),
+        keywords: searchTerms(msg("blocked bad release unblock terms groups")),
       },
       {
         key: "history",
@@ -234,7 +229,7 @@ export const PAGES = localized<PageDef[]>(() => [
       {
         key: "transcoding",
         title: t("Transcoding"),
-        keywords: searchTerms(msg("ffmpeg hardware gpu bitrate")),
+        keywords: searchTerms(msg("ffmpeg hardware gpu bitrate startup race health")),
       },
       {
         key: "devices",
