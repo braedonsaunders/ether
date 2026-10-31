@@ -11,6 +11,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -216,6 +217,12 @@ func captureCorpusMode(ctx context.Context, base string, subtitleMode bool) (tra
 		}
 		vars["playlistKey"] = listing.Playlists[0].Key
 		viewerIDs[viewer] = vars
+	}
+	// Probe every playable fixture title before the read pass. Both servers
+	// then render those facts, and a later warm-up finds the entry already
+	// recorded. These responses are not part of the corpus.
+	if err := probeFixtureMedia(ctx, client, base, profiles["web"].Headers); err != nil {
+		return result, err
 	}
 	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
 		for _, name := range names {
@@ -839,6 +846,43 @@ func corpusMutation(path string) bool {
 
 // settleWarmProbes waits until every pending warm probe on this server has
 // finished or failed. The response is not captured.
+func fixtureProbeKeys() []string {
+	keys := make([]string, 0, fixtureMovieCount()+80)
+	for i := int64(1); i <= int64(fixtureMovieCount()); i++ {
+		keys = append(keys, strconv.FormatInt(int64(core.MovieKey(10000+i)), 10))
+	}
+	for i := int64(1); i <= 20; i++ {
+		show := 20000 + i
+		for ep := 1; ep <= 4; ep++ {
+			keys = append(keys, strconv.FormatInt(int64(core.EpisodeKey(show, 1, ep)), 10))
+		}
+	}
+	return keys
+}
+
+// probeFixtureMedia synchronously probes every movie and episode for each
+// viewer. One request per viewer carries the whole key list.
+func probeFixtureMedia(ctx context.Context, client *http.Client, base string, headers http.Header) error {
+	slow := *client
+	slow.Timeout = 15 * time.Minute
+	q := url.Values{}
+	for _, key := range fixtureProbeKeys() {
+		q.Add("ratingKey", key)
+	}
+	path := "/parity/warm-probe?" + q.Encode()
+	for _, viewer := range []string{"owner", "adult", "teen", "child", "friend"} {
+		h := headers.Clone()
+		h.Set("X-Plex-Client-Identifier", "parity-"+viewer)
+		h.Set("Accept", "application/xml")
+		req := protocol.Request{Method: http.MethodGet, Path: path, Headers: map[string]http.Header{"web": h}}
+		resp, err := strictFetch(ctx, &slow, base, "parity-"+viewer, req, "web", nil, false)
+		if err != nil || resp.Status != http.StatusNoContent {
+			return fmt.Errorf("%s fixture probe: status=%d error=%v body=%s", viewer, resp.Status, err, resp.Body)
+		}
+	}
+	return nil
+}
+
 func settleWarmProbes(ctx context.Context, client *http.Client, base string, headers http.Header) error {
 	h := headers.Clone()
 	if h.Get("X-Plex-Client-Identifier") == "" {

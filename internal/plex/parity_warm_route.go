@@ -53,3 +53,38 @@ func (s *Server) handleParityWarmSettled(w http.ResponseWriter, r *http.Request)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// handleParityWarmProbe probes each requested title before returning.
+// The parity build is the only build that mounts it.
+func (s *Server) handleParityWarmProbe(w http.ResponseWriter, r *http.Request) {
+	pr := FromContext(r.Context())
+	if pr == nil || pr.User == nil {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	keys := r.URL.Query()["ratingKey"]
+	if len(keys) == 0 {
+		writeHTTPError(w, http.StatusBadRequest)
+		return
+	}
+	probe, ok := s.d.Playback.(interface {
+		ParityProbeNow(context.Context, *core.User, core.RatingKey, core.ClientCaps) error
+	})
+	if !ok || s.d.Playback == nil {
+		writeHTTPError(w, http.StatusNotFound)
+		return
+	}
+	caps := pr.ClientCaps(s.cfg().Transcode.RemoteMaxBitrateKbps)
+	for _, raw := range keys {
+		key, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || key <= 0 {
+			writeHTTPError(w, http.StatusBadRequest)
+			return
+		}
+		if err := probe.ParityProbeNow(r.Context(), pr.User, core.RatingKey(key), caps); err != nil {
+			writeHTTPError(w, http.StatusServiceUnavailable)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

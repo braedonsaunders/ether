@@ -62,7 +62,7 @@ func trackIdentity(ctx context.Context, client *http.Client, base, viewer, name 
 	// still prints the estimate. Settle that probe first so both servers render
 	// the probed file. This response is not part of the corpus.
 	settle := request
-	settle.Path = "/parity/warm-settled?ratingKey=" + key
+	settle.Path = "/parity/warm-probe?ratingKey=" + key
 	settled, err := strictFetch(ctx, client, base, "parity-"+viewer, settle, name, nil, false)
 	if err != nil || settled.Status != http.StatusNoContent {
 		return nil, fmt.Errorf("%s %s warm settle: status=%d error=%v", viewer, name, settled.Status, err)

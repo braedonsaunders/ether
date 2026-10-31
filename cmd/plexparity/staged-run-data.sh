@@ -186,7 +186,7 @@ s = p.read_text()
 needle = "r.Use(s.recoverer, s.commonHeaders, s.parse, s.requestLog, s.authenticate)\n"
 if s.count(needle) != 1:
     raise SystemExit("cannot mount the warm-settle route")
-p.write_text(s.replace(needle, needle + '\tr.Get("/parity/warm-settled", s.handleParityWarmSettled)\n', 1))
+p.write_text(s.replace(needle, needle + '\tr.Get("/parity/warm-settled", s.handleParityWarmSettled)\n\tr.Get("/parity/warm-probe", s.handleParityWarmProbe)\n', 1))
 PYCODE
  if [ "$tree" = baseline ] && [ "$counterfactual" = 1 ]; then
   cp "$root/harness/policy_counterfactual.go.txt" "$root/$tree/internal/plex/zz_parity_policy_counterfactual.go"

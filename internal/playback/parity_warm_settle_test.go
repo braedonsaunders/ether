@@ -80,6 +80,50 @@ func TestParitySettlePendingWaitsForEveryInFlightProbe(t *testing.T) {
 	}
 }
 
+func TestParityProbeNowPublishesFactsForLaterReads(t *testing.T) {
+	key := core.MovieKey(10002)
+	title := &core.Title{Key: key, Type: core.TypeMovie, Title: "Fixture Movie 002", Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
+	cat := &fakeCatalog{titles: map[core.RatingKey]*core.Title{key: title}}
+	eng := newFakeEngine(&fakeRelease{ID: "rel", Name: "parity.mp4", Size: 4096})
+	probed := &core.MediaInfo{Container: "mp4", Streams: []core.StreamInfo{{Type: "video", Codec: "h264", Width: 320, Height: 180}}}
+	m := &Manager{
+		now:  time.Now,
+		warm: map[identity]*warmEntry{},
+		deps: Deps{
+			Catalog:       cat,
+			Resolver:      newFakeResolver("rel"),
+			Engine:        eng,
+			SelectProfile: func(core.ClientCaps, *core.User) core.QualityProfile { return core.QualityProfile{} },
+			NativeProbe: func(context.Context, core.MediaSource) (*core.MediaInfo, error) {
+				return probed, nil
+			},
+		},
+	}
+	user := &core.User{ID: 1}
+	caps := core.ClientCaps{ClientID: "parity-owner", Product: "Plex Web"}
+	if err := m.ParityProbeNow(context.Background(), user, key, caps); err != nil {
+		t.Fatal(err)
+	}
+	info, ok := m.WarmProbeInfo(user, caps, key)
+	if !ok || info.Video() == nil || info.Video().Width != 320 || info.Estimated {
+		t.Fatalf("published probe ok=%v estimated=%v info=%+v", ok, info.Estimated, info)
+	}
+	if err := m.ParityProbeNow(context.Background(), user, key, caps); err != nil {
+		t.Fatal(err)
+	}
+	if eng.openCount() != 1 {
+		t.Fatalf("second probe opened the file again: %d", eng.openCount())
+	}
+	show := core.ShowKey(20001)
+	cat.titles[show] = &core.Title{Key: show, Type: core.TypeShow, Title: "Fixture Show"}
+	if err := m.ParityProbeNow(context.Background(), user, show, caps); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.WarmProbeInfo(user, caps, show); ok {
+		t.Fatal("a show was probed")
+	}
+}
+
 func TestParitySettlePendingIgnoresFinishedAndExpiredProbes(t *testing.T) {
 	finished := make(chan struct{})
 	close(finished)
