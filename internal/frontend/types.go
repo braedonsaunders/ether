@@ -10,6 +10,7 @@ type Title = core.Title
 type Collection = core.Collection
 type Person = core.Person
 type RatingKey = core.RatingKey
+type Playlist = core.Playlist
 type MediaType = core.MediaType
 type Page = core.Page
 type SortOrder = core.SortOrder

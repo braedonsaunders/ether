@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
@@ -219,7 +218,7 @@ func (i *instance) movePlaylistItem(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (i *instance) siloPlaylistKey(w http.ResponseWriter, r *http.Request) (*frontend.Viewer, string, frontend.PlaylistLibrary, core.RatingKey, bool) {
+func (i *instance) siloPlaylistKey(w http.ResponseWriter, r *http.Request) (*frontend.Viewer, string, frontend.PlaylistLibrary, frontend.RatingKey, bool) {
 	viewer, token, library, ok := i.playlistLibrary(r)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -237,13 +236,13 @@ func (i *instance) siloPlaylistKey(w http.ResponseWriter, r *http.Request) (*fro
 	return viewer, token, library, key, true
 }
 
-func (i *instance) playlistContentIndex(r *http.Request, viewer *frontend.Viewer, playlist core.RatingKey, contentID string) (int, error) {
+func (i *instance) playlistContentIndex(r *http.Request, viewer *frontend.Viewer, playlist frontend.RatingKey, contentID string) (int, error) {
 	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: playlist})
 	if err != nil {
 		return 0, err
 	}
 	if detail.Playlist == nil {
-		return 0, core.ErrNotFound
+		return 0, frontend.ErrNotFound
 	}
 	nth := 0
 	if cut := strings.LastIndex(contentID, "#"); cut > 0 {
@@ -268,11 +267,11 @@ func (i *instance) playlistContentIndex(r *http.Request, viewer *frontend.Viewer
 		}
 		seen++
 	}
-	return 0, core.ErrNotFound
+	return 0, frontend.ErrNotFound
 }
 
-func contentKeys(values []string) ([]core.RatingKey, error) {
-	out := make([]core.RatingKey, 0, len(values))
+func contentKeys(values []string) ([]frontend.RatingKey, error) {
+	out := make([]frontend.RatingKey, 0, len(values))
 	for _, value := range values {
 		key, err := ids.ParseRatingKeyGUID(strings.TrimSpace(value))
 		if err != nil {
@@ -285,9 +284,9 @@ func contentKeys(values []string) ([]core.RatingKey, error) {
 
 func writeSiloPlaylistError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, core.ErrNotFound), errors.Is(err, frontend.ErrNotFound):
+	case errors.Is(err, frontend.ErrNotFound):
 		http.Error(w, "Not Found", http.StatusNotFound)
-	case errors.Is(err, core.ErrUnauthorized):
+	case errors.Is(err, frontend.ErrUnauthorized):
 		http.Error(w, "Forbidden", http.StatusForbidden)
 	case errors.Is(err, frontend.ErrBadPlaylist):
 		http.Error(w, "Bad Request", http.StatusBadRequest)

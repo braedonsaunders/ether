@@ -10,6 +10,10 @@ import (
 // It shares identity with the domain error for errors.Is checks.
 var ErrNotFound = core.ErrNotFound
 
+// ErrUnauthorized identifies a viewer who cannot see or change the resource.
+// It shares identity with the domain error for errors.Is checks.
+var ErrUnauthorized = core.ErrUnauthorized
+
 // ErrNotAvailable means the host has no service for this browse feature.
 // It shares identity with the domain error for errors.Is checks.
 var ErrNotAvailable = core.ErrNotAvailable

@@ -4,6 +4,9 @@ package main
 func browsingPaths() []string {
 	return []string{
 		"/library", "/library/", "/library/all", "/library/sections/all", "/library/sections/{{section}}", "/library/recentlyAdded",
+		// #185 added /library/sections/{section}/{sub}/{key} so a jump-letter
+		// directory can be opened by its relative key.
+		"/library/sections/{{section}}/firstCharacter/A",
 		"/library/metadata/{{showKey}}/allLeaves", "/library/metadata/{{showKey}}/grandchildren", "/library/metadata/{{episodeKey}}/parent", "/library/metadata/{{episodeKey}}/grandparent",
 		"/library/metadata/{{movieKey}}/related", "/library/metadata/{{movieKey}}/similar", "/library/metadata/{{showKey}}/onDeck", "/library/metadata/{{movieKey}}/extras",
 		"/library/collections", "/library/collections/{{collectionKey}}/children", "/library/collections/{{collectionKey}}/items",

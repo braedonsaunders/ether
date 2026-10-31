@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/route"
@@ -68,7 +67,7 @@ func (i *instance) writePlaylists(w http.ResponseWriter, r *http.Request, viewer
 	jsonReply(w, i.queryResult(items, page.Total, q.Offset))
 }
 
-func (i *instance) playlistDTO(playlist core.Playlist) map[string]any {
+func (i *instance) playlistDTO(playlist frontend.Playlist) map[string]any {
 	id := ids.RatingKeyGUID(playlist.Key)
 	item := map[string]any{
 		"Id": id, "Name": playlist.Title, "Type": "Playlist", "IsFolder": true,
@@ -314,7 +313,7 @@ func (i *instance) deletePlaylist(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (i *instance) playlistKey(w http.ResponseWriter, r *http.Request) (*frontend.Viewer, frontend.PlaylistLibrary, core.RatingKey, bool) {
+func (i *instance) playlistKey(w http.ResponseWriter, r *http.Request) (*frontend.Viewer, frontend.PlaylistLibrary, frontend.RatingKey, bool) {
 	viewer, library, ok := i.playlistLibrary(r)
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -332,22 +331,22 @@ func (i *instance) playlistKey(w http.ResponseWriter, r *http.Request) (*fronten
 	return viewer, library, key, true
 }
 
-func (i *instance) visiblePlaylistKeys(r *http.Request, viewer *frontend.Viewer, key core.RatingKey) ([]core.RatingKey, error) {
+func (i *instance) visiblePlaylistKeys(r *http.Request, viewer *frontend.Viewer, key frontend.RatingKey) ([]frontend.RatingKey, error) {
 	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: key})
 	if err != nil {
 		return nil, err
 	}
 	if detail.Playlist == nil {
-		return nil, core.ErrNotFound
+		return nil, frontend.ErrNotFound
 	}
 	return detail.Playlist.Items, nil
 }
 
 func writePlaylistError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, core.ErrNotFound), errors.Is(err, frontend.ErrNotFound):
+	case errors.Is(err, frontend.ErrNotFound):
 		http.Error(w, "Not Found", http.StatusNotFound)
-	case errors.Is(err, core.ErrUnauthorized):
+	case errors.Is(err, frontend.ErrUnauthorized):
 		http.Error(w, "Forbidden", http.StatusForbidden)
 	case errors.Is(err, frontend.ErrBadPlaylist):
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -404,8 +403,8 @@ func playlistCreateFields(r *http.Request) (string, []string, string, error) {
 	return name, ids, userID, nil
 }
 
-func parseTitleIDs(values []string) ([]core.RatingKey, error) {
-	out := make([]core.RatingKey, 0, len(values))
+func parseTitleIDs(values []string) ([]frontend.RatingKey, error) {
+	out := make([]frontend.RatingKey, 0, len(values))
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -420,8 +419,8 @@ func parseTitleIDs(values []string) ([]core.RatingKey, error) {
 	return out, nil
 }
 
-func playlistItemIDs(keys []core.RatingKey) []string {
-	seen := map[core.RatingKey]int{}
+func playlistItemIDs(keys []frontend.RatingKey) []string {
+	seen := map[frontend.RatingKey]int{}
 	out := make([]string, len(keys))
 	for i, key := range keys {
 		id := ids.RatingKeyGUID(key)
@@ -434,7 +433,7 @@ func playlistItemIDs(keys []core.RatingKey) []string {
 	return out
 }
 
-func visiblePlaylistIndex(keys []core.RatingKey, entry string) (int, bool) {
+func visiblePlaylistIndex(keys []frontend.RatingKey, entry string) (int, bool) {
 	nth := 0
 	if cut := strings.LastIndex(entry, "#"); cut > 0 {
 		n, err := strconv.Atoi(entry[cut+1:])
