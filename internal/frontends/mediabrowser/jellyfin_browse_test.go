@@ -606,9 +606,18 @@ func TestJellyfinUserRootParentsEveryView(t *testing.T) {
 }
 
 func TestJellyfinVirtualFolders(t *testing.T) {
-	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+	views := frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
 		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}, {ID: "2", Name: "Shows", Type: "show"}}, nil
-	}})
+	}}
+	denied := mountJellyfin(t, views)
+	dw := httptest.NewRecorder()
+	dr := httptest.NewRequest(http.MethodGet, "/Library/VirtualFolders", nil)
+	dr.Header.Set("X-Emby-Token", "grant")
+	denied.Handler().ServeHTTP(dw, dr)
+	if dw.Code != http.StatusForbidden || dw.Body.Len() != 0 {
+		t.Fatalf("non-admin folders: %d %s", dw.Code, dw.Body.String())
+	}
+	inst := mountJellyfinViewer(t, views, frontend.Viewer{ID: 1, IsOwner: true})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/Library/VirtualFolders", nil)
 	r.Header.Set("X-Emby-Token", "grant")
@@ -651,9 +660,9 @@ func TestJellyfinExternalURLsUseTheLiveTMDBShape(t *testing.T) {
 }
 
 func TestJellyfinVirtualLibraryHasEmptyLocations(t *testing.T) {
-	inst := mountJellyfin(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+	inst := mountJellyfinViewer(t, frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
 		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie", Virtual: true}, {ID: "2", Name: "Shows", Type: "show"}}, nil
-	}})
+	}}, frontend.Viewer{ID: 1, IsOwner: true})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/Library/VirtualFolders", nil)
 	r.Header.Set("X-Emby-Token", "grant")
@@ -826,8 +835,14 @@ func TestJellyfinListSplitsProbedEditionsBySize(t *testing.T) {
 
 func mountJellyfin(t *testing.T, exp frontendtest.Experience) frontend.Instance {
 	t.Helper()
+	return mountJellyfinViewer(t, exp, frontend.Viewer{ID: 1})
+}
+
+func mountJellyfinViewer(t *testing.T, exp frontendtest.Experience, viewer frontend.Viewer) frontend.Instance {
+	t.Helper()
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
-		return &frontend.Viewer{ID: 1}, nil
+		v := viewer
+		return &v, nil
 	}}
 	if exp.ViewsFunc == nil && exp.LibraryItemsFunc == nil && exp.CollectionsFunc == nil && exp.RowsFunc == nil && exp.ItemFunc == nil && exp.ChildrenFunc == nil {
 		t.Fatal("empty experience")
