@@ -108,9 +108,11 @@ type brokerSession struct {
 	exactRelease     string
 	sourcePinned     bool
 	sourceETag       string
-	// transferBarrier and lazyHolds are durable protections. Stop may detach
-	// the session before they are released; only a successful backend outcome
-	// with no in-flight transfer drops them.
+	// transferBarrier is this session's admission ticket. A later open of the
+	// same title, part and device reuses it. Stop drops it once no live
+	// session still holds it; an unverified retirement leaves it until the
+	// next admission evicts that idle ticket instead of refusing the viewer.
+	// lazyHolds protect a source until its backend retirement succeeds.
 	transferBarrier *capability.Header
 	lazyHolds       []capability.Header
 	// servingReads is one tracker per in-flight media request. Stop and
@@ -791,7 +793,7 @@ func (b *Broker) Open(ctx context.Context, req frontend.OpenRequest) (frontend.S
 		// session URL does not wait for that write.
 		go b.publishOpenedSource(s)
 	}
-	barrier, barrierErr := b.admitSessionBarrier(ctx, v.ID, string(req.Protocol), p.request.Device.ID, ps.ID, id)
+	barrier, barrierErr := b.admitSessionBarrier(ctx, v.ID, string(req.Protocol), p.request.Device.ID, p.request.Item, ps.ID, id)
 	if barrierErr != nil {
 		if errors.Is(barrierErr, errTransferCommitUnknown) {
 			// The durable row may exist. Keep the prepared source; do not Stop it.
