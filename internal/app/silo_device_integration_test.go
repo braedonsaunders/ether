@@ -26,6 +26,14 @@ func (siloDeviceTestBroker) ServeMediaAccess(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 }
 
+func (b siloDeviceTestBroker) ServeSessionMedia(w http.ResponseWriter, r *http.Request, access frontend.SessionAccess, sessionID, resource string) {
+	if sessionID == "" || resource == "" {
+		http.NotFound(w, r)
+		return
+	}
+	b.ServeMediaAccess(w, r, access)
+}
+
 func TestSiloMediaRequiresActualBoundGrantAfterRevocation(t *testing.T) {
 	a := setupTestApp(t, true)
 	ctx := context.Background()
@@ -60,12 +68,20 @@ func TestSiloMediaRequiresActualBoundGrantAfterRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := func(token, device string) int {
-		r := httptest.NewRequest("GET", "/api/v2/stream/session/grant/file", nil)
-		r.Header.Set("Authorization", "Bearer "+token)
-		r.Header.Set("X-Silo-Device-Id", device)
-		w := httptest.NewRecorder()
-		inst.Handler().ServeHTTP(w, r)
-		return w.Code
+		status := 0
+		for _, path := range []string{"/api/v2/stream/session", "/api/v2/playback/transcode/session/master.m3u8", "/api/v2/playback/transcode/session/0/00000.ts"} {
+			r := httptest.NewRequest("GET", path, nil)
+			r.Header.Set("Authorization", "Bearer "+token)
+			r.Header.Set("X-Silo-Device-Id", device)
+			w := httptest.NewRecorder()
+			inst.Handler().ServeHTTP(w, r)
+			if status == 0 {
+				status = w.Code
+			} else if w.Code != status {
+				return w.Code
+			}
+		}
+		return status
 	}
 	if got := call(tv, "tv"); got != http.StatusOK {
 		t.Fatalf("valid grant: %d", got)
