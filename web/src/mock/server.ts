@@ -1779,6 +1779,23 @@ export function createFakeServer(opts: FakeOptions = {}) {
   }
 
   const metadata = createMetadataMock();
+  const plexWatch = new Map<
+    number,
+    {
+      connected: boolean;
+      enabled: boolean;
+      eligibility: string;
+      revoked: boolean;
+      pending: number;
+      dead: number;
+      restricted: boolean;
+      pinCode?: string;
+      pinUrl?: string;
+      accountMatch: boolean;
+      username?: string;
+      plexId?: number;
+    }
+  >();
 
   // ---- Router ------------------------------------------------------------------------
 
@@ -2635,6 +2652,69 @@ export function createFakeServer(opts: FakeOptions = {}) {
         return json(homeFor(id, q.get("device") ?? "tv", at, q.get("section") ?? "home"));
       }
       if (seg[2] === "refresh" && method === "POST") return new Response(null, { status: 204 });
+      if (seg[2] === "plex-watch") {
+        const cur = plexWatch.get(id) ?? {
+          connected: false,
+          enabled: false,
+          eligibility: "unchecked",
+          revoked: false,
+          pending: 0,
+          dead: 0,
+          restricted: false,
+          accountMatch: true,
+        };
+        const action = seg[3];
+        if (!action && method === "GET") return json(cur);
+        if (action === "pin" && !seg[4] && method === "POST") {
+          const next = {
+            ...cur,
+            pinCode: "MOCK",
+            pinUrl: "https://plex.tv/link",
+            accountMatch: true,
+          };
+          plexWatch.set(id, next);
+          return json(next);
+        }
+        if (action === "pin" && seg[4] === "finish" && method === "POST") {
+          if (v.plexId <= 0) {
+            return err(
+              409,
+              "account_mismatch",
+              "the Plex account that approved the code is not this viewer",
+            );
+          }
+          const next = {
+            ...cur,
+            connected: true,
+            username: v.username,
+            plexId: v.plexId,
+            pinCode: undefined,
+            pinUrl: undefined,
+            eligibility: "allowed",
+            accountMatch: true,
+          };
+          plexWatch.set(id, next);
+          return json(next);
+        }
+        if (!action && method === "PUT") {
+          const next = { ...cur, enabled: Boolean((body as { enabled?: boolean })?.enabled) };
+          plexWatch.set(id, next);
+          return json(next);
+        }
+        if (action === "disconnect" && method === "POST") {
+          const next = { ...cur, connected: false, enabled: false, username: undefined };
+          plexWatch.set(id, next);
+          return json(next);
+        }
+        if (
+          (action === "retry" || action === "import" || action === "export") &&
+          method === "POST"
+        ) {
+          const next = { ...cur, pending: 0, dead: 0 };
+          plexWatch.set(id, next);
+          return json(next);
+        }
+      }
     }
     if (seg[0] === "users" && seg[1] && (method === "PATCH" || method === "PUT")) {
       const id = Number(seg[1]);

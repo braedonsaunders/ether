@@ -16,6 +16,7 @@ import { t } from "../../i18n";
 import { api, apiFetch, errorMessage } from "../../lib/api";
 import type { Viewer } from "../../lib/contract";
 import { useAsync } from "../../lib/hooks";
+import { PlexWatchSync } from "./sections/PlexWatchSync";
 import { ViewerLiveTVAccess } from "./sections/ViewerLiveTV";
 import { KID_PRESETS, ListText, normalizePolicy, type SafetyPolicy } from "./shared";
 
@@ -306,6 +307,8 @@ export function ViewerAccess({ viewer }: { viewer: Viewer }) {
       )}
 
       <ViewerLiveTVAccess viewerId={id} />
+
+      <PlexWatchSync viewerId={id} plexId={viewer.plexId} />
 
       <SaveBar
         dirty={limits.dirty || rules.dirty}

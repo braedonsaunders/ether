@@ -20,6 +20,15 @@ func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKe
 		if !active {
 			return
 		}
+		// A Plex-account import is not a local playback timeline. Refresh the
+		// library for the mark or rating, and do not treat it as an upload.
+		if ev.Account && (ev.Kind == state.EventScrobble || ev.Kind == state.EventUnscrobble || ev.Kind == state.EventRated) {
+			refresh(ev.UserID, ev.Key)
+			return
+		}
+		if ev.Imported {
+			return
+		}
 
 		// Cross-surface explicit state changes previously came through the shared
 		// event publisher; Plex's own handlers already send these notifications.
@@ -27,7 +36,7 @@ func subscribeWatchRefresh(watch *state.State, refresh func(int64, core.RatingKe
 			refresh(ev.UserID, ev.Key)
 			return
 		}
-		if explicitOnly || ev.Imported {
+		if explicitOnly {
 			return
 		}
 		if ev.Kind == state.EventCompleted ||

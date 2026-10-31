@@ -32,15 +32,15 @@
   "m_0030896e629200": "Edytor",
   "m_00355a0c3f28ba": "Drabina adaptacyjnego bitrate · Direct Stream",
   "m_0036fd7c0fbe0f": {
-    "one": "tytuł zostałby ukryty",
     "few": "tytuły zostałyby ukryte",
     "many": "tytułów zostałoby ukrytych",
+    "one": "tytuł zostałby ukryty",
     "other": "tytułu zostałoby ukrytego"
   },
   "m_0037ac36ee2039": {
-    "one": "{count} pobranie dzisiaj · limity automatyczne",
     "few": "{count} pobrania dzisiaj · limity automatyczne",
     "many": "{count} pobrań dzisiaj · limity automatyczne",
+    "one": "{count} pobranie dzisiaj · limity automatyczne",
     "other": "{count} pobrania dzisiaj · limity automatyczne"
   },
   "m_0038bf09111a88": "Brak pasujących tytułów",
@@ -50,9 +50,9 @@
   "m_0040e631ea1713": "Może działać podczas odtwarzania",
   "m_00446ecc28fada": "MDBList",
   "m_004835dbe00869": {
-    "one": "{count} pobranie NZB dziennie",
     "few": "{count} pobrania NZB dziennie",
     "many": "{count} pobrań NZB dziennie",
+    "one": "{count} pobranie NZB dziennie",
     "other": "{count} pobrania NZB dziennie"
   },
   "m_00487c78d70a2b": "Średnia ocen TMDB",
@@ -75,9 +75,9 @@
   "m_006dcdc8fa7ec6": "Przestrzeń robocza telewizji na żywo",
   "m_006f15a2fe0e48": "Otwarcie filmu lub odcinka przygotowuje jego źródło i początkowe dane. Seriale przygotowują odcinek z sekcji Na bieżąco, gdy jest to obsługiwane.",
   "m_0075202a42a2af": {
-    "one": "{count} strumień",
     "few": "{count} strumienie",
     "many": "{count} strumieni",
+    "one": "{count} strumień",
     "other": "{count} strumienia"
   },
   "m_0075233c93a1d2": "Odświeżaj co godzinę",
@@ -106,6 +106,7 @@
   "m_009bde2dde6cc7": "Czego ta maszyna może użyć do konwersji wideo dla urządzeń, które nie potrafią odtworzyć go bezpośrednio.",
   "m_009c31d1d7a458": "Węzły",
   "m_009ea3143d05ce": "Strażnik awarii",
+  "m_009ead586f61c1": "Stan oglądania konta Plex",
   "m_00a084a302868d": "disk budget storage retention prefetch warming next episode dysk limit pamięć masowa przechowywanie wstępne pobieranie następny odcinek",
   "m_00a230047b55c8": "Dostarczone z pamięci podręcznej na dysku",
   "m_00a35ff984d8bc": "Przygotowywanie teraz",
@@ -118,9 +119,9 @@
   "m_00afcf2c123ee9": "Rozmiar odznak",
   "m_00b2237c907a62": "Niezależna pamięć podręczna na tym węźle.",
   "m_00b2c78f02f956": {
-    "one": "Dziś użyto wyszukiwań: {used} z {count}",
     "few": "Dziś użyto wyszukiwań: {used} z {count}",
     "many": "Dziś użyto wyszukiwań: {used} z {count}",
+    "one": "Dziś użyto wyszukiwań: {used} z {count}",
     "other": "Dziś użyto wyszukiwań: {used} z {count}"
   },
   "m_00b5138d8d1c2c": "Wszystkie urządzenia",
@@ -190,6 +191,7 @@
   "m_012b97515b88aa": "Niezapisane wersje robocze",
   "m_012c7df016f785": "Waga: {node}",
   "m_012d2c04fc1eb7": "Limity automatyczne",
+  "m_012d3ec3988476": "Dokończ kreator konfiguracji, aby powiązać Ether z kontem Plex.",
   "m_013085e3ac1ef6": "Przeglądarka · {platform}",
   "m_013318c8b53ec2": "Dzień dobry",
   "m_0137e5f03f82ba": "Dół",
@@ -209,9 +211,9 @@
   "m_0152bbbd7a10b9": "Usuń: {title}",
   "m_015abd5418f406": "{currency} miesięcznie",
   "m_015bc2125152b7": {
-    "one": "{count} brak",
     "few": "{count} braki",
     "many": "{count} braków",
+    "one": "{count} brak",
     "other": "{count} braku"
   },
   "m_016432d700cb95": "Tytuły oznaczone przez tego widza jako ulubione.",
@@ -235,6 +237,7 @@
   "m_01938362311cd5": "Odkrywaj",
   "m_0194d899fc2d2f": "Horrory w losowej kolejności",
   "m_01980ae499c640": "Zatrzymaj strumień",
+  "m_019d37d71adce6": "Pięć szybkich kroków i Twoje aplikacje Plex znajdą Ether jak każdy inny serwer.",
   "m_019d4db9320ab8": "Indeksator niedostępny",
   "m_019d7ad064e27a": "Pozwól ulubionym tytułom domowników zostać dłużej.",
   "m_019de9d0bd8f2a": "Szablon: {name}",
@@ -264,9 +267,9 @@
   "m_01cc261c40c43c": "Brak ulubionych osób.",
   "m_01d14fded2dd67": "Indeksatory nic nie zwróciły dla tego tytułu. Spróbuj ponownie później.",
   "m_01d3fdf0fd6f74": {
-    "one": "Zegar tego węzła różni się o {count} sekundę od zegara serwera bazy danych. Zsynchronizuj zegar (NTP) na każdym węźle.",
     "few": "Zegar tego węzła różni się o {count} sekundy od zegara serwera bazy danych. Zsynchronizuj zegar (NTP) na każdym węźle.",
     "many": "Zegar tego węzła różni się o {count} sekund od zegara serwera bazy danych. Zsynchronizuj zegar (NTP) na każdym węźle.",
+    "one": "Zegar tego węzła różni się o {count} sekundę od zegara serwera bazy danych. Zsynchronizuj zegar (NTP) na każdym węźle.",
     "other": "Zegar tego węzła różni się o {count} sekundy od zegara serwera bazy danych. Zsynchronizuj zegar (NTP) na każdym węźle."
   },
   "m_01d78a2b16a6bb": "Oczekiwanie na zatwierdzenie",
@@ -280,6 +283,7 @@
   "m_01e84c627eb6d2": "Bez tytułu",
   "m_01e9e72a888220": "Skupiona biblioteka",
   "m_01eb5fd1d6de13": "Pozostałe warunki",
+  "m_01eb71e89dc174": "Niektórych tytułów z Plex nie udało się jeszcze dopasować. Ponowienie sprawdza je znowu. Błąd bazy danych nie pomija dalszej części importu.",
   "m_01ecbe1881c100": "typowy widz",
   "m_01edfc9989e925": "Brak preferencji językowych.",
   "m_01ee4de82c0b00": "Importuj preferencje",
@@ -293,9 +297,11 @@
   "m_01f3d3e746f17e": "Zapisz kanał",
   "m_01f44defeef790": "długość strony tego widza",
   "m_01f76a6a087992": "Obraz",
+  "m_01f7bee334e2dc": "Dodatki, które czynią Ether mądrzejszym. Wszystko działa bez nich.",
   "m_01f8a94959c781": "Ukształtuj na stronie głównej →",
   "m_01fab52c7cd965": "Ostatnia synchronizacja: {when}",
   "m_01fb1fa0afb11e": "Zachowaj ten token w tajemnicy",
+  "m_01fb94a288b813": "Twój Plex. Więcej niż statyczna biblioteka.",
   "m_01fc1a0db354dc": "Wartość: {label}",
   "m_01fecdf6edee82": "Nie interesuje mnie",
   "m_01ff1353b828ec": "Układ",
@@ -347,9 +353,9 @@
   "m_02413a2ace086e": "Kontekst podglądu",
   "m_024331c508a2cd": "Odrzuć",
   "m_0244039960f5ea": {
-    "one": "{count} indeksator · dziś pozostało wyszukiwań: {remaining}",
     "few": "{count} indeksatory · dziś pozostało wyszukiwań: {remaining}",
     "many": "{count} indeksatorów · dziś pozostało wyszukiwań: {remaining}",
+    "one": "{count} indeksator · dziś pozostało wyszukiwań: {remaining}",
     "other": "{count} indeksatora · dziś pozostało wyszukiwań: {remaining}"
   },
   "m_02468c66dcfa9a": "Brak dostępnych wybranych odznak · zobacz Warstwy plakatu",
@@ -362,6 +368,7 @@
   "m_02606b9a8f8e2a": "Właściciel nigdy nie jest ograniczany kategorią wiekową.",
   "m_02608704db25a8": "domyślne ustawienie silnika",
   "m_02633e83c8d187": "Żądanie obrazu nie powiodło się ({status})",
+  "m_02638a5128ac12": "Domyślnie wyłączone. Włączenie nie wysyła istniejącej historii. Odtwarzanie trwa, gdy Plex jest niedostępny.",
   "m_0264b755bf3222": "Różnorodność",
   "m_0267490243a204": "Utwórz konto właściciela",
   "m_0268b1886371a8": "nawigacja",
@@ -370,6 +377,7 @@
   "m_026e06fbf83526": "Szukaj dostarczeń",
   "m_026e595b5271bb": "Wszystkie zdarzenia automatyczne",
   "m_0271e8f8b2bd14": "Blokuj odtwarzanie spoza sieci domowej.",
+  "m_027335d2e04118": "settings plex ustawienia",
   "m_0273cfdc145402": "Kliknij gatunek, aby go skorygować",
   "m_0275b9328d6d05": "Ukryj odcinki specjalne",
   "m_027617cb889af2": "Używane dla listy, przewodnika i strumieni tego źródła. Nigdy nie jest wysyłane do innych dostawców.",
@@ -380,9 +388,9 @@
   "m_028688447472f5": "Wszystkie popularne filmy",
   "m_02885e2073e46c": "Jeden pakiet pomocy dla wybranego urządzenia. Nie zmienia odtwarzania.",
   "m_02890a066f05d9": {
-    "one": "{name}: {count} tytuł.",
     "few": "{name}: {count} tytuły.",
     "many": "{name}: {count} tytułów.",
+    "one": "{name}: {count} tytuł.",
     "other": "{name}: {count} tytułu."
   },
   "m_028c120a29d933": "Kategoria wiekowa",
@@ -394,9 +402,9 @@
   "m_0293d8e8148c8b": "Połącz ponownie",
   "m_02941fb09831c6": "Spróbuj ponownie",
   "m_029df72d8be48b": {
-    "one": "{count} sekcja ma niezapisane zmiany",
     "few": "{count} sekcje mają niezapisane zmiany",
     "many": "{count} sekcji ma niezapisane zmiany",
+    "one": "{count} sekcja ma niezapisane zmiany",
     "other": "{count} sekcji ma niezapisane zmiany"
   },
   "m_029eab8ad3f669": "Zapasowe nr {rank}",
@@ -415,9 +423,9 @@
   "m_02bbfd11a6006c": "Filmy akcji z lat 1980–1989, w losowej kolejności",
   "m_02bc2102d07acf": "Aktywność · ostatnie 30 dni",
   "m_02bddd4029e48e": {
-    "one": "Codziennie rotuje {count} tytuł",
     "few": "Codziennie rotuje {count} tytuły",
     "many": "Codziennie rotuje {count} tytułów",
+    "one": "Codziennie rotuje {count} tytuł",
     "other": "Codziennie rotuje {count} tytułu"
   },
   "m_02beea95537318": "Ceny planów zapisane",
@@ -439,9 +447,9 @@
   "m_02d4f83ff8f11c": "do",
   "m_02d9661548eb48": "popularność",
   "m_02da64e75782c4": {
-    "one": "{count} odtworzenie",
     "few": "{count} odtworzenia",
     "many": "{count} odtworzeń",
+    "one": "{count} odtworzenie",
     "other": "{count} odtworzenia"
   },
   "m_02db68d520f1b2": "Ramówka",
@@ -468,9 +476,9 @@
   "m_030d3fb3600058": "Folder tymczasowy",
   "m_030e042c756ea8": "Rozpoczęte, ale nieukończone",
   "m_031004cdaa8c37": {
-    "one": "{source} {duration} ({count} odtworzenie)",
     "few": "{source} {duration} ({count} odtworzenia)",
     "many": "{source} {duration} ({count} odtworzeń)",
+    "one": "{source} {duration} ({count} odtworzenie)",
     "other": "{source} {duration} ({count} odtworzenia)"
   },
   "m_031021f2893bc9": "Niepowodzenie",
@@ -485,9 +493,9 @@
   "m_0325d90f9a82ff": "Zapisano ustawienia Simkl.",
   "m_032878aab35eb2": "Niedostępny serial",
   "m_0328e2be5b7581": {
-    "one": "{count} minuta",
     "few": "{count} minuty",
     "many": "{count} minut",
+    "one": "{count} minuta",
     "other": "{count} minuty"
   },
   "m_032de12b75ead9": "Zaawansowane: limity osobiste",
@@ -496,9 +504,9 @@
   "m_0332ea783247de": "Tytuły, które widz otworzył, ale nie odtworzył, wpływają na wiersze, które zobaczy następnie.",
   "m_0333027ca317a3": "Pliki testowe",
   "m_033375a2917e8e": {
-    "one": "Zainstalowane definicje: {count}.",
     "few": "Zainstalowane definicje: {count}.",
     "many": "Zainstalowane definicje: {count}.",
+    "one": "Zainstalowane definicje: {count}.",
     "other": "Zainstalowane definicje: {count}."
   },
   "m_033386ef5bff4a": "{provider} nie będzie już używany do streamingu. Jego klucz API zostanie usunięty z Ether.",
@@ -515,9 +523,9 @@
   "m_03511d39db6f7f": "Limit rozdzielczości po ulepszeniu",
   "m_0357bc87b226c4": "Plik gotowy do importu",
   "m_035960981be4e1": {
-    "one": "{count} nieudane",
     "few": "{count} nieudane",
     "many": "{count} nieudanych",
+    "one": "{count} nieudane",
     "other": "{count} nieudanego"
   },
   "m_03597bde8a517f": "Brak migawek. Utwórz pierwszą kopię zapasową.",
@@ -542,9 +550,9 @@
   "m_037f4da8f05d1c": "Wybierz sposób logowania, jeśli dostawca chroni swoje adresy URL.",
   "m_037fb292194f40": "Co ogląda serwer",
   "m_038006bc051309": {
-    "one": "Tylko kanał wybrany poniżej.",
     "few": "Tylko {count} kanały wybrane poniżej.",
     "many": "Tylko {count} kanałów wybranych poniżej.",
+    "one": "Tylko kanał wybrany poniżej.",
     "other": "Tylko {count} kanału wybranego poniżej."
   },
   "m_0381e24fefcb2d": "Co opisuje",
@@ -575,6 +583,7 @@
   "m_03d5476676b7fc": "Maksymalna liczba stron na synchronizację",
   "m_03da1fd5a4541a": "Już we Własnym ocenianiu",
   "m_03db23f21fbeb7": "Nie znaleziono nowych dopasowań",
+  "m_03db87cb2e7846": "Dostarczanie",
   "m_03deacbbd311d9": "Co jest w serwisie w Twoim regionie",
   "m_03deb3c4bf8abb": "Wybierz istniejący plakat bez zmieniania składu kolekcji.",
   "m_03df69549c96f4": "Dlaczego tutaj:",
@@ -597,6 +606,7 @@
   "m_03facff8821157": "Szkło · oceny i szczegóły",
   "m_03fe09a2e754ba": "Profil {profile}",
   "m_03ffab437fb924": "Wymóg potwierdzenia dla filmów jest wyłączony.",
+  "m_04000b62dd19d6": "Brakujące napisy są pobierane z OpenSubtitles. Konto konfiguruje się w {link}.",
   "m_04020077e71c31": "Zasila funkcję „Opisz to” oraz tematyczne wiersze na stronie głównej.",
   "m_04029a0d89758e": "Dostrajanie",
   "m_0404daecf11702": "Brak kolekcji do wyświetlenia.",
@@ -605,9 +615,9 @@
   "m_0409b7ebb53d9a": "Odznaki tytułów",
   "m_040a587be9953f": "Współczynnik trafień dysku",
   "m_040c3fce60bbd0": {
-    "one": "Wyświetlono pierwszy pasujący tytuł ({count}). Podgląd bieżących dopasowań z katalogu.",
     "few": "Wyświetlono pierwsze {count} pasujące tytuły. Podgląd bieżących dopasowań z katalogu.",
     "many": "Wyświetlono pierwszych {count} pasujących tytułów. Podgląd bieżących dopasowań z katalogu.",
+    "one": "Wyświetlono pierwszy pasujący tytuł ({count}). Podgląd bieżących dopasowań z katalogu.",
     "other": "Wyświetlono pierwszych {count} pasującego tytułu. Podgląd bieżących dopasowań z katalogu."
   },
   "m_041119e94925f1": "Budowanie podglądu…",
@@ -624,6 +634,7 @@
   "m_0424aaaf490f27": "status tmdb debrid prowlarr ratings stan oceny",
   "m_042922385e697c": "Debug",
   "m_04298d849f6e0b": "w dniu lub po",
+  "m_042dd2ece9d0ad": "Otwórz stronę zatwierdzenia",
   "m_042eb2bd6ae19a": "Twój klucz API TMDB",
   "m_0430a048c733e4": "Dodaj {name} jako indeksator",
   "m_0431fab35ddd2d": "Twoje multimedia. Poza granicami statycznej biblioteki.",
@@ -640,9 +651,9 @@
   "m_043b9d6c4759dd": "Żaden widz z nadpisaniami nie pasuje do „{query}”.",
   "m_044354b806b681": "Przygotowuje początek następnego odcinka, aby startował natychmiast.",
   "m_0443f64565d7da": {
-    "one": "Wszystkie {count} kanał na żywo ma przewodnik",
     "few": "Wszystkie {count} kanały na żywo mają przewodnik",
     "many": "Wszystkie {count} kanałów na żywo ma przewodnik",
+    "one": "Wszystkie {count} kanał na żywo ma przewodnik",
     "other": "Wszystkie {count} kanału na żywo ma przewodnik"
   },
   "m_044485feb6ec3b": "Na topie, popularne, najwyżej oceniane, aktualnie w kinach…",
@@ -657,12 +668,14 @@
   "m_045577dceca94c": "Nazwa grupy {n}",
   "m_0455bd26c25554": "dla dostawców odpowiadających tylko znanym odtwarzaczom",
   "m_0456ed32f69954": "Wyślij test",
+  "m_045846aeafa018": "Metadane › Oceny",
   "m_04587003d728aa": "Zainstalowane serwisy",
   "m_04593da96fc166": "Dokończ konfigurację, aby uruchomić wszystko. Poniższe pozycje będą się uzupełniać w trakcie.",
   "m_045e7be55a3b86": "Strategia wyboru",
   "m_045e9bee109cfe": "Nie zmierzono jeszcze odtworzeń.",
   "m_045eac42dfd29b": "Pokazuj „Dopasowanie 96% · Kończy się o 22:45” na stronie szczegółów tytułu.",
   "m_045ecfd5c1648d": "Ether nie zawiera dostawców debrid: użyj własnego konta Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link lub Offcloud i jego klucza API. Debrid strumieniuje wydania torrentowe, więc potrzebuje też co najmniej jednego źródła torrentów (indeksatora Torznab, serwisu torrentowego lub dodatku Stremio) w sekcji {indexers}; żadne nie zostało jeszcze skonfigurowane.",
+  "m_04600e288e8c1f": "Połącz konto Plex tego widza",
   "m_046261587afcdb": "Używaj wszystkich obsługiwanych kanałów",
   "m_046385e826c660": "Folder pamięci podręcznej i limit dysku",
   "m_046553d4b5518d": "Przechowuj pamięć podręczną na zamontowanym udziale sieciowym.",
@@ -672,9 +685,9 @@
   "m_046d8520c1d620": "Eksplorator pamięci podręcznej",
   "m_047334159816b2": "Grafiki TMDB",
   "m_04736065ec00ca": {
-    "one": "{count} żądanie API dziennie",
     "few": "{count} żądania API dziennie",
     "many": "{count} żądań API dziennie",
+    "one": "{count} żądanie API dziennie",
     "other": "{count} żądania API dziennie"
   },
   "m_04736cfe01f746": "Strumienie odświeżają się co kilka sekund. Zatrzymanie strumienia kończy odtwarzanie na urządzeniu widza.",
@@ -682,16 +695,16 @@
   "m_0474b5fa45d5ae": "Usuń regułę",
   "m_0474e00de25f80": "Wybierz serial",
   "m_047aeca2222ee6": {
-    "one": "Ostatni {count} dzień",
     "few": "Ostatnie {count} dni",
     "many": "Ostatnie {count} dni",
+    "one": "Ostatni {count} dzień",
     "other": "Ostatnie {count} dnia"
   },
   "m_047b178b1d46c9": "Wybierz dostawcę",
   "m_047e07b4a4ee8f": {
-    "one": "{count} tytuł nie ma obecnie metadanych o kraju. Zwykłe odświeżanie metadanych uzupełnia braki; zapisanie reguł nie uruchamia masowych wyszukiwań.",
     "few": "{count} tytuły nie mają obecnie metadanych o kraju. Zwykłe odświeżanie metadanych uzupełnia braki; zapisanie reguł nie uruchamia masowych wyszukiwań.",
     "many": "{count} tytułów nie ma obecnie metadanych o kraju. Zwykłe odświeżanie metadanych uzupełnia braki; zapisanie reguł nie uruchamia masowych wyszukiwań.",
+    "one": "{count} tytuł nie ma obecnie metadanych o kraju. Zwykłe odświeżanie metadanych uzupełnia braki; zapisanie reguł nie uruchamia masowych wyszukiwań.",
     "other": "{count} tytułu nie ma obecnie metadanych o kraju. Zwykłe odświeżanie metadanych uzupełnia braki; zapisanie reguł nie uruchamia masowych wyszukiwań."
   },
   "m_047e34b0de5019": "Własny hosting",
@@ -711,9 +724,9 @@
   "m_0499b0d2b3735d": "Synchronizuj widza",
   "m_049afe6b645d5c": "ostatnio działało {time}",
   "m_049ed28bbad73e": {
-    "one": "{from}–{to} z {count} tytułu",
     "few": "{from}–{to} z {count} tytułów",
     "many": "{from}–{to} z {count} tytułów",
+    "one": "{from}–{to} z {count} tytułu",
     "other": "{from}–{to} z {count} tytułu"
   },
   "m_04a39a9880320e": "Sprawdź ustawienia",
@@ -741,18 +754,18 @@
   "m_04d6da1f1afe82": "Ether zawiera programy, których potrzebuje. Zmień ścieżkę tylko wtedy, gdy zainstalowano własną kopię.",
   "m_04d704f0dd6ba1": "Ether przeszukuje serwisy dodane jako indeksatory, korzystając z definicji w formacie Cardigann, które sam instalujesz. Nie zawiera żadnych: instaluj wyłącznie definicje serwisów, z których masz prawo korzystać.",
   "m_04d7ddcbba86e8": {
-    "one": "Wyświetlono najnowsze {shown} z {count} decyzji.",
     "few": "Wyświetlono najnowsze {shown} z {count} decyzji.",
     "many": "Wyświetlono najnowsze {shown} z {count} decyzji.",
+    "one": "Wyświetlono najnowsze {shown} z {count} decyzji.",
     "other": "Wyświetlono najnowsze {shown} z {count} decyzji."
   },
   "m_04d93549f681a6": "Własny certyfikat",
   "m_04db98911c3eb1": "Limit dysku: {size}",
   "m_04dc02a162bd65": "Zaloguj się na swoje konto widza.",
   "m_04dc1ac4895ab6": {
-    "one": "{count} reguła",
     "few": "{count} reguły",
     "many": "{count} reguł",
+    "one": "{count} reguła",
     "other": "{count} reguły"
   },
   "m_04df0b528d90fb": "Wybierz…",
@@ -769,9 +782,9 @@
   "m_04f36b838e60ce": "Ukryj automatyczne kolekcje franczyz",
   "m_04f617d5eb1d49": "Brak grafik w katalogu",
   "m_04fb0ee40d66f8": {
-    "one": "{count} uratowanie przez uzupełnianie",
     "few": "{count} uratowania przez uzupełnianie",
     "many": "{count} uratowań przez uzupełnianie",
+    "one": "{count} uratowanie przez uzupełnianie",
     "other": "{count} uratowania przez uzupełnianie"
   },
   "m_04fbee3344bf2c": "Korekty",
@@ -797,6 +810,7 @@
   "m_05193eb1d41ffd": "Zaimportowane reguły",
   "m_051c3370dc0d5b": "Lista Letterboxd",
   "m_051cbd985e548b": "Oddzielone przecinkami",
+  "m_051d3aeb75da5b": "Opcjonalna ścieżka do własnego pliku NVEncC64.exe. Pozostaw puste dla konfiguracji automatycznej; własne instalacje nigdy nie są nadpisywane.",
   "m_05225e200a49d6": "Utracono połączenie z plex.tv",
   "m_05233d603be819": "Przetestuj klucz TMDB",
   "m_05241032cee8fe": "upnp port forward public przekierowanie portów publiczny",
@@ -810,9 +824,9 @@
   "m_053af491377788": "Wstępne ładowanie wyłączone",
   "m_053cc39b219553": "Sprawdzono: {checked} · oczekuje na szczegóły: {pending}",
   "m_053da922f3a834": {
-    "one": "{count} rok",
     "few": "{count} lata",
     "many": "{count} lat",
+    "one": "{count} rok",
     "other": "{count} roku"
   },
   "m_054a0b20132fa8": "Ziarno losowania",
@@ -851,9 +865,9 @@
   "m_0573f6461730ba": "Zadeklarowany dźwięk musi odpowiadać językowi oryginalnemu tego tytułu. Napisy się nie liczą, a sama nazwa pliku nie pozwala na porównanie.",
   "m_0575616742f24c": "Nigdy niżej niż pozycja dla: {title}",
   "m_0576f94aa5c08a": {
-    "one": "{count} odczyt z dysku",
     "few": "{count} odczyty z dysku",
     "many": "{count} odczytów z dysku",
+    "one": "{count} odczyt z dysku",
     "other": "{count} odczytu z dysku"
   },
   "m_057785b679b588": "Ukończenie konfiguracji ogranicza tę stronę administracyjną do konta właściciela. Konfigurację możesz później ponownie otworzyć w Ustawieniach.",
@@ -886,9 +900,9 @@
   "m_05a76cb616d8c1": "Pomiń tytuły pasujące do któregokolwiek z tych warunków, niezależnie od reguł.",
   "m_05a94969d28928": "Uwzględnij tytuły dla dorosłych",
   "m_05ad43fe3d9433": {
-    "one": "{count} niepowodzenie",
     "few": "{count} niepowodzenia",
     "many": "{count} niepowodzeń",
+    "one": "{count} niepowodzenie",
     "other": "{count} niepowodzenia"
   },
   "m_05b16e25bef09b": "Segmenty z Usenet są buforowane na dysku, dzięki czemu przewijanie i ponowne oglądanie są natychmiastowe.",
@@ -916,6 +930,7 @@
   "m_05df6f55026b7a": "Ostatni zwykły odcinek według dostępnych metadanych; nieznane daty na końcu",
   "m_05df964ad9f9b3": "Źródło definicji",
   "m_05dfac2b60f04f": "Ten sekret jest wyświetlany tylko raz.",
+  "m_05dfadd1428cae": "Stan Plex",
   "m_05e0d33d6dd310": "Nieopublikowana",
   "m_05e35f8f0cbac1": "M3U i XMLTV",
   "m_05e4aa1cda58ac": "Adres URL serwera Plex",
@@ -934,6 +949,7 @@
   "m_05ff2f8d217983": "Ładowanie strony głównej",
   "m_06008f4dc42886": "audio subtitles language watchlist alerts policy dźwięk napisy język lista obserwowanych alerty zasady",
   "m_0603f8c8c14881": "Odcinki specjalne umieszczone przez kolejność zachowują swoje miejsce. Ukrycie odcinków specjalnych usuwa z list przeglądania każdy odcinek sezonu 0. Odcinki pominięte przez kolejność pojawiają się w sekcji Inne odcinki.",
+  "m_0604cb4ea946e7": "Możliwości urządzeń",
   "m_0607d4d4be574c": "Wznów",
   "m_0609d540123cc4": "Adres URL strumienia",
   "m_060f1ed88b3989": "Ponów",
@@ -943,12 +959,13 @@
   "m_061c379fa8a24d": "wyłączony",
   "m_061c555bca57f4": "Puste oznacza brak wariantu zapasowego. Pasujące alternatywy są próbowane po dopasowaniach głównych.",
   "m_061deedf9f6e55": {
-    "one": "{amount} za odtworzenie · {count} odtworzenie w tym miesiącu",
     "few": "{amount} za odtworzenie · {count} odtworzenia w tym miesiącu",
     "many": "{amount} za odtworzenie · {count} odtworzeń w tym miesiącu",
+    "one": "{amount} za odtworzenie · {count} odtworzenie w tym miesiącu",
     "other": "{amount} za odtworzenie · {count} odtworzenia w tym miesiącu"
   },
   "m_061faebf66749d": "Połączono",
+  "m_0620243c6d8ddd": "Połączono · {provider}",
   "m_0620728b070495": "Nic nie jest zablokowane",
   "m_062477b462a770": "Wszyscy aktywni widzowie z dostępem współdzielonym",
   "m_0625828c3ad678": "Wyjaśnialny wybór",
@@ -959,9 +976,9 @@
   "m_062da5c5a3a9e4": "Przesuń w górę: {name}",
   "m_06312783cfee0c": "Nie znaleziono",
   "m_0634e41616c6e6": {
-    "one": "{label}: {count} wiersz",
     "few": "{label}: {count} wiersze",
     "many": "{label}: {count} wierszy",
+    "one": "{label}: {count} wiersz",
     "other": "{label}: {count} wiersza"
   },
   "m_0635efae2d027d": "Wyprzedzenie musi mieścić się w przedziale od 1 do 366 dni.",
@@ -977,11 +994,12 @@
   "m_064a1ab5bd5313": "Przejmij tożsamość, widzów i ustawienia klastra. Dotychczasowa historia tego serwera nie jest scalana.",
   "m_064a89e6bb3e31": "Lokalny port, ścieżki pamięci podręcznej i ustawienia transkodowania pozostają na tej maszynie. Oryginalna baza SQLite pozostaje w Twoim katalogu danych.",
   "m_064a9c014590aa": {
-    "one": "Dotyczy {count} widza",
     "few": "Dotyczy {count} widzów",
     "many": "Dotyczy {count} widzów",
+    "one": "Dotyczy {count} widza",
     "other": "Dotyczy {count} widza"
   },
+  "m_064cc5513ced81": "Strumieniuj wydania torrentowe przez własne konto debrid.",
   "m_064cf27492eeb4": "Online",
   "m_064e795a99e4c9": "Nieużywane definicje",
   "m_06527925e1fe24": "WIDOCZNOŚĆ BIBLIOTEKI",
@@ -1003,14 +1021,15 @@
   "m_0675f997b49659": "Profile publikowane przez TRaSH Guides, odświeżane co godzinę.",
   "m_067681d06872f1": "Sprawdź",
   "m_06769c6faf9289": "Dowolny wybrany adres URL obrazu.",
+  "m_06799b1c692822": "Plex nie zezwolił na synchronizację stanu oglądania dla tego konta.",
   "m_0679e8425086e0": "Połącz TMDB i wybierz tytuły oraz metadane, które odkryją Twoi widzowie.",
   "m_067bb0539831f8": "Nie ma na tej stronie",
   "m_068139f25abb8b": "0.0.0.0 nasłuchuje na każdym interfejsie sieciowym.",
   "m_06833aab41a35d": "Otwórz stronę zatwierdzania Simkl i wpisz kod {code}.",
   "m_068bab67236a91": {
-    "one": "{count} sugerowane dopasowanie",
     "few": "{count} sugerowane dopasowania",
     "many": "{count} sugerowanych dopasowań",
+    "one": "{count} sugerowane dopasowanie",
     "other": "{count} sugerowanego dopasowania"
   },
   "m_0690e44fdf0bdd": "Brak kanału e-mail dla raportu tygodniowego",
@@ -1035,6 +1054,7 @@
   "m_06b02e0a57fe7e": "Odkrywanie i prezentacja",
   "m_06b142704e8d28": "Każdy, kto połączył Trakt, w tym znajomi.",
   "m_06b275d8d4405c": "{title} ({year})",
+  "m_06b2f5019e4ccc": "Jak Ether dostosowuje każdy strumień do aplikacji, która go odtwarza.",
   "m_06b3490fd1dd48": "Twoje wiersze ze Studia kolekcji",
   "m_06b63c85c41f14": "Zmień kolejność źródła",
   "m_06b64b0c418139": "Nie udało się zapisać",
@@ -1061,15 +1081,16 @@
   "m_06dc5804d9c769": "Prześlij plik",
   "m_06dea04cfc1d12": "Usenet (Newznab)",
   "m_06df187c7ca965": {
-    "one": "{count} dzień w tygodniu",
     "few": "{count} dni w tygodniu",
     "many": "{count} dni w tygodniu",
+    "one": "{count} dzień w tygodniu",
     "other": "{count} dnia w tygodniu"
   },
   "m_06e1df016b6fba": "Brak włączonych indeksatorów",
   "m_06e1f27362a9e8": "Dostrajanie kanału {channel}…",
   "m_06e5373c3bde95": "Przetestuj Trakt",
   "m_06e5eb3a860789": "Z–A",
+  "m_06e74e0efa9e60": "Otwórz ponownie kreator konfiguracji",
   "m_06ea465bb2726a": "Reguła {n}",
   "m_06eae33a6bd3c5": "Przypisanie przewodnika do kanałów",
   "m_06ec0f75d38049": "Wyklucz",
@@ -1132,9 +1153,9 @@
   "m_0765ed97aa75fc": "Model",
   "m_0766807633974b": "Próbka tego szablonu",
   "m_07668148f9beb1": {
-    "one": "{count} trafienie w pamięci podręcznej ({memory} z pamięci, {disk} z dysku) wobec {fetched} pobranych",
     "few": "{count} trafienia w pamięci podręcznej ({memory} z pamięci, {disk} z dysku) wobec {fetched} pobranych",
     "many": "{count} trafień w pamięci podręcznej ({memory} z pamięci, {disk} z dysku) wobec {fetched} pobranych",
+    "one": "{count} trafienie w pamięci podręcznej ({memory} z pamięci, {disk} z dysku) wobec {fetched} pobranych",
     "other": "{count} trafienia w pamięci podręcznej ({memory} z pamięci, {disk} z dysku) wobec {fetched} pobranych"
   },
   "m_076722d3eb2f03": "Zapomnij",
@@ -1159,9 +1180,9 @@
   "m_0796cef211a6e0": "Gdy tytuł z listy obserwowanych widza można strumieniować, pojawia się na jego stronie głównej Plex. Sama data premiery nie wystarczy: Ether czeka na sprawne wydanie.",
   "m_079987edbcc20f": "Kategorie",
   "m_07a0b86b755f78": {
-    "one": "{count} usunięcie (451)",
     "few": "{count} usunięcia (451)",
     "many": "{count} usunięć (451)",
+    "one": "{count} usunięcie (451)",
     "other": "{count} usunięcia (451)"
   },
   "m_07a16636a474c3": "{field}: co najmniej {value}",
@@ -1176,15 +1197,17 @@
   "m_07b39bebc47cb3": "Data rozpoczęcia dla: {title}",
   "m_07b7c827c94c19": "Udostępnij plik z tego komputera swoim aplikacjom Plex, aby ustalić, czy problem z odtwarzaniem leży w aplikacji, czy w strumieniu. To narzędzie diagnostyczne, a nie biblioteka; wyłącz je po zakończeniu.",
   "m_07b80d86ed6696": {
-    "one": "{count} wydanie na NAS",
     "few": "{count} wydania na NAS",
     "many": "{count} wydań na NAS",
+    "one": "{count} wydanie na NAS",
     "other": "{count} wydania na NAS"
   },
+  "m_07b8f7e9728519": "Zaloguj się na konto Plex, które jest właścicielem tego serwera.",
   "m_07ba2e86a6e153": "Zsynchronizowano",
   "m_07bb5b4cdfcc1a": "Dodaj źródło M3U, aby zaimportować kanały IPTV.",
   "m_07bc8ea263ccc9": "Tylko przewodnik",
   "m_07bf034a1366dc": "Losowo",
+  "m_07c0ba56f7f8dc": "Importuj lub eksportuj historię",
   "m_07c1d86fe6ea45": "compatibility codecs zgodność kodeki",
   "m_07c2920e1765cf": "Nieznany widz",
   "m_07c62348fa8476": "Artykuły sprawdzane, zanim wydanie zostanie uznane za wiarygodne.",
@@ -1193,9 +1216,9 @@
   "m_07c7e27d2a70ca": "Najpierw ustaw wymagania, a potem ułóż preferencje według priorytetu. Punkty TRaSH rozstrzygają remisy.",
   "m_07c8a3f615112d": "Zwolnione przez zasady przechowywania pamięci podręcznej",
   "m_07cca1160d7b16": {
-    "one": "{count} kanał",
     "few": "{count} kanały",
     "many": "{count} kanałów",
+    "one": "{count} kanał",
     "other": "{count} kanału"
   },
   "m_07cd1dff014cbe": "Równoczesne żądania zakresu na otwarty plik. 0 = 4; maksymalnie 16.",
@@ -1209,9 +1232,9 @@
   "m_07e0408cad007c": "Maksymalne miejsce dla przygotowanych pobrań. Ustaw 0, aby użyć domyślnego limitu 20 GiB.",
   "m_07e422f80f3c20": "Kotwice ze strony głównej wszystkich",
   "m_07e8ceb0a74af0": {
-    "one": "{count} błąd",
     "few": "{count} błędy",
     "many": "{count} błędów",
+    "one": "{count} błąd",
     "other": "{count} błędu"
   },
   "m_07ea6909060e49": "Filmy i seriale",
@@ -1285,9 +1308,9 @@
   "m_0869c8ac9a4134": "Oryginalna grafika",
   "m_086a0fea5bf230": "Sprawdź połączenie",
   "m_086ae5ebef35ab": {
-    "one": "{count} link odświeżony",
     "few": "{count} linki odświeżone",
     "many": "{count} linków odświeżonych",
+    "one": "{count} link odświeżony",
     "other": "{count} linku odświeżonego"
   },
   "m_086d871fdbd202": "Użyj tokenu przed wygaśnięciem; zawsze możesz utworzyć kolejny.",
@@ -1334,9 +1357,9 @@
   "m_08c85cf69d7b6a": "Półkę kształtują ostatnie ponowne oglądanie, wspólne ulubione tytuły i zainteresowania gatunkami. Starsze oglądanie traci znaczenie; bez historii wybór opiera się na popularności w katalogu.",
   "m_08cb5d0fa07343": "Alerty na telefonie",
   "m_08cd5abd115457": {
-    "one": "ten węzeł: {share} z {count} połączenia",
     "few": "ten węzeł: {share} z {count} połączeń",
     "many": "ten węzeł: {share} z {count} połączeń",
+    "one": "ten węzeł: {share} z {count} połączenia",
     "other": "ten węzeł: {share} z {count} połączenia"
   },
   "m_08d25c5fa7e27e": "bursztyn",
@@ -1352,9 +1375,9 @@
   "m_08e3fb9b7323f3": "Sprawdzanie, które kanały mają wpisy programu…",
   "m_08e44edbf4cb4f": "Własny wzorzec wiersza",
   "m_08e6b2776c1ca5": {
-    "one": "{count} obejrzenie",
     "few": "{count} obejrzenia",
     "many": "{count} obejrzeń",
+    "one": "{count} obejrzenie",
     "other": "{count} obejrzenia"
   },
   "m_08e8e12cce7034": "Dostawca zapisany",
@@ -1384,12 +1407,14 @@
   "m_090b6d2f2c01df": "Zawiera",
   "m_090d73faa01327": "Zachowano {used}",
   "m_0911dd5ef5f2c6": "Dodatkowe adresy, które aplikacje Plex powinny wypróbować, oddzielone przecinkami.",
+  "m_0914ec5d898379": "Ether nie potwierdził, czy Plex zezwala na synchronizację stanu oglądania dla tego konta.",
   "m_09154bcbf86ce2": "Znaczniki",
   "m_09155c19659b5c": "Wklej JSON",
   "m_091585ad4b51b1": "Przeszukaj indeksatory pod kątem jednego filmu lub odcinka i zobacz każde wydanie, ocenione dokładnie tak, jak zrobiłoby to odtwarzanie. Przypnij wybrane albo zablokuj złe.",
   "m_091678cebc4093": "Znajdź widza z nadpisaniami",
   "m_0918a5b78948a1": "Profil: {profile} · Wysokość: {height} · Przepływność: {bitrate}",
   "m_091d0da83025e0": "Identyfikator czatu",
+  "m_0922039cc89002": "errors debug błędy debugowanie",
   "m_09240eb23ccf53": "Maksymalna liczba wstępnie załadowanych tytułów",
   "m_0924c7aecd05ad": "Klucz API Prowlarr",
   "m_092a782bcbb664": "Utwórz bota w BotFather, najpierw napisz do niego, a następnie wpisz jego token i identyfikator docelowego czatu. Identyfikatory czatów grupowych mogą być ujemne.",
@@ -1441,9 +1466,9 @@
   "m_098274f982fb0c": "Teraz odtwarzane",
   "m_0985beb1e62856": "Ścieżka ffmpeg",
   "m_09878a43a4682e": {
-    "one": "{count} dzień temu",
     "few": "{count} dni temu",
     "many": "{count} dni temu",
+    "one": "{count} dzień temu",
     "other": "{count} dnia temu"
   },
   "m_09886673fbfce2": "Twój projekt",
@@ -1456,22 +1481,25 @@
   "m_098f9a2e213392": "Filtruj komunikaty…",
   "m_0991a1e0cdc491": "Próbowane jako pierwsze",
   "m_0994bc8918b6f9": "Pokazuje niewyemitowane odcinki ze znaną datą emisji w rozpoczętych sezonach. Są oznaczone jako niewyemitowane i nie można ich odtworzyć. Alternatywne kolejności odcinków zachowują obecne listy.",
+  "m_09970627ee227e": "Podstawy",
   "m_0998693d6c7054": "każde urządzenie",
   "m_0998bb49f4949c": "Folder pamięci podręcznej",
   "m_099b345bc660cd": "Użyj plakatu tytułu",
   "m_099b3543883538": "Limit dla całego serwera",
+  "m_099b522a5c984d": "Tytuły, grafiki i szczegóły dla całego katalogu.",
   "m_099e4877001931": "Sprawdzenie certyfikatu nie powiodło się",
   "m_099efd920db4f0": "Szukaj tytułów lub identyfikatorów wydań…",
   "m_09a30b38f56832": "Studio kolekcji",
+  "m_09a34ba4a20086": "Wczytywanie stanu oglądania Plex",
   "m_09a50bbd917fa6": "Zainstaluj",
   "m_09a6372dc347db": "Prześlij: {name}",
   "m_09a87f5bfb453b": "Ostatnio zaimportowano {when} · zakres wpisów programu: {span}",
   "m_09a9b9012738ea": "Wydanie przypięte",
   "m_09ac1b92a7f43f": "Rozłącz",
   "m_09ac7c244189c5": {
-    "one": "Zainstalowane definicje: {count}, wszystkie używane przez indeksatory powyżej.",
     "few": "Zainstalowane definicje: {count}, wszystkie używane przez indeksatory powyżej.",
     "many": "Zainstalowane definicje: {count}, wszystkie używane przez indeksatory powyżej.",
+    "one": "Zainstalowane definicje: {count}, wszystkie używane przez indeksatory powyżej.",
     "other": "Zainstalowane definicje: {count}, wszystkie używane przez indeksatory powyżej."
   },
   "m_09b08aac4e75bf": "{duration} na noc",
@@ -1482,6 +1510,7 @@
   "m_09b8523601c716": "Obserwuje, co odtwarzają widzowie; włączy się, gdy pokona ręcznie dostrojony ranking.",
   "m_09bfaed1f837c2": "Definicja",
   "m_09bfd82959f8d2": "Wbudowane",
+  "m_09bfdbb21d55e2": "Ulepszanie wideo na serwerze",
   "m_09c0cf8848587c": "Weekendy",
   "m_09c51d40f9fe36": "Bezpiecznie zatrzymaj ten serwer i jego pracę w tle. Aktywne strumienie muszą się zakończyć, zanim konfiguracja będzie mogła przebiegać dalej.",
   "m_09c5e3a08635bb": "Odświeżanie podglądu",
@@ -1534,9 +1563,9 @@
   "m_0a1ed215e9aca5": "Nie wysłano jeszcze raportów tygodniowych.",
   "m_0a1f6a6e22044c": "Dostosuj synchronizację",
   "m_0a220beea2f81b": {
-    "one": "Kod wygasa o {time}. Odczekaj co najmniej {count} sekundę między sprawdzeniami.",
     "few": "Kod wygasa o {time}. Odczekaj co najmniej {count} sekundy między sprawdzeniami.",
     "many": "Kod wygasa o {time}. Odczekaj co najmniej {count} sekund między sprawdzeniami.",
+    "one": "Kod wygasa o {time}. Odczekaj co najmniej {count} sekundę między sprawdzeniami.",
     "other": "Kod wygasa o {time}. Odczekaj co najmniej {count} sekundy między sprawdzeniami."
   },
   "m_0a223f05852d71": "Utworzono właściciela",
@@ -1560,6 +1589,7 @@
   "m_0a54c4df82f5de": "Użyj zamiast tego tokenu Plex",
   "m_0a57da959424bb": "Link do dodatku",
   "m_0a5bcbdd19d2fe": "Tło",
+  "m_0a5e11beceb9d2": "Osoba, która zatwierdzi kod, musi być tym widzem. Połączenie innego konta Plex, w tym właściciela, jest odrzucane.",
   "m_0a5e3659a6ece8": "Film",
   "m_0a600ae2b22f53": "Definicja „{id}” nie jest zainstalowana, więc tego serwisu nie można przeszukiwać. Prześlij ją ponownie w sekcji Definicje serwisów lub usuń ten indeksator.",
   "m_0a6122b7b998b2": "Serwer musi obsługiwać TLS.",
@@ -1587,17 +1617,19 @@
   "m_0a798a868ef61f": "Przeglądaj szablony",
   "m_0a7a13041e22c4": "Dodaj co najmniej jedno źródło torrentów dla konta debrid: link instalacyjny dodatku strumieni Stremio lub adres URL Torznab z Prowlarr, Jackett albo Zilean.",
   "m_0a7a9e060226a9": "jest co najwyżej",
+  "m_0a7b4af1f8f814": "Import kopiuje na tego widza bieżące oznaczenia obejrzane Plex i oceny w całych gwiazdkach, gdy są nowsze. Eksport kolejkuje bieżące oznaczenia obejrzane tego widza i oceny w całych gwiazdkach. Żadne z nich nie wysyła postępu odtwarzania i żadne nie działa, dopóki nie użyjesz tych przycisków.",
   "m_0a7bf2df671b32": "Awaria zasilania, martwa maszyna lub utrata internetu nie pozwalają niezawodnie wysłać wiadomości w ostatniej chwili. Skonfiguruj sygnał życia typu dead-man w zewnętrznej usłudze monitorowania. Ether raz na minutę wysyła żądanie na jej tajny adres URL HTTPS, po pomyślnym lokalnym teście zdrowia HTTP. Ustaw w monitorze oczekiwany interwał jednej minuty z co najmniej trzyminutowym okresem tolerancji i skonfiguruj jego własne alerty e-mail lub telefoniczne. W klastrze ten wspólny sygnał życia trwa, dopóki którykolwiek węzeł odpowiada; monitoruj każdy węzeł zewnętrznie, aby wykrywać pojedyncze awarie.",
   "m_0a7f1858f2ec46": "Akcje",
   "m_0a7fbf3b03875e": "Odtworzenia, ukończenia i porzucenia pojawiają się tutaj na bieżąco.",
   "m_0a8137cbeb090d": "Filmy i odcinki w pamięci podręcznej pojawią się tutaj w miarę oglądania przez widzów.",
   "m_0a82020af2583a": "Przejdź do",
   "m_0a857b87034578": "Użyj dostawcy plakatów",
+  "m_0a86ca146783b7": "Bieżący widzowie i zaimportowana historia, z dostępem zsynchronizowanym z Plex.",
   "m_0a8c3be24321bb": "Użyj {imdb} albo {tmdb} wraz z {type} (movie/tv). Dodaj {key}, aby użyć osobnego klucza.",
   "m_0a8d77f5f81ae9": {
-    "one": "{name} korzysta ze strony głównej wszystkich w sekcji {section}. ({count} nadpisanie na innych stronach.)",
     "few": "{name} korzysta ze strony głównej wszystkich w sekcji {section}. ({count} nadpisania na innych stronach.)",
     "many": "{name} korzysta ze strony głównej wszystkich w sekcji {section}. ({count} nadpisań na innych stronach.)",
+    "one": "{name} korzysta ze strony głównej wszystkich w sekcji {section}. ({count} nadpisanie na innych stronach.)",
     "other": "{name} korzysta ze strony głównej wszystkich w sekcji {section}. ({count} nadpisania na innych stronach.)"
   },
   "m_0a8e04efcf11ae": "Równoczesne testy",
@@ -1656,6 +1688,7 @@
   "m_0ae65e13dd0e0d": "Pokazane tu grafiki i oceny pochodzą z TMDB. Sposób ich wyświetlania w Plex skonfigurujesz w sekcji Metadane.",
   "m_0ae881de4bf477": "Wiersz do zakotwiczenia",
   "m_0ae8dd709e2595": "Instalowanie aktualizacji teraz",
+  "m_0ae8f0f521a65d": "Skrót plex.direct",
   "m_0aeb9a4993b7c7": "Ostatnie 500 odtworzeń w tym okresie, w strefie czasowej Twojego urządzenia. Czas oglądania pochodzi z danych raportowanych przez aplikacje Plex.",
   "m_0aec82e03faddd": "Zajrzyj poza swoją przeglądaną bibliotekę. Wyszukaj film lub serial po premierze, aby zobaczyć jego metadane.",
   "m_0af1df85980438": "Przygotuj następny odcinek przy (%)",
@@ -1706,9 +1739,9 @@
   "m_0b55c237cebf50": "Backend magazynu",
   "m_0b57557f2a7a86": "Inteligencja dostępności",
   "m_0b590594d9dacc": {
-    "one": "{count} dostawca sprawny · zajęte połączenia: {active}/{configured}",
     "few": "{count} dostawców sprawnych · zajęte połączenia: {active}/{configured}",
     "many": "{count} dostawców sprawnych · zajęte połączenia: {active}/{configured}",
+    "one": "{count} dostawca sprawny · zajęte połączenia: {active}/{configured}",
     "other": "{count} dostawcy sprawnego · zajęte połączenia: {active}/{configured}"
   },
   "m_0b5d356eadd9c6": "Całe źródło",
@@ -1716,9 +1749,9 @@
   "m_0b604802e64e4a": "0 = bez limitu.",
   "m_0b60c94a86e0de": "Klucz API OpenSubtitles",
   "m_0b623f76206d17": {
-    "one": "Pozostaje {count} tytuł w katalogu przed uwzględnieniem premiery, dostępności i ograniczeń widzów.",
     "few": "Pozostają {count} tytuły w katalogu przed uwzględnieniem premiery, dostępności i ograniczeń widzów.",
     "many": "Pozostaje {count} tytułów w katalogu przed uwzględnieniem premiery, dostępności i ograniczeń widzów.",
+    "one": "Pozostaje {count} tytuł w katalogu przed uwzględnieniem premiery, dostępności i ograniczeń widzów.",
     "other": "Pozostaje {count} tytułu w katalogu przed uwzględnieniem premiery, dostępności i ograniczeń widzów."
   },
   "m_0b628e024bdff1": "Poprzednia",
@@ -1743,9 +1776,9 @@
   "m_0b8165fbe23160": "Profile jakości",
   "m_0b842b664b4f3b": "Szukaj osób…",
   "m_0b87683adda7d6": {
-    "one": "Do {count} tytułu",
     "few": "Do {count} tytułów",
     "many": "Do {count} tytułów",
+    "one": "Do {count} tytułu",
     "other": "Do {count} tytułu"
   },
   "m_0b8ad7d9799427": "Wpływ domowników",
@@ -1761,6 +1794,7 @@
   "m_0ba423ff31902f": "Niska",
   "m_0ba5e944eae44f": "Kody języków w kolejności preferencji, np. en, fr.",
   "m_0ba6bc252b94be": "Elementy sterujące metadanymi",
+  "m_0ba6e96b9cd0e8": "Twoje konto Plex, dostęp zdalny i bezpieczne połączenia.",
   "m_0ba7a5e1b2fa32": "Ukończone",
   "m_0babdcba863b69": "cam health blocked terms groups zablokowane terminy grupy stan",
   "m_0bac1a61131dbf": "Seriale",
@@ -1770,6 +1804,7 @@
   "m_0bb5d7c67c168e": "Zapisz wagę",
   "m_0bb8d1b332c184": "Ultra",
   "m_0bb9255f355d2c": "Ostatnio zaimportowano {when}",
+  "m_0bc0c08430f993": "Wysyłanie nadal trwa. Wyłączenie synchronizacji zatrzymuje zmiany, które nadal czekają w kolejce. Aktualizacja, która jest już wysyłana, może się jeszcze zakończyć.",
   "m_0bc17c208310c3": "{app} włączona",
   "m_0bc5960453b5ad": "Usunąć regułę?",
   "m_0bcb0398a4f45a": "Kolekcja",
@@ -1809,20 +1844,21 @@
   "m_0c072fb8baf115": "Opublikuj",
   "m_0c098f051ed4a8": "Aktywność pojawi się po obejrzeniu pierwszego tytułu.",
   "m_0c0cb66d5e7298": {
-    "one": "Miejsce na około {count} źródło wielkości filmu po 8 GiB. Rozmiary odcinków są różne; oba rodzaje dzielą ten przydział.",
     "few": "Miejsce na około {count} źródła wielkości filmu po 8 GiB każde. Rozmiary odcinków są różne; oba rodzaje dzielą ten przydział.",
     "many": "Miejsce na około {count} źródeł wielkości filmu po 8 GiB każde. Rozmiary odcinków są różne; oba rodzaje dzielą ten przydział.",
+    "one": "Miejsce na około {count} źródło wielkości filmu po 8 GiB. Rozmiary odcinków są różne; oba rodzaje dzielą ten przydział.",
     "other": "Miejsce na około {count} źródła wielkości filmu po 8 GiB każde. Rozmiary odcinków są różne; oba rodzaje dzielą ten przydział."
   },
   "m_0c0e0cfc5a57e7": "Planowanie…",
   "m_0c0f4b8e077d91": "Szukaj…",
+  "m_0c105d1a48023e": "Nie zalogowano w plex.tv. Uruchom kreator konfiguracji, aby się zalogować i przypisać ten serwer.",
   "m_0c11fdb7736f7c": "Katalog i dodatki",
   "m_0c1243087058b7": "03 / Myśl z wyprzedzeniem",
   "m_0c127ea55f4056": "Najstarsza migawka jest usuwana, gdy nowa przekroczyłaby ten limit.",
   "m_0c1a11e42dad06": {
-    "one": "Na antenie: {count} · bez przewodnika: {missing} · wymaga Plex Pass w Plex",
     "few": "Na antenie: {count} · bez przewodnika: {missing} · wymaga Plex Pass w Plex",
     "many": "Na antenie: {count} · bez przewodnika: {missing} · wymaga Plex Pass w Plex",
+    "one": "Na antenie: {count} · bez przewodnika: {missing} · wymaga Plex Pass w Plex",
     "other": "Na antenie: {count} · bez przewodnika: {missing} · wymaga Plex Pass w Plex"
   },
   "m_0c1a45b014e99a": "Bezpieczne połączenia przechodzą na zwykły HTTP do czasu wystawienia certyfikatu plex.direct.",
@@ -1864,6 +1900,7 @@
   "m_0c61d95410fd02": "Dodaj konto debrid, dostawcę Usenet lub oba i przetestuj każde z nich. Ether strumieniuje z Twoich własnych kont; żadnych nie dostarcza.",
   "m_0c6585291788ed": "Samodzielny (SQLite)",
   "m_0c66f3dad07332": "Widzowie bez własnych wyborów dźwięku i napisów używają tych ustawień.",
+  "m_0c6759742d13d9": "Zatwierdź ten kod po zalogowaniu jako ten widz. Następnie sprawdź zatwierdzenie. Kod nie jest hasłem, które Ether przechowuje na stronie po jego wygaśnięciu.",
   "m_0c68b5068311c6": "Nagrywanie. Minęło {seconds} s.",
   "m_0c6986f5deed1e": "Tytuł / widz",
   "m_0c6be7badd5b3a": "Sprawdzanie kilku wydań naraz może zużywać dodatkowe pobrania NZB. Przygotowanie stron szczegółów ma własny niewielki limit.",
@@ -1874,14 +1911,16 @@
   "m_0c743b3826f19b": "SERIAL",
   "m_0c77cfbda0bd90": "Ładowanie tytułów…",
   "m_0c79ba4e8dcf94": {
-    "one": "Przetworzono {count} wpis historii; pominięto: {skipped}.",
     "few": "Przetworzono {count} wpisy historii; pominięto: {skipped}.",
     "many": "Przetworzono {count} wpisów historii; pominięto: {skipped}.",
+    "one": "Przetworzono {count} wpis historii; pominięto: {skipped}.",
     "other": "Przetworzono {count} wpisu historii; pominięto: {skipped}."
   },
   "m_0c7a3810288c4a": "Aplikacja",
+  "m_0c7e5b0f8762e0": "Wybrany plik przekracza limit rozmiaru importu.",
   "m_0c7eed91df4e91": "Token Plex widza źródłowego",
   "m_0c80f61b732d11": "Pamięć podręczna na dysku",
+  "m_0c813e59cc859f": "Ether buduje Twoją bibliotekę Plex na podstawie TMDB, więc wymagany jest klucz API TMDB. Jest bezpłatny: {link}, a następnie wklej go tutaj i przetestuj.",
   "m_0c83fbe8a3a2f4": "Zlokalizowane grafiki",
   "m_0c860a6795171c": "Co można przeglądać",
   "m_0c871fc2eca8f4": "Przechowuj oceny przez",
@@ -1898,9 +1937,9 @@
   "m_0c996935910083": "Utwórz członka gospodarstwa domowego",
   "m_0c9c7006f59757": "migrate plex csv letterboxd trakt migracja",
   "m_0c9c836776900b": {
-    "one": "{count} próba pominięta lub przerwana w tym przebiegu. Niedostępne lub zbyt duże tytuły nie zatrzymują półki.",
     "few": "{count} próby pominięte lub przerwane w tym przebiegu. Niedostępne lub zbyt duże tytuły nie zatrzymują półki.",
     "many": "{count} prób pominiętych lub przerwanych w tym przebiegu. Niedostępne lub zbyt duże tytuły nie zatrzymują półki.",
+    "one": "{count} próba pominięta lub przerwana w tym przebiegu. Niedostępne lub zbyt duże tytuły nie zatrzymują półki.",
     "other": "{count} próby pominiętej lub przerwanej w tym przebiegu. Niedostępne lub zbyt duże tytuły nie zatrzymują półki."
   },
   "m_0c9db8973270f8": "Typowy widz",
@@ -1930,9 +1969,9 @@
   "m_0cd53c8437fa55": "Nie udało się odczytać pliku reguł.",
   "m_0cd75d1cd252b3": "Monitorowanie listy obserwowanych jest wyłączone. {link}, aby synchronizować i sprawdzać listę obserwowanych tego widza.",
   "m_0cd7626791a515": {
-    "one": "Pominięto {count} indeksator z nieobsługiwanym protokołem",
     "few": "Pominięto {count} indeksatory z nieobsługiwanym protokołem",
     "many": "Pominięto {count} indeksatorów z nieobsługiwanym protokołem",
+    "one": "Pominięto {count} indeksator z nieobsługiwanym protokołem",
     "other": "Pominięto {count} indeksatora z nieobsługiwanym protokołem"
   },
   "m_0cd788aacd464e": "Źródła ocen zapisane",
@@ -1996,9 +2035,9 @@
   "m_0d307d1ddc4605": "Przesuń później: {title}",
   "m_0d3a5c4d037f8c": "Progi popularności i liczby głosów kształtują przeglądanie. Pozostałe tytuły po premierze nadal można znaleźć przez wyszukiwarkę Plex.",
   "m_0d3b852788a607": {
-    "one": "{count} źródło gotowe",
     "few": "{count} źródła gotowe",
     "many": "{count} źródeł gotowych",
+    "one": "{count} źródło gotowe",
     "other": "{count} źródła gotowego"
   },
   "m_0d40d2f950fc44": "Punkt wyjścia dla Twojej następnej kolekcji.",
@@ -2007,9 +2046,9 @@
   "m_0d41c85ac63aa9": "Kolekcja TMDB",
   "m_0d444f7761f2b3": "Rozmiar (GiB)",
   "m_0d4623e8fd95bc": {
-    "one": "{day} · {count} kanał",
     "few": "{day} · {count} kanały",
     "many": "{day} · {count} kanałów",
+    "one": "{day} · {count} kanał",
     "other": "{day} · {count} kanału"
   },
   "m_0d475e67862e2f": "Wcześniej wybrany widz (niedostępny)",
@@ -2038,6 +2077,7 @@
   "m_0d6e85a30e753d": "Wyższa jakość bardziej obciąża kartę graficzną. Opcje strumieniowania wymagają nowszej karty NVIDIA. Średnia to dobry początek.",
   "m_0d710450703237": "Ustawienia obowiązują dla nowych żądań bez restartu. Nieznane i przyszłe daty premier nie trafiają do przeglądania.",
   "m_0d71c7a7083aa3": "Niepowodzenie: {message}",
+  "m_0d72bf84d31085": "Łączność",
   "m_0d72ee9b28b521": "Pewność",
   "m_0d73723a433476": "Domyślna dla każdego widza",
   "m_0d73e689bad5af": "Jednoczesne ulepszenia",
@@ -2054,12 +2094,13 @@
   "m_0d8bf5de2ae1d1": "Wydania",
   "m_0d8d4d04c81fc4": "Złagodź regułę, zmień „wszystkich” na „dowolnej” albo dodaj kolejne źródło.",
   "m_0d8fa61cd19c48": {
-    "one": "{count} żądanie",
     "few": "{count} żądania",
     "many": "{count} żądań",
+    "one": "{count} żądanie",
     "other": "{count} żądania"
   },
   "m_0d91b2c5c2991e": "Własne nagłówki",
+  "m_0d922ac4323919": "owner token claimed właściciel token przypisany",
   "m_0d9b5296d6a768": "Kraj odpowiada krajowi pochodzenia lub produkcji w TMDB, w tym koprodukcjom. Język to osobny warunek. Nieznane kraj, gatunek, rok i język nigdy nie pasują do wykluczenia. Kategoria wiekowa „nie jest żadnym z” ukrywa także tytuły bez kategorii.",
   "m_0d9c263916f04b": "Wydanie",
   "m_0da1883d607d06": "Własne wzorce",
@@ -2081,14 +2122,15 @@
   "m_0dbc4d9be5bcf1": "Gdzie zapisywane jest przekonwertowane wideo podczas odtwarzania. Puste używa zwykłego folderu tymczasowego.",
   "m_0dbdefec306063": "otwórz",
   "m_0dbf9d2207c702": {
-    "one": "{count} niewyświetlany",
     "few": "{count} niewyświetlane",
     "many": "{count} niewyświetlanych",
+    "one": "{count} niewyświetlany",
     "other": "{count} niewyświetlanego"
   },
   "m_0dc0554eb70340": "YAML definicji",
   "m_0dc22a4d63d0e9": "Wyszukaj filmy, aby zbudować kolejność emisji. Użyj kolekcji lub gatunków, aby uwzględnić odcinki seriali.",
   "m_0dc345a1c28fe6": "Skopiuj token",
+  "m_0dc35ae06c048b": "Dozwolone oznacza, że Plex odpowiedział, iż to konto może się synchronizować. Odmowa zostawia synchronizację wyłączoną. Niesprawdzone oznacza, że Ether tego nie potwierdził.",
   "m_0dc427dee53c77": "Brak skonfigurowanych indeksatorów.",
   "m_0dc4cd14b7cbaf": "Oglądanie: {channel}",
   "m_0dc9aa9c7ae4a8": "Model językowy",
@@ -2100,6 +2142,7 @@
   "m_0dd49bad16932b": "Ostatnio widziany: {when}",
   "m_0dd63f1065a6ff": "przeglądarka",
   "m_0dd72fc99d2ec6": "Wyszukiwanie nie powiodło się",
+  "m_0dd81b2197f3db": "Nazwa produktu aplikacji Plex.",
   "m_0dd823f235ffc3": "{field} w ciągu ostatnich {value}",
   "m_0ddbd68d097288": "Wybierz inny status lub wyszukiwanie, aby zobaczyć więcej osób.",
   "m_0de6dca824c89a": "Użyj źródła {number}",
@@ -2135,6 +2178,7 @@
   "m_0e322fd2337dba": "{label}: do",
   "m_0e330448a3fb21": "Certyfikat wygasł",
   "m_0e333ae4fe1948": "Wyszukiwania dziennie",
+  "m_0e34099ebb155c": "claim connection checks reachability przypisanie testy połączenia dostępność",
   "m_0e36aa5db07dec": "Podłącz urządzenie",
   "m_0e374b213d550e": "Bezpośredni dostęp zdalny jest włączony",
   "m_0e39cea983ace3": "Przypnij ramówkę do pór dnia (w UTC). Ramówka bazowa wypełnia resztę dnia.",
@@ -2143,9 +2187,9 @@
   "m_0e47a4c7b93c4b": "Bezczynny",
   "m_0e4d86e3c47baf": "Strefa czasowa odtwarzania",
   "m_0e4e767eb235ae": {
-    "one": "{count} odtworzenie z {shown} wyświetleń w ostatnich 7 dniach",
     "few": "{count} odtworzenia z {shown} wyświetleń w ostatnich 7 dniach",
     "many": "{count} odtworzeń z {shown} wyświetleń w ostatnich 7 dniach",
+    "one": "{count} odtworzenie z {shown} wyświetleń w ostatnich 7 dniach",
     "other": "{count} odtworzenia z {shown} wyświetleń w ostatnich 7 dniach"
   },
   "m_0e4ee49208a5ee": "Ładowanie grafik z katalogu",
@@ -2176,6 +2220,7 @@
   "m_0e8e56d52e86e2": "Układ dla: {title}",
   "m_0e919d0f4f50c0": "Opisz kolekcję",
   "m_0e94189aa61949": "Argumenty",
+  "m_0e95325bda15c4": "Niezalogowano",
   "m_0e95572bd34f35": "Przeszukaj Ether",
   "m_0e96f7ca08d490": "Jeszcze nieumieszczona",
   "m_0e9951bbdab310": "Akceleracja sprzętowa",
@@ -2207,9 +2252,9 @@
   "m_0ec49dc714595a": "Liczba wersji tej samej jakości",
   "m_0ec4ae4a08c564": "Przeniesione z profilu Radarr lub Sonarr.",
   "m_0ec6e5f133795d": {
-    "one": "ten węzeł: {slots} z {count} połączenia API",
     "few": "ten węzeł: {slots} z {count} połączeń API",
     "many": "ten węzeł: {slots} z {count} połączeń API",
+    "one": "ten węzeł: {slots} z {count} połączenia API",
     "other": "ten węzeł: {slots} z {count} połączenia API"
   },
   "m_0ec8a765324466": "Instalowanie środowiska uruchomieniowego",
@@ -2235,13 +2280,14 @@
   "m_0f00189c3341fa": "Bis",
   "m_0f0056508634aa": "Wstępne ładowanie",
   "m_0f02e2fdb3c26d": {
-    "one": "Wyświetlono najnowsze {shown} z {count} zablokowanego wydania; zawęź wyszukiwanie, aby znaleźć starsze.",
     "few": "Wyświetlono najnowsze {shown} z {count} zablokowanych wydań; zawęź wyszukiwanie, aby znaleźć starsze.",
     "many": "Wyświetlono najnowsze {shown} z {count} zablokowanych wydań; zawęź wyszukiwanie, aby znaleźć starsze.",
+    "one": "Wyświetlono najnowsze {shown} z {count} zablokowanego wydania; zawęź wyszukiwanie, aby znaleźć starsze.",
     "other": "Wyświetlono najnowsze {shown} z {count} zablokowanego wydania; zawęź wyszukiwanie, aby znaleźć starsze."
   },
   "m_0f076a5a6645dd": "Akcja, Przygodowy",
   "m_0f0ad430471ab7": "Język interfejsu",
+  "m_0f0ad937ea1f27": "To tylko odniesienie. Każda aplikacja Plex zgłasza swoje rzeczywiste kodeki oraz obsługę wyświetlacza i amplitunera podczas odtwarzania. Aby wybrać jakość dla urządzenia, użyj {link}.",
   "m_0f0f1d9646b986": "To konto Plex nie jest właścicielem tego serwera. Zaloguj się na konto, które skonfigurowało Ether.",
   "m_0f108422ac2f24": "Każda aplikacja mówi Ether, co może odtworzyć, gdy ktoś naciśnie Odtwórz. Ta tabela to wbudowany wykaz. Aby ograniczyć jakość dla urządzenia, użyj {link}.",
   "m_0f1238f38feab1": "Usuń źródło {n}",
@@ -2257,9 +2303,9 @@
   "m_0f2debf5c1c71e": "SDH / dla osób niesłyszących",
   "m_0f2ecb998df08f": "Przetestuj połączenie i kontynuuj",
   "m_0f34de196701a9": {
-    "one": "{count} wiersz przesunięty",
     "few": "{count} wiersze przesunięte",
     "many": "{count} wierszy przesuniętych",
+    "one": "{count} wiersz przesunięty",
     "other": "{count} wiersza przesuniętego"
   },
   "m_0f3772f9b14afa": "Dostrój",
@@ -2293,9 +2339,9 @@
   "m_0f68170b55ff32": "Nie podano",
   "m_0f68e8db4dca58": "Strona główna Ether",
   "m_0f6b3baad0d39c": {
-    "one": "{count} tydzień",
     "few": "{count} tygodnie",
     "many": "{count} tygodni",
+    "one": "{count} tydzień",
     "other": "{count} tygodnia"
   },
   "m_0f6cf94757eecb": "Strażnik niedostępny na tym węźle",
@@ -2310,9 +2356,9 @@
   "m_0f821709db143b": "Zaznacz i skopiuj token",
   "m_0f877c91f90f67": "Zaobserwowane użycie dzisiaj i wyniki wyszukiwania w tym miesiącu. Limity usług są obsługiwane automatycznie.",
   "m_0f94dc84dff3aa": {
-    "one": "{count} pasujący tytuł",
     "few": "{count} pasujące tytuły",
     "many": "{count} pasujących tytułów",
+    "one": "{count} pasujący tytuł",
     "other": "{count} pasującego tytułu"
   },
   "m_0f971cae31f0b6": "Kanał {name} przypisano do: {guide}",
@@ -2346,9 +2392,9 @@
   "m_0fd696abd607e8": "Wartość parametru: {label}",
   "m_0fd885e550029c": "Historia dostarczania",
   "m_0fd95692fbed2b": {
-    "one": "Kolejne {count} odrzucone wydanie nie zostało zapisane.",
     "few": "Kolejne {count} odrzucone wydania nie zostały zapisane.",
     "many": "Kolejnych {count} odrzuconych wydań nie zostało zapisanych.",
+    "one": "Kolejne {count} odrzucone wydanie nie zostało zapisane.",
     "other": "Kolejnego {count} odrzuconego wydania nie zostało zapisanych."
   },
   "m_0fda9ca6f2c707": "Zmień kanał przewodnika",
@@ -2376,9 +2422,9 @@
   "m_100301b70a8468": "Testowanie…",
   "m_100569c139cb38": "Zmień kolejność: {title}",
   "m_100658d8fdb73d": {
-    "one": "{count} przełączenie awaryjne",
     "few": "{count} przełączenia awaryjne",
     "many": "{count} przełączeń awaryjnych",
+    "one": "{count} przełączenie awaryjne",
     "other": "{count} przełączenia awaryjnego"
   },
   "m_100d404af25033": "errors debug support zip record a problem błędy debugowanie zgłoś problem",
@@ -2406,9 +2452,9 @@
   "m_103a5a93403d4a": "Minimalne",
   "m_103c377cd85c2c": "Zaktualizowano: {time}",
   "m_103e0ab7cd76f2": {
-    "one": "Zajęte: {active} z {count} połączenia",
     "few": "Zajęte: {active} z {count} połączeń",
     "many": "Zajęte: {active} z {count} połączeń",
+    "one": "Zajęte: {active} z {count} połączenia",
     "other": "Zajęte: {active} z {count} połączenia"
   },
   "m_103f351fc69d90": "Godzina rozpoczęcia powtarzającej się kolejności emisji.",
@@ -2448,9 +2494,9 @@
   "m_107ef7c828b72e": "Po wyłączeniu zgłaszana jest wersja, względem której zweryfikowano Ether. Aplikacje Plex włączają funkcje zależnie od wersji serwera, więc śledzenie może odsłonić funkcje, których Ether nie obsługuje.",
   "m_1082d1a6a743cc": "Konto Simkl zostało połączone.",
   "m_1084ceab8e0923": {
-    "one": "{count} pobranie",
     "few": "{count} pobrania",
     "many": "{count} pobrań",
+    "one": "{count} pobranie",
     "other": "{count} pobrania"
   },
   "m_1084d2a863e410": "Discover: {params}",
@@ -2465,9 +2511,9 @@
   "m_109318934fcf5e": "Harmonogram uruchomi ją w ciągu minuty, w granicach Twojego limitu.",
   "m_109598ff3ae7da": "Właściciel i członkowie Plex Home",
   "m_10966ee62adf18": {
-    "one": "{count} ma nadpisania",
     "few": "{count} mają nadpisania",
     "many": "{count} ma nadpisania",
+    "one": "{count} ma nadpisania",
     "other": "{count} ma nadpisania"
   },
   "m_1096905564c975": "Ruch bazy danych i dane uwierzytelniające będą wysyłane bez szyfrowania.",
@@ -2481,31 +2527,32 @@
   "m_10a5fbb2ff3d29": "Wycisz",
   "m_10a67142f9ed89": "Żądania API kanałów",
   "m_10aa31270e92a6": "parametr",
+  "m_10b2346b428930": "Nieudane elementy pozostają w kolejce, aż ponowisz próbę albo rozłączysz.",
   "m_10b4cfa30dedb6": {
-    "one": "Dokończ lub usuń niekompletną regułę.",
     "few": "Dokończ lub usuń niekompletne reguły ({count}).",
     "many": "Dokończ lub usuń niekompletne reguły ({count}).",
+    "one": "Dokończ lub usuń niekompletną regułę.",
     "other": "Dokończ lub usuń niekompletne reguły ({count})."
   },
   "m_10b7dd055ff58b": "Ulubione w Plexie",
   "m_10b96b8683017c": {
-    "one": "Wydania, których formaty niestandardowe uzyskają niższą ocenę, nie są odtwarzane. Ten profil ustawia własne oceny dla {count} formatu.",
     "few": "Wydania, których formaty niestandardowe uzyskają niższą ocenę, nie są odtwarzane. Ten profil ustawia własne oceny dla {count} formatów.",
     "many": "Wydania, których formaty niestandardowe uzyskają niższą ocenę, nie są odtwarzane. Ten profil ustawia własne oceny dla {count} formatów.",
+    "one": "Wydania, których formaty niestandardowe uzyskają niższą ocenę, nie są odtwarzane. Ten profil ustawia własne oceny dla {count} formatu.",
     "other": "Wydania, których formaty niestandardowe uzyskają niższą ocenę, nie są odtwarzane. Ten profil ustawia własne oceny dla {count} formatu."
   },
   "m_10ba8b31d513a0": {
-    "one": "{count} żądanie zabezpieczające, {won} wygrało",
     "few": "{count} żądania zabezpieczające, {won} wygrało",
     "many": "{count} żądań zabezpieczających, {won} wygrało",
+    "one": "{count} żądanie zabezpieczające, {won} wygrało",
     "other": "{count} żądania zabezpieczającego, {won} wygrało"
   },
   "m_10bbf84592ffe8": "Waga: {name}",
   "m_10c14b3ecd05a7": "Mały",
   "m_10c25d9a0b1c4b": {
-    "one": "Zalogowano i wyszukano: {count} wynik.",
     "few": "Zalogowano i wyszukano: {count} wyniki.",
     "many": "Zalogowano i wyszukano: {count} wyników.",
+    "one": "Zalogowano i wyszukano: {count} wynik.",
     "other": "Zalogowano i wyszukano: {count} wyniku."
   },
   "m_10c2aa549811a8": "Jak aplikacje Plex znajdują ten serwer i się z nim łączą. Dostępność z zewnątrz opiera się na wyniku testu łączności samego Plex.",
@@ -2513,6 +2560,7 @@
   "m_10c4f17412a065": "Przykładowe dopasowania",
   "m_10c5ac26463a6f": "Filtruj wiersze…",
   "m_10c6526175c6d0": "Szablon: {category}",
+  "m_10c8fc10dbfbfb": "Jak aplikacje Plex łączą się z Ether, skąd pochodzą tytuły i jak działa streaming torrentów.",
   "m_10cbe051fb5e05": "Utworzono",
   "m_10cd2a3e69a2f5": "Monitoruj kanały wydań",
   "m_10ce0d4e37b017": "Wybierz filmy i ich kolejność",
@@ -2525,8 +2573,10 @@
   "m_10dd19a0dc4c51": "Nieobejrzane przez widza",
   "m_10dd7de1090b7a": "Nazwa parametru: {label}",
   "m_10df4bba8fe3ad": "Ważny przez",
+  "m_10e08fbd14a654": "Opcjonalne. Wysyła przyszłe oznaczenia obejrzane i nieobejrzane tego widza oraz oceny w całych gwiazdkach na jego własne konto Plex. Postęp odtwarzania zostaje na tym serwerze.",
   "m_10e1d308313a16": "Godziny · 30 dni",
   "m_10e2296ac42637": "W przeciwnym razie wypełnianie całych tytułów czeka, gdy widzowie coś odtwarzają. Przygotowanie początku i następnego odcinka ma osobne opcje.",
+  "m_10e534262118d7": "Identyfikator Plex właściciela",
   "m_10e6a91608929a": "Dostawca plakatów zapisany",
   "m_10ec284df8a37e": "Wyniki szeregują kandydatów do pamięci podręcznej, a nie przewidywane prawdopodobieństwo obejrzenia. Okna seriali zawężają się wraz z odległością od odcinka. Wybór nie gwarantuje dostępności źródła.",
   "m_10eccfb05e9511": "Ta subskrypcja należy do jednego profilu przeglądarki na jednym urządzeniu. Użyj opcji Połącz to urządzenie na każdym urządzeniu, na którym chcesz otrzymywać alerty.",
@@ -2557,31 +2607,32 @@
   "m_112ee06bd338fd": "Dodaj jako indeksator",
   "m_112f1186c1b9af": "Wybierz profil pamięci podręcznej",
   "m_113106fc22e614": {
-    "one": "Dodano: {count}",
     "few": "Dodano: {count}",
     "many": "Dodano: {count}",
+    "one": "Dodano: {count}",
     "other": "Dodano: {count}"
   },
   "m_1138a4def1b4d0": "Katalog mógł się zmienić od Twojej ostatniej wizyty.",
   "m_11397ea4f572fb": "Przenieś preferencję",
   "m_113a8a4f50e4d5": "Wpisy historii w kolejce: {count}",
   "m_113cd3d4067144": {
-    "one": "{count} kolekcja · grafika widoczna w Plex",
     "few": "{count} kolekcje · grafika widoczna w Plex",
     "many": "{count} kolekcji · grafika widoczna w Plex",
+    "one": "{count} kolekcja · grafika widoczna w Plex",
     "other": "{count} kolekcji · grafika widoczna w Plex"
   },
   "m_113cd4960bb2a6": "Jednostka: {label}",
   "m_113cd4ec2d1e1e": "Odcinek",
   "m_113d98b9f11f2c": "Skopiuj te parametry do",
   "m_113f75142fdc02": "Sekret klienta",
+  "m_113fd3b4896a20": "Użyj NVIDIA RTX Video Super Resolution na tym serwerze, aby poprawić wideo o niższej rozdzielczości przed strumieniowaniem. Na obsługiwanych serwerach Windows x64 włączenie tej opcji automatycznie instaluje i weryfikuje wymagane środowisko uruchomieniowe. Ulepszanie zużywa dodatkową moc GPU.",
   "m_11408b8d72a623": "Do {height}p",
   "m_1141576c7ea2a8": "Nie można tu odtworzyć",
   "m_1145dfaa9ca07e": "Połączenia",
   "m_114a58aa977247": {
-    "one": "{names} i jeszcze {count}",
     "few": "{names} i jeszcze {count}",
     "many": "{names} i jeszcze {count}",
+    "one": "{names} i jeszcze {count}",
     "other": "{names} i jeszcze {count}"
   },
   "m_114a689b1dd9a3": "Ładowanie pamięci podręcznej…",
@@ -2589,9 +2640,9 @@
   "m_114fe29460291a": "Oczekiwanie na pozycję odtwarzania",
   "m_11542ea506a7f5": "Ten miesiąc",
   "m_11546da4c463c2": {
-    "one": "Tylko {count} widz",
     "few": "Tylko {count} widzowie",
     "many": "Tylko {count} widzów",
+    "one": "Tylko {count} widz",
     "other": "Tylko {count} widza"
   },
   "m_11556379290211": "Zapisano. Zostaw bez zmian, aby zachować, lub wpisz nową wartość, aby ją zastąpić.",
@@ -2620,6 +2671,7 @@
   "m_11807838c7bc71": "Co jest teraz odtwarzane i co obejrzeli Twoi widzowie.",
   "m_11844da0a4931d": "Pliki logów bez haseł, tokenów i kluczy, do zgłoszenia błędu.",
   "m_1184cea8df2a30": "Narzędzia projektanta",
+  "m_1184f9ecf52876": "Wyższa jakość zużywa więcej zasobów GPU. Tryby streamingowe wymagają GPU Ampere lub nowszego. Zacznij od opcji Średnia.",
   "m_1185ad0ca5d79f": "{hours} godz.",
   "m_118751dd3c35ee": "Kolejność domyślna",
   "m_1189a86c347834": "Ten limit wymaga więcej miejsca, niż jest obecnie wolne. Wybierz mniejszy limit.",
@@ -2644,9 +2696,9 @@
   "m_11a541515cb6eb": "Odblokuj: {release}",
   "m_11a9d15384aef3": "Ostrzeżenia",
   "m_11ac02be745289": {
-    "one": "Co tydzień rotuje {count} tytuł",
     "few": "Co tydzień rotuje {count} tytuły",
     "many": "Co tydzień rotuje {count} tytułów",
+    "one": "Co tydzień rotuje {count} tytuł",
     "other": "Co tydzień rotuje {count} tytułu"
   },
   "m_11ad4bbeced31b": "Rozmiar",
@@ -2681,9 +2733,9 @@
   "m_11df2d9d686684": "tmdb language region popularity język region popularność",
   "m_11e4c78c367482": "Utrzymuj gotowość punktów wznowienia",
   "m_11e4d3be5caf2b": {
-    "one": "{count} wybrany widz",
     "few": "{count} wybrani widzowie",
     "many": "{count} wybranych widzów",
+    "one": "{count} wybrany widz",
     "other": "{count} wybranego widza"
   },
   "m_11e6554c82796e": "Dane tytułu na żywo",
@@ -2706,17 +2758,18 @@
   "m_12005bc0caef60": "Przypnij wydanie",
   "m_120302ede52e08": "Wymaga identyfikatora klienta",
   "m_120361c07ab89b": {
-    "one": "{count} tytuł.",
     "few": "{count} tytuły.",
     "many": "{count} tytułów.",
+    "one": "{count} tytuł.",
     "other": "{count} tytułu."
   },
   "m_120583d331a87b": "Napisy końcowe",
+  "m_120a83491001a1": "Zalogowano",
   "m_120f554234eb7f": "Żądania zaczynają się od 512 KiB dla szybkiego pierwszego bajtu i rosną do tego rozmiaru. 0 = 8 MiB; maksymalnie 64 MiB.",
   "m_120fb0338ade07": {
-    "one": "{count} wywołanie API dzisiaj · limity automatyczne",
     "few": "{count} wywołania API dzisiaj · limity automatyczne",
     "many": "{count} wywołań API dzisiaj · limity automatyczne",
+    "one": "{count} wywołanie API dzisiaj · limity automatyczne",
     "other": "{count} wywołania API dzisiaj · limity automatyczne"
   },
   "m_12110787e9a411": "m3u xmltv playlist lista odtwarzania",
@@ -2732,6 +2785,7 @@
   "m_12275676539eb1": "Nazwa serwera, port i limity, pobrane, personalizacja i zwiastuny.",
   "m_122765a5c51bc3": "Utwórz go, gdy będziesz gotowy dodać węzeł.",
   "m_12280d377deec7": "Zezwalaj na dostęp zdalny",
+  "m_12286317cabb81": "Ustawiane przez kreator konfiguracji, gdy serwer zostaje powiązany z Twoim kontem Plex. Wyłączenie wylogowuje serwer z Plex: zostaje usunięty z urządzeń konta, aby inne konto mogło go przypisać.",
   "m_122db7f397e7f0": "Naprawa z wyprzedzeniem",
   "m_122fa62c6f6e97": "Nauczone z historii oglądania",
   "m_12362a278db896": "Pokaż kanały",
@@ -2750,9 +2804,9 @@
   "m_12554fb8746756": "Znajdź tytuł do dostosowania…",
   "m_12589eb2f87843": "Torznab (torrenty)",
   "m_1258bfd1fd8938": {
-    "one": "Dziś wykorzystano {used} z {count} żądania API",
     "few": "Dziś wykorzystano {used} z {count} żądań API",
     "many": "Dziś wykorzystano {used} z {count} żądań API",
+    "one": "Dziś wykorzystano {used} z {count} żądania API",
     "other": "Dziś wykorzystano {used} z {count} żądania API"
   },
   "m_125952708f2adf": "{service} (region domyślny)",
@@ -2769,35 +2823,35 @@
   "m_126f233f366d64": "Przygotowanie wznowienia",
   "m_126f8d98ceee44": "S{season} E{episode}",
   "m_1271d73df5188f": {
-    "one": "Nie można zaimportować: {count}",
     "few": "Nie można zaimportować: {count}",
     "many": "Nie można zaimportować: {count}",
+    "one": "Nie można zaimportować: {count}",
     "other": "Nie można zaimportować: {count}"
   },
   "m_1272d992510e9c": "Jak szeregowane są wydania dla aplikacji używających tego profilu.",
   "m_1273c1e9f944a6": "Użyj tego identyfikatora modelu",
   "m_12771d0b1ee638": {
-    "one": "{name} · {kind} · {count} odcinek",
     "few": "{name} · {kind} · {count} odcinki",
     "many": "{name} · {kind} · {count} odcinków",
+    "one": "{name} · {kind} · {count} odcinek",
     "other": "{name} · {kind} · {count} odcinka"
   },
   "m_12774409dc65c0": "Katalog {score}/100",
   "m_1279292be6779b": "Sprawdzanie obsługi",
   "m_12802de03b3f01": "Skonfiguruj OpenSubtitles",
   "m_12809bf8dacbc4": {
-    "one": "{count} połączenie",
     "few": "{count} połączenia",
     "many": "{count} połączeń",
+    "one": "{count} połączenie",
     "other": "{count} połączenia"
   },
   "m_1281b92b51a920": "Listy blokad",
   "m_1285cbf4746d19": "Wskaźnik popularności TMDB",
   "m_128b6463d83b9d": "Przypięte wydanie",
   "m_128f4a4b257661": {
-    "one": "Najnowsze wpisy na początku. W pamięci przechowywany jest {count} wpis.",
     "few": "Najnowsze wpisy na początku. W pamięci przechowywane są {count} wpisy.",
     "many": "Najnowsze wpisy na początku. W pamięci przechowywanych jest {count} wpisów.",
+    "one": "Najnowsze wpisy na początku. W pamięci przechowywany jest {count} wpis.",
     "other": "Najnowsze wpisy na początku. W pamięci przechowywanego jest {count} wpisu."
   },
   "m_128fa41a415266": "Wymagane ponowne połączenie",
@@ -2843,9 +2897,9 @@
   "m_12e1a854b336f9": "Zero oznacza brak limitu, a nie wyłączenie. Wybierz poniżej „Bez trwałych nośników”, aby wyłączyć buforowanie na dysku.",
   "m_12e5080b34176d": "Widz Ether",
   "m_12e6d63063af84": {
-    "one": "{count} dzień",
     "few": "{count} dni",
     "many": "{count} dni",
+    "one": "{count} dzień",
     "other": "{count} dnia"
   },
   "m_12e8c020d97bb2": "Nie niżej niż {slot}",
@@ -2873,21 +2927,22 @@
   "m_132162d45882b6": "Zapisz i opublikuj",
   "m_132166f2d04b7c": "Ręcznie",
   "m_132357d36a8f22": {
-    "one": "Znaleziono {count} serial",
     "few": "Znaleziono {count} seriale",
     "many": "Znaleziono {count} seriali",
+    "one": "Znaleziono {count} serial",
     "other": "Znaleziono {count} serialu"
   },
   "m_1323792139756d": "Zarządzaj członkami gospodarstwa domowego i importowaną historią.",
   "m_132643d1114a06": "Te wybory określają ZIP. Podsumowanie wymienia dokładne wartości przed pobraniem.",
   "m_1327b263f14887": "Adres URL: {label}",
   "m_132881539ea1f8": {
-    "one": "{count} wydanie",
     "few": "{count} wydania",
     "many": "{count} wydań",
+    "one": "{count} wydanie",
     "other": "{count} wydania"
   },
   "m_1329da6c20803f": "Osoba {id}",
+  "m_132a38a74609bf": "Twoje konto Plex, logowanie i dostęp zdalny. Jak każda aplikacja Plex znajduje Ether.",
   "m_132c8888940025": "{used} · bez limitu",
   "m_1332c8a065ce0e": "Szukaj kanałów przewodnika według nazwy lub identyfikatora…",
   "m_1335c770865edd": "Prosi router o przekierowanie portu.",
@@ -2907,9 +2962,9 @@
   "m_1355f04cafa4b7": "Podgląd raportu tygodniowego",
   "m_1355f4a6a3cd7b": "Przypnij: {title}",
   "m_1359acf8dadd16": {
-    "one": "Zalogowano i wyszukano: {count} wynik, na przykład:",
     "few": "Zalogowano i wyszukano: {count} wyniki, na przykład:",
     "many": "Zalogowano i wyszukano: {count} wyników, na przykład:",
+    "one": "Zalogowano i wyszukano: {count} wynik, na przykład:",
     "other": "Zalogowano i wyszukano: {count} wyniku, na przykład:"
   },
   "m_135af2a37f0b4d": "Torrenty, które Twój serwis już przechowuje, są strumieniowane przez HTTPS. Użyj tokenu API swojego konta.",
@@ -2928,6 +2983,7 @@
   "m_1377018883a052": "Podsumowanie roku",
   "m_137cf1370801c1": "Użycie pamięci w ostatnich 5 minutach, teraz {percent}",
   "m_137d1454b67a95": "Akcje kolekcji",
+  "m_137e83c1a4de36": "Uprawnienie Plex",
   "m_137fc8c973f67d": "{count} bez zmian",
   "m_138775af9b7765": "Urządzenie {device}",
   "m_138b7f9f76a39e": "ten widz",
@@ -2937,9 +2993,9 @@
   "m_1391196f8d9ad6": "Ścieżka lub nazwa polecenia. Ether go nie dostarcza.",
   "m_1395cc9805be8d": "Ułóż własny program z katalogu",
   "m_1396c78ea6592b": {
-    "one": "{count} serial",
     "few": "{count} seriale",
     "many": "{count} seriali",
+    "one": "{count} serial",
     "other": "{count} serialu"
   },
   "m_1398d7ec9dc2cd": "Portal członków gospodarstwa domowego",
@@ -2948,6 +3004,7 @@
   "m_13a24382a67cbd": "Utwórz przychodzący webhook na docelowym kanale Discord i wklej jego pełny adres URL. Wzmianki są wyłączone.",
   "m_13a27c4ab0f554": "Import zakończony",
   "m_13a4e4bbe717ab": "Ścieżka montowania NAS na tym węźle",
+  "m_13a71ff1b4ce0c": "Kwalifikujące się filmy są ulepszane w granicach rozdzielczości i przepływności widza. Nieobsługiwane filmy używają zwykłego odtwarzania.",
   "m_13a80127f04ee1": "Zasady klastra",
   "m_13a84d53e556cd": "Pasuje",
   "m_13a862658c3f8c": "Importuj indeksatory",
@@ -2958,32 +3015,32 @@
   "m_13b54a5acef468": "Wyszukiwanie: {label}",
   "m_13b74ddb61ff98": "{channel}: {title}, {start} – {end}",
   "m_13bb3428a18d16": {
-    "one": "Zainstalowane definicje: {count}, z czego używane przez indeksatory powyżej: {used}.",
     "few": "Zainstalowane definicje: {count}, z czego używane przez indeksatory powyżej: {used}.",
     "many": "Zainstalowane definicje: {count}, z czego używane przez indeksatory powyżej: {used}.",
+    "one": "Zainstalowane definicje: {count}, z czego używane przez indeksatory powyżej: {used}.",
     "other": "Zainstalowane definicje: {count}, z czego używane przez indeksatory powyżej: {used}."
   },
   "m_13bb9929b503b9": "Wklej token w sekcji Klaster → Dołącz do klastra na nowej maszynie. Jest wyświetlany raz i zawiera hasło do bazy danych oraz klucz danych uwierzytelniających, więc traktuj go jak hasło.",
   "m_13be3ca059a5e5": {
-    "one": "{count} tytuł wstrzymany, bo pokazuje go strona główna",
     "few": "{count} tytuły wstrzymane, bo pokazuje je strona główna",
     "many": "{count} tytułów wstrzymanych, bo pokazuje je strona główna",
+    "one": "{count} tytuł wstrzymany, bo pokazuje go strona główna",
     "other": "{count} tytułu wstrzymanego, bo pokazuje je strona główna"
   },
   "m_13c039972d5680": "Rozmiar wstępnego pobierania",
   "m_13c0f64a982307": "Czego nauczył się Ether",
   "m_13c39b9885447b": {
-    "one": "{count} tytuł · zaktualizowano: {when}",
     "few": "{count} tytuły · zaktualizowano: {when}",
     "many": "{count} tytułów · zaktualizowano: {when}",
+    "one": "{count} tytuł · zaktualizowano: {when}",
     "other": "{count} tytułu · zaktualizowano: {when}"
   },
   "m_13c5f715b49b80": "Szczegóły gustu",
   "m_13c6dbf34a2bec": "Adres URL obrazu lub ścieżka TMDB",
   "m_13c85b78fcd5c0": {
-    "one": "{count} rekord oglądania",
     "few": "{count} rekordy oglądania",
     "many": "{count} rekordów oglądania",
+    "one": "{count} rekord oglądania",
     "other": "{count} rekordu oglądania"
   },
   "m_13c8a56ec4ef38": "Klucz danych uwierzytelniających",
@@ -3011,15 +3068,17 @@
   "m_13f371de76f26c": "Konto Plex",
   "m_13f38dc521de3a": "Nie udało się zaktualizować kanału",
   "m_13f3db1d0ca2fe": "Wersja robocza",
+  "m_13f57466e42716": "To nie jest ciągła synchronizacja w obie strony. Ether dostarcza przyszłe zmiany w tle tylko wtedy, gdy synchronizacja jest włączona. Import działa tylko po użyciu przycisku.",
   "m_13f60f2c3e854f": "Brak widzów",
   "m_13f7150c94b182": "Wygasł",
   "m_13fa0b7fe507cf": {
-    "one": "{count} kanał przewodnika",
     "few": "{count} kanały przewodnika",
     "many": "{count} kanałów przewodnika",
+    "one": "{count} kanał przewodnika",
     "other": "{count} kanału przewodnika"
   },
   "m_13fa26360f0fe9": "Duplikuj",
+  "m_13fb760e2475fd": "Ten widz nie ma identyfikatora konta Plex, więc synchronizacji konta nie można połączyć.",
   "m_13fd33dafb0774": "Zablokuj",
   "m_13fe67a4975252": "Źródło odświeżone",
   "m_14009b5da44490": "settings ustawienia",
@@ -3038,6 +3097,7 @@
   "m_1423d1a563ae0b": "Użyj własnego certyfikatu",
   "m_1424aa70365dbc": "Odrzucić to nagranie?",
   "m_142712b41a62a4": "Brak próbki od dostawcy.",
+  "m_1427e5b34095a8": "Przypisany",
   "m_142aac196f8c8b": "Dni dla: {title}",
   "m_142be0b078a282": "{field}: nie {value}",
   "m_142eca5b6657e8": "Widok plakatów",
@@ -3108,9 +3168,9 @@
   "m_14b78af1b2f95e": "Aktywność",
   "m_14b9cd39a773e6": "Przewiń w lewo",
   "m_14bc9aff827ea9": {
-    "one": "Na antenie: {count} · wymaga Plex Pass w Plex",
     "few": "Na antenie: {count} · wymaga Plex Pass w Plex",
     "many": "Na antenie: {count} · wymaga Plex Pass w Plex",
+    "one": "Na antenie: {count} · wymaga Plex Pass w Plex",
     "other": "Na antenie: {count} · wymaga Plex Pass w Plex"
   },
   "m_14c299898bacec": "Zarządzane wstępne ładowanie",
@@ -3154,6 +3214,7 @@
   "m_1506990d0886a5": "Zamknij pełny ekran",
   "m_1509452664b9d7": "Dostarczone lokalnie",
   "m_150aadbf3acfba": "Widz",
+  "m_150d4141714c86": "Token właściciela",
   "m_150e4f4a537a1f": "Klienci, którzy używali go jako domyślnego, będą używać: {profile}.",
   "m_15123a8748a0cf": "Zapisz układ",
   "m_15131cf9a2cc73": "Edycja",
@@ -3166,9 +3227,9 @@
   "m_151dcbf81a4d8a": "Udostępnij ten serwer w Plex.tv lub zaimportuj historię oglądania.",
   "m_151e425264640c": "Brak profili",
   "m_1523e4c6339418": {
-    "one": "{count} playlista lub kolekcja",
     "few": "{count} playlisty i kolekcje",
     "many": "{count} playlist i kolekcji",
+    "one": "{count} playlista lub kolekcja",
     "other": "{count} playlisty i kolekcji"
   },
   "m_15241d9c441cf6": "Edytuj zasady",
@@ -3198,6 +3259,7 @@
   "m_1550cb35bfccdb": "Metody logowania",
   "m_15544f513744dc": "Dodaj swojego dostawcę Usenet. Konta blokowe można dodać jako uzupełniające.",
   "m_15563b465ac932": "zamknij",
+  "m_15564e348b71f0": "Tylko dla VA-API, np. /dev/dri/renderD128.",
   "m_1556715d06bea9": "Dodaj dostawcę Usenet",
   "m_155814cdac93b8": "Kopiuj adres",
   "m_155820c658a706": "Znajdź kolekcję…",
@@ -3214,9 +3276,9 @@
   "m_156679c42cb95d": "Przygotowane wznowienia",
   "m_156c1ecb65d5e8": "Zaznacz wszystko",
   "m_1570a07ed7a20f": {
-    "one": "{count} porzucone",
     "few": "{count} porzucone",
     "many": "{count} porzuconych",
+    "one": "{count} porzucone",
     "other": "{count} porzuconego"
   },
   "m_1571c44c03c2da": "Urządzenie zatwierdzone.",
@@ -3245,9 +3307,9 @@
   "m_15a155fcc8eaa3": "Wstecz",
   "m_15a51563b711fe": "Limit dysku na multimedia",
   "m_15a52806867ebe": {
-    "one": "{count} wyświetlenie",
     "few": "{count} wyświetlenia",
     "many": "{count} wyświetleń",
+    "one": "{count} wyświetlenie",
     "other": "{count} wyświetlenia"
   },
   "m_15a75ffc36d36f": "Wybierz sezon",
@@ -3278,9 +3340,9 @@
   "m_15ec63b9bb2ab1": "Potwierdzenia pojawią się tutaj",
   "m_15eda187ea524b": "Hasło bazy danych",
   "m_15f0658d2ef934": {
-    "one": "{count} miesiąc",
     "few": "{count} miesiące",
     "many": "{count} miesięcy",
+    "one": "{count} miesiąc",
     "other": "{count} miesiąca"
   },
   "m_15f246fc492423": "Pozwól niezależnej usłudze powiadomić Cię, gdy Ether nie może niczego wysłać.",
@@ -3292,9 +3354,9 @@
   "m_16085b241c4dff": "Zapisano dla: {name}.",
   "m_160876dd37ae79": "Minuty (długość odcinka w przypadku seriali)",
   "m_160bc78eb67a68": {
-    "one": "{count} wpis programu",
     "few": "{count} wpisy programu",
     "many": "{count} wpisów programu",
+    "one": "{count} wpis programu",
     "other": "{count} wpisu programu"
   },
   "m_160dd92350e8fe": "Surowa wartość: {label}",
@@ -3307,9 +3369,9 @@
   "m_161a6603b07607": "{label} w {unit}",
   "m_161aed1d4df6ff": "Przydział na wstępne ładowanie",
   "m_161c7c61888c78": {
-    "one": "{count} odtworzenie i {hours} godz. w 30 dni",
     "few": "{count} odtworzenia i {hours} godz. w 30 dni",
     "many": "{count} odtworzeń i {hours} godz. w 30 dni",
+    "one": "{count} odtworzenie i {hours} godz. w 30 dni",
     "other": "{count} odtworzenia i {hours} godz. w 30 dni"
   },
   "m_161cac3bb454a3": "TS działa z prawie każdym panelem; wybierz HLS, jeśli Twój go preferuje.",
@@ -3363,9 +3425,9 @@
   "m_1667b6eab4ed93": "Wykorzystany",
   "m_166862fb32e906": "Kategoria szablonu",
   "m_1668ec34820d0e": {
-    "one": "Reguła klienta, która go używa, zostanie usunięta.",
     "few": "{count} reguły klienta, które go używają, zostaną usunięte.",
     "many": "{count} reguł klienta, które go używają, zostanie usuniętych.",
+    "one": "Reguła klienta, która go używa, zostanie usunięta.",
     "other": "{count} reguły klienta, które go używają, zostanie usuniętych."
   },
   "m_166a5e9e166c52": "Kliknij plakat, aby przypiąć go dla wszystkich. Oznacz plakaty gatunkami lub osobami, które przedstawiają, aby dopasowanie do gustu mogło wybrać jeden dla każdego widza.",
@@ -3380,9 +3442,9 @@
   "m_168326a5c06c88": "Współdzielona pula klastra",
   "m_1683ac2247a51a": "Jeśli zostaniesz o to poproszony, zaloguj się na konto Plex właściciela klastra.",
   "m_1686b0370e575f": {
-    "one": "{exhausted} z {count} indeksatora wyczerpał dziś wyszukiwania",
     "few": "{exhausted} z {count} indeksatorów wyczerpało dziś wyszukiwania",
     "many": "{exhausted} z {count} indeksatorów wyczerpało dziś wyszukiwania",
+    "one": "{exhausted} z {count} indeksatora wyczerpał dziś wyszukiwania",
     "other": "{exhausted} z {count} indeksatora wyczerpało dziś wyszukiwania"
   },
   "m_16886b811d119f": "Odtwarza najlepsze wydanie od razu. Brakujące artykuły nadal wywołują przełączenie awaryjne, a nieudany test w tle oznacza wydanie jako wadliwe dla kolejnych żądań.",
@@ -3402,9 +3464,9 @@
   "m_169a4282447292": "dni",
   "m_169b8ed1d8a935": "Włącz naprawę",
   "m_169d6800ba07bf": {
-    "one": "{count} do naprawy",
     "few": "{count} do naprawy",
     "many": "{count} do naprawy",
+    "one": "{count} do naprawy",
     "other": "{count} do naprawy"
   },
   "m_169f6c9ea82fc5": "Plakat kolekcji {name}",
@@ -3414,6 +3476,7 @@
   "m_16aadf8f8bd31e": "wyszukiwanie trwało {duration}",
   "m_16ac3b3a51af4e": "Nowe",
   "m_16af1c381e0a96": "Przełączenie awaryjne",
+  "m_16b19101913a43": "Eksportuj bieżący stan",
   "m_16b5e03d146667": "{list} (filmy)",
   "m_16b609ee054878": "Włącz Simkl",
   "m_16b78968cf1c10": "Zablokuj…",
@@ -3434,9 +3497,9 @@
   "m_16ca8c8d49e25c": "Nazwa wyświetlana",
   "m_16cba9fc2527f4": "Odpiąć ten tytuł?",
   "m_16cf1253bd8737": {
-    "one": "{count} kolekcja",
     "few": "{count} kolekcje",
     "many": "{count} kolekcji",
+    "one": "{count} kolekcja",
     "other": "{count} kolekcji"
   },
   "m_16d014754e8e0a": "Gotowe do utworzenia klastra",
@@ -3472,6 +3535,7 @@
   "m_1715f6c892adb8": "Zmiana magazynu lub jego folderu wymaga ponownego uruchomienia węzła. Istniejące dane pamięci podręcznej pozostają w pierwotnym folderze.",
   "m_17167efa86027e": "Simkl nie mógł rozpoznać pozycji historii.",
   "m_1717cc66ebcbbb": "Telewizory i odtwarzacze przeglądające przez DLNA.",
+  "m_171b382894bddd": "Identyfikator klienta",
   "m_171c8f732a9d67": "Nie udało się załadować modeli: {error}",
   "m_171cc315f1d2f0": "Ustawienia listy obserwowanych zapisane",
   "m_171d5429be06dd": "Wyżej",
@@ -3482,12 +3546,14 @@
   "m_1720bc540c84a5": "Kolejność emisji z TMDB",
   "m_17211322497ee0": "Ładowanie szczegółów tytułu",
   "m_1721ac81d2a5c0": "Własny",
+  "m_172a15cd472816": "Źródła › Debrid",
   "m_172cd37bfd4d77": "Zamontuj ten sam udział NAS na każdym uczestniczącym węźle. Każdy węzeł może używać innej ścieżki montowania. Limity, przechowywanie, przypięcia i wstępne ładowanie są współdzielone; zapisanie tych zasad aktualizuje wszystkich członków puli.",
   "m_172d09b2c53ab0": "w dniu lub przed",
   "m_172d9055b93191": "Wszystkie integracje, z których korzysta Ether, i jak sobie radzą. Włącz jedną, a jej ustawienia otworzą się tutaj na zakładce.",
   "m_172e33a4eb9c83": "Wcześniej wybrana kolekcja",
   "m_172f1903df9c22": "Zwykłe zatrzymanie lub restart nie wywołuje alertu o awarii. Dostarczenia strażnika awarii odbywają się poza Historią dostarczania. Dostarczenie jest realizowane w miarę możliwości: strażnik musi działać i mieć dostęp do sieci. Nadzorca, który zabija całą grupę procesów, może zatrzymać także jego.",
   "m_173086f9b08a08": "Dostawcy Usenet, indeksatory i konta debrid, z których strumieniuje Ether.",
+  "m_1731241f72b928": "Wszystkie integracje używane przez Ether i ich stan. Tutaj konfiguruje się Trakt, model językowy i OpenSubtitles.",
   "m_1733647e91eecd": "Port",
   "m_1733779f619c57": "Szałwia",
   "m_1736d2aa6f24df": "Wszystkie kwalifikujące się tytuły są widoczne. Dodaj grupę, aby zawęzić bibliotekę.",
@@ -3499,21 +3565,22 @@
   "m_1740501133cb56": "Wyniki z pamięci podręcznej z {when}",
   "m_17440f2f9cc7d8": "Ładowanie edytora",
   "m_1744a26058ac14": {
-    "one": "{count} wpis programu w ciągu najbliższej doby",
     "few": "{count} wpisy programu w ciągu najbliższej doby",
     "many": "{count} wpisów programu w ciągu najbliższej doby",
+    "one": "{count} wpis programu w ciągu najbliższej doby",
     "other": "{count} wpisu programu w ciągu najbliższej doby"
   },
   "m_17465c798ee86b": "Nigdy nie poświęca jakości dla szybkości. Wśród wydań o tej samej jakości tryb automatyczny stawia na pierwszym miejscu źródło, które startuje szybciej, a dla popularnych tytułów — debrid z pamięci podręcznej, dopóki oba źródła nie mają pomiarów. Drugie źródło jest sprawdzane równolegle jako zapasowe.",
   "m_174c9f5c0c34e0": "Na istniejącym węźle otwórz Klaster → Utwórz token dołączenia. Skopiuj token tutaj. Zawiera połączenie z bazą danych i działa jednorazowo.",
   "m_175354660331ca": "Wybór według rankingu jest domyślny. Pozostałe tryby wymieniają dodatkowe zapytania do indeksatorów na krótsze oczekiwanie.",
   "m_175371b78faafb": {
-    "one": "W tym kontekście zmienia się {count} strona główna",
     "few": "W tym kontekście zmieniają się {count} strony główne",
     "many": "W tym kontekście zmienia się {count} stron głównych",
+    "one": "W tym kontekście zmienia się {count} strona główna",
     "other": "W tym kontekście zmienia się {count} strony głównej"
   },
   "m_1757064e99e7cb": "support zip diagnostic capture diagnostyka zip pomoc",
+  "m_17592534f6f172": "Ether wysyła tylko oznaczenia obejrzane lub nieobejrzane oraz oceny 1, 2, 3, 4 lub 5 całych gwiazdek. Wyczyszczenia, ułamki i inne wartości zostają tutaj. Odcinki są wysyłane tylko wtedy, gdy dokładny identyfikator odcinka Plex jest już znany. Udane wysłanie nie tworzy karty aktywności Discover. Ether nie włącza ustawienia synchronizacji stanu oglądania Plex. Ether nie używa do tego tokenów serwera ani kont współdzielonych.",
   "m_1759a72d011ede": "Ulubione",
   "m_175a707795b382": "Plex: {section} jako",
   "m_175c0a3a005ab3": "Powiększenie",
@@ -3528,9 +3595,9 @@
   "m_177a91d641dc30": "Oddziel przecinkami. Limity roku i oceny z szablonu zostają zachowane.",
   "m_177be4afd29378": "Szukaj kanałów",
   "m_177cbfb70c64ff": {
-    "one": "{count} kanał dopasowany do przewodnika",
     "few": "{count} kanały dopasowane do przewodnika",
     "many": "{count} kanałów dopasowanych do przewodnika",
+    "one": "{count} kanał dopasowany do przewodnika",
     "other": "{count} kanału dopasowanego do przewodnika"
   },
   "m_178091d131143b": "Dotyczy wszystkich widzów",
@@ -3565,9 +3632,9 @@
   "m_17b9aa451a75d1": "Typ źródła",
   "m_17b9d9d1279232": "Uczestniczące kanały",
   "m_17bb33eb90d47a": {
-    "one": "Przy tym interwale {count} kanał potrzebuje około {requests} żądań dziennie dla nowych wydań.",
     "few": "Przy tym interwale {count} kanały potrzebują około {requests} żądań dziennie dla nowych wydań.",
     "many": "Przy tym interwale {count} kanałów potrzebuje około {requests} żądań dziennie dla nowych wydań.",
+    "one": "Przy tym interwale {count} kanał potrzebuje około {requests} żądań dziennie dla nowych wydań.",
     "other": "Przy tym interwale {count} kanału potrzebuje około {requests} żądań dziennie dla nowych wydań."
   },
   "m_17bef9ae6fb13e": "Dalej o {time} · {title}",
@@ -3678,27 +3745,27 @@
   "m_1890e30548b2a2": "Nic w źródle nie pasuje.",
   "m_1891902f870258": "Nadchodzące tytuły wymagają źródła Cały katalog oraz zdalnego wyszukiwania TMDB.",
   "m_1894cd64b6f8df": {
-    "one": "{count} otwarty plik",
     "few": "{count} otwarte pliki",
     "many": "{count} otwartych plików",
+    "one": "{count} otwarty plik",
     "other": "{count} otwartego pliku"
   },
   "m_1896095e6f5bf2": "Zostanie ponownie sprawdzone pod kątem sprawności, gdy następnym razem będzie kandydatem.",
   "m_18969be245c683": "Odpiąć „{title}”?",
   "m_1896db097ddd0b": "Zakotwicz „{title}” na pozycji {slot}",
   "m_189a59134a29dd": {
-    "one": "Pobrań torrentów dziennie: {count}",
     "few": "Pobrań torrentów dziennie: {count}",
     "many": "Pobrań torrentów dziennie: {count}",
+    "one": "Pobrań torrentów dziennie: {count}",
     "other": "Pobrań torrentów dziennie: {count}"
   },
   "m_189c4ff843b6ae": "Skłaniające się ku klasyce",
   "m_189fefc276e4f8": "Przeczytaj przewodnik",
   "m_18a541e86f31d8": "Wstrzymaj",
   "m_18a55c536bf0d9": {
-    "one": "{count} odtworzenie z {impressions} wyświetleń w 7 dni",
     "few": "{count} odtworzenia z {impressions} wyświetleń w 7 dni",
     "many": "{count} odtworzeń z {impressions} wyświetleń w 7 dni",
+    "one": "{count} odtworzenie z {impressions} wyświetleń w 7 dni",
     "other": "{count} odtworzenia z {impressions} wyświetleń w 7 dni"
   },
   "m_18a5fda0ab37f2": "Opcjonalne. Folder z definicjami w formacie Cardigann, którym ufasz: folder na GitHubie lub adres URL folderu raw, adres URL API zawartości GitHuba albo zwykła lista adresów URL definicji. Ether wyświetla go przy dodawaniu serwisu i aktualizuje z niego zainstalowane definicje.",
@@ -3713,9 +3780,9 @@
   "m_18b06ece409cea": "Do godziny dla: {title}",
   "m_18b2b0c047a27f": "Świeżość",
   "m_18b95b50d0430b": {
-    "one": "{bad} z {count} dostawcy działa wadliwie",
     "few": "{bad} z {count} dostawców działa wadliwie",
     "many": "{bad} z {count} dostawców działa wadliwie",
+    "one": "{bad} z {count} dostawcy działa wadliwie",
     "other": "{bad} z {count} dostawcy działa wadliwie"
   },
   "m_18bba67fb271f8": "Pokaż kod QR",
@@ -3723,9 +3790,9 @@
   "m_18bd817048dd75": "Token właściciela (X-Plex-Token)",
   "m_18be0bd9e87648": "Włącz oceny zewnętrzne i zapisz, aby sprawdzić oceny tytułu.",
   "m_18c01ee79716fd": {
-    "one": "{count} godzina",
     "few": "{count} godziny",
     "many": "{count} godzin",
+    "one": "{count} godzina",
     "other": "{count} godziny"
   },
   "m_18c062ec3c63f8": "Filmy pojawiają się po najwcześniejszym wydaniu cyfrowym lub fizycznym w dowolnym miejscu na świecie. Jeśli TMDB nie ma takiej daty, pojawiają się 90 dni po premierze kinowej i pozostają widoczne, nawet gdy daty się zmienią. Filmy oczekujące na metadane pozostają ukryte, gdy katalog sprawdza je w tle. Nie weryfikuje to jakości wydania.",
@@ -3735,16 +3802,16 @@
   "m_18cac20f7cbd3e": "Jednoczesne pobrania na widza",
   "m_18cb5aae13b5b6": "Przerwa przed ponowną próbą",
   "m_18ce53b1a2aab0": {
-    "one": "{name} · {count} tytuł",
     "few": "{name} · {count} tytuły",
     "many": "{name} · {count} tytułów",
+    "one": "{name} · {count} tytuł",
     "other": "{name} · {count} tytułu"
   },
   "m_18cf943a2b12c6": "Ile z następnego odcinka pobrać z wyprzedzeniem.",
   "m_18d28aa8c3b35a": {
-    "one": "{count} aktywny",
     "few": "{count} aktywne",
     "many": "{count} aktywnych",
+    "one": "{count} aktywny",
     "other": "{count} aktywnego"
   },
   "m_18d41fc05d1c56": "Nowe dane multimediów omijają dysk. Niechronione istniejące dane są zwalniane; dane odtwarzane i przypięte pozostają chronione.",
@@ -3760,9 +3827,9 @@
   "m_18f0f55ffe99fb": "Cenione filmy animowane, które spodobają się całej rodzinie",
   "m_18f1515ae5de72": "Wyprzedzenie (dni)",
   "m_18f66a2b8e8b9a": {
-    "one": "{count} wydanie we współdzielonej puli",
     "few": "{count} wydania we współdzielonej puli",
     "many": "{count} wydań we współdzielonej puli",
+    "one": "{count} wydanie we współdzielonej puli",
     "other": "{count} wydania we współdzielonej puli"
   },
   "m_18f85a0d4ab0a3": "Przypnij plakat (bez tekstu)",
@@ -3772,6 +3839,12 @@
   "m_18fdbda3ab5383": "kolejność źródła",
   "m_190080336327a7": "Nie udało się odczytać tego profilu",
   "m_1901b80a76f92b": "Utwórz kopię zapasową teraz",
+  "m_1902f2fa6c62c8": {
+    "few": "{count} konta",
+    "many": "{count} kont",
+    "one": "{count} konto",
+    "other": "{count} konta"
+  },
   "m_1903cc0aef13a2": "Gatunek",
   "m_19059235f1be5d": "np. {example}",
   "m_190d5640161484": "Spróbuj dostosować ten szablon, aby pasował do większej części katalogu.",
@@ -3797,6 +3870,7 @@
   "m_1931c0bcb280c2": "Ukryj szczegóły",
   "m_19321672205e72": "Cały katalog",
   "m_19335aa0339b64": "Data zakończenia dla: {title}",
+  "m_19342865e40f0c": "Zaimportuj indeksatory Usenet i torrentowe, którymi już zarządzasz.",
   "m_1938071a9cc6a0": "Zakotwiczone wiersze zajmują swoją pozycję dla tego widza; personalizacja wypełnia pozycje pomiędzy nimi. Przeciągnij, aby zamienić miejscami.",
   "m_19381224b9b5e9": "Nie udało się wczytać języka {language}. Sprawdź połączenie i spróbuj ponownie.",
   "m_1939368f2b1dc9": "wysłano",
@@ -3832,6 +3906,7 @@
   "m_196731b03aebed": "Źródło usunięte",
   "m_196791e19c5811": "Pobranie offline",
   "m_196855b2e71a64": "Języki dźwięku konta",
+  "m_196895d58f9d9e": "Twoje konto Plex musi być właścicielem tego serwera Ether.",
   "m_196f011bb936c4": "Wprowadź ten adres serwera w obsługiwanej aplikacji:",
   "m_19700fbe911c6a": "Motyw",
   "m_1971ca3ee8244a": "Dane podglądu niedostępne.",
@@ -3843,16 +3918,18 @@
   "m_197478dba70ea3": "Edytuj kolejność dla: {viewer}",
   "m_19759626500d10": "Synchronizacja zachowuje istniejącą historię i nie usuwa obejrzanych pozycji. Odcinki anime bez zweryfikowanego mapowania są pomijane.",
   "m_19773e710c1ca5": "Wyrażenie regularne",
+  "m_197805698e6a5b": "Ukończenie konfiguracji blokuje tę stronę administracyjną na Twoje konto Plex. Konfigurację możesz otworzyć ponownie później w sekcji Łączność.",
   "m_197f395ae133e3": "Nowe wpisy programu są w przewodniku.",
   "m_197fa1b5e8b47d": "Brak dowodów.",
   "m_198004f13e8ffa": "Jak biblioteka Seriale wyświetla się w aplikacjach Plex. Ether ustawia tę nazwę; zmiana nazwy w Plexie nie zostaje zachowana.",
   "m_1982dc436baac0": "Ustawienia serwisu",
   "m_1983b9b0ef1f2a": {
-    "one": "Dokończ lub usuń niekompletne źródło.",
     "few": "Dokończ lub usuń niekompletne źródła ({count}).",
     "many": "Dokończ lub usuń niekompletne źródła ({count}).",
+    "one": "Dokończ lub usuń niekompletne źródło.",
     "other": "Dokończ lub usuń niekompletne źródła ({count})."
   },
+  "m_1983c93a765183": "Wysyłaj przyszłe zmiany",
   "m_19862da7cdac1d": "Normalnie",
   "m_19879f3cbd57c8": "pobrano w {duration}",
   "m_1989274cd3ebf9": "Zaawansowane ustawienia ramówki",
@@ -3890,9 +3967,9 @@
   "m_19d363abaf0d79": "Nowa kolekcja",
   "m_19d92bb69c5170": "Skonfiguruj ten węzeł bez opuszczania Menedżera serwera.",
   "m_19db83261f2737": {
-    "one": "{count} sprawa wymaga uwagi",
     "few": "{count} sprawy wymagają uwagi",
     "many": "{count} spraw wymaga uwagi",
+    "one": "{count} sprawa wymaga uwagi",
     "other": "{count} sprawy wymaga uwagi"
   },
   "m_19dc8759739cf5": "Okres rotacji",
@@ -3908,6 +3985,7 @@
   "m_19e730bd46036d": "Ładowanie ustawień",
   "m_19e7facde89313": "Od najnowszych lub od najstarszych",
   "m_19ea8894e434e6": "Plakaty kolekcji",
+  "m_19ecd71a027c34": "Plex odrzucił zapisany token. Połącz ponownie.",
   "m_19f06478c4e054": "Testy połączenia są teraz niedostępne: {error}",
   "m_19f3d32559cf3f": "Widoczność biblioteki zaktualizowana",
   "m_19f572e1e9b30b": "Dodaj co najmniej jeden film do tego kanału.",
@@ -3915,9 +3993,9 @@
   "m_19f6266963ee58": "Konta blokowe można oznaczyć jako uzupełniające.",
   "m_19f8182b153550": "Najwyższe",
   "m_19f825114d96fc": {
-    "one": "W użyciu jest {count} format niestandardowy.",
     "few": "W użyciu są {count} formaty niestandardowe.",
     "many": "W użyciu jest {count} formatów niestandardowych.",
+    "one": "W użyciu jest {count} format niestandardowy.",
     "other": "W użyciu jest {count} formatu niestandardowego."
   },
   "m_19f9442452100d": "{count} zablokowanych przez dostawcę",
@@ -3966,9 +4044,9 @@
   "m_1a4abaea994425": "Nazwa preferencji",
   "m_1a4b3eafd6b450": "Usuń kanał",
   "m_1a4bb3923cf901": {
-    "one": "{count} tytuł · pętla {duration}",
     "few": "{count} tytuły · pętla {duration}",
     "many": "{count} tytułów · pętla {duration}",
+    "one": "{count} tytuł · pętla {duration}",
     "other": "{count} tytułu · pętla {duration}"
   },
   "m_1a510b2edd8435": "Połączenie może być niedostępne podczas kopiowania danych. Ta strona połączy się ponownie automatycznie.",
@@ -4008,9 +4086,9 @@
   "m_1a98e23b6b0dc6": "Preferowane języki zgłaszane aplikacjom Plex dla tego konta. Reguły wyboru ścieżek znajdują się na karcie Dźwięk i napisy.",
   "m_1a9a936a80a0d7": "Dostawca usunięty",
   "m_1a9cf0d1b9339a": {
-    "one": "{count} format niestandardowy",
     "few": "{count} formaty niestandardowe",
     "many": "{count} formatów niestandardowych",
+    "one": "{count} format niestandardowy",
     "other": "{count} formatu niestandardowego"
   },
   "m_1a9d8d971b1edb": "Usuń",
@@ -4054,9 +4132,9 @@
   "m_1ae8766b0249b1": "Osoba do skorygowania",
   "m_1aea51053acae8": "Nazwa źródła",
   "m_1af3a1215ac739": {
-    "one": "Już we Własnym ocenianiu: {count}",
     "few": "Już we Własnym ocenianiu: {count}",
     "many": "Już we Własnym ocenianiu: {count}",
+    "one": "Już we Własnym ocenianiu: {count}",
     "other": "Już we Własnym ocenianiu: {count}"
   },
   "m_1af616c0e14f33": "resolution 4k 1080p remote rozdzielczość zdalnie",
@@ -4080,15 +4158,17 @@
   "m_1b12223f2489f8": "Wybierz model",
   "m_1b1240e6a14370": "Nowy dostawca",
   "m_1b1640e9e2bb77": "Podgląd odświeżony",
+  "m_1b1788ecd37bb5": "Kraj odpowiada krajowi pochodzenia lub produkcji w TMDB, w tym koprodukcjom. Język to osobny warunek. Nieznane metadane nigdy nie pasują do wykluczenia.",
   "m_1b1af82f5c1ba2": "Utwórz przenośną kopię zapasową bazy danych, ustawień i klucza danych uwierzytelniających tego serwera.",
   "m_1b1d50b71b8e77": "Przechowywana na innym węźle: pobierz ją ze strony administracyjnej tego węzła",
+  "m_1b1de6988c0b6a": "Ponów nieudane elementy",
   "m_1b1f0a85783523": "Kanał aktualizacji",
   "m_1b20efbd0f7a36": "Obejrzane godziny",
   "m_1b23999841ed8a": "Zawartość",
   "m_1b27db7066dc29": {
-    "one": "{count} widz to nadpisuje",
     "few": "{count} widzów to nadpisuje",
     "many": "{count} widzów to nadpisuje",
+    "one": "{count} widz to nadpisuje",
     "other": "{count} widza to nadpisuje"
   },
   "m_1b281d356ec8aa": "Głównie znane",
@@ -4110,6 +4190,7 @@
   "m_1b4492c1ff2dd1": "Żadna aplikacja natywna nie została jeszcze certyfikowana.",
   "m_1b44c9cfa963c9": "Epoki",
   "m_1b462a3e75b928": "Dzisiaj: {grabs} / {grabCap} pobrań deskryptorów · {used} / {cap} MiB zarezerwowane na weryfikację źródeł.",
+  "m_1b488e7958dacb": "Stan oglądania Plex nie został zaktualizowany",
   "m_1b4c9fea254359": "Usuń grupę {n}",
   "m_1b4cd67aefdde9": "Pokaż wszystkie tytuły",
   "m_1b4e77836e831c": "Jak wideo jest dostosowywane, żeby aplikacja po drugiej stronie mogła je odtworzyć. Ustawienia domyślne wystarczają w domu.",
@@ -4182,8 +4263,10 @@
   "m_1bdf83696c014c": "Wyłącz telewizję na żywo dla tego widza",
   "m_1be1126d380d2a": "Sprawdzane od góry. Pierwsza reguła pasująca do aplikacji wybiera jej profil jakości; aplikacje, do których nie pasuje żadna reguła, używają ustawień domyślnych.",
   "m_1be160c83defc9": "Sprawdź miejsce",
+  "m_1be24c425903de": "Dostępny spoza sieci",
   "m_1be45d3eaf286e": "Szukaj tytułów",
   "m_1be5bd37ee2637": "Źródła znaczników i pokrycie.",
+  "m_1be615909b1eb7": "Źródła › Indeksatory",
   "m_1bea8befce6c59": "Kanał sci-fi",
   "m_1bec287326cfa6": "Średni",
   "m_1bee7129e354ac": "Jak aplikacje Plex szyfrują połączenie z tym serwerem.",
@@ -4251,9 +4334,9 @@
   "m_1c747ac8a304d6": "Połączenie zweryfikowane",
   "m_1c7575e3f14b5c": "Wstępne pobieranie",
   "m_1c75f5d48fa902": {
-    "one": "{count} tytuł",
     "few": "{count} tytuły",
     "many": "{count} tytułów",
+    "one": "{count} tytuł",
     "other": "{count} tytułu"
   },
   "m_1c769b2081b327": "{percent} z {total}",
@@ -4273,6 +4356,7 @@
   "m_1c8ead4d179552": "Napisy: {choice}",
   "m_1c924252babc32": "Wznów wstępne ładowanie",
   "m_1c96ef6eff57aa": "Lista obserwowanych zsynchronizowana",
+  "m_1c9c3cdf13d821": "Własne konto Plex tego widza jest połączone. Synchronizacja wysyła tylko przyszłe zmiany, dopóki nie poprosisz o eksport.",
   "m_1ca10c02327944": "Historia odtwarzania",
   "m_1ca234f8f12a90": "Wzmocnij: {genre}",
   "m_1ca4a5bdd6684f": "Przeznacz niewielki limit na weryfikację obiecujących źródeł. Sprawdzanie jest wstrzymywane podczas aktywnego odtwarzania.",
@@ -4284,9 +4368,9 @@
   "m_1cad377153f4cd": "Wymaga klucza API",
   "m_1caed2e2377609": "Kraj produkcji",
   "m_1cb36afd93dbf8": {
-    "one": "{count} strumień na żywo",
     "few": "{count} strumienie na żywo",
     "many": "{count} strumieni na żywo",
+    "one": "{count} strumień na żywo",
     "other": "{count} strumienia na żywo"
   },
   "m_1cb4399dea3ad9": "Zachowaj domyślne ustawienie katalogu",
@@ -4362,23 +4446,23 @@
   "m_1d2cda48c71a1a": "Zezwól: {name}",
   "m_1d2eaeed77791f": "Jeszcze nie zsynchronizowano",
   "m_1d31cf9996623d": {
-    "one": "{count} wiersz na stronie",
     "few": "{count} wiersze na stronie",
     "many": "{count} wierszy na stronie",
+    "one": "{count} wiersz na stronie",
     "other": "{count} wiersza na stronie"
   },
   "m_1d32249f6cf399": "Sprawdzanie pokrycia…",
   "m_1d349253ea37ef": "Gotowe projekty",
   "m_1d3588ee53d7a2": {
-    "one": "{count} aktywny strumień",
     "few": "{count} aktywne strumienie",
     "many": "{count} aktywnych strumieni",
+    "one": "{count} aktywny strumień",
     "other": "{count} aktywnego strumienia"
   },
   "m_1d38074981e682": {
-    "one": "Filmy wymagają potwierdzenia przez {count} dzień po premierze.",
     "few": "Filmy wymagają potwierdzenia przez {count} dni po premierze.",
     "many": "Filmy wymagają potwierdzenia przez {count} dni po premierze.",
+    "one": "Filmy wymagają potwierdzenia przez {count} dzień po premierze.",
     "other": "Filmy wymagają potwierdzenia przez {count} dnia po premierze."
   },
   "m_1d3aa076f39410": "Zaimportowana historia ({count})",
@@ -4389,9 +4473,9 @@
   "m_1d3e46e6c5812d": "Najlepsze propozycje na pierwszym planie",
   "m_1d3fbd0b729caf": "{start}–{end} czasu lokalnego",
   "m_1d437533645548": {
-    "one": "{count} wydanie na tym węźle",
     "few": "{count} wydania na tym węźle",
     "many": "{count} wydań na tym węźle",
+    "one": "{count} wydanie na tym węźle",
     "other": "{count} wydania na tym węźle"
   },
   "m_1d43bd5d030d30": "Wszystkie zdarzenia",
@@ -4401,6 +4485,7 @@
   "m_1d52e7b4a3be4c": "Aplikacje Jellyfin w Twojej sieci.",
   "m_1d53556717b378": "Niezapisane reguły · tylko katalog lokalny",
   "m_1d539bf3ad53f2": "0 wylicza limit na podstawie Twoich połączeń Usenet.",
+  "m_1d541929dc3232": "Po osiągnięciu tego limitu dodatkowe strumienie używają zwykłego odtwarzania.",
   "m_1d5550ded8483e": "Brak wyboru",
   "m_1d56244b88ecc0": "Krytycy Rotten Tomatoes",
   "m_1d56fd7503ad94": "Dodatek Stremio · Torrent",
@@ -4425,6 +4510,7 @@
   "m_1d6ff6a4f28aad": "Usuń blok {number}",
   "m_1d71a7428ea5c8": "Opóźnienie",
   "m_1d72d6b558478c": "Telewizja w wieczory robocze",
+  "m_1d73c6b187684c": "Kod zatwierdzenia",
   "m_1d74a8698a6b5d": "Utrzymuj aktualność",
   "m_1d78e1cd865efa": "Wstrzymaj wstępne ładowanie",
   "m_1d79ef8814a2fe": "Szukaj serwisów",
@@ -4465,6 +4551,7 @@
   "m_1daefe727dd919": "Wyłączone: Plex pokazuje własną ocenę katalogu.",
   "m_1db15e27a91309": "Dla tego tytułu nie ma jeszcze opisu.",
   "m_1db2ad28fdfa91": "Niepotrzebne w przypadku większości serwerów lokalnych.",
+  "m_1db3c283b6510e": "Sprawdź zatwierdzenie",
   "m_1db60739b07095": "Przetestuj odtwarzanie z plikiem lokalnym",
   "m_1db86619c6ecfe": "Z ustawień Twojego konta debrid.",
   "m_1dbc292c4b104c": "Nigdy wyżej niż pozycja dla: {title}",
@@ -4472,9 +4559,9 @@
   "m_1dbdabb176c3bc": "Przesłane pliki pozostają bez zmian, dopóki nie prześlesz ich ponownie.",
   "m_1dbe9dd6ddd1bb": "Preferencje release",
   "m_1dc1f6ce772a08": {
-    "one": "Najwyżej oceniane wybory z ostatniego przebiegu · uwzględniono {count} aktywnego widza",
     "few": "Najwyżej oceniane wybory z ostatniego przebiegu · uwzględniono {count} aktywnych widzów",
     "many": "Najwyżej oceniane wybory z ostatniego przebiegu · uwzględniono {count} aktywnych widzów",
+    "one": "Najwyżej oceniane wybory z ostatniego przebiegu · uwzględniono {count} aktywnego widza",
     "other": "Najwyżej oceniane wybory z ostatniego przebiegu · uwzględniono {count} aktywnego widza"
   },
   "m_1dc394664e9d25": "Zmień kolejność: {name}",
@@ -4503,9 +4590,9 @@
   "m_1deb64527f86e5": "Przewodnik obejmuje do",
   "m_1ded3448d42250": "1 / Wybierz punkt wyjścia",
   "m_1ded7e44c97176": {
-    "one": "{count} film",
     "few": "{count} filmy",
     "many": "{count} filmów",
+    "one": "{count} film",
     "other": "{count} filmu"
   },
   "m_1df074091a41ae": "Znajdź serial…",
@@ -4523,6 +4610,7 @@
   "m_1e14adbefa1a69": "Zapytanie TMDB discover",
   "m_1e1807ca1ffd81": "Przypięcia chronią dane przed usunięciem",
   "m_1e1b1fdb7dd78e": "Aktywny",
+  "m_1e1d8d112d02c2": "Plex zezwala na synchronizację stanu oglądania dla tego konta.",
   "m_1e1ed12b9389d3": "Zasila funkcję „Opisz to” w Studiu kolekcji, tematyczne wiersze strony głównej, wyszukiwanie w języku naturalnym i streszczenia.",
   "m_1e23d42f115655": "Widz raportu",
   "m_1e25a645d236de": "Zainstaluj i otwórz Ether na nowej maszynie. Możesz dołączyć jeszcze przed ukończeniem jej samodzielnej konfiguracji.",
@@ -4541,9 +4629,9 @@
   "m_1e3f39fe1aed85": "Warunek: {label}",
   "m_1e3fdb20eea5fd": "Ograniczenia dla: {title}",
   "m_1e40ae0e3ecf49": {
-    "one": "Online: {live} z {count} węzła. Otwórz menedżera węzła, aby zmienić jego ustawienia lokalne.",
     "few": "Online: {live} z {count} węzłów. Otwórz menedżera węzła, aby zmienić jego ustawienia lokalne.",
     "many": "Online: {live} z {count} węzłów. Otwórz menedżera węzła, aby zmienić jego ustawienia lokalne.",
+    "one": "Online: {live} z {count} węzła. Otwórz menedżera węzła, aby zmienić jego ustawienia lokalne.",
     "other": "Online: {live} z {count} węzła. Otwórz menedżera węzła, aby zmienić jego ustawienia lokalne."
   },
   "m_1e414c680ac50c": "Wyloguj z Plex",
@@ -4593,12 +4681,13 @@
   "m_1e965e32c7e3a6": "Niewykorzystany",
   "m_1e9774acf80812": "Profil do zaimportowania",
   "m_1e977ff418b9ae": {
-    "one": "Dziś wykorzystano {count} żądanie API",
     "few": "Dziś wykorzystano {count} żądania API",
     "many": "Dziś wykorzystano {count} żądań API",
+    "one": "Dziś wykorzystano {count} żądanie API",
     "other": "Dziś wykorzystano {count} żądania API"
   },
   "m_1e98fbb9c75818": "Pobierz ZIP pomocy",
+  "m_1e9a688a32f8a4": "Zatwierdź na plex.tv",
   "m_1e9ca6c7397706": "Osoby",
   "m_1e9d2a14df3174": "Zakotwiczone wiersze zajmują swoją pozycję dla wszystkich; personalizacja wypełnia pozycje pomiędzy nimi. Przeciągnij, aby zamienić miejscami.",
   "m_1ea093101f2a05": "Biblioteka brzegowa",
@@ -4608,9 +4697,9 @@
   "m_1eaf6ce561408f": "Ustawienia domyślne serwera",
   "m_1eb0c27d7f49c7": "Obejrzano {percent}",
   "m_1eb0f40a235d61": {
-    "one": "{count} ręcznie wybrany tytuł",
     "few": "{count} ręcznie wybrane tytuły",
     "many": "{count} ręcznie wybranych tytułów",
+    "one": "{count} ręcznie wybrany tytuł",
     "other": "{count} ręcznie wybranego tytułu"
   },
   "m_1eb24748a2dfb4": "Ładowanie funkcji językowych",
@@ -4659,6 +4748,7 @@
   "m_1f06555c3273f9": "Wartości dodatnie opóźniają wyświetlanie napisów.",
   "m_1f07124ab533c1": "Nadpisanie dla: {who}",
   "m_1f07a454b7b05b": "Strona",
+  "m_1f08bc24b38235": "W Plex",
   "m_1f0a47b97d9b97": "{service} ({region})",
   "m_1f0d591434eb63": "Przeciągnij uchwyt lub użyj strzałek, aby zmienić kolejność. Posortuj według „Kolejność źródła”, aby zachować tę kolejność w Plex.",
   "m_1f107a64fd97ca": "Ty",
@@ -4686,9 +4776,9 @@
   "m_1f2c1ef7c466cc": "Rotuj elementy",
   "m_1f2c8b3ac5b812": "Harmonogram tygodniowy zapisany",
   "m_1f2dd11757fb45": {
-    "one": "{count} dniu nieaktywności",
     "few": "{count} dniach nieaktywności",
     "many": "{count} dniach nieaktywności",
+    "one": "{count} dniu nieaktywności",
     "other": "{count} dnia nieaktywności"
   },
   "m_1f2dd79e3c5c02": "Usuń z ulubionych: {channel}",
@@ -4699,15 +4789,16 @@
   "m_1f4a661922f433": "przez {node}, {when}",
   "m_1f4c2328a4a935": "Artykuły",
   "m_1f4f2757857261": {
-    "one": "godzina",
     "few": "godziny",
     "many": "godzin",
+    "one": "godzina",
     "other": "godziny"
   },
   "m_1f5199e8c55a8e": "Napisz zwykłym językiem, czego chcesz. Ether przygotuje źródła i reguły, a Ty przejrzysz je, zanim cokolwiek zostanie zapisane.",
   "m_1f55294d9914b5": "Dane logowania źródła {number}",
   "m_1f55c824c390e7": "Ustawienia dostępności",
   "m_1f5819d47b83be": "Metadane lokalne · bez wyszukiwania u dostawców",
+  "m_1f58e3ed0b7295": "pms version wersja",
   "m_1f5a59b77f5995": "Dwuliterowy region dla dat premier i dostępności w serwisach streamingowych.",
   "m_1f5c76855b2fb6": "Początek (UTC)",
   "m_1f5edbc594c658": "Zatrzymano na",
@@ -4715,9 +4806,9 @@
   "m_1f6218157e5f66": "losowo",
   "m_1f6222615fdc48": "Zbuduj kanał wirtualny z katalogu albo zaimportuj IPTV z listy M3U.",
   "m_1f623ad43b4dbf": {
-    "one": "{count} widz",
     "few": "{count} widzowie",
     "many": "{count} widzów",
+    "one": "{count} widz",
     "other": "{count} widza"
   },
   "m_1f625bae28b970": "Sekcje: {page}",
@@ -4730,6 +4821,7 @@
   "m_1f6c206c676272": "Brak hosta",
   "m_1f6f6d8a5a635a": "Ether buduje Twoją bibliotekę na podstawie TMDB, więc wymagany jest klucz API TMDB. Jest bezpłatny: {link}, a następnie wklej go tutaj i przetestuj.",
   "m_1f7223c74bf3d9": "Wybierz widza",
+  "m_1f7955ed413e76": "Udostępnianie i dostęp do serwera są zarządzane w: {link}.",
   "m_1f7969b9559bf0": "Minimalna popularność",
   "m_1f7d73ca4b3ad5": "Dozwolone godziny",
   "m_1f7d90899f2705": "E-mail (SMTP)",
@@ -4739,9 +4831,9 @@
   "m_1f84ef24caf5f1": "Opisz to",
   "m_1f88c60972658b": "Punkt odniesienia ramówki (UTC)",
   "m_1f8b8c2485b4fa": {
-    "one": "{count} wynik",
     "few": "{count} wyniki",
     "many": "{count} wyników",
+    "one": "{count} wynik",
     "other": "{count} wyniku"
   },
   "m_1f902d2cbf3551": "Ten kanał już nie istnieje.",
@@ -4749,21 +4841,22 @@
   "m_1f971a5b5a685c": "statistics devices hours viewers titles statystyki urządzenia godziny widzowie tytuły",
   "m_1f9a9e43f8f724": "Opublikowane adresy",
   "m_1f9ab884756e04": {
-    "one": "{count} rdzeń",
     "few": "{count} rdzenie",
     "many": "{count} rdzeni",
+    "one": "{count} rdzeń",
     "other": "{count} rdzenia"
   },
   "m_1f9dc6f1f797f7": "Filtry",
   "m_1fa09858061c93": "Współdzielone w całym serwerze, resetowane o północy UTC. Limit zero wyłącza daną pracę. Zwykłe odtwarzanie zachowuje swoje dotychczasowe limity dostawców.",
   "m_1fa172f3857055": "Wiersz: {title}",
+  "m_1fa6177f57acdc": "Certyfikat zainstalowany",
   "m_1fa778c3ae7aa4": "Pozwala aplikacji pokazać przycisk pomijania czołówki, streszczenia albo napisów końcowych. Przycisk nadal zależy od aplikacji.",
   "m_1fa829c416c3d8": "Sekcje edytora",
   "m_1faa17eadae702": "Nie udało się załadować metod logowania i urządzeń.",
   "m_1faad58de2d8f7": {
-    "one": "{count} indeksator · bez limitów dziennych",
     "few": "{count} indeksatory · bez limitów dziennych",
     "many": "{count} indeksatorów · bez limitów dziennych",
+    "one": "{count} indeksator · bez limitów dziennych",
     "other": "{count} indeksatora · bez limitów dziennych"
   },
   "m_1faba88e7fc859": "Otwórz podgląd: {name}",
@@ -4772,18 +4865,18 @@
   "m_1fb01ec8cfe42d": "Kanał usunięty",
   "m_1fb0202809c713": "Plik definicji",
   "m_1fb1ed0f31e1f7": {
-    "one": "Wyszukiwań dziennie: {count}",
     "few": "Wyszukiwań dziennie: {count}",
     "many": "Wyszukiwań dziennie: {count}",
+    "one": "Wyszukiwań dziennie: {count}",
     "other": "Wyszukiwań dziennie: {count}"
   },
   "m_1fb37c824c7bc5": "To usuwa serwer z konta Plex. Aplikacje Plex nie zobaczą go, dopóki nie zalogujesz się i nie przejmiesz go ponownie.",
   "m_1fb50b155c9eab": "Wszyscy · zawsze",
   "m_1fb5bd919963d6": "Sam proces Ether",
   "m_1fb65af0443bac": {
-    "one": "{count} nadpisanie",
     "few": "{count} nadpisania",
     "many": "{count} nadpisań",
+    "one": "{count} nadpisanie",
     "other": "{count} nadpisania"
   },
   "m_1fb67695eebd4c": "Utwórz gościa salonu",
@@ -4800,11 +4893,12 @@
   "m_1fcb9b5bf52dd2": "Pokaż {title} w rekomendacjach",
   "m_1fcbf641c612af": "Przywrócić niezaszyfrowaną kopię zapasową?",
   "m_1fcd3edbe01142": "Konwersja dla aplikacji",
+  "m_1fcd9c7e17f176": "Obciążenie CPU i GPU na żywo, kontrole dysku i testy wydajności tone-mappingu nie są zbierane.",
   "m_1fd36807d2b808": "Wolne: {free} z {total} na tym dysku.",
   "m_1fd6e9040f9cb9": {
-    "one": "{count} ukończone",
     "few": "{count} ukończone",
     "many": "{count} ukończonych",
+    "one": "{count} ukończone",
     "other": "{count} ukończonego"
   },
   "m_1fd9765785ada0": "Wymaga przewodnika",
@@ -4825,9 +4919,9 @@
   "m_1fed1cfe1ca4fc": "Otwórz zatwierdzanie Simkl",
   "m_1ff30d480cdeec": "Wybrani widzowie",
   "m_1ff744c021f99f": {
-    "one": "Strona główna Plex, którą widzi {count} widz",
     "few": "Strona główna Plex, którą widzą wszyscy {count} widzowie",
     "many": "Strona główna Plex, którą widzi wszystkich {count} widzów",
+    "one": "Strona główna Plex, którą widzi {count} widz",
     "other": "Strona główna Plex, którą widzi wszystkich {count} widza"
   },
   "m_1ff88b0243b76c": "Pamięć podręczna",

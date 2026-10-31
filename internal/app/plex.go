@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"runtime"
 
@@ -73,6 +74,10 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 		Token:      func() string { return a.cfg.Get().Plex.Token },
 		Background: true,
 	})
+	a.plexGUID = deps.PlexGUID
+	if err := a.buildPlexWatch(); err != nil {
+		return nil, fmt.Errorf("plex watch state: %w", err)
+	}
 	if !cfg.Spike.Enabled {
 		// EpisodeOrder is TMDB-backed (build_integrations.go): metadataTitle
 		// prefers it over Catalog, and the real catalog does not know the

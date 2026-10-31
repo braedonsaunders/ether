@@ -32,15 +32,15 @@
   "m_0030896e629200": "Editor",
   "m_00355a0c3f28ba": "Adaptivní bitrate žebříček · Direct Stream",
   "m_0036fd7c0fbe0f": {
-    "one": "titul by byl skryt",
     "few": "tituly by byly skryty",
     "many": "titulu by bylo skryto",
+    "one": "titul by byl skryt",
     "other": "titulů by bylo skryto"
   },
   "m_0037ac36ee2039": {
-    "one": "{count} stažení dnes · automatické limity",
     "few": "{count} stažení dnes · automatické limity",
     "many": "{count} stažení dnes · automatické limity",
+    "one": "{count} stažení dnes · automatické limity",
     "other": "{count} stažení dnes · automatické limity"
   },
   "m_0038bf09111a88": "Žádné odpovídající tituly",
@@ -50,9 +50,9 @@
   "m_0040e631ea1713": "Smí běžet během přehrávání",
   "m_00446ecc28fada": "MDBList",
   "m_004835dbe00869": {
-    "one": "{count} stažení NZB denně",
     "few": "{count} stažení NZB denně",
     "many": "{count} stažení NZB denně",
+    "one": "{count} stažení NZB denně",
     "other": "{count} stažení NZB denně"
   },
   "m_00487c78d70a2b": "Průměrné hodnocení na TMDB",
@@ -75,9 +75,9 @@
   "m_006dcdc8fa7ec6": "Pracovní prostor Živé TV",
   "m_006f15a2fe0e48": "Otevřením filmu nebo epizody se připraví jeho zdroj a úvodní data. U seriálů se při podpoře předehřeje epizoda Na řadě.",
   "m_0075202a42a2af": {
-    "one": "{count} stream",
     "few": "{count} streamy",
     "many": "{count} streamu",
+    "one": "{count} stream",
     "other": "{count} streamů"
   },
   "m_0075233c93a1d2": "Obnovovat každou hodinu",
@@ -106,6 +106,7 @@
   "m_009bde2dde6cc7": "Co může tento počítač použít k převodu videa pro zařízení, která ho nepřehrají přímo.",
   "m_009c31d1d7a458": "Uzly",
   "m_009ea3143d05ce": "Hlídač pádů",
+  "m_009ead586f61c1": "Stav sledování účtu Plex",
   "m_00a084a302868d": "disk rozpočet úložiště uchování předběžné načítání zahřívání další epizoda",
   "m_00a230047b55c8": "Doručeno z diskové mezipaměti",
   "m_00a35ff984d8bc": "Právě se předehřívá",
@@ -118,9 +119,9 @@
   "m_00afcf2c123ee9": "Velikost odznaků",
   "m_00b2237c907a62": "Nezávislá mezipaměť na tomto uzlu.",
   "m_00b2c78f02f956": {
-    "one": "Dnes využito hledání: {used} z {count}",
     "few": "Dnes využito hledání: {used} z {count}",
     "many": "Dnes využito hledání: {used} z {count}",
+    "one": "Dnes využito hledání: {used} z {count}",
     "other": "Dnes využito hledání: {used} z {count}"
   },
   "m_00b5138d8d1c2c": "Všechna zařízení",
@@ -190,6 +191,7 @@
   "m_012b97515b88aa": "Neuložené koncepty",
   "m_012c7df016f785": "Váha uzlu {node}",
   "m_012d2c04fc1eb7": "Automatické limity",
+  "m_012d3ec3988476": "Dokončete průvodce nastavením a propojte Ether se svým účtem Plex.",
   "m_013085e3ac1ef6": "Prohlížeč · {platform}",
   "m_013318c8b53ec2": "Dobré ráno",
   "m_0137e5f03f82ba": "Dole",
@@ -209,9 +211,9 @@
   "m_0152bbbd7a10b9": "Odebrat {title}",
   "m_015abd5418f406": "{currency} za měsíc",
   "m_015bc2125152b7": {
-    "one": "{count} chybějící",
     "few": "{count} chybějící",
     "many": "{count} chybějících",
+    "one": "{count} chybějící",
     "other": "{count} chybějících"
   },
   "m_016432d700cb95": "Tituly, které si tento divák označil jako oblíbené.",
@@ -235,6 +237,7 @@
   "m_01938362311cd5": "Prozkoumat",
   "m_0194d899fc2d2f": "Horory v náhodném pořadí",
   "m_01980ae499c640": "Zastavit stream",
+  "m_019d37d71adce6": "Pět rychlých kroků a vaše aplikace Plex najdou Ether jako kterýkoli jiný server.",
   "m_019d4db9320ab8": "Indexer nedostupný",
   "m_019d7ad064e27a": "Dopřejte oblíbeným titulům domácnosti delší pobyt.",
   "m_019de9d0bd8f2a": "Šablona {name}",
@@ -264,9 +267,9 @@
   "m_01cc261c40c43c": "Zatím žádní oblíbení lidé.",
   "m_01d14fded2dd67": "Indexery pro tento titul nic nevrátily. Zkuste Hledat znovu později.",
   "m_01d3fdf0fd6f74": {
-    "one": "Hodiny tohoto uzlu se liší od hodin databázového serveru o {count} sekundu. Synchronizujte hodiny (NTP) na každém uzlu.",
     "few": "Hodiny tohoto uzlu se liší od hodin databázového serveru o {count} sekundy. Synchronizujte hodiny (NTP) na každém uzlu.",
     "many": "Hodiny tohoto uzlu se liší od hodin databázového serveru o {count} sekundy. Synchronizujte hodiny (NTP) na každém uzlu.",
+    "one": "Hodiny tohoto uzlu se liší od hodin databázového serveru o {count} sekundu. Synchronizujte hodiny (NTP) na každém uzlu.",
     "other": "Hodiny tohoto uzlu se liší od hodin databázového serveru o {count} sekund. Synchronizujte hodiny (NTP) na každém uzlu."
   },
   "m_01d78a2b16a6bb": "Čeká se na schválení",
@@ -280,6 +283,7 @@
   "m_01e84c627eb6d2": "Bez názvu",
   "m_01e9e72a888220": "Soustředěná knihovna",
   "m_01eb5fd1d6de13": "Další podmínky",
+  "m_01eb71e89dc174": "Některé tituly z Plexu se zatím nepodařilo spárovat. Opakování je zkontroluje znovu. Chyba databáze nepřeskočí zbytek importu.",
   "m_01ecbe1881c100": "typický divák",
   "m_01edfc9989e925": "Zatím žádná preference jazyka.",
   "m_01ee4de82c0b00": "Importovat preference",
@@ -293,9 +297,11 @@
   "m_01f3d3e746f17e": "Uložit kanál",
   "m_01f44defeef790": "délka stránky tohoto diváka",
   "m_01f76a6a087992": "Obraz",
+  "m_01f7bee334e2dc": "Doplňky, které Ether zchytří. Vše funguje i bez nich.",
   "m_01f8a94959c781": "Upravit v Domů →",
   "m_01fab52c7cd965": "Poslední synchronizace {when}",
   "m_01fb1fa0afb11e": "Uchovejte tento token v tajnosti",
+  "m_01fb94a288b813": "Váš Plex. Za hranicemi statické knihovny.",
   "m_01fc1a0db354dc": "{label}: hodnota",
   "m_01fecdf6edee82": "Nemám zájem",
   "m_01ff1353b828ec": "Rozvržení",
@@ -347,9 +353,9 @@
   "m_02413a2ace086e": "Kontext náhledu",
   "m_024331c508a2cd": "Odmítnout",
   "m_0244039960f5ea": {
-    "one": "{count} indexer · dnes zbývá hledání: {remaining}",
     "few": "{count} indexery · dnes zbývá hledání: {remaining}",
     "many": "{count} indexeru · dnes zbývá hledání: {remaining}",
+    "one": "{count} indexer · dnes zbývá hledání: {remaining}",
     "other": "{count} indexerů · dnes zbývá hledání: {remaining}"
   },
   "m_02468c66dcfa9a": "Žádné vybrané odznaky nejsou k dispozici · viz Vrstvy plakátu",
@@ -362,6 +368,7 @@
   "m_02606b9a8f8e2a": "Vlastníka hodnocení obsahu nikdy neomezuje.",
   "m_02608704db25a8": "výchozí hodnota systému",
   "m_02633e83c8d187": "Požadavek na obrázek selhal ({status})",
+  "m_02638a5128ac12": "Ve výchozím stavu vypnuto. Zapnutí nenahraje existující historii. Přehrávání pokračuje, i když je Plex nedostupný.",
   "m_0264b755bf3222": "Pestrost",
   "m_0267490243a204": "Vytvořte si účet vlastníka",
   "m_0268b1886371a8": "navigovat",
@@ -370,6 +377,7 @@
   "m_026e06fbf83526": "Hledat v doručeních",
   "m_026e595b5271bb": "Všechny automatické události",
   "m_0271e8f8b2bd14": "Blokovat přehrávání mimo vaši domácí síť.",
+  "m_027335d2e04118": "nastavení plex",
   "m_0273cfdc145402": "Kliknutím na žánr ho opravíte",
   "m_0275b9328d6d05": "Skrýt speciály",
   "m_027617cb889af2": "Používá se pro seznam, průvodce a streamy tohoto zdroje. Nikdy se neposílá jiným poskytovatelům.",
@@ -380,9 +388,9 @@
   "m_028688447472f5": "Všechny populární filmy",
   "m_02885e2073e46c": "Jeden balíček podpory pro zvolené zařízení. Nemění přehrávání.",
   "m_02890a066f05d9": {
-    "one": "{name}: {count} titul.",
     "few": "{name}: {count} tituly.",
     "many": "{name}: {count} titulu.",
+    "one": "{name}: {count} titul.",
     "other": "{name}: {count} titulů."
   },
   "m_028c120a29d933": "Hodnocení obsahu",
@@ -394,9 +402,9 @@
   "m_0293d8e8148c8b": "Připojit znovu",
   "m_02941fb09831c6": "Zkusit znovu",
   "m_029df72d8be48b": {
-    "one": "{count} sekce má neuložené změny",
     "few": "{count} sekce mají neuložené změny",
     "many": "{count} sekce má neuložené změny",
+    "one": "{count} sekce má neuložené změny",
     "other": "{count} sekcí má neuložené změny"
   },
   "m_029eab8ad3f669": "Záloha č. {rank}",
@@ -415,9 +423,9 @@
   "m_02bbfd11a6006c": "Akční filmy z let 1980–1989 v náhodném pořadí",
   "m_02bc2102d07acf": "Aktivita · posledních 30 dní",
   "m_02bddd4029e48e": {
-    "one": "Denně obměňuje {count} titul",
     "few": "Denně obměňuje {count} tituly",
     "many": "Denně obměňuje {count} titulu",
+    "one": "Denně obměňuje {count} titul",
     "other": "Denně obměňuje {count} titulů"
   },
   "m_02beea95537318": "Ceny tarifů uloženy",
@@ -439,9 +447,9 @@
   "m_02d4f83ff8f11c": "až",
   "m_02d9661548eb48": "popularita",
   "m_02da64e75782c4": {
-    "one": "{count} přehrání",
     "few": "{count} přehrání",
     "many": "{count} přehrání",
+    "one": "{count} přehrání",
     "other": "{count} přehrání"
   },
   "m_02db68d520f1b2": "Programování",
@@ -468,9 +476,9 @@
   "m_030d3fb3600058": "Dočasná složka",
   "m_030e042c756ea8": "Zahájeno, ale nedokončeno",
   "m_031004cdaa8c37": {
-    "one": "{source} {duration} ({count} přehrání)",
     "few": "{source} {duration} ({count} přehrání)",
     "many": "{source} {duration} ({count} přehrání)",
+    "one": "{source} {duration} ({count} přehrání)",
     "other": "{source} {duration} ({count} přehrání)"
   },
   "m_031021f2893bc9": "Selhalo",
@@ -485,9 +493,9 @@
   "m_0325d90f9a82ff": "Nastavení Simkl bylo uloženo.",
   "m_032878aab35eb2": "Nedostupný seriál",
   "m_0328e2be5b7581": {
-    "one": "{count} minuta",
     "few": "{count} minuty",
     "many": "{count} minuty",
+    "one": "{count} minuta",
     "other": "{count} minut"
   },
   "m_032de12b75ead9": "Pokročilé: osobní limity",
@@ -496,9 +504,9 @@
   "m_0332ea783247de": "Tituly, které divák otevřel, ale nepřehrál, ovlivňují řádky, které uvidí příště.",
   "m_0333027ca317a3": "Testovací soubory",
   "m_033375a2917e8e": {
-    "one": "Nainstalované definice: {count}.",
     "few": "Nainstalované definice: {count}.",
     "many": "Nainstalované definice: {count}.",
+    "one": "Nainstalované definice: {count}.",
     "other": "Nainstalované definice: {count}."
   },
   "m_033386ef5bff4a": "{provider} se již nebude používat ke streamování. Jeho klíč API se z Etheru smaže.",
@@ -515,9 +523,9 @@
   "m_03511d39db6f7f": "Limit vylepšeného rozlišení",
   "m_0357bc87b226c4": "Soubor je připraven k importu",
   "m_035960981be4e1": {
-    "one": "{count} selhalo",
     "few": "{count} selhalo",
     "many": "{count} selhalo",
+    "one": "{count} selhalo",
     "other": "{count} selhalo"
   },
   "m_03597bde8a517f": "Zatím žádné snímky. Vytvořte první zálohu.",
@@ -542,9 +550,9 @@
   "m_037f4da8f05d1c": "Zvolte přihlášení, pokud poskytovatel své URL chrání.",
   "m_037fb292194f40": "Co sleduje server",
   "m_038006bc051309": {
-    "one": "Pouze kanál vybraný níže.",
     "few": "Pouze {count} kanály vybrané níže.",
     "many": "Pouze {count} kanálů vybraných níže.",
+    "one": "Pouze kanál vybraný níže.",
     "other": "Pouze {count} kanálů vybraných níže."
   },
   "m_0381e24fefcb2d": "Co popisuje",
@@ -575,6 +583,7 @@
   "m_03d5476676b7fc": "Maximum stran na synchronizaci",
   "m_03da1fd5a4541a": "Již ve Vlastním bodování",
   "m_03db23f21fbeb7": "Nenalezeny žádné nové shody",
+  "m_03db87cb2e7846": "Doručení",
   "m_03deacbbd311d9": "Co je k dispozici na službě ve vašem regionu",
   "m_03deb3c4bf8abb": "Vyberte existující plakát, aniž by se změnili členové kolekce.",
   "m_03df69549c96f4": "Proč zde:",
@@ -597,6 +606,7 @@
   "m_03facff8821157": "Sklo · skóre a podrobnosti",
   "m_03fe09a2e754ba": "Profil {profile}",
   "m_03ffab437fb924": "Požadavek na důkaz u filmů je vypnutý.",
+  "m_04000b62dd19d6": "Chybějící titulky se stahují z OpenSubtitles. Účet se nastavuje v části {link}.",
   "m_04020077e71c31": "Pohání funkci „Popište to“ a tematické řádky Domů.",
   "m_04029a0d89758e": "Ladění",
   "m_0404daecf11702": "Žádné kolekce k zobrazení.",
@@ -605,9 +615,9 @@
   "m_0409b7ebb53d9a": "Odznaky titulů",
   "m_040a587be9953f": "Úspěšnost mezipaměti na disku",
   "m_040c3fce60bbd0": {
-    "one": "Zobrazuje se první {count} odpovídající titul. Náhled aktuálních shod v katalogu.",
     "few": "Zobrazují se první {count} odpovídající tituly. Náhled aktuálních shod v katalogu.",
     "many": "Zobrazuje se prvního {count} odpovídajícího titulu. Náhled aktuálních shod v katalogu.",
+    "one": "Zobrazuje se první {count} odpovídající titul. Náhled aktuálních shod v katalogu.",
     "other": "Zobrazuje se prvních {count} odpovídajících titulů. Náhled aktuálních shod v katalogu."
   },
   "m_041119e94925f1": "Sestavování náhledu…",
@@ -624,6 +634,7 @@
   "m_0424aaaf490f27": "stav tmdb debrid prowlarr hodnocení",
   "m_042922385e697c": "Debug",
   "m_04298d849f6e0b": "dne nebo po",
+  "m_042dd2ece9d0ad": "Otevřít stránku schválení",
   "m_042eb2bd6ae19a": "Váš klíč API TMDB",
   "m_0430a048c733e4": "Přidat {name} jako indexer",
   "m_0431fab35ddd2d": "Vaše média. Za hranice statické knihovny.",
@@ -640,9 +651,9 @@
   "m_043b9d6c4759dd": "Žádný divák s přepsáními neodpovídá „{query}“.",
   "m_044354b806b681": "Předehřeje začátek další epizody, aby se spustila okamžitě.",
   "m_0443f64565d7da": {
-    "one": "Všechny živé kanály ({count}) mají průvodce",
     "few": "Všechny živé kanály ({count}) mají průvodce",
     "many": "Všechny živé kanály ({count}) mají průvodce",
+    "one": "Všechny živé kanály ({count}) mají průvodce",
     "other": "Všechny živé kanály ({count}) mají průvodce"
   },
   "m_044485feb6ec3b": "Trendy, populární, nejlépe hodnocené, aktuálně v kinech…",
@@ -657,12 +668,14 @@
   "m_045577dceca94c": "Název skupiny {n}",
   "m_0455bd26c25554": "pro poskytovatele, kteří odpovídají jen známým přehrávačům",
   "m_0456ed32f69954": "Odeslat test",
+  "m_045846aeafa018": "Metadata › Hodnocení",
   "m_04587003d728aa": "Nainstalované weby",
   "m_04593da96fc166": "Dokončete nastavení a vše se spustí. Položky níže se budou průběžně doplňovat.",
   "m_045e7be55a3b86": "Strategie výběru",
   "m_045e9bee109cfe": "Zatím nebyla změřena žádná přehrání.",
   "m_045eac42dfd29b": "Zobrazit „96% shoda · Skončí v 22:45“ na stránce podrobností titulu.",
   "m_045ecfd5c1648d": "Ether neobsahuje žádné poskytovatele debridu: použijte vlastní účet Real-Debrid, TorBox, AllDebrid, Premiumize, Debrid-Link nebo Offcloud a jeho klíč API. Debrid streamuje torrentová vydání, takže potřebuje také alespoň jeden zdroj torrentů (indexer Torznab, torrentový web nebo doplněk Stremio) v části {indexers}; zatím žádný není nastaven.",
+  "m_04600e288e8c1f": "Připojit účet Plex tohoto diváka",
   "m_046261587afcdb": "Použít všechny podporované feedy",
   "m_046385e826c660": "Složka mezipaměti a diskový rozpočet",
   "m_046553d4b5518d": "Uchovávejte mezipaměť na připojeném síťovém sdílení.",
@@ -672,9 +685,9 @@
   "m_046d8520c1d620": "Průzkumník mezipaměti",
   "m_047334159816b2": "Artwork z TMDB",
   "m_04736065ec00ca": {
-    "one": "{count} požadavek API denně",
     "few": "{count} požadavky API denně",
     "many": "{count} požadavku API denně",
+    "one": "{count} požadavek API denně",
     "other": "{count} požadavků API denně"
   },
   "m_04736cfe01f746": "Streamy se aktualizují každých několik sekund. Zastavením streamu se ukončí na zařízení diváka.",
@@ -682,16 +695,16 @@
   "m_0474b5fa45d5ae": "Odebrat pravidlo",
   "m_0474e00de25f80": "Vyberte seriál",
   "m_047aeca2222ee6": {
-    "one": "Poslední {count} den",
     "few": "Poslední {count} dny",
     "many": "Posledního {count} dne",
+    "one": "Poslední {count} den",
     "other": "Posledních {count} dní"
   },
   "m_047b178b1d46c9": "Vyberte poskytovatele",
   "m_047e07b4a4ee8f": {
-    "one": "{count} titul aktuálně nemá metadata o zemi. Běžná obnova metadat mezery doplní; uložení pravidel nespouští hromadné vyhledávání.",
     "few": "{count} tituly aktuálně nemají metadata o zemi. Běžná obnova metadat mezery doplní; uložení pravidel nespouští hromadné vyhledávání.",
     "many": "{count} titulu aktuálně nemá metadata o zemi. Běžná obnova metadat mezery doplní; uložení pravidel nespouští hromadné vyhledávání.",
+    "one": "{count} titul aktuálně nemá metadata o zemi. Běžná obnova metadat mezery doplní; uložení pravidel nespouští hromadné vyhledávání.",
     "other": "{count} titulů aktuálně nemá metadata o zemi. Běžná obnova metadat mezery doplní; uložení pravidel nespouští hromadné vyhledávání."
   },
   "m_047e34b0de5019": "Vlastní hosting",
@@ -711,9 +724,9 @@
   "m_0499b0d2b3735d": "Synchronizovat diváka",
   "m_049afe6b645d5c": "naposledy fungoval {time}",
   "m_049ed28bbad73e": {
-    "one": "{from}–{to} z {count} titulu",
     "few": "{from}–{to} z {count} titulů",
     "many": "{from}–{to} z {count} titulu",
+    "one": "{from}–{to} z {count} titulu",
     "other": "{from}–{to} z {count} titulů"
   },
   "m_04a39a9880320e": "Zkontrolovat nastavení",
@@ -741,18 +754,18 @@
   "m_04d6da1f1afe82": "Ether obsahuje programy, které potřebuje. Cestu změňte, jen když jste nainstalovali vlastní kopii.",
   "m_04d704f0dd6ba1": "Ether prohledává weby, které přidáte jako indexery, pomocí definic ve formátu Cardigann, které si nainstalujete. Žádné neobsahuje: instalujte pouze definice webů, které máte právo používat.",
   "m_04d7ddcbba86e8": {
-    "one": "Zobrazeno nejnovějších {shown} z {count} rozhodnutí.",
     "few": "Zobrazeno nejnovějších {shown} z {count} rozhodnutí.",
     "many": "Zobrazeno nejnovějších {shown} z {count} rozhodnutí.",
+    "one": "Zobrazeno nejnovějších {shown} z {count} rozhodnutí.",
     "other": "Zobrazeno nejnovějších {shown} z {count} rozhodnutí."
   },
   "m_04d93549f681a6": "Vlastní certifikát",
   "m_04db98911c3eb1": "Diskový rozpočet: {size}",
   "m_04dc02a162bd65": "Přihlaste se pomocí svého účtu diváka.",
   "m_04dc1ac4895ab6": {
-    "one": "{count} pravidlo",
     "few": "{count} pravidla",
     "many": "{count} pravidla",
+    "one": "{count} pravidlo",
     "other": "{count} pravidel"
   },
   "m_04df0b528d90fb": "Vybrat…",
@@ -769,9 +782,9 @@
   "m_04f36b838e60ce": "Skrýt automatické kolekce filmových sérií",
   "m_04f617d5eb1d49": "Zatím žádný artwork katalogu",
   "m_04fb0ee40d66f8": {
-    "one": "{count} záchrana přes backfill",
     "few": "{count} záchrany přes backfill",
     "many": "{count} záchrany přes backfill",
+    "one": "{count} záchrana přes backfill",
     "other": "{count} záchran přes backfill"
   },
   "m_04fbee3344bf2c": "Opravy",
@@ -797,6 +810,7 @@
   "m_05193eb1d41ffd": "Importovaná pravidla",
   "m_051c3370dc0d5b": "Seznam z Letterboxd",
   "m_051cbd985e548b": "Oddělte čárkami",
+  "m_051d3aeb75da5b": "Volitelná cesta k vlastnímu NVEncC64.exe. Ponechte prázdné pro automatické nastavení; vlastní instalace se nikdy nepřepisují.",
   "m_05225e200a49d6": "Spojení s plex.tv bylo ztraceno",
   "m_05233d603be819": "Otestovat klíč TMDB",
   "m_05241032cee8fe": "upnp přesměrování portu veřejný",
@@ -810,9 +824,9 @@
   "m_053af491377788": "Předběžné načítání je vypnuto",
   "m_053cc39b219553": "Zkontrolováno {checked} · čeká na podrobnosti {pending}",
   "m_053da922f3a834": {
-    "one": "{count} rok",
     "few": "{count} roky",
     "many": "{count} roku",
+    "one": "{count} rok",
     "other": "{count} let"
   },
   "m_054a0b20132fa8": "Základ náhodného pořadí",
@@ -851,9 +865,9 @@
   "m_0573f6461730ba": "Deklarovaný zvuk se musí shodovat s původním jazykem tohoto titulu. Titulky se nepočítají a samotný název souboru porovnání neumožní.",
   "m_0575616742f24c": "Nikdy níže než pozice pro {title}",
   "m_0576f94aa5c08a": {
-    "one": "{count} vyhledání na disku",
     "few": "{count} vyhledání na disku",
     "many": "{count} vyhledání na disku",
+    "one": "{count} vyhledání na disku",
     "other": "{count} vyhledání na disku"
   },
   "m_057785b679b588": "Dokončením úvodního nastavení se tato stránka správy uzamkne k vašemu účtu vlastníka. Později je můžete znovu otevřít z Nastavení.",
@@ -886,9 +900,9 @@
   "m_05a76cb616d8c1": "Vyřadit tituly odpovídající kterémukoli z těchto, ať pravidla říkají cokoli.",
   "m_05a94969d28928": "Zahrnout tituly pro dospělé",
   "m_05ad43fe3d9433": {
-    "one": "{count} selhání",
     "few": "{count} selhání",
     "many": "{count} selhání",
+    "one": "{count} selhání",
     "other": "{count} selhání"
   },
   "m_05b16e25bef09b": "Segmenty z Usenetu se ukládají na disk, takže převíjení a opětovné sledování je okamžité.",
@@ -916,6 +930,7 @@
   "m_05df6f55026b7a": "Nejnovější běžná epizoda z dostupných metadat; neznámá data na konci",
   "m_05df964ad9f9b3": "Zdroj definic",
   "m_05dfac2b60f04f": "Tento tajný údaj se zobrazí pouze jednou.",
+  "m_05dfadd1428cae": "Stav Plexu",
   "m_05e0d33d6dd310": "Nepublikováno",
   "m_05e35f8f0cbac1": "M3U a XMLTV",
   "m_05e4aa1cda58ac": "URL serveru Plex",
@@ -934,6 +949,7 @@
   "m_05ff2f8d217983": "Načítání Domů",
   "m_06008f4dc42886": "zvuk titulky jazyk seznam k zhlédnutí upozornění zásady",
   "m_0603f8c8c14881": "Speciály, které pořadí umísťuje, si zachovávají své místo. Skrytím speciálů se z procházených seznamů odstraní všechny epizody řady 0. Epizody, které pořadí vynechává, se zobrazí v části Ostatní epizody.",
+  "m_0604cb4ea946e7": "Schopnosti zařízení",
   "m_0607d4d4be574c": "Pokračovat",
   "m_0609d540123cc4": "URL streamu",
   "m_060f1ed88b3989": "Zkusit znovu",
@@ -943,12 +959,13 @@
   "m_061c379fa8a24d": "vypnuto",
   "m_061c555bca57f4": "Prázdné znamená žádnou zálohu. Odpovídající alternativy se zkouší po primárních shodách.",
   "m_061deedf9f6e55": {
-    "one": "{amount} za přehrání · {count} přehrání tento měsíc",
     "few": "{amount} za přehrání · {count} přehrání tento měsíc",
     "many": "{amount} za přehrání · {count} přehrání tento měsíc",
+    "one": "{amount} za přehrání · {count} přehrání tento měsíc",
     "other": "{amount} za přehrání · {count} přehrání tento měsíc"
   },
   "m_061faebf66749d": "Připojeno",
+  "m_0620243c6d8ddd": "Připojeno · {provider}",
   "m_0620728b070495": "Nic není blokováno",
   "m_062477b462a770": "Všichni aktivní sdílení diváci",
   "m_0625828c3ad678": "Vysvětlitelný výběr",
@@ -959,9 +976,9 @@
   "m_062da5c5a3a9e4": "Posunout {name} nahoru",
   "m_06312783cfee0c": "Nenalezeno",
   "m_0634e41616c6e6": {
-    "one": "{label}: {count} řádek",
     "few": "{label}: {count} řádky",
     "many": "{label}: {count} řádku",
+    "one": "{label}: {count} řádek",
     "other": "{label}: {count} řádků"
   },
   "m_0635efae2d027d": "Výhled dopředu musí být v rozmezí 1 až 366 dní.",
@@ -977,11 +994,12 @@
   "m_064a1ab5bd5313": "Převzít identitu, diváky a nastavení clusteru. Stávající historie tohoto serveru se nesloučí.",
   "m_064a89e6bb3e31": "Místní port, cesty mezipaměti a nastavení překódování zůstávají na tomto počítači. Původní databáze SQLite zůstává ve vašem datovém adresáři.",
   "m_064a9c014590aa": {
-    "one": "Ovlivní {count} diváka",
     "few": "Ovlivní {count} diváky",
     "many": "Ovlivní {count} diváka",
+    "one": "Ovlivní {count} diváka",
     "other": "Ovlivní {count} diváků"
   },
+  "m_064cc5513ced81": "Streamujte torrentová vydání přes vlastní účet debridu.",
   "m_064cf27492eeb4": "Online",
   "m_064e795a99e4c9": "Nepoužívané definice",
   "m_06527925e1fe24": "VIDITELNOST KNIHOVNY",
@@ -1003,14 +1021,15 @@
   "m_0675f997b49659": "Profily publikované TRaSH Guides, obnovované každou hodinu.",
   "m_067681d06872f1": "Zkontrolovat",
   "m_06769c6faf9289": "Libovolná URL obrázku, kterou zvolíte.",
+  "m_06799b1c692822": "Plex nepovolil synchronizaci stavu sledování pro tento účet.",
   "m_0679e8425086e0": "Připojte TMDB a vyberte tituly a metadata, která diváci objeví.",
   "m_067bb0539831f8": "Není na této stránce",
   "m_068139f25abb8b": "0.0.0.0 naslouchá na všech síťových rozhraních.",
   "m_06833aab41a35d": "Otevřete schvalovací stránku Simkl a zadejte kód {code}.",
   "m_068bab67236a91": {
-    "one": "{count} navržená shoda",
     "few": "{count} navržené shody",
     "many": "{count} navržené shody",
+    "one": "{count} navržená shoda",
     "other": "{count} navržených shod"
   },
   "m_0690e44fdf0bdd": "Pro týdenní report není žádný e-mailový kanál",
@@ -1035,6 +1054,7 @@
   "m_06b02e0a57fe7e": "Objevování a prezentace",
   "m_06b142704e8d28": "Kdokoli, kdo připojil Trakt, včetně přátel.",
   "m_06b275d8d4405c": "{title} ({year})",
+  "m_06b2f5019e4ccc": "Jak Ether přizpůsobuje každý stream aplikaci, která ho přehrává.",
   "m_06b3490fd1dd48": "Vaše řádky ze Studia kolekcí",
   "m_06b63c85c41f14": "Změnit pořadí zdroje",
   "m_06b64b0c418139": "Uložení se nezdařilo",
@@ -1061,15 +1081,16 @@
   "m_06dc5804d9c769": "Nahrát soubor",
   "m_06dea04cfc1d12": "Usenet (Newznab)",
   "m_06df187c7ca965": {
-    "one": "{count} den v týdnu",
     "few": "{count} dny v týdnu",
     "many": "{count} dne v týdnu",
+    "one": "{count} den v týdnu",
     "other": "{count} dní v týdnu"
   },
   "m_06e1df016b6fba": "Žádné indexery nejsou zapnuté",
   "m_06e1f27362a9e8": "Přepínání na {channel}…",
   "m_06e5373c3bde95": "Otestovat Trakt",
   "m_06e5eb3a860789": "Z–A",
+  "m_06e74e0efa9e60": "Znovu otevřít průvodce nastavením",
   "m_06ea465bb2726a": "Pravidlo {n}",
   "m_06eae33a6bd3c5": "Přiřazení průvodce ke kanálům",
   "m_06ec0f75d38049": "Vyloučit",
@@ -1132,9 +1153,9 @@
   "m_0765ed97aa75fc": "Model",
   "m_0766807633974b": "Ochutnávka této šablony",
   "m_07668148f9beb1": {
-    "one": "{count} zásah mezipaměti ({memory} paměť, {disk} disk) oproti {fetched} načteným",
     "few": "{count} zásahy mezipaměti ({memory} paměť, {disk} disk) oproti {fetched} načteným",
     "many": "{count} zásahu mezipaměti ({memory} paměť, {disk} disk) oproti {fetched} načteným",
+    "one": "{count} zásah mezipaměti ({memory} paměť, {disk} disk) oproti {fetched} načteným",
     "other": "{count} zásahů mezipaměti ({memory} paměť, {disk} disk) oproti {fetched} načteným"
   },
   "m_076722d3eb2f03": "Zapomenout",
@@ -1159,9 +1180,9 @@
   "m_0796cef211a6e0": "Když lze titul ze seznamu k zhlédnutí diváka streamovat, objeví se v jeho Plex Domů. Samotné datum vydání nestačí: Ether čeká na funkční vydání.",
   "m_079987edbcc20f": "Kategorie",
   "m_07a0b86b755f78": {
-    "one": "{count} odstranění (451)",
     "few": "{count} odstranění (451)",
     "many": "{count} odstranění (451)",
+    "one": "{count} odstranění (451)",
     "other": "{count} odstranění (451)"
   },
   "m_07a16636a474c3": "{field} je alespoň {value}",
@@ -1176,15 +1197,17 @@
   "m_07b39bebc47cb3": "Datum zahájení pro {title}",
   "m_07b7c827c94c19": "Poskytněte svým aplikacím Plex soubor z tohoto počítače a zjistěte, zda je problém s přehráváním v aplikaci, nebo ve streamu. Jde o diagnostiku, nikoli knihovnu; po dokončení ji vypněte.",
   "m_07b80d86ed6696": {
-    "one": "{count} vydání na NAS",
     "few": "{count} vydání na NAS",
     "many": "{count} vydání na NAS",
+    "one": "{count} vydání na NAS",
     "other": "{count} vydání na NAS"
   },
+  "m_07b8f7e9728519": "Přihlaste se účtem Plex, který tento server vlastní.",
   "m_07ba2e86a6e153": "Synchronizováno",
   "m_07bb5b4cdfcc1a": "Přidejte zdroj M3U a získejte kanály IPTV.",
   "m_07bc8ea263ccc9": "Pouze průvodce",
   "m_07bf034a1366dc": "Náhodně",
+  "m_07c0ba56f7f8dc": "Importovat nebo exportovat historii",
   "m_07c1d86fe6ea45": "kompatibilita kodeky",
   "m_07c2920e1765cf": "Neznámý divák",
   "m_07c62348fa8476": "Články kontrolované předtím, než se vydání důvěřuje.",
@@ -1193,9 +1216,9 @@
   "m_07c7e27d2a70ca": "Nejprve nastavte požadavky a pak seřaďte preference. Skóre TRaSH rozhoduje při shodě.",
   "m_07c8a3f615112d": "Uvolněno uchováváním mezipaměti",
   "m_07cca1160d7b16": {
-    "one": "{count} kanál",
     "few": "{count} kanály",
     "many": "{count} kanálu",
+    "one": "{count} kanál",
     "other": "{count} kanálů"
   },
   "m_07cd1dff014cbe": "Souběžné požadavky na rozsah na otevřený soubor. 0 = 4; nejvýše 16.",
@@ -1209,9 +1232,9 @@
   "m_07e0408cad007c": "Maximální místo pro připravená stahování. Nastavením 0 se použije výchozí limit 20 GiB.",
   "m_07e422f80f3c20": "Ukotvení z Domů pro všechny",
   "m_07e8ceb0a74af0": {
-    "one": "{count} chyba",
     "few": "{count} chyby",
     "many": "{count} chyby",
+    "one": "{count} chyba",
     "other": "{count} chyb"
   },
   "m_07ea6909060e49": "Filmy a seriály",
@@ -1285,9 +1308,9 @@
   "m_0869c8ac9a4134": "Původní artwork",
   "m_086a0fea5bf230": "Zkontrolovat připojení",
   "m_086ae5ebef35ab": {
-    "one": "{count} odkaz obnoven",
     "few": "{count} odkazy obnoveny",
     "many": "{count} odkazu obnoveno",
+    "one": "{count} odkaz obnoven",
     "other": "{count} odkazů obnoveno"
   },
   "m_086d871fdbd202": "Použijte token, než vyprší; vždy můžete vytvořit další.",
@@ -1334,9 +1357,9 @@
   "m_08c85cf69d7b6a": "Polička se řídí nedávným opakovaným sledováním, společnými oblíbenými tituly a zájmem o žánry. Starší sledování slábne; bez historie se použije popularita v katalogu.",
   "m_08cb5d0fa07343": "Upozornění v telefonu",
   "m_08cd5abd115457": {
-    "one": "tento uzel: {share} z {count} připojení",
     "few": "tento uzel: {share} z {count} připojení",
     "many": "tento uzel: {share} z {count} připojení",
+    "one": "tento uzel: {share} z {count} připojení",
     "other": "tento uzel: {share} z {count} připojení"
   },
   "m_08d25c5fa7e27e": "jantarová",
@@ -1352,9 +1375,9 @@
   "m_08e3fb9b7323f3": "Zjišťuje se, které kanály mají pořady…",
   "m_08e44edbf4cb4f": "Vlastní vzor řádku",
   "m_08e6b2776c1ca5": {
-    "one": "{count} zhlédnutí",
     "few": "{count} zhlédnutí",
     "many": "{count} zhlédnutí",
+    "one": "{count} zhlédnutí",
     "other": "{count} zhlédnutí"
   },
   "m_08e8e12cce7034": "Poskytovatel uložen",
@@ -1384,12 +1407,14 @@
   "m_090b6d2f2c01df": "Obsahuje",
   "m_090d73faa01327": "Uchováno {used}",
   "m_0911dd5ef5f2c6": "Další adresy, které mají aplikace Plex zkoušet, oddělené čárkami.",
+  "m_0914ec5d898379": "Ether nepotvrdil, zda Plex povoluje synchronizaci stavu sledování pro tento účet.",
   "m_09154bcbf86ce2": "Značky",
   "m_09155c19659b5c": "Vložit JSON",
   "m_091585ad4b51b1": "Prohledejte indexery pro jeden film nebo epizodu a zobrazte každé vydání, ohodnocené a posouzené přesně tak, jako by to udělalo přehrávání. Připněte to, které chcete, nebo zablokujte vadné.",
   "m_091678cebc4093": "Najít diváka s přepsáními",
   "m_0918a5b78948a1": "Profil: {profile} · Výška: {height} · Datový tok: {bitrate}",
   "m_091d0da83025e0": "ID chatu",
+  "m_0922039cc89002": "chyby ladění",
   "m_09240eb23ccf53": "Maximum předem načtených titulů",
   "m_0924c7aecd05ad": "Klíč API Prowlarru",
   "m_092a782bcbb664": "Vytvořte bota pomocí BotFather, nejprve mu napište zprávu a poté zadejte jeho token a ID cílového chatu. ID skupinových chatů mohou být záporná.",
@@ -1441,9 +1466,9 @@
   "m_098274f982fb0c": "Právě se přehrává",
   "m_0985beb1e62856": "Cesta k ffmpeg",
   "m_09878a43a4682e": {
-    "one": "stáří {count} den",
     "few": "stáří {count} dny",
     "many": "stáří {count} dne",
+    "one": "stáří {count} den",
     "other": "stáří {count} dní"
   },
   "m_09886673fbfce2": "Váš návrh",
@@ -1456,22 +1481,25 @@
   "m_098f9a2e213392": "Filtrovat zprávy…",
   "m_0991a1e0cdc491": "Zkoušen první",
   "m_0994bc8918b6f9": "Zobrazí dosud neodvysílané epizody se známým datem vysílání v již zahájených řadách. Jsou označené jako neodvysílané a nelze je přehrát. Alternativní pořadí epizod si zachovají stávající seznamy.",
+  "m_09970627ee227e": "Základy",
   "m_0998693d6c7054": "každé zařízení",
   "m_0998bb49f4949c": "Složka mezipaměti",
   "m_099b345bc660cd": "Použít plakát titulu",
   "m_099b3543883538": "Limit pro celý server",
+  "m_099b522a5c984d": "Tituly, artwork a podrobnosti pro celý katalog.",
   "m_099e4877001931": "Kontrola certifikátu selhala",
   "m_099efd920db4f0": "Hledat tituly nebo ID vydání…",
   "m_09a30b38f56832": "Studio kolekcí",
+  "m_09a34ba4a20086": "Načítání stavu sledování Plex",
   "m_09a50bbd917fa6": "Nainstalovat",
   "m_09a6372dc347db": "Nahrát {name}",
   "m_09a87f5bfb453b": "Naposledy importováno {when} · pořady na {span}",
   "m_09a9b9012738ea": "Vydání připnuto",
   "m_09ac1b92a7f43f": "Odpojit",
   "m_09ac7c244189c5": {
-    "one": "Nainstalované definice: {count}, všechny používají vaše indexery výše.",
     "few": "Nainstalované definice: {count}, všechny používají vaše indexery výše.",
     "many": "Nainstalované definice: {count}, všechny používají vaše indexery výše.",
+    "one": "Nainstalované definice: {count}, všechny používají vaše indexery výše.",
     "other": "Nainstalované definice: {count}, všechny používají vaše indexery výše."
   },
   "m_09b08aac4e75bf": "{duration} za noc",
@@ -1482,6 +1510,7 @@
   "m_09b8523601c716": "Sleduje, co diváci přehrávají; zapne se, jakmile překoná ručně laděné řazení.",
   "m_09bfaed1f837c2": "Definice",
   "m_09bfd82959f8d2": "Vestavěné",
+  "m_09bfdbb21d55e2": "Vylepšení videa na serveru",
   "m_09c0cf8848587c": "Víkendy",
   "m_09c51d40f9fe36": "Bezpečně zastavit tento server a jeho práci na pozadí. Aktivní streamy se musí dokončit, než nastavení může pokračovat.",
   "m_09c5e3a08635bb": "Obnovování náhledu",
@@ -1534,9 +1563,9 @@
   "m_0a1ed215e9aca5": "Zatím nebyly odeslány žádné týdenní reporty.",
   "m_0a1f6a6e22044c": "Upravit časování",
   "m_0a220beea2f81b": {
-    "one": "Platnost kódu vyprší v {time}. Mezi kontrolami počkejte alespoň {count} sekundu.",
     "few": "Platnost kódu vyprší v {time}. Mezi kontrolami počkejte alespoň {count} sekundy.",
     "many": "Platnost kódu vyprší v {time}. Mezi kontrolami počkejte alespoň {count} sekundy.",
+    "one": "Platnost kódu vyprší v {time}. Mezi kontrolami počkejte alespoň {count} sekundu.",
     "other": "Platnost kódu vyprší v {time}. Mezi kontrolami počkejte alespoň {count} sekund."
   },
   "m_0a223f05852d71": "Vlastník vytvořen",
@@ -1560,6 +1589,7 @@
   "m_0a54c4df82f5de": "Použít místo toho token Plexu",
   "m_0a57da959424bb": "Odkaz na doplněk",
   "m_0a5bcbdd19d2fe": "Pozadí",
+  "m_0a5e11beceb9d2": "Osoba, která kód schválí, musí být tento divák. Připojení jiného účtu Plex, včetně vlastníka, se odmítne.",
   "m_0a5e3659a6ece8": "Film",
   "m_0a600ae2b22f53": "Definice „{id}“ není nainstalována, takže tento web nelze prohledávat. Nahrajte ji znovu v části Definice webů, nebo tento indexer odeberte.",
   "m_0a6122b7b998b2": "Server musí podporovat TLS.",
@@ -1587,17 +1617,19 @@
   "m_0a798a868ef61f": "Procházet šablony",
   "m_0a7a13041e22c4": "Přidejte pro svůj účet debridu alespoň jeden zdroj torrentů: instalační odkaz streamovacího doplňku Stremio nebo URL Torznab z Prowlarru, Jackettu či Zilean.",
   "m_0a7a9e060226a9": "je nejvýše",
+  "m_0a7b4af1f8f814": "Import zkopíruje na tohoto diváka aktuální značky viděno z Plexu a hodnocení celými hvězdami, když jsou novější. Export zařadí do fronty aktuální značky viděno tohoto diváka a hodnocení celými hvězdami. Ani jedno neodesílá průběh přehrávání a ani jedno neproběhne, dokud nepoužijete tato tlačítka.",
   "m_0a7bf2df671b32": "Výpadek napájení, mrtvý počítač nebo ztráta internetu nemohou spolehlivě odeslat poslední zprávu. Nastavte v externí monitorovací službě heartbeat typu dead-man. Ether jednou za minutu odešle požadavek na svou tajnou URL HTTPS pro ping, poté co úspěšně projde místní kontrola stavu přes HTTP. Nastavte monitor na interval jedné minuty s tolerancí alespoň tři minuty a nastavte jeho vlastní upozornění e-mailem nebo telefonem. V clusteru tento sdílený heartbeat pokračuje, dokud některý uzel odpovídá; chcete-li zjistit výpadky jednotlivých uzlů, sledujte každý uzel externě.",
   "m_0a7f1858f2ec46": "Akce",
   "m_0a7fbf3b03875e": "Přehrání, dokončení a opuštění se tu zobrazují průběžně.",
   "m_0a8137cbeb090d": "Filmy a epizody v mezipaměti se tu zobrazí, jakmile se na ně diváci podívají.",
   "m_0a82020af2583a": "Přejít na",
   "m_0a857b87034578": "Použít poskytovatele plakátů",
+  "m_0a86ca146783b7": "Aktuální diváci a importovaná historie, s přístupem synchronizovaným z Plexu.",
   "m_0a8c3be24321bb": "Použijte {imdb} nebo {tmdb} s {type} (movie/tv). Přidejte {key} pro použití samostatného klíče.",
   "m_0a8d77f5f81ae9": {
-    "one": "{name} se na {section} řídí Domů pro všechny. ({count} přepsání na jiných stránkách.)",
     "few": "{name} se na {section} řídí Domů pro všechny. ({count} přepsání na jiných stránkách.)",
     "many": "{name} se na {section} řídí Domů pro všechny. ({count} přepsání na jiných stránkách.)",
+    "one": "{name} se na {section} řídí Domů pro všechny. ({count} přepsání na jiných stránkách.)",
     "other": "{name} se na {section} řídí Domů pro všechny. ({count} přepsání na jiných stránkách.)"
   },
   "m_0a8e04efcf11ae": "Souběžné kontroly",
@@ -1656,6 +1688,7 @@
   "m_0ae65e13dd0e0d": "Zde zobrazený artwork a hodnocení pocházejí z TMDB. Způsob jejich zobrazení v Plexu nastavíte v části Metadata.",
   "m_0ae881de4bf477": "Řádek k ukotvení",
   "m_0ae8dd709e2595": "Aktualizace se právě instaluje",
+  "m_0ae8f0f521a65d": "Hash plex.direct",
   "m_0aeb9a4993b7c7": "Posledních 500 přehrání v tomto období, v časovém pásmu vašeho zařízení. Doba sledování vychází z údajů hlášených aplikacemi Plex.",
   "m_0aec82e03faddd": "Podívejte se za hranice své procházitelné knihovny. Vyhledejte vydaný film nebo seriál a prozkoumejte jeho metadata.",
   "m_0af1df85980438": "Připravit další epizodu při (%)",
@@ -1706,9 +1739,9 @@
   "m_0b55c237cebf50": "Backend úložiště",
   "m_0b57557f2a7a86": "Přehled dostupnosti",
   "m_0b590594d9dacc": {
-    "one": "{count} poskytovatel v pořádku · {active}/{configured} připojení zaneprázdněno",
     "few": "{count} poskytovatelé v pořádku · {active}/{configured} připojení zaneprázdněno",
     "many": "{count} poskytovatele v pořádku · {active}/{configured} připojení zaneprázdněno",
+    "one": "{count} poskytovatel v pořádku · {active}/{configured} připojení zaneprázdněno",
     "other": "{count} poskytovatelů v pořádku · {active}/{configured} připojení zaneprázdněno"
   },
   "m_0b5d356eadd9c6": "Celý zdroj",
@@ -1716,9 +1749,9 @@
   "m_0b604802e64e4a": "0 = bez omezení.",
   "m_0b60c94a86e0de": "Klíč API OpenSubtitles",
   "m_0b623f76206d17": {
-    "one": "V katalogu zůstává {count} titul před uplatněním omezení podle vydání, dostupnosti a diváků.",
     "few": "V katalogu zůstávají {count} tituly před uplatněním omezení podle vydání, dostupnosti a diváků.",
     "many": "V katalogu zůstává {count} titulu před uplatněním omezení podle vydání, dostupnosti a diváků.",
+    "one": "V katalogu zůstává {count} titul před uplatněním omezení podle vydání, dostupnosti a diváků.",
     "other": "V katalogu zůstává {count} titulů před uplatněním omezení podle vydání, dostupnosti a diváků."
   },
   "m_0b628e024bdff1": "Předchozí",
@@ -1743,9 +1776,9 @@
   "m_0b8165fbe23160": "Profily kvality",
   "m_0b842b664b4f3b": "Hledat osoby…",
   "m_0b87683adda7d6": {
-    "one": "Až {count} titul",
     "few": "Až {count} tituly",
     "many": "Až {count} titulu",
+    "one": "Až {count} titul",
     "other": "Až {count} titulů"
   },
   "m_0b8ad7d9799427": "Vliv domácnosti",
@@ -1761,6 +1794,7 @@
   "m_0ba423ff31902f": "Nízká",
   "m_0ba5e944eae44f": "Kódy jazyků v pořadí podle preference, např. en, fr.",
   "m_0ba6bc252b94be": "Ovládání metadat",
+  "m_0ba6e96b9cd0e8": "Váš účet Plex, vzdálený přístup a zabezpečená připojení.",
   "m_0ba7a5e1b2fa32": "Dokončeno",
   "m_0babdcba863b69": "cam stav zdraví blokované výrazy skupiny",
   "m_0bac1a61131dbf": "Seriál",
@@ -1770,6 +1804,7 @@
   "m_0bb5d7c67c168e": "Uložit váhu",
   "m_0bb8d1b332c184": "Ultra",
   "m_0bb9255f355d2c": "Naposledy importováno {when}",
+  "m_0bc0c08430f993": "Odesílání stále probíhá. Vypnutí synchronizace zastaví změny, které ještě čekají ve frontě. Aktualizace, která se už odesílá, může ještě doběhnout.",
   "m_0bc17c208310c3": "{app} povoleno",
   "m_0bc5960453b5ad": "Odebrat pravidlo?",
   "m_0bcb0398a4f45a": "Kolekce",
@@ -1809,20 +1844,21 @@
   "m_0c072fb8baf115": "Publikovat",
   "m_0c098f051ed4a8": "Aktivita se zobrazí po zhlédnutí prvního titulu.",
   "m_0c0cb66d5e7298": {
-    "one": "Místo zhruba pro {count} zdroj velikosti filmu po 8 GiB. Velikosti epizod se liší; obojí sdílí tuto alokaci.",
     "few": "Místo zhruba pro {count} zdroje velikosti filmu po 8 GiB. Velikosti epizod se liší; obojí sdílí tuto alokaci.",
     "many": "Místo zhruba pro {count} zdroje velikosti filmu po 8 GiB. Velikosti epizod se liší; obojí sdílí tuto alokaci.",
+    "one": "Místo zhruba pro {count} zdroj velikosti filmu po 8 GiB. Velikosti epizod se liší; obojí sdílí tuto alokaci.",
     "other": "Místo zhruba pro {count} zdrojů velikosti filmu po 8 GiB. Velikosti epizod se liší; obojí sdílí tuto alokaci."
   },
   "m_0c0e0cfc5a57e7": "Plánování…",
   "m_0c0f4b8e077d91": "Hledat…",
+  "m_0c105d1a48023e": "Nejste přihlášeni k plex.tv. Spusťte průvodce nastavením, přihlaste se a spárujte tento server.",
   "m_0c11fdb7736f7c": "Katalog a bonusy",
   "m_0c1243087058b7": "3 / Myslet dopředu",
   "m_0c127ea55f4056": "Nejstarší snímek se odstraní, když by nový tento počet překročil.",
   "m_0c1a11e42dad06": {
-    "one": "{count} kanál vysílá · {missing} bez průvodce · v Plexu je vyžadován Plex Pass",
     "few": "{count} kanály vysílají · {missing} bez průvodce · v Plexu je vyžadován Plex Pass",
     "many": "{count} kanálu vysílá · {missing} bez průvodce · v Plexu je vyžadován Plex Pass",
+    "one": "{count} kanál vysílá · {missing} bez průvodce · v Plexu je vyžadován Plex Pass",
     "other": "{count} kanálů vysílá · {missing} bez průvodce · v Plexu je vyžadován Plex Pass"
   },
   "m_0c1a45b014e99a": "Zabezpečená připojení se vrátí na běžné HTTP, dokud nebude vydán certifikát plex.direct.",
@@ -1864,6 +1900,7 @@
   "m_0c61d95410fd02": "Přidejte účet debridu, poskytovatele Usenetu, nebo obojí, a každý z nich otestujte. Ether streamuje z vašich vlastních účtů; žádné nedodává.",
   "m_0c6585291788ed": "Samostatný (SQLite)",
   "m_0c66f3dad07332": "Používají je diváci bez vlastní volby zvuku a titulků.",
+  "m_0c6759742d13d9": "Schvalte tento kód přihlášení jako tento divák. Potom zkontrolujte schválení. Kód není heslo, které Ether po vypršení na stránce uchovává.",
   "m_0c68b5068311c6": "Nahrávání. Uplynulo {seconds} s.",
   "m_0c6986f5deed1e": "Titul / divák",
   "m_0c6be7badd5b3a": "Kontrola několika vydání najednou může spotřebovat další stahování NZB. Předehřívání stránek podrobností má vlastní malý rozpočet.",
@@ -1874,14 +1911,16 @@
   "m_0c743b3826f19b": "SERIÁL",
   "m_0c77cfbda0bd90": "Načítání titulů…",
   "m_0c79ba4e8dcf94": {
-    "one": "Zpracován {count} záznam historie; přeskočeno: {skipped}.",
     "few": "Zpracovány {count} záznamy historie; přeskočeno: {skipped}.",
     "many": "Zpracováno {count} záznamu historie; přeskočeno: {skipped}.",
+    "one": "Zpracován {count} záznam historie; přeskočeno: {skipped}.",
     "other": "Zpracováno {count} záznamů historie; přeskočeno: {skipped}."
   },
   "m_0c7a3810288c4a": "Aplikace",
+  "m_0c7e5b0f8762e0": "Vybraný soubor překračuje limit velikosti pro import.",
   "m_0c7eed91df4e91": "Token Plexu zdrojového diváka",
   "m_0c80f61b732d11": "Disková mezipaměť",
+  "m_0c813e59cc859f": "Ether sestavuje vaši knihovnu Plex z TMDB, proto je nutný klíč API TMDB. Je zdarma: {link}, poté ho sem vložte a otestujte.",
   "m_0c83fbe8a3a2f4": "Lokalizovaný artwork",
   "m_0c860a6795171c": "Co lze procházet",
   "m_0c871fc2eca8f4": "Uchovávat skóre po dobu",
@@ -1898,9 +1937,9 @@
   "m_0c996935910083": "Vytvořte člena domácnosti",
   "m_0c9c7006f59757": "migrace plex csv letterboxd trakt",
   "m_0c9c836776900b": {
-    "one": "{count} pokus byl při tomto běhu přeskočen nebo přerušen. Nedostupné nebo příliš velké tituly poličku nezastaví.",
     "few": "{count} pokusy byly při tomto běhu přeskočeny nebo přerušeny. Nedostupné nebo příliš velké tituly poličku nezastaví.",
     "many": "{count} pokusu bylo při tomto běhu přeskočeno nebo přerušeno. Nedostupné nebo příliš velké tituly poličku nezastaví.",
+    "one": "{count} pokus byl při tomto běhu přeskočen nebo přerušen. Nedostupné nebo příliš velké tituly poličku nezastaví.",
     "other": "{count} pokusů bylo při tomto běhu přeskočeno nebo přerušeno. Nedostupné nebo příliš velké tituly poličku nezastaví."
   },
   "m_0c9db8973270f8": "Typický divák",
@@ -1930,9 +1969,9 @@
   "m_0cd53c8437fa55": "Soubor pravidel se nepodařilo přečíst.",
   "m_0cd75d1cd252b3": "Sledování seznamu k zhlédnutí je vypnuté. {link}, aby se seznam tohoto diváka synchronizoval a kontroloval.",
   "m_0cd7626791a515": {
-    "one": "Přeskočen {count} indexer s nepodporovaným protokolem",
     "few": "Přeskočeny {count} indexery s nepodporovaným protokolem",
     "many": "Přeskočeno {count} indexeru s nepodporovaným protokolem",
+    "one": "Přeskočen {count} indexer s nepodporovaným protokolem",
     "other": "Přeskočeno {count} indexerů s nepodporovaným protokolem"
   },
   "m_0cd788aacd464e": "Zdroje hodnocení uloženy",
@@ -1996,9 +2035,9 @@
   "m_0d307d1ddc4605": "Posunout {title} později",
   "m_0d3a5c4d037f8c": "Prahové hodnoty popularity a hlasů ovlivňují procházení. Ostatní vydané tituly lze nadále najít přes vyhledávání v Plexu.",
   "m_0d3b852788a607": {
-    "one": "{count} zdroj připraven",
     "few": "{count} zdroje připraveny",
     "many": "{count} zdroje připraveno",
+    "one": "{count} zdroj připraven",
     "other": "{count} zdrojů připraveno"
   },
   "m_0d40d2f950fc44": "Výchozí bod pro vaši další kolekci.",
@@ -2007,9 +2046,9 @@
   "m_0d41c85ac63aa9": "Kolekce z TMDB",
   "m_0d444f7761f2b3": "Velikost (GiB)",
   "m_0d4623e8fd95bc": {
-    "one": "{day} · {count} kanál",
     "few": "{day} · {count} kanály",
     "many": "{day} · {count} kanálu",
+    "one": "{day} · {count} kanál",
     "other": "{day} · {count} kanálů"
   },
   "m_0d475e67862e2f": "Dříve vybraný divák (nedostupný)",
@@ -2038,6 +2077,7 @@
   "m_0d6e85a30e753d": "Vyšší kvalita víc zatíží grafickou kartu. Volby streamování potřebují novější kartu NVIDIA. Střední je dobrý začátek.",
   "m_0d710450703237": "Nastavení se uplatní na nové požadavky bez restartu. Neznámá a budoucí data vydání se v procházení nezobrazují.",
   "m_0d71c7a7083aa3": "Selhalo: {message}",
+  "m_0d72bf84d31085": "Připojení",
   "m_0d72ee9b28b521": "Jistota",
   "m_0d73723a433476": "Výchozí pro každého diváka",
   "m_0d73e689bad5af": "Souběžná vylepšení",
@@ -2054,12 +2094,13 @@
   "m_0d8bf5de2ae1d1": "Vydání",
   "m_0d8d4d04c81fc4": "Uvolněte pravidlo, přepněte „všechna“ na „kterékoli“ nebo přidejte další zdroj.",
   "m_0d8fa61cd19c48": {
-    "one": "{count} požadavek",
     "few": "{count} požadavky",
     "many": "{count} požadavku",
+    "one": "{count} požadavek",
     "other": "{count} požadavků"
   },
   "m_0d91b2c5c2991e": "Vlastní hlavičky",
+  "m_0d922ac4323919": "vlastník token spárováno",
   "m_0d9b5296d6a768": "Země odpovídá zemi původu nebo produkce podle TMDB, včetně koprodukcí. Jazyk je samostatná podmínka. Neznámá země, žánr, rok a jazyk nikdy nevyhovují vyloučení. Hodnocení obsahu „není žádné z“ skrývá i tituly bez hodnocení.",
   "m_0d9c263916f04b": "Vydání",
   "m_0da1883d607d06": "Vlastní vzory",
@@ -2081,14 +2122,15 @@
   "m_0dbc4d9be5bcf1": "Kam se během přehrávání zapisuje převedené video. Prázdné použije obvyklou dočasnou složku.",
   "m_0dbdefec306063": "otevřít",
   "m_0dbf9d2207c702": {
-    "one": "{count} nezobrazen",
     "few": "{count} nezobrazeny",
     "many": "{count} nezobrazeno",
+    "one": "{count} nezobrazen",
     "other": "{count} nezobrazeno"
   },
   "m_0dc0554eb70340": "YAML definice",
   "m_0dc22a4d63d0e9": "Vyhledejte filmy a sestavte pořadí programu. Pro zahrnutí epizod seriálů použijte kolekci nebo žánry.",
   "m_0dc345a1c28fe6": "Kopírovat token",
+  "m_0dc35ae06c048b": "Povoleno znamená, že Plex odpověděl, že tento účet může synchronizovat. Odmítnuto nechává synchronizaci vypnutou. Nezkontrolováno znamená, že Ether to nepotvrdil.",
   "m_0dc427dee53c77": "Žádné nastavené indexery.",
   "m_0dc4cd14b7cbaf": "Sledujete {channel}",
   "m_0dc9aa9c7ae4a8": "Jazykový model",
@@ -2100,6 +2142,7 @@
   "m_0dd49bad16932b": "Naposledy viděn {when}",
   "m_0dd63f1065a6ff": "web",
   "m_0dd72fc99d2ec6": "Hledání selhalo",
+  "m_0dd81b2197f3db": "Název produktu aplikace Plex.",
   "m_0dd823f235ffc3": "{field} za posledních {value}",
   "m_0ddbd68d097288": "Vyberte jiný stav nebo hledání, abyste viděli více lidí.",
   "m_0de6dca824c89a": "Použít zdroj {number}",
@@ -2135,6 +2178,7 @@
   "m_0e322fd2337dba": "{label}: do",
   "m_0e330448a3fb21": "Platnost certifikátu vypršela",
   "m_0e333ae4fe1948": "Hledání za den",
+  "m_0e34099ebb155c": "spárování kontroly připojení dostupnost",
   "m_0e36aa5db07dec": "Připojte zařízení",
   "m_0e374b213d550e": "Přímý vzdálený přístup je zapnutý",
   "m_0e39cea983ace3": "Připněte program k denním dobám (v UTC). Zbytek dne vyplní základní program.",
@@ -2143,9 +2187,9 @@
   "m_0e47a4c7b93c4b": "Nečinný",
   "m_0e4d86e3c47baf": "Časové pásmo přehrávání",
   "m_0e4e767eb235ae": {
-    "one": "{count} přehrání z {shown} zobrazení za posledních 7 dní",
     "few": "{count} přehrání z {shown} zobrazení za posledních 7 dní",
     "many": "{count} přehrání z {shown} zobrazení za posledních 7 dní",
+    "one": "{count} přehrání z {shown} zobrazení za posledních 7 dní",
     "other": "{count} přehrání z {shown} zobrazení za posledních 7 dní"
   },
   "m_0e4ee49208a5ee": "Načítání artworku katalogu",
@@ -2176,6 +2220,7 @@
   "m_0e8e56d52e86e2": "Rozvržení pro {title}",
   "m_0e919d0f4f50c0": "Popište kolekci",
   "m_0e94189aa61949": "Argumenty",
+  "m_0e95325bda15c4": "Nepřihlášeno",
   "m_0e95572bd34f35": "Hledat v Etheru",
   "m_0e96f7ca08d490": "Zatím neumístěno",
   "m_0e9951bbdab310": "Hardwarová akcelerace",
@@ -2207,9 +2252,9 @@
   "m_0ec49dc714595a": "Počet verzí stejné kvality",
   "m_0ec4ae4a08c564": "Převzato z profilu Radarr nebo Sonarr.",
   "m_0ec6e5f133795d": {
-    "one": "tento uzel: {slots} z {count} připojení API",
     "few": "tento uzel: {slots} z {count} připojení API",
     "many": "tento uzel: {slots} z {count} připojení API",
+    "one": "tento uzel: {slots} z {count} připojení API",
     "other": "tento uzel: {slots} z {count} připojení API"
   },
   "m_0ec8a765324466": "Instalace běhového prostředí",
@@ -2235,13 +2280,14 @@
   "m_0f00189c3341fa": "Přídavek",
   "m_0f0056508634aa": "Předběžné načítání",
   "m_0f02e2fdb3c26d": {
-    "one": "Zobrazeno nejnovějších {shown} z {count} blokovaného vydání; starší najdete zúžením hledání.",
     "few": "Zobrazeno nejnovějších {shown} z {count} blokovaných vydání; starší najdete zúžením hledání.",
     "many": "Zobrazeno nejnovějších {shown} z {count} blokovaných vydání; starší najdete zúžením hledání.",
+    "one": "Zobrazeno nejnovějších {shown} z {count} blokovaného vydání; starší najdete zúžením hledání.",
     "other": "Zobrazeno nejnovějších {shown} z {count} blokovaných vydání; starší najdete zúžením hledání."
   },
   "m_0f076a5a6645dd": "Akční, Dobrodružný",
   "m_0f0ad430471ab7": "Jazyk zobrazení",
+  "m_0f0ad937ea1f27": "Toto je přehled pro orientaci. Každá aplikace Plex při přehrávání hlásí své skutečné kodeky a podporu displeje i přijímače. Chcete-li zvolit kvalitu pro zařízení, použijte {link}.",
   "m_0f0f1d9646b986": "Tento účet Plex tento server nevlastní. Přihlaste se účtem, kterým byl Ether nastaven.",
   "m_0f108422ac2f24": "Každá aplikace řekne Etheru, co umí přehrát, když někdo stiskne Přehrát. Tato tabulka je vestavěný přehled. Kvalitu pro zařízení omezíte přes {link}.",
   "m_0f1238f38feab1": "Odebrat zdroj {n}",
@@ -2257,9 +2303,9 @@
   "m_0f2debf5c1c71e": "SDH / pro neslyšící",
   "m_0f2ecb998df08f": "Otestovat připojení a pokračovat",
   "m_0f34de196701a9": {
-    "one": "Přesunut {count} řádek",
     "few": "Přesunuty {count} řádky",
     "many": "Přesunuto {count} řádku",
+    "one": "Přesunut {count} řádek",
     "other": "Přesunuto {count} řádků"
   },
   "m_0f3772f9b14afa": "Doladit",
@@ -2293,9 +2339,9 @@
   "m_0f68170b55ff32": "Neuvedeno",
   "m_0f68e8db4dca58": "Domů – Ether",
   "m_0f6b3baad0d39c": {
-    "one": "{count} týden",
     "few": "{count} týdny",
     "many": "{count} týdne",
+    "one": "{count} týden",
     "other": "{count} týdnů"
   },
   "m_0f6cf94757eecb": "Hlídač není na tomto uzlu dostupný",
@@ -2310,9 +2356,9 @@
   "m_0f821709db143b": "Vyberte a zkopírujte token",
   "m_0f877c91f90f67": "Zaznamenané využití dnes a výsledky hledání tento měsíc. Limity služeb se řeší automaticky.",
   "m_0f94dc84dff3aa": {
-    "one": "{count} odpovídající titul",
     "few": "{count} odpovídající tituly",
     "many": "{count} odpovídajícího titulu",
+    "one": "{count} odpovídající titul",
     "other": "{count} odpovídajících titulů"
   },
   "m_0f971cae31f0b6": "{name} přiřazen k: {guide}",
@@ -2346,9 +2392,9 @@
   "m_0fd696abd607e8": "{label}: hodnota parametru",
   "m_0fd885e550029c": "Historie doručení",
   "m_0fd95692fbed2b": {
-    "one": "Dalších {count} zamítnutých vydání se neukládá.",
     "few": "Dalších {count} zamítnutých vydání se neukládá.",
     "many": "Dalších {count} zamítnutých vydání se neukládá.",
+    "one": "Dalších {count} zamítnutých vydání se neukládá.",
     "other": "Dalších {count} zamítnutých vydání se neukládá."
   },
   "m_0fda9ca6f2c707": "Změnit kanál průvodce",
@@ -2376,9 +2422,9 @@
   "m_100301b70a8468": "Testování…",
   "m_100569c139cb38": "Změnit pořadí: {title}",
   "m_100658d8fdb73d": {
-    "one": "{count} přepnutí na záložní zdroj",
     "few": "{count} přepnutí na záložní zdroj",
     "many": "{count} přepnutí na záložní zdroj",
+    "one": "{count} přepnutí na záložní zdroj",
     "other": "{count} přepnutí na záložní zdroj"
   },
   "m_100d404af25033": "errors debug support zip record a problem chyby ladění nahlásit problém",
@@ -2406,9 +2452,9 @@
   "m_103a5a93403d4a": "Minimální",
   "m_103c377cd85c2c": "Aktualizováno {time}",
   "m_103e0ab7cd76f2": {
-    "one": "{active} z {count} připojení zaneprázdněno",
     "few": "{active} z {count} připojení zaneprázdněno",
     "many": "{active} z {count} připojení zaneprázdněno",
+    "one": "{active} z {count} připojení zaneprázdněno",
     "other": "{active} z {count} připojení zaneprázdněno"
   },
   "m_103f351fc69d90": "Čas zahájení opakujícího se pořadí programu.",
@@ -2448,9 +2494,9 @@
   "m_107ef7c828b72e": "Vypnuto hlásí verzi, vůči které je Ether ověřen. Aplikace Plex zapínají funkce podle verze serveru, takže sledování nejnovější verze může zpřístupnit funkce, které Ether nepodporuje.",
   "m_1082d1a6a743cc": "Účet Simkl byl připojen.",
   "m_1084ceab8e0923": {
-    "one": "{count} stažení",
     "few": "{count} stažení",
     "many": "{count} stažení",
+    "one": "{count} stažení",
     "other": "{count} stažení"
   },
   "m_1084d2a863e410": "Discover: {params}",
@@ -2465,9 +2511,9 @@
   "m_109318934fcf5e": "Plánovač ji převezme do minuty, v rámci vašeho přídělu.",
   "m_109598ff3ae7da": "Vlastník a členové Plex Home",
   "m_10966ee62adf18": {
-    "one": "{count} má přepsání",
     "few": "{count} mají přepsání",
     "many": "{count} má přepsání",
+    "one": "{count} má přepsání",
     "other": "{count} má přepsání"
   },
   "m_1096905564c975": "Provoz databáze a přihlašovací údaje budou odesílány bez šifrování.",
@@ -2481,31 +2527,32 @@
   "m_10a5fbb2ff3d29": "Ztlumit",
   "m_10a67142f9ed89": "Požadavky API na feedy",
   "m_10aa31270e92a6": "parametr",
+  "m_10b2346b428930": "Neúspěšné položky zůstanou ve frontě, dokud je nezkusíte znovu nebo se neodpojíte.",
   "m_10b4cfa30dedb6": {
-    "one": "Dokončete nebo odeberte nedokončené pravidlo.",
     "few": "Dokončete nebo odeberte {count} nedokončená pravidla.",
     "many": "Dokončete nebo odeberte {count} nedokončeného pravidla.",
+    "one": "Dokončete nebo odeberte nedokončené pravidlo.",
     "other": "Dokončete nebo odeberte {count} nedokončených pravidel."
   },
   "m_10b7dd055ff58b": "Oblíbené v Plexu",
   "m_10b96b8683017c": {
-    "one": "Vydání, jejichž vlastní formáty mají nižší skóre, se nepřehrávají. Tento profil nastavuje vlastní skóre pro {count} formát.",
     "few": "Vydání, jejichž vlastní formáty mají nižší skóre, se nepřehrávají. Tento profil nastavuje vlastní skóre pro {count} formáty.",
     "many": "Vydání, jejichž vlastní formáty mají nižší skóre, se nepřehrávají. Tento profil nastavuje vlastní skóre pro {count} formátu.",
+    "one": "Vydání, jejichž vlastní formáty mají nižší skóre, se nepřehrávají. Tento profil nastavuje vlastní skóre pro {count} formát.",
     "other": "Vydání, jejichž vlastní formáty mají nižší skóre, se nepřehrávají. Tento profil nastavuje vlastní skóre pro {count} formátů."
   },
   "m_10ba8b31d513a0": {
-    "one": "{count} zajištěný požadavek, {won} vyhrálo",
     "few": "{count} zajištěné požadavky, {won} vyhrálo",
     "many": "{count} zajištěného požadavku, {won} vyhrálo",
+    "one": "{count} zajištěný požadavek, {won} vyhrálo",
     "other": "{count} zajištěných požadavků, {won} vyhrálo"
   },
   "m_10bbf84592ffe8": "Váha: {name}",
   "m_10c14b3ecd05a7": "Malý",
   "m_10c25d9a0b1c4b": {
-    "one": "Přihlášeno a vyhledáno: {count} výsledek.",
     "few": "Přihlášeno a vyhledáno: {count} výsledky.",
     "many": "Přihlášeno a vyhledáno: {count} výsledku.",
+    "one": "Přihlášeno a vyhledáno: {count} výsledek.",
     "other": "Přihlášeno a vyhledáno: {count} výsledků."
   },
   "m_10c2aa549811a8": "Jak aplikace Plex tento server najdou a připojí se k němu. Dostupnost zvenčí vychází z vlastního výsledku kontroly připojení v Plexu.",
@@ -2513,6 +2560,7 @@
   "m_10c4f17412a065": "Příklady shod",
   "m_10c5ac26463a6f": "Filtrovat řádky…",
   "m_10c6526175c6d0": "Šablona: {category}",
+  "m_10c8fc10dbfbfb": "Jak se aplikace Plex připojují k Etheru, odkud tituly pocházejí a streamování torrentů.",
   "m_10cbe051fb5e05": "Vytvořeno",
   "m_10cd2a3e69a2f5": "Sledovat feedy vydání",
   "m_10ce0d4e37b017": "Vyberte filmy a jejich pořadí",
@@ -2525,8 +2573,10 @@
   "m_10dd19a0dc4c51": "Nezhlédnuto divákem",
   "m_10dd7de1090b7a": "{label}: název parametru",
   "m_10df4bba8fe3ad": "Platnost",
+  "m_10e08fbd14a654": "Volitelné. Odešle budoucí značky viděno a neviděno tohoto diváka a hodnocení celými hvězdami na jeho vlastní účet Plex. Průběh přehrávání zůstane na tomto serveru.",
   "m_10e1d308313a16": "Hodiny · 30 dní",
   "m_10e2296ac42637": "Jinak plnění celých titulů čeká, dokud diváci streamují. Předehřívání začátku a další epizody mají vlastní ovládání.",
+  "m_10e534262118d7": "ID vlastníka v Plexu",
   "m_10e6a91608929a": "Poskytovatel plakátů uložen",
   "m_10ec284df8a37e": "Skóre řadí kandidáty pro mezipaměť, nikoli předpokládanou pravděpodobnost sledování. Okna seriálů se zužují podle vzdálenosti epizody. Výběr nezaručuje dostupnost zdroje.",
   "m_10eccfb05e9511": "Toto odebírání patří jednomu profilu prohlížeče na jednom zařízení. Použijte Připojit toto zařízení na každém zařízení, na které chcete upozornění přijímat.",
@@ -2557,31 +2607,32 @@
   "m_112ee06bd338fd": "Přidat jako indexer",
   "m_112f1186c1b9af": "Vyberte profil mezipaměti",
   "m_113106fc22e614": {
-    "one": "{count} přidán",
     "few": "{count} přidány",
     "many": "{count} přidáno",
+    "one": "{count} přidán",
     "other": "{count} přidáno"
   },
   "m_1138a4def1b4d0": "Katalog se mohl od vaší poslední návštěvy změnit.",
   "m_11397ea4f572fb": "Přesunout preferenci",
   "m_113a8a4f50e4d5": "Záznamy historie ve frontě: {count}",
   "m_113cd3d4067144": {
-    "one": "{count} kolekce · Artwork zobrazený v Plexu",
     "few": "{count} kolekce · Artwork zobrazený v Plexu",
     "many": "{count} kolekce · Artwork zobrazený v Plexu",
+    "one": "{count} kolekce · Artwork zobrazený v Plexu",
     "other": "{count} kolekcí · Artwork zobrazený v Plexu"
   },
   "m_113cd4960bb2a6": "{label}: jednotka",
   "m_113cd4ec2d1e1e": "Epizoda",
   "m_113d98b9f11f2c": "Zkopírovat tyto ovladače do",
   "m_113f75142fdc02": "Tajný klíč klienta",
+  "m_113fd3b4896a20": "Použijte na tomto serveru NVIDIA RTX Video Super Resolution ke zlepšení videa s nižším rozlišením před streamováním. Na podporovaných serverech s Windows x64 se zapnutím automaticky nainstaluje a ověří požadované běhové prostředí. Vylepšení spotřebovává dodatečnou kapacitu GPU.",
   "m_11408b8d72a623": "Až {height}p",
   "m_1141576c7ea2a8": "Zde nelze přehrát",
   "m_1145dfaa9ca07e": "Připojení",
   "m_114a58aa977247": {
-    "one": "{names} a {count} další",
     "few": "{names} a {count} další",
     "many": "{names} a {count} dalšího",
+    "one": "{names} a {count} další",
     "other": "{names} a {count} dalších"
   },
   "m_114a689b1dd9a3": "Načítání mezipaměti…",
@@ -2589,9 +2640,9 @@
   "m_114fe29460291a": "Čeká se na pozici přehrávání",
   "m_11542ea506a7f5": "Tento měsíc",
   "m_11546da4c463c2": {
-    "one": "Pouze {count} divák",
     "few": "Pouze {count} diváci",
     "many": "Pouze {count} diváka",
+    "one": "Pouze {count} divák",
     "other": "Pouze {count} diváků"
   },
   "m_11556379290211": "Uloženo. Ponechte beze změny, nebo zadejte novou hodnotu, která ji nahradí.",
@@ -2620,6 +2671,7 @@
   "m_11807838c7bc71": "Co se právě přehrává a na co se diváci dívali.",
   "m_11844da0a4931d": "Soubory protokolů bez hesel, tokenů a klíčů pro hlášení chyby.",
   "m_1184cea8df2a30": "Nástroje návrháře",
+  "m_1184f9ecf52876": "Vyšší kvalita spotřebovává více prostředků GPU. Režimy streamování vyžadují GPU Ampere nebo novější. Začněte se střední.",
   "m_1185ad0ca5d79f": "{hours} h",
   "m_118751dd3c35ee": "Výchozí pořadí",
   "m_1189a86c347834": "Tento rozpočet vyžaduje více místa, než je aktuálně volné. Vyberte menší rozpočet.",
@@ -2644,9 +2696,9 @@
   "m_11a541515cb6eb": "Odblokovat {release}",
   "m_11a9d15384aef3": "Varování",
   "m_11ac02be745289": {
-    "one": "Týdně obměňuje {count} titul",
     "few": "Týdně obměňuje {count} tituly",
     "many": "Týdně obměňuje {count} titulu",
+    "one": "Týdně obměňuje {count} titul",
     "other": "Týdně obměňuje {count} titulů"
   },
   "m_11ad4bbeced31b": "Velikost",
@@ -2681,9 +2733,9 @@
   "m_11df2d9d686684": "tmdb jazyk region popularita",
   "m_11e4c78c367482": "Udržovat body pokračování předehřáté",
   "m_11e4d3be5caf2b": {
-    "one": "{count} vybraný divák",
     "few": "{count} vybraní diváci",
     "many": "{count} vybraného diváka",
+    "one": "{count} vybraný divák",
     "other": "{count} vybraných diváků"
   },
   "m_11e6554c82796e": "Živá data titulu",
@@ -2706,17 +2758,18 @@
   "m_12005bc0caef60": "Připnout vydání",
   "m_120302ede52e08": "Vyžaduje ID klienta",
   "m_120361c07ab89b": {
-    "one": "{count} titul.",
     "few": "{count} tituly.",
     "many": "{count} titulu.",
+    "one": "{count} titul.",
     "other": "{count} titulů."
   },
   "m_120583d331a87b": "Závěrečné titulky",
+  "m_120a83491001a1": "Přihlášeno",
   "m_120f554234eb7f": "Požadavky začínají na 512 KiB pro rychlý první bajt a rostou až do této velikosti. 0 = 8 MiB; nejvýše 64 MiB.",
   "m_120fb0338ade07": {
-    "one": "{count} volání API dnes · automatické limity",
     "few": "{count} volání API dnes · automatické limity",
     "many": "{count} volání API dnes · automatické limity",
+    "one": "{count} volání API dnes · automatické limity",
     "other": "{count} volání API dnes · automatické limity"
   },
   "m_12110787e9a411": "m3u xmltv seznam skladeb playlist",
@@ -2732,6 +2785,7 @@
   "m_12275676539eb1": "Název serveru, port a limity, stahování, personalizace a upoutávky.",
   "m_122765a5c51bc3": "Vytvořte ho, až budete připraveni přidat uzel.",
   "m_12280d377deec7": "Povolit vzdálený přístup",
+  "m_12286317cabb81": "Nastavuje průvodce nastavením, když se server propojí s vaším účtem Plex. Vypnutím se server z Plexu odhlásí: odebere se ze zařízení účtu, aby ho mohl spárovat jiný účet.",
   "m_122db7f397e7f0": "Oprava předem",
   "m_122fa62c6f6e97": "Naučeno z historie sledování",
   "m_12362a278db896": "Zobrazit kanály",
@@ -2750,9 +2804,9 @@
   "m_12554fb8746756": "Najít titul k úpravě…",
   "m_12589eb2f87843": "Torznab (torrenty)",
   "m_1258bfd1fd8938": {
-    "one": "Dnes využito {used} z {count} požadavku API",
     "few": "Dnes využito {used} z {count} požadavků API",
     "many": "Dnes využito {used} z {count} požadavku API",
+    "one": "Dnes využito {used} z {count} požadavku API",
     "other": "Dnes využito {used} z {count} požadavků API"
   },
   "m_125952708f2adf": "{service} (výchozí region)",
@@ -2769,35 +2823,35 @@
   "m_126f233f366d64": "Předehřívání pokračování",
   "m_126f8d98ceee44": "S{season} E{episode}",
   "m_1271d73df5188f": {
-    "one": "{count} nelze importovat",
     "few": "{count} nelze importovat",
     "many": "{count} nelze importovat",
+    "one": "{count} nelze importovat",
     "other": "{count} nelze importovat"
   },
   "m_1272d992510e9c": "Jak se řadí vydání pro aplikace používající tento profil.",
   "m_1273c1e9f944a6": "Použít toto ID modelu",
   "m_12771d0b1ee638": {
-    "one": "{name} · {kind} · {count} epizoda",
     "few": "{name} · {kind} · {count} epizody",
     "many": "{name} · {kind} · {count} epizody",
+    "one": "{name} · {kind} · {count} epizoda",
     "other": "{name} · {kind} · {count} epizod"
   },
   "m_12774409dc65c0": "Katalog {score}/100",
   "m_1279292be6779b": "Kontrola podpory",
   "m_12802de03b3f01": "Nastavit OpenSubtitles",
   "m_12809bf8dacbc4": {
-    "one": "{count} připojení",
     "few": "{count} připojení",
     "many": "{count} připojení",
+    "one": "{count} připojení",
     "other": "{count} připojení"
   },
   "m_1281b92b51a920": "Seznamy blokovaných",
   "m_1285cbf4746d19": "Skóre popularity na TMDB",
   "m_128b6463d83b9d": "Připnuté vydání",
   "m_128f4a4b257661": {
-    "one": "Nejnovější záznamy jako první. V paměti je uložen {count} záznam.",
     "few": "Nejnovější záznamy jako první. V paměti jsou uloženy {count} záznamy.",
     "many": "Nejnovější záznamy jako první. V paměti je uloženo {count} záznamu.",
+    "one": "Nejnovější záznamy jako první. V paměti je uložen {count} záznam.",
     "other": "Nejnovější záznamy jako první. V paměti je uloženo {count} záznamů."
   },
   "m_128fa41a415266": "Je nutné se připojit znovu",
@@ -2843,9 +2897,9 @@
   "m_12e1a854b336f9": "Nula znamená neomezeno, nikoli vypnuto. Pro vypnutí diskové mezipaměti níže vyberte Žádná trvalá média.",
   "m_12e5080b34176d": "Divák v Etheru",
   "m_12e6d63063af84": {
-    "one": "{count} den",
     "few": "{count} dny",
     "many": "{count} dne",
+    "one": "{count} den",
     "other": "{count} dní"
   },
   "m_12e8c020d97bb2": "Ne níže než {slot}",
@@ -2873,21 +2927,22 @@
   "m_132162d45882b6": "Uložit a publikovat",
   "m_132166f2d04b7c": "Ručně",
   "m_132357d36a8f22": {
-    "one": "Nalezen {count} seriál",
     "few": "Nalezeny {count} seriály",
     "many": "Nalezeno {count} seriálu",
+    "one": "Nalezen {count} seriál",
     "other": "Nalezeno {count} seriálů"
   },
   "m_1323792139756d": "Spravujte členy domácnosti a importovanou historii.",
   "m_132643d1114a06": "Tato volba určuje ZIP. Shrnutí vypíše přesné hodnoty před stažením.",
   "m_1327b263f14887": "{label}: URL",
   "m_132881539ea1f8": {
-    "one": "{count} vydání",
     "few": "{count} vydání",
     "many": "{count} vydání",
+    "one": "{count} vydání",
     "other": "{count} vydání"
   },
   "m_1329da6c20803f": "Osoba {id}",
+  "m_132a38a74609bf": "Váš účet Plex, přihlášení a vzdálený přístup. Jak každá aplikace Plex najde Ether.",
   "m_132c8888940025": "{used} · neomezený rozpočet",
   "m_1332c8a065ce0e": "Hledat kanály průvodce podle názvu nebo ID…",
   "m_1335c770865edd": "Požádá váš router o přesměrování portu.",
@@ -2907,9 +2962,9 @@
   "m_1355f04cafa4b7": "Náhled týdenního reportu",
   "m_1355f4a6a3cd7b": "Připnout {title}",
   "m_1359acf8dadd16": {
-    "one": "Přihlášeno a vyhledáno: {count} výsledek, například:",
     "few": "Přihlášeno a vyhledáno: {count} výsledky, například:",
     "many": "Přihlášeno a vyhledáno: {count} výsledku, například:",
+    "one": "Přihlášeno a vyhledáno: {count} výsledek, například:",
     "other": "Přihlášeno a vyhledáno: {count} výsledků, například:"
   },
   "m_135af2a37f0b4d": "Torrenty, které vaše služba již uchovává, se streamují přes HTTPS. Použijte token API svého účtu.",
@@ -2928,6 +2983,7 @@
   "m_1377018883a052": "Rok v přehledu",
   "m_137cf1370801c1": "Využití paměti za posledních 5 minut, nyní {percent}",
   "m_137d1454b67a95": "Akce kolekce",
+  "m_137e83c1a4de36": "Způsobilost Plex",
   "m_137fc8c973f67d": "{count} beze změny",
   "m_138775af9b7765": "Zařízení {device}",
   "m_138b7f9f76a39e": "tento divák",
@@ -2937,9 +2993,9 @@
   "m_1391196f8d9ad6": "Cesta nebo název příkazu. Ether žádný nedodává.",
   "m_1395cc9805be8d": "Sestavte si vlastní program z katalogu",
   "m_1396c78ea6592b": {
-    "one": "{count} seriál",
     "few": "{count} seriály",
     "many": "{count} seriálu",
+    "one": "{count} seriál",
     "other": "{count} seriálů"
   },
   "m_1398d7ec9dc2cd": "Portál pro členy domácnosti",
@@ -2948,6 +3004,7 @@
   "m_13a24382a67cbd": "Vytvořte příchozí webhook v cílovém kanálu Discordu a vložte jeho úplnou URL webhooku. Zmínky jsou vypnuty.",
   "m_13a27c4ab0f554": "Import dokončen",
   "m_13a4e4bbe717ab": "Cesta připojení NAS na tomto uzlu",
+  "m_13a71ff1b4ce0c": "Vhodná videa se vylepšují v rámci limitů rozlišení a datového toku diváka. Nepodporovaná videa používají běžné přehrávání.",
   "m_13a80127f04ee1": "Zásady clusteru",
   "m_13a84d53e556cd": "Odpovídá",
   "m_13a862658c3f8c": "Importovat indexery",
@@ -2958,32 +3015,32 @@
   "m_13b54a5acef468": "{label}: hledání",
   "m_13b74ddb61ff98": "{channel}: {title}, {start} až {end}",
   "m_13bb3428a18d16": {
-    "one": "Nainstalované definice: {count}, z toho používají vaše indexery výše: {used}.",
     "few": "Nainstalované definice: {count}, z toho používají vaše indexery výše: {used}.",
     "many": "Nainstalované definice: {count}, z toho používají vaše indexery výše: {used}.",
+    "one": "Nainstalované definice: {count}, z toho používají vaše indexery výše: {used}.",
     "other": "Nainstalované definice: {count}, z toho používají vaše indexery výše: {used}."
   },
   "m_13bb9929b503b9": "Vložte token do části Cluster → Připojit ke clusteru na novém počítači. Zobrazí se jednou a obsahuje heslo k databázi a klíč přihlašovacích údajů, proto s ním zacházejte jako s heslem.",
   "m_13be3ca059a5e5": {
-    "one": "{count} titul zadržen, protože ho zobrazuje Domů",
     "few": "{count} tituly zadrženy, protože je zobrazuje Domů",
     "many": "{count} titulu zadrženo, protože je zobrazuje Domů",
+    "one": "{count} titul zadržen, protože ho zobrazuje Domů",
     "other": "{count} titulů zadrženo, protože je zobrazuje Domů"
   },
   "m_13c039972d5680": "Velikost předběžného načtení",
   "m_13c0f64a982307": "Co se Ether naučil",
   "m_13c39b9885447b": {
-    "one": "{count} titul · aktualizováno {when}",
     "few": "{count} tituly · aktualizováno {when}",
     "many": "{count} titulu · aktualizováno {when}",
+    "one": "{count} titul · aktualizováno {when}",
     "other": "{count} titulů · aktualizováno {when}"
   },
   "m_13c5f715b49b80": "Podrobnosti o vkusu",
   "m_13c6dbf34a2bec": "URL obrázku nebo cesta TMDB",
   "m_13c85b78fcd5c0": {
-    "one": "{count} záznam o sledování",
     "few": "{count} záznamy o sledování",
     "many": "{count} záznamu o sledování",
+    "one": "{count} záznam o sledování",
     "other": "{count} záznamů o sledování"
   },
   "m_13c8a56ec4ef38": "Klíč přihlašovacích údajů",
@@ -3011,15 +3068,17 @@
   "m_13f371de76f26c": "Účet Plex",
   "m_13f38dc521de3a": "Kanál se nepodařilo aktualizovat",
   "m_13f3db1d0ca2fe": "Koncept",
+  "m_13f57466e42716": "Toto není průběžná obousměrná synchronizace. Ether doručuje budoucí změny na pozadí jen když je synchronizace zapnutá. Import proběhne jen když použijete tlačítko.",
   "m_13f60f2c3e854f": "Zatím žádní diváci",
   "m_13f7150c94b182": "Vypršelo",
   "m_13fa0b7fe507cf": {
-    "one": "{count} kanál průvodce",
     "few": "{count} kanály průvodce",
     "many": "{count} kanálu průvodce",
+    "one": "{count} kanál průvodce",
     "other": "{count} kanálů průvodce"
   },
   "m_13fa26360f0fe9": "Duplikovat",
+  "m_13fb760e2475fd": "Tento divák nemá id účtu Plex, takže synchronizaci účtu nelze připojit.",
   "m_13fd33dafb0774": "Zablokovat",
   "m_13fe67a4975252": "Zdroj obnoven",
   "m_14009b5da44490": "nastavení",
@@ -3038,6 +3097,7 @@
   "m_1423d1a563ae0b": "Použít vlastní certifikát",
   "m_1424aa70365dbc": "Zahodit toto nahrávání?",
   "m_142712b41a62a4": "Zatím žádný vzorek poskytovatele.",
+  "m_1427e5b34095a8": "Spárováno",
   "m_142aac196f8c8b": "Dny pro {title}",
   "m_142be0b078a282": "{field} není {value}",
   "m_142eca5b6657e8": "Zobrazení plakátů",
@@ -3108,9 +3168,9 @@
   "m_14b78af1b2f95e": "Aktivita",
   "m_14b9cd39a773e6": "Posunout doleva",
   "m_14bc9aff827ea9": {
-    "one": "{count} kanál vysílá · v Plexu je vyžadován Plex Pass",
     "few": "{count} kanály vysílají · v Plexu je vyžadován Plex Pass",
     "many": "{count} kanálu vysílá · v Plexu je vyžadován Plex Pass",
+    "one": "{count} kanál vysílá · v Plexu je vyžadován Plex Pass",
     "other": "{count} kanálů vysílá · v Plexu je vyžadován Plex Pass"
   },
   "m_14c299898bacec": "Spravované předběžné načítání",
@@ -3154,6 +3214,7 @@
   "m_1506990d0886a5": "Ukončit celou obrazovku",
   "m_1509452664b9d7": "Obslouženo lokálně",
   "m_150aadbf3acfba": "Divák",
+  "m_150d4141714c86": "Token vlastníka",
   "m_150e4f4a537a1f": "Klienti, kteří ho používali jako výchozí, použijí {profile}.",
   "m_15123a8748a0cf": "Uložit rozvržení",
   "m_15131cf9a2cc73": "Edice",
@@ -3166,9 +3227,9 @@
   "m_151dcbf81a4d8a": "Sdílejte tento server z Plex.tv nebo importujte historii sledování.",
   "m_151e425264640c": "Žádné profily",
   "m_1523e4c6339418": {
-    "one": "{count} playlist nebo kolekce",
     "few": "{count} playlisty a kolekce",
     "many": "{count} playlistu a kolekcí",
+    "one": "{count} playlist nebo kolekce",
     "other": "{count} playlistů a kolekcí"
   },
   "m_15241d9c441cf6": "Upravit zásady",
@@ -3198,6 +3259,7 @@
   "m_1550cb35bfccdb": "Způsoby přihlášení",
   "m_15544f513744dc": "Přidejte svého poskytovatele Usenetu. Blokové účty lze přidat jako záložní (backfill).",
   "m_15563b465ac932": "zavřít",
+  "m_15564e348b71f0": "Pouze pro VA-API, např. /dev/dri/renderD128.",
   "m_1556715d06bea9": "Přidat poskytovatele Usenetu",
   "m_155814cdac93b8": "Kopírovat adresu",
   "m_155820c658a706": "Najít kolekci…",
@@ -3214,9 +3276,9 @@
   "m_156679c42cb95d": "Předehřátá pokračování",
   "m_156c1ecb65d5e8": "Vybrat vše",
   "m_1570a07ed7a20f": {
-    "one": "{count} zahozeno",
     "few": "{count} zahozeno",
     "many": "{count} zahozeno",
+    "one": "{count} zahozeno",
     "other": "{count} zahozeno"
   },
   "m_1571c44c03c2da": "Zařízení schváleno.",
@@ -3245,9 +3307,9 @@
   "m_15a155fcc8eaa3": "Předchozí",
   "m_15a51563b711fe": "Diskový rozpočet médií",
   "m_15a52806867ebe": {
-    "one": "{count} zobrazení",
     "few": "{count} zobrazení",
     "many": "{count} zobrazení",
+    "one": "{count} zobrazení",
     "other": "{count} zobrazení"
   },
   "m_15a75ffc36d36f": "Vyberte řadu",
@@ -3278,9 +3340,9 @@
   "m_15ec63b9bb2ab1": "Důkazy se zobrazí zde",
   "m_15eda187ea524b": "Heslo k databázi",
   "m_15f0658d2ef934": {
-    "one": "{count} měsíc",
     "few": "{count} měsíce",
     "many": "{count} měsíce",
+    "one": "{count} měsíc",
     "other": "{count} měsíců"
   },
   "m_15f246fc492423": "Nechte nezávislou službu upozornit vás, když Ether nemůže nic odeslat.",
@@ -3292,9 +3354,9 @@
   "m_16085b241c4dff": "Uloženo pro: {name}.",
   "m_160876dd37ae79": "Minuty (u seriálů délka epizody)",
   "m_160bc78eb67a68": {
-    "one": "{count} pořad",
     "few": "{count} pořady",
     "many": "{count} pořadu",
+    "one": "{count} pořad",
     "other": "{count} pořadů"
   },
   "m_160dd92350e8fe": "{label}: nezpracovaná hodnota",
@@ -3307,9 +3369,9 @@
   "m_161a6603b07607": "{label} v jednotkách: {unit}",
   "m_161aed1d4df6ff": "Alokace pro předběžné načítání",
   "m_161c7c61888c78": {
-    "one": "{count} přehrání a {hours} hodin za 30 dní",
     "few": "{count} přehrání a {hours} hodin za 30 dní",
     "many": "{count} přehrání a {hours} hodin za 30 dní",
+    "one": "{count} přehrání a {hours} hodin za 30 dní",
     "other": "{count} přehrání a {hours} hodin za 30 dní"
   },
   "m_161cac3bb454a3": "TS funguje téměř s každým panelem; HLS zvolte, pokud ho váš panel preferuje.",
@@ -3363,9 +3425,9 @@
   "m_1667b6eab4ed93": "Použito",
   "m_166862fb32e906": "Kategorie šablony",
   "m_1668ec34820d0e": {
-    "one": "Odebere se pravidlo klienta, které ho používá.",
     "few": "Odeberou se {count} pravidla klientů, která ho používají.",
     "many": "Odebere se {count} pravidla klientů, která ho používají.",
+    "one": "Odebere se pravidlo klienta, které ho používá.",
     "other": "Odebere se {count} pravidel klientů, která ho používají."
   },
   "m_166a5e9e166c52": "Kliknutím na plakát ho připnete pro všechny. Označte plakáty žánry nebo lidmi, kteří na nich jsou, aby podle vkusu mohl být vybrán jeden pro každého diváka.",
@@ -3380,9 +3442,9 @@
   "m_168326a5c06c88": "Sdílený fond clusteru",
   "m_1683ac2247a51a": "Pokud se zobrazí výzva, přihlaste se účtem Plex vlastníka clusteru.",
   "m_1686b0370e575f": {
-    "one": "{exhausted} z {count} indexeru dnes vyčerpal hledání",
     "few": "{exhausted} ze {count} indexerů dnes vyčerpalo hledání",
     "many": "{exhausted} z {count} indexeru dnes vyčerpalo hledání",
+    "one": "{exhausted} z {count} indexeru dnes vyčerpal hledání",
     "other": "{exhausted} z {count} indexerů dnes vyčerpalo hledání"
   },
   "m_16886b811d119f": "Přehraje nejlepší vydání okamžitě. Chybějící články stále spustí přepnutí na záložní zdroj a neúspěšná kontrola na pozadí označí vydání pro pozdější požadavky jako vadné.",
@@ -3402,9 +3464,9 @@
   "m_169a4282447292": "dní",
   "m_169b8ed1d8a935": "Zapnout opravu",
   "m_169d6800ba07bf": {
-    "one": "{count} k opravě",
     "few": "{count} k opravě",
     "many": "{count} k opravě",
+    "one": "{count} k opravě",
     "other": "{count} k opravě"
   },
   "m_169f6c9ea82fc5": "Plakát kolekce {name}",
@@ -3414,6 +3476,7 @@
   "m_16aadf8f8bd31e": "hledání trvalo {duration}",
   "m_16ac3b3a51af4e": "Nové",
   "m_16af1c381e0a96": "Přepnutí na záložní zdroj",
+  "m_16b19101913a43": "Exportovat aktuální stav",
   "m_16b5e03d146667": "{list} (filmy)",
   "m_16b609ee054878": "Povolit Simkl",
   "m_16b78968cf1c10": "Zablokovat…",
@@ -3434,9 +3497,9 @@
   "m_16ca8c8d49e25c": "Zobrazovaný název",
   "m_16cba9fc2527f4": "Odepnout tento titul?",
   "m_16cf1253bd8737": {
-    "one": "{count} kolekce",
     "few": "{count} kolekce",
     "many": "{count} kolekce",
+    "one": "{count} kolekce",
     "other": "{count} kolekcí"
   },
   "m_16d014754e8e0a": "Připraveno k vytvoření clusteru",
@@ -3472,6 +3535,7 @@
   "m_1715f6c892adb8": "Změna úložiště nebo jeho složky vyžaduje restart uzlu. Stávající data v mezipaměti zůstávají v původní složce.",
   "m_17167efa86027e": "Simkl nedokázal rozpoznat položku historie.",
   "m_1717cc66ebcbbb": "Televizory a přehrávače s procházením přes DLNA.",
+  "m_171b382894bddd": "Identifikátor klienta",
   "m_171c8f732a9d67": "Modely se nepodařilo načíst: {error}",
   "m_171cc315f1d2f0": "Nastavení seznamu k zhlédnutí uloženo",
   "m_171d5429be06dd": "Vyšší",
@@ -3482,12 +3546,14 @@
   "m_1720bc540c84a5": "Odvysílané pořadí podle TMDB",
   "m_17211322497ee0": "Načítání podrobností titulu",
   "m_1721ac81d2a5c0": "Vlastní",
+  "m_172a15cd472816": "Zdroje › Debrid",
   "m_172cd37bfd4d77": "Připojte stejné sdílení NAS na každém zúčastněném uzlu. Každý uzel může používat jinou cestu připojení. Rozpočty, uchovávání, připnutí a předběžné načítání jsou sdílené; uložením těchto zásad se aktualizují všichni členové fondu.",
   "m_172d09b2c53ab0": "dne nebo před",
   "m_172d9055b93191": "Všechny integrace, které Ether používá, a jak si vedou. Zapněte jednu a její nastavení se otevře na záložce zde.",
   "m_172e33a4eb9c83": "Dříve vybraná kolekce",
   "m_172f1903df9c22": "Běžné zastavení nebo restart upozornění na pád nespustí. Doručení hlídače pádů probíhají mimo Historii doručení. Doručení je poskytováno bez záruky: hlídač musí zůstat naživu a mít přístup k síti. Dohlížecí proces, který ukončí celou skupinu procesů, ho může zastavit také.",
   "m_173086f9b08a08": "Poskytovatelé Usenetu, indexery a účty debridu, ze kterých Ether streamuje.",
+  "m_1731241f72b928": "Všechny integrace, které Ether používá, a jejich stav. Zde se nastavuje Trakt, jazykový model a OpenSubtitles.",
   "m_1733647e91eecd": "Port",
   "m_1733779f619c57": "Šalvějová",
   "m_1736d2aa6f24df": "Všechny způsobilé tituly jsou viditelné. Přidejte skupinu a zúžíte svou knihovnu.",
@@ -3499,21 +3565,22 @@
   "m_1740501133cb56": "Výsledky z mezipaměti z {when}",
   "m_17440f2f9cc7d8": "Načítání editoru",
   "m_1744a26058ac14": {
-    "one": "{count} pořad v příštích 24 hodinách",
     "few": "{count} pořady v příštích 24 hodinách",
     "many": "{count} pořadu v příštích 24 hodinách",
+    "one": "{count} pořad v příštích 24 hodinách",
     "other": "{count} pořadů v příštích 24 hodinách"
   },
   "m_17465c798ee86b": "Nikdy neobětuje kvalitu pro rychlost. Mezi vydáními stejné kvality automatický režim řadí na první místo zdroj, který startuje rychleji, a u oblíbených titulů nejprve debrid z mezipaměti, dokud nejsou k dispozici měření obou zdrojů. Druhý zdroj se kontroluje souběžně jako záložní.",
   "m_174c9f5c0c34e0": "Na existujícím uzlu otevřete Cluster → Vytvořit token pro připojení. Zkopírujte token sem. Obsahuje připojení k databázi a funguje jen jednou.",
   "m_175354660331ca": "Výběr podle pořadí je výchozí. Ostatní režimy vyměňují další požadavky na indexery za kratší čekání.",
   "m_175371b78faafb": {
-    "one": "V tomto kontextu se změní {count} stránka Domů",
     "few": "V tomto kontextu se změní {count} stránky Domů",
     "many": "V tomto kontextu se změní {count} stránky Domů",
+    "one": "V tomto kontextu se změní {count} stránka Domů",
     "other": "V tomto kontextu se změní {count} stránek Domů"
   },
   "m_1757064e99e7cb": "support zip diagnostic capture diagnostika zip podpora",
+  "m_17592534f6f172": "Ether odesílá jen značky viděno nebo neviděno a hodnocení 1, 2, 3, 4 nebo 5 celými hvězdami. Vymazání, zlomky a ostatní hodnoty zůstanou zde. Epizody se odešlou jen tehdy, když je už známé přesné id epizody Plex. Úspěšné odeslání nevytvoří kartu aktivity Discover. Ether nezapíná nastavení synchronizace stavu sledování v Plexu. Ether k tomu nepoužívá tokeny serveru ani sdílených účtů.",
   "m_1759a72d011ede": "Oblíbené",
   "m_175a707795b382": "Plex {section} jako",
   "m_175c0a3a005ab3": "Přiblížení",
@@ -3528,9 +3595,9 @@
   "m_177a91d641dc30": "Oddělte čárkami. Omezení roku a hodnocení ze šablony zůstanou zachována.",
   "m_177be4afd29378": "Hledat kanály",
   "m_177cbfb70c64ff": {
-    "one": "{count} kanál přiřazen k průvodci",
     "few": "{count} kanály přiřazeny k průvodci",
     "many": "{count} kanálu přiřazeno k průvodci",
+    "one": "{count} kanál přiřazen k průvodci",
     "other": "{count} kanálů přiřazeno k průvodci"
   },
   "m_178091d131143b": "Platí pro všechny diváky",
@@ -3565,9 +3632,9 @@
   "m_17b9aa451a75d1": "Typ zdroje",
   "m_17b9d9d1279232": "Zapojené feedy",
   "m_17bb33eb90d47a": {
-    "one": "Při tomto intervalu potřebuje {count} feed přibližně {requests} požadavků denně pro čerstvé příchozí vydání.",
     "few": "Při tomto intervalu potřebují {count} feedy přibližně {requests} požadavků denně pro čerstvé příchozí vydání.",
     "many": "Při tomto intervalu potřebuje {count} feedu přibližně {requests} požadavků denně pro čerstvé příchozí vydání.",
+    "one": "Při tomto intervalu potřebuje {count} feed přibližně {requests} požadavků denně pro čerstvé příchozí vydání.",
     "other": "Při tomto intervalu potřebuje {count} feedů přibližně {requests} požadavků denně pro čerstvé příchozí vydání."
   },
   "m_17bef9ae6fb13e": "Příště v {time} · {title}",
@@ -3678,27 +3745,27 @@
   "m_1890e30548b2a2": "Ve zdroji nic neodpovídá.",
   "m_1891902f870258": "Připravované tituly vyžadují zdroj celého katalogu a vzdálené vyhledávání TMDB Discover.",
   "m_1894cd64b6f8df": {
-    "one": "{count} otevřený soubor",
     "few": "{count} otevřené soubory",
     "many": "{count} otevřeného souboru",
+    "one": "{count} otevřený soubor",
     "other": "{count} otevřených souborů"
   },
   "m_1896095e6f5bf2": "Při příštím zařazení mezi kandidáty se jeho stav znovu zkontroluje.",
   "m_18969be245c683": "Odepnout {title}?",
   "m_1896db097ddd0b": "Ukotvit {title} na pozici {slot}",
   "m_189a59134a29dd": {
-    "one": "Stažení torrentů denně: {count}",
     "few": "Stažení torrentů denně: {count}",
     "many": "Stažení torrentů denně: {count}",
+    "one": "Stažení torrentů denně: {count}",
     "other": "Stažení torrentů denně: {count}"
   },
   "m_189c4ff843b6ae": "Spíš klasika",
   "m_189fefc276e4f8": "Přečíst průvodce",
   "m_18a541e86f31d8": "Pozastavit",
   "m_18a55c536bf0d9": {
-    "one": "{count} přehrání z {impressions} zobrazení za 7 dní",
     "few": "{count} přehrání z {impressions} zobrazení za 7 dní",
     "many": "{count} přehrání z {impressions} zobrazení za 7 dní",
+    "one": "{count} přehrání z {impressions} zobrazení za 7 dní",
     "other": "{count} přehrání z {impressions} zobrazení za 7 dní"
   },
   "m_18a5fda0ab37f2": "Volitelné. Složka s definicemi ve formátu Cardigann, kterým důvěřujete: složka na GitHubu nebo adresa URL raw složky, adresa URL API obsahu GitHubu nebo prostý seznam adres URL definic. Ether ji zobrazí při přidávání webu a aktualizuje z ní nainstalované definice.",
@@ -3713,9 +3780,9 @@
   "m_18b06ece409cea": "Do hodiny pro {title}",
   "m_18b2b0c047a27f": "Čerstvost",
   "m_18b95b50d0430b": {
-    "one": "{bad} z {count} poskytovatele má potíže",
     "few": "{bad} ze {count} poskytovatelů má potíže",
     "many": "{bad} z {count} poskytovatele má potíže",
+    "one": "{bad} z {count} poskytovatele má potíže",
     "other": "{bad} z {count} poskytovatelů má potíže"
   },
   "m_18bba67fb271f8": "Zobrazit QR kód",
@@ -3723,9 +3790,9 @@
   "m_18bd817048dd75": "Token vlastníka (X-Plex-Token)",
   "m_18be0bd9e87648": "Zapněte externí hodnocení a uložením zkontrolujte skóre titulu.",
   "m_18c01ee79716fd": {
-    "one": "{count} hodina",
     "few": "{count} hodiny",
     "many": "{count} hodiny",
+    "one": "{count} hodina",
     "other": "{count} hodin"
   },
   "m_18c062ec3c63f8": "Filmy se zobrazí po nejranějším digitálním nebo fyzickém vydání kdekoli na světě. Pokud TMDB takové datum nemá, zobrazí se 90 dní po uvedení v kinech a zůstanou viditelné, i když se data změní. Filmy čekající na metadata zůstanou skryté, dokud je katalog na pozadí kontroluje. Kvalita vydání se tím neověřuje.",
@@ -3735,16 +3802,16 @@
   "m_18cac20f7cbd3e": "Souběžná stahování na diváka",
   "m_18cb5aae13b5b6": "Odpočívá",
   "m_18ce53b1a2aab0": {
-    "one": "{name} · {count} titul",
     "few": "{name} · {count} tituly",
     "many": "{name} · {count} titulu",
+    "one": "{name} · {count} titul",
     "other": "{name} · {count} titulů"
   },
   "m_18cf943a2b12c6": "Kolik z další epizody načíst předem.",
   "m_18d28aa8c3b35a": {
-    "one": "{count} aktivní",
     "few": "{count} aktivní",
     "many": "{count} aktivní",
+    "one": "{count} aktivní",
     "other": "{count} aktivní"
   },
   "m_18d41fc05d1c56": "Nová data médií obcházejí disk. Nechráněná stávající data se uvolní; data přehrávání a připnutá data zůstávají chráněná.",
@@ -3760,9 +3827,9 @@
   "m_18f0f55ffe99fb": "Uznávané animované filmy, které se budou líbit celé rodině",
   "m_18f1515ae5de72": "Výhled dopředu (dny)",
   "m_18f66a2b8e8b9a": {
-    "one": "{count} vydání ve sdíleném fondu",
     "few": "{count} vydání ve sdíleném fondu",
     "many": "{count} vydání ve sdíleném fondu",
+    "one": "{count} vydání ve sdíleném fondu",
     "other": "{count} vydání ve sdíleném fondu"
   },
   "m_18f85a0d4ab0a3": "Připnout plakát (bez textu)",
@@ -3772,6 +3839,12 @@
   "m_18fdbda3ab5383": "pořadí zdroje",
   "m_190080336327a7": "Tento profil se nepodařilo načíst",
   "m_1901b80a76f92b": "Zálohovat nyní",
+  "m_1902f2fa6c62c8": {
+    "few": "{count} účty",
+    "many": "{count} účtu",
+    "one": "{count} účet",
+    "other": "{count} účtů"
+  },
   "m_1903cc0aef13a2": "Žánr",
   "m_19059235f1be5d": "např. {example}",
   "m_190d5640161484": "Zkuste šablonu upravit, aby odpovídala většímu počtu titulů ve vašem katalogu.",
@@ -3797,6 +3870,7 @@
   "m_1931c0bcb280c2": "Skrýt podrobnosti",
   "m_19321672205e72": "Celý katalog",
   "m_19335aa0339b64": "Datum ukončení pro {title}",
+  "m_19342865e40f0c": "Importujte indexery Usenetu a torrentů, které už spravujete.",
   "m_1938071a9cc6a0": "Ukotvené řádky drží svou pozici pro tohoto diváka; personalizace vyplňuje pozice mezi nimi. Přetažením je prohodíte.",
   "m_19381224b9b5e9": "Jazyk {language} se nepodařilo načíst. Zkontrolujte připojení a zkuste to znovu.",
   "m_1939368f2b1dc9": "odesláno",
@@ -3832,6 +3906,7 @@
   "m_196731b03aebed": "Zdroj smazán",
   "m_196791e19c5811": "Stažení offline",
   "m_196855b2e71a64": "Jazyky zvuku účtu",
+  "m_196895d58f9d9e": "Váš účet Plex musí tento server Ether vlastnit.",
   "m_196f011bb936c4": "Zadejte tuto adresu serveru v podporované aplikaci:",
   "m_19700fbe911c6a": "Motiv",
   "m_1971ca3ee8244a": "Data náhledu nejsou k dispozici.",
@@ -3843,16 +3918,18 @@
   "m_197478dba70ea3": "Upravit pořadí pro diváka {viewer}",
   "m_19759626500d10": "Synchronizace zachová stávající historii a neodstraňuje zhlédnuté položky. Epizody anime bez ověřeného mapování se přeskakují.",
   "m_19773e710c1ca5": "Regulární výraz",
+  "m_197805698e6a5b": "Dokončením nastavení se tato administrační stránka uzamkne na váš účet Plex. Nastavení můžete později znovu otevřít v části Připojení.",
   "m_197f395ae133e3": "Nové pořady jsou v průvodci.",
   "m_197fa1b5e8b47d": "Zatím žádné důkazy.",
   "m_198004f13e8ffa": "Jak se knihovna Seriály zobrazuje v aplikacích Plex. Tento název nastavuje Ether; přejmenování v Plexu se neuloží.",
   "m_1982dc436baac0": "Nastavení webu",
   "m_1983b9b0ef1f2a": {
-    "one": "Dokončete nebo odeberte nedokončený zdroj.",
     "few": "Dokončete nebo odeberte {count} nedokončené zdroje.",
     "many": "Dokončete nebo odeberte {count} nedokončeného zdroje.",
+    "one": "Dokončete nebo odeberte nedokončený zdroj.",
     "other": "Dokončete nebo odeberte {count} nedokončených zdrojů."
   },
+  "m_1983c93a765183": "Odesílat budoucí změny",
   "m_19862da7cdac1d": "Normální",
   "m_19879f3cbd57c8": "načteno za {duration}",
   "m_1989274cd3ebf9": "Pokročilé nastavení programu",
@@ -3890,9 +3967,9 @@
   "m_19d363abaf0d79": "Nová kolekce",
   "m_19d92bb69c5170": "Nastavte tento uzel, aniž byste opustili Správce serveru.",
   "m_19db83261f2737": {
-    "one": "{count} věc vyžaduje pozornost",
     "few": "{count} věci vyžadují pozornost",
     "many": "{count} věci vyžaduje pozornost",
+    "one": "{count} věc vyžaduje pozornost",
     "other": "{count} věcí vyžaduje pozornost"
   },
   "m_19dc8759739cf5": "Období obměny",
@@ -3908,6 +3985,7 @@
   "m_19e730bd46036d": "Načítání nastavení",
   "m_19e7facde89313": "Od nejnovějších nebo nejstarších",
   "m_19ea8894e434e6": "Plakáty kolekcí",
+  "m_19ecd71a027c34": "Plex odmítl uložený token. Připojte se znovu.",
   "m_19f06478c4e054": "Kontroly připojení teď nejsou k dispozici: {error}",
   "m_19f3d32559cf3f": "Viditelnost knihovny aktualizována",
   "m_19f572e1e9b30b": "Přidejte do tohoto kanálu alespoň jeden film.",
@@ -3915,9 +3993,9 @@
   "m_19f6266963ee58": "Blokové účty lze označit jako záložní (backfill).",
   "m_19f8182b153550": "Nejvyšší",
   "m_19f825114d96fc": {
-    "one": "Používá se {count} vlastní formát.",
     "few": "Používají se {count} vlastní formáty.",
     "many": "Používá se {count} vlastního formátu.",
+    "one": "Používá se {count} vlastní formát.",
     "other": "Používá se {count} vlastních formátů."
   },
   "m_19f9442452100d": "{count} zablokováno poskytovatelem",
@@ -3966,9 +4044,9 @@
   "m_1a4abaea994425": "Název preference",
   "m_1a4b3eafd6b450": "Smazat kanál",
   "m_1a4bb3923cf901": {
-    "one": "{count} titul · smyčka {duration}",
     "few": "{count} tituly · smyčka {duration}",
     "many": "{count} titulu · smyčka {duration}",
+    "one": "{count} titul · smyčka {duration}",
     "other": "{count} titulů · smyčka {duration}"
   },
   "m_1a510b2edd8435": "Během kopírování dat může být připojení nedostupné. Tato stránka se připojí automaticky.",
@@ -4008,9 +4086,9 @@
   "m_1a98e23b6b0dc6": "Preferované jazyky hlášené aplikacím Plex pro tento účet. Pravidla výběru stop najdete na kartě Zvuk a titulky.",
   "m_1a9a936a80a0d7": "Poskytovatel odebrán",
   "m_1a9cf0d1b9339a": {
-    "one": "{count} vlastní formát",
     "few": "{count} vlastní formáty",
     "many": "{count} vlastního formátu",
+    "one": "{count} vlastní formát",
     "other": "{count} vlastních formátů"
   },
   "m_1a9d8d971b1edb": "Odebrat",
@@ -4054,9 +4132,9 @@
   "m_1ae8766b0249b1": "Osoba k opravě",
   "m_1aea51053acae8": "Název zdroje",
   "m_1af3a1215ac739": {
-    "one": "{count} již ve Vlastním bodování",
     "few": "{count} již ve Vlastním bodování",
     "many": "{count} již ve Vlastním bodování",
+    "one": "{count} již ve Vlastním bodování",
     "other": "{count} již ve Vlastním bodování"
   },
   "m_1af616c0e14f33": "rozlišení 4k 1080p vzdálený",
@@ -4080,15 +4158,17 @@
   "m_1b12223f2489f8": "Vyberte model",
   "m_1b1240e6a14370": "Nový poskytovatel",
   "m_1b1640e9e2bb77": "Náhled obnoven",
+  "m_1b1788ecd37bb5": "Země odpovídá zemi původu nebo produkce podle TMDB, včetně koprodukcí. Jazyk je samostatná podmínka. Neznámá metadata nikdy nevyhovují vyloučení.",
   "m_1b1af82f5c1ba2": "Vytvořit přenosnou zálohu databáze, nastavení a klíče přihlašovacích údajů tohoto serveru.",
   "m_1b1d50b71b8e77": "Uloženo na jiném uzlu: stáhněte ji z administrační stránky tohoto uzlu",
+  "m_1b1de6988c0b6a": "Znovu zkusit neúspěšné položky",
   "m_1b1f0a85783523": "Zdroj aktualizací",
   "m_1b20efbd0f7a36": "Hodin zhlédnuto",
   "m_1b23999841ed8a": "Obsah",
   "m_1b27db7066dc29": {
-    "one": "{count} divák ho přepisuje",
     "few": "{count} diváci ho přepisují",
     "many": "{count} diváka ho přepisuje",
+    "one": "{count} divák ho přepisuje",
     "other": "{count} diváků ho přepisuje"
   },
   "m_1b281d356ec8aa": "Převážně známé",
@@ -4110,6 +4190,7 @@
   "m_1b4492c1ff2dd1": "Dosud nebyly certifikovány žádné nativní aplikace.",
   "m_1b44c9cfa963c9": "Období",
   "m_1b462a3e75b928": "Dnes: {grabs} / {grabCap} stažení deskriptorů · {used} / {cap} MiB vyhrazeno pro ověřování zdrojů.",
+  "m_1b488e7958dacb": "Stav sledování Plex nebyl aktualizován",
   "m_1b4c9fea254359": "Smazat skupinu {n}",
   "m_1b4cd67aefdde9": "Zobrazit každý titul",
   "m_1b4e77836e831c": "Jak se video upraví, aby ho aplikace na druhé straně dokázala přehrát. Výchozí hodnoty stačí pro domácnost.",
@@ -4182,8 +4263,10 @@
   "m_1bdf83696c014c": "Zakázat Živou TV tomuto divákovi",
   "m_1be1126d380d2a": "Kontroluje se odshora. První pravidlo, které aplikaci odpovídá, určí její profil kvality; aplikace, kterým neodpovídá žádné pravidlo, použijí výchozí hodnoty.",
   "m_1be160c83defc9": "Zkontrolovat místo",
+  "m_1be24c425903de": "Dostupné i mimo vaši síť",
   "m_1be45d3eaf286e": "Hledat tituly",
   "m_1be5bd37ee2637": "Zdroje značek a pokrytí.",
+  "m_1be615909b1eb7": "Zdroje › Indexery",
   "m_1bea8befce6c59": "Sci-fi kanál",
   "m_1bec287326cfa6": "Střední",
   "m_1bee7129e354ac": "Jak aplikace Plex šifrují spojení s tímto serverem.",
@@ -4251,9 +4334,9 @@
   "m_1c747ac8a304d6": "Připojení ověřeno",
   "m_1c7575e3f14b5c": "Předběžné načítání",
   "m_1c75f5d48fa902": {
-    "one": "{count} titul",
     "few": "{count} tituly",
     "many": "{count} titulu",
+    "one": "{count} titul",
     "other": "{count} titulů"
   },
   "m_1c769b2081b327": "{percent} z {total}",
@@ -4273,6 +4356,7 @@
   "m_1c8ead4d179552": "Titulky: {choice}",
   "m_1c924252babc32": "Obnovit předběžné načítání",
   "m_1c96ef6eff57aa": "Seznam k zhlédnutí synchronizován",
+  "m_1c9c3cdf13d821": "Vlastní účet Plex tohoto diváka je připojený. Synchronizace odesílá jen budoucí změny, dokud nepožádáte o export.",
   "m_1ca10c02327944": "Historie přehrávání",
   "m_1ca234f8f12a90": "Posílit {genre}",
   "m_1ca4a5bdd6684f": "Věnovat malý příděl ověřování slibných zdrojů. Kontroly se během aktivního přehrávání pozastaví.",
@@ -4284,9 +4368,9 @@
   "m_1cad377153f4cd": "Vyžaduje klíč API",
   "m_1caed2e2377609": "Země produkce",
   "m_1cb36afd93dbf8": {
-    "one": "{count} stream živě",
     "few": "{count} streamy živě",
     "many": "{count} streamu živě",
+    "one": "{count} stream živě",
     "other": "{count} streamů živě"
   },
   "m_1cb4399dea3ad9": "Ponechat výchozí hodnotu katalogu",
@@ -4362,23 +4446,23 @@
   "m_1d2cda48c71a1a": "Povolit {name}",
   "m_1d2eaeed77791f": "Zatím nesynchronizováno",
   "m_1d31cf9996623d": {
-    "one": "{count} řádek na stránce",
     "few": "{count} řádky na stránce",
     "many": "{count} řádku na stránce",
+    "one": "{count} řádek na stránce",
     "other": "{count} řádků na stránce"
   },
   "m_1d32249f6cf399": "Kontrola pokrytí…",
   "m_1d349253ea37ef": "Předvolby návrhu",
   "m_1d3588ee53d7a2": {
-    "one": "{count} aktivní stream",
     "few": "{count} aktivní streamy",
     "many": "{count} aktivního streamu",
+    "one": "{count} aktivní stream",
     "other": "{count} aktivních streamů"
   },
   "m_1d38074981e682": {
-    "one": "Filmy potřebují důkaz po dobu {count} dne po vydání.",
     "few": "Filmy potřebují důkaz po dobu {count} dnů po vydání.",
     "many": "Filmy potřebují důkaz po dobu {count} dne po vydání.",
+    "one": "Filmy potřebují důkaz po dobu {count} dne po vydání.",
     "other": "Filmy potřebují důkaz po dobu {count} dnů po vydání."
   },
   "m_1d3aa076f39410": "Importovaná historie ({count})",
@@ -4389,9 +4473,9 @@
   "m_1d3e46e6c5812d": "Hlavní tipy ve světle reflektorů",
   "m_1d3fbd0b729caf": "{start}–{end} místního času",
   "m_1d437533645548": {
-    "one": "{count} vydání na tomto uzlu",
     "few": "{count} vydání na tomto uzlu",
     "many": "{count} vydání na tomto uzlu",
+    "one": "{count} vydání na tomto uzlu",
     "other": "{count} vydání na tomto uzlu"
   },
   "m_1d43bd5d030d30": "Všechny události",
@@ -4401,6 +4485,7 @@
   "m_1d52e7b4a3be4c": "Aplikace Jellyfin ve vaší síti.",
   "m_1d53556717b378": "Neuložená pravidla · pouze místní katalog",
   "m_1d539bf3ad53f2": "0 odvodí limit z vašich připojení k Usenetu.",
+  "m_1d541929dc3232": "Po dosažení tohoto limitu používají další streamy běžné přehrávání.",
   "m_1d5550ded8483e": "Nevybráno",
   "m_1d56244b88ecc0": "Rotten Tomatoes – kritici",
   "m_1d56fd7503ad94": "Doplněk Stremio · Torrent",
@@ -4425,6 +4510,7 @@
   "m_1d6ff6a4f28aad": "Odebrat blok {number}",
   "m_1d71a7428ea5c8": "Latence",
   "m_1d72d6b558478c": "Televize ve všední večer",
+  "m_1d73c6b187684c": "Schvalovací kód",
   "m_1d74a8698a6b5d": "Udržovat aktuální",
   "m_1d78e1cd865efa": "Pozastavit předběžné načítání",
   "m_1d79ef8814a2fe": "Hledat weby",
@@ -4465,6 +4551,7 @@
   "m_1daefe727dd919": "Vypnuto: Plex zobrazí vlastní hodnocení katalogu.",
   "m_1db15e27a91309": "Pro tento titul zatím není k dispozici žádný popis.",
   "m_1db2ad28fdfa91": "U většiny místních serverů není potřeba.",
+  "m_1db3c283b6510e": "Zkontrolovat schválení",
   "m_1db60739b07095": "Otestovat přehrávání s místním souborem",
   "m_1db86619c6ecfe": "Z nastavení vašeho účtu debridu.",
   "m_1dbc292c4b104c": "Nikdy výše než pozice pro {title}",
@@ -4472,9 +4559,9 @@
   "m_1dbdabb176c3bc": "Nahrané soubory zůstanou beze změny, dokud je nenahrajete znovu.",
   "m_1dbe9dd6ddd1bb": "Preference release",
   "m_1dc1f6ce772a08": {
-    "one": "Nejlépe hodnocené výběry z posledního průchodu · zohledněn {count} aktivní divák",
     "few": "Nejlépe hodnocené výběry z posledního průchodu · zohledněni {count} aktivní diváci",
     "many": "Nejlépe hodnocené výběry z posledního průchodu · zohledněno {count} aktivního diváka",
+    "one": "Nejlépe hodnocené výběry z posledního průchodu · zohledněn {count} aktivní divák",
     "other": "Nejlépe hodnocené výběry z posledního průchodu · zohledněno {count} aktivních diváků"
   },
   "m_1dc394664e9d25": "Změnit pořadí: {name}",
@@ -4503,9 +4590,9 @@
   "m_1deb64527f86e5": "Průvodce sahá do",
   "m_1ded3448d42250": "1 / Vyberte výchozí bod",
   "m_1ded7e44c97176": {
-    "one": "{count} film",
     "few": "{count} filmy",
     "many": "{count} filmu",
+    "one": "{count} film",
     "other": "{count} filmů"
   },
   "m_1df074091a41ae": "Najít seriál…",
@@ -4523,6 +4610,7 @@
   "m_1e14adbefa1a69": "Dotaz TMDB Discover",
   "m_1e1807ca1ffd81": "Připnutí chrání data před odstraněním",
   "m_1e1b1fdb7dd78e": "Aktivní",
+  "m_1e1d8d112d02c2": "Plex povoluje synchronizaci stavu sledování pro tento účet.",
   "m_1e1ed12b9389d3": "Pohání funkci „Popište to“ ve Studiu kolekcí, tematické řádky Domů, vyhledávání přirozeným jazykem a shrnutí.",
   "m_1e23d42f115655": "Divák reportu",
   "m_1e25a645d236de": "Nainstalujte a otevřete Ether na novém počítači. Připojit se můžete ještě před dokončením jeho samostatného nastavení.",
@@ -4541,9 +4629,9 @@
   "m_1e3f39fe1aed85": "{label}: podmínka",
   "m_1e3fdb20eea5fd": "Omezení pro {title}",
   "m_1e40ae0e3ecf49": {
-    "one": "{live} z {count} uzlu online. Otevřete správce uzlu a změníte jeho místní nastavení.",
     "few": "{live} ze {count} uzlů online. Otevřete správce uzlu a změníte jeho místní nastavení.",
     "many": "{live} z {count} uzlu online. Otevřete správce uzlu a změníte jeho místní nastavení.",
+    "one": "{live} z {count} uzlu online. Otevřete správce uzlu a změníte jeho místní nastavení.",
     "other": "{live} z {count} uzlů online. Otevřete správce uzlu a změníte jeho místní nastavení."
   },
   "m_1e414c680ac50c": "Odhlásit se z Plexu",
@@ -4593,12 +4681,13 @@
   "m_1e965e32c7e3a6": "Nepoužito",
   "m_1e9774acf80812": "Profil k importu",
   "m_1e977ff418b9ae": {
-    "one": "Dnes využit {count} požadavek API",
     "few": "Dnes využity {count} požadavky API",
     "many": "Dnes využito {count} požadavku API",
+    "one": "Dnes využit {count} požadavek API",
     "other": "Dnes využito {count} požadavků API"
   },
   "m_1e98fbb9c75818": "Stáhnout podpůrný ZIP",
+  "m_1e9a688a32f8a4": "Schválit na plex.tv",
   "m_1e9ca6c7397706": "Lidé",
   "m_1e9d2a14df3174": "Ukotvené řádky drží svou pozici pro všechny; personalizace vyplňuje pozice mezi nimi. Přetažením je prohodíte.",
   "m_1ea093101f2a05": "Okrajová knihovna",
@@ -4608,9 +4697,9 @@
   "m_1eaf6ce561408f": "Výchozí hodnoty serveru",
   "m_1eb0c27d7f49c7": "{percent} zhlédnuto",
   "m_1eb0f40a235d61": {
-    "one": "{count} ručně vybraný titul",
     "few": "{count} ručně vybrané tituly",
     "many": "{count} ručně vybraného titulu",
+    "one": "{count} ručně vybraný titul",
     "other": "{count} ručně vybraných titulů"
   },
   "m_1eb24748a2dfb4": "Načítání jazykových funkcí",
@@ -4659,6 +4748,7 @@
   "m_1f06555c3273f9": "Kladné hodnoty zobrazí titulky později.",
   "m_1f07124ab533c1": "Přepsání pro: {who}",
   "m_1f07a454b7b05b": "Stránka",
+  "m_1f08bc24b38235": "V Plexu",
   "m_1f0a47b97d9b97": "{service} ({region})",
   "m_1f0d591434eb63": "Pořadí změníte přetažením úchytu nebo šipkami. Aby se toto pořadí zachovalo v Plexu, řaďte podle „Pořadí zdroje“.",
   "m_1f107a64fd97ca": "Vy",
@@ -4686,9 +4776,9 @@
   "m_1f2c1ef7c466cc": "Obměňovat členy",
   "m_1f2c8b3ac5b812": "Týdenní plán uložen",
   "m_1f2dd11757fb45": {
-    "one": "{count} dni nečinnosti",
     "few": "{count} dnech nečinnosti",
     "many": "{count} dne nečinnosti",
+    "one": "{count} dni nečinnosti",
     "other": "{count} dnech nečinnosti"
   },
   "m_1f2dd79e3c5c02": "Odebrat {channel} z oblíbených",
@@ -4699,15 +4789,16 @@
   "m_1f4a661922f433": "uzlem {node}, {when}",
   "m_1f4c2328a4a935": "Články",
   "m_1f4f2757857261": {
-    "one": "hodina",
     "few": "hodiny",
     "many": "hodiny",
+    "one": "hodina",
     "other": "hodin"
   },
   "m_1f5199e8c55a8e": "Napište, co chcete, běžným jazykem. Ether navrhne zdroje a pravidla; před uložením je zkontrolujete.",
   "m_1f55294d9914b5": "Přihlášení ke zdroji {number}",
   "m_1f55c824c390e7": "Nastavení dostupnosti",
   "m_1f5819d47b83be": "Místní metadata · žádné vyhledávání u poskytovatelů",
+  "m_1f58e3ed0b7295": "pms verze",
   "m_1f5a59b77f5995": "Dvoupísmenný region pro data vydání a dostupnost streamování.",
   "m_1f5c76855b2fb6": "Začátek (UTC)",
   "m_1f5edbc594c658": "Zastaveno v",
@@ -4715,9 +4806,9 @@
   "m_1f6218157e5f66": "náhodně",
   "m_1f6222615fdc48": "Vytvořte virtuální kanál ze svého katalogu nebo přineste IPTV ze seznamu M3U.",
   "m_1f623ad43b4dbf": {
-    "one": "{count} divák",
     "few": "{count} diváci",
     "many": "{count} diváka",
+    "one": "{count} divák",
     "other": "{count} diváků"
   },
   "m_1f625bae28b970": "Sekce: {page}",
@@ -4730,6 +4821,7 @@
   "m_1f6c206c676272": "Žádný hostitel",
   "m_1f6f6d8a5a635a": "Ether sestavuje vaši knihovnu z TMDB, proto je nutný klíč API TMDB. Je zdarma: {link}, poté ho sem vložte a otestujte.",
   "m_1f7223c74bf3d9": "Vyberte diváka",
+  "m_1f7955ed413e76": "Sdílení a přístup k serveru se spravují na {link}.",
   "m_1f7969b9559bf0": "Minimální popularita",
   "m_1f7d73ca4b3ad5": "Povolené hodiny",
   "m_1f7d90899f2705": "E-mail (SMTP)",
@@ -4739,9 +4831,9 @@
   "m_1f84ef24caf5f1": "Popište to",
   "m_1f88c60972658b": "Počátek programu (UTC)",
   "m_1f8b8c2485b4fa": {
-    "one": "{count} výsledek",
     "few": "{count} výsledky",
     "many": "{count} výsledku",
+    "one": "{count} výsledek",
     "other": "{count} výsledků"
   },
   "m_1f902d2cbf3551": "Tento kanál již neexistuje.",
@@ -4749,21 +4841,22 @@
   "m_1f971a5b5a685c": "statistiky zařízení hodiny diváci tituly",
   "m_1f9a9e43f8f724": "Publikované adresy",
   "m_1f9ab884756e04": {
-    "one": "{count} jádro",
     "few": "{count} jádra",
     "many": "{count} jádra",
+    "one": "{count} jádro",
     "other": "{count} jader"
   },
   "m_1f9dc6f1f797f7": "Filtry",
   "m_1fa09858061c93": "Sdíleno v rámci serveru, obnovuje se o půlnoci UTC. Nulový příděl tuto činnost vypíná. Běžné přehrávání si ponechává své stávající rozpočty poskytovatelů.",
   "m_1fa172f3857055": "Řádek {title}",
+  "m_1fa6177f57acdc": "Certifikát je nainstalován",
   "m_1fa778c3ae7aa4": "Umožní aplikaci nabídnout tlačítko pro přeskočení úvodu, rekapitulace nebo závěrečných titulků. Tlačítko pořád závisí na aplikaci.",
   "m_1fa829c416c3d8": "Sekce editoru",
   "m_1faa17eadae702": "Metody přihlášení a zařízení nelze načíst.",
   "m_1faad58de2d8f7": {
-    "one": "{count} indexer · bez denních limitů",
     "few": "{count} indexery · bez denních limitů",
     "many": "{count} indexeru · bez denních limitů",
+    "one": "{count} indexer · bez denních limitů",
     "other": "{count} indexerů · bez denních limitů"
   },
   "m_1faba88e7fc859": "Otevřít náhled: {name}",
@@ -4772,18 +4865,18 @@
   "m_1fb01ec8cfe42d": "Kanál smazán",
   "m_1fb0202809c713": "Soubor definice",
   "m_1fb1ed0f31e1f7": {
-    "one": "Hledání denně: {count}",
     "few": "Hledání denně: {count}",
     "many": "Hledání denně: {count}",
+    "one": "Hledání denně: {count}",
     "other": "Hledání denně: {count}"
   },
   "m_1fb37c824c7bc5": "Tím server odeberete ze svého účtu Plex. Aplikace Plex ho neuvidí, dokud se znovu nepřihlásíte a nenárokujete ho.",
   "m_1fb50b155c9eab": "Všichni · vždy",
   "m_1fb5bd919963d6": "Samotný Ether",
   "m_1fb65af0443bac": {
-    "one": "{count} přepsání",
     "few": "{count} přepsání",
     "many": "{count} přepsání",
+    "one": "{count} přepsání",
     "other": "{count} přepsání"
   },
   "m_1fb67695eebd4c": "Vytvořit hosta pro obývací pokoj",
@@ -4800,11 +4893,12 @@
   "m_1fcb9b5bf52dd2": "Zobrazit {title} v doporučeních",
   "m_1fcbf641c612af": "Obnovit nešifrovanou zálohu?",
   "m_1fcd3edbe01142": "Převod pro aplikaci",
+  "m_1fcd9c7e17f176": "Živé zatížení CPU a GPU, kontroly disku a benchmarky tone-mappingu se neshromažďují.",
   "m_1fd36807d2b808": "Na tomto disku je volných {free} z {total}.",
   "m_1fd6e9040f9cb9": {
-    "one": "{count} dokončeno",
     "few": "{count} dokončeno",
     "many": "{count} dokončeno",
+    "one": "{count} dokončeno",
     "other": "{count} dokončeno"
   },
   "m_1fd9765785ada0": "Potřebuje průvodce",
@@ -4825,9 +4919,9 @@
   "m_1fed1cfe1ca4fc": "Otevřít schválení Simkl",
   "m_1ff30d480cdeec": "Konkrétní diváci",
   "m_1ff744c021f99f": {
-    "one": "Plex Domů, které vidí všichni diváci ({count})",
     "few": "Plex Domů, které vidí všichni diváci ({count})",
     "many": "Plex Domů, které vidí všichni diváci ({count})",
+    "one": "Plex Domů, které vidí všichni diváci ({count})",
     "other": "Plex Domů, které vidí všichni diváci ({count})"
   },
   "m_1ff88b0243b76c": "Mezipaměť",

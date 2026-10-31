@@ -2,6 +2,7 @@ package plex
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -113,5 +114,37 @@ func TestWatchRefreshUnmountWaitsForExecutingCallback(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Fatal("callback executed after unmount")
+	}
+}
+
+func TestAccountImportRefreshesWithoutHistoryChurn(t *testing.T) {
+	db := store.OpenTest(t)
+	watch := state.New(db, state.Options{})
+	ctx := context.Background()
+	const user = int64(7)
+	var keys []core.RatingKey
+	unsubscribe := subscribeWatchRefresh(watch, func(_ int64, k core.RatingKey) {
+		keys = append(keys, k)
+	}, false)
+	defer unsubscribe()
+	if err := watch.ImportTransaction(ctx, func(*sql.Tx) (state.ImportBatch, error) {
+		return state.ImportBatch{Records: []state.ImportRecord{{
+			UserID: user, Key: core.MovieKey(1), Views: 1, ViewedAt: time.Unix(10, 0),
+		}}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("history import refreshed the library: %+v", keys)
+	}
+	watched := true
+	if err := watch.ApplyRemote(ctx, user, core.MovieKey(2), &watched, time.Unix(20, 0), nil, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0] != core.MovieKey(2) {
+		t.Fatalf("account import refresh %+v", keys)
+	}
+	if _, ok, err := watch.ClaimSync(ctx, "n", time.Now(), time.Minute); err != nil || ok {
+		t.Fatalf("account import queued an upload %v %v", ok, err)
 	}
 }

@@ -219,6 +219,10 @@ type Deps struct {
 	CatalogVisibility func(context.Context, []core.LibraryExclusion) (any, error)
 	// Images backs the TMDB image proxy at /api/image.
 	Images ImageProxy
+
+	// PlexWatch is the per-viewer Plex account watch-state integration.
+	// Nil hides the routes.
+	PlexWatch PlexWatch
 }
 
 // Handler is the admin HTTP handler. Use NewHandler when you need access

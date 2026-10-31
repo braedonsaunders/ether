@@ -162,7 +162,15 @@ func (a *App) buildAdmin() http.Handler {
 		CatalogHelper:     a.collections,
 		CatalogVisibility: a.catalog.PreviewVisibility,
 		Images:            a.images,
+		PlexWatch:         a.plexWatchAPI(),
 	})
+}
+
+func (a *App) plexWatchAPI() admin.PlexWatch {
+	if a.plexWatch == nil {
+		return nil
+	}
+	return plexWatchAdmin{a.plexWatch}
 }
 
 // debridStatus is provider health, counters and latency EWMAs plus the
