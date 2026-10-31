@@ -16,7 +16,20 @@ func (i *instance) unsupportedExtras(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key, err := ids.ParseRatingKeyGUID(r.PathValue("id"))
-	if err != nil || i.host.Experience == nil {
+	if err != nil {
+		scope, scopeErr := i.versionScope(r, viewer)
+		if scopeErr != nil || i.host.VersionHandles == nil {
+			http.NotFound(w, r)
+			return
+		}
+		target, resolveErr := i.host.VersionHandles.Resolve(i.identityContext(r), scope, r.PathValue("id"))
+		if resolveErr != nil || target.Item == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		key = target.Item
+	}
+	if i.host.Experience == nil {
 		http.NotFound(w, r)
 		return
 	}
