@@ -108,6 +108,14 @@ func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer,
 	if experience == nil {
 		return core.ErrNotAvailable
 	}
+	if s.surface == "silo" && image.Kind == frontend.ImagePerson {
+		people, ok := experience.(frontend.PeopleImageReader)
+		if !ok {
+			return core.ErrNotAvailable
+		}
+		return people.AuthorizePersonImage(ctx, viewer, device, item, image, nil)
+	}
+
 	var images []frontend.Image
 	var complete bool
 	var err error
@@ -198,9 +206,9 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	}
 	now := s.now().UnixMilli()
 	var viewerID, item int64
-	var deviceJSON, channel string
+	var deviceJSON, channel, sourceHash string
 	var img frontend.Image
-	err := s.db.QueryRowContext(r.Context(), `SELECT i.viewer_id,i.item,i.device,i.image_kind,i.image_path,i.image_tag,i.channel,i.image_subject FROM frontend_image_grants i JOIN capability_headers h ON h.namespace='image' AND h.digest=i.hash AND h.viewer_id=i.viewer_id AND h.surface=i.surface AND h.expires=i.expires JOIN identity_grants g ON g.hash=i.source_hash AND g.viewer_id=i.viewer_id AND g.surface=i.surface JOIN auth_users u ON u.id=i.viewer_id WHERE i.hash=? AND i.surface=? AND i.revoked=0 AND i.expires>? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, string(s.surface), now, now).Scan(&viewerID, &item, &deviceJSON, &img.Kind, &img.Path, &img.Tag, &channel, &img.Subject)
+	err := s.db.QueryRowContext(r.Context(), `SELECT i.viewer_id,i.item,i.device,i.image_kind,i.image_path,i.image_tag,i.channel,i.image_subject,i.source_hash FROM frontend_image_grants i JOIN capability_headers h ON h.namespace='image' AND h.digest=i.hash AND h.viewer_id=i.viewer_id AND h.surface=i.surface AND h.expires=i.expires JOIN identity_grants g ON g.hash=i.source_hash AND g.viewer_id=i.viewer_id AND g.surface=i.surface JOIN auth_users u ON u.id=i.viewer_id WHERE i.hash=? AND i.surface=? AND i.revoked=0 AND i.expires>? AND g.revoked=0 AND g.expires>? AND u.active=1`, hash, string(s.surface), now, now).Scan(&viewerID, &item, &deviceJSON, &img.Kind, &img.Path, &img.Tag, &channel, &img.Subject, &sourceHash)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -251,6 +259,14 @@ func (s *ImageGrantService) Serve(w http.ResponseWriter, r *http.Request, secret
 	if err != nil {
 		http.Error(w, "image unavailable", 502)
 		return
+	}
+	// A Silo portrait fetch may cross I/O after its first authorization. Check
+	// current credited membership and fresh policy again before publishing bytes.
+	if s.surface == "silo" && img.Kind == frontend.ImagePerson {
+		if err := s.authorizePersonGrant(r.Context(), viewer, device, core.RatingKey(item), channel, img, hash, sourceHash, deviceJSON); err != nil {
+			http.NotFound(w, r)
+			return
+		}
 	}
 	h := w.Header()
 	h.Set("Content-Type", contentType)

@@ -107,7 +107,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 	if err != nil {
 		return nil, err
 	}
-	deps := experience.ServiceDeps{NotInterestedSource: func(ctx context.Context, u *core.User) ([]frontend.NotInterestedEntry, error) {
+	deps := experience.ServiceDeps{BeginPeopleRead: a.beginPeopleRead, NotInterestedSource: func(ctx context.Context, u *core.User) ([]frontend.NotInterestedEntry, error) {
 		entries, _, err := a.notInterested.Snapshot(ctx, u)
 		if err != nil {
 			return nil, err
@@ -117,7 +117,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			out = append(out, frontend.NotInterestedEntry{Key: entry.Key, AddedAt: entry.AddedAt})
 		}
 		return out, nil
-	}, ByExternalID: a.catalog.ByExternalID, Active: a.users.PolicyUser, Libraries: libs, LiveLibraries: a.configuredLibraries, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, AiredEpisodes: a.catalog.CachedAiredEpisodes, AddedTimes: a.catalog.CachedAddedTimes, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
+	}, ByExternalID: a.catalog.ByExternalID, Active: a.users.PolicyUser, Libraries: libs, LiveLibraries: a.configuredLibraries, Visibility: vis, State: a.state, Rows: rows, Protocol: protocol, Browse: a.catalog.Browse, CreditItems: a.catalog.CachedCreditItems, AiredEpisodes: a.catalog.CachedAiredEpisodes, AddedTimes: a.catalog.CachedAddedTimes, SimilarSource: a.catalog.Similar, FilterRecommendations: a.personalize.FilterRecommendations, Collections: a.collections, Playlists: a.playlists, Search: experience.Search{Catalog: a.catalog.Search}, CachedGet: a.catalog.CachedGet, CachedGetMany: a.catalog.CachedGetMany, ParentTitles: func(ctx context.Context, keys []core.RatingKey) (map[core.RatingKey]core.Title, error) {
 		return a.catalog.ResolveShowParents(ctx, keys)
 	}, Get: func(ctx context.Context, u *core.User, k core.RatingKey) (*core.Title, error) {
 		if a.episodeorder != nil {
@@ -198,7 +198,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		return a.favorites.Has(ctx, u, favorites.Subject{Kind: favorites.KindTitle, ID: k.String()})
 	}, IsFavoriteMany: func(ctx context.Context, u *core.User, keys []core.RatingKey) (map[core.RatingKey]bool, error) {
 		return a.favorites.HasTitles(ctx, u, keys)
-	}, IsNotInterested: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
+	}, FavoriteMembership: a.favoriteMembership, IsNotInterested: func(ctx context.Context, u *core.User, k core.RatingKey) (bool, error) {
 		return a.notInterested.Has(ctx, u, k)
 	}, SetNotInterestedSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
 		_, err := a.notInterested.Set(ctx, u, k, on)
@@ -208,7 +208,7 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 			return false, core.ErrNotAvailable
 		}
 		return a.watchlist.Contains(ctx, u.ID, k)
-	}, SetWatchlistSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
+	}, WatchlistMembership: a.watchlistMembership, SetWatchlistSource: func(ctx context.Context, u *core.User, k core.RatingKey, on bool) error {
 		if a.watchlist == nil {
 			return core.ErrNotAvailable
 		}

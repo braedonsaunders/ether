@@ -34,9 +34,10 @@ func evidenceWindow(t core.Title, now time.Time, cfg config.Availability) bool {
 func (s *Service) filterReleaseDiscovery(ctx context.Context, items []core.Title) []core.Title {
 	titles := map[core.RatingKey]*core.Title{}
 	keys := []core.RatingKey{}
+	_, avail := s.discoverySnap()
 	for i := range items {
 		t := &items[i]
-		if evidenceWindow(*t, s.now(), s.cfg().Availability) && titles[t.Key] == nil {
+		if evidenceWindow(*t, s.now(), avail) && titles[t.Key] == nil {
 			keys = append(keys, t.Key)
 			titles[t.Key] = t
 		}

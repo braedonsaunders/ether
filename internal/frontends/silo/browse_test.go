@@ -332,18 +332,20 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	v := &frontend.Viewer{ID: 1}
 	hdr10Plus := true
 	knownPresent, progressive := true, false
+	partCount := 1
+	media := frontend.MediaInfo{Container: "mp4", Duration: time.Minute, BitrateKbps: 1000, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Width: 1920, Height: 1080, FrameRate: 24, ProbedInterlaced: &progressive, PixelFormat: "yuv420p", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus, DolbyVisionConfigurationPresent: &knownPresent, DolbyVisionBLCompatibilityIDPresent: &knownPresent, DolbyVisionCompatibilityID: 1}, {Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true}}}
 	key := frontend.RatingKey(1000000000000001)
 	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return v, nil }}
 	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
-		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Film", Released: time.Unix(10000, 0)}, Markers: []frontend.Marker{{Type: "intro", Start: time.Second, End: 10 * time.Second}}, Extras: []frontend.Extra{{Title: "Trailer", Kind: "trailer", Source: "YouTube", SourceID: "clip", Language: "en"}}}, nil
+		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie", Title: "Film", Released: time.Unix(10000, 0)}, Versions: []frontend.Version{{ID: "cut", Name: "release label", FileName: "real.mp4", AddedAt: time.Unix(10000, 0), Media: media, PartCount: &partCount}}, Markers: []frontend.Marker{{Type: "intro", Start: time.Second, End: 10 * time.Second}}, Extras: []frontend.Extra{{Title: "Trailer", Kind: "trailer", Source: "YouTube", SourceID: "clip", Language: "en"}}}, nil
 	}}
 	sess := frontendtest.Sessions{PlanFunc: func(_ context.Context, r frontend.PlanRequest) (frontend.PlayPlan, error) {
 		if !r.Intent.Estimate {
 			t.Fatal("resolved detail")
 		}
-		return frontend.PlayPlan{Estimated: true, Media: frontend.MediaInfo{Container: "mp4", Duration: time.Minute, Streams: []frontend.StreamInfo{{Type: "video", Codec: "h264", Width: 1920, Height: 1080, FrameRate: 24, ProbedInterlaced: &progressive, PixelFormat: "yuv420p", ColorTransfer: "smpte2084", HDR10Plus: &hdr10Plus, DolbyVisionConfigurationPresent: &knownPresent, DolbyVisionBLCompatibilityIDPresent: &knownPresent, DolbyVisionCompatibilityID: 1}, {Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true}}}}, nil
+		return frontend.PlayPlan{Estimated: true, Media: media}, nil
 	}}
-	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: sess, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, Sessions: sess, SourceOffers: testSourceOffers{}, VersionHandles: testVersionHandles{}, Capabilities: frontendtest.Capabilities{}, IDs: ids.Codecs{Allocator: fileIDs{}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,13 +361,13 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `"audio_tracks"`) || !strings.Contains(w.Body.String(), `"language":"en"`) {
 		t.Fatalf("missing real audio tracks: %s", w.Body.String())
 	}
-	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"interlaced":false`, `"pixel_format":"yuv420p"`, `"site_key":"clip"`} {
+	for _, fact := range []string{`"video_tracks"`, `"frame_rate":"24.000"`, `"interlaced":false`, `"pixel_format":"yuv420p"`, `"site_key":"clip"`, `"file_name":"real.mp4"`, `"total_duration":60`} {
 		if !strings.Contains(w.Body.String(), fact) {
 			t.Errorf("missing known detail %s: %s", fact, w.Body.String())
 		}
 	}
-	if strings.Contains(w.Body.String(), `"total_duration"`) {
-		t.Errorf("estimate advertised as exact part duration: %s", w.Body.String())
+	if strings.Contains(w.Body.String(), `"file_name":"release label"`) {
+		t.Error("release label exposed as a filename")
 	}
 	knownPresent = false
 	negative := httptest.NewRecorder()
@@ -379,8 +381,11 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 	req.Header.Set("X-Silo-Device-Id", "tv")
 	rec := httptest.NewRecorder()
 	inst.Handler().ServeHTTP(rec, req)
-	if strings.Contains(rec.Body.String(), `"marker_segments"`) || strings.Contains(rec.Body.String(), `"intro"`) {
-		t.Errorf("unbound marker exposed as file-specific: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), `"bitrate":1000000`) {
+		t.Errorf("watch bitrate units: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"kind":"intro"`) || !strings.Contains(rec.Body.String(), `"start_seconds":1`) || !strings.Contains(rec.Body.String(), `"end_seconds":10`) {
+		t.Errorf("single probed file markers: %s", rec.Body.String())
 	}
 	spec, e := openapi.CachedSpec("../../conform/specs/manifest.json", "silo", "")
 	if e == nil {
@@ -391,14 +396,36 @@ func TestDetailWithEstimatedVersionSpec(t *testing.T) {
 		if e = doc.Validate("GET", path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); e != nil {
 			t.Errorf("detail spec: %v", e)
 		}
-		// Silo requires marker_segments, but until the broker exposes a
-		// version-bound known/unknown result an empty list would invent a fact.
-		// Keep this incompatibility explicit until the binding contract lands.
-		if e = doc.Validate("GET", watchPath, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()); e == nil || !strings.Contains(e.Error(), "marker_segments") {
-			t.Errorf("expected unknown-marker schema gap, got %v", e)
+		if e = doc.Validate("GET", watchPath, rec.Code, rec.Header().Get("Content-Type"), rec.Body.Bytes()); e != nil {
+			t.Errorf("watch spec: %v", e)
 		}
 
 	} else if !os.IsNotExist(e) {
 		t.Fatal(e)
+	}
+}
+
+func TestUnresolvedColdTitleDoesNotInventAPlayableSource(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 7}
+	key := frontend.RatingKey(1000000000000001)
+	calls := 0
+	exp := frontendtest.Experience{ItemFunc: func(context.Context, frontend.ItemRequest) (frontend.ItemDetail, error) {
+		return frontend.ItemDetail{Title: frontend.Title{Key: key, Type: "movie"}}, nil
+	}}
+	sessions := frontendtest.Sessions{PlanFunc: func(context.Context, frontend.PlanRequest) (frontend.PlayPlan, error) {
+		calls++
+		return frontend.PlayPlan{}, nil
+	}}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), frontend.Host{Identity: testDeviceIdentity(frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, viewer), Experience: exp, Sessions: sessions, SourceOffers: testSourceOffers{}, Capabilities: frontendtest.Capabilities{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/watch/"+ids.RatingKeyGUID(key), nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	r.Header.Set("X-Silo-Device-Id", "tv")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || calls != 0 || !strings.Contains(w.Body.String(), `"versions":[]`) {
+		t.Fatalf("invented source: %d %s calls=%d", w.Code, w.Body.String(), calls)
 	}
 }

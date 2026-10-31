@@ -15,7 +15,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/livetv"
 	"github.com/braedonsaunders/ether/internal/tmdb"
 	"net/url"
-	"strconv"
+	"sync"
 	"time"
 )
 
@@ -59,7 +59,51 @@ func (a Source) title(ctx context.Context, key core.RatingKey) (*core.Title, err
 	}
 	return a.Catalog.StoredTitle(ctx, key)
 }
+
+type visMemoKey struct{}
+
+type visMemo struct {
+	mu   sync.Mutex
+	seen map[core.RatingKey]bool
+	val  map[core.RatingKey]bool
+}
+
+func withVisMemo(ctx context.Context) context.Context {
+	if ctx.Value(visMemoKey{}) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, visMemoKey{}, &visMemo{})
+}
+
 func (a Source) visible(ctx context.Context, v *core.User, t *core.Title) bool {
+	if t == nil {
+		return false
+	}
+	memo, _ := ctx.Value(visMemoKey{}).(*visMemo)
+	if memo != nil {
+		memo.mu.Lock()
+		if memo.seen[t.Key] {
+			ok := memo.val[t.Key]
+			memo.mu.Unlock()
+			return ok
+		}
+		memo.mu.Unlock()
+	}
+	ok := a.judgeVisible(ctx, v, t)
+	if memo != nil {
+		memo.mu.Lock()
+		if memo.seen == nil {
+			memo.seen = map[core.RatingKey]bool{}
+			memo.val = map[core.RatingKey]bool{}
+		}
+		memo.seen[t.Key] = true
+		memo.val[t.Key] = ok
+		memo.mu.Unlock()
+	}
+	return ok
+}
+
+func (a Source) judgeVisible(ctx context.Context, v *core.User, t *core.Title) bool {
 	vis := a.Visibility
 	vis.GetTitle = a.title
 	return vis.Visible(ctx, v, t)
@@ -107,6 +151,7 @@ func (a Source) ChannelImage(viewer *core.Viewer, channel livetv.Channel) fronte
 }
 
 func (a Source) entries(ctx context.Context, req frontend.ArtworkRequest) ([]frontendArtworkEntry, bool, error) {
+	ctx = withVisMemo(ctx)
 	if req.Viewer == nil || ((req.Item == 0) == (req.Channel == "")) {
 		return nil, false, core.ErrUnauthorized
 	}
@@ -229,18 +274,12 @@ func (a Source) entries(ctx context.Context, req frontend.ArtworkRequest) ([]fro
 				}
 			}
 		}
-		for _, group := range []struct {
-			kind   string
-			people []core.Person
-		}{{"actor", title.Cast}, {"director", title.Directors}, {"writer", title.Writers}} {
-			for _, person := range group.people {
-				if person.ThumbPath == "" || person.TMDB <= 0 {
-					continue
-				}
-				id := base64.RawURLEncoding.EncodeToString([]byte(person.ThumbPath))
-				subject := "tmdb:" + strconv.FormatInt(person.TMDB, 10)
-				add(frontend.ImagePerson, group.kind+"\x00"+subject+"\x00"+person.ThumbPath, frontendArtworkEntry{personKind: group.kind, personID: id, subject: subject})
-			}
+		for _, portrait := range creditedPortraits(*title) {
+			add(frontend.ImagePerson, portrait.source, frontendArtworkEntry{
+				personKind: portrait.role,
+				personID:   base64.RawURLEncoding.EncodeToString([]byte(portrait.thumb)),
+				subject:    portrait.subject,
+			})
 		}
 	}
 	return entries, complete, nil

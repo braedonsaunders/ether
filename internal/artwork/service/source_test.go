@@ -35,6 +35,31 @@ type imageTransport func(*http.Request) (*http.Response, error)
 
 func (f imageTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestListChecksVisibilityOnce(t *testing.T) {
+	ctx := context.Background()
+	key := core.MovieKey(550)
+	catalog := storedArtwork{key: {Key: key, Type: core.TypeMovie, PosterPath: "/poster550.jpg", BackdropPath: "/back.jpg", LogoPath: "/logo.jpg", Released: time.Unix(1, 0)}}
+	viewer := &core.User{ID: 7, IsOwner: true}
+	var checks int
+	source := Source{
+		Catalog: catalog,
+		Visibility: experience.Visibility{
+			Policy: &artworkPolicy{viewer: viewer},
+			FilterAvailable: func(context.Context, []core.Title) []core.Title {
+				checks++
+				return []core.Title{{}}
+			},
+		},
+		Variants: func(*core.Title, string) (*tmdb.Images, bool) { return nil, false },
+	}
+	if _, _, err := source.List(ctx, frontend.ArtworkRequest{Viewer: viewer, Item: key}); err != nil {
+		t.Fatal(err)
+	}
+	if checks != 1 {
+		t.Fatalf("visibility checks %d, want 1", checks)
+	}
+}
+
 func TestNeutralArtworkColdSelectionRevocationAndReferences(t *testing.T) {
 	ctx := context.Background()
 	key := core.MovieKey(550)

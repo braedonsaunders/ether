@@ -488,7 +488,10 @@ type Store struct {
 	credentialKey []byte
 	mu            sync.RWMutex
 	cfg           Config
-	subs          []func(Config)
+	// generation changes whenever the live config is replaced, so readers
+	// can reuse a derived snapshot until the next successful update.
+	generation uint64
+	subs       []func(Config)
 	// syncDir is the post-rename directory-sync step used by save. Open
 	// sets it to syncDirAfterRename (production: skipped on Windows);
 	// tests may replace it per Store to inject a post-rename failure.
@@ -676,6 +679,14 @@ func (s *Store) Get() Config {
 	return clone(s.cfg)
 }
 
+// Generation changes when the live config is replaced. It does not change
+// when a save is rolled back, so a snapshot taken at this value stays valid.
+func (s *Store) Generation() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
+}
+
 // Update applies fn to a copy of the config, saves it and notifies subscribers.
 //
 // On a cluster node the shared part is written to the database with an
@@ -702,6 +713,7 @@ func (s *Store) update(fn func(*Config) error) error {
 		s.mu.Unlock()
 		return err
 	}
+	s.generation++
 	subs := append([]func(Config){}, s.subs...)
 	s.mu.Unlock()
 	for _, f := range subs {

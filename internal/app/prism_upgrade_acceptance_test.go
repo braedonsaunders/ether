@@ -23,6 +23,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/auth"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	"github.com/braedonsaunders/ether/internal/handles/capability"
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -403,6 +404,9 @@ func assertUpgradeBoundary(t *testing.T) {
 	known := store.KnownMigrations()
 	if known["playback"] != 4 {
 		t.Fatalf("playback version=%d want 4", known["playback"])
+	}
+	if known["sessions_source_offers"] != 1 {
+		t.Fatalf("sessions_source_offers version=%d, want1", known["sessions_source_offers"])
 	}
 	if known["capability_headers"] != 3 {
 		t.Fatalf("capability_headers version = %d, want 3", known["capability_headers"])
@@ -920,4 +924,114 @@ func TestPrismPlaybackPayloadFreshConstraints(t *testing.T) {
 		t.Fatalf("fresh playback version=%d", got)
 	}
 	assertPayloadWitnessUniqueness(t, db)
+}
+
+func TestSourceOfferMigrationFailureRepair(t *testing.T) {
+	ctx := context.Background()
+	check := func(t *testing.T, db *sql.DB) {
+		t.Helper()
+		if got := maxMigration(t, db, "sessions_source_offers"); got != 1 {
+			t.Fatalf("source offer migration %d", got)
+		}
+		var id int64
+		// Raw orphan payloads must fail the shared-header foreign key; the
+		// successful path uses the common transactional admission authority.
+		err := db.QueryRow(`INSERT INTO sessions_source_offers(namespace,digest,item_id,kind,reference,revision) VALUES('sessions.source-offer','missing',1,'version','reference','') RETURNING id`).Scan(&id)
+		if err == nil {
+			t.Fatal("orphan source offer accepted")
+		}
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		digest := strings.Repeat("a", 64)
+		if err = capability.AdmitHeadersInTx(ctx, db, tx, []capability.Header{{HeaderScope: capability.HeaderScope{Namespace: "sessions.source-offer", ViewerID: 1, Surface: "silo", DeviceID: "tv"}, Digest: digest, ExpiresMillis: 9999999999999}}, capability.Limits{PerScope: 256, PerShard: 4096}); err != nil {
+			t.Fatal(err)
+		}
+		if err = tx.QueryRow(`INSERT INTO sessions_source_offers(namespace,digest,item_id,kind,reference,revision) VALUES('sessions.source-offer',?,1,'version','reference','') RETURNING id`, digest).Scan(&id); err != nil || id <= 2147483647 || id > 9007199254740991 {
+			t.Fatalf("identity range %d %v", id, err)
+		}
+		if err = tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(`DELETE FROM capability_headers WHERE namespace='sessions.source-offer' AND digest=?`, digest); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM sessions_source_offers`).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("header revocation failed cascade %d %v", count, err)
+		}
+	}
+	t.Run("sqlite", func(t *testing.T) {
+		dir := t.TempDir()
+		writeInstalledConfig(t, dir)
+		buildDeliveredDB(t, dir, func(db sqlQuery) {
+			if _, err := db.ExecContext(ctx, `CREATE TABLE sessions_source_offers(poison TEXT);INSERT INTO sessions_source_offers VALUES('retained')`); err != nil {
+				t.Fatal(err)
+			}
+		})
+		db, _, err := store.OpenWith(ctx, store.Options{DataDir: dir})
+		if err == nil {
+			db.Close()
+			t.Fatal("source migration collision accepted")
+		}
+		if !strings.Contains(err.Error(), "sessions_source_offers/1") {
+			t.Fatal(err)
+		}
+		repair := openSQLiteRW(t, filepath.Join(dir, "ether.db"))
+		if got := maxMigration(t, repair, "sessions_source_offers"); got != 0 {
+			t.Fatal("failed migration version committed")
+		}
+		var value string
+		if err = repair.QueryRow(`SELECT poison FROM sessions_source_offers`).Scan(&value); err != nil || value != "retained" {
+			t.Fatalf("collision changed %q %v", value, err)
+		}
+		var offset int64
+		if err = repair.QueryRow(`SELECT view_offset_ns FROM state_watch WHERE user_id=? AND rating_key=?`, upgradeOwnerID, upgradeRatingKey).Scan(&offset); err != nil || offset != upgradeViewOffset {
+			t.Fatalf("upgrade changed progress %d %v", offset, err)
+		}
+		if _, err = repair.Exec(`DROP TABLE sessions_source_offers`); err != nil {
+			t.Fatal(err)
+		}
+		repair.Close()
+		db, _, err = store.OpenWith(ctx, store.Options{DataDir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		check(t, db)
+	})
+	t.Run("postgres", func(t *testing.T) {
+		dsn := os.Getenv(store.TestPostgresEnv)
+		if dsn == "" {
+			t.Skip("ETHER_TEST_POSTGRES is not configured")
+		}
+		db := newPostgresSchema(t, dsn)
+		applyDelivered9503(t, db, store.Postgres)
+		seedDeliveredRows(t, db)
+		if _, err := db.Exec(`CREATE TABLE sessions_source_offers(poison TEXT);INSERT INTO sessions_source_offers VALUES('retained')`); err != nil {
+			t.Fatal(err)
+		}
+		before, err := store.AppliedMigrations(ctx, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = store.Migrate(ctx, db)
+		if err == nil || !strings.Contains(err.Error(), "sessions_source_offers/1") {
+			t.Fatalf("collision %v", err)
+		}
+		after, err := store.AppliedMigrations(ctx, db)
+		if err != nil || !reflect.DeepEqual(before, after) {
+			t.Fatalf("failed set did not roll back %v", err)
+		}
+		if _, err = db.Exec(`DROP TABLE sessions_source_offers`); err != nil {
+			t.Fatal(err)
+		}
+		if err = store.Migrate(ctx, db); err != nil {
+			t.Fatal(err)
+		}
+		check(t, db)
+		assertUpgradeInventory(t, db)
+	})
 }

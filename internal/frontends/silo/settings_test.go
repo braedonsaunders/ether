@@ -185,7 +185,7 @@ func TestRevisionEightSettingsRoundTrip(t *testing.T) {
 		return w
 	}
 	w := request("GET", "/api/v2/settings/contract/capabilities", "", i.settingsCapabilities, "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"manifest_revision":8`) || !strings.Contains(w.Body.String(), `"supports_batched_effective":true`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"manifest_revision":24`) || !strings.Contains(w.Body.String(), `"supports_batched_effective":true`) {
 		t.Fatalf("capabilities: %d %s", w.Code, w.Body.String())
 	}
 	var document *openapi.Document
@@ -229,7 +229,14 @@ func TestRevisionEightSettingsRoundTrip(t *testing.T) {
 				value = strconv.FormatFloat(d.minimum, 'f', -1, 64)
 			}
 		case "enum":
-			if key == "playback.preferred_quality" {
+			if d.numeric {
+				for _, choice := range d.choices {
+					if choice != value {
+						value = choice
+						break
+					}
+				}
+			} else if key == "playback.preferred_quality" {
 				value = `"original"`
 			} else {
 				for _, choice := range d.choices {

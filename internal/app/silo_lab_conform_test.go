@@ -4,6 +4,7 @@ package app
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/conform"
+	conformSilo "github.com/braedonsaunders/ether/internal/conform/silo"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/ids"
 )
@@ -95,20 +97,7 @@ func TestSiloLabConformance(t *testing.T) {
 	if refToken == "" {
 		t.Fatal("lab sign-in failed")
 	}
-	defer func() {
-		req, _ := http.NewRequest("POST", siloURL+"/api/v2/auth/logout", nil)
-		req.Header.Set("Authorization", "Bearer "+refToken)
-		req.Header.Set("X-Silo-Device-Id", refDevice)
-		res, e := client.Do(req)
-		if e == nil {
-			res.Body.Close()
-			if err := siloLabCleanupStatus("lab sign-out", res.StatusCode); err != nil {
-				t.Error(err)
-			}
-		} else {
-			t.Error("lab sign-out failed")
-		}
-	}()
+	defer siloLabLogout(t, client, siloURL, refToken, refDevice, "primary")
 	refProfiles := call(siloURL, "GET", "/api/v2/profiles", refToken, refDevice, nil)
 	profiles, _ := refProfiles["items"].([]any)
 	if len(profiles) == 0 {
@@ -258,7 +247,18 @@ func TestSiloLabConformance(t *testing.T) {
 			t.Errorf("target playback remained after broker close: id=%s prepared=%t", session.ID, session.PreparedOnly)
 		}
 	}()
-	srv := httptest.NewServer(inst.Handler())
+	coverage := &siloLabCoverage{}
+	profilesProtocol, err := conformSilo.Load("../conform/profiles/silo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	required := map[string][]conform.Request{}
+	for _, profile := range []string{"silo-apple", "silo-android"} {
+		required[profile] = profilesProtocol.Corpus(profile)
+	}
+	defer coverage.save(t, os.Getenv("LAB_REPORT_DIR"), required)
+	coverage.setPhase("setup")
+	srv := httptest.NewServer(coverage.handler("target", inst.Handler()))
 	defer srv.Close()
 	targetDevice := "silo-fixture-device"
 	targetLogin := call(srv.URL, "POST", "/api/v2/auth/login", "", targetDevice, map[string]any{"username": "fixture-viewer", "password": "fixture-password"})
@@ -279,7 +279,7 @@ func TestSiloLabConformance(t *testing.T) {
 	values := func(username, password, token, profile, library, item, file, installation, device string) map[string]string {
 		return map[string]string{"username": username, "password": password, "access_token": token, "profile_id": profile, "library_id": library, "item_id": item, "file_id": file, "installation_id": installation, "device_id": device, "duration_seconds": "634", "position_seconds": "10", "sequence": "1", "quality_preference": "auto", "app_version": "1.0.0", "app_build": "lab", "playback_attempt_id_direct": "direct", "playback_attempt_id_transcode": "transcode", "stop_id": "stop"}
 	}
-	refProxy, stopProxy := siloLabProbeProxy(t, siloURL, refDevice, refInstall)
+	refProxy, stopProxy := siloLabProbeProxy(t, siloURL, refDevice, refInstall, coverage)
 	defer stopProxy()
 	t.Logf("lab run devices reference=%s installation=%s target=%s installation=%s", refDevice, refInstall, targetDevice, targetInstall)
 	refVars := values(settings["SILO_ADULT_USER"], settings["SILO_ADULT_PASSWORD"], refToken, refProfile, refLibrary, refItem, refFile, refInstall, refDevice)
@@ -294,7 +294,9 @@ func TestSiloLabConformance(t *testing.T) {
 	}
 	refPath, targetPath := write("reference.json", refVars), write("target.json", targetVars)
 	for _, mode := range []string{"compare", "live"} {
+		var combined conform.Report
 		for _, profile := range []string{"silo-apple", "silo-android"} {
+			coverage.setPhase(mode + "/" + profile)
 			args := []string{"run", "./cmd/conformdiff", mode, "-protocol", "silo", "-client", profile, "-target", srv.URL, "-target-vars", targetPath, "-reference-vars", refPath, "-format", "json", "-timeout", "45s"}
 			if mode == "live" {
 				args = append(args, "-reference-server", refProxy)
@@ -307,6 +309,12 @@ func TestSiloLabConformance(t *testing.T) {
 			if err = json.Unmarshal(output, &report); err != nil {
 				t.Errorf("%s %s invalid report: %v", mode, profile, runErr)
 				continue
+			}
+			combined.Differences = append(combined.Differences, report.Differences...)
+			combined.Endpoints = append(combined.Endpoints, report.Endpoints...)
+			combined.ReferenceDefects = append(combined.ReferenceDefects, report.ReferenceDefects...)
+			if dir := os.Getenv("LAB_REPORT_DIR"); dir != "" {
+				writeSiloLabReport(t, filepath.Join(dir, "profiles", profile, mode+".json"), report)
 			}
 			t.Logf("%s %s blocking=%d", mode, profile, report.Blocking())
 			for _, d := range report.Differences {
@@ -333,6 +341,23 @@ func TestSiloLabConformance(t *testing.T) {
 				t.Errorf("target session cleanup left %d sessions", len(remaining))
 			}
 		}
+		if dir := os.Getenv("LAB_REPORT_DIR"); dir != "" {
+			writeSiloLabReport(t, filepath.Join(dir, "silo-"+mode+".json"), combined)
+		}
+	}
+}
+
+func writeSiloLabReport(t *testing.T, path string, report conform.Report) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -452,7 +477,7 @@ func siloLabHomeProgress(home map[string]any) []siloLabProgressEntry {
 	return entries
 }
 
-func siloLabProbeProxy(t *testing.T, base, device, installation string) (string, func()) {
+func siloLabProbeProxy(t *testing.T, base, device, installation string, captures ...*siloLabCoverage) (string, func()) {
 	t.Helper()
 	target, err := url.Parse(base)
 	if err != nil {
@@ -460,11 +485,15 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 	}
 	var mu sync.Mutex
 	issued := map[string]bool{}
-	sessions := map[string]string{}
+	type sessionAuthority struct{ authorization, profile, profileToken string }
+	sessions := map[string]sessionAuthority{}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	orig := proxy.Director
 	proxy.Director = func(r *http.Request) { orig(r); r.Host = target.Host }
 	proxy.ModifyResponse = func(r *http.Response) error {
+		for _, capture := range captures {
+			capture.add(capture.currentPhase(), "reference", r.Request, r.StatusCode)
+		}
 		if r.StatusCode >= 200 && r.StatusCode < 300 {
 			mu.Lock()
 			if r.Request.Method == "DELETE" && strings.HasPrefix(r.Request.URL.Path, "/api/v2/playback/") {
@@ -476,7 +505,7 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 			mu.Unlock()
 		}
 		login := r.StatusCode == 200 && r.Request.Method == "POST" && r.Request.URL.Path == "/api/v2/auth/login"
-		start := r.StatusCode == 201 && r.Request.Method == "POST" && r.Request.URL.Path == "/api/v2/playback/start"
+		start := r.StatusCode >= 200 && r.StatusCode < 300 && r.Request.Method == "POST" && r.Request.URL.Path == "/api/v2/playback/start"
 		if !login && !start {
 			return nil
 		}
@@ -489,21 +518,42 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 			return fmt.Errorf("probe response too large")
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
-		var data struct {
-			AccessToken string `json:"access_token"`
-			SessionID   string `json:"session_id"`
+		decoded := body
+		if strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
+			zipped, err := gzip.NewReader(bytes.NewReader(body))
+			if err != nil {
+				return fmt.Errorf("invalid compressed Silo response")
+			}
+			decoded, err = io.ReadAll(io.LimitReader(zipped, (1<<20)+1))
+			zipped.Close()
+			if err != nil || len(decoded) > 1<<20 {
+				return fmt.Errorf("invalid compressed Silo response")
+			}
 		}
-		if json.Unmarshal(body, &data) != nil {
-			return nil
+		var data struct {
+			AccessToken  string `json:"access_token"`
+			SessionID    string `json:"session_id"`
+			PlaybackPlan struct {
+				SessionID string `json:"session_id"`
+			} `json:"playback_plan"`
+		}
+		if json.Unmarshal(decoded, &data) != nil {
+			return fmt.Errorf("invalid Silo resource response")
 		}
 		mu.Lock()
 		defer mu.Unlock()
 		if login && data.AccessToken != "" {
 			issued[data.AccessToken] = true
 		}
+		if start && data.SessionID == "" {
+			data.SessionID = data.PlaybackPlan.SessionID
+		}
+		if start {
+			t.Logf("reference playback response status=%d session_observed=%t", r.StatusCode, data.SessionID != "")
+		}
 		if start && data.SessionID != "" {
 			t.Logf("reference session observed id=%s", data.SessionID)
-			sessions[data.SessionID] = r.Request.Header.Get("Authorization")
+			sessions[data.SessionID] = sessionAuthority{r.Request.Header.Get("Authorization"), r.Request.Header.Get("X-Profile-Id"), r.Request.Header.Get("X-Profile-Token")}
 		}
 		return nil
 	}
@@ -513,15 +563,23 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 		mu.Lock()
 		defer mu.Unlock()
 		client := &http.Client{Timeout: 15 * time.Second}
-		for id, auth := range sessions {
+		for id, authority := range sessions {
 			var n [16]byte
 			if _, e := rand.Read(n[:]); e != nil {
 				t.Error("unable to create cleanup id")
 				continue
 			}
-			raw, _ := json.Marshal(map[string]string{"installation_id": installation, "stop_id": hex.EncodeToString(n[:])})
+			n[6] = n[6]&0x0f | 0x40
+			n[8] = n[8]&0x3f | 0x80
+			text := hex.EncodeToString(n[:])
+			stopID := text[:8] + "-" + text[8:12] + "-" + text[12:16] + "-" + text[16:20] + "-" + text[20:]
+			raw, _ := json.Marshal(map[string]string{"installation_id": installation, "stop_id": stopID})
 			req, _ := http.NewRequest("DELETE", base+"/api/v2/playback/"+url.PathEscape(id), bytes.NewReader(raw))
-			req.Header.Set("Authorization", auth)
+			req.Header.Set("Authorization", authority.authorization)
+			req.Header.Set("X-Profile-Id", authority.profile)
+			if authority.profileToken != "" {
+				req.Header.Set("X-Profile-Token", authority.profileToken)
+			}
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Silo-Device-Id", device)
 			res, e := client.Do(req)
@@ -530,23 +588,15 @@ func siloLabProbeProxy(t *testing.T, base, device, installation string) (string,
 				continue
 			}
 			res.Body.Close()
+			t.Logf("silo_session_cleanup session=%s status=%d", id, res.StatusCode)
 			if err := siloLabCleanupStatus("lab session cleanup", res.StatusCode); err != nil {
 				t.Error(err)
 			}
 		}
+		n := 0
 		for token := range issued {
-			req, _ := http.NewRequest("POST", base+"/api/v2/auth/logout", nil)
-			req.Header.Set("Authorization", "Bearer "+token)
-			req.Header.Set("X-Silo-Device-Id", device)
-			res, e := client.Do(req)
-			if e != nil {
-				t.Error("lab probe sign-out failed")
-				continue
-			}
-			res.Body.Close()
-			if err := siloLabCleanupStatus("lab probe sign-out", res.StatusCode); err != nil {
-				t.Error(err)
-			}
+			n++
+			siloLabLogout(t, client, base, token, device, fmt.Sprintf("probe-%d", n))
 		}
 	}
 }
