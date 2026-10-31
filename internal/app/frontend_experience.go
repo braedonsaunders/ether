@@ -255,6 +255,9 @@ func (a *App) newSurfaceExperience(protocol core.Protocol, artwork ...frontend.A
 		}
 		return out, nil
 	}}
+	if a.recommend != nil {
+		deps.Related = a.recommend
+	}
 	service, err := experience.NewService(deps)
 	if err != nil {
 		return nil, err

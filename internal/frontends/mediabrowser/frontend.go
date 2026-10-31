@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/braedonsaunders/ether/internal/frontend"
 	"github.com/braedonsaunders/ether/internal/frontend/kit/conformance"
@@ -126,6 +127,15 @@ func (i *instance) Handler() http.Handler {
 		inner = i.pages.wrap(inner, i.host.PageFreshness)
 	}
 	next := StripPrefix("/"+string(i.protocol), inner)
+	if i.protocol == "jellyfin" {
+		// Detail, resume, and Next Up publish blurhashes and aspect from rows
+		// already stored. The queue joins those rows only inside this budget;
+		// an idle worker never attaches them on its own.
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := frontend.WithSynchronousArtworkMetadata(r.Context(), 8*time.Second)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 	if i.protocol != "emby" {
 		return next
 	}

@@ -178,9 +178,7 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 	}
 	images, paths := i.gridImagesFor(r, titles), i.virtualPaths(r, viewer, keys)
 	i.fillSeriesTitles(r, viewer, titles)
-	if fieldSet(r)["mediasources"] {
-		r = i.pageEditions(r, viewer, keys)
-	}
+	r = i.pageEditions(r, viewer, keys)
 	items := make([]any, 0, len(titles))
 	for _, title := range titles {
 		item := i.itemDTO(title, states[title.Key])
@@ -203,6 +201,7 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 			item[key] = value
 		}
 		i.shapeJellyfinItem(r, viewer, item, title)
+		i.jellyfinListFacts(r, item, title)
 		i.jellyfinSeasonListFields(r, item, title)
 		if !latest {
 			i.jellyfinResumeFields(r, item)

@@ -351,6 +351,138 @@ func fetchLabPersonTMDB(ref labReferenceData, ids []string) map[string]int64 {
 	return out
 }
 
+var labReferenceMediaMemo = struct {
+	once   sync.Once
+	videos map[int64][]labTMDBVideo
+	movies map[int64][]any
+	shows  map[int64][]any
+}{}
+
+func labMemoVideos(id int64) []labTMDBVideo {
+	return labReferenceMediaMemo.videos[id]
+}
+
+func labRecommendationPage(id int64, tv bool) map[string]any {
+	results := labReferenceMediaMemo.movies[id]
+	if tv {
+		results = labReferenceMediaMemo.shows[id]
+	}
+	if results == nil {
+		results = []any{}
+	}
+	return map[string]any{"page": 1, "total_pages": 1, "total_results": len(results), "results": results}
+}
+
+func rememberLabReferenceMedia(t *testing.T, ref labReferenceData, movieID string) {
+	t.Helper()
+	labReferenceMediaMemo.once.Do(func() {
+		videos, movies := fetchLabReferenceMedia(ref, movieID)
+		labReferenceMediaMemo.videos = videos
+		labReferenceMediaMemo.movies = movies
+		labReferenceMediaMemo.shows = map[int64][]any{}
+		t.Logf("lab_reference_media trailers=%d recommendations=%d", len(videos[10378]), len(movies[10378]))
+	})
+}
+
+func fetchLabReferenceMedia(ref labReferenceData, movieID string) (map[int64][]labTMDBVideo, map[int64][]any) {
+	videos := map[int64][]labTMDBVideo{}
+	movies := map[int64][]any{}
+	if movieID == "" || ref.base == "" || ref.token == "" {
+		return videos, movies
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	get := func(path string, dest any) bool {
+		req, err := http.NewRequest("GET", strings.TrimRight(ref.base, "/")+path, nil)
+		if err != nil {
+			return false
+		}
+		req.Header.Set("X-Emby-Token", ref.token)
+		req.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+ref.device+`", Version="1", Token="`+ref.token+`"`)
+		resp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return false
+		}
+		return json.NewDecoder(resp.Body).Decode(dest) == nil
+	}
+	var detail struct {
+		RemoteTrailers []struct{ Name, Url string }
+	}
+	user := url.PathEscape(ref.user)
+	item := url.PathEscape(movieID)
+	if get("/Users/"+user+"/Items/"+item+"?Fields=RemoteTrailers", &detail) {
+		clips := make([]labTMDBVideo, 0, len(detail.RemoteTrailers))
+		for _, trailer := range detail.RemoteTrailers {
+			clip, ok := labTrailerVideo(trailer.Name, trailer.Url)
+			if ok {
+				clips = append(clips, clip)
+			}
+		}
+		if len(clips) > 0 {
+			videos[10378] = clips
+		}
+	}
+	var similar struct {
+		Items []struct {
+			Name, Type, PremiereDate string
+			ProviderIds              map[string]string
+		}
+	}
+	if get("/Items/"+item+"/Similar?Limit=20&Fields=ProviderIds,PremiereDate,Name,Type&UserId="+user, &similar) {
+		results := make([]any, 0, len(similar.Items))
+		for _, item := range similar.Items {
+			if item.Type != "" && item.Type != "Movie" {
+				continue
+			}
+			id, err := strconv.ParseInt(item.ProviderIds["Tmdb"], 10, 64)
+			if err != nil || id <= 0 || id == 10378 {
+				continue
+			}
+			date := "2008-01-01"
+			if len(item.PremiereDate) >= 10 {
+				date = item.PremiereDate[:10]
+			}
+			name := item.Name
+			if name == "" {
+				name = "Recommended"
+			}
+			results = append(results, map[string]any{"id": id, "title": name, "name": name, "release_date": date, "first_air_date": date})
+		}
+		movies[10378] = results
+	}
+	return videos, movies
+}
+
+func labTrailerVideo(name, raw string) (labTMDBVideo, bool) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return labTMDBVideo{}, false
+	}
+	host := strings.TrimPrefix(strings.ToLower(parsed.Host), "www.")
+	key := ""
+	site := ""
+	switch host {
+	case "youtube.com", "m.youtube.com", "music.youtube.com":
+		site, key = "YouTube", parsed.Query().Get("v")
+	case "youtu.be":
+		site, key = "YouTube", strings.Trim(parsed.Path, "/")
+	case "vimeo.com":
+		site, key = "Vimeo", strings.Trim(parsed.Path, "/")
+	default:
+		return labTMDBVideo{}, false
+	}
+	if key == "" || strings.Contains(key, "/") {
+		return labTMDBVideo{}, false
+	}
+	if name == "" {
+		name = "Trailer"
+	}
+	return labTMDBVideo{Name: name, Site: site, Key: key, Type: "Trailer", Official: true}, true
+}
+
 type labMediaPending struct {
 	kind, path      string
 	tmdb            int64
@@ -548,8 +680,10 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 				id, _ = strconv.ParseInt(parts[2], 10, 64)
 			}
 			var results []labTMDBVideo
-			if len(options) == 1 {
+			if len(options) == 1 && options[0].Videos != nil {
 				results = options[0].Videos[id]
+			} else {
+				results = labMemoVideos(id)
 			}
 			if results == nil {
 				results = []labTMDBVideo{}
@@ -559,8 +693,13 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 			return
 		}
 		if (strings.HasPrefix(r.URL.Path, "/3/movie/") || strings.HasPrefix(r.URL.Path, "/3/tv/")) && (strings.HasSuffix(r.URL.Path, "/recommendations") || strings.HasSuffix(r.URL.Path, "/similar")) {
+			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+			var id int64
+			if len(parts) >= 3 {
+				id, _ = strconv.ParseInt(parts[2], 10, 64)
+			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"page":1,"total_pages":1,"total_results":1,"results":[{"id":987654321,"title":"Future hidden title","name":"Future hidden title","release_date":"2099-01-01","first_air_date":"2099-01-01"}]}`)
+			_ = json.NewEncoder(w).Encode(labRecommendationPage(id, strings.Contains(r.URL.Path, "/tv/")))
 			return
 		}
 		http.NotFound(w, r)
@@ -673,6 +812,23 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	resp.Body.Close()
 	if e != nil {
 		t.Fatal(e)
+	}
+	var movieRefID string
+	for _, x := range listing.Items {
+		if x.Type == "Movie" && x.ProviderIds["Tmdb"] == "10378" {
+			movieRefID = x.Id
+			break
+		}
+	}
+	rememberLabReferenceMedia(t, jellyfinRef, movieRefID)
+	if len(labMemoVideos(10378)) > 0 {
+		if err := a.cfg.Update(func(c *config.Config) error {
+			c.Extras.Enabled = true
+			c.Extras.ResolverCommand = "/usr/bin/true"
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	seriesStudios := map[string][]string{}
 	for _, x := range listing.Items {

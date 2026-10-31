@@ -515,7 +515,9 @@ func (i *instance) browseRoutes() error {
 			i.jellyfinKnownVersionFacts(dto, shown)
 			jellyfinStudioFacts(dto, d.Title)
 			i.jellyfinDetailShell(dto)
-			if d.Title.RemoteTrailerURL != "" {
+			if trailers := jellyfinRemoteTrailers(d); len(trailers) > 0 {
+				dto["RemoteTrailers"] = trailers
+			} else if d.Title.RemoteTrailerURL != "" {
 				name := d.Title.RemoteTrailerName
 				if name == "" {
 					name = "Trailer"
@@ -689,6 +691,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 					item[key] = value
 				}
 				i.shapeJellyfinItem(r, v, item, title)
+				i.jellyfinListFacts(r, item, title)
 				i.jellyfinListFields(r, item, title)
 				items = append(items, item)
 			}
@@ -712,6 +715,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 			item[key] = value
 		}
 		i.shapeJellyfinItem(r, v, item, title)
+		i.jellyfinListFacts(r, item, title)
 		i.jellyfinListFields(r, item, title)
 		items = append(items, item)
 	}

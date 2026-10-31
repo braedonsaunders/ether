@@ -655,6 +655,78 @@ func seasonDisplayName(t frontend.Title) string {
 // jellyfinListFields drops list keys Jellyfin leaves off unless Fields asked
 // for them. Detail responses keep the item DTO. A season also drops runtime
 // unless media sources were requested.
+// jellyfinListFacts publishes subtitle and unplayed facts a library row can
+// know without embedding media sources. Resume movies omit the zero count
+// the season and series rows carry. A false subtitle flag stays absent.
+func (i *instance) jellyfinListFacts(r *http.Request, item map[string]any, title frontend.Title) {
+	if i == nil || i.protocol != "jellyfin" || item == nil {
+		return
+	}
+	if jellyfinProbedSubtitles(r, title.Key) {
+		item["HasSubtitles"] = true
+	}
+	if title.Type != "movie" || r == nil || strings.Contains(r.URL.Path, "/Resume") {
+		return
+	}
+	data, ok := item["UserData"].(map[string]any)
+	if !ok {
+		return
+	}
+	if _, exists := data["UnplayedItemCount"]; !exists {
+		data["UnplayedItemCount"] = 0
+	}
+}
+
+func jellyfinProbedSubtitles(r *http.Request, key frontend.RatingKey) bool {
+	if r == nil {
+		return false
+	}
+	cached, _ := r.Context().Value(editionPageKey{}).(map[frontend.RatingKey][]frontend.Version)
+	for _, version := range cached[key] {
+		if version.Media.Estimated || len(version.Media.Streams) == 0 {
+			continue
+		}
+		if mediaHasSubtitles(version.Media) {
+			return true
+		}
+	}
+	return false
+}
+
+func jellyfinRemoteTrailers(d frontend.ItemDetail) []any {
+	var out []any
+	for _, extra := range d.Extras {
+		if extra.Kind != "trailer" && extra.Kind != "teaser" {
+			continue
+		}
+		url, ok := remoteTrailerURL(extra.Source, extra.SourceID)
+		if !ok {
+			continue
+		}
+		name := extra.Title
+		if name == "" {
+			name = "Trailer"
+		}
+		out = append(out, map[string]string{"Name": name, "Url": url})
+	}
+	return out
+}
+
+func remoteTrailerURL(site, key string) (string, bool) {
+	site = strings.ToLower(strings.TrimSpace(site))
+	key = strings.TrimSpace(key)
+	if key == "" || strings.Contains(key, "/") || strings.Contains(key, "?") {
+		return "", false
+	}
+	switch site {
+	case "youtube":
+		return "https://www.youtube.com/watch?v=" + key, true
+	case "vimeo":
+		return "https://vimeo.com/" + key, true
+	}
+	return "", false
+}
+
 func (i *instance) jellyfinListFields(r *http.Request, item map[string]any, title frontend.Title) {
 	if i == nil || i.protocol != "jellyfin" {
 		return
@@ -757,7 +829,9 @@ func (i *instance) jellyfinResumeFields(r *http.Request, item map[string]any) {
 	}
 	if !fields["mediasources"] {
 		delete(item, "MediaSources")
-		delete(item, "HasSubtitles")
+		if has, ok := item["HasSubtitles"].(bool); !ok || !has {
+			delete(item, "HasSubtitles")
+		}
 	}
 	// Resume rows do not carry folder counts or the show's last-added date.
 	delete(item, "ChildCount")
@@ -1062,7 +1136,7 @@ type editionPageKey struct{}
 // MediaSources. Emby lists never embed them, and a Jellyfin list without
 // that field deletes the objects after they are built.
 func (i *instance) pageEditions(r *http.Request, viewer *frontend.Viewer, keys []frontend.RatingKey) *http.Request {
-	if i == nil || i.protocol != "jellyfin" || !fieldSet(r)["mediasources"] {
+	if i == nil || i.protocol != "jellyfin" {
 		return r
 	}
 	return i.withPageEditions(r, viewer, keys)

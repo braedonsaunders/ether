@@ -51,10 +51,13 @@ type ServiceDeps struct {
 	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
 	// CreditItems enumerates cached credit-title keys without browsing or hydration.
-	CreditItems           func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
-	AiredEpisodes         func(context.Context, core.RatingKey, int, int) (core.Page, error)
-	AddedTimes            func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
-	SimilarSource         func(context.Context, core.RatingKey, int) ([]core.Title, error)
+	CreditItems   func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
+	AiredEpisodes func(context.Context, core.RatingKey, int, int) (core.Page, error)
+	AddedTimes    func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
+	SimilarSource func(context.Context, core.RatingKey, int) ([]core.Title, error)
+	// Related is the same detail recommender Plex uses. Jellyfin and Emby
+	// Similar flatten its policy-filtered rows.
+	Related               core.Recommender
 	FilterRecommendations func(context.Context, *core.User, []core.Title) ([]core.Title, error)
 	Collections           core.Collections
 	Playlists             core.Playlists
@@ -1163,10 +1166,7 @@ func (s *Service) Similar(ctx context.Context, viewer *core.Viewer, device core.
 	if _, err = s.item(ctx, v, key); err != nil {
 		return frontend.SearchPage{}, err
 	}
-	if s.d.SimilarSource == nil {
-		return frontend.SearchPage{}, core.ErrNotFound
-	}
-	candidates, err := s.d.SimilarSource(ctx, key, 1000)
+	candidates, err := s.similarCandidates(ctx, v, key)
 	if err != nil {
 		return frontend.SearchPage{}, err
 	}
@@ -1204,6 +1204,33 @@ func (s *Service) Similar(ctx context.Context, viewer *core.Viewer, device core.
 		continuation = frontend.ContinuationMore
 	}
 	return frontend.SearchPage{Page: core.Page{Items: items[offset:end], Total: len(items)}, TotalExact: exact, Continuation: continuation}, nil
+}
+
+// similarCandidates uses the detail recommender when the host wired one, so
+// Jellyfin and Emby see the same policy-filtered related titles as Plex.
+func (s *Service) similarCandidates(ctx context.Context, viewer *core.User, key core.RatingKey) ([]core.Title, error) {
+	if s.d.Related != nil {
+		hubs, err := (DetailRelated{Source: s.d.Related, Visibility: s.d.Visibility, Get: s.d.CachedGet}).Rows(ctx, viewer, key, 1000)
+		if err != nil {
+			return nil, err
+		}
+		items := make([]core.Title, 0)
+		seen := map[core.RatingKey]bool{key: true}
+		for _, hub := range hubs {
+			for _, item := range hub.Items {
+				if seen[item.Key] {
+					continue
+				}
+				seen[item.Key] = true
+				items = append(items, item)
+			}
+		}
+		return items, nil
+	}
+	if s.d.SimilarSource == nil {
+		return nil, core.ErrNotFound
+	}
+	return s.d.SimilarSource(ctx, key, 1000)
 }
 
 // Ancestors returns only authorized parents, failing closed if a parent is hidden.
