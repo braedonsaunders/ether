@@ -106,6 +106,24 @@ func validImageSecret(secret string) (string, bool) {
 	return hex.EncodeToString(h[:]), true
 }
 func (s *ImageGrantService) authorized(ctx context.Context, viewer *core.Viewer, device core.Device, item core.RatingKey, channel string, image frontend.Image) error {
+	if strings.HasPrefix(image.Path, frontend.LibraryCollagePrefix) {
+		experience := s.experience()
+		if experience == nil {
+			return core.ErrNotAvailable
+		}
+		source, ok := experience.(frontend.LibraryCollageSource)
+		if !ok {
+			return core.ErrNotAvailable
+		}
+		got, err := source.LibraryCollage(ctx, viewer, device, image.Subject)
+		if err != nil {
+			return err
+		}
+		if frontend.SameImage(got, image) {
+			return nil
+		}
+		return core.ErrUnauthorized
+	}
 	if channel != "" {
 		if s.artwork == nil {
 			return core.ErrNotAvailable

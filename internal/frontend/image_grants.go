@@ -76,3 +76,13 @@ type ImagePageSigner interface {
 type ItemArtwork interface {
 	ItemArtwork(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]Image, bool, error)
 }
+
+// LibraryCollagePrefix marks a generated library-view collage. The remainder
+// is the hex identity of the view and the child posters it was built from.
+const LibraryCollagePrefix = "library-collage/"
+
+// LibraryCollageSource builds that collage for one library view. viewID is
+// the view GUID. A change in the child posters produces a different image.
+type LibraryCollageSource interface {
+	LibraryCollage(context.Context, *Viewer, Device, string) (Image, error)
+}

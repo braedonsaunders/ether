@@ -156,6 +156,7 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 			item["ChildCount"] = page.Total
 		}
 		i.attachViewMediaDates(r, v, view.ID, item)
+		i.attachLibraryCollage(r, v, viewNum, viewID, item)
 	}
 	return item, true
 }

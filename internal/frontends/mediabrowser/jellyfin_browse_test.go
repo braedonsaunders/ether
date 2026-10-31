@@ -861,3 +861,67 @@ func TestJellyfinEpisodeInheritsShowArtwork(t *testing.T) {
 		t.Fatal(grants.calls)
 	}
 }
+
+type collageGrantFake struct{ calls int }
+
+func (f *collageGrantFake) Issue(_ context.Context, r frontend.ImageGrantRequest) (string, error) {
+	if r.Credential != "grant" || r.Item == 0 || !strings.HasPrefix(r.Image.Path, frontend.LibraryCollagePrefix) || r.Image.Path != r.Image.Tag {
+		return "", errors.New("denied")
+	}
+	f.calls++
+	return "collage-secret", nil
+}
+func (*collageGrantFake) Revoke(context.Context, string, string) error { return nil }
+func (*collageGrantFake) Serve(http.ResponseWriter, *http.Request, string) {
+}
+
+type collageExperience struct {
+	frontendtest.Experience
+	image frontend.Image
+	calls int
+}
+
+func (c *collageExperience) LibraryCollage(context.Context, *frontend.Viewer, frontend.Device, string) (frontend.Image, error) {
+	c.calls++
+	return c.image, nil
+}
+
+func TestJellyfinLibraryCollagePublishesPrimaryAndParentTag(t *testing.T) {
+	viewID, err := ids.GUID(ids.View, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := frontend.LibraryCollagePrefix + strings.Repeat("ab", 32)
+	exp := &collageExperience{
+		Experience: frontendtest.Experience{
+			ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+				return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+			},
+			LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+				return frontend.Page{Total: 2}, nil
+			},
+		},
+		image: frontend.Image{Kind: frontend.ImagePoster, Path: ref, Tag: ref, Subject: viewID, Width: 640, Height: 640, BlurHash: "LGF5"},
+	}
+	grants := &collageGrantFake{}
+	i := &instance{protocol: "jellyfin", host: frontend.Host{Experience: exp, ImageGrants: grants}}
+	r := withSeriesStudioCache(httptest.NewRequest(http.MethodGet, "/UserViews", nil))
+	r.Header.Set("X-Emby-Token", "grant")
+	folder, ok := i.collectionFolder(r, &frontend.Viewer{ID: 1}, frontend.View{ID: "1", Name: "Movies", Type: "movie"})
+	if !ok {
+		t.Fatal("folder")
+	}
+	tags := folder["ImageTags"].(map[string]string)
+	hashes := folder["ImageBlurHashes"].(map[string]any)["Primary"].(map[string]string)
+	if tags["Primary"] != "collage-secret" || hashes["collage-secret"] != "LGF5" || folder["PrimaryImageAspectRatio"] != float64(1) {
+		t.Fatal(folder["ImageTags"], folder["ImageBlurHashes"], folder["PrimaryImageAspectRatio"])
+	}
+	movie := map[string]any{}
+	i.shapeJellyfinItem(r, &frontend.Viewer{ID: 1}, movie, frontend.Title{Key: core.MovieKey(5), Type: "movie", Title: "Movie"})
+	if movie["ParentId"] != viewID || movie["ParentPrimaryImageTag"] != "collage-secret" || movie["ParentPrimaryImageItemId"] != viewID {
+		t.Fatal(movie["ParentId"], movie["ParentPrimaryImageTag"], movie["ParentPrimaryImageItemId"])
+	}
+	if grants.calls != 1 || exp.calls != 1 {
+		t.Fatalf("grants %d collages %d", grants.calls, exp.calls)
+	}
+}
