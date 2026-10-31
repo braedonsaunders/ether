@@ -39,6 +39,15 @@ func TestEmbyItemDetailUsesKnownSourceFacts(t *testing.T) {
 	if _, ok := ambiguous["Size"]; ok {
 		t.Fatalf("selected an unspecified version: %#v", ambiguous)
 	}
+	richer := map[string]any{}
+	i.embyItemDetailDTO(richer, frontend.ItemDetail{Versions: []frontend.Version{
+		{Media: core.MediaInfo{Container: "mp4", Size: 10, BitrateKbps: 100, Streams: []core.StreamInfo{{Type: "video", Index: 0, Codec: "h264", Width: 1280, Height: 720}}}},
+		{FileName: "big.mp4", Media: core.MediaInfo{Container: "mp4", Size: 99, BitrateKbps: 8000, Streams: []core.StreamInfo{{Type: "video", Index: 0, Codec: "h264", Width: 3840, Height: 2160}, {Type: "audio", Index: 1, Codec: "aac"}}}},
+	}})
+	streams, _ := richer["MediaStreams"].([]any)
+	if richer["FileName"] != "big.mp4" || richer["Container"] != "mp4" || richer["MimeType"] != "video/mp4" || richer["Size"] != int64(99) || richer["Bitrate"] != 8000000 || richer["Width"] != 3840 || richer["Height"] != 2160 || len(streams) != 2 {
+		t.Fatalf("primary version: %#v", richer)
+	}
 	unsafe := map[string]any{}
 	i.embyItemDetailDTO(unsafe, frontend.ItemDetail{Versions: []frontend.Version{{FileName: "private/secret.mkv"}}})
 	if _, ok := unsafe["FileName"]; ok {
