@@ -129,6 +129,8 @@ type RowRequest struct {
 	ViewID    string
 	Item      core.RatingKey
 	Limit     int
+	// Purpose asks for one row. The zero value still returns the whole placement.
+	Purpose RowPurpose
 }
 
 // RowInteractionKind is a viewer action on an issued row or entry.

@@ -235,7 +235,7 @@ func (i *instance) browseRoutes() error {
 				http.Error(w, "Unavailable", 503)
 				return
 			}
-			rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: frontend.PlacementHome})
+			rows, err := i.host.Experience.Rows(r.Context(), frontend.RowRequest{Viewer: v, Device: device(r), Placement: frontend.PlacementHome, Purpose: purpose, Limit: queryInt(r, "Limit", 0)})
 			if err != nil {
 				http.Error(w, "Unavailable", 503)
 				return

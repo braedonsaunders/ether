@@ -687,6 +687,18 @@ func (s *Store) TrustedProxyCIDRs() []string {
 	return append([]string(nil), s.cfg.Server.TrustedProxyCIDRs...)
 }
 
+// Read returns the live config without cloning it. Callers must not mutate
+// the result or anything it points at. Browse paths use it so a page miss
+// does not marshal the whole config.
+func (s *Store) Read() Config {
+	if s == nil {
+		return Config{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg
+}
+
 // Generation changes when the live config is replaced. It does not change
 // when a save is rolled back, so a snapshot taken at this value stays valid.
 func (s *Store) Generation() uint64 {

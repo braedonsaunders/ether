@@ -151,6 +151,23 @@ func (e *Engine) buildAndStore(ctx context.Context, userID int64) (*userModel, e
 	return m, nil
 }
 
+// ModelReady reports whether a request can rank without waiting for a build.
+// A fresh viewer model or the generic model is enough. Plex still waits in
+// modelFor when neither exists; Jellyfin and Emby Next Up use this so a cold
+// start serves the un-personalized order instead.
+func (e *Engine) ModelReady(userID int64) bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	now := e.now()
+	fresh := func(m *userModel) bool {
+		return m != nil && now.Sub(m.builtAt) <= e.opts.ModelTTL
+	}
+	return fresh(e.models[userID]) || fresh(e.models[genericID])
+}
+
 // modelFor returns the viewer's model for a request. A stale model is
 // served while a rebuild runs. A viewer without a model gets the generic
 // model (and their own is queued); with wait set (owner preview) the call

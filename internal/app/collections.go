@@ -19,7 +19,7 @@ func (a *App) collectionOptions(cfg config.Config) []collections.Option {
 		Dir:      filepath.Join(dataDir, "cache", "images"),
 		ImageURL: a.tmdb.ImageURLFunc(),
 		Logger:   a.log.With("component", "images"),
-		Posters:  func() config.Posters { return a.cfg.Get().Posters },
+		Posters:  func() config.Posters { return a.cfg.Read().Posters },
 	})
 	renderer := artwork.NewRenderer(a.images, filepath.Join(dataDir, "cache", "posters"), a.log.With("component", "artwork"))
 	chat := llm.NewClient(llm.ClientOptions{Config: cfg.LLM, Logger: a.log.With("component", "llm")})
@@ -27,8 +27,8 @@ func (a *App) collectionOptions(cfg config.Config) []collections.Option {
 	return append([]collections.Option{
 		collections.WithTMDB(a.tmdb),
 		collections.WithArtwork(renderer, a.images),
-		collections.WithCatalogConfig(func() config.Catalog { return a.cfg.Get().Catalog }),
-		collections.WithTraktConfig(func() config.Trakt { return a.cfg.Get().Trakt }),
+		collections.WithCatalogConfig(func() config.Catalog { return a.cfg.Read().Catalog }),
+		collections.WithTraktConfig(func() config.Trakt { return a.cfg.Read().Trakt }),
 		collections.WithLLM(chat),
 		collections.WithUserAgent("Ether/" + a.opts.Version + " (+https://github.com/braedonsaunders/ether)"),
 	}, parityCollectionOptions()...)

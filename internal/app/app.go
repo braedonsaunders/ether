@@ -216,6 +216,8 @@ type App struct {
 	instanceLock      *instanceLock
 	closers           []func()
 	closeOnce         sync.Once
+	stopPrewarm       context.CancelFunc
+	prewarmDone       chan struct{}
 }
 
 // New builds every component. Nothing listens until Run.
@@ -389,7 +391,56 @@ func (a *App) build(ctx context.Context, cfg config.Config) error {
 			return err
 		}
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.stopPrewarm = cancel
+	a.prewarmDone = make(chan struct{})
+	go func() {
+		defer close(a.prewarmDone)
+		a.prewarmBrowse(ctx)
+	}()
 	return nil
+}
+
+// prewarmBrowse fills the catalog, statement and title caches before the first
+// viewer request. It does not block startup and a request during the warm-up
+// still reads the same data.
+func (a *App) prewarmBrowse(ctx context.Context) {
+	if a == nil || a.catalog == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			movies, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortAdded, Desc: true, Limit: 16, Filter: core.Filter{Type: core.TypeMovie, KnownAddedDate: true}})
+			shows, _ := a.catalog.Browse(ctx, core.BrowseQuery{Sort: core.SortTitle, Limit: 16, Filter: core.Filter{Type: core.TypeShow}})
+			keys := make([]core.RatingKey, 0, len(movies.Items)+len(shows.Items))
+			var show core.RatingKey
+			for _, title := range movies.Items {
+				keys = append(keys, title.Key)
+			}
+			for _, title := range shows.Items {
+				keys = append(keys, title.Key)
+				if show == 0 && title.Type == core.TypeShow {
+					show = title.Key
+				}
+			}
+			if show != 0 {
+				if episodes, err := a.catalog.Grandchildren(ctx, show); err == nil {
+					for _, episode := range episodes {
+						keys = append(keys, episode.Key)
+					}
+				}
+			}
+			if len(keys) > 0 {
+				_, _ = a.catalog.CachedGetMany(ctx, keys)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // applyConfig pushes an edited config into the running components.
@@ -670,6 +721,12 @@ func (a *App) housekeeping(ctx context.Context) {
 // Close releases every component in reverse order of construction.
 func (a *App) Close() {
 	a.closeOnce.Do(func() {
+		if a.stopPrewarm != nil {
+			a.stopPrewarm()
+		}
+		if a.prewarmDone != nil {
+			<-a.prewarmDone
+		}
 		for i := len(a.closers) - 1; i >= 0; i-- {
 			a.closers[i]()
 		}

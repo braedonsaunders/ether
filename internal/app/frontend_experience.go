@@ -27,7 +27,7 @@ func situationFor(req frontend.RowRequest) core.HomeSituation {
 func (a *App) configuredLibraries() []experience.Library {
 	movies, shows := "Movies", "TV Shows"
 	if a.cfg != nil {
-		c := a.cfg.Get()
+		c := a.cfg.Read()
 		if n := strings.TrimSpace(c.Server.MoviesLibraryName); n != "" {
 			movies = n
 		}
