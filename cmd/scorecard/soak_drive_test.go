@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -15,11 +16,12 @@ import (
 func TestRunSoakInjectsFaults(t *testing.T) {
 	var mu sync.Mutex
 	var faults []string
+	var ffmpeg atomic.Int32
 	ftyp := append([]byte{0, 0, 0, 0x18}, []byte("ftyp")...)
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/__scorecard/telemetry":
-			_ = json.NewEncoder(w).Encode(SoakSample{At: time.Now(), RSSBytes: 10 << 20, FDs: 4, Goroutines: 5, GPU: "no_device", Valid: true})
+			_ = json.NewEncoder(w).Encode(SoakSample{At: time.Now(), RSSBytes: 10 << 20, FDs: 4, Goroutines: 5, FFmpeg: int(ffmpeg.Load()), GPU: "no_device", Valid: true})
 		case r.URL.Path == "/__scorecard/fault":
 			var body struct{ Action string }
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -29,6 +31,7 @@ func TestRunSoakInjectsFaults(t *testing.T) {
 			signaled := 0
 			if strings.Contains(body.Action, "encoder") {
 				signaled = 1
+				ffmpeg.Store(0)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "signaled": signaled})
 		case r.URL.Path == "/library/sections":
@@ -41,6 +44,7 @@ func TestRunSoakInjectsFaults(t *testing.T) {
 			w.WriteHeader(http.StatusPartialContent)
 			_, _ = w.Write(ftyp)
 		case strings.Contains(r.URL.Path, "start.m3u8"):
+			ffmpeg.Store(1)
 			_, _ = w.Write([]byte("#EXTM3U\nseg.ts\n"))
 		case strings.HasSuffix(r.URL.Path, "seg.ts"):
 			_, _ = w.Write([]byte{0x47, 0x00})
