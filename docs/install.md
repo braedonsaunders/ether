@@ -458,8 +458,17 @@ restore. Sign in as the owner first, with:
 
 Sign-ins are rate limited and only open the restore actions on that page,
 for 15 minutes. Before setup is finished, the local network needs none.
-When `config.json` itself cannot be read, Ether treats setup as finished,
-offers no restore from the page and listens on `127.0.0.1` only.
+The recovery code also reaches whatever collects Ether's log: the system
+journal under systemd, `docker logs` in a container. Treat those as being as
+private as the data directory.
+
+When `config.json` itself cannot be read (or is not a settings file),
+Ether treats setup as finished, offers no restore from the page and listens
+on `127.0.0.1` only. In a container that loopback address is the
+container's own, so the page is unreachable from outside until the settings
+are fixed (`docker exec` into the container, or restore `config.json` into
+the volume); this is deliberate, so damaged settings never expose the
+server more than the owner chose.
 
 A restore counts once the restored server is about to serve. If it cannot
 start on the backup (a migration fails, the database is damaged, the
