@@ -148,6 +148,10 @@ func (e *Engine) buildAndStore(ctx context.Context, userID int64) (*userModel, e
 	e.mu.Unlock()
 	e.log.Debug("personalize: model built", "user", userID, "rows", len(m.rows), "took", m.took,
 		"confidence", fmt.Sprintf("%.2f", m.taste.Confidence))
+	if e.opts.OnBuilt != nil && userID != genericID {
+		id := userID
+		go e.opts.OnBuilt(id)
+	}
 	return m, nil
 }
 

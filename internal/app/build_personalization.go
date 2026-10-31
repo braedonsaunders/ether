@@ -124,6 +124,7 @@ func (a *App) buildPersonalization(ctx context.Context, cfg config.Config) error
 		},
 		ServerName: func() string { return a.cfg.Get().Server.FriendlyName },
 		Logger:     log.With("component", "personalize"),
+		OnBuilt:    a.refreshPersonalHomes,
 		// Background training waits while anyone is streaming.
 		Busy: func() bool {
 			if a.playback != nil && len(a.playback.Sessions()) > 0 {

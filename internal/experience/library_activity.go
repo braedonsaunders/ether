@@ -67,6 +67,14 @@ func (s *Service) latestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 		if !SectionAllowed(v, library.ID) {
 			continue
 		}
+		if group && s.d.RecentAir != nil && (library.Type == core.TypeMovie || library.Type == core.TypeShow) {
+			found, err := s.latestFromRecent(ctx, v, library, limit)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, found...)
+			continue
+		}
 		found := 0
 		for offset := 0; offset < activityScanLimit; {
 			fetch := min(max(limit*2, 50), 500)
@@ -142,6 +150,68 @@ func (s *Service) latestAdded(ctx context.Context, viewer *core.Viewer, _ core.D
 	})
 	if len(result) > limit {
 		result = result[:limit]
+	}
+	return result, nil
+}
+
+// UnplayedEpisodeCounts is the aired-episode badge for a list of shows and
+// seasons. It does not load those episodes.
+func (s *Service) UnplayedEpisodeCounts(ctx context.Context, viewer *core.Viewer, keys []core.RatingKey) (map[core.RatingKey]int, error) {
+	if s == nil || s.d.CountUnplayedAired == nil {
+		return nil, core.ErrNotAvailable
+	}
+	v, err := s.viewer(ctx, viewer)
+	if err != nil {
+		return nil, err
+	}
+	return s.d.CountUnplayedAired(ctx, v.ID, keys, v.MaxContentRating)
+}
+
+// latestFromRecent fills one library from the indexed air window. It stops
+// after a few windows so a played filter cannot walk the catalogue.
+func (s *Service) latestFromRecent(ctx context.Context, v *core.User, library Library, limit int) ([]frontend.LatestItem, error) {
+	window := min(max(limit, 16), 64)
+	var result []frontend.LatestItem
+	for offset := 0; offset < 256 && len(result) < limit; {
+		titles, done, err := s.d.RecentAir(ctx, library.Type, offset, window)
+		if err != nil {
+			return nil, err
+		}
+		if len(titles) == 0 {
+			break
+		}
+		keys := make([]core.RatingKey, len(titles))
+		for i := range titles {
+			keys[i] = titles[i].Key
+		}
+		var states map[core.RatingKey]core.WatchStatus
+		playedOnly, filterPlayed := frontend.LatestPlayedFilter(ctx)
+		if filterPlayed {
+			if s.d.State == nil {
+				return nil, core.ErrNotAvailable
+			}
+			states, err = s.d.State.GetMany(ctx, v.ID, keys)
+			if err != nil {
+				return nil, err
+			}
+		}
+		for i := range titles {
+			if titles[i].AddedAt.IsZero() || !s.visible(ctx, v, &titles[i]) {
+				continue
+			}
+			if filterPlayed && (states[titles[i].Key].ViewCount > 0) != playedOnly {
+				continue
+			}
+			value := titles[i].AddedAt
+			result = append(result, frontend.LatestItem{Title: titles[i], AddedAt: &value})
+			if len(result) == limit {
+				break
+			}
+		}
+		if done {
+			break
+		}
+		offset += window
 	}
 	return result, nil
 }

@@ -217,7 +217,7 @@ func (s *Server) hubInSections(h core.Hub, ids []int) bool {
 }
 
 func (s *Server) homeHubs(w http.ResponseWriter, r *http.Request, promotedOnly bool) {
-	ctx := r.Context()
+	ctx := withStoredPolicy(r.Context())
 	pr := FromContext(ctx)
 	q := r.URL.Query()
 	count := countParam(r, 12)
@@ -364,7 +364,7 @@ func (s *Server) handleHubs(w http.ResponseWriter, r *http.Request)         { s.
 func (s *Server) handlePromotedHubs(w http.ResponseWriter, r *http.Request) { s.homeHubs(w, r, true) }
 
 func (s *Server) handleContinueWatching(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx := withStoredPolicy(r.Context())
 	pr := FromContext(ctx)
 	mc := hubContainer()
 	mc.Hub = []model.Hub{s.renderHub(ctx, pr, s.continueHub(ctx, pr, cwGlobal, Section{}, countParam(r, 20)), hubCtx{})}
@@ -376,7 +376,7 @@ func (s *Server) handleContinueWatching(w http.ResponseWriter, r *http.Request) 
 // (/hubs/continueWatching/items, /hubs/home/continueWatching and
 // /hubs/sections/{id}/continueWatching/items).
 func (s *Server) handleContinueWatchingItems(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx := withStoredPolicy(r.Context())
 	pr := FromContext(ctx)
 	v, sec := cwGlobal, Section{}
 	if id, err := strconv.Atoi(chi.URLParam(r, "section")); err == nil {
@@ -414,7 +414,7 @@ func (s *Server) handleSectionHubs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx := r.Context()
+	ctx := withStoredPolicy(r.Context())
 	pr := FromContext(ctx)
 	count := countParam(r, 12)
 	mc := hubContainer()

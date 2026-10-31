@@ -376,3 +376,58 @@ func TestUserAndLibraryListsDoNotWaitForRows(t *testing.T) {
 		t.Fatal(warm.Code)
 	}
 }
+
+type savedHomeStore struct {
+	body []byte
+}
+
+func (s savedHomeStore) LoadPersonalHome(context.Context, string, int64, string) ([]byte, error) {
+	return append([]byte(nil), s.body...), nil
+}
+func (s savedHomeStore) SavePersonalHome(context.Context, string, int64, string, []byte) error {
+	return nil
+}
+func (s savedHomeStore) PersonalHomeViewers(context.Context) ([]frontend.Viewer, error) {
+	return []frontend.Viewer{{ID: 1, Username: "ada"}}, nil
+}
+
+func TestPersonalHomeFirstFetchServesSavedShelves(t *testing.T) {
+	block := make(chan struct{})
+	exp := frontendtest.Experience{
+		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+		},
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			<-block
+			return nil, context.Canceled
+		},
+	}
+	body, err := json.Marshal([]storedPersonalShelf{{Number: 1, WireID: "saved-shelf", Name: "Your 2025 in Review", Kind: "movies", Count: 4}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		v := frontend.Viewer{ID: 1, Username: "ada"}
+		return &v, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{
+		Identity: ident, Experience: exp, Sessions: frontendtest.Sessions{}, PersonalHomes: savedHomeStore{body: body},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { close(block) })
+	raw, ok := inst.(*instance)
+	if !ok {
+		t.Fatal("instance type")
+	}
+	raw.PreparePersonalHomes(context.Background())
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/UserViews", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	r.Header.Set("X-Emby-Device-Id", "living-room")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Your 2025 in Review") || !strings.Contains(w.Body.String(), "Movies") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}

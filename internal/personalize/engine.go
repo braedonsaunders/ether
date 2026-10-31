@@ -143,6 +143,9 @@ type Options struct {
 	ImpressionBuffer int           // queued impressions before dropping (default 4096)
 	FlushEvery       time.Duration // impression write interval (default 2s)
 	Ranker           RankerOptions // learned ranker (ranker.go)
+	// OnBuilt runs after a viewer model is stored. It must return quickly
+	// and must not build another model.
+	OnBuilt func(userID int64)
 }
 
 func (o *Options) defaults() {

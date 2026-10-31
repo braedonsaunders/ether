@@ -168,6 +168,9 @@ func (m *frontendListeners) start(ctx context.Context, id frontend.Protocol) err
 	if run.sharedDiscovery {
 		_ = m.discovery.add(id, discoveryEntry{responder: responder, endpoint: m.discoveryEndpoint})
 	}
+	if warm, ok := inst.(interface{ PreparePersonalHomes(context.Context) }); ok {
+		warm.PreparePersonalHomes(ctx)
+	}
 	for i, srv := range run.servers {
 		ln := run.listeners[i]
 		go func() {

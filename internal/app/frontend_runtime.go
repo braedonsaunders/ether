@@ -279,7 +279,7 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 				f.Grants = grants.Generation()
 			}
 			return f
-		}, Config: settings}
+		}, Config: settings, PersonalHomes: a.personalHomeDisk()}
 	})
 	r.control = newFrontendControl(r.registry, a.cfg)
 	r.control.listeners.log = a.log

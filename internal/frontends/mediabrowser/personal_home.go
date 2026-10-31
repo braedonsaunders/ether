@@ -138,8 +138,11 @@ type personalIdentitySlot struct {
 type personalIdentityCache struct {
 	mu       sync.Mutex
 	items    map[string]personalIdentitySlot
+	saved    map[string][]personalShelf
 	inflight map[string]bool
 }
+
+const personalWarmDevice = "ether-personal-home"
 
 type policyGeneration interface {
 	PolicyGeneration(context.Context) (int64, error)
@@ -166,8 +169,9 @@ func personalCacheKey(protocol string, v *frontend.Viewer, dev frontend.Device, 
 	return fmt.Sprintf("%s\n%d\n%s\n%t\n%d\n%s", protocol, v.ID, dev.ID, cfg.enabled, cfg.count, strings.Join(kinds, ","))
 }
 
-// personalShelves is the cached identity list. It never builds row items.
-// A cold cache answers empty and fills in the background.
+// personalShelves is the cached identity list. It never builds row items and
+// never waits on a model. A request serves the last list for this device, or
+// the last list saved for this viewer, and refreshes in the background.
 func (i *instance) personalShelves(r *http.Request, v *frontend.Viewer) []personalShelf {
 	cfg := i.personalConfig()
 	if !cfg.enabled || cfg.count == 0 || v == nil || i.host.Experience == nil {
@@ -181,13 +185,17 @@ func (i *instance) personalShelves(r *http.Request, v *frontend.Viewer) []person
 	gen := i.policyGeneration(r.Context())
 	i.personal.mu.Lock()
 	slot, ok := i.personal.items[key]
+	saved := i.personal.saved[personalSavedKey(string(i.protocol), v.ID, cfg)]
 	i.personal.mu.Unlock()
 	fresh := ok && time.Since(slot.at) < personalIdentityTTL && slot.gen == gen
 	if !fresh {
 		i.warmPersonalIdentities(key, gen, v, dev)
 	}
-	if ok && slot.gen == gen {
+	if ok && len(slot.shelves) > 0 {
 		return cloneShelves(slot.shelves)
+	}
+	if len(saved) > 0 {
+		return cloneShelves(saved)
 	}
 	return nil
 }
@@ -224,12 +232,10 @@ func (i *instance) warmPersonalIdentities(key string, gen int64, v *frontend.Vie
 			shelf.row.Handle = ""
 			identities[n] = shelf
 		}
-		i.personal.mu.Lock()
-		if i.personal.items == nil {
-			i.personal.items = map[string]personalIdentitySlot{}
+		if len(identities) == 0 {
+			return
 		}
-		i.personal.items[key] = personalIdentitySlot{at: time.Now(), gen: gen, shelves: identities}
-		i.personal.mu.Unlock()
+		i.storePersonalIdentities(key, gen, &viewer, identities)
 	}()
 }
 
@@ -237,6 +243,146 @@ func cloneShelves(in []personalShelf) []personalShelf {
 	out := make([]personalShelf, len(in))
 	copy(out, in)
 	return out
+}
+
+func personalSavedKey(protocol string, viewerID int64, cfg personalHomeConfig) string {
+	return fmt.Sprintf("%s\n%d\n%s", protocol, viewerID, personalConfigKey(cfg))
+}
+
+func personalConfigKey(cfg personalHomeConfig) string {
+	kinds := make([]string, 0, len(cfg.kinds))
+	for kind := range cfg.kinds {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	return fmt.Sprintf("%t\n%d\n%s", cfg.enabled, cfg.count, strings.Join(kinds, ","))
+}
+
+type storedPersonalShelf struct {
+	Number int64  `json:"number"`
+	WireID string `json:"wireID"`
+	Name   string `json:"name"`
+	Kind   string `json:"kind"`
+	Count  int    `json:"count"`
+}
+
+func encodeShelves(in []personalShelf) ([]byte, error) {
+	out := make([]storedPersonalShelf, len(in))
+	for i, shelf := range in {
+		out[i] = storedPersonalShelf{Number: shelf.number, WireID: shelf.wireID, Name: shelf.name, Kind: shelf.kind, Count: shelf.count}
+	}
+	return json.Marshal(out)
+}
+
+func decodeShelves(body []byte) ([]personalShelf, error) {
+	var stored []storedPersonalShelf
+	if err := json.Unmarshal(body, &stored); err != nil {
+		return nil, err
+	}
+	out := make([]personalShelf, 0, len(stored))
+	for _, shelf := range stored {
+		if shelf.WireID == "" || shelf.Name == "" {
+			continue
+		}
+		out = append(out, personalShelf{number: shelf.Number, wireID: shelf.WireID, name: shelf.Name, kind: shelf.Kind, count: shelf.Count})
+	}
+	return out, nil
+}
+
+func (i *instance) storePersonalIdentities(key string, gen int64, v *frontend.Viewer, identities []personalShelf) {
+	cfg := i.personalConfig()
+	i.personal.mu.Lock()
+	if i.personal.items == nil {
+		i.personal.items = map[string]personalIdentitySlot{}
+	}
+	if i.personal.saved == nil {
+		i.personal.saved = map[string][]personalShelf{}
+	}
+	i.personal.items[key] = personalIdentitySlot{at: time.Now(), gen: gen, shelves: identities}
+	savedKey := personalSavedKey(string(i.protocol), v.ID, cfg)
+	i.personal.saved[savedKey] = cloneShelves(identities)
+	prefix := fmt.Sprintf("%s\n%d\n", i.protocol, v.ID)
+	for existing := range i.personal.items {
+		if existing != key && strings.HasPrefix(existing, prefix) {
+			delete(i.personal.items, existing)
+		}
+	}
+	i.personal.mu.Unlock()
+	if i.host.PersonalHomes == nil {
+		return
+	}
+	body, err := encodeShelves(identities)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(i.life, 2*time.Second)
+	defer cancel()
+	if err := i.host.PersonalHomes.SavePersonalHome(ctx, string(i.protocol), v.ID, personalConfigKey(cfg), body); err != nil && i.host.Log != nil {
+		i.host.Log.Warn("personal home save", "err", err)
+	}
+}
+
+// PreparePersonalHomes loads the last saved library list before the listener
+// accepts clients, then refreshes each viewer without waiting for a model.
+func (i *instance) PreparePersonalHomes(ctx context.Context) {
+	if i.host.PersonalHomes == nil {
+		return
+	}
+	cfg := i.personalConfig()
+	if !cfg.enabled || cfg.count == 0 {
+		return
+	}
+	users, err := i.host.PersonalHomes.PersonalHomeViewers(ctx)
+	if err != nil {
+		return
+	}
+	for _, user := range users {
+		body, err := i.host.PersonalHomes.LoadPersonalHome(ctx, string(i.protocol), user.ID, personalConfigKey(cfg))
+		if err != nil || len(body) == 0 {
+			continue
+		}
+		shelves, err := decodeShelves(body)
+		if err != nil || len(shelves) == 0 {
+			continue
+		}
+		i.personal.mu.Lock()
+		if i.personal.saved == nil {
+			i.personal.saved = map[string][]personalShelf{}
+		}
+		i.personal.saved[personalSavedKey(string(i.protocol), user.ID, cfg)] = shelves
+		i.personal.mu.Unlock()
+	}
+	dev := frontend.Device{ID: personalWarmDevice, Client: "Ether"}
+	gen := i.policyGeneration(ctx)
+	for _, user := range users {
+		viewer := user
+		key := personalCacheKey(string(i.protocol), &viewer, dev, cfg)
+		i.warmPersonalIdentities(key, gen, &viewer, dev)
+	}
+}
+
+// RefreshPersonalHome rebuilds one viewer's libraries after a model lands.
+// It does not wait for the build that just finished.
+func (i *instance) RefreshPersonalHome(userID int64) {
+	if i.host.PersonalHomes == nil || userID == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(i.life, 2*time.Second)
+	defer cancel()
+	users, err := i.host.PersonalHomes.PersonalHomeViewers(ctx)
+	if err != nil {
+		return
+	}
+	cfg := i.personalConfig()
+	dev := frontend.Device{ID: personalWarmDevice, Client: "Ether"}
+	for _, user := range users {
+		if user.ID != userID {
+			continue
+		}
+		viewer := user
+		i.warmPersonalIdentities(personalCacheKey(string(i.protocol), &viewer, dev, cfg), i.policyGeneration(ctx), &viewer, dev)
+		return
+	}
 }
 
 func (i *instance) loadPersonalShelves(ctx context.Context, v *frontend.Viewer, dev frontend.Device) []personalShelf {

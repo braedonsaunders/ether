@@ -359,6 +359,16 @@ func (i *instance) attachUnplayedCount(r *http.Request, viewer *frontend.Viewer,
 	if title.Type != "show" && title.Type != "season" {
 		return
 	}
+	if counts, ok := unplayedCountsFrom(r); ok {
+		if n, found := counts[title.Key]; found {
+			data, ok := item["UserData"].(map[string]any)
+			if !ok {
+				return
+			}
+			data["UnplayedItemCount"] = n
+			return
+		}
+	}
 	var episodes []frontend.RatingKey
 	if local, ok := i.host.Experience.(interface {
 		LocalEpisodes(context.Context, *frontend.Viewer, frontend.RatingKey) ([]frontend.Title, bool, error)

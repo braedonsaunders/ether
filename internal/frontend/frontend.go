@@ -291,6 +291,17 @@ type Host struct {
 	ClientIP func(*http.Request) (netip.Addr, bool)
 	// PageFreshness invalidates cached browse bodies. Nil disables the cache.
 	PageFreshness func() PageFreshness
+	// PersonalHomes keeps the last personalized library list so the first
+	// UserViews after a restart can include it. Nil keeps that list in memory.
+	PersonalHomes PersonalHomeStore
+}
+
+// PersonalHomeStore persists one viewer's personalized library list.
+// The body is an opaque JSON document owned by the Media Browser frontend.
+type PersonalHomeStore interface {
+	LoadPersonalHome(ctx context.Context, protocol string, viewerID int64, config string) ([]byte, error)
+	SavePersonalHome(ctx context.Context, protocol string, viewerID int64, config string, body []byte) error
+	PersonalHomeViewers(ctx context.Context) ([]core.User, error)
 }
 
 // PageFreshness is every input of a cached browse response. A change drops

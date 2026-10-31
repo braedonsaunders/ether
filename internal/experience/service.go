@@ -62,7 +62,11 @@ type ServiceDeps struct {
 	CreditItems   func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
 	AiredEpisodes func(context.Context, core.RatingKey, int, int) (core.Page, error)
 	AddedTimes    func(context.Context, []core.RatingKey) (map[core.RatingKey]time.Time, error)
-	SimilarSource func(context.Context, core.RatingKey, int) ([]core.Title, error)
+	// RecentAir is the indexed date-added window. Nil keeps the catalogue scan.
+	RecentAir func(context.Context, core.MediaType, int, int) ([]core.Title, bool, error)
+	// CountUnplayedAired counts aired episodes with no play. Nil keeps the episode list.
+	CountUnplayedAired func(context.Context, int64, []core.RatingKey, string) (map[core.RatingKey]int, error)
+	SimilarSource      func(context.Context, core.RatingKey, int) ([]core.Title, error)
 	// Related is the same detail recommender Plex uses. Jellyfin and Emby
 	// Similar flatten its policy-filtered rows.
 	Related               core.Recommender

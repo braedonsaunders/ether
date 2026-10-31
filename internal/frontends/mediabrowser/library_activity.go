@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -177,6 +178,9 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 }
 
 func (i *instance) writeListedTitles(w http.ResponseWriter, r *http.Request, viewer *frontend.Viewer, titles []frontend.Title, added map[frontend.RatingKey]any, total int, totalExact bool, offset int, latest bool) {
+	if latest {
+		r = i.noteUnplayedCounts(r, viewer, titles)
+	}
 	keys := make([]frontend.RatingKey, 0, len(titles))
 	for _, title := range titles {
 		keys = append(keys, title.Key)
@@ -229,4 +233,41 @@ func (i *instance) writeListedTitles(w http.ResponseWriter, r *http.Request, vie
 		}
 		i.replyItems(w, r, result)
 	}
+}
+
+type unplayedCountKey struct{}
+
+func withUnplayedCounts(r *http.Request, counts map[frontend.RatingKey]int) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), unplayedCountKey{}, counts))
+}
+
+func unplayedCountsFrom(r *http.Request) (map[frontend.RatingKey]int, bool) {
+	if r == nil {
+		return nil, false
+	}
+	counts, ok := r.Context().Value(unplayedCountKey{}).(map[frontend.RatingKey]int)
+	return counts, ok && counts != nil
+}
+
+func (i *instance) noteUnplayedCounts(r *http.Request, viewer *frontend.Viewer, titles []frontend.Title) *http.Request {
+	counter, ok := i.host.Experience.(interface {
+		UnplayedEpisodeCounts(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]int, error)
+	})
+	if !ok {
+		return r
+	}
+	keys := make([]frontend.RatingKey, 0, len(titles))
+	for _, title := range titles {
+		if title.Type == "show" || title.Type == "season" {
+			keys = append(keys, title.Key)
+		}
+	}
+	if len(keys) == 0 {
+		return r
+	}
+	counts, err := counter.UnplayedEpisodeCounts(r.Context(), viewer, keys)
+	if err != nil {
+		return r
+	}
+	return withUnplayedCounts(r, counts)
 }

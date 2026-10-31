@@ -9,6 +9,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/catalog"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
+	_ "github.com/braedonsaunders/ether/internal/state"
 )
 
 func TestGetMovieOnDemand(t *testing.T) {
@@ -458,5 +459,50 @@ func TestStatsCacheAndTimeoutFallback(t *testing.T) {
 	}
 	if s2.BrowsableMovies != 4 || s2.HomeReleasePending != 4 {
 		t.Fatalf("updated stats: %+v", s2)
+	}
+}
+
+func TestRecentAirMatchesAddedOrder(t *testing.T) {
+	ctx := context.Background()
+	c := newTestCatalog(t, fakeTMDB(t))
+	if err := c.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []core.RatingKey{core.ShowKey(100), core.EpisodeKey(100, 1, 1), core.EpisodeKey(100, 1, 2), core.EpisodeKey(100, 2, 1)} {
+		if _, err := c.Get(ctx, key); err != nil {
+			t.Fatal(key, err)
+		}
+	}
+	page, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeMovie, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, done, err := c.RecentAir(ctx, core.TypeMovie, 0, 5)
+	if err != nil || !done {
+		t.Fatalf("movies: %v done=%v", err, done)
+	}
+	if len(got) != len(page.Items) {
+		t.Fatalf("movies %d vs browse %d", len(got), len(page.Items))
+	}
+	for i := range got {
+		if got[i].Key != page.Items[i].Key || got[i].AddedAt.IsZero() {
+			t.Fatalf("movie %d: got %v %v browse %v", i, got[i].Key, got[i].AddedAt, page.Items[i].Key)
+		}
+	}
+	shows, _, err := c.RecentAir(ctx, core.TypeShow, 0, 5)
+	if err != nil || len(shows) != 1 || shows[0].Key != core.ShowKey(100) || shows[0].AddedAt.IsZero() {
+		t.Fatalf("show: %+v %v", shows, err)
+	}
+	counts, err := c.CountUnplayedAired(ctx, 1, []core.RatingKey{core.ShowKey(100), core.SeasonKey(100, 1)}, "")
+	if err != nil || counts[core.ShowKey(100)] != 3 || counts[core.SeasonKey(100, 1)] != 2 {
+		t.Fatalf("unplayed %+v %v", counts, err)
+	}
+	showPage, err := c.Browse(ctx, core.BrowseQuery{Filter: core.Filter{Type: core.TypeShow, KnownAddedDate: true}, Sort: core.SortAdded, Desc: true, Limit: 5})
+	if err != nil || len(showPage.Items) == 0 || !shows[0].AddedAt.Equal(showPage.Items[0].AddedAt) {
+		added := time.Time{}
+		if len(showPage.Items) > 0 {
+			added = showPage.Items[0].AddedAt
+		}
+		t.Fatalf("show added %v browse %v err %v", shows[0].AddedAt, added, err)
 	}
 }

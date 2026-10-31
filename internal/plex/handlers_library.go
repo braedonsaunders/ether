@@ -781,6 +781,28 @@ func (s *Server) inProgressTitles(ctx context.Context, pr *Request, t core.Media
 // getTitles fetches titles concurrently, preserving order and skipping
 // failures.
 func (s *Server) getTitles(ctx context.Context, keys []core.RatingKey) []core.Title {
+	if ctx != nil && ctx.Value(storedPolicyKey{}) != nil {
+		if cached, ok := s.d.Catalog.(interface {
+			CachedGetMany(context.Context, []core.RatingKey) (map[core.RatingKey]core.Title, error)
+		}); ok {
+			got, err := cached.CachedGetMany(ctx, keys)
+			if err != nil || len(got) == 0 {
+				return nil
+			}
+			out := make([]core.Title, 0, len(got))
+			seen := map[core.RatingKey]bool{}
+			for _, k := range keys {
+				if seen[k] {
+					continue
+				}
+				seen[k] = true
+				if t, ok := got[k]; ok {
+					out = append(out, t)
+				}
+			}
+			return out
+		}
+	}
 	res := make([]*core.Title, len(keys))
 	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup

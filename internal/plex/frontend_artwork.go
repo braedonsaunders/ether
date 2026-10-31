@@ -53,8 +53,27 @@ func (a FrontendArtwork) ChannelImage(v *core.Viewer, c livetv.Channel) frontend
 	return a.source().ChannelImage(v, c)
 }
 
+type storedPolicyKey struct{}
+
+// withStoredPolicy tells a hub list to read the parent show from the mirror.
+// A provider refresh of one series must not hold Recommended.
+func withStoredPolicy(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, storedPolicyKey{}, true)
+}
+
 // Ordinary Plex routes retain their existing catalogue Get refresh behavior.
+// Hub lists use the mirrored show for the playable check.
 func (s *Server) artworkTitle(ctx context.Context, key core.RatingKey) (*core.Title, error) {
+	if ctx != nil && ctx.Value(storedPolicyKey{}) != nil {
+		if cached, ok := s.d.Catalog.(interface {
+			CachedGet(context.Context, core.RatingKey) (*core.Title, error)
+		}); ok {
+			return cached.CachedGet(ctx, key)
+		}
+	}
 	return s.d.Catalog.Get(ctx, key)
 }
 func renderUltraBlur(c model.UltraBlurColors, tr frontend.ArtworkTransform) ([]byte, string, error) {
