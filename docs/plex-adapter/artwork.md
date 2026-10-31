@@ -1,6 +1,6 @@
 # Artwork extraction checkpoint
 
-Public-only base: `b4ef791d53a68741c0f1513071328594b62eb9ed` (`origin/prism`).
+Public-only base: `b4ef791d53a68741c0f1513071328594b62eb9ed`.
 No private RC/security work is included. No public push or runtime deployment.
 
 ## Initial checkpoint boundary (historical)
@@ -106,7 +106,7 @@ New tests cover local-owner/Plex-disabled app construction, image reads and stat
 events with no Server, enable-on-demand, neutral cold selection/revocation,
 stored parent lookup, and discovery opaque identity/byte equivalence to Plex.
 Existing app authorization tests now use the actual neutral source. No claim of
-full-project Prism consolidation or native-client certification is made.
+full-project multi-app consolidation or native-client certification is made.
 
 Suggested successor gate (requires root allocation):
 

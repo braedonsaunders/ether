@@ -2,7 +2,7 @@
   "build": "e3792dab4 plus the library-refresh fix; measured before fast-forward to 1a25b7273",
   "provisional": false,
   "provisional_reason": "Matched 2 CPU and 6GB. Ether movies stay collapsed and seasons are still omitted. Playback and browse numbers are from that build, not a remeasure after 1a25b7273.",
-  "target": "prism-scorecard-h2h",
+  "target": "scorecard-h2h",
   "limits": {
     "loadavg": "14.84 13.08 13.00 7/1668 3658251",
     "meminfo_kb": {

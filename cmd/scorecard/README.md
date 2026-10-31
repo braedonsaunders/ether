@@ -1,7 +1,7 @@
 # HTTP latency measurement (experimental)
 
 This opt-in tool measures full response time for configured GET requests. It is
-only one component of the Prism scorecard; it does not establish fixture parity,
+only one component of the scorecard; it does not establish fixture parity,
 profile compatibility, streaming startup, seek, features, or device experience.
 It makes `samples` total requests to each server at each specified concurrency,
 with a 30-second timeout. Non-2xx responses and transport errors are counted;

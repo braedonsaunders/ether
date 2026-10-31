@@ -2,7 +2,7 @@
 
 Open <http://localhost:32400/ether/> on the server to manage Ether. Use your
 chosen media apps to browse and watch, subject to the support notes below.
-Ether runs on [Prism](prism.md), the shared server architecture containing
+[Ether's multi-app support](apps.md) is the shared server containing
 the Plex, Jellyfin, Emby and Silo frontends.
 If Ether uses another port, such as
 32450 alongside an existing Plex server, use that port instead.
@@ -671,9 +671,9 @@ Revocation alone does not contain a leak.
 streams while existing streams keep playing. A pause ends after a restart.
 Pausing the only available node prevents new playback until you resume it.
 **Open manager** opens a peer node’s own settings; **Updates** handles cluster
-software updates. The first Prism upgrade requires stopping and fencing all old
+software updates. The first upgrade onto multi-app support requires stopping and fencing all old
 writers, upgrading all nodes, then serving traffic. Follow the
-[mandatory first-Prism upgrade runbook](acceptance/prism-upgrade.md).
+[mandatory upgrade runbook](acceptance/upgrade.md).
 
 Elsewhere, **Backups & import** shows which node holds each backup and offers
 a shared backup folder, the Usenet and Debrid pages show this node's share of

@@ -8,21 +8,21 @@ recorded only when both sides succeed and return the same `TotalRecordCount`.
 Playback is scored only when both sides open the same SHA-256 and the same
 delivery method.
 
-Exact aggregates are in [prism-scorecard.json](prism-scorecard.json).
+Exact aggregates are in [scorecard.json](scorecard.json).
 
 ## Matched run
 
 The timed Ether process served the lab media on bb-worker-server with the
-same 2 CPU and 6GB cap as `prism-jellyfin` and `prism-emby`. It listened on
-loopback `18296` (Jellyfin) and `18297` (Emby). `prism-jf-lab-zbv` was not
+same 2 CPU and 6GB cap as the Jellyfin and Emby lab containers. It listened on
+loopback `18296` (Jellyfin) and `18297` (Emby). The extra Jellyfin lab container was not
 restarted. Samples were 21 at concurrency 1, with 3 playback repeats.
 
 That process was built from `e3792dab4` plus the library-refresh fix in this
-change. Prism moved to `1a25b7273` before the commit, and these numbers were
+change. The multi-app branch moved to `1a25b7273` before the commit, and these numbers were
 not taken again after that fast-forward. The shared lab containers were
 returned to unlimited CPU and memory after the run. Docker cannot clear a
-memory limit in place, so the restore recreated `prism-jellyfin` and
-`prism-emby` from their existing Compose files and volumes. Nothing was
+memory limit in place, so the restore recreated the Jellyfin and Emby lab containers
+from their existing Compose files and volumes. Nothing was
 reseeded.
 
 Catalogue counts are still not aligned. Jellyfin lists three Big Buck Bunny
@@ -37,7 +37,7 @@ in this change. Episode lists are the same length (40).
 | Season | 2 | 2 | 0 |
 | Episode | 40 | 40 | 40 |
 
-On `prism-jf-lab-zbv`, before this fix, a recursive episode list stayed near
+On the Jellyfin lab host, before this fix, a recursive episode list stayed near
 16s and a combined Movie+Episode+Season+Series list stayed near 30s. The time
 was waiting on a metadata read that failed once per row. The scorecard seed
 was browsable but not a fresh detail, failed refreshes were not remembered,

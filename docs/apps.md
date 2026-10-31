@@ -1,9 +1,9 @@
-# Prism architecture
+# Multi-app architecture
 
-**Ether is the product. Prism is the shared protocol-neutral server architecture
-that Ether runs on.** Plex, Jellyfin, Emby and Silo are frontend adapters within
-Prism. The repository, executable, services and installation paths retain the
-Ether name; Prism is not a separate installation.
+**Ether is the product. Ether's multi-app support is the shared protocol-neutral
+server the app frontends run in.** Plex, Jellyfin, Emby and Silo are frontend
+adapters. The repository, executable, services and installation paths use the
+Ether name; there is no separate installation for the shared server.
 
 The [README diagram](../README.md#under-the-hood) shows the ownership model.
 Clients connect to their frontend, which translates requests and responses
@@ -11,7 +11,7 @@ between the client's protocol and shared contracts. Plex clients speak the PMS
 protocol to the Plex frontend. Jellyfin, Emby and Silo do not need that frontend,
 Plex authentication or Plex wire objects to define their server behavior.
 An optional personal Plex Media Server for local files remains a separate
-external server, not a Prism dependency.
+external server, not a dependency of the shared server.
 
 ## Shared service ownership
 
@@ -51,7 +51,7 @@ Artwork selection, rendering, palettes and queues now live in
 `internal/discovery`. Application composition constructs those services directly.
 The Plex adapter is constructed on mount and owns its watch-state subscription.
 This extraction still requires the recorded focused and Plex parity gates; see
-[artwork extraction evidence](prism-extraction/artwork.md). Other legacy
+[artwork extraction evidence](plex-adapter/artwork.md). Other legacy
 dependencies remain migration debt to remove while preserving Plex behavior.
 
 The import boundary for implementations under `internal/frontends` is recorded
@@ -59,7 +59,7 @@ in [`internal/frontend/depguard_test.go`](../internal/frontend/depguard_test.go)
 Plex production imports are ratcheted there too: new internal imports fail.
 The package still imports playback domain packages, so it is not yet held to
 the frontends-only rule. Rename-aware line accounting is in
-[plex size](prism-extraction/plex-size.md). Protocol adapters and shared
+[plex size](plex-adapter/size.md). Protocol adapters and shared
 contracts also do not establish native-client certification, complete
 conformance or performance parity.
 
@@ -73,7 +73,7 @@ apply to Plex clients.
 ## Candidate-3 first-pass acceptance notes
 
 This describes candidate-3 (`82daa1c7`), before final Plex broker adoption.
-Prism is part of Ether, with no separate service or installer. The proposal is
+Multi-app support is part of Ether, with no separate service or installer. The proposal is
 a target architecture; it is not a certification or release acceptance receipt.
 
 `internal/app/frontend_runtime.go` composes a `frontend.Registry`, mounts the
@@ -115,7 +115,7 @@ client targets from unsupported web shells. No third-party web client is shipped
 Conformance, native-client certification, performance comparisons and owner-device
 acceptance are pending until versioned receipts cover the exact integrated build.
 
-The first Prism upgrade is a maintenance transition, including in HA deployments.
-Follow the [upgrade runbook](acceptance/prism-upgrade.md) before serving traffic.
+The first upgrade onto multi-app support is a maintenance transition, including in HA deployments.
+Follow the [upgrade runbook](acceptance/upgrade.md) before serving traffic.
 Reference recording and offline drift checks are described in
 [the reference workflow](acceptance/reference-drift.md).

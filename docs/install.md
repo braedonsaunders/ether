@@ -1,8 +1,8 @@
 # Installing Ether
 
-Ether runs on [Prism](prism.md), its shared server architecture. The app
-frontends, including Plex, run within that architecture. Install Ether as
-below; Prism has no separate installer or service.
+[Ether's multi-app support](apps.md) is the shared server the app
+frontends, including Plex, run in. Install Ether as
+below; there is no separate installer or service for the shared server.
 
 Download a macOS DMG, Windows setup EXE, Linux DEB/RPM, or standalone
 archive from the [Releases page](https://github.com/braedonsaunders/ether/releases/latest).
@@ -294,10 +294,10 @@ until it is resumed. A rolling update owns its maintenance state while draining.
 
 Use **Open manager** beside another node to manage that machine's local settings.
 Owner credentials are not forwarded between nodes; sign in there if needed.
-The **Updates** page handles software updates. The first Prism upgrade requires
+The **Updates** page handles software updates. The first upgrade onto multi-app support requires
 a maintenance outage: stop and fence every old database writer, upgrade all
-nodes, then serve traffic. Follow the [mandatory first-Prism upgrade
-runbook](acceptance/prism-upgrade.md); this transition is not a mixed-version
+nodes, then serve traffic. Follow the [mandatory upgrade
+runbook](acceptance/upgrade.md); this transition is not a mixed-version
 rolling upgrade.
 
 ### Settings: shared and per node
@@ -421,13 +421,13 @@ readable only by the server account. To roll back by hand, stop Ether, install
 the previous version, and replace `ether.db`, `config.json` and
 `.credentials-key` with a set's copies.
 
-Do not start pre-Prism binaries against a Prism-migrated database. Older
+Do not start binaries from before the multi-app upgrade against a migrated database. Older
 binaries may merely log newer migration versions and continue running; that
-behavior does not establish schema or writer compatibility. For the first
-Prism transition, stop and fence every old writer, upgrade every serving node,
-and follow the [upgrade and rollback runbook](acceptance/prism-upgrade.md).
+behavior does not establish schema or writer compatibility. For that
+transition, stop and fence every old writer, upgrade every serving node,
+and follow the [upgrade and rollback runbook](acceptance/upgrade.md).
 Rollback requires restoring the matching database and configuration backup
-with all Prism writers stopped and fenced.
+with every new writer stopped and fenced.
 
 Not covered: PostgreSQL databases get no pre-upgrade snapshot (use scheduled
 backups), and rolling back a release never restores a snapshot automatically,

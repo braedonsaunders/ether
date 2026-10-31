@@ -222,7 +222,7 @@ remote/unknown filesystems and unresolved identities fail closed and keep
 existing ownership. Windows build/vet is required, but cross-compilation is not
 native Windows runtime certification. No service or production host is contacted.
 
-The mandatory first-Prism maintenance gate/runbook remains the old-writer fence.
+The mandatory first multi-app maintenance gate and runbook remains the old-writer fence.
 These witnesses cannot constrain an old process that never implemented them;
 all old processes must be stopped and credentials fenced before activation.
 Broker exact-source transfer, external-owner claims, encoder retirement and

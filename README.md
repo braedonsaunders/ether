@@ -35,7 +35,7 @@
 
 A typical automated media setup is built from several excellent projects—Sonarr, Radarr, Prowlarr, SABnzbd, Overseerr, Kometa, Tautulli and more—each of them very good at its job. Wiring them together still means download clients, path mappings, webhooks and, for debrid users, FUSE/WebDAV mounts that Plex Media Server has to scan. A new title still has to download, unpack and be scanned before anyone can press Play.
 
-Ether takes a different approach to the on-demand case. **Ether is a media server backed by the live TMDB catalogue and an on-demand byte-range streaming engine.** **Ether runs on Prism, its shared protocol-neutral server architecture.** Plex, Jellyfin, Emby and Silo are frontend adapters within Prism, connecting clients to shared server services. Plex apps speak the PMS protocol through the Plex frontend. Other integrations are in development; consult the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) before choosing an app. An available integration is not a claim that every client or feature is certified.
+Ether takes a different approach to the on-demand case. **Ether is a media server backed by the live TMDB catalogue and an on-demand byte-range streaming engine.** **Ether's multi-app support is the shared protocol-neutral server the app frontends run in.** Plex, Jellyfin, Emby and Silo are frontend adapters, connecting clients to shared server services. Plex apps speak the PMS protocol through the Plex frontend. Other integrations are in development; consult the [client support notes](docs/user-guide.md#jellyfin-and-emby-apps) before choosing an app. An available integration is not a claim that every client or feature is certified.
 
 **The catalogue is available without waiting for a local library scan.** When you press **Play**, Ether resolves, health-checks, and streams the bytes on the fly. When you scrub to `01:14:22`, Ether seeks to the matching keyframe offset inside a remote Usenet RAR5 set or debrid HTTPS stream and serves just those bytes.
 
@@ -50,7 +50,7 @@ Ether takes a different approach to the on-demand case. **Ether is a media serve
 
 ## Alongside your local library
 
-Keep the media server and tools that curate the files you own. Ether adds an on-demand catalogue alongside that collection. With the Plex integration, Ether appears as a separate server in your Plex apps. An existing Plex Media Server is an optional, separate external server for local files; Prism does not require it. Ether’s availability depends on your configured sources; an on-demand catalogue is not a durable local library.
+Keep the media server and tools that curate the files you own. Ether adds an on-demand catalogue alongside that collection. With the Plex integration, Ether appears as a separate server in your Plex apps. An existing Plex Media Server is an optional, separate external server for local files; Ether's multi-app support does not require it. Ether’s availability depends on your configured sources; an on-demand catalogue is not a durable local library.
 
 The table maps familiar workflows to Ether’s on-demand features. It does not claim feature parity with these mature projects. Clustering, virtual Live TV, hardware enhancement and poster customization are optional integrations; ordinary playback needs none of them.
 
@@ -72,9 +72,9 @@ The table maps familiar workflows to Ether’s on-demand features. It does not c
 
 ## Under the hood
 
-Ether is the product; **Prism** names the architecture inside it. This diagram
+Ether is the product. **Multi-app support** is the shared server inside it. This diagram
 shows the intended ownership of protocol adapters and shared services. Extraction
-from legacy code is still in progress; see [Prism architecture](docs/prism.md) for
+from legacy code is still in progress; see [multi-app architecture](docs/apps.md) for
 the current code boundaries and migration debt.
 
 ```text
@@ -82,7 +82,7 @@ the current code boundaries and migration debt.
          |               |               |             |
          v               v               v             v
 +-------------------------- ETHER ---------------------------+
-| PRISM: shared server architecture                          |
+| Shared server                                              |
 |                                                           |
 | Frontend adapters: Plex (PMS) | Jellyfin | Emby | Silo       |
 |                            |                              |
