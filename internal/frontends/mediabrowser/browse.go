@@ -123,7 +123,23 @@ func (i *instance) itemDTO(t frontend.Title, state frontend.WatchStatus) map[str
 			}
 		}
 	}
+	i.markUnreleased(m, t)
 	return m
+}
+
+// markUnreleased shows a future premiere as a placeholder. Media stays off
+// the item so a client does not start playback. The broker also refuses to
+// resolve a title whose premiere is still ahead.
+func (i *instance) markUnreleased(item map[string]any, title frontend.Title) {
+	if item == nil || title.Released.IsZero() || !title.Released.After(time.Now()) {
+		return
+	}
+	item["IsPlaceHolder"] = true
+	if i.protocol != "emby" {
+		item["LocationType"] = "Virtual"
+	}
+	delete(item, "MediaSources")
+	delete(item, "MediaStreams")
 }
 
 // collectionFolder is one library view. The id is the view GUID, not a title.
@@ -539,6 +555,7 @@ func (i *instance) browseRoutes() error {
 		if i.protocol == "emby" {
 			i.embyItemDetailDTO(dto, d)
 		}
+		i.markUnreleased(dto, d.Title)
 		i.replyItems(w, r, dto)
 	}
 	endpoints := []struct {
@@ -580,7 +597,7 @@ func (i *instance) browseRoutes() error {
 	if err := add("GET", "/Library/VirtualFolders", i.virtualFolders); err != nil {
 		return err
 	}
-	return nil
+	return i.playlistRoutes()
 }
 
 func itemQuery(r *http.Request) frontend.ItemQuery {
@@ -704,6 +721,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 				i.shapeJellyfinItem(r, v, item, title)
 				i.jellyfinListFacts(r, item, title)
 				i.jellyfinListFields(r, item, title)
+				i.markUnreleased(item, title)
 				items = append(items, item)
 			}
 			continue
@@ -728,6 +746,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 		i.shapeJellyfinItem(r, v, item, title)
 		i.jellyfinListFacts(r, item, title)
 		i.jellyfinListFields(r, item, title)
+		i.markUnreleased(item, title)
 		items = append(items, item)
 	}
 	total := page.Total + len(items) - len(page.Items)
@@ -828,7 +847,7 @@ func (i *instance) items(w http.ResponseWriter, r *http.Request) {
 		i.writeBoxSets(w, r, v, q)
 		return
 	case specialPlaylists:
-		i.writePlaylists(w, v, q)
+		i.writePlaylists(w, r, v, q)
 		return
 	}
 	if err := navigationQuery(r, &q, false); err != nil {

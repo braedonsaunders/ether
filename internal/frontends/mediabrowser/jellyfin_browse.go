@@ -1105,15 +1105,6 @@ func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, result)
 }
 
-// writePlaylists returns an empty page. Jellyfin lists playlists with
-// IncludeItemTypes=Playlist. Membership is not on the browse experience yet.
-func (i *instance) writePlaylists(w http.ResponseWriter, viewer *frontend.Viewer, q frontend.ItemQuery) {
-	if viewer == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	jsonReply(w, i.queryResult([]any{}, 0, q.Offset))
-}
 
 type listMediaEstimateKey struct{}
 

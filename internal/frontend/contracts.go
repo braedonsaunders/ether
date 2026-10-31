@@ -342,6 +342,28 @@ type CollectionPage struct {
 
 // PageQuery defaults nonpositive Limit to 50 and caps it at 500.
 type PageQuery struct{ Offset, Limit int }
+
+// PlaylistPage is one viewer's own playlists. Item keys are titles that
+// viewer is allowed to see, in playlist order.
+type PlaylistPage struct {
+	Items []core.Playlist
+	Total int
+}
+
+// ErrBadPlaylist is an invalid playlist name, index, or empty change.
+var ErrBadPlaylist = errors.New("invalid playlist request")
+
+// PlaylistLibrary is the viewer's playlists. Remove and move indexes are
+// positions in the visible item list, never raw storage positions that
+// include titles hidden from this viewer.
+type PlaylistLibrary interface {
+	Playlists(context.Context, *core.Viewer, PageQuery) (PlaylistPage, error)
+	CreatePlaylist(context.Context, *core.Viewer, string, []core.RatingKey) (*core.Playlist, error)
+	AddPlaylistItems(context.Context, *core.Viewer, core.RatingKey, []core.RatingKey) error
+	RemovePlaylistItem(context.Context, *core.Viewer, core.RatingKey, int) error
+	MovePlaylistItem(context.Context, *core.Viewer, core.RatingKey, int, int) error
+	DeletePlaylist(context.Context, *core.Viewer, core.RatingKey) error
+}
 type NotInterestedEntry struct {
 	Key     core.RatingKey
 	AddedAt time.Time
