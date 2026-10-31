@@ -65,7 +65,7 @@ class Client:
             headers["Content-Type"] = "application/json"
         return headers
 
-    def request(self, method, path, payload=None, extra=None, read_limit=8 << 20):
+    def _full_path(self, path):
         target = urllib.parse.urlsplit(path)
         if target.scheme or target.netloc:
             if target.scheme != "http" or target.hostname != self.host or target.port != self.port:
@@ -73,24 +73,56 @@ class Client:
             full = target.path
             if target.query:
                 full += "?" + target.query
+            return full
+        if self.prefix and (path == self.prefix or path.startswith(self.prefix + "/") or path.startswith(self.prefix + "?")):
+            return path
+        return self.prefix + path
+
+    def request(self, method, path, payload=None, extra=None, read_limit=8 << 20, follow=0):
+        current_method, current_path, current_payload = method, path, payload
+        for hop in range(follow + 1):
+            full = self._full_path(current_path)
+            body = None if current_payload is None else json.dumps(current_payload).encode()
+            started = time.perf_counter()
+            conn = http.client.HTTPConnection(self.host, self.port, timeout=60)
+            try:
+                headers = self.headers(body is not None)
+                if extra:
+                    headers.update(extra)
+                conn.request(current_method, full, body=body, headers=headers)
+                response = conn.getresponse()
+                location = response.getheader("Location")
+                first = time.perf_counter()
+                data = response.read(read_limit + 1)
+                if len(data) > read_limit:
+                    raise RuntimeError("response exceeded read limit")
+                status = response.status
+                first_ms = (first - started) * 1000
+                full_ms = (time.perf_counter() - started) * 1000
+            finally:
+                conn.close()
+            if hop == follow or status not in (301, 302, 303, 307, 308) or not location:
+                return status, data, first_ms, full_ms
+            current_path = self._redirect_path(location, full)
+            if status in (301, 302, 303):
+                current_method, current_payload = "GET", None
+        raise RuntimeError("redirect follow failed")
+
+    def _redirect_path(self, location, current_full):
+        target = urllib.parse.urlsplit(location)
+        if target.scheme or target.netloc:
+            if target.scheme != "http" or target.hostname != self.host or target.port != self.port:
+                raise RuntimeError("response URL left the target host")
+            path, query = target.path, target.query
         else:
-            full = self.prefix + path
-        body = None if payload is None else json.dumps(payload).encode()
-        started = time.perf_counter()
-        conn = http.client.HTTPConnection(self.host, self.port, timeout=60)
-        try:
-            headers = self.headers(body is not None)
-            if extra:
-                headers.update(extra)
-            conn.request(method, full, body=body, headers=headers)
-            response = conn.getresponse()
-            first = time.perf_counter()
-            data = response.read(read_limit + 1)
-            if len(data) > read_limit:
-                raise RuntimeError("response exceeded read limit")
-            return response.status, data, (first - started) * 1000, (time.perf_counter() - started) * 1000
-        finally:
-            conn.close()
+            base = "http://%s:%s%s" % (self.host, self.port, current_full)
+            joined = urllib.parse.urlsplit(urllib.parse.urljoin(base, location))
+            path, query = joined.path, joined.query
+        if self.prefix and (path == self.prefix or path.startswith(self.prefix + "/")):
+            path = path[len(self.prefix):] or "/"
+        if query:
+            path += "?" + query
+        return path
 
     def json(self, method, path, payload=None):
         status, data, _, _ = self.request(method, path, payload)
@@ -177,7 +209,7 @@ def playback_span(client, item, source, profile, start_ticks=0, seek_size=None):
                 query["StartTimeTicks"] = str(start_ticks)
             path = "/Videos/%s/stream?%s" % (urllib.parse.quote(item), urllib.parse.urlencode(query))
             extra = {"Range": "bytes=%d-%d" % (seek_size, seek_size + 65535)} if seek_size else {"Range": "bytes=0-65535"}
-            status, data, _, _ = client.request("GET", path, extra=extra, read_limit=65536)
+            status, data, _, _ = client.request("GET", path, extra=extra, read_limit=65536, follow=4)
             if status not in (200, 206) or not data:
                 raise RuntimeError("direct read failed")
             delivery = "direct"
@@ -190,7 +222,7 @@ def playback_span(client, item, source, profile, start_ticks=0, seek_size=None):
 def _read_hls(client, path):
     current = path
     for _ in range(4):
-        status, data, _, _ = client.request("GET", current, read_limit=4 << 20)
+        status, data, _, _ = client.request("GET", current, read_limit=4 << 20, follow=4)
         if status != 200 or not data:
             raise RuntimeError("hls response failed")
         if not data.startswith(b"#EXTM3U"):
@@ -203,7 +235,7 @@ def _read_hls(client, path):
                 break
         if not nxt:
             raise RuntimeError("empty hls playlist")
-        current = urllib.parse.urljoin(current if "://" in current else client.base + current, nxt)
+        current = urllib.parse.urljoin("http://%s:%s%s" % (client.host, client.port, client._full_path(current)), nxt)
 
 
 def repeat_playback(client, item, source, profile, repeats, **kwargs):
@@ -369,7 +401,7 @@ def run(config):
                 for name, ref_path, eth_path in routes:
                     row = browse_pair(reference, ether, name, ref_path, eth_path, samples, concurrency)
                     protocol["browse"].append(row)
-                    if row["p95_winner"] == "reference" and not provisional and protocol["catalogue_matched"]:
+                    if row["p95_winner"] == "reference" and not provisional:
                         report["losses"].append({"protocol": spec["name"], "metric": name, "concurrency": concurrency, "kind": "browse_p95"})
             if bound:
                 ref_item, ref_source, ref_size, eth_item, eth_source = bound
@@ -386,7 +418,7 @@ def run(config):
                 protocol["playback"] = [direct, seek, resume, transcode]
             protocol["source_sha256"] = sha
             for row in protocol["playback"]:
-                if row.get("p95_winner") == "reference" and not provisional and protocol.get("catalogue_matched"):
+                if row.get("p95_winner") == "reference" and not provisional:
                     report["losses"].append({"protocol": spec["name"], "metric": row["name"], "kind": "playback_p95"})
         except (RuntimeError, json.JSONDecodeError, OSError, http.client.HTTPException, KeyError, ValueError) as exc:
             protocol["errors"].append(type(exc).__name__)
@@ -398,6 +430,14 @@ def run(config):
                     protocol["errors"].append("logout")
         report["protocols"][spec["name"]] = protocol
     return report
+
+
+def container_ffprobe(container):
+    for candidate in ("ffprobe", "/usr/lib/jellyfin-ffmpeg/ffprobe"):
+        found = subprocess.run(["docker", "exec", container, candidate, "-version"], capture_output=True, timeout=20)
+        if found.returncode == 0:
+            return candidate
+    raise RuntimeError("reference ffprobe is unavailable")
 
 
 def _height(name):
@@ -449,7 +489,7 @@ def export_fixture(config):
         host_hash = digest.hexdigest()
         if host_hash != reference_hash:
             raise RuntimeError("reference digest mismatch")
-        probe = subprocess.check_output(["docker", "exec", container, "ffprobe", "-v", "error", "-show_streams", "-of", "json", path], text=True, timeout=120)
+        probe = subprocess.check_output(["docker", "exec", container, container_ffprobe(container), "-v", "error", "-show_streams", "-of", "json", path], text=True, timeout=120)
         streams = json.loads(probe).get("streams") or []
         video = next((row for row in streams if row.get("codec_type") == "video"), {})
         audio = next((row for row in streams if row.get("codec_type") == "audio"), {})

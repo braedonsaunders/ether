@@ -654,3 +654,28 @@ func TestScorecardLabBinariesAndExtraViewers(t *testing.T) {
 		t.Fatal("blank extra password accepted")
 	}
 }
+
+func TestScorecardSearchUsesProbedSizeWithoutStat(t *testing.T) {
+	dir := t.TempDir()
+	sum := strings.Repeat("ab", 32)
+	files := []ScorecardFile{{
+		TMDB: 10378, Path: filepath.Join(dir, "missing.mp4"), SHA256: sum,
+		Info:  core.ReleaseInfo{Height: 1080, VideoCodec: "h264", AudioCodec: "aac"},
+		Media: &core.MediaInfo{Size: 42, Container: "mp4"},
+	}}
+	data, err := json.Marshal(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "scorecard-files.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := (scorecardSource{dir}).Search(context.Background(), core.SearchRequest{Type: core.TypeMovie, IDs: core.IDs{TMDB: 10378}, Title: "Big Buck Bunny", Year: 2008})
+	if err != nil || len(got) != 1 || got[0].Size != 42 {
+		t.Fatalf("search: %+v %v", got, err)
+	}
+	again, err := (scorecardSource{dir}).Search(context.Background(), core.SearchRequest{Type: core.TypeMovie, IDs: core.IDs{TMDB: 10378}, Title: "Big Buck Bunny", Year: 2008})
+	if err != nil || len(again) != 1 || again[0].Size != 42 {
+		t.Fatalf("cached search: %+v %v", again, err)
+	}
+}

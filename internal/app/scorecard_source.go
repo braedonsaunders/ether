@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/core"
@@ -34,14 +35,42 @@ func scorecardReleaseID(f ScorecardFile) string {
 
 type scorecardSource struct{ dir string }
 
+// scorecardFileCache keeps one parsed manifest per data directory. A library
+// list looks up every title, and re-reading the manifest each time is wasted
+// work even when the file itself is small. The cache reloads when the file
+// changes.
+var scorecardFileCache = struct {
+	mu    sync.Mutex
+	dir   string
+	mod   time.Time
+	size  int64
+	files []ScorecardFile
+}{}
+
 func (s scorecardSource) files() ([]ScorecardFile, error) {
-	b, e := os.ReadFile(filepath.Join(s.dir, "scorecard-files.json"))
-	if e != nil {
-		return nil, e
+	path := filepath.Join(s.dir, "scorecard-files.json")
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	scorecardFileCache.mu.Lock()
+	defer scorecardFileCache.mu.Unlock()
+	if scorecardFileCache.dir == s.dir && scorecardFileCache.files != nil && scorecardFileCache.mod.Equal(st.ModTime()) && scorecardFileCache.size == st.Size() {
+		return scorecardFileCache.files, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
 	var files []ScorecardFile
-	e = json.Unmarshal(b, &files)
-	return files, e
+	if err = json.Unmarshal(b, &files); err != nil {
+		return nil, err
+	}
+	scorecardFileCache.dir = s.dir
+	scorecardFileCache.mod = st.ModTime()
+	scorecardFileCache.size = st.Size()
+	scorecardFileCache.files = files
+	return files, nil
 }
 func (s scorecardSource) Name() string { return "scorecard local files" }
 func (s scorecardSource) Search(_ context.Context, q core.SearchRequest) ([]core.Release, error) {
@@ -54,9 +83,15 @@ func (s scorecardSource) Search(_ context.Context, q core.SearchRequest) ([]core
 		if f.TMDB != q.IDs.TMDB || f.Season != q.Season || f.Episode != q.Episode || (q.Type == core.TypeMovie && f.Episode != 0) || (q.Type == core.TypeEpisode && f.Episode == 0) || (q.Type != core.TypeMovie && q.Type != core.TypeEpisode) {
 			continue
 		}
-		stat, e := os.Stat(f.Path)
-		if e != nil {
-			return nil, e
+		var size int64
+		if f.Media != nil && f.Media.Size > 0 {
+			size = f.Media.Size
+		} else {
+			stat, e := os.Stat(f.Path)
+			if e != nil {
+				return nil, e
+			}
+			size = stat.Size()
 		}
 		info := f.Info
 		info.Title = q.Title
@@ -70,7 +105,7 @@ func (s scorecardSource) Search(_ context.Context, q core.SearchRequest) ([]core
 		if q.Type == core.TypeEpisode {
 			name = fmt.Sprintf("%s S%02dE%02d %dp WEB-DL %s %s", q.Title, q.Season, q.Episode, info.Height, info.VideoCodec, info.AudioCodec)
 		}
-		out = append(out, core.Release{ID: key, GUID: key, Indexer: s.Name(), Name: name, Size: stat.Size(), TitleIDs: q.IDs, Info: info, PubDate: time.Now()})
+		out = append(out, core.Release{ID: key, GUID: key, Indexer: s.Name(), Name: name, Size: size, TitleIDs: q.IDs, Info: info, PubDate: time.Now()})
 	}
 	return out, nil
 }
