@@ -50,6 +50,12 @@ export default function Activity() {
       ),
     [],
   );
+  const transcoder = useAsync(async () => {
+    const body = await apiFetch<{
+      value: { notice?: string; playbackError?: string } | null;
+    }>("/status/hwaccel");
+    return body.value ?? {};
+  }, []);
   const viewers = useAsync(() => api.users(), []);
   const viewing = useAsync(async () => {
     if (!viewingTab) return null;
@@ -72,7 +78,14 @@ export default function Activity() {
       active={tab}
     >
       {tab === "now" ? (
-        <NowPlaying state={sessions} />
+        <>
+          {transcoder.data?.playbackError || transcoder.data?.notice ? (
+            <p role="alert" className="text-sm text-danger">
+              {transcoder.data.playbackError || transcoder.data.notice}
+            </p>
+          ) : null}
+          <NowPlaying state={sessions} />
+        </>
       ) : (
         <>
           <ViewingFilters value={filter} onChange={setFilter} viewers={viewers.data ?? []} />

@@ -12,7 +12,7 @@ import {
 export type HealthLevel = "ok" | "warn" | "error" | "off" | "unknown";
 
 export interface HealthItem {
-  id: "usenet" | "indexers" | "cache" | "catalog" | "remote" | "plexdirect";
+  id: "usenet" | "indexers" | "cache" | "catalog" | "remote" | "plexdirect" | "transcode";
   label: string;
   level: HealthLevel;
   summary: string;
@@ -511,12 +511,30 @@ function certificateTrustProblem(
   };
 }
 
+/** Shown only when this ffmpeg cannot convert or tone-map, or a playback just failed for that reason. */
+export function transcodeHealth(v: unknown): HealthItem | null {
+  if (!isPlainObject(v)) return null;
+  const playback = str(v.playbackError);
+  const notice = str(v.notice);
+  const text = playback || notice;
+  if (!text) return null;
+  const details = playback && notice && playback !== notice ? [notice] : [];
+  return {
+    id: "transcode",
+    label: t("Transcoding"),
+    href: "/playback/transcoding",
+    level: "warn",
+    summary: text,
+    details,
+  };
+}
+
 export function computeHealth(
   sections: Record<string, unknown> | undefined,
   now = new Date(),
 ): HealthItem[] {
   const s = sections ?? {};
-  return [
+  const items: HealthItem[] = [
     usenetHealth(s.providers, s.debrid),
     indexersHealth(s.indexers, s.debrid),
     cacheHealth(s.cache),
@@ -524,6 +542,9 @@ export function computeHealth(
     remoteHealth(s.remote),
     plexDirectHealth(s.remote, now),
   ];
+  const transcode = transcodeHealth(s.hwaccel);
+  if (transcode) items.push(transcode);
+  return items;
 }
 
 // ---- Now playing --------------------------------------------------------------

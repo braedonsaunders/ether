@@ -5,6 +5,7 @@ import {
   cacheHealth,
   catalogHealth,
   computeHealth,
+  transcodeHealth,
   countsOverall,
   indexersHealth,
   normalizeSessions,
@@ -396,6 +397,15 @@ describe("health", () => {
     expect(worstLevel(h.map((x) => x.level))).toBe("warn");
     expect(h.find((x) => x.id === "plexdirect")?.statusLabel).toBe("Valid");
     expect(overallLevel(h)).toBe("warn");
+    expect(transcodeHealth(undefined)).toBeNull();
+    const tone = transcodeHealth({
+      playbackError: "This FFmpeg cannot tone-map HDR video to SDR",
+      notice: "filter list unread",
+    });
+    expect(tone?.level).toBe("warn");
+    expect(tone?.summary).toContain("tone-map");
+    expect(tone?.details).toEqual(["filter list unread"]);
+    expect(computeHealth({ ...LIVE, hwaccel: { notice: "no colours" } }, now).some((x) => x.id === "transcode")).toBe(true);
   });
   it("accepts debrid in place of Usenet", () => {
     expect(usenetHealth([], { enabled: true }).level).toBe("off");

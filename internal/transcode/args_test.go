@@ -222,10 +222,23 @@ func TestBuildArgsToneMapWithoutZscale(t *testing.T) {
 	info := mustParse(t, "mkv_hevc_hdr10.json")
 	d := Decide(info, plexWeb, allow(), Policy{})
 	s := baseSpec(info, d)
-	s.Features.filters = map[string]bool{"scale": true, "overlay": true}
+	s.Features.filters = map[string]bool{"scale": true, "overlay": true, "colorspace": true}
+	if err := graphFailure(s); err == nil || !strings.Contains(err.Error(), "tone-map") {
+		t.Fatalf("graphFailure = %v", err)
+	}
+	if strings.Contains(strings.Join(buildArgs(s), " "), "zscale") {
+		t.Fatal("missing zscale still emitted zscale")
+	}
+	s.Features.filters["libplacebo"] = true
 	graph := argValue(buildArgs(s), "-filter_complex")
-	if strings.Contains(graph, "zscale") || !strings.Contains(graph, "setparams") {
-		t.Errorf("fallback graph %q", graph)
+	if strings.Contains(graph, "zscale") || !strings.Contains(graph, "libplacebo=tonemapping=hable") {
+		t.Fatalf("libplacebo graph %q", graph)
+	}
+	delete(s.Features.filters, "libplacebo")
+	s.Features.filters["tonemap_opencl"] = true
+	graph = argValue(buildArgs(s), "-filter_complex")
+	if strings.Contains(graph, "zscale") || !strings.Contains(graph, "tonemap_opencl=tonemap=hable") {
+		t.Fatalf("opencl graph %q", graph)
 	}
 }
 

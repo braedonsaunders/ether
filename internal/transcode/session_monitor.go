@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var missingFilterRE = regexp.MustCompile(`(?i)(?:no such filter:\s*['"]?([a-z0-9_]+)|filter ['"]([a-z0-9_]+)['"] not found)`)
 
 // watch polls a run's output for finished segments until ffmpeg exits.
 func (s *Session) watch(r *run) {
@@ -238,6 +241,17 @@ func (s *Session) finish(r *run) {
 		s.decision.Enhancement.Reason = "native VSR input/process failed"
 	}
 	if r.produced == 0 {
+		if name := missingFilter(stderr); name != "" {
+			if s.tryNextGraphLocked(r, name) {
+				return
+			}
+			_ = s.reportGraphLocked(&GraphError{Message: filterUnavailableMessage(name)})
+			return
+		}
+		if namelessFilterMiss(stderr) {
+			_ = s.reportGraphLocked(&GraphError{Message: "FFmpeg rejected a filter in this graph. The same graph will not be retried."})
+			return
+		}
 		if r.hw && !s.forceCPU && looksLikeEncoderFailure(stderr, r.spec) {
 			s.forceCPU = true
 			log.Warn("hardware encoder failed; falling back to CPU", "hwaccel", r.spec.Accel.Name)
@@ -287,4 +301,86 @@ func looksLikeEncoderFailure(stderr string, spec runSpec) bool {
 		}
 	}
 	return false
+}
+
+func missingFilter(stderr string) string {
+	m := missingFilterRE.FindStringSubmatch(stderr)
+	if len(m) == 0 {
+		return ""
+	}
+	if m[1] != "" {
+		return m[1]
+	}
+	if len(m) > 2 {
+		return m[2]
+	}
+	return ""
+}
+
+func namelessFilterMiss(stderr string) bool {
+	l := strings.ToLower(stderr)
+	return strings.Contains(l, "filter not found") || strings.Contains(l, "no such filter")
+}
+
+// tryNextGraphLocked drops a filter ffmpeg says is missing and starts the
+// next graph when that graph is different. It reports a terminal graph
+// error itself when nothing else can play the video.
+func (s *Session) tryNextGraphLocked(r *run, name string) bool {
+	if s.deniedFilters == nil {
+		s.deniedFilters = map[string]bool{}
+	}
+	if s.deniedFilters[name] || s.filterFallbacks >= 4 {
+		return false
+	}
+	s.deniedFilters[name] = true
+	s.filterFallbacks++
+	next := r.spec
+	next.Features = s.featuresLocked()
+	if err := graphFailure(next); err != nil {
+		_ = s.reportGraphLocked(err)
+		return true
+	}
+	if filterGraph(buildArgs(next)) == filterGraph(buildArgs(r.spec)) {
+		return false
+	}
+	s.log.Warn("ffmpeg filter missing; trying the next graph", "filter", name, "run", r.seq)
+	if err := s.startRunLocked(r.startSeg, false); err != nil {
+		s.failErr = err
+	}
+	return true
+}
+
+func (s *Session) reportGraphLocked(err error) error {
+	if err == nil {
+		return nil
+	}
+	s.failErr = err
+	s.inputFailed = true
+	s.failures = 2
+	if s.m != nil {
+		s.m.noteGraphError(err)
+	}
+	if s.graphReported || s.closed {
+		return err
+	}
+	s.graphReported = true
+	if s.log != nil {
+		s.log.Warn("transcode graph rejected", "err", err)
+	}
+	if s.m == nil {
+		return err
+	}
+	at := s.segStart(0)
+	if s.cur != nil {
+		at = s.segStart(s.cur.next())
+	}
+	id, input, ferr := s.id, s.input, err
+	if h := s.m.opts.onInputFailure; h != nil {
+		go h(id, input, at, ferr)
+		return err
+	}
+	if h := s.m.opts.onFailure; h != nil {
+		go h(id, at, ferr)
+	}
+	return err
 }

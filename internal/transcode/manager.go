@@ -193,6 +193,8 @@ type Manager struct {
 	hw      core.HWAccel
 	feat    features
 	tempDir string
+	// graphErr is the latest owner-visible reason a graph could not be built.
+	graphErr string
 
 	mu       sync.Mutex
 	cfg      config.Transcode
@@ -265,6 +267,12 @@ func New(cfg config.Transcode, logger *slog.Logger, opts ...Option) (*Manager, e
 		return nil, fmt.Errorf("transcode: temp dir: %w", err)
 	}
 	m.cleanStale()
+	m.log.Info("ffmpeg features", "ffmpeg", m.ffmpeg, "version", m.version,
+		"filters", featureLine(m.feat), "encoders", encoderLine(m.feat),
+		"filtersProbed", m.feat.filtersProbed, "probe", probeState(m.feat))
+	if notice := m.limitation(); notice != "" {
+		m.log.Warn("transcoder limitation", "notice", notice)
+	}
 	m.log.Info("transcoder ready", "ffmpeg", m.ffmpeg, "ffprobe", m.ffprobe, "version", m.version,
 		"hwaccel", m.hw.Name, "encoders", m.hw.Encoders, "tempDir", m.tempDir)
 
@@ -368,6 +376,101 @@ func (m *Manager) FFmpegPath() string { return m.ffmpeg }
 
 // FFprobePath is the ffprobe executable in use.
 func (m *Manager) FFprobePath() string { return m.ffprobe }
+
+// Capability is the owner-visible transcoder health card: which colour and
+// tone-map paths were probed, plus the latest graph failure.
+type Capability struct {
+	Notice        string   `json:"notice,omitempty"`
+	PlaybackError string   `json:"playbackError,omitempty"`
+	FiltersProbed bool     `json:"filtersProbed"`
+	ToneMap       []string `json:"toneMap,omitempty"`
+	Colour        []string `json:"colour,omitempty"`
+}
+
+// Capability reports probed filters and any owner-visible limitation.
+func (m *Manager) Capability() Capability {
+	if m == nil {
+		return Capability{}
+	}
+	m.mu.Lock()
+	playback := m.graphErr
+	m.mu.Unlock()
+	return Capability{
+		Notice:        m.limitation(),
+		PlaybackError: playback,
+		FiltersProbed: m.feat.filtersProbed,
+		ToneMap:       toneMapPaths(m.feat, m.hw),
+		Colour:        colourPaths(m.feat),
+	}
+}
+
+func (m *Manager) noteGraphError(err error) {
+	if m == nil || err == nil {
+		return
+	}
+	m.mu.Lock()
+	m.graphErr = err.Error()
+	m.mu.Unlock()
+	m.log.Warn("transcode graph unavailable", "err", err)
+}
+
+func (m *Manager) limitation() string {
+	if m == nil {
+		return ""
+	}
+	var parts []string
+	if !m.feat.filtersProbed {
+		detail := "FFmpeg's filter list could not be read, so optional filters such as zscale are treated as unavailable."
+		if m.feat.probeDetail != "" {
+			detail += " " + m.feat.probeDetail
+		}
+		parts = append(parts, detail)
+	}
+	if len(toneMapPaths(m.feat, m.hw)) == 0 {
+		parts = append(parts, toneMapUnavailableMessage())
+	}
+	if !m.feat.hasFilter("zscale") && !m.feat.hasFilter("colorspace") {
+		parts = append(parts, colourUnavailableMessage())
+	}
+	return strings.Join(parts, " ")
+}
+
+func featureLine(f features) string {
+	names := []string{"zscale", "colorspace", "scale", "libplacebo", "tonemap", "tonemap_opencl", "tonemap_vaapi", "tonemap_videotoolbox", "scale_vt", "tonemap_cuda"}
+	parts := make([]string, len(names))
+	for i, name := range names {
+		bit := "0"
+		if f.hasFilter(name) {
+			bit = "1"
+		}
+		parts[i] = name + "=" + bit
+	}
+	return strings.Join(parts, " ")
+}
+
+func encoderLine(f features) string {
+	names := []string{"libx264", "libx265", "h264_videotoolbox", "hevc_videotoolbox", "h264_nvenc", "hevc_nvenc", "h264_vaapi", "hevc_vaapi", "h264_qsv", "hevc_qsv"}
+	var parts []string
+	for _, name := range names {
+		if f.hasEncoder(name) {
+			parts = append(parts, name)
+		}
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ",")
+}
+
+func probeState(f features) string {
+	if f.filtersProbed && f.probeDetail == "" {
+		return "ok"
+	}
+	if f.probeDetail != "" {
+		return f.probeDetail
+	}
+	return "filters unread"
+}
 
 // HWAccel implements core.Transcoder.
 func (m *Manager) HWAccel() core.HWAccel {

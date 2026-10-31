@@ -10,6 +10,8 @@ type Hardware = {
   hwaccel?: { name: string; encoders: string[] | null; device?: string };
   ffmpeg?: unknown;
   error?: string;
+  notice?: string;
+  playbackError?: string;
   enhancement?: {
     backend: string;
     setupState?: string;
@@ -98,6 +100,11 @@ export function HardwareStatus() {
                 {JSON.stringify(ffmpeg, null, 2)}
               </pre>
             </details>
+          ) : null}
+          {data.playbackError || data.notice ? (
+            <p role="alert" className="text-sm text-danger">
+              {data.playbackError || data.notice}
+            </p>
           ) : null}
           {data.enhancement ? (
             <div

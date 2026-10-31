@@ -240,6 +240,11 @@ func TestSessionHardwareFallsBackToCPU(t *testing.T) {
 		t.Fatalf("segment 0: %d %s", r.Code, r.Body.String())
 	}
 	if fr.startCount() != 2 {
+		fr.mu.Lock()
+		for i, args := range fr.starts {
+			t.Logf("start %d c:v=%s graph=%s", i, argValue(args, "-c:v"), argValue(args, "-filter_complex"))
+		}
+		fr.mu.Unlock()
 		t.Errorf("starts = %d, want 2 (hw then cpu)", fr.startCount())
 	}
 	if enc := argValue(fr.lastStart(), "-c:v"); enc != "libx264" {
@@ -252,6 +257,83 @@ func TestSessionHardwareFallsBackToCPU(t *testing.T) {
 	get(t, s, 100)
 	if enc := argValue(fr.lastStart(), "-c:v"); enc != "libx264" {
 		t.Errorf("after seek encoder %q", enc)
+	}
+}
+
+func TestSessionMissingFilterTriesNextGraph(t *testing.T) {
+	fr := newFakeRunner()
+	fr.failStart = func(args []string) (string, bool) {
+		if strings.Contains(argValue(args, "-filter_complex"), "zscale") {
+			return "No such filter: 'zscale'", true
+		}
+		return "", false
+	}
+	failures := make(chan error, 2)
+	m := newTestManager(t, fr, config.Transcode{HWAccel: "none"}, WithFailureHandler(func(_ string, _ time.Duration, err error) {
+		failures <- err
+	}))
+	info := core.MediaInfo{Duration: time.Minute, Container: "mkv", Streams: []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 720, Height: 480, BitDepth: 8},
+		{Index: 1, Type: "audio", Codec: "aac", Channels: 2},
+	}}
+	caps := appleTV
+	caps.HLSContainers = []string{"mkv"}
+	opts := allow()
+	opts.DirectPlay, opts.DirectStream = false, false
+	d := Decide(info, caps, opts, Policy{})
+	s := startSession(t, m, core.HLSRequest{SessionID: "bt601", InputURL: "http://127.0.0.1:1/dvd", Info: info, Decision: d})
+	if r := get(t, s, 0); r.Code != 200 {
+		t.Fatalf("segment 0: %d %s", r.Code, r.Body.String())
+	}
+	if fr.startCount() != 2 {
+		t.Fatalf("starts = %d, want zscale then colorspace", fr.startCount())
+	}
+	graphs := []string{}
+	fr.mu.Lock()
+	for _, args := range fr.starts {
+		graphs = append(graphs, argValue(args, "-filter_complex"))
+	}
+	fr.mu.Unlock()
+	if !strings.Contains(graphs[0], "zscale") || strings.Contains(graphs[1], "zscale") || !strings.Contains(graphs[1], "colorspace=") {
+		t.Fatalf("graphs %q", graphs)
+	}
+}
+
+func TestSessionMissingToneMapFilterDoesNotRetrySameGraph(t *testing.T) {
+	fr := newFakeRunner()
+	fr.failStart = func(args []string) (string, bool) {
+		return "No such filter: 'zscale'", true
+	}
+	failures := make(chan error, 2)
+	m := newTestManager(t, fr, config.Transcode{HWAccel: "none"}, WithFailureHandler(func(_ string, _ time.Duration, err error) {
+		failures <- err
+	}))
+	// Strip every tone-map alternative so the retry has no second graph.
+	m.feat.filters = map[string]bool{}
+	for name := range testFeatures().filters {
+		m.feat.filters[name] = true
+	}
+	for _, name := range []string{"libplacebo", "tonemap_opencl", "scale_vt", "tonemap_vaapi", "tonemap_cuda", "tonemap_videotoolbox", "colorspace"} {
+		delete(m.feat.filters, name)
+	}
+	s := startSession(t, m, transcodeRequest(t, "hdr-noz"))
+	r := get(t, s, 0)
+	if r.Code != http.StatusBadGateway && r.Code != http.StatusInternalServerError {
+		t.Fatalf("code %d %s", r.Code, r.Body.String())
+	}
+	if fr.startCount() != 1 {
+		t.Fatalf("starts = %d, want one zscale attempt and no identical retry", fr.startCount())
+	}
+	select {
+	case err := <-failures:
+		if err == nil || !strings.Contains(err.Error(), "tone-map") || strings.Contains(err.Error(), "No such filter") {
+			t.Fatalf("handler err %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("failure handler not called")
+	}
+	if !strings.Contains(m.Capability().PlaybackError, "tone-map") {
+		t.Fatalf("capability %+v", m.Capability())
 	}
 }
 
@@ -751,8 +833,14 @@ func TestSessionHEVCEncoderFallbackWarnsOncePerSession(t *testing.T) {
 	var buf lockedBuffer
 	m.log = slog.New(slog.NewTextHandler(&buf, nil))
 	// No HW HEVC and no libx265: HEVC encodes fall back to libx264.
+	// Filters stay probed so the HDR tone map is a real graph; an unread
+	// filter list is not treated as zscale.
 	m.hw = core.HWAccel{Name: AccelNone}
-	m.feat = features{encoders: map[string]bool{"libx264": true}}
+	m.feat = features{
+		encoders:      map[string]bool{"libx264": true},
+		filters:       map[string]bool{"zscale": true, "tonemap": true, "scale": true},
+		filtersProbed: true,
+	}
 
 	req := transcodeRequest(t, "hevc-fallback-once")
 	req.Decision.VideoCodec = "hevc"

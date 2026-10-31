@@ -88,6 +88,11 @@ type sessionEncoding struct {
 	endSeg   int // last segment of the input once a run hit EOF; -1 unknown
 	failures int // consecutive runs that failed without output
 	failErr  error
+	// deniedFilters are names ffmpeg reported missing. The next graph is
+	// built without them. Unknown filters are never assumed present.
+	deniedFilters   map[string]bool
+	filterFallbacks int
+	graphReported   bool
 	// hevcFallbackWarned latches the HEVC->libx264 fallback warning to
 	// at most once per session (warned from startRunLocked, under mu).
 	hevcFallbackWarned bool

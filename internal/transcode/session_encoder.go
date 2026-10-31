@@ -167,7 +167,7 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		Playlist:     fmt.Sprintf("run-%d.m3u8", s.runSeq),
 		InitName:     fmt.Sprintf("init-%d.mp4", s.runSeq),
 		Accel:        accel,
-		Features:     s.m.feat,
+		Features:     s.featuresLocked(),
 		BigProbe:     bigProbe,
 		Protocol:     s.proto,
 		FastStart:    rp.fastStart,
@@ -245,6 +245,9 @@ func (s *Session) startRunLocked(seg int, bigProbe bool) error {
 		mode:     rp.mode,
 		planEnd:  rp.planEnd,
 		track:    s.wantTrack,
+	}
+	if err := graphFailure(spec); err != nil {
+		return s.reportGraphLocked(err)
 	}
 	if !spec.Decision.VideoCopy && !s.hevcFallbackWarned {
 		// Caller holds s.mu (startRunLocked), guarding hevcFallbackWarned.
@@ -471,6 +474,24 @@ func (s *Session) reapUnpublishedLocked(r *run, proc Process) {
 			<-previous
 		}
 	}()
+}
+
+func (s *Session) featuresLocked() features {
+	if s == nil || s.m == nil {
+		return features{}
+	}
+	f := s.m.feat
+	if len(s.deniedFilters) == 0 {
+		return f
+	}
+	cloned := f
+	cloned.filters = map[string]bool{}
+	for name, ok := range f.filters {
+		if ok && !s.deniedFilters[name] {
+			cloned.filters[name] = true
+		}
+	}
+	return cloned
 }
 
 func (s *Session) noteEncoder(started bool, args []string) {

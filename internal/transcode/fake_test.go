@@ -93,6 +93,7 @@ const sampleFilters = `Filters:
  .. scale             V->V       Scale the input video size and/or convert the image format.
  .. scale_vt          V->V       Scale Videotoolbox frames
  .. zscale            V->V       Apply resizing, colorspace and bit depth conversion.
+ .. colorspace        V->V       Convert between colorspaces.
  .S tonemap           V->V       Conversion to/from different dynamic ranges.
  .. tonemap_vaapi     V->V       VAAPI VPP for tone-mapping
  .. subtitles         V->V       Render text subtitles onto input video using the libass library.

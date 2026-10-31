@@ -306,6 +306,33 @@ describe("Source usage", () => {
 });
 
 describe("Hardware status", () => {
+  it("shows a tone-map failure on Activity and the transcoder card", async () => {
+    const notice = "This FFmpeg cannot tone-map HDR video to SDR";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const value = url.endsWith("/status/sessions") ? [] : url.endsWith("/users") ? undefined : undefined;
+        if (url.endsWith("/status/hwaccel")) {
+          return new Response(
+            JSON.stringify({ value: { hwaccel: { name: "none", encoders: [] }, playbackError: notice } }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/status/sessions")) {
+          return new Response(JSON.stringify({ value: [] }), { status: 200 });
+        }
+        if (url.endsWith("/users")) return new Response(JSON.stringify({ users: [] }), { status: 200 });
+        return new Response(JSON.stringify(value ?? { ok: true }), { status: 200 });
+      }),
+    );
+    const activity = renderAt("/activity");
+    expect(await screen.findByRole("alert", {}, WAIT)).toHaveTextContent("cannot tone-map");
+    activity.unmount();
+    renderAt("/hardware");
+    expect(await screen.findByRole("alert", {}, WAIT)).toHaveTextContent("cannot tone-map");
+  });
+
   it("reports software-only transcoding", async () => {
     backend();
     renderAt("/hardware");

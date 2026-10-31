@@ -105,7 +105,8 @@ func videoEncoder(codec string, accel core.HWAccel, f features) (name string, hw
 	}
 	switch codec {
 	case "hevc":
-		if f.encoders == nil || f.hasEncoder("libx265") {
+		// A missing encoder list is not permission to assume libx265 exists.
+		if f.hasEncoder("libx265") {
 			return "libx265", false
 		}
 		return "libx264", false // no HEVC encoder at all: caller asked for the impossible
@@ -496,6 +497,7 @@ type videoPlan struct {
 	inputArgs  []string
 	graph      string // -filter_complex, output label [vout]
 	encodeArgs []string
+	err        error // the graph cannot be built; do not start ffmpeg
 }
 
 // outputSize scales (w,h) to height maxH, keeping aspect and even sizes.
@@ -523,14 +525,22 @@ func even(n int) int {
 	return n
 }
 
-// cpuToneMap converts PQ/HLG to SDR BT.709 in software. zscale (zimg) does
-// the transfer conversions; without it there is no correct CPU path, so the
-// fallback only retags the colours (playable, but washed out).
-func cpuToneMap(f features) string {
-	if f.filters == nil || f.hasFilter("zscale") {
-		return "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv"
+// cpuToneMap converts PQ/HLG to SDR BT.709 in software. zscale (zimg) is
+// the accurate path when this ffmpeg has it. libplacebo, then
+// tonemap_opencl, are the alternatives. There is no retag-only fallback:
+// a washed-out picture is not a tone map. ok is false when none of those
+// filters were probed.
+func cpuToneMap(f features) (string, bool) {
+	if f.hasFilter("zscale") && f.hasFilter("tonemap") {
+		return "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv", true
 	}
-	return "scale=out_color_matrix=bt709:out_range=tv,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+	if f.hasFilter("libplacebo") {
+		return "libplacebo=tonemapping=hable:color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv", true
+	}
+	if f.hasFilter("tonemap_opencl") {
+		return "format=p010le,hwupload,tonemap_opencl=tonemap=hable:desat=0:format=nv12,hwdownload,format=nv12", true
+	}
+	return "", false
 }
 
 // escapeFilterValue escapes a value for use inside a filter option and then
@@ -568,6 +578,7 @@ type picturePlan struct {
 	tenBit   bool
 	outRange string
 	convert  string
+	blocked  string // owner-visible reason the colour conversion cannot be built
 	pad      bool
 	setSAR   string
 }
@@ -604,7 +615,12 @@ func planPicture(s runSpec, v *core.StreamInfo, codec string) picturePlan {
 		pic.tenBit, pic.outRange = t.depth == 10, t.rng
 		pic.tonemap = t.tonemaps(v)
 		if t.convertsColour(v) {
-			pic.convert = zscaleColour(v, t)
+			filt, ok := colourFilter(v, t, s.Features)
+			if !ok {
+				pic.blocked = colourUnavailableMessage()
+			} else {
+				pic.convert = filt
+			}
 		}
 		// scale keeps the display aspect: its output SAR follows the source's.
 		src := pictureOf(v)
@@ -671,7 +687,9 @@ func planFilterChain(s runSpec, v *core.StreamInfo, pic picturePlan, accel strin
 		case pic.convert != "":
 			chain = append(chain, pic.convert)
 		case pic.tonemap:
-			chain = append(chain, cpuToneMap(s.Features))
+			if filt, ok := cpuToneMap(s.Features); ok {
+				chain = append(chain, filt)
+			}
 		}
 		if !burn {
 			chain = finish(chain)
@@ -876,6 +894,10 @@ func planVideo(s runSpec, v *core.StreamInfo) videoPlan {
 		accel = s.Accel.Name
 	}
 	pic := planPicture(s, v, codec)
+	if pic.blocked != "" {
+		p.err = &GraphError{Message: pic.blocked}
+		return p
+	}
 	sub := findStream(s.Info, d.SubtitleStream, "subtitle")
 	burn := d.BurnSubtitles && sub != nil
 
@@ -912,6 +934,10 @@ func planVideo(s runSpec, v *core.StreamInfo) videoPlan {
 
 	in := fmt.Sprintf("[0:%d]", v.Index)
 	chainInput, chain, hwFrames := planFilterChain(s, v, pic, accel, burn, finish)
+	if pic.tonemap && !toneMapped(chain, hwFrames) {
+		p.err = &GraphError{Message: toneMapUnavailableMessage()}
+		return p
+	}
 	p.inputArgs = append(p.inputArgs, chainInput...)
 
 	var graph string
@@ -929,7 +955,7 @@ func planVideo(s runSpec, v *core.StreamInfo) videoPlan {
 		}
 		graph = fmt.Sprintf("%s%s[base];[0:%d]%s[sub];[base][sub]overlay=eof_action=pass,%s[vout]",
 			in, pre, sub.Index, subScale, strings.Join(post, ","))
-	case burn && (s.Features.filters == nil || s.Features.hasFilter("subtitles")):
+	case burn && s.Features.hasFilter("subtitles"):
 		src := s.Input
 		opt := ""
 		if sub.External && sub.ExternalURL != "" {
@@ -957,6 +983,26 @@ func planVideo(s runSpec, v *core.StreamInfo) videoPlan {
 
 	p.encodeArgs = planEncodeArgs(s, pic, enc, codec, hwFrames)
 	return p
+}
+
+// toneMapped reports whether the filter chain actually converts HDR to SDR.
+// Hardware frames are a tone map only when the GPU branch that set them
+// was selected for a tone-map (scale_vt, tonemap_vaapi, tonemap_cuda).
+func toneMapped(chain []string, hwFrames bool) bool {
+	if hwFrames {
+		return true
+	}
+	g := strings.Join(chain, ",")
+	return strings.Contains(g, "tonemap") || strings.Contains(g, "libplacebo") || strings.Contains(g, "zscale")
+}
+
+func filterGraph(args []string) string {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == "-filter_complex" {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 func hdrX265Params(outRange string) string {
