@@ -617,6 +617,7 @@
   "m_03bceda00e7625": "Går inte att spela än",
   "m_03bd47e184ceba": "En VPN-container som gluetun kan publicera en proxy medan Ether stannar på ditt vanliga nätverk, så att Plex och fjärråtkomst stannar hemma. På värdnätverket är adressen oftast http://127.0.0.1:8888, eftersom Docker-namn inte syns där. På ett delat Docker-nätverk är den oftast http://gluetun:8888. gluetuns vanliga proxy är HTTP på port 8888; använd en SOCKS-adress bara om du har slagit på en. Delar hela stacken VPN-containerns nätverk, lämna detta av och publicera Ethers portar på den containern. Indexernamn slås upp på den här datorn. Blockerar leverantörens DNS dem, peka den här datorns resolver mot VPN:et.",
   "m_03be2202673df4": "Rader",
+  "m_03bfa47becf235": "Plex programtablå uppdateras strax.",
   "m_03c0bc13b9a2fd": "Fäst bakgrund {number} ({language})",
   "m_03c22b2ed43923": "Den här budgeten är större än ledigt utrymme på den här disken.",
   "m_03c232d926fc55": "Vardag",
@@ -2295,6 +2296,7 @@
   "m_0df26a02ad1338": "Plats {slot}",
   "m_0df3b2006bf5f3": "Låt alla vara på för att använda varje personlig rad. Stäng av en för att dölja den sorten.",
   "m_0df4374791e20e": "IPTV-källor",
+  "m_0dfee5f721345a": "den här kanalen",
   "m_0dff402097c149": "Väntar på nästa omgång",
   "m_0e00c5c872cfad": "Snart klar…",
   "m_0e0259be059a2e": "Linux-grafikenhet, till exempel /dev/dri/renderD128. Lämna tomt om inte den omvandlade videon vägrar starta.",
@@ -2389,6 +2391,7 @@
   "m_0ea8317c116f8b": "HDR10",
   "m_0ea8478893eee6": "Smak",
   "m_0ea881a6649ee8": "Nytt territorium",
+  "m_0ea8d16ce54df4": "Ta bort {name}",
   "m_0ea9c97405d4a6": "Ether har uppdaterats — ladda om när du är redo",
   "m_0eaa4f299fd3e7": "{name} togs bort",
   "m_0eb1e9e2565e02": "Det gick inte att uppdatera definitionerna",
@@ -4262,6 +4265,7 @@
   "m_1a2572e1c90950": "är någon av",
   "m_1a257c97dc09a2": "Inga registrerade uppspelningar den här månaden",
   "m_1a2749a1968805": "Cachade avsnitt",
+  "m_1a2acfeb9a0de8": "Rättar filmår · {done} klara · {pending} kvar",
   "m_1a2b439e4baffb": "RTX Video: {status}",
   "m_1a2c259bfff2f5": {
     "one": "och {count} ström till (omkodning eller Live-TV)",
@@ -4287,7 +4291,6 @@
   "m_1a463f39cec097": "Studio",
   "m_1a4a89d884de18": "profil {profile}",
   "m_1a4abaea994425": "Preferensens namn",
-  "m_1a4b3eafd6b450": "Ta bort kanal",
   "m_1a4bb3923cf901": {
     "one": "{count} titel · {duration} slinga",
     "other": "{count} titlar · {duration} slinga"
@@ -4766,7 +4769,6 @@
   "m_1d5a505476f4b0": "Ersätt den här serverns identitet och delade inställningar med klustrets. Behåll dess lokala data i en automatisk säkerhetskopia.",
   "m_1d5a8e925a6e29": "{time} din tid",
   "m_1d5c68f71b884a": "Kanalen skapades",
-  "m_1d5d0ad2550147": "Plex hämtar den vid nästa guideuppdatering.",
   "m_1d5dbd5a81c213": "Inga modeller hittades. Skriv ett modell-ID.",
   "m_1d5dceb339eb82": "Använd för blockkonton: anlitas bara när en artikel saknas någon annanstans.",
   "m_1d619b05020cf6": "Sök samlingar…",

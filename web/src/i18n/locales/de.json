@@ -617,6 +617,7 @@
   "m_03bceda00e7625": "Noch nicht abspielbar",
   "m_03bd47e184ceba": "Ein VPN-Container wie gluetun kann einen Proxy bereitstellen, während Ether im normalen Netz bleibt, damit Plex und der Fernzugriff zu Hause bleiben. Im Host-Netz ist die Adresse meist http://127.0.0.1:8888, weil Docker-Namen dort nicht sichtbar sind. In einem gemeinsamen Docker-Netz ist es meist http://gluetun:8888. gluetuns üblicher Proxy ist HTTP auf Port 8888; eine SOCKS-Adresse nur verwenden, wenn du eine eingeschaltet hast. Teilt der ganze Stapel das Netz des VPN-Containers, lass dies aus und veröffentliche Ethers Ports an diesem Container. Indexernamen werden auf diesem Computer aufgelöst. Blockiert der DNS des Anbieters sie, richte den Resolver dieses Computers auf das VPN.",
   "m_03be2202673df4": "Reihen",
+  "m_03bfa47becf235": "Plex aktualisiert das Programm gleich.",
   "m_03c0bc13b9a2fd": "Hintergrundbild {number} festlegen ({language})",
   "m_03c22b2ed43923": "Dieses Budget ist größer als der freie Speicher auf diesem Datenträger.",
   "m_03c232d926fc55": "Alltag",
@@ -2295,6 +2296,7 @@
   "m_0df26a02ad1338": "Position {slot}",
   "m_0df3b2006bf5f3": "Lass alle an, um jede personalisierte Reihe zu verwenden. Schalte eine aus, um diese Art auszublenden.",
   "m_0df4374791e20e": "IPTV-Quellen",
+  "m_0dfee5f721345a": "diesen Sender",
   "m_0dff402097c149": "Warten auf den nächsten Durchlauf",
   "m_0e00c5c872cfad": "Fast fertig…",
   "m_0e0259be059a2e": "Linux-Grafikgerät, zum Beispiel /dev/dri/renderD128. Leer lassen, außer das umgewandelte Video startet nicht.",
@@ -2389,6 +2391,7 @@
   "m_0ea8317c116f8b": "HDR10",
   "m_0ea8478893eee6": "Geschmack",
   "m_0ea881a6649ee8": "Neuland",
+  "m_0ea8d16ce54df4": "{name} löschen",
   "m_0ea9c97405d4a6": "Ether wurde aktualisiert — laden Sie neu, wenn Sie soweit sind",
   "m_0eaa4f299fd3e7": "{name} entfernt",
   "m_0eb1e9e2565e02": "Definitionen konnten nicht aktualisiert werden",
@@ -4262,6 +4265,7 @@
   "m_1a2572e1c90950": "ist eines von",
   "m_1a257c97dc09a2": "Keine aufgezeichneten Wiedergaben in diesem Monat",
   "m_1a2749a1968805": "Zwischengespeicherte Episoden",
+  "m_1a2acfeb9a0de8": "Filmjahre werden korrigiert · {done} erledigt · {pending} übrig",
   "m_1a2b439e4baffb": "RTX Video: {status}",
   "m_1a2c259bfff2f5": {
     "one": "und {count} weiterer Stream (Transkodierung oder Live-TV)",
@@ -4287,7 +4291,6 @@
   "m_1a463f39cec097": "Studio",
   "m_1a4a89d884de18": "Profil {profile}",
   "m_1a4abaea994425": "Name der Präferenz",
-  "m_1a4b3eafd6b450": "Kanal löschen",
   "m_1a4bb3923cf901": {
     "one": "{count} Titel · Schleife von {duration}",
     "other": "{count} Titel · Schleife von {duration}"
@@ -4766,7 +4769,6 @@
   "m_1d5a505476f4b0": "Ersetze Identität und gemeinsame Einstellungen dieses Servers durch die des Clusters. Seine lokalen Daten bleiben in einem automatischen Backup erhalten.",
   "m_1d5a8e925a6e29": "{time} deiner Zeit",
   "m_1d5c68f71b884a": "Kanal erstellt",
-  "m_1d5d0ad2550147": "Plex übernimmt ihn bei der nächsten Programmaktualisierung.",
   "m_1d5dbd5a81c213": "Keine Modelle gefunden. Tippe eine Modell-ID.",
   "m_1d5dceb339eb82": "Für Block-Konten verwenden: wird nur befragt, wenn ein Artikel anderswo fehlt.",
   "m_1d619b05020cf6": "Sammlungen suchen…",
