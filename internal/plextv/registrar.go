@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -705,13 +706,29 @@ func (r *Registrar) connections(cfg config.Config) []remote.Connection {
 	})
 }
 
+// publishable is the URI list sent to plex.tv. Like PMS, every address goes
+// out as plain http://<ip>:<port>, whatever the secure-connections mode:
+// plex.tv matches those IPs against localAddresses to mark LAN connections
+// local, and synthesises the https plex.direct variants (https only when
+// httpsRequired is set). A published plex.direct hostname is stored as a
+// non-local address, so clients would list a LAN server as Remote.
 func publishable(cs []remote.Connection, includePlexDirect bool) []string {
 	var out []string
-	for _, c := range cs {
-		if c.Protocol == "https" && !c.Custom && !includePlexDirect {
-			continue
+	add := func(uri string) {
+		if !slices.Contains(out, uri) {
+			out = append(out, uri)
 		}
-		out = append(out, c.URI)
+	}
+	for _, c := range cs {
+		if c.Protocol == "https" && !c.Custom {
+			if c.Address != "" && c.Port > 0 {
+				add("http://" + net.JoinHostPort(c.Address, strconv.Itoa(c.Port)))
+			}
+			if !includePlexDirect {
+				continue
+			}
+		}
+		add(c.URI)
 	}
 	return out
 }
@@ -720,18 +737,17 @@ func publishable(cs []remote.Connection, includePlexDirect bool) []string {
 // them.
 func (r *Registrar) publishSet(cfg config.Config) ([]remote.Connection, []string) {
 	conns := r.connections(cfg)
-	uris := publishable(conns, r.o.PublishPlexDirect || cfg.Plex.SecureConnections == remote.SecureRequired)
+	published := conns
 	if !cfg.Plex.RemoteAccess {
 		// Only LAN and custom URLs when remote access is off.
-		var lanOnly []string
+		published = nil
 		for _, c := range conns {
-			if (c.Local || c.Custom) && slices.Contains(uris, c.URI) {
-				lanOnly = append(lanOnly, c.URI)
+			if c.Local || c.Custom {
+				published = append(published, c)
 			}
 		}
-		uris = lanOnly
 	}
-	return conns, uris
+	return conns, publishable(published, r.o.PublishPlexDirect)
 }
 
 // NodeURIs returns the URIs this node would publish for itself, refreshing
