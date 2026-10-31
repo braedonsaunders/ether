@@ -106,7 +106,7 @@ const (
 	recoveryHold = 2 * time.Minute
 	// Sign-in attempts within limitWindow: limitPerIP per client (an IPv4
 	// address or an IPv6 /64), limitPerName per username, and
-	// limitFailures failures from all clients together. At most limitKeys
+	// limitFailures password failures from all clients together. At most limitKeys
 	// clients and names are tracked, and maxVerifies Argon2id checks (about
 	// 19 MB each) run at once.
 	limitWindow   = 15 * time.Minute
@@ -354,14 +354,17 @@ func (rc *recovery) issueToken() string {
 
 // admit records a sign-in attempt from client (and for username, when
 // set) and reports whether it may proceed. The client's limit is checked
-// first and nothing is recorded once it is exceeded; so is the limit on
-// failures from everyone, and the number of tracked keys is capped.
-func (rc *recovery) admit(client, username string) bool {
+// first and nothing is recorded once it is exceeded, and the number of
+// tracked keys is capped. Password sign-ins (shared) also stop once
+// everyone together has failed limitFailures times. The recovery code
+// (about 59 bits, one use) and Plex (verified by plex.tv) are exempt, so
+// guessed passwords from a few hosts cannot lock the owner out of them.
+func (rc *recovery) admit(client, username string, shared bool) bool {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	now := rc.now()
 	rc.pruneLocked(now)
-	if len(rc.failures) >= limitFailures {
+	if shared && len(rc.failures) >= limitFailures {
 		return false
 	}
 	ipKey, nameKey := "ip:"+client, ""
@@ -391,7 +394,7 @@ func (rc *recovery) admit(client, username string) bool {
 	return true
 }
 
-// failed records a failed sign-in for the limit on everyone.
+// failed records a failed password sign-in for the limit on everyone.
 func (rc *recovery) failed() {
 	rc.mu.Lock()
 	rc.failures = append(rc.failures, rc.now())
@@ -513,7 +516,7 @@ func (rc *recovery) localSignIn(w http.ResponseWriter, r *http.Request) {
 		recoveryError(w, http.StatusBadRequest, "invalid", "enter a username and password")
 		return
 	}
-	if !rc.admit("local:"+rc.clientKey(r, f), body.Username) {
+	if !rc.admit("local:"+rc.clientKey(r, f), body.Username, true) {
 		recoveryError(w, http.StatusTooManyRequests, "rate_limit", "too many attempts; try again later")
 		return
 	}
@@ -558,7 +561,7 @@ func (rc *recovery) codeSignIn(w http.ResponseWriter, r *http.Request) {
 		recoveryError(w, http.StatusBadRequest, "invalid", "invalid request")
 		return
 	}
-	if !rc.admit("code:"+rc.clientKey(r, f), "") {
+	if !rc.admit("code:"+rc.clientKey(r, f), "", false) {
 		recoveryError(w, http.StatusTooManyRequests, "rate_limit", "too many attempts; try again later")
 		return
 	}
@@ -571,7 +574,6 @@ func (rc *recovery) codeSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 	rc.mu.Unlock()
 	if !ok {
-		rc.failed()
 		recoveryError(w, http.StatusUnauthorized, "invalid_code", "that recovery code is not right")
 		return
 	}
@@ -586,7 +588,7 @@ func (rc *recovery) startPIN(w http.ResponseWriter, r *http.Request) {
 		recoveryError(w, http.StatusServiceUnavailable, "signin_unavailable", "Plex sign-in is not available for this server")
 		return
 	}
-	if !rc.admit("pin:"+rc.clientKey(r, f), "") {
+	if !rc.admit("pin:"+rc.clientKey(r, f), "", false) {
 		recoveryError(w, http.StatusTooManyRequests, "rate_limit", "too many attempts; try again later")
 		return
 	}
@@ -644,7 +646,6 @@ func (rc *recovery) pollPIN(w http.ResponseWriter, r *http.Request) {
 	rc.mu.Unlock()
 	acct, err := plex.User(r.Context(), got.AuthToken)
 	if err != nil || f.OwnerPlexID == 0 || acct.ID != f.OwnerPlexID {
-		rc.failed()
 		recoveryError(w, http.StatusForbidden, "not_owner", "That Plex account doesn't own this server. Sign in as the owner.")
 		return
 	}

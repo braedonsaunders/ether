@@ -185,7 +185,13 @@ func (a *App) confirmRestore() error {
 		return nil
 	}
 	if err := backup.ConfirmRestore(a.opts.DataDir, a.restored); err != nil {
-		if p, _ := backup.ReadPending(a.opts.DataDir); p == nil {
+		// Committed only when the record is known to be gone: a record
+		// that cannot be read (damaged since it was applied) is not.
+		read := a.readPending
+		if read == nil {
+			read = backup.ReadPending
+		}
+		if p, rerr := read(a.opts.DataDir); rerr == nil && p == nil {
 			// Committed; only the report could not be written.
 			a.restored.Status = "restored"
 			a.log.Warn("restore finished, but its report could not be saved", "err", err)

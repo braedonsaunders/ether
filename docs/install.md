@@ -462,13 +462,14 @@ The recovery code also reaches whatever collects Ether's log: the system
 journal under systemd, `docker logs` in a container. Treat those as being as
 private as the data directory.
 
-When `config.json` itself cannot be read (or is not a settings file),
-Ether treats setup as finished, offers no restore from the page and listens
+When `config.json` itself cannot be read (or is not a settings file:
+empty, `null` or `{}`), Ether treats setup as finished, offers no restore from the page and listens
 on `127.0.0.1` only. In a container that loopback address is the
 container's own, so the page is unreachable from outside until the settings
 are fixed (`docker exec` into the container, or restore `config.json` into
 the volume); this is deliberate, so damaged settings never expose the
-server more than the owner chose.
+server more than the owner chose. A partial `config.json` is fine:
+whatever it leaves out takes its default, as it does once Ether is running.
 
 A restore counts once the restored server is about to serve. If it cannot
 start on the backup (a migration fails, the database is damaged, the

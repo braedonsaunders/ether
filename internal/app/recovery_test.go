@@ -645,7 +645,7 @@ func TestRecoveryLimiterIsBounded(t *testing.T) {
 	}
 	// Old attempts are pruned.
 	rc.now = func() time.Time { return time.Now().Add(limitWindow + time.Minute) }
-	rc.admit("probe", "")
+	rc.admit("probe", "", true)
 	rc.mu.Lock()
 	keys, fails := len(rc.limits), len(rc.failures)
 	rc.mu.Unlock()
@@ -658,7 +658,7 @@ func TestRecoveryLimiterIsBounded(t *testing.T) {
 		rc.limits["filler"+strconv.Itoa(i)] = []time.Time{rc.now()}
 	}
 	rc.mu.Unlock()
-	if rc.admit("new-client", "") {
+	if rc.admit("new-client", "", false) {
 		t.Fatal("a new key was tracked beyond the cap")
 	}
 }
@@ -706,11 +706,30 @@ func TestRecoveryGlobalLimits(t *testing.T) {
 	rc := testRecovery(dataDir)
 	h := rc.handler()
 	rc.prepare()
+	// A few hosts guessing passwords under unique usernames reach the limit
+	// on everyone: password sign-ins stop.
 	for i := range limitFailures {
-		postFrom(h, "code", `{"code":"ZZZZ-ZZZZ-ZZZZ"}`, "192.168."+strconv.Itoa(i/200)+"."+strconv.Itoa(i%200+1)+":5000", nil)
+		postFrom(h, "local", `{"username":"user`+strconv.Itoa(i)+`","password":"guess"}`, "192.168.1."+strconv.Itoa(i/limitPerIP+1)+":5000", nil)
 	}
-	if c := postFrom(h, "code", `{"code":"`+rc.code+`"}`, "192.168.250.1:5000", nil); c != http.StatusTooManyRequests {
-		t.Fatalf("after %d failures from everyone: %d", limitFailures, c)
+	if c := postFrom(h, "local", `{"username":"owner","password":"first secret"}`, "192.168.250.1:5000", nil); c != http.StatusTooManyRequests {
+		t.Fatalf("password sign-in after %d failures from everyone: %d", limitFailures, c)
+	}
+	// They do not lock the owner out of the recovery code, which keeps
+	// its per-client limit.
+	if w := signIn(t, h, "code", `{"code":"`+rc.code+`"}`, nil); w.Code != http.StatusOK {
+		t.Fatalf("correct recovery code after %d password failures: %d %s", limitFailures, w.Code, w.Body)
+	}
+	for range limitPerIP {
+		postFrom(h, "code", `{"code":"ZZZZ-ZZZZ-ZZZZ"}`, "192.168.9.9:5000", nil)
+	}
+	if c := postFrom(h, "code", `{"code":"`+rc.code+`"}`, "192.168.9.9:5000", nil); c != http.StatusTooManyRequests {
+		t.Fatalf("recovery code over its client's limit: %d", c)
+	}
+	rc.mu.Lock()
+	fails := len(rc.failures)
+	rc.mu.Unlock()
+	if fails != limitFailures {
+		t.Fatalf("recovery code failures counted against passwords: %d", fails)
 	}
 
 	rc = testRecovery(dataDir)
@@ -747,7 +766,7 @@ func TestRecoveryRound3Items(t *testing.T) {
 		t.Fatalf("restore after a successful start: %d", w.Code)
 	}
 
-	for _, doc := range []string{"null", "{}", `{"plex":{}}`, `{"server":null}`} {
+	for _, doc := range []string{"null", "{}", "[]", `"server"`, `{"server":5}`} {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "config.json"), []byte(doc), 0o600)
 		if f := readNodeFacts(dir, os.Getenv); f.Readable || !f.SetupComplete || f.Standalone() || f.Server.BindAddress != "127.0.0.1" {
@@ -777,4 +796,85 @@ func TestRecoveryRound3Items(t *testing.T) {
 			t.Errorf("localForwardHost(%q) = %v", host, got)
 		}
 	}
+}
+
+// Follow-up, item 2: a hand-written partial config.json that config.Open
+// merges over the defaults starts on the defaults it leaves out, not on
+// loopback only.
+func TestPartialSettingsUseTheDefaults(t *testing.T) {
+	for _, doc := range []string{`{"setupComplete":true,"plex":{"ownerPlexId":7}}`, `{"setupComplete":true,"server":{"friendlyName":"Den"}}`} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := config.Open(dir)
+		if err != nil {
+			t.Fatalf("config.Open %s: %v", doc, err)
+		}
+		want := cfg.Get().Server
+		f := readNodeFacts(dir, func(string) string { return "" })
+		if !f.Readable || !f.SetupComplete || !f.Standalone() || f.Server.BindAddress != want.BindAddress || f.Server.Port != want.Port {
+			t.Fatalf("settings %s: %+v, config.Open has %s:%d", doc, f, want.BindAddress, want.Port)
+		}
+		if f.Server.BindAddress == "127.0.0.1" {
+			t.Fatalf("settings %s: bound to loopback only", doc)
+		}
+	}
+}
+
+// Follow-up, item 3: a restore record that cannot be read at confirm time
+// is not taken for a committed restore; the server does not serve it.
+func TestUnreadableRestoreRecordIsNotServed(t *testing.T) {
+	apply := func(t *testing.T) (*App, string, []byte) {
+		dataDir, bundle, db := ownedDataDir(t)
+		db.Close()
+		st, err := backup.StageLocal(context.Background(), dataDir, bundle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := backup.RequestStaged(dataDir, st.ID); err != nil {
+			t.Fatal(err)
+		}
+		before, _ := os.ReadFile(filepath.Join(dataDir, "config.json"))
+		a := &App{opts: Options{DataDir: dataDir}, log: quietLog(), tracker: startup.NewTracker("1", time.Now)}
+		if err := a.applyPendingRestore(); err != nil || !a.restoreApplied() {
+			t.Fatalf("apply: %v %+v", err, a.restored)
+		}
+		return a, dataDir, before
+	}
+
+	t.Run("damaged record", func(t *testing.T) {
+		a, dataDir, _ := apply(t)
+		if err := os.WriteFile(filepath.Join(dataDir, backup.PendingFile), []byte("{damaged"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.confirmRestore(); err == nil {
+			t.Fatal("confirmRestore served a restore whose record is damaged")
+		}
+		if rep, _ := backup.ReadReport(dataDir); rep != nil {
+			t.Fatalf("report for an uncommitted restore: %+v", rep)
+		}
+	})
+
+	t.Run("read error after a failed commit", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root ignores directory permissions")
+		}
+		a, dataDir, before := apply(t)
+		a.readPending = func(string) (*backup.Pending, error) { return nil, os.ErrPermission }
+		if err := os.Chmod(dataDir, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		err := a.confirmRestore()
+		os.Chmod(dataDir, 0o700)
+		if err == nil {
+			t.Fatal("confirmRestore served a restore whose record could not be read")
+		}
+		if !a.rollbackUnconfirmed(err) {
+			t.Fatal("no rollback after the unconfirmed restore")
+		}
+		if after, _ := os.ReadFile(filepath.Join(dataDir, "config.json")); string(after) != string(before) {
+			t.Fatal("original settings not put back")
+		}
+	})
 }
