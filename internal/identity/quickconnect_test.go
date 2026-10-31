@@ -179,7 +179,13 @@ func TestQuickConnectRedeemStaysFastOnALargeDatabase(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users(id,plex_id,created_at,updated_at) VALUES(1,99,0,0)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `CREATE TABLE quick_bulk(n INTEGER PRIMARY KEY, payload BLOB)`); err != nil {
+	// The bulk rows exist so a redeem that scans the database is slow.
+	// SQLite stores that ballast as BLOB; PostgreSQL has no BLOB type.
+	payloadType := "BLOB"
+	if store.DialectOf(db) == store.Postgres {
+		payloadType = "BYTEA"
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE quick_bulk(n INTEGER PRIMARY KEY, payload `+payloadType+`)`); err != nil {
 		t.Fatal(err)
 	}
 	payload := bytes.Repeat([]byte("x"), 256<<10)
