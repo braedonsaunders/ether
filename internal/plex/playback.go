@@ -1328,6 +1328,15 @@ func (s *Server) partSelectsTitle(id *int64, rawID int64, viaRegistry bool, bind
 }
 
 // handlePartSelect is PUT /library/parts/{part}?audioStreamID=&subtitleStreamID=.
+// The stored subtitle is the title's choice. The part id only finds that
+// title: Play Version part ids move between releases as the list reorders.
+//
+// GET /library/metadata is built for that request from this choice. Nothing
+// caches the rendered body, and the response is Cache-Control: no-cache, so
+// a re-read sees the new selection. Apple TV checks the menu radio from the
+// PUT immediately and leaves the detail chip on its previous label until
+// that screen loads again. Plex Media Server's client does the same; the
+// chip is not a stale Ether document.
 func (s *Server) handlePartSelect(w http.ResponseWriter, r *http.Request) {
 	pr := FromContext(r.Context())
 	rawID, err := strconv.ParseInt(chi.URLParam(r, "part"), 10, 64)

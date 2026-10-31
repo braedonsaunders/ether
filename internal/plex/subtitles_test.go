@@ -781,6 +781,114 @@ func TestWaysToWatchSubtitleReread(t *testing.T) {
 	assertSpanish(guidPath)
 }
 
+// TestSubtitleChoiceSurvivesVariantReorder is the Apple TV More Ways to
+// Watch flake: the viewer picks Spanish SRT, then the variant list reorders
+// (a different release becomes Auto, so the same part id names a different
+// release) and the Spanish track moves to a new index. A PGS track now sits
+// in the old slot with the old stream index. The choice is the title plus
+// language, codec, and source, so the re-read and the direct-play decision
+// still select that SRT, at the same stream id.
+func TestSubtitleChoiceSurvivesVariantReorder(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	initial := []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 1280, Height: 720},
+		{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+		{Index: 2, Type: "subtitle", Codec: "subrip", Language: "en"},
+		{Index: 3, Type: "subtitle", Codec: "srt", Language: "es"},
+	}
+	for i := range f.resolver.byKey[fightClub.Key] {
+		if f.resolver.byKey[fightClub.Key][i].Auto {
+			f.resolver.byKey[fightClub.Key][i].Info.Streams = initial
+		}
+	}
+	pb.info.Streams = initial
+	db := store.OpenTest(t)
+	prefs := trackprefs.New(db)
+	rules := trackprefs.Default()
+	rules.SubtitleMode = "off"
+	if err := prefs.PutRules(context.Background(), ownerUser.ID, rules); err != nil {
+		t.Fatal(err)
+	}
+	f.srv.d.TrackPreferences = prefs
+
+	key := fightClub.Key.String()
+	meta := f.get(t, "/library/metadata/"+key, appleTV...)
+	if meta.Code != http.StatusOK {
+		t.Fatalf("detail: %d %s", meta.Code, meta.Body.String())
+	}
+	esID := ""
+	for _, tag := range subtitleTags(meta.Body.String()) {
+		if strings.Contains(tag, `languageCode="spa"`) && strings.Contains(tag, `codec="srt"`) && !strings.Contains(tag, `external="1"`) {
+			esID = streamAttr(tag, "id")
+		}
+	}
+	if esID == "" {
+		t.Fatalf("spanish srt missing:\n%s", meta.Body.String())
+	}
+	partID := strconv.FormatInt(f.srv.variantIDs.idFor(fightClub.Key, "rel-4k"), 10)
+	req := httptest.NewRequest(http.MethodPut, "/library/parts/"+partID+"?subtitleStreamID="+esID+"&allParts=1", nil)
+	req.RemoteAddr = "192.168.1.50:51000"
+	req.Header.Set("X-Plex-Token", ownerToken)
+	for i := 0; i+1 < len(appleTV); i += 2 {
+		req.Header.Set(appleTV[i], appleTV[i+1])
+	}
+	rec := httptest.NewRecorder()
+	f.srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// A warmer candidate becomes Auto, so the title-key part is a different
+	// release, and the Spanish SRT is no longer at index 3.
+	var next []core.ReleaseVariant
+	for _, id := range []string{"rel-4k", "rel-compat", "rel-auto"} {
+		for _, v := range f.resolver.byKey[fightClub.Key] {
+			if v.Release.ID == id {
+				v.Auto = id == "rel-4k"
+				next = append(next, v)
+			}
+		}
+	}
+	moved := []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 1280, Height: 720},
+		{Index: 1, Type: "audio", Codec: "aac", Language: "en", Channels: 2, Default: true},
+		{Index: 3, Type: "subtitle", Codec: "hdmv_pgs_subtitle", Language: "es"},
+		{Index: 4, Type: "subtitle", Codec: "subrip", Language: "en"},
+		{Index: 9, Type: "subtitle", Codec: "srt", Language: "es"},
+	}
+	for i := range next {
+		if next[i].Auto {
+			next[i].Info.Streams = moved
+		}
+	}
+	f.resolver.byKey[fightClub.Key] = next
+	pb.info.Streams = moved
+
+	assertSpanishSRT := func(path string) {
+		t.Helper()
+		body := f.get(t, path, appleTV...).Body.String()
+		chosen := selectedTag(subtitleTags(body))
+		if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `languageCode="spa"`) || !strings.Contains(chosen, `codec="srt"`) {
+			t.Fatalf("GET %s selected %q, want Spanish SRT id %s", path, chosen, esID)
+		}
+	}
+	assertSpanishSRT("/library/metadata/" + key)
+	assertSpanishSRT("/library/metadata/" + partID)
+
+	dec := f.get(t, "/video/:/transcode/universal/decision?path=/library/metadata/"+key+"&directPlay=1&directStream=1&protocol=hls&session=reorder-sub", appleTV...)
+	if dec.Code != http.StatusOK {
+		t.Fatalf("decision: %d %s", dec.Code, dec.Body.String())
+	}
+	tags := subtitleTags(dec.Body.String())
+	chosen := selectedTag(tags)
+	if chosen == "" && len(tags) > 0 {
+		chosen = tags[0]
+	}
+	if !strings.Contains(chosen, `id="`+esID+`"`) || !strings.Contains(chosen, `codec="srt"`) {
+		t.Fatalf("direct play dropped Spanish SRT: %q\n%s", chosen, dec.Body.String())
+	}
+}
+
 func TestDetailDoesNotDownloadSidecars(t *testing.T) {
 	f, _ := newSubtitleFixture(t)
 	rec := f.get(t, "/library/metadata/"+fightClub.Key.String())

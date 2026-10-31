@@ -118,9 +118,8 @@ func (s *Server) withCachedSidecars(ctx context.Context, u *core.User, t *core.T
 	return out
 }
 
-// resolveSubtitle finds a chosen subtitle stream in info: the same sidecar
-// source, the same embedded position, else a track of the same language
-// (same kind and forced flag preferred). -1 when info has none.
+// resolveSubtitle finds a chosen subtitle in info by language, codec, and
+// source. The old stream position is only a tie-break. -1 when info has none.
 func resolveSubtitle(want *core.StreamInfo, pos int, info core.MediaInfo) int {
 	return experience.ResolveSubtitle(want, pos, info)
 }

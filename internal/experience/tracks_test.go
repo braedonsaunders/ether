@@ -43,3 +43,15 @@ func TestResolveSubtitlePreservesIdentityAndFallback(t *testing.T) {
 		t.Fatalf("invalid: %d", got)
 	}
 }
+
+func TestResolveSubtitlePrefersCodecOverTheOldSlot(t *testing.T) {
+	want := &core.StreamInfo{Type: "subtitle", Language: "es", Codec: "srt", Index: 3}
+	info := core.MediaInfo{Streams: []core.StreamInfo{
+		{Type: "video"},
+		{Type: "subtitle", Language: "es", Codec: "hdmv_pgs_subtitle", Index: 3},
+		{Type: "subtitle", Language: "es", Codec: "srt", Index: 9},
+	}}
+	if got := ResolveSubtitle(want, 1, info); got != 2 {
+		t.Fatalf("Spanish SRT at the new index = %d, want 2", got)
+	}
+}

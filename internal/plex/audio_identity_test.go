@@ -151,6 +151,22 @@ func bindTable(t *testing.T, r *sessions.PlexStreamTable, key core.RatingKey, in
 	return id
 }
 
+func TestSubtitleIdentityIgnoresPosition(t *testing.T) {
+	r := sessions.NewPlexStreamTable()
+	es := core.StreamInfo{Type: "subtitle", Language: "es", Codec: "srt"}
+	first := bindTable(t, r, fightClub.Key, 3, es)
+	moved := es
+	moved.Index = 9
+	if got := bindTable(t, r, fightClub.Key, 9, moved); got != first {
+		t.Fatalf("subtitle id changed with position: %d vs %d", got, first)
+	}
+	pgs := es
+	pgs.Codec = "hdmv_pgs_subtitle"
+	if got := bindTable(t, r, fightClub.Key, 3, pgs); got == first {
+		t.Fatal("different codec reused the Spanish SRT id")
+	}
+}
+
 func TestAudioIdentityPrefersExplicitRegionBeforeCodec(t *testing.T) {
 	want := core.StreamInfo{Type: "audio", Language: "pt-BR", Codec: "ac3", Channels: 6}
 	info := core.MediaInfo{Streams: []core.StreamInfo{

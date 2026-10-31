@@ -1,6 +1,8 @@
 package experience
 
 import (
+	"strings"
+
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/langtag"
 )
@@ -40,6 +42,10 @@ func PickAudio(info core.MediaInfo, langs []string) int {
 }
 
 // ResolveSubtitle maps a stored choice onto a stream position, or -1.
+// The choice is language, codec, and source (sidecar URL, or embedded
+// versus external). A matching track at a new index beats whatever now
+// sits in the old slot: variant lists reorder, and that slot is not the
+// track the viewer picked.
 func ResolveSubtitle(want *core.StreamInfo, pos int, info core.MediaInfo) int {
 	if want == nil {
 		if pos >= 0 && pos < len(info.Streams) && info.Streams[pos].Type == "subtitle" {
@@ -47,36 +53,61 @@ func ResolveSubtitle(want *core.StreamInfo, pos int, info core.MediaInfo) int {
 		}
 		return -1
 	}
-	if !want.External && pos >= 0 && pos < len(info.Streams) {
-		st := info.Streams[pos]
-		if st.Type == "subtitle" && !st.External && st.Index == want.Index && (want.Language == "" || sameTrackLanguage(st.Language, want.Language)) {
+	if want.Language == "" && want.ExternalURL == "" {
+		if pos >= 0 && pos < len(info.Streams) && info.Streams[pos].Type == "subtitle" && info.Streams[pos].Index == want.Index {
 			return pos
 		}
-	}
-	if want.External && want.ExternalURL != "" {
-		for i, st := range info.Streams {
-			if st.Type == "subtitle" && st.External && st.ExternalURL == want.ExternalURL {
-				return i
-			}
-		}
+		return -1
 	}
 	best, bestScore := -1, 0
 	for i, st := range info.Streams {
-		if st.Type != "subtitle" || !sameTrackLanguage(st.Language, want.Language) {
+		if st.Type != "subtitle" {
 			continue
 		}
-		n := 1
-		if st.Forced == want.Forced {
-			n += 4
+		score := subtitleIdentityScore(*want, st)
+		if score == 0 {
+			continue
 		}
-		if st.External == want.External {
-			n += 2
+		if i == pos {
+			score++
 		}
-		if n > bestScore {
-			best, bestScore = i, n
+		if score > bestScore {
+			best, bestScore = i, score
 		}
 	}
 	return best
+}
+
+// subtitleIdentityScore ranks how well st is the chosen subtitle. A sidecar
+// URL is the source. Otherwise language is required, and the same codec and
+// the same source kind (embedded or external) outrank a forced-flag or
+// position tie.
+func subtitleIdentityScore(want, st core.StreamInfo) int {
+	if want.ExternalURL != "" && st.External && st.ExternalURL == want.ExternalURL {
+		return 1000
+	}
+	if !sameTrackLanguage(st.Language, want.Language) {
+		return 0
+	}
+	n := 10
+	if subtitleCodec(want.Codec) != "" && subtitleCodec(st.Codec) == subtitleCodec(want.Codec) {
+		n += 40
+	}
+	if st.External == want.External {
+		n += 20
+	}
+	if st.Forced == want.Forced {
+		n += 4
+	}
+	return n
+}
+
+func subtitleCodec(c string) string {
+	c = strings.ToLower(c)
+	if c == "subrip" {
+		return "srt"
+	}
+	return c
 }
 
 func sameTrackLanguage(a, b string) bool { return a != "" && b != "" && langtag.MatchTier(a, b) > 0 }

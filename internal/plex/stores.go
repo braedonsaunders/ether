@@ -29,10 +29,9 @@ type selection struct {
 	audioStream *core.StreamInfo
 	subtitle    int // position, -1 = none
 	subtitleSet bool
-	// subtitleStream is the chosen subtitle when it was picked by stream
-	// id, so the choice is found again in a differently shaped MediaInfo
-	// (the estimate before play, the probed release after); see
-	// resolveSubtitle.
+	// subtitleStream is the chosen subtitle's identity (language, codec,
+	// and source), not its position. A later variant order can put a
+	// different track in the old slot; resolveSubtitle finds this one.
 	subtitleStream *core.StreamInfo
 }
 
