@@ -14,21 +14,20 @@ import (
 )
 
 func TestUserViewsStayFastWhileRowsFillALargeLibrary(t *testing.T) {
-	var libraryCalls atomic.Int32
-	var blockLibrary atomic.Bool
-	libraryBlock := make(chan struct{})
+	var counts atomic.Int32
 	rowBlock := make(chan struct{})
-	title := frontend.Title{Key: 4, Type: "show", Title: "Shown", Released: time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC)}
+	title := frontend.Title{Key: 4, Type: "show", Title: "Shown"}
 	exp := frontendtest.Experience{
 		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
 			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
 		},
 		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
-			libraryCalls.Add(1)
-			if blockLibrary.Load() {
-				<-libraryBlock
-			}
-			return frontend.Page{Items: []frontend.Title{title}, Total: 27000}, nil
+			t.Error("UserViews browsed the library")
+			return frontend.Page{}, nil
+		},
+		LibraryCountFunc: func(context.Context, *frontend.Viewer, string) (int, error) {
+			counts.Add(1)
+			return 27000, nil
 		},
 		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
 			<-rowBlock
@@ -55,32 +54,22 @@ func TestUserViewsStayFastWhileRowsFillALargeLibrary(t *testing.T) {
 		inst.Handler().ServeHTTP(w, r)
 		return w
 	}
-	warm := call()
-	if warm.Code != 200 {
-		t.Fatal(warm.Code, warm.Body.String())
+	start := time.Now()
+	cold := call()
+	if cold.Code != 200 || time.Since(start) > 100*time.Millisecond {
+		t.Fatalf("cold UserViews took %s: %d %s", time.Since(start), cold.Code, cold.Body.String())
 	}
 	var listed struct{ Items []map[string]any }
-	if json.Unmarshal(warm.Body.Bytes(), &listed) != nil || len(listed.Items) == 0 || listed.Items[len(listed.Items)-1]["ChildCount"] != float64(27000) {
-		t.Fatal(warm.Body.String())
+	if json.Unmarshal(cold.Body.Bytes(), &listed) != nil || len(listed.Items) == 0 || listed.Items[len(listed.Items)-1]["ChildCount"] != float64(27000) {
+		t.Fatal(cold.Body.String())
 	}
-	primed := libraryCalls.Load()
-	if primed == 0 {
-		t.Fatal("warm view list did not count the library")
+	if _, ok := listed.Items[len(listed.Items)-1]["DateCreated"]; ok {
+		t.Fatal("cold view invented DateCreated")
 	}
-	blockLibrary.Store(true)
-	start := time.Now()
-	again := call()
-	elapsed := time.Since(start)
-	if again.Code != 200 || elapsed > 100*time.Millisecond {
-		t.Fatalf("warm UserViews took %s: %d %s", elapsed, again.Code, again.Body.String())
-	}
-	if libraryCalls.Load() != primed {
-		t.Fatalf("warm UserViews walked the library again: %d calls", libraryCalls.Load())
-	}
-	var listedAgain struct{ Items []map[string]any }
-	if json.Unmarshal(again.Body.Bytes(), &listedAgain) != nil || listedAgain.Items[len(listedAgain.Items)-1]["ChildCount"] != float64(27000) {
-		t.Fatal(again.Body.String())
+	start = time.Now()
+	warm := call()
+	if warm.Code != 200 || time.Since(start) > 100*time.Millisecond || counts.Load() != 1 {
+		t.Fatalf("warm UserViews took %s after %d counts: %s", time.Since(start), counts.Load(), warm.Body.String())
 	}
 	close(rowBlock)
-	close(libraryBlock)
 }

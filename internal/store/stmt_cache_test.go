@@ -3,10 +3,14 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"modernc.org/sqlite"
 )
 
 func TestCachedSQLiteStatementsReuse(t *testing.T) {
@@ -113,4 +117,56 @@ func BenchmarkCachedBrowseRead(b *testing.B) {
 			}
 		}
 	})
+}
+
+var (
+	holdOnce sync.Once
+	holdCur  atomic.Int32
+	holdPeak atomic.Int32
+)
+
+func TestParallelSlowQueriesOverlap(t *testing.T) {
+	holdOnce.Do(func() {
+		err := sqlite.RegisterScalarFunction("ether_stmt_hold", 0, func(*sqlite.FunctionContext, []driver.Value) (driver.Value, error) {
+			n := holdCur.Add(1)
+			for {
+				p := holdPeak.Load()
+				if n <= p || holdPeak.CompareAndSwap(p, n) {
+					break
+				}
+			}
+			time.Sleep(300 * time.Millisecond)
+			holdCur.Add(-1)
+			return int64(1), nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	holdCur.Store(0)
+	holdPeak.Store(0)
+	db, err := sql.Open("sqlite-cached", filepath.Join(t.TempDir(), "slow.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	db.SetMaxOpenConns(4)
+	ctx := context.Background()
+	start := time.Now()
+	var wg sync.WaitGroup
+	for n := 0; n < 2; n++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var n int64
+			if err := db.QueryRowContext(ctx, `SELECT ether_stmt_hold()`).Scan(&n); err != nil {
+				t.Errorf("slow query: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+	if holdPeak.Load() < 2 || elapsed > 450*time.Millisecond {
+		t.Fatalf("same statement serialized: peak %d elapsed %s", holdPeak.Load(), elapsed)
+	}
 }

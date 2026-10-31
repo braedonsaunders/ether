@@ -29,6 +29,7 @@ type Experience struct {
 	AncestorsFunc            func(context.Context, *core.Viewer, core.Device, core.RatingKey) ([]core.Title, error)
 	FacetsFunc               func(context.Context, *core.Viewer, core.Device, string, string) ([]core.FacetValue, error)
 	LibraryItemsFunc         func(context.Context, *core.Viewer, core.Device, string, frontend.ItemQuery) (core.Page, error)
+	LibraryCountFunc         func(context.Context, *core.Viewer, string) (int, error)
 	SetPlayedFunc            func(context.Context, *core.Viewer, core.RatingKey) error
 	SetUnplayedFunc          func(context.Context, *core.Viewer, core.RatingKey) error
 	SetWatchlistFunc         func(context.Context, *core.Viewer, core.RatingKey, bool) error
@@ -135,6 +136,12 @@ func (f Experience) Facets(c context.Context, v *core.Viewer, d core.Device, id,
 		return f.FacetsFunc(c, v, d, id, name)
 	}
 	return nil, nil
+}
+func (f Experience) LibraryCount(c context.Context, v *core.Viewer, id string) (int, error) {
+	if f.LibraryCountFunc != nil {
+		return f.LibraryCountFunc(c, v, id)
+	}
+	return 0, context.Canceled
 }
 func (f Experience) LibraryItems(c context.Context, v *core.Viewer, d core.Device, id string, q frontend.ItemQuery) (core.Page, error) {
 	if f.LibraryItemsFunc != nil {

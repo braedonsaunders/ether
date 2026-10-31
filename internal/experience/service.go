@@ -50,6 +50,9 @@ type ServiceDeps struct {
 	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
+	// CountBrowsable is the indexed library size. The view list uses it instead
+	// of browsing titles.
+	CountBrowsable func(context.Context, core.MediaType) (int, error)
 	// CreditItems enumerates cached credit-title keys without browsing or hydration.
 	CreditItems   func(context.Context, core.RatingKey, int) ([]core.RatingKey, error)
 	AiredEpisodes func(context.Context, core.RatingKey, int, int) (core.Page, error)
@@ -196,6 +199,33 @@ func (s *Service) Views(ctx context.Context, viewer *core.Viewer) ([]frontend.Vi
 		}
 	}
 	return out, nil
+}
+
+// LibraryCount is the indexed size of one library. It does not browse or
+// hydrate titles. A viewer who cannot open the library gets zero.
+func (s *Service) LibraryCount(ctx context.Context, viewer *core.Viewer, viewID string) (int, error) {
+	if s == nil || s.d.CountBrowsable == nil {
+		return 0, errors.New("experience: library count unavailable")
+	}
+	v, err := s.viewer(ctx, viewer)
+	if err != nil {
+		return 0, err
+	}
+	var library Library
+	var found bool
+	for _, lib := range s.libraries() {
+		if strconv.Itoa(lib.ID) == viewID {
+			library, found = lib, true
+			break
+		}
+	}
+	if !found {
+		return 0, core.ErrNotFound
+	}
+	if !SectionAllowed(v, library.ID) {
+		return 0, nil
+	}
+	return s.d.CountBrowsable(ctx, library.Type)
 }
 
 // LibraryItems scans catalogue pages and filters before applying the requested page.

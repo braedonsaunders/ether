@@ -91,11 +91,15 @@ func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
 			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
 		},
-		LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, id string, q frontend.ItemQuery) (frontend.Page, error) {
-			if v == nil || v.ID != 1 || id != "1" || (q.Limit != 1 && q.Limit != 0) {
-				t.Fatalf("library count query viewer=%v id=%s limit=%d", v, id, q.Limit)
+		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+			t.Fatal("UserViews browsed the library")
+			return frontend.Page{}, nil
+		},
+		LibraryCountFunc: func(_ context.Context, v *frontend.Viewer, id string) (int, error) {
+			if v == nil || v.ID != 1 || id != "1" {
+				t.Fatalf("library count viewer=%v id=%s", v, id)
 			}
-			return frontend.Page{Total: 6}, nil
+			return 6, nil
 		},
 	}
 	inst := mountJellyfin(t, exp)
@@ -148,8 +152,8 @@ func TestJellyfinItemDetailServesCollectionFolder(t *testing.T) {
 		ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
 			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
 		},
-		LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
-			return frontend.Page{Total: 6}, nil
+		LibraryCountFunc: func(context.Context, *frontend.Viewer, string) (int, error) {
+			return 6, nil
 		},
 	}
 	inst := mountJellyfin(t, exp)
