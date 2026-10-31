@@ -26,9 +26,7 @@ func (c *Catalog) genreNames(ctx context.Context, mediaType string, ids []int, f
 	if len(full) > 0 {
 		out := make([]string, 0, len(full))
 		for _, g := range full {
-			if g.Name != "" {
-				out = append(out, g.Name)
-			}
+			out = appendUnique(out, g.Name)
 		}
 		return out
 	}
@@ -500,9 +498,7 @@ func keywordNames(k *tmdb.Keywords) []string {
 	out := []string{}
 	for _, list := range [][]tmdb.Keyword{k.Keywords, k.Results} {
 		for _, kw := range list {
-			if kw.Name != "" {
-				out = append(out, kw.Name)
-			}
+			out = appendUnique(out, kw.Name)
 		}
 	}
 	return out

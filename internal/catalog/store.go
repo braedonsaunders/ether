@@ -333,6 +333,8 @@ SELECT h.key, 'home', CAST(h.checked AS TEXT), CAST(h.earliest_ts AS TEXT), CAST
 	}
 	for key := range touched {
 		for _, i := range idx[key] {
+			items[i].Genres = uniqueStrings(items[i].Genres)
+			items[i].Keywords = uniqueStrings(items[i].Keywords)
 			sort.Strings(items[i].Genres)
 			sort.Strings(items[i].Keywords)
 			sort.Strings(items[i].AlternativeTitles)
@@ -450,7 +452,7 @@ SELECT 'season', show_key, CAST(season AS TEXT), CAST(child_count AS TEXT), '', 
 			continue
 		}
 		if len(items[i].Keywords) == 0 && len(show.keywords) > 0 && (items[i].Type == core.TypeSeason || items[i].Type == core.TypeEpisode) {
-			items[i].Keywords = append([]string(nil), show.keywords...)
+			items[i].Keywords = uniqueStrings(append([]string(nil), show.keywords...))
 		}
 		if items[i].ShowYear == 0 {
 			items[i].ShowYear = show.year
@@ -830,6 +832,29 @@ func addedAtFor(browsable int, now int64) int64 {
 		return now
 	}
 	return 0
+}
+
+func appendUnique(dst []string, v string) []string {
+	if v == "" {
+		return dst
+	}
+	for _, existing := range dst {
+		if existing == v {
+			return dst
+		}
+	}
+	return append(dst, v)
+}
+
+func uniqueStrings(in []string) []string {
+	if len(in) < 2 {
+		return in
+	}
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		out = appendUnique(out, v)
+	}
+	return out
 }
 
 func replacePairs(ctx context.Context, tx *sql.Tx, table, col string, key int64, vals []string) error {

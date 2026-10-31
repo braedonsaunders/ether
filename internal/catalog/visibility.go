@@ -49,10 +49,10 @@ func (c *Catalog) FilterVisibility(ctx context.Context, ts []core.Title) []core.
 		table, col string
 		set        func(int, string)
 	}{
-		{"catalog_countries", "country", func(i int, v string) { out[i].Countries = append(out[i].Countries, v) }},
-		{"catalog_genres", "genre", func(i int, v string) { out[i].Genres = append(out[i].Genres, v) }},
-		{"catalog_studios", "studio", func(i int, v string) { out[i].Studios = append(out[i].Studios, v) }},
-		{"catalog_keywords", "keyword", func(i int, v string) { out[i].Keywords = append(out[i].Keywords, v) }},
+		{"catalog_countries", "country", func(i int, v string) { out[i].Countries = appendUnique(out[i].Countries, v) }},
+		{"catalog_genres", "genre", func(i int, v string) { out[i].Genres = appendUnique(out[i].Genres, v) }},
+		{"catalog_studios", "studio", func(i int, v string) { out[i].Studios = appendUnique(out[i].Studios, v) }},
+		{"catalog_keywords", "keyword", func(i int, v string) { out[i].Keywords = appendUnique(out[i].Keywords, v) }},
 	} {
 		for start := 0; start < len(ts); start += batch {
 			part := ts[start:min(start+batch, len(ts))]
@@ -60,6 +60,12 @@ func (c *Catalog) FilterVisibility(ctx context.Context, ts []core.Title) []core.
 				return nil
 			}
 		}
+	}
+	for i := range out {
+		out[i].Genres = uniqueStrings(out[i].Genres)
+		out[i].Keywords = uniqueStrings(out[i].Keywords)
+		out[i].Studios = uniqueStrings(out[i].Studios)
+		out[i].Countries = uniqueStrings(out[i].Countries)
 	}
 	for start := 0; start < len(ts); start += batch {
 		part := ts[start:min(start+batch, len(ts))]
