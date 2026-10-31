@@ -139,7 +139,7 @@ func (t *operabilityTranscoder) StartHLS(_ context.Context, req core.HLSRequest)
 	if id == "" {
 		id = "hls"
 	}
-	s := &operabilityHLS{id: id}
+	s := &operabilityHLS{id: id, lease: req.InputLease}
 	t.live[id] = s
 	t.start++
 	return s, nil
@@ -152,8 +152,14 @@ func (t *operabilityTranscoder) Session(id string) (core.HLSSession, bool) {
 }
 func (t *operabilityTranscoder) Stop(id string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	s := t.live[id]
 	delete(t.live, id)
+	t.mu.Unlock()
+	// A real encoder seals its input lease on stop. Leaving the lease held
+	// blocks source retirement, so the owner session list never clears.
+	if h, ok := s.(*operabilityHLS); ok && h.lease != nil {
+		h.lease.SealInput()
+	}
 }
 func (t *operabilityTranscoder) HWAccel() core.HWAccel { return core.HWAccel{Name: "none"} }
 func (t *operabilityTranscoder) starts() int {
@@ -162,7 +168,10 @@ func (t *operabilityTranscoder) starts() int {
 	return t.start
 }
 
-type operabilityHLS struct{ id string }
+type operabilityHLS struct {
+	id    string
+	lease core.EncoderInputLease
+}
 
 func (s *operabilityHLS) ID() string { return s.id }
 func (s *operabilityHLS) ServePlaylist(w http.ResponseWriter, _ *http.Request) {
