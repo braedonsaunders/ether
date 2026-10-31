@@ -330,6 +330,16 @@ func (s *Service) Handler() http.Handler {
 	return m
 }
 
+// BrowseBlocks is the part of a viewer's policy that library SQL can apply
+// before pagination: blocked genres, blocked keywords, and the rating cap.
+func (s *Service) BrowseBlocks(u *core.User) (genres, keywords []string, maxRating string) {
+	if s == nil || u == nil {
+		return nil, nil, ""
+	}
+	p := s.ForUser(u)
+	return append([]string(nil), p.BlockedGenres...), append([]string(nil), p.BlockedKeywords...), p.MaxContentRating
+}
+
 // ForUser is u's policy.
 func (s *Service) ForUser(u *core.User) Policy {
 	if u == nil {

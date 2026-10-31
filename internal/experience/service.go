@@ -50,6 +50,11 @@ type ServiceDeps struct {
 	Children            func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Grandchildren       func(context.Context, *core.User, core.RatingKey) ([]core.Title, error)
 	Browse              func(context.Context, core.BrowseQuery) (core.Page, error)
+	// PageExclusions are viewer-specific SQL exclusions for an indexed library
+	// page: hidden titles, blocked genres, blocked keywords, and the policy
+	// content-rating cap. Nil keeps the catalogue scan, which still applies
+	// filters the SQL page cannot see.
+	PageExclusions func(context.Context, *core.User) ([]core.RatingKey, []string, []string, string)
 	// CountBrowsable is the indexed library size. The view list uses it instead
 	// of browsing titles.
 	CountBrowsable func(context.Context, core.MediaType) (int, error)
@@ -389,6 +394,11 @@ func (s *Service) LibraryItems(ctx context.Context, viewer *core.Viewer, device 
 		clear(recursiveBatch)
 		recursiveBatch = recursiveBatch[:0]
 		return nil
+	}
+	if page, ok, err := s.indexedLibraryPage(ctx, v, library, q); err != nil {
+		return core.Page{}, err
+	} else if ok {
+		return page, nil
 	}
 	for offset := 0; ; {
 		filter := q.Filter
