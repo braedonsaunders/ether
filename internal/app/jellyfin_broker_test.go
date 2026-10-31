@@ -106,7 +106,9 @@ func TestJellyfinRealBrokerPlayback(t *testing.T) {
 }
 
 func TestPlexWatchReachesJellyfinSocket(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Race instrumentation of store open, mount, and the handshake exceeds 5s
+	// on the shared worker. The budget bounds a stuck socket; it is not the assertion.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	viewer := &core.Viewer{ID: 2}
 	active := func(_ context.Context, id int64) (*core.Viewer, error) {
