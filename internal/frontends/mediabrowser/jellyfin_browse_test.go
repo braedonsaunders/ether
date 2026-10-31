@@ -92,7 +92,7 @@ func TestJellyfinViewsUseCollectionFolderShell(t *testing.T) {
 			return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
 		},
 		LibraryItemsFunc: func(_ context.Context, v *frontend.Viewer, _ frontend.Device, id string, q frontend.ItemQuery) (frontend.Page, error) {
-			if v == nil || v.ID != 1 || id != "1" || q.Limit != 1 {
+			if v == nil || v.ID != 1 || id != "1" || (q.Limit != 1 && q.Limit != 0) {
 				t.Fatalf("library count query viewer=%v id=%s limit=%d", v, id, q.Limit)
 			}
 			return frontend.Page{Total: 6}, nil
@@ -222,6 +222,25 @@ func TestJellyfinBrowseFiltersReachTheLibrary(t *testing.T) {
 	inst.Handler().ServeHTTP(w, r)
 	if w.Code != 200 || got.Filter.MinRating != 7.5 || len(got.Filter.ContentRatings) != 2 || got.Filter.ContentRatings[0] != "PG-13" || got.Filter.Studio != "A24" || got.Filter.Query != "Arrival" || got.Filter.MinRuntime != 60*time.Second || got.Sort != core.SortReleased || !got.Desc {
 		t.Fatal(w.Code, got)
+	}
+}
+
+func TestJellyfinNextUpUsesContinueEpisodes(t *testing.T) {
+	episode := frontend.Title{Key: 8, Type: "episode", Title: "Two", ShowTitle: "Show"}
+	movie := frontend.Title{Key: 3, Type: "movie", Title: "Film"}
+	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+		return []frontend.Row{{Purpose: frontend.RowContinue, Items: []frontend.Title{movie, episode}}}, nil
+	}, UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+		return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+	}}
+	inst := mountJellyfin(t, exp)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Shows/NextUp", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	var body struct{ Items []map[string]any }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 1 || body.Items[0]["Name"] != "Two" {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }
 

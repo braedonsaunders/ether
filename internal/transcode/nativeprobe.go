@@ -893,6 +893,7 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 		si.BitDepth = f.bitDepth
 		si.PixelFormat = yuvPixFmt(f.chroma, f.bitDepth)
 		si.NALLengthSize = nalLengthSize(p, 4)
+		applyReferenceFrames(si, f)
 		spsPicture(si, f)
 		if transfer == 0 || transfer == 2 {
 			transfer = f.transfer
@@ -917,6 +918,7 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 		}
 		si.BitDepth = f.bitDepth
 		si.PixelFormat = yuvPixFmt(f.chroma, f.bitDepth)
+		applyReferenceFrames(si, f)
 		spsPicture(si, f)
 		if transfer == 0 || transfer == 2 {
 			transfer = f.transfer
@@ -942,6 +944,14 @@ func videoConfig(si *core.StreamInfo, codec string, p []byte, transfer int, dovi
 		return incomplete("video codec %s", codec)
 	}
 	return applyTransfer(si, transfer, dovi)
+}
+
+func applyReferenceFrames(si *core.StreamInfo, f spsFacts) {
+	if si == nil || !f.hasRefs {
+		return
+	}
+	v := f.refs
+	si.ReferenceFrames = &v
 }
 
 // yuvPixFmt is the ffprobe pixel format for a signalled chroma_format_idc and

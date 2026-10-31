@@ -152,6 +152,7 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 		if err == nil {
 			item["ChildCount"] = page.Total
 		}
+		i.attachViewMediaDates(r, v, view.ID, item)
 	}
 	return item, true
 }
@@ -254,6 +255,33 @@ func (i *instance) browseRoutes() error {
 				}
 				if row.Handle != "" && len(titles) > start {
 					spans = append(spans, rowSpan{start, len(titles), row.Handle})
+				}
+			}
+			// Jellyfin Next Up is the next episode after something the viewer
+			// watched. That episode is carried on the continue row when no
+			// home row is labeled next-up.
+			if purpose == frontend.RowNextUp && len(titles) == 0 {
+				for _, row := range rows {
+					if row.Purpose != frontend.RowContinue {
+						continue
+					}
+					start := len(titles)
+					if len(row.Entries) > 0 {
+						for _, entry := range row.Entries {
+							if entry.Kind == frontend.RowEntryTitle && entry.Title != nil && entry.Title.Type == "episode" {
+								titles = append(titles, *entry.Title)
+							}
+						}
+					} else {
+						for _, title := range row.Items {
+							if title.Type == "episode" {
+								titles = append(titles, title)
+							}
+						}
+					}
+					if row.Handle != "" && len(titles) > start {
+						spans = append(spans, rowSpan{start, len(titles), row.Handle})
+					}
 				}
 			}
 			offset := queryInt(r, "StartIndex", 0)

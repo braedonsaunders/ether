@@ -98,6 +98,11 @@ type spsFacts struct {
 	sarNum, sarDen    int
 	fullRange         int
 	primaries, matrix int
+	// refs is max_num_ref_frames (H.264) or the highest temporal layer's
+	// max_dec_pic_buffering (H.265). hasRefs is false when the SPS did not
+	// reach that field.
+	refs    int
+	hasRefs bool
 }
 
 // avcSPS parses an H.264 sequence parameter set NAL (header byte included).
@@ -153,7 +158,8 @@ func avcSPS(nal []byte) (spsFacts, error) {
 			r.se()
 		}
 	}
-	r.ue()    // max_num_ref_frames
+	f.refs = int(r.ue()) // max_num_ref_frames
+	f.hasRefs = r.err == nil
 	r.skip(1) // gaps_in_frame_num_value_allowed_flag
 	r.ue()    // pic_width_in_mbs_minus1
 	r.ue()    // pic_height_in_map_units_minus1
@@ -314,7 +320,9 @@ func hevcSPS(nal []byte) (spsFacts, error) {
 		first = 0
 	}
 	for i := first; i <= maxSub; i++ {
-		r.ue()
+		// Highest layer wins: ffprobe's refs is that layer's DPB size.
+		f.refs = int(r.ue()) + 1
+		f.hasRefs = r.err == nil
 		r.ue()
 		r.ue()
 	}
