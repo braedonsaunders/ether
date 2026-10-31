@@ -143,3 +143,60 @@ func TestLivePlaybackUsesAuthorizedChannelTarget(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func TestLiveTVInfoViewChannelAndOnNow(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 1}
+	now := time.Now().UTC()
+	live := frontendtest.LiveTV{
+		ChannelsFunc: func(context.Context, *frontend.Viewer) ([]frontend.LiveChannel, error) {
+			return []frontend.LiveChannel{{ID: "channel-1", Name: "News", Number: "2"}}, nil
+		},
+		ResolveChannelFunc: func(_ context.Context, _ *frontend.Viewer, guid string) (frontend.LiveChannel, error) {
+			id, _ := ids.StringGUID(ids.Channel, "channel-1")
+			if guid != id {
+				t.Fatal(guid)
+			}
+			return frontend.LiveChannel{ID: "channel-1", Name: "News", Number: "2"}, nil
+		},
+		GuideFunc: func(context.Context, *frontend.Viewer, frontend.LiveGuideQuery) ([]frontend.LiveProgramme, error) {
+			return []frontend.LiveProgramme{
+				{ID: "now", ChannelID: "channel-1", Title: "On Now", Start: now.Add(-time.Minute), End: now.Add(time.Hour)},
+				{ID: "later", ChannelID: "channel-1", Title: "Later", Start: now.Add(2 * time.Hour), End: now.Add(3 * time.Hour)},
+			}, nil
+		},
+	}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}
+	exp := frontendtest.Experience{ViewsFunc: func(context.Context, *frontend.Viewer) ([]frontend.View, error) {
+		return []frontend.View{{ID: "1", Name: "Movies", Type: "movie"}}, nil
+	}}
+	for _, front := range []frontend.Frontend{Jellyfin{MachineID: "test"}, Emby{MachineID: "test"}} {
+		inst, err := front.Mount(context.Background(), frontend.Host{Identity: ident, Experience: exp, LiveTV: live})
+		if err != nil {
+			t.Fatal(err)
+		}
+		call := func(path string) *httptest.ResponseRecorder {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", path, nil)
+			r.Header.Set("X-Emby-Token", "grant")
+			inst.Handler().ServeHTTP(w, r)
+			return w
+		}
+		info := call("/LiveTv/Info")
+		if info.Code != 200 || !strings.Contains(info.Body.String(), `"IsEnabled":true`) || !strings.Contains(info.Body.String(), `"EnabledUsers":[]`) || !strings.Contains(info.Body.String(), `"Name":"Ether"`) || !strings.Contains(info.Body.String(), `"IsVisible":true`) {
+			t.Fatal(front.Describe().ID, info.Code, info.Body.String())
+		}
+		views := call("/UserViews")
+		if views.Code != 200 || !strings.Contains(views.Body.String(), `"CollectionType":"livetv"`) || !strings.Contains(views.Body.String(), `"Name":"Live TV"`) {
+			t.Fatal(front.Describe().ID, views.Code, views.Body.String())
+		}
+		id, _ := ids.StringGUID(ids.Channel, "channel-1")
+		one := call("/LiveTv/Channels/" + id)
+		if one.Code != 200 || !strings.Contains(one.Body.String(), `"Name":"News"`) || !strings.Contains(one.Body.String(), `"Type":"TvChannel"`) || strings.Contains(one.Body.String(), `"Items"`) {
+			t.Fatal(front.Describe().ID, one.Code, one.Body.String())
+		}
+		rec := call("/LiveTv/Programs/Recommended?IsAiring=true&Limit=5")
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"Name":"On Now"`) || strings.Contains(rec.Body.String(), "Later") || !strings.Contains(rec.Body.String(), `"ChannelName":"News"`) || !strings.Contains(rec.Body.String(), `"TotalRecordCount":1`) {
+			t.Fatal(front.Describe().ID, rec.Code, rec.Body.String())
+		}
+	}
+}

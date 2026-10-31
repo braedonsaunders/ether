@@ -482,10 +482,10 @@ const airedSeasonEpisodeWhere = `type='episode' AND show_key=? AND season=? AND 
 // SeasonEpisodePage returns one window of a single catalogue season. The
 // count and the page both use catalog_titles_show (show_key, season, episode),
 // so a season of thousands of episodes does not load the rest of the show.
-// limit is 1..100. An empty first page fetches that season once; later pages
+// limit is 1..1000. An empty first page fetches that season once; later pages
 // do not.
 func (c *Catalog) SeasonEpisodePage(ctx context.Context, show core.RatingKey, season, offset, limit int) (core.Page, error) {
-	if show.Kind() != core.KindShow || season < 0 || season >= 1000 || offset < 0 || limit < 1 || limit > 100 {
+	if show.Kind() != core.KindShow || season < 0 || season >= 1000 || offset < 0 || limit < 1 || limit > 1000 {
 		return core.Page{}, fmt.Errorf("catalog: season page out of range")
 	}
 	page, err := c.seasonEpisodeQuery(ctx, show.TMDB(), season, offset, limit)

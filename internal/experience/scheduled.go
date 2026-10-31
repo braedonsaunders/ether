@@ -157,7 +157,7 @@ func (s *Service) futureSeasonEpisodes(ctx context.Context, v *core.User, show c
 }
 
 func (s *Service) pagedSeason(ctx context.Context, v *core.User, key core.RatingKey, q frontend.ItemQuery) (core.Page, bool, error) {
-	if s.d.SeasonEpisodes == nil || !q.Recursive || key.Kind() != core.KindShow || q.Season == nil || q.Limit < 1 || q.Limit > 100 || q.Offset < 0 || q.AdjacentTo != 0 || q.StartAt != 0 || q.Watched != nil || q.Favorite != nil || q.Desc || q.Sort != "" || !plainItemFilter(q.Filter) {
+	if s.d.SeasonEpisodes == nil || !q.Recursive || key.Kind() != core.KindShow || q.Season == nil || q.Limit < 1 || q.Limit > 1000 || q.Offset < 0 || q.AdjacentTo != 0 || q.StartAt != 0 || q.Watched != nil || q.Favorite != nil || q.Desc || q.Sort != "" || !plainItemFilter(q.Filter) {
 		return core.Page{}, false, nil
 	}
 	if len(q.Types) > 0 && !containsMediaType(q.Types, core.TypeEpisode) {

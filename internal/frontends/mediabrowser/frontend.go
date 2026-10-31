@@ -82,10 +82,19 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 			return nil, err
 		}
 	}
+	if err := r.Handle("GET", "/LiveTv/Info", http.HandlerFunc(inst.liveTVInfo)); err != nil {
+		return nil, err
+	}
 	if err := r.Handle("GET", "/LiveTv/Channels", http.HandlerFunc(inst.channels)); err != nil {
 		return nil, err
 	}
+	if err := r.Handle("GET", "/LiveTv/Channels/{id}", http.HandlerFunc(inst.channel)); err != nil {
+		return nil, err
+	}
 	if err := r.Handle("GET", "/LiveTv/Programs", http.HandlerFunc(inst.programmes)); err != nil {
+		return nil, err
+	}
+	if err := r.Handle("GET", "/LiveTv/Programs/Recommended", http.HandlerFunc(inst.recommendedProgrammes)); err != nil {
 		return nil, err
 	}
 	for _, method := range []string{"GET", "HEAD"} {

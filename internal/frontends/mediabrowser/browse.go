@@ -15,6 +15,12 @@ import (
 	kitsort "github.com/braedonsaunders/ether/internal/frontend/kit/sort"
 )
 
+// showChildPageMax is the indexed window used when a show's season or
+// episode list omits Limit. Jellyfin returns the whole list; this ceiling
+// covers a long-running soap's seasons and one season's episodes without
+// the silent page of 50 those routes used to apply.
+const showChildPageMax = 1000
+
 func queryInt(r *http.Request, name string, def int) int {
 	v := route.Query(r.URL.Query(), name)
 	if len(v) != 1 {
@@ -155,8 +161,11 @@ func (i *instance) collectionFolder(r *http.Request, v *frontend.Viewer, view fr
 		return nil, false
 	}
 	kind := "movies"
-	if view.Type == "show" {
+	switch view.Type {
+	case "show":
 		kind = "tvshows"
+	case "livetv":
+		kind = "livetv"
 	}
 	item := map[string]any{"Id": viewID, "Name": view.Name, "Type": "CollectionFolder", "CollectionType": kind, "IsFolder": true, "ServerId": i.info.ID, "SortName": view.Name, "DisplayPreferencesId": viewID, "CanDelete": false, "CanDownload": false, "ProviderIds": map[string]string{}}
 	if i.protocol == "emby" {
@@ -188,6 +197,15 @@ func (i *instance) writeCollectionFolder(w http.ResponseWriter, r *http.Request,
 	}
 	if ids.PersonalView(viewNum) {
 		i.writePersonalFolder(w, r, v, viewNum)
+		return
+	}
+	if viewNum == liveTVViewNumber && i.liveTVEnabled() {
+		item, ok := i.collectionFolder(r, v, frontend.View{ID: ids.Decimal(liveTVViewNumber), Name: "Live TV", Type: "livetv"})
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		i.replyItems(w, r, item)
 		return
 	}
 	vs, err := i.host.Experience.Views(r.Context(), v)
@@ -234,13 +252,18 @@ func (i *instance) browseRoutes() error {
 			http.Error(w, "Unavailable", 503)
 			return
 		}
-		items := make([]any, 0, len(vs))
+		items := make([]any, 0, len(vs)+1)
 		for _, view := range vs {
 			item, ok := i.collectionFolder(r, v, view)
 			if !ok {
 				continue
 			}
 			items = append(items, item)
+		}
+		if i.liveTVEnabled() {
+			if item, ok := i.collectionFolder(r, v, frontend.View{ID: ids.Decimal(liveTVViewNumber), Name: "Live TV", Type: "livetv"}); ok {
+				items = append(items, item)
+			}
 		}
 		items = i.prependPersonalViews(r, v, items)
 		i.replyItems(w, r, i.queryResult(items, len(items), 0))
@@ -778,6 +801,9 @@ func (i *instance) children(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := itemQuery(r)
+	if len(route.Query(r.URL.Query(), "Limit")) == 0 {
+		q.Limit = showChildPageMax
+	}
 	page, err := i.host.Experience.Children(r.Context(), v, device(r), key, q)
 	if err != nil {
 		http.Error(w, "Unavailable", 503)
@@ -982,6 +1008,26 @@ func (i *instance) ancestors(w http.ResponseWriter, r *http.Request) {
 	i.replyItems(w, r, items)
 }
 
+func applySeasonID(show frontend.RatingKey, r *http.Request, q *frontend.ItemQuery) error {
+	values := route.Query(r.URL.Query(), "SeasonId")
+	if len(values) == 0 || (len(values) == 1 && values[0] == "") {
+		return nil
+	}
+	if len(values) != 1 {
+		return errors.New("ambiguous season")
+	}
+	key, err := ids.ParseRatingKeyGUID(values[0])
+	if err != nil || key.Kind() != frontend.KindSeason {
+		return frontend.ErrNotFound
+	}
+	if show.Kind() == frontend.KindShow && key.TMDB() != show.TMDB() {
+		return frontend.ErrNotFound
+	}
+	season := key.Season()
+	q.Season = &season
+	return nil
+}
+
 func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.viewer(r)
 	if err != nil || v == nil {
@@ -998,6 +1044,9 @@ func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := itemQuery(r)
+	if len(route.Query(r.URL.Query(), "Limit")) == 0 {
+		q.Limit = showChildPageMax
+	}
 	version, err := i.navigationWithVersion(r, v, &q, true)
 	if err != nil {
 		if errors.Is(err, frontend.ErrNotFound) {
@@ -1016,6 +1065,16 @@ func (i *instance) episodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		q.Season = &season
+	}
+	// SeasonId is the season item Swiftfin asks for. It wins over Season so a
+	// season folder cannot be filled with the rest of the series.
+	if err = applySeasonID(key, r, &q); err != nil {
+		if errors.Is(err, frontend.ErrNotFound) {
+			i.page(w, r, v, frontend.Page{}, q.Offset)
+			return
+		}
+		http.Error(w, "Bad Request", 400)
+		return
 	}
 	page, err := i.host.Experience.Children(r.Context(), v, device(r), key, q)
 	if err != nil {
