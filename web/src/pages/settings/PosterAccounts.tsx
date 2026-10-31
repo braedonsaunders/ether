@@ -1,5 +1,5 @@
 import { Badge, Button, toast } from "@braedonsaunders/appkit-ui";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Drawer } from "../../components/Drawer";
 import { MutationError } from "../../components/feedback";
 import { Field, SecretInput } from "../../components/fields";
@@ -65,8 +65,18 @@ function active(posters: Posters, id: string) {
   return posters.enabled && posters.source === id;
 }
 
-/** Poster-service keys. Artwork keeps which style to use and links here. */
-export function PosterAccounts({ locked }: { locked: boolean }) {
+/**
+ * Poster-service keys. Artwork keeps which style to use and links here.
+ * `children` receives one card per service so the parent can place them in
+ * the same grid as the other cards in the group.
+ */
+export function PosterAccounts({
+  locked,
+  children,
+}: {
+  locked: boolean;
+  children: (cards: ReactNode) => ReactNode;
+}) {
   const config = useAsync(async () => normalize((await api.getConfig()).posters), []);
   const posters = config.data ? normalize(config.data) : null;
   const [draft, setDraft] = useState<Posters | null>(null);
@@ -91,11 +101,11 @@ export function PosterAccounts({ locked }: { locked: boolean }) {
     }
   };
 
-  if (!posters) return null;
+  if (!posters) return children(null);
   const service = SERVICES.find((item) => item.id === draft?.source);
   return (
     <>
-      {SERVICES.map((item) => {
+      {children(SERVICES.map((item) => {
         const on = active(posters, item.id);
         const keyed =
           secretConfigured(posters.apiKey) || secretConfigured(posters.urlTemplate);
@@ -145,7 +155,7 @@ export function PosterAccounts({ locked }: { locked: boolean }) {
             }
           />
         );
-      })}
+      }))}
       <Drawer
         open={draft !== null}
         onClose={() => {

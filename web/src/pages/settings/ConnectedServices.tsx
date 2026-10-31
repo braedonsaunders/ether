@@ -1136,20 +1136,24 @@ function ServiceOverview({
         configureLabel={on("simkl") ? t("Manage Simkl") : t("Set up Simkl")}
       />
     </IntegrationGroup>
-    <IntegrationGroup title={t("Artwork and ratings")}>
-      <PosterAccounts locked={switchesHeld} />
-      <IntegrationAppCard
-        identity={{ id: "ratings", name: t("OMDb and MDBList") }}
-        description={t("IMDb, Rotten Tomatoes and other rating badges in Plex.")}
-        status={ratingsStatus(ratings)}
-        enabled={ratings?.enabled}
-        busy={locked || busyId === "ratings"}
-        disabled={switchesHeld || !ratings}
-        onToggle={ratings ? onToggleRatings : undefined}
-        configureHref="/services/ratings"
-        configureLabel={t("Ratings")}
-      />
-    </IntegrationGroup>
+    <PosterAccounts locked={switchesHeld}>
+      {(cards) => (
+        <IntegrationGroup title={t("Artwork and ratings")}>
+          {cards}
+          <IntegrationAppCard
+            identity={{ id: "ratings", name: t("OMDb and MDBList") }}
+            description={t("IMDb, Rotten Tomatoes and other rating badges in Plex.")}
+            status={ratingsStatus(ratings)}
+            enabled={ratings?.enabled}
+            busy={locked || busyId === "ratings"}
+            disabled={switchesHeld || !ratings}
+            onToggle={ratings ? onToggleRatings : undefined}
+            configureHref="/services/ratings"
+            configureLabel={t("Ratings")}
+          />
+        </IntegrationGroup>
+      )}
+    </PosterAccounts>
     <IntegrationGroup title={t("Playback extras")}>
       <IntegrationAppCard
         identity={{ id: "opensubtitles", name: "OpenSubtitles" }}

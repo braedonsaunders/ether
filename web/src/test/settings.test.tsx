@@ -85,6 +85,10 @@ describe("Settings", () => {
     expect(screen.queryByRole("region", { name: "Essentials" })).toBeNull();
     expect(within(required).getByRole("listitem", { name: "TMDB" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Set up TMDB" })).toHaveAttribute("href", "/services/tmdb");
+    const artwork = screen.getByRole("region", { name: "Artwork and ratings" });
+    const posters = await within(artwork).findByRole("listitem", { name: "PostersPlus" }, WAIT);
+    const ratings = within(artwork).getByRole("listitem", { name: "OMDb and MDBList" });
+    expect(posters.parentElement).toBe(ratings.parentElement);
     for (const name of ["Debrid", "Prowlarr", "Plex"])
       expect(screen.queryByRole("listitem", { name })).toBeNull();
     for (const name of [/Catalog settings/, /Sources › Debrid/, /Sources › Indexers/])
