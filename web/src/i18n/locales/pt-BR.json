@@ -1755,6 +1755,11 @@
   "m_0abadbedf6894f": "Ações para {release}",
   "m_0abce084240d5f": "personalizada",
   "m_0abd37a346cd74": "Começar a gravar",
+  "m_0abf41a4799823": {
+    "one": "usando {using} de {count} conexão (limite do servidor detectado)",
+    "many": "usando {using} de {count} conexões (limite do servidor detectado)",
+    "other": "usando {using} de {count} conexões (limite do servidor detectado)"
+  },
   "m_0ac04023bddbe8": "Somente SDR",
   "m_0ac1652ab7b5f4": "O pôster oficial da franquia é buscado quando você salva. Coleções sem uma fonte de franquia do TMDB usam a arte automática.",
   "m_0ac3c72484745e": "Resultados para “{query}”",
@@ -4469,6 +4474,11 @@
   "m_1b832c3fc2b5f7": "Conhecendo o espectador: as linhas são pessoais, mas ainda exploram.",
   "m_1b86404e2f0dd1": "Encontrar um release",
   "m_1b8797fbdae067": "O Ether está atualizado",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} solicitação assumida de um provedor ocupado",
+    "many": "{count} solicitações assumidas de provedores ocupados",
+    "other": "{count} solicitações assumidas de provedores ocupados"
+  },
   "m_1b8d369ae23df1": "Publica seu endereço público no plex.tv.",
   "m_1b8ffcd7534fa9": "Escolha espectadores para restringir este canal. Os limites parentais deles continuam valendo; as configurações de TV ao vivo por espectador ficam no perfil de cada um.",
   "m_1b90e44b07407d": "Os canais dela e a programação deles são removidos da TV ao vivo.",

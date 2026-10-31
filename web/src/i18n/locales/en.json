@@ -1708,6 +1708,10 @@
   "m_0abadbedf6894f": "Actions for {release}",
   "m_0abce084240d5f": "custom",
   "m_0abd37a346cd74": "Start recording",
+  "m_0abf41a4799823": {
+    "one": "using {using} of {count} connection (server limit learned)",
+    "other": "using {using} of {count} connections (server limit learned)"
+  },
   "m_0ac04023bddbe8": "SDR only",
   "m_0ac1652ab7b5f4": "The official franchise poster is fetched when you save. Collections without a TMDB franchise source use automatic artwork.",
   "m_0ac3c72484745e": "Results for “{query}”",
@@ -4340,6 +4344,10 @@
   "m_1b832c3fc2b5f7": "Getting to know them: rows are personal but still exploring.",
   "m_1b86404e2f0dd1": "Find a release",
   "m_1b8797fbdae067": "Ether is up to date",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} request taken over from a busy provider",
+    "other": "{count} requests taken over from busy providers"
+  },
   "m_1b8d369ae23df1": "Publishes your public address to plex.tv.",
   "m_1b8ffcd7534fa9": "Pick viewers to restrict this channel. Their parental limits still apply; per-viewer Live TV settings live on each viewer's profile.",
   "m_1b90e44b07407d": "Its channels and their listings are removed from Live TV.",

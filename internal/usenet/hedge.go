@@ -405,7 +405,7 @@ func (p *pool) reserveHedge() bool {
 func (p *pool) hedgeBody(ctx context.Context, id string, groups []string) (*yenc.Part, int64, error) {
 	c, err := p.takeIdle()
 	if err == nil && c == nil {
-		c, err = p.dialNew(ctx)
+		c, err = p.dialNew(ctx, false)
 	}
 	if err != nil {
 		p.sem.Release(core.PriorityLive)

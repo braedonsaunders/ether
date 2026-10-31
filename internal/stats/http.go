@@ -136,17 +136,18 @@ func (s *Service) infrastructure(w http.ResponseWriter, r *http.Request) {
 		BodyMisses    int64  `json:"bodyMisses"`
 		BodyTakedowns int64  `json:"bodyTakedowns"`
 		BackfillSaves int64  `json:"backfillSaves"`
+		Spillovers    int64  `json:"spillovers"`
 	}
 	usage := []Usage{}
 	month := s.opts.Now().UTC().Format("2006-01") + "-01"
-	rows, err := s.db.QueryContext(r.Context(), `SELECT provider,CAST(SUM(bytes) AS BIGINT),CAST(SUM(articles) AS BIGINT),CAST(SUM(misses) AS BIGINT),CAST(SUM(errors) AS BIGINT),CAST(SUM(backfill_saves) AS BIGINT),CAST(SUM(body_misses) AS BIGINT),CAST(SUM(body_takedowns) AS BIGINT) FROM stats_provider_days WHERE day>=? GROUP BY provider`, month)
+	rows, err := s.db.QueryContext(r.Context(), `SELECT provider,CAST(SUM(bytes) AS BIGINT),CAST(SUM(articles) AS BIGINT),CAST(SUM(misses) AS BIGINT),CAST(SUM(errors) AS BIGINT),CAST(SUM(backfill_saves) AS BIGINT),CAST(SUM(body_misses) AS BIGINT),CAST(SUM(body_takedowns) AS BIGINT),CAST(SUM(spillovers) AS BIGINT) FROM stats_provider_days WHERE day>=? GROUP BY provider`, month)
 	if err != nil {
 		fail(w, 500, "Usage unavailable")
 		return
 	}
 	for rows.Next() {
 		var u Usage
-		if rows.Scan(&u.ID, &u.Bytes, &u.Articles, &u.Misses, &u.Errors, &u.BackfillSaves, &u.BodyMisses, &u.BodyTakedowns) != nil {
+		if rows.Scan(&u.ID, &u.Bytes, &u.Articles, &u.Misses, &u.Errors, &u.BackfillSaves, &u.BodyMisses, &u.BodyTakedowns, &u.Spillovers) != nil {
 			rows.Close()
 			fail(w, 500, "Usage unavailable")
 			return

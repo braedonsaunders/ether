@@ -951,7 +951,7 @@ func TestServerConnectionLimitBelowConfigured(t *testing.T) {
 	for i := 0; i < 12; i++ {
 		addSeg(t, s, fmt.Sprintf("s%d@x", i), []byte("x"))
 	}
-	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 4)}, Options{LimitCooloff: 150 * time.Millisecond, KeepAlive: 20 * time.Millisecond})
+	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 4)}, Options{KeepAlive: 20 * time.Millisecond, limits: limitTiming{widen: 400 * time.Millisecond, refusalPause: 20 * time.Millisecond}})
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
@@ -984,12 +984,29 @@ func TestServerConnectionLimitBelowConfigured(t *testing.T) {
 	if st := statsFor(f, "p"); st.MaxConnections != 2 || st.ConfiguredConnections != 4 {
 		t.Fatalf("pool did not adapt: %+v", st)
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for statsFor(f, "p").MaxConnections != 4 {
+	if st := statsFor(f, "p"); !st.LimitLearned || st.ServerLimit != 0 || st.LimitRefusals == 0 {
+		t.Fatalf("learned limit not reported: %+v", st)
+	}
+	// The account is upgraded: successful requests widen the cap back one
+	// connection at a time instead of jumping after a fixed cool-off.
+	s.SetMaxConns(4)
+	deadline := time.Now().Add(5 * time.Second)
+	seen := map[int]bool{}
+	for i := 0; statsFor(f, "p").MaxConnections != 4; i++ {
 		if time.Now().After(deadline) {
-			t.Fatal("configured size never restored")
+			t.Fatalf("configured size never restored: %+v", statsFor(f, "p"))
+		}
+		seen[statsFor(f, "p").MaxConnections] = true
+		if _, err := f.Body(context.Background(), fmt.Sprintf("s%d@x", i%12), nil, core.PriorityLive); err != nil {
+			t.Fatal(err)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if !seen[3] {
+		t.Fatalf("cap jumped instead of widening by one: saw %v", seen)
+	}
+	if st := statsFor(f, "p"); st.LimitLearned {
+		t.Fatalf("still limited at the configured size: %+v", st)
 	}
 }
 
@@ -1130,7 +1147,11 @@ func TestTinyBodyCheckBackfillsWhenStatClaimsTakenDownArticleExists(t *testing.T
 func TestWarmWithShrunkSemaphoreDoesNotDeadlock(t *testing.T) {
 	s := nntptest.Start(t, nntptest.Options{})
 	f := newFetcher(t, []config.UsenetProvider{s.Provider("p", 4)}, Options{MinIdle: -1})
-	f.pools[0].shrinkTo(1)
+	p := f.pools[0]
+	p.mu.Lock()
+	p.limit.cap = 1
+	p.mu.Unlock()
+	p.applySize()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := f.Warm(ctx, 4); err != nil {

@@ -1708,6 +1708,10 @@
   "m_0abadbedf6894f": "Åtgärder för {release}",
   "m_0abce084240d5f": "egen",
   "m_0abd37a346cd74": "Starta inspelning",
+  "m_0abf41a4799823": {
+    "one": "använder {using} av {count} anslutning (servergräns upptäckt)",
+    "other": "använder {using} av {count} anslutningar (servergräns upptäckt)"
+  },
   "m_0ac04023bddbe8": "Endast SDR",
   "m_0ac1652ab7b5f4": "Den officiella franchiseaffischen hämtas när du sparar. Samlingar utan TMDB-franchisekälla använder automatiskt omslag.",
   "m_0ac3c72484745e": "Resultat för ”{query}”",
@@ -4340,6 +4344,10 @@
   "m_1b832c3fc2b5f7": "Lär känna dem: raderna är personliga men utforskar fortfarande.",
   "m_1b86404e2f0dd1": "Hitta en release",
   "m_1b8797fbdae067": "Ether är uppdaterat",
+  "m_1b8c1ed6acdf6e": {
+    "one": "{count} begäran övertagen från en upptagen leverantör",
+    "other": "{count} begäranden övertagna från upptagna leverantörer"
+  },
   "m_1b8d369ae23df1": "Publicerar din offentliga adress till plex.tv.",
   "m_1b8ffcd7534fa9": "Välj tittare för att begränsa den här kanalen. Deras föräldrabegränsningar gäller fortfarande; Live-TV-inställningar per tittare finns i varje tittares profil.",
   "m_1b90e44b07407d": "Dess kanaler och deras programinformation tas bort från Live-TV.",
