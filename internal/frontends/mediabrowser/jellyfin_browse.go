@@ -1,6 +1,7 @@
 package mediabrowser
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -240,9 +241,13 @@ func (i *instance) shapeJellyfinItem(r *http.Request, viewer *frontend.Viewer, i
 			item["Container"] = container
 		}
 	}
-	if title.Type == "season" {
+	if title.Type == "season" || title.Type == "show" {
 		i.attachUnplayedCount(r, viewer, item, title)
 	}
+	if len(title.Keywords) > 0 {
+		item["Tags"] = title.Keywords
+	}
+	i.fillSeriesStudio(r, viewer, item, title)
 }
 
 // attachUnplayedCount sets UserData.UnplayedItemCount from the viewer's watch
@@ -625,6 +630,10 @@ func (i *instance) jellyfinKnownVersionFacts(dto map[string]any, versions []fron
 	if version.Media.Container != "" {
 		dto["Container"] = version.Media.Container
 	}
+	if !version.Media.Estimated && len(version.Media.Streams) > 0 {
+		dto["MediaStreams"] = i.mediaStreams(version.Media.Streams)
+		dto["HasSubtitles"] = mediaHasSubtitles(version.Media)
+	}
 }
 
 func (i *instance) virtualFolders(w http.ResponseWriter, r *http.Request) {
@@ -677,4 +686,148 @@ func (i *instance) writePlaylists(w http.ResponseWriter, viewer *frontend.Viewer
 		return
 	}
 	jsonReply(w, i.queryResult([]any{}, 0, q.Offset))
+}
+
+type listMediaEstimateKey struct{}
+
+func withListMediaEstimate(r *http.Request) *http.Request {
+	if r == nil {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), listMediaEstimateKey{}, true))
+}
+
+func listMediaEstimate(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	set, _ := r.Context().Value(listMediaEstimateKey{}).(bool)
+	return set
+}
+
+func mediaHasSubtitles(media frontend.MediaInfo) bool {
+	for _, stream := range media.Streams {
+		if stream.Type == "subtitle" {
+			return true
+		}
+	}
+	return false
+}
+
+type jellyfinEdition struct {
+	handle string
+	source map[string]any
+	media  frontend.MediaInfo
+}
+
+// jellyfinEditions returns one probed local copy per file. A single copy keeps
+// the title id. Several copies become separate Jellyfin items, matching a
+// library that stores each file as its own item.
+func (i *instance) jellyfinEditions(r *http.Request, viewer *frontend.Viewer, title frontend.Title) []jellyfinEdition {
+	if i == nil || i.protocol != "jellyfin" || i.host.Editions == nil || viewer == nil || r == nil {
+		return nil
+	}
+	if title.Type != "movie" && title.Type != "episode" {
+		return nil
+	}
+	versions, err := i.host.Editions.Editions(r.Context(), viewer, device(r), title.Key)
+	if err != nil || len(versions) == 0 {
+		return nil
+	}
+	out := make([]jellyfinEdition, 0, len(versions))
+	var scope frontend.VersionScope
+	var scopeErr error
+	scoped := false
+	for _, version := range versions {
+		if version.Media.Estimated || version.Media.Size <= 0 || version.ID == "" {
+			continue
+		}
+		id := ids.RatingKeyGUID(title.Key)
+		if len(versions) > 1 {
+			if !scoped {
+				scope, scopeErr = i.versionScope(r, viewer)
+				scoped = true
+			}
+			if scopeErr != nil || i.host.VersionHandles == nil {
+				continue
+			}
+			handle, e := i.host.VersionHandles.Issue(i.identityContext(r), scope, title.Key, version.ID)
+			if e != nil || handle == "" {
+				continue
+			}
+			id = handle
+		}
+		source := i.detailMediaSourceDTO(id, version.Media)
+		jellyfinMediaSourceShape(source, title.Title)
+		i.jellyfinMediaSourceDTO(source, version.Media, false)
+		out = append(out, jellyfinEdition{handle: id, source: source, media: version.Media})
+	}
+	return out
+}
+
+func applyJellyfinEditionFacts(item map[string]any, media frontend.MediaInfo) {
+	if item == nil || media.Estimated || len(media.Streams) == 0 {
+		return
+	}
+	item["HasSubtitles"] = mediaHasSubtitles(media)
+}
+
+func (i *instance) fillSeriesStudio(r *http.Request, viewer *frontend.Viewer, item map[string]any, title frontend.Title) {
+	if i == nil || i.protocol != "jellyfin" || item == nil {
+		return
+	}
+	if title.Type != "episode" && title.Type != "season" {
+		return
+	}
+	if _, ok := item["SeriesStudio"]; ok {
+		return
+	}
+	name := ""
+	for _, studio := range title.Studios {
+		if studio != "" {
+			name = studio
+			break
+		}
+	}
+	if name == "" && title.ShowKey != 0 && r != nil && viewer != nil && i.host.Experience != nil {
+		name = i.cachedSeriesStudio(r, viewer, title.ShowKey)
+	}
+	if name != "" {
+		item["SeriesStudio"] = name
+	}
+}
+
+type seriesStudioCacheKey struct{}
+
+func (i *instance) cachedSeriesStudio(r *http.Request, viewer *frontend.Viewer, show frontend.RatingKey) string {
+	cache, _ := r.Context().Value(seriesStudioCacheKey{}).(map[frontend.RatingKey]string)
+	if cache != nil {
+		if name, ok := cache[show]; ok {
+			return name
+		}
+	}
+	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: show})
+	name := ""
+	if err == nil {
+		for _, studio := range detail.Title.Studios {
+			if studio != "" {
+				name = studio
+				break
+			}
+		}
+	}
+	if cache != nil {
+		cache[show] = name
+	}
+	return name
+}
+
+func withSeriesStudioCache(r *http.Request) *http.Request {
+	if r == nil {
+		return r
+	}
+	if _, ok := r.Context().Value(seriesStudioCacheKey{}).(map[frontend.RatingKey]string); ok {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), seriesStudioCacheKey{}, map[frontend.RatingKey]string{}))
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/plextv"
 	"github.com/braedonsaunders/ether/internal/sessions"
 	tmdbpkg "github.com/braedonsaunders/ether/internal/tmdb"
+	"github.com/braedonsaunders/ether/internal/transcode"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -79,7 +80,7 @@ func TestMediaBrowserLabConformance(t *testing.T) {
 	}
 	// Leave time for normal cleanup inside the reviewed 22m package/1500s outer caps.
 	// A forced termination still leaves credential cleanup UNKNOWN.
-	workload, cancelWorkload := context.WithTimeout(context.Background(), 20*time.Minute)
+	workload, cancelWorkload := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancelWorkload()
 	jellyfinRef := labReference(t, settings, "JELLYFIN", settings["LAB_JELLYFIN_URL"])
 	defer jellyfinRef.logout(t)
@@ -275,6 +276,138 @@ func TestLabPickerSettingsArePerProtocol(t *testing.T) {
 	}
 }
 
+var labPersonMemo = struct {
+	once sync.Once
+	ids  map[string]int64
+}{}
+
+func labPersonTMDB(t *testing.T, ref labReferenceData, ids []string) map[string]int64 {
+	t.Helper()
+	labPersonMemo.once.Do(func() {
+		labPersonMemo.ids = fetchLabPersonTMDB(ref, ids)
+	})
+	if labPersonMemo.ids == nil {
+		return map[string]int64{}
+	}
+	return labPersonMemo.ids
+}
+
+func fetchLabPersonTMDB(ref labReferenceData, ids []string) map[string]int64 {
+	out := map[string]int64{}
+	if len(ids) == 0 {
+		return out
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	for _, id := range ids {
+		req, err := http.NewRequest("GET", strings.TrimRight(ref.base, "/")+"/Items/"+url.PathEscape(id)+"?Fields=ProviderIds", nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("X-Emby-Token", ref.token)
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		var person struct {
+			ProviderIds map[string]string
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&person)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || decodeErr != nil {
+			continue
+		}
+		parsed, err := strconv.ParseInt(person.ProviderIds["Tmdb"], 10, 64)
+		if err == nil && parsed > 0 {
+			out[id] = parsed
+		}
+	}
+	return out
+}
+
+type labMediaPending struct {
+	kind, path      string
+	tmdb            int64
+	season, episode int
+}
+
+var labMediaMemo = struct {
+	once  sync.Once
+	files []labMediaFile
+}{}
+
+func memoLabMedia(pending []labMediaPending) []labMediaFile {
+	labMediaMemo.once.Do(func() {
+		if cache := os.Getenv("LAB_MEDIA_CACHE"); cache != "" {
+			if b, err := os.ReadFile(cache); err == nil {
+				var files []labMediaFile
+				if json.Unmarshal(b, &files) == nil && len(files) > 0 {
+					labMediaMemo.files = files
+					return
+				}
+			}
+		}
+		for _, item := range pending {
+			file, ok := labMediaFromItem(item.kind, item.path, item.tmdb, item.season, item.episode)
+			if ok {
+				labMediaMemo.files = append(labMediaMemo.files, file)
+			}
+		}
+		if cache := os.Getenv("LAB_MEDIA_CACHE"); cache != "" && len(labMediaMemo.files) > 0 {
+			if b, err := json.Marshal(labMediaMemo.files); err == nil {
+				_ = os.WriteFile(cache, b, 0600)
+			}
+		}
+	})
+	return labMediaMemo.files
+}
+
+func labMediaFromItem(kind, itemPath string, tmdb int64, season, episode int) (labMediaFile, bool) {
+	root := os.Getenv("LAB_MEDIA_ROOT")
+	if root == "" || itemPath == "" || tmdb <= 0 || (kind != "Movie" && kind != "Episode") {
+		return labMediaFile{}, false
+	}
+	local := itemPath
+	if strings.HasPrefix(itemPath, "/media/") {
+		local = filepath.Join(root, strings.TrimPrefix(itemPath, "/media/"))
+	}
+	info, err := os.Stat(local)
+	if err != nil || info.IsDir() {
+		return labMediaFile{}, false
+	}
+	file, err := os.Open(local)
+	if err != nil {
+		return labMediaFile{}, false
+	}
+	sum := sha256.New()
+	_, err = io.Copy(sum, file)
+	file.Close()
+	if err != nil {
+		return labMediaFile{}, false
+	}
+	media := &core.MediaInfo{Size: info.Size(), Container: strings.TrimPrefix(strings.ToLower(filepath.Ext(local)), ".")}
+	if probed, probeErr := probeLabFile(local); probeErr == nil && probed != nil {
+		media = probed
+		if media.Size == 0 {
+			media.Size = info.Size()
+		}
+		media.Estimated = false
+	}
+	if kind == "Movie" {
+		season, episode = 0, 0
+	}
+	return labMediaFile{TMDB: tmdb, Season: season, Episode: episode, Path: local, SHA256: hex.EncodeToString(sum.Sum(nil)), Media: media}, true
+}
+
+func probeLabFile(path string) (*core.MediaInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters", "-i", path).Output()
+	if err != nil {
+		return nil, err
+	}
+	return transcode.ParseProbe(out)
+}
+
 // newAlignedLabFixture supplies an isolated real app with fake playback and artwork for opt-in lab tests.
 // Options permit other protocols to match a reference duration without changing
 // the MediaBrowser fixture; values are bounded to keep generated media small.
@@ -392,7 +525,7 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	if e = local.Create(ctx, viewer.ID, "fixture-viewer", "fixture-password"); e != nil {
 		t.Fatal(e)
 	}
-	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People,Status,EndDate", nil)
+	request, _ := http.NewRequest("GET", jellyfinRef.base+"/Items?Recursive=true&Fields=ProviderIds,Overview,OriginalTitle,Genres,Studios,ProductionLocations,Taglines,People,Tags,SeriesStudio,UserData,Status,EndDate,Path,MediaSources", nil)
 	request.Header.Set("X-Emby-Token", jellyfinRef.token)
 	request.Header.Set("Authorization", `MediaBrowser Client="Conform", Device="Conform", DeviceId="`+jellyfinRef.device+`", Version="1", Token="`+jellyfinRef.token+`"`)
 	resp, e := (&http.Client{Timeout: 30 * time.Second}).Do(request)
@@ -401,14 +534,22 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	}
 	var listing struct {
 		Items []struct {
-			Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating, SeriesName, SeasonName, Status, EndDate string
-			ProviderIds                                                                                                    map[string]string
-			IndexNumber, ParentIndexNumber, ProductionYear                                                                 int
-			RunTimeTicks                                                                                                   int64
-			CommunityRating                                                                                                float64
-			Genres, ProductionLocations, Taglines                                                                          []string
-			Studios                                                                                                        []struct{ Name string }
-			People                                                                                                         []struct{ Name, Role, Type string }
+			Id, Name, Type, Overview, OriginalTitle, OriginalLanguage, OfficialRating, SeriesId, SeriesName, SeriesStudio, SeasonName, Status, EndDate, Path string
+			ProviderIds                                                                                                                                      map[string]string
+			IndexNumber, ParentIndexNumber, ProductionYear                                                                                                   int
+			RunTimeTicks                                                                                                                                     int64
+			CommunityRating                                                                                                                                  float64
+			Genres, ProductionLocations, Taglines, Tags                                                                                                      []string
+			Studios                                                                                                                                          []struct{ Name string }
+			People                                                                                                                                           []struct {
+				Id, Name, Role, Type string
+				ProviderIds          map[string]string
+			}
+			MediaSources []struct{ Size int64 }
+			UserData     struct {
+				Played                bool
+				PlaybackPositionTicks int64
+			}
 		}
 	}
 	e = json.NewDecoder(resp.Body).Decode(&listing)
@@ -416,12 +557,35 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 	if e != nil {
 		t.Fatal(e)
 	}
+	seriesStudios := map[string][]string{}
+	for _, x := range listing.Items {
+		if x.Type != "Series" {
+			continue
+		}
+		for _, studio := range x.Studios {
+			if studio.Name != "" {
+				seriesStudios[x.Id] = append(seriesStudios[x.Id], studio.Name)
+			}
+		}
+	}
+	var personIDs []string
+	seenPerson := map[string]bool{}
+	for _, x := range listing.Items {
+		for _, person := range x.People {
+			if person.Id != "" && !seenPerson[person.Id] {
+				seenPerson[person.Id] = true
+				personIDs = append(personIDs, person.Id)
+			}
+		}
+	}
+	personTMDB := labPersonTMDB(t, jellyfinRef, personIDs)
+	var labPending []labMediaPending
 	for _, x := range listing.Items {
 		tmdbID, _ := strconv.ParseInt(x.ProviderIds["Tmdb"], 10, 64)
 		tvdb, _ := strconv.ParseInt(x.ProviderIds["Tvdb"], 10, 64)
 		title := core.Title{Title: x.Name, Summary: x.Overview, IDs: core.IDs{TMDB: tmdbID, IMDB: x.ProviderIds["Imdb"], TVDB: tvdb}, Year: x.ProductionYear, Runtime: time.Duration(x.RunTimeTicks) * 100 * time.Nanosecond, Released: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC), PosterPath: "/fixture.jpg", BackdropPath: "/fixture.jpg", StillPath: "/fixture.jpg"}
 		title.OriginalTitle, title.Language, title.ContentRating, title.Rating = x.OriginalTitle, x.OriginalLanguage, x.OfficialRating, x.CommunityRating
-		title.Genres, title.Countries, title.Status = x.Genres, x.ProductionLocations, x.Status
+		title.Genres, title.Countries, title.Status, title.Keywords = x.Genres, x.ProductionLocations, x.Status, x.Tags
 		if parsed, err := time.Parse(time.RFC3339Nano, x.EndDate); err == nil {
 			title.LastAirDate = parsed
 		}
@@ -431,8 +595,20 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		for _, studio := range x.Studios {
 			title.Studios = append(title.Studios, studio.Name)
 		}
+		if x.Type == "Episode" && len(title.Studios) == 0 {
+			if x.SeriesStudio != "" {
+				title.Studios = []string{x.SeriesStudio}
+			} else {
+				title.Studios = append([]string(nil), seriesStudios[x.SeriesId]...)
+			}
+		}
 		for _, person := range x.People {
-			p := core.Person{Name: person.Name, Role: person.Role}
+			p := core.Person{Name: person.Name, Role: person.Role, TMDB: personTMDB[person.Id]}
+			if p.TMDB == 0 {
+				if parsed, err := strconv.ParseInt(person.ProviderIds["Tmdb"], 10, 64); err == nil {
+					p.TMDB = parsed
+				}
+			}
 			switch person.Type {
 			case "Actor":
 				title.Cast = append(title.Cast, p)
@@ -478,6 +654,27 @@ func newAlignedLabFixture(t *testing.T, jellyfinRef labReferenceData, options ..
 		if e = a.catalog.UpsertTitle(ctx, title, true); e != nil {
 			t.Fatal(e)
 		}
+		if x.UserData.Played {
+			if e = a.state.Scrobble(ctx, viewer.ID, title.Key); e != nil {
+				t.Fatal(e)
+			}
+		} else if x.UserData.PlaybackPositionTicks > 0 {
+			if e = a.state.Progress(ctx, viewer.ID, title.Key, time.Duration(x.UserData.PlaybackPositionTicks)*100*time.Nanosecond, title.Runtime, "stopped"); e != nil {
+				t.Fatal(e)
+			}
+		}
+		mediaID, mediaSeason, mediaEpisode := tmdbID, 0, 0
+		if x.Type == "Episode" {
+			mediaID, mediaSeason, mediaEpisode = 91461, x.ParentIndexNumber, x.IndexNumber
+		}
+		labPending = append(labPending, labMediaPending{kind: x.Type, path: x.Path, tmdb: mediaID, season: mediaSeason, episode: mediaEpisode})
+	}
+	labFiles := memoLabMedia(labPending)
+	if len(labFiles) > 0 {
+		if e = writeLabMedia(dir, labFiles); e != nil {
+			t.Fatal(e)
+		}
+		t.Logf("lab_media files=%d", len(labFiles))
 	}
 	if _, err := a.catalog.Similar(ctx, core.MovieKey(10378), 5); err != nil {
 		t.Fatal(err)

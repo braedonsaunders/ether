@@ -182,6 +182,7 @@ func (i *instance) browseRoutes() error {
 	}
 	rowHandler := func(purpose frontend.RowPurpose, asArray bool) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
+			r = withListMediaEstimate(withSeriesStudioCache(r))
 			v, _, err := i.viewer(r)
 			if err != nil || v == nil {
 				http.Error(w, "Unauthorized", 401)
@@ -266,6 +267,7 @@ func (i *instance) browseRoutes() error {
 		}
 	}
 	detail := func(w http.ResponseWriter, r *http.Request) {
+		r = withSeriesStudioCache(r)
 		v, token, err := i.viewer(r)
 		if err != nil || v == nil {
 			http.Error(w, "Unauthorized", 401)
@@ -274,18 +276,19 @@ func (i *instance) browseRoutes() error {
 		wireID := r.PathValue("id")
 		key, err := ids.ParseRatingKeyGUID(wireID)
 		versionID := ""
+		releaseID := ""
 		if err != nil {
 			scope, e := i.versionScope(r, v)
-			if e != nil {
+			if e != nil || i.host.VersionHandles == nil {
 				http.NotFound(w, r)
 				return
 			}
-			target, _, _, e := i.resolveSource(r, scope, wireID)
-			if e != nil || target == 0 {
+			target, e := i.host.VersionHandles.Resolve(i.identityContext(r), scope, wireID)
+			if e != nil || target.Item == 0 {
 				http.NotFound(w, r)
 				return
 			}
-			key, versionID = target, wireID
+			key, versionID, releaseID = target.Item, wireID, target.Release
 		}
 		if i.host.Experience == nil {
 			http.Error(w, "Unavailable", 503)
@@ -343,6 +346,9 @@ func (i *instance) browseRoutes() error {
 			scope, scopeErr := i.versionScope(r, v)
 			needDefault := scopeErr != nil || len(d.Versions) == 0
 			for _, version := range d.Versions {
+				if releaseID != "" && version.ID != releaseID {
+					continue
+				}
 				if scopeErr != nil {
 					break
 				}
@@ -382,9 +388,18 @@ func (i *instance) browseRoutes() error {
 				dto["EnableMediaSourceDisplay"] = len(sources) > 1
 			}
 		}
+		shown := d.Versions
+		if releaseID != "" {
+			shown = nil
+			for _, version := range d.Versions {
+				if version.ID == releaseID {
+					shown = append(shown, version)
+				}
+			}
+		}
 		// A single item page is still browsing. Compatibility comes from the
 		// estimate plan above; DetailPlan runs only when playback starts.
-		i.versionItemFacts(dto, d.Versions)
+		i.versionItemFacts(dto, shown)
 		tags, backdrops, imageMetadata := i.imageTags(r, d, token)
 		for key, value := range imageMetadata {
 			dto[key] = value
@@ -399,7 +414,7 @@ func (i *instance) browseRoutes() error {
 		if i.protocol == "jellyfin" {
 			i.jellyfinItemDetailDTO(d, dto)
 			i.shapeJellyfinItem(r, v, dto, d.Title)
-			i.jellyfinKnownVersionFacts(dto, d.Versions)
+			i.jellyfinKnownVersionFacts(dto, shown)
 			jellyfinStudioFacts(dto, d.Title)
 			i.jellyfinDetailShell(dto)
 			if d.Title.Type == "show" {
@@ -514,6 +529,7 @@ func (i *instance) page(w http.ResponseWriter, r *http.Request, v *frontend.View
 }
 
 func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *frontend.Viewer, page frontend.Page, offset int, anchor frontend.RatingKey, version string) {
+	r = withListMediaEstimate(withSeriesStudioCache(r))
 	keys := make([]frontend.RatingKey, 0, len(page.Items))
 	for _, title := range page.Items {
 		keys = append(keys, title.Key)
@@ -527,9 +543,32 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 	images := i.gridImages(r, keys)
 	paths := i.virtualPaths(r, v, keys)
 	for _, title := range page.Items {
+		editions := i.jellyfinEditions(r, v, title)
+		if len(editions) > 1 {
+			for _, edition := range editions {
+				item := i.itemDTO(title, state[title.Key])
+				item["Id"] = edition.handle
+				item["MediaSources"] = []any{edition.source}
+				applyJellyfinEditionFacts(item, edition.media)
+				if p := paths[title.Key]; p != "" {
+					item["Path"] = p
+				}
+				for key, value := range images[title.Key] {
+					item[key] = value
+				}
+				i.shapeJellyfinItem(r, v, item, title)
+				i.jellyfinListFields(r, item, title)
+				items = append(items, item)
+			}
+			continue
+		}
 		item := i.itemDTO(title, state[title.Key])
 		if version != "" && title.Key == anchor {
 			item["Id"] = version
+		}
+		if len(editions) == 1 {
+			item["MediaSources"] = []any{editions[0].source}
+			applyJellyfinEditionFacts(item, editions[0].media)
 		}
 		if p := paths[title.Key]; p != "" {
 			item["Path"] = p
@@ -541,7 +580,11 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 		i.jellyfinListFields(r, item, title)
 		items = append(items, item)
 	}
-	jsonReply(w, i.queryResult(items, page.Total, offset))
+	total := page.Total + len(items) - len(page.Items)
+	if total < len(items) {
+		total = len(items)
+	}
+	jsonReply(w, i.queryResult(items, total, offset))
 }
 func (i *instance) children(w http.ResponseWriter, r *http.Request) {
 	v, _, err := i.viewer(r)

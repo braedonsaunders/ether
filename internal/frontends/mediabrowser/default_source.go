@@ -20,7 +20,7 @@ func (i *instance) defaultMediaSource(r *http.Request, viewer *frontend.Viewer, 
 	if i.protocol == "jellyfin" {
 		i.jellyfinMediaSourceDTO(source, frontend.MediaInfo{Estimated: true}, false)
 	}
-	if i.host.Sessions == nil || i.host.Capabilities == nil {
+	if i.host.Sessions == nil || i.host.Capabilities == nil || listMediaEstimate(r) {
 		return source
 	}
 	dev := device(r)

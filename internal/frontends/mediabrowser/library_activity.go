@@ -28,6 +28,7 @@ func activityView(r *http.Request) (string, error) {
 }
 
 func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, latest bool) {
+	r = withListMediaEstimate(withSeriesStudioCache(r))
 	viewer, _, err := i.viewer(r)
 	if err != nil || viewer == nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)

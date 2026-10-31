@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -600,6 +601,69 @@ func requireJellyfinSpec(t *testing.T, method, path string, w *httptest.Response
 	}
 	if err = doc.Validate(method, path, w.Code, w.Header().Get("Content-Type"), w.Body.Bytes()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+type staticEditions struct{ versions []frontend.Version }
+
+func (s staticEditions) Editions(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey) ([]frontend.Version, error) {
+	return s.versions, nil
+}
+
+type issuedHandles struct{ n int }
+
+func (h *issuedHandles) Issue(context.Context, frontend.VersionScope, frontend.RatingKey, string) (string, error) {
+	h.n++
+	return fmt.Sprintf("edition-handle-%d", h.n), nil
+}
+func (h *issuedHandles) Resolve(context.Context, frontend.VersionScope, string) (frontend.VersionTarget, error) {
+	return frontend.VersionTarget{}, frontend.ErrNotFound
+}
+func (h *issuedHandles) MatchSession(context.Context, frontend.VersionScope, string, string) error {
+	return frontend.ErrNotFound
+}
+
+func TestJellyfinListSplitsProbedEditionsBySize(t *testing.T) {
+	exp := frontendtest.Experience{LibraryItemsFunc: func(context.Context, *frontend.Viewer, frontend.Device, string, frontend.ItemQuery) (frontend.Page, error) {
+		return frontend.Page{Items: []frontend.Title{{Key: core.MovieKey(10378), Type: "movie", Title: "Big Buck Bunny", IDs: core.IDs{TMDB: 10378}}}, Total: 1}, nil
+	}}
+	ident := frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) {
+		return &frontend.Viewer{ID: 1}, nil
+	}}
+	inst, err := (Jellyfin{MachineID: "test"}).Mount(context.Background(), frontend.Host{
+		Identity: ident, Experience: exp, Capabilities: frontendtest.Capabilities{},
+		Editions: staticEditions{versions: []frontend.Version{
+			{ID: "small", Media: core.MediaInfo{Size: 10, Container: "mkv", Streams: []core.StreamInfo{{Type: "video", Index: 0, Codec: "h264"}}}},
+			{ID: "large", Media: core.MediaInfo{Size: 20, Container: "mkv", Streams: []core.StreamInfo{{Type: "video", Index: 0, Codec: "hevc"}, {Type: "subtitle", Index: 1, Codec: "subrip"}}}},
+		}},
+		VersionHandles: &issuedHandles{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/Items?Recursive=true&Fields=MediaSources,ProviderIds", nil)
+	r.Header.Set("X-Emby-Token", "grant")
+	inst.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var body struct {
+		Items []struct {
+			Id           string
+			HasSubtitles bool
+			MediaSources []struct{ Size int64 }
+		}
+		TotalRecordCount int
+	}
+	if json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Items) != 2 || body.TotalRecordCount != 2 {
+		t.Fatal(w.Body.String())
+	}
+	if body.Items[0].Id == body.Items[1].Id || body.Items[0].MediaSources[0].Size == body.Items[1].MediaSources[0].Size {
+		t.Fatal(body.Items)
+	}
+	if !body.Items[1].HasSubtitles {
+		t.Fatal("subtitle edition lost HasSubtitles")
 	}
 }
 

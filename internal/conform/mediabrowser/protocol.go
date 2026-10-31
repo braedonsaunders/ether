@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -389,6 +390,9 @@ func (p *Protocol) Fetch(ctx context.Context, c *http.Client, base, token string
 	}
 	resp, err := c.Do(req)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "Client.Timeout") || strings.Contains(err.Error(), "context deadline exceeded") {
+			return conform.Response{}, fmt.Errorf("request timed out")
+		}
 		return conform.Response{}, fmt.Errorf("request failed (%T)", err)
 	}
 	defer resp.Body.Close()
