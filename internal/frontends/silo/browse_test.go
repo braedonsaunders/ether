@@ -191,6 +191,93 @@ func TestRecentlyAddedHomeRowKeepsLibrarySectionType(t *testing.T) {
 	}
 }
 
+type pageImageSigner struct {
+	frontendtest.ImageGrants
+	sign func(context.Context, frontend.ImagePageRequest) ([]frontend.ImageBatchItem, error)
+}
+
+func (s pageImageSigner) SignPage(ctx context.Context, req frontend.ImagePageRequest) ([]frontend.ImageBatchItem, error) {
+	return s.sign(ctx, req)
+}
+
+func TestHomeSectionItemsIncludeArtwork(t *testing.T) {
+	viewer := &frontend.Viewer{ID: 5}
+	key := frontend.RatingKey(1000000000000001)
+	// The stored row title has no poster fields. Home still has to paint the
+	// artwork identity the page signer authorizes.
+	title := frontend.Title{Key: key, Type: "movie", Title: "Silo"}
+	exp := frontendtest.Experience{
+		RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
+			return []frontend.Row{{ID: "home.trending", Title: "Trending", Purpose: frontend.RowRecommendation, Items: []frontend.Title{title}}}, nil
+		},
+		UserDataFunc: func(context.Context, *frontend.Viewer, []frontend.RatingKey) (map[frontend.RatingKey]frontend.WatchStatus, error) {
+			return map[frontend.RatingKey]frontend.WatchStatus{}, nil
+		},
+	}
+	var signed []frontend.RatingKey
+	grants := pageImageSigner{
+		ImageGrants: frontendtest.ImageGrants{IssueFunc: func(context.Context, frontend.ImageGrantRequest) (string, error) {
+			t.Fatal("home cards must sign the page, not issue the stored path")
+			return "", errors.New("stored path")
+		}},
+		sign: func(_ context.Context, req frontend.ImagePageRequest) ([]frontend.ImageBatchItem, error) {
+			if len(req.Titles) != 1 || req.Titles[0].Key != key {
+				t.Fatalf("signed titles: %+v", req.Titles)
+			}
+			signed = append(signed, req.Titles[0].Key)
+			return []frontend.ImageBatchItem{{Item: key, Authoritative: true, Images: []frontend.GrantedImage{
+				{Image: frontend.Image{Kind: frontend.ImagePoster, Path: "ref-poster"}, Secret: "poster-token"},
+				{Image: frontend.Image{Kind: frontend.ImageBackdrop, Path: "ref-backdrop"}, Secret: "backdrop-token"},
+				{Image: frontend.Image{Kind: frontend.ImageLogo, Path: "ref-logo"}, Secret: "logo-token"},
+			}}}, nil
+		},
+	}
+	host := frontend.Host{Identity: frontendtest.Identity{ResolveFunc: func(context.Context, string) (*frontend.Viewer, error) { return viewer, nil }}, Experience: exp, ImageGrants: grants}
+	inst, err := (Frontend{MachineID: "test"}).Mount(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("GET", "/api/v2/home/sections", nil)
+	r.Header.Set("Authorization", "Bearer grant")
+	w := httptest.NewRecorder()
+	inst.Handler().ServeHTTP(w, r)
+	body := w.Body.String()
+	if w.Code != 200 || !strings.Contains(body, `"poster_url":"/api/v2/images/poster-token"`) || !strings.Contains(body, `"backdrop_url":"/api/v2/images/backdrop-token"`) || !strings.Contains(body, `"logo_url":"/api/v2/images/logo-token"`) {
+		t.Fatalf("home artwork: %d %s", w.Code, body)
+	}
+	if len(signed) != 1 {
+		t.Fatalf("signed %d pages", len(signed))
+	}
+}
+
+func TestStoredCardGrantUsesArtworkIdentity(t *testing.T) {
+	key := frontend.RatingKey(1000000000000001)
+	var paths []string
+	i := &instance{host: frontend.Host{
+		Experience: frontendtest.Experience{ItemArtworkFunc: func(context.Context, *frontend.Viewer, frontend.Device, frontend.RatingKey) ([]frontend.Image, bool, error) {
+			return []frontend.Image{
+				{Kind: frontend.ImagePoster, Path: "ref-poster"},
+				{Kind: frontend.ImageBackdrop, Path: "ref-backdrop"},
+				{Kind: frontend.ImageLogo, Path: "ref-logo"},
+			}, true, nil
+		}},
+		ImageGrants: frontendtest.ImageGrants{IssueFunc: func(_ context.Context, req frontend.ImageGrantRequest) (string, error) {
+			paths = append(paths, req.Image.Path)
+			return req.Image.Path, nil
+		}},
+	}}
+	title := frontend.Title{Key: key, Type: "movie", Title: "Silo", PosterPath: "/stored.jpg", BackdropPath: "/stored-b.jpg", LogoPath: "/stored-l.jpg"}
+	got := i.storedCardGrants(httptest.NewRequest("GET", "/", nil), &frontend.Viewer{ID: 7}, "token", title)
+	if len(got) != 3 || paths[0] != "ref-poster" || paths[1] != "ref-backdrop" || paths[2] != "ref-logo" {
+		t.Fatalf("grants: %+v paths=%v", got, paths)
+	}
+	out := map[string]any{}
+	i.paintCardArtwork(httptest.NewRequest("GET", "/", nil), got, out)
+	if out["poster_url"] != "/api/v2/images/ref-poster" || out["backdrop_url"] != "/api/v2/images/ref-backdrop" || out["logo_url"] != "/api/v2/images/ref-logo" {
+		t.Fatalf("card urls: %+v", out)
+	}
+}
+
 func TestEmptyHomeStaysOnExperienceRows(t *testing.T) {
 	v := &frontend.Viewer{ID: 5}
 	exp := frontendtest.Experience{

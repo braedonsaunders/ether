@@ -151,6 +151,7 @@ func (i *instance) sectionCards(r *http.Request, v *frontend.Viewer, credential 
 		return nil, err
 	}
 	overlays, batched := i.editionOverlays(r, v, keys)
+	artwork := i.sectionArtwork(r, v, credential, titles)
 	home := !strings.Contains(r.URL.Path, "/library/")
 	items := make([]any, 0, len(titles))
 	for _, t := range titles {
@@ -163,7 +164,7 @@ func (i *instance) sectionCards(r *http.Request, v *frontend.Viewer, credential 
 		} else if row.Purpose == frontend.RowContinue && states[t.Key].ViewOffset > 0 {
 			item["item_source"] = "in_progress"
 		}
-		i.storedCardArtwork(r, credential, t, item)
+		i.paintCardArtwork(r, artwork[t.Key], item)
 		if summary := overlays[t.Key]; len(summary) > 0 {
 			item["overlay_summary"] = summary
 		} else if !batched {

@@ -46,32 +46,87 @@ func (i *instance) creditPortraits(r *http.Request, viewer *frontend.Viewer, cre
 	return urls
 }
 
-// storedCardArtwork grants poster, backdrop, and logo URLs from paths already
-// on the row title. Home and library sections use it so a card does not
-// refresh the title from a provider.
-func (i *instance) storedCardArtwork(r *http.Request, credential string, title frontend.Title, out map[string]any) {
-	if i.host.ImageGrants == nil {
-		return
+// sectionArtwork signs poster, backdrop, and logo for titles the row already
+// authorized. The page signer resolves the artwork identity the image server
+// accepts; a stored PosterPath is a different identity and Issue rejects it.
+func (i *instance) sectionArtwork(r *http.Request, v *frontend.Viewer, credential string, titles []frontend.Title) map[frontend.RatingKey][]frontend.GrantedImage {
+	out := map[frontend.RatingKey][]frontend.GrantedImage{}
+	if i.host.ImageGrants == nil || len(titles) == 0 {
+		return out
 	}
-	for _, img := range []frontend.Image{
-		{Kind: "poster", Path: title.PosterPath},
-		{Kind: "backdrop", Path: title.BackdropPath},
-		{Kind: "logo", Path: title.LogoPath},
-	} {
-		field := map[string]string{"poster": "poster_url", "backdrop": "backdrop_url", "logo": "logo_url"}[img.Kind]
-		if field == "" || img.Path == "" {
+	kinds := []string{frontend.ImagePoster, frontend.ImageBackdrop, frontend.ImageLogo}
+	if signer, ok := i.host.ImageGrants.(frontend.ImagePageSigner); ok {
+		const batch = 50
+		for start := 0; start < len(titles); start += batch {
+			end := min(start+batch, len(titles))
+			page, err := signer.SignPage(r.Context(), frontend.ImagePageRequest{Credential: credential, Device: device(r), Titles: titles[start:end], Kinds: kinds})
+			if err != nil {
+				continue
+			}
+			for _, item := range page {
+				if item.Authoritative && len(item.Images) > 0 {
+					out[item.Item] = item.Images
+				}
+			}
+		}
+		return out
+	}
+	for _, title := range titles {
+		if granted := i.storedCardGrants(r, v, credential, title); len(granted) > 0 {
+			out[title.Key] = granted
+		}
+	}
+	return out
+}
+
+func (i *instance) paintCardArtwork(r *http.Request, granted []frontend.GrantedImage, out map[string]any) {
+	prefix := ""
+	if r.Context().Value(sharedPrefix{}) != nil {
+		prefix = "/silo"
+	}
+	fields := map[string]string{frontend.ImagePoster: "poster_url", frontend.ImageBackdrop: "backdrop_url", frontend.ImageLogo: "logo_url"}
+	seen := map[string]bool{}
+	for _, grant := range granted {
+		field := fields[grant.Image.Kind]
+		if field == "" || grant.Secret == "" || seen[field] {
 			continue
 		}
+		seen[field] = true
+		out[field] = prefix + "/api/v2/images/" + grant.Secret
+	}
+}
+
+// storedCardGrants is the single-grant fallback when the host cannot sign a page.
+// It issues the artwork list's identity, which is what Serve rechecks.
+func (i *instance) storedCardGrants(r *http.Request, v *frontend.Viewer, credential string, title frontend.Title) []frontend.GrantedImage {
+	if i.host.ImageGrants == nil {
+		return nil
+	}
+	images := []frontend.Image{
+		{Kind: frontend.ImagePoster, Path: title.PosterPath},
+		{Kind: frontend.ImageBackdrop, Path: title.BackdropPath},
+		{Kind: frontend.ImageLogo, Path: title.LogoPath},
+	}
+	if art, ok := i.host.Experience.(frontend.ItemArtwork); ok {
+		listed, complete, err := art.ItemArtwork(r.Context(), v, device(r), title.Key)
+		if err == nil && complete {
+			images = listed
+		}
+	}
+	var out []frontend.GrantedImage
+	seen := map[string]bool{}
+	for _, img := range images {
+		if img.Path == "" || seen[img.Kind] || (img.Kind != frontend.ImagePoster && img.Kind != frontend.ImageBackdrop && img.Kind != frontend.ImageLogo) {
+			continue
+		}
+		seen[img.Kind] = true
 		token, err := i.host.ImageGrants.Issue(r.Context(), frontend.ImageGrantRequest{Credential: credential, Device: device(r), Item: title.Key, Image: img})
 		if err != nil {
 			continue
 		}
-		prefix := ""
-		if r.Context().Value(sharedPrefix{}) != nil {
-			prefix = "/silo"
-		}
-		out[field] = prefix + "/api/v2/images/" + token
+		out = append(out, frontend.GrantedImage{Image: img, Secret: token})
 	}
+	return out
 }
 
 func (i *instance) artwork(r *http.Request, viewer *frontend.Viewer, credential string, key frontend.RatingKey, out map[string]any) {
