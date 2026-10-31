@@ -10,8 +10,8 @@ import {
   WizardLayout,
   cn,
 } from "@braedonsaunders/appkit-ui";
-import { Check, ExternalLink, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ExternalLink, KeyRound, Newspaper, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppOptional } from "../app-context";
 import { RestartButton } from "../components/RestartDrawer";
@@ -32,7 +32,7 @@ import { loadLocale, localized, rememberLocale, t, tn, tx } from "../i18n";
 import { api, apiFetch, newId, setToken } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { DebridProvider, DiskInfo, EtherConfig, Indexer, UsenetProvider } from "../lib/types";
-import { appLabel, appPurpose } from "./apps/catalog";
+import { appLabel, appPurpose, appRank } from "./apps/catalog";
 import { CachePresetCards, cachePresetKey, presetForFreeBytes } from "./cache/presets";
 import { ProwlarrImport } from "../components/ProwlarrImport";
 import { DEBRID_KINDS } from "./sources/Debrid";
@@ -76,9 +76,11 @@ const FALLBACK_APPS = [
   { id: "plex", name: "Plex" },
   { id: "jellyfin", name: "Jellyfin" },
   { id: "emby", name: "Emby" },
-  { id: "silo", name: "Silo" },
   { id: "stremio", name: "Stremio" },
-  { id: "webdav", name: "Files" },
+  { id: "silo", name: "Silo" },
+  { id: "dlna", name: "DLNA" },
+  { id: "webdav", name: "Files (WebDAV)" },
+  { id: "m3u", name: "M3U & XMLTV" },
 ];
 
 export interface SetupApp {
@@ -111,9 +113,10 @@ function storedStep(): number {
 export function appCatalog(
   list: { descriptor: { id: string; name: string } }[] | null,
 ): SetupApp[] {
-  const rows = list?.length
+  const rows = (list?.length
     ? list.map((item) => ({ id: item.descriptor.id, name: item.descriptor.name }))
-    : FALLBACK_APPS;
+    : FALLBACK_APPS
+  ).slice().sort((a, b) => appRank(a.id) - appRank(b.id));
   return rows.map((row) => {
     return {
       id: row.id,
@@ -205,6 +208,45 @@ function withIndexerType(ix: Indexer, type: IndexerType): Indexer {
 }
 
 const TORRENTIO_URL = "https://torrentio.strem.fun/manifest.json";
+
+function SourceChoice({
+  pressed,
+  onClick,
+  logo,
+  title,
+  line,
+  children,
+}: {
+  pressed: boolean;
+  onClick: () => void;
+  logo: ReactNode;
+  title: string;
+  line: string;
+  children?: ReactNode;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-xl border bg-surface",
+        pressed ? "border-primary" : "border-border",
+      )}
+    >
+      <button
+        type="button"
+        aria-pressed={pressed}
+        onClick={onClick}
+        className="flex w-full items-center gap-3 p-4 text-left"
+      >
+        <span className="grid size-7 shrink-0 place-items-center text-fg">{logo}</span>
+        <span>
+          <span className="block text-sm font-medium text-fg">{title}</span>
+          <span className="block text-sm text-fg-muted">{line}</span>
+        </span>
+      </button>
+      {pressed && children ? <div className="space-y-4 px-4 pb-4">{children}</div> : null}
+    </section>
+  );
+}
 const READY_MS = 1700;
 
 function prefersReducedMotion(): boolean {
@@ -1165,104 +1207,21 @@ export default function Setup() {
       ) : null}
 
       {stepId === "sources" ? (
-        <div className="space-y-6">
-          {providers.length === 0 && debrid.length === 0 ? (
-            <div className="space-y-3">
-              <p className="text-sm text-fg-muted" role="status">
-                {debridSupported
-                  ? t("Add a debrid account, a Usenet provider, or both, and test each one.")
-                  : t("Add a Usenet provider and test it.")}
-              </p>
-              {debridSupported ? (
-                <p className="text-sm text-fg-muted">
-                  <a
-                    className="text-primary underline"
-                    href="https://real-debrid.com/premium"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t("What it costs and how to get a key")}
-                  </a>
-                  {". "}
-                  {t(
-                    "A debrid account is a paid subscription. That page shows the price and where the API token is.",
-                  )}
-                </p>
-              ) : null}
-              {readyMade ? (
-                <div className="rounded-xl border border-border bg-surface p-4" role="status">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-medium text-fg">
-                      {t("Torrentio (no account needed)")}
-                    </p>
-                    <Button
-                      variant="link"
-                      className="shrink-0"
-                      onClick={() => {
-                        const removed = indexers.filter(
-                          (item) => isStremio(item) && item.url.trim() === TORRENTIO_URL,
-                        );
-                        setIndexers(
-                          indexers.filter((item) => !removed.some((row) => row.id === item.id)),
-                        );
-                        setIndexerTests((current) => {
-                          const nextTests = { ...current };
-                          for (const row of removed) delete nextTests[row.id];
-                          return nextTests;
-                        });
-                        setReadyMade(false);
-                      }}
-                    >
-                      {t("Change")}
-                    </Button>
-                  </div>
-                  <p className="mt-1 text-sm text-fg-muted">
-                    {t(
-                      "It finds titles with no account. Playing them needs a debrid account. Ether does not download the torrent itself.",
-                    )}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      const row = {
-                        ...blankIndexer("stremio"),
-                        name: "Torrentio",
-                        url: TORRENTIO_URL,
-                      };
-                      const rest = indexers.filter((item) => !(isStremio(item) && !item.url.trim()));
-                      setIndexers([...rest, row]);
-                      setReadyMade(true);
-                      void runTest("indexer", row.id, () =>
-                        api.testIndexer(normalizedIndexer(row)),
-                      );
-                    }}
-                  >
-                    {t("Use a ready-made setup")}
-                  </Button>
-                  <p className="text-sm text-fg-muted">
-                    {t(
-                      "One click adds Torrentio with no account. It finds titles. Playing them needs a debrid account.",
-                    )}
-                  </p>
-                </>
-              )}
-            </div>
-          ) : null}
+        <div className="space-y-3">
           {debridSupported ? (
-            <section className="space-y-4" aria-labelledby="setup-debrid">
-              <div>
-                <h3 id="setup-debrid" className="text-sm font-semibold text-fg">
-                  {t("Debrid accounts")}
-                </h3>
-                <p className="text-sm text-fg-muted">
-                  {t(
-                    "Torrents your service already holds stream over HTTPS. Use your account's API token.",
-                  )}
-                </p>
-              </div>
+            <SourceChoice
+              pressed={debrid.length > 0}
+              logo={<KeyRound size={18} />}
+              title={t("Debrid service")}
+              line={t("Real-Debrid, TorBox, AllDebrid… (fast, paid)")}
+              onClick={() => {
+                if (debrid.length === 0) {
+                  setDebrid([blankDebrid()]);
+                  return;
+                }
+                if (debrid.every((row) => row.apiKey.trim() === "")) setDebrid([]);
+              }}
+            >
               {debrid.map((d, i) => (
                 <fieldset
                   key={d.id || i}
@@ -1335,14 +1294,24 @@ export default function Setup() {
               <Button variant="outline" onClick={() => setDebrid([...debrid, blankDebrid()])}>
                 <Plus size={15} /> {t("Add debrid account")}
               </Button>
-            </section>
+            </SourceChoice>
           ) : null}
-          <section className="space-y-4" aria-labelledby="setup-usenet">
-            <div>
-              <h3 id="setup-usenet" className="text-sm font-semibold text-fg">
-                {t("Usenet providers")}
-              </h3>
-            </div>
+          <SourceChoice
+            pressed={providers.length > 0}
+            logo={<Newspaper size={18} />}
+            title={t("Usenet provider")}
+            line={t("NZB login from a provider you pay")}
+            onClick={() => {
+              if (providers.length === 0) {
+                setProviders([blankProvider()]);
+                return;
+              }
+              if (providers.every((row) => !row.host.trim() && !row.username.trim() && !row.name.trim())) {
+                setProviders([]);
+              }
+            }}
+          >
+            <h3 className="text-sm font-semibold text-fg">{t("Usenet providers")}</h3>
             {providers.map((p, i) => (
               <fieldset key={p.id || i} className="rounded-xl border border-border bg-surface p-4">
                 <legend className="px-1 text-sm font-medium text-fg">
@@ -1410,9 +1379,6 @@ export default function Setup() {
                     />{" "}
                     {t("Backfill only")}
                   </label>
-                  <span className="text-fg-muted">
-                    {t("Block accounts can be marked as backfill.")}
-                  </span>
                   <label className="flex items-center gap-2">
                     <Switch
                       checked={p.enabled}
@@ -1439,7 +1405,34 @@ export default function Setup() {
             <Button variant="outline" onClick={() => setProviders([...providers, blankProvider()])}>
               <Plus size={15} /> {t("Add provider")}
             </Button>
-          </section>
+          </SourceChoice>
+          <SourceChoice
+            pressed={readyMade || indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL)}
+            logo={<StremioMark />}
+            title="Torrentio"
+            line={t("finds releases; needs debrid to play")}
+            onClick={() => {
+              const chosen = indexers.some((item) => isStremio(item) && item.url.trim() === TORRENTIO_URL);
+              if (readyMade || chosen) {
+                const removed = indexers.filter(
+                  (item) => isStremio(item) && item.url.trim() === TORRENTIO_URL,
+                );
+                setIndexers(indexers.filter((item) => !removed.some((row) => row.id === item.id)));
+                setIndexerTests((current) => {
+                  const nextTests = { ...current };
+                  for (const row of removed) delete nextTests[row.id];
+                  return nextTests;
+                });
+                setReadyMade(false);
+                return;
+              }
+              const row = { ...blankIndexer("stremio"), name: "Torrentio", url: TORRENTIO_URL };
+              const rest = indexers.filter((item) => !(isStremio(item) && !item.url.trim()));
+              setIndexers([...rest, row]);
+              setReadyMade(true);
+              void runTest("indexer", row.id, () => api.testIndexer(normalizedIndexer(row)));
+            }}
+          />
         </div>
       ) : null}
 
@@ -1694,32 +1687,6 @@ export default function Setup() {
               </div>
             </Field>
           </section>
-          <fieldset className="space-y-2">
-            <legend className="text-sm font-semibold text-fg">
-              {t("Do you watch 4K at home?")}
-            </legend>
-            <p className="text-sm text-fg-muted">
-              {t("Home playback stays at 1080p unless you say yes. Away from home stays at 1080p.")}
-            </p>
-            <label className="flex items-center gap-2 text-sm text-fg">
-              <input
-                type="radio"
-                name="setup-4k"
-                checked={cfg.quality.default !== "4K"}
-                onChange={() => setCfg({ ...cfg, quality: { ...cfg.quality, default: "1080p" } })}
-              />
-              {t("No, 1080p is enough")}
-            </label>
-            <label className="flex items-center gap-2 text-sm text-fg">
-              <input
-                type="radio"
-                name="setup-4k"
-                checked={cfg.quality.default === "4K"}
-                onChange={() => setCfg({ ...cfg, quality: { ...cfg.quality, default: "4K" } })}
-              />
-              {t("Yes, use 4K at home")}
-            </label>
-          </fieldset>
           <p className="text-sm text-fg-muted">
             {tn(
               cfg.catalog.tmdbKey.trim() && cfg.catalog.tmdbKey !== "••••"

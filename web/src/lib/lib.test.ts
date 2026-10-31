@@ -409,7 +409,10 @@ describe("health", () => {
   });
   it("accepts debrid in place of Usenet", () => {
     expect(usenetHealth([], { enabled: true }).level).toBe("off");
-    expect(usenetHealth([], { enabled: false }).level).toBe("error");
+    const emptySources = usenetHealth([], { enabled: false });
+    expect(emptySources.setupGap).toBe(true);
+    expect(emptySources.level).toBe("unknown");
+    expect(emptySources.countsOverall).toBe(false);
   });
   it("warns when debrid has no torrent indexer or nothing is enabled", () => {
     const nzb = { indexer: "NZBgeek", hitsLimit: 0, enabled: true, torrent: false };
@@ -432,7 +435,7 @@ describe("health", () => {
     ).toBe("warn");
   });
   it("flags real problems", () => {
-    expect(usenetHealth([]).level).toBe("error");
+    expect(usenetHealth([]).setupGap).toBe(true);
     expect(usenetHealth({ error: "boom" }).summary).toBe("boom");
     expect(catalogHealth({ lastSync: "2026-10-01T00:00:00Z" }, now).level).toBe("warn");
     const correcting = catalogHealth(
@@ -461,8 +464,27 @@ describe("health", () => {
         id: "remote",
         summary: "Sign in to finish connecting",
         href: "/apps/plex/account",
+        setupGap: true,
+        level: "unknown",
       }),
     ]);
+    const fresh = computeHealth(
+      {
+        providers: [],
+        debrid: { enabled: false },
+        indexers: [{ indexer: "Torrentio", enabled: true, hitsLimit: 0 }],
+        cache: { used: 0, budget: 32 * 1024 ** 3 },
+        catalog: { movies: 0, shows: 0 },
+        database: { integrity: { ok: true, checked: now.toISOString() } },
+      },
+      now,
+      { plexEnabled: false },
+    );
+    expect(fresh.filter((item) => item.setupGap).map((item) => item.id)).toEqual([
+      "usenet",
+      "catalog",
+    ]);
+    expect(overallLevel(fresh)).toBe("ok");
     expect(
       remoteHealth({ claimed: true, remoteAccess: true, presence: { connected: false } }).level,
     ).toBe("warn");

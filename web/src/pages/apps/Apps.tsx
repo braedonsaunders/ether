@@ -23,7 +23,7 @@ import { isPlainObject } from "../../lib/format";
 import { useAsync, useInterval } from "../../lib/hooks";
 import { viewerStatus } from "../viewers/ViewerStatus";
 import { PlexApp } from "./PlexApp";
-import { appLabel, appPath, appPurpose } from "./catalog";
+import { appLabel, appPath, appPurpose, appRank } from "./catalog";
 import { awaySummary, homeSummary } from "./reachability";
 
 type FrontendInfo = {
@@ -547,7 +547,9 @@ export default function Apps() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const querySection = searchParams.get("section");
-  const apps = state.data ?? [];
+  const apps = [...(state.data ?? [])].sort(
+    (a, b) => appRank(a.descriptor.id) - appRank(b.descriptor.id),
+  );
   const plexInfo = apps.find((info) => info.descriptor.id === "plex");
   const plexOn = plexInfo?.enabled === true;
   const showPlex = plexOn && routeTab === "plex";

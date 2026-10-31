@@ -394,12 +394,12 @@ describe("setup wizard", () => {
     await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-    await screen.findByRole("heading", { name: "Usenet providers" });
+    await screen.findByRole("heading", { name: "Where Ether streams from" });
     expect(calls(fake, "PUT", "/config")[0]?.body).toMatchObject({
       usenet: { providers: [] },
       indexers: [],
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add provider" }));
+    fireEvent.click(screen.getByRole("button", { name: /Usenet provider/ }));
     fireEvent.change(screen.getByPlaceholderText("news.example.com"), {
       target: { value: provider.host },
     });
@@ -421,15 +421,11 @@ describe("setup wizard", () => {
     await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-    await screen.findByRole("heading", { name: "Debrid accounts" });
+    await screen.findByRole("heading", { name: "Where Ether streams from" });
     expect(screen.queryByText(/ships none/)).toBeNull();
-    expect(
-      screen.getByText("Add a debrid account, a Usenet provider, or both, and test each one."),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Add debrid account" }));
-    expect(
-      screen.queryByText("Add a debrid account, a Usenet provider, or both, and test each one."),
-    ).toBeNull();
+    expect(screen.queryByRole("link", { name: "What it costs and how to get a key" })).toBeNull();
+    expect(screen.queryByLabelText("API token")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Debrid service/ }));
     expect(screen.getByLabelText("API token")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Find your Real-Debrid API token" })).toHaveAttribute(
       "href",
@@ -478,7 +474,7 @@ describe("setup wizard", () => {
     await selectPlex();
     await screen.findByText(/Signed in as alice/);
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-    await screen.findByRole("heading", { name: "Usenet providers" });
+    await screen.findByRole("heading", { name: "Where Ether streams from" });
     fireEvent.click(screen.getByLabelText(/Skip the connection test/));
     expect(screen.getByRole("button", { name: "Save and continue" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Finish now, add sources later" })).toBeEnabled();
@@ -496,20 +492,24 @@ describe("setup wizard", () => {
       await selectPlex();
       await screen.findByText(/Signed in as alice/);
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
-      await screen.findByRole("heading", { name: "Usenet providers" });
+      await screen.findByRole("heading", { name: "Where Ether streams from" });
       if (kind === "indexer") {
-        fireEvent.click(screen.getByRole("button", { name: "Use a ready-made setup" }));
-        expect(await screen.findByText("Torrentio (no account needed)")).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Change" }));
-        expect(screen.getByRole("button", { name: "Use a ready-made setup" })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole("button", { name: "Use a ready-made setup" }));
+        const torrentio = () => screen.getByRole("button", { name: /Torrentio/ });
+        fireEvent.click(torrentio());
+        expect(torrentio()).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByText("finds releases; needs debrid to play")).toBeInTheDocument();
+        fireEvent.click(torrentio());
+        expect(torrentio()).toHaveAttribute("aria-pressed", "false");
+        fireEvent.click(torrentio());
         fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
         await screen.findByRole("heading", { name: "Indexers and addons" });
         fireEvent.change(screen.getByDisplayValue("https://torrentio.strem.fun/manifest.json"), {
           target: { value: "" },
         });
+        fireEvent.click(screen.getByRole("button", { name: "Add indexer" }));
+      } else {
+        fireEvent.click(screen.getByRole("button", { name: /Usenet provider/ }));
       }
-      fireEvent.click(screen.getByRole("button", { name: `Add ${kind}` }));
       fireEvent.change(screen.getAllByRole("textbox")[0]!, { target: { value: "Keep my draft" } });
       fireEvent.click(screen.getByLabelText(/Skip the connection test/));
       fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
@@ -770,6 +770,18 @@ describe("setup wizard", () => {
       await screen.findByRole("heading", { name: "Where will your household watch?" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("More apps")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("switch").map((el) => el.getAttribute("aria-label")),
+    ).toEqual([
+      "Plex enabled",
+      "Jellyfin enabled",
+      "Emby enabled",
+      "Stremio enabled",
+      "Silo enabled",
+      "DLNA enabled",
+      "Files (WebDAV) enabled",
+      "M3U & XMLTV enabled",
+    ]);
     expect(screen.getByRole("switch", { name: "Silo enabled" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Stremio enabled" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Jellyfin enabled" })).not.toBeChecked();
