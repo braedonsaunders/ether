@@ -320,6 +320,12 @@ func (s *Server) mediaForVariants(ctx context.Context, pr *Request, t *core.Titl
 			m.Selected = model.Ptr(true)
 			m.Part[0].Selected = model.Ptr(true)
 		}
+		// Auto's title is the release-name estimate. When the file that
+		// actually played is a different resolution or codec, the label has
+		// to follow the probe or Play Version still says 1080p EAC3.
+		if v.Auto && played && probeDisagrees(v.Info, probed) {
+			m.Extra = []model.Attr{model.A("title", playedAutoTitle(probed))}
+		}
 		out = append(out, m)
 	}
 	// A recorded PMS movie has one Media and does not set Media@selected
@@ -439,6 +445,72 @@ func (s *Server) resolveVariantSelection(ctx context.Context, pr *Request, p *pl
 		return ""
 	}
 	return vs[p.mediaIndex].Release.ID
+}
+
+// probeDisagrees reports that the file which played is not the picture or
+// audio the release name (or its stand-in) described.
+func probeDisagrees(claimed, probed core.MediaInfo) bool {
+	if probed.Video() == nil {
+		return false
+	}
+	if resolutionClass(streamHeight(claimed)) != resolutionClass(probed.Video().Height) {
+		return true
+	}
+	return primaryAudioCodec(claimed) != primaryAudioCodec(probed)
+}
+
+func streamHeight(info core.MediaInfo) int {
+	if v := info.Video(); v != nil {
+		return v.Height
+	}
+	return 0
+}
+
+func resolutionClass(h int) int {
+	switch {
+	case h >= 1800:
+		return 2160
+	case h >= 1000:
+		return 1080
+	case h >= 700:
+		return 720
+	case h > 0:
+		return 480
+	default:
+		return 0
+	}
+}
+
+func primaryAudioCodec(info core.MediaInfo) string {
+	fallback := ""
+	for _, st := range info.Streams {
+		if st.Type != "audio" || st.Codec == "" {
+			continue
+		}
+		if st.Default || fallback == "" {
+			fallback = strings.ToLower(st.Codec)
+			if st.Default {
+				return fallback
+			}
+		}
+	}
+	return fallback
+}
+
+// playedAutoTitle names Auto from the probe, not the release-name estimate.
+func playedAutoTitle(info core.MediaInfo) string {
+	h := streamHeight(info)
+	res := "SD"
+	switch {
+	case h >= 1800:
+		res = "4K"
+	case h >= 700:
+		res = strconv.Itoa(h) + "p"
+	}
+	if a := strings.ToUpper(primaryAudioCodec(info)); a != "" {
+		return "Auto · " + res + " · " + a
+	}
+	return "Auto · " + res
 }
 
 // preparePlayback prepares a play session, honouring a "Play Version"

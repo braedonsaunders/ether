@@ -267,6 +267,18 @@ func TestResolvePreferAlternatesPreferSameEdition(t *testing.T) {
 	}
 }
 
+func TestEstimateVariantInfoDoesNotInvent1080pEAC3(t *testing.T) {
+	info := estimateVariantInfo(matrixTitle(), rel("x", "Abzurdah 2015", 8000))
+	if info.Video() != nil {
+		t.Fatalf("unparsed release advertised a picture: %+v", info.Video())
+	}
+	for _, st := range info.Streams {
+		if st.Type == "audio" {
+			t.Fatalf("unparsed release advertised audio %+v", st)
+		}
+	}
+}
+
 func TestEstimateVariantInfo(t *testing.T) {
 	title := matrixTitle()
 	r := rel("x", "ignored", 8000)

@@ -629,3 +629,27 @@ func TestDetailPassesPlayedReleaseToVariants(t *testing.T) {
 		t.Fatalf("played release %q, want rel-played", f.resolver.lastPlayed)
 	}
 }
+
+// A played file that is SD AAC must not leave Auto titled as the 1080p
+// E-AC-3 estimate the detail showed before playback.
+func TestAutoLabelFollowsPlayedProbe(t *testing.T) {
+	f, pb := newVariantPlaybackFixture(t)
+	probe := core.MediaInfo{Container: "mkv", Streams: []core.StreamInfo{
+		{Index: 0, Type: "video", Codec: "h264", Width: 720, Height: 480, Default: true},
+		{Index: 1, Type: "audio", Codec: "aac", Channels: 2, Default: true},
+	}}
+	pb.mu.Lock()
+	pb.resumed = map[resumedFactKey]resumedFact{{ownerUser.ID, fightClub.Key}: {info: probe, release: "rel-sd"}}
+	pb.mu.Unlock()
+	rec := f.get(t, "/library/metadata/"+fightClub.Key.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `title="Auto · SD · AAC"`) {
+		t.Fatalf("auto title did not follow the played file:\n%s", body)
+	}
+	if !strings.Contains(body, `videoResolution="480"`) {
+		t.Fatalf("played media still hides the SD probe:\n%s", body)
+	}
+}

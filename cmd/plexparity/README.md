@@ -106,3 +106,10 @@ the library and are not a second `#`. Plex tvOS adds every directory titled
 `#` into the offset of later letters, so the trailing bucket shifted
 jump-to-letter by that count. `/firstCharacter/~` still filters those titles.
 This note does not allowlist any response.
+
+Play Version: an unparsed release no longer advertises 1080p H.264 or E-AC-3
+5.1. After playback, when the probed file's resolution class or audio codec
+disagrees with Auto's estimate, Auto's media title follows the probe
+(`Auto · SD · AAC`). A known 1080p candidate is still tried before a known
+SD file; the downgrade trace is unchanged. This note does not allowlist any
+response.

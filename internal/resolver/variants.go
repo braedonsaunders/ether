@@ -506,20 +506,23 @@ func sourceWord(s core.Source) string {
 // release size over the title runtime (typical bitrates when unknown).
 func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 	info := rel.Info
-	height := info.Height
+	// Bitrate guesses need a height. The picture shown on a detail page must
+	// not: an unparsed name is not 1080p, and inventing E-AC-3 5.1 is how a
+	// detail promised 1080p EAC3 for a file that played as SD.
+	claimedH := info.Height
+	height := claimedH
 	if height <= 0 {
 		height = 1080
 	}
 	codec := info.VideoCodec
-	if codec == "" {
+	if codec == "" && claimedH >= 2160 {
+		codec = "hevc"
+	} else if codec == "" && claimedH > 0 {
 		codec = "h264"
-		if height >= 2160 {
-			codec = "hevc"
-		}
 	}
 	video := core.StreamInfo{
 		Index: 0, Type: "video", Codec: codec,
-		Width: variantWidth(height), Height: height,
+		Width: variantWidth(claimedH), Height: claimedH,
 		FrameRate: 23.976, BitDepth: 8, Default: true,
 	}
 	if codec == "h264" {
@@ -537,10 +540,10 @@ func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 	video.DolbyVision = info.DolbyVision
 
 	audioCodec := info.AudioCodec
-	if audioCodec == "" {
-		audioCodec = "eac3"
+	channels := channelInfo{}
+	if info.Channels != "" {
+		channels = channelsFromString(info.Channels)
 	}
-	channels := channelsFromString(info.Channels)
 	audio := core.StreamInfo{
 		Index: 1, Type: "audio", Codec: audioCodec,
 		Channels: channels.count, ChannelLayout: channels.layout,
@@ -579,12 +582,19 @@ func estimateVariantInfo(t *core.Title, rel core.Release) core.MediaInfo {
 	if container == "" {
 		container = "mkv"
 	}
+	var streams []core.StreamInfo
+	if claimedH > 0 || codec != "" {
+		streams = append(streams, video)
+	}
+	if audioCodec != "" {
+		streams = append(streams, audio)
+	}
 	return core.MediaInfo{
 		Container:   container,
 		Duration:    dur,
 		Size:        size,
 		BitrateKbps: bitrate,
-		Streams:     []core.StreamInfo{video, audio},
+		Streams:     streams,
 		Estimated:   true,
 	}
 }
