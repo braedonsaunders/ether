@@ -20,11 +20,12 @@ import (
 // (block) accounts are never spill targets: they stay last resort for
 // articles the primaries lack.
 
-// serves reports whether a request could be answered here at all: the
-// credentials are accepted, and either new dials are allowed or an idle
-// socket is left (connect backoff pauses dials only).
+// serves reports whether a request could be answered here at all, by the
+// same checks get makes: idle sockets may be used (no credential lockout or
+// command backoff), and either new dials are allowed or an idle socket is
+// left (connect backoff pauses dials only).
 func (p *pool) serves() bool {
-	if p.brk.authDisabled() != nil {
+	if p.brk.idleAllowed() != nil {
 		return false
 	}
 	if p.brk.allow() == nil {
