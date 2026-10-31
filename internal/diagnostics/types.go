@@ -100,7 +100,7 @@ type Event struct {
 	Candidates   []Candidate
 	Media        *MediaFacts
 	// Playback is the structured resolution trace for KindPlaybackDecision.
-	// It is exported even when the titles flag is off. It must not carry
+	// Release names stay only when the titles flag is on. It must not carry
 	// a username or address.
 	Playback *PlaybackDecision
 }
@@ -121,8 +121,8 @@ type Candidate struct {
 
 // PlaybackDecision is a privacy-safe explanation of one resolution:
 // the profile ceiling, who chose, the candidates that mattered, and
-// the Play Version part ids. Release names are included so a support
-// ZIP can explain a pick without the titles flag.
+// the Play Version part ids. Release names are included only when the
+// owner includes titles. Otherwise each name is a neutral token.
 type PlaybackDecision struct {
 	Profile            string              `json:"profile,omitempty"`
 	ProfileMaxHeight   int                 `json:"profileMaxHeight,omitempty"`

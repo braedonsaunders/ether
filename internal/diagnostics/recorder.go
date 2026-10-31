@@ -862,7 +862,7 @@ func identityPreview(events []Event, titles, users, addrs bool) IdentityPreview 
 		p.Explanation = "Usernames are not in the ZIP. Addresses are not in the ZIP."
 	}
 	if !titles {
-		p.Explanation += " Titles and source names are not in the ZIP."
+		p.Explanation += " Titles and source names are not in the ZIP. Release names in playback decisions are replaced with resolution, source, group, size, and a per-capture hash."
 	} else {
 		p.Explanation += " Titles and source names are in the ZIP."
 	}
