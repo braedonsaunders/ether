@@ -83,13 +83,10 @@ func readNodeFacts(dataDir string, getenv func(string) string) nodeFacts {
 }
 
 // settingsDocument reports whether raw is a settings file at all: a JSON
-// object with server settings. null, {} or an unrelated document fail
-// closed like unparsable JSON.
+// object with at least one setting. null, {} or a non-object fail closed
+// like unparsable JSON; a partial file uses the defaults for what it
+// leaves out, as config.Open does.
 func settingsDocument(raw []byte) bool {
 	var top map[string]json.RawMessage
-	if json.Unmarshal(raw, &top) != nil || top == nil {
-		return false
-	}
-	server, ok := top["server"]
-	return ok && len(server) > 0 && server[0] == '{'
+	return json.Unmarshal(raw, &top) == nil && len(top) > 0
 }

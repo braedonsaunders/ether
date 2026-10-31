@@ -766,7 +766,7 @@ func TestRecoveryRound3Items(t *testing.T) {
 		t.Fatalf("restore after a successful start: %d", w.Code)
 	}
 
-	for _, doc := range []string{"null", "{}", `{"plex":{}}`, `{"server":null}`} {
+	for _, doc := range []string{"null", "{}", "[]", `"server"`, `{"server":5}`} {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "config.json"), []byte(doc), 0o600)
 		if f := readNodeFacts(dir, os.Getenv); f.Readable || !f.SetupComplete || f.Standalone() || f.Server.BindAddress != "127.0.0.1" {
@@ -794,6 +794,30 @@ func TestRecoveryRound3Items(t *testing.T) {
 	} {
 		if got := localForwardHost(host); got != want {
 			t.Errorf("localForwardHost(%q) = %v", host, got)
+		}
+	}
+}
+
+// Follow-up, item 2: a hand-written partial config.json that config.Open
+// merges over the defaults starts on the defaults it leaves out, not on
+// loopback only.
+func TestPartialSettingsUseTheDefaults(t *testing.T) {
+	for _, doc := range []string{`{"setupComplete":true,"plex":{"ownerPlexId":7}}`, `{"setupComplete":true,"server":{"friendlyName":"Den"}}`} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := config.Open(dir)
+		if err != nil {
+			t.Fatalf("config.Open %s: %v", doc, err)
+		}
+		want := cfg.Get().Server
+		f := readNodeFacts(dir, func(string) string { return "" })
+		if !f.Readable || !f.SetupComplete || !f.Standalone() || f.Server.BindAddress != want.BindAddress || f.Server.Port != want.Port {
+			t.Fatalf("settings %s: %+v, config.Open has %s:%d", doc, f, want.BindAddress, want.Port)
+		}
+		if f.Server.BindAddress == "127.0.0.1" {
+			t.Fatalf("settings %s: bound to loopback only", doc)
 		}
 	}
 }
