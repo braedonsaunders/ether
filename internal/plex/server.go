@@ -113,6 +113,10 @@ type Deps struct {
 
 	// Config returns the current settings snapshot.
 	Config func() config.Config
+	// ApplyClientRules adjusts caps for the owner's quality rules. Nil leaves
+	// the request caps unchanged. The app wires resolver.ApplyClientRules so
+	// this package stays outside the resolver.
+	ApplyClientRules func(config.Quality, core.ClientCaps, *core.User) core.ClientCaps
 	// OwnerSubscription returns the current entitlement snapshot from plex.tv.
 	OwnerSubscription func() (active bool, features []string)
 	// ImageURL builds TMDB image URLs; defaults to image.tmdb.org.

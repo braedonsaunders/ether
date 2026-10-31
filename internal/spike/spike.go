@@ -19,6 +19,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/core"
 	"github.com/braedonsaunders/ether/internal/plex"
+	"github.com/braedonsaunders/ether/internal/resolver"
 	"github.com/braedonsaunders/ether/internal/sessions"
 )
 
@@ -191,16 +192,17 @@ func (l *Library) Transcoder() core.Transcoder   { return l.trans }
 func (l *Library) Deps() plex.Deps {
 	c := l.cfg()
 	return plex.Deps{
-		Catalog:     l.Catalog(),
-		Collections: l.Collections(),
-		Recommender: l.Recommender(),
-		State:       l.State(),
-		Playlists:   l.Playlists(),
-		Auth:        l.Auth(),
-		Playback:    l.Playback(),
-		Transcoder:  l.Transcoder(),
-		Config:      l.cfg,
-		Logger:      l.opts.Logger,
+		Catalog:          l.Catalog(),
+		Collections:      l.Collections(),
+		Recommender:      l.Recommender(),
+		State:            l.State(),
+		Playlists:        l.Playlists(),
+		Auth:             l.Auth(),
+		Playback:         l.Playback(),
+		Transcoder:       l.Transcoder(),
+		Config:           l.cfg,
+		ApplyClientRules: resolver.ApplyClientRules,
+		Logger:           l.opts.Logger,
 		Identity: plex.Identity{
 			MachineIdentifier: c.Server.MachineIdentifier,
 			FriendlyName:      c.Server.FriendlyName,

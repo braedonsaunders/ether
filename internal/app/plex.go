@@ -11,6 +11,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/plex"
 	"github.com/braedonsaunders/ether/internal/plexguid"
 	"github.com/braedonsaunders/ether/internal/plextv"
+	"github.com/braedonsaunders/ether/internal/resolver"
 )
 
 // buildPlex assembles the PMS-compatible front end. In spike mode the
@@ -102,6 +103,7 @@ func (a *App) buildPlex(ctx context.Context, cfg config.Config) (http.Handler, e
 	deps.FavoriteShows = a.favoriteShows
 	deps.Now = parityClock()
 	deps.Config = a.cfg.Get
+	deps.ApplyClientRules = resolver.ApplyClientRules
 	deps.Logger = a.log.With("component", "plex")
 	deps.Identity = identity
 	deps.OwnerSubscription = func() (bool, []string) {

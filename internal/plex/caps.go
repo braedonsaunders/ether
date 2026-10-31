@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/braedonsaunders/ether/internal/core"
-	"github.com/braedonsaunders/ether/internal/resolver"
 )
 
 // baseCaps is what a product/platform can play according to what Plex
@@ -215,10 +214,14 @@ func (pr *Request) ClientCaps(remoteMaxKbps int) core.ClientCaps {
 
 // clientCaps derives core.ClientCaps for the request and applies any
 // matching client rule override from the server's quality configuration.
+// The override stays behind Deps so this package does not import the resolver.
 func (s *Server) clientCaps(pr *Request) core.ClientCaps {
 	cfg := s.cfg()
 	caps := pr.ClientCaps(cfg.Transcode.RemoteMaxBitrateKbps)
-	return resolver.ApplyClientRules(cfg.Quality, caps, pr.User)
+	if s.d.ApplyClientRules == nil {
+		return caps
+	}
+	return s.d.ApplyClientRules(cfg.Quality, caps, pr.User)
 }
 
 // Directive is one parsed X-Plex-Client-Profile-Extra directive, e.g.
