@@ -23,6 +23,20 @@ func TestOpenSetsJournalSizeLimitAndMaintainTruncatesWAL(t *testing.T) {
 	if limit != journalSizeLimit {
 		t.Fatalf("journal_size_limit = %d, want %d", limit, journalSizeLimit)
 	}
+	var synchronous int
+	if err := db.QueryRowContext(ctx, `PRAGMA synchronous`).Scan(&synchronous); err != nil {
+		t.Fatal(err)
+	}
+	if synchronous != 1 {
+		t.Fatalf("synchronous = %d, want NORMAL (1)", synchronous)
+	}
+	var auto int
+	if err := db.QueryRowContext(ctx, `PRAGMA wal_autocheckpoint`).Scan(&auto); err != nil {
+		t.Fatal(err)
+	}
+	if auto != 0 {
+		t.Fatalf("wal_autocheckpoint = %d, want 0", auto)
+	}
 
 	if _, err := db.ExecContext(ctx, `CREATE TABLE store_test_t(v TEXT)`); err != nil {
 		t.Fatal(err)

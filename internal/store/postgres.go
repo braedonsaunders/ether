@@ -104,6 +104,11 @@ func parsePostgresConfig(raw string) (*pgx.ConnConfig, error) {
 
 // openPostgres connects to an owner-supplied PostgreSQL database, checks
 // the server and migrates the schema under a cluster-wide lock.
+//
+// Checkpoints stay on the server's checkpointer process. This client does
+// not issue CHECKPOINT and does not set synchronous_commit, checkpoint_timeout,
+// or max_wal_size, so a request commit waits for its own WAL record and not
+// for a checkpoint.
 func openPostgres(ctx context.Context, rawURL string, log *slog.Logger, gate MigrationGate) (*sql.DB, error) {
 	cfg, err := parsePostgresConfig(rawURL)
 	if err != nil {
