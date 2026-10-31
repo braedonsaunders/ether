@@ -810,15 +810,15 @@ func applyStreamDecision(st model.Stream, src core.StreamInfo, dec core.Decision
 				st.Format = st.Codec
 			}
 		}
-		// Segmented Matroska timestamps start 10s ahead of the title clock.
-		// A plain SRT makes AVPlayer sync cues against that media clock and
-		// hold the last presented frame across a seek. WebVTT can carry
-		// X-TIMESTAMP-MAP so LOCAL title time meets the cluster clock.
-		if st.Location == "sidecar" && dec.Container == transcode.ContainerMatroska && textSidecarCodec(st.Codec) {
-			if st.Key != "" && !strings.HasSuffix(st.Key, ".vtt") {
-				st.Key += ".vtt"
-			}
-			st.Format = "vtt"
+		// Plex tvOS reads the text track from the Matroska segments and does
+		// not request a sidecar. The transcoder muxes that track on the
+		// same clock as the video; a sidecar key would describe a file
+		// this player never opens.
+		if st.Location == "sidecar" && dec.Container == transcode.ContainerMatroska && textSidecarCodec(st.Codec) && !dec.BurnSubtitles {
+			st.Decision = "copy"
+			st.Location = "segments-av"
+			st.Key = ""
+			st.Format = ""
 		}
 	}
 	return st, true

@@ -345,6 +345,34 @@ func TestBuildArgsTextBurnKeepsSeekClock(t *testing.T) {
 	}
 }
 
+func TestBuildArgsMatroskaTextTrackSeeksWithTheVideo(t *testing.T) {
+	info := mustParse(t, "mkv_pgs.json")
+	d := core.Decision{Kind: core.DecisionTranscode, Container: ContainerMatroska, VideoCodec: "h264", MaxHeight: 1080, BitrateKbps: 4000, AudioStream: 1, AudioCopy: true, SubtitleStream: 5}
+	args := buildArgs(baseSpec(info, d))
+	mustContain(t, args, "-ss 200.000 -i http://127.0.0.1:32400/ether/source/1", "-map 0:5", "-c:s copy")
+	mustNotContain(t, args, "-sn")
+	if strings.Count(joined(args), "-ss ") != 1 {
+		t.Fatalf("embedded text uses the video input's seek, args:\n%s", joined(args))
+	}
+
+	for i := range info.Streams {
+		if info.Streams[i].Index == 5 {
+			info.Streams[i].External = true
+			info.Streams[i].ExternalURL = "http://subs/spa.srt"
+			info.Streams[i].Codec = "srt"
+		}
+	}
+	ext := buildArgs(baseSpec(info, d))
+	mustContain(t, ext, "-ss 200.000 -i http://127.0.0.1:32400/ether/source/1", "-ss 200.000 -i http://subs/spa.srt", "-map 1:0", "-c:s copy")
+	mustNotContain(t, ext, "-sn")
+
+	ts := d
+	ts.Container = ContainerMPEGTS
+	mpegts := buildArgs(baseSpec(info, ts))
+	mustContain(t, mpegts, "-sn")
+	mustNotContain(t, mpegts, "http://subs/spa.srt")
+}
+
 func TestBuildArgsTextSubtitleStaysSidecar(t *testing.T) {
 	pgs := mustParse(t, "mkv_pgs.json")
 	o := allow()

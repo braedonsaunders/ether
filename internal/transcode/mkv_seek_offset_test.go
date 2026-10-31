@@ -3,6 +3,7 @@ package transcode
 import (
 	"context"
 	"math"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -27,6 +28,39 @@ func TestIntegrationMatroskaPresentationStartsAtSeekOffset(t *testing.T) {
 	path := e.writeTemp(t, "offset-result.mkv", data)
 	if got := startTime(t, e.probeFile(t, path), "video"); math.Abs(got-22) > 1.1 {
 		t.Fatalf("seek presentation starts %.3f, want 22", got)
+	}
+}
+
+func TestIntegrationMatroskaSubtitleSeekMatchesVideo(t *testing.T) {
+	e := newRealEnv(t, WithoutHWDetection(), WithSegmentTimeout(20*time.Second))
+	srt := filepath.Join(e.dir, "cues.srt")
+	if err := os.WriteFile(srt, []byte("1\n00:00:12,000 --> 00:00:14,000\nAt twelve\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e.gen(t, "subs.mkv", 24, "-i", srt, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-g", "24", "-c:a", "aac", "-c:s", "srt")
+	info, err := e.m.Probe(t.Context(), e.url("subs.mkv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := -1
+	for _, stream := range info.Streams {
+		if stream.Type == "subtitle" {
+			sub = stream.Index
+		}
+	}
+	if sub < 0 {
+		t.Fatal("generated file has no subtitle stream")
+	}
+	d := core.Decision{Kind: core.DecisionTranscode, Container: ContainerMatroska, VideoCodec: "h264", AudioCodec: "aac", AudioCopy: true, AudioStream: 1, SubtitleStream: sub, MaxHeight: 360, BitrateKbps: 1500}
+	hs, err := e.m.StartHLS(t.Context(), core.HLSRequest{SessionID: "sub-seek", InputURL: e.url("subs.mkv"), Info: *info, Decision: d, StartOffset: 12 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := e.writeTemp(t, "sub-seek.mkv", append(fetch(t, hs, InitSegment), fetch(t, hs, 0)...))
+	streams := e.probeFile(t, path)
+	video, cue := startTime(t, streams, "video"), startTime(t, streams, "subtitle")
+	if math.Abs(video-cue) > 0.5 || math.Abs(video-22) > 1.5 {
+		t.Fatalf("resumed segment video %.3f subtitle %.3f, want both near 22", video, cue)
 	}
 }
 

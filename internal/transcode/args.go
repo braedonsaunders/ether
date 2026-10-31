@@ -242,6 +242,17 @@ func buildCodecArgs(s runSpec) []string {
 		args = append(args, "-ss", secs(s.Start))
 	}
 	args = append(args, "-i", s.Input)
+	textSub := matroskaTextSubtitle(s)
+	if textSub != nil && textSub.External && textSub.ExternalURL != "" {
+		// A sidecar file is a second input. Without the same -ss, its cues
+		// stay on the title's zero while output_ts_offset places the video
+		// at the resume point, and the Matroska muxer holds the picture
+		// waiting to interleave them.
+		if s.Start > 0 {
+			args = append(args, "-ss", secs(s.Start))
+		}
+		args = append(args, "-i", textSub.ExternalURL)
+	}
 
 	// ---- mapping
 	if v != nil {
@@ -254,7 +265,17 @@ func buildCodecArgs(s runSpec) []string {
 	if a != nil {
 		args = append(args, "-map", fmt.Sprintf("0:%d", a.Index))
 	}
-	args = append(args, "-map_metadata", "-1", "-map_chapters", "-1", "-sn", "-dn")
+	args = append(args, "-map_metadata", "-1", "-map_chapters", "-1", "-dn")
+	switch {
+	case textSub != nil && textSub.External && textSub.ExternalURL != "":
+		args = append(args, "-map", "1:0", "-c:s", matroskaSubtitleCodec(textSub.Codec))
+	case textSub != nil:
+		// The primary -ss applies to this stream too, so its cues share
+		// the run clock that output_ts_offset then places on the title.
+		args = append(args, "-map", fmt.Sprintf("0:%d", textSub.Index), "-c:s", matroskaSubtitleCodec(textSub.Codec))
+	default:
+		args = append(args, "-sn")
+	}
 
 	// ---- video
 	if v != nil {
@@ -550,6 +571,34 @@ func escapeFilterValue(v string) string {
 	v = r.Replace(v)
 	g := strings.NewReplacer(`\`, `\\`, `'`, `\'`, `[`, `\[`, `]`, `\]`, `,`, `\,`, `;`, `\;`)
 	return g.Replace(v)
+}
+
+// matroskaTextSubtitle is the selected text track Plex tvOS reads from
+// inside segmented Matroska. Burned and non-Matroska decisions keep the
+// sidecar path. A nil return means the run stays subtitle-free (-sn).
+func matroskaTextSubtitle(s runSpec) *core.StreamInfo {
+	if s.Decision.Container != ContainerMatroska || s.Decision.BurnSubtitles {
+		return nil
+	}
+	sub := findStream(s.Info, s.Decision.SubtitleStream, "subtitle")
+	if sub == nil || !IsTextSubtitle(sub.Codec) {
+		return nil
+	}
+	if sub.External && sub.ExternalURL == "" {
+		return nil
+	}
+	return sub
+}
+
+// matroskaSubtitleCodec copies a codec Matroska already stores as text and
+// rewrites the others to SubRip, which the segment muxer can header.
+func matroskaSubtitleCodec(codec string) string {
+	switch strings.ToLower(codec) {
+	case "subrip", "srt", "ass", "ssa", "webvtt":
+		return "copy"
+	default:
+		return "srt"
+	}
 }
 
 // subtitleOrdinal is the position of a stream among the subtitle streams
