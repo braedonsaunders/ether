@@ -1,0 +1,245 @@
+{
+  "enforce_from": "0.3",
+  "recertified_for": [],
+  "notes": "Native clients are not certified. Tags at or after enforce_from fail until recertified_for lists that minor and every cell is pass, unsupported, or waived.",
+  "protocols": [
+    {
+      "id": "jellyfin",
+      "features": [
+        "browse",
+        "direct",
+        "remux",
+        "transcode",
+        "resume",
+        "watched",
+        "skip_intro",
+        "subtitles",
+        "live_tv",
+        "quick_connect"
+      ],
+      "clients": [
+        {
+          "name": "Jellyfin for Android TV",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "Swiftfin",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "Findroid",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "Streamyfin",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "Infuse",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "JellyCon",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "Jellyfin for Roku",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        }
+      ]
+    },
+    {
+      "id": "emby",
+      "features": [
+        "browse",
+        "direct",
+        "remux",
+        "transcode",
+        "resume",
+        "watched",
+        "skip_intro",
+        "subtitles",
+        "live_tv",
+        "quick_connect"
+      ],
+      "clients": [
+        {
+          "name": "Emby Web (externally hosted)",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "Emby for Android TV",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "skip_intro": "—",
+            "subtitles": "—",
+            "live_tv": "—",
+            "quick_connect": "—"
+          }
+        },
+        {
+          "name": "Emby for TV (Apple TV, 2.x web-shell)",
+          "version": "2.0.9",
+          "results": {
+            "browse": "unsupported",
+            "direct": "unsupported",
+            "remux": "unsupported",
+            "transcode": "unsupported",
+            "resume": "unsupported",
+            "watched": "unsupported",
+            "skip_intro": "unsupported",
+            "subtitles": "unsupported",
+            "live_tv": "unsupported",
+            "quick_connect": "unsupported"
+          },
+          "support": "unsupported"
+        }
+      ]
+    },
+    {
+      "id": "silo",
+      "features": [
+        "browse",
+        "direct",
+        "remux",
+        "transcode",
+        "resume",
+        "watched",
+        "subtitles",
+        "device_pairing"
+      ],
+      "clients": [
+        {
+          "name": "Silo for Apple TV, iOS and macOS",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "subtitles": "—",
+            "device_pairing": "—"
+          }
+        },
+        {
+          "name": "Silo for Android and Android TV",
+          "version": "Pending",
+          "results": {
+            "browse": "—",
+            "direct": "—",
+            "remux": "—",
+            "transcode": "—",
+            "resume": "—",
+            "watched": "—",
+            "subtitles": "—",
+            "device_pairing": "—"
+          }
+        }
+      ]
+    }
+  ]
+}
