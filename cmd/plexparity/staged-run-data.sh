@@ -170,6 +170,17 @@ PYCODE
  cp "$root/harness/parity_wait_fixture.go" "$root/$tree/internal/personalize/"
  cp "$root/harness/parity_session_fixture.go" "$root/$tree/internal/livetv/"
  cp "$root/harness/parity_clock_fixture.go" "$root/$tree/internal/transcode/"
+ cp "$root/harness/parity_warm_settle.go" "$root/$tree/internal/playback/"
+ cp "$root/harness/parity_warm_route.go" "$root/$tree/internal/plex/"
+ python3 - "$root/$tree/internal/plex/routes.go" <<'PYCODE'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+needle = "r.Use(s.recoverer, s.commonHeaders, s.parse, s.requestLog, s.authenticate)\n"
+if s.count(needle) != 1:
+    raise SystemExit("cannot mount the warm-settle route")
+p.write_text(s.replace(needle, needle + '\tr.Get("/parity/warm-settled", s.handleParityWarmSettled)\n', 1))
+PYCODE
  if [ "$tree" = baseline ] && [ "$counterfactual" = 1 ]; then
   cp "$root/harness/policy_counterfactual.go.txt" "$root/$tree/internal/plex/zz_parity_policy_counterfactual.go"
   python3 - "$root/$tree/internal/plex/handlers_hubs.go" <<'PYCODE'

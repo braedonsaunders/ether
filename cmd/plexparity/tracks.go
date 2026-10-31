@@ -58,6 +58,15 @@ func trackIdentity(ctx context.Context, client *http.Client, base, viewer, name 
 	h.Set("X-Plex-Session-Identifier", id)
 	h.Set("Accept", "application/xml")
 	request := protocol.Request{Method: http.MethodGet, Path: "/library/metadata/" + key, Headers: map[string]http.Header{name: h}}
+	// The detail read starts a warm probe and only waits 100ms. Main sometimes
+	// still prints the estimate. Settle that probe first so both servers render
+	// the probed file. This response is not part of the corpus.
+	settle := request
+	settle.Path = "/parity/warm-settled?ratingKey=" + key
+	settled, err := strictFetch(ctx, client, base, "parity-"+viewer, settle, name, nil, false)
+	if err != nil || settled.Status != http.StatusNoContent {
+		return nil, fmt.Errorf("%s %s warm settle: status=%d error=%v", viewer, name, settled.Status, err)
+	}
 	fetch := func(label string) (protocol.Response, error) {
 		r, err := strictFetch(ctx, client, base, "parity-"+viewer, request, name, nil, false)
 		if err != nil || r.Status != http.StatusOK {

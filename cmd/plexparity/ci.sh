@@ -23,6 +23,7 @@ cp "$root/internal/app/parity_runtime_default.go" "$root/internal/app/parity_run
 cp "$root/internal/personalize/parity_wait_fixture.go" "$dir/harness/"
 cp "$root/internal/livetv/parity_session_fixture.go" "$dir/harness/"
 cp "$root/internal/transcode/parity_clock_fixture.go" "$dir/harness/"
+cp "$root/internal/playback/parity_warm_settle.go" "$root/internal/plex/parity_warm_route.go" "$dir/harness/"
 bash "$root/scripts/fetch-ffmpeg.sh" linux-amd64
 mkdir -p "$HOME/prism-test/.cache/ffmpeg/linux-amd64"
 cp -a "$root/dist/ffmpeg/linux-amd64/." "$HOME/prism-test/.cache/ffmpeg/linux-amd64/"

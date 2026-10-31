@@ -80,4 +80,5 @@ rsync -az "$root/internal/app/parity_runtime_default.go" "$root/internal/app/par
 rsync -az "$root/internal/personalize/parity_wait_fixture.go" "$host:$remote/harness/"
 rsync -az "$root/internal/livetv/parity_session_fixture.go" "$host:$remote/harness/"
 rsync -az "$root/internal/transcode/parity_clock_fixture.go" "$host:$remote/harness/"
+rsync -az "$root/internal/playback/parity_warm_settle.go" "$root/internal/plex/parity_warm_route.go" "$host:$remote/harness/"
 ssh -o BatchMode=yes "$host" bash -s -- "$remote" "${ETHER_PARITY_ATTRIBUTION:-0}" "${ETHER_PARITY_CROWD_DIAG:-0}" "${ETHER_PARITY_NOTIFICATIONS_ONLY:-0}" "${ETHER_PARITY_LIVETV_ONLY:-0}" "${ETHER_PARITY_DOWNLOADS_ONLY:-0}" "${ETHER_PARITY_TRICKPLAY_ONLY:-0}" "${ETHER_PARITY_SUBTITLES_ONLY:-0}" "${ETHER_PARITY_IPTV_ONLY:-0}" "${ETHER_PARITY_POLICY_COUNTERFACTUAL:-0}" "${ETHER_PARITY_TRAIN_RANKER:-0}" "${ETHER_PARITY_RANKER_TRAIN_ONLY:-0}" "$both_models" "${ETHER_PARITY_EXPIRY_ONLY:-0}" "${ETHER_PARITY_CLUSTER_ONLY:-0}" "${ETHER_PARITY_INFUSE_ONLY:-0}" "${ETHER_PARITY_EXPECT_EARLY_RESUME:-0}" "$seconds" "$allow_internal_pg" < "$root/cmd/plexparity/staged-run-data.sh"
