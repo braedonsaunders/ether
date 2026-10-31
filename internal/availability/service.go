@@ -52,6 +52,7 @@ type Service struct {
 	visibilityMu       sync.Mutex
 	visibilityRevision uint64
 	visibilityCache    map[string]visibilityEntry
+	hiddenCache        map[string]hiddenEntry
 	db                 *sql.DB
 	cfg                func() config.Config
 	d                  Deps

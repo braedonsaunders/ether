@@ -86,6 +86,7 @@ func (s *Service) clearVisibility() {
 	s.visibilityMu.Lock()
 	s.visibilityRevision++
 	s.visibilityCache = nil
+	s.hiddenCache = nil
 	s.visibilityMu.Unlock()
 }
 

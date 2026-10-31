@@ -51,24 +51,29 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 		return core.Page{}, err
 	}
 	var total int
-	if hasCnt && cntEnt.gen == gen && cntEnt.minute == minBucket {
+	// A page answered with a stale total is not cached, so the recounted
+	// total reaches the next read.
+	staleTotal := false
+	switch {
+	case hasCnt && cntEnt.gen == gen && cntEnt.minute == minBucket:
 		total = cntEnt.total
-	} else {
-		if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total); err != nil {
+	case hasCnt && cntEnt.total >= staleCountMin:
+		// A large total walks the whole filtered set. Serve the last count
+		// and recount behind the read, as Facet does; a total a few seconds
+		// old only moves the end of the last page.
+		total, staleTotal = cntEnt.total, true
+		_ = c.hydrate(ctx, "count:"+ckey, 0, func(ctx context.Context) error {
+			_, err := c.countBrowse(ctx, ckey, where, args)
+			return err
+		})
+	default:
+		if total, err = c.countBrowse(ctx, ckey, where, args); err != nil {
 			return core.Page{}, err
-		}
-		if c.writeGen.Load() == gen {
-			c.cacheMu.Lock()
-			if len(c.countCache) >= 1024 {
-				c.countCache = map[string]cachedCount{}
-			}
-			c.countCache[ckey] = cachedCount{total: total, gen: gen, minute: minBucket}
-			c.cacheMu.Unlock()
 		}
 	}
 	if total == 0 || offset >= total {
 		page := core.Page{Items: []core.Title{}, Total: total}
-		if c.writeGen.Load() == gen {
+		if c.writeGen.Load() == gen && !staleTotal {
 			c.cacheMu.Lock()
 			if len(c.browseCache) >= 512 {
 				c.browseCache = map[string]cachedBrowse{}
@@ -123,7 +128,7 @@ func (c *Catalog) Browse(ctx context.Context, q core.BrowseQuery) (core.Page, er
 	if items == nil {
 		items = []core.Title{}
 	}
-	if c.writeGen.Load() == gen {
+	if c.writeGen.Load() == gen && !staleTotal {
 		cachedItems := make([]core.Title, len(items))
 		for i := range items {
 			cachedItems[i] = cloneTitle(items[i])
@@ -387,6 +392,30 @@ func (c *Catalog) browseWhere(f core.Filter) (string, []any, error) {
 func escapeLike(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return r.Replace(s)
+}
+
+// staleCountMin is the total from which Browse serves a stale count while it
+// recounts; a smaller count is cheap enough to take on the request.
+const staleCountMin = 10000
+
+// countBrowse counts a browse filter's matches and caches the total.
+func (c *Catalog) countBrowse(ctx context.Context, ckey, where string, args []any) (int, error) {
+	gen := c.writeGen.Load()
+	minBucket := c.minuteBucket()
+	var total int
+	if err := c.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM catalog_titles t WHERE `+where, args...).Scan(&total); err != nil {
+		return 0, err
+	}
+	// Stamped with the generation it started at, so a write during the
+	// count makes the next read recount; storing it even then keeps a busy
+	// catalogue's stale total moving.
+	c.cacheMu.Lock()
+	if len(c.countCache) >= 1024 {
+		c.countCache = map[string]cachedCount{}
+	}
+	c.countCache[ckey] = cachedCount{total: total, gen: gen, minute: minBucket}
+	c.cacheMu.Unlock()
+	return total, nil
 }
 
 // Facet returns value counts over the browsable set.
