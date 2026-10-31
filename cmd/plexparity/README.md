@@ -130,6 +130,14 @@ detail; an episode still names its season and show. The per-connection
 websocket handshake token is not part of the pair. This note does not
 allowlist a route.
 
+DVR lineup refresh (`2ef11dc0c`): `GET /livetv/dvrs` and `GET /livetv/dvrs/1`
+include `refreshedAt`. PMS puts that attribute on the Dvr element; clients
+compare it to drop a cached lineup, and a guide reload advances it. The
+`80208da4d` versus `0b675e5d6` capture recorded 100 pairs in each world
+(five viewers, five clients, XML and JSON, both paths). Both worlds hashed
+the same pairs, now in `approved_livetv.json`. Every other byte of those
+bodies matches. This note does not allowlist a route.
+
 Movie intros (`766c16dcd`): a movie intro that starts at the head of the file
 (within one second) and ends within 90 seconds is not offered as Skip Intro.
 TheIntroDB's row for The Matrix is one submission from the start to 40

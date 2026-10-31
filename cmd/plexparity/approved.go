@@ -67,6 +67,12 @@ var approvedActiveSubtitleDate []byte
 //go:embed approved_watch.json
 var approvedWatch []byte
 
+// Exact DVR listing pairs from the 80208da4d versus 0b675e5d6 run. Both
+// worlds produced the same 100 pairs. The only body change is refreshedAt.
+//
+//go:embed approved_livetv.json
+var approvedLiveTV []byte
+
 type responseSignature struct {
 	Status      int    `json:"status"`
 	ContentType string `json:"content_type"`
@@ -91,7 +97,7 @@ func approved(a, b capture) (string, error) {
 	for _, registry := range []struct {
 		data       []byte
 		restricted bool
-	}{{approvedSearch, true}, {approvedScopes, false}, {approvedResume, false}, {approvedDateAdded, false}, {approvedComposite, false}, {approvedActiveDate, false}, {approvedActiveResume, false}, {approvedActiveSubtitleDate, false}, {approvedWatch, false}} {
+	}{{approvedSearch, true}, {approvedScopes, false}, {approvedResume, false}, {approvedDateAdded, false}, {approvedComposite, false}, {approvedActiveDate, false}, {approvedActiveResume, false}, {approvedActiveSubtitleDate, false}, {approvedWatch, false}, {approvedLiveTV, false}} {
 		if registry.restricted && a.viewer != "teen" && a.viewer != "child" {
 			continue
 		}

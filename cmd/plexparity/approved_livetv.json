@@ -1,0 +1,1702 @@
+[
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "owner",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "adult",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "teen",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "18f75720bbf64fea74bcb8c463eaa61909b4dada68ff5b0e056b3b4deaa1493e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "bc4b8f12036805122085407a6a3be521a1039ce38e54d00a8f1be79be4a42a4b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "child",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "cf6594691f935735f18d5af2389ad4457f09cdd900f3e435b13405a11d7fd1a3"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "22dc59f34dead0bd6019351cc0e2f0dc5c14acd140d3688e5e85bb6bd6933a7b"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "androidtv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "appletv",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "desktop",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "ios",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": false,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "c7a6b339a891af3c60bc3740932c3e296d05ed6f51ee8b6cde5f7f915965702e"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "text/xml;charset=utf-8",
+      "sha256": "fc5aac9c761dc2ebd8c68b41a056f5434b4daea5df1858052b2c7f11aa83b125"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  },
+  {
+    "viewer": "friend",
+    "client": "web",
+    "json": true,
+    "path": "/livetv/dvrs/1",
+    "baseline": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "fd46af927a3b293a57968c3c36613636b305bc0eaa5f38bc0c891878edb9b217"
+    },
+    "candidate": {
+      "status": 200,
+      "content_type": "application/json",
+      "sha256": "bd746507374fea65283bd1d967f6f0108ed337d3a428e14aa629c3240563d85a"
+    },
+    "commit": "2ef11dc0c"
+  }
+]

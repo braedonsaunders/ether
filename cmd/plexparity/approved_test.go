@@ -427,6 +427,47 @@ func TestApprovedWatchRegistryIsExact(t *testing.T) {
 	}
 }
 
+func TestApprovedLiveTVRegistryIsExact(t *testing.T) {
+	var entries []approvedDifference
+	if err := json.Unmarshal(approvedLiveTV, &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 100 {
+		t.Fatalf("got %d DVR response pairs, want 100", len(entries))
+	}
+	viewers := map[string]bool{"owner": true, "adult": true, "teen": true, "child": true, "friend": true}
+	clients := map[string]bool{"web": true, "ios": true, "appletv": true, "androidtv": true, "desktop": true}
+	counts := map[string]int{}
+	seen := make(map[approvedDifference]bool, len(entries))
+	for _, e := range entries {
+		if e.Path != "/livetv/dvrs" && e.Path != "/livetv/dvrs/1" {
+			t.Fatalf("DVR approval includes an unreviewed route: %+v", e)
+		}
+		counts[e.Path+" json="+fmt.Sprintf("%t", e.JSON)]++
+		if seen[e] || !viewers[e.Viewer] || !clients[e.Client] || e.Commit != "2ef11dc0c" || e.Baseline.Status != 200 || e.Candidate.Status != 200 || e.Baseline.ContentType != e.Candidate.ContentType || len(e.Baseline.SHA256) != 64 || len(e.Candidate.SHA256) != 64 || e.Baseline.SHA256 == e.Candidate.SHA256 {
+			t.Fatalf("DVR approval is not a unique exact reviewed pair: %+v", e)
+		}
+		seen[e] = true
+	}
+	if counts["/livetv/dvrs json=false"] != 25 || counts["/livetv/dvrs json=true"] != 25 || counts["/livetv/dvrs/1 json=false"] != 25 || counts["/livetv/dvrs/1 json=true"] != 25 {
+		t.Fatalf("DVR approval counts %v", counts)
+	}
+	old := approvedLiveTV
+	defer func() { approvedLiveTV = old }()
+	a := capture{viewer: "owner", client: "web", path: "/livetv/dvrs", response: protocol.Response{Status: 200, Headers: http.Header{"Content-Type": {"application/json"}}, Body: []byte("before")}}
+	b := a
+	b.response.Body = []byte("after")
+	e := approvedDifference{Viewer: a.viewer, Client: a.client, Path: a.path, Baseline: signature(a.response), Candidate: signature(b.response), Commit: "2ef11dc0c"}
+	approvedLiveTV, _ = json.Marshal([]approvedDifference{e})
+	if got, err := approved(a, b); err != nil || got != e.Commit {
+		t.Fatalf("exact DVR pair: %q %v", got, err)
+	}
+	b.response.Body = []byte("unreviewed")
+	if got, err := approved(a, b); err != nil || got != "" {
+		t.Fatalf("unreviewed DVR body approved: %q %v", got, err)
+	}
+}
+
 func TestWatchApprovalAcceptsOnlyTheTypedContainerAndHandshake(t *testing.T) {
 	body := []byte("{\"MediaContainer\":{\"size\":0}}\n")
 	pair := func(extra string, contentType string) (capture, capture) {
