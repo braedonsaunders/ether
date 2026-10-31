@@ -341,10 +341,8 @@ func TestMixedProtocolOperability(t *testing.T) {
 	})
 
 	t.Run("status-health-logs", func(t *testing.T) {
-		code, body := call(http.MethodGet, "/ether/api/frontends", "", ownerHeader)
-		if code != 200 {
-			t.Fatal(code, string(body))
-		}
+		// A client sighting is written off the request path. The count stays
+		// unknown until that write finishes, so poll briefly after the burst.
 		var list []struct {
 			Descriptor struct {
 				ID string `json:"id"`
@@ -356,8 +354,27 @@ func TestMixedProtocolOperability(t *testing.T) {
 				Clients24hKnown  bool `json:"clients24hKnown"`
 			} `json:"status"`
 		}
-		if err := json.Unmarshal(body, &list); err != nil {
-			t.Fatal(err)
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			code, body := call(http.MethodGet, "/ether/api/frontends", "", ownerHeader)
+			if code != 200 {
+				t.Fatal(code, string(body))
+			}
+			list = nil
+			if err := json.Unmarshal(body, &list); err != nil {
+				t.Fatal(err)
+			}
+			ready := len(list) > 0
+			for _, item := range list {
+				if !item.Enabled || !item.Status.Mounted || !item.Status.LiveStreamsKnown || !item.Status.Clients24hKnown {
+					ready = false
+					break
+				}
+			}
+			if ready || !time.Now().Before(deadline) {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
 		}
 		seen := map[string]bool{}
 		for _, item := range list {
