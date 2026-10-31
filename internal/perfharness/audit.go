@@ -136,14 +136,11 @@ func explainPostgres(ctx context.Context, db *sql.DB, query string, sizes map[st
 	if !(strings.HasPrefix(upper, "SELECT") || strings.HasPrefix(upper, "WITH") || strings.HasPrefix(upper, "UPDATE") || strings.HasPrefix(upper, "DELETE") || strings.HasPrefix(upper, "INSERT")) {
 		return nil, nil
 	}
-	// The simple protocol sends the statement with its $n placeholders
-	// unbound, which is what GENERIC_PLAN plans.
-	rows, err := db.QueryContext(ctx, "EXPLAIN (GENERIC_PLAN) "+q, pgx.QueryExecModeSimpleProtocol)
+	plan, err := genericPlan(ctx, db, q)
 	if err != nil {
 		return []string{"explain failed: " + err.Error()}, nil
 	}
-	defer rows.Close()
-	var plan, issues []string
+	var issues []string
 	seen := map[string]bool{}
 	add := func(s string) {
 		if !seen[s] {
@@ -151,12 +148,7 @@ func explainPostgres(ctx context.Context, db *sql.DB, query string, sizes map[st
 			issues = append(issues, s)
 		}
 	}
-	for rows.Next() {
-		var line string
-		if rows.Scan(&line) != nil {
-			continue
-		}
-		plan = append(plan, line)
+	for _, line := range plan {
 		if m := pgSeqScan.FindStringSubmatch(line); m != nil && sizes[m[1]] >= 2000 {
 			add(fmt.Sprintf("sequential scan of %s (%d rows)", m[1], sizes[m[1]]))
 		}
@@ -168,6 +160,38 @@ func explainPostgres(ctx context.Context, db *sql.DB, query string, sizes map[st
 		}
 	}
 	return plan, issues
+}
+
+// genericPlan runs EXPLAIN (GENERIC_PLAN) on the raw connection: the
+// statement must reach the server with its $n placeholders unbound, which
+// neither database/sql nor pgx's query paths allow.
+func genericPlan(ctx context.Context, db *sql.DB, query string) ([]string, error) {
+	q, _ := store.Rebind(query)
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	var plan []string
+	err = conn.Raw(func(raw any) error {
+		pc, ok := raw.(interface{ PgxConn() *pgx.Conn })
+		if !ok {
+			return fmt.Errorf("not a PostgreSQL connection")
+		}
+		results, err := pc.PgxConn().PgConn().Exec(ctx, "EXPLAIN (GENERIC_PLAN) "+q).ReadAll()
+		if err != nil {
+			return err
+		}
+		for _, r := range results {
+			for _, row := range r.Rows {
+				if len(row) > 0 {
+					plan = append(plan, string(row[0]))
+				}
+			}
+		}
+		return nil
+	})
+	return plan, err
 }
 
 func auditWith(trace map[string]TraceRecord, w io.Writer, explainOne func(string) ([]string, []string)) error {
