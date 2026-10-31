@@ -973,6 +973,7 @@ func (s *Service) Children(ctx context.Context, viewer *core.Viewer, device core
 	}
 	return core.Page{Items: out[start:end], Total: total}, nil
 }
+
 // searchWindowMin is the smallest candidate window a search reads.
 const searchWindowMin = 100
 
