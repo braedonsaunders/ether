@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
@@ -462,4 +463,27 @@ func TestPlaylistEdgeCases(t *testing.T) {
 		t.Fatalf("list: %+v", list)
 	}
 	_ = p2
+}
+
+func TestWatchedEpisodesOfReadsOnlyTheListedShows(t *testing.T) {
+	s, _ := newTestState(t)
+	keys := []core.RatingKey{core.EpisodeKey(1, 1, 1), core.EpisodeKey(1, 2, 3), core.EpisodeKey(2, 1, 1), core.EpisodeKey(3, 999, 9999), core.MovieKey(1)}
+	if err := s.ScrobbleMany(ctx, 7, keys); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Scrobble(ctx, 8, core.EpisodeKey(1, 1, 2)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.WatchedEpisodesOf(ctx, 7, []int64{1, 3, 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []core.RatingKey{core.EpisodeKey(1, 1, 1), core.EpisodeKey(1, 2, 3), core.EpisodeKey(3, 999, 9999)}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("watched = %v, want %v", got, want)
+	}
+	all, err := s.WatchedEpisodes(ctx, 7)
+	if err != nil || len(all) != 4 {
+		t.Fatalf("all watched = %v, %v", all, err)
+	}
 }

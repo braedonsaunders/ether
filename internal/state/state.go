@@ -888,6 +888,49 @@ func (s *State) WatchedEpisodes(ctx context.Context, userID int64) ([]core.Ratin
 	return out, rows.Err()
 }
 
+// WatchedEpisodesOf lists userID's watched episode keys (view_count > 0)
+// belonging to shows (TMDB ids). Each show's episodes are one key range of
+// the (user_id, rating_key) primary key, so a list page reads only its own
+// shows' history, however long the viewer's history is.
+func (s *State) WatchedEpisodesOf(ctx context.Context, userID int64, shows []int64) ([]core.RatingKey, error) {
+	var out []core.RatingKey
+	const chunk = 200
+	for start := 0; start < len(shows); start += chunk {
+		part := shows[start:min(start+chunk, len(shows))]
+		ranges := make([]string, 0, len(part))
+		args := make([]any, 0, 1+2*len(part))
+		args = append(args, userID)
+		for _, show := range part {
+			if show <= 0 {
+				continue
+			}
+			ranges = append(ranges, "rating_key BETWEEN ? AND ?")
+			args = append(args, int64(core.EpisodeKey(show, 0, 0)), int64(core.EpisodeKey(show, 999, 9999)))
+		}
+		if len(ranges) == 0 {
+			continue
+		}
+		rows, err := s.db.QueryContext(ctx, `SELECT rating_key FROM state_watch WHERE user_id=? AND view_count>0 AND (`+strings.Join(ranges, " OR ")+`) ORDER BY rating_key`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var k int64
+			if err := rows.Scan(&k); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out = append(out, core.RatingKey(k))
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // Rollup summarises the watched state of a set of children (the episodes of
 // a season/show) for Plex's viewedLeafCount-style fields.
 type Rollup struct {

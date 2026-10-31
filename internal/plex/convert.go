@@ -1158,6 +1158,11 @@ type watchedEpisodesReader interface {
 	WatchedEpisodes(ctx context.Context, userID int64) ([]core.RatingKey, error)
 }
 
+// watchedEpisodesOfReader reads only the given shows' watched episodes.
+type watchedEpisodesOfReader interface {
+	WatchedEpisodesOf(ctx context.Context, userID int64, shows []int64) ([]core.RatingKey, error)
+}
+
 // applyListLeafCounts populates viewedLeafCount (and viewCount when all
 // episodes are watched) on shows and seasons in list/search/hub responses,
 // touching only shows that have at least one watched episode for the user.
@@ -1175,11 +1180,24 @@ func (s *Server) applyListLeafCounts(ctx context.Context, pr *Request, items []m
 	if !hasShowOrSeason {
 		return
 	}
-	reader, ok := s.d.State.(watchedEpisodesReader)
-	if !ok {
+	var watched []core.RatingKey
+	var err error
+	if reader, ok := s.d.State.(watchedEpisodesOfReader); ok {
+		// Only the listed shows' history: a page never reads all of it.
+		seen := map[int64]bool{}
+		var shows []int64
+		for i := range ts {
+			if tmdb := ts[i].Key.TMDB(); (ts[i].Type == core.TypeShow || ts[i].Type == core.TypeSeason) && tmdb > 0 && !seen[tmdb] {
+				seen[tmdb] = true
+				shows = append(shows, tmdb)
+			}
+		}
+		watched, err = reader.WatchedEpisodesOf(ctx, pr.User.ID, shows)
+	} else if reader, ok := s.d.State.(watchedEpisodesReader); ok {
+		watched, err = reader.WatchedEpisodes(ctx, pr.User.ID)
+	} else {
 		return
 	}
-	watched, err := reader.WatchedEpisodes(ctx, pr.User.ID)
 	if err != nil || len(watched) == 0 {
 		return
 	}
