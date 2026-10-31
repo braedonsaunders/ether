@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"time"
 
 	"github.com/braedonsaunders/ether/internal/config"
@@ -21,10 +20,6 @@ import (
 type updateState struct {
 	boot updater.StartupResult
 	mgr  *updater.Manager
-
-	mu      sync.Mutex
-	cancel  context.CancelFunc // cancels Run
-	restart string             // reason, once a restart was requested
 }
 
 func (a *App) updatesDir() string { return filepath.Join(a.opts.DataDir, "updates") }
@@ -128,40 +123,13 @@ func (a *App) activeSessionCount() int {
 	return n
 }
 
-// runUpdates drives the manager for the lifetime of Run; cancel stops Run
-// when an installed update needs a restart.
-func (a *App) runUpdates(ctx context.Context, cancel context.CancelFunc) {
+// runUpdates drives the manager for the lifetime of Run; an installed
+// update restarts the server through requestRestart.
+func (a *App) runUpdates(ctx context.Context) {
 	if a.updates == nil || a.updates.mgr == nil {
 		return
 	}
-	a.updates.mu.Lock()
-	a.updates.cancel = cancel
-	a.updates.mu.Unlock()
 	a.updates.mgr.Run(ctx)
-}
-
-func (a *App) requestRestart(reason string) {
-	a.updates.mu.Lock()
-	a.updates.restart = reason
-	cancel := a.updates.cancel
-	a.updates.mu.Unlock()
-	a.log.Info("restarting to finish update", "reason", reason)
-	if cancel != nil {
-		cancel()
-	}
-}
-
-// runResult is Run's return value after a graceful shutdown.
-func (a *App) runResult() error {
-	if a.updates == nil {
-		return nil
-	}
-	a.updates.mu.Lock()
-	defer a.updates.mu.Unlock()
-	if a.updates.restart != "" {
-		return fmt.Errorf("%s: %w", a.updates.restart, service.ErrRestartRequested)
-	}
-	return nil
 }
 
 func (a *App) updateStatus(context.Context) any {

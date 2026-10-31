@@ -46,6 +46,7 @@ func (a *App) extensionHandlers() map[string]http.Handler {
 	m["subtitle-sync"] = a.subtitleSyncHandler()
 	m["metadata"] = a.episodeorder.Router()
 	m["updates"] = a.updatesHandler()
+	m["server/restart"] = a.restartHandler()
 	m["cluster"] = a.clusterHandler()
 	ua := "Ether/" + a.opts.Version + " (+https://github.com/braedonsaunders/ether)"
 	m["releases"] = a.resolver.ConsoleHandler(resolver.ConsoleDeps{

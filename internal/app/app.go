@@ -5,7 +5,6 @@ package app
 
 import (
 	"context"
-	"crypto/tls"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -59,6 +58,7 @@ import (
 	"github.com/braedonsaunders/ether/internal/sessions"
 	"github.com/braedonsaunders/ether/internal/simkl"
 	"github.com/braedonsaunders/ether/internal/spike"
+	"github.com/braedonsaunders/ether/internal/startup"
 	"github.com/braedonsaunders/ether/internal/state"
 	"github.com/braedonsaunders/ether/internal/stats"
 	"github.com/braedonsaunders/ether/internal/store"
@@ -76,11 +76,9 @@ import (
 	"github.com/braedonsaunders/ether/internal/viewerpolicy"
 	"github.com/braedonsaunders/ether/internal/watchlist"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/netip"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -117,6 +115,9 @@ type Options struct {
 	// CatalogNow, when set, is the catalog clock from construction. Tests
 	// pin it so a minute snapshot cannot expire while a background browse runs.
 	CatalogNow func() time.Time
+	// front is Serve's listener, bound before the database opens; nil
+	// when an App is run on its own (tests), which then binds in Run.
+	front *frontDoor
 }
 
 // App is a running Ether server.
@@ -233,6 +234,14 @@ type App struct {
 	closeOnce         sync.Once
 	stopPrewarm       context.CancelFunc
 	prewarmDone       chan struct{}
+	// tracker reports this start's progress on the startup status page.
+	tracker *startup.Tracker
+	// restored is the report of a restore applied at this start.
+	restored *backup.Report
+	// integrity is the database's last integrity check (SQLite).
+	integrity atomic.Pointer[store.Integrity]
+	// restart is an owner-requested restart (restart.go).
+	restart restartState
 }
 
 // New builds every component. Nothing listens until Run.
@@ -265,6 +274,19 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if err := a.confirmUpdateStartup(); err != nil {
 		return nil, err
 	}
+	a.tracker = startup.NewTracker(opts.Version, time.Now)
+	if opts.front != nil {
+		a.tracker = opts.front.tracker
+		a.tracker.Begin()
+		if err := a.openFrontDoor(); err != nil {
+			return nil, err
+		}
+	}
+	// A restore requested before the restart replaces the settings and the
+	// database now, before anything has opened them.
+	if err := a.applyPendingRestore(); err != nil {
+		return nil, err
+	}
 
 	// Opening the config may rewrite it for this version, so capture the
 	// files as they are now: a pre-migrate database snapshot stores them, so
@@ -274,7 +296,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.log.Warn("pre-upgrade companion files incomplete; database snapshot alone may not restore settings and credentials", "err", snapshotErr)
 	}
 	if a.cfg, err = config.Open(opts.DataDir); err != nil {
-		return nil, fmt.Errorf("config: %w", err)
+		return nil, startFail(startup.FailConfig, fmt.Errorf("config: %w", err))
 	}
 	if warning := config.DataDirWarning(opts.DataDir); warning != "" {
 		a.log.Warn(warning)
@@ -282,17 +304,18 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	// ETHER_PORT sets the HTTP port before the UI is reachable, e.g. to run
 	// next to a Plex Media Server already using 32400 with host networking.
 	// It is saved, so plex.tv, LAN discovery and port mapping all agree.
-	if v := strings.TrimSpace(os.Getenv("ETHER_PORT")); v != "" {
-		port, perr := strconv.Atoi(v)
-		if perr != nil || port < 1 || port > 65535 {
-			return nil, fmt.Errorf("ETHER_PORT=%q: want a port between 1 and 65535", v)
+	port, err := envPort()
+	if err != nil {
+		return nil, startFail(startup.FailConfig, err)
+	}
+	if port != 0 && a.cfg.Get().Server.Port != port {
+		if err := a.cfg.Update(func(c *config.Config) error { c.Server.Port = port; return nil }); err != nil {
+			return nil, startFail(startup.FailConfig, fmt.Errorf("ETHER_PORT: %w", err))
 		}
-		if a.cfg.Get().Server.Port != port {
-			if err := a.cfg.Update(func(c *config.Config) error { c.Server.Port = port; return nil }); err != nil {
-				return nil, fmt.Errorf("ETHER_PORT: %w", err)
-			}
-			a.log.Info("server port set from ETHER_PORT", "port", port)
-		}
+		a.log.Info("server port set from ETHER_PORT", "port", port)
+	}
+	if err := a.keepListeningPort(); err != nil {
+		return nil, startFail(startup.FailConfig, err)
 	}
 	cfg := a.cfg.Get()
 	if opts.Spike {
@@ -315,15 +338,17 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		}
 	}
 	dbCfg := cfg.Database.Effective(os.Getenv)
+	a.tracker.SetDatabase(trackedDatabase(dbCfg))
 	var dialect store.Dialect
 	// A clustered node whose PostgreSQL server is briefly unreachable at
 	// boot waits for it here (logging every attempt) rather than exiting
-	// and being restarted in a tight loop by the service manager. Nothing
-	// listens meanwhile — on purpose: a node that cannot reach the shared
-	// database must not answer Plex clients or GDM discovery, and it is out
-	// of the published connections because it is not heartbeating. The
-	// hang watchdog only starts in Run. Errors retrying cannot fix (bad
-	// password, missing database, invalid URL) still fail at once.
+	// and being restarted in a tight loop by the service manager. Only the
+	// startup status page answers meanwhile — on purpose: a node that
+	// cannot reach the shared database must not answer Plex clients or GDM
+	// discovery, and it is out of the published connections because it is
+	// not heartbeating. The hang watchdog only starts in Run. Errors
+	// retrying cannot fix (bad password, missing database, invalid URL)
+	// still fail at once.
 	var gate store.MigrationGate
 	if dbCfg.IsPostgres() {
 		id, err := cluster.LoadIdentity(opts.DataDir)
@@ -335,22 +360,25 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.db, dialect, err = store.OpenWithRetry(ctx, store.Options{
 		DataDir: opts.DataDir, Driver: dbCfg.Driver, URL: dbCfg.URL,
 		Logger: a.log.With("component", "store"), MigrationGate: gate,
-		SnapshotFiles: snapshotFiles,
+		SnapshotFiles: snapshotFiles, Progress: a.storeProgress,
 	}, store.RetryOptions{
 		MinBackoff: a.opts.DBRetryMin, MaxBackoff: a.opts.DBRetryMax,
 		OnRetry: func(attempt int, wait time.Duration, err error) {
 			if errors.Is(err, store.ErrMigrationDeferred) {
+				a.tracker.Waiting(startup.PhaseWaitingCluster, attempt, wait, err)
 				a.log.Warn("database: waiting before migrating the shared schema", "attempt", attempt, "retry", wait, "reason", err)
 				return
 			}
+			a.tracker.Waiting(startup.PhaseWaitingDatabase, attempt, wait, err)
 			a.log.Error("database: PostgreSQL is unreachable; waiting for it before starting",
 				"url", dbCfg.Redacted().URL, "attempt", attempt, "retry", wait, "err", err)
 		},
 	}); err != nil {
 		a.Close() // libera o instance lock (o db não foi aberto)
-		return nil, fmt.Errorf("database: %w", err)
+		return nil, startFail(openFailure(err, dbCfg.IsPostgres()), fmt.Errorf("database: %w", err))
 	}
 	a.cfg.SetPolicyEpoch(func() error { return viewerpolicy.Bump(context.Background(), a.db) })
+	a.checkRestoredIntegrity(ctx)
 	if dialect == store.Postgres {
 		a.log.Info("database: using PostgreSQL", "url", dbCfg.Redacted().URL)
 		a.warnNewerSchema(ctx)
@@ -361,15 +389,13 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		return nil, fmt.Errorf("cluster: %w", err)
 	}
 	// A restored PostgreSQL-style bundle leaves a logical dump to import.
-	if imported, err := backup.ImportPending(ctx, a.db, opts.DataDir); err != nil {
+	if err := a.importRestoredDump(ctx); err != nil {
 		a.Close()
-		return nil, fmt.Errorf("database: %w", err)
-	} else if imported {
-		a.log.Info("database: imported restored backup")
+		return nil, err
 	}
 	if err := a.checkCredentialKey(ctx); err != nil {
 		a.Close()
-		return nil, err
+		return nil, startFail(startup.FailCredentialKey, err)
 	}
 	if dialect == store.Postgres {
 		if err := a.attachCluster(ctx, dbCfg.URL); err != nil {
@@ -378,6 +404,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		}
 		cfg = a.cfg.Get()
 	}
+	a.tracker.Set(startup.PhaseStartingServices)
 	if err := a.build(ctx, cfg); err != nil {
 		a.Close()
 		return nil, err
@@ -528,6 +555,7 @@ func (a *App) Config() *config.Store { return a.cfg }
 func (a *App) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	a.bindRestart(ctx, cancel)
 	cfg := a.cfg.Get()
 
 	// Leave the cluster last, after background work has stopped.
@@ -599,7 +627,7 @@ func (a *App) Run(ctx context.Context) error {
 			a.backups.Run(ctx, alerts.observe)
 		})
 	})
-	background.start(func() { a.runUpdates(ctx, cancel) })
+	background.start(func() { a.runUpdates(ctx) })
 	background.start(func() { a.runClusterSync(ctx) })
 	background.start(func() { a.runBudgets(ctx) })
 	background.start(func() { a.runEgress(ctx) })
@@ -608,35 +636,39 @@ func (a *App) Run(ctx context.Context) error {
 	// listener accepts a play. A play must not wait on that write.
 	a.settleBeforeListen(ctx)
 
-	ln, err := a.listen(cfg)
-	if err != nil {
-		return err
+	front := a.opts.front
+	if front == nil {
+		ln, err := a.listen(cfg)
+		if err != nil {
+			return err
+		}
+		front = newFrontDoor(a.tracker, a.log)
+		front.serve(ln)
+		defer front.close()
 	}
-	a.frontends.start(ctx, ln.Addr())
+	addr := front.ln.Addr()
+	a.frontends.start(ctx, addr)
 	defer a.frontends.stop()
 	cfg = a.cfg.Get() // the port may have moved off a busy default
 	// Publish the actual listener, including automatic port fallback, without
 	// exposing the service's protected configuration to the desktop user.
-	if err := service.PublishLocalURL(a.opts.DataDir, strings.TrimSuffix(probeURL(ln.Addr()), "/identity")); err != nil {
+	if err := service.PublishLocalURL(a.opts.DataDir, strings.TrimSuffix(probeURL(addr), "/identity")); err != nil {
 		a.log.Warn("publish local tray endpoint", "err", err)
 	}
-	dl := newDualListener(ln, func() *tls.Config { return a.certs.TLSConfig() })
-	srv := &http.Server{
-		Handler:           a.handler,
-		ReadHeaderTimeout: 30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ErrorLog:          slog.NewLogLogger(a.log.Handler(), slog.LevelDebug),
-	}
-	a.log.Info("Ether listening", "addr", ln.Addr().String(), "ui", fmt.Sprintf("http://localhost:%d/ether/", cfg.Server.Port),
+	front.setTLS(a.certs.TLSConfig)
+	front.setProxies(func() []string { return a.cfg.Get().Server.TrustedProxyCIDRs })
+	front.gate.Open(a.handler)
+	a.log.Info("Ether listening", "addr", addr.String(), "ui", fmt.Sprintf("http://localhost:%d/ether/", cfg.Server.Port),
 		"version", a.opts.Version, "spike", cfg.Spike.Enabled)
-
-	errc := make(chan error, 1)
-	go func() { errc <- srv.Serve(dl) }()
+	if a.restored != nil {
+		a.log.Info("restore finished", "status", a.restored.Status, "source", a.restored.Source, "rollback", a.restored.RollbackPath)
+	}
+	background.start(func() { a.checkIntegrityLater(ctx) })
 	a.notifyLifecycle("server.started", "Ether is online", cfg.Server.FriendlyName+" is ready for connections.")
 	// Hang watchdog: restart via the supervisor if we stop answering.
 	watchdogErr := make(chan error, 1)
 	go func() {
-		watchdog := newWatchdog(probeURL(ln.Addr()), a.log.With("component", "watchdog"))
+		watchdog := newWatchdog(probeURL(addr), a.log.With("component", "watchdog"))
 		probe := watchdog.probe
 		watchdog.probe = func(ctx context.Context) error {
 			if err := probe(ctx); err != nil {
@@ -658,7 +690,7 @@ func (a *App) Run(ctx context.Context) error {
 	case <-setupStop:
 		runErr = errClusterSetup
 	case <-ctx.Done():
-	case err := <-errc:
+	case err := <-front.errc:
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
@@ -671,9 +703,11 @@ func (a *App) Run(ctx context.Context) error {
 	// Hand leadership over first: another node takes over singleton work
 	// and plex.tv publication while this one finishes shutting down.
 	a.stepDownForShutdown()
+	// New requests now get 503 and the stopping status while those in
+	// flight finish (at most 10s, as before).
 	shutdown, done := context.WithTimeout(context.Background(), 10*time.Second)
 	defer done()
-	_ = srv.Shutdown(shutdown)
+	front.gate.Close(shutdown)
 	a.registrar.Stop()
 	if runErr != nil {
 		return runErr
@@ -764,39 +798,6 @@ func appendUnique(xs []string, more ...string) []string {
 		}
 	}
 	return xs
-}
-
-// fallbackPorts are tried, in order, when the default port 32400 is already
-// taken, normally by a Plex Media Server on the same machine.
-var fallbackPorts = []int{32450, 32451, 32452, 32453, 32454, 32455, 32456, 32457, 32458, 32459}
-
-// listen binds the configured port. When that is the default 32400 and it
-// is in use, Ether moves to the first free fallback port and saves it, so
-// it runs next to Plex out of the box; plex.tv publishes the port, so Plex
-// apps follow. A port the owner chose (or ETHER_PORT) is never moved.
-func (a *App) listen(cfg config.Config) (net.Listener, error) {
-	addr := net.JoinHostPort(cfg.Server.BindAddress, strconv.Itoa(cfg.Server.Port))
-	ln, err := net.Listen("tcp", addr)
-	if err == nil {
-		return ln, nil
-	}
-	if cfg.Server.Port != config.DefaultPort || !addrInUse(err) || os.Getenv("ETHER_PORT") != "" {
-		return nil, fmt.Errorf("listen %s: %w", addr, err)
-	}
-	for _, port := range fallbackPorts {
-		alt, aerr := net.Listen("tcp", net.JoinHostPort(cfg.Server.BindAddress, strconv.Itoa(port)))
-		if aerr != nil {
-			continue
-		}
-		if uerr := a.cfg.Update(func(c *config.Config) error { c.Server.Port = port; return nil }); uerr != nil {
-			alt.Close()
-			return nil, fmt.Errorf("save port %d: %w", port, uerr)
-		}
-		a.log.Warn("port 32400 is in use (usually by Plex Media Server); Ether moved to another port and saved it",
-			"port", port, "ui", fmt.Sprintf("http://localhost:%d/ether/", port))
-		return alt, nil
-	}
-	return nil, fmt.Errorf("listen %s: %w (and ports %d-%d are also in use)", addr, err, fallbackPorts[0], fallbackPorts[len(fallbackPorts)-1])
 }
 
 // addrInUse reports a bind failure because the port is taken: EADDRINUSE,

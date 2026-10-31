@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/braedonsaunders/ether/internal/clusterconfig"
 	"github.com/braedonsaunders/ether/internal/config"
 	"github.com/braedonsaunders/ether/internal/service"
+	"github.com/braedonsaunders/ether/internal/startup"
+	"github.com/braedonsaunders/ether/internal/updater"
 )
 
 var errClusterSetup = errors.New("cluster setup requested")
@@ -27,17 +30,53 @@ type clusterSetup struct {
 	stop    chan struct{}
 }
 
-// Serve owns the complete application lifetime. A UI cluster transition first
-// stops HTTP and every background writer and closes SQLite, then migrates and
-// starts a fresh App. It works in the foreground and under every OS supervisor.
+// Serve owns the complete application lifetime. It binds the port as soon
+// as the data directory is locked, so the console can show a starting
+// server's progress (startup.Gate), and keeps it across App instances. A UI
+// cluster transition first stops HTTP and every background writer and
+// closes SQLite, then migrates and starts a fresh App. A start that fails
+// after the port is bound does not exit (a service manager would only
+// restart it into the same failure): the status page explains the failure,
+// offers a restore on a standalone server, and the start is retried with
+// backoff. It works in the foreground and under every OS supervisor.
 func Serve(ctx context.Context, opts Options) error {
 	setup := &clusterSetup{state: "idle", stop: make(chan struct{}, 1)}
 	opts.clusterSetup = setup
+	if opts.Version == "" {
+		opts.Version = updater.Version
+	}
+	log := opts.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	front := newFrontDoor(startup.NewTracker(opts.Version, time.Now), log)
+	defer front.close()
+	opts.front = front
+	failures := 0
 	for {
 		a, err := New(ctx, opts)
 		if err != nil {
-			return err
+			if !front.bound() || ctx.Err() != nil || errors.Is(err, service.ErrRestartRequested) {
+				return err
+			}
+			failures++
+			wait := startRetryDelay(failures)
+			front.tracker.Fail(failureOf(err, standaloneDataDir(opts.DataDir)), failures, wait)
+			log.Error("Ether could not start; the console at /ether/ explains why. Retrying", "err", err, "attempt", failures, "retry", wait)
+			front.recovery.Store(ptr(newRecovery(opts.DataDir, front, log).handler()))
+			t := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return nil
+			case <-t.C:
+			case <-front.retry:
+				t.Stop()
+			}
+			front.recovery.Store(nil)
+			continue
 		}
+		failures = 0
 		finish := func(bool) error { return nil }
 		if opts.NotificationExecutable != "" {
 			watch, watchErr := a.WatchNotifications(opts.NotificationExecutable)
@@ -63,6 +102,14 @@ func Serve(ctx context.Context, opts Options) error {
 		}
 	}
 }
+
+// startRetryDelay is the wait before retrying a failed start: 15s,
+// doubling, at most 10 minutes.
+func startRetryDelay(failures int) time.Duration {
+	return min(15*time.Second<<min(failures-1, 6), 10*time.Minute)
+}
+
+func ptr[T any](v T) *T { return &v }
 
 func (s *clusterSetup) apply(ctx context.Context, dir string) error {
 	s.mu.Lock()
