@@ -17,12 +17,10 @@ import (
 type viewerKey struct{}
 
 func (i *instance) serverName() string {
-	if i.host.Config != nil {
-		if name, ok := i.host.Config()["serverName"].(string); ok && strings.TrimSpace(name) != "" {
-			return name
-		}
+	if i.host.Config == nil {
+		return frontend.AdvertisedName(nil)
 	}
-	return "Ether"
+	return frontend.AdvertisedName(i.host.Config())
 }
 func (i *instance) uuid() string {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", i.id[:8], i.id[8:12], i.id[12:16], i.id[16:20], i.id[20:])

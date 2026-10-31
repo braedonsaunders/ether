@@ -13,9 +13,10 @@ vi.mock("../lib/api", async (importOriginal) => {
   };
 });
 vi.mock("../app-context", () => ({
-  useApp: () => ({
+    useApp: () => ({
     dashboard: { sections: { remote: {} } },
     reloadBoot: vi.fn(),
+    boot: { serverName: "Living Room Ether" },
   }),
 }));
 
@@ -156,6 +157,9 @@ describe("Apps", () => {
     expect(screen.queryByRole("spinbutton", { name: "Port" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Jellyfin" }));
     expect(await screen.findByRole("spinbutton", { name: "Port" })).toBeInTheDocument();
+    expect(screen.getByText("Living Room Ether")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "General settings" })).toHaveAttribute("href", "/server");
+    expect(screen.queryByRole("textbox", { name: "Server name" })).not.toBeInTheDocument();
   });
 
   it("sends a disabled app's deep link back to the overview", async () => {

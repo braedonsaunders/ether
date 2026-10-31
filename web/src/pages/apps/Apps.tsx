@@ -8,6 +8,7 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useApp } from "../../app-context";
 import { ErrorPanel, LoadingRows } from "../../components/feedback";
 import { IntegrationAppCard } from "../../components/IntegrationAppCard";
 import { EmbyMark, JellyfinMark, PlexMark } from "../../components/integration-brands";
@@ -185,6 +186,7 @@ function ConnectDevice({ info }: { info: FrontendInfo }) {
 }
 
 function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
+  const { boot } = useApp();
   const state = useAsync(() => apiFetch<Settings>(`/frontends/${id}/settings`), [id]);
   const { draft, setDraft, dirty, reset } = useDraft(state.data);
   const [saving, setSaving] = useState(false);
@@ -194,7 +196,8 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
     setSaving(true);
     setError(undefined);
     try {
-      await apiFetch(`/frontends/${id}/settings`, { method: "PUT", body: JSON.stringify(draft) });
+      const { serverName: _serverName, ...body } = draft;
+      await apiFetch(`/frontends/${id}/settings`, { method: "PUT", body: JSON.stringify(body) });
       await state.reload();
     } catch (err) {
       setError(err);
@@ -340,17 +343,17 @@ function ProtocolSettings({ id, hidden }: { id: string; hidden: boolean }) {
                 : t("How {app} apps find this server.", { app: protocolName(id) })
             }
           >
-            {named && id !== "dlna" ? (
+            {named ? (
               <SettingsRow
-                title={<label htmlFor={`${id}-name`}>{t("Server name")}</label>}
-                description={t("The name apps show for this server.")}
-                control={
-                  <Input
-                    id={`${id}-name`}
-                    aria-label={t("Server name")}
-                    value={draft.serverName ?? ""}
-                    onChange={(e) => setDraft({ ...draft, serverName: e.currentTarget.value })}
-                  />
+                title={t("Server name")}
+                description={
+                  <>
+                    <span>{boot.serverName?.trim() || "Ether"}</span>
+                    {" · "}
+                    <Link className="underline" to="/server">
+                      {t("General settings")}
+                    </Link>
+                  </>
                 }
               />
             ) : null}

@@ -497,15 +497,14 @@ describe("Settings", () => {
     renderApp("/apps/jellyfin", {}, (f) => {
       f.state.config.frontends = { jellyfin: { enabled: true }, silo: { enabled: true } };
     });
-    fireEvent.change(await screen.findByLabelText("Server name", {}, WAIT), {
-      target: { value: "Household Jellyfin" },
+    fireEvent.change(await screen.findByRole("spinbutton", { name: "Port" }, WAIT), {
+      target: { value: "8095" },
     });
     fireEvent.click(screen.getByRole("tab", { name: "Silo" }));
     await screen.findByRole("spinbutton", { name: "Port" }, WAIT);
     fireEvent.click(screen.getByRole("tab", { name: "Jellyfin" }));
-    expect(await screen.findByRole("textbox", { name: "Server name" }, WAIT)).toHaveValue(
-      "Household Jellyfin",
-    );
+    expect(await screen.findByRole("spinbutton", { name: "Port" }, WAIT)).toHaveValue(8095);
+    expect(screen.queryByRole("textbox", { name: "Server name" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Unsaved changes" })).toBeVisible();
   });
 

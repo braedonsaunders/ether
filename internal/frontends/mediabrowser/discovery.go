@@ -30,10 +30,7 @@ func (i *instance) RespondDiscovery(_ context.Context, request frontend.Discover
 	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
 		return nil, false
 	}
-	name := i.info.ServerName
-	if configured, ok := settings["serverName"].(string); ok && configured != "" {
-		name = configured
-	}
+	name := frontend.AdvertisedName(settings)
 	response := map[string]string{"Address": request.Endpoint, "Id": i.info.ID, "Name": name}
 	if i.protocol == "jellyfin" {
 		response["EndpointAddress"] = endpoint.Hostname()

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -199,6 +200,17 @@ func (boundIdentity) Revoke(context.Context, string) error { return ErrIdentityU
 func (boundIdentity) SetupComplete() bool                  { return false }
 
 type Settings map[string]any
+
+// AdvertisedName is the household name a frontend shows. The app fills
+// serverName from the general server name; a frontend does not keep its own.
+func AdvertisedName(settings Settings) string {
+	if name, ok := settings["serverName"].(string); ok {
+		if name = strings.TrimSpace(name); name != "" {
+			return name
+		}
+	}
+	return "Ether"
+}
 
 // Subscriber delivers events across nodes until the context is cancelled.
 type Subscriber interface {

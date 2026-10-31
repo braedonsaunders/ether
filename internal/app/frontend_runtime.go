@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strings"
 	"sync"
 	"time"
 
@@ -125,10 +126,23 @@ func newFrontendRuntime(a *App, cfg config.Config) (*frontendRuntime, error) {
 	r.registry = frontend.NewRegistry(func(id frontend.Protocol) frontend.Host {
 		settings := func() frontend.Settings {
 			value, err := r.control.Settings(r.ctx, id)
-			if err != nil {
-				return frontend.Settings{}
+			if err != nil || value == nil {
+				value = frontend.Settings{}
 			}
-			return value
+			name := "Ether"
+			if a.cfg != nil {
+				if trimmed := strings.TrimSpace(a.cfg.Get().Server.FriendlyName); trimmed != "" {
+					name = trimmed
+				}
+			}
+			out := make(frontend.Settings, len(value)+1)
+			for k, v := range value {
+				if k != "serverName" {
+					out[k] = v
+				}
+			}
+			out["serverName"] = name
+			return out
 		}
 		experience := experiences[id]
 		if experience == nil {

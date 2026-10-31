@@ -26,10 +26,6 @@ func (f Frontend) ValidateSettings(settings frontend.Settings) error {
 			if id, ok := value.(float64); !ok || math.IsNaN(id) || math.IsInf(id, 0) || id <= 0 || id > 9007199254740991 || id != math.Trunc(id) {
 				return errors.New("invalid viewer")
 			}
-		case "serverName":
-			if _, ok := value.(string); !ok {
-				return errors.New("invalid server name")
-			}
 		case "discovery":
 			if _, ok := value.(bool); !ok {
 				return errors.New("invalid discovery setting")

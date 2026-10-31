@@ -86,12 +86,12 @@ func TestSetupFrontendsAcceptanceFreshInstall(t *testing.T) {
 	putJSON(t, h, http.MethodPut, "/ether/api/frontends/missing/enabled", `{"enabled":true}`, "", http.StatusBadRequest)
 
 	cfg = openConfig(t, dir)
-	assertSelectedFrontends(t, cfg.Get(), "Living Room", "Downstairs")
+	assertSelectedFrontends(t, cfg.Get())
 	h = newSetupHandler(cfg, users, local, grants, limiter, newConfigFrontends(t, cfg))
 	reloadedSettings := putJSON(t, h, http.MethodGet, "/ether/api/frontends/jellyfin/settings", "", "", http.StatusOK)
 	var jellyfin map[string]any
 	decode(t, reloadedSettings, &jellyfin)
-	if jellyfin["serverName"] != "Living Room" || jellyfin["discovery"] != true || jellyfin["port"] != float64(8096) {
+	if _, named := jellyfin["serverName"]; named || jellyfin["discovery"] != true || jellyfin["port"] != float64(8096) {
 		t.Fatal("reloaded Jellyfin settings route did not return nested settings")
 	}
 	again := mustStatus(t, h, "")
@@ -111,7 +111,7 @@ func TestSetupFrontendsAcceptanceFreshInstall(t *testing.T) {
 	if cfg.Get().SetupComplete || cfg.Get().Server.FriendlyName != "Ether House" {
 		t.Fatal("config write marked setup complete or dropped the server name")
 	}
-	assertSelectedFrontends(t, cfg.Get(), "Living Room", "Downstairs")
+	assertSelectedFrontends(t, cfg.Get())
 
 	if err := cfg.Update(func(c *config.Config) error {
 		c.Cache.Dir = ""
@@ -227,7 +227,7 @@ func TestSetupFrontendsAcceptanceFreshInstall(t *testing.T) {
 	if !kept.SetupComplete || kept.Server.FriendlyName != "Ether House Again" || kept.Plex.Claimed || kept.Plex.Token != "" {
 		t.Fatal("reloaded config lost setup state or gained a Plex claim")
 	}
-	assertSelectedFrontends(t, kept, "Renamed", "Downstairs")
+	assertSelectedFrontends(t, kept)
 	if kept.Usenet.Providers[0].Password != fixtureUsenet || kept.Indexers[0].APIKey != fixtureIndexer || kept.Catalog.TMDBKey != fixtureTMDB || kept.Cache.Dir != cacheDir {
 		t.Fatal("rerun did not preserve provider, indexer, catalog, or cache settings")
 	}
@@ -464,18 +464,18 @@ func assertAdminGrant(t *testing.T, ctx context.Context, users *auth.Service, db
 	}
 }
 
-func assertSelectedFrontends(t *testing.T, cfg config.Config, jellyfinName, embyName string) {
+func assertSelectedFrontends(t *testing.T, cfg config.Config) {
 	t.Helper()
 	if cfg.Frontends["plex"].Enabled || !cfg.Frontends["jellyfin"].Enabled || !cfg.Frontends["emby"].Enabled {
 		t.Fatal("reloaded app selection was not Jellyfin and Emby with Plex disabled")
 	}
-	if cfg.Frontends["jellyfin"].Settings["serverName"] != jellyfinName || cfg.Frontends["jellyfin"].Settings["discovery"] != true {
+	if _, named := cfg.Frontends["jellyfin"].Settings["serverName"]; named || cfg.Frontends["jellyfin"].Settings["discovery"] != true {
 		t.Fatal("reloaded Jellyfin settings were not nested under the frontend")
 	}
 	if cfg.FrontendPorts["jellyfin"] != 8096 {
 		t.Fatal("reloaded Jellyfin port was not stored as a node-local port")
 	}
-	if cfg.Frontends["emby"].Settings["serverName"] != embyName || cfg.Frontends["emby"].Settings["quickConnect"] != true || cfg.FrontendPorts["emby"] != 8097 {
+	if _, named := cfg.Frontends["emby"].Settings["serverName"]; named || cfg.Frontends["emby"].Settings["quickConnect"] != true || cfg.FrontendPorts["emby"] != 8097 {
 		t.Fatal("reloaded Emby settings were not preserved")
 	}
 }
@@ -644,7 +644,7 @@ func (f *configFrontends) Settings(_ context.Context, id frontend.Protocol) (fro
 	}
 	cfg := f.config.Get()
 	if id == "plex" {
-		return frontend.Settings{"port": float64(cfg.Server.Port), "serverName": cfg.Server.FriendlyName}, nil
+		return frontend.Settings{"port": float64(cfg.Server.Port)}, nil
 	}
 	settings := frontend.Settings{}
 	for k, v := range cfg.Frontends[string(id)].Settings {
@@ -662,6 +662,7 @@ func (f *configFrontends) PutSettings(_ context.Context, id frontend.Protocol, s
 	if _, ok := f.descriptor(id); !ok {
 		return frontend.ErrNotRegistered
 	}
+	s = withoutServerName(s)
 	supported, err := f.registry.ValidateSettings(id, s)
 	if err != nil {
 		return err
@@ -671,16 +672,13 @@ func (f *configFrontends) PutSettings(_ context.Context, id frontend.Protocol, s
 	}
 	if id == "plex" {
 		for key := range s {
-			if key != "port" && key != "serverName" {
+			if key != "port" {
 				return fmt.Errorf("unsupported Plex setting %s", key)
 			}
 		}
 		return f.config.Update(func(c *config.Config) error {
 			if port, ok := s["port"].(float64); ok {
 				c.Server.Port = int(port)
-			}
-			if name, ok := s["serverName"].(string); ok {
-				c.Server.FriendlyName = name
 			}
 			return nil
 		})
@@ -728,6 +726,19 @@ func (f *configFrontends) Toggle(_ context.Context, id frontend.Protocol, enable
 	})
 }
 
+func withoutServerName(s frontend.Settings) frontend.Settings {
+	if _, ok := s["serverName"]; !ok {
+		return s
+	}
+	out := make(frontend.Settings, len(s))
+	for k, v := range s {
+		if k != "serverName" {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // acceptFrontendSettings mirrors app.validateFrontendSettings. That function
 // is unexported, and this slice does not import the app package.
 func acceptFrontendSettings(s frontend.Settings, protocolValidator bool) error {
@@ -737,10 +748,6 @@ func acceptFrontendSettings(s frontend.Settings, protocolValidator bool) error {
 			n, ok := v.(float64)
 			if !ok || n < 1 || n > 65535 || math.Trunc(n) != n {
 				return errors.New("invalid port")
-			}
-		case "serverName":
-			if _, ok := v.(string); !ok {
-				return errors.New("invalid server name")
 			}
 		case "discovery", "quickConnect", "publicViewerPicker":
 			if _, ok := v.(bool); !ok {

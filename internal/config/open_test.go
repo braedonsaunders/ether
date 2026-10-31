@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,6 +58,46 @@ func TestOpenKeepsDefaultsForMissingKeys(t *testing.T) {
 	}
 	if c.Catalog.Language != d.Catalog.Language || c.Transcode.MaxTranscodes != d.Transcode.MaxTranscodes {
 		t.Fatalf("missing sections lost their defaults: %+v %+v", c.Catalog, c.Transcode)
+	}
+}
+
+func TestOpenDropsPerAppServerNames(t *testing.T) {
+	dir := t.TempDir()
+	doc := `{"server":{"friendlyName":"Living Room"},"frontends":{"jellyfin":{"enabled":true,"settings":{"serverName":"House","discovery":true}},"emby":{"enabled":true,"settings":{"serverName":"Downstairs"}}}}`
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(doc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := s.Get()
+	if c.Server.FriendlyName != "Living Room" {
+		t.Fatalf("friendly name = %q", c.Server.FriendlyName)
+	}
+	if _, ok := c.Frontends["jellyfin"].Settings["serverName"]; ok || c.Frontends["jellyfin"].Settings["discovery"] != true {
+		t.Fatalf("jellyfin settings = %#v", c.Frontends["jellyfin"].Settings)
+	}
+	if _, ok := c.Frontends["emby"].Settings["serverName"]; ok {
+		t.Fatalf("emby settings = %#v", c.Frontends["emby"].Settings)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "serverName") || strings.Contains(string(raw), "House") || strings.Contains(string(raw), "Downstairs") {
+		t.Fatalf("saved config still has a per-app name: %s", raw)
+	}
+	if err := s.Update(func(c *Config) error {
+		fe := c.Frontends["jellyfin"]
+		fe.Settings["serverName"] = "Again"
+		c.Frontends["jellyfin"] = fe
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.Get().Frontends["jellyfin"].Settings["serverName"]; ok {
+		t.Fatal("update kept a per-app server name")
 	}
 }
 

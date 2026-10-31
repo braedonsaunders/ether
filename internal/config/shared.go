@@ -389,6 +389,7 @@ func (s *Store) updateClustered(fn func(*Config) error) error {
 			s.writeMu.Unlock()
 			return err
 		}
+		DropFrontendServerNames(&next)
 		newShared := SharedJSON(next)
 		if bytes.Equal(newShared, SharedJSON(base)) {
 			break

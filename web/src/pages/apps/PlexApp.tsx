@@ -8,7 +8,7 @@ import {
 } from "@braedonsaunders/appkit-ui";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../../app-context";
 import { MoreOptions } from "../../components/ConfigSection";
 import { RemoteDiagnostics } from "../../components/RemoteDiagnostics";
@@ -251,7 +251,18 @@ function PlexAccount({
         description={t("These identify the server. Ether sets them; they are not edited here.")}
       >
         {owner ? <SettingsRow title={t("Owner")} description={owner} /> : null}
-        <SettingsRow title={t("Server name")} description={config.server.friendlyName || "—"} />
+        <SettingsRow
+          title={t("Server name")}
+          description={
+            <>
+              <span>{config.server.friendlyName || "—"}</span>
+              {" · "}
+              <Link className="underline" to="/server">
+                {t("General settings")}
+              </Link>
+            </>
+          }
+        />
         <SettingsRow
           title={t("Machine identifier")}
           description={config.server.machineIdentifier || "—"}

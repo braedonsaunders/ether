@@ -77,7 +77,7 @@ func (f *frontendControl) Settings(_ context.Context, id frontend.Protocol) (fro
 	}
 	cfg := f.config.Get()
 	if id == "plex" {
-		return frontend.Settings{"port": float64(cfg.Server.Port), "serverName": cfg.Server.FriendlyName}, nil
+		return frontend.Settings{"port": float64(cfg.Server.Port)}, nil
 	}
 	settings := frontend.Settings{}
 	for k, v := range cfg.Frontends[string(id)].Settings {
@@ -98,10 +98,6 @@ func validateFrontendSettings(s frontend.Settings, protocolValidator bool) error
 			if !ok || n < 1 || n > 65535 || math.Trunc(n) != n {
 				return errors.New("invalid port")
 			}
-		case "serverName":
-			if _, ok := v.(string); !ok {
-				return errors.New("invalid server name")
-			}
 		case "discovery", "quickConnect", "publicViewerPicker":
 			if _, ok := v.(bool); !ok {
 				return fmt.Errorf("invalid %s", k)
@@ -118,6 +114,7 @@ func (f *frontendControl) PutSettings(_ context.Context, id frontend.Protocol, s
 	if _, ok := f.descriptor(id); !ok {
 		return frontend.ErrNotRegistered
 	}
+	s = withoutServerName(s)
 	supported, err := f.registry.ValidateSettings(id, s)
 	if err != nil {
 		return err
@@ -127,16 +124,13 @@ func (f *frontendControl) PutSettings(_ context.Context, id frontend.Protocol, s
 	}
 	if id == "plex" {
 		for key := range s {
-			if key != "port" && key != "serverName" {
+			if key != "port" {
 				return fmt.Errorf("unsupported Plex setting %s", key)
 			}
 		}
 		return f.config.Update(func(c *config.Config) error {
 			if port, ok := s["port"].(float64); ok {
 				c.Server.Port = int(port)
-			}
-			if name, ok := s["serverName"].(string); ok {
-				c.Server.FriendlyName = name
 			}
 			return nil
 		})
@@ -209,6 +203,19 @@ func (f *frontendControl) Reconcile(ctx context.Context, c config.Config) {
 			}
 		}
 	}
+}
+
+func withoutServerName(s frontend.Settings) frontend.Settings {
+	if _, ok := s["serverName"]; !ok {
+		return s
+	}
+	out := make(frontend.Settings, len(s))
+	for k, v := range s {
+		if k != "serverName" {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 var _ admin.FrontendAdmin = (*frontendControl)(nil)

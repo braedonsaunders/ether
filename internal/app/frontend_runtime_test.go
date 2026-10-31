@@ -131,7 +131,13 @@ func TestPlexFrontendStatusUsesMainListener(t *testing.T) {
 func TestPlexFrontendSettingsUseExistingServerConfig(t *testing.T) {
 	a := setupTestApp(t, true)
 	ctx := context.Background()
-	if err := a.frontends.control.PutSettings(ctx, "plex", frontend.Settings{"port": float64(32401), "serverName": "Test Ether"}); err != nil {
+	if err := a.cfg.Update(func(c *config.Config) error {
+		c.Server.FriendlyName = "Test Ether"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.frontends.control.PutSettings(ctx, "plex", frontend.Settings{"port": float64(32401), "serverName": "Other"}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := a.cfg.Get()
@@ -139,7 +145,7 @@ func TestPlexFrontendSettingsUseExistingServerConfig(t *testing.T) {
 		t.Fatal(cfg.Server, cfg.FrontendPorts)
 	}
 	settings, err := a.frontends.control.Settings(ctx, "plex")
-	if err != nil || settings["port"] != float64(32401) || settings["serverName"] != "Test Ether" {
+	if err != nil || settings["port"] != float64(32401) || settings["serverName"] != nil {
 		t.Fatal(settings, err)
 	}
 }

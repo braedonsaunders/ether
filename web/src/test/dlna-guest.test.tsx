@@ -7,6 +7,13 @@ vi.mock("@braedonsaunders/appkit-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@braedonsaunders/appkit-ui")>()),
   confirmDialog: vi.fn(async () => true),
 }));
+vi.mock("../app-context", () => ({
+  useApp: () => ({
+    boot: { serverName: "Living Room Ether" },
+    reloadBoot: vi.fn(),
+    dashboard: null,
+  }),
+}));
 const apiFetch = vi.fn();
 vi.mock("../lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/api")>()),

@@ -171,7 +171,11 @@ func unique(nodes []resource) []resource {
 }
 
 func (i *instance) resolve(r *http.Request, viewer *frontend.Viewer, device frontend.Device) (resource, error) {
-	node := resource{dir: true, kind: "root"}
+	var settings frontend.Settings
+	if i.host.Config != nil {
+		settings = i.host.Config()
+	}
+	node := resource{dir: true, kind: "root", name: frontend.AdvertisedName(settings)}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) == 1 && parts[0] == "" {
 		return node, nil

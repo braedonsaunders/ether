@@ -310,10 +310,9 @@ func (s *Server) identity() Identity {
 	if id.MachineIdentifier == "" {
 		id.MachineIdentifier = "ether"
 	}
-	if id.FriendlyName == "" {
-		id.FriendlyName = c.Server.FriendlyName
-	}
-	if id.FriendlyName == "" {
+	if name := strings.TrimSpace(c.Server.FriendlyName); name != "" {
+		id.FriendlyName = name
+	} else if strings.TrimSpace(id.FriendlyName) == "" {
 		id.FriendlyName = "Ether"
 	}
 	if c.Plex.CompatibilityVersion != "" {

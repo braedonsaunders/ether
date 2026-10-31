@@ -62,10 +62,7 @@ func mount(ctx context.Context, host frontend.Host, machineID string, protocol f
 	if err := publicRoutes(r, func() PublicInfo {
 		current := info
 		if host.Config != nil {
-			cfg := host.Config()
-			if name, ok := cfg["serverName"].(string); ok && name != "" {
-				current.ServerName = name
-			}
+			current.ServerName = frontend.AdvertisedName(host.Config())
 		}
 		return current
 	}, inst.publicViewers); err != nil {

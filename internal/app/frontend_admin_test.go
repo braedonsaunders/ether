@@ -22,13 +22,13 @@ func TestFrontendControl(t *testing.T) {
 	}
 	f := newFrontendControl(r, c)
 	c.Subscribe(func(c config.Config) { f.Reconcile(ctx, c) })
-	settings := frontend.Settings{"port": float64(8090), "serverName": "Ether"}
+	settings := frontend.Settings{"port": float64(8090), "discovery": true, "serverName": "Ether"}
 	if err := f.PutSettings(ctx, "test", settings); err != nil {
 		t.Fatal(err)
 	}
-	settings["serverName"] = "changed"
+	settings["discovery"] = false
 	got, err := f.Settings(ctx, "test")
-	if err != nil || got["serverName"] != "Ether" {
+	if err != nil || got["discovery"] != true || got["serverName"] != nil {
 		t.Fatal(got, err)
 	}
 	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(99999)}); err == nil {
@@ -41,10 +41,10 @@ func TestFrontendControl(t *testing.T) {
 	if err != nil || len(list) != 1 || !list[0].Enabled || len(list[0].Status.Addresses) != 1 {
 		t.Fatal(list, err)
 	}
-	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(8091), "serverName": "Ether"}); err != nil || closed != 1 {
+	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(8091), "discovery": true, "serverName": "Ether"}); err != nil || closed != 1 {
 		t.Fatal(err, closed)
 	}
-	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(8091), "serverName": "Renamed"}); err != nil || closed != 1 {
+	if err := f.PutSettings(ctx, "test", frontend.Settings{"port": float64(8091), "discovery": true, "serverName": "Renamed"}); err != nil || closed != 1 {
 		t.Fatal(err, closed)
 	}
 	if err := f.Toggle(ctx, "test", false); err != nil || closed != 2 {

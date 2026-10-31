@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/braedonsaunders/ether/internal/frontend"
 )
 
 func (i *instance) systemInfo(w http.ResponseWriter, r *http.Request) {
@@ -46,8 +48,12 @@ func (i *instance) openAPI(w http.ResponseWriter, r *http.Request) {
 func (i *instance) systemIdentity(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"server_id": i.id})
 }
-func (*instance) branding(w http.ResponseWriter, _ *http.Request) {
-	reply(w, http.StatusOK, map[string]any{"server_name": "Ether", "login_subtitle": "", "storage_available": false})
+func (i *instance) branding(w http.ResponseWriter, _ *http.Request) {
+	var settings frontend.Settings
+	if i.host.Config != nil {
+		settings = i.host.Config()
+	}
+	reply(w, http.StatusOK, map[string]any{"server_name": frontend.AdvertisedName(settings), "login_subtitle": "", "storage_available": false})
 }
 func (i *instance) setup(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"needs_setup": false, "wizard_completed": true})

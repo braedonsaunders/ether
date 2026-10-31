@@ -585,15 +585,17 @@ func Open(dataDir string) (*Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		if s.cfg, err = decodeOverDefaults(s.cfg, plain); err != nil {
+		var dropped bool
+		if s.cfg, dropped, err = decodeOverDefaults(s.cfg, plain); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", s.path, err)
 		}
 		// A configuration already upgraded to v2 credentials stays v2.
 		s.bound.Store(stats.strict)
 		s.localBound.Store(stats.strict)
 		// Seal secrets written in plaintext (by hand, or by a release that
-		// predates sealing).
-		if stats.plaintext > 0 || !ContainsSealed(b) {
+		// predates sealing). Also rewrite a file that still names a server
+		// per app.
+		if dropped || stats.plaintext > 0 || !ContainsSealed(b) {
 			if err := s.save(); err != nil {
 				return nil, err
 			}
@@ -629,7 +631,7 @@ func Read(dataDir string) (Config, error) {
 			return Config{}, err
 		}
 	}
-	cfg, err := decodeOverDefaults(Defaults(dataDir), plain)
+	cfg, _, err := decodeOverDefaults(Defaults(dataDir), plain)
 	if err != nil {
 		return Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -644,20 +646,65 @@ func Read(dataDir string) (Config, error) {
 // default field the file omits (omitempty zero values) — a saved quality
 // rule {"platform":"iOS"} would come back still matching the default rule's
 // "Apple TV" product.
-func decodeOverDefaults(defaults Config, b []byte) (Config, error) {
+func decodeOverDefaults(defaults Config, b []byte) (Config, bool, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
 	var file map[string]any
 	if err := dec.Decode(&file); err != nil {
-		return Config{}, err
+		return Config{}, false, err
 	}
 	// Like json.Unmarshal, reject anything after the document.
 	if _, err := dec.Token(); err != io.EOF {
-		return Config{}, fmt.Errorf("invalid data after the top-level value")
+		return Config{}, false, fmt.Errorf("invalid data after the top-level value")
 	}
+	dropped := stripFrontendServerNames(file)
 	doc := toDoc(defaults)
 	mergeDoc(doc, file)
-	return fromDoc(doc)
+	cfg, err := fromDoc(doc)
+	return cfg, dropped, err
+}
+
+// stripFrontendServerNames removes a per-app server name. The general
+// server name is the only one frontends advertise.
+func stripFrontendServerNames(file map[string]any) bool {
+	fronts, ok := file["frontends"].(map[string]any)
+	if !ok {
+		return false
+	}
+	dropped := false
+	for _, raw := range fronts {
+		fe, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		settings, ok := fe["settings"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, ok := settings["serverName"]; ok {
+			delete(settings, "serverName")
+			dropped = true
+		}
+	}
+	return dropped
+}
+
+// DropFrontendServerNames removes a stored per-app server name so a save
+// cannot keep a second name beside the general one.
+func DropFrontendServerNames(c *Config) {
+	for id, fe := range c.Frontends {
+		if fe.Settings == nil {
+			continue
+		}
+		if _, ok := fe.Settings["serverName"]; !ok {
+			continue
+		}
+		delete(fe.Settings, "serverName")
+		if len(fe.Settings) == 0 {
+			fe.Settings = nil
+		}
+		c.Frontends[id] = fe
+	}
 }
 
 // mergeDoc overlays src onto dst recursively: objects merge key by key at
@@ -730,6 +777,7 @@ func (s *Store) update(fn func(*Config) error) error {
 		s.mu.Unlock()
 		return err
 	}
+	DropFrontendServerNames(&next)
 	prev := s.cfg
 	s.cfg = next
 	if err := s.save(); err != nil {
