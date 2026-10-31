@@ -184,13 +184,50 @@ ETHER_PERF_GATE=quick go test ./internal/app -run TestPerformanceGate -v   # a 5
   refreshed in a deduplicated background slot, at most 16 at once. A title
   with no details yet waits at most 2 s while its fetch carries on detached,
   so the result still lands in the mirror for the next read.
+- A request has 1.5 s to wait on TMDB in all
+  (`catalog.WithReadWaitBudget`, set for every request). A page that touches
+  thirty titles with no details waits at most that long, not 2 s per title.
 - The TMDB client has a circuit breaker (`internal/tmdb/breaker.go`). After
-  three consecutive failed requests, each already retried, reads fail fast
-  for 30 s instead of paying a 0.5 + 1 + 2 s retry ladder per title.
+  three consecutive unreachable attempts (or exhausted 429/5xx ladders),
+  reads fail fast for 30 s instead of paying a 0.5 + 1 + 2 s retry ladder
+  per title. An outage therefore opens the breaker within the first
+  request's retries.
 
 On the lab data, cold Plex home routes took 35–87 s before these two changes.
 Each page waited on TMDB retries title by title. After the changes they take
 0.1–5 s, and the remaining time is Ether's own work, which the audit ranks.
+
+### Search
+
+- **Titles.** An FTS5 trigram index (`catalog_titles_fts`, plus
+  `catalog_alt_titles_fts` for alternative titles) answers the substring
+  match a `LIKE '%q%'` scan used to. A query of three or more characters
+  with no LIKE metacharacters becomes a lookup of its trigrams; shorter or
+  unusual queries keep the plain `LIKE`. On PostgreSQL, a `pg_trgm` GIN
+  index serves the same `ILIKE` predicate when the server has the
+  extension. A test proves the index and the scan return the same rows.
+- **People.** `catalog_person_names` holds one row per credited person,
+  kept in step with `catalog_credits` by triggers, with an FTS5 word-prefix
+  index. A people search takes the 500 most credited matching people, orders
+  them as before (exact name first, then by name), and keeps each person
+  whose most popular credited titles the viewer may see. It never walks
+  every credited title.
+- **Bounded windows.** `/Items?searchTerm=` (Infuse, Swiftfin, the Emby
+  apps) is a search, not a library walk filtered by name. An experience
+  search reads a candidate window that grows with the requested page: at
+  least 100 candidates, at most 1000. TMDB's own search widens results
+  beyond the mirror. It runs detached and is waited for at most 1 s, or
+  150 ms when the mirror already has enough matches; late results are
+  already in the mirror for the next keystroke.
+
+### Browse totals
+
+Library exclusion rules compile to key sets (`t.key NOT IN (SELECT key …)`),
+so each set is built once and probed by rowid, never two correlated
+subqueries per title. A covering index on
+`(type, browsable, adult, released_ts)` lets a library-wide total read that
+one narrow index. With the owner's country exclusion on the lab data, the
+totals behind every listing fell from 0.4–2 s to 20–30 ms.
 
 ### Caches
 

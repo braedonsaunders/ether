@@ -83,6 +83,7 @@ type PerfTraceRecord struct {
 	Start      time.Time             `json:"start"`
 	Duration   time.Duration         `json:"duration"`
 	Queries    int64                 `json:"queries"`
+	Writes     int64                 `json:"writes"`
 	Rows       int64                 `json:"rows"`
 	DBTime     time.Duration         `json:"dbTime"`
 	LockWait   time.Duration         `json:"lockWait"`
@@ -112,7 +113,7 @@ func (p *perfObserver) wrap(surface string, next http.Handler) http.Handler {
 		if tracing {
 			p.writeTrace(PerfTraceRecord{
 				Tag: r.Header.Get(PerfTagHeader), Surface: surface, Method: r.Method, Path: r.URL.Path, Status: recorder.Status(), Bytes: recorder.BytesWritten(),
-				Start: start, Duration: elapsed, Queries: stats.Queries(), Rows: stats.Rows(), DBTime: stats.DBTime(), LockWait: stats.LockWait(),
+				Start: start, Duration: elapsed, Queries: stats.Queries(), Writes: stats.Writes(), Rows: stats.Rows(), DBTime: stats.DBTime(), LockWait: stats.LockWait(),
 				Statements: stats.Statements(),
 			})
 		}
@@ -148,7 +149,7 @@ func (p *perfObserver) budget(surface string, r *http.Request, contentType strin
 	p.lastWarn[shape] = now
 	p.mu.Unlock()
 	attrs := []any{"surface", surface, "method", r.Method, "route", routeShape(r.URL.Path), "duration", elapsed.Round(time.Millisecond),
-		"queries", stats.Queries(), "rows", stats.Rows(), "db_time", stats.DBTime().Round(time.Millisecond), "lock_wait", stats.LockWait().Round(time.Millisecond)}
+		"queries", stats.Queries(), "writes", stats.Writes(), "rows", stats.Rows(), "db_time", stats.DBTime().Round(time.Millisecond), "lock_wait", stats.LockWait().Round(time.Millisecond)}
 	for i, st := range stats.Statements() {
 		if i == 3 {
 			break

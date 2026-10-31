@@ -31,6 +31,10 @@ type Result struct {
 	Skipped string        `json:"skipped,omitempty"`
 }
 
+// requestTimeout caps one replayed request; a path that scales with the
+// library fails its budget long before this.
+const requestTimeout = 60 * time.Second
+
 type Runner struct {
 	basePort int
 	// shared sends every protocol to the base port under its shared path
@@ -52,7 +56,7 @@ type Runner struct {
 func NewRunner(basePort int, shared bool, viewers []Viewer) *Runner {
 	tr := &http.Transport{MaxIdleConnsPerHost: 64, MaxConnsPerHost: 0, IdleConnTimeout: 90 * time.Second}
 	return &Runner{basePort: basePort, shared: shared, viewers: viewers, owner: viewers[0], sessions: map[string]*session{},
-		http: &http.Client{Transport: tr, Timeout: 90 * time.Second}}
+		http: &http.Client{Transport: tr, Timeout: requestTimeout}}
 }
 
 func (r *Runner) session(v Viewer, c Client) *session {

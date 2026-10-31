@@ -39,6 +39,7 @@ type TraceRecord struct {
 	Status     int             `json:"status"`
 	Duration   time.Duration   `json:"duration"`
 	Queries    int64           `json:"queries"`
+	Writes     int64           `json:"writes"`
 	Rows       int64           `json:"rows"`
 	DBTime     time.Duration   `json:"dbTime"`
 	LockWait   time.Duration   `json:"lockWait"`
@@ -81,14 +82,14 @@ func ReadTrace(path string) (map[string]TraceRecord, []TraceRecord, error) {
 type Row struct {
 	Client, Step, Class                    string
 	Cold, WarmP50, WarmP95, ConcP95, BgP95 time.Duration
-	Queries, Rows                          int64
+	Queries, Writes, Rows                  int64
 	DBTime, LockWait                       time.Duration
 	Status                                 string
 	Fails                                  []string
 	Skipped                                string
 	Errors                                 []string
 	samples                                map[string][]time.Duration
-	queries, rowsRead                      []int64
+	queries, writes, rowsRead              []int64
 	dbTimes, lockWaits                     []time.Duration
 }
 
@@ -147,6 +148,7 @@ func Summarize(results []Result, trace map[string]TraceRecord, order []Client) [
 		r.samples[res.Phase] = append(r.samples[res.Phase], res.Dur)
 		if tr, ok := trace[res.Tag]; ok && (res.Phase == "warm" || res.Phase == "cold") {
 			r.queries = append(r.queries, tr.Queries)
+			r.writes = append(r.writes, tr.Writes)
 			r.rowsRead = append(r.rowsRead, tr.Rows)
 			r.dbTimes = append(r.dbTimes, tr.DBTime)
 			r.lockWaits = append(r.lockWaits, tr.LockWait)
@@ -163,7 +165,7 @@ func Summarize(results []Result, trace map[string]TraceRecord, order []Client) [
 		r.WarmP95 = percentile(r.samples["warm"], 0.95)
 		r.ConcP95 = percentile(r.samples["concurrent"], 0.95)
 		r.BgP95 = percentile(r.samples["background"], 0.95)
-		r.Queries, r.Rows = median64(r.queries), median64(r.rowsRead)
+		r.Queries, r.Writes, r.Rows = median64(r.queries), median64(r.writes), median64(r.rowsRead)
 		r.DBTime = percentile(r.dbTimes, 0.5)
 		r.LockWait = percentile(r.lockWaits, 1)
 		check := func(name string, got, limit time.Duration, n int) {
@@ -210,8 +212,8 @@ func WriteReport(w io.Writer, title string, meta []string, rows []*Row) (failed 
 		fmt.Fprintf(w, "- %s\n", m)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "| client | step | class | cold | warm p50 | warm p95 | concurrent p95 | busy-writer p95 | queries | rows read | db time | lock wait | result |")
-	fmt.Fprintln(w, "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+	fmt.Fprintln(w, "| client | step | class | cold | warm p50 | warm p95 | concurrent p95 | busy-writer p95 | queries | writes | rows read | db time | lock wait | result |")
+	fmt.Fprintln(w, "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
 	for _, r := range rows {
 		status := r.Status
 		if len(r.Fails) > 0 {
@@ -226,9 +228,9 @@ func WriteReport(w io.Writer, title string, meta []string, rows []*Row) (failed 
 		if r.Status == "FAIL" || r.Status == "ERROR" {
 			failed++
 		}
-		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s | %s | %d | %d | %s | %s | %s |\n",
+		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s | %s | %d | %d | %d | %s | %s | %s |\n",
 			r.Client, strings.ReplaceAll(r.Step, "|", "/"), r.Class, ms(r.Cold), ms(r.WarmP50), ms(r.WarmP95), ms(r.ConcP95), ms(r.BgP95),
-			r.Queries, r.Rows, ms(r.DBTime), ms(r.LockWait), status)
+			r.Queries, r.Writes, r.Rows, ms(r.DBTime), ms(r.LockWait), status)
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Budgets (p95): ")
