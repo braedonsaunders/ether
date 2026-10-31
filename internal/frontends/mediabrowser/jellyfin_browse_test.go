@@ -231,6 +231,9 @@ func TestJellyfinNextUpUsesContinueEpisodes(t *testing.T) {
 	exp := frontendtest.Experience{RowsFunc: func(context.Context, frontend.RowRequest) ([]frontend.Row, error) {
 		return []frontend.Row{{Purpose: frontend.RowContinue, Items: []frontend.Title{movie, episode}}}, nil
 	}, ItemFunc: func(_ context.Context, req frontend.ItemRequest) (frontend.ItemDetail, error) {
+		if req.Key == core.ShowKey(5) {
+			return frontend.ItemDetail{Title: frontend.Title{Key: req.Key, Type: "show", Title: "The Scene"}}, nil
+		}
 		if req.Key != episode.Key {
 			t.Fatalf("next up item %v", req.Key)
 		}
@@ -371,7 +374,7 @@ func TestJellyfinUnplayedCountUsesEpisodeWatchState(t *testing.T) {
 
 func TestJellyfinEpisodeParentsComeFromTheTitle(t *testing.T) {
 	i := &instance{protocol: "jellyfin"}
-	encoded := i.itemDTO(frontend.Title{Key: core.EpisodeKey(42, 1, 3), Type: "episode", Title: "Pilot", Season: 1, Episode: 3}, frontend.WatchStatus{})
+	encoded := i.itemDTO(frontend.Title{Key: core.EpisodeKey(42, 1, 3), Type: "episode", Title: "Pilot"}, frontend.WatchStatus{})
 	showID := ids.RatingKeyGUID(core.ShowKey(42))
 	seasonID := ids.RatingKeyGUID(core.SeasonKey(42, 1))
 	if encoded["SeriesId"] != showID || encoded["SeasonId"] != seasonID || encoded["ParentId"] != seasonID || encoded["SeasonName"] != "Season 1" {

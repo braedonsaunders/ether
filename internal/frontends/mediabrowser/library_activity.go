@@ -142,6 +142,7 @@ func (i *instance) libraryActivity(w http.ResponseWriter, r *http.Request, lates
 		return
 	}
 	images, paths := i.gridImagesFor(r, titles), i.virtualPaths(r, viewer, keys)
+	i.fillSeriesTitles(r, viewer, titles)
 	if fieldSet(r)["mediasources"] {
 		r = i.withPageEditions(r, viewer, keys)
 	}

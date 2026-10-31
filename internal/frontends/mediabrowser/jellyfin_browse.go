@@ -482,6 +482,55 @@ func (i *instance) attachLibraryParent(r *http.Request, viewer *frontend.Viewer,
 	item["ParentId"] = viewID
 }
 
+// fillSeriesTitles copies each episode or season's show title onto the row
+// when the list item did not carry it. The show id comes from ShowKey or
+// from the episode key. One lookup is shared by every row of that show.
+func (i *instance) fillSeriesTitles(r *http.Request, viewer *frontend.Viewer, titles []frontend.Title) {
+	if i == nil || r == nil || viewer == nil || i.host.Experience == nil {
+		return
+	}
+	names := map[frontend.RatingKey]string{}
+	for n := range titles {
+		title := &titles[n]
+		if title.ShowTitle != "" || (title.Type != "episode" && title.Type != "season") {
+			continue
+		}
+		show := title.ShowKey
+		if show == 0 && (title.Key.Kind() == frontend.KindEpisode || title.Key.Kind() == frontend.KindSeason) {
+			show = frontend.ShowKey(title.Key.TMDB())
+		}
+		if show == 0 {
+			continue
+		}
+		name, ok := names[show]
+		if !ok {
+			name = i.showTitle(r, viewer, show)
+			names[show] = name
+		}
+		if name == "" {
+			continue
+		}
+		title.ShowTitle = name
+		if title.ShowKey == 0 {
+			title.ShowKey = show
+		}
+	}
+}
+
+func (i *instance) showTitle(r *http.Request, viewer *frontend.Viewer, show frontend.RatingKey) string {
+	detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: viewer, Device: device(r), Key: show})
+	if err != nil || detail.Title.Title == "" {
+		return ""
+	}
+	if detail.Title.Type != "" && detail.Title.Type != "show" {
+		return ""
+	}
+	if detail.Title.Key != 0 && detail.Title.Key != show {
+		return ""
+	}
+	return detail.Title.Title
+}
+
 // nameChildSeries copies the parent show's title onto children that do not
 // already carry it. Season rows often omit the series label that detail fills.
 func (i *instance) nameChildSeries(r *http.Request, viewer *frontend.Viewer, parent frontend.RatingKey, page *frontend.Page) {
@@ -534,23 +583,36 @@ func attachParentIdentity(m map[string]any, t frontend.Title) {
 			m["SeriesName"] = t.ShowTitle
 		}
 	}
+	seasonNumber, episodeNumber := t.Season, t.Episode
+	if seasonNumber == 0 {
+		if n := t.Key.Season(); n > 0 {
+			seasonNumber = n
+		}
+	}
+	if episodeNumber == 0 && t.Key.Kind() == frontend.KindEpisode {
+		if n := t.Key.Episode(); n > 0 {
+			episodeNumber = n
+		}
+	}
+	labeled := t
+	labeled.Season = seasonNumber
 	if t.Type == "episode" || t.Type == "season" {
-		if name := seasonDisplayName(t); name != "" {
+		if name := seasonDisplayName(labeled); name != "" {
 			m["SeasonName"] = name
 		}
 	}
 	if t.Type == "episode" {
 		season := t.Key.Parent()
-		if season == 0 && show.Kind() == frontend.KindShow && (t.Season > 0 || t.SeasonTitle != "") {
-			season = frontend.SeasonKey(show.TMDB(), t.Season)
+		if season == 0 && show.Kind() == frontend.KindShow && (seasonNumber > 0 || t.SeasonTitle != "") {
+			season = frontend.SeasonKey(show.TMDB(), seasonNumber)
 		}
 		if season != 0 {
 			id := ids.RatingKeyGUID(season)
 			m["SeasonId"] = id
 			m["ParentId"] = id
 		}
-		m["ParentIndexNumber"] = t.Season
-		m["IndexNumber"] = t.Episode
+		m["ParentIndexNumber"] = seasonNumber
+		m["IndexNumber"] = episodeNumber
 	}
 	if t.Type == "season" {
 		parent := t.Key.Parent()
@@ -560,7 +622,7 @@ func attachParentIdentity(m map[string]any, t frontend.Title) {
 		if parent != 0 {
 			m["ParentId"] = ids.RatingKeyGUID(parent)
 		}
-		m["IndexNumber"] = t.Season
+		m["IndexNumber"] = seasonNumber
 	}
 }
 

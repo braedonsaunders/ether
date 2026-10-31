@@ -302,12 +302,18 @@ func (i *instance) browseRoutes() error {
 			if fieldSet(r)["mediasources"] {
 				r = i.withPageEditions(r, v, keys)
 			}
+			i.fillSeriesTitles(r, v, page)
 			for _, title := range page {
 				if purpose == frontend.RowNextUp && title.Type == "episode" && i.host.Experience != nil {
 					detail, err := i.host.Experience.Item(r.Context(), frontend.ItemRequest{Viewer: v, Device: device(r), Key: title.Key})
 					if err == nil && detail.Title.Key == title.Key && detail.Title.Type == "episode" {
 						title = detail.Title
 					}
+				}
+				if title.ShowTitle == "" && (title.Type == "episode" || title.Type == "season") {
+					one := []frontend.Title{title}
+					i.fillSeriesTitles(r, v, one)
+					title = one[0]
 				}
 				item := i.itemDTO(title, state[title.Key])
 				if p := paths[title.Key]; p != "" {
@@ -634,6 +640,7 @@ func (i *instance) pageWithVersion(w http.ResponseWriter, r *http.Request, v *fr
 	images := i.gridImagesFor(r, page.Items)
 	paths := i.virtualPaths(r, v, keys)
 	r = i.withPageEditions(r, v, keys)
+	i.fillSeriesTitles(r, v, page.Items)
 	for _, title := range page.Items {
 		editions := i.jellyfinEditions(r, v, title)
 		if len(editions) > 1 {
