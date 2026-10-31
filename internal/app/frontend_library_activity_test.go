@@ -34,6 +34,7 @@ func TestSurfaceLibraryActivityUsesCatalogAndWatchState(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// 61s of 97 minutes is under 5%, so it is not a resume point.
 	if err = a.state.Progress(ctx, viewer.ID, resumable.Key, 61*time.Second, 97*time.Minute, "paused"); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +64,7 @@ func TestSurfaceLibraryActivityUsesCatalogAndWatchState(t *testing.T) {
 	for _, item := range resume.Items {
 		seen[item.Key] = true
 	}
-	if !seen[title.Key] || !seen[resumable.Key] || seen[tooEarly.Key] {
+	if !seen[title.Key] || seen[resumable.Key] || seen[tooEarly.Key] {
 		t.Fatalf("resume threshold: %+v", resume)
 	}
 }

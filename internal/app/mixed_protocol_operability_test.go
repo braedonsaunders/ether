@@ -577,12 +577,13 @@ func TestMixedProtocolOperability(t *testing.T) {
 		if json.Unmarshal(body, &embyPlay) != nil || embyPlay.PlaySessionId == "" {
 			t.Fatal(string(body))
 		}
-		code, body = call(http.MethodPost, "/emby/Sessions/Playing/Progress", `{"PlaySessionId":"`+embyPlay.PlaySessionId+`","PositionTicks":600000000}`, em)
+		// Ten minutes stays inside the 5%–90% resume window. One minute is below 5% and is not kept.
+		code, body = call(http.MethodPost, "/emby/Sessions/Playing/Progress", `{"PlaySessionId":"`+embyPlay.PlaySessionId+`","PositionTicks":6000000000}`, em)
 		if code != 204 {
 			t.Fatalf("emby progress %d %s", code, body)
 		}
 		code, body = call(http.MethodGet, "/jellyfin/Users/"+userGUID+"/Items/"+guid, "", jf)
-		if code != 200 || !strings.Contains(string(body), `"PlaybackPositionTicks":600000000`) {
+		if code != 200 || !strings.Contains(string(body), `"PlaybackPositionTicks":6000000000`) {
 			t.Fatalf("jellyfin missed emby progress %d %s", code, body)
 		}
 
